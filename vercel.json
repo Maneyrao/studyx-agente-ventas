@@ -1,0 +1,9 @@
+{
+  "regions": ["iad1"],
+  "crons": [
+    {
+      "path": "/api/cron/retry-embeddings",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}

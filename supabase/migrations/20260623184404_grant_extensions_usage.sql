@@ -1,0 +1,1 @@
+GRANT USAGE ON SCHEMA extensions TO orchestrator_role;
