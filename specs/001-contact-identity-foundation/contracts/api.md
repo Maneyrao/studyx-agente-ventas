@@ -150,7 +150,7 @@ Todos los campos son opcionales; se actualiza solo lo que se envía.
 
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
-| `status` | `"open"` \| `"closed"` \| `"transferred"` | Nuevo estado |
+| `status` | `"open"` \| `"closed"` | Nuevo estado |
 | `current_intent` | string | Intención detectada (texto libre) |
 
 ### Response 200 OK

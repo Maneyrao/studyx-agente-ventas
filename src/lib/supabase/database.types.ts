@@ -31,7 +31,7 @@ export interface Database {
           id: string;
           contact_id: string;
           channel: 'whatsapp' | 'voice';
-          status: 'open' | 'closed' | 'transferred';
+          status: 'open' | 'closed';
           current_intent: string | null;
           started_at: string;
           last_turn_at: string;

@@ -1,15 +1,23 @@
 {
-  "name": "next-scaffold",
+  "name": "studyx-agente-ventas",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.mts",
+    "test:unit": "vitest run --config vitest.config.mts tests/unit",
+    "test:coverage": "vitest run --config vitest.config.mts --coverage",
+    "test:integration": "vitest run --config vitest.integration.config.mts",
+    "test:db:reset-loop": "node scripts/verify-db-reset-loop.mjs",
+    "test:db:lint": "supabase db lint --local --level error --fail-on error",
+    "test:db:invariants": "supabase test db"
   },
   "dependencies": {
-    "next": "^16.2.9",
+    "next": "^16.3.0",
     "openai": "^6.44.0",
     "postgres": "^3.4.9",
     "react": "^19.2.7",
@@ -19,12 +27,14 @@
   "devDependencies": {
     "@supabase/supabase-js": "^2.108.2",
     "@types/node": "^20",
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
-    "eslint": "^8",
-    "eslint-config-next": "14.2.35",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitest/coverage-v8": "^4.0.18",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.3.0",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   }
 }

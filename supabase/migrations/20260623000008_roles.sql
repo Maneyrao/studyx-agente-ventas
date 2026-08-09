@@ -1,12 +1,12 @@
--- Two connection roles with their own LOGIN credentials.
--- Passwords must also be set in Supabase Dashboard → Project Settings → Database → Roles
--- so that Supavisor accepts them as connection identities.
---
--- Replace <orchestrator_password> and <audit_writer_password> with strong random strings
--- before running this migration against the remote database.
+-- Credentials are deliberately not versioned. After these migrations are applied,
+-- provision LOGIN and a unique password for each role with a project-admin
+-- connection. Store the resulting connection URLs only in `.env.local` / Vercel.
+-- Example (run outside migrations, never commit the values):
+--   ALTER ROLE orchestrator_role LOGIN PASSWORD '<generated-secret>';
+--   ALTER ROLE audit_writer LOGIN PASSWORD '<generated-secret>';
 
-CREATE ROLE orchestrator_role LOGIN PASSWORD 'PN3ZbOq6x6xlUVJu+Jy4PWE8sNjrOTlj';
-CREATE ROLE audit_writer       LOGIN PASSWORD 'QGyAhx1I+ggVft4wFm0zLDMIB2p87yJF';
+CREATE ROLE orchestrator_role NOLOGIN;
+CREATE ROLE audit_writer       NOLOGIN;
 
 -- orchestrator_role: business tables only — INSERT, UPDATE, SELECT; no DELETE
 GRANT INSERT, UPDATE, SELECT ON contacts           TO orchestrator_role;

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { updateConversation, ConversationNotFoundError } from '@/lib/services/conversation.service';
 
 const schema = z.object({
-  status: z.enum(['open', 'closed', 'transferred']).optional(),
+  status: z.enum(['open', 'closed']).optional(),
   current_intent: z.string().optional(),
 });
 

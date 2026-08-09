@@ -15,10 +15,14 @@ export async function getRecentMessages(params: {
 
   const messages = await sql<Message[]>`
     SELECT id, conversation_id, contact_id, direction, content, metadata, created_at
-    FROM messages
-    WHERE conversation_id = ${conversation_id}
-    ORDER BY created_at ASC
-    LIMIT ${safeLimit}
+    FROM (
+      SELECT id, conversation_id, contact_id, direction, content, metadata, created_at
+      FROM messages
+      WHERE conversation_id = ${conversation_id}
+      ORDER BY created_at DESC, id DESC
+      LIMIT ${safeLimit}
+    ) AS recent
+    ORDER BY created_at ASC, id ASC
   `;
 
   logger.info({ event: 'memory.recent.fetched', conversation_id, count: messages.length });

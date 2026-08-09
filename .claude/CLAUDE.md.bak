@@ -1,0 +1,29 @@
+# StudyX Agente de Ventas
+
+Backend conversacional con Next.js, Supabase/PostgreSQL, pgvector y Botpress.
+
+## Fuente de verdad
+
+- PostgreSQL contiene identidad, consentimiento, estados, mensajes y entrega.
+- Resúmenes y embeddings son datos derivados y reconstruibles.
+- Las reglas críticas deben estar protegidas por constraints y transacciones.
+
+## Trabajo actual
+
+Seguir [docs/ROADMAP.md](docs/ROADMAP.md). La fase activa está registrada en `SESSION.md`.
+
+## Reglas operativas
+
+- Crear migraciones aditivas; no reescribir migraciones aplicadas.
+- No registrar secretos ni imprimir valores de `.env`.
+- Preservar los cambios locales existentes del usuario.
+- Ante fallos transitorios, intentar como máximo tres veces con backoff; luego registrar y escalar.
+- Priorizar seguridad: pausar antes que duplicar, inventar o responder a un contacto bloqueado.
+
+## Verificación mínima
+
+- TypeScript, lint y unitarias.
+- Migración limpia en Supabase local.
+- Integración, concurrencia, replay e inyección de fallos.
+- Build de producción antes de cada entrega.
+

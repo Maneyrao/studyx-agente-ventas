@@ -5,6 +5,7 @@ import { registerAgentReply, TurnNotFoundError, TurnAlreadyAnsweredError } from 
 const schema = z.object({
   turn_id: z.string().uuid(),
   content: z.string().min(1).max(4096),
+  trace_id: z.string().uuid().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -24,7 +25,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await registerAgentReply(parsed.data);
+    const result = await registerAgentReply({
+      ...parsed.data,
+      trace_id: parsed.data.trace_id ?? request.headers.get('x-trace-id') ?? undefined,
+    });
     return NextResponse.json(result, { status: 201 });
   } catch (err) {
     if (err instanceof TurnNotFoundError) {

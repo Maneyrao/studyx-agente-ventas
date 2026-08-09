@@ -2,6 +2,7 @@ import { sql } from '@/lib/db/orchestrator';
 import { auditLog } from '@/lib/audit/logger';
 import { logger } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
+import type { DbClient } from '@/lib/db/types';
 
 const E164_REGEX = /^\+[1-9]\d{7,14}$/;
 
@@ -16,6 +17,10 @@ export interface Contact {
   summary: string | null;
   summary_updated_at: string | null;
   pending_turns: number;
+  lifecycle_status: 'active' | 'blocked' | 'deleted' | null;
+  sales_stage: 'new' | 'qualified' | 'offered' | 'won' | 'lost' | null;
+  blocked_at: string | null;
+  blocked_reason: string | null;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
@@ -31,15 +36,22 @@ export class ContactValidationError extends Error {
 export async function resolveContact(params: {
   phone: string;
   channel: 'whatsapp' | 'voice';
+  db?: DbClient;
+  audit?: {
+    event_key?: string;
+    correlation_id?: string;
+    causation_id?: string;
+    source_event_id?: string;
+  };
 }): Promise<{ contact: Contact; created: boolean }> {
-  const { phone, channel } = params;
+  const { phone, channel, db = sql, audit } = params;
 
   if (!E164_REGEX.test(phone)) {
     throw new ContactValidationError('INVALID_PHONE', `Phone number must be in E.164 format: ${phone}`);
   }
 
   // Atomic upsert: INSERT … ON CONFLICT DO NOTHING RETURNING *
-  const inserted = await sql<Contact[]>`
+  const inserted = await db<Contact[]>`
     INSERT INTO contacts (phone, channel_origin)
     VALUES (${phone}, ${channel})
     ON CONFLICT (phone) DO NOTHING
@@ -55,7 +67,7 @@ export async function resolveContact(params: {
     counter.increment('contacts_created');
   } else {
     // Race: another request created the contact between our INSERT and DO NOTHING
-    const existing = await sql<Contact[]>`
+    const existing = await db<Contact[]>`
       SELECT * FROM contacts WHERE phone = ${phone} LIMIT 1
     `;
     contact = existing[0];
@@ -69,7 +81,8 @@ export async function resolveContact(params: {
     entity_type: 'contact',
     entity_id: contact.id,
     payload: { channel },
-  });
+    ...audit,
+  }, db);
 
   return { contact, created };
 }

@@ -36,7 +36,7 @@ function normalize(text: string): string {
   return text
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '');
+    .replace(/\p{Diacritic}/gu, '');
 }
 
 const NORMALIZED_MARKERS = MARKERS.map(normalize);

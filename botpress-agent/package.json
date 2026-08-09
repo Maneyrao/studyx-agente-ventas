@@ -1,0 +1,22 @@
+{
+  "name": "botpress-agent",
+  "version": "1.0.0",
+  "description": "StudyX Botpress adapter with a canonical Next.js/Supabase backend",
+  "type": "module",
+  "scripts": {
+    "dev": "adk dev",
+    "build": "adk build",
+    "check": "adk check --format json",
+    "typecheck": "tsc --noEmit",
+    "evals": "adk evals --format json",
+    "deploy": "adk deploy"
+  },
+  "dependencies": {
+    "@botpress/evals": "^2.0.5",
+    "@botpress/runtime": "^2.0.5"
+  },
+  "devDependencies": {
+    "@botpress/adk-cli": "^2.0.5",
+    "typescript": "^5.9.3"
+  }
+}

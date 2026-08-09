@@ -48,7 +48,7 @@ CREATE UNIQUE INDEX messages_in_reply_to_unique
 - Estados de `status`: `prospecto | cliente | inactivo` (sin cambios). En el MVP, tanto el **opt-out** (el contacto pidió no ser contactado) como el **bloqueo** se representan con el único valor `status = inactivo`; no se distinguen como estados separados. La señalización para el agente se deriva de ese valor y se expone como `blocked: boolean` en el paquete de contexto de la ingesta. Si en el futuro se necesita diferenciar opt-out de bloqueo, requerirá un estado/columna adicional.
 
 ### Conversación *(reutilizada)*
-- `id, contact_id, channel, status (open|closed|transferred), current_intent, started_at, last_turn_at, created_at`.
+- `id, contact_id, channel, status (open|closed), current_intent, started_at, last_turn_at, created_at`.
 - Invariante para esta feature: a lo sumo **una** conversación `open` por `(contact_id, channel)`; la ingesta reutiliza la abierta o crea una nueva.
 
 ### Mensaje *(extendido)*

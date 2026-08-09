@@ -5,7 +5,6 @@ const TRIVIAL_PHRASES = [
   'hola',
   'buenas',
   'buen dia',
-  'buen dia',
   'buenos dias',
   'buenas tardes',
   'buenas noches',
@@ -33,7 +32,8 @@ function normalize(text: string): string {
   return text
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[.!¡,;:]+$/g, '')
     .trim();
 }
 
@@ -45,11 +45,7 @@ export function isTrivial(content: string): boolean {
   // Exact match against known trivial phrases
   if (NORMALIZED_TRIVIAL.includes(normalized)) return true;
 
-  // Very short messages (≤ 3 words) with no question mark and no digit — likely acks
-  const words = normalized.split(/\s+/).filter(Boolean);
-  if (words.length <= 3 && !normalized.includes('?') && !/\d/.test(normalized)) {
-    return true;
-  }
-
+  // Short does not mean trivial. Messages such as "quiero comprar", "prefiero
+  // noche" and "no me llames" are commercially meaningful and must be kept.
   return false;
 }

@@ -1,22 +1,39 @@
-import { auditSql } from '@/lib/db/audit';
+import { sql } from '@/lib/db/orchestrator';
+import type { DbClient } from '@/lib/db/types';
 
 interface AuditParams {
   action: string;
   entity_type: string;
   entity_id: string;
   payload?: Record<string, unknown> | null;
+  event_key?: string | null;
+  correlation_id?: string | null;
+  causation_id?: string | null;
+  source_event_id?: string | null;
 }
 
-// Writes to audit_log via the write_audit_log() SECURITY DEFINER function.
-// The function runs as audit_writer — the only identity with INSERT on audit_log.
-// SELECT is the correct syntax to invoke a RETURNS void SQL function in PostgreSQL.
-export async function auditLog(params: AuditParams): Promise<void> {
-  const { action, entity_type, entity_id, payload = null } = params;
-  await auditSql`SELECT write_audit_log(
+// The SECURITY DEFINER function keeps INSERT privileges away from the caller.
+// Passing the transaction handle is mandatory for atomic business mutations.
+export async function auditLog(params: AuditParams, db: DbClient = sql): Promise<void> {
+  const {
+    action,
+    entity_type,
+    entity_id,
+    payload = null,
+    event_key = null,
+    correlation_id = null,
+    causation_id = null,
+    source_event_id = null,
+  } = params;
+  await db`SELECT append_audit_event_atomic(
     ${'orchestrator'},
     ${action},
     ${entity_type},
     ${entity_id}::uuid,
-    ${payload ? JSON.stringify(payload) : null}::jsonb
+    ${payload ? JSON.stringify(payload) : null}::jsonb,
+    ${event_key},
+    ${correlation_id}::uuid,
+    ${causation_id}::uuid,
+    ${source_event_id}::uuid
   )`;
 }

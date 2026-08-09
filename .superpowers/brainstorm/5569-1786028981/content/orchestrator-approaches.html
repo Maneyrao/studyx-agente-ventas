@@ -1,0 +1,57 @@
+<h2>¿Qué tipo de agente debe gobernar Botpress?</h2>
+<p class="subtitle">Tres arquitecturas posibles para un ciclo de venta corto. Seleccioná la que quieras explorar.</p>
+
+<div class="cards">
+  <div class="card" data-choice="a-autonomo" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:20px;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;min-height:150px">
+      <div style="padding:12px;border:1px solid #64748b;border-radius:10px">WhatsApp</div>
+      <div>→</div>
+      <div style="padding:18px;border:2px solid #8b5cf6;border-radius:10px;text-align:center"><strong>Agente autónomo</strong><br><small>razona + decide + actúa</small></div>
+      <div>→</div>
+      <div style="padding:12px;border:1px solid #64748b;border-radius:10px">Respuesta</div>
+    </div>
+    <div class="card-body">
+      <h3>A · Generalista autónomo</h3>
+      <p>Un único nodo de IA decide todo el recorrido. Es rápido de armar, pero ofrece menos control, trazabilidad y previsibilidad comercial.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b-hibrido-recomendado" onclick="toggleSelect(this)" style="border:2px solid #22c55e">
+    <div class="card-image" style="padding:20px;display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;min-height:150px">
+      <div style="padding:10px;border:1px solid #64748b;border-radius:10px">Ingreso</div>
+      <div>→</div>
+      <div style="padding:10px;border:2px solid #22c55e;border-radius:10px">Guardas</div>
+      <div>→</div>
+      <div style="padding:10px;border:2px solid #8b5cf6;border-radius:10px">Agente comercial</div>
+      <div>→</div>
+      <div style="padding:10px;border:2px solid #22c55e;border-radius:10px">Validación</div>
+      <div>→</div>
+      <div style="padding:10px;border:1px solid #64748b;border-radius:10px">Salida</div>
+    </div>
+    <div class="card-body">
+      <h3>B · Híbrido controlado — recomendado</h3>
+      <p>Botpress controla estados y reglas; un agente comercial genera la respuesta dentro de límites explícitos. Equilibra naturalidad, velocidad y seguridad.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c-multiagente" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:20px;display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;min-height:150px">
+      <div style="padding:10px;border:2px solid #f59e0b;border-radius:10px">Supervisor</div>
+      <div>→</div>
+      <div style="padding:9px;border:1px solid #8b5cf6;border-radius:10px">Ventas</div>
+      <div style="padding:9px;border:1px solid #8b5cf6;border-radius:10px">FAQ</div>
+      <div style="padding:9px;border:1px solid #8b5cf6;border-radius:10px">Objeciones</div>
+      <div style="padding:9px;border:1px solid #8b5cf6;border-radius:10px">Handoff</div>
+    </div>
+    <div class="card-body">
+      <h3>C · Supervisor multiagente</h3>
+      <p>Especialistas separados por función. Escala bien cuando el negocio es complejo, pero para el MVP agrega latencia, costo y puntos de falla innecesarios.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:24px;padding:16px;border-left:4px solid #22c55e;background:rgba(34,197,94,.08)">
+  <div class="label">Mi recomendación</div>
+  <h3>Agente Comercial Híbrido Controlado</h3>
+  <p>Un solo agente conversacional especializado en ventas, contenido por una máquina de estados de Botpress. Supabase aporta memoria y verdad; no dirige el flujo.</p>
+</div>

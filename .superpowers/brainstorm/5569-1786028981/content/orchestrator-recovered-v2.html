@@ -1,0 +1,88 @@
+<h2>Definición recuperada: orquestador comercial StudyX</h2>
+<p class="subtitle">No es una elección de arquitectura: es el flujo comercial end-to-end ya definido, ejecutado en Botpress.</p>
+
+<div class="mockup">
+  <div class="mockup-header">Workflow principal de la oportunidad</div>
+  <div class="mockup-body" style="padding:22px">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center">
+      <div style="padding:12px;border:1px solid #64748b;border-radius:10px;text-align:center">WhatsApp /<br>Formulario</div>
+      <div>→</div>
+      <div style="padding:12px;border:2px solid #0ea5e9;border-radius:10px;text-align:center">Ingreso<br><small>identidad + consentimiento</small></div>
+      <div>→</div>
+      <div style="padding:12px;border:2px solid #8b5cf6;border-radius:10px;text-align:center"><strong>Asesor Comercial StudyX</strong><br><small>consulta memoria y conocimiento</small></div>
+      <div>→</div>
+      <div style="padding:12px;border:2px solid #f59e0b;border-radius:10px;text-align:center">Calificación<br><small>interés + fit + urgencia</small></div>
+      <div>→</div>
+      <div style="padding:12px;border:2px solid #22c55e;border-radius:10px;text-align:center">Oferta confirmada<br><small>producto + precio + moneda</small></div>
+    </div>
+
+    <div style="text-align:center;font-size:24px;margin:10px 0">↓</div>
+
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center">
+      <div style="padding:12px;border:2px solid #22c55e;border-radius:10px;text-align:center">Pago pendiente<br><small>enlace autorizado</small></div>
+      <div>→</div>
+      <div style="padding:12px;border:1px solid #64748b;border-radius:10px;text-align:center">PSP<br><small>Mercado Pago / elegido</small></div>
+      <div>→</div>
+      <div style="padding:12px;border:2px solid #22c55e;border-radius:10px;text-align:center">Pago verificado<br><small>solo webhook firmado</small></div>
+      <div>→</div>
+      <div style="padding:12px;border:2px solid #0ea5e9;border-radius:10px;text-align:center">Alta pendiente<br><small>aviso + Sheets</small></div>
+      <div>→</div>
+      <div style="padding:12px;border:2px solid #22c55e;border-radius:10px;text-align:center">Completado</div>
+    </div>
+  </div>
+</div>
+
+<div class="split" style="margin-top:20px">
+  <div class="mockup">
+    <div class="mockup-header">Botpress posee el workflow</div>
+    <div class="mockup-body">
+      <ul>
+        <li>Etapa conversacional y próxima acción</li>
+        <li>Preguntas de calificación</li>
+        <li>FAQ y manejo de objeciones</li>
+        <li>Esperas, seguimientos y rutas de error</li>
+        <li>Envío de mensajes y coordinación de herramientas</li>
+      </ul>
+    </div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-header">Supabase conserva los hechos</div>
+    <div class="mockup-body">
+      <ul>
+        <li>Contacto, consentimiento y oportunidad</li>
+        <li>Mensajes, resumen y memoria</li>
+        <li>Oferta exacta y enlace emitido</li>
+        <li>Pago verificado y alta</li>
+        <li>Auditoría e idempotencia</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:20px">
+  <div class="label">Salidas laterales ya definidas</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+    <span style="padding:8px 12px;border:1px solid #ef4444;border-radius:999px">No califica</span>
+    <span style="padding:8px 12px;border:1px solid #ef4444;border-radius:999px">Opt-out</span>
+    <span style="padding:8px 12px;border:1px solid #ef4444;border-radius:999px">Expirado</span>
+    <span style="padding:8px 12px;border:1px solid #ef4444;border-radius:999px">Pago fallido</span>
+    <span style="padding:8px 12px;border:1px solid #f59e0b;border-radius:999px">Revisión administrativa</span>
+  </div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="confirmar-flujo-recuperado" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>Éste es el flujo previamente definido</h3>
+      <p>Continuar con el diseño de nodos, variables y transiciones de Botpress.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="requiere-correccion" onclick="toggleSelect(this)">
+    <div class="letter">!</div>
+    <div class="content">
+      <h3>Requiere una corrección</h3>
+      <p>Indicar qué parte no representa la definición anterior.</p>
+    </div>
+  </div>
+</div>

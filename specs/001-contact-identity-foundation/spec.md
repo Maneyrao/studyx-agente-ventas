@@ -191,8 +191,8 @@ cercanos a la query.
   y exponer contadores incrementales de: contactos creados, mensajes registrados,
   búsquedas semánticas ejecutadas, embeddings en estado pendiente. Los contadores se
   exponen como entradas en el log estructurado (sin endpoint HTTP dedicado en este sprint).
-- **FR-014**: El sistema DEBE permitir actualizar el estado (`open`, `closed`,
-  `transferred`) y la intención actual (`current_intent`) de una conversación existente,
+- **FR-014**: El sistema DEBE permitir actualizar el estado (`open`, `closed`)
+  y la intención actual (`current_intent`) de una conversación existente,
   vía `PATCH /api/conversations/:id`. La operación falla con `CONVERSATION_NOT_FOUND`
   si la conversación no existe.
 
@@ -205,7 +205,7 @@ cercanos a la query.
 
 - **Conversation**: Sesión de interacción entre un contacto y el sistema. Atributos
   clave: referencia al contacto, canal (`whatsapp` / `voice`), estado (`open` /
-  `closed` / `transferred`), intención actual (campo libre, actualizable), timestamps
+  `closed`), intención actual (campo libre, actualizable), timestamps
   de inicio y último turno.
 
 - **Message**: Turno individual dentro de una conversación. Atributos clave: referencia

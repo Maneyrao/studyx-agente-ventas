@@ -55,7 +55,7 @@ CREATE TABLE conversations (
   channel         text        NOT NULL
                               CHECK (channel IN ('whatsapp', 'voice')),
   status          text        NOT NULL DEFAULT 'open'
-                              CHECK (status IN ('open', 'closed', 'transferred')),
+                              CHECK (status IN ('open', 'closed')),
   current_intent  text,
   started_at      timestamptz NOT NULL DEFAULT now(),
   last_turn_at    timestamptz NOT NULL DEFAULT now(),

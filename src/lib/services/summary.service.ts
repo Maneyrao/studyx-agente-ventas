@@ -5,7 +5,13 @@ import { logger } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
 import { config } from '@/lib/config';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let openai: OpenAI | null = null;
+
+function getOpenAIClient(): OpenAI {
+  if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is not set');
+  openai ??= new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return openai;
+}
 
 interface RecentMessage {
   direction: 'inbound' | 'outbound';
@@ -44,7 +50,7 @@ export async function regenerateSummary(contact_id: string): Promise<string> {
 
   const prompt = buildSummaryPrompt(messages);
 
-  const response = await openai.chat.completions.create({
+  const response = await getOpenAIClient().chat.completions.create({
     model: config.summaryModel,
     messages: [{ role: 'user', content: prompt }],
     max_tokens: 300,
