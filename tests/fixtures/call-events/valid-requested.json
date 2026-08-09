@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "event_id": "tg-sim:evt:req:01HMZ8Q7WKX0",
+  "call_id": "9c858901-8a57-4791-81fe-4c483003b3c2",
+  "event_type": "requested",
+  "sequence": 0,
+  "occurred_at": "2026-08-07T15:35:00.000-03:00",
+  "provider": "telegram_sandbox",
+  "payload": {
+    "event_type": "requested",
+    "contact_id": "0a4a8f65-e5c1-4c47-9b2f-c0f5f7d6a1e3",
+    "conversation_id": "7ab3e34e-4b26-40c1-9a5b-4c9b1f0f8e2d",
+    "reason": "lead_calificado_solicita_llamada",
+    "course_of_interest": "programacion_intensivo",
+    "previous_summary": "El usuario preguntó por precios y disponibilidad. Interés alto."
+  }
+}

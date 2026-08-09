@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "event_id": "tg-sim:evt:started:01HMZ8Q8ABCD",
+  "call_id": "9c858901-8a57-4791-81fe-4c483003b3c2",
+  "event_type": "started",
+  "sequence": 1,
+  "occurred_at": "2026-08-07T15:36:12.000-03:00",
+  "provider": "telegram_sandbox",
+  "payload": {
+    "event_type": "started",
+    "started_at": "2026-08-07T15:36:12.000-03:00"
+  }
+}

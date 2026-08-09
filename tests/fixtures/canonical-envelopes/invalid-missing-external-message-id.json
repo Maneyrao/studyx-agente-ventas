@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "source": "botpress",
+  "channel": "whatsapp",
+  "integration_id": "wamid-integration-01",
+  "external_conversation_id": "+541112345678",
+  "external_user_id": "+541112345678",
+  "phone_e164": "+541112345678",
+  "trace_id": "550e8400-e29b-41d4-a716-446655440000",
+  "message": {
+    "type": "text",
+    "text": "Hola",
+    "occurred_at": "2026-08-07T15:30:00.000-03:00",
+    "reply_to_external_message_id": null,
+    "audio_reference": null,
+    "metadata": {}
+  }
+}

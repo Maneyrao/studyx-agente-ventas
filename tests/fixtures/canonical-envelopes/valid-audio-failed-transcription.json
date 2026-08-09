@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "source": "botpress",
+  "channel": "whatsapp",
+  "integration_id": "telegram-sandbox-01",
+  "external_message_id": "tg:msg:12345:67891",
+  "external_conversation_id": "tg:chat:12345",
+  "external_user_id": "tg:user:12345",
+  "phone_e164": "+9990012345678",
+  "trace_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "sandbox_provider": "telegram_sandbox",
+  "message": {
+    "type": "audio",
+    "text": "[audio_no_transcrito]",
+    "occurred_at": "2026-08-07T15:32:00.000-03:00",
+    "reply_to_external_message_id": null,
+    "audio_reference": {
+      "provider_file_id": "AwACAgIAAxkBAAIC1WYQvT_xyz789",
+      "mime_type": "audio/ogg",
+      "duration_seconds": 12,
+      "transcription_status": "failed",
+      "transcription_provider": "openai-whisper-1"
+    },
+    "metadata": {}
+  }
+}

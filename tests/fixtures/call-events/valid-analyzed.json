@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "event_id": "tg-sim:evt:analyzed:01HMZ8QGHIJKL",
+  "call_id": "9c858901-8a57-4791-81fe-4c483003b3c2",
+  "event_type": "analyzed",
+  "sequence": 3,
+  "occurred_at": "2026-08-07T15:43:00.000-03:00",
+  "provider": "telegram_sandbox",
+  "payload": {
+    "event_type": "analyzed",
+    "analysis": {
+      "result": "link_enviado_sin_pago",
+      "nivel_interes": "alto",
+      "objecion": "precio",
+      "notas": "Envió link de pago; espera 24h para seguimiento."
+    }
+  }
+}

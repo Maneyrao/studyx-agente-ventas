@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "source": "botpress",
+  "channel": "whatsapp",
+  "integration_id": "telegram:bot-a",
+  "external_message_id": "tg:msg:12345678:151",
+  "external_conversation_id": "tg:chat:12345678",
+  "external_user_id": "tg:user:12345678",
+  "phone_e164": "+9990012345678",
+  "trace_id": "12345678-1234-4234-8234-123456789013",
+  "sandbox_provider": "some_other_sandbox",
+  "message": {
+    "type": "text",
+    "text": "Hola",
+    "occurred_at": "2026-08-07T15:30:00.000-03:00",
+    "reply_to_external_message_id": null,
+    "audio_reference": null,
+    "metadata": {}
+  }
+}

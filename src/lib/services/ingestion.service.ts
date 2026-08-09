@@ -1,14 +1,24 @@
 import { resolveContact, Contact } from './contact.service';
 import { getOrCreateOpenConversation } from './conversation.service';
-import { registerMessage, getMessageById, MessageNotFoundError, Message } from './message.service';
+import { registerMessage, getMessageById, Message } from './message.service';
 import { getRecentMessages, semanticSearch, SearchResult } from './memory.service';
-import { regenerateSummary } from './summary.service';
+import { randomUUID } from 'node:crypto';
+import {
+  commitAgentDecision,
+  DecisionConflictError,
+  DecisionTurnNotFoundError,
+} from './decision.service';
 import { referencesPast } from '@/lib/heuristics/reference-detection';
 import { isTrivial } from '@/lib/heuristics/triviality';
 import { config } from '@/lib/config';
 import { logger } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
 import { sql } from '@/lib/db/orchestrator';
+import { withSerializableTransaction } from '@/lib/db/transaction';
+import { sha256Hex } from '@/lib/idempotency/canonical-json';
+import { isExplicitOptOut } from '@/lib/heuristics/opt-out';
+import type { DbClient } from '@/lib/db/types';
+import type { DecisionResponseType } from '@/features/orchestration/domain/decision';
 
 export class TurnNotFoundError extends Error {
   readonly code = 'TURN_NOT_FOUND';
@@ -37,36 +47,360 @@ export interface ContactContext {
   status: 'prospecto' | 'cliente' | 'inactivo';
   name: string | null;
   blocked: boolean;
+  consent_status: 'allowed' | 'revoked' | 'unknown';
   summary: string | null;
   summary_updated_at: string | null;
 }
 
 export interface IngestContext {
+  status: 'accepted' | 'duplicate' | 'suppressed';
+  replayed: boolean;
+  trace_id: string;
   turn_id: string;
+  conversation_id: string;
+  policy: {
+    may_respond: boolean;
+    allowed_response_types: DecisionResponseType[];
+    reason: string | null;
+  };
   contact: ContactContext;
-  recent_turns: Pick<Message, 'direction' | 'content' | 'created_at'>[];
-  long_term_memory: Pick<SearchResult, 'content' | 'similarity' | 'created_at'>[] | null;
-  long_term_memory_available: boolean;
+  context: {
+    recent_turns: Pick<Message, 'direction' | 'content' | 'created_at'>[];
+    summary: string | null;
+    long_term_memory: Pick<SearchResult, 'content' | 'similarity' | 'created_at'>[] | null;
+    long_term_memory_available: boolean;
+  };
+  existing_result: {
+    decision_id: string | null;
+    outbound_id: string | null;
+    delivery_status: string | null;
+    next_state: 'completed' | 'waiting_user';
+  } | null;
 }
 
-export async function processInboundMessage(params: {
-  phone: string;
-  content: string;
-  channel: 'whatsapp' | 'voice';
-}): Promise<IngestContext> {
-  const { phone, content, channel } = params;
+export interface InboundEnvelope {
+  schema_version: 1;
+  source: 'botpress';
+  channel: 'emulator' | 'whatsapp';
+  integration_id: string;
+  external_message_id: string;
+  provider_message_id?: string;
+  external_conversation_id: string;
+  external_user_id: string;
+  phone_e164: string;
+  trace_id: string;
+  message: {
+    type: 'text' | 'audio' | 'image' | 'unsupported';
+    text: string;
+    occurred_at: string;
+    reply_to_external_message_id: string | null;
+    audio_reference?: {
+      provider_file_id: string;
+      mime_type: string;
+      duration_seconds: number | null;
+      transcription_status: 'ok' | 'failed' | 'skipped';
+      transcription_provider: string | null;
+    } | null;
+    metadata?: Record<string, string | number | boolean>;
+  };
+  /**
+   * Sandbox origin marker. When set, the backend uses this as the `provider`
+   * for idempotency keys (channel_events / channel_threads UNIQUE) and the
+   * anti-real-effects lock (see `sandbox.service.ts`) so a sandbox contact
+   * cannot trigger Retell, Stripe, or production WhatsApp / Sheets.
+   */
+  sandbox_provider?: 'telegram_sandbox' | null;
+}
 
-  const { contact } = await resolveContact({ phone, channel });
-  const conversation = await getOrCreateOpenConversation(contact.id, channel);
+export class IdempotencyConflictError extends Error {
+  readonly code = 'IDEMPOTENCY_KEY_REUSED';
+  constructor() {
+    super('The external message identity is already bound to another payload');
+    this.name = 'IdempotencyConflictError';
+  }
+}
 
-  const { message: inbound } = await registerMessage({
-    conversation_id: conversation.id,
-    direction: 'inbound',
-    content,
+export class ChannelIdentityConflictError extends Error {
+  readonly code = 'CHANNEL_IDENTITY_CONFLICT';
+  constructor() {
+    super('The provider conversation is already bound to another contact');
+    this.name = 'ChannelIdentityConflictError';
+  }
+}
+
+export class InboundEventUnavailableError extends Error {
+  readonly code = 'INBOUND_EVENT_UNAVAILABLE';
+  constructor(public readonly retryable: boolean) {
+    super(retryable ? 'The inbound event is already being processed' : 'The inbound event is terminal');
+    this.name = 'InboundEventUnavailableError';
+  }
+}
+
+interface InboundCore {
+  inbound: Message;
+  contact: Contact;
+  conversation_id: string;
+  replayed: boolean;
+  explicit_opt_out: boolean;
+  consent_status: 'unknown' | 'granted' | 'revoked';
+}
+
+async function findExistingInbound(eventId: string, db: DbClient): Promise<InboundCore | null> {
+  const rows = await db<Array<Message & Contact & {
+    message_id: string;
+    conversation_id: string;
+    consent_status: 'unknown' | 'granted' | 'revoked' | null;
+  }>>`
+    SELECT
+      m.id AS message_id,
+      m.conversation_id,
+      m.contact_id,
+      m.direction,
+      m.content,
+      m.in_reply_to,
+      m.metadata,
+      m.created_at,
+      m.source_event_id,
+      c.*,
+      ccp.consent_status
+    FROM messages AS m
+    JOIN contacts AS c ON c.id = m.contact_id
+    LEFT JOIN contact_channel_permissions AS ccp
+      ON ccp.contact_id = c.id AND ccp.channel = 'whatsapp'
+    WHERE m.source_event_id = ${eventId}::uuid
+    LIMIT 1
+  `;
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    inbound: { ...row, id: row.message_id },
+    contact: row,
+    conversation_id: row.conversation_id,
+    replayed: true,
+    explicit_opt_out: row.consent_status === 'revoked',
+    consent_status: row.consent_status ?? 'unknown',
+  };
+}
+
+async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
+  const channel = 'whatsapp' as const;
+  // sandbox_provider (e.g. 'telegram_sandbox') wins over the default derivation so
+  // the sandbox lives on its own row in channel_events / channel_threads (their
+  // UNIQUE constraints include `provider`) and never collides with production.
+  const provider =
+    envelope.sandbox_provider ??
+    (envelope.channel === 'emulator' ? 'botpress_emulator' : envelope.source);
+  const canonicalPayload = {
+    schema_version: envelope.schema_version,
+    source: envelope.source,
+    channel,
+    integration_id: envelope.integration_id,
+    external_message_id: envelope.external_message_id,
+    provider_message_id: envelope.provider_message_id ?? null,
+    external_conversation_id: envelope.external_conversation_id,
+    external_user_id: envelope.external_user_id,
+    phone_e164: envelope.phone_e164,
+    message: envelope.message,
+  };
+  const payloadHash = sha256Hex(canonicalPayload);
+
+  return withSerializableTransaction(async (db) => {
+    const reservations = await db<Array<{
+      event_id: string;
+      was_created: boolean;
+      payload_matches: boolean;
+      event_status: string;
+    }>>`
+      SELECT * FROM reserve_inbound_channel_event(
+        ${provider},
+        ${envelope.integration_id},
+        ${channel},
+        ${envelope.external_message_id},
+        ${envelope.external_message_id},
+        ${envelope.external_conversation_id},
+        decode(${payloadHash}, 'hex'),
+        ${JSON.stringify(canonicalPayload)}::jsonb
+      )
+    `;
+    const reservation = reservations[0];
+    if (!reservation?.payload_matches) throw new IdempotencyConflictError();
+
+    const events = await db<Array<{ status: string }>>`
+      SELECT status FROM channel_events WHERE id = ${reservation.event_id}::uuid FOR UPDATE
+    `;
+    const existing = await findExistingInbound(reservation.event_id, db);
+    if (existing) return existing;
+    if (events[0]?.status === 'processing') throw new InboundEventUnavailableError(true);
+    if (events[0]?.status === 'processed' || events[0]?.status === 'dead_letter') {
+      throw new InboundEventUnavailableError(false);
+    }
+
+    const { contact } = await resolveContact({
+      phone: envelope.phone_e164,
+      channel,
+      db,
+      audit: {
+        event_key: `channel-event:${reservation.event_id}:contact`,
+        correlation_id: envelope.trace_id,
+        source_event_id: reservation.event_id,
+      },
+    });
+    await db`SELECT id FROM contacts WHERE id = ${contact.id}::uuid FOR UPDATE`;
+
+    const threads = await db<Array<{ id: string; contact_id: string }>>`
+      INSERT INTO channel_threads (
+        contact_id, provider, integration_id, channel, external_conversation_id, metadata
+      )
+      VALUES (
+        ${contact.id}::uuid,
+        ${provider},
+        ${envelope.integration_id},
+        ${channel},
+        ${envelope.external_conversation_id},
+        ${JSON.stringify({ external_user_id: envelope.external_user_id })}::jsonb
+      )
+      ON CONFLICT (provider, integration_id, external_conversation_id)
+      DO UPDATE SET last_seen_at = now()
+      WHERE channel_threads.contact_id = EXCLUDED.contact_id
+        AND channel_threads.channel = EXCLUDED.channel
+      RETURNING id, contact_id
+    `;
+    const thread = threads[0];
+    if (!thread) throw new ChannelIdentityConflictError();
+
+    await db`
+      UPDATE channel_events
+      SET
+        contact_id = ${contact.id}::uuid,
+        channel_thread_id = ${thread.id}::uuid,
+        status = 'processing',
+        attempt_count = attempt_count + 1,
+        lease_until = now() + interval '60 seconds',
+        leased_by = ${`next:${envelope.trace_id}`}
+      WHERE id = ${reservation.event_id}::uuid
+    `;
+
+    const openRows = await db<Array<{ id: string; channel_thread_id: string | null }>>`
+      SELECT id, channel_thread_id
+      FROM conversations
+      WHERE contact_id = ${contact.id}::uuid AND channel = ${channel} AND status = 'open'
+      FOR UPDATE
+    `;
+    let conversationId: string;
+    if (openRows[0]?.channel_thread_id === null) {
+      const adopted = await db<Array<{ id: string }>>`
+        UPDATE conversations
+        SET channel_thread_id = ${thread.id}::uuid
+        WHERE id = ${openRows[0].id}::uuid
+        RETURNING id
+      `;
+      conversationId = adopted[0].id;
+    } else {
+      if (openRows[0] && openRows[0].channel_thread_id !== thread.id) {
+        await db`
+          UPDATE conversations
+          SET status = 'closed', last_turn_at = now()
+          WHERE id = ${openRows[0].id}::uuid
+        `;
+      }
+      const conversation = await getOrCreateOpenConversation(contact.id, channel, {
+        db,
+        channel_thread_id: thread.id,
+      });
+      conversationId = conversation.id;
+    }
+
+    const explicitOptOut = isExplicitOptOut(envelope.message.text);
+    if (explicitOptOut) {
+      await db`
+        SELECT * FROM record_contact_permission_event(
+          ${`opt-out:${reservation.event_id}`},
+          ${contact.id}::uuid,
+          ${channel},
+          ${'revoked'},
+          ${'inbound_explicit_opt_out'},
+          ${reservation.event_id}::uuid,
+          ${JSON.stringify({ text: envelope.message.text })}::jsonb,
+          ${envelope.message.occurred_at}::timestamptz
+        )
+      `;
+    } else {
+      await db`
+        INSERT INTO contact_channel_permissions (
+          contact_id, channel, consent_status, consent_source, reply_window_expires_at
+        )
+        VALUES (
+          ${contact.id}::uuid,
+          ${channel},
+          'unknown',
+          'inbound_message',
+          ${envelope.message.occurred_at}::timestamptz + interval '24 hours'
+        )
+        ON CONFLICT (contact_id, channel) DO UPDATE
+        SET reply_window_expires_at = GREATEST(
+          contact_channel_permissions.reply_window_expires_at,
+          EXCLUDED.reply_window_expires_at
+        )
+      `;
+    }
+
+    const { message: inbound } = await registerMessage({
+      conversation_id: conversationId,
+      direction: 'inbound',
+      content: envelope.message.text,
+      source_event_id: reservation.event_id,
+      metadata: {
+        message_type: envelope.message.type,
+        external_message_id: envelope.external_message_id,
+        provider_message_id: envelope.provider_message_id ?? null,
+        occurred_at: envelope.message.occurred_at,
+        reply_to_external_message_id: envelope.message.reply_to_external_message_id,
+      },
+    }, {
+      db,
+      embedding: isTrivial(envelope.message.text) ? 'skip' : 'enqueue',
+      audit: {
+        event_key: `channel-event:${reservation.event_id}:message`,
+        correlation_id: envelope.trace_id,
+        source_event_id: reservation.event_id,
+      },
+    });
+
+    await db`
+      UPDATE channel_events
+      SET
+        status = 'processed',
+        processed_at = now(),
+        lease_until = NULL,
+        leased_by = NULL,
+        last_error_code = NULL,
+        last_error_detail = NULL
+      WHERE id = ${reservation.event_id}::uuid
+    `;
+
+    const permissions = await db<Array<{ consent_status: 'unknown' | 'granted' | 'revoked' }>>`
+      SELECT consent_status
+      FROM contact_channel_permissions
+      WHERE contact_id = ${contact.id}::uuid AND channel = ${channel}
+    `;
+    return {
+      inbound,
+      contact,
+      conversation_id: conversationId,
+      replayed: !reservation.was_created,
+      explicit_opt_out: explicitOptOut,
+      consent_status: permissions[0]?.consent_status ?? 'unknown',
+    };
   });
+}
+
+export async function processInboundMessage(envelope: InboundEnvelope): Promise<IngestContext> {
+  const { inbound, contact, conversation_id, replayed, explicit_opt_out, consent_status } =
+    await persistInbound(envelope);
+  const content = envelope.message.text;
 
   const { messages: recentMessages } = await getRecentMessages({
-    conversation_id: conversation.id,
+    conversation_id,
     limit: config.recentTurnsLimit,
   });
 
@@ -76,7 +410,7 @@ export async function processInboundMessage(params: {
     created_at: m.created_at,
   }));
 
-  let long_term_memory: IngestContext['long_term_memory'] = null;
+  let long_term_memory: IngestContext['context']['long_term_memory'] = null;
   let long_term_memory_available = true;
 
   // FR-006: un mensaje trivial (saludo/ack/agradecimiento) NUNCA dispara búsqueda
@@ -110,103 +444,142 @@ export async function processInboundMessage(params: {
   logger.info({
     event: 'ingestion.processed',
     contact_id: contact.id,
-    conversation_id: conversation.id,
+    conversation_id,
     turn_id: inbound.id,
     trivial,
     memory_search_attempted: shouldRetrieveMemory,
     long_term_memory_available,
   });
 
+  const blocked = contact.status === 'inactivo'
+    || contact.lifecycle_status === 'blocked'
+    || contact.lifecycle_status === 'deleted'
+    || contact.deleted_at !== null;
+  const unsupportedMessage = envelope.message.type === 'unsupported';
+  const mayRespond = explicit_opt_out || (!blocked && consent_status !== 'revoked');
+  const allowedResponseTypes: IngestContext['policy']['allowed_response_types'] = explicit_opt_out
+    ? ['opt_out_ack']
+    : !mayRespond
+      ? []
+      : unsupportedMessage
+        ? ['out_of_scope', 'technical_fallback']
+        : [
+            'social_reply',
+            'commercial_reply',
+            'clarification',
+            'complaint_ack',
+            'automation_only',
+            'out_of_scope',
+            'technical_fallback',
+          ];
+
+  const decisions = await sql<Array<{
+    decision_id: string;
+    outbound_id: string | null;
+    state: string | null;
+    next_state: 'completed' | 'waiting_user';
+  }>>`
+    SELECT ad.id AS decision_id, ad.outbound_message_id AS outbound_id, od.state, ad.next_state
+    FROM agent_decisions AS ad
+    LEFT JOIN outbound_deliveries AS od ON od.message_id = ad.outbound_message_id
+    WHERE ad.turn_id = ${inbound.id}::uuid
+    LIMIT 1
+  `;
+  const existingDecision = decisions[0];
+  const deliveryStatus = existingDecision?.state === 'submitted' || existingDecision?.state === 'delivered'
+    ? 'submitted_to_botpress'
+    : existingDecision?.state === 'failed_retryable' || existingDecision?.state === 'dead_letter'
+      ? 'failed'
+      : existingDecision?.state ?? null;
+
   return {
+    status: !mayRespond ? 'suppressed' : replayed ? 'duplicate' : 'accepted',
+    replayed,
+    trace_id: envelope.trace_id,
     turn_id: inbound.id,
+    conversation_id,
+    policy: {
+      may_respond: mayRespond,
+      allowed_response_types: allowedResponseTypes,
+      reason: blocked
+        ? 'CONTACT_BLOCKED'
+        : consent_status === 'revoked' && !explicit_opt_out
+          ? 'CONSENT_REVOKED'
+          : explicit_opt_out
+            ? 'EXPLICIT_OPT_OUT_ACK_ONLY'
+            : unsupportedMessage
+              ? 'UNSUPPORTED_MESSAGE_TYPE'
+              : null,
+    },
     contact: {
       id: contact.id,
       status: contact.status,
       name: contact.name,
       // C1 / Edge case opt-out: señal explícita para que el agente NO continúe la
       // conversación comercial cuando el contacto está inactivo/bloqueado.
-      blocked: contact.status === 'inactivo',
+      blocked,
+      consent_status: consent_status === 'granted' ? 'allowed' : consent_status,
       summary: contact.summary,
       summary_updated_at: contact.summary_updated_at,
     },
-    recent_turns,
-    long_term_memory,
-    long_term_memory_available,
+    context: {
+      recent_turns,
+      summary: contact.summary,
+      long_term_memory,
+      long_term_memory_available,
+    },
+    existing_result: existingDecision ? {
+      decision_id: existingDecision.decision_id,
+      outbound_id: existingDecision.outbound_id,
+      delivery_status: deliveryStatus,
+      next_state: existingDecision.next_state,
+    } : null,
   };
 }
 
 export async function registerAgentReply(params: {
   turn_id: string;
   content: string;
+  trace_id?: string;
 }): Promise<AgentReplyResult> {
-  const { turn_id, content } = params;
-
-  // Validate that the turn exists and is an inbound message in an open conversation
-  let inbound: Message;
+  const { turn_id, content, trace_id = randomUUID() } = params;
   try {
-    inbound = await getMessageById(turn_id);
-  } catch (err) {
-    if (err instanceof MessageNotFoundError) throw new TurnNotFoundError(turn_id);
-    throw err;
-  }
-
-  if (inbound.direction !== 'inbound') throw new TurnNotFoundError(turn_id);
-
-  // Register outbound (unique index prevents double-answering the same turn)
-  let outbound: Message;
-  try {
-    const result = await registerMessage({
-      conversation_id: inbound.conversation_id,
-      direction: 'outbound',
-      content,
-      in_reply_to: turn_id,
+    const decision = await commitAgentDecision({
+      turn_id,
+      trace_id,
+      decision: {
+        schema_version: 2,
+        intent: 'commercial',
+        kind: 'reply',
+        response: content,
+        response_type: 'commercial_reply',
+        business_action: null,
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'completed',
+        reason_code: 'LEGACY_REPLY_ADAPTER',
+        confidence: 1,
+      },
+      model: {
+        provider: 'botpress',
+        model: 'legacy-reply-adapter',
+        prompt_version: 'legacy-v2',
+      },
     });
-    outbound = result.message;
-  } catch (err) {
-    // Unique index violation = turn already answered
-    const msg = String(err);
-    if (msg.includes('messages_in_reply_to_unique') || msg.includes('unique') || msg.includes('duplicate')) {
-      throw new TurnAlreadyAnsweredError(turn_id);
-    }
-    throw err;
+    if (!decision.outbound) throw new TurnAlreadyAnsweredError(turn_id);
+    const outbound = await getMessageById(decision.outbound.id);
+    const pending = await sql<Array<{ pending_turns: number }>>`
+      SELECT pending_turns FROM contacts WHERE id = ${outbound.contact_id}::uuid
+    `;
+    counter.increment('replies_registered');
+    return {
+      message: outbound,
+      summary_regenerated: false,
+      pending_turns: pending[0]?.pending_turns ?? 0,
+    };
+  } catch (error) {
+    if (error instanceof DecisionTurnNotFoundError) throw new TurnNotFoundError(turn_id);
+    if (error instanceof DecisionConflictError) throw new TurnAlreadyAnsweredError(turn_id);
+    throw error;
   }
-
-  // Increment pending_turns and read back the new count
-  const updated = await sql<{ contact_id: string; pending_turns: number }[]>`
-    UPDATE contacts
-    SET pending_turns = pending_turns + 1
-    WHERE id = ${inbound.contact_id}
-    RETURNING id AS contact_id, pending_turns
-  `;
-  const pending_turns = updated[0]?.pending_turns ?? 0;
-
-  counter.increment('replies_registered');
-
-  // Regenerate summary if threshold crossed and turn is non-trivial
-  let summary_regenerated = false;
-
-  if (pending_turns >= config.summaryThreshold && !isTrivial(inbound.content)) {
-    try {
-      await regenerateSummary(inbound.contact_id);
-      await sql`UPDATE contacts SET pending_turns = 0 WHERE id = ${inbound.contact_id}`;
-      summary_regenerated = true;
-    } catch (err) {
-      logger.error({ event: 'ingestion.summary_regeneration.failed', contact_id: inbound.contact_id, error: String(err) });
-    }
-  }
-
-  logger.info({
-    event: 'ingestion.reply_registered',
-    turn_id,
-    outbound_id: outbound.id,
-    contact_id: inbound.contact_id,
-    pending_turns,
-    summary_regenerated,
-  });
-
-  return {
-    message: outbound,
-    summary_regenerated,
-    pending_turns: summary_regenerated ? 0 : pending_turns,
-  };
 }

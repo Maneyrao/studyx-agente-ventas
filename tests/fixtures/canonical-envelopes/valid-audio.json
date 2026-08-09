@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "source": "botpress",
+  "channel": "whatsapp",
+  "integration_id": "telegram-sandbox-01",
+  "external_message_id": "tg:msg:12345:67890",
+  "external_conversation_id": "tg:chat:12345",
+  "external_user_id": "tg:user:12345",
+  "phone_e164": "+9990012345678",
+  "trace_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+  "sandbox_provider": "telegram_sandbox",
+  "message": {
+    "type": "audio",
+    "text": "Hola, quería consultar los precios del curso de programación por favor",
+    "occurred_at": "2026-08-07T15:31:12.000-03:00",
+    "reply_to_external_message_id": null,
+    "audio_reference": {
+      "provider_file_id": "AwACAgIAAxkBAAIC1WYQvT_abc123def456",
+      "mime_type": "audio/ogg",
+      "duration_seconds": 8,
+      "transcription_status": "ok",
+      "transcription_provider": "openai-whisper-1"
+    },
+    "metadata": {
+      "voice_note": true,
+      "original_type": "voice"
+    }
+  }
+}
