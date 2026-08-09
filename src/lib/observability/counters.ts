@@ -8,6 +8,9 @@ type CounterName =
   | 'ingest_processed'
   | 'ingest_long_term_memory_errors'
   | 'ingest_summary_regeneration_errors'
+  | 'ingest_knowledge_base_errors'
+  | 'knowledge_base_searches_executed'
+  | 'knowledge_base_documents_ingested'
   | 'replies_registered'
   | 'summaries_regenerated';
 

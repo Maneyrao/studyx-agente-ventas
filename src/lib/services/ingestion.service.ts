@@ -3,6 +3,7 @@ import { getOrCreateOpenConversation } from './conversation.service';
 import { registerMessage, getMessageById, Message } from './message.service';
 import { getRecentMessages, semanticSearch, SearchResult } from './memory.service';
 import { regenerateSummary } from './summary.service';
+import { searchKnowledgeBase, KnowledgeResult } from './knowledge-base.service';
 import { randomUUID } from 'node:crypto';
 import {
   commitAgentDecision,
@@ -72,6 +73,8 @@ export interface IngestContext {
     summary: string | null;
     long_term_memory: Pick<SearchResult, 'content' | 'similarity' | 'created_at'>[] | null;
     long_term_memory_available: boolean;
+    knowledge_base: Pick<KnowledgeResult, 'source_uri' | 'title' | 'content' | 'similarity'>[] | null;
+    knowledge_base_available: boolean;
   };
   existing_result: {
     decision_id: string | null;
@@ -467,6 +470,36 @@ export async function processInboundMessage(envelope: InboundEnvelope): Promise<
     }
   }
 
+  // Phase 6: Knowledge Base retrieval. Fires on every non-trivial turn (unlike
+  // long_term_memory which is gated on referencesPast). Fail-open: on any
+  // error we return knowledge_base_available=false and keep going — the KB
+  // is advisory context, never on the critical path of a turn.
+  let knowledge_base: IngestContext['context']['knowledge_base'] = null;
+  let knowledge_base_available = true;
+  if (!trivial) {
+    try {
+      const { results } = await searchKnowledgeBase({
+        query: content,
+        limit: config.kbResultsLimit,
+        min_similarity: config.kbMinSimilarity,
+      });
+      knowledge_base = results.map((r) => ({
+        source_uri: r.source_uri,
+        title: r.title,
+        content: r.content,
+        similarity: r.similarity,
+      }));
+    } catch (err) {
+      knowledge_base_available = false;
+      logger.error({
+        event: 'ingestion.knowledge_base.failed',
+        contact_id: contact.id,
+        error: String(err),
+      });
+      counter.increment('ingest_knowledge_base_errors');
+    }
+  }
+
   counter.increment('ingest_processed');
 
   logger.info({
@@ -557,6 +590,8 @@ export async function processInboundMessage(envelope: InboundEnvelope): Promise<
       summary: effectiveSummary,
       long_term_memory,
       long_term_memory_available,
+      knowledge_base,
+      knowledge_base_available,
     },
     existing_result: existingDecision ? {
       decision_id: existingDecision.decision_id,
