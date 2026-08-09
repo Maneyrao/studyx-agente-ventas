@@ -45,7 +45,13 @@ ${turns}
 Genera un resumen en 2-4 oraciones que capture: intereses del prospecto, objeciones expresadas, datos que compartió y estado comercial actual. Solo datos reales de la conversación.`;
 }
 
-export async function regenerateSummary(contact_id: string): Promise<string> {
+export interface RegeneratedSummary {
+  summary: string;
+  version: number;
+  summary_updated_at: string;
+}
+
+export async function regenerateSummary(contact_id: string): Promise<RegeneratedSummary> {
   const messages = await getContactRecentMessages(contact_id);
 
   const prompt = buildSummaryPrompt(messages);
@@ -59,21 +65,38 @@ export async function regenerateSummary(contact_id: string): Promise<string> {
 
   const summary = response.choices[0]?.message?.content?.trim() ?? '';
 
-  await sql`
+  const rows = await sql<Array<{ summary_version: number; summary_updated_at: string }>>`
     UPDATE contacts
-    SET summary = ${summary}, summary_updated_at = now()
+    SET
+      summary = ${summary},
+      summary_updated_at = now(),
+      summary_version = summary_version + 1,
+      pending_turns = 0
     WHERE id = ${contact_id}
+    RETURNING summary_version, summary_updated_at
   `;
+
+  const row = rows[0];
+  if (!row) throw new Error(`Contact not found: ${contact_id}`);
 
   await auditLog({
     action: 'contact.summary_regenerated',
     entity_type: 'contact',
     entity_id: contact_id,
-    payload: { model: config.summaryModel },
+    payload: { model: config.summaryModel, version: row.summary_version },
   });
 
   counter.increment('summaries_regenerated');
-  logger.info({ event: 'summary.regenerated', contact_id, model: config.summaryModel });
+  logger.info({
+    event: 'summary.regenerated',
+    contact_id,
+    model: config.summaryModel,
+    version: row.summary_version,
+  });
 
-  return summary;
+  return {
+    summary,
+    version: row.summary_version,
+    summary_updated_at: row.summary_updated_at,
+  };
 }

@@ -2,6 +2,7 @@ import { resolveContact, Contact } from './contact.service';
 import { getOrCreateOpenConversation } from './conversation.service';
 import { registerMessage, getMessageById, Message } from './message.service';
 import { getRecentMessages, semanticSearch, SearchResult } from './memory.service';
+import { regenerateSummary } from './summary.service';
 import { randomUUID } from 'node:crypto';
 import {
   commitAgentDecision,
@@ -48,8 +49,10 @@ export interface ContactContext {
   name: string | null;
   blocked: boolean;
   consent_status: 'allowed' | 'revoked' | 'unknown';
+  opted_in_at: string;
   summary: string | null;
   summary_updated_at: string | null;
+  summary_version: number;
 }
 
 export interface IngestContext {
@@ -410,6 +413,31 @@ export async function processInboundMessage(envelope: InboundEnvelope): Promise<
     created_at: m.created_at,
   }));
 
+  // Phase 5: regenerate summary synchronously when pending_turns crosses the
+  // threshold, so the business_context we return already holds the fresh
+  // version. Failure to regenerate must NOT block the ingest response — we
+  // fall back to the stored summary. regenerateSummary resets pending_turns
+  // to 0 and bumps summary_version atomically.
+  let effectiveSummary = contact.summary;
+  let effectiveSummaryVersion = contact.summary_version;
+  let effectiveSummaryUpdatedAt = contact.summary_updated_at;
+  if (contact.pending_turns >= config.summaryThreshold) {
+    try {
+      const regenerated = await regenerateSummary(contact.id);
+      effectiveSummary = regenerated.summary;
+      effectiveSummaryVersion = regenerated.version;
+      effectiveSummaryUpdatedAt = regenerated.summary_updated_at;
+    } catch (err) {
+      logger.error({
+        event: 'ingestion.summary_regeneration.failed',
+        contact_id: contact.id,
+        pending_turns: contact.pending_turns,
+        error: String(err),
+      });
+      counter.increment('ingest_summary_regeneration_errors');
+    }
+  }
+
   let long_term_memory: IngestContext['context']['long_term_memory'] = null;
   let long_term_memory_available = true;
 
@@ -519,12 +547,14 @@ export async function processInboundMessage(envelope: InboundEnvelope): Promise<
       // conversación comercial cuando el contacto está inactivo/bloqueado.
       blocked,
       consent_status: consent_status === 'granted' ? 'allowed' : consent_status,
-      summary: contact.summary,
-      summary_updated_at: contact.summary_updated_at,
+      opted_in_at: contact.opted_in_at,
+      summary: effectiveSummary,
+      summary_updated_at: effectiveSummaryUpdatedAt,
+      summary_version: effectiveSummaryVersion,
     },
     context: {
       recent_turns,
-      summary: contact.summary,
+      summary: effectiveSummary,
       long_term_memory,
       long_term_memory_available,
     },

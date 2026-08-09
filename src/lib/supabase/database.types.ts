@@ -18,6 +18,7 @@ export interface Database {
           email: string | null;
           summary: string | null;
           summary_updated_at: string | null;
+          summary_version: number;
           pending_turns: number;
           deleted_at: string | null;
           created_at: string;

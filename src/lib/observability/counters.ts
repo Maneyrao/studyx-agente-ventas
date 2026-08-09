@@ -7,6 +7,7 @@ type CounterName =
   | 'pending_embeddings'
   | 'ingest_processed'
   | 'ingest_long_term_memory_errors'
+  | 'ingest_summary_regeneration_errors'
   | 'replies_registered'
   | 'summaries_regenerated';
 

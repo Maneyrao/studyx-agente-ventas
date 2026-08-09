@@ -16,6 +16,7 @@ export interface Contact {
   email: string | null;
   summary: string | null;
   summary_updated_at: string | null;
+  summary_version: number;
   pending_turns: number;
   lifecycle_status: 'active' | 'blocked' | 'deleted' | null;
   sales_stage: 'new' | 'qualified' | 'offered' | 'won' | 'lost' | null;
