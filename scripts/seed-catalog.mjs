@@ -58,10 +58,13 @@ if (!existsSync(tsxBin)) {
 
 const runner = `
   import { upsertProducts, ProductSchema } from './src/lib/services/catalog.service.ts';
-  const raw = JSON.parse(process.env.__CATALOG_PAYLOAD ?? '[]');
-  const validated = raw.map((p) => ProductSchema.parse(p));
-  const r = await upsertProducts(validated);
-  console.log(JSON.stringify(r));
+  (async () => {
+    const raw = JSON.parse(process.env.__CATALOG_PAYLOAD ?? '[]');
+    const validated = raw.map((p) => ProductSchema.parse(p));
+    const r = await upsertProducts(validated);
+    console.log(JSON.stringify(r));
+    process.exit(0);
+  })().catch((e) => { console.error(String(e && e.stack || e)); process.exit(1); });
 `;
 
 const result = spawnSync(tsxBin, ['--eval', runner], {
