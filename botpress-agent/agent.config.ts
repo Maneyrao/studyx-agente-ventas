@@ -1,23 +1,24 @@
-import { z, defineConfig } from '@botpress/runtime'
+import { z, defineConfig } from "@botpress/runtime";
 import {
   DEFAULT_DEVELOPMENT_EMULATOR_PHONE_E164,
   E164_PATTERN,
-} from './src/channels/shared/emulator-envelope'
+} from "./src/channels/shared/emulator-envelope";
 
 export default defineConfig({
-  name: 'botpress-agent',
-  description: 'StudyX sales conversation adapter. Next.js and Supabase remain the source of truth.',
+  name: "Studyx",
+  description:
+    "StudyX sales conversation adapter. Next.js and Supabase remain the source of truth.",
 
   configuration: {
     schema: z.object({
-      apiBaseUrl: z.string().min(1).default('http://localhost:3000'),
-      orchestratorKeyId: z.string().min(1).default('botpress-dev'),
+      apiBaseUrl: z.string().min(1).default("http://localhost:3000"),
+      orchestratorKeyId: z.string().min(1).default("botpress-dev"),
       requestTimeoutMs: z.number().int().min(1000).max(30000).default(8000),
       retryBaseDelayMs: z.number().int().min(10).max(5000).default(250),
       retryMaxDelayMs: z.number().int().min(100).max(10000).default(2000),
       emulatorPhoneE164: z
         .string()
-        .regex(E164_PATTERN, 'emulatorPhoneE164 must be a strict E.164 identity')
+        .regex(E164_PATTERN, "emulatorPhoneE164 must be a strict E.164 identity")
         .default(DEFAULT_DEVELOPMENT_EMULATOR_PHONE_E164),
       automationEnabled: z.boolean().default(false),
     }),
@@ -25,16 +26,18 @@ export default defineConfig({
 
   secrets: {
     STUDYX_ORCHESTRATOR_KEY: {
-      description: 'Shared credential presented to the StudyX Next.js API.',
+      description: "Shared credential presented to the StudyX Next.js API.",
     },
     STUDYX_SIGNING_SECRET: {
-      description: 'HMAC-SHA256 key used to sign StudyX API requests.',
+      description: "HMAC-SHA256 key used to sign StudyX API requests.",
     },
     GEMINI_API_KEY: {
-      description: 'Google AI Studio key used by transcribeAudio (Phase 4). Model: gemini-2.5-flash.',
+      description:
+        "Google AI Studio key used by transcribeAudio (Phase 4). Model: gemini-2.5-flash.",
     },
     TELEGRAM_BOT_A_TOKEN: {
-      description: 'Telegram Bot API token for the sandbox Bot A (Phase 2). Used to download voice notes for transcription.',
+      description:
+        "Telegram Bot API token for the sandbox Bot A (Phase 2). Used to download voice notes for transcription.",
     },
   },
 
@@ -50,13 +53,14 @@ export default defineConfig({
 
   message: {
     tags: {
-      studyx_outbound_id: {
-        title: 'StudyX outbound ID',
-        description: 'Stable outbound identifier committed by StudyX and attached to the Botpress message.',
+      studyxOutboundId: {
+        title: "StudyX outbound ID",
+        description:
+          "Stable outbound identifier committed by StudyX and attached to the Botpress message.",
       },
-      studyx_trace_id: {
-        title: 'StudyX trace ID',
-        description: 'End-to-end correlation ID without customer content.',
+      studyxTraceId: {
+        title: "StudyX trace ID",
+        description: "End-to-end correlation ID without customer content.",
       },
     },
   },
@@ -65,4 +69,4 @@ export default defineConfig({
     idleTimeout: 60000,
     judgePassThreshold: 4,
   },
-})
+});

@@ -447,27 +447,42 @@ run('canonical orchestration lifecycle', () => {
     );
   });
 
-  it('commits inbound first and degrades safely when OpenAI memory is unavailable', async () => {
-    const priorKey = process.env.OPENAI_API_KEY;
-    delete process.env.OPENAI_API_KEY;
+  it('commits the inbound without any derived work on the ingest path', async () => {
+    // Fase 3: retrieval and summarization moved to the claim. A message that
+    // explicitly references the past used to trigger a vector search here — the
+    // worst case, since a burst of five such messages paid five embeddings and
+    // produced one answer. Ingest must now be pure persistence.
+    const priorKey = process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
     try {
-      const input = envelope({
-        message: {
-          type: 'text',
-          text: 'Como te dije antes, quiero retomar la compra',
-          occurred_at: new Date().toISOString(),
-          reply_to_external_message_id: null,
-        },
-      });
-      const result = await processInboundMessage(input);
+      const result = await processInboundMessage(
+        envelope({
+          message: {
+            type: 'text',
+            text: 'Como te dije antes, quiero retomar la compra',
+            occurred_at: new Date().toISOString(),
+            reply_to_external_message_id: null,
+          },
+        })
+      );
+
+      // A missing embedding key cannot affect ingest, because ingest no longer
+      // calls the provider at all.
       expect(result.status).toBe('accepted');
-      expect(result.context.long_term_memory).toBeNull();
-      expect(result.context.long_term_memory_available).toBe(false);
+      expect(result.batch.id).toEqual(expect.any(String));
+      expect('context' in result).toBe(false);
+
       const persisted = await db!`SELECT id FROM messages WHERE id = ${result.turn_id}::uuid`;
       expect(persisted).toHaveLength(1);
+
+      // Selective memory: a canonical message is not queued for vectorization.
+      const queued = await db!`
+        SELECT message_id FROM message_embeddings WHERE message_id = ${result.turn_id}::uuid
+      `;
+      expect(queued).toHaveLength(0);
     } finally {
-      if (priorKey === undefined) delete process.env.OPENAI_API_KEY;
-      else process.env.OPENAI_API_KEY = priorKey;
+      if (priorKey === undefined) delete process.env.GEMINI_API_KEY;
+      else process.env.GEMINI_API_KEY = priorKey;
     }
   });
 });

@@ -1,4 +1,5 @@
 import { sql } from '@/lib/db/orchestrator';
+import { jsonbParam } from '@/lib/db/json';
 import type { DbClient } from '@/lib/db/types';
 
 interface AuditParams {
@@ -30,7 +31,7 @@ export async function auditLog(params: AuditParams, db: DbClient = sql): Promise
     ${action},
     ${entity_type},
     ${entity_id}::uuid,
-    ${payload ? JSON.stringify(payload) : null}::jsonb,
+    ${jsonbParam(db, payload)},
     ${event_key},
     ${correlation_id}::uuid,
     ${causation_id}::uuid,

@@ -3,7 +3,8 @@ import { sql } from '@/lib/db/orchestrator';
 import { auditLog } from '@/lib/audit/logger';
 import { logger } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
-import { generateEmbedding } from '@/lib/embeddings/openai';
+import { generateEmbedding } from '@/lib/embeddings/gemini';
+import { jsonbParam } from '@/lib/db/json';
 import { updateLastTurn, getConversation, ConversationNotFoundError } from './conversation.service';
 import type { DbClient } from '@/lib/db/types';
 
@@ -75,7 +76,7 @@ export async function registerMessage(
       ${direction},
       ${content},
       ${in_reply_to ?? null},
-      ${metadata ? JSON.stringify(metadata) : null}::jsonb,
+      ${jsonbParam(db, metadata)},
       ${source_event_id ?? null}::uuid
     )
     RETURNING *

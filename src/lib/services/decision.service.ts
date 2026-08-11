@@ -1,8 +1,8 @@
 import { withSerializableTransaction } from '@/lib/db/transaction';
+import { jsonbParam } from '@/lib/db/json';
 import { getPostgresError, type DbClient } from '@/lib/db/types';
 import { sha256Hex } from '@/lib/idempotency/canonical-json';
 import { isExplicitOptOut } from '@/lib/heuristics/opt-out';
-import { isTrivial } from '@/lib/heuristics/triviality';
 import { registerMessage, type Message } from './message.service';
 import { auditLog } from '@/lib/audit/logger';
 import {
@@ -232,7 +232,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         ${decision.response},
         ${decision.response_type},
         NULL,
-        ${JSON.stringify(decision.memory_candidates)}::jsonb,
+        ${jsonbParam(db, decision.memory_candidates)},
         ${decision.missing_information}::text[],
         ${decision.next_state},
         ${decision.reason_code},
@@ -262,7 +262,9 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           },
         }, {
           db,
-          embedding: isTrivial(decision.response) ? 'skip' : 'enqueue',
+          // Fase 4: ver ingestion.service. El outbound tampoco se vectoriza por
+          // defecto; la memoria histórica sale de selected_memories.
+          embedding: 'skip',
           audit: {
             event_key: `decision:${decisionId}:message`,
             correlation_id: validatedInput.trace_id,
@@ -307,7 +309,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           ${purpose},
           ${turn.phone},
           ${`outbound:${decisionId}`},
-          ${JSON.stringify(outboxPayload)}::jsonb,
+          ${jsonbParam(db, outboxPayload)},
           ${3}
         )
       `;

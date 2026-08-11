@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db/orchestrator';
-import { generateEmbedding } from '@/lib/embeddings/openai';
+import { generateEmbedding } from '@/lib/embeddings/gemini';
 import { counter } from '@/lib/observability/counters';
 import { logger } from '@/lib/observability/structured-log';
 import { randomUUID } from 'node:crypto';

@@ -77,7 +77,7 @@ describe('call event schema — invariants', () => {
   });
 
   it('rejects a sequence that is not an integer >= 0', () => {
-    const evt = loadFixture('valid-started.json') as any;
+    const evt = loadFixture('valid-started.json') as unknown as Record<string, unknown>;
     evt.sequence = -1;
     expect(CallEventSchema.safeParse(evt).success).toBe(false);
     evt.sequence = 1.5;
@@ -87,7 +87,7 @@ describe('call event schema — invariants', () => {
 
 describe('call event schema — derived states are NOT emitted', () => {
   it('rejects a webhook-emitted "failed" event_type (derived, not provider-emitted)', () => {
-    const evt = loadFixture('valid-started.json') as any;
+    const evt = loadFixture('valid-started.json') as unknown as Record<string, unknown>;
     evt.event_type = 'failed';
     evt.payload = { event_type: 'failed', reason: 'call_did_not_connect' };
     const parsed = CallEventSchema.safeParse(evt);
@@ -95,7 +95,7 @@ describe('call event schema — derived states are NOT emitted', () => {
   });
 
   it('rejects a webhook-emitted "ringing" event_type (not part of the provider model)', () => {
-    const evt = loadFixture('valid-started.json') as any;
+    const evt = loadFixture('valid-started.json') as unknown as Record<string, unknown>;
     evt.event_type = 'ringing';
     evt.payload = { event_type: 'ringing' };
     const parsed = CallEventSchema.safeParse(evt);

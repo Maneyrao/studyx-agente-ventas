@@ -15,10 +15,10 @@ sqlMock.end = async () => {};
 vi.mock('@/lib/db/orchestrator', () => ({ sql: sqlMock }));
 
 const embedCalls: string[] = [];
-vi.mock('@/lib/embeddings/openai', () => ({
+vi.mock('@/lib/embeddings/gemini', () => ({
   generateEmbedding: vi.fn(async (text: string) => {
     embedCalls.push(text);
-    return Array.from({ length: 1536 }, () => 0.001);
+    return Array.from({ length: 768 }, () => 0.001);
   }),
 }));
 
@@ -81,12 +81,12 @@ describe('searchKnowledgeBase', () => {
   });
 
   it('propagates embedding errors (fail-open is a caller responsibility)', async () => {
-    const { generateEmbedding } = await import('@/lib/embeddings/openai');
+    const { generateEmbedding } = await import('@/lib/embeddings/gemini');
     (generateEmbedding as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new Error('OPENAI_TIMEOUT'),
+      new Error('GEMINI_TIMEOUT'),
     );
     await expect(searchKnowledgeBase({ query: 'x', limit: 5, min_similarity: 0.75 }))
-      .rejects.toThrow(/OPENAI_TIMEOUT/);
+      .rejects.toThrow(/GEMINI_TIMEOUT/);
   });
 });
 

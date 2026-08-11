@@ -1,7 +1,7 @@
 import { sql } from '@/lib/db/orchestrator';
 import { logger } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
-import { generateEmbedding } from '@/lib/embeddings/openai';
+import { generateEmbedding } from '@/lib/embeddings/gemini';
 
 export interface KnowledgeResult {
   chunk_id: string;

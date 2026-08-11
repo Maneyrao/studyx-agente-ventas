@@ -31,6 +31,10 @@ function expectedIdempotencyKey(pathname: string, body: Record<string, unknown>)
     ) return null;
     return `inbound:${String(body.source)}:${String(body.integration_id)}:${String(body.external_message_id)}`;
   }
+  // A claim is idempotent per batch: replaying the same signed request must not
+  // be able to masquerade as a claim on a different window.
+  const claim = pathname.match(/^\/api\/agent\/batches\/([^/]+)\/claim$/);
+  if (claim) return `claim:${claim[1]}`;
   const decision = pathname.match(/^\/api\/agent\/turns\/([^/]+)\/decision$/);
   if (decision) return `decision:${decision[1]}`;
   const delivery = pathname.match(/^\/api\/agent\/outbounds\/([^/]+)\/delivery$/);

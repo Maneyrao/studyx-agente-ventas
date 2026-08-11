@@ -12,7 +12,19 @@ type CounterName =
   | 'knowledge_base_searches_executed'
   | 'knowledge_base_documents_ingested'
   | 'replies_registered'
-  | 'summaries_regenerated';
+  | 'summaries_regenerated'
+  // Batching. `absorbed` is the load-shedding signal: a high ratio against
+  // `claimed` means bursts are collapsing as intended, while a high
+  // `waiting` ratio means workflows are waking before their window is due.
+  | 'batch_claim_claimed'
+  | 'batch_claim_waiting'
+  | 'batch_claim_absorbed'
+  | 'batch_claim_completed'
+  | 'batch_claim_abandoned'
+  | 'batch_claim_not_found'
+  | 'batch_claim_stolen'
+  | 'batch_context_memory_unavailable'
+  | 'batch_context_knowledge_unavailable';
 
 // Serverless-safe counter: no in-memory state between Vercel invocations.
 // Each increment emits a structured log line — verifiable in log drains / Vercel dashboard.

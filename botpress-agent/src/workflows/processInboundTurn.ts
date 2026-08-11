@@ -320,8 +320,8 @@ export const processInboundTurn = new Workflow({
             type: 'text',
             payload: { text: committed.outbound!.content },
             tags: {
-              studyx_outbound_id: committed.outbound!.id,
-              studyx_trace_id: input.trace_id,
+              studyxOutboundId: committed.outbound!.id,
+              studyxTraceId: input.trace_id,
             },
           }) as Promise<{ message: { id: string } }>,
         { maxAttempts: 1 }

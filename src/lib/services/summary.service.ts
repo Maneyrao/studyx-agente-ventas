@@ -1,16 +1,61 @@
-import OpenAI from 'openai';
 import { sql } from '@/lib/db/orchestrator';
 import { auditLog } from '@/lib/audit/logger';
 import { logger } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
 import { config } from '@/lib/config';
 
-let openai: OpenAI | null = null;
+const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
+const SUMMARY_TIMEOUT_MS = 20000;
 
-function getOpenAIClient(): OpenAI {
-  if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is not set');
-  openai ??= new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  return openai;
+interface GeminiGenerateResponse {
+  candidates?: Array<{
+    content?: { parts?: Array<{ text?: unknown }> };
+  }>;
+}
+
+async function generateSummaryText(prompt: string): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
+
+  const model = config.summaryModel;
+  const url = `${GEMINI_BASE_URL}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const body = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0.3,
+      maxOutputTokens: 300,
+      responseMimeType: 'text/plain',
+    },
+  };
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SUMMARY_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(`GEMINI_SUMMARY_HTTP_${response.status}${detail ? `:${detail.slice(0, 200)}` : ''}`);
+  }
+
+  const payload = (await response.json()) as GeminiGenerateResponse;
+  const parts = payload?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts) || parts.length === 0) return '';
+  const text = parts
+    .map((p) => (p && typeof p.text === 'string' ? p.text : ''))
+    .join('')
+    .trim();
+  return text;
 }
 
 interface RecentMessage {
@@ -55,15 +100,7 @@ export async function regenerateSummary(contact_id: string): Promise<Regenerated
   const messages = await getContactRecentMessages(contact_id);
 
   const prompt = buildSummaryPrompt(messages);
-
-  const response = await getOpenAIClient().chat.completions.create({
-    model: config.summaryModel,
-    messages: [{ role: 'user', content: prompt }],
-    max_tokens: 300,
-    temperature: 0.3,
-  });
-
-  const summary = response.choices[0]?.message?.content?.trim() ?? '';
+  const summary = await generateSummaryText(prompt);
 
   const rows = await sql<Array<{ summary_version: number; summary_updated_at: string }>>`
     UPDATE contacts
