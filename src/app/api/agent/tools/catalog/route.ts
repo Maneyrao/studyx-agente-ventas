@@ -1,50 +1,62 @@
 import { NextResponse } from 'next/server';
-import { listActiveProducts, getEffectivePriceCents } from '@/lib/services/catalog.service';
+import { listActiveProducts } from '@/lib/services/catalog.service';
+import {
+  DEFAULT_CATALOG_LIMITS,
+  buildCatalogView,
+} from '@/features/orchestration/domain/catalog-view';
 import { logger } from '@/lib/observability/structured-log';
+import { counter } from '@/lib/observability/counters';
 
 /**
  * GET /api/agent/tools/catalog
  *
- * Returns every active product with its effective price (base or promo,
- * whichever the current server time selects). Consumed by the Botpress-side
- * agent as a "tool" so the LLM never invents prices — it always reads them
- * from a single source of truth.
+ * The only place a price may come from. The agent has no authority to change
+ * anything here — this endpoint reads, and there is no write counterpart it
+ * could reach.
  *
- * No auth: the catalog is not sensitive. Add HMAC only if we start returning
- * customer-specific offers here.
+ * What the response guarantees, and why each one exists:
+ *
+ * - `prices_assertable: false` means the agent must decline to quote. An empty
+ *   catalog has to be a refusal, not an invitation to improvise.
+ * - An expired promotion is absent, never shown as history. `as_of` says when
+ *   the prices were read, so "vigente" is a claim the backend makes, not one
+ *   the model infers.
+ * - Descriptions are authored text and go through the same sanitization as any
+ *   retrieved document: a product blurb cannot become an instruction.
+ * - Items and characters are capped, so a growing catalog cannot silently
+ *   crowd the structured facts out of the prompt.
+ *
+ * Sits under `/api/agent/`, so the proxy already requires the orchestrator key
+ * and a valid HMAC signature. No query parameters on purpose: the signature
+ * covers the path and body only, so a filter passed in the query string would
+ * be the one unsigned input in the request.
  */
 export async function GET() {
   try {
     const products = await listActiveProducts();
-    const now = Date.now();
-    const items = products.map((p) => ({
-      sku: p.sku,
-      name: p.name,
-      description: p.description,
-      duration_weeks: p.duration_weeks,
-      modality: p.modality,
-      price: {
-        ars_cents: getEffectivePriceCents(p, 'ARS', now),
-        usd_cents: getEffectivePriceCents(p, 'USD', now),
-      },
-      list_price: {
-        ars_cents: p.price_ars_cents,
-        usd_cents: p.price_usd_cents,
-      },
-      promo: p.promo_ars_cents !== null || p.promo_usd_cents !== null
-        ? {
-            ars_cents: p.promo_ars_cents,
-            usd_cents: p.promo_usd_cents,
-            valid_to: p.promo_valid_to,
-          }
-        : null,
-    }));
-    return NextResponse.json(
-      { count: items.length, items, generated_at: new Date(now).toISOString() },
-      { status: 200 },
-    );
+    const view = buildCatalogView(products, { ...DEFAULT_CATALOG_LIMITS, now: Date.now() });
+
+    counter.increment('catalog_lookups');
+    if (view.injection_suspected_count > 0) {
+      logger.warn({
+        event: 'catalog.injection_suspected',
+        suspected: view.injection_suspected_count,
+      });
+    }
+    if (view.dropped > 0 || view.stale_promotions_dropped > 0) {
+      logger.info({
+        event: 'catalog.capped',
+        dropped: view.dropped,
+        stale_promotions_dropped: view.stale_promotions_dropped,
+      });
+    }
+
+    return NextResponse.json(view, { status: 200 });
   } catch (error) {
+    // Degrade, never block: the workflow treats this as "no catalog available"
+    // and the agent falls back to not quoting anything.
+    counter.increment('catalog_lookup_failures');
     logger.error({ event: 'catalog.list.failed', error: String(error) });
-    return NextResponse.json({ error: 'CATALOG_UNAVAILABLE' }, { status: 500 });
+    return NextResponse.json({ error: 'CATALOG_UNAVAILABLE' }, { status: 503 });
   }
 }

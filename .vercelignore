@@ -1,0 +1,29 @@
+# Nada de esto tiene que viajar al build de Vercel.
+# Las variables reales viven en el panel del proyecto, no en el bundle.
+
+# Secretos y respaldos.
+.env
+.env.*
+*.bak
+*.bak-*
+
+# El agente de Botpress es un deployable aparte (`adk deploy`): trae su propio
+# node_modules y artefactos de build, 831 MB que no tienen nada que hacer en el
+# bundle de Next. Subirlo colgaba el deploy.
+botpress-agent/
+
+# Artefactos y material que no participa del runtime.
+.adk/
+supabase/.temp/
+coverage/
+tests/
+scripts/
+specs/
+docs/
+data/
+.superpowers/
+.claude/
+tsconfig.tsbuildinfo
+
+# El binario del CLI de ADK: 322 MB vendorizados que no participan del runtime.
+.tools/

@@ -1,5 +1,10 @@
 import { withSerializableTransaction } from '@/lib/db/transaction';
+import { sql } from '@/lib/db/orchestrator';
 import { jsonbParam } from '@/lib/db/json';
+import { logger } from '@/lib/observability/structured-log';
+import { counter } from '@/lib/observability/counters';
+import { selectMemories } from '@/features/orchestration/application/select-memories';
+import { memoryStore } from '@/features/orchestration/adapters/postgres-memory-store';
 import { getPostgresError, type DbClient } from '@/lib/db/types';
 import { sha256Hex } from '@/lib/idempotency/canonical-json';
 import { isExplicitOptOut } from '@/lib/heuristics/opt-out';
@@ -7,14 +12,29 @@ import { registerMessage, type Message } from './message.service';
 import { auditLog } from '@/lib/audit/logger';
 import {
   DecisionValidationError,
-  parseDecisionV2,
   type DecisionV2,
 } from '@/features/orchestration/domain/decision';
+import {
+  assertBusinessActionPermitted,
+  parseDecisionAny,
+  type DecisionV3,
+} from '@/features/orchestration/domain/decision-v3';
+
+/**
+ * The wire accepts both schema versions. v3 is a strict superset of v2, so a
+ * v2 producer keeps working unchanged while Botpress moves to v3 — which is
+ * the whole point of making the migration additive instead of a flag day.
+ */
+export type AnyDecision = DecisionV2 | DecisionV3;
+
+function retrievalUsedOf(decision: AnyDecision) {
+  return 'retrieval_used' in decision ? decision.retrieval_used : null;
+}
 
 export interface CommitDecisionInput {
   turn_id: string;
   trace_id: string;
-  decision: DecisionV2;
+  decision: AnyDecision;
   model: {
     provider: 'botpress';
     model: string;
@@ -33,6 +53,13 @@ export interface CommitDecisionResult {
     id: string;
     content: string;
     status: 'pending' | 'submitted_to_botpress' | 'failed';
+    /**
+     * The attempt the workflow is being handed. It has to come back on the
+     * delivery report: that is what lets the backend tell "this attempt failed"
+     * apart from "an attempt that is no longer running failed", and only the
+     * first of those may ever lead to another send.
+     */
+    delivery_attempt: number;
   } | null;
 }
 
@@ -62,6 +89,7 @@ export class DecisionTurnNotFoundError extends Error {
 
 interface TurnPolicyRow extends Message {
   contact_status: 'prospecto' | 'cliente' | 'inactivo';
+  contact_name: string | null;
   lifecycle_status: 'active' | 'blocked' | 'deleted' | null;
   deleted_at: string | null;
   phone: string;
@@ -69,6 +97,7 @@ interface TurnPolicyRow extends Message {
   provider: string;
   integration_id: string;
   channel: 'whatsapp' | 'voice';
+  batch_id: string | null;
 }
 
 interface DecisionRow {
@@ -81,6 +110,7 @@ interface DecisionRow {
   payload_hash_hex: string;
   outbound_message_id: string | null;
   delivery_state: string | null;
+  delivery_attempt: number | null;
 }
 
 const AGENT_DECISION_TURN_UNIQUE_CONSTRAINT = 'agent_decisions_turn_id_uq';
@@ -102,7 +132,8 @@ async function loadDecision(turnId: string, db: DbClient): Promise<DecisionRow |
       ad.next_state,
       encode(ad.payload_hash, 'hex') AS payload_hash_hex,
       ad.outbound_message_id,
-      od.state AS delivery_state
+      od.state AS delivery_state,
+      od.attempt_count AS delivery_attempt
     FROM agent_decisions AS ad
     LEFT JOIN outbound_deliveries AS od ON od.message_id = ad.outbound_message_id
     WHERE ad.turn_id = ${turnId}::uuid
@@ -116,6 +147,7 @@ async function loadTurnPolicy(turnId: string, db: DbClient): Promise<TurnPolicyR
     SELECT
       m.*,
       c.status AS contact_status,
+      c.name AS contact_name,
       c.lifecycle_status,
       c.deleted_at,
       c.phone,
@@ -137,7 +169,7 @@ async function loadTurnPolicy(turnId: string, db: DbClient): Promise<TurnPolicyR
   return rows[0];
 }
 
-function validatePolicy(decision: DecisionV2, turn: TurnPolicyRow): void {
+function validatePolicy(decision: AnyDecision, turn: TurnPolicyRow): void {
   const blocked = turn.contact_status === 'inactivo'
     || turn.lifecycle_status === 'blocked'
     || turn.lifecycle_status === 'deleted'
@@ -179,14 +211,20 @@ function duplicateDecisionResult(
       id: existing.outbound_message_id,
       content: existing.response,
       status: mapDeliveryState(existing.delivery_state),
+      delivery_attempt: Number(existing.delivery_attempt ?? 1),
     } : null,
   };
 }
 
 export async function commitAgentDecision(input: CommitDecisionInput): Promise<CommitDecisionResult> {
-  let decision: DecisionV2;
+  let decision: AnyDecision;
   try {
-    decision = parseDecisionV2(input.decision);
+    decision = parseDecisionAny(input.decision);
+    // The backend keeps the final word: Botpress validates the same rule, but
+    // an agent that skips or misreads it must still be unable to commit.
+    assertBusinessActionPermitted(
+      'business_action' in decision ? decision.business_action : null
+    );
   } catch (error) {
     if (error instanceof DecisionValidationError) {
       throw new DecisionPolicyError(error.code);
@@ -195,13 +233,16 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
   }
   const validatedInput = { ...input, decision };
   const payloadHash = sha256Hex(decisionPayload(validatedInput));
+  let turnContext: TurnPolicyRow | null = null;
 
+  const commit = async (): Promise<CommitDecisionResult> => {
   try {
     return await withSerializableTransaction(async (db) => {
       const existing = await loadDecision(validatedInput.turn_id, db);
       if (existing) return duplicateDecisionResult(existing, validatedInput, payloadHash);
 
     const turn = await loadTurnPolicy(validatedInput.turn_id, db);
+    turnContext = turn;
     validatePolicy(decision, turn);
     const inserted = await db<Array<{ id: string }>>`
       INSERT INTO agent_decisions (
@@ -213,6 +254,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         response,
         response_type,
         business_action,
+        retrieval_used,
         memory_candidates,
         missing_information,
         next_state,
@@ -231,7 +273,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         ${decision.kind},
         ${decision.response},
         ${decision.response_type},
-        NULL,
+        ${jsonbParam(db, decision.business_action ?? null)},
+        ${jsonbParam(db, retrievalUsedOf(decision))},
         ${jsonbParam(db, decision.memory_candidates)},
         ${decision.missing_information}::text[],
         ${decision.next_state},
@@ -317,7 +360,10 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
 
       // The Botpress workflow receiving this response owns the first short
       // lease. A replay sees the existing decision and never sends again.
-      await db`
+      // El intento sale del mismo UPDATE que toma el lease: es el número que
+      // este workflow tiene que devolver al reportar, y leerlo aparte abriría
+      // una ventana en la que ya no sería el suyo.
+      const leased = await db<Array<{ attempt_count: number }>>`
         UPDATE outbound_deliveries
         SET
           state = 'leased',
@@ -325,6 +371,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           lease_until = now() + interval '5 minutes',
           attempt_count = attempt_count + 1
         WHERE id = ${queue.delivery_id}::uuid AND state = 'pending'
+        RETURNING attempt_count
       `;
       await db`
         UPDATE outbox_events
@@ -341,7 +388,12 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         SET pending_turns = pending_turns + 1
         WHERE id = ${turn.contact_id}::uuid
       `;
-      outbound = { id: message.id, content: message.content, status: 'pending' };
+      outbound = {
+        id: message.id,
+        content: message.content,
+        status: 'pending',
+        delivery_attempt: Number(leased[0]?.attempt_count ?? 1),
+      };
     }
 
     await auditLog({
@@ -354,6 +406,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         intent: decision.intent,
         kind: decision.kind,
         response_type: decision.response_type,
+        business_action: decision.business_action?.type ?? null,
         next_state: decision.next_state,
         outbound_id: outbound?.id ?? null,
       },
@@ -388,6 +441,97 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       return duplicateDecisionResult(existing, validatedInput, payloadHash);
     });
   }
+  };
+
+  const result = await commit();
+
+  // Fase 4 — memoria selectiva.
+  //
+  // Corre DESPUÉS del commit y en su propia conexión, a propósito. Adentro de
+  // la transacción serializable, un solo INSERT rechazado dejaría la
+  // transacción abortada y se llevaría puesta la decisión y el outbound: una
+  // memoria jamás puede costar una respuesta al cliente. Un duplicado tampoco
+  // reescribe nada, porque `commitAgentDecision` es idempotente por turno y una
+  // repetición sale por `duplicate` sin volver a entrar acá.
+  const turn = turnContext as TurnPolicyRow | null;
+  if (result.status === 'committed' && turn && decision.memory_candidates.length > 0) {
+    await recordTurnMemories({
+      turn,
+      candidates: decision.memory_candidates,
+      decision_id: result.decision_id,
+      trace_id: validatedInput.trace_id,
+    });
+  }
+
+  return result;
+}
+
+/**
+ * The messages a citation may point at: the whole claimed batch, in stable
+ * order. Falls back to the representative turn when the inbound predates
+ * batching, so an older row can still produce a verifiable memory.
+ */
+async function loadMemorySourceMessages(turn: TurnPolicyRow) {
+  return sql<Array<{ id: string; content: string }>>`
+    SELECT id, content
+    FROM messages
+    WHERE direction = 'inbound'
+      AND contact_id = ${turn.contact_id}::uuid
+      AND conversation_id = ${turn.conversation_id}::uuid
+      AND (
+        (${turn.batch_id}::uuid IS NOT NULL AND batch_id = ${turn.batch_id}::uuid)
+        OR (${turn.batch_id}::uuid IS NULL AND id = ${turn.id}::uuid)
+      )
+    ORDER BY conversation_seq NULLS LAST, created_at
+  `;
+}
+
+async function recordTurnMemories(params: {
+  turn: TurnPolicyRow;
+  candidates: DecisionV2['memory_candidates'];
+  decision_id: string;
+  trace_id: string;
+}): Promise<void> {
+  try {
+    const batchMessages = await loadMemorySourceMessages(params.turn);
+    const outcome = await selectMemories(
+      {
+        contact_id: params.turn.contact_id,
+        conversation_id: params.turn.conversation_id,
+        source_batch_id: params.turn.batch_id,
+        decision_id: params.decision_id,
+        trace_id: params.trace_id,
+        batch_messages: batchMessages,
+        structured_facts: {
+          contact_name: params.turn.contact_name,
+          contact_status: params.turn.contact_status,
+          consent_status: params.turn.consent_status ?? 'unknown',
+        },
+        candidates: params.candidates,
+      },
+      {
+        store: memoryStore,
+        log: (event, fields) => logger.info({ event, ...fields }),
+      }
+    );
+
+    if (outcome.accepted.length > 0) counter.increment('memory_accepted', outcome.accepted.length);
+    if (outcome.rejected.length > 0) counter.increment('memory_rejected', outcome.rejected.length);
+    if (outcome.duplicates > 0) counter.increment('memory_duplicate', outcome.duplicates);
+    if (outcome.superseded.length > 0) {
+      counter.increment('memory_superseded', outcome.superseded.length);
+    }
+  } catch (error) {
+    // Already-degraded path: `selectMemories` swallows per-candidate failures,
+    // so reaching here means the batch could not even be read. The turn is
+    // committed and delivered either way.
+    logger.error({
+      event: 'orchestration.memory.selection_failed',
+      trace_id: params.trace_id,
+      decision_id: params.decision_id,
+      error: String(error),
+    });
+  }
 }
 
 export interface DeliveryReportInput {
@@ -397,10 +541,24 @@ export interface DeliveryReportInput {
   botpress_message_id: string | null;
   replayed: boolean;
   error_code: string | null;
+  /**
+   * The attempt this report is about, as handed to the workflow when it took
+   * the delivery. A workflow that revives late reports about *its* attempt, not
+   * about whatever is running now; without this the backend cannot tell the two
+   * apart and a stale `failed` can authorize a resend over a physical send.
+   * Omitted means "whatever attempt is current", which is only safe for the
+   * first one.
+   */
+  delivery_attempt?: number | null;
 }
 
 export interface DeliveryReportResult {
-  status: 'recorded' | 'duplicate';
+  /**
+   * `stale_ignored`: the report belongs to an earlier attempt. It is kept as
+   * evidence and audited, but it may not move the delivery — a later attempt
+   * owns the row and may already have sent.
+   */
+  status: 'recorded' | 'duplicate' | 'stale_ignored';
   replayed: boolean;
   outbound_id: string;
   delivery_status: 'submitted_to_botpress' | 'failed';
@@ -431,9 +589,44 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
   };
   const payloadHash = sha256Hex(semanticPayload);
   const messageIdentity = input.botpress_message_id ?? 'none';
-  const eventKey = `delivery:${input.outbound_id}:${messageIdentity}:${input.status}`;
 
   return withSerializableTransaction(async (db) => {
+    // The delivery is locked before anything else: the attempt it is on is what
+    // gives this report an identity, and that number has to be read under the
+    // same lock that will later refuse to move a row whose attempt advanced.
+    const deliveries = await db<Array<{
+      id: string;
+      state: string;
+      provider_message_id: string | null;
+      attempt_count: number;
+      outbox_id: string;
+      outbox_state: string;
+    }>>`
+      SELECT od.id, od.state, od.provider_message_id, od.attempt_count,
+             oe.id AS outbox_id, oe.state AS outbox_state
+      FROM outbound_deliveries AS od
+      JOIN outbox_events AS oe ON oe.delivery_id = od.id
+      WHERE od.message_id = ${input.outbound_id}::uuid
+      FOR UPDATE OF od, oe
+    `;
+    const delivery = deliveries[0];
+    if (!delivery) throw new OutboundNotFoundError();
+
+    const currentAttempt = Number(delivery.attempt_count);
+    const reportedAttempt = input.delivery_attempt ?? currentAttempt;
+
+    // A report from an attempt that has not happened is not a late report; it
+    // is a client inventing history. It never touches the delivery.
+    if (reportedAttempt > currentAttempt) {
+      throw new DeliveryReportConflictError(
+        `Report claims attempt ${reportedAttempt} but delivery is on attempt ${currentAttempt}`
+      );
+    }
+
+    // The attempt belongs in the key: a replay of attempt 1's report must still
+    // dedupe, while attempt 2's own report has to be recordable next to it.
+    const eventKey = `delivery:${input.outbound_id}:${messageIdentity}:${input.status}:a${reportedAttempt}`;
+
     const existingReports = await db<Array<{ payload_hash_hex: string }>>`
       SELECT encode(payload_hash, 'hex') AS payload_hash_hex
       FROM delivery_reports
@@ -450,22 +643,9 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
       };
     }
 
-    const deliveries = await db<Array<{
-      id: string;
-      state: string;
-      provider_message_id: string | null;
-      outbox_id: string;
-      outbox_state: string;
-    }>>`
-      SELECT od.id, od.state, od.provider_message_id, oe.id AS outbox_id, oe.state AS outbox_state
-      FROM outbound_deliveries AS od
-      JOIN outbox_events AS oe ON oe.delivery_id = od.id
-      WHERE od.message_id = ${input.outbound_id}::uuid
-      FOR UPDATE OF od, oe
-    `;
-    const delivery = deliveries[0];
-    if (!delivery) throw new OutboundNotFoundError();
-    if (['delivered', 'dead_letter', 'cancelled'].includes(delivery.state)) {
+    const stale = reportedAttempt < currentAttempt;
+
+    if (!stale && ['delivered', 'dead_letter', 'cancelled'].includes(delivery.state)) {
       throw new DeliveryReportConflictError(`Delivery is terminal: ${delivery.state}`);
     }
 
@@ -478,7 +658,8 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
         report_status,
         botpress_message_id,
         error_code,
-        payload_hash
+        payload_hash,
+        delivery_attempt
       )
       VALUES (
         ${eventKey},
@@ -488,9 +669,38 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
         ${input.status},
         ${input.botpress_message_id},
         ${input.error_code},
-        decode(${payloadHash}, 'hex')
+        decode(${payloadHash}, 'hex'),
+        ${reportedAttempt}
       )
     `;
+
+    // A report about an attempt that is no longer running is evidence, not an
+    // instruction. It stays in the table so the reconciler and a person can see
+    // it, but the row belongs to the later attempt, which may already have
+    // created the message in Botpress. Downgrading it here is how the same
+    // message gets sent twice.
+    if (stale) {
+      await auditLog({
+        action: 'delivery.report.stale_ignored',
+        entity_type: 'outbound_delivery',
+        entity_id: delivery.id,
+        payload: {
+          ...semanticPayload,
+          reported_attempt: reportedAttempt,
+          current_attempt: currentAttempt,
+          delivery_state: delivery.state,
+        },
+        event_key: `audit:${eventKey}:stale`,
+        correlation_id: input.trace_id,
+      }, db);
+
+      return {
+        status: 'stale_ignored',
+        replayed: false,
+        outbound_id: input.outbound_id,
+        delivery_status: input.status,
+      };
+    }
 
     if (input.status === 'submitted_to_botpress') {
       if (!input.botpress_message_id || input.error_code) throw new DeliveryReportConflictError('Invalid submitted report');
@@ -501,7 +711,7 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
           await db`
             UPDATE outbound_deliveries
             SET state = 'leased', leased_by = ${`botpress:${input.trace_id}`}, lease_until = now() + interval '5 minutes'
-            WHERE id = ${delivery.id}::uuid
+            WHERE id = ${delivery.id}::uuid AND attempt_count = ${reportedAttempt}
           `;
         }
         await db`
@@ -512,7 +722,7 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
             submitted_at = now(),
             lease_until = NULL,
             leased_by = NULL
-          WHERE id = ${delivery.id}::uuid
+          WHERE id = ${delivery.id}::uuid AND attempt_count = ${reportedAttempt}
         `;
       }
       if (delivery.outbox_state !== 'published') {
@@ -536,7 +746,7 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
         await db`
           UPDATE outbound_deliveries
           SET state = 'leased', leased_by = ${`botpress:${input.trace_id}`}, lease_until = now() + interval '5 minutes'
-          WHERE id = ${delivery.id}::uuid
+          WHERE id = ${delivery.id}::uuid AND attempt_count = ${reportedAttempt}
         `;
       }
       await db`
@@ -547,7 +757,7 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
           last_error_code = ${input.error_code},
           lease_until = NULL,
           leased_by = NULL
-        WHERE id = ${delivery.id}::uuid
+        WHERE id = ${delivery.id}::uuid AND attempt_count = ${reportedAttempt}
       `;
       if (delivery.outbox_state !== 'leased') {
         await db`

@@ -11,7 +11,7 @@ import {
   memoryRetriever,
 } from '@/features/orchestration/adapters/postgres-retrievers';
 import { config } from '@/lib/config';
-import { logger } from '@/lib/observability/structured-log';
+import { logger, timedStage } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
 
 type UnclaimedCounter =
@@ -77,7 +77,10 @@ export async function POST(
   }
 
   try {
-    const result = await claimBatch(
+    const result = await timedStage(
+      'orchestration.claim',
+      { trace_id: parsed.data.trace_id, batch_id },
+      () => claimBatch(
       { batch_id, claimed_by: parsed.data.claimed_by, trace_id: parsed.data.trace_id },
       {
         store: orchestrationStore,
@@ -92,6 +95,7 @@ export async function POST(
         },
         log: (event, fields) => logger.info({ event, ...fields }),
       }
+    )
     );
 
     if (result.outcome !== 'claimed') {

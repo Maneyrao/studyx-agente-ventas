@@ -316,3 +316,406 @@ Ningún cambio preexistente fue borrado ni sobrescrito.
 |---|---|
 | OPS-01 | `20260811010001_knowledge_chunks_gemini_768.sql` hace `TRUNCATE knowledge_chunks`. Los chunks son derivados, pero si el entorno donde se aplique ya tenía contenido ingerido hay que volver a correr `scripts/ingest-kb.mjs` o la búsqueda de KB devuelve vacío en silencio. |
 | OPS-02 | Ni `knowledge_chunks` ni `search_knowledge_base` / `search_contact_memory` tienen GRANT explícito a `orchestrator_role` (deuda que viene de la fase 6, no la introdujo esta sesión). En Supabase funciona porque el rol de conexión es el dueño; conviene cerrarlo antes de producción. |
+
+---
+
+# Fases 4–8 (sesión 2026-08-11, continuación)
+
+Baseline al arrancar: HEAD `d3ad38c`
+(`feat: Migración Gemini 768 + serialización JSONB + Fase 2 batching durable`),
+rama `snapshot/wip-full`. Sin reset, checkout, clean, stash, commit, push, PR,
+deploy ni migración remota en toda la sesión.
+`.env.local.bak-2026-08-10` nunca se abrió.
+
+## Decisión de canal: Telegram
+
+Telegram es el único canal real del piloto. WhatsApp queda **fuera de alcance**.
+Se conservó la decisión previa de que Telegram viaje como `channel='whatsapp'` +
+`sandbox_provider='telegram_sandbox'` + teléfono sintético + fila en
+`sandbox_identities`: ejerce el mismo recorrido canónico que después usará
+WhatsApp, y `provider` participa de todas las constraints de unicidad, así que
+el aislamiento es de esquema, no de convención.
+
+Telegram es sólo un adaptador de prueba. Ninguna regla comercial lo menciona.
+
+## FASE 4 — Memoria selectiva
+
+`selected_memories` invierte la carga de la prueba: no se recuerda nada salvo
+que sobreviva a una validación estructural contra el lote que el cliente
+escribió. Los rechazos también se guardan, con motivo — sin eso, «el agente
+inventó un dato» es una anécdota en vez de una fila.
+
+Archivos nuevos:
+
+- `supabase/migrations/20260811030001_selected_memories.sql` — tabla con los seis
+  estados (`proposed/accepted/rejected/active/superseded/expired`), FK compuesta
+  `(source_message_id, conversation_id, contact_id, 'inbound')` que hace
+  imposible citar a otro contacto o a un outbound, índice parcial único de un
+  solo `active` por (contacto, tipo, clave), dedupe parcial por hash, CHECK que
+  impide vectorizar cualquier cosa que no esté `accepted`/`active`, y cinco
+  funciones (`record_selected_memory`, `record_rejected_memory`,
+  `expire_selected_memories`, `search_selected_memories`,
+  `claim_memory_embeddings`).
+- `src/features/orchestration/domain/memory-selection.ts` — validación pura:
+  tipo en lista cerrada, clave slug y no reservada, umbral de confianza, cita
+  presente en el lote, valor anclado a su propia cita (ningún número aparece de
+  la nada), datos sensibles, texto imperativo, y contradicción con datos
+  estructurados.
+- `src/features/orchestration/ports/memory-store.ts` + adapter Postgres.
+- `src/features/orchestration/application/select-memories.ts` — tope de 10
+  candidatos por turno; cada escritura aislada; un fallo cuenta y sigue.
+- `src/app/api/cron/memory-maintenance/route.ts` — expiración + vectorización
+  asíncrona con presupuesto de intentos.
+
+Decisiones que costaron una corrección:
+
+- El reemplazo entra como `accepted`, después se degrada el anterior, y recién
+  entonces se promueve el nuevo a `active`. El orden es forzado: el índice
+  parcial no se puede diferir y la FK de reemplazo exige que la fila nueva ya
+  exista. Insertar directo como `active` fallaba con 23505 (encontrado por el
+  test de reemplazo, corregido en la misma migración antes de aplicarla en
+  ningún entorno real).
+- La selección corre **después** del commit de la decisión y en otra conexión.
+  Adentro de la transacción serializable, un solo INSERT rechazado abortaba la
+  transacción entera y se llevaba puestos la decisión y el outbound.
+- `PostgresMemoryRetriever` ahora lee `search_selected_memories` en vez de
+  `search_contact_memory`: la memoria de largo plazo dejó de ser «todo mensaje
+  vectorizado».
+
+Pruebas: `memory-selection.test.ts` (26), `select-memories.test.ts` (9),
+`selected-memories.test.ts` (13 contra PostgreSQL).
+
+## FASE 5 — Knowledge Base y catálogo
+
+- `src/features/orchestration/domain/retrieved-context.ts` — `sanitizeRetrievedText`
+  (quita los marcadores de la cerca y los caracteres de control, marca lo que
+  parece instrucción) y `capRetrievedItems` (trunca por ítem **antes** de medir
+  el presupuesto total, o un documento gigante desaloja a todos los demás).
+- `src/features/orchestration/domain/catalog-view.ts` — una promoción vencida no
+  es «una promoción que terminó»: está **ausente** y el precio vuelve a lista.
+  Catálogo vacío ⇒ `prices_assertable: false`, que es la señal de negarse a
+  cotizar en vez de improvisar.
+- `claim-batch.ts` aplica los topes a KB y memorias y reporta
+  `knowledge_base_dropped` e `injection_suspected_count`: un tope nunca es una
+  omisión silenciosa.
+- La ruta del catálogo devuelve la vista, sin query params: la firma HMAC cubre
+  path y body, así que un filtro por query sería la única entrada sin firmar.
+
+Del lado ADK: `ClaimedTurnSchema` **declara** `knowledge_base` y
+`selected_memories` (el hueco G-06: Next.js las devolvía y el contrato no las
+nombraba), `CatalogResponseSchema`, y la acción `lookupCatalog`.
+
+Pruebas: `retrieved-context.test.ts` (11), `catalog-view.test.ts` (10),
+`botpress-response-parity.test.ts` (5).
+
+## FASE 6 — Decision v3 y workflow durable
+
+- `supabase/migrations/20260811040001_agent_decisions_v3.sql` — `schema_version
+  IN (2,3)`, `retrieval_used jsonb` con CHECK de forma, y `business_action`
+  limitado por la base a `mark_hot_lead` y `log_objection`. `escalate_to_human`
+  se rechaza en la base **y** está ausente del schema productor: no hay humano
+  al que derivar, así que permitir la fila sería crear un estado que nadie
+  atiende. El trigger de inmutabilidad se recreó para cubrir la columna nueva.
+- `decision.service.ts` usa `parseDecisionAny` + `assertBusinessActionPermitted`.
+  v2 sigue siendo válido en el alambre.
+- La ruta acepta una unión discriminada v2/v3; zod valida forma, el dominio
+  valida reglas.
+- `processInboundTurn` completo: transcribe → `/ingest` → `step.sleepUntil(due_at)`
+  → `/claim` (hasta 6 intentos, deslizando con `retry_after_ms`) → se detiene en
+  `absorbed`/`completed`/`abandoned` **sin llamar al modelo** → catálogo
+  degradable → prompt armado exclusivamente con el contexto reclamado → Decision
+  v3 → validación local → `/decision` → **un solo** `createMessage` → `/delivery`.
+  `timeout` subido a 5m porque la ventana desliza.
+
+Hallazgo del contrato, encontrado y cerrado: `IngestResponseSchema` del ADK
+seguía exigiendo `context`, que la fase 3 había eliminado. Toda ingesta real
+habría fallado con `INVALID_STUDYX_RESPONSE` — una caída total del camino feliz
+que ningún test podía ver, porque los dos lados nunca están en el mismo proceso.
+`tests/contract/botpress-response-parity.test.ts` ahora lo pinea desde los dos
+extremos (tipo TypeScript real + texto del schema ADK).
+
+Desviación registrada: el ADK no expone `tools` de forma verificable en sus
+tipos, así que el catálogo se **inyecta como dato estructurado** dentro de la
+cerca no confiable en vez de exponerse como herramienta con loop. Cumple lo
+mismo (Botpress no toca PostgreSQL, el modelo no puede escribir) y es
+determinista para evals.
+
+Pruebas: `decision-v3-policy.test.ts` (10), `decision-v3.test.ts` (7 contra
+PostgreSQL). Evals escritas: `conversational-matrix.eval.ts` (9 escenarios con
+aserciones deterministas `not_contains`/`matches` + juez) y
+`burst-single-answer.eval.ts`. Correr `adk evals` está bloqueado (EXT-04).
+
+## FASE 7 — Concurrencia, entrega y reconciliación
+
+Regla central: **un reenvío exige evidencia afirmativa de que no hubo envío
+físico**, no la ausencia de evidencia de que sí lo hubo.
+
+- `src/features/orchestration/domain/delivery-reconciliation.ts` — función pura.
+  `provider_message_id` presente gana sobre cualquier otra señal, incluida la
+  columna `state`. El estado ambiguo (arrendado, lease vencido, sin reporte) va
+  a `ambiguous_paused`, que es **pegajoso**: ninguna pasada posterior lo puede
+  convertir en reenvío, con cualquier presupuesto de intentos.
+- `supabase/migrations/20260811050001_orchestration_reconciliation.sql` —
+  `reconciliation_state/reason/at/count` en `outbound_deliveries`,
+  `list_stale_outbound_deliveries`, `apply_delivery_reconciliation` (bajo
+  `FOR UPDATE`, con re-chequeo de `provider_message_id` antes de autorizar) y
+  `list_orphaned_decisions`.
+- `application/reconcile-orchestration.ts` + `/api/cron/reconcile-orchestration`
+  (cada 2 min en `vercel.json`), con auditoría por `event_key` determinista y
+  ocho contadores.
+
+Corrección durante la fase: `apply_delivery_reconciliation` intentaba
+`failed_retryable -> pending`, que la máquina de estados de la fase 1 prohíbe.
+Un reenvío autorizado **no** mueve `state` —`pending` y `failed_retryable` ya
+son los estados desde los que un worker toma la entrega— sino que suelta el
+lease muerto y adelanta el reloj. `mark_sent` pasa por `leased` porque
+`submitted` sólo es alcanzable desde ahí, y esa transición es exactamente lo que
+pasó. Pelearse con la máquina de estados habría sido el bug.
+
+Pruebas: `delivery-reconciliation.test.ts` (15), `reconcile-orchestration.test.ts`
+(11 contra PostgreSQL, con dos conexiones independientes reales).
+
+Nota de test: `outbound_deliveries_set_updated_at` reescribe `updated_at` en
+cada UPDATE, así que envejecer una fila requiere
+`SET LOCAL session_replication_role='replica'` dentro de una transacción —
+alcance de una sola conexión, seguro frente a archivos de test concurrentes.
+
+## FASE 8 — Health, readiness y piloto
+
+- `/api/health` — liveness pura, sin tocar dependencias. Una sonda de liveness
+  que consultara PostgreSQL reiniciaría todos los procesos sanos durante un
+  hipo de base.
+- `/api/ready` — sólo configuración requerida y PostgreSQL. Reporta **nombres**
+  de variables faltantes, jamás valores.
+- `/api/diagnostics` — los degradables (Gemini, pgvector, backlog derivado),
+  detrás de `CRON_SECRET`, siempre 200: el cuerpo trae la mala noticia. Separado
+  a propósito, para que una caída de pgvector no pueda sacar de rotación a un
+  proceso perfectamente capaz de conversar.
+- `structured-log.ts` — `withTrace` (trace_id, contact_id, conversation_id,
+  batch_id, turn_id, decision_id, outbound_id) y `timedStage` (latencia por
+  etapa, en éxito y en error). Cableado en las rutas de claim y decisión.
+- Contadores nuevos: memoria (aceptada/rechazada/duplicada/reemplazada/expirada/
+  fallo de embedding), catálogo, y ocho de reconciliación.
+
+Docs: `docs/PILOT_RUNBOOK.md`, `docs/PILOT_MATRIX.md` (36 escenarios en cuatro
+bloques), `docs/FAILURE_MATRIX.md` (estaba vacío; ahora es la matriz completa
+con la prueba de cada fila), `docs/ORCHESTRATOR_MAP.md` reescrito.
+
+Pruebas: `readiness.test.ts` (9), `health-readiness.test.ts` (5).
+
+## Autorrevisión: bug encontrado y corregido en la fase 8
+
+`src/proxy.ts` tiene `matcher: ['/api/:path*']` y exige `x-orchestrator-key`
+para todo salvo `/api/cron/`. Recién creados, `/api/health`, `/api/ready` y
+`/api/diagnostics` devolvían **401** antes de llegar a su handler: existían y
+eran inservibles. Un balanceador o una sonda de uptime no tiene ni va a tener
+clave de orquestador, así que el proceso habría reportado «unhealthy» por la
+única razón que no puede evitar — que la sonda es anónima.
+
+Corregido con una lista de rutas públicas de coincidencia **exacta**
+(`/api/healthcheck-admin` no es `/api/health`). `/api/diagnostics` sigue
+exigiendo `CRON_SECRET`, pero en su handler: un 401 del proxy sería
+indistinguible del 401 del handler y mandaría al operador tras la credencial
+equivocada.
+
+Prueba: `tests/unit/security/proxy-public-paths.test.ts` (9), escrita en rojo
+antes del arreglo.
+
+## Bloqueos externos (actualizado)
+
+| ID | Bloqueo | Evidencia | Acción exacta del usuario |
+|---|---|---|---|
+| EXT-01 | Sin runtime de contenedores | `supabase status` falla contra `unix:///var/run/docker.sock` | Instalar Docker Desktop u OrbStack para `supabase db lint` y pgTAP |
+| EXT-02 | `GEMINI_API_KEY` ausente en test | — | Exportarla para probar embeddings/resumen reales; mientras tanto hay fakes deterministas |
+| EXT-04 | `npm run evals` falla | `adk check` no lista la integración `chat` | `adk integrations add chat` + `adk deploy`. **No lo ejecuté**: la consigna prohíbe agregar `chat` |
+| EXT-05 | El piloto real por Telegram no puede correr | `adk check --format json` no lista `telegram` entre las dependencias instaladas | `adk integrations info telegram` → `adk integrations add telegram` → `adk deploy`, con autorización explícita |
+
+EXT-03 (WhatsApp) queda cerrado por decisión: WhatsApp está fuera de alcance.
+
+## Gates (ejecución fresca, fin de fase 8)
+
+| Gate | Resultado |
+|---|---|
+| `npm run lint` | ✅ |
+| `npm run typecheck` | ✅ (tras borrar `tsconfig.tsbuildinfo`) |
+| `npm run test:coverage` | ✅ 31 archivos / 375 tests |
+| `npm run build` | ✅ 19 rutas, incluidas health/ready/diagnostics y los 3 cron |
+| `npm run test:integration` (PG nativo, cluster desde cero) | ✅ 12 archivos / 90 tests |
+| `scripts/verify-native-postgres-loop.sh` | ✅ 3/3 desde cero |
+| botpress `npm run typecheck` | ✅ |
+| botpress `npm run check` | ✅ `errors: []` |
+| botpress `npm run build` | ✅ |
+| botpress `npm run evals` | ⛔ EXT-04 |
+| `npm run test:db:lint` / `test:db:invariants` | ⛔ EXT-01 |
+
+## Todavía NO implementado
+
+1. **Worker de outbound.** El reconciliador puede *autorizar* un reenvío, pero
+   nadie lo envía: `createMessage` vive en Botpress y no hay un proceso que tome
+   entregas `resend_authorized`. Es deliberado —«no reintentos ciegos»— pero es
+   un hueco real y hay que decirlo.
+2. **Audio detrás de un puerto** (G-14): `transcribeAudio` se sigue invocando
+   directo desde el workflow.
+3. **Pruebas de carga.**
+4. **WhatsApp**: fuera de alcance por decisión.
+5. **Ejecución del piloto**: ninguna fila de `PILOT_MATRIX.md` está llena.
+   Bloqueado por EXT-05.
+6. ~~`docs/ROADMAP.md` invariante 6 dice «OpenAI»~~ — corregido a Gemini en esta sesión (4 referencias).
+7. OPS-02 sigue abierto: `knowledge_chunks` y las funciones de búsqueda de KB no
+   tienen GRANT explícito a `orchestrator_role` (deuda de la fase 6 previa).
+
+---
+
+# FASE 7b — Cierre de la revisión adversarial y salida a producción
+
+Fecha: 2026-08-11 (sesión de despliegue).
+
+## Los dos fallos del revisor, y por qué eran el mismo fallo
+
+El revisor independiente encontró dos caminos por los que el sistema podía
+mandar el mismo mensaje dos veces. Los dos nacen del mismo error conceptual:
+tratar *«lo último que se supo de esta entrega»* como si fuera *«lo que se sabe
+del intento que corre ahora»*.
+
+### Fallo A — la pausa no era terminal
+
+`apply_delivery_reconciliation` aceptaba `authorize_resend` sobre una entrega ya
+marcada `ambiguous_paused`. `list_stale_outbound_deliveries` filtraba las
+pausadas, y el dominio devolvía `wait`, pero **filtrar una lectura no es
+proteger una escritura**: entre que una pasada leyó su lista y escribe su
+veredicto, otra pudo haber pausado la fila. Dos cron superpuestos alcanzaban.
+
+### Fallo B — un reporte sin dueño
+
+`list_stale_outbound_deliveries` tomaba el reporte más reciente de la entrega
+sin preguntar a qué intento pertenecía. Un `failed` del intento 1 quedaba como
+evidencia sobre el intento 2, que pudo haber creado el mensaje en Botpress antes
+de morir. El reconciliador leía «falló antes de enviar» y autorizaba un reenvío
+encima de un envío físico.
+
+## Reproducción (TDD, rojo antes que verde)
+
+Los tests del revisor en `tests/integration/zz-adversarial-review.test.ts`
+fallaron primero, los dos con el mismo síntoma:
+
+```
+FINDING A: expected 'resend_authorized' to be 'ambiguous_paused'
+FINDING B: expected 'resend_authorized' to be 'ambiguous_paused'
+```
+
+Se sumaron 10 tests nuevos en `tests/integration/delivery-attempt-fencing.test.ts`
+(8 en rojo, 2 como guardas de regresión) antes de escribir una línea de producción.
+
+## La corrección
+
+Migración **aditiva** `20260811060001_delivery_attempt_fencing.sql`. No se tocó
+ninguna migración aplicada.
+
+1. `delivery_reports.delivery_attempt` — un reporte pertenece a un intento.
+2. Trigger `delivery_reports_attempt_fence` — un reporte no puede decir que
+   pertenece a un intento que todavía no ocurrió.
+3. `list_stale_outbound_deliveries` — sólo lee reportes del intento vigente
+   (`IS NOT DISTINCT FROM`: sin intento no hay evidencia, y sin evidencia se
+   pausa).
+4. `apply_delivery_reconciliation` — desde `ambiguous_paused` la única
+   transición que puede hacer una máquina es converger hacia un envío probado
+   (`mark_sent` con `provider_message_id`). Todo lo demás se **rechaza y se
+   audita** en `audit_log` como `delivery.reconciliation.rejected`.
+
+En TypeScript (`decision.service.ts`):
+
+- La entrega se bloquea (`FOR UPDATE`) **antes** de calcular nada: el intento es
+  lo que le da identidad al reporte y hay que leerlo bajo el mismo lock que
+  después rechaza mover una fila cuyo intento avanzó.
+- El intento entra en el `event_key`, así un replay del intento 1 sigue
+  deduplicando pero el reporte propio del intento 2 se puede registrar al lado.
+- Un reporte atrasado se guarda como evidencia, se audita
+  (`delivery.report.stale_ignored`) y devuelve `status: 'stale_ignored'` **sin
+  tocar el estado de la entrega**.
+- Los `UPDATE` que mueven estado llevan `AND attempt_count = <intento>`.
+
+Contrato de punta a punta: el commit devuelve `outbound.delivery_attempt` (del
+`RETURNING` del propio UPDATE que toma el lease) y el workflow de Botpress lo
+devuelve en los dos reportes, éxito y fracaso.
+
+## Corrección de un test, justificada
+
+`reconcile-orchestration.test.ts` → «abandons instead of resending when the
+attempt budget is gone» pasó a agotar el presupuesto **antes** del reporte. El
+orden viejo (reportar y después mover el contador) dejaba al último intento sin
+evidencia, que bajo la regla nueva es un pausado, no un abandono. No se debilitó
+la aserción: se corrigió el montaje para que pruebe lo que dice probar.
+
+## Lint
+
+Se eliminaron los dos `console.log` forenses del revisor y sus directivas
+`eslint-disable` sobrantes, convirtiendo el output de depuración en aserciones
+reales (`applied.applied === false`, `by_action.authorize_resend === 0`,
+`after.state === before.state`).
+
+## Gates (ejecución fresca, fase 7b)
+
+| Gate | Resultado |
+|---|---|
+| `npm run lint` | ✅ 0 errores, 0 warnings |
+| `npm run typecheck` | ✅ |
+| `npm run test:coverage` | ✅ 32 archivos / 384 tests |
+| `npm run test:integration` (PG nativo desde cero) | ✅ 14 archivos / 104 tests |
+| `scripts/verify-native-postgres-loop.sh` | ✅ 3/3 |
+| `npm run build` | ✅ 20 rutas |
+| botpress `typecheck` / `check` / `build` | ✅ |
+
+## Supabase remoto: la divergencia, resuelta
+
+El remoto tenía dos migraciones que **no están en Git**:
+`20260805000001_universal_business_memory` y `20260805000002_secure_existing_tables`.
+La primera creó un `knowledge_chunks` de otro linaje (`source_id`,
+`embedding_status`, `metadata`, FK a `knowledge_sources`, función
+`search_workspace_knowledge`) que chocaba por nombre con el KB de la fase 6.
+
+Ningún código de StudyX referencia ese linaje: el repo usa
+`knowledge_documents` + `knowledge_chunks(document_id, …)` + `search_knowledge_base()`.
+
+Resolución aprobada por el usuario, **no destructiva**:
+
+```sql
+ALTER TABLE public.knowledge_chunks RENAME TO legacy_knowledge_chunks_20260805;
+```
+
+Las 6 filas se conservan y el rename es reversible. Queda huérfana
+`search_workspace_knowledge`, que StudyX nunca invoca.
+
+No se ejecutó `migration repair --status reverted`: habría dejado el historial
+diciendo que esas dos migraciones están revertidas cuando en realidad están
+aplicadas. En su lugar, cada migración pendiente se aplicó en su propia
+transacción con `psql --single-transaction` y se registró en
+`supabase_migrations.schema_migrations`.
+
+Aplicadas en orden: `20260809020001`, `20260811010001`, `20260811020001`,
+`20260811030001`, `20260811040001`, `20260811050001`, `20260811060001`.
+`migration list` ya no muestra pendientes locales.
+
+Verificado en remoto: `inbound_batches`, `selected_memories`,
+`knowledge_documents`, `apply_delivery_reconciliation` con la guarda adherente,
+`delivery_reports.delivery_attempt` y el trigger de fencing.
+
+## Vercel
+
+Proyecto `maneyraos-projects/studyx-agente-ventas` creado y vinculado.
+Variables cargadas en `production`. Se agregó `.vercelignore` para que ningún
+`.env*` ni `*.bak-*` viaje en el upload.
+
+**Restricción de plan:** la cuenta es Hobby y sólo admite cron diarios. Los tres
+cron pasaron de `*/5`, `*/10` y `*/2` a una corrida diaria. No están en el
+camino crítico de un turno (ingest → claim → decision → delivery es síncrono),
+pero el reconciliador deja de barrer cada 2 minutos. Durante el piloto se
+dispara a mano contra `/api/cron/reconcile-orchestration` con `CRON_SECRET`.
+El plan Pro restituye la cadencia original.
+
+## Hallazgo abierto (no bloqueante)
+
+`DATABASE_URL` entra al pooler como `postgres` (superusuario), no como
+`orchestrator_role`. El comentario de `src/lib/db/orchestrator.ts` afirma lo
+segundo. El modelo de menor privilegio de la fase 1 —sin acceso directo a
+`audit_log`— no está en efecto en producción. No rompe nada funcional; hay que
+corregirlo antes de tráfico real.

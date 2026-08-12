@@ -38,38 +38,38 @@ export class PostgresMemoryRetriever implements MemoryRetriever {
 
     const embedding = await this.embed(input.query);
 
-    // `search_contact_memory` is already contact-scoped in SQL; the parameter
-    // below is the only contact this can ever read, so cross-contact leakage is
-    // a schema-level impossibility rather than a caller convention.
+    // Fase 4: la memoria de largo plazo ya no es "todo mensaje vectorizado"
+    // sino `selected_memories`, y sólo las filas `active` con vigencia abierta.
+    // `search_selected_memories` es contact-scoped en SQL: el parámetro de abajo
+    // es el único contacto que esta consulta puede leer, así que la fuga entre
+    // contactos es imposible por esquema, no por convención del llamador.
     const rows = await this.db<Array<{
-      message_id: string;
-      content: string;
+      memory_id: string;
+      memory_type: string;
+      memory_key: string;
+      value_text: string;
+      source_quote: string;
       similarity: number;
-      created_at: Date;
+      recorded_at: Date;
     }>>`
-      SELECT message_id, content, similarity, created_at
-      FROM search_contact_memory(
+      SELECT memory_id, memory_type, memory_key, value_text, source_quote, similarity, recorded_at
+      FROM search_selected_memories(
         ${input.contact_id}::uuid,
         ${toVectorLiteral(embedding)}::extensions.vector,
-        ${Math.min(Math.max(input.limit, 1), 20)}
+        ${Math.min(Math.max(input.limit, 1), 20)},
+        ${input.min_similarity}
       )
     `;
 
-    // The similarity floor is applied here rather than in SQL because
-    // `search_contact_memory` predates it; below the floor a "match" is noise
-    // and noise in the prompt is worse than no memory at all.
-    return rows
-      .filter((row) => row.similarity >= input.min_similarity)
-      .slice(0, input.limit)
-      .map((row) => ({
-        memory_id: row.message_id,
-        type: 'conversation_excerpt',
-        key: 'recalled_message',
-        value: row.content,
-        source_quote: row.content,
-        similarity: row.similarity,
-        recorded_at: row.created_at.toISOString(),
-      }));
+    return rows.slice(0, input.limit).map((row) => ({
+      memory_id: row.memory_id,
+      type: row.memory_type,
+      key: row.memory_key,
+      value: row.value_text,
+      source_quote: row.source_quote,
+      similarity: row.similarity,
+      recorded_at: row.recorded_at.toISOString(),
+    }));
   }
 }
 

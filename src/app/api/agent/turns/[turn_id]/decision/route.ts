@@ -6,14 +6,29 @@ import {
   DECISION_NEXT_STATES,
   DECISION_RESPONSE_TYPES,
   DecisionValidationError,
-  parseDecisionV2,
 } from '@/features/orchestration/domain/decision';
+import {
+  assertBusinessActionPermitted,
+  parseDecisionAny,
+} from '@/features/orchestration/domain/decision-v3';
+import { timedStage } from '@/lib/observability/structured-log';
 import {
   commitAgentDecision,
   DecisionConflictError,
   DecisionPolicyError,
   DecisionTurnNotFoundError,
 } from '@/lib/services/decision.service';
+
+/**
+ * POST /api/agent/turns/:turn_id/decision
+ *
+ * Accepts Decision v2 and v3. v3 is a strict superset, so both versions are
+ * valid on the wire and no producer has to change on a single day.
+ *
+ * Zod checks the shape; the domain parser checks the rules. Both run, in that
+ * order, because a malformed body should be a 400 with field details while a
+ * well-formed but forbidden decision should be a 422 naming the rule it broke.
+ */
 
 const memoryCandidateSchema = z.object({
   type: z.string().trim().min(1).max(128),
@@ -23,28 +38,64 @@ const memoryCandidateSchema = z.object({
   confidence: z.number().min(0).max(1),
 }).strict();
 
-const decisionSchema = z.object({
-  schema_version: z.literal(2),
+const businessActionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('send_pricing_info'), sku: z.string().trim().min(1).max(64) }).strict(),
+  z.object({ type: z.literal('schedule_followup'), when_iso: z.string().datetime({ offset: true }) }).strict(),
+  z.object({ type: z.literal('escalate_to_human'), reason: z.string().trim().min(1).max(256) }).strict(),
+  z.object({ type: z.literal('mark_hot_lead'), score: z.number().min(0).max(1) }).strict(),
+  z.object({
+    type: z.literal('log_objection'),
+    objection_key: z.string().trim().min(1).max(128),
+    quote: z.string().trim().min(1).max(1024),
+  }).strict(),
+]);
+
+const retrievalUsedSchema = z.object({
+  kb: z.boolean(),
+  long_term_memory: z.boolean(),
+  summary_version: z.number().int().nonnegative().nullable(),
+}).strict();
+
+const decisionCoreShape = {
   intent: z.enum(DECISION_INTENTS),
   kind: z.enum(DECISION_KINDS),
   response: z.string().trim().min(1).max(4096).nullable(),
   response_type: z.enum(DECISION_RESPONSE_TYPES).nullable(),
   confidence: z.number().min(0).max(1),
   reason_code: z.string().trim().min(1).max(128),
-  business_action: z.null(),
   memory_candidates: z.array(memoryCandidateSchema).max(20),
   missing_information: z.array(z.string().trim().min(1).max(128)).max(20),
   next_state: z.enum(DECISION_NEXT_STATES),
-}).strict().superRefine((decision, context) => {
-  try {
-    parseDecisionV2(decision);
-  } catch (error) {
-    context.addIssue({
-      code: 'custom',
-      message: error instanceof DecisionValidationError ? error.code : 'INVALID_DECISION',
-    });
-  }
-});
+};
+
+const decisionV2Schema = z.object({
+  schema_version: z.literal(2),
+  business_action: z.null(),
+  ...decisionCoreShape,
+}).strict();
+
+const decisionV3Schema = z.object({
+  schema_version: z.literal(3),
+  business_action: businessActionSchema.nullable(),
+  retrieval_used: retrievalUsedSchema.nullable(),
+  ...decisionCoreShape,
+}).strict();
+
+const decisionSchema = z
+  .discriminatedUnion('schema_version', [decisionV2Schema, decisionV3Schema])
+  .superRefine((decision, context) => {
+    try {
+      parseDecisionAny(decision);
+      assertBusinessActionPermitted(
+        'business_action' in decision ? decision.business_action : null
+      );
+    } catch (error) {
+      context.addIssue({
+        code: 'custom',
+        message: error instanceof DecisionValidationError ? error.code : 'INVALID_DECISION',
+      });
+    }
+  });
 
 const schema = z.object({
   turn_id: z.string().uuid(),
@@ -80,7 +131,12 @@ export async function POST(
   }
 
   try {
-    return NextResponse.json(await commitAgentDecision(parsed.data), { status: 200 });
+    const committed = await timedStage(
+      'orchestration.decision_commit',
+      { trace_id: parsed.data.trace_id, turn_id: parsed.data.turn_id },
+      () => commitAgentDecision(parsed.data)
+    );
+    return NextResponse.json(committed, { status: 200 });
   } catch (error) {
     if (error instanceof DecisionTurnNotFoundError) {
       return NextResponse.json({ error: error.code }, { status: 404 });

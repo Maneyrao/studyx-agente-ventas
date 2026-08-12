@@ -119,6 +119,15 @@ export async function requestStudyxJson<T>(params: {
   idempotencyKey: string
   traceId: string
   responseSchema: z.ZodType<T>
+  /**
+   * Statuses whose body carries the answer rather than an error.
+   *
+   * The claim endpoint uses 202/409/410 to say "you are not the owner", which
+   * is a normal, expected outcome — turning it into a thrown error would make
+   * the losing workflow look like a failure and invite a retry that must never
+   * happen.
+   */
+  acceptStatuses?: number[]
 }): Promise<T> {
   const method = params.method ?? 'POST'
   const url = new URL(params.path, configuration.apiBaseUrl)
@@ -150,7 +159,8 @@ export async function requestStudyxJson<T>(params: {
       })
 
       const payload = await parseResponsePayload(response)
-      if (!response.ok) {
+      const accepted = response.ok || (params.acceptStatuses?.includes(response.status) ?? false)
+      if (!accepted) {
         throw new StudyxHttpError(
           parseErrorCode(payload, `HTTP_${response.status}`),
           isRetryableStatus(response.status),

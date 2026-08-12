@@ -1,4 +1,5 @@
 import { evaluateTurnPolicy, type TurnPolicy } from '../domain/turn-policy';
+import { capRetrievedItems } from '../domain/retrieved-context';
 import type {
   BatchMessage,
   ClaimOutcome,
@@ -39,17 +40,25 @@ export interface ContextLimits {
   readonly recentTurns: number;
   readonly memoryResults: number;
   readonly memoryMinSimilarity: number;
+  readonly memoryMaxChars: number;
   readonly knowledgeResults: number;
   readonly knowledgeMinSimilarity: number;
+  readonly knowledgeMaxCharsPerItem: number;
+  readonly knowledgeMaxTotalChars: number;
   readonly leaseMs: number;
 }
 
 export const DEFAULT_CONTEXT_LIMITS: ContextLimits = {
   recentTurns: 10,
+  // 2-5 memories. Beyond that the recalled text starts outweighing the
+  // structured facts it is supposed to lose against.
   memoryResults: 5,
   memoryMinSimilarity: 0.75,
+  memoryMaxChars: 512,
   knowledgeResults: 5,
   knowledgeMinSimilarity: 0.75,
+  knowledgeMaxCharsPerItem: 1_200,
+  knowledgeMaxTotalChars: 4_000,
   leaseMs: 120_000,
 };
 
@@ -91,6 +100,10 @@ export interface ClaimedTurn {
     readonly long_term_memory_available: boolean;
     readonly knowledge_base: RetrievedKnowledge[];
     readonly knowledge_base_available: boolean;
+    /** Results the budget refused. Reported so a cap is never a silent omission. */
+    readonly knowledge_base_dropped: number;
+    /** Retrieved documents that tried to read as instructions. */
+    readonly injection_suspected_count: number;
   };
   readonly existing_result: {
     readonly decision_id: string;
@@ -195,6 +208,8 @@ export async function claimBatch(
   let long_term_memory_available = true;
   let knowledge_base: RetrievedKnowledge[] = [];
   let knowledge_base_available = true;
+  let knowledge_base_dropped = 0;
+  let injection_suspected_count = 0;
 
   if (shouldRetrieve) {
     const [memoryResult, knowledgeResult] = await Promise.allSettled([
@@ -212,7 +227,16 @@ export async function claimBatch(
     ]);
 
     if (memoryResult.status === 'fulfilled') {
-      selected_memories = memoryResult.value.slice(0, limits.memoryResults);
+      // Memories were already validated structurally at write time, so the cap
+      // here is purely a budget: a long recalled value must not crowd out the
+      // structured facts that outrank it.
+      selected_memories = memoryResult.value
+        .slice(0, limits.memoryResults)
+        .map((memory) => ({
+          ...memory,
+          value: memory.value.slice(0, limits.memoryMaxChars),
+          source_quote: memory.source_quote.slice(0, limits.memoryMaxChars),
+        }));
     } else {
       long_term_memory_available = false;
       log('orchestration.claim.memory_unavailable', {
@@ -223,7 +247,27 @@ export async function claimBatch(
     }
 
     if (knowledgeResult.status === 'fulfilled') {
-      knowledge_base = knowledgeResult.value.slice(0, limits.knowledgeResults);
+      // A knowledge chunk is authored third-party text. It gets a hard budget
+      // and its structural injection tricks removed before it can reach a
+      // prompt; what survives stays data, never an instruction.
+      const capped = capRetrievedItems(knowledgeResult.value, (item) => item.content, {
+        maxItems: limits.knowledgeResults,
+        maxCharsPerItem: limits.knowledgeMaxCharsPerItem,
+        maxTotalChars: limits.knowledgeMaxTotalChars,
+      });
+      knowledge_base = capped.kept.map((entry) => ({ ...entry.item, content: entry.text }));
+      knowledge_base_dropped = capped.dropped;
+      injection_suspected_count = capped.injection_suspected_count;
+      if (capped.injection_suspected_count > 0) {
+        log('orchestration.claim.knowledge_injection_suspected', {
+          trace_id: input.trace_id,
+          batch_id: claim.batch_id,
+          suspected: capped.injection_suspected_count,
+          sources: capped.kept
+            .filter((entry) => entry.injection_suspected)
+            .map((entry) => entry.item.source_uri),
+        });
+      }
     } else {
       knowledge_base_available = false;
       log('orchestration.claim.knowledge_unavailable', {
@@ -243,6 +287,8 @@ export async function claimBatch(
     may_respond: policy.may_respond,
     long_term_memory_available,
     knowledge_base_available,
+    knowledge_base_dropped,
+    injection_suspected_count,
   });
 
   return {
@@ -277,6 +323,8 @@ export async function claimBatch(
       long_term_memory_available,
       knowledge_base,
       knowledge_base_available,
+      knowledge_base_dropped,
+      injection_suspected_count,
     },
     existing_result: facts.existing_decision
       ? {

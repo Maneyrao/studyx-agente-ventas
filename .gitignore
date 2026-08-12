@@ -35,3 +35,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Respaldos de entorno: cualquier .env* con sufijo, no sólo los .local
+.env.local.*
+.env*.bak
+.env*.bak-*

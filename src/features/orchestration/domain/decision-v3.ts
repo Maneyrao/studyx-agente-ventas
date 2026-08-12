@@ -245,3 +245,41 @@ export function parseDecisionAny(value: unknown): DecisionV2 | DecisionV3 {
 }
 
 export { DECISION_INTENTS, DECISION_KINDS, DECISION_RESPONSE_TYPES, DECISION_NEXT_STATES };
+
+/**
+ * The only business actions the backend will store.
+ *
+ * Both are purely observational: nothing outside the database changes when one
+ * is recorded, so replaying a decision can never double-charge, double-book or
+ * double-promise. Everything else in `BUSINESS_ACTION_TYPES` stays in the
+ * schema — the shape is defined and validated — but is refused at the policy
+ * boundary until a real use case exists to execute it.
+ *
+ * `escalate_to_human` is refused with its own code on purpose. It is not "an
+ * action we have not built yet": there is no human queue in this system, so a
+ * decision that escalates would park the customer in a state nobody attends.
+ * A request for a human is answered by the agent, with `automation_only`.
+ */
+export const PERMITTED_BUSINESS_ACTIONS = ['mark_hot_lead', 'log_objection'] as const;
+
+export type PermittedBusinessActionType = (typeof PERMITTED_BUSINESS_ACTIONS)[number];
+
+export function isBusinessActionPermitted(action: BusinessAction | null): boolean {
+  if (action === null) return true;
+  return (PERMITTED_BUSINESS_ACTIONS as readonly string[]).includes(action.type);
+}
+
+/**
+ * Backend-side policy gate. Botpress validates the same rule locally, but this
+ * is the one that decides: the agent never gets the last word on what may be
+ * committed.
+ */
+export function assertBusinessActionPermitted(action: BusinessAction | null): void {
+  if (action === null) return;
+  if (action.type === 'escalate_to_human') {
+    throw new DecisionValidationError('HUMAN_HANDOFF_FORBIDDEN');
+  }
+  if (!isBusinessActionPermitted(action)) {
+    throw new DecisionValidationError('BUSINESS_ACTION_NOT_PERMITTED');
+  }
+}
