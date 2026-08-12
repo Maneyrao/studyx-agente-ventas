@@ -88,7 +88,52 @@ Copiar una fila por escenario ejecutado.
 |---|---|---|---|---|---|---|---|---|---|---|
 | | | `studyx-decision-v3` | | | | | | | | |
 
-> **Ninguna fila está llena todavía.** El piloto no se ejecutó: la integración
-> `telegram` no está instalada en Botpress Cloud y `adk integrations add` es una
-> acción hacia afuera que requiere autorización explícita. Ver EXT-05 en el
-> ledger y la sección 3 del runbook.
+> **Ninguna fila de escenario está llena todavía.** Ver más abajo qué sí quedó
+> verificado y qué falta.
+
+---
+
+## Verificación de la cañería en producción (2026-08-12)
+
+Antes de que exista una sola fila de escenario hay que poder afirmar que el
+backend desplegado ejecuta un turno completo. Eso ya está probado, y conviene
+decir con precisión qué prueba y qué no.
+
+Se recorrieron los cuatro pasos contra `https://studyx-agente-ventas.vercel.app`
+con peticiones firmadas (HMAC + llave de orquestador), sin pasar por Botpress ni
+por Telegram:
+
+| Paso | Endpoint | HTTP | Resultado |
+|---|---|---|---|
+| 1 | `POST /api/agent/ingest` | 200 | contacto, conversación, turno y batch creados |
+| 2 | `POST /api/agent/batches/:id/claim` | 200 | `outcome=claimed` |
+| 3 | `POST /api/agent/turns/:id/decision` | 200 | outbound creado, `delivery_attempt=1` |
+| 4 | `POST /api/agent/outbounds/:id/delivery` | 200 | `recorded` → `submitted_to_botpress` |
+
+`trace_id = ddf4b5f5-2137-45b9-85d8-467a099bb503`. Estado final en PostgreSQL
+remoto:
+
+```
+decision_kind | next_state | entrega   | intento | report_status         | intento_reportado | batch
+reply         | completed  | submitted |       1 | submitted_to_botpress |                 1 | claimed
+```
+
+`intento_reportado = 1` es la evidencia de que el fencing de la fase 7b quedó
+activo en producción, no sólo en los tests.
+
+**Qué NO prueba esto.** La decisión fue *provista* por el script, no generada
+por el modelo. Por lo tanto no valida ninguna fila de A, B, C ni D: no hubo
+prompt, no hubo catálogo consultado, no hubo memoria seleccionada y no hubo
+mensaje real de un cliente. Es exclusivamente la cañería de orquestación.
+
+---
+
+## Lo que falta para llenar la matriz
+
+1. Rotar las credenciales expuestas por el CLI de ADK al fallar un deploy
+   (token de Telegram, key de Gemini, PAT de Botpress).
+2. Completar `adk deploy` — el intento del 2026-08-12 murió por timeout contra
+   la API de Botpress.
+3. Configurar la integración `telegram` en `prod`. Ya está instalada en el
+   proyecto ADK y en `dev`; en `prod` figura como `unconfigured`.
+4. Recién ahí: mensaje real desde Telegram y una fila por escenario.
