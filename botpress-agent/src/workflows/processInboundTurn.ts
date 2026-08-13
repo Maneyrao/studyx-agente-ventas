@@ -1,4 +1,4 @@
-import { Autonomous, Workflow, configuration, z } from '@botpress/runtime'
+import { Autonomous, Workflow, configuration, context, z } from '@botpress/runtime'
 import { claimBatch } from '../actions/claimBatch'
 import { commitDecision } from '../actions/commitDecision'
 import { ingestTurn } from '../actions/ingestTurn'
@@ -329,11 +329,19 @@ export const processInboundTurn = new Workflow({
     // El sueño es un step durable: si el runtime recicla el workflow, se
     // reanuda en el mismo punto en vez de reprocesar el turno. Un reclamante
     // perdedor sale acá y nunca llega al modelo.
+    //
+    // No usar `step.sleepUntil`: el runtime le resta MIN_STEP_REMAINING_TIME_MS
+    // (10s) al objetivo, así que cualquier ventana menor a 10s se convierte en
+    // una espera de 0ms y el loop quema todos los intentos antes de `due_at`
+    // (observado en prod: claim_exhausted en <1s con debounce de 2s).
+    // `step.sleep(ms)` sí espera los ms exactos cuando son cortos y escala a
+    // reprogramación durable cuando son largos.
     let claimed: ClaimedTurn | null = null
     let dueAt = ingest.batch.due_at
 
     for (let attempt = 0; attempt < MAX_CLAIM_ATTEMPTS; attempt += 1) {
-      await step.sleepUntil(`await-batch-window-${attempt}`, dueAt)
+      const waitMs = Math.max(0, new Date(dueAt).getTime() - Date.now())
+      await step.sleep(`await-batch-window-${attempt}`, waitMs)
 
       let outcome
       try {
@@ -515,7 +523,11 @@ export const processInboundTurn = new Workflow({
         () =>
           client.createMessage({
             conversationId: input.botpress_conversation_id,
-            userId: input.botpress_user_id,
+            // Un mensaje del bot se crea con el userId del BOT (así lo hace el
+            // propio runtime en conversation.send). Con el userId del contacto
+            // la API responde 403 "not authorized to create messages as an
+            // integration" y la entrega falla (observado en prod).
+            userId: context.get('botId'),
             type: 'text',
             payload: { text: committed.outbound!.content },
             tags: {

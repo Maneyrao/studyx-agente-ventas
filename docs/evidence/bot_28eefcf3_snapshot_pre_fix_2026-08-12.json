@@ -1,0 +1,2801 @@
+{
+ "id": "28eefcf3-4623-4d5f-b08e-7d4c20a84d28",
+ "name": "Studyx",
+ "createdAt": "2026-08-03T10:31:06.380Z",
+ "updatedAt": "2026-08-12T12:29:13.018Z",
+ "configuration": {
+  "data": {
+   "models": {
+    "autonomous": [
+     "anthropic:claude-haiku-4-5",
+     "google-ai:gemini-3.5-flash",
+     "fast"
+    ],
+    "zai": [
+     "google-ai:gemini-3.5-flash",
+     "groq:gpt-oss-120b",
+     "fast"
+    ]
+   },
+   "apiBaseUrl": "https://studyx-agente-ventas.vercel.app",
+   "orchestratorKeyId": "botpress-dev",
+   "automationEnabled": true
+  },
+  "schema": {
+   "type": "object",
+   "properties": {
+    "model": {
+     "type": "string"
+    },
+    "models": {
+     "type": "object",
+     "properties": {
+      "autonomous": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "array",
+         "items": {
+          "type": "string"
+         }
+        }
+       ]
+      },
+      "zai": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "array",
+         "items": {
+          "type": "string"
+         }
+        }
+       ]
+      }
+     },
+     "additionalProperties": false
+    }
+   },
+   "additionalProperties": false
+  }
+ },
+ "signingSecret": "",
+ "states": {
+  "botState": {
+   "type": "bot",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {},
+     "location": {
+      "oneOf": [
+       {
+        "type": "object",
+        "properties": {
+         "type": {
+          "type": "string",
+          "const": "state"
+         }
+        },
+        "required": [
+         "type"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "type": {
+          "type": "string",
+          "const": "file"
+         },
+         "key": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "type",
+         "key"
+        ],
+        "additionalProperties": false
+       }
+      ],
+      "discriminator": {
+       "propertyName": "type"
+      },
+      "x-zui": {
+       "def": {
+        "typeName": "ZodDiscriminatedUnion",
+        "discriminator": "type"
+       }
+      }
+     }
+    },
+    "required": [
+     "location"
+    ],
+    "additionalProperties": false
+   }
+  },
+  "conversation": {
+   "type": "conversation",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "transcript": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "id": {
+         "type": "string"
+        },
+        "role": {
+         "anyOf": [
+          {
+           "type": "string",
+           "const": "assistant"
+          },
+          {
+           "type": "string",
+           "const": "user"
+          },
+          {
+           "type": "string",
+           "const": "event"
+          },
+          {
+           "type": "string",
+           "const": "summary"
+          }
+         ]
+        },
+        "name": {
+         "type": "string"
+        },
+        "createdAt": {
+         "type": "string"
+        },
+        "content": {
+         "type": "string"
+        },
+        "attachments": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "type": {
+            "type": "string",
+            "const": "image"
+           },
+           "url": {
+            "type": "string"
+           }
+          },
+          "required": [
+           "type",
+           "url"
+          ],
+          "additionalProperties": false
+         }
+        },
+        "payload": {
+         "x-zui": {
+          "def": {
+           "typeName": "ZodUnknown"
+          }
+         }
+        }
+       },
+       "required": [
+        "id",
+        "role"
+       ],
+       "additionalProperties": false
+      }
+     }
+    },
+    "required": [
+     "transcript"
+    ],
+    "additionalProperties": false
+   }
+  },
+  "dsData": {
+   "type": "bot",
+   "schema": {
+    "type": "object",
+    "additionalProperties": {}
+   }
+  },
+  "state": {
+   "type": "conversation",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {},
+     "location": {
+      "oneOf": [
+       {
+        "type": "object",
+        "properties": {
+         "type": {
+          "type": "string",
+          "const": "state"
+         }
+        },
+        "required": [
+         "type"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "type": {
+          "type": "string",
+          "const": "file"
+         },
+         "key": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "type",
+         "key"
+        ],
+        "additionalProperties": false
+       }
+      ],
+      "discriminator": {
+       "propertyName": "type"
+      },
+      "x-zui": {
+       "def": {
+        "typeName": "ZodDiscriminatedUnion",
+        "discriminator": "type"
+       }
+      }
+     }
+    },
+    "required": [
+     "location"
+    ],
+    "additionalProperties": false
+   }
+  },
+  "userState": {
+   "type": "user",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {},
+     "location": {
+      "oneOf": [
+       {
+        "type": "object",
+        "properties": {
+         "type": {
+          "type": "string",
+          "const": "state"
+         }
+        },
+        "required": [
+         "type"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "type": {
+          "type": "string",
+          "const": "file"
+         },
+         "key": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "type",
+         "key"
+        ],
+        "additionalProperties": false
+       }
+      ],
+      "discriminator": {
+       "propertyName": "type"
+      },
+      "x-zui": {
+       "def": {
+        "typeName": "ZodDiscriminatedUnion",
+        "discriminator": "type"
+       }
+      }
+     }
+    },
+    "required": [
+     "location"
+    ],
+    "additionalProperties": false
+   }
+  }
+ },
+ "message": {
+  "tags": {
+   "playbook": {
+    "title": "Active playbook",
+    "description": "The id of the playbook that was active when this message was sent (absent if none)."
+   },
+   "sessionId": {
+    "title": "Session ID",
+    "description": "Built-in: ULID identifying which lifecycle session this message belongs to."
+   },
+   "sessionNumber": {
+    "title": "Session Number",
+    "description": "Built-in: Session sequence number, increments each time the conversation session expires."
+   },
+   "studyxOutboundId": {
+    "title": "StudyX outbound ID",
+    "description": "Stable outbound identifier committed by StudyX and attached to the Botpress message."
+   },
+   "studyxTraceId": {
+    "title": "StudyX trace ID",
+    "description": "End-to-end correlation ID without customer content."
+   }
+  }
+ },
+ "user": {
+  "tags": {}
+ },
+ "conversation": {
+  "tags": {
+   "adkSyncTs": {
+    "title": "ADK Sync Timestamp",
+    "description": "Built-in: Last synced message timestamp. Automatically updated by the ADK when messages are processed."
+   },
+   "debug": {
+    "title": "Debug Mode",
+    "description": "Set to \"true\" to enable debug recording for this conversation."
+   },
+   "debugToken": {
+    "title": "Debug stream token",
+    "description": "Capability JWT for live debug streaming to viber-sync. Set by viber-api on preview conversations; absent on production traffic."
+   },
+   "preview": {
+    "title": "Builder preview",
+    "description": "Set to \"true\" when the conversation is a builder/UI preview (the preview pane), not real end-user traffic."
+   },
+   "sessionExpired": {
+    "title": "Session Expired",
+    "description": "Built-in: Set to \"true\" when a conversation session expires via lifecycle management."
+   },
+   "status": {
+    "title": "Conversation status",
+    "description": "LLM-assessed status of the conversation: pending, resolved, unresolved, abandoned, or spam."
+   },
+   "title": {
+    "title": "Conversation title",
+    "description": "Short auto-generated display title for the conversation, refreshed as the conversation grows."
+   },
+   "version": {
+    "title": "Definition slot",
+    "description": "Which definition slot to execute against: \"draft\" (preview) or \"published\" (default \u2014 real-user traffic)."
+   }
+  }
+ },
+ "events": {
+  "memoryRefresh": {
+   "description": "Fires after the user has been silent for a while so the runtime can refresh user memory without ending or clearing the conversation.",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "generation": {
+      "type": "integer",
+      "minimum": 0
+     }
+    },
+    "additionalProperties": false
+   },
+   "attributes": {}
+  },
+  "statusEvaluation": {
+   "description": "Fires after the conversation has been idle so the runtime can evaluate and tag its status (pending/resolved/unresolved/abandoned/spam).",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "generation": {
+      "type": "integer",
+      "minimum": 0
+     }
+    },
+    "additionalProperties": false
+   },
+   "attributes": {}
+  },
+  "subworkflowFinished": {
+   "schema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+   },
+   "attributes": {}
+  },
+  "workflowCallback": {
+   "schema": {
+    "type": "object",
+    "properties": {
+     "workflow": {
+      "type": "string"
+     },
+     "workflowId": {
+      "type": "string"
+     },
+     "target": {
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "conversationId": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "conversationId"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "workflowId": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "workflowId"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "completed",
+       "failed",
+       "canceled",
+       "timed_out"
+      ]
+     },
+     "output": {},
+     "error": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "workflow",
+     "workflowId",
+     "target",
+     "status"
+    ],
+    "additionalProperties": false
+   },
+   "attributes": {}
+  },
+  "workflowContinue": {
+   "schema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+   },
+   "attributes": {}
+  },
+  "workflowDataRequest": {
+   "schema": {
+    "type": "object",
+    "properties": {
+     "workflowId": {
+      "type": "string"
+     },
+     "workflowName": {
+      "type": "string"
+     },
+     "stepName": {
+      "type": "string"
+     },
+     "request": {
+      "type": "string"
+     },
+     "message": {
+      "type": "string"
+     },
+     "schema": {}
+    },
+    "required": [
+     "workflowId",
+     "workflowName",
+     "stepName",
+     "request",
+     "message"
+    ],
+    "additionalProperties": false
+   },
+   "attributes": {}
+  },
+  "workflowNotify": {
+   "schema": {
+    "type": "object",
+    "properties": {
+     "workflowId": {
+      "type": "string"
+     },
+     "workflowName": {
+      "type": "string"
+     },
+     "stepName": {
+      "type": "string"
+     },
+     "notification": {
+      "type": "string"
+     },
+     "payload": {}
+    },
+    "required": [
+     "workflowId",
+     "workflowName",
+     "stepName",
+     "notification"
+    ],
+    "additionalProperties": false
+   },
+   "attributes": {}
+  },
+  "workflowSchedule": {
+   "schema": {
+    "type": "object",
+    "properties": {
+     "workflow": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "workflow"
+    ],
+    "additionalProperties": false
+   },
+   "attributes": {}
+  }
+ },
+ "recurringEvents": {},
+ "subscriptions": {
+  "events": null
+ },
+ "actions": {
+  "addWebsitePageToDraft": {
+   "title": "Add Website Page to Draft Knowledge",
+   "description": "Upload a crawled webpage into the Master knowledge base as a draft entry. Used by the website-indexing workflow.",
+   "input": {
+    "schema": {
+     "type": "object",
+     "properties": {
+      "url": {
+       "type": "string",
+       "description": "Canonical URL of the page being added."
+      },
+      "content": {
+       "type": "string",
+       "description": "Page body (HTML or extracted text)."
+      },
+      "contentType": {
+       "type": "string",
+       "description": "Defaults to text/html."
+      }
+     },
+     "required": [
+      "url",
+      "content"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "output": {
+    "schema": {
+     "type": "object",
+     "properties": {
+      "id": {
+       "type": "string"
+      },
+      "key": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "id",
+      "key"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "attributes": {}
+  },
+  "claimBatch": {
+   "title": "Claim StudyX inbound batch",
+   "description": "Takes ownership of one inbound batch and returns its controlled context.",
+   "input": {
+    "schema": {
+     "type": "object",
+     "properties": {
+      "batch_id": {
+       "type": "string",
+       "format": "uuid",
+       "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+      },
+      "trace_id": {
+       "type": "string",
+       "format": "uuid",
+       "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+      },
+      "claimed_by": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 128
+      }
+     },
+     "required": [
+      "batch_id",
+      "trace_id",
+      "claimed_by"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "output": {
+    "schema": {
+     "anyOf": [
+      {
+       "type": "object",
+       "properties": {
+        "outcome": {
+         "type": "string",
+         "const": "claimed"
+        },
+        "trace_id": {
+         "type": "string",
+         "format": "uuid",
+         "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+        },
+        "batch": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string",
+           "format": "uuid",
+           "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+          },
+          "claim_token": {
+           "type": "string",
+           "format": "uuid",
+           "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+          },
+          "conversation_id": {
+           "type": "string",
+           "format": "uuid",
+           "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+          },
+          "contact_id": {
+           "type": "string",
+           "format": "uuid",
+           "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+          },
+          "lease_until": {
+           "type": "string"
+          },
+          "hard_deadline_at": {
+           "type": "string"
+          },
+          "message_count": {
+           "type": "integer"
+          },
+          "stolen": {
+           "type": "boolean"
+          }
+         },
+         "required": [
+          "id",
+          "claim_token",
+          "conversation_id",
+          "contact_id",
+          "lease_until",
+          "hard_deadline_at",
+          "message_count",
+          "stolen"
+         ],
+         "additionalProperties": false
+        },
+        "turn_id": {
+         "type": "string",
+         "format": "uuid",
+         "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+        },
+        "policy": {
+         "type": "object",
+         "properties": {
+          "may_respond": {
+           "type": "boolean"
+          },
+          "allowed_response_types": {
+           "type": "array",
+           "items": {
+            "type": "string",
+            "enum": [
+             "social_reply",
+             "commercial_reply",
+             "clarification",
+             "complaint_ack",
+             "automation_only",
+             "opt_out_ack",
+             "out_of_scope",
+             "technical_fallback"
+            ]
+           }
+          },
+          "reason": {
+           "anyOf": [
+            {
+             "type": "string"
+            },
+            {
+             "type": "null"
+            }
+           ],
+           "x-zui": {
+            "def": {
+             "typeName": "ZodNullable"
+            }
+           },
+           "default": null
+          }
+         },
+         "required": [
+          "may_respond",
+          "allowed_response_types"
+         ],
+         "additionalProperties": false
+        },
+        "contact": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string",
+           "format": "uuid",
+           "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+          },
+          "status": {
+           "type": "string"
+          },
+          "name": {
+           "anyOf": [
+            {
+             "type": "string"
+            },
+            {
+             "type": "null"
+            }
+           ],
+           "x-zui": {
+            "def": {
+             "typeName": "ZodNullable"
+            }
+           },
+           "default": null
+          },
+          "blocked": {
+           "type": "boolean"
+          },
+          "consent_status": {
+           "type": "string",
+           "enum": [
+            "allowed",
+            "revoked",
+            "unknown"
+           ]
+          },
+          "opted_in_at": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "id",
+          "status",
+          "blocked",
+          "consent_status",
+          "opted_in_at"
+         ],
+         "additionalProperties": false
+        },
+        "context": {
+         "type": "object",
+         "properties": {
+          "batch_messages": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+             },
+             "conversation_seq": {
+              "type": "integer"
+             },
+             "content": {
+              "type": "string"
+             },
+             "created_at": {
+              "type": "string"
+             },
+             "message_type": {
+              "type": "string"
+             }
+            },
+            "required": [
+             "id",
+             "conversation_seq",
+             "content",
+             "created_at",
+             "message_type"
+            ],
+            "additionalProperties": false
+           }
+          },
+          "recent_turns": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "direction": {
+              "type": "string",
+              "enum": [
+               "inbound",
+               "outbound"
+              ]
+             },
+             "content": {
+              "type": "string"
+             },
+             "created_at": {
+              "type": "string"
+             }
+            },
+            "required": [
+             "direction",
+             "content",
+             "created_at"
+            ],
+            "additionalProperties": false
+           }
+          },
+          "summary": {
+           "type": "object",
+           "properties": {
+            "text": {
+             "anyOf": [
+              {
+               "type": "string"
+              },
+              {
+               "type": "null"
+              }
+             ],
+             "x-zui": {
+              "def": {
+               "typeName": "ZodNullable"
+              }
+             },
+             "default": null
+            },
+            "version": {
+             "type": "integer"
+            },
+            "updated_at": {
+             "anyOf": [
+              {
+               "type": "string"
+              },
+              {
+               "type": "null"
+              }
+             ],
+             "x-zui": {
+              "def": {
+               "typeName": "ZodNullable"
+              }
+             },
+             "default": null
+            }
+           },
+           "required": [
+            "version"
+           ],
+           "additionalProperties": false
+          },
+          "selected_memories": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "memory_id": {
+              "type": "string"
+             },
+             "type": {
+              "type": "string"
+             },
+             "key": {
+              "type": "string"
+             },
+             "value": {
+              "type": "string"
+             },
+             "source_quote": {
+              "type": "string"
+             },
+             "similarity": {
+              "type": "number"
+             },
+             "recorded_at": {
+              "type": "string"
+             }
+            },
+            "required": [
+             "memory_id",
+             "type",
+             "key",
+             "value",
+             "source_quote",
+             "similarity",
+             "recorded_at"
+            ],
+            "additionalProperties": false
+           }
+          },
+          "long_term_memory_available": {
+           "type": "boolean"
+          },
+          "knowledge_base": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "source_uri": {
+              "type": "string"
+             },
+             "title": {
+              "type": "string"
+             },
+             "content": {
+              "type": "string"
+             },
+             "similarity": {
+              "type": "number"
+             }
+            },
+            "required": [
+             "source_uri",
+             "title",
+             "content",
+             "similarity"
+            ],
+            "additionalProperties": false
+           }
+          },
+          "knowledge_base_available": {
+           "type": "boolean"
+          },
+          "knowledge_base_dropped": {
+           "type": "integer",
+           "default": 0
+          },
+          "injection_suspected_count": {
+           "type": "integer",
+           "default": 0
+          }
+         },
+         "required": [
+          "batch_messages",
+          "recent_turns",
+          "summary",
+          "selected_memories",
+          "long_term_memory_available",
+          "knowledge_base",
+          "knowledge_base_available"
+         ],
+         "additionalProperties": false
+        },
+        "existing_result": {
+         "anyOf": [
+          {
+           "type": "object",
+           "properties": {
+            "decision_id": {
+             "anyOf": [
+              {
+               "type": "string",
+               "format": "uuid",
+               "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+              },
+              {
+               "type": "null"
+              }
+             ],
+             "x-zui": {
+              "def": {
+               "typeName": "ZodNullable"
+              }
+             },
+             "default": null
+            },
+            "outbound_id": {
+             "anyOf": [
+              {
+               "type": "string",
+               "format": "uuid",
+               "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+              },
+              {
+               "type": "null"
+              }
+             ],
+             "x-zui": {
+              "def": {
+               "typeName": "ZodNullable"
+              }
+             },
+             "default": null
+            },
+            "delivery_status": {
+             "anyOf": [
+              {
+               "type": "string"
+              },
+              {
+               "type": "null"
+              }
+             ],
+             "x-zui": {
+              "def": {
+               "typeName": "ZodNullable"
+              }
+             },
+             "default": null
+            },
+            "next_state": {
+             "type": "string",
+             "enum": [
+              "completed",
+              "waiting_user"
+             ]
+            }
+           },
+           "required": [
+            "next_state"
+           ],
+           "additionalProperties": false
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "x-zui": {
+          "def": {
+           "typeName": "ZodNullable"
+          }
+         },
+         "default": null
+        }
+       },
+       "required": [
+        "outcome",
+        "trace_id",
+        "batch",
+        "turn_id",
+        "policy",
+        "contact",
+        "context"
+       ],
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "properties": {
+        "outcome": {
+         "type": "string",
+         "enum": [
+          "waiting",
+          "absorbed",
+          "completed",
+          "abandoned",
+          "not_found"
+         ]
+        },
+        "trace_id": {
+         "type": "string",
+         "format": "uuid",
+         "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+        },
+        "batch_id": {
+         "type": "string",
+         "format": "uuid",
+         "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+        },
+        "retry_after_ms": {
+         "type": "integer",
+         "minimum": 0
+        }
+       },
+       "required": [
+        "outcome",
+        "trace_id",
+        "batch_id",
+        "retry_after_ms"
+       ],
+       "additionalProperties": false
+      }
+     ]
+    }
+   },
+   "attributes": {}
+  },
+  "generateQuestionsFromConversations": {
+   "title": "Generate Questions From Conversations",
+   "description": "Scan recent conversations (end-user traffic and preview chats) and extract distinct knowledge questions to use as question tests. Returns candidates only \u2014 nothing is saved.",
+   "input": {
+    "schema": {
+     "type": "object",
+     "properties": {
+      "limit": {
+       "type": "integer",
+       "description": "Max candidates to return.",
+       "minimum": 0,
+       "maximum": 20,
+       "default": 10
+      }
+     },
+     "additionalProperties": false
+    }
+   },
+   "output": {
+    "schema": {
+     "type": "object",
+     "properties": {
+      "questions": {
+       "type": "array",
+       "description": "Candidate questions, best first.",
+       "items": {
+        "type": "string"
+       }
+      },
+      "conversationsScanned": {
+       "type": "integer",
+       "description": "How many conversations were read."
+      }
+     },
+     "required": [
+      "questions",
+      "conversationsScanned"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "attributes": {}
+  },
+  "ingestTurn": {
+   "title": "Ingest StudyX turn",
+   "description": "Persists one external inbound event and returns the canonical StudyX context.",
+   "input": {
+    "schema": {
+     "type": "object",
+     "properties": {
+      "schema_version": {
+       "type": "number",
+       "const": 1
+      },
+      "source": {
+       "type": "string",
+       "const": "botpress"
+      },
+      "channel": {
+       "type": "string",
+       "enum": [
+        "emulator",
+        "whatsapp"
+       ]
+      },
+      "integration_id": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 512
+      },
+      "external_message_id": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 512
+      },
+      "provider_message_id": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 512
+      },
+      "external_conversation_id": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 512
+      },
+      "external_user_id": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 512
+      },
+      "phone_e164": {
+       "type": "string",
+       "minLength": 8,
+       "maxLength": 16
+      },
+      "trace_id": {
+       "type": "string",
+       "format": "uuid",
+       "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+      },
+      "message": {
+       "type": "object",
+       "properties": {
+        "type": {
+         "type": "string",
+         "enum": [
+          "text",
+          "audio",
+          "image",
+          "unsupported"
+         ]
+        },
+        "text": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 4096
+        },
+        "occurred_at": {
+         "type": "string",
+         "minLength": 1
+        },
+        "reply_to_external_message_id": {
+         "anyOf": [
+          {
+           "type": "string",
+           "minLength": 1,
+           "maxLength": 512
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "x-zui": {
+          "def": {
+           "typeName": "ZodNullable"
+          }
+         },
+         "default": null
+        },
+        "audio_reference": {
+         "anyOf": [
+          {
+           "type": "object",
+           "properties": {
+            "provider_file_id": {
+             "type": "string",
+             "minLength": 1,
+             "maxLength": 512
+            },
+            "mime_type": {
+             "type": "string",
+             "minLength": 1,
+             "maxLength": 128
+            },
+            "duration_seconds": {
+             "anyOf": [
+              {
+               "type": "integer",
+               "minimum": 0
+              },
+              {
+               "type": "null"
+              }
+             ],
+             "x-zui": {
+              "def": {
+               "typeName": "ZodNullable"
+              }
+             },
+             "default": null
+            },
+            "transcription_status": {
+             "type": "string",
+             "enum": [
+              "ok",
+              "failed",
+              "skipped"
+             ]
+            },
+            "transcription_provider": {
+             "anyOf": [
+              {
+               "type": "string",
+               "minLength": 1,
+               "maxLength": 64
+              },
+              {
+               "type": "null"
+              }
+             ],
+             "x-zui": {
+              "def": {
+               "typeName": "ZodNullable"
+              }
+             },
+             "default": null
+            }
+           },
+           "required": [
+            "provider_file_id",
+            "mime_type",
+            "transcription_status"
+           ],
+           "additionalProperties": false
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "x-zui": {
+          "def": {
+           "typeName": "ZodNullable"
+          }
+         },
+         "default": null
+        },
+        "metadata": {
+         "type": "object",
+         "additionalProperties": {
+          "anyOf": [
+           {
+            "type": "string",
+            "maxLength": 512
+           },
+           {
+            "type": "number"
+           },
+           {
+            "type": "boolean"
+           }
+          ]
+         },
+         "default": {}
+        }
+       },
+       "required": [
+        "type",
+        "text",
+        "occurred_at"
+       ],
+       "additionalProperties": false
+      },
+      "sandbox_provider": {
+       "anyOf": [
+        {
+         "type": "string",
+         "enum": [
+          "telegram_sandbox"
+         ]
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "x-zui": {
+        "def": {
+         "typeName": "ZodNullable"
+        }
+       },
+       "default": null
+      }
+     },
+     "required": [
+      "schema_version",
+      "source",
+      "channel",
+      "integration_id",
+      "external_message_id",
+      "external_conversation_id",
+      "external_user_id",
+      "trace_id",
+      "message"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "output": {
+    "schema": {
+     "type": "object",
+     "properties": {
+      "status": {
+       "type": "string",
+       "enum": [
+        "accepted",
+        "duplicate",
+        "suppressed"
+       ]
+      },
+      "replayed": {
+       "type": "boolean"
+      },
+      "trace_id": {
+       "type": "string",
+       "format": "uuid",
+       "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+      },
+      "turn_id": {
+       "type": "string",
+       "format": "uuid",
+       "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+      },
+      "conversation_id": {
+       "type": "string",
+       "format": "uuid",
+       "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+      },
+      "batch": {
+       "type": "object",
+       "properties": {
+        "id": {
+         "type": "string",
+         "format": "uuid",
+         "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+        },
+        "state": {
+         "type": "string",
+         "enum": [
+          "waiting",
+          "claimed",
+          "completed",
+          "abandoned"
+         ]
+        },
+        "joined_existing": {
+         "type": "boolean"
+        },
+        "due_at": {
+         "type": "string",
+         "minLength": 1
+        },
+        "hard_deadline_at": {
+         "type": "string",
+         "minLength": 1
+        },
+        "conversation_seq": {
+         "type": "integer"
+        },
+        "message_count": {
+         "type": "integer"
+        }
+       },
+       "required": [
+        "id",
+        "state",
+        "joined_existing",
+        "due_at",
+        "hard_deadline_at",
+        "conversation_seq",
+        "message_count"
+       ],
+       "additionalProperties": false
+      },
+      "policy": {
+       "type": "object",
+       "properties": {
+        "may_respond": {
+         "type": "boolean"
+        },
+        "allowed_response_types": {
+         "type": "array",
+         "items": {
+          "type": "string",
+          "enum": [
+           "social_reply",
+           "commercial_reply",
+           "clarification",
+           "complaint_ack",
+           "automation_only",
+           "opt_out_ack",
+           "out_of_scope",
+           "technical_fallback"
+          ]
+         }
+        },
+        "reason": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "x-zui": {
+          "def": {
+           "typeName": "ZodNullable"
+          }
+         },
+         "default": null
+        }
+       },
+       "required": [
+        "may_respond",
+        "allowed_response_types"
+       ],
+       "additionalProperties": false
+      },
+      "contact": {
+       "type": "object",
+       "properties": {
+        "id": {
+         "type": "string",
+         "format": "uuid",
+         "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+        },
+        "status": {
+         "type": "string"
+        },
+        "name": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "x-zui": {
+          "def": {
+           "typeName": "ZodNullable"
+          }
+         },
+         "default": null
+        },
+        "blocked": {
+         "type": "boolean"
+        },
+        "consent_status": {
+         "type": "string",
+         "enum": [
+          "allowed",
+          "revoked",
+          "unknown"
+         ]
+        }
+       },
+       "required": [
+        "id",
+        "status",
+        "blocked",
+        "consent_status"
+       ],
+       "additionalProperties": false
+      },
+      "existing_result": {
+       "anyOf": [
+        {
+         "type": "object",
+         "properties": {
+          "decision_id": {
+           "anyOf": [
+            {
+             "type": "string",
+             "format": "uuid",
+             "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+            },
+            {
+             "type": "null"
+            }
+           ],
+           "x-zui": {
+            "def": {
+             "typeName": "ZodNullable"
+            }
+           },
+           "default": null
+          },
+          "outbound_id": {
+           "anyOf": [
+            {
+             "type": "string",
+             "format": "uuid",
+             "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+            },
+            {
+             "type": "null"
+            }
+           ],
+           "x-zui": {
+            "def": {
+             "typeName": "ZodNullable"
+            }
+           },
+           "default": null
+          },
+          "delivery_status": {
+           "anyOf": [
+            {
+             "type": "string"
+            },
+            {
+             "type": "null"
+            }
+           ],
+           "x-zui": {
+            "def": {
+             "typeName": "ZodNullable"
+            }
+           },
+           "default": null
+          },
+          "next_state": {
+           "type": "string",
+           "enum": [
+            "completed",
+            "waiting_user"
+           ]
+          }
+         },
+         "required": [
+          "next_state"
+         ],
+         "additionalProperties": false
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "x-zui": {
+        "def": {
+         "typeName": "ZodNullable"
+        }
+       },
+       "default": null
+      }
+     },
+     "required": [
+      "status",
+      "replayed",
+      "trace_id",
+      "turn_id",
+      "conversation_id",
+      "batch",
+      "policy",
+      "contact"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "attributes": {}
+  },
+  "lookupCatalog": {
+   "title": "Look up StudyX catalog",
+   "description": "Reads the current, structured product catalog. Read-only.",
+   "input": {
+    "schema": {
+     "type": "object",
+     "properties": {
+      "trace_id": {
+       "type": "string",
+       "format": "uuid",
+       "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+      }
+     },
+     "required": [
+      "trace_id"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "output": {
+    "schema": {
+     "type": "object",
+     "properties": {
+      "items": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "sku": {
+          "type": "string"
+         },
+         "name": {
+          "type": "string"
+         },
+         "description": {
+          "anyOf": [
+           {
+            "type": "string"
+           },
+           {
+            "type": "null"
+           }
+          ],
+          "x-zui": {
+           "def": {
+            "typeName": "ZodNullable"
+           }
+          },
+          "default": null
+         },
+         "duration_weeks": {
+          "type": "integer"
+         },
+         "modality": {
+          "type": "string",
+          "enum": [
+           "live",
+           "ondemand",
+           "hybrid"
+          ]
+         },
+         "price": {
+          "type": "object",
+          "properties": {
+           "ars_cents": {
+            "type": "integer"
+           },
+           "usd_cents": {
+            "type": "integer"
+           }
+          },
+          "required": [
+           "ars_cents",
+           "usd_cents"
+          ],
+          "additionalProperties": false
+         },
+         "price_source": {
+          "type": "string",
+          "enum": [
+           "list",
+           "promo"
+          ]
+         },
+         "promo": {
+          "anyOf": [
+           {
+            "type": "object",
+            "properties": {
+             "ars_cents": {
+              "anyOf": [
+               {
+                "type": "integer"
+               },
+               {
+                "type": "null"
+               }
+              ],
+              "x-zui": {
+               "def": {
+                "typeName": "ZodNullable"
+               }
+              }
+             },
+             "usd_cents": {
+              "anyOf": [
+               {
+                "type": "integer"
+               },
+               {
+                "type": "null"
+               }
+              ],
+              "x-zui": {
+               "def": {
+                "typeName": "ZodNullable"
+               }
+              }
+             },
+             "valid_to": {
+              "anyOf": [
+               {
+                "type": "string"
+               },
+               {
+                "type": "null"
+               }
+              ],
+              "x-zui": {
+               "def": {
+                "typeName": "ZodNullable"
+               }
+              }
+             }
+            },
+            "required": [
+             "ars_cents",
+             "usd_cents",
+             "valid_to"
+            ],
+            "additionalProperties": false
+           },
+           {
+            "type": "null"
+           }
+          ],
+          "x-zui": {
+           "def": {
+            "typeName": "ZodNullable"
+           }
+          },
+          "default": null
+         }
+        },
+        "required": [
+         "sku",
+         "name",
+         "duration_weeks",
+         "modality",
+         "price",
+         "price_source"
+        ],
+        "additionalProperties": false
+       }
+      },
+      "count": {
+       "type": "integer"
+      },
+      "dropped": {
+       "type": "integer",
+       "default": 0
+      },
+      "stale_promotions_dropped": {
+       "type": "integer",
+       "default": 0
+      },
+      "injection_suspected_count": {
+       "type": "integer",
+       "default": 0
+      },
+      "as_of": {
+       "type": "string"
+      },
+      "prices_assertable": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "items",
+      "count",
+      "as_of",
+      "prices_assertable"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "attributes": {}
+  },
+  "reportDelivery": {
+   "title": "Report StudyX delivery state",
+   "description": "Records Botpress submission or failure without claiming provider delivery.",
+   "input": {
+    "schema": {
+     "type": "object",
+     "properties": {
+      "outbound_id": {
+       "type": "string",
+       "format": "uuid",
+       "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+      },
+      "trace_id": {
+       "type": "string",
+       "format": "uuid",
+       "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+      },
+      "status": {
+       "type": "string",
+       "enum": [
+        "submitted_to_botpress",
+        "failed"
+       ]
+      },
+      "botpress_message_id": {
+       "anyOf": [
+        {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 512
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "x-zui": {
+        "def": {
+         "typeName": "ZodNullable"
+        }
+       },
+       "default": null
+      },
+      "replayed": {
+       "type": "boolean",
+       "default": false
+      },
+      "error_code": {
+       "anyOf": [
+        {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 128
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "x-zui": {
+        "def": {
+         "typeName": "ZodNullable"
+        }
+       },
+       "default": null
+      },
+      "delivery_attempt": {
+       "anyOf": [
+        {
+         "type": "integer",
+         "minimum": 1
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "x-zui": {
+        "def": {
+         "typeName": "ZodNullable"
+        }
+       },
+       "default": null
+      }
+     },
+     "required": [
+      "outbound_id",
+      "trace_id",
+      "status"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "output": {
+    "schema": {
+     "type": "object",
+     "properties": {
+      "status": {
+       "type": "string",
+       "enum": [
+        "recorded",
+        "duplicate",
+        "stale_ignored"
+       ]
+      },
+      "replayed": {
+       "type": "boolean"
+      },
+      "outbound_id": {
+       "type": "string",
+       "format": "uuid",
+       "pattern": "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$"
+      },
+      "delivery_status": {
+       "type": "string",
+       "enum": [
+        "submitted_to_botpress",
+        "failed"
+       ]
+      }
+     },
+     "required": [
+      "status",
+      "replayed",
+      "outbound_id",
+      "delivery_status"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "attributes": {}
+  },
+  "startSimulationBatch": {
+   "title": "Start Simulation Batch",
+   "description": "Resolve simulations from the agent definition and start a batch workflow that runs them in parallel. Returns the batch workflow id.",
+   "input": {
+    "schema": {
+     "type": "object",
+     "properties": {
+      "version": {
+       "type": "string",
+       "description": "Which definition slot to read simulations from and run against.",
+       "enum": [
+        "draft",
+        "published"
+       ],
+       "default": "published"
+      },
+      "simulationIds": {
+       "type": "array",
+       "description": "Subset of simulation ids to run.",
+       "items": {
+        "type": "string"
+       }
+      },
+      "kind": {
+       "type": "string",
+       "description": "Run only simulations of this kind.",
+       "enum": [
+        "flow",
+        "question"
+       ]
+      },
+      "playbookId": {
+       "type": "string",
+       "description": "Run only the flow tests associated to this playbook."
+      },
+      "concurrency": {
+       "type": "integer",
+       "description": "How many runs execute at once.",
+       "minimum": 0,
+       "maximum": 20,
+       "default": 5
+      }
+     },
+     "additionalProperties": false
+    }
+   },
+   "output": {
+    "schema": {
+     "type": "object",
+     "properties": {
+      "batchId": {
+       "type": "string",
+       "description": "Id of the started SimulationBatch workflow run."
+      },
+      "total": {
+       "type": "integer",
+       "description": "How many simulations the batch will run."
+      }
+     },
+     "required": [
+      "batchId",
+      "total"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "attributes": {}
+  },
+  "syncWebsiteKnowledge": {
+   "title": "Sync Website Knowledge",
+   "description": "Reconcile an explicit website-knowledge patch for a draft or published definition slot.",
+   "input": {
+    "schema": {
+     "type": "object",
+     "properties": {
+      "scope": {
+       "type": "string",
+       "description": "Which definition slot to reconcile.",
+       "enum": [
+        "draft",
+        "published"
+       ]
+      },
+      "revision": {
+       "type": "string",
+       "description": "Definition revision that emitted this command. Optional only for rolling-deploy compatibility."
+      },
+      "urls": {
+       "type": "array",
+       "description": "Exact desired URL set. Omit to leave website knowledge untouched; [] explicitly clears it.",
+       "items": {
+        "type": "string"
+       }
+      }
+     },
+     "required": [
+      "scope"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "output": {
+    "schema": {
+     "type": "object",
+     "properties": {
+      "changed": {
+       "type": "boolean",
+       "description": "Whether an explicit website reconciliation was scheduled."
+      },
+      "desired": {
+       "type": "integer",
+       "description": "Number of URLs in the explicit desired set."
+      },
+      "workflowId": {
+       "type": "string",
+       "description": "Durable reconciliation or follow-up workflow id."
+      },
+      "queued": {
+       "type": "boolean",
+       "description": "Whether the command is waiting for an active reconciliation."
+      }
+     },
+     "required": [
+      "changed",
+      "desired"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "attributes": {}
+  },
+  "tablesRecomputeRows": {
+   "input": {
+    "schema": {
+     "type": "object",
+     "properties": {
+      "tableId": {
+       "type": "string"
+      },
+      "botId": {
+       "type": "string"
+      },
+      "schema": {},
+      "requests": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "row": {
+          "type": "object",
+          "additionalProperties": {}
+         },
+         "columnsToRecompute": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          }
+         }
+        },
+        "required": [
+         "row",
+         "columnsToRecompute"
+        ],
+        "additionalProperties": false
+       }
+      }
+     },
+     "required": [
+      "tableId",
+      "botId",
+      "requests"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "output": {
+    "schema": {
+     "type": "object",
+     "properties": {
+      "isFinished": {
+       "type": "boolean"
+      },
+      "rows": {
+       "type": "array",
+       "items": {}
+      }
+     },
+     "required": [
+      "isFinished",
+      "rows"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "attributes": {}
+  },
+  "transcribeAudio": {
+   "title": "Transcribe an inbound audio message",
+   "description": "Downloads an audio file from the source provider and returns the transcribed text via Gemini.",
+   "input": {
+    "schema": {
+     "type": "object",
+     "properties": {
+      "audio_reference": {
+       "type": "object",
+       "properties": {
+        "provider_file_id": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 512
+        },
+        "mime_type": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 128
+        },
+        "duration_seconds": {
+         "anyOf": [
+          {
+           "type": "integer",
+           "minimum": 0
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "x-zui": {
+          "def": {
+           "typeName": "ZodNullable"
+          }
+         },
+         "default": null
+        },
+        "transcription_status": {
+         "type": "string",
+         "enum": [
+          "ok",
+          "failed",
+          "skipped"
+         ]
+        },
+        "transcription_provider": {
+         "anyOf": [
+          {
+           "type": "string",
+           "minLength": 1,
+           "maxLength": 64
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "x-zui": {
+          "def": {
+           "typeName": "ZodNullable"
+          }
+         },
+         "default": null
+        }
+       },
+       "required": [
+        "provider_file_id",
+        "mime_type",
+        "transcription_status"
+       ],
+       "additionalProperties": false
+      },
+      "provider_source": {
+       "type": "string",
+       "enum": [
+        "telegram_sandbox"
+       ]
+      }
+     },
+     "required": [
+      "audio_reference",
+      "provider_source"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "output": {
+    "schema": {
+     "type": "object",
+     "properties": {
+      "status": {
+       "type": "string",
+       "enum": [
+        "ok",
+        "failed"
+       ]
+      },
+      "text": {
+       "type": "string"
+      },
+      "provider": {
+       "type": "string"
+      },
+      "reason": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "x-zui": {
+        "def": {
+         "typeName": "ZodNullable"
+        }
+       },
+       "default": null
+      }
+     },
+     "required": [
+      "status",
+      "text",
+      "provider"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "attributes": {}
+  }
+ },
+ "integrations": {
+  "intver_01KQYW62BM57D669VPPSAKXGHG": {
+   "configurationType": null,
+   "configuration": {},
+   "enabled": true,
+   "name": "anthropic",
+   "status": "registered",
+   "statusReason": null,
+   "version": "18.0.1",
+   "webhookUrl": "***MASKED***",
+   "webhookId": "***MASKED***",
+   "createdAt": "2026-05-06T14:48:34.924Z",
+   "updatedAt": "2026-05-06T14:48:34.924Z",
+   "title": "Anthropic",
+   "description": "Access a curated list of Claude models to set as your chosen LLM.",
+   "id": "intver_01KQYW62BM57D669VPPSAKXGHG",
+   "iconUrl": "https://mediafiles.botpress.cloud/int_01J29XBDF9D3TT7VWHYBB39G8W/integration/icon.svg",
+   "public": true,
+   "visibility": "public",
+   "verificationStatus": "unapproved",
+   "disabledChannels": [],
+   "lifecycleStatus": "published"
+  },
+  "intver_01KNS02E7FF0WQAYXWJDM3ZZNQ": {
+   "configurationType": null,
+   "configuration": {},
+   "enabled": true,
+   "name": "openai",
+   "status": "registered",
+   "statusReason": null,
+   "version": "20.0.0",
+   "webhookUrl": "***MASKED***",
+   "webhookId": "***MASKED***",
+   "createdAt": "2026-04-09T11:29:40.724Z",
+   "updatedAt": "2026-04-09T11:29:40.724Z",
+   "title": "OpenAI",
+   "description": "Gain access to OpenAI models for text generation, speech synthesis, audio transcription, and image generation.",
+   "id": "intver_01KNS02E7FF0WQAYXWJDM3ZZNQ",
+   "iconUrl": "https://mediafiles.botpress.cloud/int_01J0XY3C3VT7PC835HRGCKRBFA/integration/icon.svg",
+   "public": true,
+   "visibility": "public",
+   "verificationStatus": "unapproved",
+   "disabledChannels": [],
+   "lifecycleStatus": "published"
+  },
+  "intver_01KNRZZPBTBA0FAHVDVGAJNBJ1": {
+   "configurationType": null,
+   "configuration": {},
+   "enabled": true,
+   "name": "cerebras",
+   "status": "registered",
+   "statusReason": null,
+   "version": "9.0.0",
+   "webhookUrl": "***MASKED***",
+   "webhookId": "***MASKED***",
+   "createdAt": "2026-04-09T11:28:09.752Z",
+   "updatedAt": "2026-04-09T11:28:09.752Z",
+   "title": "Cerebras",
+   "description": "Get access to a curated list of Cerebras models for content generation and chat completions within your bot.",
+   "id": "intver_01KNRZZPBTBA0FAHVDVGAJNBJ1",
+   "iconUrl": "https://mediafiles.botpress.cloud/int_01J7C7K08J94KBY5B9G3YTQ1SF/integration/icon.svg",
+   "public": true,
+   "visibility": "public",
+   "verificationStatus": "unapproved",
+   "disabledChannels": [],
+   "lifecycleStatus": "published"
+  },
+  "intver_01KPBEHKBJD4MZ0ZDWEBMHX74D": {
+   "configurationType": null,
+   "configuration": {
+    "crawlerHeaderValue": "botpress"
+   },
+   "enabled": true,
+   "name": "browser",
+   "status": "registered",
+   "statusReason": null,
+   "version": "0.8.8",
+   "webhookUrl": "***MASKED***",
+   "webhookId": "***MASKED***",
+   "createdAt": "2026-04-16T15:28:55.092Z",
+   "updatedAt": "2026-04-16T15:28:55.092Z",
+   "title": "Browser",
+   "description": "Capture screenshots and retrieve web page content with metadata for automated browsing and data extraction.",
+   "id": "intver_01KPBEHKBJD4MZ0ZDWEBMHX74D",
+   "iconUrl": "https://mediafiles.botpress.cloud/int_01J2A33DQRKVCBZHW6A4JYZKPJ/integration/icon.svg",
+   "public": true,
+   "visibility": "public",
+   "verificationStatus": "unapproved",
+   "disabledChannels": [],
+   "lifecycleStatus": "published"
+  },
+  "intver_01K34MHES80EGJRA2MPCKN5KXW": {
+   "configurationType": null,
+   "configuration": {},
+   "enabled": false,
+   "name": "notion-kb",
+   "status": "registered",
+   "statusReason": null,
+   "version": "1.0.0",
+   "webhookUrl": "***MASKED***",
+   "webhookId": "***MASKED***",
+   "createdAt": "2025-08-20T21:00:46.039Z",
+   "updatedAt": "2025-08-27T14:49:45.541Z",
+   "title": "Notion (Legacy)",
+   "description": "Import files from Notion to Botpress",
+   "id": "intver_01K34MHES80EGJRA2MPCKN5KXW",
+   "iconUrl": "https://mediafiles.botpress.cloud/int_01K34MHERNX5KD88D23VRZ6DFS/integration/icon.svg",
+   "public": false,
+   "visibility": "unlisted",
+   "verificationStatus": "unapproved",
+   "disabledChannels": [],
+   "lifecycleStatus": "published"
+  },
+  "intver_01KNS00R1R8P4N2J4SVN6HHX4P": {
+   "configurationType": null,
+   "configuration": {},
+   "enabled": true,
+   "name": "google-ai",
+   "status": "registered",
+   "statusReason": null,
+   "version": "8.0.0",
+   "webhookUrl": "***MASKED***",
+   "webhookId": "***MASKED***",
+   "createdAt": "2026-04-09T11:28:47.430Z",
+   "updatedAt": "2026-04-09T11:28:47.430Z",
+   "title": "Google AI",
+   "description": "Gain access to Gemini models for content generation, chat responses, and advanced language tasks.",
+   "id": "intver_01KNS00R1R8P4N2J4SVN6HHX4P",
+   "iconUrl": "https://mediafiles.botpress.cloud/int_01JC1R2AEBVW4QT77JHS9QKCRD/integration/icon.svg",
+   "public": true,
+   "visibility": "public",
+   "verificationStatus": "unapproved",
+   "disabledChannels": [],
+   "lifecycleStatus": "published"
+  },
+  "intver_01KMZAEJVYBMNRMP01816TVEBH": {
+   "configurationType": null,
+   "configuration": {},
+   "enabled": true,
+   "name": "charts",
+   "status": "registered",
+   "statusReason": null,
+   "version": "0.2.8",
+   "webhookUrl": "***MASKED***",
+   "webhookId": "***MASKED***",
+   "createdAt": "2026-03-30T12:10:51.150Z",
+   "updatedAt": "2026-03-30T12:10:51.150Z",
+   "title": "Charts",
+   "description": "Easily generate a variety of charts, including line, bar, pie, and scatter plots, etc.",
+   "id": "intver_01KMZAEJVYBMNRMP01816TVEBH",
+   "iconUrl": "https://mediafiles.botpress.cloud/int_01J2A6HKD2HVJ3Z3V5KGBTX9WT/integration/icon.svg",
+   "public": true,
+   "visibility": "public",
+   "verificationStatus": "unapproved",
+   "disabledChannels": [],
+   "lifecycleStatus": "published"
+  },
+  "intver_01KXNM4M96B06TPXYRSTMQ5Q4V": {
+   "configurationType": null,
+   "configuration": {},
+   "enabled": true,
+   "name": "fireworks-ai",
+   "status": "registered",
+   "statusReason": null,
+   "version": "12.0.0",
+   "webhookUrl": "***MASKED***",
+   "webhookId": "***MASKED***",
+   "createdAt": "2026-07-16T14:09:01.557Z",
+   "updatedAt": "2026-07-16T14:09:01.557Z",
+   "title": "Fireworks AI",
+   "description": "Choose from curated Fireworks AI models for content generation, chat completions, and audio transcription.",
+   "id": "intver_01KXNM4M96B06TPXYRSTMQ5Q4V",
+   "iconUrl": "https://mediafiles.botpress.cloud/int_01J4MJQRH68JMDX6GRX9EYK3X9/integration/icon.svg",
+   "public": true,
+   "visibility": "public",
+   "verificationStatus": "unapproved",
+   "disabledChannels": [],
+   "lifecycleStatus": "published"
+  },
+  "intver_01KNS015P14BRMA1C0CJG239M4": {
+   "configurationType": null,
+   "configuration": {},
+   "enabled": true,
+   "name": "groq",
+   "status": "registered",
+   "statusReason": null,
+   "version": "16.0.0",
+   "webhookUrl": "***MASKED***",
+   "webhookId": "***MASKED***",
+   "createdAt": "2026-04-09T11:28:58.399Z",
+   "updatedAt": "2026-04-09T11:28:58.399Z",
+   "title": "Groq",
+   "description": "Gain access to Groq models for content generation, chat responses, and audio transcription.",
+   "id": "intver_01KNS015P14BRMA1C0CJG239M4",
+   "iconUrl": "https://mediafiles.botpress.cloud/int_01J0XY2GADMAZA0SYSBYDD0VQ7/integration/icon.svg",
+   "public": true,
+   "visibility": "public",
+   "verificationStatus": "unapproved",
+   "disabledChannels": [],
+   "lifecycleStatus": "published"
+  },
+  "intver_01KMZAQP6WG231KVJSEY88KG2J": {
+   "configurationType": null,
+   "configuration": {},
+   "enabled": true,
+   "name": "pdf-generator",
+   "status": "registered",
+   "statusReason": null,
+   "version": "0.0.7",
+   "webhookUrl": "***MASKED***",
+   "webhookId": "***MASKED***",
+   "createdAt": "2026-03-30T12:15:46.429Z",
+   "updatedAt": "2026-03-30T12:15:46.429Z",
+   "title": "PDF Generator",
+   "description": "Converts markdown content to PDF using PDFShift",
+   "id": "intver_01KMZAQP6WG231KVJSEY88KG2J",
+   "iconUrl": "https://mediafiles.botpress.cloud/int_01J3E7D42G935C8BJDSMY92MY1/integration/icon.svg",
+   "public": true,
+   "visibility": "public",
+   "verificationStatus": "unapproved",
+   "disabledChannels": [],
+   "lifecycleStatus": "published"
+  },
+  "intver_01KYAFXPQB7BJCP0K44W7KX25H": {
+   "configurationType": null,
+   "configuration": {
+    "botToken": "***REDACTED***",
+    "typingIndicatorEmoji": false
+   },
+   "enabled": true,
+   "name": "telegram",
+   "status": "registered",
+   "statusReason": null,
+   "version": "1.0.10",
+   "webhookUrl": "***MASKED***",
+   "webhookId": "***MASKED***",
+   "identifier": "amsterdam_reservas_bot",
+   "createdAt": "2026-07-24T16:39:22.795Z",
+   "updatedAt": "2026-07-24T16:39:22.795Z",
+   "title": "Telegram",
+   "description": "Engage with your audience in real-time.",
+   "id": "intver_01KYAFXPQB7BJCP0K44W7KX25H",
+   "iconUrl": "https://mediafiles.botpress.cloud/6f648c90-42eb-4f53-ae91-9ac5530c68c3/integration/icon.svg",
+   "public": true,
+   "visibility": "public",
+   "verificationStatus": "unapproved",
+   "disabledChannels": [],
+   "lifecycleStatus": "published"
+  },
+  "intver_01KVC0F76256Q0KWPMGZHKRTZB": {
+   "configurationType": null,
+   "configuration": {},
+   "enabled": false,
+   "name": "gsheets",
+   "status": "registration_pending",
+   "statusReason": null,
+   "version": "2.1.10",
+   "webhookUrl": "***MASKED***",
+   "webhookId": "***MASKED***",
+   "createdAt": "2026-06-18T00:00:44.764Z",
+   "updatedAt": "2026-06-18T00:00:44.764Z",
+   "title": "Google Sheets",
+   "description": "Access, update, and append Google Sheets data.",
+   "id": "intver_01KVC0F76256Q0KWPMGZHKRTZB",
+   "iconUrl": "https://mediafiles.botpress.cloud/abb09b30-de3f-4deb-83b7-afac689dc3f1/integration/icon.svg",
+   "public": true,
+   "visibility": "public",
+   "verificationStatus": "unapproved",
+   "disabledChannels": [],
+   "lifecycleStatus": "published"
+  },
+  "intver_01KZRPAXHAZ2GVS5BYJKX5XVQS": {
+   "configurationType": null,
+   "configuration": {},
+   "enabled": false,
+   "name": "whatsapp",
+   "status": "registration_pending",
+   "statusReason": null,
+   "version": "4.18.4",
+   "webhookUrl": "***MASKED***",
+   "webhookId": "***MASKED***",
+   "createdAt": "2026-08-11T15:16:31.128Z",
+   "updatedAt": "2026-08-11T15:16:31.128Z",
+   "title": "WhatsApp",
+   "description": "Send and receive messages through WhatsApp.",
+   "id": "intver_01KZRPAXHAZ2GVS5BYJKX5XVQS",
+   "iconUrl": "https://mediafiles.botpress.cloud/0652c357-e136-41de-82c3-64637b074fb4/integration/icon.svg",
+   "public": true,
+   "visibility": "public",
+   "verificationStatus": "unapproved",
+   "disabledChannels": [],
+   "lifecycleStatus": "published"
+  },
+  "intver_01KK043XBGRNTRARGATB0D6MDY": {
+   "configurationType": null,
+   "configuration": {},
+   "enabled": true,
+   "name": "agi/improvement",
+   "status": "registered",
+   "statusReason": null,
+   "version": "3.0.0",
+   "webhookUrl": "***MASKED***",
+   "webhookId": "***MASKED***",
+   "createdAt": "2026-03-05T23:07:56.520Z",
+   "updatedAt": "2026-04-27T17:39:21.404Z",
+   "title": "Improvement",
+   "description": "",
+   "id": "intver_01KK043XBGRNTRARGATB0D6MDY",
+   "iconUrl": "https://mediafiles.botpress.cloud/int_01JDTX5RMAC2S1GQZ1VCBCPWFS/integration/icon.svg",
+   "public": true,
+   "visibility": "public",
+   "verificationStatus": "approved",
+   "disabledChannels": [],
+   "lifecycleStatus": "published"
+  },
+  "intver_01KT1V7KWAKS6Y93Q5ESJ3FZK3": {
+   "configurationType": null,
+   "configuration": {},
+   "enabled": true,
+   "name": "agi/mcp",
+   "status": "registered",
+   "statusReason": null,
+   "version": "0.1.4",
+   "webhookUrl": "***MASKED***",
+   "webhookId": "***MASKED***",
+   "createdAt": "2026-06-01T15:01:03.901Z",
+   "updatedAt": "2026-06-01T15:01:03.901Z",
+   "title": "MCP",
+   "description": "Connect any MCP server to your bot. Add servers, discover their tools, and call them as agent tools.",
+   "id": "intver_01KT1V7KWAKS6Y93Q5ESJ3FZK3",
+   "iconUrl": "https://mediafiles.botpress.cloud/int_01KQMPYWBA159CB66SGS7ZHY4V/integration/icon.svg",
+   "public": true,
+   "visibility": "public",
+   "verificationStatus": "unapproved",
+   "disabledChannels": [],
+   "lifecycleStatus": "published"
+  },
+  "intver_01JBVV0VQW8XN3Z5V9K8DB1M3B": {
+   "configurationType": null,
+   "configuration": {
+    "citationsEnabled": true,
+    "homePageEnabled": true,
+    "welcomeHeading": "Hi there, how can we help?",
+    "welcomeSubtitle": "Tap a starting point or ask in your own words.",
+    "allowFileUpload": true,
+    "feedbackEnabled": true,
+    "soundEnabled": true,
+    "conversationHistory": true,
+    "footer": "[\u26a1 by Botpress](https://botpress.com/?from=webchat)",
+    "botDisplayName": "Studyx",
+    "botAvatarUrl": "https://files.bpcontent.cloud/2026/08/03/10/20260803103108-9ZT9FGTH.png",
+    "version": "v2",
+    "webchatMajorVersion": "v5",
+    "conversationStarters": [
+     {
+      "id": "browse_certifications",
+      "text": "Browse certifications",
+      "title": "Browse certifications",
+      "enabled": true
+     },
+     {
+      "id": "manage_billing",
+      "text": "Manage billing",
+      "title": "Manage billing",
+      "icon": "credit-card",
+      "enabled": true
+     },
+     {
+      "id": "get_diploma",
+      "text": "Get my diploma",
+      "title": "Get my diploma",
+      "enabled": true
+     },
+     {
+      "id": "course_requirements",
+      "text": "Course requirements",
+      "title": "Course requirements",
+      "icon": "circle-help",
+      "enabled": true
+     }
+    ],
+    "conversationStartersEnabled": true,
+    "conversationStartersDisplayStyle": "cards",
+    "agentPresenceEnabled": true
+   },
+   "enabled": true,
+   "name": "webchat",
+   "status": "registered",
+   "statusReason": null,
+   "version": "0.3.0",
+   "webhookUrl": "***MASKED***",
+   "webhookId": "***MASKED***",
+   "createdAt": "2024-11-04T14:59:50.335Z",
+   "updatedAt": "2026-08-12T13:41:01.013Z",
+   "title": "Webchat",
+   "description": "Webchat integration for Botpress",
+   "id": "intver_01JBVV0VQW8XN3Z5V9K8DB1M3B",
+   "iconUrl": "https://mediafiles.botpress.cloud/2c56f350-6e19-406a-b018-a4781deb5ff3/integration/icon.svg",
+   "public": true,
+   "visibility": "public",
+   "verificationStatus": "approved",
+   "disabledChannels": [],
+   "lifecycleStatus": "published"
+  }
+ },
+ "plugins": {
+  "desk-hitl": {
+   "configuration": {
+    "sendAgentAssignedMessage": true,
+    "sendSessionEndedMessage": true,
+    "sendTransferMessage": true,
+    "sendWaitingMessage": true
+   },
+   "enabled": true,
+   "name": "desk-hitl",
+   "version": "2.0.2",
+   "createdAt": "2026-07-07T14:59:27.245Z",
+   "updatedAt": "2026-07-07T14:59:27.245Z",
+   "title": "Desk HITL",
+   "description": "Escalate conversations to human agents in Botpress Desk",
+   "id": "plugver_01KWYHEN6F9QJY28G1GHP3HM80",
+   "iconUrl": "https://mediafiles.botpress.cloud/plugin_01KNHWEP6X0VSCF9S3C8QJB6CX/plugin/icon.svg",
+   "public": true,
+   "visibility": "public",
+   "interfaces": {},
+   "lifecycleStatus": "published"
+  }
+ },
+ "deployedAt": "2026-08-12T10:08:37.017Z",
+ "medias": [],
+ "createdBy": "790e9fb1-cf61-4c4e-a2c4-0c7d640378f2",
+ "dev": false,
+ "alwaysAlive": false,
+ "status": "active",
+ "tags": {
+  "viberPreviewTagsReady": "1",
+  "viberBuilderConversation": "conv_01KZ3JQV5Y20F93YJP6A7SRMTN",
+  "runtime": "adk",
+  "runtimeVersion": "2.0.2",
+  "framework": "vibe",
+  "deployment": "deploy-1786529312583",
+  "runtimeHash": "c321ebd2425ba42cffd310370f3d0e1d8e9490f03c77a90e98d7bad5e6821090",
+  "logoUrl": "https://files.bpcontent.cloud/2026/08/03/10/20260803103108-9ZT9FGTH.png",
+  "avatarMode": "logo",
+  "viberUnpublishedChanges": "false"
+ },
+ "type": "adk",
+ "secrets": [
+  "STUDYX_ORCHESTRATOR_KEY",
+  "STUDYX_SIGNING_SECRET",
+  "GEMINI_API_KEY",
+  "TELEGRAM_BOT_A_TOKEN"
+ ]
+}
