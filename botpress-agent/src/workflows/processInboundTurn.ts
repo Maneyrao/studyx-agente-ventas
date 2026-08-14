@@ -48,11 +48,17 @@ const PROMPT_VERSION = 'studyx-decision-v3'
 /**
  * Explicit, versioned model choice — the remote bot configuration has no say.
  * The array is a FAILOVER chain, not a balancer: Botpress only moves past the
- * first entry when it fails. gemini-3.5-flash is the latency choice
- * (verified available via `adk models`); claude-haiku-4-5 is the proven
- * fallback that already passed the decision contract in production.
+ * first entry when it fails.
+ *
+ * gemini-3.6-flash is the newer latency-class model (`adk models` lists it as
+ * recommended in the same family); measured baseline with 3.5-flash was
+ * model_ms 5.9-7.3s on real production turns (traces edfaa3f4, a68019b8).
+ * 3.5-flash stays as first failover with the proven claude-haiku-4-5 behind
+ * it, and every output still passes DecisionSchema + Next.js validation with
+ * the technical fallback as the last resort.
  */
 const DECISION_MODELS = [
+  'google-ai:gemini-3.6-flash',
   'google-ai:gemini-3.5-flash',
   'anthropic:claude-haiku-4-5-20251001',
 ] as const
@@ -183,7 +189,18 @@ function catalogForPrompt(catalog: CatalogResponse | null) {
   }
 }
 
+/** Bounded projection: history informs the decision, it never dominates the prompt. */
+const MAX_RECENT_TURNS = 10
+const MAX_RECENT_TURN_CHARS = 280
+
 function buildInstructions(claimed: ClaimedTurn, catalog: CatalogResponse | null): string {
+  const recentTurns = claimed.context.recent_turns.slice(-MAX_RECENT_TURNS).map((turn) => ({
+    ...turn,
+    content:
+      turn.content.length > MAX_RECENT_TURN_CHARS
+        ? `${turn.content.slice(0, MAX_RECENT_TURN_CHARS)}…`
+        : turn.content,
+  }))
   const context = {
     contact: {
       status: claimed.contact.status,
@@ -197,7 +214,7 @@ function buildInstructions(claimed: ClaimedTurn, catalog: CatalogResponse | null
       type: message.message_type,
       text: message.content,
     })),
-    recent_turns: claimed.context.recent_turns,
+    recent_turns: recentTurns,
     summary: claimed.context.summary,
     selected_memories: claimed.context.selected_memories,
     long_term_memory_available: claimed.context.long_term_memory_available,
@@ -538,8 +555,9 @@ export const processInboundTurn = new Workflow({
         decision = await step(
           'generate-structured-decision',
           async () => {
+            const instructions = buildInstructions(owned, catalog)
             const generated = await execute({
-              instructions: buildInstructions(owned, catalog),
+              instructions,
               exits: [DecisionExit],
               temperature: 0.1,
               // Sin herramientas, una iteración debe alcanzar el exit
@@ -555,6 +573,7 @@ export const processInboundTurn = new Workflow({
               turn_id: owned.turn_id,
               model_chain: DECISION_MODELS.join('>'),
               iterations_used: generated.iterations?.length ?? null,
+              instructions_chars: instructions.length,
             })
             return normalizeDecision(DecisionSchema.parse(generated.output), owned)
           },
