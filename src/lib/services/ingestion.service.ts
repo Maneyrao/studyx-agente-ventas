@@ -240,6 +240,17 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
   const payloadHash = sha256Hex(canonicalPayload);
 
   return withSerializableTransaction(async (db) => {
+    // Per-phase wall-clock inside the transaction. One log line per attempt,
+    // no message content: this is how we know WHERE an ingest spent its time
+    // (observed range in prod: 0.8s–2.9s for the same work).
+    const txnStartedAt = Date.now();
+    let phaseMark = txnStartedAt;
+    const phases: Record<string, number> = {};
+    const mark = (name: string): void => {
+      phases[name] = Date.now() - phaseMark;
+      phaseMark = Date.now();
+    };
+
     const reservations = await db<Array<{
       event_id: string;
       was_created: boolean;
@@ -269,6 +280,7 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
     if (events[0]?.status === 'processed' || events[0]?.status === 'dead_letter') {
       throw new InboundEventUnavailableError(false);
     }
+    mark('reserve');
 
     const { contact } = await resolveContact({
       phone: envelope.phone_e164,
@@ -281,6 +293,7 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
       },
     });
     await db`SELECT id FROM contacts WHERE id = ${contact.id}::uuid FOR UPDATE`;
+    mark('contact');
 
     const threads = await db<Array<{ id: string; contact_id: string }>>`
       INSERT INTO channel_threads (
@@ -314,6 +327,7 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
         leased_by = ${`next:${envelope.trace_id}`}
       WHERE id = ${reservation.event_id}::uuid
     `;
+    mark('thread_event');
 
     const openRows = await db<Array<{ id: string; channel_thread_id: string | null }>>`
       SELECT id, channel_thread_id
@@ -344,10 +358,14 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
       });
       conversationId = conversation.id;
     }
+    mark('conversation');
 
+    // Both branches surface the resulting consent themselves (RETURNING /
+    // the function's current_status), so no separate final SELECT is needed.
     const explicitOptOut = isExplicitOptOut(envelope.message.text);
+    let consentStatus: 'unknown' | 'granted' | 'revoked';
     if (explicitOptOut) {
-      await db`
+      const consentRows = await db<Array<{ current_status: 'unknown' | 'granted' | 'revoked' | null }>>`
         SELECT * FROM record_contact_permission_event(
           ${`opt-out:${reservation.event_id}`},
           ${contact.id}::uuid,
@@ -359,8 +377,9 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
           ${envelope.message.occurred_at}::timestamptz
         )
       `;
+      consentStatus = consentRows[0]?.current_status ?? 'unknown';
     } else {
-      await db`
+      const permissionRows = await db<Array<{ consent_status: 'unknown' | 'granted' | 'revoked' }>>`
         INSERT INTO contact_channel_permissions (
           contact_id, channel, consent_status, consent_source, reply_window_expires_at
         )
@@ -376,8 +395,11 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
           contact_channel_permissions.reply_window_expires_at,
           EXCLUDED.reply_window_expires_at
         )
+        RETURNING consent_status
       `;
+      consentStatus = permissionRows[0]?.consent_status ?? 'unknown';
     }
+    mark('permissions');
 
     const { message: inbound } = await registerMessage({
       conversation_id: conversationId,
@@ -405,6 +427,8 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
       },
     });
 
+    mark('message');
+
     await db`
       UPDATE channel_events
       SET
@@ -428,18 +452,21 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
       hard_deadline_ms: DEFAULT_BATCH_WINDOW_POLICY.hardDeadlineMs,
     });
 
-    const permissions = await db<Array<{ consent_status: 'unknown' | 'granted' | 'revoked' }>>`
-      SELECT consent_status
-      FROM contact_channel_permissions
-      WHERE contact_id = ${contact.id}::uuid AND channel = ${channel}
-    `;
+    mark('batch');
+    logger.info({
+      event: 'ingestion.phases',
+      trace_id: envelope.trace_id,
+      ...phases,
+      txn_ms: Date.now() - txnStartedAt,
+    });
+
     return {
       inbound,
       contact,
       conversation_id: conversationId,
       replayed: !reservation.was_created,
       explicit_opt_out: explicitOptOut,
-      consent_status: permissions[0]?.consent_status ?? 'unknown',
+      consent_status: consentStatus,
       batch,
     };
   });

@@ -45,6 +45,11 @@ export async function withSerializableTransaction<T>(
       return (await sql.begin('isolation level serializable', operation)) as T;
     } catch (error) {
       if (!isRetryableTransactionError(error) || attempt === maxAttempts) throw error;
+      // Structured so contention is countable per deploy: a rising retry rate
+      // is the early signal, the 503 TRANSIENT_DB_CONTENTION is the late one.
+      console.info(
+        JSON.stringify({ event: 'db.txn.serialization_retry', attempt, max_attempts: maxAttempts })
+      );
       await wait(transactionRetryDelay(attempt, options.baseDelayMs, options.maxDelayMs, options.random));
     }
   }

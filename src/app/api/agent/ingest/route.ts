@@ -10,6 +10,7 @@ import {
 } from '@/lib/services/ingestion.service';
 import { ContactValidationError } from '@/lib/services/contact.service';
 import { isRetryableTransactionError } from '@/lib/db/transaction';
+import { timedStage } from '@/lib/observability/structured-log';
 
 // Kept inline for legacy request compatibility. The canonical schema — with
 // audio_reference + metadata + sandbox_provider — lives at
@@ -108,7 +109,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const context = await processInboundMessage(envelope);
+    const context = await timedStage('ingest.process', { trace_id: envelope.trace_id }, () =>
+      processInboundMessage(envelope)
+    );
     return NextResponse.json(context, { status: 200 });
   } catch (err) {
     if (err instanceof ContactValidationError && err.code === 'INVALID_PHONE') {
