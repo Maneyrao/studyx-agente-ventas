@@ -17,6 +17,7 @@ import {
   type IngestResponse,
   type WorkflowResult,
 } from '../schemas/contracts'
+import { GREETING_FAST_PATH_MODEL, matchDeterministicGreeting } from '../utils/greeting'
 import { StudyxHttpError } from '../utils/http'
 
 /**
@@ -43,6 +44,25 @@ import { StudyxHttpError } from '../utils/http'
  */
 
 const PROMPT_VERSION = 'studyx-decision-v3'
+
+/**
+ * Explicit, versioned model choice — the remote bot configuration has no say.
+ * The array is a FAILOVER chain, not a balancer: Botpress only moves past the
+ * first entry when it fails. gemini-3.5-flash is the latency choice
+ * (verified available via `adk models`); claude-haiku-4-5 is the proven
+ * fallback that already passed the decision contract in production.
+ */
+const DECISION_MODELS = [
+  'google-ai:gemini-3.5-flash',
+  'anthropic:claude-haiku-4-5-20251001',
+] as const
+
+/**
+ * One generation must reach the structured exit: the task has zero tools, so
+ * there is nothing to iterate over. If evals ever show a single iteration
+ * failing to exit, raise to 2 with evidence — never back to 3.
+ */
+const DECISION_ITERATIONS = 1
 
 /** Bounded: the window slides, but not forever. */
 const MAX_CLAIM_ATTEMPTS = 6
@@ -235,6 +255,27 @@ export const processInboundTurn = new Workflow({
     state.phase = 'processing'
     state.errorCode = null
 
+    // Per-stage wall-clock in milliseconds, logged once at every terminal
+    // return via `emitTimings`. Content-free: stage names and durations only.
+    // Best-effort under durable replays — a resumed workflow re-times only the
+    // stages that actually re-run.
+    const workflowStartedAt = Date.now()
+    const timings: Record<string, number> = {}
+    const occurredAtMs = Date.parse(input.message.occurred_at ?? '')
+    if (Number.isFinite(occurredAtMs)) {
+      timings.telegram_to_router_ms = Math.max(0, workflowStartedAt - occurredAtMs)
+    }
+    const emitTimings = (extra: Record<string, unknown> = {}): void => {
+      safeLog('studyx.turn.timings', {
+        trace_id: input.trace_id,
+        turn_id: state.turnId,
+        phase: state.phase,
+        ...timings,
+        total_workflow_ms: Date.now() - workflowStartedAt,
+        ...extra,
+      })
+    }
+
     // ---- Paso 1-2: normalizar audio pendiente ----------------------------
     // Si el adapter dejó la transcripción pendiente, se resuelve antes de
     // ingerir. Hasta 3 intentos; al fallar definitivamente el turno sigue con
@@ -283,18 +324,22 @@ export const processInboundTurn = new Workflow({
 
     // ---- Paso 3: persistir ------------------------------------------------
     let ingest: IngestResponse
+    const ingestStartedAt = Date.now()
     try {
       ingest = await step(
         'ingest-canonical-turn',
         () => ingestTurn.execute({ input, client }),
         { maxAttempts: 1 }
       )
+      timings.ingest_ms = Date.now() - ingestStartedAt
       state.turnId = ingest.turn_id
       state.batchId = ingest.batch.id
     } catch (error) {
+      timings.ingest_ms = Date.now() - ingestStartedAt
       state.phase = 'paused_error'
       state.errorCode = errorCode(error)
       safeLog('studyx.turn.ingest_failed', { trace_id: input.trace_id, error_code: state.errorCode })
+      emitTimings()
       return resultFromState(state, input.trace_id)
     }
 
@@ -321,6 +366,7 @@ export const processInboundTurn = new Workflow({
         turn_id: ingest.turn_id,
         processing_state: state.phase,
       })
+      emitTimings()
       return resultFromState(state, input.trace_id)
     }
 
@@ -338,12 +384,16 @@ export const processInboundTurn = new Workflow({
     // reprogramación durable cuando son largos.
     let claimed: ClaimedTurn | null = null
     let dueAt = ingest.batch.due_at
+    timings.batch_wait_ms = 0
+    timings.claim_ms = 0
 
     for (let attempt = 0; attempt < MAX_CLAIM_ATTEMPTS; attempt += 1) {
       const waitMs = Math.max(0, new Date(dueAt).getTime() - Date.now())
       await step.sleep(`await-batch-window-${attempt}`, waitMs)
+      timings.batch_wait_ms += waitMs
 
       let outcome
+      const claimStartedAt = Date.now()
       try {
         outcome = await step(
           `claim-inbound-batch-${attempt}`,
@@ -358,7 +408,9 @@ export const processInboundTurn = new Workflow({
             }),
           { maxAttempts: 1 }
         )
+        timings.claim_ms += Date.now() - claimStartedAt
       } catch (error) {
+        timings.claim_ms += Date.now() - claimStartedAt
         state.phase = 'paused_error'
         state.errorCode = errorCode(error)
         safeLog('studyx.turn.claim_failed', {
@@ -366,6 +418,7 @@ export const processInboundTurn = new Workflow({
           batch_id: ingest.batch.id,
           error_code: state.errorCode,
         })
+        emitTimings()
         return resultFromState(state, input.trace_id)
       }
 
@@ -393,6 +446,7 @@ export const processInboundTurn = new Workflow({
         batch_id: ingest.batch.id,
         outcome: outcome.outcome,
       })
+      emitTimings()
       return resultFromState(state, input.trace_id)
     }
 
@@ -404,6 +458,7 @@ export const processInboundTurn = new Workflow({
         batch_id: ingest.batch.id,
         attempts: MAX_CLAIM_ATTEMPTS,
       })
+      emitTimings()
       return resultFromState(state, input.trace_id)
     }
 
@@ -420,16 +475,40 @@ export const processInboundTurn = new Workflow({
       injection_suspected: owned.context.injection_suspected_count,
     })
 
+    // ---- Fast path determinista: saludo inequívoco -----------------------
+    // Un lote de UN mensaje que es exactamente un saludo no necesita modelo ni
+    // catálogo. La decisión igual se commitea en Next.js como cualquier otra:
+    // misma validación, mismo outbound, mismo envío único.
+    const automatable =
+      configuration.automationEnabled && owned.policy.may_respond && !owned.contact.blocked
+    const fastPathDecision = automatable ? matchDeterministicGreeting(owned) : null
+    if (fastPathDecision) {
+      safeLog('studyx.turn.greeting_fast_path', {
+        trace_id: input.trace_id,
+        turn_id: owned.turn_id,
+      })
+    }
+
     // ---- Paso 7: catálogo, degradable ------------------------------------
     let catalog: CatalogResponse | null = null
-    if (owned.policy.may_respond && configuration.automationEnabled) {
+    if (automatable && !fastPathDecision) {
+      const catalogStartedAt = Date.now()
       try {
+        // Retries live in ONE layer: the action's HTTP client (1 extra attempt
+        // on transient failures only). maxAttempts here must stay 1 or the
+        // budgets multiply — 2 step attempts × N HTTP retries was worth ~3.4s
+        // on the 24s production trace.
         catalog = await step(
           'lookup-catalog',
           () => lookupCatalog.execute({ client, input: { trace_id: input.trace_id } }),
-          { maxAttempts: 2 }
+          { maxAttempts: 1 }
         )
+        timings.catalog_ms = Date.now() - catalogStartedAt
       } catch (error) {
+        timings.catalog_ms = Date.now() - catalogStartedAt
+        if (error instanceof StudyxHttpError) {
+          timings.catalog_attempts = error.attempts
+        }
         // Sin catálogo el agente no puede afirmar precios, pero la conversación
         // sigue: `prices_assertable` queda en false y el prompt lo dice.
         safeLog('studyx.turn.catalog_unavailable', {
@@ -442,11 +521,19 @@ export const processInboundTurn = new Workflow({
 
     // ---- Pasos 8-9: generar y validar localmente -------------------------
     let decision: Decision
+    let decisionModel: string = DECISION_MODELS[0]
     if (!configuration.automationEnabled) {
       decision = suppress('AUTOMATION_DISABLED')
+      decisionModel = 'policy:automation-disabled'
     } else if (!owned.policy.may_respond || owned.contact.blocked) {
       decision = suppress(owned.policy.reason ?? 'CONTACT_BLOCKED')
+      decisionModel = 'policy:suppressed'
+    } else if (fastPathDecision) {
+      decision = fastPathDecision
+      decisionModel = GREETING_FAST_PATH_MODEL
+      timings.model_ms = 0
     } else {
+      const modelStartedAt = Date.now()
       try {
         decision = await step(
           'generate-structured-decision',
@@ -455,15 +542,27 @@ export const processInboundTurn = new Workflow({
               instructions: buildInstructions(owned, catalog),
               exits: [DecisionExit],
               temperature: 0.1,
-              iterations: 3,
+              // Sin herramientas, una iteración debe alcanzar el exit
+              // estructurado. El array de modelos es failover, no balanceo.
+              model: [...DECISION_MODELS],
+              reasoningEffort: 'none',
+              iterations: DECISION_ITERATIONS,
               signal,
             })
             if (!generated.is(DecisionExit)) throw new Error('DECISION_EXIT_NOT_REACHED')
+            safeLog('studyx.turn.model_generated', {
+              trace_id: input.trace_id,
+              turn_id: owned.turn_id,
+              model_chain: DECISION_MODELS.join('>'),
+              iterations_used: generated.iterations?.length ?? null,
+            })
             return normalizeDecision(DecisionSchema.parse(generated.output), owned)
           },
           { maxAttempts: 1 }
         )
+        timings.model_ms = Date.now() - modelStartedAt
       } catch (error) {
+        timings.model_ms = Date.now() - modelStartedAt
         safeLog('studyx.turn.model_failed', {
           trace_id: input.trace_id,
           turn_id: owned.turn_id,
@@ -472,11 +571,13 @@ export const processInboundTurn = new Workflow({
         decision = owned.policy.allowed_response_types.includes('technical_fallback')
           ? technicalFallback()
           : suppress('MODEL_UNAVAILABLE')
+        decisionModel = 'policy:model-unavailable'
       }
     }
 
     // ---- Paso 10: commitear en Next.js -----------------------------------
     let committed
+    const commitStartedAt = Date.now()
     try {
       committed = await step(
         'commit-canonical-decision',
@@ -489,17 +590,19 @@ export const processInboundTurn = new Workflow({
               decision,
               model: {
                 provider: 'botpress',
-                model: 'default-autonomous',
+                model: decisionModel,
                 prompt_version: PROMPT_VERSION,
               },
             },
           }),
         { maxAttempts: 1 }
       )
+      timings.commit_ms = Date.now() - commitStartedAt
       state.decisionId = committed.decision_id
       state.outboundId = committed.outbound?.id ?? null
       state.phase = 'decision_committed'
     } catch (error) {
+      timings.commit_ms = Date.now() - commitStartedAt
       state.phase = 'paused_error'
       state.errorCode = errorCode(error)
       safeLog('studyx.turn.commit_failed', {
@@ -507,16 +610,19 @@ export const processInboundTurn = new Workflow({
         turn_id: owned.turn_id,
         error_code: state.errorCode,
       })
+      emitTimings()
       return resultFromState(state, input.trace_id)
     }
 
     if (committed.status === 'rejected' || !committed.outbound) {
       state.phase = committed.next_state
+      emitTimings()
       return resultFromState(state, input.trace_id)
     }
 
     // ---- Paso 11: un único envío físico ----------------------------------
     let delivery: { message: { id: string } }
+    const sendStartedAt = Date.now()
     try {
       delivery = await step(
         'submit-outbound-to-botpress',
@@ -537,7 +643,9 @@ export const processInboundTurn = new Workflow({
           }) as Promise<{ message: { id: string } }>,
         { maxAttempts: 1 }
       )
+      timings.send_ms = Date.now() - sendStartedAt
     } catch (error) {
+      timings.send_ms = Date.now() - sendStartedAt
       state.deliveryStatus = 'failed'
       state.phase = 'paused_error'
       state.errorCode = errorCode(error)
@@ -574,11 +682,13 @@ export const processInboundTurn = new Workflow({
         outbound_id: committed.outbound.id,
         error_code: state.errorCode,
       })
+      emitTimings()
       return resultFromState(state, input.trace_id)
     }
 
     // ---- Paso 12: reportar la entrega ------------------------------------
     state.deliveryStatus = 'submitted_to_botpress'
+    const reportStartedAt = Date.now()
     try {
       await step(
         'report-botpress-submission',
@@ -597,7 +707,9 @@ export const processInboundTurn = new Workflow({
           }),
         { maxAttempts: 1 }
       )
+      timings.delivery_report_ms = Date.now() - reportStartedAt
     } catch (error) {
+      timings.delivery_report_ms = Date.now() - reportStartedAt
       // Botpress returned a message ID, so delivery must never be downgraded to
       // failed. Pause for reconciliation instead of risking a duplicate send.
       state.phase = 'paused_error'
@@ -609,6 +721,7 @@ export const processInboundTurn = new Workflow({
         botpress_message_id: delivery.message.id,
         error_code: state.errorCode,
       })
+      emitTimings()
       return resultFromState(state, input.trace_id)
     }
 
@@ -620,6 +733,10 @@ export const processInboundTurn = new Workflow({
       outbound_id: committed.outbound.id,
       botpress_message_id: delivery.message.id,
       botpress_message_replayed: false,
+    })
+    emitTimings({
+      model: decisionModel,
+      fast_path: fastPathDecision !== null,
     })
     return resultFromState(state, input.trace_id)
   },

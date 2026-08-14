@@ -105,3 +105,88 @@ describe('getEffectivePriceCents', () => {
     expect(JSON.stringify(p)).toBe(before);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Regression: PostgreSQL `timestamptz::text` format vs ProductSchema.
+//
+// PostgreSQL returns `promo_valid_to` as '2026-10-01 02:59:59+00' (space
+// separator, short offset). ProductSchema requires strict ISO with offset.
+// The service must normalize BEFORE parsing — never relax the schema.
+// ---------------------------------------------------------------------------
+import {
+  CatalogInvalidDataError,
+  isPlaceholderSku,
+  normalizeTimestamptz,
+  parseProductRow,
+  type ProductRow,
+} from '@/lib/services/catalog.service';
+
+const PG_TIMESTAMPTZ = '2026-10-01 02:59:59+00';
+
+const pgRow: ProductRow = {
+  sku: 'CURSO-VENTAS-4',
+  name: 'Curso Ventas 4 semanas',
+  description: null,
+  duration_weeks: 4,
+  modality: 'hybrid',
+  price_ars_cents: '7500000',
+  price_usd_cents: '7500',
+  promo_ars_cents: '6000000',
+  promo_usd_cents: '6000',
+  promo_valid_to: PG_TIMESTAMPTZ,
+  active: true,
+};
+
+describe('normalizeTimestamptz', () => {
+  it('normalizes the exact PostgreSQL timestamptz text format to strict ISO', () => {
+    expect(normalizeTimestamptz(PG_TIMESTAMPTZ)).toBe('2026-10-01T02:59:59.000Z');
+  });
+
+  it('normalizes a timestamptz with explicit negative offset', () => {
+    expect(normalizeTimestamptz('2026-09-30 23:59:59-03')).toBe('2026-10-01T02:59:59.000Z');
+  });
+
+  it('passes through an already-ISO value unchanged in meaning', () => {
+    expect(normalizeTimestamptz('2026-10-01T02:59:59.000Z')).toBe('2026-10-01T02:59:59.000Z');
+  });
+
+  it('keeps null as null', () => {
+    expect(normalizeTimestamptz(null)).toBeNull();
+  });
+
+  it('throws CatalogInvalidDataError (never a retryable error) on garbage', () => {
+    expect(() => normalizeTimestamptz('not-a-date')).toThrow(CatalogInvalidDataError);
+  });
+});
+
+describe('parseProductRow', () => {
+  it('parses the exact row shape PostgreSQL returns, promo_valid_to included', () => {
+    const product = parseProductRow(pgRow);
+    expect(product.promo_valid_to).toBe('2026-10-01T02:59:59.000Z');
+    expect(product.price_ars_cents).toBe(7500000);
+    expect(product.promo_usd_cents).toBe(6000);
+  });
+
+  it('keeps a null promo_valid_to as null', () => {
+    expect(parseProductRow({ ...pgRow, promo_valid_to: null }).promo_valid_to).toBeNull();
+  });
+
+  it('throws CatalogInvalidDataError when a row violates the schema', () => {
+    expect(() => parseProductRow({ ...pgRow, price_ars_cents: '-1' })).toThrow(
+      CatalogInvalidDataError,
+    );
+  });
+
+  it('ProductSchema itself still rejects the raw PG format (schema NOT relaxed)', () => {
+    expect(() =>
+      ProductSchema.parse({ ...baseProduct, promo_valid_to: PG_TIMESTAMPTZ }),
+    ).toThrow();
+  });
+});
+
+describe('isPlaceholderSku', () => {
+  it('flags any SKU starting with PLACEHOLDER-', () => {
+    expect(isPlaceholderSku('PLACEHOLDER-CURSO-VENTAS-8')).toBe(true);
+    expect(isPlaceholderSku('CURSO-VENTAS-8')).toBe(false);
+  });
+});

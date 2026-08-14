@@ -12,6 +12,7 @@ import {
   parseDecisionAny,
 } from '@/features/orchestration/domain/decision-v3';
 import { timedStage } from '@/lib/observability/structured-log';
+import { isRetryableTransactionError } from '@/lib/db/transaction';
 import {
   commitAgentDecision,
   DecisionConflictError,
@@ -146,6 +147,13 @@ export async function POST(
     }
     if (error instanceof DecisionPolicyError) {
       return NextResponse.json({ error: error.code, reason: error.reason }, { status: 422 });
+    }
+    // Serialization/deadlock exhaustion is transient and the commit is
+    // idempotent per turn: let the client retry instead of reporting a
+    // permanent fault.
+    if (isRetryableTransactionError(error)) {
+      console.error('POST /api/agent/turns/:turn_id/decision transient contention:', error);
+      return NextResponse.json({ error: 'TRANSIENT_DB_CONTENTION' }, { status: 503 });
     }
     console.error('POST /api/agent/turns/:turn_id/decision error:', error);
     return NextResponse.json({ error: 'INTERNAL_ERROR' }, { status: 500 });

@@ -1,6 +1,6 @@
 {
   "$schema": "PLACEHOLDER — replace with the real StudyX catalog before going live.",
-  "note": "Prices are in MINOR UNITS (cents). 12500000 ARS_cents = ARS 125.000. Update via scripts/seed-catalog.mjs, or point the /api/agent/tools/catalog endpoint at a different source (e.g. Google Sheets fetch) — the shape is enforced by ProductSchema in src/lib/services/catalog.service.ts.",
+  "note": "Prices are in MINOR UNITS (cents). 12500000 ARS_cents = ARS 125.000. Update via scripts/seed-catalog.mjs, or point the /api/agent/tools/catalog endpoint at a different source (e.g. Google Sheets fetch) — the shape is enforced by ProductSchema in src/lib/services/catalog.service.ts. Placeholder products ship with active:false and PLACEHOLDER-* SKUs are additionally excluded from the assertable catalog in code and SQL.",
   "products": [
     {
       "sku": "PLACEHOLDER-CURSO-VENTAS-8",
@@ -13,7 +13,7 @@
       "promo_ars_cents": null,
       "promo_usd_cents": null,
       "promo_valid_to": null,
-      "active": true
+      "active": false
     },
     {
       "sku": "PLACEHOLDER-CURSO-VENTAS-4",
@@ -26,7 +26,7 @@
       "promo_ars_cents": 6000000,
       "promo_usd_cents": 6000,
       "promo_valid_to": "2026-09-30T23:59:59-03:00",
-      "active": true
+      "active": false
     },
     {
       "sku": "PLACEHOLDER-CURSO-VENTAS-ONDEMAND",
@@ -39,7 +39,7 @@
       "promo_ars_cents": null,
       "promo_usd_cents": null,
       "promo_valid_to": null,
-      "active": true
+      "active": false
     }
   ]
 }

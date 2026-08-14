@@ -9,6 +9,7 @@ import {
   type InboundEnvelope,
 } from '@/lib/services/ingestion.service';
 import { ContactValidationError } from '@/lib/services/contact.service';
+import { isRetryableTransactionError } from '@/lib/db/transaction';
 
 // Kept inline for legacy request compatibility. The canonical schema — with
 // audio_reference + metadata + sandbox_provider — lives at
@@ -121,6 +122,14 @@ export async function POST(request: NextRequest) {
         { error: err.code, retryable: err.retryable },
         { status: err.retryable ? 425 : 409 }
       );
+    }
+    // A serialization/deadlock failure that survived the in-process retries is
+    // still transient: the write is idempotent, so the client may safely try
+    // again. 503 keeps it inside the client's retryable status set; 500 would
+    // read as a permanent fault and drop the turn.
+    if (isRetryableTransactionError(err)) {
+      console.error('POST /api/agent/ingest transient contention:', err);
+      return NextResponse.json({ error: 'TRANSIENT_DB_CONTENTION' }, { status: 503 });
     }
     console.error('POST /api/agent/ingest error:', err);
     return NextResponse.json({ error: 'INTERNAL_ERROR' }, { status: 500 });

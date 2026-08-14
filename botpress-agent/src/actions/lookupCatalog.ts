@@ -26,6 +26,11 @@ export const lookupCatalog = new Action<any, any>({
       idempotencyKey: 'catalog:list',
       traceId: input.trace_id,
       responseSchema: CatalogResponseSchema,
+      // Degradable read: one extra round trip at most on a transient failure
+      // (network, timeout, 429, 5xx). A 422 CATALOG_INVALID_DATA is permanent
+      // and is never retried. This is the ONLY retry layer for the catalog —
+      // the workflow step runs with maxAttempts: 1.
+      additionalRetries: 1,
     })
   },
 })

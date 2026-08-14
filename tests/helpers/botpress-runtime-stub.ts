@@ -18,6 +18,25 @@ export class Conversation<TDefinition = unknown> {
 }
 
 /** Mutable per-test agent configuration; tests read/override as needed. */
-export const configuration: { emulatorPhoneE164: string; [key: string]: unknown } = {
+export const configuration: {
+  emulatorPhoneE164: string;
+  apiBaseUrl: string;
+  orchestratorKeyId: string;
+  requestTimeoutMs: number;
+  retryBaseDelayMs: number;
+  retryMaxDelayMs: number;
+  [key: string]: unknown;
+} = {
   emulatorPhoneE164: '+59891234567',
+  apiBaseUrl: 'http://studyx.test',
+  orchestratorKeyId: 'botpress-test',
+  requestTimeoutMs: 2000,
+  retryBaseDelayMs: 1,
+  retryMaxDelayMs: 2,
+};
+
+/** Test doubles for agent secrets; never real values. */
+export const secrets: Record<string, string> = {
+  STUDYX_ORCHESTRATOR_KEY: 'test-orchestrator-key',
+  STUDYX_SIGNING_SECRET: 'test-signing-secret',
 };

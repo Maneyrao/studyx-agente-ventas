@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { listActiveProducts } from '@/lib/services/catalog.service';
+import { CatalogInvalidDataError, listActiveProducts } from '@/lib/services/catalog.service';
 import {
   DEFAULT_CATALOG_LIMITS,
   buildCatalogView,
@@ -53,9 +53,16 @@ export async function GET() {
 
     return NextResponse.json(view, { status: 200 });
   } catch (error) {
-    // Degrade, never block: the workflow treats this as "no catalog available"
-    // and the agent falls back to not quoting anything.
     counter.increment('catalog_lookup_failures');
+    // A schema/data violation is permanent: retrying returns the same rows.
+    // 422 is deliberately outside the client's retryable status set.
+    if (error instanceof CatalogInvalidDataError) {
+      logger.error({ event: 'catalog.list.invalid_data', error: String(error) });
+      return NextResponse.json({ error: 'CATALOG_INVALID_DATA' }, { status: 422 });
+    }
+    // Degrade, never block: the workflow treats this as "no catalog available"
+    // and the agent falls back to not quoting anything. 503 = genuinely
+    // transient (DB/network), the one case where a single retry makes sense.
     logger.error({ event: 'catalog.list.failed', error: String(error) });
     return NextResponse.json({ error: 'CATALOG_UNAVAILABLE' }, { status: 503 });
   }

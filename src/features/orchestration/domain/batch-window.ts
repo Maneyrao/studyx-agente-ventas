@@ -39,7 +39,11 @@ export interface BatchWindowPolicy {
 }
 
 export const DEFAULT_BATCH_WINDOW_POLICY: BatchWindowPolicy = {
-  windowMs: 2_000,
+  // 1s of debounce still folds a quick burst into one batch (the window slides
+  // on every new message) while costing half the base latency of the previous
+  // 2s window. The hard deadline is unchanged: a steady stream of messages can
+  // never postpone the turn past 4s.
+  windowMs: 1_000,
   hardDeadlineMs: 4_000,
   maxClaimAttempts: 4,
   minSleepMs: 250,

@@ -1,4 +1,5 @@
 {
+  "fluid": true,
   "regions": ["iad1"],
   "crons": [
     {

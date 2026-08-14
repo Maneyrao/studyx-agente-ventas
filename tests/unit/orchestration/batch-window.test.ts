@@ -139,12 +139,48 @@ describe('planBatchWait', () => {
 });
 
 describe('DEFAULT_BATCH_WINDOW_POLICY', () => {
-  it('matches the frozen 2s rolling window and 4s hard deadline', () => {
-    expect(policy.windowMs).toBe(2000);
+  it('matches the frozen 1s rolling window and 4s hard deadline', () => {
+    expect(policy.windowMs).toBe(1000);
     expect(policy.hardDeadlineMs).toBe(4000);
   });
 
   it('keeps the hard deadline at or beyond the rolling window', () => {
     expect(policy.hardDeadlineMs).toBeGreaterThanOrEqual(policy.windowMs);
+  });
+});
+
+describe('DEFAULT_BATCH_WINDOW_POLICY (latency contract)', () => {
+  it('debounces at 1s so a turn starts a full second earlier than the old 2s window', () => {
+    expect(policy.windowMs).toBe(1_000);
+  });
+
+  it('keeps the 4s hard deadline: a message stream cannot postpone the turn forever', () => {
+    expect(policy.hardDeadlineMs).toBe(4_000);
+    expect(policy.hardDeadlineMs).toBeGreaterThan(policy.windowMs);
+  });
+
+  it('plans a 1s sleep from a freshly opened window', () => {
+    const plan = planBatchWait({
+      now: t0,
+      dueAt: at(policy.windowMs),
+      hardDeadlineAt: at(policy.hardDeadlineMs),
+      attempt: 1,
+      policy,
+    });
+    expect(plan.action).toBe('sleep');
+    expect(plan.sleepMs).toBe(1_000);
+  });
+
+  it('a message extending the window still claims by the hard deadline, not later', () => {
+    // Messages keep arriving <1s apart: due_at slides but is capped at 4s.
+    const plan = planBatchWait({
+      now: at(3_500),
+      dueAt: at(4_500), // backend would clamp this; the planner clamps too
+      hardDeadlineAt: at(policy.hardDeadlineMs),
+      attempt: 2,
+      policy,
+    });
+    expect(plan.action).toBe('sleep');
+    expect(plan.sleepMs).toBe(500);
   });
 });
