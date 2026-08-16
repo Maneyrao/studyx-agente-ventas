@@ -235,3 +235,47 @@ run('controlled context at claim time', () => {
     expect(result.existing_result?.outbound_id).toEqual(expect.any(String));
   });
 });
+
+run('sales_context at claim time', () => {
+  it('defaults to advising with no call history in the database', async () => {
+    const ingested = await processInboundMessage(envelope());
+    await forceDue(ingested.batch.id);
+
+    const result = await claimBatch(
+      { batch_id: ingested.batch.id, claimed_by: 'workflow-a', trace_id: randomUUID() },
+      deps
+    );
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.sales_context).toEqual({
+      mode: 'advising',
+      course_of_interest: null,
+      open_call_offer: null,
+      active_call: null,
+      allowed_actions: ['offer_call'],
+      last_call_result: null,
+    });
+  });
+
+  // NEEDS_CONTEXT (see task-2 report): `active_call` / `last_call_result`
+  // cannot be exercised against a real database from this branch.
+  // `call_sessions` is owned by the sibling call-infrastructure plan and
+  // does not exist here — this worktree owns only Agent A's conversational
+  // layer, and per the task's revised scope, no migration or test-only DDL
+  // for `call_sessions` may be created to fake it. The adapter hardcodes
+  // both facts to null (see `loadClaimedCallFacts`); `in_call`,
+  // `call_pending` and `post_call` therefore stay unreachable here and are
+  // covered only at the unit level (mocked store, see
+  // `tests/unit/orchestration/claim-batch.test.ts`) until the sibling
+  // plan's call ledger merges.
+  //
+  // NEEDS_CONTEXT (see task-2 report): `open_call_offer` is similarly
+  // unreachable against the real schema. `agent_decisions.response_type`'s
+  // CHECK constraint does not yet allow `'call_offer'` (Decision v4, owned
+  // by the sibling `005-agent-a-b-communication` plan) — no producer in
+  // this codebase can write such a row today, so a fixture row for this
+  // scenario cannot be inserted without either a migration (out of scope
+  // here) or a runtime ALTER of the constraint (rejected as equivalent to
+  // one). `awaiting_call_consent` is covered only at the unit level in the
+  // meantime, the same way as the call facts above.
+});

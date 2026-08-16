@@ -264,6 +264,37 @@ export const KnowledgeItemSchema = z.object({
 })
 
 /**
+ * The bounded sales/call context handed to Agent A on every claimed turn.
+ * Never carries phone, provider credentials, a transcript or unbounded call
+ * analysis — only what the deterministic call-offer policy allows and the
+ * facts that produced it.
+ */
+export const SalesContextSchema = z.object({
+  mode: z.enum(['advising', 'awaiting_call_consent', 'call_pending', 'in_call', 'post_call']),
+  course_of_interest: z.string().nullable(),
+  open_call_offer: z
+    .object({
+      decision_id: z.string().uuid(),
+      expires_at: z.string(),
+    })
+    .nullable(),
+  active_call: z
+    .object({
+      call_id: z.string().uuid(),
+      status: z.string(),
+    })
+    .nullable(),
+  allowed_actions: z.array(z.enum(['offer_call', 'request_call_now'])),
+  last_call_result: z
+    .object({
+      call_id: z.string().uuid(),
+      result: z.string().nullable(),
+      ended_at: z.string(),
+    })
+    .nullable(),
+})
+
+/**
  * The controlled context, delivered only to the workflow that won the claim.
  *
  * `knowledge_base` is declared here on purpose: Next.js has been returning it
@@ -302,6 +333,7 @@ export const ClaimedTurnSchema = z.object({
     knowledge_base_dropped: z.number().int().default(0),
     injection_suspected_count: z.number().int().default(0),
   }),
+  sales_context: SalesContextSchema,
   existing_result: ExistingResultSchema,
 })
 

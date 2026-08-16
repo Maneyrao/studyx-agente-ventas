@@ -6,6 +6,7 @@ import type {
   BatchMembership,
   BatchMessage,
   ClaimBatchInput,
+  ClaimedCallFacts,
   ClaimedTurnFacts,
   CompleteBatchInput,
   OpenOrJoinBatchInput,
@@ -289,6 +290,50 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
             next_state: row.next_state ?? 'completed',
           }
         : null,
+    };
+  }
+
+  /**
+   * The current open call offer, active call and last call result, each
+   * scoped to the claimed batch's own contact and conversation.
+   *
+   * Only `open_offer` is real today. `active_call` and `last_call_result`
+   * are hardcoded null: `call_sessions` is owned by the sibling call-
+   * infrastructure plan and does not exist on this branch (this worktree
+   * owns only Agent A's conversational layer). These facts are wired when
+   * the sibling plan's call ledger merges — the port's `ActiveCallFact` /
+   * `LastCallResultFact` shapes are kept for that integration, but nothing
+   * here queries `call_sessions` in the meantime.
+   *
+   * The `open_offer` query itself is read-only and safe to ship, but it is
+   * currently unreachable in practice: `agent_decisions.response_type` has
+   * no `'call_offer'` value in its CHECK constraint yet (that arrives with
+   * Decision v4, tracked in the sibling `005-agent-a-b-communication` plan).
+   * No producer in this codebase can write such a row today, so this query
+   * returns null until that migration lands — see task-2 report for the
+   * open NEEDS_CONTEXT finding.
+   */
+  async loadClaimedCallFacts(input: {
+    contact_id: string;
+    conversation_id: string;
+  }): Promise<ClaimedCallFacts> {
+    const offerRows = await this.db<Array<{ decision_id: string; offered_at: Date }>>`
+      SELECT ad.id AS decision_id, ad.created_at AS offered_at
+      FROM agent_decisions AS ad
+      JOIN messages AS m ON m.id = ad.turn_id
+      WHERE m.contact_id = ${input.contact_id}::uuid
+        AND m.conversation_id = ${input.conversation_id}::uuid
+        AND ad.response_type = 'call_offer'
+      ORDER BY ad.created_at DESC
+      LIMIT 1
+    `;
+
+    const offer = offerRows[0];
+
+    return {
+      open_offer: offer ? { decision_id: offer.decision_id, offered_at: offer.offered_at.toISOString() } : null,
+      active_call: null,
+      last_call_result: null,
     };
   }
 

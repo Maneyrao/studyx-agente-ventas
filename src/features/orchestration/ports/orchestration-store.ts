@@ -126,6 +126,43 @@ export interface ClaimedTurnFacts {
   } | null;
 }
 
+/**
+ * The most recent unresolved offer to call the customer, as recorded by the
+ * latest immutable `agent_decisions` row with `response_type = 'call_offer'`.
+ * Whether it is still live (or has expired) is the call-offer policy's job,
+ * not this store's — the adapter reports the raw fact only.
+ */
+export interface CallOfferFact {
+  readonly decision_id: string;
+  readonly offered_at: string;
+}
+
+/** A call currently in one of `call_sessions`' active statuses for this contact. */
+export interface ActiveCallFact {
+  readonly call_id: string;
+  readonly status: string;
+}
+
+/** The most recently ended call for this contact, if any. */
+export interface LastCallResultFact {
+  readonly call_id: string;
+  readonly result: string | null;
+  readonly ended_at: string;
+}
+
+/**
+ * Raw sales/call facts for a claimed batch's own contact and conversation.
+ * Deliberately bounded: no phone, no provider credentials, no transcript, no
+ * unbounded call analysis. Turning these facts into `allowed_actions` is the
+ * pure call-offer policy's job, applied in the application layer — this
+ * store never decides anything, it only reports what is durably true.
+ */
+export interface ClaimedCallFacts {
+  readonly open_offer: CallOfferFact | null;
+  readonly active_call: ActiveCallFact | null;
+  readonly last_call_result: LastCallResultFact | null;
+}
+
 export interface OrchestrationStore {
   /**
    * Attach a freshly persisted inbound to the conversation's open window,
@@ -149,6 +186,17 @@ export interface OrchestrationStore {
     batch_id: string;
     recent_turns_limit: number;
   }): Promise<ClaimedTurnFacts | null>;
+
+  /**
+   * Sales/call facts for the claimed batch's own contact and conversation.
+   * Never widens beyond either scope. A missing table or query failure is
+   * fatal, like any other store read; only an empty result set means "no
+   * offer and no call yet" and produces the default advising context.
+   */
+  loadClaimedCallFacts(input: {
+    contact_id: string;
+    conversation_id: string;
+  }): Promise<ClaimedCallFacts>;
 
   /** Reconciliation sweep over claims whose lease ran out. */
   expireStaleClaims(input?: {
