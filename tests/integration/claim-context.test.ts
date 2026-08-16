@@ -257,25 +257,107 @@ run('sales_context at claim time', () => {
     });
   });
 
-  // NEEDS_CONTEXT (see task-2 report): `active_call` / `last_call_result`
-  // cannot be exercised against a real database from this branch.
-  // `call_sessions` is owned by the sibling call-infrastructure plan and
-  // does not exist here — this worktree owns only Agent A's conversational
-  // layer, and per the task's revised scope, no migration or test-only DDL
-  // for `call_sessions` may be created to fake it. The adapter hardcodes
-  // both facts to null (see `loadClaimedCallFacts`); `in_call`,
-  // `call_pending` and `post_call` therefore stay unreachable here and are
-  // covered only at the unit level (mocked store, see
-  // `tests/unit/orchestration/claim-batch.test.ts`) until the sibling
-  // plan's call ledger merges.
-  //
-  // NEEDS_CONTEXT (see task-2 report): `open_call_offer` is similarly
-  // unreachable against the real schema. `agent_decisions.response_type`'s
-  // CHECK constraint does not yet allow `'call_offer'` (Decision v4, owned
-  // by the sibling `005-agent-a-b-communication` plan) — no producer in
-  // this codebase can write such a row today, so a fixture row for this
-  // scenario cannot be inserted without either a migration (out of scope
-  // here) or a runtime ALTER of the constraint (rejected as equivalent to
-  // one). `awaiting_call_consent` is covered only at the unit level in the
-  // meantime, the same way as the call facts above.
+  // `call_sessions` y Decision v4 ya existen en esta rama integrada, así que
+  // los tres hechos de llamada se proyectan desde filas canónicas reales.
+  async function seedTurnWithIds(text: string) {
+    const context = await processInboundMessage(envelope({
+      message: {
+        type: 'text',
+        text,
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    }));
+    const rows = await db!<Array<{ contact_id: string; conversation_id: string }>>`
+      SELECT contact_id, conversation_id FROM messages WHERE id = ${context.turn_id}::uuid
+    `;
+    return { ...context, ...rows[0] };
+  }
+
+  async function insertCallSession(input: {
+    turnId: string;
+    contactId: string;
+    conversationId: string;
+    status: string;
+    result?: string | null;
+    completedAt?: string | null;
+  }): Promise<string> {
+    const callId = randomUUID();
+    await db!`
+      INSERT INTO call_sessions (
+        id, source_turn_id, contact_id, conversation_id, provider,
+        request_idempotency_key, status, consent_source_message_id,
+        context_snapshot, context_hash, prompt_version, requested_at,
+        completed_at, result
+      ) VALUES (
+        ${callId}::uuid, ${input.turnId}::uuid, ${input.contactId}::uuid,
+        ${input.conversationId}::uuid, 'telegram_sandbox',
+        ${`vitest:${callId}`}, ${input.status}, ${input.turnId}::uuid,
+        ${db!.json({ call_id: callId })}, sha256(${callId}::bytea),
+        'studyx-agent-a-sales-bridge-v1', now(),
+        ${input.completedAt ?? null}, ${input.result ?? null}
+      )
+    `;
+    return callId;
+  }
+
+  async function claimSalesContext(batchId: string) {
+    await forceDue(batchId);
+    const result = await claimBatch(
+      { batch_id: batchId, claimed_by: 'workflow-calls', trace_id: randomUUID() },
+      deps
+    );
+    expect(result.outcome).toBe('claimed');
+    if (result.outcome !== 'claimed') throw new Error('unclaimed');
+    return result.sales_context;
+  }
+
+  it('projects a requested call as call_pending and blocks new call actions', async () => {
+    const seeded = await seedTurnWithIds('¿Sigue la promo?');
+    const callId = await insertCallSession({
+      turnId: seeded.turn_id,
+      contactId: seeded.contact_id,
+      conversationId: seeded.conversation_id,
+      status: 'requested',
+    });
+
+    const salesContext = await claimSalesContext(seeded.batch.id);
+    expect(salesContext.mode).toBe('call_pending');
+    expect(salesContext.active_call).toEqual({ call_id: callId, status: 'requested' });
+    expect(salesContext.allowed_actions).toEqual([]);
+  });
+
+  it('projects an in_progress call as in_call', async () => {
+    const seeded = await seedTurnWithIds('Hola?');
+    const callId = await insertCallSession({
+      turnId: seeded.turn_id,
+      contactId: seeded.contact_id,
+      conversationId: seeded.conversation_id,
+      status: 'in_progress',
+    });
+
+    const salesContext = await claimSalesContext(seeded.batch.id);
+    expect(salesContext.mode).toBe('in_call');
+    expect(salesContext.active_call).toEqual({ call_id: callId, status: 'in_progress' });
+  });
+
+  it('projects the newest terminal call as post_call with its structured result', async () => {
+    const seeded = await seedTurnWithIds('Gracias por la llamada');
+    const callId = await insertCallSession({
+      turnId: seeded.turn_id,
+      contactId: seeded.contact_id,
+      conversationId: seeded.conversation_id,
+      status: 'completed',
+      result: 'seguimiento_agendado',
+      completedAt: new Date().toISOString(),
+    });
+
+    const salesContext = await claimSalesContext(seeded.batch.id);
+    expect(salesContext.mode).toBe('post_call');
+    expect(salesContext.active_call).toBeNull();
+    expect(salesContext.last_call_result).toMatchObject({
+      call_id: callId,
+      result: 'seguimiento_agendado',
+    });
+  });
 });

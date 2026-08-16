@@ -1,6 +1,7 @@
 import { Autonomous, Workflow, configuration, context, z } from '@botpress/runtime'
 import { claimBatch } from '../actions/claimBatch'
 import { commitDecision } from '../actions/commitDecision'
+import { dispatchCall } from '../actions/dispatchCall'
 import { ingestTurn } from '../actions/ingestTurn'
 import { lookupCatalog } from '../actions/lookupCatalog'
 import { reportDelivery } from '../actions/reportDelivery'
@@ -19,6 +20,7 @@ import {
 } from '../schemas/contracts'
 import { AGENT_A_PROMPT_VERSION, buildAgentASalesBridgeInstructions } from '../prompts/agent-a-sales-bridge'
 import { GREETING_FAST_PATH_MODEL, matchDeterministicGreeting } from '../utils/greeting'
+import { CALL_HANDOFF_FAST_PATH_MODEL, matchCallHandoffFastPath } from '../utils/call-handoff-fast-path'
 import { StudyxHttpError } from '../utils/http'
 
 /**
@@ -407,9 +409,13 @@ export const processInboundTurn = new Workflow({
     // misma validación, mismo outbound, mismo envío único.
     const automatable =
       configuration.automationEnabled && owned.policy.may_respond && !owned.contact.blocked
-    const fastPathDecision = automatable ? matchDeterministicGreeting(owned) : null
+    // El fast path de llamada corre primero: un pedido directo o una
+    // aceptación inequívoca no necesitan catálogo ni modelo, y el backend
+    // re-valida el consentimiento en el commit de todas formas.
+    const callFastPath = automatable ? matchCallHandoffFastPath(owned) : null
+    const fastPathDecision = callFastPath ?? (automatable ? matchDeterministicGreeting(owned) : null)
     if (fastPathDecision) {
-      safeLog('studyx.turn.greeting_fast_path', {
+      safeLog(callFastPath ? 'studyx.turn.call_fast_path' : 'studyx.turn.greeting_fast_path', {
         trace_id: input.trace_id,
         turn_id: owned.turn_id,
       })
@@ -456,7 +462,7 @@ export const processInboundTurn = new Workflow({
       decisionModel = 'policy:suppressed'
     } else if (fastPathDecision) {
       decision = fastPathDecision
-      decisionModel = GREETING_FAST_PATH_MODEL
+      decisionModel = callFastPath ? CALL_HANDOFF_FAST_PATH_MODEL : GREETING_FAST_PATH_MODEL
       timings.model_ms = 0
     } else {
       const modelStartedAt = Date.now()
@@ -540,6 +546,45 @@ export const processInboundTurn = new Workflow({
       })
       emitTimings()
       return resultFromState(state, input.trace_id)
+    }
+
+    // ---- Dispatch inmediato de la llamada reservada ----------------------
+    // Corre DESPUÉS del commit canónico y es idempotente por call_id. Un
+    // timeout o resultado ambiguo queda como dispatch_ambiguous del lado
+    // backend y lo reconcilia otro proceso: acá jamás se rediscca ni se
+    // reintenta, y el turno sigue su curso normal (el mensaje al cliente ya
+    // dice "intenta comunicarse", nunca que la llamada está conectada).
+    if (committed.call_request) {
+      const dispatchStartedAt = Date.now()
+      try {
+        const dispatched = await step(
+          'dispatch-voice-call',
+          () =>
+            dispatchCall.execute({
+              client,
+              input: {
+                call_id: committed.call_request!.call_id,
+                trace_id: input.trace_id,
+              },
+            }),
+          { maxAttempts: 1 }
+        )
+        timings.call_dispatch_ms = Date.now() - dispatchStartedAt
+        safeLog('studyx.turn.call_dispatch_result', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          call_id: committed.call_request.call_id,
+          dispatch_status: dispatched.status,
+        })
+      } catch (error) {
+        timings.call_dispatch_ms = Date.now() - dispatchStartedAt
+        safeLog('studyx.turn.call_dispatch_unconfirmed', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          call_id: committed.call_request.call_id,
+          error_code: errorCode(error),
+        })
+      }
     }
 
     if (committed.status === 'rejected' || !committed.outbound) {

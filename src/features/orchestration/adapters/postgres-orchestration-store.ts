@@ -297,21 +297,12 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
    * The current open call offer, active call and last call result, each
    * scoped to the claimed batch's own contact and conversation.
    *
-   * Only `open_offer` is real today. `active_call` and `last_call_result`
-   * are hardcoded null: `call_sessions` is owned by the sibling call-
-   * infrastructure plan and does not exist on this branch (this worktree
-   * owns only Agent A's conversational layer). These facts are wired when
-   * the sibling plan's call ledger merges — the port's `ActiveCallFact` /
-   * `LastCallResultFact` shapes are kept for that integration, but nothing
-   * here queries `call_sessions` in the meantime.
-   *
-   * The `open_offer` query itself is read-only and safe to ship, but it is
-   * currently unreachable in practice: `agent_decisions.response_type` has
-   * no `'call_offer'` value in its CHECK constraint yet (that arrives with
-   * Decision v4, tracked in the sibling `005-agent-a-b-communication` plan).
-   * No producer in this codebase can write such a row today, so this query
-   * returns null until that migration lands — see task-2 report for the
-   * open NEEDS_CONTEXT finding.
+   * All three facts are projected from canonical rows: `open_offer` from the
+   * latest immutable `call_offer` decision (Decision v4), and the call facts
+   * from `call_sessions` — active statuses feed `active_call` (the partial
+   * unique index guarantees at most one), and the most recent terminal row
+   * feeds `last_call_result` from its structured `result` column, never from
+   * a free-form transcript.
    */
   async loadClaimedCallFacts(input: {
     contact_id: string;
@@ -328,12 +319,36 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
       LIMIT 1
     `;
 
+    const activeRows = await this.db<Array<{ id: string; status: string }>>`
+      SELECT id, status
+      FROM call_sessions
+      WHERE contact_id = ${input.contact_id}::uuid
+        AND conversation_id = ${input.conversation_id}::uuid
+        AND status IN ('requested', 'dispatching', 'provider_accepted', 'dispatch_ambiguous', 'in_progress')
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+
+    const terminalRows = await this.db<Array<{ id: string; result: string | null; ended_at: Date }>>`
+      SELECT id, result, COALESCE(completed_at, updated_at) AS ended_at
+      FROM call_sessions
+      WHERE contact_id = ${input.contact_id}::uuid
+        AND conversation_id = ${input.conversation_id}::uuid
+        AND status IN ('completed', 'failed', 'no_answer', 'timed_out', 'cancelled')
+      ORDER BY COALESCE(completed_at, updated_at) DESC
+      LIMIT 1
+    `;
+
     const offer = offerRows[0];
+    const active = activeRows[0];
+    const terminal = terminalRows[0];
 
     return {
       open_offer: offer ? { decision_id: offer.decision_id, offered_at: offer.offered_at.toISOString() } : null,
-      active_call: null,
-      last_call_result: null,
+      active_call: active ? { call_id: active.id, status: active.status } : null,
+      last_call_result: terminal
+        ? { call_id: terminal.id, result: terminal.result, ended_at: terminal.ended_at.toISOString() }
+        : null,
     };
   }
 

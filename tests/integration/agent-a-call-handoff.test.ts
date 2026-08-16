@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
+import { dispatchCall } from '@/features/calls/application/dispatch-call';
+import { PostgresCallStore } from '@/features/calls/adapters/postgres-call-store';
+import { PostgresContextReceiptStore } from '@/features/calls/adapters/postgres-context-receipt-store';
+import { TelegramSimVoiceProvider } from '@/features/calls/adapters/telegram-sim-voice.provider';
+import type { TelegramSendMessageInput } from '@/features/calls/adapters/telegram-bot-api.client';
 import { openLocalTestDatabase } from '../helpers/db';
 import { processInboundMessage, type InboundEnvelope } from '@/lib/services/ingestion.service';
 import { commitAgentDecision, DecisionPolicyError } from '@/lib/services/decision.service';
@@ -291,5 +296,69 @@ run('agent a call handoff — refusals reserve nothing', () => {
 
     const secondTurn = await seedTurn(identity, 'Llamame ya');
     await expectRejected(secondTurn, callConfirmation('direct_request'), 'ACTIVE_CALL_IN_PROGRESS');
+  });
+});
+
+run('agent a → agent b end to end', () => {
+  it('dispatches the reserved call to Telegram B with a verifiable context hash', async () => {
+    // Identidad sandbox: sandbox_identities exige el prefijo sintético +999.
+    const identity: Identity = {
+      ...newIdentity(),
+      phone: `+999${Math.floor(10_000_000 + Math.random() * 89_999_999).toString().padStart(10, '0')}`,
+    };
+    const turnId = await seedTurn(identity, 'Llamame ahora');
+    const committed = await commit(turnId, callConfirmation('direct_request'));
+    const callId = committed.call_request!.call_id;
+
+    const contactRows = await db!<Array<{ contact_id: string }>>`
+      SELECT contact_id FROM messages WHERE id = ${turnId}::uuid
+    `;
+    const userId = `user-${randomUUID()}`;
+    const chatId = `chat-${randomUUID()}`;
+    await db!`
+      INSERT INTO sandbox_identities (provider, external_user_id, contact_id, synthetic_phone)
+      VALUES ('telegram_sandbox', ${userId}, ${contactRows[0].contact_id}::uuid, ${identity.phone})
+    `;
+
+    const receipts = new PostgresContextReceiptStore(db!, {
+      expectedChatId: chatId,
+      expectedUserId: userId,
+    });
+    await receipts.registerBinding({ chatId, userId, startedAt: new Date().toISOString() });
+    const telegram = {
+      sendMessage: vi.fn(async (input: TelegramSendMessageInput) => {
+        void input;
+        return { messageId: '99', acceptedAt: new Date().toISOString() };
+      }),
+      answerCallbackQuery: vi.fn(async () => undefined),
+    };
+    const provider = new TelegramSimVoiceProvider({
+      receipts,
+      destinationResolver: receipts,
+      telegram,
+      nonce: () => `nonce_${callId.replaceAll('-', '').slice(0, 16)}`,
+    });
+    const store = new PostgresCallStore(db!);
+
+    const first = await dispatchCall({ callId, workerId: 'e2e-1' }, { store, provider });
+    expect(first.status).toBe('provider_accepted');
+    const replay = await dispatchCall({ callId, workerId: 'e2e-replay' }, { store, provider });
+    expect(replay).toEqual(first);
+    expect(telegram.sendMessage).toHaveBeenCalledTimes(1);
+
+    // B's receipt proves it loaded exactly the persisted context: the ack's
+    // hash is recomputed from the transported payload and must match the
+    // session's stored hash byte for byte.
+    const evidence = await db!<Array<{ receipt_hash: string; session_hash: string; status: string }>>`
+      SELECT encode(r.context_hash, 'hex') AS receipt_hash,
+             encode(s.context_hash, 'hex') AS session_hash,
+             s.status
+      FROM call_context_receipts AS r
+      JOIN call_sessions AS s ON s.id = r.call_id
+      WHERE r.call_id = ${callId}::uuid
+    `;
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0].receipt_hash).toBe(evidence[0].session_hash);
+    expect(evidence[0].status).toBe('provider_accepted');
   });
 });
