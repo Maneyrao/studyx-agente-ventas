@@ -475,6 +475,16 @@ export const CommitDecisionResponseSchema = z.object({
     })
     .nullable()
     .default(null),
+  // Presente exactamente cuando la decisión reservó una llamada. En replay
+  // trae el mismo call_id de la primera reserva; el workflow despacha por
+  // call_id y nunca conoce el teléfono.
+  call_request: z
+    .object({
+      call_id: z.string().uuid(),
+      status: z.literal('requested'),
+    })
+    .nullable()
+    .default(null),
 })
 
 export type CommitDecisionResponse = z.infer<typeof CommitDecisionResponseSchema>

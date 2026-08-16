@@ -22,6 +22,12 @@ import {
   parseDecisionAnyVersion,
   type DecisionV4,
 } from '@/features/orchestration/domain/decision-v4';
+import {
+  CallRequestRejectedError,
+  findCallRequestByTurn,
+  reserveCallForDecision,
+  type ReservedCallRequest,
+} from '@/features/calls/application/request-call';
 
 /**
  * The wire accepts every frozen schema version. Each one is a strict superset
@@ -66,6 +72,12 @@ export interface CommitDecisionResult {
      */
     delivery_attempt: number;
   } | null;
+  /**
+   * Present exactly when this decision reserved a call. On replay it carries
+   * the same call_id the first commit reserved — the workflow can dispatch
+   * with it idempotently, and never learns the phone number.
+   */
+  call_request: ReservedCallRequest | null;
 }
 
 export class DecisionConflictError extends Error {
@@ -202,7 +214,8 @@ function decisionPayload(input: CommitDecisionInput) {
 function duplicateDecisionResult(
   existing: DecisionRow,
   input: CommitDecisionInput,
-  payloadHash: string
+  payloadHash: string,
+  callRequest: ReservedCallRequest | null
 ): CommitDecisionResult {
   if (existing.payload_hash_hex !== payloadHash) throw new DecisionConflictError();
   return {
@@ -218,6 +231,7 @@ function duplicateDecisionResult(
       status: mapDeliveryState(existing.delivery_state),
       delivery_attempt: Number(existing.delivery_attempt ?? 1),
     } : null,
+    call_request: callRequest,
   };
 }
 
@@ -242,7 +256,10 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
   try {
     return await withSerializableTransaction(async (db) => {
       const existing = await loadDecision(validatedInput.turn_id, db);
-      if (existing) return duplicateDecisionResult(existing, validatedInput, payloadHash);
+      if (existing) {
+        const replayedCall = await findCallRequestByTurn(db, validatedInput.turn_id);
+        return duplicateDecisionResult(existing, validatedInput, payloadHash, replayedCall);
+      }
 
     const turn = await loadTurnPolicy(validatedInput.turn_id, db);
     turnContext = turn;
@@ -292,6 +309,37 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     `;
     const decisionId = inserted[0].id;
     let outbound: CommitDecisionResult['outbound'] = null;
+
+    // Reserva atómica: la sesión de llamada, su consentimiento derivado y el
+    // evento `requested` viven o mueren con la decisión. Ninguna llamada de
+    // red ocurre acá — el dispatch corre después del commit, por call_id.
+    let callRequest: ReservedCallRequest | null = null;
+    if (
+      decision.schema_version === 4
+      && decision.business_action?.type === 'request_call_now'
+    ) {
+      try {
+        callRequest = await reserveCallForDecision(db, {
+          turn_id: validatedInput.turn_id,
+          trace_id: validatedInput.trace_id,
+          decision_id: decisionId,
+          contact_id: turn.contact_id,
+          conversation_id: turn.conversation_id,
+          contact_name: turn.contact_name,
+          phone: turn.phone,
+          turn_text: turn.content,
+          course_of_interest: decision.business_action.course_of_interest ?? null,
+          prompt_version: validatedInput.model.prompt_version,
+        });
+      } catch (error) {
+        if (error instanceof CallRequestRejectedError) {
+          // Consentimiento no verificable => la decisión entera se rechaza.
+          // Commitear el "registré la llamada" sin sesión mentiría al cliente.
+          throw new DecisionPolicyError(error.reason);
+        }
+        throw error;
+      }
+    }
 
     if (decision.response) {
       let message: Message;
@@ -412,6 +460,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         business_action: decision.business_action?.type ?? null,
         next_state: decision.next_state,
         outbound_id: outbound?.id ?? null,
+        call_id: callRequest?.call_id ?? null,
       },
       event_key: `decision:${decisionId}:committed`,
       correlation_id: validatedInput.trace_id,
@@ -427,6 +476,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         decision_id: decisionId,
         next_state: decision.next_state,
         outbound,
+        call_request: callRequest,
       };
     });
   } catch (error) {
@@ -441,7 +491,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     return withSerializableTransaction(async (db) => {
       const existing = await loadDecision(validatedInput.turn_id, db);
       if (!existing) throw error;
-      return duplicateDecisionResult(existing, validatedInput, payloadHash);
+      const replayedCall = await findCallRequestByTurn(db, validatedInput.turn_id);
+      return duplicateDecisionResult(existing, validatedInput, payloadHash, replayedCall);
     });
   }
   };
