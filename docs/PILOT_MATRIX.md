@@ -1,7 +1,7 @@
 # Matriz de escenarios — piloto de Telegram
 
-Versión de instrucciones: **`studyx-decision-v3`**
-(`PROMPT_VERSION` en `botpress-agent/src/workflows/processInboundTurn.ts`).
+Versión de instrucciones: **`studyx-agent-a-sales-bridge-v1`**
+(`AGENT_A_PROMPT_VERSION` en `botpress-agent/src/prompts/agent-a-sales-bridge.ts`).
 Cambiar el prompt obliga a subir esa versión y a re-correr toda la matriz: una
 fila que pasó con otra versión no es evidencia de nada.
 
@@ -86,7 +86,7 @@ Copiar una fila por escenario ejecutado.
 
 | Fecha | # | Versión prompt | Esperado | Real | Latencia total (ms) | Decisión (`intent`/`kind`/`response_type`) | Herramientas (`retrieval_used`) | Estado final PG | Pass/Fail | Test de regresión creado |
 |---|---|---|---|---|---|---|---|---|---|---|
-| | | `studyx-decision-v3` | | | | | | | | |
+| | | `studyx-agent-a-sales-bridge-v1` | | | | | | | | |
 
 > **Ninguna fila de escenario está llena todavía.** Ver más abajo qué sí quedó
 > verificado y qué falta.
