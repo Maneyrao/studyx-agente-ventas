@@ -57,7 +57,14 @@ function expectedIdempotencyKey(pathname: string, body: Record<string, unknown>)
  *
  * Exact matches only. `/api/healthcheck-admin` is not `/api/health`.
  */
-const UNAUTHENTICATED_PATHS = new Set(['/api/health', '/api/ready', '/api/diagnostics']);
+const UNAUTHENTICATED_PATHS = new Set([
+  '/api/health',
+  '/api/ready',
+  '/api/diagnostics',
+  // The handler validates X-Telegram-Bot-Api-Secret-Token. This exact path
+  // must be reachable by Telegram, which cannot provide our orchestrator key.
+  '/api/webhooks/voice/telegram',
+]);
 
 export async function proxy(request: NextRequest) {
   // Vercel Cron authenticates with Authorization: Bearer CRON_SECRET inside

@@ -16,3 +16,38 @@ export const config = {
   kbResultsLimit: parsePositiveInt(process.env.KB_RESULTS_LIMIT, 5),
   kbMinSimilarity: parseFloat01(process.env.KB_MIN_SIMILARITY, 0.75),
 };
+
+export type TelegramAgentBConfig = {
+  botToken: string;
+  webhookSecret: string;
+  smokeChatId: string;
+  smokeUserId: string;
+  requestTimeoutMs: number;
+  voiceProvider: 'telegram_sandbox' | 'retell';
+};
+
+export function loadTelegramAgentBConfig(
+  environment: NodeJS.ProcessEnv = process.env,
+): TelegramAgentBConfig {
+  const required = [
+    'TELEGRAM_AGENT_B_BOT_TOKEN',
+    'TELEGRAM_AGENT_B_WEBHOOK_SECRET',
+    'TELEGRAM_AGENT_B_SMOKE_CHAT_ID',
+    'TELEGRAM_AGENT_B_SMOKE_USER_ID',
+  ] as const;
+  for (const key of required) {
+    if (!environment[key]?.trim()) throw new Error(`MISSING_AGENT_B_CONFIG:${key}`);
+  }
+  const voiceProvider = environment.VOICE_PROVIDER ?? 'telegram_sandbox';
+  if (voiceProvider !== 'telegram_sandbox' && voiceProvider !== 'retell') {
+    throw new Error('INVALID_AGENT_B_CONFIG:VOICE_PROVIDER');
+  }
+  return {
+    botToken: environment.TELEGRAM_AGENT_B_BOT_TOKEN!,
+    webhookSecret: environment.TELEGRAM_AGENT_B_WEBHOOK_SECRET!,
+    smokeChatId: environment.TELEGRAM_AGENT_B_SMOKE_CHAT_ID!,
+    smokeUserId: environment.TELEGRAM_AGENT_B_SMOKE_USER_ID!,
+    requestTimeoutMs: parsePositiveInt(environment.TELEGRAM_AGENT_B_REQUEST_TIMEOUT_MS, 5_000),
+    voiceProvider,
+  };
+}
