@@ -114,7 +114,7 @@ function isOneOf<const T extends readonly string[]>(
 
 const ISO_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
-function parseBusinessAction(value: unknown): BusinessAction | null {
+export function parseBusinessAction(value: unknown): BusinessAction | null {
   if (value === null) return null;
   if (!isRecord(value) || !isOneOf(value.type, BUSINESS_ACTION_TYPES)) {
     throw new DecisionValidationError('INVALID_BUSINESS_ACTION');

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { InboundEnvelopeSchema } from '@/lib/contracts/inbound-envelope';
-import { CallEventSchema } from '@/lib/contracts/call-event';
+import { CallEventAnySchema } from '@/lib/contracts/call-event';
 
 const REPO_ROOT = process.cwd();
 const ENVELOPE_DIR = join(REPO_ROOT, 'tests/fixtures/canonical-envelopes');
@@ -61,7 +61,7 @@ describe('canonical envelope — fixture verdict matches file-name convention', 
 });
 
 describe('call event — fixture verdict matches file-name convention', () => {
-  const rows = classify(CallEventSchema, CALL_EVENT_DIR);
+  const rows = classify(CallEventAnySchema, CALL_EVENT_DIR);
 
   it('has at least six fixtures (valid + invalid)', () => {
     expect(rows.length).toBeGreaterThanOrEqual(6);

@@ -177,10 +177,22 @@ describe('catalog response parity', () => {
 });
 
 describe('decision schema parity', () => {
-  it('the agent produces v3 and cannot emit a human handoff', () => {
+  it('the agent produces v3/v4 and cannot emit a human handoff', () => {
     const block = schemaBlock('DecisionSchema');
-    expect(block).toContain('schema_version: z.literal(3)');
+    expect(block).toContain('schema_version: z.union([z.literal(3), z.literal(4)])');
     expect(block).toContain('retrieval_used');
+
+    // El protocolo de llamada v4 queda gateado por versión y por acción:
+    // call_offer sin side effect, call_confirmation ⇔ request_call_now.
+    expect(block).toContain('CALL_PROTOCOL_REQUIRES_V4');
+    expect(block).toContain('INVALID_CALL_OFFER');
+    expect(block).toContain('INVALID_CALL_REQUEST');
+
+    const callAction = schemaBlock('RequestCallNowActionSchema');
+    expect(callAction).toContain('request_call_now');
+    expect(callAction).toContain("z.enum(['direct_request', 'accepted_offer'])");
+    expect(callAction).toContain('.strict()');
+    expect(callAction).not.toMatch(/phone|contact_id|call_id:|provider_call_id|consent/i);
 
     // `escalate_to_human` must be unreachable from the producer side. The
     // backend refuses it too, but an agent that cannot express it never spends

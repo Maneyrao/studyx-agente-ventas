@@ -15,17 +15,22 @@ import {
   type DecisionV2,
 } from '@/features/orchestration/domain/decision';
 import {
-  assertBusinessActionPermitted,
-  parseDecisionAny,
   type DecisionV3,
 } from '@/features/orchestration/domain/decision-v3';
+import {
+  assertDecisionBusinessActionPermitted,
+  parseDecisionAnyVersion,
+  type DecisionV4,
+} from '@/features/orchestration/domain/decision-v4';
 
 /**
- * The wire accepts both schema versions. v3 is a strict superset of v2, so a
- * v2 producer keeps working unchanged while Botpress moves to v3 — which is
- * the whole point of making the migration additive instead of a flag day.
+ * The wire accepts every frozen schema version. Each one is a strict superset
+ * of the previous, so an older producer keeps working unchanged while
+ * Botpress migrates — the whole point of making each migration additive
+ * instead of a flag day. v4 adds the call protocol (call_offer,
+ * call_confirmation, request_call_now).
  */
-export type AnyDecision = DecisionV2 | DecisionV3;
+export type AnyDecision = DecisionV2 | DecisionV3 | DecisionV4;
 
 function retrievalUsedOf(decision: AnyDecision) {
   return 'retrieval_used' in decision ? decision.retrieval_used : null;
@@ -219,12 +224,10 @@ function duplicateDecisionResult(
 export async function commitAgentDecision(input: CommitDecisionInput): Promise<CommitDecisionResult> {
   let decision: AnyDecision;
   try {
-    decision = parseDecisionAny(input.decision);
+    decision = parseDecisionAnyVersion(input.decision);
     // The backend keeps the final word: Botpress validates the same rule, but
     // an agent that skips or misreads it must still be unable to commit.
-    assertBusinessActionPermitted(
-      'business_action' in decision ? decision.business_action : null
-    );
+    assertDecisionBusinessActionPermitted(decision);
   } catch (error) {
     if (error instanceof DecisionValidationError) {
       throw new DecisionPolicyError(error.code);

@@ -107,15 +107,51 @@ export const RetrievalUsedSchema = z.object({
   summary_version: z.number().int().nonnegative().nullable(),
 }).strict()
 
+/**
+ * Decision v4 call protocol, additive over v3. `call_offer` proposes a call
+ * and waits; `call_confirmation` + `request_call_now` asks the backend for
+ * one. The action never carries identity (phone, contact_id, call_id,
+ * provider IDs, consent evidence) — `.strict()` rejects any such field, and
+ * the backend derives all of it from the canonical turn.
+ */
+export const RequestCallNowActionSchema = z.object({
+  type: z.literal('request_call_now'),
+  reason: z.enum(['direct_request', 'accepted_offer']),
+  course_of_interest: z.string().min(1).max(128).optional(),
+}).strict()
+
+export const DecisionBusinessActionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('mark_hot_lead'), score: z.number().min(0).max(1) }).strict(),
+  z.object({
+    type: z.literal('log_objection'),
+    objection_key: z.string().min(1).max(128),
+    quote: z.string().min(1).max(1024),
+  }).strict(),
+  RequestCallNowActionSchema,
+])
+
+export const DecisionResponseTypeSchema = z.enum([
+  'social_reply',
+  'commercial_reply',
+  'clarification',
+  'complaint_ack',
+  'automation_only',
+  'opt_out_ack',
+  'out_of_scope',
+  'technical_fallback',
+  'call_offer',
+  'call_confirmation',
+])
+
 export const DecisionSchema = z.object({
-  schema_version: z.literal(3),
+  schema_version: z.union([z.literal(3), z.literal(4)]),
   intent: IntentSchema,
   kind: z.enum(['reply', 'clarify', 'suppress']),
   response: z.string().min(1).max(4096).nullable(),
-  response_type: ResponseTypeSchema.nullable(),
+  response_type: DecisionResponseTypeSchema.nullable(),
   confidence: z.number().min(0).max(1),
   reason_code: z.string().min(1).max(128),
-  business_action: BusinessActionSchema.nullable(),
+  business_action: DecisionBusinessActionSchema.nullable(),
   memory_candidates: z.array(MemoryCandidateSchema).max(10),
   missing_information: z.array(z.string().min(1).max(128)).max(20),
   next_state: z.enum(['completed', 'waiting_user']),
@@ -163,6 +199,21 @@ export const DecisionSchema = z.object({
     && (decision.response_type !== 'automation_only' || decision.next_state !== 'waiting_user')
   ) {
     context.addIssue({ code: 'custom', message: 'INVALID_HUMAN_REQUEST' })
+  }
+  // Reglas v4: el protocolo de llamada no existe por debajo de schema 4.
+  const requestsCall = decision.business_action?.type === 'request_call_now'
+  const isCallResponse = decision.response_type === 'call_offer' || decision.response_type === 'call_confirmation'
+  if (decision.schema_version !== 4 && (requestsCall || isCallResponse)) {
+    context.addIssue({ code: 'custom', message: 'CALL_PROTOCOL_REQUIRES_V4' })
+  }
+  if (
+    decision.response_type === 'call_offer'
+    && (decision.business_action !== null || decision.kind !== 'reply' || decision.next_state !== 'waiting_user')
+  ) {
+    context.addIssue({ code: 'custom', message: 'INVALID_CALL_OFFER' })
+  }
+  if (requestsCall !== (decision.response_type === 'call_confirmation')) {
+    context.addIssue({ code: 'custom', message: 'INVALID_CALL_REQUEST' })
   }
 })
 

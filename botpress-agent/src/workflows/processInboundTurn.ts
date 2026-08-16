@@ -156,7 +156,10 @@ function normalizeDecision(decision: Decision, claimed: ClaimedTurn): Decision {
     return suppress('INVALID_DECISION_SHAPE')
   }
 
-  if (!claimed.policy.allowed_response_types.includes(decision.response_type)) {
+  // El claim publica sólo los 8 response types conversacionales; los de
+  // llamada (call_offer/call_confirmation) nunca llegan por esta vía, así que
+  // una decisión del modelo que los use queda suprimida acá.
+  if (!(claimed.policy.allowed_response_types as string[]).includes(decision.response_type)) {
     return suppress('RESPONSE_TYPE_NOT_ALLOWED')
   }
 

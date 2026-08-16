@@ -1,0 +1,19 @@
+{
+  "schema_version": 2,
+  "event_id": "studyx:evt:requested:9c858901-8a57-4791-81fe-4c483003b3c2",
+  "call_id": "9c858901-8a57-4791-81fe-4c483003b3c2",
+  "trace_id": "0d4f2f6e-9f6e-4b53-9a89-64c8f31c2b11",
+  "provider_call_id": null,
+  "event_type": "requested",
+  "sequence": 0,
+  "occurred_at": "2026-08-16T15:35:58.000-03:00",
+  "provider": "telegram_sandbox",
+  "payload": {
+    "event_type": "requested",
+    "contact_id": "3f7d3c62-08a5-4a86-b7fb-3e7dd7f0a9b1",
+    "conversation_id": "b8d0a3fa-25c1-4a5b-9f0f-40d3e2c25c8e",
+    "reason": "accepted_offer",
+    "course_of_interest": "Python",
+    "previous_summary": null
+  }
+}
