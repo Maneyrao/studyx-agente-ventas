@@ -1,8 +1,13 @@
 import { evaluateTurnPolicy, type TurnPolicy } from '../domain/turn-policy';
 import { capRetrievedItems } from '../domain/retrieved-context';
+import { classifyDeterministicSalesSignal } from '../domain/sales-signal';
+import { evaluateCallOfferPolicy } from '../domain/call-offer-policy';
 import type {
+  ActiveCallFact,
   BatchMessage,
+  ClaimedCallFacts,
   ClaimOutcome,
+  LastCallResultFact,
   OrchestrationStore,
   RecentTurn,
 } from '../ports/orchestration-store';
@@ -34,6 +39,8 @@ export interface ClaimBatchDependencies {
   readonly knowledge: KnowledgeRetriever;
   readonly limits: ContextLimits;
   readonly log?: (event: string, fields: Record<string, unknown>) => void;
+  /** Clock for the call-offer policy's offer-expiry and cooldown math. Defaults to the real time. */
+  readonly now?: () => string;
 }
 
 export interface ContextLimits {
@@ -66,6 +73,26 @@ export interface ClaimBatchInput {
   readonly batch_id: string;
   readonly claimed_by: string;
   readonly trace_id: string;
+}
+
+/**
+ * The controlled sales/call context handed to Agent A on every claimed turn.
+ *
+ * `allowed_actions` is the only thing this shape grants — it is always the
+ * pure call-offer policy's output, never re-derived or widened here. `mode`
+ * is a coarse label over the same underlying facts (open offer, active call,
+ * last call result) so the prompt can describe where the conversation is
+ * without re-deriving it. `course_of_interest` has no source in this task:
+ * a later task lets Agent A's own decision supply it, so it stays `null`
+ * until then — inventing a heuristic for it here would be a guess, not a fact.
+ */
+export interface ClaimedSalesContext {
+  readonly mode: 'advising' | 'awaiting_call_consent' | 'call_pending' | 'in_call' | 'post_call';
+  readonly course_of_interest: string | null;
+  readonly open_call_offer: { readonly decision_id: string; readonly expires_at: string } | null;
+  readonly active_call: { readonly call_id: string; readonly status: string } | null;
+  readonly allowed_actions: Array<'offer_call' | 'request_call_now'>;
+  readonly last_call_result: { readonly call_id: string; readonly result: string | null; readonly ended_at: string } | null;
 }
 
 export interface ClaimedTurn {
@@ -105,6 +132,7 @@ export interface ClaimedTurn {
     /** Retrieved documents that tried to read as instructions. */
     readonly injection_suspected_count: number;
   };
+  readonly sales_context: ClaimedSalesContext;
   readonly existing_result: {
     readonly decision_id: string;
     readonly outbound_id: string | null;
@@ -149,6 +177,74 @@ function retrievalQuery(messages: BatchMessage[]): string {
     .trim();
 }
 
+/**
+ * A call in one of the ledger's active statuses is `in_progress` (the call is
+ * actually connected) or one of the other active statuses (still being set
+ * up). Everything else about the status string is opaque to this layer.
+ */
+function deriveSalesMode(input: {
+  activeCall: ActiveCallFact | null;
+  openCallOffer: { decision_id: string; expires_at: string } | null;
+  lastCallResult: LastCallResultFact | null;
+}): ClaimedSalesContext['mode'] {
+  if (input.activeCall) {
+    return input.activeCall.status === 'in_progress' ? 'in_call' : 'call_pending';
+  }
+  if (input.openCallOffer) return 'awaiting_call_consent';
+  // A call happened and nothing newer (offer or call) has started since.
+  // The turn that actually delivers the handback is a later task's job; this
+  // context only reports that the most recent sales event was a finished call.
+  if (input.lastCallResult) return 'post_call';
+  return 'advising';
+}
+
+/**
+ * Combine the raw call facts with the deterministic policy from Task 1 into
+ * the bounded shape Agent A is allowed to see. This is the only place that
+ * calls `evaluateCallOfferPolicy` — the adapter never touches policy, and the
+ * policy itself never touches SQL.
+ */
+function buildSalesContext(input: {
+  callFacts: ClaimedCallFacts;
+  currentMessageText: string;
+  consentRevoked: boolean;
+  blocked: boolean;
+  now: string;
+}): ClaimedSalesContext {
+  const signal = classifyDeterministicSalesSignal(input.currentMessageText);
+  const policyResult = evaluateCallOfferPolicy({
+    now: input.now,
+    signal,
+    openOffer: input.callFacts.open_offer
+      ? { decisionId: input.callFacts.open_offer.decision_id, offeredAt: input.callFacts.open_offer.offered_at }
+      : null,
+    // No decline is persisted anywhere queried in this task's scope — only
+    // `call_offer` decisions and `call_sessions` rows are loaded, so cooldown
+    // enforcement across turns is a later task's job.
+    lastDeclineAt: null,
+    optedOut: input.consentRevoked,
+    blocked: input.blocked,
+    activeCall: input.callFacts.active_call !== null,
+  });
+
+  const openCallOffer = policyResult.openOffer
+    ? { decision_id: policyResult.openOffer.decisionId, expires_at: policyResult.openOffer.expiresAt }
+    : null;
+
+  return {
+    mode: deriveSalesMode({
+      activeCall: input.callFacts.active_call,
+      openCallOffer,
+      lastCallResult: input.callFacts.last_call_result,
+    }),
+    course_of_interest: null,
+    open_call_offer: openCallOffer,
+    active_call: input.callFacts.active_call,
+    allowed_actions: policyResult.allowedActions,
+    last_call_result: input.callFacts.last_call_result,
+  };
+}
+
 export async function claimBatch(
   input: ClaimBatchInput,
   deps: ClaimBatchDependencies
@@ -176,12 +272,16 @@ export async function claimBatch(
     };
   }
 
-  const [facts, batchMessages] = await Promise.all([
+  const [facts, batchMessages, callFacts] = await Promise.all([
     store.loadClaimedTurnFacts({
       batch_id: claim.batch_id,
       recent_turns_limit: limits.recentTurns,
     }),
     store.listBatchMessages(claim.batch_id),
+    // Scoped to this batch's own contact and conversation, same as every
+    // other claim-time read. A database outage here is fatal, like any other
+    // store call — it is deliberately not wrapped in try/catch.
+    store.loadClaimedCallFacts({ contact_id: claim.contact_id!, conversation_id: claim.conversation_id! }),
   ]);
 
   if (!facts) throw new BatchFactsMissingError(claim.batch_id);
@@ -278,6 +378,17 @@ export async function claimBatch(
     }
   }
 
+  const salesContext = buildSalesContext({
+    callFacts,
+    // The customer's most recent message in this batch is what the sales
+    // signal classifies — joining the whole burst would blur an unambiguous
+    // short reply ("sí") into a longer string the classifier must not guess at.
+    currentMessageText: batchMessages.at(-1)?.content ?? '',
+    consentRevoked: facts.contact.consent_status === 'revoked',
+    blocked: policy.blocked,
+    now: (deps.now ?? (() => new Date().toISOString()))(),
+  });
+
   log('orchestration.claim.claimed', {
     trace_id: input.trace_id,
     batch_id: claim.batch_id,
@@ -326,6 +437,7 @@ export async function claimBatch(
       knowledge_base_dropped,
       injection_suspected_count,
     },
+    sales_context: salesContext,
     existing_result: facts.existing_decision
       ? {
           decision_id: facts.existing_decision.decision_id,

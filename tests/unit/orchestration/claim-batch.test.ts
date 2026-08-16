@@ -7,6 +7,7 @@ import {
 } from '@/features/orchestration/application/claim-batch';
 import type {
   BatchClaim,
+  ClaimedCallFacts,
   ClaimedTurnFacts,
   OrchestrationStore,
 } from '@/features/orchestration/ports/orchestration-store';
@@ -56,11 +57,22 @@ function facts(overrides: Partial<ClaimedTurnFacts> = {}): ClaimedTurnFacts {
   };
 }
 
+function callFacts(overrides: Partial<ClaimedCallFacts> = {}): ClaimedCallFacts {
+  return {
+    open_offer: null,
+    active_call: null,
+    last_call_result: null,
+    ...overrides,
+  };
+}
+
 function buildDeps(options: {
   claimResult?: BatchClaim;
   factsResult?: ClaimedTurnFacts | null;
+  callFactsResult?: ClaimedCallFacts;
   memory?: ClaimBatchDependencies['memory'];
   knowledge?: ClaimBatchDependencies['knowledge'];
+  now?: () => string;
 } = {}): ClaimBatchDependencies & { store: OrchestrationStore } {
   const store: OrchestrationStore = {
     openOrJoinBatch: vi.fn(),
@@ -73,6 +85,7 @@ function buildDeps(options: {
     loadClaimedTurnFacts: vi
       .fn()
       .mockResolvedValue(options.factsResult === undefined ? facts() : options.factsResult),
+    loadClaimedCallFacts: vi.fn().mockResolvedValue(options.callFactsResult ?? callFacts()),
     expireStaleClaims: vi.fn(),
   };
 
@@ -81,6 +94,7 @@ function buildDeps(options: {
     memory: options.memory ?? { search: vi.fn().mockResolvedValue([]) },
     knowledge: options.knowledge ?? { search: vi.fn().mockResolvedValue([]) },
     limits: DEFAULT_CONTEXT_LIMITS,
+    now: options.now,
   };
 }
 
@@ -120,6 +134,7 @@ describe('claimBatch', () => {
       expect(knowledge.search).not.toHaveBeenCalled();
       expect(deps.store.loadClaimedTurnFacts).not.toHaveBeenCalled();
       expect(deps.store.listBatchMessages).not.toHaveBeenCalled();
+      expect(deps.store.loadClaimedCallFacts).not.toHaveBeenCalled();
     }
   );
 
@@ -282,5 +297,165 @@ describe('claimBatch', () => {
 
     if (result.outcome !== 'claimed') throw new Error('expected a claim');
     expect(result.batch.stolen).toBe(true);
+  });
+});
+
+describe('claimBatch sales_context', () => {
+  it('defaults to advising with no open offer, no active call and no history', async () => {
+    const deps = buildDeps();
+    const result = await claimBatch(input, deps);
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    // The double's last batch message ("¿cuánto sale el curso?") settles
+    // nothing on its own, so the policy is free to offer.
+    expect(result.sales_context).toEqual({
+      mode: 'advising',
+      course_of_interest: null,
+      open_call_offer: null,
+      active_call: null,
+      allowed_actions: ['offer_call'],
+      last_call_result: null,
+    });
+  });
+
+  it('scopes the call facts read to the claimed batch\'s own contact and conversation', async () => {
+    const deps = buildDeps();
+    await claimBatch(input, deps);
+
+    expect(deps.store.loadClaimedCallFacts).toHaveBeenCalledWith({
+      contact_id: 'contact-1',
+      conversation_id: 'conversation-1',
+    });
+  });
+
+  it('surfaces a live open offer as awaiting_call_consent', async () => {
+    const deps = buildDeps({
+      callFactsResult: callFacts({
+        open_offer: { decision_id: 'decision-offer-1', offered_at: '2026-08-11T11:58:00.000Z' },
+      }),
+      now: () => '2026-08-11T12:00:00.000Z',
+    });
+
+    const result = await claimBatch(input, deps);
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+    expect(result.sales_context.mode).toBe('awaiting_call_consent');
+    expect(result.sales_context.open_call_offer).toEqual({
+      decision_id: 'decision-offer-1',
+      expires_at: '2026-08-11T12:13:00.000Z',
+    });
+    // The current message is an unrelated question, not a settling reply,
+    // so no action is granted while the offer is still pending a response.
+    expect(result.sales_context.allowed_actions).toEqual([]);
+  });
+
+  it('lets an expired offer fall back to advising and eligible for a new one', async () => {
+    const deps = buildDeps({
+      callFactsResult: callFacts({
+        open_offer: { decision_id: 'decision-offer-1', offered_at: '2026-08-11T11:00:00.000Z' },
+      }),
+      now: () => '2026-08-11T12:00:00.000Z',
+    });
+
+    const result = await claimBatch(input, deps);
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+    expect(result.sales_context.mode).toBe('advising');
+    expect(result.sales_context.open_call_offer).toBeNull();
+    expect(result.sales_context.allowed_actions).toEqual(['offer_call']);
+  });
+
+  it('grants request_call_now for a direct call request regardless of any offer', async () => {
+    const deps = buildDeps();
+    deps.store.listBatchMessages = vi.fn().mockResolvedValue([
+      { id: 'm1', conversation_seq: 1, content: 'llamame por favor', created_at: '2026-08-11T12:00:00.000Z', message_type: 'text' },
+    ]);
+
+    const result = await claimBatch(input, deps);
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+    expect(result.sales_context.allowed_actions).toEqual(['request_call_now']);
+  });
+
+  it('reports in_call and grants no sales action while a call is connected', async () => {
+    const deps = buildDeps({
+      callFactsResult: callFacts({ active_call: { call_id: 'call-1', status: 'in_progress' } }),
+    });
+
+    const result = await claimBatch(input, deps);
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+    expect(result.sales_context.mode).toBe('in_call');
+    expect(result.sales_context.active_call).toEqual({ call_id: 'call-1', status: 'in_progress' });
+    expect(result.sales_context.allowed_actions).toEqual([]);
+  });
+
+  it('reports call_pending for a call still being set up', async () => {
+    const deps = buildDeps({
+      callFactsResult: callFacts({ active_call: { call_id: 'call-1', status: 'dispatching' } }),
+    });
+
+    const result = await claimBatch(input, deps);
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+    expect(result.sales_context.mode).toBe('call_pending');
+    expect(result.sales_context.allowed_actions).toEqual([]);
+  });
+
+  it('reports post_call when the most recent sales event was a finished call', async () => {
+    const deps = buildDeps({
+      callFactsResult: callFacts({
+        last_call_result: { call_id: 'call-1', result: 'interested', ended_at: '2026-08-11T11:30:00.000Z' },
+      }),
+    });
+
+    const result = await claimBatch(input, deps);
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+    expect(result.sales_context.mode).toBe('post_call');
+    expect(result.sales_context.last_call_result).toEqual({
+      call_id: 'call-1',
+      result: 'interested',
+      ended_at: '2026-08-11T11:30:00.000Z',
+    });
+    // Nothing newer than the finished call has started, but the policy still
+    // decides whether a new offer may be made.
+    expect(result.sales_context.allowed_actions).toEqual(['offer_call']);
+  });
+
+  it('never grants a sales action for a blocked contact', async () => {
+    const deps = buildDeps({
+      factsResult: facts({ contact: { ...facts().contact, lifecycle_status: 'blocked' } }),
+    });
+
+    const result = await claimBatch(input, deps);
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+    expect(result.sales_context.allowed_actions).toEqual([]);
+  });
+
+  it('never grants a sales action once consent is revoked', async () => {
+    const deps = buildDeps({
+      factsResult: facts({ contact: { ...facts().contact, consent_status: 'revoked' } }),
+    });
+
+    const result = await claimBatch(input, deps);
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+    expect(result.sales_context.allowed_actions).toEqual([]);
+  });
+
+  it('never grants a sales action while a call is already active, even on a direct request', async () => {
+    const deps = buildDeps({
+      callFactsResult: callFacts({ active_call: { call_id: 'call-1', status: 'in_progress' } }),
+    });
+    deps.store.listBatchMessages = vi.fn().mockResolvedValue([
+      { id: 'm1', conversation_seq: 1, content: 'llamame ahora', created_at: '2026-08-11T12:00:00.000Z', message_type: 'text' },
+    ]);
+
+    const result = await claimBatch(input, deps);
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+    expect(result.sales_context.allowed_actions).toEqual([]);
   });
 });

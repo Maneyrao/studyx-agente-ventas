@@ -119,6 +119,45 @@ describe('claim response parity', () => {
       expect(block, `UnclaimedTurnSchema must declare ${outcome}`).toContain(`'${outcome}'`);
     }
   });
+
+  it('declares sales_context, the bounded call context handed to Agent A on every claim', () => {
+    const salesContextSample: ClaimedTurn['sales_context'] = {
+      mode: 'advising',
+      course_of_interest: null,
+      open_call_offer: null,
+      active_call: null,
+      allowed_actions: ['offer_call'],
+      last_call_result: null,
+    };
+
+    const claimedBlock = schemaBlock('ClaimedTurnSchema');
+    expect(claimedBlock, 'ClaimedTurnSchema must declare sales_context').toContain('sales_context:');
+
+    const salesContextBlock = schemaBlock('SalesContextSchema');
+    for (const key of Object.keys(salesContextSample)) {
+      expect(salesContextBlock, `SalesContextSchema must declare ${key}`).toContain(`${key}:`);
+    }
+
+    // Every mode and allowed action the application layer can produce must be
+    // representable — a narrower ADK enum would reject a real claimed turn.
+    for (const mode of [
+      'advising',
+      'awaiting_call_consent',
+      'call_pending',
+      'in_call',
+      'post_call',
+    ]) {
+      expect(salesContextBlock, `SalesContextSchema mode must allow ${mode}`).toContain(`'${mode}'`);
+    }
+    for (const action of ['offer_call', 'request_call_now']) {
+      expect(salesContextBlock, `SalesContextSchema allowed_actions must allow ${action}`).toContain(
+        `'${action}'`
+      );
+    }
+
+    // Never a phone, credential, transcript or unbounded call analysis.
+    expect(salesContextBlock).not.toMatch(/phone|credential|transcript|analysis/i);
+  });
 });
 
 describe('catalog response parity', () => {
