@@ -117,7 +117,11 @@ export interface BusinessContextLimits {
 }
 
 export const DEFAULT_BUSINESS_CONTEXT_LIMITS: BusinessContextLimits = {
-  maxOfferings: 12,
+  // StudyX (production) seeds exactly 14 active offerings; this bound is a
+  // prompt-size/context guard, not a catalog capacity limit, so it must stay
+  // above the largest real workspace or the catalog and agent prompt both
+  // silently drop offerings past this count. Keep headroom above 14.
+  maxOfferings: 20,
   maxTextChars: 400,
   maxSchedules: 6,
   maxQualificationFields: 12,
