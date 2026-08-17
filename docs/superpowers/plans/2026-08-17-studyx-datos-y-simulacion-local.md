@@ -410,7 +410,9 @@ git add scripts/seed-sandbox-tester.mjs
 git commit -m "feat: script de alta idempotente del tester sandbox"
 ```
 
----### Task 5: Runbook de simulación local (túnel + webhooks)
+---
+
+### Task 5: Runbook de simulación local (túnel + webhooks)
 
 **Files:**
 - Create: `docs/runbooks/simulacion-local-a-b-a.md`
