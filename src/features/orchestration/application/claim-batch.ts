@@ -412,10 +412,19 @@ export async function claimBatch(
     try {
       business_context = await deps.business.load();
       business_context_available = business_context !== null;
-      if (!business_context_available) {
+      if (business_context === null) {
         log('orchestration.claim.business_context_missing', {
           trace_id: input.trace_id,
           batch_id: claim.batch_id,
+        });
+      } else if (business_context.offerings_truncated > 0) {
+        // Silent truncation here means the agent's own prompt context is
+        // missing real courses — it can tell a customer one doesn't exist.
+        // Make the breach loud instead of a wrong answer.
+        log('orchestration.claim.business_context_truncated', {
+          trace_id: input.trace_id,
+          batch_id: claim.batch_id,
+          offerings_truncated: business_context.offerings_truncated,
         });
       }
     } catch (error) {

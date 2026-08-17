@@ -11,6 +11,7 @@ import type {
   ClaimedTurnFacts,
   OrchestrationStore,
 } from '@/features/orchestration/ports/orchestration-store';
+import type { BusinessContextView } from '@/features/orchestration/domain/business-context';
 
 /**
  * The use case is exercised entirely through its ports — no database, no HTTP.
@@ -298,6 +299,62 @@ describe('claimBatch', () => {
 
     if (result.outcome !== 'claimed') throw new Error('expected a claim');
     expect(result.batch.stolen).toBe(true);
+  });
+});
+
+function businessContextView(overrides: Partial<BusinessContextView> = {}): BusinessContextView {
+  return {
+    workspace: {
+      slug: 'studyx',
+      display_name: 'StudyX',
+      environment: 'production',
+      default_locale: 'es-AR',
+      timezone: 'America/Argentina/Buenos_Aires',
+    },
+    offerings: [],
+    qualification_fields: [],
+    injection_suspected_count: 0,
+    offerings_truncated: 0,
+    ...overrides,
+  };
+}
+
+describe('claimBatch business context', () => {
+  it('does not log a truncation event when every offering fits the cap', async () => {
+    const log = vi.fn();
+    const deps = {
+      ...buildDeps(),
+      business: { load: vi.fn().mockResolvedValue(businessContextView({ offerings_truncated: 0 })) },
+      log,
+    };
+
+    await claimBatch(input, deps);
+
+    expect(log).not.toHaveBeenCalledWith(
+      'orchestration.claim.business_context_truncated',
+      expect.anything()
+    );
+  });
+
+  it('logs when the business context silently dropped offerings past the cap, so the agent missing real courses is a detectable failure, not a silent one', async () => {
+    const log = vi.fn();
+    const deps = {
+      ...buildDeps(),
+      business: { load: vi.fn().mockResolvedValue(businessContextView({ offerings_truncated: 3 })) },
+      log,
+    };
+
+    const result = await claimBatch(input, deps);
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    // The truncated context still reaches the agent's prompt (advisory, not
+    // blocking) — but the loss must be loud.
+    expect(result.business_context?.offerings_truncated).toBe(3);
+    expect(log).toHaveBeenCalledWith('orchestration.claim.business_context_truncated', {
+      trace_id: input.trace_id,
+      batch_id: 'batch-1',
+      offerings_truncated: 3,
+    });
   });
 });
 

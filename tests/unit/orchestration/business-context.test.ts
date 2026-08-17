@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   buildBusinessCatalogView,
   buildBusinessContextView,
+  DEFAULT_BUSINESS_CONTEXT_LIMITS,
   type RawBusinessContext,
+  type RawOfferingRow,
 } from '@/features/orchestration/domain/business-context';
 import { loadBusinessWorkspaceConfig } from '@/lib/config';
 
@@ -130,6 +132,57 @@ describe('buildBusinessContextView', () => {
     expect(view.injection_suspected_count).toBeGreaterThan(0);
     // The poisoned description can never touch the price columns.
     expect(group?.price).toEqual({ amount: '85000.00', currency: 'ARS' });
+  });
+
+  it('reports zero truncation when every offering fits inside maxOfferings', () => {
+    const view = buildBusinessContextView(rawContext());
+    expect(view.offerings).toHaveLength(2);
+    expect(view.offerings_truncated).toBe(0);
+  });
+
+  it('caps offerings at maxOfferings and reports the exact truncated count — the boundary this suite exists to pin, so a future cap regression fails loudly instead of silently dropping real courses', () => {
+    const base = rawContext();
+    const template = base.offerings[0];
+    const synthetic: RawOfferingRow[] = Array.from({ length: 5 }, (_, index) => ({
+      ...template,
+      code: `synthetic_${index}`,
+      display_name: `Synthetic ${index}`,
+    }));
+    const raw: RawBusinessContext = { ...base, offerings: synthetic };
+    const limits = { ...DEFAULT_BUSINESS_CONTEXT_LIMITS, maxOfferings: 2 };
+
+    const view = buildBusinessContextView(raw, limits);
+
+    // Only the first maxOfferings survive (source query orders by code, so
+    // "first" is whatever the caller handed in) ...
+    expect(view.offerings).toHaveLength(2);
+    expect(view.offerings.map((offering) => offering.code)).toEqual(['synthetic_0', 'synthetic_1']);
+    // ... and the exact cut is counted, not swallowed.
+    expect(view.offerings_truncated).toBe(3);
+  });
+
+  it('never reports truncation when the raw offering count exactly equals maxOfferings', () => {
+    const base = rawContext();
+    const template = base.offerings[0];
+    const synthetic: RawOfferingRow[] = Array.from({ length: 3 }, (_, index) => ({
+      ...template,
+      code: `synthetic_${index}`,
+    }));
+    const raw: RawBusinessContext = { ...base, offerings: synthetic };
+    const limits = { ...DEFAULT_BUSINESS_CONTEXT_LIMITS, maxOfferings: 3 };
+
+    const view = buildBusinessContextView(raw, limits);
+
+    expect(view.offerings).toHaveLength(3);
+    expect(view.offerings_truncated).toBe(0);
+  });
+
+  it('keeps the default ceiling above the documented real StudyX catalog size, so seeding the rest of it cannot silently truncate again', () => {
+    // docs/analysis/ANALISIS-STUDYX-CONTEXTO-VS-SITIO.md records ~28 published
+    // diplomado fichas and 30 store products; the 14 seeded today are only
+    // the verified subset. This pins the regression from Task 3's fix round:
+    // a cap raised without headroom just changes the value of the same bug.
+    expect(DEFAULT_BUSINESS_CONTEXT_LIMITS.maxOfferings).toBeGreaterThanOrEqual(30);
   });
 });
 

@@ -60,8 +60,15 @@ export async function GET() {
         suspected: offerings!.injection_suspected_count,
       });
     }
-    if (view.dropped > 0) {
-      logger.info({ event: 'catalog.capped', dropped: view.dropped });
+    // Source the real truncation count from the context view, not
+    // `view.dropped`: by the time `buildBusinessCatalogView` runs here, its
+    // input was already sliced to the same `maxOfferings` bound by
+    // `buildBusinessContextView` above, so `view.dropped` can never be
+    // non-zero for this path. `offerings_truncated` is where the cut
+    // actually happens.
+    const truncated = offerings?.offerings_truncated ?? 0;
+    if (truncated > 0) {
+      logger.info({ event: 'catalog.capped', dropped: truncated });
     }
 
     return NextResponse.json(view, { status: 200 });

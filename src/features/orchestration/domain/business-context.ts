@@ -106,6 +106,13 @@ export interface BusinessContextView {
   readonly offerings: BusinessOfferingView[];
   readonly qualification_fields: QualificationFieldView[];
   readonly injection_suspected_count: number;
+  /**
+   * How many active offerings existed beyond `maxOfferings` and were cut
+   * from this view. Non-zero here means the agent's own prompt context is
+   * missing real courses — silently, unless the caller logs this count. See
+   * DEFAULT_BUSINESS_CONTEXT_LIMITS.maxOfferings for what the bound is.
+   */
+  readonly offerings_truncated: number;
 }
 
 export interface BusinessContextLimits {
@@ -117,11 +124,20 @@ export interface BusinessContextLimits {
 }
 
 export const DEFAULT_BUSINESS_CONTEXT_LIMITS: BusinessContextLimits = {
-  // StudyX (production) seeds exactly 14 active offerings; this bound is a
-  // prompt-size/context guard, not a catalog capacity limit, so it must stay
-  // above the largest real workspace or the catalog and agent prompt both
-  // silently drop offerings past this count. Keep headroom above 14.
-  maxOfferings: 20,
+  // A defensive ceiling on how many offerings enter the context, not an
+  // aggregate prompt-size check (no such check exists downstream — only the
+  // per-field maxTextChars and the other per-array caps below). Must stay
+  // above the largest real workspace's active offering count, or offerings
+  // past this count are cut from both the catalog endpoints and the agent's
+  // own prompt context. StudyX (production) currently seeds 14 verified
+  // offerings out of a documented ~28-30 course catalog
+  // (docs/analysis/ANALISIS-STUDYX-CONTEXTO-VS-SITIO.md), so 40 leaves
+  // headroom for the rest of that catalog to be seeded without silently
+  // truncating again. A breach of this bound is no longer silent: it sets
+  // BusinessContextView.offerings_truncated, which callers log (see
+  // catalog/route.ts's `catalog.capped` and claim-batch.ts's
+  // `orchestration.claim.business_context_truncated`).
+  maxOfferings: 40,
   maxTextChars: 400,
   maxSchedules: 6,
   maxQualificationFields: 12,
@@ -242,9 +258,9 @@ export function buildBusinessContextView(
 ): BusinessContextView {
   const tally: SanitizeTally = { suspected: 0 };
 
-  const offerings = raw.offerings
-    .slice(0, limits.maxOfferings)
-    .map((offering) => buildOfferingView(offering, limits, tally));
+  const cappedRawOfferings = raw.offerings.slice(0, limits.maxOfferings);
+  const offerings_truncated = raw.offerings.length - cappedRawOfferings.length;
+  const offerings = cappedRawOfferings.map((offering) => buildOfferingView(offering, limits, tally));
 
   const qualification_fields = raw.qualification_fields
     .slice()
@@ -270,6 +286,7 @@ export function buildBusinessContextView(
     offerings,
     qualification_fields,
     injection_suspected_count: tally.suspected,
+    offerings_truncated,
   };
 }
 
