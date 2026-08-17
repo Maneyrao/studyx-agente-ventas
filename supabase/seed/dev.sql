@@ -361,7 +361,7 @@ INSERT INTO offerings (
   '{"language":"Spanish","min_age":18}'::jsonb,
   '{"modality":"online","classes":38,"modules":5,"temario_publicado":true,"includes":["actividades_practicas","examenes_parciales_y_final","profesores_que_acompanan","certificado_de_academia"]}'::jsonb,
   '{"never_invent_price":true,"price_message":"El precio te lo confirma el equipo de inscripciones.","forbidden_promises":["certificación verificada","título oficial","homologación","matrícula profesional","cuotas o financiación","más de 50 diplomados","horarios de clases en vivo","política de devoluciones"]}'::jsonb,
-  '{"source_url":"/diplomado/maquillaje-profesional/","published_price_conflict":"699_vs_1200"}'::jsonb
+  '{"published_price_conflict":"699_vs_1200"}'::jsonb
 ),
 (
   'b1000000-0000-4000-8000-000000000002', 'b0000000-0000-4000-8000-000000000001',
@@ -394,7 +394,7 @@ INSERT INTO offerings (
   '{"language":"Spanish","min_age":18}'::jsonb,
   '{"modality":"online","classes":25,"temario_publicado":true,"includes":["actividades_practicas","examenes_parciales_y_final","profesores_que_acompanan","certificado_de_academia"]}'::jsonb,
   '{"never_invent_price":true,"price_message":"El precio te lo confirma el equipo de inscripciones.","forbidden_promises":["certificación verificada","título oficial","homologación","matrícula profesional","cuotas o financiación","más de 50 diplomados","horarios de clases en vivo","política de devoluciones"]}'::jsonb,
-  '{"source_url":"/diplomado/unas-gelificadas/","published_price_conflict":"699_vs_1200"}'::jsonb
+  '{"published_price_conflict":"699_vs_1200"}'::jsonb
 ),
 (
   'b1000000-0000-4000-8000-000000000005', 'b0000000-0000-4000-8000-000000000001',

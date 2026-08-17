@@ -7,6 +7,39 @@ afterAll(async () => db?.end());
 
 const WS = 'studyx-sandbox';
 
+// code -> classes, from the task brief's table B.2. Sorted keys documented as
+// the exact set of 14 offerings that must exist for this workspace.
+const EXPECTED_CLASSES: Record<string, number> = {
+  maquillaje_profesional: 38,
+  entrenamiento_funcional: 36,
+  decoracion_de_interiores: 34,
+  unas_gelificadas: 25,
+  masoterapia: 24,
+  paisajismo_jardineria: 24,
+  fotografia_profesional: 41,
+  estetica_integral: 20,
+  vino_cata_maridaje: 19,
+  nutricion_alimentacion: 16,
+  cuidador_adultos_mayores: 14,
+  barista: 12,
+  sushi_principiantes: 10,
+  depilacion_definitiva: 7,
+};
+
+const EXPECTED_CODES = Object.keys(EXPECTED_CLASSES).sort();
+
+// The eight mandated phrases from the plan's Global Constraints / análisis Parte D.2.
+const MANDATED_FORBIDDEN_PROMISES = [
+  'certificación verificada',
+  'título oficial',
+  'homologación',
+  'matrícula profesional',
+  'cuotas o financiación',
+  'más de 50 diplomados',
+  'horarios de clases en vivo',
+  'política de devoluciones',
+];
+
 run('seed studyx-sandbox', () => {
   it('crea el workspace en environment sandbox', async () => {
     const rows = await db!`SELECT environment, status FROM workspaces WHERE slug = ${WS}`;
@@ -26,6 +59,54 @@ run('seed studyx-sandbox', () => {
       expect(r.currency).toBe('USD');
       expect(r.guardrails.never_invent_price).toBe(true);
     }
+  });
+
+  it('el set exacto de 14 codes coincide con la tabla del brief', async () => {
+    const rows = await db!<Array<{ code: string }>>`
+      SELECT code FROM offerings o JOIN workspaces w ON w.id = o.workspace_id
+      WHERE w.slug = ${WS}`;
+    const actualCodes = rows.map((r) => r.code).sort();
+    expect(actualCodes).toEqual(EXPECTED_CODES);
+  });
+
+  it('delivery.classes de cada offering coincide con la tabla B.2 del brief', async () => {
+    const rows = await db!<Array<{ code: string; delivery: { classes: number } }>>`
+      SELECT code, delivery FROM offerings o JOIN workspaces w ON w.id = o.workspace_id
+      WHERE w.slug = ${WS}`;
+    expect(rows).toHaveLength(14);
+    for (const r of rows) {
+      expect(r.delivery.classes, `classes for ${r.code}`).toBe(EXPECTED_CLASSES[r.code]);
+    }
+  });
+
+  it('cada offering prohíbe las ocho promesas mandatadas, sin excepción por fila', async () => {
+    const rows = await db!<Array<{ code: string; guardrails: { forbidden_promises: string[] } }>>`
+      SELECT code, guardrails FROM offerings o JOIN workspaces w ON w.id = o.workspace_id
+      WHERE w.slug = ${WS}`;
+    expect(rows).toHaveLength(14);
+    for (const r of rows) {
+      for (const phrase of MANDATED_FORBIDDEN_PROMISES) {
+        expect(
+          r.guardrails.forbidden_promises,
+          `offering ${r.code} must forbid "${phrase}"`,
+        ).toContain(phrase);
+      }
+    }
+  });
+
+  it('exactamente una offering (barista) tiene source_url en metadata', async () => {
+    const rows = await db!<Array<{ code: string }>>`
+      SELECT o.code FROM offerings o JOIN workspaces w ON w.id = o.workspace_id
+      WHERE w.slug = ${WS} AND o.metadata ? 'source_url'`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].code).toBe('barista');
+  });
+
+  it('siembra exactamente 3 knowledge_sources', async () => {
+    const rows = await db!`
+      SELECT k.id FROM knowledge_sources k JOIN workspaces w ON w.id = k.workspace_id
+      WHERE w.slug = ${WS}`;
+    expect(rows).toHaveLength(3);
   });
 
   it('la política comercial cita los límites de los T&C', async () => {
