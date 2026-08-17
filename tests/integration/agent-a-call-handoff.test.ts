@@ -169,6 +169,32 @@ run('agent a call handoff — reservation', () => {
     expect(await sessionsByTurn(turnId)).toHaveLength(1);
   });
 
+  it('a direct request buried inside a batch still reserves the call', async () => {
+    const identity = newIdentity();
+    // Three messages land in the same inbound window; the batch's
+    // representative turn is the FIRST one, whose text alone carries no
+    // consent. The buried "llamame" must still authorize the reservation.
+    const representativeTurn = await seedTurn(identity, '¿Los sábados de 15 a 17 es en vivo?');
+    await seedTurn(identity, 'llamame y lo vemos');
+    await seedTurn(identity, 'gracias!');
+
+    const result = await commit(representativeTurn, callConfirmation('direct_request'));
+    expect(result.call_request?.call_id).toBeDefined();
+    expect(await sessionsByTurn(representativeTurn)).toHaveLength(1);
+  });
+
+  it('a decline after a buried request in the same batch blocks the call', async () => {
+    const identity = newIdentity();
+    // The newest decisive message wins: the customer asked and then took it
+    // back inside the same burst. Consent must NOT ride on the first message.
+    const representativeTurn = await seedTurn(identity, 'llamame');
+    await seedTurn(identity, 'no, mejor no me llames');
+
+    await expect(commit(representativeTurn, callConfirmation('direct_request')))
+      .rejects.toBeInstanceOf(DecisionPolicyError);
+    expect(await sessionsByTurn(representativeTurn)).toHaveLength(0);
+  });
+
   it('two concurrent commits agree on one call_id', async () => {
     const identity = newIdentity();
     const turnId = await seedTurn(identity, 'Llamame ahora');
@@ -266,7 +292,7 @@ run('agent a call handoff — refusals reserve nothing', () => {
           conversation_id: randomUUID(),
           contact_name: null,
           phone,
-          turn_text: 'Llamame ahora',
+          consent_messages: [{ id: turnId, content: 'Llamame ahora' }],
           course_of_interest: null,
           prompt_version: 'studyx-agent-a-sales-bridge-v1',
         }),
@@ -300,6 +326,109 @@ run('agent a call handoff — refusals reserve nothing', () => {
 });
 
 run('agent a → agent b end to end', () => {
+  it('two concurrent dispatches send exactly one Telegram message', async () => {
+    const identity: Identity = {
+      ...newIdentity(),
+      phone: `+999${Math.floor(10_000_000 + Math.random() * 89_999_999).toString().padStart(10, '0')}`,
+    };
+    const turnId = await seedTurn(identity, 'Llamame ahora');
+    const committed = await commit(turnId, callConfirmation('direct_request'));
+    const callId = committed.call_request!.call_id;
+
+    const contactRows = await db!<Array<{ contact_id: string }>>`
+      SELECT contact_id FROM messages WHERE id = ${turnId}::uuid
+    `;
+    const userId = `user-${randomUUID()}`;
+    const chatId = `chat-${randomUUID()}`;
+    await db!`
+      INSERT INTO sandbox_identities (provider, external_user_id, contact_id, synthetic_phone)
+      VALUES ('telegram_sandbox', ${userId}, ${contactRows[0].contact_id}::uuid, ${identity.phone})
+    `;
+
+    const sendMessage = vi.fn(async (input: TelegramSendMessageInput) => {
+      void input;
+      return { messageId: '77', acceptedAt: new Date().toISOString() };
+    });
+    const dbA = openLocalTestDatabase();
+    const dbB = openLocalTestDatabase();
+    try {
+      const buildDeps = (client: NonNullable<typeof db>) => {
+        const receipts = new PostgresContextReceiptStore(client, {
+          expectedChatId: chatId,
+          expectedUserId: userId,
+        });
+        const provider = new TelegramSimVoiceProvider({
+          receipts,
+          destinationResolver: receipts,
+          telegram: { sendMessage, answerCallbackQuery: vi.fn(async () => undefined) },
+          nonce: () => `nonce_${callId.replaceAll('-', '').slice(0, 16)}`,
+        });
+        return { store: new PostgresCallStore(client), provider };
+      };
+      const receiptsSetup = new PostgresContextReceiptStore(db!, {
+        expectedChatId: chatId,
+        expectedUserId: userId,
+      });
+      await receiptsSetup.registerBinding({ chatId, userId, startedAt: new Date().toISOString() });
+
+      const [first, second] = await Promise.all([
+        dispatchCall({ callId, workerId: 'race-a' }, buildDeps(dbA)),
+        dispatchCall({ callId, workerId: 'race-b' }, buildDeps(dbB)),
+      ]);
+
+      const statuses = [first.status, second.status].sort();
+      expect(statuses).toContain('provider_accepted');
+      // The loser either observed the winner's terminal state or hit the lease.
+      expect(statuses.every((status) => ['provider_accepted', 'busy'].includes(status))).toBe(true);
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+    } finally {
+      await dbA.end();
+      await dbB.end();
+    }
+  });
+
+  it('an ambiguous dispatch outcome never redials automatically', async () => {
+    const identity: Identity = {
+      ...newIdentity(),
+      phone: `+999${Math.floor(10_000_000 + Math.random() * 89_999_999).toString().padStart(10, '0')}`,
+    };
+    const turnId = await seedTurn(identity, 'Llamame ahora');
+    const committed = await commit(turnId, callConfirmation('direct_request'));
+    const callId = committed.call_request!.call_id;
+
+    const store = new PostgresCallStore(db!);
+    const unimplemented = async () => {
+      throw new Error('not exercised in this test');
+    };
+    const timeoutProvider = {
+      placeCall: vi.fn(async () => {
+        // Unknown outcome: the provider timed out with the result unknowable.
+        throw new Error('ETIMEDOUT');
+      }),
+      findCallByInternalId: unimplemented,
+      cancelCall: unimplemented,
+    };
+
+    const first = await dispatchCall({ callId, workerId: 'ambiguous-1' }, { store, provider: timeoutProvider });
+    expect(first.status).toBe('dispatch_ambiguous');
+
+    // A later dispatch attempt must NOT place a new provider call: ambiguous
+    // is terminal for the dispatcher; only explicit reconciliation may act.
+    const retryProvider = {
+      placeCall: vi.fn(async () => ({ providerCallId: 'x', acceptedAt: new Date().toISOString() })),
+      findCallByInternalId: unimplemented,
+      cancelCall: unimplemented,
+    };
+    const retry = await dispatchCall({ callId, workerId: 'ambiguous-2' }, { store, provider: retryProvider });
+    expect(retry.status).toBe('dispatch_ambiguous');
+    expect(retryProvider.placeCall).not.toHaveBeenCalled();
+
+    const session = await db!<Array<{ status: string }>>`
+      SELECT status FROM call_sessions WHERE id = ${callId}::uuid
+    `;
+    expect(session[0].status).toBe('dispatch_ambiguous');
+  });
+
   it('dispatches the reserved call to Telegram B with a verifiable context hash', async () => {
     // Identidad sandbox: sandbox_identities exige el prefijo sintético +999.
     const identity: Identity = {

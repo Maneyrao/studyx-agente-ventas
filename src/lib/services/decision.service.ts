@@ -319,6 +319,16 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       && decision.business_action?.type === 'request_call_now'
     ) {
       try {
+        // El consentimiento se deriva del batch completo, no sólo del turno
+        // representativo: un "llamame" enterrado en la ráfaga autoriza y un
+        // "mejor no" posterior lo revoca.
+        const consentMessages = turn.batch_id === null
+          ? [{ id: turn.id, content: turn.content }]
+          : await db<Array<{ id: string; content: string }>>`
+              SELECT id, content FROM messages
+              WHERE batch_id = ${turn.batch_id}::uuid AND direction = 'inbound'
+              ORDER BY conversation_seq ASC, created_at ASC, id ASC
+            `;
         callRequest = await reserveCallForDecision(db, {
           turn_id: validatedInput.turn_id,
           trace_id: validatedInput.trace_id,
@@ -327,7 +337,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           conversation_id: turn.conversation_id,
           contact_name: turn.contact_name,
           phone: turn.phone,
-          turn_text: turn.content,
+          consent_messages: consentMessages,
           course_of_interest: decision.business_action.course_of_interest ?? null,
           prompt_version: validatedInput.model.prompt_version,
         });

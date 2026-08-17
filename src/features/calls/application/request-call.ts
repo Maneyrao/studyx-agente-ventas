@@ -43,8 +43,12 @@ export interface ReserveCallInput {
   conversation_id: string;
   contact_name: string | null;
   phone: string | null;
-  /** Inbound text of the consent-source turn (the turn being decided). */
-  turn_text: string;
+  /**
+   * Every inbound message of the batch being decided, oldest first (a single
+   * message when the turn was not batched). Consent is derived over the whole
+   * burst; the decisive message becomes consent_source_message_id.
+   */
+  consent_messages: ReadonlyArray<{ id: string; content: string }>;
   course_of_interest: string | null;
   prompt_version: string;
   now?: () => Date;
@@ -87,10 +91,18 @@ export async function reserveCallForDecision(
     ? { decisionId: offers[0].decision_id, offeredAt: offers[0].offered_at.toISOString() }
     : null;
 
-  const verdict = evaluateVoiceConsent({ text: input.turn_text, now: nowIso, openOffer });
+  if (input.consent_messages.length === 0) {
+    throw new CallRequestRejectedError('CALL_CONFIRMATION_REQUIRED');
+  }
+  const verdict = evaluateVoiceConsent({
+    texts: input.consent_messages.map((message) => message.content),
+    now: nowIso,
+    openOffer,
+  });
   if (!verdict.allowed) {
     throw new CallRequestRejectedError(verdict.code);
   }
+  const consentSourceMessageId = input.consent_messages[verdict.sourceIndex].id;
 
   const active = await db<Array<{ id: string }>>`
     SELECT id FROM call_sessions
@@ -141,7 +153,7 @@ export async function reserveCallForDecision(
       ${provider},
       ${`voice-call:turn:${input.turn_id}`},
       'requested',
-      ${input.turn_id}::uuid,
+      ${consentSourceMessageId}::uuid,
       ${jsonbParam(db, context)},
       decode(${contextHashHex}, 'hex'),
       ${input.prompt_version},

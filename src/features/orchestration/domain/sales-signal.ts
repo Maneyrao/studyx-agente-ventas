@@ -92,9 +92,21 @@ export function classifyDeterministicSalesSignal(text: string): DeterministicSal
  * `model_required`, exactly like a single ambiguous message.
  */
 export function classifyBatchSalesSignal(texts: readonly string[]): DeterministicSalesSignal {
+  return classifyBatchSalesSignalWithIndex(texts).signal;
+}
+
+/**
+ * Same scan, but also reports WHICH message decided the batch, so callers
+ * that need evidence (e.g. the call-consent source message) can point at the
+ * exact text that carried the signal. `index` is null for `model_required`.
+ */
+export function classifyBatchSalesSignalWithIndex(texts: readonly string[]): {
+  signal: DeterministicSalesSignal;
+  index: number | null;
+} {
   for (let index = texts.length - 1; index >= 0; index -= 1) {
     const signal = classifyDeterministicSalesSignal(texts[index]);
-    if (signal.type !== 'model_required') return signal;
+    if (signal.type !== 'model_required') return { signal, index };
   }
-  return { type: 'model_required' };
+  return { signal: { type: 'model_required' }, index: null };
 }

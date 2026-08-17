@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 /**
  * Deterministic voice-consent policy. The model's claimed reason is never
- * trusted: the backend re-derives consent from the turn text and the open
- * offer window (15 minutes). A negation always wins over any affirmative
- * word in the same message.
+ * trusted: the backend re-derives consent from every inbound text of the
+ * batch and the open offer window (15 minutes). The newest decisive message
+ * wins, and a negation always beats any affirmative word.
  */
 import { evaluateVoiceConsent } from '@/features/calls/domain/call-consent';
 
@@ -21,25 +21,26 @@ function offerAgedMinutes(minutes: number) {
 describe('evaluateVoiceConsent', () => {
   it('allows a direct request on its own, without any offer', () => {
     expect(
-      evaluateVoiceConsent({ text: 'Llamame ahora', now: NOW, openOffer: null }),
-    ).toEqual({ allowed: true, mode: 'direct_request', offeredByDecisionId: null });
+      evaluateVoiceConsent({ texts: ['Llamame ahora'], now: NOW, openOffer: null }),
+    ).toEqual({ allowed: true, mode: 'direct_request', offeredByDecisionId: null, sourceIndex: 0 });
   });
 
   it('allows a short acceptance while the offer is open', () => {
     expect(
-      evaluateVoiceConsent({ text: 'sí', now: NOW, openOffer: offerAgedMinutes(14) }),
+      evaluateVoiceConsent({ texts: ['sí'], now: NOW, openOffer: offerAgedMinutes(14) }),
     ).toEqual({
       allowed: true,
       mode: 'accepted_offer',
       offeredByDecisionId: OFFER_DECISION_ID,
+      sourceIndex: 0,
     });
     expect(
-      evaluateVoiceConsent({ text: 'Dale!', now: NOW, openOffer: offerAgedMinutes(1) }),
+      evaluateVoiceConsent({ texts: ['Dale!'], now: NOW, openOffer: offerAgedMinutes(1) }),
     ).toMatchObject({ allowed: true, mode: 'accepted_offer' });
   });
 
   it('refuses a short acceptance without any offer', () => {
-    expect(evaluateVoiceConsent({ text: 'sí', now: NOW, openOffer: null })).toEqual({
+    expect(evaluateVoiceConsent({ texts: ['sí'], now: NOW, openOffer: null })).toEqual({
       allowed: false,
       code: 'CALL_OFFER_MISSING',
     });
@@ -47,14 +48,14 @@ describe('evaluateVoiceConsent', () => {
 
   it('refuses a short acceptance once the offer expired', () => {
     expect(
-      evaluateVoiceConsent({ text: 'sí', now: NOW, openOffer: offerAgedMinutes(16) }),
+      evaluateVoiceConsent({ texts: ['sí'], now: NOW, openOffer: offerAgedMinutes(16) }),
     ).toEqual({ allowed: false, code: 'CALL_OFFER_EXPIRED' });
   });
 
   it('a negation wins over any affirmative word in the same message', () => {
     expect(
       evaluateVoiceConsent({
-        text: 'Sí, pero no me llames',
+        texts: ['Sí, pero no me llames'],
         now: NOW,
         openOffer: offerAgedMinutes(1),
       }),
@@ -63,14 +64,40 @@ describe('evaluateVoiceConsent', () => {
 
   it('treats an opt-out as an explicit decline', () => {
     expect(
-      evaluateVoiceConsent({ text: 'Quiero darme de baja', now: NOW, openOffer: offerAgedMinutes(1) }),
+      evaluateVoiceConsent({ texts: ['Quiero darme de baja'], now: NOW, openOffer: offerAgedMinutes(1) }),
     ).toEqual({ allowed: false, code: 'CALL_EXPLICITLY_DECLINED' });
+  });
+
+  it('a direct request buried mid-batch authorizes, and points at its message', () => {
+    expect(
+      evaluateVoiceConsent({
+        texts: ['¿Es en vivo?', 'llamame y lo vemos', 'gracias!'],
+        now: NOW,
+        openOffer: null,
+      }),
+    ).toEqual({ allowed: true, mode: 'direct_request', offeredByDecisionId: null, sourceIndex: 1 });
+  });
+
+  it('the newest decisive message wins: a request followed by a decline is refused', () => {
+    expect(
+      evaluateVoiceConsent({
+        texts: ['llamame', 'no, mejor no me llames'],
+        now: NOW,
+        openOffer: null,
+      }),
+    ).toEqual({ allowed: false, code: 'CALL_EXPLICITLY_DECLINED' });
+  });
+
+  it('an empty batch requires explicit confirmation', () => {
+    expect(
+      evaluateVoiceConsent({ texts: [], now: NOW, openOffer: offerAgedMinutes(1) }),
+    ).toEqual({ allowed: false, code: 'CALL_CONFIRMATION_REQUIRED' });
   });
 
   it('anything outside the bounded patterns requires explicit confirmation', () => {
     expect(
       evaluateVoiceConsent({
-        text: 'Quiero información del curso',
+        texts: ['Quiero información del curso'],
         now: NOW,
         openOffer: offerAgedMinutes(1),
       }),
