@@ -36,6 +36,56 @@ export function loadBusinessWorkspaceConfig(
   return { workspaceSlug: raw };
 }
 
+export type PaymentProviderConfig =
+  | { provider: 'fake' }
+  | {
+      provider: 'stripe_test';
+      secretKey: string;
+      webhookSecret: string;
+      successUrl: string;
+      cancelUrl: string;
+    };
+
+/**
+ * Payment provider selection. Fail closed on anything suspicious:
+ *   - stripe_test refuses a live secret key outright;
+ *   - stripe_live is DISABLED in this phase — selecting it always throws, so
+ *     no configuration mistake can reach real money. (When it is eventually
+ *     enabled, the provider still runs assertRealSideEffectAllowed per
+ *     contact before any live call.)
+ */
+export function loadPaymentProviderConfig(
+  environment: NodeJS.ProcessEnv = process.env,
+): PaymentProviderConfig {
+  const raw = (environment.PAYMENT_PROVIDER ?? 'fake').trim();
+  if (raw === 'fake') return { provider: 'fake' };
+  if (raw === 'stripe_live') throw new Error('STRIPE_LIVE_DISABLED');
+  if (raw !== 'stripe_test') throw new Error('INVALID_PAYMENT_CONFIG:PAYMENT_PROVIDER');
+
+  const secretKey = environment.STRIPE_SECRET_KEY?.trim();
+  const webhookSecret = environment.STRIPE_WEBHOOK_SECRET?.trim();
+  const successUrl = environment.STRIPE_SUCCESS_URL?.trim();
+  const cancelUrl = environment.STRIPE_CANCEL_URL?.trim();
+  for (const [name, value] of [
+    ['STRIPE_SECRET_KEY', secretKey],
+    ['STRIPE_WEBHOOK_SECRET', webhookSecret],
+    ['STRIPE_SUCCESS_URL', successUrl],
+    ['STRIPE_CANCEL_URL', cancelUrl],
+  ] as const) {
+    if (!value) throw new Error(`MISSING_PAYMENT_CONFIG:${name}`);
+  }
+  if (secretKey!.startsWith('sk_live') || secretKey!.startsWith('rk_live')) {
+    throw new Error('STRIPE_TEST_REJECTS_LIVE_KEY');
+  }
+  return {
+    provider: 'stripe_test',
+    secretKey: secretKey!,
+    webhookSecret: webhookSecret!,
+    successUrl: successUrl!,
+    cancelUrl: cancelUrl!,
+  };
+}
+
 export type TelegramAgentBConfig = {
   botToken: string;
   webhookSecret: string;

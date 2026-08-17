@@ -10,6 +10,8 @@ export interface CreateCheckoutSessionInput {
   readonly paymentId: string;
   readonly workspaceId: string;
   readonly offeringId: string;
+  /** Canonical contact — the sandbox lock is evaluated against it. */
+  readonly contactId: string;
   /** Canonical Stripe price (null for non-Stripe providers). */
   readonly stripePriceId: string | null;
   readonly checkoutMode: 'payment' | 'subscription';

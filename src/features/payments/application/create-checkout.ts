@@ -109,6 +109,7 @@ export async function createCheckout(
       paymentId: payment.id,
       workspaceId: payment.workspace_id,
       offeringId: payment.offering_id,
+      contactId: payment.contact_id,
       stripePriceId: payment.stripe_price_id,
       checkoutMode: payment.checkout_mode,
       idempotencyKey,
