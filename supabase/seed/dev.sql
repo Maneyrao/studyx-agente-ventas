@@ -1,32 +1,7 @@
--- Development seed data for Contact Identity Foundation
--- Run after migrations: supabase db reset
+-- Sandbox seed: Aburridont / Inglés IT.
+-- All people and identifiers below are synthetic and exist only for smoke tests.
 
-INSERT INTO contacts (id, phone, status, channel_origin, name)
-VALUES
-  ('00000000-0000-0000-0000-000000000001', '+5491112345678', 'prospecto', 'whatsapp', 'Ana García'),
-  ('00000000-0000-0000-0000-000000000002', '+5491198765432', 'cliente',   'whatsapp', 'Carlos Méndez'),
-  ('00000000-0000-0000-0000-000000000003', '+5491155551234', 'prospecto', 'voice',    'María López')
-ON CONFLICT (phone) DO NOTHING;
-
-INSERT INTO conversations (id, contact_id, channel, status)
-VALUES
-  ('10000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001', 'whatsapp', 'open'),
-  ('10000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000002', 'whatsapp', 'open')
-ON CONFLICT DO NOTHING;
-
-INSERT INTO messages (conversation_id, contact_id, direction, content)
-VALUES
-  ('10000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001', 'inbound',  'Hola, me interesa el curso de Python para datos'),
-  ('10000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001', 'outbound', 'Claro, te cuento sobre nuestro curso de Python para análisis de datos.'),
-  ('10000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000002', 'inbound',  '¿Cuándo es el próximo curso de Excel avanzado?')
-ON CONFLICT DO NOTHING;
-
--- ---------------------------------------------------------------------------
--- Aburridont — Inglés IT (sandbox). Synthetic, reproducible business fixture:
--- every id, name and figure below is test data. Idempotent via ON CONFLICT.
--- knowledge_chunks is NOT seeded: it is the derived index, rebuilt by the
--- knowledge-source projection (see 20260817010001_universal_business_schema).
--- ---------------------------------------------------------------------------
+BEGIN;
 
 INSERT INTO workspaces (
   id, slug, display_name, environment, status, default_locale, timezone, metadata
@@ -38,7 +13,7 @@ INSERT INTO workspaces (
   'active',
   'es-AR',
   'America/Argentina/Buenos_Aires',
-  '{"test_data":true,"replaceable":true}'::jsonb
+  '{"test_data":true,"replaceable":true,"owner":"Thiago"}'::jsonb
 )
 ON CONFLICT (slug) DO UPDATE SET
   display_name = EXCLUDED.display_name,
@@ -122,17 +97,17 @@ ON CONFLICT (workspace_id, code) DO UPDATE SET
 INSERT INTO pipeline_stages (
   id, pipeline_id, code, display_name, position, is_terminal, outcome, metadata
 ) VALUES
-  ('a2100000-0000-4000-8000-000000000001', 'a2000000-0000-4000-8000-000000000001', 'new',                      'Nuevo',              0, false, NULL,           '{}'::jsonb),
-  ('a2100000-0000-4000-8000-000000000002', 'a2000000-0000-4000-8000-000000000001', 'engaged',                  'En conversación',    1, false, NULL,           '{}'::jsonb),
-  ('a2100000-0000-4000-8000-000000000003', 'a2000000-0000-4000-8000-000000000001', 'qualifying',               'Calificando',        2, false, NULL,           '{}'::jsonb),
-  ('a2100000-0000-4000-8000-000000000004', 'a2000000-0000-4000-8000-000000000001', 'qualified',                'Calificado',         3, false, NULL,           '{}'::jsonb),
-  ('a2100000-0000-4000-8000-000000000005', 'a2000000-0000-4000-8000-000000000001', 'consultation_requested',   'Llamada solicitada', 4, false, NULL,           '{}'::jsonb),
-  ('a2100000-0000-4000-8000-000000000006', 'a2000000-0000-4000-8000-000000000001', 'consultation_in_progress', 'Llamada en curso',   5, false, NULL,           '{}'::jsonb),
-  ('a2100000-0000-4000-8000-000000000007', 'a2000000-0000-4000-8000-000000000001', 'follow_up',                'Seguimiento',        6, false, NULL,           '{}'::jsonb),
-  ('a2100000-0000-4000-8000-000000000008', 'a2000000-0000-4000-8000-000000000001', 'nurture',                  'Nutrición',          7, false, NULL,           '{}'::jsonb),
-  ('a2100000-0000-4000-8000-000000000009', 'a2000000-0000-4000-8000-000000000001', 'won',                      'Ganado',             8, true,  'won',          '{}'::jsonb),
-  ('a2100000-0000-4000-8000-000000000010', 'a2000000-0000-4000-8000-000000000001', 'lost',                     'Perdido',            9, true,  'lost',         '{}'::jsonb),
-  ('a2100000-0000-4000-8000-000000000011', 'a2000000-0000-4000-8000-000000000001', 'disqualified',             'No califica',       10, true,  'disqualified', '{}'::jsonb)
+  ('a2100000-0000-4000-8000-000000000001', 'a2000000-0000-4000-8000-000000000001', 'new',                     'Nuevo',                         0, false, NULL,              '{}'::jsonb),
+  ('a2100000-0000-4000-8000-000000000002', 'a2000000-0000-4000-8000-000000000001', 'engaged',                 'En conversación',               1, false, NULL,              '{}'::jsonb),
+  ('a2100000-0000-4000-8000-000000000003', 'a2000000-0000-4000-8000-000000000001', 'qualifying',              'Calificando',                    2, false, NULL,              '{}'::jsonb),
+  ('a2100000-0000-4000-8000-000000000004', 'a2000000-0000-4000-8000-000000000001', 'qualified',               'Calificado',                     3, false, NULL,              '{}'::jsonb),
+  ('a2100000-0000-4000-8000-000000000005', 'a2000000-0000-4000-8000-000000000001', 'consultation_requested',  'Llamada solicitada',             4, false, NULL,              '{}'::jsonb),
+  ('a2100000-0000-4000-8000-000000000006', 'a2000000-0000-4000-8000-000000000001', 'consultation_in_progress','Llamada en curso',                 5, false, NULL,              '{}'::jsonb),
+  ('a2100000-0000-4000-8000-000000000007', 'a2000000-0000-4000-8000-000000000001', 'follow_up',               'Seguimiento',                    6, false, NULL,              '{}'::jsonb),
+  ('a2100000-0000-4000-8000-000000000008', 'a2000000-0000-4000-8000-000000000001', 'nurture',                 'Nutrición',                      7, false, NULL,              '{}'::jsonb),
+  ('a2100000-0000-4000-8000-000000000009', 'a2000000-0000-4000-8000-000000000001', 'won',                     'Ganado',                         8, true,  'won',             '{}'::jsonb),
+  ('a2100000-0000-4000-8000-000000000010', 'a2000000-0000-4000-8000-000000000001', 'lost',                    'Perdido',                        9, true,  'lost',            '{}'::jsonb),
+  ('a2100000-0000-4000-8000-000000000011', 'a2000000-0000-4000-8000-000000000001', 'disqualified',            'No califica',                   10, true,  'disqualified',    '{}'::jsonb)
 ON CONFLICT (pipeline_id, code) DO UPDATE SET
   display_name = EXCLUDED.display_name,
   position = EXCLUDED.position,
@@ -159,8 +134,8 @@ INSERT INTO qualification_fields (
    '¿Tenés disponibilidad martes y jueves a las 21, o sábados de 15 a 17?', 'multi_select', '["tue_thu_21","sat_15_17","neither"]'::jsonb, true, 4,
    '{"group_fit":["tue_thu_21","sat_15_17"]}'::jsonb, 'active'),
   ('a3000000-0000-4000-8000-000000000006', 'a0000000-0000-4000-8000-000000000001', 'start_timing',
-   '¿Querés arrancar ahora o estás averiguando para más adelante?', 'single_select', '["now","within_30_days","later","browsing"]'::jsonb, true, 5,
-   '{"priority_values":["now","within_30_days"]}'::jsonb, 'active'),
+   '¿Querés arrancar ahora en agosto o estás averiguando para más adelante?', 'single_select', '["august","within_30_days","later","browsing"]'::jsonb, true, 5,
+   '{"priority_values":["august","within_30_days"]}'::jsonb, 'active'),
   ('a3000000-0000-4000-8000-000000000007', 'a0000000-0000-4000-8000-000000000001', 'budget_fit',
    'El grupo cuesta 85.000 ARS por mes. ¿Ese presupuesto te sirve?', 'single_select', '["yes","maybe","no"]'::jsonb, true, 6,
    '{"group_fit":["yes"]}'::jsonb, 'active')
@@ -207,3 +182,173 @@ ON CONFLICT (workspace_id, title, version) DO UPDATE SET
   status = EXCLUDED.status,
   metadata = EXCLUDED.metadata,
   updated_at = now();
+
+INSERT INTO knowledge_chunks (
+  id, source_id, chunk_index, content, embedding, embedding_status, embedding_model, embedded_at, metadata
+)
+SELECT
+  mapping.chunk_id,
+  source.id,
+  0,
+  source.content,
+  NULL,
+  'pending',
+  NULL,
+  NULL,
+  '{"test_data":true}'::jsonb
+FROM knowledge_sources source
+JOIN (
+  VALUES
+    ('a4000000-0000-4000-8000-000000000001'::uuid, 'a4100000-0000-4000-8000-000000000001'::uuid),
+    ('a4000000-0000-4000-8000-000000000002'::uuid, 'a4100000-0000-4000-8000-000000000002'::uuid),
+    ('a4000000-0000-4000-8000-000000000003'::uuid, 'a4100000-0000-4000-8000-000000000003'::uuid),
+    ('a4000000-0000-4000-8000-000000000004'::uuid, 'a4100000-0000-4000-8000-000000000004'::uuid),
+    ('a4000000-0000-4000-8000-000000000005'::uuid, 'a4100000-0000-4000-8000-000000000005'::uuid),
+    ('a4000000-0000-4000-8000-000000000006'::uuid, 'a4100000-0000-4000-8000-000000000006'::uuid)
+) AS mapping(source_id, chunk_id) ON mapping.source_id = source.id
+ON CONFLICT (source_id, chunk_index) DO UPDATE SET
+  content = EXCLUDED.content,
+  embedding = NULL,
+  embedding_status = 'pending',
+  embedding_model = NULL,
+  embedded_at = NULL,
+  metadata = EXCLUDED.metadata,
+  updated_at = now();
+
+INSERT INTO contacts (id, phone, status, channel_origin, name)
+VALUES (
+  'a5000000-0000-4000-8000-000000000001',
+  '+5491100000001',
+  'prospecto',
+  'whatsapp',
+  'Alumno Smoke'
+)
+ON CONFLICT (phone) DO UPDATE SET
+  status = 'prospecto',
+  channel_origin = 'whatsapp',
+  name = 'Alumno Smoke',
+  email = NULL,
+  summary = NULL,
+  summary_updated_at = NULL,
+  pending_turns = 0,
+  deleted_at = NULL,
+  updated_at = now();
+
+INSERT INTO workspace_contacts (
+  id, workspace_id, contact_id, lifecycle_status, source_channel, metadata
+) VALUES (
+  'a5100000-0000-4000-8000-000000000001',
+  'a0000000-0000-4000-8000-000000000001',
+  'a5000000-0000-4000-8000-000000000001',
+  'active',
+  'whatsapp',
+  '{"synthetic":true,"purpose":"smoke_test"}'::jsonb
+)
+ON CONFLICT (workspace_id, contact_id) DO UPDATE SET
+  lifecycle_status = 'active',
+  source_channel = 'whatsapp',
+  metadata = EXCLUDED.metadata,
+  updated_at = now();
+
+INSERT INTO contact_consents (
+  id, workspace_contact_id, channel, purpose, status, source, evidence
+) VALUES (
+  'a5200000-0000-4000-8000-000000000001',
+  'a5100000-0000-4000-8000-000000000001',
+  'voice',
+  'sales_call',
+  'unknown',
+  'sandbox_seed',
+  '{"synthetic":true}'::jsonb
+)
+ON CONFLICT (workspace_contact_id, channel, purpose) DO UPDATE SET
+  status = 'unknown',
+  source = 'sandbox_seed',
+  granted_at = NULL,
+  revoked_at = NULL,
+  expires_at = NULL,
+  evidence = EXCLUDED.evidence,
+  updated_at = now();
+
+INSERT INTO opportunities (
+  id, workspace_contact_id, offering_id, pipeline_id, stage_id, status,
+  qualification_score, next_action, metadata
+) VALUES (
+  'a5300000-0000-4000-8000-000000000001',
+  'a5100000-0000-4000-8000-000000000001',
+  'a1000000-0000-4000-8000-000000000001',
+  'a2000000-0000-4000-8000-000000000001',
+  'a2100000-0000-4000-8000-000000000001',
+  'open',
+  NULL,
+  'Iniciar conversación de calificación',
+  '{"synthetic":true,"purpose":"smoke_test"}'::jsonb
+)
+ON CONFLICT (id) DO UPDATE SET
+  offering_id = EXCLUDED.offering_id,
+  pipeline_id = EXCLUDED.pipeline_id,
+  stage_id = EXCLUDED.stage_id,
+  status = 'open',
+  qualification_score = NULL,
+  next_action = EXCLUDED.next_action,
+  next_action_at = NULL,
+  closed_reason = NULL,
+  closed_at = NULL,
+  metadata = EXCLUDED.metadata,
+  updated_at = now();
+
+INSERT INTO memory_items (
+  id, workspace_contact_id, memory_type, memory_key, content, structured_value,
+  source_type, confidence, sensitivity
+) VALUES (
+  'a5400000-0000-4000-8000-000000000001',
+  'a5100000-0000-4000-8000-000000000001',
+  'fact',
+  'test_identity',
+  'Este contacto es un alumno completamente sintético utilizado para smoke tests.',
+  '{"synthetic":true}'::jsonb,
+  'system',
+  1.0,
+  'public'
+)
+ON CONFLICT (id) DO UPDATE SET
+  content = EXCLUDED.content,
+  structured_value = EXCLUDED.structured_value,
+  source_type = EXCLUDED.source_type,
+  confidence = EXCLUDED.confidence,
+  sensitivity = EXCLUDED.sensitivity,
+  valid_until = NULL,
+  superseded_by = NULL,
+  updated_at = now();
+
+INSERT INTO memory_embeddings (
+  id, memory_item_id, embedding, status, embedding_model, embedded_at
+) VALUES (
+  'a5500000-0000-4000-8000-000000000001',
+  'a5400000-0000-4000-8000-000000000001',
+  NULL,
+  'pending',
+  NULL,
+  NULL
+)
+ON CONFLICT (memory_item_id) DO UPDATE SET
+  embedding = NULL,
+  status = 'pending',
+  embedding_model = NULL,
+  embedded_at = NULL,
+  retry_count = 0,
+  last_error_code = NULL,
+  updated_at = now();
+
+INSERT INTO audit_log (id, actor, action, entity_type, entity_id, payload)
+VALUES (
+  'a9000000-0000-4000-8000-000000000001',
+  'sandbox_seed',
+  'sandbox.dataset.seeded',
+  'workspace',
+  'a0000000-0000-4000-8000-000000000001',
+  '{"dataset":"aburridont-english-it-sandbox","synthetic":true,"contains_real_customer_data":false}'::jsonb
+)
+ON CONFLICT (id) DO NOTHING;
+
+COMMIT;
