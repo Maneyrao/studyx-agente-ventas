@@ -35,7 +35,12 @@ export type PaymentStateEvent =
   | { type: 'async_payment_succeeded' }
   | { type: 'async_payment_failed' }
   | { type: 'checkout_expired' }
-  | { type: 'refunded' };
+  | { type: 'refunded' }
+  /**
+   * Anomaly marker (session/amount/currency mismatch). Recorded in the event
+   * log for forensics; never a state transition anywhere.
+   */
+  | { type: 'checkout_amount_mismatch' };
 
 export interface PaymentTransition {
   next: PaymentStatus;

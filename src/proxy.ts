@@ -68,6 +68,9 @@ const UNAUTHENTICATED_PATHS = new Set([
   // The handler validates X-Telegram-Bot-Api-Secret-Token. This exact path
   // must be reachable by Telegram, which cannot provide our orchestrator key.
   '/api/webhooks/voice/telegram',
+  // The handler verifies Stripe-Signature against the raw body. Stripe
+  // cannot provide the orchestrator key either.
+  '/api/webhooks/payments/stripe',
 ]);
 
 export async function proxy(request: NextRequest) {
