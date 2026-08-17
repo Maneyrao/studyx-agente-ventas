@@ -48,7 +48,15 @@ type CounterName =
   | 'reconcile_deliveries_confirmed'
   | 'reconcile_deliveries_abandoned'
   | 'reconcile_orphaned_decisions'
-  | 'reconcile_failures';
+  | 'reconcile_failures'
+  // Cierre post-llamada (spec 007). `post_call_followup_failed` es la que
+  // hay que mirar: cada unidad es una llamada terminada cuyo cierre no se
+  // pudo sintetizar (turno sin thread de WhatsApp resoluble), y queda
+  // pendiente para la próxima corrida sin reintento inmediato.
+  | 'post_call_followup_sent'
+  | 'post_call_followup_revoked'
+  | 'post_call_followup_skipped'
+  | 'post_call_followup_failed';
 
 // Serverless-safe counter: no in-memory state between Vercel invocations.
 // Each increment emits a structured log line — verifiable in log drains / Vercel dashboard.
