@@ -1,11 +1,14 @@
-import { afterAll, describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
 afterAll(async () => db?.end());
 
-const WS = 'studyx-sandbox';
+const WS = 'studyx';
+const SEED_PATH = resolve(__dirname, '../../supabase/seed/studyx.sql');
 
 // code -> classes, from the task brief's table B.2. Sorted keys documented as
 // the exact set of 14 offerings that must exist for this workspace.
@@ -40,11 +43,21 @@ const MANDATED_FORBIDDEN_PROMISES = [
   'política de devoluciones',
 ];
 
-run('seed studyx-sandbox', () => {
-  it('crea el workspace en environment sandbox', async () => {
+run('seed studyx (production)', () => {
+  // Self-contained: apply supabase/seed/studyx.sql against the local cluster
+  // (TEST_DATABASE_URL, validated as loopback-only by openLocalTestDatabase)
+  // before asserting on it, so this suite doesn't depend on anyone having run
+  // the seed by hand first. sql.unsafe() uses the simple query protocol, so
+  // the file's BEGIN/COMMIT and multiple statements run as-is, same as psql -f.
+  beforeAll(async () => {
+    const seedSql = readFileSync(SEED_PATH, 'utf8');
+    await db!.unsafe(seedSql);
+  });
+
+  it('crea el workspace studyx en environment production', async () => {
     const rows = await db!`SELECT environment, status FROM workspaces WHERE slug = ${WS}`;
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ environment: 'sandbox', status: 'active' });
+    expect(rows[0]).toMatchObject({ environment: 'production', status: 'active' });
   });
 
   it('siembra 14 offerings, todas sin precio numérico', async () => {
