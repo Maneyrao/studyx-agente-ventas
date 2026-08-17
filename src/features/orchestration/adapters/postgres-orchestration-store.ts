@@ -6,6 +6,7 @@ import type {
   BatchMembership,
   BatchMessage,
   ClaimBatchInput,
+  ClaimedCallFacts,
   ClaimedTurnFacts,
   CompleteBatchInput,
   OpenOrJoinBatchInput,
@@ -289,6 +290,79 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
             next_state: row.next_state ?? 'completed',
           }
         : null,
+    };
+  }
+
+  /**
+   * The current open call offer, active call and last call result, each
+   * scoped to the claimed batch's own contact and conversation.
+   *
+   * All three facts are projected from canonical rows: `open_offer` from the
+   * latest immutable `call_offer` decision (Decision v4), and the call facts
+   * from `call_sessions` — active statuses feed `active_call` (the partial
+   * unique index guarantees at most one), and the most recent terminal row
+   * feeds `last_call_result` from its structured `result` column, never from
+   * a free-form transcript.
+   */
+  async loadClaimedCallFacts(input: {
+    contact_id: string;
+    conversation_id: string;
+  }): Promise<ClaimedCallFacts> {
+    const offerRows = await this.db<Array<{ decision_id: string; offered_at: Date }>>`
+      SELECT ad.id AS decision_id, ad.created_at AS offered_at
+      FROM agent_decisions AS ad
+      JOIN messages AS m ON m.id = ad.turn_id
+      WHERE m.contact_id = ${input.contact_id}::uuid
+        AND m.conversation_id = ${input.conversation_id}::uuid
+        AND ad.response_type = 'call_offer'
+      ORDER BY ad.created_at DESC
+      LIMIT 1
+    `;
+
+    const activeRows = await this.db<Array<{ id: string; status: string }>>`
+      SELECT id, status
+      FROM call_sessions
+      WHERE contact_id = ${input.contact_id}::uuid
+        AND conversation_id = ${input.conversation_id}::uuid
+        AND status IN ('requested', 'dispatching', 'provider_accepted', 'dispatch_ambiguous', 'in_progress')
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+
+    const terminalRows = await this.db<Array<{ id: string; result: string | null; ended_at: Date }>>`
+      SELECT id, result, COALESCE(completed_at, updated_at) AS ended_at
+      FROM call_sessions
+      WHERE contact_id = ${input.contact_id}::uuid
+        AND conversation_id = ${input.conversation_id}::uuid
+        AND status IN ('completed', 'failed', 'no_answer', 'timed_out', 'cancelled')
+      ORDER BY COALESCE(completed_at, updated_at) DESC
+      LIMIT 1
+    `;
+
+    // Declines are ordinary immutable decisions; `intent = 'commercial_decline'`
+    // is their durable marker. The newest one drives the cross-turn cooldown.
+    const declineRows = await this.db<Array<{ declined_at: Date }>>`
+      SELECT ad.created_at AS declined_at
+      FROM agent_decisions AS ad
+      JOIN messages AS m ON m.id = ad.turn_id
+      WHERE m.contact_id = ${input.contact_id}::uuid
+        AND m.conversation_id = ${input.conversation_id}::uuid
+        AND ad.intent = 'commercial_decline'
+      ORDER BY ad.created_at DESC
+      LIMIT 1
+    `;
+
+    const offer = offerRows[0];
+    const active = activeRows[0];
+    const terminal = terminalRows[0];
+
+    return {
+      open_offer: offer ? { decision_id: offer.decision_id, offered_at: offer.offered_at.toISOString() } : null,
+      active_call: active ? { call_id: active.id, status: active.status } : null,
+      last_call_result: terminal
+        ? { call_id: terminal.id, result: terminal.result, ended_at: terminal.ended_at.toISOString() }
+        : null,
+      last_decline_at: declineRows[0] ? declineRows[0].declined_at.toISOString() : null,
     };
   }
 

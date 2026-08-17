@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CallEventSchema } from '@/lib/contracts/call-event';
+import { CallEventAnySchema, CallEventSchema, CallEventV2Schema } from '@/lib/contracts/call-event';
 
 const FIXTURE_DIR = join(process.cwd(), 'tests/fixtures/call-events');
 
@@ -26,7 +26,7 @@ describe('call event schema — accept fixtures', () => {
   });
 
   it.each(valid)('accepts %s', (name) => {
-    const parsed = CallEventSchema.safeParse(loadFixture(name));
+    const parsed = CallEventAnySchema.safeParse(loadFixture(name));
     expect(parsed.success).toBe(true);
   });
 });
@@ -39,8 +39,33 @@ describe('call event schema — reject fixtures', () => {
   });
 
   it.each(invalid)('rejects %s', (name) => {
-    const parsed = CallEventSchema.safeParse(loadFixture(name));
+    const parsed = CallEventAnySchema.safeParse(loadFixture(name));
     expect(parsed.success).toBe(false);
+  });
+});
+
+describe('call event v2 — correlation invariants', () => {
+  it('keeps the v1 parser available for queued fixtures/events', () => {
+    const parsed = CallEventSchema.safeParse(loadFixture('valid-started.json'));
+    expect(parsed.success).toBe(true);
+  });
+
+  it('allows a null provider_call_id only on requested', () => {
+    const requested = CallEventV2Schema.safeParse(
+      loadFixture('valid-v2-requested-null-provider-id.json'),
+    );
+    expect(requested.success).toBe(true);
+    const ended = CallEventV2Schema.safeParse(
+      loadFixture('invalid-v2-ended-null-provider-id.json'),
+    );
+    expect(ended.success).toBe(false);
+  });
+
+  it('requires trace_id on every v2 event', () => {
+    const fixture = loadFixture('valid-v2-started-with-provider-id.json') as Record<string, unknown>;
+    const { trace_id: _traceId, ...withoutTrace } = fixture;
+    void _traceId;
+    expect(CallEventV2Schema.safeParse(withoutTrace).success).toBe(false);
   });
 });
 

@@ -235,3 +235,169 @@ run('controlled context at claim time', () => {
     expect(result.existing_result?.outbound_id).toEqual(expect.any(String));
   });
 });
+
+run('sales_context at claim time', () => {
+  it('defaults to advising with no call history in the database', async () => {
+    const ingested = await processInboundMessage(envelope());
+    await forceDue(ingested.batch.id);
+
+    const result = await claimBatch(
+      { batch_id: ingested.batch.id, claimed_by: 'workflow-a', trace_id: randomUUID() },
+      deps
+    );
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.sales_context).toEqual({
+      mode: 'advising',
+      course_of_interest: null,
+      open_call_offer: null,
+      active_call: null,
+      allowed_actions: ['offer_call'],
+      last_call_result: null,
+    });
+  });
+
+  // `call_sessions` y Decision v4 ya existen en esta rama integrada, así que
+  // los tres hechos de llamada se proyectan desde filas canónicas reales.
+  async function seedTurnWithIds(text: string) {
+    const context = await processInboundMessage(envelope({
+      message: {
+        type: 'text',
+        text,
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    }));
+    const rows = await db!<Array<{ contact_id: string; conversation_id: string }>>`
+      SELECT contact_id, conversation_id FROM messages WHERE id = ${context.turn_id}::uuid
+    `;
+    return { ...context, ...rows[0] };
+  }
+
+  async function insertCallSession(input: {
+    turnId: string;
+    contactId: string;
+    conversationId: string;
+    status: string;
+    result?: string | null;
+    completedAt?: string | null;
+  }): Promise<string> {
+    const callId = randomUUID();
+    await db!`
+      INSERT INTO call_sessions (
+        id, source_turn_id, contact_id, conversation_id, provider,
+        request_idempotency_key, status, consent_source_message_id,
+        context_snapshot, context_hash, prompt_version, requested_at,
+        completed_at, result
+      ) VALUES (
+        ${callId}::uuid, ${input.turnId}::uuid, ${input.contactId}::uuid,
+        ${input.conversationId}::uuid, 'telegram_sandbox',
+        ${`vitest:${callId}`}, ${input.status}, ${input.turnId}::uuid,
+        ${db!.json({ call_id: callId })}, sha256(${callId}::bytea),
+        'studyx-agent-a-sales-bridge-v1', now(),
+        ${input.completedAt ?? null}, ${input.result ?? null}
+      )
+    `;
+    return callId;
+  }
+
+  async function claimSalesContext(batchId: string) {
+    await forceDue(batchId);
+    const result = await claimBatch(
+      { batch_id: batchId, claimed_by: 'workflow-calls', trace_id: randomUUID() },
+      deps
+    );
+    expect(result.outcome).toBe('claimed');
+    if (result.outcome !== 'claimed') throw new Error('unclaimed');
+    return result.sales_context;
+  }
+
+  it('projects a requested call as call_pending and blocks new call actions', async () => {
+    const seeded = await seedTurnWithIds('¿Sigue la promo?');
+    const callId = await insertCallSession({
+      turnId: seeded.turn_id,
+      contactId: seeded.contact_id,
+      conversationId: seeded.conversation_id,
+      status: 'requested',
+    });
+
+    const salesContext = await claimSalesContext(seeded.batch.id);
+    expect(salesContext.mode).toBe('call_pending');
+    expect(salesContext.active_call).toEqual({ call_id: callId, status: 'requested' });
+    expect(salesContext.allowed_actions).toEqual([]);
+  });
+
+  it('projects an in_progress call as in_call', async () => {
+    const seeded = await seedTurnWithIds('Hola?');
+    const callId = await insertCallSession({
+      turnId: seeded.turn_id,
+      contactId: seeded.contact_id,
+      conversationId: seeded.conversation_id,
+      status: 'in_progress',
+    });
+
+    const salesContext = await claimSalesContext(seeded.batch.id);
+    expect(salesContext.mode).toBe('in_call');
+    expect(salesContext.active_call).toEqual({ call_id: callId, status: 'in_progress' });
+  });
+
+  it('projects the newest terminal call as post_call with its structured result', async () => {
+    const seeded = await seedTurnWithIds('Gracias por la llamada');
+    const callId = await insertCallSession({
+      turnId: seeded.turn_id,
+      contactId: seeded.contact_id,
+      conversationId: seeded.conversation_id,
+      status: 'completed',
+      result: 'seguimiento_agendado',
+      completedAt: new Date().toISOString(),
+    });
+
+    const salesContext = await claimSalesContext(seeded.batch.id);
+    expect(salesContext.mode).toBe('post_call');
+    expect(salesContext.active_call).toBeNull();
+    expect(salesContext.last_call_result).toMatchObject({
+      call_id: callId,
+      result: 'seguimiento_agendado',
+    });
+  });
+
+  it('enforces the 30-minute decline cooldown across turns from the durable decision log', async () => {
+    // A conversational decline ("mejor no") keeps the channel open — unlike
+    // "no me llames", which the ingest opt-out heuristic treats as a full
+    // consent revocation and which therefore never reaches a reply decision.
+    const first = envelope({ message: {
+      type: 'text', text: 'Mejor no, gracias', occurred_at: new Date().toISOString(), reply_to_external_message_id: null,
+    } });
+    const ingested = await processInboundMessage(first);
+    await forceDue(ingested.batch.id);
+    await commitAgentDecision({
+      turn_id: ingested.turn_id,
+      trace_id: randomUUID(),
+      decision: {
+        schema_version: 3,
+        intent: 'commercial_decline',
+        kind: 'reply',
+        response: 'Perfecto, no te llamo. Cualquier consulta me escribís por acá.',
+        response_type: 'commercial_reply',
+        business_action: null,
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'completed',
+        reason_code: 'CALL_DECLINED',
+        confidence: 0.95,
+        retrieval_used: { kb: false, long_term_memory: false, summary_version: null },
+      },
+      model: { provider: 'botpress', model: 'test-model', prompt_version: 'v1' },
+    });
+
+    const second = await processInboundMessage(followUp(first, '¿Y los horarios cuáles son?'));
+    const salesContext = await claimSalesContext(second.batch.id);
+    // Inside the cooldown a proactive offer is withheld…
+    expect(salesContext.allowed_actions).toEqual([]);
+
+    // …but an explicit new direct request still overrides it.
+    const third = await processInboundMessage(followUp(first, 'Llamame ahora'));
+    const overriding = await claimSalesContext(third.batch.id);
+    expect(overriding.allowed_actions).toEqual(['request_call_now']);
+  });
+});

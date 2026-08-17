@@ -107,15 +107,51 @@ export const RetrievalUsedSchema = z.object({
   summary_version: z.number().int().nonnegative().nullable(),
 }).strict()
 
+/**
+ * Decision v4 call protocol, additive over v3. `call_offer` proposes a call
+ * and waits; `call_confirmation` + `request_call_now` asks the backend for
+ * one. The action never carries identity (phone, contact_id, call_id,
+ * provider IDs, consent evidence) — `.strict()` rejects any such field, and
+ * the backend derives all of it from the canonical turn.
+ */
+export const RequestCallNowActionSchema = z.object({
+  type: z.literal('request_call_now'),
+  reason: z.enum(['direct_request', 'accepted_offer']),
+  course_of_interest: z.string().min(1).max(128).optional(),
+}).strict()
+
+export const DecisionBusinessActionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('mark_hot_lead'), score: z.number().min(0).max(1) }).strict(),
+  z.object({
+    type: z.literal('log_objection'),
+    objection_key: z.string().min(1).max(128),
+    quote: z.string().min(1).max(1024),
+  }).strict(),
+  RequestCallNowActionSchema,
+])
+
+export const DecisionResponseTypeSchema = z.enum([
+  'social_reply',
+  'commercial_reply',
+  'clarification',
+  'complaint_ack',
+  'automation_only',
+  'opt_out_ack',
+  'out_of_scope',
+  'technical_fallback',
+  'call_offer',
+  'call_confirmation',
+])
+
 export const DecisionSchema = z.object({
-  schema_version: z.literal(3),
+  schema_version: z.union([z.literal(3), z.literal(4)]),
   intent: IntentSchema,
   kind: z.enum(['reply', 'clarify', 'suppress']),
   response: z.string().min(1).max(4096).nullable(),
-  response_type: ResponseTypeSchema.nullable(),
+  response_type: DecisionResponseTypeSchema.nullable(),
   confidence: z.number().min(0).max(1),
   reason_code: z.string().min(1).max(128),
-  business_action: BusinessActionSchema.nullable(),
+  business_action: DecisionBusinessActionSchema.nullable(),
   memory_candidates: z.array(MemoryCandidateSchema).max(10),
   missing_information: z.array(z.string().min(1).max(128)).max(20),
   next_state: z.enum(['completed', 'waiting_user']),
@@ -163,6 +199,21 @@ export const DecisionSchema = z.object({
     && (decision.response_type !== 'automation_only' || decision.next_state !== 'waiting_user')
   ) {
     context.addIssue({ code: 'custom', message: 'INVALID_HUMAN_REQUEST' })
+  }
+  // Reglas v4: el protocolo de llamada no existe por debajo de schema 4.
+  const requestsCall = decision.business_action?.type === 'request_call_now'
+  const isCallResponse = decision.response_type === 'call_offer' || decision.response_type === 'call_confirmation'
+  if (decision.schema_version !== 4 && (requestsCall || isCallResponse)) {
+    context.addIssue({ code: 'custom', message: 'CALL_PROTOCOL_REQUIRES_V4' })
+  }
+  if (
+    decision.response_type === 'call_offer'
+    && (decision.business_action !== null || decision.kind !== 'reply' || decision.next_state !== 'waiting_user')
+  ) {
+    context.addIssue({ code: 'custom', message: 'INVALID_CALL_OFFER' })
+  }
+  if (requestsCall !== (decision.response_type === 'call_confirmation')) {
+    context.addIssue({ code: 'custom', message: 'INVALID_CALL_REQUEST' })
   }
 })
 
@@ -264,6 +315,37 @@ export const KnowledgeItemSchema = z.object({
 })
 
 /**
+ * The bounded sales/call context handed to Agent A on every claimed turn.
+ * Never carries phone, provider credentials, a transcript or unbounded call
+ * analysis — only what the deterministic call-offer policy allows and the
+ * facts that produced it.
+ */
+export const SalesContextSchema = z.object({
+  mode: z.enum(['advising', 'awaiting_call_consent', 'call_pending', 'in_call', 'post_call']),
+  course_of_interest: z.string().nullable(),
+  open_call_offer: z
+    .object({
+      decision_id: z.string().uuid(),
+      expires_at: z.string(),
+    })
+    .nullable(),
+  active_call: z
+    .object({
+      call_id: z.string().uuid(),
+      status: z.string(),
+    })
+    .nullable(),
+  allowed_actions: z.array(z.enum(['offer_call', 'request_call_now'])),
+  last_call_result: z
+    .object({
+      call_id: z.string().uuid(),
+      result: z.string().nullable(),
+      ended_at: z.string(),
+    })
+    .nullable(),
+})
+
+/**
  * The controlled context, delivered only to the workflow that won the claim.
  *
  * `knowledge_base` is declared here on purpose: Next.js has been returning it
@@ -271,6 +353,65 @@ export const KnowledgeItemSchema = z.object({
  * `*_available` flags are what let a degraded turn stay a valid turn — an
  * empty list because pgvector is down must never read as "nothing relevant".
  */
+/**
+ * Bounded commercial facts for the configured workspace. Everything here is
+ * backend-derived and rides inside the untrusted-context fence like retrieval:
+ * the model reads it, it never chooses the workspace or amends a price.
+ */
+export const BusinessOfferingSchema = z.object({
+  code: z.string(),
+  display_name: z.string(),
+  offering_type: z.enum(['service', 'course', 'product', 'subscription']),
+  description: z.string().nullable().default(null),
+  value_proposition: z.string().nullable().default(null),
+  price_type: z.enum(['fixed', 'quote', 'free']),
+  price: z.object({ amount: z.string(), currency: z.string() }).nullable().default(null),
+  price_assertable: z.boolean(),
+  billing_interval: z.string().nullable().default(null),
+  modality: z.string().nullable().default(null),
+  schedules: z
+    .array(
+      z.object({
+        days: z.array(z.string()).default([]),
+        start: z.string().nullable().default(null),
+        end: z.string().nullable().default(null),
+        timezone: z.string().nullable().default(null),
+      })
+    )
+    .default([]),
+  certification: z.boolean().nullable().default(null),
+  hours_per_month: z.number().nullable().default(null),
+  policies: z.object({
+    allowed_promise: z.string().nullable().default(null),
+    forbidden_promises: z.array(z.string()).default([]),
+    price_message: z.string().nullable().default(null),
+  }),
+})
+
+export const BusinessContextSchema = z.object({
+  workspace: z.object({
+    slug: z.string(),
+    display_name: z.string(),
+    environment: z.enum(['sandbox', 'staging', 'production']),
+    default_locale: z.string(),
+    timezone: z.string(),
+  }),
+  offerings: z.array(BusinessOfferingSchema),
+  qualification_fields: z.array(
+    z.object({
+      code: z.string(),
+      prompt: z.string(),
+      response_type: z.enum(['boolean', 'single_select', 'multi_select', 'text', 'number']),
+      options: z.array(z.string()).default([]),
+      is_required: z.boolean(),
+      position: z.number().int(),
+    })
+  ),
+  injection_suspected_count: z.number().int().default(0),
+})
+
+export type BusinessContext = z.infer<typeof BusinessContextSchema>
+
 export const ClaimedTurnSchema = z.object({
   outcome: z.literal('claimed'),
   trace_id: z.string().uuid(),
@@ -302,6 +443,9 @@ export const ClaimedTurnSchema = z.object({
     knowledge_base_dropped: z.number().int().default(0),
     injection_suspected_count: z.number().int().default(0),
   }),
+  sales_context: SalesContextSchema,
+  business_context: BusinessContextSchema.nullable().default(null),
+  business_context_available: z.boolean().default(false),
   existing_result: ExistingResultSchema,
 })
 
@@ -335,18 +479,17 @@ export const CatalogItemSchema = z.object({
   sku: z.string(),
   name: z.string(),
   description: z.string().nullable().default(null),
-  duration_weeks: z.number().int(),
-  modality: z.enum(['live', 'ondemand', 'hybrid']),
-  price: z.object({ ars_cents: z.number().int(), usd_cents: z.number().int() }),
-  price_source: z.enum(['list', 'promo']),
-  promo: z
-    .object({
-      ars_cents: z.number().int().nullable(),
-      usd_cents: z.number().int().nullable(),
-      valid_to: z.string().nullable(),
-    })
-    .nullable()
-    .default(null),
+  offering_type: z.enum(['service', 'course', 'product', 'subscription']),
+  modality: z.string().nullable().default(null),
+  billing_interval: z.string().nullable().default(null),
+  /**
+   * Canonical price columns, verbatim. `null` means the backend refused to
+   * provide an amount (quote/free): there is no field an invented price
+   * could ride in, and `price_assertable` says so explicitly.
+   */
+  price: z.object({ amount: z.string(), currency: z.string() }).nullable().default(null),
+  price_type: z.enum(['fixed', 'quote', 'free']),
+  price_assertable: z.boolean(),
 })
 
 export const CatalogResponseSchema = z.object({
@@ -389,6 +532,16 @@ export const CommitDecisionResponseSchema = z.object({
       // de "falló un intento que ya no corre", y sólo el primero puede llevar
       // a otro envío.
       delivery_attempt: z.number().int().min(1),
+    })
+    .nullable()
+    .default(null),
+  // Presente exactamente cuando la decisión reservó una llamada. En replay
+  // trae el mismo call_id de la primera reserva; el workflow despacha por
+  // call_id y nunca conoce el teléfono.
+  call_request: z
+    .object({
+      call_id: z.string().uuid(),
+      status: z.literal('requested'),
     })
     .nullable()
     .default(null),

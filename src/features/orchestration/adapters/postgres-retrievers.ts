@@ -1,5 +1,6 @@
 import { sql } from '@/lib/db/orchestrator';
 import { generateEmbedding } from '@/lib/embeddings/gemini';
+import { loadBusinessWorkspaceConfig } from '@/lib/config';
 import type { DbClient } from '@/lib/db/types';
 import type {
   KnowledgeRetriever,
@@ -74,16 +75,48 @@ export class PostgresMemoryRetriever implements MemoryRetriever {
 }
 
 export class PostgresKnowledgeRetriever implements KnowledgeRetriever {
+  private workspaceIdPromise: Promise<string> | null = null;
+
+  /**
+   * The tenant is bound at construction, never taken from search input: the
+   * default resolver maps BUSINESS_WORKSPACE_SLUG (backend configuration) to
+   * a workspaces row. If the slug is missing or the workspace does not
+   * exist, search throws — the claim path treats that as "knowledge base
+   * unavailable" and degrades. It never falls back to another tenant's data.
+   */
   constructor(
     private readonly db: DbClient = sql,
-    private readonly embed: (text: string) => Promise<number[]> = generateEmbedding
+    private readonly embed: (text: string) => Promise<number[]> = generateEmbedding,
+    private readonly resolveWorkspaceId: () => Promise<string> = async () => {
+      const { workspaceSlug } = loadBusinessWorkspaceConfig();
+      const rows = await db<Array<{ id: string }>>`
+        SELECT id FROM workspaces WHERE slug = ${workspaceSlug} AND status = 'active'
+      `;
+      if (rows.length === 0) {
+        throw new Error(`BUSINESS_WORKSPACE_NOT_FOUND:${workspaceSlug}`);
+      }
+      return rows[0].id;
+    }
   ) {}
+
+  private workspaceId(): Promise<string> {
+    // Memoized: workspace ids are stable for the lifetime of a deployment.
+    // A failed resolution is not cached so a transient DB error can recover.
+    if (!this.workspaceIdPromise) {
+      this.workspaceIdPromise = this.resolveWorkspaceId().catch((error) => {
+        this.workspaceIdPromise = null;
+        throw error;
+      });
+    }
+    return this.workspaceIdPromise;
+  }
 
   async search(input: {
     query: string;
     limit: number;
     min_similarity: number;
   }): Promise<RetrievedKnowledge[]> {
+    const workspaceId = await this.workspaceId();
     const embedding = await this.embed(input.query);
 
     const rows = await this.db<Array<{
@@ -94,6 +127,7 @@ export class PostgresKnowledgeRetriever implements KnowledgeRetriever {
     }>>`
       SELECT source_uri, title, content, similarity
       FROM search_knowledge_base(
+        ${workspaceId}::uuid,
         ${toVectorLiteral(embedding)}::extensions.vector,
         ${Math.min(Math.max(input.limit, 1), 20)},
         ${input.min_similarity}

@@ -11,6 +11,7 @@ type CounterName =
   | 'ingest_knowledge_base_errors'
   | 'knowledge_base_searches_executed'
   | 'knowledge_base_documents_ingested'
+  | 'knowledge_sources_projected'
   | 'replies_registered'
   | 'summaries_regenerated'
   // Batching. `absorbed` is the load-shedding signal: a high ratio against

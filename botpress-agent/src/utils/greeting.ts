@@ -19,7 +19,7 @@ import type { ClaimedTurn, Decision } from '../schemas/contracts'
  * send. The fast path changes who authors the decision, never the pipeline.
  */
 
-export const GREETING_FAST_PATH_MODEL = 'deterministic:greeting-fast-path-v1'
+export const GREETING_FAST_PATH_MODEL = 'deterministic:greeting-fast-path-v2'
 
 const EXACT_GREETINGS = new Set([
   'hola',
@@ -33,9 +33,21 @@ const EXACT_GREETINGS = new Set([
   'hola buenas noches',
 ])
 
-const GREETING_RESPONSE =
-  '¡Hola! 😊 Soy el asistente de StudyX. Puedo darte información sobre nuestros cursos, ' +
-  'modalidades y duración. ¿En qué te puedo ayudar?'
+/**
+ * The identity in the greeting is the configured workspace's display name —
+ * already sanitized by the backend — never a hardcoded brand. Without
+ * business context the greeting stays brand-neutral instead of guessing.
+ */
+function buildGreetingResponse(claimed: ClaimedTurn): string {
+  const businessName = claimed.business_context?.workspace.display_name ?? null
+  const identity = businessName
+    ? `Soy la asesora virtual de ${businessName}.`
+    : 'Soy la asesora virtual del equipo.'
+  return (
+    `¡Hola! 😊 ${identity} Puedo darte información sobre nuestros cursos, ` +
+    'modalidades y horarios. ¿En qué te puedo ayudar?'
+  )
+}
 
 /**
  * Lowercase, strip diacritics, collapse whitespace and drop surrounding
@@ -68,7 +80,7 @@ export function matchDeterministicGreeting(claimed: ClaimedTurn): Decision | nul
     schema_version: 3,
     intent: 'social',
     kind: 'reply',
-    response: GREETING_RESPONSE,
+    response: buildGreetingResponse(claimed),
     response_type: 'social_reply',
     business_action: null,
     memory_candidates: [],

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { IngestContext } from '@/lib/services/ingestion.service';
 import type { ClaimedTurn } from '@/features/orchestration/application/claim-batch';
-import type { CatalogView } from '@/features/orchestration/domain/catalog-view';
+import type { BusinessCatalogView } from '@/features/orchestration/domain/business-context';
 
 /**
  * The Botpress response schemas must describe what Next.js actually returns.
@@ -119,11 +119,50 @@ describe('claim response parity', () => {
       expect(block, `UnclaimedTurnSchema must declare ${outcome}`).toContain(`'${outcome}'`);
     }
   });
+
+  it('declares sales_context, the bounded call context handed to Agent A on every claim', () => {
+    const salesContextSample: ClaimedTurn['sales_context'] = {
+      mode: 'advising',
+      course_of_interest: null,
+      open_call_offer: null,
+      active_call: null,
+      allowed_actions: ['offer_call'],
+      last_call_result: null,
+    };
+
+    const claimedBlock = schemaBlock('ClaimedTurnSchema');
+    expect(claimedBlock, 'ClaimedTurnSchema must declare sales_context').toContain('sales_context:');
+
+    const salesContextBlock = schemaBlock('SalesContextSchema');
+    for (const key of Object.keys(salesContextSample)) {
+      expect(salesContextBlock, `SalesContextSchema must declare ${key}`).toContain(`${key}:`);
+    }
+
+    // Every mode and allowed action the application layer can produce must be
+    // representable — a narrower ADK enum would reject a real claimed turn.
+    for (const mode of [
+      'advising',
+      'awaiting_call_consent',
+      'call_pending',
+      'in_call',
+      'post_call',
+    ]) {
+      expect(salesContextBlock, `SalesContextSchema mode must allow ${mode}`).toContain(`'${mode}'`);
+    }
+    for (const action of ['offer_call', 'request_call_now']) {
+      expect(salesContextBlock, `SalesContextSchema allowed_actions must allow ${action}`).toContain(
+        `'${action}'`
+      );
+    }
+
+    // Never a phone, credential, transcript or unbounded call analysis.
+    expect(salesContextBlock).not.toMatch(/phone|credential|transcript|analysis/i);
+  });
 });
 
 describe('catalog response parity', () => {
   it('the ADK schema declares the fields that decide whether a price may be quoted', () => {
-    const sample: Pick<CatalogView, 'items' | 'count' | 'as_of' | 'prices_assertable'> = {
+    const sample: Pick<BusinessCatalogView, 'items' | 'count' | 'as_of' | 'prices_assertable'> = {
       items: [],
       count: 0,
       as_of: 'now',
@@ -138,10 +177,22 @@ describe('catalog response parity', () => {
 });
 
 describe('decision schema parity', () => {
-  it('the agent produces v3 and cannot emit a human handoff', () => {
+  it('the agent produces v3/v4 and cannot emit a human handoff', () => {
     const block = schemaBlock('DecisionSchema');
-    expect(block).toContain('schema_version: z.literal(3)');
+    expect(block).toContain('schema_version: z.union([z.literal(3), z.literal(4)])');
     expect(block).toContain('retrieval_used');
+
+    // El protocolo de llamada v4 queda gateado por versión y por acción:
+    // call_offer sin side effect, call_confirmation ⇔ request_call_now.
+    expect(block).toContain('CALL_PROTOCOL_REQUIRES_V4');
+    expect(block).toContain('INVALID_CALL_OFFER');
+    expect(block).toContain('INVALID_CALL_REQUEST');
+
+    const callAction = schemaBlock('RequestCallNowActionSchema');
+    expect(callAction).toContain('request_call_now');
+    expect(callAction).toContain("z.enum(['direct_request', 'accepted_offer'])");
+    expect(callAction).toContain('.strict()');
+    expect(callAction).not.toMatch(/phone|contact_id|call_id:|provider_call_id|consent/i);
 
     // `escalate_to_human` must be unreachable from the producer side. The
     // backend refuses it too, but an agent that cannot express it never spends

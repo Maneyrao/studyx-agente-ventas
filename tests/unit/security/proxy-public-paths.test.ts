@@ -42,6 +42,22 @@ describe('unauthenticated operational endpoints', () => {
     expect(response.status).not.toBe(401);
   });
 
+  it('lets only the exact Telegram Agent B webhook reach its own secret validation', async () => {
+    const response = await proxy(unauthenticatedGet('/api/webhooks/voice/telegram'));
+    expect(response.status).not.toBe(401);
+    const nearMiss = await proxy(unauthenticatedGet('/api/webhooks/voice/telegram-admin'));
+    expect(nearMiss.status).toBe(401);
+  });
+
+  it('lets only the exact Stripe payments webhook reach its own signature validation', async () => {
+    const response = await proxy(unauthenticatedGet('/api/webhooks/payments/stripe'));
+    expect(response.status).not.toBe(401);
+    const nearMiss = await proxy(unauthenticatedGet('/api/webhooks/payments/stripe-admin'));
+    expect(nearMiss.status).toBe(401);
+    const prefixMiss = await proxy(unauthenticatedGet('/api/webhooks/payments/stripe/replay'));
+    expect(prefixMiss.status).toBe(401);
+  });
+
   it('lets the cron routes through, as before', async () => {
     const response = await proxy(unauthenticatedGet('/api/cron/reconcile-orchestration'));
     expect(response.status).not.toBe(401);

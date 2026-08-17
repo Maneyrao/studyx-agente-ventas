@@ -102,6 +102,31 @@ describe('matchDeterministicGreeting', () => {
     expect(() => DecisionSchema.parse(decision)).not.toThrow();
   });
 
+  it('greets with the configured workspace display name, never a hardcoded brand', () => {
+    const claimed = claimedTurn({ texts: ['hola'] });
+    (claimed as { business_context?: unknown }).business_context = {
+      workspace: {
+        slug: 'aburridont-english-it-sandbox',
+        display_name: 'Aburridont — Inglés IT (Sandbox)',
+        environment: 'sandbox',
+        default_locale: 'es-AR',
+        timezone: 'America/Argentina/Buenos_Aires',
+      },
+      offerings: [],
+      qualification_fields: [],
+      injection_suspected_count: 0,
+    };
+    const decision = matchDeterministicGreeting(claimed);
+    expect(decision!.response).toContain('Aburridont — Inglés IT (Sandbox)');
+    expect(decision!.response).not.toContain('StudyX');
+  });
+
+  it('stays brand-neutral when business context is unavailable', () => {
+    const decision = matchDeterministicGreeting(claimedTurn({ texts: ['hola'] }));
+    expect(decision!.response).not.toMatch(/StudyX|Aburridont/);
+    expect(decision!.response).toContain('asesora virtual');
+  });
+
   const ambiguous = [
     'hola, quiero información del curso',
     'hola precios?',
@@ -135,6 +160,6 @@ describe('matchDeterministicGreeting', () => {
   });
 
   it('exposes a stable versioned model identifier for the commit metadata', () => {
-    expect(GREETING_FAST_PATH_MODEL).toBe('deterministic:greeting-fast-path-v1');
+    expect(GREETING_FAST_PATH_MODEL).toBe('deterministic:greeting-fast-path-v2');
   });
 });

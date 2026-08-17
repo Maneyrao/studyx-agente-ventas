@@ -112,6 +112,53 @@ describe('API proxy authentication', () => {
     await expect(wrongIdempotency.json()).resolves.toMatchObject({ error: 'IDEMPOTENCY_KEY_MISMATCH' });
   });
 
+  it('binds the call dispatch idempotency key to the call_id in the path', async () => {
+    const callId = '7f9f3f66-0b7c-4c8e-9a9e-2f8f0a1b2c3d';
+    const traceId = '53b13d12-2a1d-4b28-b1fd-605b97ebef34';
+    const dispatchRequest = (pathname: string, idempotencyKey: string) => {
+      const body = JSON.stringify({ trace_id: traceId });
+      const timestamp = Date.now().toString();
+      const signature = createHmac('sha256', 'signing-secret')
+        .update(`${timestamp}\nPOST\n${pathname}\n${body}`)
+        .digest('hex');
+      return new NextRequest(`http://localhost${pathname}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-orchestrator-key-id': 'botpress-test',
+          'x-orchestrator-key': 'orchestrator-key',
+          'x-request-timestamp': timestamp,
+          'x-signature': `v1=${signature}`,
+          'x-trace-id': traceId,
+          'idempotency-key': idempotencyKey,
+          'x-request-id': `${traceId}:${idempotencyKey}`,
+        },
+        body,
+      });
+    };
+
+    const exact = await proxy(dispatchRequest(`/api/agent/calls/${callId}/dispatch`, `voice-call:${callId}`));
+    expect(exact.status).toBe(200);
+    expect(exact.headers.get('x-middleware-next')).toBe('1');
+
+    const wrongKey = await proxy(dispatchRequest(`/api/agent/calls/${callId}/dispatch`, 'voice-call:something-else'));
+    expect(wrongKey.status).toBe(409);
+    await expect(wrongKey.json()).resolves.toMatchObject({ error: 'IDEMPOTENCY_KEY_MISMATCH' });
+
+    const otherCallId = 'a1b2c3d4-1111-4222-8333-944455566677';
+    const wrongCall = await proxy(dispatchRequest(`/api/agent/calls/${otherCallId}/dispatch`, `voice-call:${callId}`));
+    expect(wrongCall.status).toBe(409);
+    await expect(wrongCall.json()).resolves.toMatchObject({ error: 'IDEMPOTENCY_KEY_MISMATCH' });
+
+    // Nearby-but-not-exact paths must not trip the dispatch matcher: no
+    // expected key exists for them, so any signed key passes this check.
+    const lookalike = await proxy(
+      dispatchRequest(`/api/agent/calls/${callId}/dispatch/extra`, 'voice-call:unrelated')
+    );
+    expect(lookalike.status).toBe(200);
+    expect(lookalike.headers.get('x-middleware-next')).toBe('1');
+  });
+
   it('leaves cron authentication to the cron handler', async () => {
     delete process.env.ORCHESTRATOR_API_KEY;
     delete process.env.ORCHESTRATOR_KEY_ID;

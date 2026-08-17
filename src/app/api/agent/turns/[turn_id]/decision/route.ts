@@ -8,9 +8,11 @@ import {
   DecisionValidationError,
 } from '@/features/orchestration/domain/decision';
 import {
-  assertBusinessActionPermitted,
-  parseDecisionAny,
-} from '@/features/orchestration/domain/decision-v3';
+  DECISION_V4_RESPONSE_TYPES,
+  REQUEST_CALL_NOW_REASONS,
+  assertDecisionBusinessActionPermitted,
+  parseDecisionAnyVersion,
+} from '@/features/orchestration/domain/decision-v4';
 import { timedStage } from '@/lib/observability/structured-log';
 import { isRetryableTransactionError } from '@/lib/db/transaction';
 import {
@@ -82,14 +84,35 @@ const decisionV3Schema = z.object({
   ...decisionCoreShape,
 }).strict();
 
+// v4 narrows the action union to what the backend executes or records; the
+// dormant v3 shapes are not part of the v4 wire contract at all.
+const businessActionV4Schema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('mark_hot_lead'), score: z.number().min(0).max(1) }).strict(),
+  z.object({
+    type: z.literal('log_objection'),
+    objection_key: z.string().trim().min(1).max(128),
+    quote: z.string().trim().min(1).max(1024),
+  }).strict(),
+  z.object({
+    type: z.literal('request_call_now'),
+    reason: z.enum(REQUEST_CALL_NOW_REASONS),
+    course_of_interest: z.string().trim().min(1).max(128).optional(),
+  }).strict(),
+]);
+
+const decisionV4Schema = z.object({
+  schema_version: z.literal(4),
+  business_action: businessActionV4Schema.nullable(),
+  retrieval_used: retrievalUsedSchema.nullable(),
+  ...decisionCoreShape,
+  response_type: z.enum([...DECISION_RESPONSE_TYPES, ...DECISION_V4_RESPONSE_TYPES]).nullable(),
+}).strict();
+
 const decisionSchema = z
-  .discriminatedUnion('schema_version', [decisionV2Schema, decisionV3Schema])
+  .discriminatedUnion('schema_version', [decisionV2Schema, decisionV3Schema, decisionV4Schema])
   .superRefine((decision, context) => {
     try {
-      parseDecisionAny(decision);
-      assertBusinessActionPermitted(
-        'business_action' in decision ? decision.business_action : null
-      );
+      assertDecisionBusinessActionPermitted(parseDecisionAnyVersion(decision));
     } catch (error) {
       context.addIssue({
         code: 'custom',

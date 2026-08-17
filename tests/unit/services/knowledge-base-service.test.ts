@@ -38,26 +38,46 @@ beforeEach(() => {
   nextSqlResult = [];
 });
 
+const WORKSPACE_ID = '00000000-0000-0000-0000-0000000000aa';
+
 describe('searchKnowledgeBase', () => {
   it('rejects when the query is missing or blank', async () => {
-    await expect(searchKnowledgeBase({ query: '', limit: 5, min_similarity: 0.75 }))
+    await expect(searchKnowledgeBase({ workspace_id: WORKSPACE_ID, query: '', limit: 5, min_similarity: 0.75 }))
       .rejects.toThrow(/query is required/);
-    await expect(searchKnowledgeBase({ query: '   ', limit: 5, min_similarity: 0.75 }))
+    await expect(searchKnowledgeBase({ workspace_id: WORKSPACE_ID, query: '   ', limit: 5, min_similarity: 0.75 }))
       .rejects.toThrow(/query is required/);
+  });
+
+  it('rejects a missing or malformed workspace_id before embedding anything', async () => {
+    await expect(
+      searchKnowledgeBase({ workspace_id: '', query: 'precio', limit: 5, min_similarity: 0.75 }),
+    ).rejects.toThrow(/workspace_id/);
+    await expect(
+      searchKnowledgeBase({ workspace_id: 'not-a-uuid', query: 'precio', limit: 5, min_similarity: 0.75 }),
+    ).rejects.toThrow(/workspace_id/);
+    expect(embedCalls).toEqual([]);
   });
 
   it('calls generateEmbedding once with the exact query text', async () => {
     nextSqlResult = [];
-    await searchKnowledgeBase({ query: '¿Cuánto sale el curso?', limit: 5, min_similarity: 0.75 });
+    await searchKnowledgeBase({ workspace_id: WORKSPACE_ID, query: '¿Cuánto sale el curso?', limit: 5, min_similarity: 0.75 });
     expect(embedCalls).toEqual(['¿Cuánto sale el curso?']);
+  });
+
+  it('scopes the SQL call to the given workspace', async () => {
+    nextSqlResult = [];
+    await searchKnowledgeBase({ workspace_id: WORKSPACE_ID, query: 'test', limit: 5, min_similarity: 0.75 });
+    const call = sqlCalls[0];
+    // params: [workspace_id, embedding_json, limit, min_similarity]
+    expect(call.params[0]).toBe(WORKSPACE_ID);
   });
 
   it('caps limit at 20 (defense against caller mistakes)', async () => {
     nextSqlResult = [];
-    await searchKnowledgeBase({ query: 'test', limit: 999, min_similarity: 0 });
+    await searchKnowledgeBase({ workspace_id: WORKSPACE_ID, query: 'test', limit: 999, min_similarity: 0 });
     const call = sqlCalls[0];
-    // params: [embedding_json, limit, min_similarity]
-    expect(call.params[1]).toBe(20);
+    // params: [workspace_id, embedding_json, limit, min_similarity]
+    expect(call.params[2]).toBe(20);
   });
 
   it('returns rows verbatim from the SQL function', async () => {
@@ -72,6 +92,7 @@ describe('searchKnowledgeBase', () => {
       },
     ];
     const result = await searchKnowledgeBase({
+      workspace_id: WORKSPACE_ID,
       query: 'precio del curso',
       limit: 5,
       min_similarity: 0.75,
@@ -85,7 +106,7 @@ describe('searchKnowledgeBase', () => {
     (generateEmbedding as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error('GEMINI_TIMEOUT'),
     );
-    await expect(searchKnowledgeBase({ query: 'x', limit: 5, min_similarity: 0.75 }))
+    await expect(searchKnowledgeBase({ workspace_id: WORKSPACE_ID, query: 'x', limit: 5, min_similarity: 0.75 }))
       .rejects.toThrow(/GEMINI_TIMEOUT/);
   });
 });

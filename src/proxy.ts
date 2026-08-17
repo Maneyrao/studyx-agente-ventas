@@ -41,6 +41,10 @@ function expectedIdempotencyKey(pathname: string, body: Record<string, unknown>)
   if (delivery) {
     return `delivery:${delivery[1]}:${String(body.botpress_message_id ?? 'none')}:${String(body.status)}`;
   }
+  // Dispatch is idempotent per call: the signed key must be bound to the
+  // call_id in the path so a replay cannot dispatch a different call.
+  const dispatch = pathname.match(/^\/api\/agent\/calls\/([^/]+)\/dispatch$/);
+  if (dispatch) return `voice-call:${dispatch[1]}`;
   return null;
 }
 
@@ -57,7 +61,17 @@ function expectedIdempotencyKey(pathname: string, body: Record<string, unknown>)
  *
  * Exact matches only. `/api/healthcheck-admin` is not `/api/health`.
  */
-const UNAUTHENTICATED_PATHS = new Set(['/api/health', '/api/ready', '/api/diagnostics']);
+const UNAUTHENTICATED_PATHS = new Set([
+  '/api/health',
+  '/api/ready',
+  '/api/diagnostics',
+  // The handler validates X-Telegram-Bot-Api-Secret-Token. This exact path
+  // must be reachable by Telegram, which cannot provide our orchestrator key.
+  '/api/webhooks/voice/telegram',
+  // The handler verifies Stripe-Signature against the raw body. Stripe
+  // cannot provide the orchestrator key either.
+  '/api/webhooks/payments/stripe',
+]);
 
 export async function proxy(request: NextRequest) {
   // Vercel Cron authenticates with Authorization: Bearer CRON_SECRET inside
