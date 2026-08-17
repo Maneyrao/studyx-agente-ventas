@@ -17,6 +17,25 @@ export const config = {
   kbMinSimilarity: parseFloat01(process.env.KB_MIN_SIMILARITY, 0.75),
 };
 
+export type BusinessWorkspaceConfig = {
+  /** Slug of the tenant whose data this deployment serves. Backend-derived:
+   * model output never selects the workspace. */
+  workspaceSlug: string;
+};
+
+const WORKSPACE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/;
+
+export function loadBusinessWorkspaceConfig(
+  environment: NodeJS.ProcessEnv = process.env,
+): BusinessWorkspaceConfig {
+  const raw = environment.BUSINESS_WORKSPACE_SLUG?.trim();
+  if (!raw) throw new Error('MISSING_BUSINESS_CONFIG:BUSINESS_WORKSPACE_SLUG');
+  if (!WORKSPACE_SLUG_PATTERN.test(raw)) {
+    throw new Error('INVALID_BUSINESS_CONFIG:BUSINESS_WORKSPACE_SLUG');
+  }
+  return { workspaceSlug: raw };
+}
+
 export type TelegramAgentBConfig = {
   botToken: string;
   webhookSecret: string;

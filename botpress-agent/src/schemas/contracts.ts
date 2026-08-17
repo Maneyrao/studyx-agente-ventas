@@ -353,6 +353,65 @@ export const SalesContextSchema = z.object({
  * `*_available` flags are what let a degraded turn stay a valid turn — an
  * empty list because pgvector is down must never read as "nothing relevant".
  */
+/**
+ * Bounded commercial facts for the configured workspace. Everything here is
+ * backend-derived and rides inside the untrusted-context fence like retrieval:
+ * the model reads it, it never chooses the workspace or amends a price.
+ */
+export const BusinessOfferingSchema = z.object({
+  code: z.string(),
+  display_name: z.string(),
+  offering_type: z.enum(['service', 'course', 'product', 'subscription']),
+  description: z.string().nullable().default(null),
+  value_proposition: z.string().nullable().default(null),
+  price_type: z.enum(['fixed', 'quote', 'free']),
+  price: z.object({ amount: z.string(), currency: z.string() }).nullable().default(null),
+  price_assertable: z.boolean(),
+  billing_interval: z.string().nullable().default(null),
+  modality: z.string().nullable().default(null),
+  schedules: z
+    .array(
+      z.object({
+        days: z.array(z.string()).default([]),
+        start: z.string().nullable().default(null),
+        end: z.string().nullable().default(null),
+        timezone: z.string().nullable().default(null),
+      })
+    )
+    .default([]),
+  certification: z.boolean().nullable().default(null),
+  hours_per_month: z.number().nullable().default(null),
+  policies: z.object({
+    allowed_promise: z.string().nullable().default(null),
+    forbidden_promises: z.array(z.string()).default([]),
+    price_message: z.string().nullable().default(null),
+  }),
+})
+
+export const BusinessContextSchema = z.object({
+  workspace: z.object({
+    slug: z.string(),
+    display_name: z.string(),
+    environment: z.enum(['sandbox', 'staging', 'production']),
+    default_locale: z.string(),
+    timezone: z.string(),
+  }),
+  offerings: z.array(BusinessOfferingSchema),
+  qualification_fields: z.array(
+    z.object({
+      code: z.string(),
+      prompt: z.string(),
+      response_type: z.enum(['boolean', 'single_select', 'multi_select', 'text', 'number']),
+      options: z.array(z.string()).default([]),
+      is_required: z.boolean(),
+      position: z.number().int(),
+    })
+  ),
+  injection_suspected_count: z.number().int().default(0),
+})
+
+export type BusinessContext = z.infer<typeof BusinessContextSchema>
+
 export const ClaimedTurnSchema = z.object({
   outcome: z.literal('claimed'),
   trace_id: z.string().uuid(),
@@ -385,6 +444,8 @@ export const ClaimedTurnSchema = z.object({
     injection_suspected_count: z.number().int().default(0),
   }),
   sales_context: SalesContextSchema,
+  business_context: BusinessContextSchema.nullable().default(null),
+  business_context_available: z.boolean().default(false),
   existing_result: ExistingResultSchema,
 })
 
@@ -418,18 +479,17 @@ export const CatalogItemSchema = z.object({
   sku: z.string(),
   name: z.string(),
   description: z.string().nullable().default(null),
-  duration_weeks: z.number().int(),
-  modality: z.enum(['live', 'ondemand', 'hybrid']),
-  price: z.object({ ars_cents: z.number().int(), usd_cents: z.number().int() }),
-  price_source: z.enum(['list', 'promo']),
-  promo: z
-    .object({
-      ars_cents: z.number().int().nullable(),
-      usd_cents: z.number().int().nullable(),
-      valid_to: z.string().nullable(),
-    })
-    .nullable()
-    .default(null),
+  offering_type: z.enum(['service', 'course', 'product', 'subscription']),
+  modality: z.string().nullable().default(null),
+  billing_interval: z.string().nullable().default(null),
+  /**
+   * Canonical price columns, verbatim. `null` means the backend refused to
+   * provide an amount (quote/free): there is no field an invented price
+   * could ride in, and `price_assertable` says so explicitly.
+   */
+  price: z.object({ amount: z.string(), currency: z.string() }).nullable().default(null),
+  price_type: z.enum(['fixed', 'quote', 'free']),
+  price_assertable: z.boolean(),
 })
 
 export const CatalogResponseSchema = z.object({

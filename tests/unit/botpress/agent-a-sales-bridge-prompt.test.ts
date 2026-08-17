@@ -94,14 +94,15 @@ const NO_CATALOG: CatalogResponse | null = null;
 const LOADED_CATALOG: CatalogResponse = {
   items: [
     {
-      sku: 'PY-101',
-      name: 'Python desde cero',
-      description: 'Curso intensivo',
-      duration_weeks: 8,
-      modality: 'live',
-      price: { ars_cents: 15000000, usd_cents: 1500000 },
-      price_source: 'list',
-      promo: null,
+      sku: 'group_it_english',
+      name: 'Plan Grupal IT',
+      description: 'Clases grupales de inglés IT',
+      offering_type: 'course',
+      modality: 'virtual',
+      billing_interval: 'monthly',
+      price: { amount: '85000.00', currency: 'ARS' },
+      price_type: 'fixed',
+      price_assertable: true,
     },
   ],
   count: 1,
@@ -193,6 +194,52 @@ describe('buildAgentASalesBridgeInstructions', () => {
     const payload = JSON.parse(fenced.split('\n').slice(1, -1).join('\n'));
     expect(payload.sales_context.mode).toBe('awaiting_call_consent');
     expect(payload.sales_context.allowed_actions).toEqual(['offer_call']);
+  });
+
+  it('embeds business_context inside the fenced payload, never outside it', () => {
+    const businessContext = {
+      workspace: {
+        slug: 'aburridont-english-it-sandbox',
+        display_name: 'Aburridont — Inglés IT (Sandbox)',
+        environment: 'sandbox',
+        default_locale: 'es-AR',
+        timezone: 'America/Argentina/Buenos_Aires',
+      },
+      offerings: [
+        {
+          code: 'group_it_english',
+          display_name: 'Plan Grupal IT',
+          offering_type: 'course',
+          description: null,
+          value_proposition: null,
+          price_type: 'fixed',
+          price: { amount: '85000.00', currency: 'ARS' },
+          price_assertable: true,
+          billing_interval: 'monthly',
+          modality: 'virtual',
+          schedules: [{ days: ['tuesday', 'thursday'], start: '21:00', end: null, timezone: null }],
+          certification: true,
+          hours_per_month: 8,
+          policies: { allowed_promise: null, forbidden_promises: [], price_message: null },
+        },
+      ],
+      qualification_fields: [],
+      injection_suspected_count: 0,
+    };
+    const claimed = claimedTurn({});
+    ;(claimed as { business_context?: unknown }).business_context = businessContext
+    ;(claimed as { business_context_available?: boolean }).business_context_available = true
+
+    const instructions = buildAgentASalesBridgeInstructions(claimed, LOADED_CATALOG);
+    const start = instructions.indexOf('UNTRUSTED_CONTEXT_START');
+    const end = instructions.indexOf('UNTRUSTED_CONTEXT_END');
+    const fenced = instructions.slice(start, end);
+    const payload = JSON.parse(fenced.split('\n').slice(1, -1).join('\n'));
+    expect(payload.business_context.workspace.display_name).toBe('Aburridont — Inglés IT (Sandbox)');
+    expect(payload.business_context.offerings[0].price).toEqual({ amount: '85000.00', currency: 'ARS' });
+    expect(payload.business_context_available).toBe(true);
+    // Dynamic business content must not leak outside the fence.
+    expect(instructions.slice(0, start)).not.toContain('85000.00');
   });
 
   it('degrades catalog to prices_assertable=false when no catalog is available', () => {

@@ -1,4 +1,5 @@
 import { evaluateTurnPolicy, type TurnPolicy } from '../domain/turn-policy';
+import type { BusinessContextView } from '../domain/business-context';
 import { capRetrievedItems } from '../domain/retrieved-context';
 import { classifyDeterministicSalesSignal } from '../domain/sales-signal';
 import { evaluateCallOfferPolicy } from '../domain/call-offer-policy';
@@ -41,6 +42,14 @@ export interface ClaimBatchDependencies {
   readonly log?: (event: string, fields: Record<string, unknown>) => void;
   /** Clock for the call-offer policy's offer-expiry and cooldown math. Defaults to the real time. */
   readonly now?: () => string;
+  /**
+   * Loads the configured workspace's business context. Optional and
+   * degradable like retrieval: absence or failure yields
+   * `business_context: null` with the availability flag down, never a
+   * blocked turn. The workspace is fixed by backend configuration — this
+   * dependency takes no argument a caller could vary per request.
+   */
+  readonly business?: { load(): Promise<BusinessContextView | null> };
 }
 
 export interface ContextLimits {
@@ -133,6 +142,9 @@ export interface ClaimedTurn {
     readonly injection_suspected_count: number;
   };
   readonly sales_context: ClaimedSalesContext;
+  /** Configured workspace's commercial facts; null when unavailable. */
+  readonly business_context: BusinessContextView | null;
+  readonly business_context_available: boolean;
   readonly existing_result: {
     readonly decision_id: string;
     readonly outbound_id: string | null;
@@ -389,6 +401,30 @@ export async function claimBatch(
     now: (deps.now ?? (() => new Date().toISOString()))(),
   });
 
+  // Business context is advisory like retrieval: a missing workspace or a
+  // failed read degrades the turn, it never blocks it. Suppressed turns skip
+  // the read entirely — no prompt will be built, so the data has no consumer.
+  let business_context: BusinessContextView | null = null;
+  let business_context_available = false;
+  if (policy.may_respond && deps.business) {
+    try {
+      business_context = await deps.business.load();
+      business_context_available = business_context !== null;
+      if (!business_context_available) {
+        log('orchestration.claim.business_context_missing', {
+          trace_id: input.trace_id,
+          batch_id: claim.batch_id,
+        });
+      }
+    } catch (error) {
+      log('orchestration.claim.business_context_unavailable', {
+        trace_id: input.trace_id,
+        batch_id: claim.batch_id,
+        error: String(error),
+      });
+    }
+  }
+
   log('orchestration.claim.claimed', {
     trace_id: input.trace_id,
     batch_id: claim.batch_id,
@@ -400,6 +436,7 @@ export async function claimBatch(
     knowledge_base_available,
     knowledge_base_dropped,
     injection_suspected_count,
+    business_context_available,
   });
 
   return {
@@ -438,6 +475,8 @@ export async function claimBatch(
       injection_suspected_count,
     },
     sales_context: salesContext,
+    business_context,
+    business_context_available,
     existing_result: facts.existing_decision
       ? {
           decision_id: facts.existing_decision.decision_id,

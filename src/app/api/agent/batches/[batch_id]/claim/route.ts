@@ -10,9 +10,32 @@ import {
   knowledgeRetriever,
   memoryRetriever,
 } from '@/features/orchestration/adapters/postgres-retrievers';
-import { config } from '@/lib/config';
+import { businessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
+import { buildBusinessContextView } from '@/features/orchestration/domain/business-context';
+import { config, loadBusinessWorkspaceConfig } from '@/lib/config';
 import { logger, timedStage } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
+
+/**
+ * The workspace is fixed by deployment configuration. A deployment without
+ * BUSINESS_WORKSPACE_SLUG keeps claiming turns — business context simply
+ * reports unavailable, and the agent answers without commercial facts.
+ */
+function businessContextLoader() {
+  let workspaceSlug: string;
+  try {
+    workspaceSlug = loadBusinessWorkspaceConfig().workspaceSlug;
+  } catch (error) {
+    logger.warn({ event: 'orchestration.claim.business_config_missing', error: String(error) });
+    return undefined;
+  }
+  return {
+    async load() {
+      const raw = await businessContextStore.loadBusinessContext(workspaceSlug);
+      return raw ? buildBusinessContextView(raw) : null;
+    },
+  };
+}
 
 type UnclaimedCounter =
   | 'batch_claim_waiting'
@@ -94,6 +117,7 @@ export async function POST(
           knowledgeMinSimilarity: config.kbMinSimilarity,
         },
         log: (event, fields) => logger.info({ event, ...fields }),
+        business: businessContextLoader(),
       }
     )
     );
