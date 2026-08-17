@@ -161,7 +161,7 @@ stateDiagram-v2
 | **Recuperación limitada a 2–5** | ✅ | `search_selected_memories` + `capRetrievedItems` | `selected-memories.test.ts` |
 | **KB en el contrato de Botpress** | ✅ | `ClaimedTurnSchema` | `botpress-response-parity.test.ts` |
 | **Límites y saneado de KB** | ✅ | `domain/retrieved-context.ts` | `retrieved-context.test.ts` (11) |
-| **Catálogo conectado al workflow** | ✅ | `actions/lookupCatalog.ts` + `domain/catalog-view.ts` | `catalog-view.test.ts` (10) |
+| **Catálogo conectado al workflow** | ✅ | `actions/lookupCatalog.ts` + `domain/business-context.ts` | `business-context.test.ts` |
 | **Decision v3 en uso** | ✅ | `decision.service.ts` (`parseDecisionAny`) | `decision-v3.test.ts` (7), `decision-v3-policy.test.ts` (10) |
 | **Workflow con claim y espera durable** | ✅ | `processInboundTurn` (`step.sleepUntil`) | `botpress-response-parity.test.ts`; end-to-end ⛔ EXT-05 |
 | **Reconciliador de claims** | ✅ | `application/reconcile-orchestration.ts` | `reconcile-orchestration.test.ts` (11) |

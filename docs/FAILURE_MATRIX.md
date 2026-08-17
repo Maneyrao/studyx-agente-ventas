@@ -72,7 +72,7 @@ Las filas marcadas ⛔ dicen exactamente qué falta para poder verificarlas.
 | Gemini caído | La conversación sigue con hechos estructurados, mensajes recientes y resumen | `Promise.allSettled` en el claim | `claim-batch.test.ts`, `claim-context.test.ts` |
 | pgvector caído | Igual, con `long_term_memory_available=false` | el retriever lanza de verdad; el caso de uso degrada | `claim-context.test.ts`, `selected-memories.test.ts` |
 | KB caída | `knowledge_base_available=false`; el turno se responde | idem | `claim-batch.test.ts` |
-| Catálogo caído | `prices_assertable=false`; el agente no cotiza | `buildCatalogView` + degradación en el workflow | `catalog-view.test.ts` |
+| Catálogo caído | `prices_assertable=false`; el agente no cotiza | `buildBusinessCatalogView` + degradación en el workflow | `business-context.test.ts` |
 | Tabla de memoria inaccesible | El turno se commitea y se entrega igual | la selección corre **después** del commit, en otra conexión | `selected-memories.test.ts` |
 | Embeddings de memoria fallando | Quedan `pending`/`failed`; nunca bloquean | cron de mantenimiento con presupuesto de intentos | `selected-memories.test.ts` |
 | PostgreSQL caído | `/api/ready` 503 — el único caso que saca el proceso de rotación | separación required / degradable | `health-readiness.test.ts` |
@@ -83,7 +83,7 @@ Las filas marcadas ⛔ dicen exactamente qué falta para poder verificarlas.
 |---|---|---|---|
 | Injection directa del cliente | No obedece; no revela instrucciones | cerca `UNTRUSTED_CONTEXT_*` + reglas duras del prompt | eval `studyx-conversational-matrix` ⛔ EXT-04 |
 | Injection dentro de un documento de KB | Los marcadores se eliminan; el intento queda contado | `sanitizeRetrievedText` | `retrieved-context.test.ts` |
-| Injection en la descripción de un producto | Igual que un chunk de KB | `buildCatalogView` → `capRetrievedItems` | `catalog-view.test.ts` |
+| Injection en la descripción de un producto | Igual que un chunk de KB | `buildBusinessContextView` → `sanitizeRetrievedText` | `catalog-detail.test.ts` |
 | Documento que cierra la cerca del contexto | Imposible: se le quita el marcador | `FENCE_PATTERN` | `retrieved-context.test.ts` |
 | Caracteres de control que fingen un cambio de rol | Se eliminan | `CONTROL_CHARS` | `retrieved-context.test.ts` |
 | KB creciendo sin límite | Tope de ítems, de caracteres por ítem y total; lo descartado se reporta | `capRetrievedItems` | `retrieved-context.test.ts` |

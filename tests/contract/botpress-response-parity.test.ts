@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { IngestContext } from '@/lib/services/ingestion.service';
 import type { ClaimedTurn } from '@/features/orchestration/application/claim-batch';
-import type { CatalogView } from '@/features/orchestration/domain/catalog-view';
+import type { BusinessCatalogView } from '@/features/orchestration/domain/business-context';
 
 /**
  * The Botpress response schemas must describe what Next.js actually returns.
@@ -162,7 +162,7 @@ describe('claim response parity', () => {
 
 describe('catalog response parity', () => {
   it('the ADK schema declares the fields that decide whether a price may be quoted', () => {
-    const sample: Pick<CatalogView, 'items' | 'count' | 'as_of' | 'prices_assertable'> = {
+    const sample: Pick<BusinessCatalogView, 'items' | 'count' | 'as_of' | 'prices_assertable'> = {
       items: [],
       count: 0,
       as_of: 'now',

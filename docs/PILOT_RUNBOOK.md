@@ -51,7 +51,8 @@ Para el entorno real del piloto, aplicar las migraciones nuevas **en orden**:
 ### 2.2 Catálogo y base de conocimiento
 
 ```bash
-node scripts/seed-catalog.mjs     # productos: sin esto, prices_assertable = false
+# Catálogo: las offerings del workspace (tabla `offerings`) son la única fuente de precios;
+# sin offerings activas, prices_assertable = false
 node scripts/ingest-kb.mjs        # chunks de KB (necesita GEMINI_API_KEY)
 ```
 
@@ -197,7 +198,7 @@ como test se vuelve a producir.
 
 | Tipo de fallo | Dónde va el test |
 |---|---|
-| El agente afirmó un precio que no vino del catálogo | `tests/unit/orchestration/catalog-view.test.ts` + fila `not_contains` en `evals/conversational-matrix.eval.ts` |
+| El agente afirmó un precio que no vino del catálogo | `tests/unit/orchestration/business-context.test.ts` + fila `not_contains` en `evals/conversational-matrix.eval.ts` |
 | El agente prometió un humano | `evals/conversational-matrix.eval.ts` (bloque `NO_HUMAN_PROMISE`) + `tests/integration/decision-v3.test.ts` |
 | El agente recordó algo que el cliente no dijo | `tests/unit/orchestration/memory-selection.test.ts` con la cita exacta |
 | Un documento de KB cambió la conducta del agente | `tests/unit/orchestration/retrieved-context.test.ts` con el texto real |
