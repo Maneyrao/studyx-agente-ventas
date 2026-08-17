@@ -1,0 +1,52 @@
+[env] DATABASE_URL=set ORCHESTRATOR_API_KEY=set ORCHESTRATOR_KEY_ID=set STUDYX_SIGNING_SECRET=set
+[run-pilot] base_url=http://localhost:3000 run_tag=415782
+[retry] Scenario 1: full text turn (ingest -> decision -> delivery), same trace_id end-to-end attempt 1/3 failed: decision status=500 body={"error":"INTERNAL_ERROR"}
+[retry] Scenario 1: full text turn (ingest -> decision -> delivery), same trace_id end-to-end attempt 2/3 failed: decision status=500 body={"error":"INTERNAL_ERROR"}
+[retry] Scenario 1: full text turn (ingest -> decision -> delivery), same trace_id end-to-end attempt 3/3 failed: decision status=500 body={"error":"INTERNAL_ERROR"}
+[FAIL] Scenario 1: full text turn (ingest -> decision -> delivery), same trace_id end-to-end — decision status=500 body={"error":"INTERNAL_ERROR"}
+[retry] Scenario 2: inbound idempotency — same event x10 -> exactly 1 inbound + 1 outbound attempt 1/3 failed: ingest replay #1 status=409 body={"error":"IDEMPOTENCY_KEY_REUSED"}
+[retry] Scenario 2: inbound idempotency — same event x10 -> exactly 1 inbound + 1 outbound attempt 2/3 failed: ingest replay #1 status=409 body={"error":"IDEMPOTENCY_KEY_REUSED"}
+[retry] Scenario 2: inbound idempotency — same event x10 -> exactly 1 inbound + 1 outbound attempt 3/3 failed: ingest replay #1 status=409 body={"error":"IDEMPOTENCY_KEY_REUSED"}
+[FAIL] Scenario 2: inbound idempotency — same event x10 -> exactly 1 inbound + 1 outbound — ingest replay #1 status=409 body={"error":"IDEMPOTENCY_KEY_REUSED"}
+[PASS] Scenario 3: external_message_id collision, different content -> HTTP 409 — first ingest=200, colliding external_message_id with different content=409 error=IDEMPOTENCY_KEY_REUSED
+[retry] Scenario 4 attempt 1/3 failed: threw: TypeError: fetch failed
+[retry] Scenario 4 attempt 2/3 failed: threw: TypeError: fetch failed
+[retry] Scenario 4 attempt 3/3 failed: threw: TypeError: fetch failed
+[FAIL] Scenario 4 — threw: TypeError: fetch failed
+[retry] Scenario 5 attempt 1/3 failed: threw: TypeError: fetch failed
+[retry] Scenario 5 attempt 2/3 failed: threw: TypeError: fetch failed
+[retry] Scenario 5 attempt 3/3 failed: threw: TypeError: fetch failed
+[FAIL] Scenario 5 — threw: TypeError: fetch failed
+[retry] Scenario 6 attempt 1/3 failed: threw: TypeError: fetch failed
+[retry] Scenario 6 attempt 2/3 failed: threw: TypeError: fetch failed
+[retry] Scenario 6 attempt 3/3 failed: threw: TypeError: fetch failed
+[FAIL] Scenario 6 — threw: TypeError: fetch failed
+[PASS] Scenario 7: 1 byte tampered in body after signing -> 401 INVALID_SIGNATURE — tampered body correctly rejected with 401 INVALID_SIGNATURE
+[PASS] Scenario 8: timestamp -6min -> 401 STALE_REQUEST — timestamp -6min correctly rejected with 401 STALE_REQUEST
+[run-pilot] 3/8 scenarios passed
+PostgresError: update or delete on table "messages" violates foreign key constraint "embedding_jobs_message_contact_fk" on table "embedding_jobs"
+    at ErrorResponse (file:///Users/tmaneyro22/Documents/AGENTE%20IA/studyx-agente-ventas/node_modules/postgres/src/connection.js:815:30)
+    at handle (file:///Users/tmaneyro22/Documents/AGENTE%20IA/studyx-agente-ventas/node_modules/postgres/src/connection.js:489:6)
+    at Socket.data (file:///Users/tmaneyro22/Documents/AGENTE%20IA/studyx-agente-ventas/node_modules/postgres/src/connection.js:324:9)
+    at Socket.emit (node:events:509:20)
+    at addChunk (node:internal/streams/readable:564:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:515:3)
+    at Readable.push (node:internal/streams/readable:395:5)
+    at TCP.onStreamRead (node:internal/stream_base_commons:189:23)
+    at cachedError (file:///Users/tmaneyro22/Documents/AGENTE%20IA/studyx-agente-ventas/node_modules/postgres/src/query.js:170:23)
+    at new Query (file:///Users/tmaneyro22/Documents/AGENTE%20IA/studyx-agente-ventas/node_modules/postgres/src/query.js:36:24)
+    at sql (file:///Users/tmaneyro22/Documents/AGENTE%20IA/studyx-agente-ventas/node_modules/postgres/src/index.js:112:11)
+    at cleanup (file:///Users/tmaneyro22/Documents/AGENTE%20IA/studyx-agente-ventas/scripts/run-pilot.mjs:569:12)
+[cleanup] failed: PostgresError: update or delete on table "messages" violates foreign key constraint "embedding_jobs_message_contact_fk" on table "embedding_jobs"
+    at ErrorResponse (file:///Users/tmaneyro22/Documents/AGENTE%20IA/studyx-agente-ventas/node_modules/postgres/src/connection.js:815:30)
+    at handle (file:///Users/tmaneyro22/Documents/AGENTE%20IA/studyx-agente-ventas/node_modules/postgres/src/connection.js:489:6)
+    at Socket.data (file:///Users/tmaneyro22/Documents/AGENTE%20IA/studyx-agente-ventas/node_modules/postgres/src/connection.js:324:9)
+    at Socket.emit (node:events:509:20)
+    at addChunk (node:internal/streams/readable:564:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:515:3)
+    at Readable.push (node:internal/streams/readable:395:5)
+    at TCP.onStreamRead (node:internal/stream_base_commons:189:23)
+    at cachedError (file:///Users/tmaneyro22/Documents/AGENTE%20IA/studyx-agente-ventas/node_modules/postgres/src/query.js:170:23)
+    at new Query (file:///Users/tmaneyro22/Documents/AGENTE%20IA/studyx-agente-ventas/node_modules/postgres/src/query.js:36:24)
+    at sql (file:///Users/tmaneyro22/Documents/AGENTE%20IA/studyx-agente-ventas/node_modules/postgres/src/index.js:112:11)
+    at cleanup (file:///Users/tmaneyro22/Documents/AGENTE%20IA/studyx-agente-ventas/scripts/run-pilot.mjs:569:12)

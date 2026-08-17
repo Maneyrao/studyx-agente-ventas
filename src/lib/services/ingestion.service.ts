@@ -1,26 +1,25 @@
 import { resolveContact, Contact } from './contact.service';
 import { getOrCreateOpenConversation } from './conversation.service';
 import { registerMessage, getMessageById, Message } from './message.service';
-import { getRecentMessages, semanticSearch, SearchResult } from './memory.service';
-import { regenerateSummary } from './summary.service';
-import { searchKnowledgeBase, KnowledgeResult } from './knowledge-base.service';
 import { randomUUID } from 'node:crypto';
 import {
   commitAgentDecision,
   DecisionConflictError,
   DecisionTurnNotFoundError,
 } from './decision.service';
-import { referencesPast } from '@/lib/heuristics/reference-detection';
-import { isTrivial } from '@/lib/heuristics/triviality';
-import { config } from '@/lib/config';
 import { logger } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
 import { sql } from '@/lib/db/orchestrator';
 import { withSerializableTransaction } from '@/lib/db/transaction';
+import { jsonbParam } from '@/lib/db/json';
 import { sha256Hex } from '@/lib/idempotency/canonical-json';
 import { isExplicitOptOut } from '@/lib/heuristics/opt-out';
 import type { DbClient } from '@/lib/db/types';
 import type { DecisionResponseType } from '@/features/orchestration/domain/decision';
+import { evaluateTurnPolicy, type TurnPolicyReason } from '@/features/orchestration/domain/turn-policy';
+import { PostgresOrchestrationStore } from '@/features/orchestration/adapters/postgres-orchestration-store';
+import type { BatchMembership } from '@/features/orchestration/ports/orchestration-store';
+import { DEFAULT_BATCH_WINDOW_POLICY } from '@/features/orchestration/domain/batch-window';
 
 export class TurnNotFoundError extends Error {
   readonly code = 'TURN_NOT_FOUND';
@@ -62,20 +61,25 @@ export interface IngestContext {
   trace_id: string;
   turn_id: string;
   conversation_id: string;
+  /**
+   * The durable window this inbound joined. The caller sleeps until `due_at`
+   * and then claims; it never decides on its own that a turn is ready.
+   */
+  batch: {
+    id: string;
+    state: 'waiting' | 'claimed' | 'completed' | 'abandoned';
+    joined_existing: boolean;
+    due_at: string;
+    hard_deadline_at: string;
+    conversation_seq: number;
+    message_count: number;
+  };
   policy: {
     may_respond: boolean;
     allowed_response_types: DecisionResponseType[];
-    reason: string | null;
+    reason: TurnPolicyReason | null;
   };
   contact: ContactContext;
-  context: {
-    recent_turns: Pick<Message, 'direction' | 'content' | 'created_at'>[];
-    summary: string | null;
-    long_term_memory: Pick<SearchResult, 'content' | 'similarity' | 'created_at'>[] | null;
-    long_term_memory_available: boolean;
-    knowledge_base: Pick<KnowledgeResult, 'source_uri' | 'title' | 'content' | 'similarity'>[] | null;
-    knowledge_base_available: boolean;
-  };
   existing_result: {
     decision_id: string | null;
     outbound_id: string | null;
@@ -149,6 +153,7 @@ interface InboundCore {
   replayed: boolean;
   explicit_opt_out: boolean;
   consent_status: 'unknown' | 'granted' | 'revoked';
+  batch: BatchMembership;
 }
 
 async function findExistingInbound(eventId: string, db: DbClient): Promise<InboundCore | null> {
@@ -156,6 +161,12 @@ async function findExistingInbound(eventId: string, db: DbClient): Promise<Inbou
     message_id: string;
     conversation_id: string;
     consent_status: 'unknown' | 'granted' | 'revoked' | null;
+    batch_id: string;
+    batch_state: BatchMembership['state'];
+    batch_due_at: Date;
+    batch_hard_deadline_at: Date;
+    batch_message_count: number;
+    conversation_seq: string | number;
   }>>`
     SELECT
       m.id AS message_id,
@@ -167,10 +178,17 @@ async function findExistingInbound(eventId: string, db: DbClient): Promise<Inbou
       m.metadata,
       m.created_at,
       m.source_event_id,
+      m.conversation_seq,
       c.*,
-      ccp.consent_status
+      ccp.consent_status,
+      b.id               AS batch_id,
+      b.state            AS batch_state,
+      b.due_at           AS batch_due_at,
+      b.hard_deadline_at AS batch_hard_deadline_at,
+      b.message_count    AS batch_message_count
     FROM messages AS m
     JOIN contacts AS c ON c.id = m.contact_id
+    JOIN inbound_batches AS b ON b.id = m.batch_id
     LEFT JOIN contact_channel_permissions AS ccp
       ON ccp.contact_id = c.id AND ccp.channel = 'whatsapp'
     WHERE m.source_event_id = ${eventId}::uuid
@@ -185,6 +203,17 @@ async function findExistingInbound(eventId: string, db: DbClient): Promise<Inbou
     replayed: true,
     explicit_opt_out: row.consent_status === 'revoked',
     consent_status: row.consent_status ?? 'unknown',
+    // A replay must return the window the original message already belongs to,
+    // never open a second one.
+    batch: {
+      batch_id: row.batch_id,
+      joined: true,
+      state: row.batch_state,
+      due_at: row.batch_due_at.toISOString(),
+      hard_deadline_at: row.batch_hard_deadline_at.toISOString(),
+      conversation_seq: Number(row.conversation_seq),
+      message_count: Number(row.batch_message_count),
+    },
   };
 }
 
@@ -211,6 +240,17 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
   const payloadHash = sha256Hex(canonicalPayload);
 
   return withSerializableTransaction(async (db) => {
+    // Per-phase wall-clock inside the transaction. One log line per attempt,
+    // no message content: this is how we know WHERE an ingest spent its time
+    // (observed range in prod: 0.8s–2.9s for the same work).
+    const txnStartedAt = Date.now();
+    let phaseMark = txnStartedAt;
+    const phases: Record<string, number> = {};
+    const mark = (name: string): void => {
+      phases[name] = Date.now() - phaseMark;
+      phaseMark = Date.now();
+    };
+
     const reservations = await db<Array<{
       event_id: string;
       was_created: boolean;
@@ -225,7 +265,7 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
         ${envelope.external_message_id},
         ${envelope.external_conversation_id},
         decode(${payloadHash}, 'hex'),
-        ${JSON.stringify(canonicalPayload)}::jsonb
+        ${jsonbParam(db, canonicalPayload)}
       )
     `;
     const reservation = reservations[0];
@@ -240,6 +280,7 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
     if (events[0]?.status === 'processed' || events[0]?.status === 'dead_letter') {
       throw new InboundEventUnavailableError(false);
     }
+    mark('reserve');
 
     const { contact } = await resolveContact({
       phone: envelope.phone_e164,
@@ -252,6 +293,7 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
       },
     });
     await db`SELECT id FROM contacts WHERE id = ${contact.id}::uuid FOR UPDATE`;
+    mark('contact');
 
     const threads = await db<Array<{ id: string; contact_id: string }>>`
       INSERT INTO channel_threads (
@@ -263,7 +305,7 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
         ${envelope.integration_id},
         ${channel},
         ${envelope.external_conversation_id},
-        ${JSON.stringify({ external_user_id: envelope.external_user_id })}::jsonb
+        ${jsonbParam(db, { external_user_id: envelope.external_user_id })}
       )
       ON CONFLICT (provider, integration_id, external_conversation_id)
       DO UPDATE SET last_seen_at = now()
@@ -285,6 +327,7 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
         leased_by = ${`next:${envelope.trace_id}`}
       WHERE id = ${reservation.event_id}::uuid
     `;
+    mark('thread_event');
 
     const openRows = await db<Array<{ id: string; channel_thread_id: string | null }>>`
       SELECT id, channel_thread_id
@@ -315,10 +358,14 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
       });
       conversationId = conversation.id;
     }
+    mark('conversation');
 
+    // Both branches surface the resulting consent themselves (RETURNING /
+    // the function's current_status), so no separate final SELECT is needed.
     const explicitOptOut = isExplicitOptOut(envelope.message.text);
+    let consentStatus: 'unknown' | 'granted' | 'revoked';
     if (explicitOptOut) {
-      await db`
+      const consentRows = await db<Array<{ current_status: 'unknown' | 'granted' | 'revoked' | null }>>`
         SELECT * FROM record_contact_permission_event(
           ${`opt-out:${reservation.event_id}`},
           ${contact.id}::uuid,
@@ -326,12 +373,13 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
           ${'revoked'},
           ${'inbound_explicit_opt_out'},
           ${reservation.event_id}::uuid,
-          ${JSON.stringify({ text: envelope.message.text })}::jsonb,
+          ${jsonbParam(db, { text: envelope.message.text })},
           ${envelope.message.occurred_at}::timestamptz
         )
       `;
+      consentStatus = consentRows[0]?.current_status ?? 'unknown';
     } else {
-      await db`
+      const permissionRows = await db<Array<{ consent_status: 'unknown' | 'granted' | 'revoked' }>>`
         INSERT INTO contact_channel_permissions (
           contact_id, channel, consent_status, consent_source, reply_window_expires_at
         )
@@ -347,8 +395,11 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
           contact_channel_permissions.reply_window_expires_at,
           EXCLUDED.reply_window_expires_at
         )
+        RETURNING consent_status
       `;
+      consentStatus = permissionRows[0]?.consent_status ?? 'unknown';
     }
+    mark('permissions');
 
     const { message: inbound } = await registerMessage({
       conversation_id: conversationId,
@@ -364,13 +415,19 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
       },
     }, {
       db,
-      embedding: isTrivial(envelope.message.text) ? 'skip' : 'enqueue',
+      // Fase 4: la memoria es selectiva. Un mensaje canónico ya no se vectoriza
+      // por el hecho de existir; sólo los memory candidates validados entran a
+      // la cola de embeddings. Vectorizar todo contradecía la política y además
+      // llenaba pgvector de ruido que después degradaba el recall.
+      embedding: 'skip',
       audit: {
         event_key: `channel-event:${reservation.event_id}:message`,
         correlation_id: envelope.trace_id,
         source_event_id: reservation.event_id,
       },
     });
+
+    mark('message');
 
     await db`
       UPDATE channel_events
@@ -384,122 +441,45 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
       WHERE id = ${reservation.event_id}::uuid
     `;
 
-    const permissions = await db<Array<{ consent_status: 'unknown' | 'granted' | 'revoked' }>>`
-      SELECT consent_status
-      FROM contact_channel_permissions
-      WHERE contact_id = ${contact.id}::uuid AND channel = ${channel}
-    `;
+    // Batching commits with the inbound: the message is a durable member of a
+    // window before Botpress is ever told to sleep, so a workflow crash during
+    // the wait can never lose it.
+    const batch = await new PostgresOrchestrationStore(db).openOrJoinBatch({
+      conversation_id: conversationId,
+      contact_id: contact.id,
+      message_id: inbound.id,
+      window_ms: DEFAULT_BATCH_WINDOW_POLICY.windowMs,
+      hard_deadline_ms: DEFAULT_BATCH_WINDOW_POLICY.hardDeadlineMs,
+    });
+
+    mark('batch');
+    logger.info({
+      event: 'ingestion.phases',
+      trace_id: envelope.trace_id,
+      ...phases,
+      txn_ms: Date.now() - txnStartedAt,
+    });
+
     return {
       inbound,
       contact,
       conversation_id: conversationId,
       replayed: !reservation.was_created,
       explicit_opt_out: explicitOptOut,
-      consent_status: permissions[0]?.consent_status ?? 'unknown',
+      consent_status: consentStatus,
+      batch,
     };
   });
 }
 
 export async function processInboundMessage(envelope: InboundEnvelope): Promise<IngestContext> {
-  const { inbound, contact, conversation_id, replayed, explicit_opt_out, consent_status } =
+  const { inbound, contact, conversation_id, replayed, explicit_opt_out, consent_status, batch } =
     await persistInbound(envelope);
-  const content = envelope.message.text;
-
-  const { messages: recentMessages } = await getRecentMessages({
-    conversation_id,
-    limit: config.recentTurnsLimit,
-  });
-
-  const recent_turns = recentMessages.map((m) => ({
-    direction: m.direction,
-    content: m.content,
-    created_at: m.created_at,
-  }));
-
-  // Phase 5: regenerate summary synchronously when pending_turns crosses the
-  // threshold, so the business_context we return already holds the fresh
-  // version. Failure to regenerate must NOT block the ingest response — we
-  // fall back to the stored summary. regenerateSummary resets pending_turns
-  // to 0 and bumps summary_version atomically.
-  let effectiveSummary = contact.summary;
-  let effectiveSummaryVersion = contact.summary_version;
-  let effectiveSummaryUpdatedAt = contact.summary_updated_at;
-  if (contact.pending_turns >= config.summaryThreshold) {
-    try {
-      const regenerated = await regenerateSummary(contact.id);
-      effectiveSummary = regenerated.summary;
-      effectiveSummaryVersion = regenerated.version;
-      effectiveSummaryUpdatedAt = regenerated.summary_updated_at;
-    } catch (err) {
-      logger.error({
-        event: 'ingestion.summary_regeneration.failed',
-        contact_id: contact.id,
-        pending_turns: contact.pending_turns,
-        error: String(err),
-      });
-      counter.increment('ingest_summary_regeneration_errors');
-    }
-  }
-
-  let long_term_memory: IngestContext['context']['long_term_memory'] = null;
-  let long_term_memory_available = true;
-
-  // FR-006: un mensaje trivial (saludo/ack/agradecimiento) NUNCA dispara búsqueda
-  // vectorial, aunque contenga un marcador de referencia. La trivialidad se evalúa
-  // PRIMERO como short-circuit, de modo que SC-001 (cero búsquedas en turnos triviales)
-  // se cumple siempre, sin importar el contenido.
-  const trivial = isTrivial(content);
-  const shouldRetrieveMemory = !trivial && referencesPast(content);
-
-  if (shouldRetrieveMemory) {
-    try {
-      const { results } = await semanticSearch({
-        contact_id: contact.id,
-        query: content,
-        limit: config.ltmResultsLimit,
-      });
-      long_term_memory = results.map((r) => ({
-        content: r.content,
-        similarity: r.similarity,
-        created_at: r.created_at,
-      }));
-    } catch (err) {
-      long_term_memory_available = false;
-      logger.error({ event: 'ingestion.long_term_memory.failed', contact_id: contact.id, error: String(err) });
-      counter.increment('ingest_long_term_memory_errors');
-    }
-  }
-
-  // Phase 6: Knowledge Base retrieval. Fires on every non-trivial turn (unlike
-  // long_term_memory which is gated on referencesPast). Fail-open: on any
-  // error we return knowledge_base_available=false and keep going — the KB
-  // is advisory context, never on the critical path of a turn.
-  let knowledge_base: IngestContext['context']['knowledge_base'] = null;
-  let knowledge_base_available = true;
-  if (!trivial) {
-    try {
-      const { results } = await searchKnowledgeBase({
-        query: content,
-        limit: config.kbResultsLimit,
-        min_similarity: config.kbMinSimilarity,
-      });
-      knowledge_base = results.map((r) => ({
-        source_uri: r.source_uri,
-        title: r.title,
-        content: r.content,
-        similarity: r.similarity,
-      }));
-    } catch (err) {
-      knowledge_base_available = false;
-      logger.error({
-        event: 'ingestion.knowledge_base.failed',
-        contact_id: contact.id,
-        error: String(err),
-      });
-      counter.increment('ingest_knowledge_base_errors');
-    }
-  }
-
+  // Fase 3: la ingesta no construye contexto. Recuperación semántica, base de
+  // conocimiento y regeneración de resumen son trabajo derivado y se hacen una
+  // sola vez, en el claim, por el workflow que realmente es dueño del lote.
+  // Hacerlo acá significaba pagar embeddings y una llamada al modelo por CADA
+  // mensaje de una ráfaga, en el camino crítico del ACK del canal.
   counter.increment('ingest_processed');
 
   logger.info({
@@ -507,32 +487,19 @@ export async function processInboundMessage(envelope: InboundEnvelope): Promise<
     contact_id: contact.id,
     conversation_id,
     turn_id: inbound.id,
-    trivial,
-    memory_search_attempted: shouldRetrieveMemory,
-    long_term_memory_available,
+    batch_id: batch.batch_id,
+    batch_message_count: batch.message_count,
+    trace_id: envelope.trace_id,
   });
 
-  const blocked = contact.status === 'inactivo'
-    || contact.lifecycle_status === 'blocked'
-    || contact.lifecycle_status === 'deleted'
-    || contact.deleted_at !== null;
-  const unsupportedMessage = envelope.message.type === 'unsupported';
-  const mayRespond = explicit_opt_out || (!blocked && consent_status !== 'revoked');
-  const allowedResponseTypes: IngestContext['policy']['allowed_response_types'] = explicit_opt_out
-    ? ['opt_out_ack']
-    : !mayRespond
-      ? []
-      : unsupportedMessage
-        ? ['out_of_scope', 'technical_fallback']
-        : [
-            'social_reply',
-            'commercial_reply',
-            'clarification',
-            'complaint_ack',
-            'automation_only',
-            'out_of_scope',
-            'technical_fallback',
-          ];
+  const policy = evaluateTurnPolicy({
+    contact_status: contact.status,
+    lifecycle_status: contact.lifecycle_status,
+    deleted_at: contact.deleted_at,
+    consent_status,
+    explicit_opt_out,
+    unsupported_message: envelope.message.type === 'unsupported',
+  });
 
   const decisions = await sql<Array<{
     decision_id: string;
@@ -554,23 +521,24 @@ export async function processInboundMessage(envelope: InboundEnvelope): Promise<
       : existingDecision?.state ?? null;
 
   return {
-    status: !mayRespond ? 'suppressed' : replayed ? 'duplicate' : 'accepted',
+    status: !policy.may_respond ? 'suppressed' : replayed ? 'duplicate' : 'accepted',
     replayed,
     trace_id: envelope.trace_id,
     turn_id: inbound.id,
     conversation_id,
+    batch: {
+      id: batch.batch_id,
+      state: batch.state,
+      joined_existing: batch.joined,
+      due_at: batch.due_at,
+      hard_deadline_at: batch.hard_deadline_at,
+      conversation_seq: batch.conversation_seq,
+      message_count: batch.message_count,
+    },
     policy: {
-      may_respond: mayRespond,
-      allowed_response_types: allowedResponseTypes,
-      reason: blocked
-        ? 'CONTACT_BLOCKED'
-        : consent_status === 'revoked' && !explicit_opt_out
-          ? 'CONSENT_REVOKED'
-          : explicit_opt_out
-            ? 'EXPLICIT_OPT_OUT_ACK_ONLY'
-            : unsupportedMessage
-              ? 'UNSUPPORTED_MESSAGE_TYPE'
-              : null,
+      may_respond: policy.may_respond,
+      allowed_response_types: policy.allowed_response_types,
+      reason: policy.reason,
     },
     contact: {
       id: contact.id,
@@ -578,20 +546,12 @@ export async function processInboundMessage(envelope: InboundEnvelope): Promise<
       name: contact.name,
       // C1 / Edge case opt-out: señal explícita para que el agente NO continúe la
       // conversación comercial cuando el contacto está inactivo/bloqueado.
-      blocked,
+      blocked: policy.blocked,
       consent_status: consent_status === 'granted' ? 'allowed' : consent_status,
       opted_in_at: contact.opted_in_at,
-      summary: effectiveSummary,
-      summary_updated_at: effectiveSummaryUpdatedAt,
-      summary_version: effectiveSummaryVersion,
-    },
-    context: {
-      recent_turns,
-      summary: effectiveSummary,
-      long_term_memory,
-      long_term_memory_available,
-      knowledge_base,
-      knowledge_base_available,
+      summary: contact.summary,
+      summary_updated_at: contact.summary_updated_at,
+      summary_version: contact.summary_version,
     },
     existing_result: existingDecision ? {
       decision_id: existingDecision.decision_id,

@@ -13,6 +13,10 @@ const schema = z.object({
   botpress_message_id: z.string().trim().min(1).max(512).nullable().default(null),
   replayed: z.boolean().default(false),
   error_code: z.string().trim().min(1).max(128).nullable().default(null),
+  // El intento que el workflow recibió al commitear. Opcional por
+  // compatibilidad: sin él el backend asume el intento vigente, que sólo es
+  // seguro mientras haya uno solo.
+  delivery_attempt: z.number().int().min(1).max(100).nullable().default(null),
 });
 
 export async function POST(

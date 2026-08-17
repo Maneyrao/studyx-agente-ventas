@@ -1,0 +1,16 @@
+[env] DATABASE_URL=set ORCHESTRATOR_API_KEY=set ORCHESTRATOR_KEY_ID=set STUDYX_SIGNING_SECRET=set
+[run-pilot] base_url=http://localhost:3000 run_tag=392472
+[retry] Scenario 1 attempt 1/3 failed: threw: TypeError: fetch failed
+[retry] Scenario 1 attempt 2/3 failed: threw: TypeError: fetch failed
+[retry] Scenario 1 attempt 3/3 failed: threw: TypeError: fetch failed
+[FAIL] Scenario 1 — threw: TypeError: fetch failed
+[retry] Scenario 2 attempt 1/3 failed: threw: TypeError: fetch failed
+[retry] Scenario 2 attempt 2/3 failed: threw: TypeError: fetch failed
+[retry] Scenario 2 attempt 3/3 failed: threw: TypeError: fetch failed
+[FAIL] Scenario 2 — threw: TypeError: fetch failed
+[retry] Scenario 3 attempt 1/3 failed: threw: TypeError: fetch failed
+[retry] Scenario 3 attempt 2/3 failed: threw: TypeError: fetch failed
+[retry] Scenario 3 attempt 3/3 failed: threw: TypeError: fetch failed
+[FAIL] Scenario 3 — threw: TypeError: fetch failed
+[retry] Scenario 4 attempt 1/3 failed: threw: TypeError: fetch failed
+[retry] Scenario 4 attempt 2/3 failed: threw: TypeError: fetch failed

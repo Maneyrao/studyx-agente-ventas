@@ -32,7 +32,7 @@ Restricción principal: los hechos comerciales, el consentimiento y la entrega n
 3. Sólo puede existir una conversación abierta por `(contact_id, channel)`.
 4. Un contacto bloqueado o sin consentimiento comercial no puede recibir un outbound comercial.
 5. Un outbound sólo figura como `sent` cuando existe confirmación del canal.
-6. Un fallo de OpenAI o pgvector no revierte ni duplica un mensaje canónico.
+6. Un fallo de Gemini o pgvector no revierte ni duplica un mensaje canónico.
 7. Cada operación puede rastrearse desde `external_message_id` hasta `turn_id`, delivery y auditoría.
 8. Los resúmenes y embeddings son derivados; nunca reemplazan consentimiento, precios, pagos o estados estructurados.
 
@@ -96,7 +96,7 @@ Las invariantes 1–4 están protegidas por constraints y pruebas de integració
 
 ## Fase 2 — Procesamiento derivado y memoria segura
 
-*Objetivo: sacar OpenAI del camino transaccional y recuperar sólo memoria relevante.*
+*Objetivo: sacar Gemini del camino transaccional y recuperar sólo memoria relevante.*
 
 ### Backend y workers
 
@@ -109,14 +109,14 @@ Las invariantes 1–4 están protegidas por constraints y pruebas de integració
 
 ### Pruebas
 
-- [x] OpenAI caído no impide confirmar el inbound.
+- [x] Gemini caído no impide confirmar el inbound.
 - [x] pgvector/embedding no disponible degrada a memoria reciente.
 - [ ] Una búsqueda irrelevante devuelve memoria vacía.
 - [x] Cincuenta mensajes devuelven los últimos N en orden cronológico.
 
 ### Definición de terminado
 
-La latencia de OpenAI no puede provocar una reentrega duplicada y la memoria derivada puede reconstruirse desde PostgreSQL.
+La latencia de Gemini no puede provocar una reentrega duplicada y la memoria derivada puede reconstruirse desde PostgreSQL.
 
 ## Fase 3 — Contrato Botpress y entrega recuperable
 

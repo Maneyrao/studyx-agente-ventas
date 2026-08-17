@@ -109,17 +109,17 @@ describe('canonical inbound envelope — audio contract', () => {
   });
 
   it('never permits a URL field in AudioReference (only opaque provider_file_id)', () => {
-    const withUrl = loadFixture('valid-audio.json') as any;
-    withUrl.message.audio_reference.url = 'https://api.telegram.org/file/bot123/audio.ogg';
-    const parsed = InboundEnvelopeSchema.safeParse(withUrl);
+    const obj = loadFixture('valid-audio.json') as unknown;
+    (obj as unknown as {message: {audio_reference: Record<string, string | number>}}).message.audio_reference.url = 'https://api.telegram.org/file/bot123/audio.ogg';
+    const parsed = InboundEnvelopeSchema.safeParse(obj);
     expect(parsed.success).toBe(false);
   });
 });
 
 describe('canonical inbound envelope — metadata contract', () => {
   it('defaults metadata to an empty object when omitted', () => {
-    const withoutMetadata = loadFixture('valid-text.json') as any;
-    delete withoutMetadata.message.metadata;
+    const withoutMetadata = loadFixture('valid-text.json') as unknown;
+    delete (withoutMetadata as unknown as {message: {metadata: unknown}}).message.metadata;
     const parsed = InboundEnvelopeSchema.safeParse(withoutMetadata);
     expect(parsed.success).toBe(true);
     if (parsed.success) {
@@ -128,22 +128,22 @@ describe('canonical inbound envelope — metadata contract', () => {
   });
 
   it('accepts string, number and boolean metadata values', () => {
-    const envelope = loadFixture('valid-text.json') as any;
-    envelope.message.metadata = { source: 'web', retries: 3, urgent: true };
+    const envelope = loadFixture('valid-text.json') as unknown;
+    (envelope as unknown as {message: {metadata: unknown}}).message.metadata = { source: 'web', retries: 3, urgent: true };
     const parsed = InboundEnvelopeSchema.safeParse(envelope);
     expect(parsed.success).toBe(true);
   });
 
   it('rejects a metadata key longer than 64 characters', () => {
-    const envelope = loadFixture('valid-text.json') as any;
-    envelope.message.metadata = { ['x'.repeat(65)]: 'y' };
+    const envelope = loadFixture('valid-text.json') as unknown;
+    (envelope as unknown as {message: {metadata: unknown}}).message.metadata = { ['x'.repeat(65)]: 'y' };
     const parsed = InboundEnvelopeSchema.safeParse(envelope);
     expect(parsed.success).toBe(false);
   });
 
   it('rejects a metadata string value longer than 512 characters', () => {
-    const envelope = loadFixture('valid-text.json') as any;
-    envelope.message.metadata = { big: 'x'.repeat(513) };
+    const envelope = loadFixture('valid-text.json') as unknown;
+    (envelope as unknown as {message: {metadata: unknown}}).message.metadata = { big: 'x'.repeat(513) };
     const parsed = InboundEnvelopeSchema.safeParse(envelope);
     expect(parsed.success).toBe(false);
   });

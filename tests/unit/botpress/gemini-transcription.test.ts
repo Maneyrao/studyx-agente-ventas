@@ -53,7 +53,7 @@ describe('transcribeWithGemini', () => {
     });
     const call = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
     const body = JSON.parse(call[1].body);
-    const inlinePart = body.contents[0].parts.find((p: any) => p.inline_data);
+    const inlinePart = body.contents[0].parts.find((p: unknown) => (p as Record<string, unknown>).inline_data);
     expect(inlinePart).toBeDefined();
     expect(inlinePart.inline_data.mime_type).toBe('audio/mpeg');
     // base64 of [0xff,0xd8,0xff,0xe0,0x00,0x10]

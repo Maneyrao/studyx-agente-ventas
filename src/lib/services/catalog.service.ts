@@ -20,6 +20,82 @@ export const ProductSchema = z.object({
 export type Product = z.infer<typeof ProductSchema>;
 
 /**
+ * Raw row shape as returned by postgres.js: bigints arrive as strings and
+ * `promo_valid_to::text` arrives in PostgreSQL's own timestamptz format
+ * ('2026-10-01 02:59:59+00'), which ProductSchema rejects on purpose.
+ */
+export interface ProductRow {
+  sku: string;
+  name: string;
+  description: string | null;
+  duration_weeks: number;
+  modality: string;
+  price_ars_cents: string | number;
+  price_usd_cents: string | number;
+  promo_ars_cents: string | number | null;
+  promo_usd_cents: string | number | null;
+  promo_valid_to: string | null;
+  active: boolean;
+}
+
+/**
+ * Permanent, non-retryable catalog data error. The HTTP layer maps this to a
+ * 422 CATALOG_INVALID_DATA so clients never burn retries on data that will be
+ * exactly as invalid on the next attempt.
+ */
+export class CatalogInvalidDataError extends Error {
+  readonly code = 'CATALOG_INVALID_DATA' as const;
+  constructor(detail: string) {
+    super(`CATALOG_INVALID_DATA: ${detail}`);
+    this.name = 'CatalogInvalidDataError';
+  }
+}
+
+/**
+ * Placeholder SKUs from the seed must never be quotable, even if a row flips
+ * back to active by accident. Defense in depth: SQL excludes them, this
+ * predicate excludes them again in code.
+ */
+export function isPlaceholderSku(sku: string): boolean {
+  return sku.startsWith('PLACEHOLDER-');
+}
+
+/**
+ * Normalize any valid timestamptz text (PG format or ISO) to strict ISO 8601.
+ * Null stays null. Garbage is a permanent data error, not a transient one.
+ */
+export function normalizeTimestamptz(value: string | null): string | null {
+  if (value === null) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new CatalogInvalidDataError('promo_valid_to is not a parseable timestamp');
+  }
+  return parsed.toISOString();
+}
+
+/**
+ * Coerce one DB row into a validated Product. Numeric strings become numbers,
+ * the promo timestamp is normalized to ISO, and a schema violation surfaces as
+ * CatalogInvalidDataError — never as a retryable failure.
+ */
+export function parseProductRow(row: ProductRow): Product {
+  const coerced = {
+    ...row,
+    price_ars_cents: Number(row.price_ars_cents),
+    price_usd_cents: Number(row.price_usd_cents),
+    promo_ars_cents: row.promo_ars_cents === null ? null : Number(row.promo_ars_cents),
+    promo_usd_cents: row.promo_usd_cents === null ? null : Number(row.promo_usd_cents),
+    promo_valid_to: normalizeTimestamptz(row.promo_valid_to),
+  };
+  const parsed = ProductSchema.safeParse(coerced);
+  if (!parsed.success) {
+    const fields = parsed.error.issues.map((issue) => issue.path.join('.')).join(',');
+    throw new CatalogInvalidDataError(`schema violation in fields: ${fields}`);
+  }
+  return parsed.data;
+}
+
+/**
  * Effective price for the given currency, honoring an active promo when
  * present and still within its validity window. Returns MINOR UNITS.
  * Never mutates the input; returns the base price when no promo applies.
@@ -42,7 +118,7 @@ export function getEffectivePriceCents(
 }
 
 export async function listActiveProducts(): Promise<Product[]> {
-  const rows = await sql<Product[]>`
+  const rows = await sql<ProductRow[]>`
     SELECT sku, name, description, duration_weeks, modality,
            price_ars_cents::int8 AS price_ars_cents,
            price_usd_cents::int8 AS price_usd_cents,
@@ -52,22 +128,15 @@ export async function listActiveProducts(): Promise<Product[]> {
            active
     FROM products
     WHERE active = true
+      AND sku NOT LIKE 'PLACEHOLDER-%'
     ORDER BY sku ASC
   `;
-  // Postgres returns bigint as string via postgres.js; coerce to number for
-  // ergonomic downstream use. Safe: cents fit well inside 2^53.
-  const coerced = rows.map((r) => ({
-    ...r,
-    price_ars_cents: Number(r.price_ars_cents),
-    price_usd_cents: Number(r.price_usd_cents),
-    promo_ars_cents: r.promo_ars_cents === null ? null : Number(r.promo_ars_cents),
-    promo_usd_cents: r.promo_usd_cents === null ? null : Number(r.promo_usd_cents),
-  }));
-  return coerced.map((r) => ProductSchema.parse(r));
+  return rows.filter((r) => !isPlaceholderSku(r.sku)).map(parseProductRow);
 }
 
 export async function getProductBySku(sku: string): Promise<Product | null> {
-  const rows = await sql<Product[]>`
+  if (isPlaceholderSku(sku)) return null;
+  const rows = await sql<ProductRow[]>`
     SELECT sku, name, description, duration_weeks, modality,
            price_ars_cents::int8 AS price_ars_cents,
            price_usd_cents::int8 AS price_usd_cents,
@@ -80,15 +149,7 @@ export async function getProductBySku(sku: string): Promise<Product | null> {
     LIMIT 1
   `;
   if (rows.length === 0) return null;
-  const r = rows[0];
-  const coerced = {
-    ...r,
-    price_ars_cents: Number(r.price_ars_cents),
-    price_usd_cents: Number(r.price_usd_cents),
-    promo_ars_cents: r.promo_ars_cents === null ? null : Number(r.promo_ars_cents),
-    promo_usd_cents: r.promo_usd_cents === null ? null : Number(r.promo_usd_cents),
-  };
-  return ProductSchema.parse(coerced);
+  return parseProductRow(rows[0]);
 }
 
 /**

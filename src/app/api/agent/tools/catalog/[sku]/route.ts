@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getProductBySku, getEffectivePriceCents } from '@/lib/services/catalog.service';
+import {
+  CatalogInvalidDataError,
+  getProductBySku,
+  getEffectivePriceCents,
+} from '@/lib/services/catalog.service';
 import { logger } from '@/lib/observability/structured-log';
 
 /**
@@ -48,7 +52,11 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ sku: strin
       { status: 200 },
     );
   } catch (error) {
+    if (error instanceof CatalogInvalidDataError) {
+      logger.error({ event: 'catalog.get.invalid_data', sku, error: String(error) });
+      return NextResponse.json({ error: 'CATALOG_INVALID_DATA' }, { status: 422 });
+    }
     logger.error({ event: 'catalog.get.failed', sku, error: String(error) });
-    return NextResponse.json({ error: 'CATALOG_UNAVAILABLE' }, { status: 500 });
+    return NextResponse.json({ error: 'CATALOG_UNAVAILABLE' }, { status: 503 });
   }
 }

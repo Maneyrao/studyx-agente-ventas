@@ -2,7 +2,14 @@ import type { ChannelAdapter, ChannelAdapterContext, ChannelAdapterResult } from
 import { resolveIntegrationId } from './shared/normalize'
 import { buildTelegramSandboxEnvelope } from './shared/telegram-envelope'
 
-const TELEGRAM_CHANNEL_NAMES = new Set(['telegram:message', 'telegram.channel', 'telegram'])
+/**
+ * The ADK runtime names the handler channel `${integrationAlias}.${channelName}`
+ * (see @botpress/runtime internal handler dispatch). The telegram integration's
+ * only channel is literally named "channel", so production events arrive as
+ * `telegram.channel`. Verified against the live prod conversation
+ * (integration=telegram, channel=channel) on 2026-08-12.
+ */
+const TELEGRAM_CHANNEL_NAMES = new Set(['telegram.channel'])
 
 type IncomingTelegramMessage = {
   id: string
@@ -18,11 +25,12 @@ type IncomingTelegramMessage = {
     photo?: TelegramPhotoPayload
     reply_to_message?: { message_id: number | string }
   }
-  tags?: {
-    telegram_user_id?: string
-    telegram_chat_id?: string
-    reply_to_message_id?: string
-  }
+  /**
+   * Real production message tags (integration-namespaced), e.g.
+   * `{ "telegram:id": "60", "telegram:chatId": "8464326323" }` where
+   * `telegram:id` is the Telegram message_id and `telegram:chatId` the chat id.
+   */
+  tags?: Record<string, string>
 }
 
 type TelegramVoicePayload = {
@@ -88,17 +96,36 @@ function extractAudioReference(
   }
 }
 
-function extractTelegramUserId(m: IncomingTelegramMessage): string {
-  return m.tags?.telegram_user_id ?? m.userId
+type ConversationTags = ChannelAdapterContext['conversation']['tags']
+
+function firstNonEmpty(...values: Array<string | undefined>): string | undefined {
+  return values.find((v) => typeof v === 'string' && v !== '')
 }
 
-function extractTelegramChatId(m: IncomingTelegramMessage): string {
-  return m.tags?.telegram_chat_id ?? m.conversationId
+/**
+ * Telegram numeric user id. Production sources, in priority order:
+ *  1. conversation tag `telegram:fromUserId` (the human counterpart)
+ *  2. conversation/message tag `telegram:chatId` (equals the user id in 1:1 chats)
+ *  3. the Botpress `userId` — never numeric, so `mintSyntheticPhone` throws and
+ *     the adapter fails closed with PHONE_E164_UNRESOLVED instead of inventing identity.
+ */
+function extractTelegramUserId(m: IncomingTelegramMessage, convTags: ConversationTags): string {
+  return (
+    firstNonEmpty(
+      convTags?.['telegram:fromUserId'],
+      convTags?.['telegram:chatId'],
+      m.tags?.['telegram:chatId'],
+    ) ?? m.userId
+  )
+}
+
+function extractTelegramChatId(m: IncomingTelegramMessage, convTags: ConversationTags): string {
+  return (
+    firstNonEmpty(m.tags?.['telegram:chatId'], convTags?.['telegram:chatId']) ?? m.conversationId
+  )
 }
 
 function extractReplyToExternal(m: IncomingTelegramMessage): string | null {
-  const fromTag = m.tags?.reply_to_message_id
-  if (typeof fromTag === 'string' && fromTag !== '') return fromTag
   const fromPayload = m.payload.reply_to_message?.message_id
   if (typeof fromPayload === 'number' || typeof fromPayload === 'string') return String(fromPayload)
   return null
@@ -117,14 +144,15 @@ export const telegramChannel: ChannelAdapter = {
     }
     const message = ctx.message
     const mappedType = mapMessageType(message.type)
-    const telegramUserId = extractTelegramUserId(message)
+    const convTags = ctx.conversation.tags
+    const telegramUserId = extractTelegramUserId(message, convTags)
 
     try {
       return {
         kind: 'envelope',
         input: buildTelegramSandboxEnvelope({
           telegramUserId,
-          telegramChatId: extractTelegramChatId(message),
+          telegramChatId: extractTelegramChatId(message, convTags),
           integrationId: resolveIntegrationId(ctx.conversation, ctx.channel),
           externalMessageId: message.id,
           traceId: ctx.traceId,

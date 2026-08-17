@@ -1,0 +1,82 @@
+[env] DATABASE_URL=set ORCHESTRATOR_API_KEY=set ORCHESTRATOR_KEY_ID=set STUDYX_SIGNING_SECRET=set
+[run-pilot] base_url=http://localhost:3000 run_tag=379006
+[retry] Scenario 1: full text turn (ingest -> decision -> delivery), same trace_id end-to-end attempt 1/3 failed: ingest status=500 body={"error":"INTERNAL_ERROR"}
+[retry] Scenario 1: full text turn (ingest -> decision -> delivery), same trace_id end-to-end attempt 2/3 failed: ingest status=500 body={"error":"INTERNAL_ERROR"}
+[retry] Scenario 1: full text turn (ingest -> decision -> delivery), same trace_id end-to-end attempt 3/3 failed: ingest status=500 body={"error":"INTERNAL_ERROR"}
+[FAIL] Scenario 1: full text turn (ingest -> decision -> delivery), same trace_id end-to-end — ingest status=500 body={"error":"INTERNAL_ERROR"}
+[retry] Scenario 2: inbound idempotency — same event x10 -> exactly 1 inbound + 1 outbound attempt 1/3 failed: ingest replay #0 status=500 body={"error":"INTERNAL_ERROR"}
+[retry] Scenario 2: inbound idempotency — same event x10 -> exactly 1 inbound + 1 outbound attempt 2/3 failed: ingest replay #0 status=500 body={"error":"INTERNAL_ERROR"}
+[retry] Scenario 2: inbound idempotency — same event x10 -> exactly 1 inbound + 1 outbound attempt 3/3 failed: ingest replay #0 status=500 body={"error":"INTERNAL_ERROR"}
+[FAIL] Scenario 2: inbound idempotency — same event x10 -> exactly 1 inbound + 1 outbound — ingest replay #0 status=500 body={"error":"INTERNAL_ERROR"}
+[retry] Scenario 3: external_message_id collision, different content -> HTTP 409 attempt 1/3 failed: first ingest status=500 body={"error":"INTERNAL_ERROR"}
+[retry] Scenario 3: external_message_id collision, different content -> HTTP 409 attempt 2/3 failed: first ingest status=500 body={"error":"INTERNAL_ERROR"}
+[retry] Scenario 3: external_message_id collision, different content -> HTTP 409 attempt 3/3 failed: first ingest status=500 body={"error":"INTERNAL_ERROR"}
+[FAIL] Scenario 3: external_message_id collision, different content -> HTTP 409 — first ingest status=500 body={"error":"INTERNAL_ERROR"}
+[retry] Scenario 4: burst — 5 rapid messages, same contact -> 5 turns, exactly 1 open conversation attempt 1/3 failed: one burst call failed: status=500 body={"error":"INTERNAL_ERROR"}
+[retry] Scenario 4: burst — 5 rapid messages, same contact -> 5 turns, exactly 1 open conversation attempt 2/3 failed: one burst call failed: status=500 body={"error":"INTERNAL_ERROR"}
+[retry] Scenario 4: burst — 5 rapid messages, same contact -> 5 turns, exactly 1 open conversation attempt 3/3 failed: one burst call failed: status=500 body={"error":"INTERNAL_ERROR"}
+[FAIL] Scenario 4: burst — 5 rapid messages, same contact -> 5 turns, exactly 1 open conversation — one burst call failed: status=500 body={"error":"INTERNAL_ERROR"}
+[retry] Scenario 5: contact blocked by SQL before ingest -> no outbound generated attempt 1/3 failed: bootstrap ingest status=500 body={"error":"INTERNAL_ERROR"}
+[retry] Scenario 5: contact blocked by SQL before ingest -> no outbound generated attempt 2/3 failed: bootstrap ingest status=500 body={"error":"INTERNAL_ERROR"}
+[retry] Scenario 5: contact blocked by SQL before ingest -> no outbound generated attempt 3/3 failed: bootstrap ingest status=500 body={"error":"INTERNAL_ERROR"}
+[FAIL] Scenario 5: contact blocked by SQL before ingest -> no outbound generated — bootstrap ingest status=500 body={"error":"INTERNAL_ERROR"}
+[retry] Scenario 6: opt-out contact — decision endpoint only admits opt_out_ack attempt 1/3 failed: ingest status=500 body={"error":"INTERNAL_ERROR"}
+[retry] Scenario 6: opt-out contact — decision endpoint only admits opt_out_ack attempt 2/3 failed: ingest status=500 body={"error":"INTERNAL_ERROR"}
+[retry] Scenario 6: opt-out contact — decision endpoint only admits opt_out_ack attempt 3/3 failed: ingest status=500 body={"error":"INTERNAL_ERROR"}
+[FAIL] Scenario 6: opt-out contact — decision endpoint only admits opt_out_ack — ingest status=500 body={"error":"INTERNAL_ERROR"}
+[PASS] Scenario 7: 1 byte tampered in body after signing -> 401 INVALID_SIGNATURE — tampered body correctly rejected with 401 INVALID_SIGNATURE
+[PASS] Scenario 8: timestamp -6min -> 401 STALE_REQUEST — timestamp -6min correctly rejected with 401 STALE_REQUEST
+[run-pilot] 2/8 scenarios passed
+[cleanup] no sandbox contacts were created, nothing to remove
+
+--- ROOT CAUSE DIAGNOSIS (backend/environment, NOT a runner bug) -------------
+
+Dev server error for every ingest 500 (identical on all 6 failing scenarios):
+
+  Error [PostgresError]: function reserve_inbound_channel_event(unknown,
+  unknown, unknown, unknown, unknown, unknown, bytea, jsonb) does not exist
+    at src/lib/services/ingestion.service.ts:219:8
+  code: '42883', routine: 'ParseFuncOrColumn'
+
+Direct inspection of the DATABASE_URL target (read-only queries, no writes)
+confirms the function genuinely does not exist, and that the target database's
+schema does not match supabase/migrations/*.sql at all:
+
+  - `SELECT ... FROM pg_proc WHERE proname = 'reserve_inbound_channel_event'`
+    -> 0 rows in any schema.
+  - `SELECT version, name FROM supabase_migrations.schema_migrations`
+    stops at 20260805000002 "secure_existing_tables" — a migration that does
+    NOT exist anywhere under supabase/migrations/ in this repo. The repo's
+    Phase 1-8 migrations (20260805010001_phase1_integrity_preflight through
+    20260809030001_phase8_products_catalog) are not recorded as applied.
+  - `information_schema.tables` on that database lists: audit_log,
+    contact_consents, contacts, conversations, knowledge_chunks,
+    knowledge_sources, memory_embeddings, memory_items, message_embeddings,
+    messages, offerings, opportunities, pipeline_stages, products,
+    qualification_answers, qualification_fields, sales_pipelines,
+    sandbox_identities, workspace_contacts, workspaces.
+    channel_events, channel_threads, contact_channel_permissions,
+    consent_events, agent_decisions, outbound_deliveries, outbox_events and
+    delivery_reports — all required by ingestion.service.ts / decision.service.ts
+    — are entirely absent.
+  - `contacts` in that database is missing lifecycle_status, sales_stage,
+    blocked_at, blocked_reason (added by 20260805010002/…004), so even
+    Scenario 5's SQL block step would fail against this schema.
+  - `sandbox_identities` DOES exist with the exact columns the Phase 2
+    migration defines (provider, external_user_id, contact_id,
+    synthetic_phone) — inconsistent with the rest of the missing Phase 1/2
+    schema, suggesting it was created out of band rather than via
+    `supabase/migrations/20260808010001_phase2_sandbox_identities.sql`.
+
+Conclusion: the `DATABASE_URL` this backend is running against is not the
+database the repo's migrations were written for/applied to. This is a real
+infrastructure/environment defect, not a bug in run-pilot.mjs and not a bug in
+ingestion.service.ts (its query matches the migration's function signature
+exactly: 6x text, bytea, jsonb). No migration was modified, no backend code
+was changed, and no workaround was added to the runner to route around this —
+per instructions, scenarios 1-6 were left FAILING and this is flagged for a
+human decision on which database/migration state to point DATABASE_URL at.
+
+Scenarios 7 and 8 PASS because the proxy's signature and timestamp checks are
+enforced in src/proxy.ts before any query runs — they positively confirm the
+runner signs requests byte-identically to botpress-agent/src/utils/http.ts.

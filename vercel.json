@@ -1,9 +1,18 @@
 {
+  "fluid": true,
   "regions": ["iad1"],
   "crons": [
     {
       "path": "/api/cron/retry-embeddings",
-      "schedule": "*/5 * * * *"
+      "schedule": "10 3 * * *"
+    },
+    {
+      "path": "/api/cron/memory-maintenance",
+      "schedule": "20 3 * * *"
+    },
+    {
+      "path": "/api/cron/reconcile-orchestration",
+      "schedule": "30 3 * * *"
     }
   ]
 }

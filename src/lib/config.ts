@@ -10,7 +10,7 @@ function parseFloat01(raw: string | undefined, fallback: number): number {
 
 export const config = {
   summaryThreshold: parsePositiveInt(process.env.SUMMARY_THRESHOLD, 10),
-  summaryModel: process.env.SUMMARY_MODEL ?? 'gpt-4o-mini',
+  summaryModel: process.env.SUMMARY_MODEL ?? 'gemini-2.5-flash',
   recentTurnsLimit: parsePositiveInt(process.env.RECENT_TURNS_LIMIT, 10),
   ltmResultsLimit: parsePositiveInt(process.env.LTM_RESULTS_LIMIT, 5),
   kbResultsLimit: parsePositiveInt(process.env.KB_RESULTS_LIMIT, 5),

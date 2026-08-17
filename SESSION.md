@@ -7,7 +7,17 @@ Rama: `feat/phases-0-8-canal-agnostic`.
 
 ## Fase actual
 
-Phase 3 — Agent A inbound text (en curso).
+**Fases 0–8 del ledger de orquestación: terminadas** (2026-08-11).
+Fuente de reanudación: `.superpowers/ledgers/2026-08-11-studyx-mvp-orchestrator.md`.
+Estado real del código: `docs/ORCHESTRATOR_MAP.md`.
+
+Siguiente paso: ejecutar el piloto de Telegram siguiendo
+`docs/PILOT_RUNBOOK.md` y llenar `docs/PILOT_MATRIX.md`. Bloqueado por EXT-05
+(la integración `telegram` no está instalada en Botpress Cloud).
+
+> La numeración de abajo pertenece al plan de 20 fases de `specs/004-...` y no
+> coincide con la del ledger. Donde discrepen, manda el ledger, que es lo que
+> se verificó contra el código.
 
 ## Posición dentro del plan de 20 fases
 

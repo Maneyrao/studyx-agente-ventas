@@ -1,3 +1,5 @@
+import { EMBEDDING_DIMENSIONS } from '@/lib/embeddings/gemini';
+
 export interface ChannelSendInput {
   destination: string;
   content: string;
@@ -14,7 +16,7 @@ export class FakeEmbeddingProvider {
   readonly calls: string[] = [];
   private readonly script: ScriptedResult<number[]>[] = [];
 
-  returnOnce(vector: number[] = Array.from({ length: 1536 }, () => 0)): void {
+  returnOnce(vector: number[] = Array.from({ length: EMBEDDING_DIMENSIONS }, () => 0)): void {
     this.script.push({ type: 'return', value: vector });
   }
 
@@ -25,7 +27,7 @@ export class FakeEmbeddingProvider {
   async generate(text: string): Promise<number[]> {
     this.calls.push(text);
     const next = this.script.shift();
-    if (!next) return Array.from({ length: 1536 }, () => 0);
+    if (!next) return Array.from({ length: EMBEDDING_DIMENSIONS }, () => 0);
     if (next.type === 'throw') throw next.error;
     return next.value;
   }
