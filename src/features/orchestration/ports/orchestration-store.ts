@@ -161,6 +161,12 @@ export interface ClaimedCallFacts {
   readonly open_offer: CallOfferFact | null;
   readonly active_call: ActiveCallFact | null;
   readonly last_call_result: LastCallResultFact | null;
+  /**
+   * When this contact last declined a call in this conversation, from the
+   * durable decision log (`intent = 'commercial_decline'`). Feeds the
+   * call-offer policy's 30-minute cooldown across turns.
+   */
+  readonly last_decline_at: string | null;
 }
 
 export interface OrchestrationStore {

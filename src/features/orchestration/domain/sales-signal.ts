@@ -82,3 +82,19 @@ export function classifyDeterministicSalesSignal(text: string): DeterministicSal
 
   return { type: 'model_required' };
 }
+
+/**
+ * Classify a whole inbound burst: the customer's most recent decisive words
+ * win. Scanning from the newest message backwards, the first message that
+ * carries a definite signal decides the batch — "llamame" followed by
+ * "gracias" is still a direct request, while "llamame" followed by
+ * "no, mejor no" is a decline. A batch with no decisive message at all is
+ * `model_required`, exactly like a single ambiguous message.
+ */
+export function classifyBatchSalesSignal(texts: readonly string[]): DeterministicSalesSignal {
+  for (let index = texts.length - 1; index >= 0; index -= 1) {
+    const signal = classifyDeterministicSalesSignal(texts[index]);
+    if (signal.type !== 'model_required') return signal;
+  }
+  return { type: 'model_required' };
+}

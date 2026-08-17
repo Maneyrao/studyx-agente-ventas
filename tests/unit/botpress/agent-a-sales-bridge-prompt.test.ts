@@ -115,7 +115,7 @@ const LOADED_CATALOG: CatalogResponse = {
 
 describe('AGENT_A_PROMPT_VERSION', () => {
   it('is the pinned sales-bridge version', () => {
-    expect(AGENT_A_PROMPT_VERSION).toBe('agent-a-sales-bridge-v1.1');
+    expect(AGENT_A_PROMPT_VERSION).toBe('aburridont-agent-a-sales-bridge-v2.1');
   });
 });
 
@@ -141,6 +141,41 @@ describe('buildAgentASalesBridgeInstructions', () => {
     const withoutBusiness = buildAgentASalesBridgeInstructions(claimedTurn({}), LOADED_CATALOG);
     expect(withoutBusiness).not.toMatch(/StudyX|Aburridont/);
     expect(withoutBusiness).toContain('never invent one');
+  });
+
+  it('instructs Decision v4 with the call protocol invariants', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}), LOADED_CATALOG);
+    expect(instructions).toContain('schema_version must be 4');
+    expect(instructions).not.toContain('schema_version must be 3');
+    // call_offer is side-effect free…
+    expect(instructions).toMatch(/call_offer[\s\S]*(no side effect|nothing is dialed)/i);
+    // …and call_confirmation ⇔ request_call_now as an inseparable pair.
+    expect(instructions).toMatch(/call_confirmation[\s\S]*request_call_now[\s\S]*inseparable pair/i);
+    expect(instructions).toMatch(/direct_request[\s\S]*accepted_offer/);
+  });
+
+  it('marks conversational declines with intent commercial_decline for the cooldown', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}), LOADED_CATALOG);
+    expect(instructions).toContain('commercial_decline');
+    expect(instructions).toMatch(/declines a call[\s\S]*commercial_decline/i);
+  });
+
+  it('honors a direct call request that arrives inside a multi-message burst', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}), LOADED_CATALOG);
+    expect(instructions).toMatch(/direct call request[\s\S]*burst|burst[\s\S]*direct call request/i);
+    expect(instructions).toMatch(/answer the rest of the batch in the same response/i);
+  });
+
+  it('treats qualification as conversational, never a prerequisite form', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}), LOADED_CATALOG);
+    expect(instructions).toContain('business_context.qualification_fields');
+    expect(instructions).toMatch(/never as a prerequisite/i);
+    expect(instructions).toMatch(/at most one per turn/i);
+  });
+
+  it('forbids naming a number for quote-priced offerings', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}), LOADED_CATALOG);
+    expect(instructions).toMatch(/price_type "quote"[\s\S]*NEVER name a number/i);
   });
 
   it('requires answering the actual question before any call CTA', () => {

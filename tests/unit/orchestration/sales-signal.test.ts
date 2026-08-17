@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyDeterministicSalesSignal } from '@/features/orchestration/domain/sales-signal';
+import { classifyBatchSalesSignal, classifyDeterministicSalesSignal } from '@/features/orchestration/domain/sales-signal';
 
 describe('classifyDeterministicSalesSignal', () => {
   it('recognizes a direct request to be called', () => {
@@ -54,5 +54,30 @@ describe('classifyDeterministicSalesSignal', () => {
   it('returns model_required for empty or blank text', () => {
     expect(classifyDeterministicSalesSignal('')).toEqual({ type: 'model_required' });
     expect(classifyDeterministicSalesSignal('   ')).toEqual({ type: 'model_required' });
+  });
+});
+
+describe('classifyBatchSalesSignal', () => {
+  it('finds a direct call request buried under trailing small talk', () => {
+    expect(classifyBatchSalesSignal(['llamame', 'gracias'])).toEqual({ type: 'direct_call_request' });
+  });
+
+  it('lets the newest decisive message override an earlier request', () => {
+    expect(classifyBatchSalesSignal(['llamame', 'pensándolo mejor no me llames'])).toEqual({
+      type: 'call_decline',
+    });
+  });
+
+  it('keeps a contextual short acceptance decisive inside a burst', () => {
+    expect(classifyBatchSalesSignal(['dale', 'perfecto'])).toEqual({ type: 'call_acceptance' });
+  });
+
+  it('returns model_required when no message is decisive', () => {
+    expect(classifyBatchSalesSignal(['hola', 'cuánto sale el curso?'])).toEqual({ type: 'model_required' });
+    expect(classifyBatchSalesSignal([])).toEqual({ type: 'model_required' });
+  });
+
+  it('matches the single-message classifier on one-message batches', () => {
+    expect(classifyBatchSalesSignal(['llamame'])).toEqual(classifyDeterministicSalesSignal('llamame'));
   });
 });

@@ -1,7 +1,7 @@
 import { evaluateTurnPolicy, type TurnPolicy } from '../domain/turn-policy';
 import type { BusinessContextView } from '../domain/business-context';
 import { capRetrievedItems } from '../domain/retrieved-context';
-import { classifyDeterministicSalesSignal } from '../domain/sales-signal';
+import { classifyBatchSalesSignal } from '../domain/sales-signal';
 import { evaluateCallOfferPolicy } from '../domain/call-offer-policy';
 import type {
   ActiveCallFact,
@@ -218,22 +218,24 @@ function deriveSalesMode(input: {
  */
 function buildSalesContext(input: {
   callFacts: ClaimedCallFacts;
-  currentMessageText: string;
+  batchMessageTexts: readonly string[];
   consentRevoked: boolean;
   blocked: boolean;
   now: string;
 }): ClaimedSalesContext {
-  const signal = classifyDeterministicSalesSignal(input.currentMessageText);
+  // The whole burst is classified, newest decisive message first: a direct
+  // "llamame" buried under a trailing "gracias" still opens the call path,
+  // and a decline after an earlier request still wins.
+  const signal = classifyBatchSalesSignal(input.batchMessageTexts);
   const policyResult = evaluateCallOfferPolicy({
     now: input.now,
     signal,
     openOffer: input.callFacts.open_offer
       ? { decisionId: input.callFacts.open_offer.decision_id, offeredAt: input.callFacts.open_offer.offered_at }
       : null,
-    // No decline is persisted anywhere queried in this task's scope — only
-    // `call_offer` decisions and `call_sessions` rows are loaded, so cooldown
-    // enforcement across turns is a later task's job.
-    lastDeclineAt: null,
+    // The durable decline marker (intent = 'commercial_decline') loaded with
+    // the other call facts; drives the 30-minute cooldown across turns.
+    lastDeclineAt: input.callFacts.last_decline_at,
     optedOut: input.consentRevoked,
     blocked: input.blocked,
     activeCall: input.callFacts.active_call !== null,
@@ -392,10 +394,10 @@ export async function claimBatch(
 
   const salesContext = buildSalesContext({
     callFacts,
-    // The customer's most recent message in this batch is what the sales
-    // signal classifies — joining the whole burst would blur an unambiguous
-    // short reply ("sí") into a longer string the classifier must not guess at.
-    currentMessageText: batchMessages.at(-1)?.content ?? '',
+    // Each message is classified on its own, never joined into one string —
+    // concatenation would blur an unambiguous short reply ("sí") into a
+    // longer text the classifier must not guess at.
+    batchMessageTexts: batchMessages.map((message) => message.content),
     consentRevoked: facts.contact.consent_status === 'revoked',
     blocked: policy.blocked,
     now: (deps.now ?? (() => new Date().toISOString()))(),

@@ -360,4 +360,44 @@ run('sales_context at claim time', () => {
       result: 'seguimiento_agendado',
     });
   });
+
+  it('enforces the 30-minute decline cooldown across turns from the durable decision log', async () => {
+    // A conversational decline ("mejor no") keeps the channel open — unlike
+    // "no me llames", which the ingest opt-out heuristic treats as a full
+    // consent revocation and which therefore never reaches a reply decision.
+    const first = envelope({ message: {
+      type: 'text', text: 'Mejor no, gracias', occurred_at: new Date().toISOString(), reply_to_external_message_id: null,
+    } });
+    const ingested = await processInboundMessage(first);
+    await forceDue(ingested.batch.id);
+    await commitAgentDecision({
+      turn_id: ingested.turn_id,
+      trace_id: randomUUID(),
+      decision: {
+        schema_version: 3,
+        intent: 'commercial_decline',
+        kind: 'reply',
+        response: 'Perfecto, no te llamo. Cualquier consulta me escribís por acá.',
+        response_type: 'commercial_reply',
+        business_action: null,
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'completed',
+        reason_code: 'CALL_DECLINED',
+        confidence: 0.95,
+        retrieval_used: { kb: false, long_term_memory: false, summary_version: null },
+      },
+      model: { provider: 'botpress', model: 'test-model', prompt_version: 'v1' },
+    });
+
+    const second = await processInboundMessage(followUp(first, '¿Y los horarios cuáles son?'));
+    const salesContext = await claimSalesContext(second.batch.id);
+    // Inside the cooldown a proactive offer is withheld…
+    expect(salesContext.allowed_actions).toEqual([]);
+
+    // …but an explicit new direct request still overrides it.
+    const third = await processInboundMessage(followUp(first, 'Llamame ahora'));
+    const overriding = await claimSalesContext(third.batch.id);
+    expect(overriding.allowed_actions).toEqual(['request_call_now']);
+  });
 });

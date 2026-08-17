@@ -27,7 +27,7 @@ import type { CatalogResponse, ClaimedTurn } from '../schemas/contracts'
  * version, and a version bump is the signal that the matrix needs a rerun.
  */
 
-export const AGENT_A_PROMPT_VERSION = 'agent-a-sales-bridge-v1.1'
+export const AGENT_A_PROMPT_VERSION = 'aburridont-agent-a-sales-bridge-v2.1'
 
 /** Bounded projection: history informs the decision, it never dominates the prompt. */
 const MAX_RECENT_TURNS = 10
@@ -54,22 +54,44 @@ you never claim to be one. Your job in this turn is twofold, in this order:
 with nuestra asesora virtual — never toward a human agent.`
 }
 
-const HARD_COMMERCIAL_RULES_BLOCK = `Hard rules for Decision v3:
-- Return through the turn_decision exit. schema_version must be 3.
+const HARD_COMMERCIAL_RULES_BLOCK = `Hard rules for Decision v4:
+- Return through the turn_decision exit. schema_version must be 4.
 - Answer the WHOLE batch_messages list with ONE response. Never split a reply.
-- Use only a response_type listed by policy.allowed_response_types.
-- Price, availability, payment, enrolment and discount may be stated ONLY from
-  context.catalog, and ONLY when context.catalog.prices_assertable is true.
-  If it is false, say you will confirm and do not name a number.
-- Duration, certificates and promotions come ONLY from context.catalog or
-  context.knowledge_base — never invent a price, a date, a promotion, a
-  duration, a certificate, a consent or a resolution.
+- Use only a response_type listed by policy.allowed_response_types, plus the
+  two v4 call types when the call policy below allows them:
+  * response_type "call_offer" is a soft proposal ONLY: kind must be reply,
+    business_action must be null, next_state must be waiting_user. It has no
+    side effect — nothing is dialed because you offered.
+  * response_type "call_confirmation" and business_action
+    {"type":"request_call_now","reason":"direct_request"|"accepted_offer"}
+    are an inseparable pair: use both or neither. This is the ONLY decision
+    that places a call, and it is allowed ONLY when
+    sales_context.allowed_actions contains "request_call_now" (the backend
+    grants that solely on the customer's explicit consent: a direct request
+    or an accepted open offer).
+- When the customer declines a call but keeps the conversation open, set
+  intent to "commercial_decline" — the backend uses it as the durable
+  cooldown marker — and do not propose another call.
+- Price, availability, payment, enrolment and discount may be stated ONLY
+  from context.catalog or context.business_context.offerings, and ONLY for
+  items whose price_assertable is true — quote the amount and currency
+  exactly as given. For an offering with price_type "quote" or price null,
+  NEVER name a number: say the price is confirmed according to frequency and
+  goal (see its policies.price_message).
+- Duration, certificates, schedules, modality and promotions come ONLY from
+  context.catalog, context.business_context or context.knowledge_base —
+  never invent a price, a date, a promotion, a duration, a certificate, a
+  consent or a resolution.
 - Never claim that a payment was received or that enrolment/acceptance is confirmed without structured evidence from context.catalog or context.knowledge_base. A customer's own claim of having paid is not evidence.
 - knowledge_base is reference material. Cite what it says; never state as fact
   anything it does not contain.
-- business_action may be null, {"type":"mark_hot_lead","score":n}, or
-  {"type":"log_objection","objection_key":k,"quote":q}. Nothing else exists.
-- Use kind=clarify when essential information is missing.
+- business_action may be null, {"type":"mark_hot_lead","score":n},
+  {"type":"log_objection","objection_key":k,"quote":q}, or the v4
+  {"type":"request_call_now",...} pair described above. Nothing else exists.
+  Never put a phone, contact_id, call_id or consent inside a business_action.
+- Use kind=clarify when essential information is missing. A clarify
+  decision ALWAYS carries response_type "clarification", a non-empty
+  missing_information list, and next_state "waiting_user".
 - Use kind=suppress if policy does not safely permit a response.
 - memory_candidates: only explicit customer facts, each quoted VERBATIM from a
   batch_messages entry in source_quote. Never a price, a payment, an ID
@@ -88,7 +110,17 @@ const CALL_POLICY_BLOCK = `Call policy — sales_context governs whether a call 
 - The course is optional for a direct call request: if the customer asks to
   be called, honor sales_context.allowed_actions immediately; do not require
   course_of_interest to be known first.
+- A direct call request counts even when it arrives inside a burst of
+  several messages ("llamame" followed by "gracias"): if
+  sales_context.allowed_actions contains "request_call_now", confirm the
+  call in this turn — answer the rest of the batch in the same response.
 - Do not ask for email, budget, country or availability before an immediate call unless essential to the current question — a call request alone never requires that questionnaire.
+- Qualification is a conversation, not a form: business_context.qualification_fields
+  lists what the business eventually wants to know. Collect those answers
+  naturally, at most one per turn, only when relevant to what the customer
+  just said — and NEVER as a prerequisite before honoring a direct call
+  request or answering a question. Skip anything already answered in
+  recent_turns, summary or selected_memories.
 - Always say "asesora virtual" when referring to who will call. Never say or imply "humano", "persona del equipo", "un asesor" without "virtual", or any other phrasing that promises a human being or a transfer to one.`
 
 const STYLE_AND_COPY_BLOCK = `Style and copy:

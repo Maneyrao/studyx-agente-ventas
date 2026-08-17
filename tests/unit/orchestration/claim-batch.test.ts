@@ -62,6 +62,7 @@ function callFacts(overrides: Partial<ClaimedCallFacts> = {}): ClaimedCallFacts 
     open_offer: null,
     active_call: null,
     last_call_result: null,
+    last_decline_at: null,
     ...overrides,
   };
 }
@@ -375,6 +376,43 @@ describe('claimBatch sales_context', () => {
     if (result.outcome !== 'claimed') throw new Error('expected a claim');
 
     expect(result.sales_context.allowed_actions).toEqual(['request_call_now']);
+  });
+
+  it('grants request_call_now when the direct request sits mid-batch under trailing text', async () => {
+    const deps = buildDeps();
+    deps.store.listBatchMessages = vi.fn().mockResolvedValue([
+      { id: 'm1', conversation_seq: 1, content: 'llamame por favor', created_at: '2026-08-11T12:00:00.000Z', message_type: 'text' },
+      { id: 'm2', conversation_seq: 2, content: 'gracias', created_at: '2026-08-11T12:00:05.000Z', message_type: 'text' },
+    ]);
+
+    const result = await claimBatch(input, deps);
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+    expect(result.sales_context.allowed_actions).toEqual(['request_call_now']);
+  });
+
+  it('withholds offer_call while a persisted decline is inside the 30-minute cooldown', async () => {
+    const deps = buildDeps({
+      callFactsResult: callFacts({ last_decline_at: '2026-08-11T11:50:00.000Z' }),
+      now: () => '2026-08-11T12:00:00.000Z',
+    });
+
+    const result = await claimBatch(input, deps);
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+    expect(result.sales_context.allowed_actions).toEqual([]);
+  });
+
+  it('re-enables offer_call once the persisted decline cooldown has elapsed', async () => {
+    const deps = buildDeps({
+      callFactsResult: callFacts({ last_decline_at: '2026-08-11T11:20:00.000Z' }),
+      now: () => '2026-08-11T12:00:00.000Z',
+    });
+
+    const result = await claimBatch(input, deps);
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+    expect(result.sales_context.allowed_actions).toEqual(['offer_call']);
   });
 
   it('reports in_call and grants no sales action while a call is connected', async () => {

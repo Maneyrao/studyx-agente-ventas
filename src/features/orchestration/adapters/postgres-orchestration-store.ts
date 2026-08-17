@@ -339,6 +339,19 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
       LIMIT 1
     `;
 
+    // Declines are ordinary immutable decisions; `intent = 'commercial_decline'`
+    // is their durable marker. The newest one drives the cross-turn cooldown.
+    const declineRows = await this.db<Array<{ declined_at: Date }>>`
+      SELECT ad.created_at AS declined_at
+      FROM agent_decisions AS ad
+      JOIN messages AS m ON m.id = ad.turn_id
+      WHERE m.contact_id = ${input.contact_id}::uuid
+        AND m.conversation_id = ${input.conversation_id}::uuid
+        AND ad.intent = 'commercial_decline'
+      ORDER BY ad.created_at DESC
+      LIMIT 1
+    `;
+
     const offer = offerRows[0];
     const active = activeRows[0];
     const terminal = terminalRows[0];
@@ -349,6 +362,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
       last_call_result: terminal
         ? { call_id: terminal.id, result: terminal.result, ended_at: terminal.ended_at.toISOString() }
         : null,
+      last_decline_at: declineRows[0] ? declineRows[0].declined_at.toISOString() : null,
     };
   }
 
