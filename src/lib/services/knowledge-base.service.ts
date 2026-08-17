@@ -21,21 +21,29 @@ export interface KnowledgeDocument {
   ingested_at: string;
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Retrieval-augmented context. Fires a single vector search against the
- * curated knowledge base. Callers should skip trivial turns (see triviality
- * heuristic) so we don't pay for embeddings on "gracias".
+ * curated knowledge base, scoped to exactly one workspace. The workspace id
+ * must be resolved in the backend (BUSINESS_WORKSPACE_SLUG); it never comes
+ * from model output or a request body. Callers should skip trivial turns
+ * (see triviality heuristic) so we don't pay for embeddings on "gracias".
  *
  * Returns empty array if nothing meets p_min_similarity; throws only on
  * transport/embedding failures — the ingest path fails open (KB unavailable)
  * so a KB outage never blocks a turn.
  */
 export async function searchKnowledgeBase(params: {
+  workspace_id: string;
   query: string;
   limit: number;
   min_similarity: number;
 }): Promise<{ results: KnowledgeResult[]; total: number }> {
-  const { query, limit, min_similarity } = params;
+  const { workspace_id, query, limit, min_similarity } = params;
+  if (typeof workspace_id !== 'string' || !UUID_PATTERN.test(workspace_id)) {
+    throw new Error('workspace_id must be a UUID resolved from backend configuration');
+  }
   if (typeof query !== 'string' || query.trim().length === 0) {
     throw new Error('query is required');
   }
@@ -45,6 +53,7 @@ export async function searchKnowledgeBase(params: {
 
   const results = await sql<KnowledgeResult[]>`
     SELECT * FROM search_knowledge_base(
+      ${workspace_id}::uuid,
       ${JSON.stringify(embedding)}::extensions.vector,
       ${Math.min(limit, 20)},
       ${min_similarity}
@@ -77,9 +86,15 @@ export async function ingestDocument(input: {
   uri: string;
   title: string;
   source_type?: KnowledgeDocument['source_type'];
+  /**
+   * Owning tenant. Omitted/null marks a legacy global document, which is
+   * excluded from every workspace-scoped search — it can never leak into a
+   * tenant it was not written for.
+   */
+  workspace_id?: string | null;
   chunks: Array<{ content: string; token_count: number }>;
 }): Promise<{ document_id: string; version: number; chunks_written: number }> {
-  const { uri, title, source_type = 'markdown', chunks } = input;
+  const { uri, title, source_type = 'markdown', workspace_id = null, chunks } = input;
   if (!uri || !title) throw new Error('uri and title are required');
   if (!Array.isArray(chunks) || chunks.length === 0) {
     throw new Error('chunks must be a non-empty array');
@@ -93,8 +108,8 @@ export async function ingestDocument(input: {
   const nextVersion = (existing[0]?.max_version ?? 0) + 1;
 
   const inserted = await sql<Array<{ id: string }>>`
-    INSERT INTO knowledge_documents (uri, title, source_type, version)
-    VALUES (${uri}, ${title}, ${source_type}, ${nextVersion})
+    INSERT INTO knowledge_documents (uri, title, source_type, version, workspace_id)
+    VALUES (${uri}, ${title}, ${source_type}, ${nextVersion}, ${workspace_id}::uuid)
     RETURNING id
   `;
   const document_id = inserted[0].id;

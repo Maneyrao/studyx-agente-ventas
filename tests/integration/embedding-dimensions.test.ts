@@ -65,15 +65,18 @@ run('pgvector dimensions match the embedding provider', () => {
   });
 
   it('searches the knowledge base with a provider-sized query vector', async () => {
+    // The search entry point is workspace-scoped; an unknown workspace simply
+    // yields no rows, which is enough to prove the vector dimension matches.
     const results = await db!<Array<{ chunk_id: string; similarity: number }>>`
       SELECT chunk_id, similarity
       FROM search_knowledge_base(
+        ${randomUUID()}::uuid,
         ${unitVector(EMBEDDING_DIMENSIONS)}::extensions.vector,
         5,
         0.5
       )
     `;
-    expect(Array.isArray(results)).toBe(true);
+    expect(results).toEqual([]);
   });
 
   it('searches contact memory with a provider-sized query vector', async () => {
