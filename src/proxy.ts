@@ -41,6 +41,10 @@ function expectedIdempotencyKey(pathname: string, body: Record<string, unknown>)
   if (delivery) {
     return `delivery:${delivery[1]}:${String(body.botpress_message_id ?? 'none')}:${String(body.status)}`;
   }
+  // Dispatch is idempotent per call: the signed key must be bound to the
+  // call_id in the path so a replay cannot dispatch a different call.
+  const dispatch = pathname.match(/^\/api\/agent\/calls\/([^/]+)\/dispatch$/);
+  if (dispatch) return `voice-call:${dispatch[1]}`;
   return null;
 }
 
