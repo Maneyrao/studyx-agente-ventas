@@ -183,37 +183,10 @@ ON CONFLICT (workspace_id, title, version) DO UPDATE SET
   metadata = EXCLUDED.metadata,
   updated_at = now();
 
-INSERT INTO knowledge_chunks (
-  id, source_id, chunk_index, content, embedding, embedding_status, embedding_model, embedded_at, metadata
-)
-SELECT
-  mapping.chunk_id,
-  source.id,
-  0,
-  source.content,
-  NULL,
-  'pending',
-  NULL,
-  NULL,
-  '{"test_data":true}'::jsonb
-FROM knowledge_sources source
-JOIN (
-  VALUES
-    ('a4000000-0000-4000-8000-000000000001'::uuid, 'a4100000-0000-4000-8000-000000000001'::uuid),
-    ('a4000000-0000-4000-8000-000000000002'::uuid, 'a4100000-0000-4000-8000-000000000002'::uuid),
-    ('a4000000-0000-4000-8000-000000000003'::uuid, 'a4100000-0000-4000-8000-000000000003'::uuid),
-    ('a4000000-0000-4000-8000-000000000004'::uuid, 'a4100000-0000-4000-8000-000000000004'::uuid),
-    ('a4000000-0000-4000-8000-000000000005'::uuid, 'a4100000-0000-4000-8000-000000000005'::uuid),
-    ('a4000000-0000-4000-8000-000000000006'::uuid, 'a4100000-0000-4000-8000-000000000006'::uuid)
-) AS mapping(source_id, chunk_id) ON mapping.source_id = source.id
-ON CONFLICT (source_id, chunk_index) DO UPDATE SET
-  content = EXCLUDED.content,
-  embedding = NULL,
-  embedding_status = 'pending',
-  embedding_model = NULL,
-  embedded_at = NULL,
-  metadata = EXCLUDED.metadata,
-  updated_at = now();
+-- knowledge_chunks is a derived index (document_id, vector(768)), rebuilt from
+-- knowledge_sources by the knowledge-source projection worker/cron
+-- (knowledge_projection_jobs -> runKnowledgeProjectionWorker /
+-- /api/cron/project-knowledge). It is never hand-seeded here.
 
 INSERT INTO contacts (id, phone, status, channel_origin, name)
 VALUES (
@@ -399,7 +372,7 @@ INSERT INTO offerings (
   '{"language":"Spanish","min_age":18}'::jsonb,
   '{"modality":"online","classes":36,"modules":3,"temario_publicado":true,"includes":["actividades_practicas","examenes_parciales_y_final","profesores_que_acompanan","certificado_de_academia"]}'::jsonb,
   '{"never_invent_price":true,"price_message":"El precio te lo confirma el equipo de inscripciones.","forbidden_promises":["certificación verificada","título oficial","homologación","matrícula profesional","cuotas o financiación","más de 50 diplomados","horarios de clases en vivo","política de devoluciones"]}'::jsonb,
-  '{"source_url":"/diplomado/entrenamiento-funcional/","published_price_conflict":"699_vs_1200"}'::jsonb
+  '{"published_price_conflict":"699_vs_1200"}'::jsonb
 ),
 (
   'b1000000-0000-4000-8000-000000000003', 'b0000000-0000-4000-8000-000000000001',
@@ -410,7 +383,7 @@ INSERT INTO offerings (
   '{"language":"Spanish","min_age":18}'::jsonb,
   '{"modality":"online","classes":34,"temario_publicado":true,"includes":["actividades_practicas","examenes_parciales_y_final","profesores_que_acompanan","certificado_de_academia"]}'::jsonb,
   '{"never_invent_price":true,"price_message":"El precio te lo confirma el equipo de inscripciones.","forbidden_promises":["certificación verificada","título oficial","homologación","matrícula profesional","cuotas o financiación","más de 50 diplomados","horarios de clases en vivo","política de devoluciones"]}'::jsonb,
-  '{"source_url":"/diplomado/decoracion-de-interiores/","published_price_conflict":"699_vs_1200","declared_classes":34,"syllabus_item_count":20,"classes_syllabus_mismatch":true}'::jsonb
+  '{"published_price_conflict":"699_vs_1200","declared_classes":34,"syllabus_item_count":20,"classes_syllabus_mismatch":true}'::jsonb
 ),
 (
   'b1000000-0000-4000-8000-000000000004', 'b0000000-0000-4000-8000-000000000001',
@@ -432,7 +405,7 @@ INSERT INTO offerings (
   '{"language":"Spanish","min_age":18}'::jsonb,
   '{"modality":"online","classes":24,"temario_publicado":true,"includes":["actividades_practicas","examenes_parciales_y_final","profesores_que_acompanan","certificado_de_academia"]}'::jsonb,
   '{"never_invent_price":true,"price_message":"El precio te lo confirma el equipo de inscripciones.","forbidden_promises":["certificación verificada","título oficial","homologación","matrícula profesional","cuotas o financiación","más de 50 diplomados","horarios de clases en vivo","política de devoluciones"]}'::jsonb,
-  '{"source_url":"/diplomado/masoterapia/","published_price_conflict":"699_vs_1200"}'::jsonb
+  '{"published_price_conflict":"699_vs_1200"}'::jsonb
 ),
 (
   'b1000000-0000-4000-8000-000000000006', 'b0000000-0000-4000-8000-000000000001',
@@ -443,7 +416,7 @@ INSERT INTO offerings (
   '{"language":"Spanish","min_age":18}'::jsonb,
   '{"modality":"online","classes":24,"temario_publicado":true,"includes":["actividades_practicas","examenes_parciales_y_final","profesores_que_acompanan","certificado_de_academia"]}'::jsonb,
   '{"never_invent_price":true,"price_message":"El precio te lo confirma el equipo de inscripciones.","forbidden_promises":["certificación verificada","título oficial","homologación","matrícula profesional","cuotas o financiación","más de 50 diplomados","horarios de clases en vivo","política de devoluciones"]}'::jsonb,
-  '{"source_url":"/diplomado/paisajismo-jardineria/","published_price_conflict":"699_vs_1200"}'::jsonb
+  '{"published_price_conflict":"699_vs_1200"}'::jsonb
 ),
 (
   'b1000000-0000-4000-8000-000000000007', 'b0000000-0000-4000-8000-000000000001',
@@ -454,7 +427,7 @@ INSERT INTO offerings (
   '{"language":"Spanish","min_age":18}'::jsonb,
   '{"modality":"online","classes":41,"temario_publicado":true,"includes":["actividades_practicas","examenes_parciales_y_final","profesores_que_acompanan","certificado_de_academia"]}'::jsonb,
   '{"never_invent_price":true,"price_message":"El precio te lo confirma el equipo de inscripciones.","forbidden_promises":["certificación verificada","título oficial","homologación","matrícula profesional","cuotas o financiación","más de 50 diplomados","horarios de clases en vivo","política de devoluciones"]}'::jsonb,
-  '{"source_url":"/diplomado/fotografia-profesional/","published_price_conflict":"699_vs_1200","declared_classes":41,"syllabus_module_count":26,"classes_syllabus_mismatch":true}'::jsonb
+  '{"published_price_conflict":"699_vs_1200","declared_classes":41,"syllabus_module_count":26,"classes_syllabus_mismatch":true}'::jsonb
 ),
 (
   'b1000000-0000-4000-8000-000000000008', 'b0000000-0000-4000-8000-000000000001',
@@ -465,7 +438,7 @@ INSERT INTO offerings (
   '{"language":"Spanish","min_age":18}'::jsonb,
   '{"modality":"online","classes":20,"temario_publicado":true,"includes":["actividades_practicas","examenes_parciales_y_final","profesores_que_acompanan","certificado_de_academia"]}'::jsonb,
   '{"never_invent_price":true,"price_message":"El precio te lo confirma el equipo de inscripciones.","forbidden_promises":["certificación verificada","título oficial","homologación","matrícula profesional","cuotas o financiación","más de 50 diplomados","horarios de clases en vivo","política de devoluciones"]}'::jsonb,
-  '{"source_url":"/diplomado/estetica-integral/","published_price_conflict":"699_vs_1200"}'::jsonb
+  '{"published_price_conflict":"699_vs_1200"}'::jsonb
 ),
 (
   'b1000000-0000-4000-8000-000000000009', 'b0000000-0000-4000-8000-000000000001',
@@ -476,7 +449,7 @@ INSERT INTO offerings (
   '{"language":"Spanish","min_age":18}'::jsonb,
   '{"modality":"online","classes":19,"temario_publicado":true,"includes":["actividades_practicas","examenes_parciales_y_final","profesores_que_acompanan","certificado_de_academia"]}'::jsonb,
   '{"never_invent_price":true,"price_message":"El precio te lo confirma el equipo de inscripciones.","forbidden_promises":["certificación verificada","título oficial","homologación","matrícula profesional","cuotas o financiación","más de 50 diplomados","horarios de clases en vivo","política de devoluciones"]}'::jsonb,
-  '{"source_url":"/diplomado/vino-cata-maridaje/","published_price_conflict":"699_vs_1200"}'::jsonb
+  '{"published_price_conflict":"699_vs_1200"}'::jsonb
 ),
 (
   'b1000000-0000-4000-8000-000000000010', 'b0000000-0000-4000-8000-000000000001',
@@ -487,7 +460,7 @@ INSERT INTO offerings (
   '{"language":"Spanish","min_age":18}'::jsonb,
   '{"modality":"online","classes":16,"temario_publicado":true,"includes":["actividades_practicas","examenes_parciales_y_final","profesores_que_acompanan","certificado_de_academia"]}'::jsonb,
   '{"never_invent_price":true,"price_message":"El precio te lo confirma el equipo de inscripciones.","forbidden_promises":["certificación verificada","título oficial","homologación","matrícula profesional","cuotas o financiación","más de 50 diplomados","horarios de clases en vivo","política de devoluciones"]}'::jsonb,
-  '{"source_url":"/diplomado/nutricion-alimentacion/","published_price_conflict":"699_vs_1200"}'::jsonb
+  '{"published_price_conflict":"699_vs_1200"}'::jsonb
 ),
 (
   'b1000000-0000-4000-8000-000000000011', 'b0000000-0000-4000-8000-000000000001',
@@ -498,7 +471,7 @@ INSERT INTO offerings (
   '{"language":"Spanish","min_age":18}'::jsonb,
   '{"modality":"online","classes":14,"temario_publicado":true,"additional_activities":{"trabajos_integradores":7,"trabajo_practico_final":true},"includes":["actividades_practicas","examenes_parciales_y_final","profesores_que_acompanan","certificado_de_academia"]}'::jsonb,
   '{"never_invent_price":true,"price_message":"El precio te lo confirma el equipo de inscripciones.","forbidden_promises":["certificación verificada","título oficial","homologación","matrícula profesional","cuotas o financiación","más de 50 diplomados","horarios de clases en vivo","política de devoluciones"]}'::jsonb,
-  '{"source_url":"/diplomado/cuidador-adultos-mayores/","published_price_conflict":"699_vs_1200"}'::jsonb
+  '{"published_price_conflict":"699_vs_1200"}'::jsonb
 ),
 (
   'b1000000-0000-4000-8000-000000000012', 'b0000000-0000-4000-8000-000000000001',
@@ -520,7 +493,7 @@ INSERT INTO offerings (
   '{"language":"Spanish","min_age":18}'::jsonb,
   '{"modality":"online","classes":10,"temario_publicado":true,"includes":["actividades_practicas","examenes_parciales_y_final","profesores_que_acompanan","certificado_de_academia"]}'::jsonb,
   '{"never_invent_price":true,"price_message":"El precio te lo confirma el equipo de inscripciones.","forbidden_promises":["certificación verificada","título oficial","homologación","matrícula profesional","cuotas o financiación","más de 50 diplomados","horarios de clases en vivo","política de devoluciones"]}'::jsonb,
-  '{"source_url":"/diplomado/sushi-principiantes/","published_price_conflict":"699_vs_1200"}'::jsonb
+  '{"published_price_conflict":"699_vs_1200"}'::jsonb
 ),
 (
   'b1000000-0000-4000-8000-000000000014', 'b0000000-0000-4000-8000-000000000001',
@@ -531,7 +504,7 @@ INSERT INTO offerings (
   '{"language":"Spanish","min_age":18}'::jsonb,
   '{"modality":"online","classes":7,"temario_publicado":true,"includes":["actividades_practicas","examenes_parciales_y_final","profesores_que_acompanan","certificado_de_academia"]}'::jsonb,
   '{"never_invent_price":true,"price_message":"El precio te lo confirma el equipo de inscripciones.","forbidden_promises":["certificación verificada","título oficial","homologación","matrícula profesional","cuotas o financiación","más de 50 diplomados","horarios de clases en vivo","política de devoluciones"]}'::jsonb,
-  '{"source_url":"/diplomado/depilacion-definitiva/","published_price_conflict":"699_vs_1200"}'::jsonb
+  '{"published_price_conflict":"699_vs_1200"}'::jsonb
 )
 ON CONFLICT (workspace_id, code) DO UPDATE SET
   display_name = EXCLUDED.display_name, offering_type = EXCLUDED.offering_type,
