@@ -115,11 +115,34 @@ const LOADED_CATALOG: CatalogResponse = {
 
 describe('AGENT_A_PROMPT_VERSION', () => {
   it('is the pinned sales-bridge version', () => {
-    expect(AGENT_A_PROMPT_VERSION).toBe('studyx-agent-a-sales-bridge-v1');
+    expect(AGENT_A_PROMPT_VERSION).toBe('agent-a-sales-bridge-v1.1');
   });
 });
 
 describe('buildAgentASalesBridgeInstructions', () => {
+  it('derives the sales identity from business_context, with no hardcoded brand', () => {
+    const withBusiness = claimedTurn({});
+    ;(withBusiness as { business_context?: unknown }).business_context = {
+      workspace: {
+        slug: 'aburridont-english-it-sandbox',
+        display_name: 'Aburridont — Inglés IT (Sandbox)',
+        environment: 'sandbox',
+        default_locale: 'es-AR',
+        timezone: 'America/Argentina/Buenos_Aires',
+      },
+      offerings: [],
+      qualification_fields: [],
+      injection_suspected_count: 0,
+    }
+    const instructions = buildAgentASalesBridgeInstructions(withBusiness, LOADED_CATALOG);
+    expect(instructions).toContain('the sales advisor for Aburridont — Inglés IT (Sandbox)');
+    expect(instructions).not.toContain('StudyX');
+
+    const withoutBusiness = buildAgentASalesBridgeInstructions(claimedTurn({}), LOADED_CATALOG);
+    expect(withoutBusiness).not.toMatch(/StudyX|Aburridont/);
+    expect(withoutBusiness).toContain('never invent one');
+  });
+
   it('requires answering the actual question before any call CTA', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}), LOADED_CATALOG);
     expect(instructions).toMatch(/answer(s)? .*before.*(call|cta)/i);

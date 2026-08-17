@@ -1,15 +1,16 @@
 import type { CatalogResponse, ClaimedTurn } from '../schemas/contracts'
 
 /**
- * The versioned Agent A instructions: a concise StudyX sales advisor that
- * can bridge a high-intent conversation into an immediate voice call with
- * "nuestra asesora virtual".
+ * The versioned Agent A instructions: a concise sales advisor for the
+ * configured workspace that can bridge a high-intent conversation into an
+ * immediate voice call with "nuestra asesora virtual".
  *
  * This file is the entire behavioral contract for that model call. It is
  * organized as five explicit blocks so each spec rule has exactly one place
  * to live and one place to change:
  *
- *   1. IDENTITY_AND_SCOPE_BLOCK    — who the agent is, what it is for.
+ *   1. identityAndScopeBlock       — who the agent is (workspace-derived
+ *                                    business name), what it is for.
  *   2. HARD_COMMERCIAL_RULES_BLOCK — Decision v3 shape, catalog grounding,
  *                                    no invented facts.
  *   3. CALL_POLICY_BLOCK           — when a call may be offered or placed,
@@ -26,19 +27,32 @@ import type { CatalogResponse, ClaimedTurn } from '../schemas/contracts'
  * version, and a version bump is the signal that the matrix needs a rerun.
  */
 
-export const AGENT_A_PROMPT_VERSION = 'studyx-agent-a-sales-bridge-v1'
+export const AGENT_A_PROMPT_VERSION = 'agent-a-sales-bridge-v1.1'
 
 /** Bounded projection: history informs the decision, it never dominates the prompt. */
 const MAX_RECENT_TURNS = 10
 const MAX_RECENT_TURN_CHARS = 280
 
-const IDENTITY_AND_SCOPE_BLOCK = `You are Agent A, StudyX's sales advisor for a short chat conversation
+/**
+ * The business identity comes from the backend-derived workspace, never from
+ * a hardcoded brand. Without business context the agent stays brand-neutral:
+ * inventing a company name would be exactly the kind of ungrounded fact the
+ * rest of this prompt forbids.
+ */
+function identityAndScopeBlock(claimed: ClaimedTurn): string {
+  const businessName = claimed.business_context?.workspace.display_name ?? null
+  const identity = businessName
+    ? `You are Agent A, the sales advisor for ${businessName}`
+    : 'You are Agent A, the sales advisor for this business (its name is in ' +
+      'business_context when available; if absent, never invent one)'
+  return `${identity} in a short chat conversation
 (Telegram/WhatsApp, Argentine Spanish). You produce exactly one structured
 decision per turn through the turn_decision exit. You are not a human and
 you never claim to be one. Your job in this turn is twofold, in this order:
 (1) answer what the customer actually asked, using only grounded facts, and
 (2) when appropriate, bridge the conversation toward an immediate voice call
 with nuestra asesora virtual — never toward a human agent.`
+}
 
 const HARD_COMMERCIAL_RULES_BLOCK = `Hard rules for Decision v3:
 - Return through the turn_decision exit. schema_version must be 3.
@@ -173,7 +187,7 @@ export function buildAgentASalesBridgeInstructions(
   catalog: CatalogResponse | null,
 ): string {
   return [
-    IDENTITY_AND_SCOPE_BLOCK,
+    identityAndScopeBlock(claimed),
     HARD_COMMERCIAL_RULES_BLOCK,
     CALL_POLICY_BLOCK,
     STYLE_AND_COPY_BLOCK,
