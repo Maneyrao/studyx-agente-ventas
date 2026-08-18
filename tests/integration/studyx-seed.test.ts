@@ -129,4 +129,26 @@ run('seed studyx (production)', () => {
     expect(rows.length).toBeGreaterThanOrEqual(1);
     expect(rows[0].content).toContain('No somos una entidad educativa con licencia');
   });
+
+  // Dejar los montos fuera de `offerings` no alcanza. El texto de un
+  // knowledge_source se proyecta a `knowledge_chunks`, y `search_knowledge_base`
+  // devuelve ese `content` tal cual al prompt del Agente A. Una política que
+  // explicara la prohibición nombrando "$699/$1.200" pondría los dos números
+  // delante del modelo justo cuando el cliente pregunta por el precio — que es
+  // la consulta de máxima similitud con ese chunk — y sin ningún monto
+  // sancionado para ofrecer en su lugar. El motivo de la prohibición se explica
+  // sin citar cifras.
+  it('ningún knowledge_source contiene un monto: el texto recuperable no puede filtrar un precio', async () => {
+    const rows = await db!<{ title: string; content: string }[]>`
+      SELECT k.title, k.content FROM knowledge_sources k JOIN workspaces w ON w.id = k.workspace_id
+      WHERE w.slug = ${WS}`;
+    expect(rows.length).toBeGreaterThan(0);
+
+    // Cualquier cifra de tres o más dígitos, con o sin separadores ni signo.
+    const amount = /\$\s*\d|(?<!\d)\d{1,3}(?:[.,]\d{3})+(?!\d)|(?<!\d)\d{3,}(?!\d)/;
+    const leaks = rows
+      .filter((row) => amount.test(row.content))
+      .map((row) => `${row.title}: ${row.content.match(amount)?.[0]}`);
+    expect(leaks).toEqual([]);
+  });
 });
