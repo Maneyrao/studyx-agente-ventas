@@ -316,7 +316,20 @@ export interface BusinessCatalogView {
 
 export function buildBusinessCatalogView(
   offerings: readonly BusinessOfferingView[],
-  options: { readonly now: number; readonly maxItems?: number }
+  options: {
+    readonly now: number;
+    readonly maxItems?: number;
+    /**
+     * Offerings the caller already dropped before handing the array over.
+     * `buildBusinessContextView` slices to the same cap upstream, so by the
+     * time the catalog route calls this the cut has already happened and the
+     * local `slice` finds nothing left to remove. Without this, the response
+     * body claims `dropped: 0` while real offerings are missing from it.
+     */
+    readonly droppedUpstream?: number;
+    /** Same reason: the injection scan runs upstream, not here. */
+    readonly injectionSuspectedCount?: number;
+  }
 ): BusinessCatalogView {
   const maxItems = options.maxItems ?? DEFAULT_BUSINESS_CONTEXT_LIMITS.maxOfferings;
   const kept = offerings.slice(0, maxItems);
@@ -336,9 +349,9 @@ export function buildBusinessCatalogView(
   return {
     items,
     count: items.length,
-    dropped: offerings.length - kept.length,
+    dropped: offerings.length - kept.length + (options.droppedUpstream ?? 0),
     stale_promotions_dropped: 0,
-    injection_suspected_count: 0,
+    injection_suspected_count: options.injectionSuspectedCount ?? 0,
     as_of: new Date(options.now).toISOString(),
     prices_assertable: items.some((item) => item.price_assertable),
   };

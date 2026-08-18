@@ -48,25 +48,25 @@ export async function GET() {
   try {
     const raw = await businessContextStore.loadBusinessContext(workspaceSlug);
     const offerings = raw ? buildBusinessContextView(raw) : null;
-    const view = buildBusinessCatalogView(offerings?.offerings ?? [], { now: Date.now() });
+    // Both counts are carried in from the context view rather than recomputed:
+    // its input was already sliced to the same `maxOfferings` bound and already
+    // scanned for injection, so a view built from its output would find nothing
+    // to report and would tell the caller `dropped: 0` on a truncated catalog.
+    const truncated = offerings?.offerings_truncated ?? 0;
+    const injectionSuspected = offerings?.injection_suspected_count ?? 0;
+    const view = buildBusinessCatalogView(offerings?.offerings ?? [], {
+      now: Date.now(),
+      droppedUpstream: truncated,
+      injectionSuspectedCount: injectionSuspected,
+    });
 
     counter.increment('catalog_lookups');
     if (raw === null) {
       logger.warn({ event: 'catalog.workspace_missing' });
     }
-    if ((offerings?.injection_suspected_count ?? 0) > 0) {
-      logger.warn({
-        event: 'catalog.injection_suspected',
-        suspected: offerings!.injection_suspected_count,
-      });
+    if (injectionSuspected > 0) {
+      logger.warn({ event: 'catalog.injection_suspected', suspected: injectionSuspected });
     }
-    // Source the real truncation count from the context view, not
-    // `view.dropped`: by the time `buildBusinessCatalogView` runs here, its
-    // input was already sliced to the same `maxOfferings` bound by
-    // `buildBusinessContextView` above, so `view.dropped` can never be
-    // non-zero for this path. `offerings_truncated` is where the cut
-    // actually happens.
-    const truncated = offerings?.offerings_truncated ?? 0;
     if (truncated > 0) {
       logger.info({ event: 'catalog.capped', dropped: truncated });
     }

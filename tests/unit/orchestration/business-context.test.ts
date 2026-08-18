@@ -215,6 +215,47 @@ describe('buildBusinessCatalogView', () => {
     const catalog = buildBusinessCatalogView(quoteOnly, { now: NOW });
     expect(catalog.prices_assertable).toBe(false);
   });
+
+  // The catalog route feeds this function an array `buildBusinessContextView`
+  // already sliced to the same cap, so the cut never happens here — it happened
+  // upstream. Without carrying that count in, the body reports `dropped: 0`
+  // while real offerings are missing, and a client reading the response cannot
+  // tell a complete catalog from a truncated one.
+  it('reports offerings dropped upstream, not just the ones it cut itself', () => {
+    const context = buildBusinessContextView(rawContext());
+    const catalog = buildBusinessCatalogView(context.offerings, {
+      now: NOW,
+      droppedUpstream: 14,
+    });
+    expect(catalog.count).toBe(2);
+    expect(catalog.dropped).toBe(14);
+  });
+
+  it('adds its own cut to the upstream count instead of replacing it', () => {
+    const context = buildBusinessContextView(rawContext());
+    const catalog = buildBusinessCatalogView(context.offerings, {
+      now: NOW,
+      maxItems: 1,
+      droppedUpstream: 3,
+    });
+    expect(catalog.count).toBe(1);
+    expect(catalog.dropped).toBe(4);
+  });
+
+  it('reports the upstream injection-suspected count instead of a hardcoded zero', () => {
+    const context = buildBusinessContextView(rawContext());
+    const catalog = buildBusinessCatalogView(context.offerings, {
+      now: NOW,
+      injectionSuspectedCount: 2,
+    });
+    expect(catalog.injection_suspected_count).toBe(2);
+  });
+
+  it('defaults both upstream counts to zero when the caller omits them', () => {
+    const context = buildBusinessContextView(rawContext());
+    const catalog = buildBusinessCatalogView(context.offerings, { now: NOW });
+    expect(catalog).toMatchObject({ dropped: 0, injection_suspected_count: 0 });
+  });
 });
 
 describe('loadBusinessWorkspaceConfig', () => {
