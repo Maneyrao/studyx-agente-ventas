@@ -79,6 +79,14 @@ export interface BusinessOfferingView {
   readonly schedules: OfferingSchedule[];
   readonly certification: boolean | null;
   readonly hours_per_month: number | null;
+  /** Class count, e.g. "38 clases". Null when not published for this offering. */
+  readonly classes: number | null;
+  /** Module count, e.g. "5 módulos". Null when not published for this offering. */
+  readonly modules: number | null;
+  /** What's bundled in: prácticas, exámenes, certificado, etc. */
+  readonly includes: string[];
+  /** True when the offering has a published syllabus (temario) to point customers to. */
+  readonly syllabus_published: boolean | null;
   readonly policies: {
     readonly allowed_promise: string | null;
     readonly forbidden_promises: string[];
@@ -240,6 +248,17 @@ function buildOfferingView(
       typeof delivery.hours_per_month === 'number' && Number.isFinite(delivery.hours_per_month)
         ? delivery.hours_per_month
         : null,
+    classes:
+      typeof delivery.classes === 'number' && Number.isFinite(delivery.classes)
+        ? delivery.classes
+        : null,
+    modules:
+      typeof delivery.modules === 'number' && Number.isFinite(delivery.modules)
+        ? delivery.modules
+        : null,
+    includes: cleanStringList(delivery.includes, 12, 64, tally),
+    syllabus_published:
+      typeof delivery.temario_publicado === 'boolean' ? delivery.temario_publicado : null,
     policies: {
       allowed_promise: cleanText(
         typeof guardrails.allowed_promise === 'string' ? guardrails.allowed_promise : null,

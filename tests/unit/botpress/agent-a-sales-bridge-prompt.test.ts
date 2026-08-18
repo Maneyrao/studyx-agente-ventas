@@ -115,7 +115,7 @@ const LOADED_CATALOG: CatalogResponse = {
 
 describe('AGENT_A_PROMPT_VERSION', () => {
   it('is the pinned sales-bridge version', () => {
-    expect(AGENT_A_PROMPT_VERSION).toBe('aburridont-agent-a-sales-bridge-v2.1');
+    expect(AGENT_A_PROMPT_VERSION).toBe('aburridont-agent-a-sales-bridge-v2.2');
   });
 });
 
