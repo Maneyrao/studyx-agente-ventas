@@ -60,17 +60,27 @@ run('seed studyx (production)', () => {
     expect(rows[0]).toMatchObject({ environment: 'production', status: 'active' });
   });
 
-  it('siembra 14 offerings, todas sin precio numérico', async () => {
+  // El precio cargado es el que cobra el checkout ($1.200 en los 30 productos
+  // de la tienda), no el que publican las fichas ($699). Si alguna vez se
+  // invierte, el agente cotiza un número que el pago desmiente — que es
+  // exactamente el hallazgo #1 del análisis.
+  it('siembra 14 offerings al precio que realmente se cobra, no al publicado', async () => {
     const rows = await db!`
-      SELECT code, price_type, price_amount, currency, guardrails
+      SELECT o.code, o.price_type, o.price_amount, o.currency, o.guardrails, o.metadata
       FROM offerings o JOIN workspaces w ON w.id = o.workspace_id
       WHERE w.slug = ${WS}`;
     expect(rows).toHaveLength(14);
     for (const r of rows) {
-      expect(r.price_type).toBe('quote');
-      expect(r.price_amount).toBeNull();
+      expect(r.price_type).toBe('fixed');
+      expect(Number(r.price_amount)).toBe(1200);
       expect(r.currency).toBe('USD');
       expect(r.guardrails.never_invent_price).toBe(true);
+      // La beca queda como dato, nunca como precio cotizable.
+      expect(Number(r.metadata.beca_price_usd)).toBe(699);
+      expect(r.guardrails.beca_amount_gated).toBe(true);
+      // La equivalencia beca↔$699 sigue sin confirmar (pregunta E.1 del
+      // análisis); si alguien la da por hecha, este assert lo frena.
+      expect(r.metadata.beca_hypothesis_unconfirmed).toBe(true);
     }
   });
 
@@ -115,11 +125,25 @@ run('seed studyx (production)', () => {
     expect(rows[0].code).toBe('barista');
   });
 
-  it('siembra exactamente 3 knowledge_sources', async () => {
-    const rows = await db!`
-      SELECT k.id FROM knowledge_sources k JOIN workspaces w ON w.id = k.workspace_id
+  it('siembra las 9 fuentes de conocimiento del análisis', async () => {
+    const rows = await db!<Array<{ title: string }>>`
+      SELECT k.title FROM knowledge_sources k JOIN workspaces w ON w.id = k.workspace_id
       WHERE w.slug = ${WS}`;
-    expect(rows).toHaveLength(3);
+    // Ambos lados con el mismo comparador: los títulos llevan acentos y el
+    // orden por code units no coincide con el alfabético.
+    expect(rows.map((r) => r.title).sort()).toEqual(
+      [
+        'Beca StudyX y cierre',
+        'Consentimiento: qué canal está cubierto',
+        'Devoluciones: los documentos se contradicen',
+        'Límites comerciales (T&C literales)',
+        'Modalidad: qué se puede afirmar sobre las clases',
+        'Prueba social publicada y programa Enterprise',
+        'Qué vende StudyX',
+        'Quién cobra y bajo qué ley',
+        'Tamaño real del catálogo y qué no afirmar',
+      ].sort()
+    );
   });
 
   it('la política comercial cita los límites de los T&C', async () => {
@@ -130,25 +154,19 @@ run('seed studyx (production)', () => {
     expect(rows[0].content).toContain('No somos una entidad educativa con licencia');
   });
 
-  // Dejar los montos fuera de `offerings` no alcanza. El texto de un
-  // knowledge_source se proyecta a `knowledge_chunks`, y `search_knowledge_base`
-  // devuelve ese `content` tal cual al prompt del Agente A. Una política que
-  // explicara la prohibición nombrando "$699/$1.200" pondría los dos números
-  // delante del modelo justo cuando el cliente pregunta por el precio — que es
-  // la consulta de máxima similitud con ese chunk — y sin ningún monto
-  // sancionado para ofrecer en su lugar. El motivo de la prohibición se explica
-  // sin citar cifras.
-  it('ningún knowledge_source contiene un monto: el texto recuperable no puede filtrar un precio', async () => {
+  // Ahora que $1.200 es un precio legítimo y cotizable, el monto que NO puede
+  // aparecer en texto recuperable es el de la beca. El sitio dice que la beca
+  // la aplica "únicamente el departamento de inscripciones", así que si $699
+  // entra a un knowledge_source, `search_knowledge_base` se lo sirve al prompt
+  // y el agente termina regalando un descuento que no le corresponde otorgar.
+  it('ningún knowledge_source filtra el monto de la beca', async () => {
     const rows = await db!<{ title: string; content: string }[]>`
       SELECT k.title, k.content FROM knowledge_sources k JOIN workspaces w ON w.id = k.workspace_id
       WHERE w.slug = ${WS}`;
     expect(rows.length).toBeGreaterThan(0);
 
-    // Cualquier cifra de tres o más dígitos, con o sin separadores ni signo.
-    const amount = /\$\s*\d|(?<!\d)\d{1,3}(?:[.,]\d{3})+(?!\d)|(?<!\d)\d{3,}(?!\d)/;
-    const leaks = rows
-      .filter((row) => amount.test(row.content))
-      .map((row) => `${row.title}: ${row.content.match(amount)?.[0]}`);
+    const beca = /\b699\b/;
+    const leaks = rows.filter((row) => beca.test(row.content)).map((row) => row.title);
     expect(leaks).toEqual([]);
   });
 });

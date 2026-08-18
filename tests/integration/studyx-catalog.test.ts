@@ -11,12 +11,12 @@ afterAll(async () => db?.end());
 const WS = 'studyx';
 const SEED_PATH = resolve(__dirname, '../../supabase/seed/studyx.sql');
 
-// The catalog endpoints are the agent's only sanctioned source of course and
-// price facts, so the scan covers every string the response carries (see
-// collectQuotableText). The pattern is deliberately narrow — the two amounts
-// of the unresolved $699/$1,200 conflict — rather than "any number", because
-// catalog items legitimately carry digits that are not prices.
-const PRICE_LEAK_PATTERN = /699|1[.,]?200/;
+// El catálogo es la única fuente sancionada de precio para el agente. $1.200
+// es legítimo: es lo que cobra el checkout. El monto que NO puede salir por
+// ningún campo es el de la Beca Studyx ($699), porque el sitio dice que la beca
+// la aplica "únicamente el departamento de inscripciones" — si el agente la
+// cotiza, regala un descuento que no le corresponde otorgar.
+const BECA_LEAK_PATTERN = /\b699\b/;
 
 /**
  * Every string anywhere in the item, walked recursively.
@@ -41,16 +41,16 @@ function collectQuotableText(value: unknown): string[] {
   return [];
 }
 
-function assertNoNumericPrice(item: Record<string, unknown>) {
-  // Structural: the price field itself must be null/absent for every item —
-  // there is no field a numeric amount could ride in.
-  expect(item.price ?? null).toBeNull();
-  expect((item as { price_amount?: unknown }).price_amount ?? null).toBeNull();
-  expect(item.price_assertable).toBe(false);
-  expect(item.price_type).toBe('quote');
+function assertChargedPrice(item: Record<string, unknown>) {
+  // El precio expuesto es exactamente el que cobra el checkout. Un item sin
+  // precio, o con otro número, significa que el agente va a decir algo que el
+  // pago después desmiente.
+  expect(item.price_type).toBe('fixed');
+  expect(item.price_assertable).toBe(true);
+  expect(item.price).toMatchObject({ amount: '1200.00', currency: 'USD' });
 }
 
-function assertNoQuotableLeak(item: Record<string, unknown>) {
+function assertNoBecaLeak(item: Record<string, unknown>) {
   const texts = collectQuotableText(item);
   // Without this the loop below passes on an empty list, which is how the
   // previous version of this scan stayed green while reading nothing. Every
@@ -58,7 +58,7 @@ function assertNoQuotableLeak(item: Record<string, unknown>) {
   // walk broke, not that the item is clean.
   expect(texts.length).toBeGreaterThan(0);
   for (const text of texts) {
-    expect(text).not.toMatch(PRICE_LEAK_PATTERN);
+    expect(text).not.toMatch(BECA_LEAK_PATTERN);
   }
 }
 
@@ -96,22 +96,22 @@ run('catálogo del agente con workspace studyx (production)', () => {
     expect(res.items).toHaveLength(14);
   });
 
-  it('ningún item expone un precio numérico ni los montos del conflicto', async () => {
+  it('cada item expone el precio cobrable y ninguno filtra el monto de la beca', async () => {
     process.env.BUSINESS_WORKSPACE_SLUG = WS;
     const res = await catalogList();
-    expect(res.prices_assertable).toBe(false);
+    expect(res.prices_assertable).toBe(true);
     for (const item of res.items) {
-      assertNoNumericPrice(item);
-      assertNoQuotableLeak(item);
+      assertChargedPrice(item);
+      assertNoBecaLeak(item);
     }
   });
 
-  it('el detalle de barista mantiene paridad con la lista y sin precio', async () => {
+  it('el detalle de barista mantiene paridad con la lista y expone el precio cobrable', async () => {
     process.env.BUSINESS_WORKSPACE_SLUG = WS;
     const detail = await catalogDetail('barista');
     expect(detail.status).toBe(200);
-    assertNoNumericPrice(detail.body);
-    assertNoQuotableLeak(detail.body);
+    assertChargedPrice(detail.body);
+    assertNoBecaLeak(detail.body);
 
     const list = await catalogList();
     const listItem = list.items.find((item: { sku: string }) => item.sku === 'barista');
