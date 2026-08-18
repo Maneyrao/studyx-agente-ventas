@@ -184,6 +184,24 @@ describe('buildBusinessContextView', () => {
     // a cap raised without headroom just changes the value of the same bug.
     expect(DEFAULT_BUSINESS_CONTEXT_LIMITS.maxOfferings).toBeGreaterThanOrEqual(30);
   });
+
+  it('keeps headroom above the eight forbidden promises StudyX seeds, so adding a ninth guardrail cannot drop it silently', () => {
+    // This cap used to be a bare `8` inline — exactly the seeded count. These
+    // are the agent's safety rails, so a silent cut does not degrade an answer,
+    // it removes a prohibition: the agent simply stops being forbidden from
+    // quoting a price or promising a título.
+    expect(DEFAULT_BUSINESS_CONTEXT_LIMITS.maxForbiddenPromises).toBeGreaterThanOrEqual(16);
+  });
+
+  it('carries every forbidden promise through when a workspace declares more than the eight StudyX seeds', () => {
+    const promises = Array.from({ length: 12 }, (_, index) => `prohibido_${index}`);
+    const raw = rawContext();
+    const view = buildBusinessContextView({
+      ...raw,
+      offerings: [{ ...raw.offerings[0], guardrails: { forbidden_promises: promises } }],
+    });
+    expect(view.offerings[0].policies.forbidden_promises).toEqual(promises);
+  });
 });
 
 describe('buildBusinessCatalogView', () => {

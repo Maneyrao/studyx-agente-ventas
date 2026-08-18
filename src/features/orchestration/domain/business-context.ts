@@ -121,6 +121,7 @@ export interface BusinessContextLimits {
   readonly maxSchedules: number;
   readonly maxQualificationFields: number;
   readonly maxOptions: number;
+  readonly maxForbiddenPromises: number;
 }
 
 export const DEFAULT_BUSINESS_CONTEXT_LIMITS: BusinessContextLimits = {
@@ -142,6 +143,14 @@ export const DEFAULT_BUSINESS_CONTEXT_LIMITS: BusinessContextLimits = {
   maxSchedules: 6,
   maxQualificationFields: 12,
   maxOptions: 12,
+  // Was a bare `8` inline — exactly the number StudyX seeds, so the very next
+  // forbidden promise added to a workspace would have been dropped on the
+  // floor without a word. These are the agent's safety rails (no price, no
+  // "certificación verificada", no título/homologación, no cuotas…), so a
+  // silent cut here is worse than one on offerings: the agent keeps talking
+  // and simply stops being forbidden from something. Same lesson as
+  // maxOfferings above — leave headroom well above the real data.
+  maxForbiddenPromises: 24,
 };
 
 interface SanitizeTally {
@@ -239,7 +248,7 @@ function buildOfferingView(
       ),
       forbidden_promises: cleanStringList(
         guardrails.forbidden_promises,
-        8,
+        limits.maxForbiddenPromises,
         limits.maxTextChars,
         tally
       ),

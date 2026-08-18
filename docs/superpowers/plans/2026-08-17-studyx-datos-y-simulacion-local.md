@@ -10,6 +10,21 @@
 
 **Spec:** `~/Downloads/ANALISIS-STUDYX-CONTEXTO-VS-SITIO.md` (análisis contexto vs sitio, 14-ago-2026) — copiarlo a `docs/analysis/ANALISIS-STUDYX-CONTEXTO-VS-SITIO.md` en la Task 1 para que viaje con el repo. También: `specs/007-post-call-followup/spec.md` y `docs/runbooks/telegram-agent-b-smoke.md`.
 
+## Lo que este plan dice vs. lo que quedó implementado
+
+El cuerpo del plan quedó como se escribió antes de ejecutarlo. Tres decisiones
+tomadas durante la ejecución lo contradicen, y manda lo implementado:
+
+| El plan dice | Quedó |
+|---|---|
+| workspace `studyx-sandbox` | **`studyx`** |
+| `environment = 'sandbox'` | **`production`** (decisión del usuario) |
+| bloque StudyX dentro de `supabase/seed/dev.sql` | archivo propio **`supabase/seed/studyx.sql`**; `dev.sql` quedó sólo con fixtures sintéticas y sin ninguna referencia a StudyX |
+
+Donde el plan diga `studyx-sandbox`, `sandbox` o `dev.sql` a propósito de
+StudyX, leer la columna derecha. El detalle está en la Ruling 11 del ledger
+(`.superpowers/sdd/2026-08-17-studyx-datos-y-simulacion-local/progress.md`).
+
 ## ⛔ Antes de copiar cualquier comando de este plan
 
 **`$DATABASE_URL` en `.env.local` apunta a la Supabase de PRODUCCIÓN**

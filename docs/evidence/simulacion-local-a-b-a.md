@@ -1,7 +1,13 @@
 # Simulación local A→B→A — evidencia
 
-Fecha: 2026-08-17. Rama: `feat/studyx-datos-y-sim-local`. Commit base al
-correr esto: `b65bc5f`. Cluster: `postgresql://postgres@127.0.0.1:55433/studyx_test`
+Fecha: 2026-08-17. Rama: `feat/studyx-datos-y-sim-local`. El árbol sobre el que
+se corrió esto tenía como base `b65bc5f`; el trabajo que la evidencia describe
+—`tests/integration/post-call-followup.test.ts` y el arreglo de
+`scripts/pg-native-up.sh`— quedó commiteado en `6c21274`, así que `b65bc5f` por
+sí solo no lo contiene. Posteriormente la review final de rama motivó
+`9496459` (sacar los montos del texto recuperable) y `5556c3e` (el detalle del
+catálogo deja de negar cursos pasados el tope); ninguno de los dos cambia lo
+verificado acá. Cluster: `postgresql://postgres@127.0.0.1:55433/studyx_test`
 (nativo, `scripts/pg-native-up.sh`). Workspace: `studyx`
 (`BUSINESS_WORKSPACE_SLUG=studyx`, seed `supabase/seed/studyx.sql`).
 
