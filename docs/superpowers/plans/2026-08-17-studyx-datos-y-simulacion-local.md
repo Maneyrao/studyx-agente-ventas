@@ -10,9 +10,30 @@
 
 **Spec:** `~/Downloads/ANALISIS-STUDYX-CONTEXTO-VS-SITIO.md` (análisis contexto vs sitio, 14-ago-2026) — copiarlo a `docs/analysis/ANALISIS-STUDYX-CONTEXTO-VS-SITIO.md` en la Task 1 para que viaje con el repo. También: `specs/007-post-call-followup/spec.md` y `docs/runbooks/telegram-agent-b-smoke.md`.
 
+## ⛔ Antes de copiar cualquier comando de este plan
+
+**`$DATABASE_URL` en `.env.local` apunta a la Supabase de PRODUCCIÓN**
+(`aws-1-us-east-2.pooler.supabase.com:6543`). Este plan quedó escrito con
+`psql "$DATABASE_URL" …` en más de diez pasos. Ejecutados tal cual, esos
+comandos escriben en la base real de clientes: ya pasó una vez durante la
+ejecución de este plan (se sembraron fixtures sintéticas en producción y hubo
+que borrarlas en una transacción de limpieza).
+
+Para cualquier trabajo local, sembrado o prueba, usar el cluster desechable:
+
+```bash
+LC_ALL=C bash scripts/pg-native-up.sh      # 127.0.0.1:55433, base studyx_test
+export TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:55433/studyx_test"
+```
+
+y reemplazar `"$DATABASE_URL"` por `"$TEST_DATABASE_URL"` en todo comando de
+este documento. `dev.sql` sólo carga fixtures sintéticas (Aburridont, "Alumno
+Smoke") y no debe tocar producción nunca.
+
 ## Global Constraints
 
 - Migraciones SOLO aditivas; nunca editar una migración aplicada (`.claude/rules/database.md`).
+- Ningún comando de sembrado, prueba o limpieza corre contra `$DATABASE_URL`: es producción (ver el bloque de arriba).
 - `contacts.phone` E.164 estricto `/^\+[1-9]\d{7,14}$/`; sandbox = `+999` + telegram user id con padding a 10 dígitos (13 dígitos totales).
 - Sandbox: `provider = 'telegram_sandbox'` + fila en `sandbox_identities`. Ningún efecto real (Retell, cobro, WhatsApp, Sheets prod) sobre un contacto con fila en `sandbox_identities`.
 - **Ningún precio de StudyX entra como `price_amount` numérico** hasta que StudyX responda $699 vs $1.200 (hallazgo #1 del análisis). Todo `price_type='quote'`, `never_invent_price: true`.
@@ -561,8 +582,22 @@ git push -u personal feat/studyx-datos-y-sim-local
 
 Este plan deja el mecanismo listo; actualizar datos NO requiere un plan nuevo:
 
-1. Editar el bloque StudyX de `supabase/seed/dev.sql` (p.ej. precio confirmado → `price_type='fixed'`, `price_amount=…`; nueva política → editar el `knowledge_sources` correspondiente **subiendo `version`**).
-2. `psql "$DATABASE_URL" -f supabase/seed/dev.sql` — idempotente, actualiza en el lugar.
+1. Editar `supabase/seed/studyx.sql` — **no** `dev.sql`. Durante la ejecución
+   (Ruling 11) StudyX se separó a su propio archivo de seed: `dev.sql` quedó
+   sólo con fixtures sintéticas y no contiene ninguna referencia a StudyX.
+   Ejemplos de edición: precio confirmado → `price_type='fixed'`,
+   `price_amount=…`; nueva política → editar el `knowledge_sources`
+   correspondiente **subiendo `version`**.
+2. Aplicarlo. Es idempotente (`ON CONFLICT`), así que actualiza en el lugar:
+
+   ```bash
+   # Local, que es donde se prueba primero:
+   psql "$TEST_DATABASE_URL" -f supabase/seed/studyx.sql
+   ```
+
+   Contra producción, sólo después de que el cambio esté verificado localmente
+   y con la URL escrita a mano en ese momento — nunca `$DATABASE_URL` desde un
+   comando copiado, por lo explicado en el bloque del inicio.
 3. El trigger de `knowledge_projection_jobs` re-encola la proyección de las fuentes editadas; el cron `/api/cron/project-knowledge` (cada 15 min) reconstruye el índice vectorial.
 4. Ajustar los asserts de `tests/integration/studyx-seed.test.ts` (p.ej. quitar el assert de `price_amount IS NULL` para los cursos con precio confirmado) — el test es el contrato de qué datos son válidos.
 5. Correr Task 7 de nuevo (verificación + checkpoint + push).
