@@ -126,6 +126,18 @@ try {
     // conversations no tiene una UNIQUE que capture "una sola conversación
     // abierta por contacto", así que la idempotencia se hace a mano: sólo
     // insertar si no hay ya una abierta para este contacto.
+    //
+    // El chequeo y el INSERT no son atómicos entre sí: en READ COMMITTED dos
+    // corridas simultáneas para el mismo contacto pueden evaluar el NOT EXISTS
+    // antes de que cualquiera commitee, y ambas insertar. El lock consultivo,
+    // tomado antes del chequeo y liberado solo al cerrar la transacción,
+    // serializa ese tramo por contacto. Se namespacea con el prefijo para no
+    // pisar el espacio de locks de nadie más.
+    await tx`
+      SELECT pg_advisory_xact_lock(
+        hashtextextended('seed-sandbox-tester:conversation:' || ${contact.id}::text, 0)
+      )`;
+
     await tx`
       INSERT INTO conversations (contact_id, channel, status)
       SELECT ${contact.id}, 'whatsapp', 'open'
