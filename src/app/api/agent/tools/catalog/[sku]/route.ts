@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { businessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
 import {
+  DEFAULT_BUSINESS_CONTEXT_LIMITS,
   buildBusinessCatalogView,
   buildBusinessContextView,
 } from '@/features/orchestration/domain/business-context';
@@ -44,11 +45,33 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ sku: strin
       return NextResponse.json({ error: 'NOT_FOUND', sku }, { status: 404 });
     }
 
-    const context = buildBusinessContextView(raw);
-    const view = buildBusinessCatalogView(context.offerings, { now: Date.now() });
+    // Look through the whole catalog, not the capped slice. `maxOfferings`
+    // exists to bound how much text goes into the agent's prompt; a lookup of
+    // one sku puts nothing in a prompt, so applying the cap here only means an
+    // offering past position N answers "NOT_FOUND" for a course the business
+    // really sells — the same silent denial this endpoint's list counterpart
+    // was fixed for. `maxTextChars` and the rest still apply: sanitization is
+    // not what the cap is for.
+    const context = buildBusinessContextView(raw, {
+      ...DEFAULT_BUSINESS_CONTEXT_LIMITS,
+      maxOfferings: raw.offerings.length,
+    });
+    // `maxItems` has to be lifted too: it defaults to the same `maxOfferings`,
+    // so leaving it alone would re-apply the cap here and undo the line above.
+    const view = buildBusinessCatalogView(context.offerings, {
+      now: Date.now(),
+      maxItems: context.offerings.length,
+      injectionSuspectedCount: context.injection_suspected_count,
+    });
     const item = view.items.find((candidate) => candidate.sku === sku);
     if (!item) {
       return NextResponse.json({ error: 'NOT_FOUND', sku }, { status: 404 });
+    }
+    if (context.injection_suspected_count > 0) {
+      logger.warn({
+        event: 'catalog.detail.injection_suspected',
+        suspected: context.injection_suspected_count,
+      });
     }
 
     return NextResponse.json({ ...item, as_of: view.as_of }, { status: 200 });
