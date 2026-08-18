@@ -179,8 +179,15 @@ directamente en el backend a través del flujo completo:
 5. **Despachar a Bot B** via `POST /api/agent/calls/[call_id]/dispatch` (la llamada
    ya existe en este punto).
 
-Para los detalles de la firma HMAC y el shape exacto del envelope, consulta
-`specs/002-agent-message-ingestion/quickstart.md`.
+Para el juego exacto de headers y el formato de la entrada de firma, consulta
+`botpress-agent/README.md`: `src/proxy.ts` exige un header `x-signature` con
+prefijo `v1=` y la entrada canónica es
+`timestamp + "\n" + método + "\n" + pathname + "\n" + body JSON exacto`. El shape
+del envelope está en `src/lib/contracts/inbound-envelope.ts`.
+
+Ojo con `specs/002-agent-message-ingestion/quickstart.md`: sus ejemplos de curl
+llevan sólo `X-Orchestrator-Key` y el proxy actual los rechaza. Sirve para ver la
+secuencia de llamadas, no para armar la autenticación.
 
 ### 5. Verificar que todo funciona
 
