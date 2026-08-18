@@ -2,7 +2,10 @@ import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import type { TelegramBotClient } from '../adapters/telegram-bot-api.client';
 import type { ContextReceiptStore, TelegramSmokeBindingStore } from '../ports/context-receipt-store';
+import type { CallStore } from '../ports/call-store';
 import { verifyTelegramContext } from './verify-telegram-context';
+import { recordCallEvent } from './record-call-event';
+import { buildVerdictOutcomeEvents } from '../domain/context-verdict-outcome';
 
 const TelegramIdentitySchema = z.object({ id: z.union([z.number().int(), z.string().min(1)]) }).passthrough();
 const TelegramMessageSchema = z.object({
@@ -38,6 +41,7 @@ function secretMatches(actual: string | null, expected: string): boolean {
 type WebhookDependencies = {
   receipts: ContextReceiptStore & TelegramSmokeBindingStore;
   telegram: TelegramBotClient;
+  calls: CallStore;
   webhookSecret: string;
   now?: () => Date;
 };
@@ -71,6 +75,26 @@ export async function handleTelegramWebhook(
       messageId: String(callback.message.message_id),
       receivedAt: (dependencies.now ?? (() => new Date()))().toISOString(),
     }, dependencies);
+
+    // El veredicto humano sobre el contexto es el único hecho de negocio que
+    // el sandbox tiene para cerrar la llamada (no hay webhook de Retell).
+    // Se cierra tanto en 'recorded' como en 'duplicate' (reintento de
+    // Telegram) para que un fallo parcial en la primera pasada —el veredicto
+    // quedó grabado pero `appendEvent` no llegó a correr— se autocorrija en
+    // el reintento: `appendEvent` es idempotente por (provider, event_id).
+    if (result.status === 'recorded' || result.status === 'duplicate') {
+      const occurredAt = (dependencies.now ?? (() => new Date()))().toISOString();
+      const events = buildVerdictOutcomeEvents({
+        callId: result.callId,
+        provider: 'telegram_sandbox',
+        verdict: result.verdict,
+        occurredAt,
+      });
+      for (const event of events) {
+        await recordCallEvent(event, { store: dependencies.calls });
+      }
+    }
+
     return Response.json(result, { status: 200 });
   }
 

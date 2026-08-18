@@ -1,6 +1,7 @@
 import { handleTelegramWebhook } from '@/features/calls/application/telegram-webhook';
 import { TelegramBotApiClient } from '@/features/calls/adapters/telegram-bot-api.client';
 import { PostgresContextReceiptStore } from '@/features/calls/adapters/postgres-context-receipt-store';
+import { PostgresCallStore } from '@/features/calls/adapters/postgres-call-store';
 import { loadTelegramAgentBConfig } from '@/lib/config';
 
 export const runtime = 'nodejs';
@@ -13,6 +14,7 @@ export async function POST(request: Request): Promise<Response> {
       expectedChatId: settings.smokeChatId,
       expectedUserId: settings.smokeUserId,
     });
+    const calls = new PostgresCallStore(sql);
     const telegram = new TelegramBotApiClient({
       token: settings.botToken,
       timeoutMs: settings.requestTimeoutMs,
@@ -20,6 +22,7 @@ export async function POST(request: Request): Promise<Response> {
     return await handleTelegramWebhook(request, {
       receipts,
       telegram,
+      calls,
       webhookSecret: settings.webhookSecret,
     });
   } catch {

@@ -14,7 +14,7 @@ export interface VerifyTelegramContextInput {
 }
 
 export type VerifyTelegramContextResult =
-  | { status: 'recorded' | 'duplicate'; verdict: ContextVerdict }
+  | { status: 'recorded' | 'duplicate'; verdict: ContextVerdict; callId: string }
   | { status: 'rejected'; code: string };
 
 export async function verifyTelegramContext(
@@ -56,7 +56,7 @@ export async function verifyTelegramContext(
     if (stored === 'conflict') return { status: 'rejected', code: 'CALLBACK_VERDICT_CONFLICT' };
 
     answerText = stored === 'duplicate' ? 'Ya estaba registrado' : 'Verificación registrada';
-    return { status: stored, verdict: callback.verdict };
+    return { status: stored, verdict: callback.verdict, callId: receipt.callId };
   } finally {
     await dependencies.telegram.answerCallbackQuery({
       callbackQueryId: input.callbackQueryId,

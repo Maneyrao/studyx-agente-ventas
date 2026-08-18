@@ -7,9 +7,11 @@ const nonce = 'nonce_abcdefgh';
 const nonceHash = createHash('sha256').update(nonce).digest('hex');
 const now = '2026-08-16T12:00:00.000Z';
 
+const fixedCallId = randomUUID();
+
 function receipt(): ContextReceiptRecord {
   return {
-    id: randomUUID(), callId: randomUUID(), idempotencyKey: 'voice-call:test', contextHash: 'a'.repeat(64),
+    id: randomUUID(), callId: fixedCallId, idempotencyKey: 'voice-call:test', contextHash: 'a'.repeat(64),
     ack: { schema_version: 1, event: 'context_loaded', call_id: randomUUID(), context_hash: 'a'.repeat(64), received_fields: ['call_id'], missing_fields: [], status: 'accepted', loaded_at: now },
     telegramChatId: 'chat-1', telegramUserId: 'user-1', telegramMessageId: '77', nonceHash,
     expiresAt: '2026-08-16T12:15:00.000Z', createdAt: now, deliveryStatus: 'accepted', verdict: null, verifiedAt: null,
@@ -32,7 +34,7 @@ describe('verifyTelegramContext', () => {
     await expect(verifyTelegramContext({
       updateId: '900', callbackQueryId: 'cb-1', callbackData: `bctx:${nonce}:ok`,
       chatId: 'chat-1', userId: 'user-1', messageId: '77', receivedAt: now,
-    }, { receipts, telegram })).resolves.toEqual({ status: 'recorded', verdict: 'correct' });
+    }, { receipts, telegram })).resolves.toEqual({ status: 'recorded', verdict: 'correct', callId: fixedCallId });
     expect(receipts.recordVerdict).toHaveBeenCalledWith(expect.objectContaining({ verdict: 'correct' }));
     expect(telegram.answerCallbackQuery).toHaveBeenCalledOnce();
   });
@@ -42,7 +44,7 @@ describe('verifyTelegramContext', () => {
     await expect(verifyTelegramContext({
       updateId: '900', callbackQueryId: 'cb-1', callbackData: `bctx:${nonce}:ok`,
       chatId: 'chat-1', userId: 'user-1', messageId: '77', receivedAt: now,
-    }, { receipts, telegram })).resolves.toMatchObject({ status: 'duplicate' });
+    }, { receipts, telegram })).resolves.toEqual({ status: 'duplicate', verdict: 'correct', callId: fixedCallId });
     expect(telegram.answerCallbackQuery).toHaveBeenCalledOnce();
   });
 

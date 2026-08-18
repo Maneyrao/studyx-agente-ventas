@@ -282,6 +282,26 @@ Este script detiene el proceso PostgreSQL con `pg_ctl -m fast` y limpia
   requiere; el backend lo invoca cuando llega un turno real.
 - **Retell** (VoIP real) tampoco está en el flujo local. Telegram sandbox
   simula el contexto de la llamada sin hacer llamadas de verdad.
+- **Candado anti-efectos-reales, verificado:** `VOICE_PROVIDER` es un switch
+  global (`request-call.ts:resolveVoiceProvider`), no por contacto — hoy en
+  producción, sin Retell, cualquier contacto real que confirme una llamada
+  también recibe `call_sessions.provider = 'telegram_sandbox'`. Lo que impide
+  que ese contacto real reciba el mensaje de Telegram del tester es el JOIN a
+  `sandbox_identities` dentro de `PostgresContextReceiptStore.resolve`
+  (`postgres-context-receipt-store.ts`): sin esa fila, `resolve()` lanza
+  `TELEGRAM_AGENT_B_NOT_STARTED` antes de llamar a `telegram.sendMessage`, y
+  `dispatchCall` cierra la llamada en `dispatch_ambiguous` — nunca en
+  `provider_accepted`. Cubierto por el test
+  `tests/integration/telegram-agent-b-smoke.test.ts` → *"un contacto real
+  (sin sandbox_identities) nunca dispara un mensaje de Telegram"*.
+- **El loop B→A se cierra por veredicto humano, no por webhook de Retell:**
+  cuando apretás un botón en Telegram, `telegram-webhook.ts` traduce el
+  veredicto a los eventos `call_events` (`started`+`ended` o sólo `ended`,
+  ver `domain/context-verdict-outcome.ts`) que el cron post-llamada necesita
+  para encontrar la llamada en estado terminal. Antes de esto, el ledger se
+  quedaba trabado en `provider_accepted` y el cron nunca tenía nada que
+  cerrar — verificado end-to-end en el mismo archivo de test, contra la ruta
+  HTTP real (`handleTelegramWebhook` → `runPostCallFollowup`).
 - **`TEST_DATABASE_URL`** es necesaria para que los tests de integración
   realmente ejecuten. Sin ella, las suites se saltan silenciosamente (imprimen
   `[integration skipped]` y no corren nada). Exportá siempre:
