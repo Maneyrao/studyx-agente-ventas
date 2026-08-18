@@ -96,6 +96,12 @@ const sql = `-- GENERADO POR scripts/generate-temarios-seed.mjs — NO EDITAR A 
 
 BEGIN;
 
+-- El pooler de Supabase (modo transacción, :6543) no garantiza un search_path
+-- con 'public': el mismo archivo corre en el cluster local y falla contra
+-- producción con "relation knowledge_sources does not exist". Fijarlo acá es
+-- lo que hace que este seed sea aplicable a las dos bases sin editarlo.
+SET search_path TO public;
+
 INSERT INTO knowledge_sources (id, workspace_id, source_type, title, content, status, version, metadata) VALUES
 ${rows.join(',\n')}
 ON CONFLICT (workspace_id, title, version) DO UPDATE SET
