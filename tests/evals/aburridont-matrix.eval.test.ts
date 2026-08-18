@@ -82,6 +82,7 @@ function aburridontRawContext(): RawBusinessContext {
             { days: ['saturday'], start: '15:00', end: '17:00', timezone: 'America/Argentina/Buenos_Aires' },
           ],
         },
+        audience: {},
         guardrails: {
           allowed_promise: 'Destrabar el inglés hablado en contextos laborales IT.',
           forbidden_promises: ['fluidez total en 3 meses', 'ser bilingüe en 3 meses'],
@@ -98,6 +99,7 @@ function aburridontRawContext(): RawBusinessContext {
         currency: 'ARS',
         billing_interval: 'custom',
         delivery: { modality: 'virtual', frequency: 'to_confirm' },
+        audience: {},
         guardrails: { price_message: 'Precio a confirmar según frecuencia y objetivo.', never_invent_price: true },
       },
     ],

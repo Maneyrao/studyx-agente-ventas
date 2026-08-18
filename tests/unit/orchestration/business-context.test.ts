@@ -35,11 +35,16 @@ function rawContext(overrides: Partial<RawBusinessContext> = {}): RawBusinessCon
           modality: 'virtual',
           hours_per_month: 8,
           certification: true,
+          classes: 38,
+          modules: 5,
+          temario_publicado: true,
+          includes: ['actividades_practicas', 'examenes_parciales_y_final'],
           schedules: [
             { days: ['tuesday', 'thursday'], start: '21:00', timezone: 'America/Argentina/Buenos_Aires' },
             { days: ['saturday'], start: '15:00', end: '17:00', timezone: 'America/Argentina/Buenos_Aires' },
           ],
         },
+        audience: { language: 'Spanish', min_age: 18 },
         guardrails: {
           allowed_promise: 'Destrabar el inglés hablado en contextos laborales IT.',
           forbidden_promises: ['fluidez total en 3 meses'],
@@ -56,6 +61,7 @@ function rawContext(overrides: Partial<RawBusinessContext> = {}): RawBusinessCon
         currency: 'ARS',
         billing_interval: 'custom',
         delivery: { modality: 'virtual' },
+        audience: {},
         guardrails: { price_message: 'Precio a confirmar según frecuencia y objetivo.' },
       },
     ],
@@ -106,6 +112,28 @@ describe('buildBusinessContextView', () => {
     expect(group?.schedules).toHaveLength(2);
     expect(group?.schedules[0]).toMatchObject({ days: ['tuesday', 'thursday'], start: '21:00' });
     expect(group?.schedules[1]).toMatchObject({ days: ['saturday'], start: '15:00', end: '17:00' });
+  });
+
+  it('carries class/module counts, includes, syllabus flag and audience into the view', () => {
+    const view = buildBusinessContextView(rawContext());
+    const group = view.offerings.find((offering) => offering.code === 'group_it_english');
+    expect(group?.classes).toBe(38);
+    expect(group?.modules).toBe(5);
+    expect(group?.includes).toEqual(['actividades_practicas', 'examenes_parciales_y_final']);
+    expect(group?.syllabus_published).toBe(true);
+    expect(group?.language).toBe('Spanish');
+    expect(group?.min_age).toBe(18);
+  });
+
+  it('defaults the course-detail fields to null/empty when the seed omits them', () => {
+    const view = buildBusinessContextView(rawContext());
+    const individual = view.offerings.find((offering) => offering.code === 'individual_it_english');
+    expect(individual?.classes).toBeNull();
+    expect(individual?.modules).toBeNull();
+    expect(individual?.includes).toEqual([]);
+    expect(individual?.syllabus_published).toBeNull();
+    expect(individual?.language).toBeNull();
+    expect(individual?.min_age).toBeNull();
   });
 
   it('orders qualification fields by position', () => {

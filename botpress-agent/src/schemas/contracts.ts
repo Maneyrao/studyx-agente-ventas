@@ -381,6 +381,12 @@ export const BusinessOfferingSchema = z.object({
     .default([]),
   certification: z.boolean().nullable().default(null),
   hours_per_month: z.number().nullable().default(null),
+  classes: z.number().nullable().default(null),
+  modules: z.number().nullable().default(null),
+  includes: z.array(z.string()).default([]),
+  syllabus_published: z.boolean().nullable().default(null),
+  language: z.string().nullable().default(null),
+  min_age: z.number().nullable().default(null),
   policies: z.object({
     allowed_promise: z.string().nullable().default(null),
     forbidden_promises: z.array(z.string()).default([]),

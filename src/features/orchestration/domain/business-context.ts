@@ -39,6 +39,7 @@ export interface RawOfferingRow {
   readonly billing_interval: string | null;
   readonly delivery: Record<string, unknown>;
   readonly guardrails: Record<string, unknown>;
+  readonly audience: Record<string, unknown>;
 }
 
 export interface RawQualificationFieldRow {
@@ -87,6 +88,10 @@ export interface BusinessOfferingView {
   readonly includes: string[];
   /** True when the offering has a published syllabus (temario) to point customers to. */
   readonly syllabus_published: boolean | null;
+  /** Course language from the audience column, e.g. "Spanish". */
+  readonly language: string | null;
+  /** Minimum age requirement from the audience column, e.g. 18. */
+  readonly min_age: number | null;
   readonly policies: {
     readonly allowed_promise: string | null;
     readonly forbidden_promises: string[];
@@ -224,6 +229,7 @@ function buildOfferingView(
     && offering.currency !== null;
   const delivery = offering.delivery ?? {};
   const guardrails = offering.guardrails ?? {};
+  const audience = offering.audience ?? {};
 
   return {
     code: offering.code,
@@ -259,6 +265,15 @@ function buildOfferingView(
     includes: cleanStringList(delivery.includes, 12, 64, tally),
     syllabus_published:
       typeof delivery.temario_publicado === 'boolean' ? delivery.temario_publicado : null,
+    language: cleanText(
+      typeof audience.language === 'string' ? audience.language : null,
+      64,
+      tally
+    ),
+    min_age:
+      typeof audience.min_age === 'number' && Number.isFinite(audience.min_age)
+        ? audience.min_age
+        : null,
     policies: {
       allowed_promise: cleanText(
         typeof guardrails.allowed_promise === 'string' ? guardrails.allowed_promise : null,

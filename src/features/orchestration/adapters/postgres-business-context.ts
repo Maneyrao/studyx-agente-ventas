@@ -29,7 +29,7 @@ export class PostgresBusinessContextStore implements BusinessContextStore {
       this.db<RawOfferingRow[]>`
         SELECT code, display_name, offering_type, description, value_proposition,
                price_type, price_amount::text AS price_amount, currency,
-               billing_interval, delivery, guardrails
+               billing_interval, delivery, guardrails, audience
         FROM offerings
         WHERE workspace_id = ${workspace.id}::uuid AND status = 'active'
         ORDER BY code
