@@ -24,17 +24,17 @@ producción puede escribir datos de prueba en el catálogo de clientes reales.
 bash scripts/pg-native-up.sh
 ```
 
-Este comando arranca un PostgreSQL 17 en `127.0.0.1:55433`. Espera a que
-termine de inicializar (verás logs de conexión). Luego aplica las migraciones
-y carga los datos de prueba:
+Este comando arranca un PostgreSQL 17 en `127.0.0.1:55433`, crea y migra la
+base de datos `studyx_test` automáticamente. Espera a que termine de
+inicializar (verás logs de conexión). Luego carga los datos de prueba:
 
 ```bash
 # Seed de fixtures sintéticas (contacto "Alumno Smoke" fake + tenant fake).
 # Úsalo sólo para desarrollo local; dev.sql nunca toca producción.
-psql -h 127.0.0.1 -p 55433 -U postgres postgres < supabase/seed/dev.sql
+psql -h 127.0.0.1 -p 55433 -U postgres studyx_test < supabase/seed/dev.sql
 
 # Alternativamente, si necesitas probar contra el catálogo real de StudyX:
-psql -h 127.0.0.1 -p 55433 -U postgres postgres < supabase/seed/studyx.sql
+psql -h 127.0.0.1 -p 55433 -U postgres studyx_test < supabase/seed/studyx.sql
 ```
 
 - `dev.sql` carga un contacto sintético y un tenant de juguete. Es rápido y
@@ -70,8 +70,9 @@ cp .env.example .env.local
 - **`VOICE_PROVIDER=telegram_sandbox`**: déjalo así. Es el provider de voz para
   simulación.
 
-- **`BUSINESS_WORKSPACE_SLUG=studyx`**: el workspace que quieres probar. Es el
-  valor que guardaste en StudyX al crear el tenant.
+- **`BUSINESS_WORKSPACE_SLUG=studyx`**: el workspace que quieres probar. Este
+  valor está baked en `supabase/seed/studyx.sql` y no necesita configuración
+  adicional.
 
 - **`CRON_SECRET`**: otro secreto que inventas (ej: `openssl rand -hex 32`).
   Autentica la llamada del cron post-llamada.
@@ -84,7 +85,7 @@ tabla `sandbox_identities`:
 ```bash
 # Usa el cluster local (no DATABASE_URL)
 node scripts/seed-sandbox-tester.mjs \
-  --database-url "postgresql://postgres@127.0.0.1:55433/postgres" \
+  --database-url "postgresql://postgres@127.0.0.1:55433/studyx_test" \
   --telegram-user-id <TU_USER_ID> \
   --name "Tu Nombre"
 ```
@@ -168,10 +169,18 @@ Busca:
 
 Si tienes Bot A en Botpress con su webhook conectado al mismo túnel, el flujo
 es automático. Pero la ruta soportada para pruebas locales es inyectar
-directamente en el backend.
+directamente en el backend a través del flujo completo:
 
-Consulta el runbook de integración E2E (`docs/runbooks/`) para la interfaz
-exacta de inyección de turnos (`POST /api/agent/calls`).
+1. **Ingerir el mensaje inbound** via `POST /api/agent/ingest` (requiere envelope
+   HMAC-firmado).
+2. **Reclamar el turno** via `POST /api/agent/batches/[batch_id]/claim`.
+3. **Guardar la decisión del agente** via `POST /api/agent/turns/[turn_id]/decision`.
+4. Una decisión con `request_call_now` reserva la llamada y dispara el flujo a Bot B.
+5. **Despachar a Bot B** via `POST /api/agent/calls/[call_id]/dispatch` (la llamada
+   ya existe en este punto).
+
+Para los detalles de la firma HMAC y el shape exacto del envelope, consulta
+`specs/002-agent-message-ingestion/quickstart.md`.
 
 ### 5. Verificar que todo funciona
 
@@ -254,8 +263,11 @@ storm en los logs).
 Opcionalmente, mata el cluster local:
 
 ```bash
-docker stop pg-native-dev  # o `pkill -f "postgres.*55433"` si usas binarios nativos
+bash scripts/pg-native-down.sh
 ```
+
+Este script detiene el proceso PostgreSQL con `pg_ctl -m fast` y limpia
+`/private/tmp/studyx-pg17-55433`.
 
 ## Notas de arquitectura
 
@@ -267,7 +279,7 @@ docker stop pg-native-dev  # o `pkill -f "postgres.*55433"` si usas binarios nat
   realmente ejecuten. Sin ella, las suites se saltan silenciosamente (imprimen
   `[integration skipped]` y no corren nada). Exportá siempre:
   ```bash
-  export TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:55433/postgres"
+  export TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:55433/studyx_test"
   npm run test:integration
   ```
   Verifica que el reporte muestra un número no cero de tests ejecutados.
