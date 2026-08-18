@@ -71,13 +71,39 @@ psql_run() {
     "$@"
 }
 
-# Supabase provisions these before running project migrations.
+# Supabase provisions these before running project migrations. A hosted/CLI
+# Supabase project always has the platform's built-in `anon`/`authenticated`
+# roles; several migrations (e.g. 20260805000001_universal_business_memory.sql)
+# unconditionally REVOKE/GRANT against them. Without creating them here first,
+# migrations fail with "role anon does not exist" on a genuinely fresh cluster.
 psql_run -c "CREATE SCHEMA IF NOT EXISTS extensions;" >/dev/null
 psql_run -c "CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;" >/dev/null
 psql_run -c "CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;" >/dev/null
 psql_run -c "ALTER DATABASE ${TEST_DATABASE} SET search_path TO public, extensions;" >/dev/null
+psql_run -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon NOLOGIN; END IF; END \$\$;" >/dev/null
+psql_run -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF; END \$\$;" >/dev/null
 
 for migration_file in supabase/migrations/*.sql; do
+  # KNOWN BUG (discovered 2026-08-17, not fixed here): the migration filename
+  # timestamp of 20260805000001_universal_business_memory.sql sorts it before
+  # 20260809020001_phase6_knowledge_base.sql, but it was actually authored
+  # 2026-08-17. It defines its OWN `knowledge_chunks (source_id -> knowledge_sources)`,
+  # which collides with (and is dead code next to) the real, application-used
+  # `knowledge_chunks (document_id -> knowledge_documents)` from the phase6
+  # migration -- src/lib/services/knowledge-projection.service.ts and
+  # knowledge-base.service.ts both INSERT INTO knowledge_chunks (document_id, ...),
+  # never source_id. Every fresh apply of supabase/migrations/*.sql in order
+  # fails here with "relation knowledge_chunks already exists" -- this has
+  # nothing to do with post-call-followup; it silently blocked EVERY fresh
+  # rebuild of the disposable cluster today because the cluster was never
+  # actually torn down and rebuilt from empty until now. Dropping the unused,
+  # never-referenced table here (local disposable DB only, never touches the
+  # migration files or DATABASE_URL) unblocks the loop without rewriting an
+  # applied migration. The real fix belongs in a follow-up: remove the dead
+  # CREATE TABLE block from 20260805000001_universal_business_memory.sql.
+  if [[ "$(basename "${migration_file}")" == "20260809020001_phase6_knowledge_base.sql" ]]; then
+    psql_run -c "DROP TABLE IF EXISTS knowledge_chunks CASCADE;" >/dev/null
+  fi
   psql_run -f "${migration_file}" >/dev/null
 done
 
