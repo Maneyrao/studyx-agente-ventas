@@ -1,3 +1,4 @@
+import type { ConversationChannel } from '@/lib/contracts/channel';
 import { sql } from '@/lib/db/orchestrator';
 import { auditLog } from '@/lib/audit/logger';
 import { logger } from '@/lib/observability/structured-log';
@@ -10,7 +11,7 @@ export interface Contact {
   id: string;
   phone: string;
   status: 'prospecto' | 'cliente' | 'inactivo';
-  channel_origin: 'whatsapp' | 'voice';
+  channel_origin: 'whatsapp' | 'voice' | 'telegram';
   opted_in_at: string;
   name: string | null;
   email: string | null;
@@ -36,7 +37,7 @@ export class ContactValidationError extends Error {
 
 export async function resolveContact(params: {
   phone: string;
-  channel: 'whatsapp' | 'voice';
+  channel: ConversationChannel;
   db?: DbClient;
   audit?: {
     event_key?: string;

@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
-import type { TelegramBotClient } from '../adapters/telegram-bot-api.client';
+import type { TelegramBotClient } from '@/features/messaging/adapters/telegram-bot-api.client';
 import type { ContextReceiptStore, TelegramSmokeBindingStore } from '../ports/context-receipt-store';
 import { verifyTelegramContext } from './verify-telegram-context';
 

@@ -6,7 +6,7 @@ import { verifyTelegramContext } from '@/features/calls/application/verify-teleg
 import { PostgresCallStore } from '@/features/calls/adapters/postgres-call-store';
 import { PostgresContextReceiptStore } from '@/features/calls/adapters/postgres-context-receipt-store';
 import { TelegramSimVoiceProvider, telegramProviderCallId } from '@/features/calls/adapters/telegram-sim-voice.provider';
-import type { TelegramSendMessageInput } from '@/features/calls/adapters/telegram-bot-api.client';
+import type { TelegramSendMessageInput } from '@/features/messaging/adapters/telegram-bot-api.client';
 import { openLocalTestDatabase } from '../helpers/db';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;

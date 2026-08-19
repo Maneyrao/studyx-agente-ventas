@@ -8,7 +8,7 @@ import {
   type PlaceVoiceCallInput,
   type VoiceProvider,
 } from '../ports/voice-provider';
-import { TelegramAmbiguousError, TelegramApiError, type TelegramBotClient } from './telegram-bot-api.client';
+import { TelegramAmbiguousError, TelegramApiError, type TelegramBotClient } from '@/features/messaging/adapters/telegram-bot-api.client';
 
 export function telegramProviderCallId(chatId: string, messageId: string): string {
   const opaqueChat = createHash('sha256').update(chatId, 'utf8').digest('hex').slice(0, 16);

@@ -8,7 +8,7 @@ import type {
 } from '@/features/calls/ports/context-receipt-store';
 import { AmbiguousVoiceProviderError } from '@/features/calls/ports/voice-provider';
 import { TelegramSimVoiceProvider, telegramProviderCallId } from '@/features/calls/adapters/telegram-sim-voice.provider';
-import { TelegramAmbiguousError } from '@/features/calls/adapters/telegram-bot-api.client';
+import { TelegramAmbiguousError } from '@/features/messaging/adapters/telegram-bot-api.client';
 
 const now = '2026-08-16T12:00:00.000Z';
 

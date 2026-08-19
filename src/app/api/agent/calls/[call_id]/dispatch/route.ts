@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { dispatchCall } from '@/features/calls/application/dispatch-call';
 import { PostgresCallStore } from '@/features/calls/adapters/postgres-call-store';
 import { PostgresContextReceiptStore } from '@/features/calls/adapters/postgres-context-receipt-store';
-import { TelegramBotApiClient } from '@/features/calls/adapters/telegram-bot-api.client';
+import { TelegramBotApiClient } from '@/features/messaging/adapters/telegram-bot-api.client';
 import { TelegramSimVoiceProvider } from '@/features/calls/adapters/telegram-sim-voice.provider';
 import { loadTelegramAgentBConfig } from '@/lib/config';
 

@@ -4,7 +4,7 @@ import { dispatchCall } from '@/features/calls/application/dispatch-call';
 import { PostgresCallStore } from '@/features/calls/adapters/postgres-call-store';
 import { PostgresContextReceiptStore } from '@/features/calls/adapters/postgres-context-receipt-store';
 import { TelegramSimVoiceProvider } from '@/features/calls/adapters/telegram-sim-voice.provider';
-import type { TelegramSendMessageInput } from '@/features/calls/adapters/telegram-bot-api.client';
+import type { TelegramSendMessageInput } from '@/features/messaging/adapters/telegram-bot-api.client';
 import { openLocalTestDatabase } from '../helpers/db';
 import { processInboundMessage, type InboundEnvelope } from '@/lib/services/ingestion.service';
 import { commitAgentDecision, DecisionPolicyError } from '@/lib/services/decision.service';

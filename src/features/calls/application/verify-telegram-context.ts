@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { decodeContextVerdictCallback, type ContextVerdict } from '../domain/context-receipt';
 import type { ContextReceiptStore } from '../ports/context-receipt-store';
-import type { TelegramBotClient } from '../adapters/telegram-bot-api.client';
+import type { TelegramBotClient } from '@/features/messaging/adapters/telegram-bot-api.client';
 
 export interface VerifyTelegramContextInput {
   updateId: string;

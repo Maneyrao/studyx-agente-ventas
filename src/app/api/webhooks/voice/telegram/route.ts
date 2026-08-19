@@ -1,5 +1,5 @@
 import { handleTelegramWebhook } from '@/features/calls/application/telegram-webhook';
-import { TelegramBotApiClient } from '@/features/calls/adapters/telegram-bot-api.client';
+import { TelegramBotApiClient } from '@/features/messaging/adapters/telegram-bot-api.client';
 import { PostgresContextReceiptStore } from '@/features/calls/adapters/postgres-context-receipt-store';
 import { loadTelegramAgentBConfig } from '@/lib/config';
 

@@ -1,3 +1,4 @@
+import type { ConversationChannel } from '@/lib/contracts/channel';
 import { sql } from '@/lib/db/orchestrator';
 import { auditLog } from '@/lib/audit/logger';
 import { logger } from '@/lib/observability/structured-log';
@@ -6,7 +7,7 @@ import type { DbClient } from '@/lib/db/types';
 export interface Conversation {
   id: string;
   contact_id: string;
-  channel: 'whatsapp' | 'voice';
+  channel: ConversationChannel;
   status: 'open' | 'closed';
   current_intent: string | null;
   started_at: string;
@@ -33,7 +34,7 @@ export class ContactNotFoundError extends Error {
 
 export async function createConversation(params: {
   contact_id: string;
-  channel: 'whatsapp' | 'voice';
+  channel: ConversationChannel;
   channel_thread_id?: string | null;
   db?: DbClient;
 }): Promise<Conversation> {
@@ -102,7 +103,7 @@ export async function getConversation(id: string, db: DbClient = sql): Promise<C
 
 export async function findOpenConversation(
   contact_id: string,
-  channel: 'whatsapp' | 'voice',
+  channel: ConversationChannel,
   db: DbClient = sql,
   channel_thread_id?: string | null
 ): Promise<Conversation | null> {
@@ -119,7 +120,7 @@ export async function findOpenConversation(
 
 export async function getOrCreateOpenConversation(
   contact_id: string,
-  channel: 'whatsapp' | 'voice',
+  channel: ConversationChannel,
   options: { db?: DbClient; channel_thread_id?: string | null } = {}
 ): Promise<Conversation> {
   const { db = sql, channel_thread_id = null } = options;
