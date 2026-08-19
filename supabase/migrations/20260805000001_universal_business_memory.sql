@@ -431,4 +431,32 @@ COMMENT ON TABLE knowledge_chunks IS
 COMMENT ON TABLE memory_embeddings IS
   'Derived, rebuildable vectors for selected memories; never the source of truth.';
 
+-- ---------------------------------------------------------------------------
+-- Retire this migration's `knowledge_chunks`.
+-- ---------------------------------------------------------------------------
+-- This table and the one created by 20260809020001_phase6_knowledge_base.sql
+-- collided on a name while modelling different things: this one chunks
+-- `knowledge_sources` with an asynchronous embedding pipeline, that one chunks
+-- `knowledge_documents` for retrieval. Because this file sorts earlier, it won
+-- the name and Phase 6 then failed with "relation already exists", which is why
+-- a clean `supabase db reset` was impossible.
+--
+-- The architecture had already settled the question elsewhere — see the header
+-- of 20260817010001_universal_business_schema.sql: "NO knowledge_chunks
+-- redefinition. knowledge_sources is the canonical knowledge store". The
+-- retrieval index owned by Phase 6 keeps the name; `knowledge_sources` reaches
+-- it through knowledge_projection_jobs.
+--
+-- Production was already repaired by hand exactly this way, and this rename is
+-- what brings the migrations back in step with it. It is deliberately the same
+-- one-line operation rather than a rewrite of the CREATE TABLE above: indexes,
+-- policy and constraints keep their original names on the renamed table, which
+-- is precisely the state production is in.
+--
+-- Nothing reads this table: its `search_workspace_knowledge` has no caller in
+-- the codebase. It is kept rather than dropped because dropping is not this
+-- migration's call to make (Constitution IV), and the row data — if any — is
+-- still evidence.
+ALTER TABLE knowledge_chunks RENAME TO legacy_knowledge_chunks_20260805;
+
 COMMIT;
