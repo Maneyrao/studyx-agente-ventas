@@ -401,6 +401,14 @@ export const BusinessContextSchema = z.object({
     environment: z.enum(['sandbox', 'staging', 'production']),
     default_locale: z.string(),
     timezone: z.string(),
+    payment_options: z.array(z.object({
+      code: z.enum(['monthly_12', 'monthly_6', 'one_time']),
+      label: z.string(),
+      total: z.object({ amount: z.literal('360.00'), currency: z.literal('USD') }),
+      installments: z.number().int().positive(),
+      installment_amount: z.enum(['30.00', '60.00', '360.00']),
+      payment_link: z.string().url(),
+    }).strict()).default([]),
   }),
   offerings: z.array(BusinessOfferingSchema),
   qualification_fields: z.array(

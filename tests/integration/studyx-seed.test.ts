@@ -37,7 +37,6 @@ const MANDATED_FORBIDDEN_PROMISES = [
   'título oficial',
   'homologación',
   'matrícula profesional',
-  'cuotas o financiación',
   'más de 50 diplomados',
   'horarios de clases en vivo',
   'política de devoluciones',
@@ -60,11 +59,7 @@ run('seed studyx (production)', () => {
     expect(rows[0]).toMatchObject({ environment: 'production', status: 'active' });
   });
 
-  // El precio cargado es el que cobra el checkout ($1.200 en los 30 productos
-  // de la tienda), no el que publican las fichas ($699). Si alguna vez se
-  // invierte, el agente cotiza un número que el pago desmiente — que es
-  // exactamente el hallazgo #1 del análisis.
-  it('siembra 14 offerings al precio que realmente se cobra, no al publicado', async () => {
+  it('siembra 14 offerings con el total y las tres opciones confirmadas por el dueño', async () => {
     const rows = await db!`
       SELECT o.code, o.price_type, o.price_amount, o.currency, o.guardrails, o.metadata
       FROM offerings o JOIN workspaces w ON w.id = o.workspace_id
@@ -72,16 +67,23 @@ run('seed studyx (production)', () => {
     expect(rows).toHaveLength(14);
     for (const r of rows) {
       expect(r.price_type).toBe('fixed');
-      expect(Number(r.price_amount)).toBe(1200);
+      expect(Number(r.price_amount)).toBe(360);
       expect(r.currency).toBe('USD');
       expect(r.guardrails.never_invent_price).toBe(true);
-      // La beca queda como dato, nunca como precio cotizable.
-      expect(Number(r.metadata.beca_price_usd)).toBe(699);
-      expect(r.guardrails.beca_amount_gated).toBe(true);
-      // La equivalencia beca↔$699 sigue sin confirmar (pregunta E.1 del
-      // análisis); si alguien la da por hecha, este assert lo frena.
-      expect(r.metadata.beca_hypothesis_unconfirmed).toBe(true);
+      expect(r.metadata.total_price_usd).toBe(360);
+      expect(r.metadata.payment_options_owner_confirmed).toBe(true);
     }
+  });
+
+  it('expone únicamente los tres links y cuotas de pago autorizados', async () => {
+    const rows = await db!<{ metadata: { payment_options?: unknown[] } }[]>`
+      SELECT metadata FROM workspaces WHERE slug = ${WS}`;
+    const plans = rows[0].metadata.payment_options as Array<Record<string, unknown>>;
+    expect(plans).toHaveLength(3);
+    expect(plans.map((plan) => plan.code)).toEqual(['monthly_12', 'monthly_6', 'one_time']);
+    expect(plans.map((plan) => plan.installment_amount)).toEqual(['30.00', '60.00', '360.00']);
+    expect(plans.every((plan) => plan.total_amount === '360.00')).toBe(true);
+    expect(plans.every((plan) => typeof plan.payment_link === 'string' && plan.payment_link.startsWith('https://buy.stripe.com/'))).toBe(true);
   });
 
   it('el set exacto de 14 codes coincide con la tabla del brief', async () => {
@@ -154,19 +156,17 @@ run('seed studyx (production)', () => {
     expect(rows[0].content).toContain('No somos una entidad educativa con licencia');
   });
 
-  // Ahora que $1.200 es un precio legítimo y cotizable, el monto que NO puede
-  // aparecer en texto recuperable es el de la beca. El sitio dice que la beca
-  // la aplica "únicamente el departamento de inscripciones", así que si $699
-  // entra a un knowledge_source, `search_knowledge_base` se lo sirve al prompt
-  // y el agente termina regalando un descuento que no le corresponde otorgar.
-  it('ningún knowledge_source filtra el monto de la beca', async () => {
+  it('la política recuperable nombra únicamente los tres pagos autorizados', async () => {
     const rows = await db!<{ title: string; content: string }[]>`
       SELECT k.title, k.content FROM knowledge_sources k JOIN workspaces w ON w.id = k.workspace_id
       WHERE w.slug = ${WS}`;
     expect(rows.length).toBeGreaterThan(0);
 
-    const beca = /\b699\b/;
-    const leaks = rows.filter((row) => beca.test(row.content)).map((row) => row.title);
-    expect(leaks).toEqual([]);
+    const policy = rows.find((row) => row.title === 'Límites comerciales (T&C literales)');
+    expect(policy?.content).toContain('12 pagos mensuales de USD 30');
+    expect(policy?.content).toContain('6 pagos mensuales de USD 60');
+    expect(policy?.content).toContain('pago único de USD 360');
+    expect(policy?.content).not.toContain('USD 1.200');
+    expect(policy?.content).not.toContain('USD 699');
   });
 });

@@ -310,6 +310,7 @@ function businessContextView(overrides: Partial<BusinessContextView> = {}): Busi
       environment: 'production',
       default_locale: 'es-AR',
       timezone: 'America/Argentina/Buenos_Aires',
+      payment_options: [],
     },
     offerings: [],
     qualification_fields: [],

@@ -19,6 +19,7 @@ function rawContext(overrides: Partial<RawBusinessContext> = {}): RawBusinessCon
       environment: 'sandbox',
       default_locale: 'es-AR',
       timezone: 'America/Argentina/Buenos_Aires',
+      metadata: {},
     },
     offerings: [
       {
@@ -139,6 +140,42 @@ describe('buildBusinessContextView', () => {
   it('orders qualification fields by position', () => {
     const view = buildBusinessContextView(rawContext());
     expect(view.qualification_fields.map((field) => field.code)).toEqual(['tech_profile', 'budget_fit']);
+  });
+
+  it('exposes only the three exact owner-configured StudyX payment options', () => {
+    const view = buildBusinessContextView(rawContext({
+      workspace: {
+        ...rawContext().workspace,
+        metadata: {
+          payment_options: [
+            { code: 'monthly_12', currency: 'USD', total_amount: '360.00', installments: 12, installment_amount: '30.00', payment_link: 'https://buy.stripe.com/14A5kC31I3Nwfbq67Fdwc0f' },
+            { code: 'monthly_6', currency: 'USD', total_amount: '360.00', installments: 6, installment_amount: '60.00', payment_link: 'https://buy.stripe.com/4gMdR8cCi97Q7IYdA7dwc0a' },
+            { code: 'one_time', currency: 'USD', total_amount: '360.00', installments: 1, installment_amount: '360.00', payment_link: 'https://buy.stripe.com/9B64gy7hYesaaVa1Rpdwc0j' },
+          ],
+        },
+      },
+    }));
+
+    expect(view.workspace.payment_options).toEqual([
+      expect.objectContaining({ code: 'monthly_12', installment_amount: '30.00' }),
+      expect.objectContaining({ code: 'monthly_6', installment_amount: '60.00' }),
+      expect.objectContaining({ code: 'one_time', installment_amount: '360.00' }),
+    ]);
+  });
+
+  it('fails closed when payment configuration is partial or altered', () => {
+    const view = buildBusinessContextView(rawContext({
+      workspace: {
+        ...rawContext().workspace,
+        metadata: {
+          payment_options: [
+            { code: 'monthly_12', currency: 'USD', total_amount: '360.00', installments: 12, installment_amount: '30.00', payment_link: 'https://buy.stripe.com/14A5kC31I3Nwfbq67Fdwc0f' },
+          ],
+        },
+      },
+    }));
+
+    expect(view.workspace.payment_options).toEqual([]);
   });
 
   it('sanitizes and flags malicious authored content instead of forwarding it', () => {

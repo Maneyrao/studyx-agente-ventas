@@ -115,7 +115,7 @@ const LOADED_CATALOG: CatalogResponse = {
 
 describe('AGENT_A_PROMPT_VERSION', () => {
   it('is the pinned sales-bridge version', () => {
-    expect(AGENT_A_PROMPT_VERSION).toBe('aburridont-agent-a-sales-bridge-v2.2');
+    expect(AGENT_A_PROMPT_VERSION).toBe('studyx-agent-a-sales-v1');
   });
 });
 
@@ -231,6 +231,28 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(instructions).toMatch(/structured evidence/i);
   });
 
+  it('limits checkout to the three owner-approved payment plans', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}), LOADED_CATALOG);
+    expect(instructions).toMatch(/exactly three payment options/i);
+    expect(instructions).toContain('12 monthly\n  payments of USD 30');
+    expect(instructions).toContain('6 monthly payments of USD 60');
+    expect(instructions).toContain('one single payment of\n  USD 360');
+    expect(instructions).toMatch(/There is no fourth option/i);
+    expect(instructions).toMatch(/ONLY after the customer explicitly chooses/i);
+    expect(instructions).toMatch(/exactly one.*payment link|one.*payment link/i);
+    expect(instructions).toMatch(/Apple Pay/i);
+  });
+
+  it('enforces the supplied WhatsApp sales behavior without claiming a payment from a screenshot', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}), LOADED_CATALOG);
+    expect(instructions).toMatch(/one diagnostic question/i);
+    expect(instructions).toMatch(/One idea per message, maximum 3-4 short lines/i);
+    expect(instructions).toMatch(/never.*AI.*bot|AI.*bot.*never/i);
+    expect(instructions).toMatch(/choice.?based close|close.*by choice/i);
+    expect(instructions).toContain('screenshot can be acknowledged as received, but it is NOT payment');
+    expect(instructions).toContain('Only a verified Stripe webhook is');
+  });
+
   it('fences the untrusted context with explicit markers', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}), LOADED_CATALOG);
     expect(instructions).toContain('UNTRUSTED_CONTEXT_START');
@@ -262,6 +284,7 @@ describe('buildAgentASalesBridgeInstructions', () => {
         environment: 'sandbox',
         default_locale: 'es-AR',
         timezone: 'America/Argentina/Buenos_Aires',
+        payment_options: [],
       },
       offerings: [
         {

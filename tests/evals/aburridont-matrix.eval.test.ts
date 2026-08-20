@@ -58,6 +58,7 @@ function aburridontRawContext(): RawBusinessContext {
       environment: 'sandbox',
       default_locale: 'es-AR',
       timezone: 'America/Argentina/Buenos_Aires',
+      metadata: {},
     },
     offerings: [
       {

@@ -18,7 +18,7 @@ export class PostgresBusinessContextStore implements BusinessContextStore {
 
   async loadBusinessContext(workspaceSlug: string): Promise<RawBusinessContext | null> {
     const workspaces = await this.db<RawWorkspaceRow[]>`
-      SELECT id, slug, display_name, environment, default_locale, timezone
+      SELECT id, slug, display_name, environment, default_locale, timezone, metadata
       FROM workspaces
       WHERE slug = ${workspaceSlug} AND status = 'active'
     `;

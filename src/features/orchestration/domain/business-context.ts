@@ -25,6 +25,7 @@ export interface RawWorkspaceRow {
   readonly environment: 'sandbox' | 'staging' | 'production';
   readonly default_locale: string;
   readonly timezone: string;
+  readonly metadata: Record<string, unknown>;
 }
 
 export interface RawOfferingRow {
@@ -115,6 +116,8 @@ export interface BusinessContextView {
     readonly environment: RawWorkspaceRow['environment'];
     readonly default_locale: string;
     readonly timezone: string;
+    /** Owner-approved payment options; empty means do not quote or link payment. */
+    readonly payment_options: PaymentOptionView[];
   };
   readonly offerings: BusinessOfferingView[];
   readonly qualification_fields: QualificationFieldView[];
@@ -126,6 +129,22 @@ export interface BusinessContextView {
    * DEFAULT_BUSINESS_CONTEXT_LIMITS.maxOfferings for what the bound is.
    */
   readonly offerings_truncated: number;
+}
+
+/**
+ * Payment links are business configuration, never model-authored copy. The
+ * Agent A prompt fails closed unless all three owner-approved StudyX options
+ * are present and internally consistent.
+ */
+export type PaymentPlanCode = 'monthly_12' | 'monthly_6' | 'one_time';
+
+export interface PaymentOptionView {
+  readonly code: PaymentPlanCode;
+  readonly label: string;
+  readonly total: { readonly amount: string; readonly currency: 'USD' };
+  readonly installments: number;
+  readonly installment_amount: string;
+  readonly payment_link: string;
 }
 
 export interface BusinessContextLimits {
@@ -216,6 +235,88 @@ function readSchedules(
     });
   }
   return schedules;
+}
+
+const STUDYX_PAYMENT_PLAN_SPECS: Readonly<Record<PaymentPlanCode, {
+  readonly label: string;
+  readonly installments: number;
+  readonly installment_amount: string;
+}>> = {
+  monthly_12: {
+    label: '12 pagos mensuales de USD 30',
+    installments: 12,
+    installment_amount: '30.00',
+  },
+  monthly_6: {
+    label: '6 pagos mensuales de USD 60',
+    installments: 6,
+    installment_amount: '60.00',
+  },
+  one_time: {
+    label: 'Pago único de USD 360',
+    installments: 1,
+    installment_amount: '360.00',
+  },
+};
+
+const STUDYX_PAYMENT_PLAN_ORDER: readonly PaymentPlanCode[] = [
+  'monthly_12',
+  'monthly_6',
+  'one_time',
+];
+
+function isStripePaymentLink(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 2_048) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname === 'buy.stripe.com';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * This intentionally accepts no partial configuration: presenting two plans,
+ * a fourth one, an altered amount, or a non-Stripe URL is worse than showing
+ * no payment choices. The agent then asks to confirm payment options.
+ */
+function readStudyxPaymentOptions(metadata: Record<string, unknown>): PaymentOptionView[] {
+  const raw = metadata.payment_options;
+  if (!Array.isArray(raw) || raw.length !== STUDYX_PAYMENT_PLAN_ORDER.length) return [];
+
+  const byCode = new Map<PaymentPlanCode, Record<string, unknown>>();
+  for (const entry of raw) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return [];
+    const record = entry as Record<string, unknown>;
+    const code = record.code;
+    if (!(typeof code === 'string' && code in STUDYX_PAYMENT_PLAN_SPECS)) return [];
+    const typedCode = code as PaymentPlanCode;
+    if (byCode.has(typedCode)) return [];
+    byCode.set(typedCode, record);
+  }
+
+  const options: PaymentOptionView[] = [];
+  for (const code of STUDYX_PAYMENT_PLAN_ORDER) {
+    const record = byCode.get(code);
+    const spec = STUDYX_PAYMENT_PLAN_SPECS[code];
+    if (!record
+      || record.currency !== 'USD'
+      || record.total_amount !== '360.00'
+      || record.installments !== spec.installments
+      || record.installment_amount !== spec.installment_amount
+      || !isStripePaymentLink(record.payment_link)) {
+      return [];
+    }
+    options.push({
+      code,
+      label: spec.label,
+      total: { amount: '360.00', currency: 'USD' },
+      installments: spec.installments,
+      installment_amount: spec.installment_amount,
+      payment_link: record.payment_link,
+    });
+  }
+  return options;
 }
 
 function buildOfferingView(
@@ -325,6 +426,7 @@ export function buildBusinessContextView(
       environment: raw.workspace.environment,
       default_locale: raw.workspace.default_locale,
       timezone: raw.workspace.timezone,
+      payment_options: readStudyxPaymentOptions(raw.workspace.metadata ?? {}),
     },
     offerings,
     qualification_fields,

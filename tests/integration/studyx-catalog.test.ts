@@ -11,12 +11,11 @@ afterAll(async () => db?.end());
 const WS = 'studyx';
 const SEED_PATH = resolve(__dirname, '../../supabase/seed/studyx.sql');
 
-// El catálogo es la única fuente sancionada de precio para el agente. $1.200
-// es legítimo: es lo que cobra el checkout. El monto que NO puede salir por
-// ningún campo es el de la Beca Studyx ($699), porque el sitio dice que la beca
-// la aplica "únicamente el departamento de inscripciones" — si el agente la
-// cotiza, regala un descuento que no le corresponde otorgar.
-const BECA_LEAK_PATTERN = /\b699\b/;
+// El catálogo es la única fuente sancionada de precio para el agente. El dueño
+// confirmó USD 360 como total y los tres planes viven en workspace.metadata;
+// el catálogo nunca vuelve a exponer el precio histórico de USD 1.200 o la
+// antigua hipótesis de beca de USD 699.
+const LEGACY_PRICE_LEAK_PATTERN = /\b(?:699|1200|1\.200)\b/;
 
 /**
  * Every string anywhere in the item, walked recursively.
@@ -47,7 +46,7 @@ function assertChargedPrice(item: Record<string, unknown>) {
   // pago después desmiente.
   expect(item.price_type).toBe('fixed');
   expect(item.price_assertable).toBe(true);
-  expect(item.price).toMatchObject({ amount: '1200.00', currency: 'USD' });
+  expect(item.price).toMatchObject({ amount: '360.00', currency: 'USD' });
 }
 
 function assertNoBecaLeak(item: Record<string, unknown>) {
@@ -58,7 +57,7 @@ function assertNoBecaLeak(item: Record<string, unknown>) {
   // walk broke, not that the item is clean.
   expect(texts.length).toBeGreaterThan(0);
   for (const text of texts) {
-    expect(text).not.toMatch(BECA_LEAK_PATTERN);
+    expect(text).not.toMatch(LEGACY_PRICE_LEAK_PATTERN);
   }
 }
 
