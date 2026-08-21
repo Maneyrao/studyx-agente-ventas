@@ -72,32 +72,49 @@ function buildDeps(options: {
   claimResult?: BatchClaim;
   factsResult?: ClaimedTurnFacts | null;
   callFactsResult?: ClaimedCallFacts;
+  messagesResult?: Array<{
+    id: string;
+    conversation_seq: number;
+    content: string;
+    created_at: string;
+    message_type: string;
+  }>;
+  embedding?: { embed(query: string): Promise<readonly number[]> };
   memory?: ClaimBatchDependencies['memory'];
   knowledge?: ClaimBatchDependencies['knowledge'];
   now?: () => string;
 } = {}): ClaimBatchDependencies & { store: OrchestrationStore } {
-  const store: OrchestrationStore = {
+  const messages = options.messagesResult ?? [
+    { id: 'm1', conversation_seq: 1, content: 'hola', created_at: '2026-08-11T12:00:00.000Z', message_type: 'text' },
+    { id: 'm2', conversation_seq: 2, content: '¿cuánto sale el curso?', created_at: '2026-08-11T12:00:01.000Z', message_type: 'text' },
+  ];
+  const selectedFacts = options.factsResult === undefined ? facts() : options.factsResult;
+  const selectedCallFacts = options.callFactsResult ?? callFacts();
+  const store = {
     openOrJoinBatch: vi.fn(),
     claimBatch: vi.fn().mockResolvedValue(options.claimResult ?? claim()),
     completeBatch: vi.fn(),
-    listBatchMessages: vi.fn().mockResolvedValue([
-      { id: 'm1', conversation_seq: 1, content: 'hola', created_at: '2026-08-11T12:00:00.000Z', message_type: 'text' },
-      { id: 'm2', conversation_seq: 2, content: '¿cuánto sale el curso?', created_at: '2026-08-11T12:00:01.000Z', message_type: 'text' },
-    ]),
+    listBatchMessages: vi.fn().mockResolvedValue(messages),
     loadClaimedTurnFacts: vi
       .fn()
-      .mockResolvedValue(options.factsResult === undefined ? facts() : options.factsResult),
-    loadClaimedCallFacts: vi.fn().mockResolvedValue(options.callFactsResult ?? callFacts()),
+      .mockResolvedValue(selectedFacts),
+    loadClaimedCallFacts: vi.fn().mockResolvedValue(selectedCallFacts),
+    loadClaimedBatchContext: vi.fn().mockResolvedValue(
+      selectedFacts === null
+        ? null
+        : { facts: selectedFacts, batch_messages: messages, call_facts: selectedCallFacts }
+    ),
     expireStaleClaims: vi.fn(),
-  };
+  } as unknown as OrchestrationStore;
 
   return {
     store,
+    embedding: options.embedding ?? { embed: vi.fn().mockResolvedValue([0.125, -0.25, 0.5]) },
     memory: options.memory ?? { search: vi.fn().mockResolvedValue([]) },
     knowledge: options.knowledge ?? { search: vi.fn().mockResolvedValue([]) },
     limits: DEFAULT_CONTEXT_LIMITS,
     now: options.now,
-  };
+  } as ClaimBatchDependencies & { store: OrchestrationStore };
 }
 
 const input = { batch_id: 'batch-1', claimed_by: 'workflow-1', trace_id: 'trace-1' };
@@ -117,6 +134,21 @@ describe('claimBatch', () => {
     expect(result.context.recent_turns).toHaveLength(1);
   });
 
+  it('loads facts, batch messages and call facts through one core snapshot port', async () => {
+    const deps = buildDeps();
+
+    await claimBatch(input, deps);
+
+    expect(deps.store.loadClaimedBatchContext).toHaveBeenCalledTimes(1);
+    expect(deps.store.loadClaimedBatchContext).toHaveBeenCalledWith({
+      batch_id: 'batch-1',
+      recent_turns_limit: DEFAULT_CONTEXT_LIMITS.recentTurns,
+    });
+    expect(deps.store.loadClaimedTurnFacts).not.toHaveBeenCalled();
+    expect(deps.store.listBatchMessages).not.toHaveBeenCalled();
+    expect(deps.store.loadClaimedCallFacts).not.toHaveBeenCalled();
+  });
+
   it.each(['waiting', 'absorbed', 'completed', 'abandoned', 'not_found'] as const)(
     'does no derived work when the outcome is %s',
     async (outcome) => {
@@ -134,6 +166,7 @@ describe('claimBatch', () => {
       // A losing workflow must cost nothing: no embedding, no context read.
       expect(memory.search).not.toHaveBeenCalled();
       expect(knowledge.search).not.toHaveBeenCalled();
+      expect(deps.store.loadClaimedBatchContext).not.toHaveBeenCalled();
       expect(deps.store.loadClaimedTurnFacts).not.toHaveBeenCalled();
       expect(deps.store.listBatchMessages).not.toHaveBeenCalled();
       expect(deps.store.loadClaimedCallFacts).not.toHaveBeenCalled();
@@ -151,20 +184,59 @@ describe('claimBatch', () => {
     expect(result.retry_after_ms).toBe(1350);
   });
 
-  it('searches with the whole batch, not just the last message', async () => {
+  it('embeds the whole nontrivial batch exactly once and shares that vector by identity', async () => {
+    const vector = [0.125, -0.25, 0.5] as const;
+    const embedding = { embed: vi.fn().mockResolvedValue(vector) };
     const memory = { search: vi.fn().mockResolvedValue([]) };
     const knowledge = { search: vi.fn().mockResolvedValue([]) };
-    await claimBatch(input, buildDeps({ memory, knowledge }));
+    await claimBatch(input, buildDeps({ embedding, memory, knowledge }));
 
+    expect(embedding.embed).toHaveBeenCalledTimes(1);
+    expect(embedding.embed).toHaveBeenCalledWith('hola\n¿cuánto sale el curso?');
     expect(memory.search).toHaveBeenCalledWith(
       expect.objectContaining({
         contact_id: 'contact-1',
-        query: 'hola\n¿cuánto sale el curso?',
+        embedding: vector,
       })
     );
     expect(knowledge.search).toHaveBeenCalledWith(
-      expect.objectContaining({ query: 'hola\n¿cuánto sale el curso?' })
+      expect.objectContaining({ embedding: vector })
     );
+    expect(vi.mocked(memory.search).mock.calls[0][0].embedding).toBe(vector);
+    expect(vi.mocked(knowledge.search).mock.calls[0][0].embedding).toBe(vector);
+  });
+
+  it('emits PII-free claim timings and structural call counters', async () => {
+    const log = vi.fn();
+    const result = await claimBatch(input, {
+      ...buildDeps(),
+      business: { load: vi.fn().mockResolvedValue(businessContextView()) },
+      log,
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.diagnostics.timings).toEqual({
+      claim_total_ms: expect.any(Number),
+      core_db_ms: expect.any(Number),
+      shared_embedding_ms: expect.any(Number),
+      memory_search_ms: expect.any(Number),
+      knowledge_search_ms: expect.any(Number),
+      business_snapshot_ms: expect.any(Number),
+    });
+    expect(result.diagnostics.counters).toEqual({
+      embedding_calls: 1,
+      memory_search_calls: 1,
+      knowledge_search_calls: 1,
+      business_snapshot_calls: 1,
+      catalog_calls: 0,
+    });
+
+    const timingEvent = log.mock.calls.find(([event]) => event === 'orchestration.claim.timings');
+    expect(timingEvent).toBeDefined();
+    const serialized = JSON.stringify(timingEvent?.[1] ?? {});
+    expect(serialized).not.toContain('Ana');
+    expect(serialized).not.toContain('contact-1');
+    expect(serialized).not.toContain('¿cuánto sale el curso?');
   });
 
   it('degrades to structured context when the memory index fails', async () => {
@@ -203,6 +275,86 @@ describe('claimBatch', () => {
     expect(result.context.knowledge_base_available).toBe(false);
     expect(result.context.long_term_memory_available).toBe(true);
     expect(result.context.selected_memories).toHaveLength(1);
+  });
+
+  it('keeps knowledge results when only the memory database search fails', async () => {
+    const memory = { search: vi.fn().mockRejectedValue(new Error('memory db down')) };
+    const knowledge = {
+      search: vi.fn().mockResolvedValue([
+        {
+          source_uri: 'kb://course/python',
+          title: 'Python',
+          content: 'Curso de Python.',
+          similarity: 0.91,
+        },
+      ]),
+    };
+
+    const result = await claimBatch(input, buildDeps({ memory, knowledge }));
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.context.long_term_memory_available).toBe(false);
+    expect(result.context.knowledge_base_available).toBe(true);
+    expect(result.context.knowledge_base).toHaveLength(1);
+  });
+
+  it('marks both vector sources unavailable when their one shared embedding fails', async () => {
+    const embedding = { embed: vi.fn().mockRejectedValue(new Error('embedding provider down')) };
+    const memory = { search: vi.fn().mockResolvedValue([]) };
+    const knowledge = { search: vi.fn().mockResolvedValue([]) };
+
+    const result = await claimBatch(input, buildDeps({ embedding, memory, knowledge }));
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(embedding.embed).toHaveBeenCalledTimes(1);
+    expect(memory.search).not.toHaveBeenCalled();
+    expect(knowledge.search).not.toHaveBeenCalled();
+    expect(result.context.long_term_memory_available).toBe(false);
+    expect(result.context.knowledge_base_available).toBe(false);
+  });
+
+  it('treats an empty shared embedding as unavailable instead of a successful empty search', async () => {
+    const embedding = { embed: vi.fn().mockResolvedValue([]) };
+    const memory = { search: vi.fn().mockResolvedValue([]) };
+    const knowledge = { search: vi.fn().mockResolvedValue([]) };
+
+    const result = await claimBatch(input, buildDeps({ embedding, memory, knowledge }));
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(memory.search).not.toHaveBeenCalled();
+    expect(knowledge.search).not.toHaveBeenCalled();
+    expect(result.context.long_term_memory_available).toBe(false);
+    expect(result.context.knowledge_base_available).toBe(false);
+  });
+
+  it.each([
+    { label: 'an unequivocal greeting', messages: ['hola'] },
+    { label: 'a deterministic direct call request', messages: ['llamame ahora'] },
+  ])('skips embeddings for $label', async ({ messages }) => {
+    const embedding = { embed: vi.fn().mockResolvedValue([0.1, 0.2]) };
+    const memory = { search: vi.fn().mockResolvedValue([]) };
+    const knowledge = { search: vi.fn().mockResolvedValue([]) };
+    const deps = buildDeps({
+      embedding,
+      memory,
+      knowledge,
+      messagesResult: messages.map((content, index) => ({
+        id: `m${index + 1}`,
+        conversation_seq: index + 1,
+        content,
+        created_at: '2026-08-11T12:00:00.000Z',
+        message_type: 'text',
+      })),
+    });
+
+    const result = await claimBatch(input, deps);
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.deterministic_route).not.toBeNull();
+    expect(result.diagnostics.counters.embedding_calls).toBe(0);
+    expect(embedding.embed).not.toHaveBeenCalled();
+    expect(memory.search).not.toHaveBeenCalled();
+    expect(knowledge.search).not.toHaveBeenCalled();
   });
 
   it('never retrieves for a blocked contact', async () => {
@@ -304,6 +456,8 @@ describe('claimBatch', () => {
 
 function businessContextView(overrides: Partial<BusinessContextView> = {}): BusinessContextView {
   return {
+    as_of: '2026-08-11T12:00:00.000Z',
+    prices_assertable: false,
     workspace: {
       slug: 'studyx',
       display_name: 'StudyX',
@@ -377,13 +531,13 @@ describe('claimBatch sales_context', () => {
     });
   });
 
-  it('scopes the call facts read to the claimed batch\'s own contact and conversation', async () => {
+  it('scopes the core snapshot read to the claimed batch identity', async () => {
     const deps = buildDeps();
     await claimBatch(input, deps);
 
-    expect(deps.store.loadClaimedCallFacts).toHaveBeenCalledWith({
-      contact_id: 'contact-1',
-      conversation_id: 'conversation-1',
+    expect(deps.store.loadClaimedBatchContext).toHaveBeenCalledWith({
+      batch_id: 'batch-1',
+      recent_turns_limit: DEFAULT_CONTEXT_LIMITS.recentTurns,
     });
   });
 
@@ -426,9 +580,13 @@ describe('claimBatch sales_context', () => {
 
   it('grants request_call_now for a direct call request regardless of any offer', async () => {
     const deps = buildDeps();
-    deps.store.listBatchMessages = vi.fn().mockResolvedValue([
+    const messages = [
       { id: 'm1', conversation_seq: 1, content: 'llamame por favor', created_at: '2026-08-11T12:00:00.000Z', message_type: 'text' },
-    ]);
+    ];
+    deps.store.listBatchMessages = vi.fn().mockResolvedValue(messages);
+    deps.store.loadClaimedBatchContext = vi.fn().mockResolvedValue({
+      facts: facts(), batch_messages: messages, call_facts: callFacts(),
+    });
 
     const result = await claimBatch(input, deps);
     if (result.outcome !== 'claimed') throw new Error('expected a claim');
@@ -438,10 +596,14 @@ describe('claimBatch sales_context', () => {
 
   it('grants request_call_now when the direct request sits mid-batch under trailing text', async () => {
     const deps = buildDeps();
-    deps.store.listBatchMessages = vi.fn().mockResolvedValue([
+    const messages = [
       { id: 'm1', conversation_seq: 1, content: 'llamame por favor', created_at: '2026-08-11T12:00:00.000Z', message_type: 'text' },
       { id: 'm2', conversation_seq: 2, content: 'gracias', created_at: '2026-08-11T12:00:05.000Z', message_type: 'text' },
-    ]);
+    ];
+    deps.store.listBatchMessages = vi.fn().mockResolvedValue(messages);
+    deps.store.loadClaimedBatchContext = vi.fn().mockResolvedValue({
+      facts: facts(), batch_messages: messages, call_facts: callFacts(),
+    });
 
     const result = await claimBatch(input, deps);
     if (result.outcome !== 'claimed') throw new Error('expected a claim');
@@ -545,9 +707,14 @@ describe('claimBatch sales_context', () => {
     const deps = buildDeps({
       callFactsResult: callFacts({ active_call: { call_id: 'call-1', status: 'in_progress' } }),
     });
-    deps.store.listBatchMessages = vi.fn().mockResolvedValue([
+    const messages = [
       { id: 'm1', conversation_seq: 1, content: 'llamame ahora', created_at: '2026-08-11T12:00:00.000Z', message_type: 'text' },
-    ]);
+    ];
+    deps.store.listBatchMessages = vi.fn().mockResolvedValue(messages);
+    deps.store.loadClaimedBatchContext = vi.fn().mockResolvedValue({
+      facts: facts(), batch_messages: messages,
+      call_facts: callFacts({ active_call: { call_id: 'call-1', status: 'in_progress' } }),
+    });
 
     const result = await claimBatch(input, deps);
     if (result.outcome !== 'claimed') throw new Error('expected a claim');

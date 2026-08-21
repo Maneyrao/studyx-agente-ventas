@@ -46,7 +46,7 @@ export async function GET() {
   }
 
   try {
-    const raw = await businessContextStore.loadBusinessContext(workspaceSlug);
+    const raw = await businessContextStore.loadBusinessCatalog(workspaceSlug);
     const offerings = raw ? buildBusinessContextView(raw) : null;
     // Both counts are carried in from the context view rather than recomputed:
     // its input was already sliced to the same `maxOfferings` bound and already
@@ -55,7 +55,7 @@ export async function GET() {
     const truncated = offerings?.offerings_truncated ?? 0;
     const injectionSuspected = offerings?.injection_suspected_count ?? 0;
     const view = buildBusinessCatalogView(offerings?.offerings ?? [], {
-      now: Date.now(),
+      asOf: raw?.as_of,
       droppedUpstream: truncated,
       injectionSuspectedCount: injectionSuspected,
     });

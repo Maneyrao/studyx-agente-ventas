@@ -1,8 +1,12 @@
 import { evaluateTurnPolicy, type TurnPolicy } from '../domain/turn-policy';
 import type { BusinessContextView } from '../domain/business-context';
 import { capRetrievedItems } from '../domain/retrieved-context';
-import { classifyBatchSalesSignal } from '../domain/sales-signal';
+import {
+  classifyBatchSalesSignal,
+  classifyDeterministicSalesSignal,
+} from '../domain/sales-signal';
 import { evaluateCallOfferPolicy } from '../domain/call-offer-policy';
+import { isTrivial } from '@/lib/heuristics/triviality';
 import type {
   ActiveCallFact,
   BatchMessage,
@@ -15,6 +19,7 @@ import type {
 import type {
   KnowledgeRetriever,
   MemoryRetriever,
+  QueryEmbedder,
   RetrievedKnowledge,
   RetrievedMemory,
 } from '../ports/retrieval';
@@ -36,10 +41,13 @@ import type {
 
 export interface ClaimBatchDependencies {
   readonly store: OrchestrationStore;
+  readonly embedding: QueryEmbedder;
   readonly memory: MemoryRetriever;
   readonly knowledge: KnowledgeRetriever;
   readonly limits: ContextLimits;
   readonly log?: (event: string, fields: Record<string, unknown>) => void;
+  /** Monotonic wall clock for PII-free stage timings. */
+  readonly monotonicNow?: () => number;
   /** Clock for the call-offer policy's offer-expiry and cooldown math. Defaults to the real time. */
   readonly now?: () => string;
   /**
@@ -142,6 +150,30 @@ export interface ClaimedTurn {
     readonly injection_suspected_count: number;
   };
   readonly sales_context: ClaimedSalesContext;
+  /** Backend-classified route consumed by Botpress; null means a model is required. */
+  readonly deterministic_route:
+    | 'greeting'
+    | 'call_direct_request'
+    | 'call_accepted_offer'
+    | 'call_acceptance_clarification'
+    | null;
+  readonly diagnostics: {
+    readonly timings: {
+      readonly claim_total_ms: number;
+      readonly core_db_ms: number;
+      readonly shared_embedding_ms: number;
+      readonly memory_search_ms: number;
+      readonly knowledge_search_ms: number;
+      readonly business_snapshot_ms: number;
+    };
+    readonly counters: {
+      readonly embedding_calls: number;
+      readonly memory_search_calls: number;
+      readonly knowledge_search_calls: number;
+      readonly business_snapshot_calls: number;
+      readonly catalog_calls: 0;
+    };
+  };
   /** Configured workspace's commercial facts; null when unavailable. */
   readonly business_context: BusinessContextView | null;
   readonly business_context_available: boolean;
@@ -187,6 +219,68 @@ function retrievalQuery(messages: BatchMessage[]): string {
     .join('\n')
     .slice(0, 4096)
     .trim();
+}
+
+const EXACT_GREETINGS = new Set([
+  'hola',
+  'buenas',
+  'buen dia',
+  'buenas tardes',
+  'buenas noches',
+  'hola buenas',
+  'hola buen dia',
+  'hola buenas tardes',
+  'hola buenas noches',
+]);
+
+function normalizeGreeting(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9ñ\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * One backend classifier decides whether retrieval/model work is unnecessary.
+ * Botpress consumes the resulting enum; it does not maintain a second regex
+ * vocabulary that could drift from the claim-time decision.
+ */
+function deterministicRoute(input: {
+  batchMessages: readonly BatchMessage[];
+  policy: TurnPolicy;
+  salesContext: ClaimedSalesContext;
+}): ClaimedTurn['deterministic_route'] {
+  if (input.batchMessages.length !== 1) return null;
+  const message = input.batchMessages[0];
+  if (message.message_type !== 'text') return null;
+
+  if (
+    input.policy.allowed_response_types.includes('social_reply')
+    && EXACT_GREETINGS.has(normalizeGreeting(message.content))
+  ) {
+    return 'greeting';
+  }
+
+  const signal = classifyDeterministicSalesSignal(message.content);
+  if (
+    signal.type === 'direct_call_request'
+    && input.salesContext.allowed_actions.includes('request_call_now')
+  ) {
+    return 'call_direct_request';
+  }
+  if (signal.type === 'call_acceptance') {
+    if (
+      input.salesContext.open_call_offer
+      && input.salesContext.allowed_actions.includes('request_call_now')
+    ) {
+      return 'call_accepted_offer';
+    }
+    if (!input.salesContext.open_call_offer) return 'call_acceptance_clarification';
+  }
+  return null;
 }
 
 /**
@@ -263,8 +357,25 @@ export async function claimBatch(
   input: ClaimBatchInput,
   deps: ClaimBatchDependencies
 ): Promise<ClaimBatchResult> {
-  const { store, memory, knowledge, limits } = deps;
+  const { store, embedding, memory, knowledge, limits } = deps;
   const log = deps.log ?? (() => {});
+  const monotonicNow = deps.monotonicNow ?? (() => Date.now());
+  const claimStartedAt = monotonicNow();
+  const timings = {
+    claim_total_ms: 0,
+    core_db_ms: 0,
+    shared_embedding_ms: 0,
+    memory_search_ms: 0,
+    knowledge_search_ms: 0,
+    business_snapshot_ms: 0,
+  };
+  const counters = {
+    embedding_calls: 0,
+    memory_search_calls: 0,
+    knowledge_search_calls: 0,
+    business_snapshot_calls: 0,
+    catalog_calls: 0 as const,
+  };
 
   const claim = await store.claimBatch({
     batch_id: input.batch_id,
@@ -286,19 +397,22 @@ export async function claimBatch(
     };
   }
 
-  const [facts, batchMessages, callFacts] = await Promise.all([
-    store.loadClaimedTurnFacts({
+  // One inward port call projects facts, current messages and call state from
+  // one database snapshot. Claim/decision locks remain untouched; only the
+  // read fan-out is consolidated.
+  const coreStartedAt = monotonicNow();
+  let core;
+  try {
+    core = await store.loadClaimedBatchContext({
       batch_id: claim.batch_id,
       recent_turns_limit: limits.recentTurns,
-    }),
-    store.listBatchMessages(claim.batch_id),
-    // Scoped to this batch's own contact and conversation, same as every
-    // other claim-time read. A database outage here is fatal, like any other
-    // store call — it is deliberately not wrapped in try/catch.
-    store.loadClaimedCallFacts({ contact_id: claim.contact_id!, conversation_id: claim.conversation_id! }),
-  ]);
+    });
+  } finally {
+    timings.core_db_ms = Math.max(0, monotonicNow() - coreStartedAt);
+  }
 
-  if (!facts) throw new BatchFactsMissingError(claim.batch_id);
+  if (!core) throw new BatchFactsMissingError(claim.batch_id);
+  const { facts, batch_messages: batchMessages, call_facts: callFacts } = core;
 
   const policy = evaluateTurnPolicy({
     contact_status: facts.contact.status,
@@ -313,85 +427,6 @@ export async function claimBatch(
 
   const query = retrievalQuery(batchMessages);
 
-  // A suppressed turn produces no answer, so paying for retrieval would be pure
-  // waste — and running a vector search for a blocked contact is exactly the
-  // kind of work that should never happen.
-  const shouldRetrieve = policy.may_respond && query.length > 0;
-
-  let selected_memories: RetrievedMemory[] = [];
-  let long_term_memory_available = true;
-  let knowledge_base: RetrievedKnowledge[] = [];
-  let knowledge_base_available = true;
-  let knowledge_base_dropped = 0;
-  let injection_suspected_count = 0;
-
-  if (shouldRetrieve) {
-    const [memoryResult, knowledgeResult] = await Promise.allSettled([
-      memory.search({
-        contact_id: facts.contact.id,
-        query,
-        limit: limits.memoryResults,
-        min_similarity: limits.memoryMinSimilarity,
-      }),
-      knowledge.search({
-        query,
-        limit: limits.knowledgeResults,
-        min_similarity: limits.knowledgeMinSimilarity,
-      }),
-    ]);
-
-    if (memoryResult.status === 'fulfilled') {
-      // Memories were already validated structurally at write time, so the cap
-      // here is purely a budget: a long recalled value must not crowd out the
-      // structured facts that outrank it.
-      selected_memories = memoryResult.value
-        .slice(0, limits.memoryResults)
-        .map((memory) => ({
-          ...memory,
-          value: memory.value.slice(0, limits.memoryMaxChars),
-          source_quote: memory.source_quote.slice(0, limits.memoryMaxChars),
-        }));
-    } else {
-      long_term_memory_available = false;
-      log('orchestration.claim.memory_unavailable', {
-        trace_id: input.trace_id,
-        batch_id: claim.batch_id,
-        error: String(memoryResult.reason),
-      });
-    }
-
-    if (knowledgeResult.status === 'fulfilled') {
-      // A knowledge chunk is authored third-party text. It gets a hard budget
-      // and its structural injection tricks removed before it can reach a
-      // prompt; what survives stays data, never an instruction.
-      const capped = capRetrievedItems(knowledgeResult.value, (item) => item.content, {
-        maxItems: limits.knowledgeResults,
-        maxCharsPerItem: limits.knowledgeMaxCharsPerItem,
-        maxTotalChars: limits.knowledgeMaxTotalChars,
-      });
-      knowledge_base = capped.kept.map((entry) => ({ ...entry.item, content: entry.text }));
-      knowledge_base_dropped = capped.dropped;
-      injection_suspected_count = capped.injection_suspected_count;
-      if (capped.injection_suspected_count > 0) {
-        log('orchestration.claim.knowledge_injection_suspected', {
-          trace_id: input.trace_id,
-          batch_id: claim.batch_id,
-          suspected: capped.injection_suspected_count,
-          sources: capped.kept
-            .filter((entry) => entry.injection_suspected)
-            .map((entry) => entry.item.source_uri),
-        });
-      }
-    } else {
-      knowledge_base_available = false;
-      log('orchestration.claim.knowledge_unavailable', {
-        trace_id: input.trace_id,
-        batch_id: claim.batch_id,
-        error: String(knowledgeResult.reason),
-      });
-    }
-  }
-
   const salesContext = buildSalesContext({
     callFacts,
     // Each message is classified on its own, never joined into one string —
@@ -402,13 +437,20 @@ export async function claimBatch(
     blocked: policy.blocked,
     now: (deps.now ?? (() => new Date().toISOString()))(),
   });
+  const deterministic_route = deterministicRoute({
+    batchMessages,
+    policy,
+    salesContext,
+  });
 
-  // Business context is advisory like retrieval: a missing workspace or a
-  // failed read degrades the turn, it never blocks it. Suppressed turns skip
-  // the read entirely — no prompt will be built, so the data has no consumer.
+  // Commercial data is independent from vector retrieval, so start its one
+  // bounded statement immediately and join it only before returning the claim.
   let business_context: BusinessContextView | null = null;
   let business_context_available = false;
-  if (policy.may_respond && deps.business) {
+  const businessTask = (async () => {
+    if (!policy.may_respond || !deps.business) return;
+    counters.business_snapshot_calls += 1;
+    const businessStartedAt = monotonicNow();
     try {
       business_context = await deps.business.load();
       business_context_available = business_context !== null;
@@ -418,9 +460,6 @@ export async function claimBatch(
           batch_id: claim.batch_id,
         });
       } else if (business_context.offerings_truncated > 0) {
-        // Silent truncation here means the agent's own prompt context is
-        // missing real courses — it can tell a customer one doesn't exist.
-        // Make the breach loud instead of a wrong answer.
         log('orchestration.claim.business_context_truncated', {
           trace_id: input.trace_id,
           batch_id: claim.batch_id,
@@ -433,8 +472,156 @@ export async function claimBatch(
         batch_id: claim.batch_id,
         error: String(error),
       });
+    } finally {
+      timings.business_snapshot_ms = Math.max(0, monotonicNow() - businessStartedAt);
+    }
+  })();
+
+  // A suppressed turn produces no answer, so paying for retrieval would be pure
+  // waste — and running a vector search for a blocked contact is exactly the
+  // kind of work that should never happen.
+  const shouldRetrieve =
+    policy.may_respond
+    && query.length > 0
+    && deterministic_route === null
+    && !isTrivial(query)
+    && facts.existing_decision === null;
+
+  let selected_memories: RetrievedMemory[] = [];
+  let long_term_memory_available = true;
+  let knowledge_base: RetrievedKnowledge[] = [];
+  let knowledge_base_available = true;
+  let knowledge_base_dropped = 0;
+  let injection_suspected_count = 0;
+
+  if (shouldRetrieve) {
+    let queryEmbedding: readonly number[];
+    counters.embedding_calls += 1;
+    const embeddingStartedAt = monotonicNow();
+    try {
+      queryEmbedding = await embedding.embed(query);
+    } catch (error) {
+      long_term_memory_available = false;
+      knowledge_base_available = false;
+      log('orchestration.claim.embedding_unavailable', {
+        trace_id: input.trace_id,
+        batch_id: claim.batch_id,
+        error: String(error),
+      });
+      queryEmbedding = [];
+    } finally {
+      timings.shared_embedding_ms = Math.max(0, monotonicNow() - embeddingStartedAt);
+    }
+
+    if (
+      queryEmbedding.length === 0
+      && long_term_memory_available
+      && knowledge_base_available
+    ) {
+      long_term_memory_available = false;
+      knowledge_base_available = false;
+      log('orchestration.claim.embedding_unavailable', {
+        trace_id: input.trace_id,
+        batch_id: claim.batch_id,
+        error: 'EMPTY_EMBEDDING',
+      });
+    }
+
+    if (queryEmbedding.length > 0) {
+      counters.memory_search_calls += 1;
+      counters.knowledge_search_calls += 1;
+      const measuredMemorySearch = async () => {
+        const startedAt = monotonicNow();
+        try {
+          return await memory.search({
+            contact_id: facts.contact.id,
+            embedding: queryEmbedding,
+            limit: limits.memoryResults,
+            min_similarity: limits.memoryMinSimilarity,
+          });
+        } finally {
+          timings.memory_search_ms = Math.max(0, monotonicNow() - startedAt);
+        }
+      };
+      const measuredKnowledgeSearch = async () => {
+        const startedAt = monotonicNow();
+        try {
+          return await knowledge.search({
+            embedding: queryEmbedding,
+            limit: limits.knowledgeResults,
+            min_similarity: limits.knowledgeMinSimilarity,
+          });
+        } finally {
+          timings.knowledge_search_ms = Math.max(0, monotonicNow() - startedAt);
+        }
+      };
+      const [memoryResult, knowledgeResult] = await Promise.allSettled([
+        measuredMemorySearch(),
+        measuredKnowledgeSearch(),
+      ]);
+
+      if (memoryResult.status === 'fulfilled') {
+        // Memories were already validated structurally at write time, so the cap
+        // here is purely a budget: a long recalled value must not crowd out the
+        // structured facts that outrank it.
+        selected_memories = memoryResult.value
+          .slice(0, limits.memoryResults)
+          .map((memory) => ({
+            ...memory,
+            value: memory.value.slice(0, limits.memoryMaxChars),
+            source_quote: memory.source_quote.slice(0, limits.memoryMaxChars),
+          }));
+      } else {
+        long_term_memory_available = false;
+        log('orchestration.claim.memory_unavailable', {
+          trace_id: input.trace_id,
+          batch_id: claim.batch_id,
+          error: String(memoryResult.reason),
+        });
+      }
+
+      if (knowledgeResult.status === 'fulfilled') {
+        // A knowledge chunk is authored third-party text. It gets a hard budget
+        // and its structural injection tricks removed before it can reach a
+        // prompt; what survives stays data, never an instruction.
+        const capped = capRetrievedItems(knowledgeResult.value, (item) => item.content, {
+          maxItems: limits.knowledgeResults,
+          maxCharsPerItem: limits.knowledgeMaxCharsPerItem,
+          maxTotalChars: limits.knowledgeMaxTotalChars,
+        });
+        knowledge_base = capped.kept.map((entry) => ({ ...entry.item, content: entry.text }));
+        knowledge_base_dropped = capped.dropped;
+        injection_suspected_count = capped.injection_suspected_count;
+        if (capped.injection_suspected_count > 0) {
+          log('orchestration.claim.knowledge_injection_suspected', {
+            trace_id: input.trace_id,
+            batch_id: claim.batch_id,
+            suspected: capped.injection_suspected_count,
+            sources: capped.kept
+              .filter((entry) => entry.injection_suspected)
+              .map((entry) => entry.item.source_uri),
+          });
+        }
+      } else {
+        knowledge_base_available = false;
+        log('orchestration.claim.knowledge_unavailable', {
+          trace_id: input.trace_id,
+          batch_id: claim.batch_id,
+          error: String(knowledgeResult.reason),
+        });
+      }
     }
   }
+
+  await businessTask;
+  timings.claim_total_ms = Math.max(0, monotonicNow() - claimStartedAt);
+
+  log('orchestration.claim.timings', {
+    trace_id: input.trace_id,
+    batch_id: claim.batch_id,
+    ...timings,
+    ...counters,
+  });
 
   log('orchestration.claim.claimed', {
     trace_id: input.trace_id,
@@ -486,6 +673,8 @@ export async function claimBatch(
       injection_suspected_count,
     },
     sales_context: salesContext,
+    deterministic_route,
+    diagnostics: { timings, counters },
     business_context,
     business_context_available,
     existing_result: facts.existing_decision

@@ -12,6 +12,8 @@ const NOW = Date.parse('2026-08-17T00:00:00.000Z');
 
 function rawContext(overrides: Partial<RawBusinessContext> = {}): RawBusinessContext {
   return {
+    as_of: '2026-08-17T00:00:00.000Z',
+    offerings_total: 2,
     workspace: {
       id: '9c8bb0a3-6ff7-4f6c-9c5c-0e64cc90b6ce',
       slug: 'aburridont-english-it-sandbox',
@@ -89,6 +91,20 @@ function rawContext(overrides: Partial<RawBusinessContext> = {}): RawBusinessCon
 }
 
 describe('buildBusinessContextView', () => {
+  it('carries the database snapshot timestamp and fail-closed aggregate price flag', () => {
+    const view = buildBusinessContextView(rawContext());
+    expect(view.as_of).toBe('2026-08-17T00:00:00.000Z');
+    expect(view.prices_assertable).toBe(true);
+
+    const quoteOnly = rawContext();
+    const unavailable = buildBusinessContextView({
+      ...quoteOnly,
+      offerings: quoteOnly.offerings.filter((offering) => offering.price_type === 'quote'),
+      offerings_total: 1,
+    });
+    expect(unavailable.prices_assertable).toBe(false);
+  });
+
   it('exposes the fixed price exactly as the canonical columns say', () => {
     const view = buildBusinessContextView(rawContext());
     const group = view.offerings.find((offering) => offering.code === 'group_it_english');
@@ -213,7 +229,7 @@ describe('buildBusinessContextView', () => {
       code: `synthetic_${index}`,
       display_name: `Synthetic ${index}`,
     }));
-    const raw: RawBusinessContext = { ...base, offerings: synthetic };
+    const raw: RawBusinessContext = { ...base, offerings: synthetic, offerings_total: synthetic.length };
     const limits = { ...DEFAULT_BUSINESS_CONTEXT_LIMITS, maxOfferings: 2 };
 
     const view = buildBusinessContextView(raw, limits);
@@ -233,7 +249,7 @@ describe('buildBusinessContextView', () => {
       ...template,
       code: `synthetic_${index}`,
     }));
-    const raw: RawBusinessContext = { ...base, offerings: synthetic };
+    const raw: RawBusinessContext = { ...base, offerings: synthetic, offerings_total: synthetic.length };
     const limits = { ...DEFAULT_BUSINESS_CONTEXT_LIMITS, maxOfferings: 3 };
 
     const view = buildBusinessContextView(raw, limits);

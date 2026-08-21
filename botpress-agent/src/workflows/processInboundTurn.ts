@@ -3,7 +3,6 @@ import { claimBatch } from '../actions/claimBatch'
 import { commitDecision } from '../actions/commitDecision'
 import { dispatchCall } from '../actions/dispatchCall'
 import { ingestTurn } from '../actions/ingestTurn'
-import { lookupCatalog } from '../actions/lookupCatalog'
 import { reportDelivery } from '../actions/reportDelivery'
 import { transcribeAudio } from '../actions/transcribeAudio'
 import {
@@ -12,7 +11,6 @@ import {
   ProcessingStateSchema,
   WorkflowInputSchema,
   WorkflowResultSchema,
-  type CatalogResponse,
   type ClaimedTurn,
   type Decision,
   type IngestResponse,
@@ -313,12 +311,21 @@ export const processInboundTurn = new Workflow({
     let claimed: ClaimedTurn | null = null
     let dueAt = ingest.batch.due_at
     timings.batch_wait_ms = 0
+    timings.batch_wait_actual_ms = 0
+    timings.batch_wait_scheduled_ms = 0
     timings.claim_ms = 0
 
     for (let attempt = 0; attempt < MAX_CLAIM_ATTEMPTS; attempt += 1) {
       const waitMs = Math.max(0, new Date(dueAt).getTime() - Date.now())
+      const waitStartedAt = Date.now()
       await step.sleep(`await-batch-window-${attempt}`, waitMs)
-      timings.batch_wait_ms += waitMs
+      const actualWaitMs = Math.max(0, Date.now() - waitStartedAt)
+      timings.batch_wait_actual_ms += actualWaitMs
+      // Keep the established aggregate name, but make it report observed wall
+      // time rather than the requested delay. The requested delay is useful
+      // separately when diagnosing durable scheduler overhead.
+      timings.batch_wait_ms += actualWaitMs
+      timings.batch_wait_scheduled_ms += waitMs
 
       let outcome
       const claimStartedAt = Date.now()
@@ -392,6 +399,7 @@ export const processInboundTurn = new Workflow({
 
     const owned = claimed
     state.turnId = owned.turn_id
+    Object.assign(timings, owned.diagnostics.timings, owned.diagnostics.counters)
     safeLog('studyx.turn.claimed', {
       trace_id: input.trace_id,
       batch_id: owned.batch.id,
@@ -421,39 +429,13 @@ export const processInboundTurn = new Workflow({
       })
     }
 
-    // ---- Paso 7: catálogo, degradable ------------------------------------
-    let catalog: CatalogResponse | null = null
-    if (automatable && !fastPathDecision) {
-      const catalogStartedAt = Date.now()
-      try {
-        // Retries live in ONE layer: the action's HTTP client (1 extra attempt
-        // on transient failures only). maxAttempts here must stay 1 or the
-        // budgets multiply — 2 step attempts × N HTTP retries was worth ~3.4s
-        // on the 24s production trace.
-        catalog = await step(
-          'lookup-catalog',
-          () => lookupCatalog.execute({ client, input: { trace_id: input.trace_id } }),
-          { maxAttempts: 1 }
-        )
-        timings.catalog_ms = Date.now() - catalogStartedAt
-      } catch (error) {
-        timings.catalog_ms = Date.now() - catalogStartedAt
-        if (error instanceof StudyxHttpError) {
-          timings.catalog_attempts = error.attempts
-        }
-        // Sin catálogo el agente no puede afirmar precios, pero la conversación
-        // sigue: `prices_assertable` queda en false y el prompt lo dice.
-        safeLog('studyx.turn.catalog_unavailable', {
-          trace_id: input.trace_id,
-          turn_id: owned.turn_id,
-          error_code: errorCode(error),
-        })
-      }
-    }
-
-    // ---- Pasos 8-9: generar y validar localmente -------------------------
+    // ---- Pasos 7-9: generar y validar localmente -------------------------
+    // The claim already carries the one coherent business snapshot. The
+    // standalone catalog action remains available to non-turn callers, but a
+    // normal turn never performs a second commercial read.
     let decision: Decision
     let decisionModel: string = DECISION_MODELS[0]
+    timings.model_ms = 0
     if (!configuration.automationEnabled) {
       decision = suppress('AUTOMATION_DISABLED')
       decisionModel = 'policy:automation-disabled'
@@ -470,7 +452,7 @@ export const processInboundTurn = new Workflow({
         decision = await step(
           'generate-structured-decision',
           async () => {
-            const instructions = buildAgentASalesBridgeInstructions(owned, catalog)
+            const instructions = buildAgentASalesBridgeInstructions(owned)
             const generated = await execute({
               instructions,
               exits: [DecisionExit],
@@ -507,6 +489,10 @@ export const processInboundTurn = new Workflow({
           : suppress('MODEL_UNAVAILABLE')
         decisionModel = 'policy:model-unavailable'
       }
+    }
+
+    if (Number.isFinite(occurredAtMs)) {
+      timings.event_to_decision_ms = Math.max(0, Date.now() - occurredAtMs)
     }
 
     // ---- Paso 10: commitear en Next.js -----------------------------------

@@ -10,7 +10,6 @@ import { describe, expect, it } from 'vitest';
 import {
   GREETING_FAST_PATH_MODEL,
   matchDeterministicGreeting,
-  normalizeGreetingText,
 } from '../../../botpress-agent/src/utils/greeting';
 import { DecisionSchema, type ClaimedTurn } from '../../../botpress-agent/src/schemas/contracts';
 
@@ -20,6 +19,7 @@ function claimedTurn(overrides: {
   texts: string[];
   allowed?: string[];
   messageType?: string;
+  route?: ClaimedTurn['deterministic_route'];
 }): ClaimedTurn {
   const allowed = overrides.allowed ?? [
     'social_reply',
@@ -70,27 +70,16 @@ function claimedTurn(overrides: {
       knowledge_base_dropped: 0,
       injection_suspected_count: 0,
     },
+    deterministic_route: overrides.route ?? null,
     existing_result: null,
   } as unknown as ClaimedTurn;
 }
-
-describe('normalizeGreetingText', () => {
-  it('strips punctuation, emoji, accents and case', () => {
-    expect(normalizeGreetingText('¡Hola!! 👋')).toBe('hola');
-    expect(normalizeGreetingText('Buen día')).toBe('buen dia');
-    expect(normalizeGreetingText('  BUENAS   TARDES. ')).toBe('buenas tardes');
-  });
-
-  it('preserves interior content so extra words defeat the exact match', () => {
-    expect(normalizeGreetingText('hola, quiero el precio')).toBe('hola quiero el precio');
-  });
-});
 
 describe('matchDeterministicGreeting', () => {
   const unambiguous = ['hola', 'Hola', '¡Hola!', 'buenas', 'Buen día', 'buenas tardes', 'Buenas noches'];
   for (const text of unambiguous) {
     it(`matches the unambiguous greeting ${JSON.stringify(text)}`, () => {
-      const decision = matchDeterministicGreeting(claimedTurn({ texts: [text] }));
+      const decision = matchDeterministicGreeting(claimedTurn({ texts: [text], route: 'greeting' }));
       expect(decision).not.toBeNull();
       expect(decision!.response_type).toBe('social_reply');
       expect(decision!.reason_code).toBe('DETERMINISTIC_GREETING');
@@ -98,13 +87,15 @@ describe('matchDeterministicGreeting', () => {
   }
 
   it('produces a decision that passes the full Decision v3 schema', () => {
-    const decision = matchDeterministicGreeting(claimedTurn({ texts: ['hola'] }));
+    const decision = matchDeterministicGreeting(claimedTurn({ texts: ['hola'], route: 'greeting' }));
     expect(() => DecisionSchema.parse(decision)).not.toThrow();
   });
 
   it('greets with the configured workspace display name, never a hardcoded brand', () => {
-    const claimed = claimedTurn({ texts: ['hola'] });
+    const claimed = claimedTurn({ texts: ['hola'], route: 'greeting' });
     (claimed as { business_context?: unknown }).business_context = {
+      as_of: '2026-08-13T00:00:00.000Z',
+      prices_assertable: false,
       workspace: {
         slug: 'aburridont-english-it-sandbox',
         display_name: 'Aburridont — Inglés IT (Sandbox)',
@@ -115,6 +106,7 @@ describe('matchDeterministicGreeting', () => {
       offerings: [],
       qualification_fields: [],
       injection_suspected_count: 0,
+      offerings_truncated: 0,
     };
     const decision = matchDeterministicGreeting(claimed);
     expect(decision!.response).toContain('Aburridont — Inglés IT (Sandbox)');
@@ -122,7 +114,7 @@ describe('matchDeterministicGreeting', () => {
   });
 
   it('stays brand-neutral when business context is unavailable', () => {
-    const decision = matchDeterministicGreeting(claimedTurn({ texts: ['hola'] }));
+    const decision = matchDeterministicGreeting(claimedTurn({ texts: ['hola'], route: 'greeting' }));
     expect(decision!.response).not.toMatch(/StudyX|Aburridont/);
     expect(decision!.response).toContain('asesora virtual');
   });
@@ -140,6 +132,17 @@ describe('matchDeterministicGreeting', () => {
       expect(matchDeterministicGreeting(claimedTurn({ texts: [text] }))).toBeNull();
     });
   }
+
+  it('does not reclassify greeting text when the backend route is null', () => {
+    expect(matchDeterministicGreeting(claimedTurn({ texts: ['hola'], route: null }))).toBeNull();
+  });
+
+  it('trusts the backend route instead of maintaining a second text classifier', () => {
+    const decision = matchDeterministicGreeting(
+      claimedTurn({ texts: ['opaque backend-classified input'], route: 'greeting' }),
+    );
+    expect(decision?.reason_code).toBe('DETERMINISTIC_GREETING');
+  });
 
   it('never fast-paths a batch with more than one message', () => {
     expect(matchDeterministicGreeting(claimedTurn({ texts: ['hola', 'precio?'] }))).toBeNull();

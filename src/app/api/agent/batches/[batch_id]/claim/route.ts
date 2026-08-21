@@ -9,6 +9,7 @@ import { orchestrationStore } from '@/features/orchestration/adapters/postgres-o
 import {
   knowledgeRetriever,
   memoryRetriever,
+  queryEmbedder,
 } from '@/features/orchestration/adapters/postgres-retrievers';
 import { businessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
 import { buildBusinessContextView } from '@/features/orchestration/domain/business-context';
@@ -107,6 +108,7 @@ export async function POST(
       { batch_id, claimed_by: parsed.data.claimed_by, trace_id: parsed.data.trace_id },
       {
         store: orchestrationStore,
+        embedding: queryEmbedder,
         memory: memoryRetriever,
         knowledge: knowledgeRetriever,
         limits: {

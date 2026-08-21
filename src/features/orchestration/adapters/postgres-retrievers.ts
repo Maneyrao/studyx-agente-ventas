@@ -5,6 +5,7 @@ import type { DbClient } from '@/lib/db/types';
 import type {
   KnowledgeRetriever,
   MemoryRetriever,
+  QueryEmbedder,
   RetrievedKnowledge,
   RetrievedMemory,
 } from '../ports/retrieval';
@@ -12,32 +13,27 @@ import type {
 /**
  * pgvector-backed implementations of the two advisory retrieval ports.
  *
- * Both embed the query with Gemini and then run a similarity search. Either
- * step can fail — missing key, provider outage, index unavailable — and both
- * are allowed to: the use case wraps these calls in `allSettled` and degrades.
- * They therefore throw honestly instead of returning an empty result, so a
- * failure is never mistaken for "nothing relevant".
+ * These adapters perform only PostgreSQL vector searches. Query embedding is
+ * owned by the claim use case and crosses the inward port once, so memory and
+ * knowledge can share the exact same vector. A database failure still throws
+ * honestly so the use case can degrade each index independently.
  */
 
-function toVectorLiteral(embedding: number[]): string {
+function toVectorLiteral(embedding: readonly number[]): string {
   return `[${embedding.join(',')}]`;
 }
 
 export class PostgresMemoryRetriever implements MemoryRetriever {
-  constructor(
-    private readonly db: DbClient = sql,
-    private readonly embed: (text: string) => Promise<number[]> = generateQueryEmbedding
-  ) {}
+  constructor(private readonly db: DbClient = sql) {}
 
   async search(input: {
     contact_id: string;
-    query: string;
+    embedding: readonly number[];
     limit: number;
     min_similarity: number;
   }): Promise<RetrievedMemory[]> {
     if (!input.contact_id) throw new Error('contact_id is required');
-
-    const embedding = await this.embed(input.query);
+    if (input.embedding.length === 0) throw new Error('embedding is required');
 
     // Fase 4: la memoria de largo plazo ya no es "todo mensaje vectorizado"
     // sino `selected_memories`, y sólo las filas `active` con vigencia abierta.
@@ -56,7 +52,7 @@ export class PostgresMemoryRetriever implements MemoryRetriever {
       SELECT memory_id, memory_type, memory_key, value_text, source_quote, similarity, recorded_at
       FROM search_selected_memories(
         ${input.contact_id}::uuid,
-        ${toVectorLiteral(embedding)}::extensions.vector,
+        ${toVectorLiteral(input.embedding)}::extensions.vector,
         ${EMBEDDING_EPOCH},
         ${Math.min(Math.max(input.limit, 1), 20)},
         ${input.min_similarity}
@@ -87,7 +83,6 @@ export class PostgresKnowledgeRetriever implements KnowledgeRetriever {
    */
   constructor(
     private readonly db: DbClient = sql,
-    private readonly embed: (text: string) => Promise<number[]> = generateQueryEmbedding,
     private readonly resolveWorkspaceId: () => Promise<string> = async () => {
       const { workspaceSlug } = loadBusinessWorkspaceConfig();
       const rows = await db<Array<{ id: string }>>`
@@ -113,12 +108,12 @@ export class PostgresKnowledgeRetriever implements KnowledgeRetriever {
   }
 
   async search(input: {
-    query: string;
+    embedding: readonly number[];
     limit: number;
     min_similarity: number;
   }): Promise<RetrievedKnowledge[]> {
     const workspaceId = await this.workspaceId();
-    const embedding = await this.embed(input.query);
+    if (input.embedding.length === 0) throw new Error('embedding is required');
 
     const rows = await this.db<Array<{
       source_uri: string;
@@ -129,7 +124,7 @@ export class PostgresKnowledgeRetriever implements KnowledgeRetriever {
       SELECT source_uri, title, content, similarity
       FROM search_knowledge_base(
         ${workspaceId}::uuid,
-        ${toVectorLiteral(embedding)}::extensions.vector,
+        ${toVectorLiteral(input.embedding)}::extensions.vector,
         ${EMBEDDING_EPOCH},
         ${Math.min(Math.max(input.limit, 1), 20)},
         ${input.min_similarity}
@@ -147,3 +142,8 @@ export class PostgresKnowledgeRetriever implements KnowledgeRetriever {
 
 export const memoryRetriever = new PostgresMemoryRetriever();
 export const knowledgeRetriever = new PostgresKnowledgeRetriever();
+
+/** Gemini remains an outer adapter; the use case sees only QueryEmbedder. */
+export const queryEmbedder: QueryEmbedder = {
+  embed: generateQueryEmbedding,
+};

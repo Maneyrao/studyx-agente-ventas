@@ -405,6 +405,8 @@ export const BusinessOfferingSchema = z.object({
 })
 
 export const BusinessContextSchema = z.object({
+  as_of: z.string().min(1),
+  prices_assertable: z.boolean(),
   workspace: z.object({
     slug: z.string(),
     display_name: z.string(),
@@ -432,6 +434,7 @@ export const BusinessContextSchema = z.object({
     })
   ),
   injection_suspected_count: z.number().int().default(0),
+  offerings_truncated: z.number().int().nonnegative().default(0),
 })
 
 export type BusinessContext = z.infer<typeof BusinessContextSchema>
@@ -468,6 +471,29 @@ export const ClaimedTurnSchema = z.object({
     injection_suspected_count: z.number().int().default(0),
   }),
   sales_context: SalesContextSchema,
+  deterministic_route: z.enum([
+    'greeting',
+    'call_direct_request',
+    'call_accepted_offer',
+    'call_acceptance_clarification',
+  ]).nullable(),
+  diagnostics: z.object({
+    timings: z.object({
+      claim_total_ms: z.number().nonnegative(),
+      core_db_ms: z.number().nonnegative(),
+      shared_embedding_ms: z.number().nonnegative(),
+      memory_search_ms: z.number().nonnegative(),
+      knowledge_search_ms: z.number().nonnegative(),
+      business_snapshot_ms: z.number().nonnegative(),
+    }).strict(),
+    counters: z.object({
+      embedding_calls: z.number().int().nonnegative(),
+      memory_search_calls: z.number().int().nonnegative(),
+      knowledge_search_calls: z.number().int().nonnegative(),
+      business_snapshot_calls: z.number().int().nonnegative(),
+      catalog_calls: z.literal(0),
+    }).strict(),
+  }).strict(),
   business_context: BusinessContextSchema.nullable().default(null),
   business_context_available: z.boolean().default(false),
   existing_result: ExistingResultSchema,

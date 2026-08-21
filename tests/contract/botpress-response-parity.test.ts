@@ -3,7 +3,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { IngestContext } from '@/lib/services/ingestion.service';
 import type { ClaimedTurn } from '@/features/orchestration/application/claim-batch';
-import type { BusinessCatalogView } from '@/features/orchestration/domain/business-context';
+import type {
+  BusinessCatalogView,
+  BusinessContextView,
+} from '@/features/orchestration/domain/business-context';
 import {
   DecisionValidationError,
   MEMORY_CANDIDATE_TYPES as DOMAIN_MEMORY_CANDIDATE_TYPES,
@@ -194,6 +197,63 @@ describe('claim response parity', () => {
 
     // Never a phone, credential, transcript or unbounded call analysis.
     expect(salesContextBlock).not.toMatch(/phone|credential|transcript|analysis/i);
+  });
+
+  it('declares the backend fast-path route and PII-free hot-path diagnostics', () => {
+    const sample: Pick<ClaimedTurn, 'deterministic_route' | 'diagnostics'> = {
+      deterministic_route: null,
+      diagnostics: {
+        timings: {
+          claim_total_ms: 0,
+          core_db_ms: 0,
+          shared_embedding_ms: 0,
+          memory_search_ms: 0,
+          knowledge_search_ms: 0,
+          business_snapshot_ms: 0,
+        },
+        counters: {
+          embedding_calls: 0,
+          memory_search_calls: 0,
+          knowledge_search_calls: 0,
+          business_snapshot_calls: 0,
+          catalog_calls: 0,
+        },
+      },
+    };
+
+    const claimedBlock = schemaBlock('ClaimedTurnSchema');
+    for (const key of Object.keys(sample)) {
+      expect(claimedBlock, `ClaimedTurnSchema must declare ${key}`).toContain(`${key}:`);
+    }
+    for (const route of [
+      'greeting',
+      'call_direct_request',
+      'call_accepted_offer',
+      'call_acceptance_clarification',
+    ]) {
+      expect(claimedBlock, `deterministic_route must allow ${route}`).toContain(`'${route}'`);
+    }
+    for (const key of Object.keys(sample.diagnostics.timings)) {
+      expect(claimedBlock, `diagnostics.timings must declare ${key}`).toContain(`${key}:`);
+    }
+    for (const key of Object.keys(sample.diagnostics.counters)) {
+      expect(claimedBlock, `diagnostics.counters must declare ${key}`).toContain(`${key}:`);
+    }
+  });
+
+  it('declares one timestamped business snapshot and its fail-closed price flag', () => {
+    const sample: Pick<
+      BusinessContextView,
+      'as_of' | 'prices_assertable' | 'offerings_truncated'
+    > = {
+      as_of: '2026-08-21T00:00:00.000Z',
+      prices_assertable: false,
+      offerings_truncated: 0,
+    };
+    const block = schemaBlock('BusinessContextSchema');
+    for (const key of Object.keys(sample)) {
+      expect(block, `BusinessContextSchema must declare ${key}`).toContain(`${key}:`);
+    }
   });
 });
 

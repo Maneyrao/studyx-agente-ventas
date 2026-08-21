@@ -31,9 +31,8 @@ function vector(seed: number): string {
   return `[${Array.from({ length: EMBEDDING_DIMENSIONS }, (_unused, i) => (i === seed ? 1 : 0)).join(',')}]`;
 }
 
-function fakeEmbedding(seed = 0): () => Promise<number[]> {
-  return () =>
-    Promise.resolve(Array.from({ length: EMBEDDING_DIMENSIONS }, (_unused, i) => (i === seed ? 1 : 0)));
+function fakeEmbedding(seed = 0): number[] {
+  return Array.from({ length: EMBEDDING_DIMENSIONS }, (_unused, i) => (i === seed ? 1 : 0));
 }
 
 function envelope(text: string): InboundEnvelope {
@@ -382,10 +381,10 @@ run('selected_memories — lifecycle', () => {
       WHERE id = ${memoryId}::uuid
     `;
 
-    const retriever = new PostgresMemoryRetriever(sql, fakeEmbedding(0));
+    const retriever = new PostgresMemoryRetriever(sql);
     const before = await retriever.search({
       contact_id: turn.contact_id,
-      query: 'anatomía',
+      embedding: fakeEmbedding(0),
       limit: 5,
       min_similarity: 0.5,
     });
@@ -443,10 +442,10 @@ run('selected_memories — retrieval', () => {
     await remember(mine, ['pref_a', 'pref_b', 'pref_c', 'pref_d', 'pref_e', 'pref_f', 'pref_g']);
     await remember(theirs, ['pref_a', 'pref_b']);
 
-    const retriever = new PostgresMemoryRetriever(sql, fakeEmbedding(0));
+    const retriever = new PostgresMemoryRetriever(sql);
     const results = await retriever.search({
       contact_id: mine.contact_id,
-      query: 'preferencias',
+      embedding: fakeEmbedding(0),
       limit: 5,
       min_similarity: 0.5,
     });
@@ -463,17 +462,13 @@ run('selected_memories — retrieval', () => {
     expect(ownership.every((row) => row.contact_id === mine.contact_id)).toBe(true);
   });
 
-  it('degrades to nothing when the embedding provider is down, without throwing away the turn', async () => {
+  it('rejects an empty shared embedding before querying the database', async () => {
     const turn = await seedTurn('Quiero rendir el final de anatomía en marzo');
-    const retriever = new PostgresMemoryRetriever(sql, () => {
-      throw new Error('GEMINI_UNAVAILABLE');
-    });
+    const retriever = new PostgresMemoryRetriever(sql);
 
-    // The retriever throws honestly; the claim use case is what turns that into
-    // `long_term_memory_available: false` instead of a failed turn.
     await expect(
-      retriever.search({ contact_id: turn.contact_id, query: 'algo', limit: 5, min_similarity: 0.5 })
-    ).rejects.toThrow('GEMINI_UNAVAILABLE');
+      retriever.search({ contact_id: turn.contact_id, embedding: [], limit: 5, min_similarity: 0.5 })
+    ).rejects.toThrow('embedding is required');
   });
 
   it('never returns a memory that is still waiting for its vector', async () => {
@@ -500,10 +495,10 @@ run('selected_memories — retrieval', () => {
       trace_id: randomUUID(),
     });
 
-    const retriever = new PostgresMemoryRetriever(sql, fakeEmbedding(0));
+    const retriever = new PostgresMemoryRetriever(sql);
     const results = await retriever.search({
       contact_id: turn.contact_id,
-      query: 'horario',
+      embedding: fakeEmbedding(0),
       limit: 5,
       min_similarity: 0.1,
     });

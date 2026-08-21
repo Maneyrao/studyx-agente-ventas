@@ -16,6 +16,7 @@ function claimed(overrides: {
   allowedActions?: Array<'offer_call' | 'request_call_now'>;
   openOffer?: boolean;
   course?: string | null;
+  route?: ClaimedTurn['deterministic_route'];
 }): ClaimedTurn {
   const texts = overrides.texts ?? ['Llamame'];
   return {
@@ -72,6 +73,7 @@ function claimed(overrides: {
       allowed_actions: overrides.allowedActions ?? ['offer_call'],
       last_call_result: null,
     },
+    deterministic_route: overrides.route ?? null,
     existing_result: null,
   } as unknown as ClaimedTurn;
 }
@@ -79,7 +81,12 @@ function claimed(overrides: {
 describe('matchCallHandoffFastPath', () => {
   it('a direct request with request_call_now allowed becomes an immediate v4 request', () => {
     const decision = matchCallHandoffFastPath(
-      claimed({ texts: ['Llamame ahora'], allowedActions: ['request_call_now'], course: 'Python' }),
+      claimed({
+        texts: ['Llamame ahora'],
+        allowedActions: ['request_call_now'],
+        course: 'Python',
+        route: 'call_direct_request',
+      }),
     );
     expect(decision).toMatchObject({
       schema_version: 4,
@@ -95,13 +102,22 @@ describe('matchCallHandoffFastPath', () => {
 
   it('a direct request without policy permission falls through to the model', () => {
     expect(
-      matchCallHandoffFastPath(claimed({ texts: ['Llamame'], allowedActions: [] })),
+      matchCallHandoffFastPath(claimed({
+        texts: ['Llamame'],
+        allowedActions: [],
+        route: 'call_direct_request',
+      })),
     ).toBeNull();
   });
 
   it('an exact acceptance over an open offer becomes an accepted_offer request', () => {
     const decision = matchCallHandoffFastPath(
-      claimed({ texts: ['sí'], allowedActions: ['request_call_now'], openOffer: true }),
+      claimed({
+        texts: ['sí'],
+        allowedActions: ['request_call_now'],
+        openOffer: true,
+        route: 'call_accepted_offer',
+      }),
     );
     expect(decision).toMatchObject({
       response_type: 'call_confirmation',
@@ -111,7 +127,12 @@ describe('matchCallHandoffFastPath', () => {
 
   it('a bare acceptance without an offer asks one clarification and never calls', () => {
     const decision = matchCallHandoffFastPath(
-      claimed({ texts: ['sí'], allowedActions: [], openOffer: false }),
+      claimed({
+        texts: ['sí'],
+        allowedActions: [],
+        openOffer: false,
+        route: 'call_acceptance_clarification',
+      }),
     );
     expect(decision).toMatchObject({
       kind: 'clarify',
@@ -160,5 +181,27 @@ describe('matchCallHandoffFastPath', () => {
         claimed({ texts: ['Quiero información'], allowedActions: ['request_call_now'] }),
       ),
     ).toBeNull();
+  });
+
+  it('does not reclassify a direct-request phrase when the backend route is null', () => {
+    expect(
+      matchCallHandoffFastPath(
+        claimed({ texts: ['Llamame'], allowedActions: ['request_call_now'], route: null }),
+      ),
+    ).toBeNull();
+  });
+
+  it('trusts the backend route instead of maintaining a second text classifier', () => {
+    const decision = matchCallHandoffFastPath(
+      claimed({
+        texts: ['opaque backend-classified input'],
+        allowedActions: ['request_call_now'],
+        route: 'call_direct_request',
+      }),
+    );
+    expect(decision?.business_action).toMatchObject({
+      type: 'request_call_now',
+      reason: 'direct_request',
+    });
   });
 });

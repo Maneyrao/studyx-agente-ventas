@@ -6,6 +6,7 @@ import type {
   BatchMembership,
   BatchMessage,
   ClaimBatchInput,
+  ClaimedBatchContext,
   ClaimedCallFacts,
   ClaimedTurnFacts,
   CompleteBatchInput,
@@ -62,6 +63,11 @@ function requireIso(value: Date | null, field: string): string {
   const parsed = iso(value);
   if (!parsed) throw new Error(`Orchestration store returned a null ${field}`);
   return parsed;
+}
+
+function jsonIso(value: Date | string | null): string | null {
+  if (value === null) return null;
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
 export class PostgresOrchestrationStore implements OrchestrationStore {
@@ -178,6 +184,234 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
     }));
   }
 
+  async loadClaimedBatchContext(input: {
+    batch_id: string;
+    recent_turns_limit: number;
+  }): Promise<ClaimedBatchContext | null> {
+    const limit = Math.min(Math.max(input.recent_turns_limit, 1), 20);
+    type JsonBatchMessage = {
+      id: string;
+      conversation_seq: string | number;
+      content: string;
+      created_at: Date | string;
+      message_type: string | null;
+    };
+    type JsonRecentTurn = {
+      direction: 'inbound' | 'outbound';
+      content: string;
+      created_at: Date | string;
+    };
+    type SnapshotRow = {
+      contact_id: string;
+      contact_status: 'prospecto' | 'cliente' | 'inactivo';
+      name: string | null;
+      lifecycle_status: 'active' | 'blocked' | 'deleted' | null;
+      deleted_at: Date | null;
+      consent_status: 'unknown' | 'granted' | 'revoked' | null;
+      opted_in_at: Date;
+      pending_turns: number;
+      summary: string | null;
+      summary_version: number;
+      summary_updated_at: Date | null;
+      representative_turn_id: string;
+      unsupported_message: boolean;
+      decision_id: string | null;
+      outbound_id: string | null;
+      delivery_state: string | null;
+      next_state: 'completed' | 'waiting_user' | null;
+      batch_messages: JsonBatchMessage[];
+      recent_turns: JsonRecentTurn[];
+      open_offer: { decision_id: string; offered_at: Date | string } | null;
+      active_call: { call_id: string; status: string } | null;
+      last_call_result: {
+        call_id: string;
+        result: string | null;
+        ended_at: Date | string;
+      } | null;
+      last_decline_at: Date | string | null;
+    };
+
+    const rows = await this.db<SnapshotRow[]>`
+      SELECT
+        c.id AS contact_id,
+        c.status AS contact_status,
+        c.name,
+        c.lifecycle_status,
+        c.deleted_at,
+        ccp.consent_status,
+        c.opted_in_at,
+        c.pending_turns,
+        c.summary,
+        c.summary_version,
+        c.summary_updated_at,
+        b.representative_turn_id,
+        NOT EXISTS (
+          SELECT 1
+          FROM messages AS readable
+          WHERE readable.batch_id = b.id
+            AND COALESCE(readable.metadata ->> 'message_type', 'text') <> 'unsupported'
+        ) AS unsupported_message,
+        ad.id AS decision_id,
+        ad.outbound_message_id AS outbound_id,
+        od.state AS delivery_state,
+        ad.next_state,
+        COALESCE((
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'id', bm.id,
+              'conversation_seq', bm.conversation_seq,
+              'content', bm.content,
+              'created_at', bm.created_at,
+              'message_type', COALESCE(bm.metadata ->> 'message_type', 'text')
+            ) ORDER BY bm.conversation_seq
+          )
+          FROM messages AS bm
+          WHERE bm.batch_id = b.id
+            AND bm.conversation_id = b.conversation_id
+            AND bm.contact_id = b.contact_id
+        ), '[]'::jsonb) AS batch_messages,
+        COALESCE((
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'direction', recent.direction,
+              'content', recent.content,
+              'created_at', recent.created_at
+            ) ORDER BY recent.created_at, recent.id
+          )
+          FROM (
+            SELECT rm.id, rm.direction, rm.content, rm.created_at
+            FROM messages AS rm
+            WHERE rm.conversation_id = b.conversation_id
+              AND rm.contact_id = b.contact_id
+              AND rm.batch_id IS DISTINCT FROM b.id
+            ORDER BY rm.created_at DESC, rm.id DESC
+            LIMIT ${limit}
+          ) AS recent
+        ), '[]'::jsonb) AS recent_turns,
+        (
+          SELECT jsonb_build_object(
+            'decision_id', offer.id,
+            'offered_at', offer.created_at
+          )
+          FROM agent_decisions AS offer
+          JOIN messages AS offer_message ON offer_message.id = offer.turn_id
+          WHERE offer_message.contact_id = b.contact_id
+            AND offer_message.conversation_id = b.conversation_id
+            AND offer.response_type = 'call_offer'
+          ORDER BY offer.created_at DESC
+          LIMIT 1
+        ) AS open_offer,
+        (
+          SELECT jsonb_build_object('call_id', active.id, 'status', active.status)
+          FROM call_sessions AS active
+          WHERE active.contact_id = b.contact_id
+            AND active.conversation_id = b.conversation_id
+            AND active.status IN (
+              'requested', 'dispatching', 'provider_accepted',
+              'dispatch_ambiguous', 'in_progress'
+            )
+          ORDER BY active.created_at DESC
+          LIMIT 1
+        ) AS active_call,
+        (
+          SELECT jsonb_build_object(
+            'call_id', terminal.id,
+            'result', terminal.result,
+            'ended_at', COALESCE(terminal.completed_at, terminal.updated_at)
+          )
+          FROM call_sessions AS terminal
+          WHERE terminal.contact_id = b.contact_id
+            AND terminal.conversation_id = b.conversation_id
+            AND terminal.status IN (
+              'completed', 'failed', 'no_answer', 'timed_out', 'cancelled'
+            )
+          ORDER BY COALESCE(terminal.completed_at, terminal.updated_at) DESC
+          LIMIT 1
+        ) AS last_call_result,
+        (
+          SELECT decline.created_at
+          FROM agent_decisions AS decline
+          JOIN messages AS decline_message ON decline_message.id = decline.turn_id
+          WHERE decline_message.contact_id = b.contact_id
+            AND decline_message.conversation_id = b.conversation_id
+            AND decline.intent = 'commercial_decline'
+          ORDER BY decline.created_at DESC
+          LIMIT 1
+        ) AS last_decline_at
+      FROM inbound_batches AS b
+      JOIN conversations AS conv
+        ON conv.id = b.conversation_id AND conv.contact_id = b.contact_id
+      JOIN contacts AS c ON c.id = b.contact_id
+      LEFT JOIN contact_channel_permissions AS ccp
+        ON ccp.contact_id = c.id AND ccp.channel = conv.channel
+      LEFT JOIN agent_decisions AS ad ON ad.turn_id = b.representative_turn_id
+      LEFT JOIN outbound_deliveries AS od ON od.message_id = ad.outbound_message_id
+      WHERE b.id = ${input.batch_id}::uuid
+      LIMIT 1
+    `;
+
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      facts: {
+        contact: {
+          id: row.contact_id,
+          status: row.contact_status,
+          name: row.name,
+          lifecycle_status: row.lifecycle_status,
+          deleted_at: jsonIso(row.deleted_at),
+          consent_status: row.consent_status ?? 'unknown',
+          opted_in_at: jsonIso(row.opted_in_at)!,
+          pending_turns: Number(row.pending_turns),
+        },
+        summary: {
+          text: row.summary,
+          version: Number(row.summary_version),
+          updated_at: jsonIso(row.summary_updated_at),
+        },
+        recent_turns: (row.recent_turns ?? []).map((turn) => ({
+          direction: turn.direction,
+          content: turn.content,
+          created_at: jsonIso(turn.created_at)!,
+        })),
+        representative_turn_id: row.representative_turn_id,
+        unsupported_message: row.unsupported_message,
+        existing_decision: row.decision_id
+          ? {
+              decision_id: row.decision_id,
+              outbound_id: row.outbound_id,
+              delivery_state: row.delivery_state,
+              next_state: row.next_state ?? 'completed',
+            }
+          : null,
+      },
+      batch_messages: (row.batch_messages ?? []).map((message) => ({
+        id: message.id,
+        conversation_seq: Number(message.conversation_seq),
+        content: message.content,
+        created_at: jsonIso(message.created_at)!,
+        message_type: message.message_type ?? 'text',
+      })),
+      call_facts: {
+        open_offer: row.open_offer
+          ? {
+              decision_id: row.open_offer.decision_id,
+              offered_at: jsonIso(row.open_offer.offered_at)!,
+            }
+          : null,
+        active_call: row.active_call,
+        last_call_result: row.last_call_result
+          ? {
+              call_id: row.last_call_result.call_id,
+              result: row.last_call_result.result,
+              ended_at: jsonIso(row.last_call_result.ended_at)!,
+            }
+          : null,
+        last_decline_at: jsonIso(row.last_decline_at),
+      },
+    };
+  }
+
   async loadClaimedTurnFacts(input: {
     batch_id: string;
     recent_turns_limit: number;
@@ -253,6 +487,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
         SELECT direction, content, created_at
         FROM messages
         WHERE conversation_id = ${row.conversation_id}::uuid
+          AND batch_id IS DISTINCT FROM ${input.batch_id}::uuid
         ORDER BY created_at DESC, id DESC
         LIMIT ${limit}
       ) AS recent_window

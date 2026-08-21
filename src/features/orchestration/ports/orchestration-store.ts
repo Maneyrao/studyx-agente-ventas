@@ -169,6 +169,17 @@ export interface ClaimedCallFacts {
   readonly last_decline_at: string | null;
 }
 
+/**
+ * One coherent, batch-scoped read used by the claim hot path. The adapter may
+ * project this with one SQL statement; the application never coordinates
+ * driver-level subqueries or depends on PostgreSQL JSON shapes.
+ */
+export interface ClaimedBatchContext {
+  readonly facts: ClaimedTurnFacts;
+  readonly batch_messages: BatchMessage[];
+  readonly call_facts: ClaimedCallFacts;
+}
+
 export interface OrchestrationStore {
   /**
    * Attach a freshly persisted inbound to the conversation's open window,
@@ -192,6 +203,12 @@ export interface OrchestrationStore {
     batch_id: string;
     recent_turns_limit: number;
   }): Promise<ClaimedTurnFacts | null>;
+
+  /** Facts, current batch and call state from one claim-time snapshot. */
+  loadClaimedBatchContext(input: {
+    batch_id: string;
+    recent_turns_limit: number;
+  }): Promise<ClaimedBatchContext | null>;
 
   /**
    * Sales/call facts for the claimed batch's own contact and conversation.

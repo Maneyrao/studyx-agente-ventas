@@ -26,11 +26,21 @@ export interface RetrievedKnowledge {
   readonly similarity: number;
 }
 
+/**
+ * The application owns query embedding because one customer query is one
+ * retrieval operation, even when several derived indexes consume it. Keeping
+ * this port inward prevents either PostgreSQL adapter from making a second
+ * provider call behind the use case's back.
+ */
+export interface QueryEmbedder {
+  embed(query: string): Promise<readonly number[]>;
+}
+
 export interface MemoryRetriever {
   /** Contact-scoped. An implementation must never widen the contact filter. */
   search(input: {
     contact_id: string;
-    query: string;
+    embedding: readonly number[];
     limit: number;
     min_similarity: number;
   }): Promise<RetrievedMemory[]>;
@@ -38,7 +48,7 @@ export interface MemoryRetriever {
 
 export interface KnowledgeRetriever {
   search(input: {
-    query: string;
+    embedding: readonly number[];
     limit: number;
     min_similarity: number;
   }): Promise<RetrievedKnowledge[]>;

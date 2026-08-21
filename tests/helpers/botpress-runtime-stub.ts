@@ -17,6 +17,30 @@ export class Conversation<TDefinition = unknown> {
   }
 }
 
+/** Records workflow definitions so orchestration behavior can run in unit tests. */
+export class Workflow<TDefinition = unknown> {
+  definition: TDefinition;
+  constructor(definition: TDefinition) {
+    this.definition = definition;
+  }
+}
+
+/** Minimal structured-exit surface used by workflow generation tests. */
+class Exit<TDefinition = unknown> {
+  definition: TDefinition;
+  constructor(definition: TDefinition) {
+    this.definition = definition;
+  }
+}
+
+export const Autonomous = { Exit };
+
+export const context = {
+  get(key: string): string {
+    return key === 'botId' ? 'test-bot-id' : '';
+  },
+};
+
 /** Mutable per-test agent configuration; tests read/override as needed. */
 export const configuration: {
   emulatorPhoneE164: string;

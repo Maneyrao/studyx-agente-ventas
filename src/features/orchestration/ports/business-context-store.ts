@@ -1,4 +1,7 @@
-import type { RawBusinessContext } from '../domain/business-context';
+import type {
+  BusinessContextLimits,
+  RawBusinessContext,
+} from '../domain/business-context';
 
 /**
  * Loads the canonical business context for one workspace slug.
@@ -10,5 +13,14 @@ import type { RawBusinessContext } from '../domain/business-context';
  * permission to fall back to another tenant's data.
  */
 export interface BusinessContextStore {
-  loadBusinessContext(workspaceSlug: string): Promise<RawBusinessContext | null>;
+  loadBusinessContext(
+    workspaceSlug: string,
+    limits?: BusinessContextLimits
+  ): Promise<RawBusinessContext | null>;
+
+  /** Offering-only snapshot for standalone catalog callers. */
+  loadBusinessCatalog(
+    workspaceSlug: string,
+    limits?: Pick<BusinessContextLimits, 'maxOfferings'>
+  ): Promise<RawBusinessContext | null>;
 }

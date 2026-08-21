@@ -2,7 +2,6 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
-  buildBusinessCatalogView,
   buildBusinessContextView,
   type RawBusinessContext,
 } from '@/features/orchestration/domain/business-context';
@@ -12,7 +11,6 @@ import {
 } from '../../botpress-agent/src/prompts/agent-a-sales-bridge';
 import {
   DecisionSchema,
-  type CatalogResponse,
   type ClaimedTurn,
   type Decision,
 } from '../../botpress-agent/src/schemas/contracts';
@@ -20,7 +18,7 @@ import {
 /**
  * Aburridont conversational matrix — REAL model behavior, not structure.
  *
- * Each scenario builds the same ClaimedTurn + catalog shapes the production
+ * Each scenario builds the same claimed business snapshot the production
  * workflow builds, renders the real versioned prompt, sends it to Gemini
  * (the first model of the production failover chain, called directly), and
  * judges the returned Decision with deterministic, reproducible rules.
@@ -51,6 +49,7 @@ const UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
 
 function aburridontRawContext(): RawBusinessContext {
   return {
+    as_of: NOW,
     workspace: {
       id: 'a0000000-0000-4000-8000-000000000001',
       slug: 'aburridont-english-it-sandbox',
@@ -104,6 +103,7 @@ function aburridontRawContext(): RawBusinessContext {
         guardrails: { price_message: 'Precio a confirmar según frecuencia y objetivo.', never_invent_price: true },
       },
     ],
+    offerings_total: 2,
     qualification_fields: [
       { code: 'tech_profile', prompt: '¿Trabajás o estudiás algo relacionado con programación o IT?', response_type: 'boolean', options: [], is_required: true, position: 0 },
       { code: 'goal', prompt: '¿Para qué querés mejorar tu inglés?', response_type: 'multi_select', options: ['interviews', 'dailies', 'calls', 'remote_work', 'clients', 'general_base'], is_required: true, position: 1 },
@@ -117,7 +117,6 @@ function aburridontRawContext(): RawBusinessContext {
 }
 
 const BUSINESS = buildBusinessContextView(aburridontRawContext());
-const CATALOG = buildBusinessCatalogView(BUSINESS.offerings, { now: Date.parse(NOW) }) as unknown as CatalogResponse;
 
 const DEFAULT_ALLOWED = [
   'social_reply', 'commercial_reply', 'clarification', 'complaint_ack',
@@ -138,7 +137,6 @@ interface ScenarioContext {
   knowledgeBase?: Array<Record<string, unknown>>;
   knowledgeAvailable?: boolean;
   businessContext?: unknown | null;
-  catalog?: CatalogResponse | null;
 }
 
 function claimedTurn(context: ScenarioContext): ClaimedTurn {
@@ -470,7 +468,6 @@ const SCENARIOS: Scenario[] = [
     context: {
       messages: ['¿Cuánto sale el plan grupal?'],
       businessContext: null,
-      catalog: null,
       knowledgeAvailable: false,
     },
     judge: (_decision, response) => {
@@ -490,7 +487,7 @@ interface ScenarioRecord {
   input: string[];
   response: string;
   decision: unknown;
-  source: { catalog: boolean; business_context: boolean; knowledge_base: boolean };
+  source: { business_snapshot: boolean; knowledge_base: boolean };
   call: { offered: boolean; requested: boolean };
   latency_ms: number;
   pass: boolean;
@@ -590,8 +587,7 @@ suite(`Aburridont conversational matrix [${LABEL}] — prompt ${AGENT_A_PROMPT_V
     it(`${scenario.id} ${scenario.name}`, async () => {
       await sleep(10_000); // free-tier RPM headroom between scenarios
       const claimed = claimedTurn(scenario.context);
-      const catalog = scenario.context.catalog === undefined ? CATALOG : scenario.context.catalog;
-      const instructions = buildAgentASalesBridgeInstructions(claimed, catalog);
+      const instructions = buildAgentASalesBridgeInstructions(claimed);
 
       let record: ScenarioRecord;
       try {
@@ -604,8 +600,7 @@ suite(`Aburridont conversational matrix [${LABEL}] — prompt ${AGENT_A_PROMPT_V
           response: decision.response ?? '',
           decision,
           source: {
-            catalog: catalog !== null,
-            business_context: scenario.context.businessContext !== null,
+            business_snapshot: scenario.context.businessContext !== null,
             knowledge_base: scenario.context.knowledgeAvailable ?? true,
           },
           call: {
@@ -621,7 +616,10 @@ suite(`Aburridont conversational matrix [${LABEL}] — prompt ${AGENT_A_PROMPT_V
         record = {
           id: scenario.id, name: scenario.name, input: scenario.context.messages,
           response: '', decision: null,
-          source: { catalog: catalog !== null, business_context: scenario.context.businessContext !== null, knowledge_base: scenario.context.knowledgeAvailable ?? true },
+          source: {
+            business_snapshot: scenario.context.businessContext !== null,
+            knowledge_base: scenario.context.knowledgeAvailable ?? true,
+          },
           call: { offered: false, requested: false },
           latency_ms: 0, pass: false,
           reason: `decisión inválida o error de modelo: ${String(error).slice(0, 300)}`,

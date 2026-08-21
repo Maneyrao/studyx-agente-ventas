@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
 import { processInboundMessage, type InboundEnvelope } from '@/lib/services/ingestion.service';
 import { commitAgentDecision } from '@/lib/services/decision.service';
@@ -7,13 +7,19 @@ import {
   claimBatch,
   DEFAULT_CONTEXT_LIMITS,
 } from '@/features/orchestration/application/claim-batch';
-import { orchestrationStore } from '@/features/orchestration/adapters/postgres-orchestration-store';
+import {
+  PostgresOrchestrationStore,
+  orchestrationStore,
+} from '@/features/orchestration/adapters/postgres-orchestration-store';
 import {
   PostgresKnowledgeRetriever,
   PostgresMemoryRetriever,
 } from '@/features/orchestration/adapters/postgres-retrievers';
 import { EMBEDDING_DIMENSIONS } from '@/lib/embeddings/gemini';
 import { sql } from '@/lib/db/orchestrator';
+import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
+import { buildBusinessContextView } from '@/features/orchestration/domain/business-context';
+import type { DbClient } from '@/lib/db/types';
 
 /**
  * Fase 3 against a real database: the controlled context is assembled only
@@ -36,10 +42,27 @@ function fakeEmbedding(): Promise<number[]> {
 
 const deps = {
   store: orchestrationStore,
-  memory: new PostgresMemoryRetriever(sql, fakeEmbedding),
-  knowledge: new PostgresKnowledgeRetriever(sql, fakeEmbedding),
+  embedding: { embed: fakeEmbedding },
+  memory: new PostgresMemoryRetriever(sql),
+  knowledge: new PostgresKnowledgeRetriever(sql),
   limits: DEFAULT_CONTEXT_LIMITS,
 };
+
+function countedDatabase() {
+  let statements = 0;
+  const counted = ((strings: TemplateStringsArray, ...params: unknown[]) => {
+    statements += 1;
+    return (db as unknown as (strings: TemplateStringsArray, ...params: unknown[]) => unknown)(
+      strings,
+      ...params
+    );
+  }) as unknown as DbClient;
+  return {
+    db: counted,
+    reset() { statements = 0; },
+    get statements() { return statements; },
+  };
+}
 
 function envelope(overrides: Partial<InboundEnvelope> = {}): InboundEnvelope {
   const identity = randomUUID();
@@ -96,7 +119,7 @@ run('controlled context at claim time', () => {
       'Hola',
       '¿cuánto sale el curso de ventas?',
     ]);
-    expect(result.context.recent_turns.length).toBeGreaterThanOrEqual(2);
+    expect(result.context.recent_turns).toEqual([]);
     expect(result.context.summary.version).toBeGreaterThanOrEqual(0);
     expect(result.policy.may_respond).toBe(true);
     expect(result.contact.id).toEqual(expect.any(String));
@@ -130,7 +153,14 @@ run('controlled context at claim time', () => {
   });
 
   it('degrades to structured context when the embedding provider is unavailable', async () => {
-    const ingested = await processInboundMessage(envelope());
+    const ingested = await processInboundMessage(envelope({
+      message: {
+        type: 'text',
+        text: '¿Cuánto sale el curso?',
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    }));
     await forceDue(ingested.batch.id);
 
     const failing = () => Promise.reject(new Error('GEMINI_API_KEY is not set'));
@@ -138,8 +168,7 @@ run('controlled context at claim time', () => {
       { batch_id: ingested.batch.id, claimed_by: 'workflow-a', trace_id: randomUUID() },
       {
         ...deps,
-        memory: new PostgresMemoryRetriever(sql, failing),
-        knowledge: new PostgresKnowledgeRetriever(sql, failing),
+        embedding: { embed: failing },
       }
     );
 
@@ -148,7 +177,51 @@ run('controlled context at claim time', () => {
     expect(result.context.knowledge_base_available).toBe(false);
     // The turn stays answerable from facts the provider cannot affect.
     expect(result.context.batch_messages).toHaveLength(1);
-    expect(result.context.recent_turns.length).toBeGreaterThan(0);
+    expect(result.context.recent_turns).toEqual([]);
+  });
+
+  it('uses at most five PostgreSQL statements from claim start through the warm model path', async () => {
+    const workspaceSlug = `claim-hotpath-${randomUUID().slice(0, 8)}`;
+    const workspaceRows = await db!<Array<{ id: string }>>`
+      INSERT INTO workspaces (slug, display_name)
+      VALUES (${workspaceSlug}, 'Hot path fixture')
+      RETURNING id
+    `;
+    const ingested = await processInboundMessage(envelope({
+      message: {
+        type: 'text',
+        text: '¿Qué incluye el curso avanzado?',
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    }));
+    await forceDue(ingested.batch.id);
+
+    const counted = countedDatabase();
+    const embedding = { embed: vi.fn(fakeEmbedding) };
+    const businessStore = new PostgresBusinessContextStore(counted.db);
+    counted.reset();
+
+    const result = await claimBatch(
+      { batch_id: ingested.batch.id, claimed_by: 'workflow-query-count', trace_id: randomUUID() },
+      {
+        store: new PostgresOrchestrationStore(counted.db),
+        embedding,
+        memory: new PostgresMemoryRetriever(counted.db),
+        knowledge: new PostgresKnowledgeRetriever(counted.db, async () => workspaceRows[0].id),
+        business: {
+          async load() {
+            const raw = await businessStore.loadBusinessContext(workspaceSlug);
+            return raw ? buildBusinessContextView(raw) : null;
+          },
+        },
+        limits: DEFAULT_CONTEXT_LIMITS,
+      }
+    );
+
+    expect(result.outcome).toBe('claimed');
+    expect(embedding.embed).toHaveBeenCalledTimes(1);
+    expect(counted.statements).toBeLessThanOrEqual(5);
   });
 
   it('tells a second workflow it was absorbed and gives it no context', async () => {

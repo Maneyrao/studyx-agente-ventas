@@ -53,8 +53,12 @@ export interface RawQualificationFieldRow {
 }
 
 export interface RawBusinessContext {
+  /** Database clock captured by the same statement that read the snapshot. */
+  readonly as_of: string;
   readonly workspace: RawWorkspaceRow;
   readonly offerings: RawOfferingRow[];
+  /** Active rows before the bounded SQL projection was applied. */
+  readonly offerings_total: number;
   readonly qualification_fields: RawQualificationFieldRow[];
 }
 
@@ -110,6 +114,10 @@ export interface QualificationFieldView {
 }
 
 export interface BusinessContextView {
+  /** One coherent commercial snapshot, timestamped by PostgreSQL. */
+  readonly as_of: string;
+  /** false means no amount in this snapshot may be stated. */
+  readonly prices_assertable: boolean;
   readonly workspace: {
     readonly slug: string;
     readonly display_name: string;
@@ -403,7 +411,7 @@ export function buildBusinessContextView(
   const tally: SanitizeTally = { suspected: 0 };
 
   const cappedRawOfferings = raw.offerings.slice(0, limits.maxOfferings);
-  const offerings_truncated = raw.offerings.length - cappedRawOfferings.length;
+  const offerings_truncated = Math.max(0, raw.offerings_total - cappedRawOfferings.length);
   const offerings = cappedRawOfferings.map((offering) => buildOfferingView(offering, limits, tally));
 
   const qualification_fields = raw.qualification_fields
@@ -420,6 +428,8 @@ export function buildBusinessContextView(
     }));
 
   return {
+    as_of: raw.as_of,
+    prices_assertable: offerings.some((offering) => offering.price_assertable),
     workspace: {
       slug: raw.workspace.slug,
       display_name: cleanText(raw.workspace.display_name, 128, tally) ?? raw.workspace.slug,
@@ -462,7 +472,9 @@ export interface BusinessCatalogView {
 export function buildBusinessCatalogView(
   offerings: readonly BusinessOfferingView[],
   options: {
-    readonly now: number;
+    readonly now?: number;
+    /** Prefer the database timestamp when deriving a catalog from a snapshot. */
+    readonly asOf?: string;
     readonly maxItems?: number;
     /**
      * Offerings the caller already dropped before handing the array over.
@@ -497,7 +509,7 @@ export function buildBusinessCatalogView(
     dropped: offerings.length - kept.length + (options.droppedUpstream ?? 0),
     stale_promotions_dropped: 0,
     injection_suspected_count: options.injectionSuspectedCount ?? 0,
-    as_of: new Date(options.now).toISOString(),
+    as_of: options.asOf ?? new Date(options.now ?? Date.now()).toISOString(),
     prices_assertable: items.some((item) => item.price_assertable),
   };
 }
