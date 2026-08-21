@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
+import { EMBEDDING_EPOCH } from '@/lib/embeddings/gemini';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
@@ -41,8 +42,13 @@ async function addDocumentWithChunk(input: {
     RETURNING id
   `;
   await db!`
-    INSERT INTO knowledge_chunks (document_id, chunk_index, content, token_count, embedding)
-    VALUES (${docs[0].id}::uuid, 0, ${input.content}, 10, ${input.embedding}::extensions.vector)
+    INSERT INTO knowledge_chunks (
+      document_id, chunk_index, content, token_count, embedding, embedding_epoch
+    )
+    VALUES (
+      ${docs[0].id}::uuid, 0, ${input.content}, 10,
+      ${input.embedding}::extensions.vector, ${EMBEDDING_EPOCH}
+    )
   `;
   return uri;
 }
@@ -53,6 +59,7 @@ async function searchWorkspace(workspaceId: string | null, queryEmbedding: strin
     FROM search_knowledge_base(
       ${workspaceId}::uuid,
       ${queryEmbedding}::extensions.vector,
+      ${EMBEDDING_EPOCH},
       5,
       0.0
     )

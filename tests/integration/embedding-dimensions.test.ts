@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
-import { EMBEDDING_DIMENSIONS } from '@/lib/embeddings/gemini';
+import { EMBEDDING_DIMENSIONS, EMBEDDING_EPOCH } from '@/lib/embeddings/gemini';
 
 /**
  * Every pgvector column and every vector-taking function has to agree with the
@@ -23,7 +23,7 @@ function unitVector(dimensions: number): string {
 }
 
 run('pgvector dimensions match the embedding provider', () => {
-  it('declares every vector column at the provider dimension', async () => {
+  it('declares every active materialization vector at the provider dimension', async () => {
     const columns = await db!<Array<{ relation: string; column_name: string; type: string }>>`
       SELECT
         a.attrelid::regclass::text AS relation,
@@ -34,6 +34,7 @@ run('pgvector dimensions match the embedding provider', () => {
       JOIN pg_namespace AS n ON n.oid = c.relnamespace
       WHERE n.nspname = 'public'
         AND c.relkind = 'r'
+        AND c.relname IN ('message_embeddings', 'selected_memories', 'knowledge_chunks')
         AND format_type(a.atttypid, a.atttypmod) LIKE 'vector(%'
       ORDER BY relation, column_name
     `;
@@ -53,13 +54,16 @@ run('pgvector dimensions match the embedding provider', () => {
     `;
 
     await expect(db!`
-      INSERT INTO knowledge_chunks (document_id, chunk_index, content, token_count, embedding)
+      INSERT INTO knowledge_chunks (
+        document_id, chunk_index, content, token_count, embedding, embedding_epoch
+      )
       VALUES (
         ${documents[0].id}::uuid,
         0,
         'El curso de ventas dura ocho semanas.',
         9,
-        ${unitVector(EMBEDDING_DIMENSIONS)}::extensions.vector
+        ${unitVector(EMBEDDING_DIMENSIONS)}::extensions.vector,
+        ${EMBEDDING_EPOCH}
       )
     `).resolves.toBeDefined();
   });
@@ -72,6 +76,7 @@ run('pgvector dimensions match the embedding provider', () => {
       FROM search_knowledge_base(
         ${randomUUID()}::uuid,
         ${unitVector(EMBEDDING_DIMENSIONS)}::extensions.vector,
+        ${EMBEDDING_EPOCH},
         5,
         0.5
       )
@@ -85,6 +90,7 @@ run('pgvector dimensions match the embedding provider', () => {
       FROM search_contact_memory(
         ${randomUUID()}::uuid,
         ${unitVector(EMBEDDING_DIMENSIONS)}::extensions.vector,
+        ${EMBEDDING_EPOCH},
         5
       )
     `;

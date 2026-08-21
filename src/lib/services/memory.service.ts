@@ -1,7 +1,7 @@
 import { sql } from '@/lib/db/orchestrator';
 import { logger } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
-import { generateQueryEmbedding } from '@/lib/embeddings/gemini';
+import { EMBEDDING_EPOCH, generateQueryEmbedding } from '@/lib/embeddings/gemini';
 import { Message } from './message.service';
 
 // ─── US3: Recent memory ──────────────────────────────────────────────────────
@@ -56,6 +56,7 @@ export async function semanticSearch(params: {
     SELECT * FROM search_contact_memory(
       ${contact_id}::uuid,
       ${JSON.stringify(embedding)}::extensions.vector,
+      ${EMBEDDING_EPOCH},
       ${Math.min(limit, 20)}
     )
   `;

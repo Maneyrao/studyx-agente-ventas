@@ -7,7 +7,7 @@ import { PostgresMemoryStore } from '@/features/orchestration/adapters/postgres-
 import { PostgresMemoryRetriever } from '@/features/orchestration/adapters/postgres-retrievers';
 import { selectMemories } from '@/features/orchestration/application/select-memories';
 import { memoryDedupeHash } from '@/features/orchestration/domain/memory-selection';
-import { EMBEDDING_DIMENSIONS } from '@/lib/embeddings/gemini';
+import { EMBEDDING_DIMENSIONS, EMBEDDING_EPOCH } from '@/lib/embeddings/gemini';
 import { sql } from '@/lib/db/orchestrator';
 
 /**
@@ -143,7 +143,8 @@ run('selected_memories — structural isolation', () => {
     await expect(
       sql`
         UPDATE selected_memories
-        SET embedding = ${vector(0)}::extensions.vector, embedding_state = 'ready'
+        SET embedding = ${vector(0)}::extensions.vector,
+            embedding_epoch = ${EMBEDDING_EPOCH}, embedding_state = 'ready'
         WHERE id = ${id}::uuid
       `
     ).rejects.toMatchObject({ code: '23514' });
@@ -295,7 +296,8 @@ run('selected_memories — lifecycle', () => {
 
     await sql`
       UPDATE selected_memories
-      SET embedding = ${vector(0)}::extensions.vector, embedding_state = 'ready'
+      SET embedding = ${vector(0)}::extensions.vector,
+          embedding_epoch = ${EMBEDDING_EPOCH}, embedding_state = 'ready'
       WHERE id = ${first.accepted[0].memory_id}::uuid
     `;
 
@@ -373,6 +375,7 @@ run('selected_memories — lifecycle', () => {
     await sql`
       UPDATE selected_memories
       SET embedding = ${vector(0)}::extensions.vector,
+          embedding_epoch = ${EMBEDDING_EPOCH},
           embedding_state = 'ready',
           valid_from = now() - interval '2 days',
           valid_until = now() - interval '1 minute'
@@ -430,7 +433,8 @@ run('selected_memories — retrieval', () => {
         });
         await sql`
           UPDATE selected_memories
-          SET embedding = ${vector(0)}::extensions.vector, embedding_state = 'ready'
+          SET embedding = ${vector(0)}::extensions.vector,
+              embedding_epoch = ${EMBEDDING_EPOCH}, embedding_state = 'ready'
           WHERE id = ${stored.memory_id}::uuid
         `;
       }

@@ -1,5 +1,5 @@
 import { sql } from '@/lib/db/orchestrator';
-import { generateQueryEmbedding } from '@/lib/embeddings/gemini';
+import { EMBEDDING_EPOCH, generateQueryEmbedding } from '@/lib/embeddings/gemini';
 import { loadBusinessWorkspaceConfig } from '@/lib/config';
 import type { DbClient } from '@/lib/db/types';
 import type {
@@ -57,6 +57,7 @@ export class PostgresMemoryRetriever implements MemoryRetriever {
       FROM search_selected_memories(
         ${input.contact_id}::uuid,
         ${toVectorLiteral(embedding)}::extensions.vector,
+        ${EMBEDDING_EPOCH},
         ${Math.min(Math.max(input.limit, 1), 20)},
         ${input.min_similarity}
       )
@@ -129,6 +130,7 @@ export class PostgresKnowledgeRetriever implements KnowledgeRetriever {
       FROM search_knowledge_base(
         ${workspaceId}::uuid,
         ${toVectorLiteral(embedding)}::extensions.vector,
+        ${EMBEDDING_EPOCH},
         ${Math.min(Math.max(input.limit, 1), 20)},
         ${input.min_similarity}
       )

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
 import { openIndependentLocalTestDatabases, openLocalTestDatabase } from '../helpers/db';
-import { EMBEDDING_DIMENSIONS } from '@/lib/embeddings/gemini';
+import { EMBEDDING_DIMENSIONS, EMBEDDING_EPOCH } from '@/lib/embeddings/gemini';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
@@ -81,11 +81,12 @@ run('database invariants under replay and bad integration writes', () => {
       RETURNING id
     `;
     await expect(db!`
-      INSERT INTO message_embeddings (message_id, contact_id, embedding, status)
+      INSERT INTO message_embeddings (message_id, contact_id, embedding, embedding_epoch, status)
       VALUES (
         ${messages[0].id}::uuid,
         ${contacts[1].id}::uuid,
         (ARRAY[1] || array_fill(0, ARRAY[${EMBEDDING_DIMENSIONS - 1}::int]))::extensions.vector,
+        ${EMBEDDING_EPOCH},
         'indexed'
       )
     `).rejects.toMatchObject({ code: '23503' });

@@ -21,18 +21,12 @@ export async function GET(request: NextRequest) {
   }
 
   const workerId = `knowledge-projection-cron:${randomUUID()}`;
-  const totals = { claimed: 0, completed: 0, failed: 0, skipped: 0 };
-
-  // Drain until the queue has no claimable jobs, with a hard round bound so a
-  // pathological queue can never pin the cron invocation.
-  for (let round = 0; round < 20; round++) {
-    const result = await runKnowledgeProjectionWorker({ worker_id: workerId, limit: 20 });
-    totals.claimed += result.claimed;
-    totals.completed += result.completed;
-    totals.failed += result.failed;
-    totals.skipped += result.skipped;
-    if (result.claimed === 0) break;
-  }
+  const totals = await runKnowledgeProjectionWorker({
+    worker_id: workerId,
+    limit: 2,
+    lease_seconds: 45,
+    deadline_ms: 45_000,
+  });
 
   logger.info({ event: 'cron.project_knowledge', worker_id: workerId, ...totals });
   return NextResponse.json(totals, { status: 200 });

@@ -8,10 +8,10 @@ import {
 async function main() {
   requireGeminiApiKey();
   process.env.DATABASE_URL = resolveLocalQueueDatabaseUrl();
-  const { runKnowledgeProjectionWorker } = await import('../src/lib/services/knowledge-projection.service');
-  const workerId = `knowledge-projection-cli:${randomUUID()}`;
+  const { runMessageEmbeddingWorker } = await import('../src/lib/services/message-embedding-worker.service');
+  const workerId = `message-embedding-cli:${randomUUID()}`;
   const totals = await drainDurableQueue(
-    (id) => runKnowledgeProjectionWorker({ worker_id: id, limit: 2, deadline_ms: 45_000 }),
+    (id) => runMessageEmbeddingWorker({ worker_id: id, limit: 2, deadline_ms: 45_000 }),
     workerId,
   );
   console.log(JSON.stringify(totals));

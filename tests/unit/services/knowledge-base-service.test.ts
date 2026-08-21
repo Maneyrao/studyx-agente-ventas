@@ -16,6 +16,7 @@ vi.mock('@/lib/db/orchestrator', () => ({ sql: sqlMock }));
 
 const embedCalls: string[] = [];
 vi.mock('@/lib/embeddings/gemini', () => ({
+  EMBEDDING_EPOCH: 'gemini-embedding-2:768:retrieval-v1',
   generateQueryEmbedding: vi.fn(async (text: string) => {
     embedCalls.push(`query:${text}`);
     return Array.from({ length: 768 }, () => 0.001);
@@ -74,14 +75,15 @@ describe('searchKnowledgeBase', () => {
     const call = sqlCalls[0];
     // params: [workspace_id, embedding_json, limit, min_similarity]
     expect(call.params[0]).toBe(WORKSPACE_ID);
+    expect(call.params[2]).toBe('gemini-embedding-2:768:retrieval-v1');
   });
 
   it('caps limit at 20 (defense against caller mistakes)', async () => {
     nextSqlResult = [];
     await searchKnowledgeBase({ workspace_id: WORKSPACE_ID, query: 'test', limit: 999, min_similarity: 0 });
     const call = sqlCalls[0];
-    // params: [workspace_id, embedding_json, limit, min_similarity]
-    expect(call.params[2]).toBe(20);
+    // params: [workspace_id, embedding_json, embedding_epoch, limit, min_similarity]
+    expect(call.params[3]).toBe(20);
   });
 
   it('returns rows verbatim from the SQL function', async () => {

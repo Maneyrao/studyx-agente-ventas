@@ -1,7 +1,11 @@
 import { sql } from '@/lib/db/orchestrator';
 import { logger } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
-import { generateDocumentEmbedding, generateQueryEmbedding } from '@/lib/embeddings/gemini';
+import {
+  EMBEDDING_EPOCH,
+  generateDocumentEmbedding,
+  generateQueryEmbedding,
+} from '@/lib/embeddings/gemini';
 
 export interface KnowledgeResult {
   chunk_id: string;
@@ -55,6 +59,7 @@ export async function searchKnowledgeBase(params: {
     SELECT * FROM search_knowledge_base(
       ${workspace_id}::uuid,
       ${JSON.stringify(embedding)}::extensions.vector,
+      ${EMBEDDING_EPOCH},
       ${Math.min(limit, 20)},
       ${min_similarity}
     )
@@ -123,13 +128,16 @@ export async function ingestDocument(input: {
       kind: source_type,
     });
     await sql`
-      INSERT INTO knowledge_chunks (document_id, chunk_index, content, token_count, embedding)
+      INSERT INTO knowledge_chunks (
+        document_id, chunk_index, content, token_count, embedding, embedding_epoch
+      )
       VALUES (
         ${document_id}::uuid,
         ${i},
         ${c.content},
         ${c.token_count},
-        ${JSON.stringify(embedding)}::extensions.vector
+        ${JSON.stringify(embedding)}::extensions.vector,
+        ${EMBEDDING_EPOCH}
       )
     `;
     chunks_written++;

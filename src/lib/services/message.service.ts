@@ -3,7 +3,7 @@ import { sql } from '@/lib/db/orchestrator';
 import { auditLog } from '@/lib/audit/logger';
 import { logger } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
-import { generateDocumentEmbedding } from '@/lib/embeddings/gemini';
+import { EMBEDDING_EPOCH, generateDocumentEmbedding } from '@/lib/embeddings/gemini';
 import { jsonbParam } from '@/lib/db/json';
 import { updateLastTurn, getConversation, ConversationNotFoundError } from './conversation.service';
 import type { DbClient } from '@/lib/db/types';
@@ -100,8 +100,11 @@ export async function registerMessage(
   } else if (embedding === 'sync') try {
     const embedding = await generateDocumentEmbedding({ title: 'message', text: content, kind: 'message' });
     await db`
-      INSERT INTO message_embeddings (message_id, contact_id, embedding, status)
-      VALUES (${message.id}, ${message.contact_id}, ${JSON.stringify(embedding)}::extensions.vector, 'indexed')
+      INSERT INTO message_embeddings (message_id, contact_id, embedding, embedding_epoch, status)
+      VALUES (
+        ${message.id}, ${message.contact_id}, ${JSON.stringify(embedding)}::extensions.vector,
+        ${EMBEDDING_EPOCH}, 'indexed'
+      )
     `;
     embedding_status = 'indexed';
   } catch (embeddingError) {

@@ -5,6 +5,7 @@ import {
   runKnowledgeProjectionWorker,
   type ProjectionWorkerResult,
 } from '@/lib/services/knowledge-projection.service';
+import { EMBEDDING_EPOCH } from '@/lib/embeddings/gemini';
 import { openLocalTestDatabase } from '../helpers/db';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
@@ -72,8 +73,8 @@ async function docsFor(uri: string) {
 }
 
 async function chunksFor(uri: string) {
-  return db!<Array<{ content: string; version: number }>>`
-    SELECT c.content, d.version FROM knowledge_chunks c
+  return db!<Array<{ content: string; version: number; embedding_epoch: string | null }>>`
+    SELECT c.content, d.version, c.embedding_epoch FROM knowledge_chunks c
     JOIN knowledge_documents d ON d.id = c.document_id
     WHERE d.uri = ${uri} ORDER BY d.version, c.chunk_index
   `;
@@ -123,7 +124,11 @@ run('knowledge projection jobs', () => {
     expect(docs[0].archived_at).toBeNull();
 
     const chunks = await chunksFor(uri);
-    expect(chunks).toEqual([{ content: 'Martes y jueves 21hs.', version: 1 }]);
+    expect(chunks).toEqual([{
+      content: 'Martes y jueves 21hs.',
+      version: 1,
+      embedding_epoch: EMBEDDING_EPOCH,
+    }]);
 
     const jobs = await jobsFor(sourceId);
     expect(jobs[0].status).toBe('completed');
@@ -170,7 +175,11 @@ run('knowledge projection jobs', () => {
 
     await runKnowledgeProjectionWorker({ worker_id: 'w1' }, { sql: db!, embed: fakeEmbed });
     const chunks = await chunksFor(knowledgeSourceUri(workspaceId, sourceId));
-    expect(chunks).toEqual([{ content: 'Respuesta corregida.', version: 1 }]);
+    expect(chunks).toEqual([{
+      content: 'Respuesta corregida.',
+      version: 1,
+      embedding_epoch: EMBEDDING_EPOCH,
+    }]);
   });
 
   it('replaying the worker 10 times never duplicates documents or chunks', async () => {
@@ -286,7 +295,11 @@ run('knowledge projection jobs', () => {
     await runKnowledgeProjectionWorker({ worker_id: 'repair' }, { sql: db!, embed: fakeEmbed });
 
     expect(await docsFor(uri)).toHaveLength(1);
-    expect(await chunksFor(uri)).toEqual([{ content: 'Contenido reparado.', version: 1 }]);
+    expect(await chunksFor(uri)).toEqual([{
+      content: 'Contenido reparado.',
+      version: 1,
+      embedding_epoch: EMBEDDING_EPOCH,
+    }]);
     const jobs = await jobsFor(sourceId);
     expect(jobs[0].status).toBe('completed');
   });

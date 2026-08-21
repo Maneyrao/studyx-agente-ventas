@@ -8,6 +8,7 @@ import {
 } from '@/features/observability/adapters/probes';
 import { evaluateReadiness } from '@/features/observability/domain/readiness';
 import { sql } from '@/lib/db/orchestrator';
+import { EMBEDDING_EPOCH } from '@/lib/embeddings/gemini';
 
 /**
  * Fase 8 against a real database.
@@ -40,7 +41,33 @@ run('probes against a live database', () => {
   it('reads the derived backlog without failing when it is empty', async () => {
     const probe = await probeDerivedBacklog(sql);
     expect(probe.required).toBe(false);
-    expect(probe.detail).toContain('pending_memory_embeddings');
+    const detail = JSON.parse(probe.detail ?? '{}');
+    expect(detail).toMatchObject({ embedding_epoch: EMBEDDING_EPOCH });
+    expect(detail.message_queue).toEqual(expect.objectContaining({
+      claimable: expect.any(Number),
+      leased: expect.any(Number),
+      dead_letter: expect.any(Number),
+    }));
+    expect(detail.message_queue).toHaveProperty('oldest_age_seconds');
+    expect(detail.message_queue).toHaveProperty('last_error');
+    expect(detail.selected_memory_queue).toEqual(expect.objectContaining({
+      claimable: expect.any(Number),
+      leased: expect.any(Number),
+      dead_letter: expect.any(Number),
+    }));
+    expect(detail.knowledge_queue).toEqual(expect.objectContaining({
+      claimable: expect.any(Number),
+      leased: expect.any(Number),
+      dead_letter: expect.any(Number),
+    }));
+    expect(detail.epoch_coverage).toEqual(expect.objectContaining({
+      messages_current: expect.any(Number),
+      messages_legacy: expect.any(Number),
+      selected_current: expect.any(Number),
+      selected_legacy: expect.any(Number),
+      knowledge_current: expect.any(Number),
+      knowledge_legacy: expect.any(Number),
+    }));
   });
 
   it('keeps the process ready when only degradable dependencies are down', async () => {

@@ -6,6 +6,7 @@ vi.mock('@/lib/db/orchestrator', () => ({
   sql: Object.assign(() => Promise.resolve([]), { end: async () => {} }),
 }));
 vi.mock('@/lib/embeddings/gemini', () => ({
+  EMBEDDING_EPOCH: 'gemini-embedding-2:768:retrieval-v1',
   generateQueryEmbedding: async () => Array.from({ length: 768 }, () => 0.001),
 }));
 
@@ -34,6 +35,7 @@ describe('PostgresKnowledgeRetriever workspace scoping', () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0].params[0]).toBe(WORKSPACE_ID);
+    expect(calls[0].params[2]).toBe('gemini-embedding-2:768:retrieval-v1');
   });
 
   it('fails closed when the workspace cannot be resolved: throws without querying', async () => {
