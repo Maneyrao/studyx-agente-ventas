@@ -20,16 +20,16 @@ ALTER TABLE knowledge_chunks
 
 ALTER TABLE selected_memories
   DROP CONSTRAINT IF EXISTS selected_memories_embedding_state_check,
+  DROP CONSTRAINT IF EXISTS selected_memories_embedding_attempt_bounds_check,
   DROP CONSTRAINT IF EXISTS selected_memories_embedding_scope_check,
-  DROP CONSTRAINT IF EXISTS selected_memories_embedding_state_scope_check;
+  DROP CONSTRAINT IF EXISTS selected_memories_embedding_state_scope_check,
+  DROP CONSTRAINT IF EXISTS selected_memories_lease_shape_check;
 
 ALTER TABLE selected_memories
   ADD CONSTRAINT selected_memories_embedding_state_check
     CHECK (embedding_state IN (
       'skip', 'pending', 'leased', 'ready', 'failed', 'failed_retryable', 'dead_letter'
     )),
-  ADD CONSTRAINT selected_memories_embedding_attempt_bounds_check
-    CHECK (embedding_attempts <= embedding_max_attempts AND embedding_max_attempts BETWEEN 1 AND 20),
   ADD CONSTRAINT selected_memories_embedding_scope_check
     CHECK (
       (embedding IS NULL AND embedding_state IN (
@@ -44,17 +44,50 @@ ALTER TABLE selected_memories
     CHECK (
       (embedding_state = 'leased' AND lease_until IS NOT NULL AND leased_by IS NOT NULL)
       OR (embedding_state <> 'leased' AND lease_until IS NULL AND leased_by IS NULL)
-    ),
-  ADD CONSTRAINT selected_memories_ready_epoch_check
-    CHECK (embedding_state <> 'ready' OR embedding_epoch IS NOT NULL) NOT VALID;
+    );
 
-ALTER TABLE message_embeddings
-  ADD CONSTRAINT message_embeddings_indexed_epoch_check
-    CHECK (status <> 'indexed' OR embedding_epoch IS NOT NULL) NOT VALID;
+-- Preserve the historical attempt counter. Rows which already exhausted the
+-- new default are terminalized during expand instead of becoming permanently
+-- unclaimable; max_attempts is raised for counters above five before the check
+-- is installed.
+UPDATE selected_memories
+SET embedding_max_attempts = GREATEST(embedding_max_attempts, embedding_attempts);
 
-ALTER TABLE knowledge_chunks
-  ADD CONSTRAINT knowledge_chunks_epoch_check
-    CHECK (embedding_epoch IS NOT NULL) NOT VALID;
+UPDATE selected_memories
+SET embedding_state = 'dead_letter',
+    embedding_last_error = COALESCE(embedding_last_error, 'MAX_ATTEMPTS_EXHAUSTED'),
+    embedding_updated_at = now(),
+    lease_until = NULL,
+    leased_by = NULL
+WHERE embedding_state IN ('pending', 'failed_retryable')
+  AND embedding_attempts >= embedding_max_attempts;
+
+ALTER TABLE selected_memories
+  ADD CONSTRAINT selected_memories_embedding_attempt_bounds_check
+    CHECK (embedding_max_attempts >= 1 AND embedding_attempts <= embedding_max_attempts);
+
+-- Epoch enforcement is transition-based, not a NOT VALID CHECK. PostgreSQL
+-- re-evaluates NOT VALID checks on every UPDATE, which would make an unrelated
+-- metadata update fail for a preserved legacy vector. These triggers require
+-- the active epoch only when a vector is newly materialized or changed.
+CREATE OR REPLACE FUNCTION public.enforce_message_embedding_epoch()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
+BEGIN
+  IF NEW.status = 'indexed'
+     AND NEW.embedding_epoch IS DISTINCT FROM 'gemini-embedding-2:768:retrieval-v1' THEN
+    RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'Indexed embedding requires the active epoch';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+DROP TRIGGER IF EXISTS message_embeddings_enforce_epoch ON message_embeddings;
+CREATE TRIGGER message_embeddings_enforce_epoch
+BEFORE INSERT OR UPDATE OF status, embedding, embedding_epoch ON message_embeddings
+FOR EACH ROW EXECUTE FUNCTION public.enforce_message_embedding_epoch();
 
 CREATE OR REPLACE FUNCTION public.normalize_selected_memory_embedding_lease()
 RETURNS trigger
@@ -69,13 +102,36 @@ BEGIN
   IF NEW.embedding IS NULL THEN
     NEW.embedding_epoch := NULL;
   END IF;
+  IF NEW.embedding_state = 'ready'
+     AND NEW.embedding_epoch IS DISTINCT FROM 'gemini-embedding-2:768:retrieval-v1' THEN
+    RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'Ready selected memory requires the active epoch';
+  END IF;
   RETURN NEW;
 END
 $$;
 
+DROP TRIGGER IF EXISTS selected_memories_normalize_embedding_lease ON selected_memories;
 CREATE TRIGGER selected_memories_normalize_embedding_lease
-BEFORE INSERT OR UPDATE OF embedding, embedding_state ON selected_memories
+BEFORE INSERT OR UPDATE OF embedding, embedding_state, embedding_epoch ON selected_memories
 FOR EACH ROW EXECUTE FUNCTION public.normalize_selected_memory_embedding_lease();
+
+CREATE OR REPLACE FUNCTION public.enforce_knowledge_chunk_epoch()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
+BEGIN
+  IF NEW.embedding_epoch IS DISTINCT FROM 'gemini-embedding-2:768:retrieval-v1' THEN
+    RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'Knowledge chunk requires the active epoch';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+DROP TRIGGER IF EXISTS knowledge_chunks_enforce_epoch ON knowledge_chunks;
+CREATE TRIGGER knowledge_chunks_enforce_epoch
+BEFORE INSERT OR UPDATE OF embedding, embedding_epoch ON knowledge_chunks
+FOR EACH ROW EXECUTE FUNCTION public.enforce_knowledge_chunk_epoch();
 
 DROP INDEX IF EXISTS selected_memories_embedding_pending_idx;
 CREATE INDEX selected_memories_embedding_claim_idx
@@ -87,17 +143,29 @@ CREATE INDEX knowledge_projection_jobs_claim_idx
   ON knowledge_projection_jobs (available_at, lease_until, created_at, id)
   WHERE status IN ('pending', 'leased', 'failed_retryable');
 
-CREATE INDEX message_embeddings_epoch_contact_idx
-  ON message_embeddings (embedding_epoch, contact_id)
-  WHERE status = 'indexed' AND embedding_epoch IS NOT NULL;
+DROP INDEX IF EXISTS message_embeddings_hnsw_idx;
+DROP INDEX IF EXISTS message_embeddings_current_epoch_hnsw_idx;
+CREATE INDEX message_embeddings_current_epoch_hnsw_idx
+  ON message_embeddings
+  USING hnsw (embedding extensions.vector_cosine_ops)
+  WHERE status = 'indexed'
+    AND embedding_epoch = 'gemini-embedding-2:768:retrieval-v1';
 
-CREATE INDEX selected_memories_epoch_contact_idx
-  ON selected_memories (embedding_epoch, contact_id)
-  WHERE embedding_state = 'ready' AND embedding_epoch IS NOT NULL;
+DROP INDEX IF EXISTS selected_memories_embedding_hnsw_idx;
+DROP INDEX IF EXISTS selected_memories_current_epoch_hnsw_idx;
+CREATE INDEX selected_memories_current_epoch_hnsw_idx
+  ON selected_memories
+  USING hnsw (embedding extensions.vector_cosine_ops)
+  WHERE status = 'active'
+    AND embedding_state = 'ready'
+    AND embedding_epoch = 'gemini-embedding-2:768:retrieval-v1';
 
-CREATE INDEX knowledge_chunks_epoch_idx
-  ON knowledge_chunks (embedding_epoch)
-  WHERE embedding_epoch IS NOT NULL;
+DROP INDEX IF EXISTS knowledge_chunks_embedding_hnsw_idx;
+DROP INDEX IF EXISTS knowledge_chunks_current_epoch_hnsw_idx;
+CREATE INDEX knowledge_chunks_current_epoch_hnsw_idx
+  ON knowledge_chunks
+  USING hnsw (embedding extensions.vector_cosine_ops)
+  WHERE embedding_epoch = 'gemini-embedding-2:768:retrieval-v1';
 
 -- A legacy direct indexed write may complete a pending job.  A leased job,
 -- however, belongs exclusively to its worker and can only be completed by an
@@ -150,16 +218,26 @@ VOLATILE
 SECURITY INVOKER
 SET search_path = pg_catalog, public
 AS $$
-  WITH exhausted AS (
+  WITH exhausted_candidates AS (
+    SELECT sm.id
+    FROM public.selected_memories AS sm
+    WHERE sm.embedding_attempts >= sm.embedding_max_attempts
+      AND (
+        sm.embedding_state IN ('pending', 'failed_retryable')
+        OR (sm.embedding_state = 'leased' AND sm.lease_until <= now())
+      )
+    ORDER BY sm.embedding_updated_at NULLS FIRST, sm.created_at, sm.id
+    FOR UPDATE SKIP LOCKED
+    LIMIT 100
+  ), exhausted AS (
     UPDATE public.selected_memories AS stale
     SET embedding_state = 'dead_letter',
         lease_until = NULL,
         leased_by = NULL,
         embedding_last_error = COALESCE(stale.embedding_last_error, 'MAX_ATTEMPTS_EXHAUSTED'),
         embedding_updated_at = now()
-    WHERE stale.embedding_state = 'leased'
-      AND stale.lease_until <= now()
-      AND stale.embedding_attempts >= stale.embedding_max_attempts
+    FROM exhausted_candidates AS ec
+    WHERE stale.id = ec.id
     RETURNING stale.id
   ), candidates AS (
     SELECT sm.id
@@ -209,6 +287,7 @@ AS $$
   JOIN messages m ON m.id = me.message_id
   WHERE me.contact_id = p_contact_id
     AND me.status = 'indexed'
+    AND me.embedding_epoch = 'gemini-embedding-2:768:retrieval-v1'
     AND me.embedding_epoch = p_embedding_epoch
   ORDER BY me.embedding <=> p_query_embedding
   LIMIT greatest(1, least(p_limit, 20));
@@ -235,6 +314,7 @@ AS $$
   WHERE sm.contact_id = p_contact_id
     AND sm.status = 'active'
     AND sm.embedding_state = 'ready'
+    AND sm.embedding_epoch = 'gemini-embedding-2:768:retrieval-v1'
     AND sm.embedding_epoch = p_embedding_epoch
     AND (sm.valid_until IS NULL OR sm.valid_until > now())
     AND 1 - (sm.embedding <=> p_query_embedding) >= p_min_similarity
@@ -262,6 +342,7 @@ AS $$
   JOIN knowledge_documents kd ON kd.id = kc.document_id
   WHERE kd.workspace_id = p_workspace_id
     AND kd.archived_at IS NULL
+    AND kc.embedding_epoch = 'gemini-embedding-2:768:retrieval-v1'
     AND kc.embedding_epoch = p_embedding_epoch
     AND (p_min_similarity IS NULL OR 1 - (kc.embedding <=> p_query_embedding) >= p_min_similarity)
   ORDER BY kc.embedding <=> p_query_embedding
@@ -276,6 +357,37 @@ GRANT EXECUTE ON FUNCTION public.search_knowledge_base(uuid, extensions.vector, 
 REVOKE EXECUTE ON FUNCTION public.search_contact_memory(uuid, extensions.vector, text, int) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.search_selected_memories(uuid, extensions.vector, text, int, double precision) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.search_knowledge_base(uuid, extensions.vector, text, int, float) FROM PUBLIC;
+
+-- The phase6 tables are created after the historical broad grants in a clean
+-- migration replay, so grant their runtime owner explicitly and restore RLS.
+ALTER TABLE knowledge_documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE knowledge_chunks ENABLE ROW LEVEL SECURITY;
+
+GRANT SELECT ON knowledge_sources TO orchestrator_role;
+GRANT SELECT, INSERT, UPDATE ON knowledge_documents, knowledge_chunks TO orchestrator_role;
+REVOKE DELETE, TRUNCATE ON knowledge_documents, knowledge_chunks FROM orchestrator_role;
+REVOKE ALL ON knowledge_documents, knowledge_chunks FROM anon, authenticated;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'knowledge_documents'
+      AND policyname = 'orchestrator_access'
+  ) THEN
+    CREATE POLICY orchestrator_access ON knowledge_documents
+      FOR ALL TO orchestrator_role USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'knowledge_chunks'
+      AND policyname = 'orchestrator_access'
+  ) THEN
+    CREATE POLICY orchestrator_access ON knowledge_chunks
+      FOR ALL TO orchestrator_role USING (true) WITH CHECK (true);
+  END IF;
+END
+$$;
 
 COMMENT ON COLUMN message_embeddings.embedding_epoch IS 'Vector-space epoch; NULL is legacy and excluded from epoch-aware search.';
 COMMENT ON COLUMN selected_memories.embedding_epoch IS 'Vector-space epoch; NULL is legacy and excluded from epoch-aware search.';

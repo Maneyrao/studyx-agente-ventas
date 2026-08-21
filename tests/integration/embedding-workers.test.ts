@@ -197,4 +197,50 @@ run('epoch-aware durable embedding workers', () => {
     `;
     expect(rows[0]).toEqual({ embedding_state: 'leased', leased_by: 'new-owner', embedding: null });
   });
+
+  it('aborts an in-flight provider at the hard wall and does not continue to completion SQL', async () => {
+    const fixture = await sourceFixture('Necesito una respuesta rápida.');
+    const memories = await db!<Array<{ id: string }>>`
+      INSERT INTO selected_memories (
+        contact_id, conversation_id, source_message_id, status, memory_type,
+        memory_key, value_normalized, source_quote, confidence, dedupe_hash, embedding_state
+      ) VALUES (
+        ${fixture.contactId}::uuid, ${fixture.conversationId}::uuid, ${fixture.messageId}::uuid,
+        'active', 'constraint', ${`deadline_${randomUUID().replaceAll('-', '')}`},
+        'Necesito una respuesta rápida.', 'Necesito una respuesta rápida.', 1,
+        ${randomUUID().replaceAll('-', '').padEnd(64, '4')}, 'pending'
+      ) RETURNING id
+    `;
+    let providerCalled = false;
+    let providerAborted = false;
+    const slowEmbed = async (
+      _input: { title: string; text: string; kind: string },
+      options?: { signal?: AbortSignal },
+    ): Promise<number[]> => {
+      providerCalled = true;
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => resolve(embedding), 2_000);
+        options?.signal?.addEventListener('abort', () => {
+          providerAborted = true;
+          clearTimeout(timer);
+          reject(new Error('ABORTED_BY_WORKER_DEADLINE'));
+        }, { once: true });
+      });
+    };
+
+    const startedAt = Date.now();
+    const result = await runSelectedMemoryEmbeddingWorker(
+      { worker_id: 'hard-wall', limit: 1, deadline_ms: 100 },
+      { sql: db!, embed: slowEmbed },
+    );
+
+    expect(providerCalled).toBe(true);
+    expect(providerAborted).toBe(true);
+    expect(Date.now() - startedAt).toBeLessThan(500);
+    expect(result).toMatchObject({ completed: 0, deadline_reached: true });
+    const rows = await db!<Array<{ embedding: string | null }>>`
+      SELECT embedding::text AS embedding FROM selected_memories WHERE id = ${memories[0].id}::uuid
+    `;
+    expect(rows[0].embedding).toBeNull();
+  });
 });

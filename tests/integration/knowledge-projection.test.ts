@@ -218,6 +218,62 @@ run('knowledge projection jobs', () => {
     expect(jobs[0].status).toBe('completed');
   });
 
+  it('does not publish a source archived while Gemini is in flight', async () => {
+    const workspaceId = await workspaceFixture();
+    const sourceId = await addSource(workspaceId, 'Carrera archive', 'No debe publicarse.');
+    let releaseEmbedding!: () => void;
+    let embeddingStarted!: () => void;
+    const started = new Promise<void>((resolve) => { embeddingStarted = resolve; });
+    const release = new Promise<void>((resolve) => { releaseEmbedding = resolve; });
+    const inFlight = runKnowledgeProjectionWorker(
+      { worker_id: 'archive-race', limit: 1 },
+      {
+        sql: db!,
+        embed: async () => {
+          embeddingStarted();
+          await release;
+          return fakeEmbed();
+        },
+      },
+    );
+    await started;
+    await db!`UPDATE knowledge_sources SET status = 'archived' WHERE id = ${sourceId}::uuid`;
+    releaseEmbedding();
+
+    const result = await inFlight;
+    expect(result).toMatchObject({ completed: 0, skipped: 1 });
+    expect(await docsFor(knowledgeSourceUri(workspaceId, sourceId))).toHaveLength(0);
+    expect(await chunksFor(knowledgeSourceUri(workspaceId, sourceId))).toHaveLength(0);
+    expect((await jobsFor(sourceId))[0].status).toBe('skipped');
+  });
+
+  it('projects and searches successfully under the real orchestrator role', async () => {
+    const workspaceId = await workspaceFixture();
+    await addSource(workspaceId, 'Rol mínimo', 'Visible con privilegios mínimos.');
+    const roleDb = openLocalTestDatabase();
+    try {
+      await roleDb`SET ROLE orchestrator_role`;
+      const result = await runKnowledgeProjectionWorker(
+        { worker_id: 'role-worker', limit: 1 },
+        { sql: roleDb, embed: fakeEmbed },
+      );
+      expect(result).toMatchObject({ claimed: 1, completed: 1, failed: 0 });
+      const rows = await roleDb<Array<{ content: string }>>`
+        SELECT content FROM search_knowledge_base(
+          ${workspaceId}::uuid,
+          ${JSON.stringify(await fakeEmbed())}::extensions.vector,
+          ${EMBEDDING_EPOCH},
+          5,
+          0.5
+        )
+      `;
+      expect(rows.map((row) => row.content)).toContain('Visible con privilegios mínimos.');
+      await expect(roleDb`DELETE FROM knowledge_chunks`).rejects.toMatchObject({ code: '42501' });
+    } finally {
+      await roleDb.end();
+    }
+  });
+
   it('projects each workspace only from its own sources', async () => {
     const workspaceA = await workspaceFixture();
     const workspaceB = await workspaceFixture();

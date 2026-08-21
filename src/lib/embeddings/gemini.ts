@@ -31,19 +31,30 @@ export function isTerminalEmbeddingConfigurationError(error: unknown): boolean {
     && error.classification === 'terminal_configuration';
 }
 
-export function generateQueryEmbedding(text: string): Promise<number[]> {
-  return requestEmbedding(`task: search result | query: ${text}`);
+export interface EmbeddingRequestOptions {
+  signal?: AbortSignal;
+  timeout_ms?: number;
+}
+
+export function generateQueryEmbedding(
+  text: string,
+  options: EmbeddingRequestOptions = {},
+): Promise<number[]> {
+  return requestEmbedding(`task: search result | query: ${text}`, options);
 }
 
 export function generateDocumentEmbedding(input: {
   title: string;
   text: string;
   kind: string;
-}): Promise<number[]> {
-  return requestEmbedding(`title: ${input.title || 'none'} | kind: ${input.kind} | text: ${input.text}`);
+}, options: EmbeddingRequestOptions = {}): Promise<number[]> {
+  return requestEmbedding(
+    `title: ${input.title || 'none'} | kind: ${input.kind} | text: ${input.text}`,
+    options,
+  );
 }
 
-async function requestEmbedding(text: string): Promise<number[]> {
+async function requestEmbedding(text: string, options: EmbeddingRequestOptions): Promise<number[]> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new EmbeddingProviderError('GEMINI_EMBED_API_KEY_MISSING', 'terminal_configuration');
@@ -51,10 +62,14 @@ async function requestEmbedding(text: string): Promise<number[]> {
 
   const controller = new AbortController();
   let timedOut = false;
+  const timeoutMs = Math.min(EMBEDDING_TIMEOUT_MS, Math.max(1, options.timeout_ms ?? EMBEDDING_TIMEOUT_MS));
   const timeout = setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, EMBEDDING_TIMEOUT_MS);
+  }, timeoutMs);
+  const abortFromCaller = () => controller.abort();
+  options.signal?.addEventListener('abort', abortFromCaller, { once: true });
+  if (options.signal?.aborted) controller.abort();
 
   let response: Response;
   try {
@@ -80,6 +95,7 @@ async function requestEmbedding(text: string): Promise<number[]> {
     );
   } finally {
     clearTimeout(timeout);
+    options.signal?.removeEventListener('abort', abortFromCaller);
   }
 
   if (!response.ok) {

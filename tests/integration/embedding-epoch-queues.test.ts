@@ -85,6 +85,14 @@ run('embedding epochs and durable selected-memory leases', () => {
       UPDATE selected_memories
       SET embedding = ${vector()}::extensions.vector,
           embedding_state = 'ready',
+          embedding_epoch = 'legacy-provider:768'
+      WHERE id = ${fixture.memoryId}::uuid
+    `).rejects.toMatchObject({ code: '23514' });
+
+    await expect(db!`
+      UPDATE selected_memories
+      SET embedding = ${vector()}::extensions.vector,
+          embedding_state = 'ready',
           embedding_epoch = ${EMBEDDING_EPOCH}
       WHERE id = ${fixture.memoryId}::uuid
     `).resolves.toBeDefined();
@@ -110,6 +118,119 @@ run('embedding epochs and durable selected-memory leases', () => {
       INSERT INTO knowledge_chunks (document_id, chunk_index, content, token_count, embedding)
       VALUES (${docs[0].id}::uuid, 0, 'sin epoch', 2, ${vector()}::extensions.vector)
     `).rejects.toMatchObject({ code: '23514' });
+  });
+
+  it('uses transition triggers, not NOT VALID checks that break unrelated legacy updates', async () => {
+    const epochChecks = await db!<Array<{ conname: string }>>`
+      SELECT conname FROM pg_constraint
+      WHERE conname IN (
+        'message_embeddings_indexed_epoch_check',
+        'selected_memories_ready_epoch_check',
+        'knowledge_chunks_epoch_check'
+      )
+    `;
+    expect(epochChecks).toEqual([]);
+
+    const fixture = await selectedMemoryFixture('Memoria de proveedor anterior.');
+    const workspaces = await db!<Array<{ id: string }>>`
+      INSERT INTO workspaces (slug, display_name)
+      VALUES (${`legacy-update-${randomUUID()}`}, 'Legacy Update') RETURNING id
+    `;
+    const docs = await db!<Array<{ id: string }>>`
+      INSERT INTO knowledge_documents (uri, title, source_type, version, workspace_id)
+      VALUES (${`legacy-update/${randomUUID()}`}, 'Legacy', 'manual', 1, ${workspaces[0].id}::uuid)
+      RETURNING id
+    `;
+
+    await db!.begin(async (tx) => {
+      await tx`SET LOCAL session_replication_role = replica`;
+      await tx`
+        UPDATE selected_memories
+        SET embedding = ${vector()}::extensions.vector, embedding_state = 'ready', embedding_epoch = NULL
+        WHERE id = ${fixture.memoryId}::uuid
+      `;
+      await tx`
+        INSERT INTO message_embeddings (message_id, contact_id, embedding, embedding_epoch, status)
+        VALUES (
+          ${fixture.messageId}::uuid, ${fixture.contactId}::uuid,
+          ${vector()}::extensions.vector, NULL, 'indexed'
+        )
+      `;
+      await tx`
+        INSERT INTO knowledge_chunks (
+          document_id, chunk_index, content, token_count, embedding, embedding_epoch
+        ) VALUES (${docs[0].id}::uuid, 0, 'legacy', 1, ${vector()}::extensions.vector, NULL)
+      `;
+      await tx`SET LOCAL session_replication_role = origin`;
+
+      await tx`
+        UPDATE selected_memories SET confidence = 0.8 WHERE id = ${fixture.memoryId}::uuid
+      `;
+      await tx`
+        UPDATE message_embeddings SET created_at = created_at WHERE message_id = ${fixture.messageId}::uuid
+      `;
+      await tx`
+        UPDATE knowledge_chunks SET content = 'legacy actualizado' WHERE document_id = ${docs[0].id}::uuid
+      `;
+    });
+  });
+
+  it('provides current-epoch partial HNSW paths for every active vector search', async () => {
+    const indexes = await db!<Array<{ tablename: string; indexname: string; indexdef: string }>>`
+      SELECT tablename, indexname, indexdef
+      FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND indexname IN (
+          'message_embeddings_current_epoch_hnsw_idx',
+          'selected_memories_current_epoch_hnsw_idx',
+          'knowledge_chunks_current_epoch_hnsw_idx'
+        )
+      ORDER BY indexname
+    `;
+    expect(indexes).toHaveLength(3);
+    for (const index of indexes) {
+      expect(index.indexdef).toContain('USING hnsw');
+      expect(index.indexdef).toContain(EMBEDDING_EPOCH);
+    }
+    expect(indexes.find((index) => index.tablename === 'message_embeddings')?.indexdef)
+      .toContain("status = 'indexed'::text");
+    expect(indexes.find((index) => index.tablename === 'selected_memories')?.indexdef)
+      .toContain("embedding_state = 'ready'::text");
+  });
+
+  it('terminalizes pending selected memories already at or beyond their max attempts', async () => {
+    await db!`
+      UPDATE selected_memories
+      SET embedding_state = 'skip', lease_until = NULL, leased_by = NULL
+      WHERE embedding_state IN ('pending', 'leased', 'failed_retryable')
+    `;
+    const atMax = await selectedMemoryFixture('Intentos agotados cinco.');
+    const beyondFive = await selectedMemoryFixture('Intentos legacy siete.');
+    await db!`
+      UPDATE selected_memories
+      SET embedding_attempts = 5, embedding_max_attempts = 5
+      WHERE id = ${atMax.memoryId}::uuid
+    `;
+    await db!`
+      UPDATE selected_memories
+      SET embedding_attempts = 7, embedding_max_attempts = 7
+      WHERE id = ${beyondFive.memoryId}::uuid
+    `;
+
+    const claimed = await db!`
+      SELECT memory_id FROM claim_memory_embeddings('attempt-normalizer', 20, 60)
+    `;
+    expect(claimed).toEqual([]);
+    const states = await db!<Array<{ id: string; embedding_state: string; embedding_max_attempts: number }>>`
+      SELECT id, embedding_state, embedding_max_attempts
+      FROM selected_memories
+      WHERE id IN (${atMax.memoryId}::uuid, ${beyondFive.memoryId}::uuid)
+      ORDER BY embedding_attempts
+    `;
+    expect(states).toEqual([
+      { id: atMax.memoryId, embedding_state: 'dead_letter', embedding_max_attempts: 5 },
+      { id: beyondFive.memoryId, embedding_state: 'dead_letter', embedding_max_attempts: 7 },
+    ]);
   });
 
   it('leases one selected memory to only one of two concurrent workers', async () => {
@@ -143,20 +264,6 @@ run('embedding epochs and durable selected-memory leases', () => {
 
   it('excludes vectors from another epoch in all three epoch-aware searches', async () => {
     const fixture = await selectedMemoryFixture('Quiero estudiar diseño.');
-    await db!`
-      UPDATE selected_memories
-      SET embedding = ${vector(0)}::extensions.vector,
-          embedding_epoch = 'legacy-provider:768', embedding_state = 'ready'
-      WHERE id = ${fixture.memoryId}::uuid
-    `;
-    await db!`
-      INSERT INTO message_embeddings (message_id, contact_id, embedding, embedding_epoch, status)
-      VALUES (
-        ${fixture.messageId}::uuid, ${fixture.contactId}::uuid,
-        ${vector(0)}::extensions.vector, 'legacy-provider:768', 'indexed'
-      )
-    `;
-
     const workspaces = await db!<Array<{ id: string }>>`
       INSERT INTO workspaces (slug, display_name)
       VALUES (${`epoch-${randomUUID()}`}, 'Epoch Test') RETURNING id
@@ -166,14 +273,32 @@ run('embedding epochs and durable selected-memory leases', () => {
       VALUES (${`epoch/${randomUUID()}`}, 'Legacy', 'manual', 1, ${workspaces[0].id}::uuid)
       RETURNING id
     `;
-    await db!`
-      INSERT INTO knowledge_chunks (
-        document_id, chunk_index, content, token_count, embedding, embedding_epoch
-      ) VALUES (
-        ${docs[0].id}::uuid, 0, 'vector viejo', 3,
-        ${vector(0)}::extensions.vector, 'legacy-provider:768'
-      )
-    `;
+    // These rows model materializations which predate the transition trigger.
+    // New writes with this epoch are rejected by the invariant test above.
+    await db!.begin(async (tx) => {
+      await tx`SET LOCAL session_replication_role = replica`;
+      await tx`
+        UPDATE selected_memories
+        SET embedding = ${vector(0)}::extensions.vector,
+            embedding_epoch = 'legacy-provider:768', embedding_state = 'ready'
+        WHERE id = ${fixture.memoryId}::uuid
+      `;
+      await tx`
+        INSERT INTO message_embeddings (message_id, contact_id, embedding, embedding_epoch, status)
+        VALUES (
+          ${fixture.messageId}::uuid, ${fixture.contactId}::uuid,
+          ${vector(0)}::extensions.vector, 'legacy-provider:768', 'indexed'
+        )
+      `;
+      await tx`
+        INSERT INTO knowledge_chunks (
+          document_id, chunk_index, content, token_count, embedding, embedding_epoch
+        ) VALUES (
+          ${docs[0].id}::uuid, 0, 'vector viejo', 3,
+          ${vector(0)}::extensions.vector, 'legacy-provider:768'
+        )
+      `;
+    });
 
     const selected = await db!`
       SELECT memory_id FROM search_selected_memories(

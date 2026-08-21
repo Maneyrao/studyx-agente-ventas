@@ -104,7 +104,15 @@ for migration_file in supabase/migrations/*.sql; do
   if [[ "$(basename "${migration_file}")" == "20260809020001_phase6_knowledge_base.sql" ]]; then
     psql_run -c "DROP TABLE IF EXISTS knowledge_chunks CASCADE;" >/dev/null
   fi
+  if [[ "$(basename "${migration_file}")" == "20260821010001_embedding_epoch_gemini_2.sql" ]] \
+     && [[ "${EMBEDDING_EPOCH_MIGRATION_FIXTURE:-0}" == "1" ]]; then
+    psql_run -f tests/fixtures/migrations/embedding-epoch-pre.sql >/dev/null
+  fi
   psql_run -f "${migration_file}" >/dev/null
+  if [[ "$(basename "${migration_file}")" == "20260821010001_embedding_epoch_gemini_2.sql" ]] \
+     && [[ "${EMBEDDING_EPOCH_MIGRATION_FIXTURE:-0}" == "1" ]]; then
+    psql_run -f tests/fixtures/migrations/embedding-epoch-post.sql >/dev/null
+  fi
 done
 
 if [[ "${SEED}" == "--seed" ]]; then

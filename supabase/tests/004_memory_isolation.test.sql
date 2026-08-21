@@ -17,11 +17,11 @@ VALUES
   ('93000000-0000-0000-0000-000000000002', '92000000-0000-0000-0000-000000000002', '91000000-0000-0000-0000-000000000002', 'inbound', 'Curso de Python nocturno'),
   ('93000000-0000-0000-0000-000000000003', '92000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000001', 'inbound', 'Embedding todavía pendiente');
 
-INSERT INTO message_embeddings (message_id, contact_id, embedding, status)
+INSERT INTO message_embeddings (message_id, contact_id, embedding, embedding_epoch, status)
 VALUES
-  ('93000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000001', (ARRAY[1] || array_fill(0, ARRAY[767]))::extensions.vector, 'indexed'),
-  ('93000000-0000-0000-0000-000000000002', '91000000-0000-0000-0000-000000000002', (ARRAY[1] || array_fill(0, ARRAY[767]))::extensions.vector, 'indexed'),
-  ('93000000-0000-0000-0000-000000000003', '91000000-0000-0000-0000-000000000001', array_fill(0, ARRAY[768])::extensions.vector, 'pending');
+  ('93000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000001', (ARRAY[1] || array_fill(0, ARRAY[767]))::extensions.vector, 'gemini-embedding-2:768:retrieval-v1', 'indexed'),
+  ('93000000-0000-0000-0000-000000000002', '91000000-0000-0000-0000-000000000002', (ARRAY[1] || array_fill(0, ARRAY[767]))::extensions.vector, 'gemini-embedding-2:768:retrieval-v1', 'indexed'),
+  ('93000000-0000-0000-0000-000000000003', '91000000-0000-0000-0000-000000000001', array_fill(0, ARRAY[768])::extensions.vector, NULL, 'pending');
 
 SELECT is(
   (SELECT count(*) FROM search_contact_memory(
