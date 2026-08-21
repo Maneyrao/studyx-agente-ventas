@@ -8,6 +8,10 @@ vi.mock('@/lib/db/orchestrator', () => ({
 }));
 
 import { runMessageEmbeddingWorker } from '@/lib/services/message-embedding-worker.service';
+import {
+  WorkerDeadline,
+  WorkerDeadlineExceeded,
+} from '@/lib/services/durable-worker-deadline';
 import type { DbClient } from '@/lib/db/types';
 
 function deferred() {
@@ -25,6 +29,66 @@ function resolvedQuery<T>(value: T): Promise<T> & { cancel(): void } {
 }
 
 describe('embedding worker hard deadline', () => {
+  it('observes a rejecting runtime CancelRequest promise without masking a successful query', async () => {
+    let resolveMain!: (value: string) => void;
+    const main = new Promise<string>((resolve) => { resolveMain = resolve; });
+    const pending = Object.assign(main, {
+      cancel: (() => {
+        resolveMain('committed');
+        return Promise.reject(new Error('CANCEL_REQUEST_FAILED'));
+      }) as unknown as () => void,
+    });
+    const unhandled: unknown[] = [];
+    const onUnhandled = (error: unknown) => unhandled.push(error);
+    process.on('unhandledRejection', onUnhandled);
+
+    try {
+      const outcome = await new WorkerDeadline(40)
+        .runCancellable('runtime-cancel-rejection', () => pending)
+        .then(
+          (value) => ({ value }),
+          (error: unknown) => ({ error }),
+        );
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(outcome).toEqual({ value: 'committed' });
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
+
+  it('waits for both ReadyForQuery and a delayed CancelRequest before reporting deadline', async () => {
+    let rejectMain!: (error: Error) => void;
+    let resolveCancel!: () => void;
+    const main = new Promise<never>((_resolve, reject) => { rejectMain = reject; });
+    const cancelRequest = new Promise<void>((resolve) => { resolveCancel = resolve; });
+    const pending = Object.assign(main, {
+      cancel: (() => {
+        rejectMain(new Error('QUERY_CANCELLED'));
+        return cancelRequest;
+      }) as unknown as () => void,
+    });
+    let settled = false;
+    const observed = new WorkerDeadline(40)
+      .runCancellable('delayed-cancel-request', () => pending)
+      .then(
+        (value) => {
+          settled = true;
+          return { value };
+        },
+        (error: unknown) => {
+          settled = true;
+          return { error };
+        },
+      );
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(settled).toBe(false);
+    resolveCancel();
+    const outcome = await observed;
+    expect('error' in outcome ? outcome.error : null).toBeInstanceOf(WorkerDeadlineExceeded);
+  });
+
   it('bounds a delayed pool/SQL claim and does not continue after the deadline', async () => {
     let dbCalls = 0;
     const delayed = () => {

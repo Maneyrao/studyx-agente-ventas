@@ -1,5 +1,9 @@
 export class WorkerDeadlineExceeded extends Error {
-  constructor(readonly operation: string) {
+  constructor(
+    readonly operation: string,
+    readonly queryError?: unknown,
+    readonly cancelError?: unknown,
+  ) {
     super(`WORKER_DEADLINE_EXCEEDED:${operation}`);
     this.name = 'WorkerDeadlineExceeded';
   }
@@ -65,24 +69,66 @@ export class WorkerDeadline {
 
     return new Promise<T>((resolve, reject) => {
       let expired = false;
+      let finished = false;
+      let mainSettled = false;
+      let mainSucceeded = false;
+      let mainValue: T | undefined;
+      let mainError: unknown;
+      let cancelSettled = false;
+      let cancelError: unknown;
+
+      const finish = () => {
+        if (finished || !mainSettled) return;
+        if (expired && !cancelSettled) return;
+        finished = true;
+        clearTimeout(timer);
+
+        // If PostgreSQL completed successfully, report that committed truth
+        // even when a racing CancelRequest failed. Otherwise expose both the
+        // main query and cancellation failures on the deadline error.
+        if (mainSucceeded) resolve(mainValue as T);
+        else if (expired) {
+          reject(new WorkerDeadlineExceeded(operation, mainError, cancelError));
+        } else reject(mainError);
+      };
+
       const timer = setTimeout(() => {
         expired = true;
         // postgres.js cancellation covers both queued pool acquisition and an
-        // in-flight statement. We wait for the query to settle below before
-        // reporting the deadline, so no database work can outlive the worker.
-        pending.cancel();
+        // in-flight statement. At runtime cancel() returns an auxiliary
+        // CancelRequest Promise despite its declared void type. Observe it and
+        // wait for both it and ReadyForQuery before reporting the deadline.
+        try {
+          const cancelRequest = (pending.cancel as unknown as () => unknown)();
+          void Promise.resolve(cancelRequest).then(
+            () => {
+              cancelSettled = true;
+              finish();
+            },
+            (error: unknown) => {
+              cancelError = error;
+              cancelSettled = true;
+              finish();
+            },
+          );
+        } catch (error) {
+          cancelError = error;
+          cancelSettled = true;
+          finish();
+        }
       }, remaining);
 
       void Promise.resolve(pending).then(
         (value) => {
-          clearTimeout(timer);
-          if (expired) reject(new WorkerDeadlineExceeded(operation));
-          else resolve(value);
+          mainValue = value;
+          mainSucceeded = true;
+          mainSettled = true;
+          finish();
         },
         (error: unknown) => {
-          clearTimeout(timer);
-          if (expired) reject(new WorkerDeadlineExceeded(operation));
-          else reject(error);
+          mainError = error;
+          mainSettled = true;
+          finish();
         },
       );
     });
