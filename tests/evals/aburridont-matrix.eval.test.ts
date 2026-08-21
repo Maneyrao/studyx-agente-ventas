@@ -349,7 +349,7 @@ const SCENARIOS: Scenario[] = [
   {
     id: 'A13', name: 'rechazo de llamada',
     context: {
-      messages: ['Mejor no, prefiero seguir por acá'],
+      messages: ['Mejor no, prefiero seguir por acá. ¿Cuáles son las formas de pago?'],
       salesContext: {
         mode: 'awaiting_call_consent',
         open_call_offer: { decision_id: UUID, expires_at: '2026-08-17T12:10:00.000Z' },
@@ -361,7 +361,10 @@ const SCENARIOS: Scenario[] = [
       if (decision.response_type === 'call_offer' || /te llamo|llamada ahora/i.test(response)) {
         return fail('insiste con la llamada');
       }
-      return ok('registra el decline y sigue por chat');
+      if (!/(12|6|360|pago|cuota|plan)/i.test(response)) {
+        return fail('acepta el rechazo pero no continúa el asesoramiento solicitado por chat');
+      }
+      return ok('registra el decline y continúa la venta por chat');
     },
   },
   {

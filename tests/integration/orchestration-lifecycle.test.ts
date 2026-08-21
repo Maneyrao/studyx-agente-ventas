@@ -321,6 +321,22 @@ run('canonical orchestration lifecycle', () => {
     expect(acknowledgement.outbound?.status).toBe('pending');
   });
 
+  it('keeps WhatsApp consent open when the customer declines only a call', async () => {
+    const callDecline = envelope({
+      message: {
+        type: 'text',
+        text: 'No me llames, prefiero que me asesores por WhatsApp',
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    });
+
+    const result = await processInboundMessage(callDecline);
+    expect(result.contact.consent_status).not.toBe('revoked');
+    expect(result.policy.allowed_response_types).toContain('commercial_reply');
+    expect(result.policy.allowed_response_types).not.toContain('opt_out_ack');
+  });
+
   it('fails closed for a blocked contact', async () => {
     const accepted = await processInboundMessage(envelope());
     await db!`

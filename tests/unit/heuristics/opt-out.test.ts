@@ -17,8 +17,10 @@ describe('isExplicitOptOut', () => {
     'El curso no me convence',
     'No puedo esta semana',
     'Quiero comparar precios',
+    'No me llames, prefiero seguir por WhatsApp',
+    'No quiero recibir llamadas',
+    'Dejá de llamarme y explicame por acá',
   ])('does not confuse commercial rejection with opt-out: %s', (text) => {
     expect(isExplicitOptOut(text)).toBe(false);
   });
 });
-

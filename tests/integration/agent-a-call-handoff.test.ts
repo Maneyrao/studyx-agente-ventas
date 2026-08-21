@@ -245,17 +245,15 @@ run('agent a call handoff — refusals reserve nothing', () => {
   it('a negation beats any affirmative word', async () => {
     const identity = newIdentity();
     const turnId = await seedTurn(identity, 'Sí, pero no me llames');
-    // "no me llames" ya revoca consentimiento en el ingest, así que la
-    // guardia más temprana (CONSENT_REVOKED) puede ganarle a la de consenso
-    // de voz (CALL_EXPLICITLY_DECLINED). Cualquiera de las dos vale: lo
-    // inviolable es que no se commitea decisión ni se reserva llamada.
+    // Rechazar voz mantiene WhatsApp abierto, pero la guardia de consentimiento
+    // de llamada igualmente impide reservar o commitear la llamada.
     let reason: string | null = null;
     try {
       await commit(turnId, callConfirmation('accepted_offer'));
     } catch (error) {
       reason = (error as DecisionPolicyError).reason;
     }
-    expect(['CALL_EXPLICITLY_DECLINED', 'CONSENT_REVOKED']).toContain(reason);
+    expect(reason).toBe('CALL_EXPLICITLY_DECLINED');
     expect(await sessionsByTurn(turnId)).toHaveLength(0);
     const committed = await db!<Array<{ id: string }>>`
       SELECT id FROM agent_decisions WHERE turn_id = ${turnId}::uuid

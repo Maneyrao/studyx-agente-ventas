@@ -115,7 +115,7 @@ const LOADED_CATALOG: CatalogResponse = {
 
 describe('AGENT_A_PROMPT_VERSION', () => {
   it('is the pinned sales-bridge version', () => {
-    expect(AGENT_A_PROMPT_VERSION).toBe('studyx-agent-a-sales-v1');
+    expect(AGENT_A_PROMPT_VERSION).toBe('studyx-agent-a-sales-v2');
   });
 });
 
@@ -158,6 +158,20 @@ describe('buildAgentASalesBridgeInstructions', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}), LOADED_CATALOG);
     expect(instructions).toContain('commercial_decline');
     expect(instructions).toMatch(/declines a call[\s\S]*commercial_decline/i);
+  });
+
+  it('continues the complete sales journey in WhatsApp after a call decline', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}), LOADED_CATALOG);
+    expect(instructions).toMatch(/call decline[\s\S]*not a (sales|conversation) decline/i);
+    expect(instructions).toMatch(/continue[\s\S]*(entire|complete)[\s\S]*(sales|commercial)[\s\S]*(WhatsApp|chat)/i);
+    expect(instructions).toMatch(/answer[\s\S]*pending question/i);
+    expect(instructions).toMatch(/qualification[\s\S]*payment link[\s\S]*WhatsApp/i);
+  });
+
+  it('distinguishes declining a call from opting out of WhatsApp messages', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}), LOADED_CATALOG);
+    expect(instructions).toMatch(/declining (the |a )?call[\s\S]*(does not|is not)[\s\S]*opt[- ]out/i);
+    expect(instructions).toMatch(/stop messaging|do not write|no me escribas/i);
   });
 
   it('honors a direct call request that arrives inside a multi-message burst', () => {

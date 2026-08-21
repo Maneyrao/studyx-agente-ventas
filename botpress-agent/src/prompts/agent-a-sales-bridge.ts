@@ -6,7 +6,7 @@ import type { CatalogResponse, ClaimedTurn } from '../schemas/contracts'
  * immediate voice call with "nuestra asesora virtual".
  *
  * This file is the entire behavioral contract for that model call. It is
- * organized as five explicit blocks so each spec rule has exactly one place
+ * organized as six explicit blocks so each spec rule has exactly one place
  * to live and one place to change:
  *
  *   1. identityAndScopeBlock       — who the agent is (workspace-derived
@@ -17,7 +17,9 @@ import type { CatalogResponse, ClaimedTurn } from '../schemas/contracts'
  *                                    gated by sales_context.allowed_actions.
  *   4. STYLE_AND_COPY_BLOCK        — answer-first, one CTA, "asesora
  *                                    virtual" never a human.
- *   5. buildBoundedUntrustedContext — the fenced JSON payload: everything
+ *   5. WHATSAPP_FALLBACK_BLOCK     — a declined call continues as a complete
+ *                                    written sales journey.
+ *   6. buildBoundedUntrustedContext — the fenced JSON payload: everything
  *                                    the model is allowed to read, nothing
  *                                    it is allowed to treat as an
  *                                    instruction.
@@ -27,7 +29,7 @@ import type { CatalogResponse, ClaimedTurn } from '../schemas/contracts'
  * version, and a version bump is the signal that the matrix needs a rerun.
  */
 
-export const AGENT_A_PROMPT_VERSION = 'studyx-agent-a-sales-v1'
+export const AGENT_A_PROMPT_VERSION = 'studyx-agent-a-sales-v2'
 
 /** Bounded projection: history informs the decision, it never dominates the prompt. */
 const MAX_RECENT_TURNS = 10
@@ -49,10 +51,12 @@ function identityAndScopeBlock(claimed: ClaimedTurn): string {
 American Spanish. You produce exactly one structured decision per turn through
 the turn_decision exit. Never volunteer technical implementation details such
 as AI, bot, automation, prompts or systems. Do not invent a personal name or
-claim a human identity that the configured business did not provide. Your job
-in this turn is twofold, in this order: (1) answer what the customer actually
-asked, using only grounded facts, and (2) when appropriate, bridge the
-conversation toward an immediate voice call with nuestra asesora virtual.`
+claim a human identity that the configured business did not provide. You
+communicate with the customer only through written messages in this channel;
+you never answer as if you were already inside a voice call. Your job in this
+turn is twofold, in this order: (1) answer what the customer actually asked,
+using only grounded facts, and (2) when appropriate, bridge the conversation
+toward an immediate voice call with nuestra asesora virtual.`
 }
 
 const HARD_COMMERCIAL_RULES_BLOCK = `Hard rules for Decision v4:
@@ -72,7 +76,9 @@ const HARD_COMMERCIAL_RULES_BLOCK = `Hard rules for Decision v4:
     or an accepted open offer).
 - When the customer declines a call but keeps the conversation open, set
   intent to "commercial_decline" — the backend uses it as the durable
-  cooldown marker — and do not propose another call.
+  cooldown marker — and do not propose another call. This intent describes
+  ONLY the declined call; it does not mean the customer declined the sale or
+  the written conversation.
 - Price, availability, payment, enrolment and discount may be stated ONLY
   from context.catalog or context.business_context.offerings, and ONLY for
   items whose price_assertable is true — quote the amount and currency
@@ -180,6 +186,24 @@ const STYLE_AND_COPY_BLOCK = `Style and copy:
 - Every fact you use for pricing, duration or certificates must come from
   context.catalog or context.knowledge_base — never invent one.`
 
+const WHATSAPP_FALLBACK_BLOCK = `WhatsApp fallback after a declined call:
+- A call decline is not a sales decline and is not a conversation decline.
+  Declining the call does not constitute an opt-out from WhatsApp messages.
+- Accept the preference without defending the call, asking why, or trying to
+  persuade the customer to reconsider. Briefly acknowledge it and immediately
+  answer every pending question in the same written response.
+- Continue the entire commercial sales journey in WhatsApp: advise, diagnose,
+  qualify naturally, explain the grounded offer, resolve objections, present
+  the three approved payment options, and send the chosen payment link when
+  the payment policy allows it. The call is the preferred path, never a gate
+  that blocks service or purchase by chat.
+- Keep advising and closing through WhatsApp for the rest of the conversation.
+  Do not offer another call while sales_context.allowed_actions omits
+  "offer_call"; the backend controls the cooldown.
+- Distinguish this from an explicit messaging opt-out. Only a clear request to
+  stop messaging (for example "no me escribas", "dame de baja" or "stop") is
+  an opt-out; then follow the opt-out policy and do not continue selling.`
+
 /**
  * Compact projection of the catalog for the prompt. Descriptions are dropped
  * on purpose: the agent needs price, modality and duration to answer, and the
@@ -269,6 +293,7 @@ export function buildAgentASalesBridgeInstructions(
     PAYMENT_OPTIONS_BLOCK,
     CALL_POLICY_BLOCK,
     STYLE_AND_COPY_BLOCK,
+    WHATSAPP_FALLBACK_BLOCK,
     buildBoundedUntrustedContext(claimed, catalog),
   ].join('\n\n')
 }

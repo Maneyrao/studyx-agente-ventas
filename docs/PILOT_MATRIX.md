@@ -1,6 +1,6 @@
 # Matriz de escenarios — piloto de Telegram
 
-Versión de instrucciones: **`aburridont-agent-a-sales-bridge-v2`**
+Versión de instrucciones: **`studyx-agent-a-sales-v2`**
 (`AGENT_A_PROMPT_VERSION` en `botpress-agent/src/prompts/agent-a-sales-bridge.ts`).
 Cambiar el prompt obliga a subir esa versión y a re-correr toda la matriz: una
 fila que pasó con otra versión no es evidencia de nada.
@@ -178,7 +178,7 @@ decisión), para no entrenar el prompt contra los tests.
 | A10 | "llamame" | call_confirmation + request_call_now(direct_request) |
 | A11 | "sí" sin oferta | NO confirma llamada; clarifica |
 | A12 | "sí" tras oferta | call_confirmation + request_call_now(accepted_offer) |
-| A13 | Rechazo | intent=commercial_decline, no insiste |
+| A13 | Rechazo | intent=commercial_decline, no insiste y continúa la venta por chat |
 | A14 | Cooldown | sin nueva oferta durante el cooldown |
 | A15 | Opt-out | opt_out_ack / suppress, sin acciones |
 | A16 | Batch multi-pregunta | una respuesta cubre todo, ≤1 CTA |

@@ -362,13 +362,14 @@ run('sales_context at claim time', () => {
   });
 
   it('enforces the 30-minute decline cooldown across turns from the durable decision log', async () => {
-    // A conversational decline ("mejor no") keeps the channel open — unlike
-    // "no me llames", which the ingest opt-out heuristic treats as a full
-    // consent revocation and which therefore never reaches a reply decision.
+    // A call-specific decline keeps the written channel open. The reply
+    // decision becomes the durable marker that suppresses another call offer.
     const first = envelope({ message: {
-      type: 'text', text: 'Mejor no, gracias', occurred_at: new Date().toISOString(), reply_to_external_message_id: null,
+      type: 'text', text: 'No me llames, prefiero seguir por acá', occurred_at: new Date().toISOString(), reply_to_external_message_id: null,
     } });
     const ingested = await processInboundMessage(first);
+    expect(ingested.contact.consent_status).not.toBe('revoked');
+    expect(ingested.policy.allowed_response_types).toContain('commercial_reply');
     await forceDue(ingested.batch.id);
     await commitAgentDecision({
       turn_id: ingested.turn_id,
