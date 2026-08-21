@@ -159,7 +159,8 @@ const RESERVED_CONTENT_PATTERNS: RegExp[] = [
   /\b(?:pago|payment|pag[ao]|abone(?:\s+la\s+inscripcion)?|tarjeta|transferencia|cuotas?)\b/,
   /\b(?:cupo(?:s)?|vacante(?:s)?|stock)\b/,
   /\b(?:hay|quedan)\s+(?:un(?:a)?|dos|tres|\d+)\s+(?:cupos?|lugares|vacantes)\b/,
-  /\b(?:consent(?:imiento)?|autoriz(?:o|acion)|acepto\s+(?:los\s+)?terminos|doy permiso\s+para\s+que\s+me contacten)\b/,
+  /\bhay disponibilidad\s+(?:para|del|de)\s+(?:el\s+)?curso\b/,
+  /\b(?:consent(?:imiento)?|autoriz(?:o|acion)|acepto\s+(?:(?:los\s+)?terminos|que\s+me contacten)|doy permiso\s+para\s+que\s+me contacten)\b/,
 ];
 
 /** Identity stated as a capitalized name needs the original quote's casing. */

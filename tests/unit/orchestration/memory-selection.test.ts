@@ -209,6 +209,8 @@ describe('evaluateMemoryCandidate — identity and contact preferences', () => {
     ['enrolment payment fact', 'estado_actual', 'Aboné la inscripción', 'abone la inscripcion'],
     ['capacity phrased as places', 'dato_curso', 'Quedan dos lugares', 'quedan dos lugares'],
     ['contact consent fact', 'estado_actual', 'Doy permiso para que me contacten', 'doy permiso para que me contacten'],
+    ['course availability fact', 'dato_curso', 'Hay disponibilidad para el curso', 'hay disponibilidad para el curso'],
+    ['contact acceptance fact', 'estado_actual', 'Acepto que me contacten', 'acepto que me contacten'],
   ])('rejects %s even when the key is not reserved', (_label, key, quote, value) => {
     const result = evaluateMemoryCandidate(
       candidate({ type: 'study_context', key, value, source_quote: quote }),
