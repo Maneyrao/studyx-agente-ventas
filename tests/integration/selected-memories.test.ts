@@ -151,6 +151,43 @@ run('selected_memories — structural isolation', () => {
 });
 
 run('selected_memories — lifecycle', () => {
+  it('records “Me interesa Barista” as an active study goal queued for embedding', async () => {
+    const turn = await seedTurn('Me interesa Barista');
+    const store = new PostgresMemoryStore(sql);
+
+    const result = await selectMemories(
+      {
+        contact_id: turn.contact_id,
+        conversation_id: turn.conversation_id,
+        source_batch_id: turn.batch_id,
+        decision_id: null,
+        trace_id: randomUUID(),
+        batch_messages: [{ id: turn.id, content: turn.text }],
+        structured_facts: FACTS,
+        candidates: [{
+          type: 'study_goal',
+          key: 'course_of_interest',
+          value: 'barista',
+          source_quote: 'Me interesa Barista',
+          confidence: 0.92,
+        }],
+      },
+      { store }
+    );
+
+    expect(result.accepted).toHaveLength(1);
+    const rows = await sql<Array<{ memory_type: string; memory_key: string; status: string; embedding_state: string }>>`
+      SELECT memory_type, memory_key, status, embedding_state
+      FROM selected_memories WHERE id = ${result.accepted[0].memory_id}::uuid
+    `;
+    expect(rows[0]).toEqual({
+      memory_type: 'study_goal',
+      memory_key: 'course_of_interest',
+      status: 'active',
+      embedding_state: 'pending',
+    });
+  });
+
   it('records an accepted memory as active and queued for embedding', async () => {
     const turn = await seedTurn('Quiero rendir el final de anatomía en marzo');
     const store = new PostgresMemoryStore(sql);

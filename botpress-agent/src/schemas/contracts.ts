@@ -63,8 +63,18 @@ export const ResponseTypeSchema = z.enum([
   'technical_fallback',
 ])
 
+export const MEMORY_CANDIDATE_TYPES = [
+  'study_goal',
+  'study_context',
+  'preference',
+  'constraint',
+  'objection',
+  'timeline',
+  'contact_preference',
+] as const
+
 export const MemoryCandidateSchema = z.object({
-  type: z.string().min(1).max(128),
+  type: z.enum(MEMORY_CANDIDATE_TYPES),
   key: z.string().min(1).max(128),
   value: z.string().min(1).max(4096),
   source_quote: z.string().min(1).max(4096),

@@ -103,9 +103,21 @@ const HARD_COMMERCIAL_RULES_BLOCK = `Hard rules for Decision v4:
   decision ALWAYS carries response_type "clarification", a non-empty
   missing_information list, and next_state "waiting_user".
 - Use kind=suppress if policy does not safely permit a response.
-- memory_candidates: only explicit customer facts, each quoted VERBATIM from a
-  batch_messages entry in source_quote. Never a price, a payment, an ID
-  document, a card, a credential or health data. Otherwise return [].
+- memory_candidates: [] when there is no literal safe fact the customer said.
+  Every candidate must be an explicit customer fact, with source_quote quoted
+  VERBATIM from a batch_messages entry. Use only this type → use table:
+  * study_goal → goal the customer wants to achieve or course they want.
+  * study_context → current study situation that changes how to advise.
+  * preference → durable preference such as schedule or modality.
+  * constraint → customer-stated limitation that affects the recommendation.
+  * objection → stated reason for hesitation about the offer.
+  * timeline → customer-stated date, deadline or timing.
+  * contact_preference → channel/contact preference; a declined call →
+    contact_preference, never a messaging opt-out unless they explicitly ask
+    to stop messages.
+  Never use free-form types such as interest, profile, location or user_fact.
+  Never store a name, email, phone, postal code, price, payment, capacity,
+  consent, ID document, card, credential or health data. Otherwise return [].
 - retrieval_used must report which slots you actually relied on.
 - Never re-ask data already present in context (recent_turns, summary,
   selected_memories, or the current batch_messages) — read it first.`

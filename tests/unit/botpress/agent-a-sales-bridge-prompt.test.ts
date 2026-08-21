@@ -245,6 +245,24 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(instructions).toMatch(/structured evidence/i);
   });
 
+  it('limits memory candidates to literal safe facts with the backend type vocabulary', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}), LOADED_CATALOG);
+    expect(instructions).toMatch(/memory_candidates.*\[\].*no literal safe fact/i);
+    expect(instructions).toMatch(/source_quote[\s\S]*verbatim/i);
+    for (const type of [
+      'study_goal',
+      'study_context',
+      'preference',
+      'constraint',
+      'objection',
+      'timeline',
+      'contact_preference',
+    ]) {
+      expect(instructions).toContain(`${type} →`);
+    }
+    expect(instructions).toMatch(/declined call[\s\S]*contact_preference/i);
+  });
+
   it('limits checkout to the three owner-approved payment plans', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}), LOADED_CATALOG);
     expect(instructions).toMatch(/exactly three payment options/i);

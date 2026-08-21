@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ALLOWED_MEMORY_TYPES,
   DEFAULT_MIN_MEMORY_CONFIDENCE,
+  detectStructuredContradiction,
   evaluateMemoryCandidate,
   memoryDedupeHash,
   normalizeMemoryText,
@@ -163,6 +164,67 @@ describe('evaluateMemoryCandidate — memory poisoning', () => {
       contextWith('Quiero rendir el final de anatomía en marzo')
     );
     expect(result).toMatchObject({ status: 'rejected', reason: 'TYPE_NOT_ALLOWED' });
+  });
+
+  it.each(['interest', 'profile', 'location', 'user_fact', 'free_form'])(
+    'rejects the unsupported Agent A memory type %s',
+    (type) => {
+      const result = evaluateMemoryCandidate(
+        candidate({ type }),
+        contextWith('Quiero rendir el final de anatomía en marzo')
+      );
+      expect(result).toMatchObject({ status: 'rejected', reason: 'TYPE_NOT_ALLOWED' });
+    }
+  );
+});
+
+describe('evaluateMemoryCandidate — identity and contact preferences', () => {
+  it.each([
+    ['name', 'nombre', 'Me llamo Ana', 'ana'],
+    ['email', 'email', 'Mi email es ana@example.com', 'ana@example.com'],
+    ['phone', 'telefono', 'Mi teléfono es +54 11 4444 5555', '+54 11 4444 5555'],
+    ['postal code', 'codigo_postal', 'Mi código postal es 1414', '1414'],
+  ])('rejects %s as a reserved identity key', (_label, key, quote, value) => {
+    const result = evaluateMemoryCandidate(
+      candidate({ type: 'study_context', key, value, source_quote: quote }),
+      contextWith(quote)
+    );
+    expect(result).toMatchObject({ status: 'rejected', reason: 'RESERVED_KEY' });
+  });
+
+  it.each([
+    ['price', 'precio', 'El precio es 50000 pesos', 'el precio es 50000 pesos'],
+    ['payment', 'pago', 'Pago con transferencia', 'pago con transferencia'],
+    ['capacity', 'cupo', 'Queda un cupo', 'queda un cupo'],
+    ['consent', 'consentimiento', 'Doy mi consentimiento', 'doy mi consentimiento'],
+  ])('keeps %s in backend-owned data, never vector memory', (_label, key, quote, value) => {
+    const result = evaluateMemoryCandidate(
+      candidate({ type: 'study_context', key, value, source_quote: quote }),
+      contextWith(quote)
+    );
+    expect(result).toMatchObject({ status: 'rejected', reason: 'RESERVED_KEY' });
+  });
+
+  it('keeps a declined call as a contact preference rather than a general opt-out', () => {
+    const quote = 'No quiero llamadas';
+    const result = evaluateMemoryCandidate(
+      candidate({
+        type: 'contact_preference',
+        key: 'llamadas',
+        value: 'no quiero llamadas',
+        source_quote: quote,
+      }),
+      contextWith(quote)
+    );
+
+    expect(result.status).toBe('accepted');
+    if (result.status !== 'accepted') return;
+    expect(result.memory.type).toBe('contact_preference');
+    expect(detectStructuredContradiction(result.memory, {
+      contact_name: null,
+      contact_status: 'prospecto',
+      consent_status: 'granted',
+    })).toBeNull();
   });
 });
 

@@ -24,6 +24,16 @@ export const DECISION_RESPONSE_TYPES = [
 
 export const DECISION_NEXT_STATES = ['completed', 'waiting_user'] as const;
 
+export const MEMORY_CANDIDATE_TYPES = [
+  'study_goal',
+  'study_context',
+  'preference',
+  'constraint',
+  'objection',
+  'timeline',
+  'contact_preference',
+] as const;
+
 const DECISION_FIELDS = new Set([
   'schema_version',
   'intent',
@@ -50,9 +60,10 @@ export type DecisionIntent = (typeof DECISION_INTENTS)[number];
 export type DecisionKind = (typeof DECISION_KINDS)[number];
 export type DecisionResponseType = (typeof DECISION_RESPONSE_TYPES)[number];
 export type DecisionNextState = (typeof DECISION_NEXT_STATES)[number];
+export type DecisionMemoryType = (typeof MEMORY_CANDIDATE_TYPES)[number];
 
 export interface DecisionMemoryCandidate {
-  type: string;
+  type: DecisionMemoryType;
   key: string;
   value: string;
   source_quote: string;
@@ -98,8 +109,7 @@ function parseMemoryCandidates(value: unknown): DecisionMemoryCandidate[] {
     if (
       !isRecord(candidate)
       || Object.keys(candidate).some((key) => !MEMORY_CANDIDATE_FIELDS.has(key))
-      || typeof candidate.type !== 'string'
-      || candidate.type.trim() === ''
+      || !isOneOf(candidate.type, MEMORY_CANDIDATE_TYPES)
       || typeof candidate.key !== 'string'
       || candidate.key.trim() === ''
       || typeof candidate.value !== 'string'

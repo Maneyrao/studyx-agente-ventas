@@ -155,22 +155,22 @@ describe('selectMemories', () => {
     expect(replacement.superseded).toEqual(['memory-1']);
   });
 
-  it('rejects a candidate that contradicts the structured contact name', async () => {
+  it('rejects a candidate that contradicts the structured contact status', async () => {
     const store = new FakeMemoryStore();
     const result = await selectMemories(
       input({
         structured_facts: {
-          contact_name: 'Lucía',
+          contact_name: null,
           contact_status: 'prospecto',
           consent_status: 'granted',
         },
-        batch_messages: [{ id: MESSAGE, content: 'Me llamo Ana' }],
+        batch_messages: [{ id: MESSAGE, content: 'Ya soy cliente' }],
         candidates: [
           {
             type: 'study_context',
-            key: 'nombre',
-            value: 'ana',
-            source_quote: 'Me llamo Ana',
+            key: 'estado_cliente',
+            value: 'ya soy cliente',
+            source_quote: 'Ya soy cliente',
             confidence: 0.99,
           },
         ],
@@ -181,7 +181,7 @@ describe('selectMemories', () => {
     expect(result.rejected).toEqual([
       expect.objectContaining({ reason: 'CONTRADICTS_STRUCTURED_DATA' }),
     ]);
-    expect(store.rejected[0]?.contradicts_field).toBe('contacts.name');
+    expect(store.rejected[0]?.contradicts_field).toBe('contacts.status');
   });
 
   it('rejects a candidate that contradicts the structured consent state', async () => {

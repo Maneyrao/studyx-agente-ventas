@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   DECISION_INTENTS,
   DECISION_KINDS,
+  MEMORY_CANDIDATE_TYPES,
   DECISION_NEXT_STATES,
   DECISION_RESPONSE_TYPES,
   DecisionValidationError,
@@ -34,7 +35,7 @@ import {
  */
 
 const memoryCandidateSchema = z.object({
-  type: z.string().trim().min(1).max(128),
+  type: z.enum(MEMORY_CANDIDATE_TYPES),
   key: z.string().trim().min(1).max(128),
   value: z.string().trim().min(1).max(4096),
   source_quote: z.string().trim().min(1).max(4096),

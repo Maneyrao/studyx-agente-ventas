@@ -4,6 +4,10 @@ import { join } from 'node:path';
 import type { IngestContext } from '@/lib/services/ingestion.service';
 import type { ClaimedTurn } from '@/features/orchestration/application/claim-batch';
 import type { BusinessCatalogView } from '@/features/orchestration/domain/business-context';
+import {
+  DecisionValidationError,
+  parseDecisionV2,
+} from '@/features/orchestration/domain/decision';
 
 /**
  * The Botpress response schemas must describe what Next.js actually returns.
@@ -31,6 +35,43 @@ const CONTRACTS = readFileSync(
   join(process.cwd(), 'botpress-agent/src/schemas/contracts.ts'),
   'utf8'
 );
+
+const DECISION_ROUTE = readFileSync(
+  join(process.cwd(), 'src/app/api/agent/turns/[turn_id]/decision/route.ts'),
+  'utf8'
+);
+
+const MEMORY_CANDIDATE_TYPES = [
+  'study_goal',
+  'study_context',
+  'preference',
+  'constraint',
+  'objection',
+  'timeline',
+  'contact_preference',
+] as const;
+
+function decisionWithMemory(type: string) {
+  return {
+    schema_version: 2,
+    intent: 'commercial',
+    kind: 'reply',
+    response: 'Te cuento sobre el curso.',
+    response_type: 'commercial_reply',
+    confidence: 0.9,
+    reason_code: 'COURSE_INTEREST',
+    business_action: null,
+    memory_candidates: [{
+      type,
+      key: 'course_of_interest',
+      value: 'barista',
+      source_quote: 'Me interesa Barista',
+      confidence: 0.9,
+    }],
+    missing_information: [],
+    next_state: 'completed',
+  };
+}
 
 /** The block of a named schema, so a key is checked inside the right object. */
 function schemaBlock(name: string): string {
@@ -177,6 +218,34 @@ describe('catalog response parity', () => {
 });
 
 describe('decision schema parity', () => {
+  it('accepts the literal Barista study goal through the domain parser', () => {
+    expect(parseDecisionV2(decisionWithMemory('study_goal')).memory_candidates).toEqual([{
+      type: 'study_goal',
+      key: 'course_of_interest',
+      value: 'barista',
+      source_quote: 'Me interesa Barista',
+      confidence: 0.9,
+    }]);
+  });
+
+  it.each(['interest', 'profile', 'location', 'user_fact', 'free_form'])(
+    'rejects the free-form Agent A type %s in the backend domain',
+    (type) => {
+      expect(() => parseDecisionV2(decisionWithMemory(type))).toThrowError(
+        new DecisionValidationError('INVALID_MEMORY_CANDIDATES')
+      );
+    }
+  );
+
+  it('keeps Botpress and the API route on the same closed memory type enum', () => {
+    expect(DECISION_ROUTE).toContain('type: z.enum(MEMORY_CANDIDATE_TYPES)');
+    const memoryCandidate = schemaBlock('MemoryCandidateSchema');
+    expect(memoryCandidate).toContain('z.enum(MEMORY_CANDIDATE_TYPES)');
+    for (const type of MEMORY_CANDIDATE_TYPES) {
+      expect(CONTRACTS).toContain(`'${type}'`);
+    }
+  });
+
   it('the agent produces v3/v4 and cannot emit a human handoff', () => {
     const block = schemaBlock('DecisionSchema');
     expect(block).toContain('schema_version: z.union([z.literal(3), z.literal(4)])');
