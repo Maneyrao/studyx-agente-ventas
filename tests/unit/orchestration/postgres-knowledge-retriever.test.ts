@@ -6,7 +6,7 @@ vi.mock('@/lib/db/orchestrator', () => ({
   sql: Object.assign(() => Promise.resolve([]), { end: async () => {} }),
 }));
 vi.mock('@/lib/embeddings/gemini', () => ({
-  generateEmbedding: async () => Array.from({ length: 768 }, () => 0.001),
+  generateQueryEmbedding: async () => Array.from({ length: 768 }, () => 0.001),
 }));
 
 import { PostgresKnowledgeRetriever } from '@/features/orchestration/adapters/postgres-retrievers';

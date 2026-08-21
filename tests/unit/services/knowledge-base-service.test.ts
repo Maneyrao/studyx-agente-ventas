@@ -16,8 +16,12 @@ vi.mock('@/lib/db/orchestrator', () => ({ sql: sqlMock }));
 
 const embedCalls: string[] = [];
 vi.mock('@/lib/embeddings/gemini', () => ({
-  generateEmbedding: vi.fn(async (text: string) => {
-    embedCalls.push(text);
+  generateQueryEmbedding: vi.fn(async (text: string) => {
+    embedCalls.push(`query:${text}`);
+    return Array.from({ length: 768 }, () => 0.001);
+  }),
+  generateDocumentEmbedding: vi.fn(async (input: { text: string }) => {
+    embedCalls.push(`document:${input.text}`);
     return Array.from({ length: 768 }, () => 0.001);
   }),
 }));
@@ -58,10 +62,10 @@ describe('searchKnowledgeBase', () => {
     expect(embedCalls).toEqual([]);
   });
 
-  it('calls generateEmbedding once with the exact query text', async () => {
+  it('uses the query embedding interface with the exact query text', async () => {
     nextSqlResult = [];
     await searchKnowledgeBase({ workspace_id: WORKSPACE_ID, query: '¿Cuánto sale el curso?', limit: 5, min_similarity: 0.75 });
-    expect(embedCalls).toEqual(['¿Cuánto sale el curso?']);
+    expect(embedCalls).toEqual(['query:¿Cuánto sale el curso?']);
   });
 
   it('scopes the SQL call to the given workspace', async () => {
@@ -102,8 +106,8 @@ describe('searchKnowledgeBase', () => {
   });
 
   it('propagates embedding errors (fail-open is a caller responsibility)', async () => {
-    const { generateEmbedding } = await import('@/lib/embeddings/gemini');
-    (generateEmbedding as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+    const { generateQueryEmbedding } = await import('@/lib/embeddings/gemini');
+    (generateQueryEmbedding as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error('GEMINI_TIMEOUT'),
     );
     await expect(searchKnowledgeBase({ workspace_id: WORKSPACE_ID, query: 'x', limit: 5, min_similarity: 0.75 }))
@@ -150,6 +154,6 @@ describe('ingestDocument', () => {
     void originalMock;
     expect(result.version).toBe(1);
     expect(result.chunks_written).toBe(1);
-    expect(embedCalls).toEqual(['chunk zero content']);
+    expect(embedCalls).toEqual(['document:chunk zero content']);
   });
 });

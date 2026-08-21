@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { sql } from '@/lib/db/orchestrator';
-import { generateEmbedding } from '@/lib/embeddings/gemini';
+import { generateDocumentEmbedding, isTerminalEmbeddingConfigurationError } from '@/lib/embeddings/gemini';
 import { memoryStore } from '@/features/orchestration/adapters/postgres-memory-store';
 import { counter } from '@/lib/observability/counters';
 import { logger } from '@/lib/observability/structured-log';
@@ -52,7 +52,11 @@ export async function GET(request: NextRequest) {
 
   for (const row of pending) {
     try {
-      const embedding = await generateEmbedding(row.value_text);
+      const embedding = await generateDocumentEmbedding({
+        title: 'selected memory',
+        text: row.value_text,
+        kind: 'selected-memory',
+      });
       // The predicate re-checks the status: a memory superseded or expired
       // between the claim and now must not come back holding a fresh vector.
       await sql`
@@ -69,7 +73,7 @@ export async function GET(request: NextRequest) {
       embedded += 1;
     } catch (error) {
       failed += 1;
-      const terminal = row.attempts >= MAX_EMBEDDING_ATTEMPTS;
+      const terminal = isTerminalEmbeddingConfigurationError(error) || row.attempts >= MAX_EMBEDDING_ATTEMPTS;
       await sql`
         UPDATE selected_memories
         SET

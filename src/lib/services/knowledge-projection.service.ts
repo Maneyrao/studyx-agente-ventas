@@ -1,7 +1,7 @@
 import { sql as orchestratorSql } from '@/lib/db/orchestrator';
 import { logger } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
-import { generateEmbedding } from '@/lib/embeddings/gemini';
+import { generateDocumentEmbedding, isTerminalEmbeddingConfigurationError } from '@/lib/embeddings/gemini';
 
 /**
  * Durable projection of canonical `knowledge_sources` into the derived search
@@ -65,7 +65,6 @@ export async function runKnowledgeProjectionWorker(
   deps: Partial<WorkerDeps> = {}
 ): Promise<ProjectionWorkerResult> {
   const sql = deps.sql ?? orchestratorSql;
-  const embed = deps.embed ?? generateEmbedding;
   const limit = input.limit ?? 10;
   const leaseSeconds = input.lease_seconds ?? 120;
 
@@ -101,7 +100,13 @@ export async function runKnowledgeProjectionWorker(
 
     try {
       // Network call strictly outside any transaction.
-      const embedding = await embed(source.content);
+      const embedding = deps.embed
+        ? await deps.embed(source.content)
+        : await generateDocumentEmbedding({
+          title: source.title,
+          text: source.content,
+          kind: 'knowledge-source',
+        });
       const uri = knowledgeSourceUri(source.workspace_id, source.id);
       const tokenCount = Math.max(1, Math.ceil(source.content.length / 4));
 
@@ -168,7 +173,7 @@ export async function runKnowledgeProjectionWorker(
       counter.increment('knowledge_sources_projected');
     } catch (error) {
       failed += 1;
-      const terminal = job.attempt_count >= job.max_attempts;
+      const terminal = isTerminalEmbeddingConfigurationError(error) || job.attempt_count >= job.max_attempts;
       await sql`
         UPDATE knowledge_projection_jobs
         SET

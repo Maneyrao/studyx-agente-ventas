@@ -1,5 +1,5 @@
 import { sql } from '@/lib/db/orchestrator';
-import { generateEmbedding } from '@/lib/embeddings/gemini';
+import { generateQueryEmbedding } from '@/lib/embeddings/gemini';
 import { loadBusinessWorkspaceConfig } from '@/lib/config';
 import type { DbClient } from '@/lib/db/types';
 import type {
@@ -26,7 +26,7 @@ function toVectorLiteral(embedding: number[]): string {
 export class PostgresMemoryRetriever implements MemoryRetriever {
   constructor(
     private readonly db: DbClient = sql,
-    private readonly embed: (text: string) => Promise<number[]> = generateEmbedding
+    private readonly embed: (text: string) => Promise<number[]> = generateQueryEmbedding
   ) {}
 
   async search(input: {
@@ -86,7 +86,7 @@ export class PostgresKnowledgeRetriever implements KnowledgeRetriever {
    */
   constructor(
     private readonly db: DbClient = sql,
-    private readonly embed: (text: string) => Promise<number[]> = generateEmbedding,
+    private readonly embed: (text: string) => Promise<number[]> = generateQueryEmbedding,
     private readonly resolveWorkspaceId: () => Promise<string> = async () => {
       const { workspaceSlug } = loadBusinessWorkspaceConfig();
       const rows = await db<Array<{ id: string }>>`

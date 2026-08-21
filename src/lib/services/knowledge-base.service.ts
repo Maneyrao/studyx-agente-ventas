@@ -1,7 +1,7 @@
 import { sql } from '@/lib/db/orchestrator';
 import { logger } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
-import { generateEmbedding } from '@/lib/embeddings/gemini';
+import { generateDocumentEmbedding, generateQueryEmbedding } from '@/lib/embeddings/gemini';
 
 export interface KnowledgeResult {
   chunk_id: string;
@@ -49,7 +49,7 @@ export async function searchKnowledgeBase(params: {
   }
 
   const start = Date.now();
-  const embedding = await generateEmbedding(query);
+  const embedding = await generateQueryEmbedding(query);
 
   const results = await sql<KnowledgeResult[]>`
     SELECT * FROM search_knowledge_base(
@@ -117,7 +117,11 @@ export async function ingestDocument(input: {
   let chunks_written = 0;
   for (let i = 0; i < chunks.length; i++) {
     const c = chunks[i];
-    const embedding = await generateEmbedding(c.content);
+    const embedding = await generateDocumentEmbedding({
+      title,
+      text: c.content,
+      kind: source_type,
+    });
     await sql`
       INSERT INTO knowledge_chunks (document_id, chunk_index, content, token_count, embedding)
       VALUES (

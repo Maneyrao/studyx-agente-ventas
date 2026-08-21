@@ -1,7 +1,7 @@
 import { sql } from '@/lib/db/orchestrator';
 import { logger } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
-import { generateEmbedding } from '@/lib/embeddings/gemini';
+import { generateQueryEmbedding } from '@/lib/embeddings/gemini';
 import { Message } from './message.service';
 
 // ─── US3: Recent memory ──────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ export async function semanticSearch(params: {
   if (!contact_id) throw new Error('contact_id is required');
 
   const start = Date.now();
-  const embedding = await generateEmbedding(query);
+  const embedding = await generateQueryEmbedding(query);
 
   const results = await sql<SearchResult[]>`
     SELECT * FROM search_contact_memory(

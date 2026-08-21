@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db/orchestrator';
-import { generateEmbedding } from '@/lib/embeddings/gemini';
+import { generateDocumentEmbedding, isTerminalEmbeddingConfigurationError } from '@/lib/embeddings/gemini';
 import { counter } from '@/lib/observability/counters';
 import { logger } from '@/lib/observability/structured-log';
 import { randomUUID } from 'node:crypto';
@@ -45,7 +45,11 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-      const embedding = await generateEmbedding(messages[0].content);
+      const embedding = await generateDocumentEmbedding({
+        title: 'message',
+        text: messages[0].content,
+        kind: 'message',
+      });
       await sql`
         UPDATE message_embeddings
         SET embedding = ${JSON.stringify(embedding)}::extensions.vector, status = 'indexed'
@@ -57,7 +61,7 @@ export async function GET(request: NextRequest) {
     } catch (error) {
       failed++;
       counter.increment('pending_embeddings');
-      const terminal = row.attempt_count >= row.max_attempts;
+      const terminal = isTerminalEmbeddingConfigurationError(error) || row.attempt_count >= row.max_attempts;
       const retryDelaySeconds = Math.min(3600, 30 * 2 ** Math.max(0, row.attempt_count - 1));
       await sql`
         UPDATE embedding_jobs

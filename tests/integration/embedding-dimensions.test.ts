@@ -6,7 +6,7 @@ import { EMBEDDING_DIMENSIONS } from '@/lib/embeddings/gemini';
 /**
  * Every pgvector column and every vector-taking function has to agree with the
  * dimension the configured embedding provider actually emits. The migration to
- * Gemini `text-embedding-004` (768) moved `message_embeddings` but left
+ * The previous 768-dimensional embedding provider moved `message_embeddings` but left
  * `knowledge_chunks` at the OpenAI-era 1536, so knowledge-base ingest and search
  * fail on a dimension mismatch the moment a real key is present — invisible
  * while `searchKnowledgeBase` fails open on a missing `GEMINI_API_KEY`.
