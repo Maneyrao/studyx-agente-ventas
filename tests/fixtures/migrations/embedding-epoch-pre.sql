@@ -15,7 +15,8 @@ VALUES (
 INSERT INTO messages (id, conversation_id, contact_id, direction, content)
 VALUES
   ('e3000000-0000-4000-8000-000000000001', 'e2000000-0000-4000-8000-000000000001', 'e1000000-0000-4000-8000-000000000001', 'inbound', 'legacy attempts five'),
-  ('e3000000-0000-4000-8000-000000000002', 'e2000000-0000-4000-8000-000000000001', 'e1000000-0000-4000-8000-000000000001', 'inbound', 'legacy attempts seven');
+  ('e3000000-0000-4000-8000-000000000002', 'e2000000-0000-4000-8000-000000000001', 'e1000000-0000-4000-8000-000000000001', 'inbound', 'legacy attempts seven'),
+  ('e3000000-0000-4000-8000-000000000003', 'e2000000-0000-4000-8000-000000000001', 'e1000000-0000-4000-8000-000000000001', 'inbound', 'legacy terminal failed');
 
 INSERT INTO selected_memories (
   id, contact_id, conversation_id, source_message_id, status, memory_type,
@@ -37,4 +38,12 @@ INSERT INTO selected_memories (
     'e3000000-0000-4000-8000-000000000002',
     'active', 'constraint', 'legacy_seven', 'legacy seven', 'legacy attempts seven',
     1, repeat('7', 64), 'pending', 7
+  ),
+  (
+    'e4000000-0000-4000-8000-000000000003',
+    'e1000000-0000-4000-8000-000000000001',
+    'e2000000-0000-4000-8000-000000000001',
+    'e3000000-0000-4000-8000-000000000003',
+    'active', 'constraint', 'legacy_failed', 'legacy failed', 'legacy terminal failed',
+    1, repeat('9', 64), 'failed', 9
   );

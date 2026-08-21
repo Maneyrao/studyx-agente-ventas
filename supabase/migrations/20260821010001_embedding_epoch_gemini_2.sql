@@ -266,6 +266,204 @@ AS $$
             sm.embedding_max_attempts, sm.leased_by, sm.lease_until;
 $$;
 
+-- Multi-table completions are exposed as one top-level statement so the
+-- worker can cancel the complete PostgreSQL transaction boundary. No native
+-- postgres.js begin() promise is allowed to outlive the worker deadline.
+DROP FUNCTION IF EXISTS public.complete_message_embedding_job(
+  uuid, uuid, uuid, text, extensions.vector, text
+);
+
+CREATE FUNCTION public.complete_message_embedding_job(
+  p_job_id          uuid,
+  p_message_id      uuid,
+  p_contact_id      uuid,
+  p_worker_id       text,
+  p_embedding       extensions.vector(768),
+  p_embedding_epoch text
+)
+RETURNS boolean
+LANGUAGE plpgsql
+VOLATILE
+SECURITY INVOKER
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  locked_job_id uuid;
+  affected_rows bigint;
+BEGIN
+  SELECT ej.id INTO locked_job_id
+  FROM public.embedding_jobs AS ej
+  WHERE ej.id = p_job_id
+    AND ej.message_id = p_message_id
+    AND ej.contact_id = p_contact_id
+    AND ej.status = 'leased'
+    AND ej.leased_by = p_worker_id
+    AND ej.lease_until > now()
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN false;
+  END IF;
+
+  UPDATE public.message_embeddings
+  SET embedding = p_embedding,
+      embedding_epoch = p_embedding_epoch,
+      status = 'indexed'
+  WHERE message_id = p_message_id
+    AND contact_id = p_contact_id
+    AND status = 'pending';
+  GET DIAGNOSTICS affected_rows = ROW_COUNT;
+  IF affected_rows <> 1 THEN
+    RAISE EXCEPTION 'MESSAGE_MATERIALIZATION_ROW_MISMATCH';
+  END IF;
+
+  UPDATE public.embedding_jobs
+  SET status = 'completed',
+      completed_at = now(),
+      lease_until = NULL,
+      leased_by = NULL,
+      last_error_code = NULL,
+      last_error_detail = NULL
+  WHERE id = locked_job_id
+    AND status = 'leased'
+    AND leased_by = p_worker_id
+    AND lease_until > now();
+  GET DIAGNOSTICS affected_rows = ROW_COUNT;
+  IF affected_rows <> 1 THEN
+    RAISE EXCEPTION 'MESSAGE_JOB_COMPLETION_ROW_MISMATCH';
+  END IF;
+
+  RETURN true;
+END
+$$;
+
+DROP FUNCTION IF EXISTS public.complete_knowledge_projection_job(
+  uuid, uuid, uuid, integer, text, text, text, text, integer, extensions.vector, text
+);
+
+CREATE FUNCTION public.complete_knowledge_projection_job(
+  p_job_id          uuid,
+  p_workspace_id    uuid,
+  p_source_id       uuid,
+  p_source_version  integer,
+  p_worker_id       text,
+  p_uri             text,
+  p_title           text,
+  p_content         text,
+  p_token_count     integer,
+  p_embedding       extensions.vector(768),
+  p_embedding_epoch text
+)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+SECURITY INVOKER
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  live_source public.knowledge_sources%ROWTYPE;
+  locked_job_id uuid;
+  projected_document_id uuid;
+  affected_rows bigint;
+BEGIN
+  -- Match canonical writer ordering: source first, then projection job.
+  SELECT ks.* INTO live_source
+  FROM public.knowledge_sources AS ks
+  WHERE ks.id = p_source_id AND ks.workspace_id = p_workspace_id
+  FOR UPDATE;
+
+  SELECT kpj.id INTO locked_job_id
+  FROM public.knowledge_projection_jobs AS kpj
+  WHERE kpj.id = p_job_id
+    AND kpj.workspace_id = p_workspace_id
+    AND kpj.source_id = p_source_id
+    AND kpj.source_version = p_source_version
+    AND kpj.status = 'leased'
+    AND kpj.leased_by = p_worker_id
+    AND kpj.lease_until > now()
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN 'lease_lost';
+  END IF;
+
+  IF live_source.id IS NULL
+     OR live_source.status <> 'active'
+     OR live_source.version <> p_source_version
+     OR live_source.title IS DISTINCT FROM p_title
+     OR live_source.content IS DISTINCT FROM p_content THEN
+    UPDATE public.knowledge_projection_jobs
+    SET status = 'skipped',
+        lease_until = NULL,
+        leased_by = NULL,
+        last_error_code = CASE
+          WHEN live_source.id IS NULL THEN 'SOURCE_NOT_FOUND'
+          ELSE 'SOURCE_CHANGED_DURING_EMBEDDING'
+        END
+    WHERE id = locked_job_id
+      AND status = 'leased'
+      AND leased_by = p_worker_id;
+    GET DIAGNOSTICS affected_rows = ROW_COUNT;
+    IF affected_rows <> 1 THEN
+      RAISE EXCEPTION 'KNOWLEDGE_JOB_SKIP_ROW_MISMATCH';
+    END IF;
+    RETURN 'skipped';
+  END IF;
+
+  INSERT INTO public.knowledge_documents (uri, title, source_type, version, workspace_id)
+  VALUES (p_uri, p_title, 'manual', p_source_version, p_workspace_id)
+  ON CONFLICT (uri, version) DO NOTHING
+  RETURNING id INTO projected_document_id;
+
+  IF projected_document_id IS NULL THEN
+    SELECT kd.id INTO projected_document_id
+    FROM public.knowledge_documents AS kd
+    WHERE kd.uri = p_uri
+      AND kd.version = p_source_version
+      AND kd.workspace_id = p_workspace_id;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'DOCUMENT_TENANT_MISMATCH';
+    END IF;
+  END IF;
+
+  INSERT INTO public.knowledge_chunks (
+    document_id, chunk_index, content, token_count, embedding, embedding_epoch
+  )
+  VALUES (
+    projected_document_id, 0, p_content, p_token_count, p_embedding, p_embedding_epoch
+  )
+  ON CONFLICT (document_id, chunk_index) DO UPDATE
+  SET content = EXCLUDED.content,
+      token_count = EXCLUDED.token_count,
+      embedding = EXCLUDED.embedding,
+      embedding_epoch = EXCLUDED.embedding_epoch;
+
+  UPDATE public.knowledge_documents
+  SET archived_at = now()
+  WHERE uri = p_uri
+    AND workspace_id = p_workspace_id
+    AND version < p_source_version
+    AND archived_at IS NULL;
+
+  UPDATE public.knowledge_projection_jobs
+  SET status = 'completed',
+      completed_at = now(),
+      lease_until = NULL,
+      leased_by = NULL,
+      last_error_code = NULL,
+      last_error_detail = NULL
+  WHERE id = locked_job_id
+    AND status = 'leased'
+    AND leased_by = p_worker_id;
+  GET DIAGNOSTICS affected_rows = ROW_COUNT;
+  IF affected_rows <> 1 THEN
+    RAISE EXCEPTION 'KNOWLEDGE_JOB_COMPLETION_ROW_MISMATCH';
+  END IF;
+
+  RETURN 'completed';
+END
+$$;
+
 -- Epoch-aware overloads.  Legacy signatures remain for the expand/backfill
 -- window; all new application callers use these overloads.
 CREATE FUNCTION public.search_contact_memory(
@@ -351,6 +549,14 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.claim_memory_embeddings(text, integer, integer) TO orchestrator_role;
 REVOKE EXECUTE ON FUNCTION public.claim_memory_embeddings(text, integer, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.complete_message_embedding_job(uuid, uuid, uuid, text, extensions.vector, text)
+  TO orchestrator_role;
+GRANT EXECUTE ON FUNCTION public.complete_knowledge_projection_job(uuid, uuid, uuid, integer, text, text, text, text, integer, extensions.vector, text)
+  TO orchestrator_role;
+REVOKE EXECUTE ON FUNCTION public.complete_message_embedding_job(uuid, uuid, uuid, text, extensions.vector, text)
+  FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.complete_knowledge_projection_job(uuid, uuid, uuid, integer, text, text, text, text, integer, extensions.vector, text)
+  FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.search_contact_memory(uuid, extensions.vector, text, int) TO orchestrator_role;
 GRANT EXECUTE ON FUNCTION public.search_selected_memories(uuid, extensions.vector, text, int, double precision) TO orchestrator_role;
 GRANT EXECUTE ON FUNCTION public.search_knowledge_base(uuid, extensions.vector, text, int, float) TO orchestrator_role;

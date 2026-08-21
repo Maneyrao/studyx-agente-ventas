@@ -6,7 +6,7 @@ import {
 } from '@/lib/embeddings/gemini';
 import { sql as orchestratorSql } from '@/lib/db/orchestrator';
 import {
-  runDeadlineTransaction,
+  runDeadlineQuery,
   WorkerDeadline,
   WorkerDeadlineExceeded,
 } from './durable-worker-deadline';
@@ -71,7 +71,7 @@ export async function runMessageEmbeddingWorker(
 
     let jobs: ClaimedMessageJob[];
     try {
-      jobs = await runDeadlineTransaction(sql, deadline, 'claim-message-embedding', (tx) => tx<ClaimedMessageJob[]>`
+      jobs = await runDeadlineQuery(deadline, 'claim-message-embedding', () => sql<ClaimedMessageJob[]>`
         SELECT id, message_id, contact_id, attempt_count, max_attempts
         FROM claim_embedding_jobs(${input.worker_id}, 1, ${leaseSeconds})
       `);
@@ -88,7 +88,7 @@ export async function runMessageEmbeddingWorker(
 
     let messages: Array<{ content: string }>;
     try {
-      messages = await runDeadlineTransaction(sql, deadline, 'load-message-source', (tx) => tx<Array<{ content: string }>>`
+      messages = await runDeadlineQuery(deadline, 'load-message-source', () => sql<Array<{ content: string }>>`
         SELECT content FROM messages
         WHERE id = ${job.message_id}::uuid AND contact_id = ${job.contact_id}::uuid
       `);
@@ -102,7 +102,7 @@ export async function runMessageEmbeddingWorker(
     if (!messages[0]) {
       let skipped: Array<{ id: string }>;
       try {
-        skipped = await runDeadlineTransaction(sql, deadline, 'skip-message-embedding', (tx) => tx<Array<{ id: string }>>`
+        skipped = await runDeadlineQuery(deadline, 'skip-message-embedding', () => sql<Array<{ id: string }>>`
           UPDATE embedding_jobs
           SET status = 'skipped', completed_at = now(), lease_until = NULL, leased_by = NULL,
               last_error_code = 'MESSAGE_NOT_FOUND'
@@ -127,38 +127,17 @@ export async function runMessageEmbeddingWorker(
         { title: 'message', text: messages[0].content, kind: 'message' },
         { signal, timeout_ms: deadline.remainingMs() },
       ));
-      const completed = await runDeadlineTransaction(sql, deadline, 'complete-message-embedding', async (tx) => {
-        const owned = await tx<Array<{ id: string }>>`
-          SELECT id FROM embedding_jobs
-          WHERE id = ${job.id}::uuid
-            AND status = 'leased' AND leased_by = ${input.worker_id} AND lease_until > now()
-          FOR UPDATE
-        `;
-        if (owned.length !== 1) return false;
-
-        const materialized = await tx<Array<{ message_id: string }>>`
-          UPDATE message_embeddings
-          SET embedding = ${JSON.stringify(embedding)}::extensions.vector,
-              embedding_epoch = ${EMBEDDING_EPOCH},
-              status = 'indexed'
-          WHERE message_id = ${job.message_id}::uuid
-            AND contact_id = ${job.contact_id}::uuid
-            AND status = 'pending'
-          RETURNING message_id
-        `;
-        if (materialized.length !== 1) throw new Error('MESSAGE_MATERIALIZATION_ROW_MISMATCH');
-
-        const finalized = await tx<Array<{ id: string }>>`
-          UPDATE embedding_jobs
-          SET status = 'completed', completed_at = now(), lease_until = NULL, leased_by = NULL,
-              last_error_code = NULL, last_error_detail = NULL
-          WHERE id = ${job.id}::uuid AND status = 'leased' AND leased_by = ${input.worker_id}
-          RETURNING id
-        `;
-        if (finalized.length !== 1) throw new Error('MESSAGE_JOB_COMPLETION_ROW_MISMATCH');
-        return true;
-      });
-      if (completed) result.completed += 1;
+      const completed = await runDeadlineQuery(deadline, 'complete-message-embedding', () => sql<Array<{ completed: boolean }>>`
+        SELECT complete_message_embedding_job(
+          ${job.id}::uuid,
+          ${job.message_id}::uuid,
+          ${job.contact_id}::uuid,
+          ${input.worker_id},
+          ${JSON.stringify(embedding)}::extensions.vector,
+          ${EMBEDDING_EPOCH}
+        ) AS completed
+      `);
+      if (completed[0]?.completed) result.completed += 1;
       else result.lease_lost += 1;
     } catch (error) {
       if (error instanceof WorkerDeadlineExceeded) {
@@ -169,7 +148,7 @@ export async function runMessageEmbeddingWorker(
       const terminal = terminalConfiguration || job.attempt_count >= job.max_attempts;
       let failed: Array<{ id: string }>;
       try {
-        failed = await runDeadlineTransaction(sql, deadline, 'fail-message-embedding', (tx) => tx<Array<{ id: string }>>`
+        failed = await runDeadlineQuery(deadline, 'fail-message-embedding', () => sql<Array<{ id: string }>>`
           UPDATE embedding_jobs
           SET status = ${terminal ? 'dead_letter' : 'failed_retryable'},
               available_at = now() + make_interval(secs => ${backoffSeconds(job.attempt_count)}),

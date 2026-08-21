@@ -243,4 +243,60 @@ run('epoch-aware durable embedding workers', () => {
     `;
     expect(rows[0].embedding).toBeNull();
   });
+
+  it('cancels an atomic completion blocked past the wall and never commits after returning', async () => {
+    const fixture = await sourceFixture('Completion bloqueada.');
+    await db!`
+      INSERT INTO message_embeddings (message_id, contact_id, status)
+      VALUES (${fixture.messageId}::uuid, ${fixture.contactId}::uuid, 'pending')
+    `;
+    const [locker, workerDb] = openIndependentLocalTestDatabases(2);
+    let locked!: () => void;
+    let release!: () => void;
+    const lockAcquired = new Promise<void>((resolve) => { locked = resolve; });
+    const releaseLock = new Promise<void>((resolve) => { release = resolve; });
+    const holding = locker.begin(async (tx) => {
+      await tx`
+        SELECT message_id FROM message_embeddings
+        WHERE message_id = ${fixture.messageId}::uuid
+        FOR UPDATE
+      `;
+      locked();
+      await releaseLock;
+    });
+
+    try {
+      await lockAcquired;
+      const startedAt = Date.now();
+      const result = await runMessageEmbeddingWorker(
+        { worker_id: 'blocked-completion', limit: 1, deadline_ms: 150 },
+        { sql: workerDb, embed: async () => embedding },
+      );
+      expect(Date.now() - startedAt).toBeLessThan(500);
+      expect(result).toMatchObject({ claimed: 1, completed: 0, deadline_reached: true });
+
+      release();
+      await holding;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      const materialization = await db!<Array<{
+        status: string;
+        embedding_epoch: string | null;
+        job_status: string;
+      }>>`
+        SELECT me.status, me.embedding_epoch, ej.status AS job_status
+        FROM message_embeddings AS me
+        JOIN embedding_jobs AS ej ON ej.message_id = me.message_id
+        WHERE me.message_id = ${fixture.messageId}::uuid
+      `;
+      expect(materialization[0]).toEqual({
+        status: 'pending',
+        embedding_epoch: null,
+        job_status: 'leased',
+      });
+    } finally {
+      release();
+      await holding.catch(() => {});
+      await Promise.all([locker.end(), workerDb.end()]);
+    }
+  });
 });

@@ -7,7 +7,7 @@ import {
 import { sql as orchestratorSql } from '@/lib/db/orchestrator';
 import type { EmbeddingWorkerResult } from './message-embedding-worker.service';
 import {
-  runDeadlineTransaction,
+  runDeadlineQuery,
   WorkerDeadline,
   WorkerDeadlineExceeded,
 } from './durable-worker-deadline';
@@ -61,7 +61,7 @@ export async function runSelectedMemoryEmbeddingWorker(
     }
     let rows: ClaimedMemory[];
     try {
-      rows = await runDeadlineTransaction(sql, deadline, 'claim-selected-memory', (tx) => tx<ClaimedMemory[]>`
+      rows = await runDeadlineQuery(deadline, 'claim-selected-memory', () => sql<ClaimedMemory[]>`
         SELECT memory_id, contact_id, value_text, attempts, max_attempts
         FROM claim_memory_embeddings(${input.worker_id}, 1, ${leaseSeconds})
       `);
@@ -82,7 +82,7 @@ export async function runSelectedMemoryEmbeddingWorker(
         text: memory.value_text,
         kind: 'selected-memory',
       }, { signal, timeout_ms: deadline.remainingMs() }));
-      const completed = await runDeadlineTransaction(sql, deadline, 'complete-selected-memory', (tx) => tx<Array<{ id: string }>>`
+      const completed = await runDeadlineQuery(deadline, 'complete-selected-memory', () => sql<Array<{ id: string }>>`
           UPDATE selected_memories
           SET embedding = ${JSON.stringify(vector)}::extensions.vector,
               embedding_epoch = ${EMBEDDING_EPOCH},
@@ -110,7 +110,7 @@ export async function runSelectedMemoryEmbeddingWorker(
       const terminal = terminalConfiguration || memory.attempts >= memory.max_attempts;
       let failed: Array<{ id: string }>;
       try {
-        failed = await runDeadlineTransaction(sql, deadline, 'fail-selected-memory', (tx) => tx<Array<{ id: string }>>`
+        failed = await runDeadlineQuery(deadline, 'fail-selected-memory', () => sql<Array<{ id: string }>>`
           UPDATE selected_memories
           SET embedding_state = ${terminal ? 'dead_letter' : 'failed_retryable'},
               embedding_available_at = now() + make_interval(secs => ${backoffSeconds(memory.attempts)}),

@@ -1,5 +1,3 @@
-import type postgres from 'postgres';
-
 export class WorkerDeadlineExceeded extends Error {
   constructor(readonly operation: string) {
     super(`WORKER_DEADLINE_EXCEEDED:${operation}`);
@@ -56,25 +54,45 @@ export class WorkerDeadline {
       if (timer) clearTimeout(timer);
     }
   }
+
+  async runCancellable<T>(
+    operation: string,
+    start: () => PromiseLike<T> & { cancel(): void },
+  ): Promise<T> {
+    this.assertRemaining(operation);
+    const remaining = this.remainingMs();
+    const pending = start();
+
+    return new Promise<T>((resolve, reject) => {
+      let expired = false;
+      const timer = setTimeout(() => {
+        expired = true;
+        // postgres.js cancellation covers both queued pool acquisition and an
+        // in-flight statement. We wait for the query to settle below before
+        // reporting the deadline, so no database work can outlive the worker.
+        pending.cancel();
+      }, remaining);
+
+      void Promise.resolve(pending).then(
+        (value) => {
+          clearTimeout(timer);
+          if (expired) reject(new WorkerDeadlineExceeded(operation));
+          else resolve(value);
+        },
+        (error: unknown) => {
+          clearTimeout(timer);
+          if (expired) reject(new WorkerDeadlineExceeded(operation));
+          else reject(error);
+        },
+      );
+    });
+  }
 }
 
-type TransactionDb = {
-  begin<T>(callback: (tx: postgres.TransactionSql) => Promise<T>): Promise<T>;
-};
-
-export function runDeadlineTransaction<T>(
-  db: TransactionDb,
+export function runDeadlineQuery<T>(
   deadline: WorkerDeadline,
   operation: string,
-  callback: (tx: postgres.TransactionSql) => Promise<T>,
+  start: () => PromiseLike<T> & { cancel(): void },
 ): Promise<T> {
-  return deadline.run(operation, () => db.begin(async (tx) => {
-    // This check runs only after a pooled connection is acquired. If the pool
-    // wait consumed the wall budget, no SQL (especially no claim) is emitted.
-    deadline.assertRemaining(`${operation}:pool`);
-    const timeout = `${Math.max(1, deadline.remainingMs())}ms`;
-    await tx`SELECT set_config('statement_timeout', ${timeout}, true)`;
-    deadline.assertRemaining(`${operation}:statement-timeout`);
-    return callback(tx);
-  }));
+  return deadline.runCancellable(operation, start);
 }

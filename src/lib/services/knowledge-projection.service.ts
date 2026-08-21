@@ -8,7 +8,7 @@ import {
   type EmbeddingRequestOptions,
 } from '@/lib/embeddings/gemini';
 import {
-  runDeadlineTransaction,
+  runDeadlineQuery,
   WorkerDeadline,
   WorkerDeadlineExceeded,
 } from './durable-worker-deadline';
@@ -98,7 +98,7 @@ export async function runKnowledgeProjectionWorker(
     }
     let jobs: ClaimedJob[];
     try {
-      jobs = await runDeadlineTransaction(sql, deadline, 'claim-knowledge-projection', (tx) => tx<ClaimedJob[]>`
+      jobs = await runDeadlineQuery(deadline, 'claim-knowledge-projection', () => sql<ClaimedJob[]>`
         SELECT id, workspace_id, source_id, source_version, attempt_count, max_attempts
         FROM claim_knowledge_projection_jobs(${input.worker_id}, 1, ${leaseSeconds})
       `);
@@ -115,7 +115,7 @@ export async function runKnowledgeProjectionWorker(
 
     let sources: SourceRow[];
     try {
-      sources = await runDeadlineTransaction(sql, deadline, 'load-knowledge-source', (tx) => tx<SourceRow[]>`
+      sources = await runDeadlineQuery(deadline, 'load-knowledge-source', () => sql<SourceRow[]>`
         SELECT id, workspace_id, title, content, version, status
         FROM knowledge_sources
         WHERE id = ${job.source_id}::uuid AND workspace_id = ${job.workspace_id}::uuid
@@ -134,7 +134,7 @@ export async function runKnowledgeProjectionWorker(
       // job was enqueued (the archive trigger already hid its documents).
       let skippedRows: Array<{ id: string }>;
       try {
-        skippedRows = await runDeadlineTransaction(sql, deadline, 'skip-knowledge-source', (tx) => tx<Array<{ id: string }>>`
+        skippedRows = await runDeadlineQuery(deadline, 'skip-knowledge-source', () => sql<Array<{ id: string }>>`
           UPDATE knowledge_projection_jobs
           SET status = 'skipped', lease_until = NULL, leased_by = NULL,
               last_error_code = ${source ? 'SOURCE_ARCHIVED' : 'SOURCE_NOT_FOUND'}
@@ -166,100 +166,29 @@ export async function runKnowledgeProjectionWorker(
       const uri = knowledgeSourceUri(source.workspace_id, source.id);
       const tokenCount = Math.max(1, Math.ceil(source.content.length / 4));
 
-      const completion = await runDeadlineTransaction(sql, deadline, 'complete-knowledge-projection', async (tx) => {
-        // Match the canonical writer's lock order: knowledge_sources first,
-        // then its projection job. This avoids source-edit/job deadlocks and
-        // closes the archive-during-Gemini race before any derived write.
-        const liveSources = await tx<SourceRow[]>`
-          SELECT id, workspace_id, title, content, version, status
-          FROM knowledge_sources
-          WHERE id = ${job.source_id}::uuid AND workspace_id = ${job.workspace_id}::uuid
-          FOR UPDATE
-        `;
-        const owned = await tx<Array<{ id: string }>>`
-          SELECT id FROM knowledge_projection_jobs
-          WHERE id = ${job.id}::uuid AND status = 'leased'
-            AND leased_by = ${input.worker_id} AND lease_until > now()
-          FOR UPDATE
-        `;
-        if (owned.length !== 1) return 'lease_lost' as const;
-        const liveSource = liveSources[0];
-        if (!liveSource || liveSource.status !== 'active' || liveSource.version !== job.source_version) {
-          const skippedJob = await tx<Array<{ id: string }>>`
-            UPDATE knowledge_projection_jobs
-            SET status = 'skipped', lease_until = NULL, leased_by = NULL,
-                last_error_code = ${liveSource ? 'SOURCE_CHANGED_DURING_EMBEDDING' : 'SOURCE_NOT_FOUND'}
-            WHERE id = ${job.id}::uuid AND status = 'leased' AND leased_by = ${input.worker_id}
-            RETURNING id
-          `;
-          if (skippedJob.length !== 1) throw new Error('KNOWLEDGE_JOB_SKIP_ROW_MISMATCH');
-          return 'skipped' as const;
-        }
-
-        const inserted = await tx<Array<{ id: string }>>`
-          INSERT INTO knowledge_documents (uri, title, source_type, version, workspace_id)
-          VALUES (${uri}, ${source.title}, 'manual', ${source.version}, ${source.workspace_id}::uuid)
-          ON CONFLICT (uri, version) DO NOTHING
-          RETURNING id
-        `;
-        let documentId = inserted[0]?.id;
-        if (!documentId) {
-          const existing = await tx<Array<{ id: string }>>`
-            SELECT id FROM knowledge_documents
-            WHERE uri = ${uri} AND version = ${source.version}
-              AND workspace_id = ${source.workspace_id}::uuid
-          `;
-          if (!existing[0]) {
-            // A (uri, version) document exists but belongs to nobody or to a
-            // different tenant; never adopt it.
-            throw new Error('DOCUMENT_TENANT_MISMATCH');
-          }
-          documentId = existing[0].id;
-        }
-
-        // Upsert instead of DO NOTHING: repairs a document that lost its
-        // chunk and refreshes content for in-place source edits. Sources are
-        // short curated texts; one chunk per source keeps this deterministic.
-        await tx`
-          INSERT INTO knowledge_chunks (
-            document_id, chunk_index, content, token_count, embedding, embedding_epoch
-          )
-          VALUES (
-            ${documentId}::uuid,
-            0,
+      // One cancellable statement owns the complete commit boundary. The
+      // function locks source -> job, revalidates both, and either commits all
+      // derived writes/finalization or none of them.
+      const completionRows = await runDeadlineQuery(
+        deadline,
+        'complete-knowledge-projection',
+        () => sql<Array<{ outcome: string }>>`
+          SELECT complete_knowledge_projection_job(
+            ${job.id}::uuid,
+            ${job.workspace_id}::uuid,
+            ${job.source_id}::uuid,
+            ${job.source_version},
+            ${input.worker_id},
+            ${uri},
+            ${source.title},
             ${source.content},
             ${tokenCount},
             ${JSON.stringify(embedding)}::extensions.vector,
             ${EMBEDDING_EPOCH}
-          )
-          ON CONFLICT (document_id, chunk_index) DO UPDATE
-          SET content = EXCLUDED.content,
-              token_count = EXCLUDED.token_count,
-              embedding = EXCLUDED.embedding,
-              embedding_epoch = EXCLUDED.embedding_epoch
-        `;
-
-        // The freshly projected version supersedes older ones.
-        await tx`
-          UPDATE knowledge_documents
-          SET archived_at = now()
-          WHERE uri = ${uri}
-            AND workspace_id = ${source.workspace_id}::uuid
-            AND version < ${source.version}
-            AND archived_at IS NULL
-        `;
-
-        const finalized = await tx<Array<{ id: string }>>`
-          UPDATE knowledge_projection_jobs
-          SET status = 'completed', completed_at = now(),
-              lease_until = NULL, leased_by = NULL,
-              last_error_code = NULL, last_error_detail = NULL
-          WHERE id = ${job.id}::uuid AND status = 'leased' AND leased_by = ${input.worker_id}
-          RETURNING id
-        `;
-        if (finalized.length !== 1) throw new Error('KNOWLEDGE_JOB_COMPLETION_ROW_MISMATCH');
-        return 'completed' as const;
-      });
+          ) AS outcome
+        `,
+      );
+      const completion = completionRows[0]?.outcome ?? 'lease_lost';
 
       if (completion === 'completed') {
         completed += 1;
@@ -278,7 +207,7 @@ export async function runKnowledgeProjectionWorker(
       const terminal = terminalConfiguration || job.attempt_count >= job.max_attempts;
       let failedRows: Array<{ id: string }>;
       try {
-        failedRows = await runDeadlineTransaction(sql, deadline, 'fail-knowledge-projection', (tx) => tx<Array<{ id: string }>>`
+        failedRows = await runDeadlineQuery(deadline, 'fail-knowledge-projection', () => sql<Array<{ id: string }>>`
           UPDATE knowledge_projection_jobs
           SET
             status = ${terminal ? 'dead_letter' : 'failed_retryable'},
