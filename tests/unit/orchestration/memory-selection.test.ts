@@ -202,12 +202,31 @@ describe('evaluateMemoryCandidate — identity and contact preferences', () => {
     ['payment fact', 'forma_preferida', 'Pago con tarjeta', 'pago con tarjeta'],
     ['capacity fact', 'dato_curso', 'Quedan dos cupos', 'quedan dos cupos'],
     ['consent fact', 'estado_actual', 'Acepto los términos', 'acepto los terminos'],
+    ['number-led phone fact', 'dato_preferido', 'Mi número es 11 4444 5555', '11 4444 5555'],
+    ['argentine postal code', 'ubicacion_actual', 'Vivo en C1414ABC', 'c1414abc'],
+    ['identity phrased as soy', 'detalle_personal', 'Soy Ana Pérez', 'ana perez'],
+    ['amount-led price fact', 'dato_comercial', 'Son 50000 pesos', 'son 50000 pesos'],
+    ['enrolment payment fact', 'estado_actual', 'Aboné la inscripción', 'abone la inscripcion'],
+    ['capacity phrased as places', 'dato_curso', 'Quedan dos lugares', 'quedan dos lugares'],
+    ['contact consent fact', 'estado_actual', 'Doy permiso para que me contacten', 'doy permiso para que me contacten'],
   ])('rejects %s even when the key is not reserved', (_label, key, quote, value) => {
     const result = evaluateMemoryCandidate(
       candidate({ type: 'study_context', key, value, source_quote: quote }),
       contextWith(quote)
     );
     expect(result).toMatchObject({ status: 'rejected', reason: 'RESERVED_KEY' });
+  });
+
+  it.each([
+    ['constraint', 'horario', 'Estoy disponible los martes'],
+    ['preference', 'horario', 'Acepto cursar de noche'],
+    ['study_context', 'fortaleza', 'Me sale bien química'],
+  ])('accepts a literal non-commercial %s fact despite an ambiguous word', (type, key, quote) => {
+    const result = evaluateMemoryCandidate(
+      candidate({ type, key, value: quote, source_quote: quote }),
+      contextWith(quote)
+    );
+    expect(result.status).toBe('accepted');
   });
 
   it.each([

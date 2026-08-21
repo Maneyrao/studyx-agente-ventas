@@ -149,14 +149,22 @@ const SENSITIVE_PATTERNS: RegExp[] = [
  */
 const RESERVED_CONTENT_PATTERNS: RegExp[] = [
   /\b[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+\b/,
-  /\b(?:telefono|celular|whatsapp|llamame|contactame|contacto)\b[^0-9]{0,24}\+?\d[\d\s().-]{6,}\d\b/,
+  /\b(?:telefono|celular|whatsapp|numero|llamame|contactame|contacto)\b[^0-9]{0,24}\+?\d[\d\s().-]{6,}\d\b/,
   /\+\d(?:[\s().-]*\d){6,14}\b/,
   /\b(?:codigo postal|postal|zip|c\.?p\.?)\b(?:\s+(?:es|:))?\s*(?:[a-z]\d{4}[a-z]{0,3}|\d{4,8})\b/,
+  /\b[a-z]\d{4}[a-z]{3}\b/,
   /\b(?:mi nombre es|me llamo|nombre completo:?)\s+[a-z]+(?:\s+[a-z]+){0,3}\b/,
-  /\b(?:precio|price|arancel|costo|cuesta|sale|gratis|sin cargo)\b/,
-  /\b(?:pago|payment|pag[ao]|tarjeta|transferencia|cuotas?)\b/,
-  /\b(?:cupo(?:s)?|disponib(?:ilidad|le)?|vacante(?:s)?|stock)\b/,
-  /\b(?:consent(?:imiento)?|autoriz(?:o|acion)|acepto(?:\s+(?:los\s+)?terminos)?)\b/,
+  /\b(?:precio|price|arancel|costo|gratis|sin cargo)\b/,
+  /\b(?:cuesta|sale|son|es)\s+(?:\$?\d+(?:[.\s]\d{3})*(?:,\d+)?\s*(?:pesos?|ars|usd|dolares?)|gratis|sin cargo)\b/,
+  /\b(?:pago|payment|pag[ao]|abone(?:\s+la\s+inscripcion)?|tarjeta|transferencia|cuotas?)\b/,
+  /\b(?:cupo(?:s)?|vacante(?:s)?|stock)\b/,
+  /\b(?:hay|quedan)\s+(?:un(?:a)?|dos|tres|\d+)\s+(?:cupos?|lugares|vacantes)\b/,
+  /\b(?:consent(?:imiento)?|autoriz(?:o|acion)|acepto\s+(?:los\s+)?terminos|doy permiso\s+para\s+que\s+me contacten)\b/,
+];
+
+/** Identity stated as a capitalized name needs the original quote's casing. */
+const RAW_RESERVED_CONTENT_PATTERNS: RegExp[] = [
+  /\bSoy\s+\p{Lu}[\p{L}'-]+(?:\s+\p{Lu}[\p{L}'-]+)+\b/u,
 ];
 
 const STOPWORDS = new Set([
@@ -316,6 +324,9 @@ export function evaluateMemoryCandidate(
   if (matchesAny(INSTRUCTION_PATTERNS, inspected)) return reject('INSTRUCTION_LIKE');
   if (matchesAny(SENSITIVE_PATTERNS, collapseDigitRuns(inspected))) return reject('SENSITIVE_DATA');
   if (matchesAny(RESERVED_CONTENT_PATTERNS, inspected)) return reject('RESERVED_KEY');
+  if (matchesAny(RAW_RESERVED_CONTENT_PATTERNS, `${candidate.value} ${candidate.source_quote}`)) {
+    return reject('RESERVED_KEY');
+  }
 
   // The citation must exist in a message of THIS batch, which the store built
   // from this contact's own conversation. A quote lifted from another contact
