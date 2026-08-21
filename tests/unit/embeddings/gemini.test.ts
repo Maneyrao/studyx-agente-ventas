@@ -69,6 +69,15 @@ describe('Gemini embeddings', () => {
     });
   });
 
+  it('classifies malformed JSON in a successful response as retryable', async () => {
+    fetchMock.mockResolvedValue(new Response('{', { status: 200 }));
+
+    await expect(generateQueryEmbedding('precio')).rejects.toMatchObject({
+      classification: 'retryable',
+      retryable: true,
+    });
+  });
+
   it('rejects an embedding that is not exactly 768 finite numbers', async () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify({
       embedding: { values: [...Array.from({ length: 767 }, () => 0.5), 'not-a-number'] },

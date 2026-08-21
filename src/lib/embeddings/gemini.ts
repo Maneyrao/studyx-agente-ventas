@@ -93,7 +93,12 @@ async function requestEmbedding(text: string): Promise<number[]> {
     );
   }
 
-  const payload = (await response.json()) as GeminiEmbedResponse;
+  let payload: GeminiEmbedResponse;
+  try {
+    payload = (await response.json()) as GeminiEmbedResponse;
+  } catch {
+    throw new EmbeddingProviderError('GEMINI_EMBED_INVALID_RESPONSE', 'retryable', response.status);
+  }
   const values = payload.embedding?.values;
   if (
     !Array.isArray(values)
