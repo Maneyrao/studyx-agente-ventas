@@ -88,12 +88,12 @@ describe('evaluateMemoryCandidate — accepted path', () => {
     expect(result.memory.dedupe_hash).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('matches the quote regardless of accents, casing and inner whitespace', () => {
+  it('rejects a normalized paraphrase because source_quote must be a literal batch substring', () => {
     const result = evaluateMemoryCandidate(
       candidate({ source_quote: 'quiero  RENDIR el final de anatomia en marzo' }),
       contextWith('Quiero rendir el final de anatomía en marzo')
     );
-    expect(result.status).toBe('accepted');
+    expect(result).toMatchObject({ status: 'rejected', reason: 'QUOTE_NOT_FOUND' });
   });
 
   it('exposes the allowed type list as a closed set', () => {
@@ -193,6 +193,24 @@ describe('evaluateMemoryCandidate — identity and contact preferences', () => {
   });
 
   it.each([
+    ['email address', 'dato_preferido', 'Mi mail es ana@example.com', 'ana@example.com'],
+    ['ordinary phone number', 'dato_preferido', 'Mi WhatsApp es 11 4444 5555', '11 4444 5555'],
+    ['postal code', 'ubicacion_actual', 'Mi código postal es 1414', '1414'],
+    ['name fact', 'detalle_personal', 'Mi nombre es Ana Pérez', 'ana perez'],
+    ['price fact', 'dato_comercial', 'El curso sale 50000 pesos', 'el curso sale 50000 pesos'],
+    ['free-price fact', 'dato_comercial', 'El curso es gratis', 'el curso es gratis'],
+    ['payment fact', 'forma_preferida', 'Pago con tarjeta', 'pago con tarjeta'],
+    ['capacity fact', 'dato_curso', 'Quedan dos cupos', 'quedan dos cupos'],
+    ['consent fact', 'estado_actual', 'Acepto los términos', 'acepto los terminos'],
+  ])('rejects %s even when the key is not reserved', (_label, key, quote, value) => {
+    const result = evaluateMemoryCandidate(
+      candidate({ type: 'study_context', key, value, source_quote: quote }),
+      contextWith(quote)
+    );
+    expect(result).toMatchObject({ status: 'rejected', reason: 'RESERVED_KEY' });
+  });
+
+  it.each([
     ['price', 'precio', 'El precio es 50000 pesos', 'el precio es 50000 pesos'],
     ['payment', 'pago', 'Pago con transferencia', 'pago con transferencia'],
     ['capacity', 'cupo', 'Queda un cupo', 'queda un cupo'],
@@ -220,6 +238,27 @@ describe('evaluateMemoryCandidate — identity and contact preferences', () => {
     expect(result.status).toBe('accepted');
     if (result.status !== 'accepted') return;
     expect(result.memory.type).toBe('contact_preference');
+    expect(detectStructuredContradiction(result.memory, {
+      contact_name: null,
+      contact_status: 'prospecto',
+      consent_status: 'granted',
+    })).toBeNull();
+  });
+
+  it('keeps “No me llames” as a call-only contact preference', () => {
+    const quote = 'No me llames';
+    const result = evaluateMemoryCandidate(
+      candidate({
+        type: 'contact_preference',
+        key: 'llamadas',
+        value: 'no me llames',
+        source_quote: quote,
+      }),
+      contextWith(quote)
+    );
+
+    expect(result.status).toBe('accepted');
+    if (result.status !== 'accepted') return;
     expect(detectStructuredContradiction(result.memory, {
       contact_name: null,
       contact_status: 'prospecto',

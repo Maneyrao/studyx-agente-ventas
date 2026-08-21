@@ -103,8 +103,8 @@ describe('selectMemories', () => {
           {
             type: 'study_goal',
             key: 'objetivo',
-            value: 'ya pagó la inscripción',
-            source_quote: 'Ya pagué todo',
+            value: 'rendir el final de fisiología en julio',
+            source_quote: 'Quiero rendir el final de fisiología en julio',
             confidence: 0.95,
           },
         ],

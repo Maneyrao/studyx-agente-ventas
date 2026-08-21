@@ -544,7 +544,7 @@ run('selected_memories — poisoning is archived, not silently dropped', () => {
 
     expect(result.accepted).toHaveLength(0);
     expect(result.rejected.map((row) => row.reason).sort()).toEqual([
-      'QUOTE_NOT_FOUND',
+      'RESERVED_KEY',
       'RESERVED_KEY',
     ]);
 

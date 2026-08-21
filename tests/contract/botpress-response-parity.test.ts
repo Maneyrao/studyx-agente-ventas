@@ -6,8 +6,10 @@ import type { ClaimedTurn } from '@/features/orchestration/application/claim-bat
 import type { BusinessCatalogView } from '@/features/orchestration/domain/business-context';
 import {
   DecisionValidationError,
+  MEMORY_CANDIDATE_TYPES as DOMAIN_MEMORY_CANDIDATE_TYPES,
   parseDecisionV2,
 } from '@/features/orchestration/domain/decision';
+import { MemoryCandidateSchema } from '../../botpress-agent/src/schemas/contracts';
 
 /**
  * The Botpress response schemas must describe what Next.js actually returns.
@@ -41,16 +43,6 @@ const DECISION_ROUTE = readFileSync(
   'utf8'
 );
 
-const MEMORY_CANDIDATE_TYPES = [
-  'study_goal',
-  'study_context',
-  'preference',
-  'constraint',
-  'objection',
-  'timeline',
-  'contact_preference',
-] as const;
-
 function decisionWithMemory(type: string) {
   return {
     schema_version: 2,
@@ -79,6 +71,10 @@ function schemaBlock(name: string): string {
   expect(start, `${name} must exist in the ADK contracts`).toBeGreaterThan(-1);
   const next = CONTRACTS.indexOf('\nexport const ', start + 1);
   return CONTRACTS.slice(start, next === -1 ? undefined : next);
+}
+
+function enumValues(block: string): string[] {
+  return [...block.matchAll(/'([^']+)'/g)].map((match) => match[1]);
 }
 
 describe('ingest response parity', () => {
@@ -241,10 +237,21 @@ describe('decision schema parity', () => {
     expect(DECISION_ROUTE).toContain('type: z.enum(MEMORY_CANDIDATE_TYPES)');
     const memoryCandidate = schemaBlock('MemoryCandidateSchema');
     expect(memoryCandidate).toContain('z.enum(MEMORY_CANDIDATE_TYPES)');
-    for (const type of MEMORY_CANDIDATE_TYPES) {
-      expect(CONTRACTS).toContain(`'${type}'`);
-    }
+    expect(enumValues(schemaBlock('MEMORY_CANDIDATE_TYPES'))).toEqual(DOMAIN_MEMORY_CANDIDATE_TYPES);
   });
+
+  it.each(['interest', 'profile', 'location', 'user_fact', 'free_form', 'legacy_memory'])(
+    'makes Botpress reject the legacy or extra memory type %s',
+    (type) => {
+      expect(MemoryCandidateSchema.safeParse({
+        type,
+        key: 'course_of_interest',
+        value: 'barista',
+        source_quote: 'Me interesa Barista',
+        confidence: 0.9,
+      }).success).toBe(false);
+    }
+  );
 
   it('the agent produces v3/v4 and cannot emit a human handoff', () => {
     const block = schemaBlock('DecisionSchema');
