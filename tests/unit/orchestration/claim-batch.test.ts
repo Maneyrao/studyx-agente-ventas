@@ -298,6 +298,29 @@ describe('claimBatch', () => {
     });
   });
 
+  it('lets new Botpress parse a legacy non-null business snapshot fail closed', async () => {
+    const result = await claimBatch(input, {
+      ...buildDeps(),
+      business: { load: vi.fn().mockResolvedValue(businessContextView()) },
+    });
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+    const wireResult = withWireUuids(result);
+    if (!wireResult.business_context) throw new Error('expected business context');
+    const legacyBusinessContext: Record<string, unknown> = { ...wireResult.business_context };
+    delete legacyBusinessContext.as_of;
+    delete legacyBusinessContext.prices_assertable;
+
+    const parsed = ClaimedTurnSchema.parse({
+      ...wireResult,
+      business_context: legacyBusinessContext,
+      business_context_available: true,
+    });
+
+    expect(parsed.business_context?.as_of).toBeNull();
+    expect(parsed.business_context?.prices_assertable).toBe(false);
+  });
+
   it('accepts additive future diagnostics without invalidating a claim', async () => {
     const result = await claimBatch(input, buildDeps());
     if (result.outcome !== 'claimed') throw new Error('expected a claim');

@@ -412,8 +412,11 @@ export const BusinessOfferingSchema = z.object({
 })
 
 export const BusinessContextSchema = z.object({
-  as_of: z.string().min(1),
-  prices_assertable: z.boolean(),
+  // Transitional defaults let a new Botpress revision consume the previous
+  // backend snapshot shape. Missing freshness evidence must never make prices
+  // assertable, so legacy snapshots degrade closed instead of failing the turn.
+  as_of: z.string().min(1).nullable().default(null),
+  prices_assertable: z.boolean().default(false),
   workspace: z.object({
     slug: z.string(),
     display_name: z.string(),

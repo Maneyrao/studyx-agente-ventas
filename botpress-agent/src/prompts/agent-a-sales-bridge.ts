@@ -281,6 +281,21 @@ function businessSnapshotForPrompt(claimed: ClaimedTurn) {
   }
 }
 
+const COMMERCIAL_KNOWLEDGE_PATTERN =
+  /(?:\b(?:usd|ars|eur|gbp|precio|price|valor|pago|pagos|payment|payments|cuota|cuotas|installment|installments|financiaci[oó]n|financing|descuento|discount|stripe|paypal|apple\s+pay|google\s+pay)\b|[$€£]|https?:\/\/(?:buy\.)?stripe\.com)/iu
+
+/**
+ * Pricing/payment facts have one authority: the fenced business snapshot.
+ * Retrieved documents remain useful for curriculum and policies, but any
+ * item carrying commercial terms is omitted wholesale so stale prose cannot
+ * duplicate or resurrect a price when the snapshot fails closed.
+ */
+function nonCommercialKnowledgeForPrompt(claimed: ClaimedTurn) {
+  return claimed.context.knowledge_base.filter(
+    (item) => !COMMERCIAL_KNOWLEDGE_PATTERN.test(`${item.title}\n${item.content}`)
+  )
+}
+
 /**
  * The fenced payload: everything the model may read, delimited so a
  * customer message or a retrieved chunk can never be promoted to an
@@ -288,6 +303,7 @@ function businessSnapshotForPrompt(claimed: ClaimedTurn) {
  * else — the model reads `allowed_actions` here, it does not decide it.
  */
 function buildBoundedUntrustedContext(claimed: ClaimedTurn): string {
+  const knowledgeBase = nonCommercialKnowledgeForPrompt(claimed)
   const currentBatchKeys = new Set(
     claimed.context.batch_messages.map((message) => `${message.created_at}\u0000${message.content}`)
   )
@@ -318,7 +334,9 @@ function buildBoundedUntrustedContext(claimed: ClaimedTurn): string {
     summary: claimed.context.summary,
     selected_memories: claimed.context.selected_memories,
     long_term_memory_available: claimed.context.long_term_memory_available,
-    knowledge_base: claimed.context.knowledge_base,
+    knowledge_base: knowledgeBase,
+    knowledge_base_commercial_items_dropped:
+      claimed.context.knowledge_base.length - knowledgeBase.length,
     knowledge_base_available: claimed.context.knowledge_base_available,
     sales_context: claimed.sales_context,
     business_snapshot: businessSnapshotForPrompt(claimed),

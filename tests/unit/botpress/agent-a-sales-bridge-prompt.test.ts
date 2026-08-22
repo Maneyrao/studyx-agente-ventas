@@ -20,6 +20,23 @@ import type { ClaimedTurn } from '../../../botpress-agent/src/schemas/contracts'
 
 const UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
 
+const PRICE_BEARING_STUDYX_KNOWLEDGE = [
+  {
+    source_uri: 'studyx://policy/commercial-limits',
+    title: 'Límites comerciales (T&C literales)',
+    content:
+      'El valor total es USD 360: 12 pagos mensuales de USD 30, 6 pagos mensuales de USD 60 o un pago único de USD 360.',
+    similarity: 0.99,
+  },
+  {
+    source_uri: 'studyx://sales/close',
+    title: 'Beca StudyX y cierre',
+    content:
+      'Cuando elige una opción se comparte el link de Stripe. No ofrecer descuentos ni una cuarta opción de pago.',
+    similarity: 0.95,
+  },
+];
+
 function claimedTurn(overrides: {
   texts?: string[];
   allowed?: string[];
@@ -349,6 +366,8 @@ describe('buildAgentASalesBridgeInstructions', () => {
 
   it('projects each StudyX commercial value exactly once from the fenced snapshot', () => {
     const claimed = claimedTurn({});
+    claimed.context.knowledge_base = PRICE_BEARING_STUDYX_KNOWLEDGE;
+    claimed.context.knowledge_base_available = true;
     ;(claimed as { business_context?: unknown }).business_context = {
       as_of: '2026-08-21T15:00:00.000Z',
       prices_assertable: true,
@@ -431,6 +450,9 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(fenced.match(/(?<!\d)30\.00(?!\d)/g)).toHaveLength(1);
     expect(fenced.match(/(?<!\d)60\.00(?!\d)/g)).toHaveLength(1);
     expect(fenced.match(/https:\/\/buy\.stripe\.com\/studyx-/g)).toHaveLength(3);
+    expect(fenced).not.toContain('USD 360');
+    expect(fenced).not.toContain('studyx://policy/commercial-limits');
+    expect(fenced).not.toContain('studyx://sales/close');
     expect(fenced).not.toContain('price_message');
     expect(fenced).not.toContain('Precio total USD 360');
   });
@@ -458,6 +480,8 @@ describe('buildAgentASalesBridgeInstructions', () => {
 
   it('removes all price amounts and payment links when the snapshot is not assertable', () => {
     const claimed = claimedTurn({});
+    claimed.context.knowledge_base = PRICE_BEARING_STUDYX_KNOWLEDGE;
+    claimed.context.knowledge_base_available = true;
     ;(claimed as { business_context?: unknown }).business_context = {
       as_of: '2026-08-21T15:00:00.000Z',
       prices_assertable: false,
