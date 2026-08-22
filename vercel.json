@@ -3,6 +3,14 @@
   "regions": ["iad1"],
   "crons": [
     {
+      "path": "/api/cron/project-knowledge",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/retry-embeddings",
+      "schedule": "10 3 * * *"
+    },
+    {
       "path": "/api/cron/memory-maintenance",
       "schedule": "20 3 * * *"
     },

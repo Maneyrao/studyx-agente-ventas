@@ -4,6 +4,19 @@ const textEncoder = new TextEncoder()
 
 export const ADDITIONAL_RETRIES = 3
 
+/**
+ * Matches `agent.config.ts`'s zod default for `requestTimeoutMs`. Belt and
+ * suspenders: if a runtime ever hands us a config object where the field
+ * failed to apply (undefined rather than the schema's default), a bare
+ * `setTimeout(fn, undefined)` would leave the request effectively unbounded
+ * instead of failing closed at a known value.
+ */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 8_000
+
+export function resolveRequestTimeoutMs(): number {
+  return configuration.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
+}
+
 export type RetryOptions = {
   baseDelayMs?: number
   maxDelayMs?: number
@@ -187,7 +200,7 @@ export async function requestStudyxJson<T>(params: {
       const controller = new AbortController()
       const timeout = setTimeout(
         () => controller.abort(),
-        configuration.requestTimeoutMs,
+        resolveRequestTimeoutMs(),
       )
 
       try {

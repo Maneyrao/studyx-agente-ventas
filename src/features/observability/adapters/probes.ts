@@ -1,7 +1,13 @@
 import { sql } from '@/lib/db/orchestrator';
 import type { DbClient } from '@/lib/db/types';
 import type { DependencyProbe } from '../domain/readiness';
-import { EMBEDDING_EPOCH } from '@/lib/embeddings/gemini';
+import {
+  EMBEDDING_EPOCH,
+  EmbeddingProviderError,
+  generateQueryEmbedding,
+  isTerminalEmbeddingConfigurationError,
+  type EmbeddingRequestOptions,
+} from '@/lib/embeddings/gemini';
 
 /**
  * The actual I/O behind each readiness probe.
@@ -83,20 +89,60 @@ export async function probePgvector(db: DbClient = sql): Promise<DependencyProbe
   }
 }
 
+const GEMINI_SMOKE_TIMEOUT_MS = 3_000;
+
 /**
  * Degradable: Gemini writes embeddings and summaries, both derived and
- * reconstructible. Checked by configuration only — a diagnostics endpoint that
- * spent a real API call per poll would be a bill, not a signal.
+ * reconstructible. A *real* bounded embedding call rather than a presence
+ * check on the key — a key can be set and still be revoked or wrong, and a
+ * presence-only check would keep reporting `ok` right through that (the
+ * "healthy-empty" false positive §6 forbids). Never logs the key: only fixed,
+ * safe `EmbeddingProviderError` codes (e.g. `GEMINI_EMBED_HTTP_401`) ever
+ * appear in the detail. Reports the embedding epoch so a caller can tell
+ * current from legacy coverage. One short request (`"ping"`, capped at
+ * `GEMINI_SMOKE_TIMEOUT_MS`) — cheap enough for an ops-facing poll
+ * (`/api/diagnostics`), but must never be called on the hot path.
  */
-export function probeGemini(read: (name: string) => string | undefined): DependencyProbe {
-  const configured = Boolean(read('GEMINI_API_KEY')?.trim());
-  return {
-    name: 'gemini',
-    required: false,
-    status: configured ? 'ok' : 'down',
-    detail: configured ? null : 'GEMINI_API_KEY is not set; embeddings and summaries will degrade',
-    latency_ms: null,
-  };
+export async function probeGeminiEmbedding(
+  embed: (
+    text: string,
+    options?: EmbeddingRequestOptions,
+  ) => Promise<number[]> = generateQueryEmbedding,
+): Promise<DependencyProbe> {
+  const startedAt = Date.now();
+  try {
+    const values = await embed('ping', { timeout_ms: GEMINI_SMOKE_TIMEOUT_MS });
+    const finite =
+      values.length === 768 && values.every((value) => Number.isFinite(value));
+    return {
+      name: 'gemini_embedding',
+      required: false,
+      status: finite ? 'ok' : 'degraded',
+      detail: JSON.stringify({
+        epoch: EMBEDDING_EPOCH,
+        smoke: finite ? 'ok' : 'unavailable',
+        reason: finite ? null : 'GEMINI_EMBED_INVALID_VALUES',
+      }),
+      latency_ms: Date.now() - startedAt,
+    };
+  } catch (error) {
+    // Never the key: EmbeddingProviderError.message is always one of a fixed
+    // set of safe codes (GEMINI_EMBED_HTTP_401, GEMINI_EMBED_TIMEOUT, ...).
+    const reason = error instanceof EmbeddingProviderError
+      ? error.message
+      : 'GEMINI_EMBED_UNKNOWN_ERROR';
+    // A bad/revoked key (401/403/...) is a configuration problem, not a
+    // transient blip — reported as 'down' rather than 'degraded' so it does
+    // not read like something that will clear itself on the next poll.
+    const status = isTerminalEmbeddingConfigurationError(error) ? 'down' : 'degraded';
+    return {
+      name: 'gemini_embedding',
+      required: false,
+      status,
+      detail: JSON.stringify({ epoch: EMBEDDING_EPOCH, smoke: 'unavailable', reason }),
+      latency_ms: Date.now() - startedAt,
+    };
+  }
 }
 
 /** Degradable: how much derived work is queued and how much gave up. */
@@ -181,10 +227,19 @@ export async function probeDerivedBacklog(db: DbClient = sql): Promise<Dependenc
       knowledge_queue: { dead_letter: 0 },
       ambiguous_deliveries: 0,
     };
+    // A queue with claimable work is not "ok" — the memory contract (`§6`)
+    // requires the KB and selected-memory layers to actually be caught up, not
+    // merely alive. Reporting 'ok' with 23 sources still stuck in
+    // knowledge_projection_jobs would be exactly the "healthy-empty" false
+    // positive the contract forbids.
+    const hasClaimableBacklog = ['message_queue', 'selected_memory_queue', 'knowledge_queue'].some(
+      (key) => ((detail as Record<string, { claimable?: number }>)[key]?.claimable ?? 0) > 0
+    );
     const degraded = detail.ambiguous_deliveries > 0
       || detail.message_queue.dead_letter > 0
       || detail.selected_memory_queue.dead_letter > 0
-      || detail.knowledge_queue.dead_letter > 0;
+      || detail.knowledge_queue.dead_letter > 0
+      || hasClaimableBacklog;
     return {
       name: 'derived_backlog',
       required: false,

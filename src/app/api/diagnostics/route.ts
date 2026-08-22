@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { evaluateReadiness, probeEnvironment } from '@/features/observability/domain/readiness';
 import {
   probeDerivedBacklog,
-  probeGemini,
+  probeGeminiEmbedding,
   probePgvector,
   probePostgres,
 } from '@/features/observability/adapters/probes';
@@ -32,16 +32,20 @@ export async function GET(request: NextRequest) {
   const traceId = request.headers.get('x-trace-id') ?? randomUUID();
   const log = withTrace({ trace_id: traceId });
 
-  const [postgres, pgvector, backlog] = await Promise.all([
+  // Gemini is a real, bounded embedding call here — not a key-presence check.
+  // /api/diagnostics is the ops-facing poll, not the hot path, so the cost of
+  // one small request is acceptable; it must never run on every turn.
+  const [postgres, pgvector, backlog, gemini] = await Promise.all([
     probePostgres(),
     probePgvector(),
     probeDerivedBacklog(),
+    probeGeminiEmbedding(),
   ]);
 
   const verdict = evaluateReadiness([
     postgres,
     pgvector,
-    probeGemini((name: string) => process.env[name]),
+    gemini,
     backlog,
     ...probeEnvironment((name: string) => process.env[name]).filter((probe) => !probe.required),
   ]);

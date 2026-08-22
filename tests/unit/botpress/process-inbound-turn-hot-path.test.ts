@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const actionSpies = vi.hoisted(() => ({
   ingest: vi.fn(),
@@ -34,6 +34,8 @@ vi.mock('../../../botpress-agent/src/actions/transcribeAudio', () => ({
 
 import { configuration } from '../../helpers/botpress-runtime-stub';
 import { processInboundTurn } from '../../../botpress-agent/src/workflows/processInboundTurn';
+import { DEFAULT_REQUEST_TIMEOUT_MS, resolveRequestTimeoutMs } from '../../../botpress-agent/src/utils/http';
+import { dispatch } from '../../../botpress-agent/src/channels';
 
 const UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
 const NOW = '2026-08-21T12:00:00.000Z';
@@ -261,5 +263,68 @@ describe('processInboundTurn hot path', () => {
     const serializedTimingLog = JSON.stringify(timingLog);
     expect(serializedTimingLog).not.toContain('¿Cuánto sale el curso?');
     expect(serializedTimingLog).not.toContain('user-test');
+  });
+});
+
+describe('requestStudyxJson timeout default', () => {
+  const originalTimeout = configuration.requestTimeoutMs;
+
+  afterEach(() => {
+    configuration.requestTimeoutMs = originalTimeout;
+  });
+
+  // RED: an unset/undefined `configuration.requestTimeoutMs` (a live runtime
+  // whose config schema failed to apply, or a stub missing the field) must
+  // not translate into `setTimeout(fn, undefined)` — a bare fetch with no
+  // effective bound.
+  it('falls back to 8000ms when configuration.requestTimeoutMs is missing', () => {
+    configuration.requestTimeoutMs = undefined as unknown as number;
+    expect(resolveRequestTimeoutMs()).toBe(8000);
+    expect(resolveRequestTimeoutMs()).toBe(DEFAULT_REQUEST_TIMEOUT_MS);
+  });
+
+  it('uses the configured value when one is present', () => {
+    configuration.requestTimeoutMs = 4321;
+    expect(resolveRequestTimeoutMs()).toBe(4321);
+  });
+});
+
+describe('router dispatch — non-message callbacks never reach the workflow dispatcher', () => {
+  const conversation = { id: 'conv-1', alias: 'telegram', integration: 'telegram' };
+
+  // RED: an inline keyboard callback, edited-message notification, or any
+  // other non-`message` conversation event must be skipped by dispatch()
+  // before the router ever calls `processInboundTurn.getOrCreate` — starting
+  // a durable workflow for a callback would be a phantom turn with no user
+  // message behind it.
+  it('skips a non-message event type instead of matching a channel adapter', () => {
+    const result = dispatch({
+      type: 'callback',
+      channel: 'telegram.channel',
+      message: { id: 'cb-1' },
+      conversation,
+      traceId: 'trace-callback-1',
+    });
+    expect(result.kind).toBe('skip');
+  });
+
+  it('still dispatches an ordinary inbound text message on the same channel', () => {
+    const result = dispatch({
+      type: 'message',
+      channel: 'telegram.channel',
+      message: {
+        id: 'msg-1',
+        createdAt: NOW,
+        type: 'text',
+        direction: 'incoming',
+        userId: 'user-1',
+        conversationId: 'conv-1',
+        payload: { text: 'hola' },
+        tags: { 'telegram:chatId': '123456' },
+      },
+      conversation: { ...conversation, tags: { 'telegram:fromUserId': '123456' } },
+      traceId: 'trace-message-1',
+    });
+    expect(result.kind).toBe('envelope');
   });
 });
