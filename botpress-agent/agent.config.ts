@@ -39,6 +39,10 @@ export default defineConfig({
       description:
         "Telegram Bot API token for the sandbox Bot A (Phase 2). Used to download voice notes for transcription.",
     },
+    CRON_SECRET: {
+      description:
+        "Bearer token for /api/cron/flush-projections, used only by flushLeadProjection's opportunistic (best-effort, never blocking) Sheets-outbox flush. Same secret Next.js's cron routes already require — no value here, only the declaration; the value is provisioned per environment.",
+    },
   },
 
   bot: {

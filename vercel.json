@@ -17,6 +17,10 @@
     {
       "path": "/api/cron/reconcile-orchestration",
       "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/cron/flush-projections",
+      "schedule": "40 3 * * *"
     }
   ]
 }

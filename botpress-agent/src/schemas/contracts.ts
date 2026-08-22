@@ -640,6 +640,14 @@ export const CommitDecisionResponseSchema = z.object({
     })
     .nullable()
     .default(null),
+  // Passthrough only, from commit-claimed-decision.ts's best-effort batch
+  // close (spec §8). Optional: an older backend, or a commit with no claimed
+  // batch to close (batch_id/claim_token absent), simply omits it. Never
+  // gates anything on the Botpress side — it exists so the workflow can log
+  // whether the batch actually reached `completed`.
+  batch_completion: z
+    .enum(['completed', 'duplicate', 'stale_claim', 'not_found', 'skipped', 'error'])
+    .optional(),
 })
 
 export type CommitDecisionResponse = z.infer<typeof CommitDecisionResponseSchema>

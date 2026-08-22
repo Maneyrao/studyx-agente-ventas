@@ -8,6 +8,7 @@ const actionSpies = vi.hoisted(() => ({
   dispatch: vi.fn(),
   delivery: vi.fn(),
   transcribe: vi.fn(),
+  flush: vi.fn(),
 }));
 
 vi.mock('../../../botpress-agent/src/actions/ingestTurn', () => ({
@@ -30,6 +31,9 @@ vi.mock('../../../botpress-agent/src/actions/reportDelivery', () => ({
 }));
 vi.mock('../../../botpress-agent/src/actions/transcribeAudio', () => ({
   transcribeAudio: { execute: actionSpies.transcribe },
+}));
+vi.mock('../../../botpress-agent/src/actions/flushLeadProjection', () => ({
+  flushLeadProjection: { execute: actionSpies.flush },
 }));
 
 import { configuration } from '../../helpers/botpress-runtime-stub';
@@ -198,6 +202,7 @@ describe('processInboundTurn hot path', () => {
       outbound: null,
       call_request: null,
     });
+    actionSpies.flush.mockResolvedValue({ status: 'unavailable', completed: 0 });
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
   });
 
@@ -240,6 +245,10 @@ describe('processInboundTurn hot path', () => {
 
     expect(execute).toHaveBeenCalledTimes(1);
     expect(actionSpies.catalog).toHaveBeenCalledTimes(0);
+    // No delivery happened (the mocked commit is rejected, `outbound: null`),
+    // so the opportunistic Sheets flush must never run either — it is wired
+    // strictly after a confirmed delivery, never as part of the common path.
+    expect(actionSpies.flush).toHaveBeenCalledTimes(0);
 
     const timingLog = vi.mocked(console.info).mock.calls
       .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)

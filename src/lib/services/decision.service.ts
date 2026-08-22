@@ -9,7 +9,12 @@ import { getPostgresError, type DbClient } from '@/lib/db/types';
 import { sha256Hex } from '@/lib/idempotency/canonical-json';
 import { isExplicitOptOut } from '@/lib/heuristics/opt-out';
 import { registerMessage, type Message } from './message.service';
+import { enqueueLeadProjection } from './projection.service';
 import { auditLog } from '@/lib/audit/logger';
+import { loadBusinessWorkspaceConfig, loadSheetsProjectionConfig } from '@/lib/config';
+import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
+import { materializePaymentLinkAction } from '@/features/payments/application/materialize-payment-link-action';
+import { createConfigPaymentLinkResolver } from '@/features/payments/adapters/config-payment-link.resolver';
 import {
   DecisionValidationError,
   type DecisionV2,
@@ -264,6 +269,85 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     const turn = await loadTurnPolicy(validatedInput.turn_id, db);
     turnContext = turn;
     validatePolicy(decision, turn);
+
+    // Fase 4 — pago (spec §4). Revalidado en el backend, nunca confiado del
+    // modelo: `allowed_payment_plan` sale del batch ACTUAL (nunca memoria ni
+    // resumen), el offering se revalida contra el snapshot canónico y el
+    // link sale sólo de configuración. `business_action` ya sólo contiene
+    // tipo/plan/offering — nunca link ni precio — así que no hace falta
+    // filtrar nada antes de persistirlo como decisión o de guardarlo en
+    // memoria.
+    let finalResponse = decision.response;
+    let paymentLinkStrippedUrls: readonly string[] = [];
+    if (decision.schema_version === 4 && decision.business_action?.type === 'send_payment_link') {
+      const action = decision.business_action;
+      const batchMessages = turn.batch_id === null
+        ? [{ content: turn.content }]
+        : await db<Array<{ content: string }>>`
+            SELECT content FROM messages
+            WHERE batch_id = ${turn.batch_id}::uuid AND direction = 'inbound'
+            ORDER BY conversation_seq ASC, created_at ASC, id ASC
+          `;
+
+      // One extra canonical read, ONLY here (spec §7): the offering must be
+      // revalidated against the live snapshot, never trusted from the model
+      // or from a stale claim-time copy. A snapshot failure degrades to "no
+      // offerings known" rather than crashing the whole commit — the action
+      // itself still fails closed via OFFERING_NOT_FOUND when it names one.
+      let offerings: readonly { code: string }[] = [];
+      try {
+        // Bound to THIS transaction's own connection, never the module-level
+        // pool: the pool is sized 1 in production (each serverless
+        // invocation gets one connection), so a second query on the shared
+        // `sql` singleton from inside an open transaction would starve
+        // waiting for a connection the transaction itself is holding.
+        const snapshot = await new PostgresBusinessContextStore(db).loadBusinessContext(
+          loadBusinessWorkspaceConfig().workspaceSlug
+        );
+        offerings = snapshot?.offerings ?? [];
+      } catch (error) {
+        logger.error({
+          event: 'orchestration.payment_link.business_snapshot_unavailable',
+          trace_id: validatedInput.trace_id,
+          turn_id: turn.id,
+          error: String(error),
+        });
+      }
+
+      const materialized = materializePaymentLinkAction({
+        action,
+        batchMessages,
+        businessSnapshot: { offerings },
+        contact: {
+          blocked: turn.contact_status === 'inactivo'
+            || turn.lifecycle_status === 'blocked'
+            || turn.lifecycle_status === 'deleted'
+            || turn.deleted_at !== null,
+          // Only an actually revoked consent blocks a commercial outbound
+          // (spec §8) — the same binary `validatePolicy` above already
+          // enforces for every OTHER decision kind by checking exclusively
+          // for `'revoked'`, never for `'unknown'`. Nothing in this codebase
+          // ever writes `'granted'` for an inbound-initiated WhatsApp
+          // conversation (see ingestion.service.ts): a prospect's default,
+          // never-opted-out state is `'unknown'`, and it must count as
+          // `'allowed'` here too, or `send_payment_link` would be
+          // unreachable for every real contact.
+          consent_status: turn.consent_status === 'revoked' ? 'revoked' : 'allowed',
+        },
+        modelResponseText: decision.response,
+        resolver: createConfigPaymentLinkResolver(),
+      });
+      if (!materialized.ok) {
+        throw new DecisionPolicyError(materialized.reason);
+      }
+      // `response_text` is only the model's OWN text, sanitized of any URL it
+      // had no authority to write (spec §4 steps 3-4): the fixed
+      // {label, url} block is a SEPARATE return value the caller must append
+      // — materializePaymentLinkAction never does this itself.
+      finalResponse = `${materialized.response_text}\n\n${materialized.block.label}: ${materialized.block.url}`.trim();
+      paymentLinkStrippedUrls = materialized.stripped_urls;
+    }
+
     const inserted = await db<Array<{ id: string }>>`
       INSERT INTO agent_decisions (
         turn_id,
@@ -291,7 +375,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         ${decision.schema_version},
         ${decision.intent},
         ${decision.kind},
-        ${decision.response},
+        ${finalResponse},
         ${decision.response_type},
         ${jsonbParam(db, decision.business_action ?? null)},
         ${jsonbParam(db, retrievalUsedOf(decision))},
@@ -309,6 +393,27 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     `;
     const decisionId = inserted[0].id;
     let outbound: CommitDecisionResult['outbound'] = null;
+
+    // A non-empty list here is an injection/jailbreak signal: the model
+    // wrote a URL it has no authority to write, and it was silently removed
+    // before this response ever reached the customer. The action itself
+    // still succeeds — spec §4's refusal list does not include this case —
+    // but the attempt must stay observable.
+    if (paymentLinkStrippedUrls.length > 0) {
+      await auditLog({
+        action: 'agent.decision.payment_link_urls_stripped',
+        entity_type: 'agent_decision',
+        entity_id: decisionId,
+        payload: {
+          turn_id: validatedInput.turn_id,
+          stripped_urls: paymentLinkStrippedUrls,
+        },
+        event_key: `decision:${decisionId}:stripped_urls`,
+        correlation_id: validatedInput.trace_id,
+        causation_id: turn.id,
+        source_event_id: turn.source_event_id ?? undefined,
+      }, db);
+    }
 
     // Reserva atómica: la sesión de llamada, su consentimiento derivado y el
     // evento `requested` viven o mueren con la decisión. Ninguna llamada de
@@ -351,13 +456,13 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       }
     }
 
-    if (decision.response) {
+    if (finalResponse) {
       let message: Message;
       try {
         ({ message } = await registerMessage({
           conversation_id: turn.conversation_id,
           direction: 'outbound',
-          content: decision.response,
+          content: finalResponse,
           in_reply_to: turn.id,
           metadata: {
             decision_id: decisionId,
@@ -550,12 +655,69 @@ async function loadMemorySourceMessages(turn: TurnPolicyRow) {
   `;
 }
 
+/**
+ * "no registrar link ni precio como memoria seleccionada" (spec §4) is
+ * structural for `send_payment_link` itself — the typed action never carries
+ * a link or a price at all. This is the behavioral half of that rule: even a
+ * well-formed `memory_candidate` whose free text happens to contain a URL or
+ * a price-like amount (model hallucination, injection, or a bad generation)
+ * must never reach `selected_memories`. Mirrors the same two patterns
+ * `decision-v4.ts` already uses to reject a URL/amount-shaped
+ * `offering_sku`, applied here to `value`/`source_quote` instead.
+ */
+const MEMORY_CANDIDATE_URL_PATTERN = /https?:\/\//i;
+// Requires CURRENCY CONTEXT, not just a decimal-shaped number: a bare
+// `\d[.,]\d{2}` false-positived on Spanish time expressions ("de 20.30 a
+// 22.00", "turno de las 8,30") — exactly the schedule preferences the
+// memory system exists to capture. A number only counts as price-like when
+// it sits next to a currency symbol or a currency word (either order), and
+// a currency word alone (without an adjacent number) is not enough either.
+const MEMORY_CANDIDATE_AMOUNT_PATTERN =
+  /[$€£]\s*\d|\d+(?:[.,]\d{2,3})?\s*\b(?:usd|u\$s|ars|d[oó]lares?|pesos)\b|\b(?:usd|u\$s|ars)\b\s*\d+/i;
+
+function isUrlOrPriceLikeMemoryCandidate(candidate: DecisionV2['memory_candidates'][number]): boolean {
+  const text = `${candidate.value} ${candidate.source_quote}`;
+  return MEMORY_CANDIDATE_URL_PATTERN.test(text) || MEMORY_CANDIDATE_AMOUNT_PATTERN.test(text);
+}
+
 async function recordTurnMemories(params: {
   turn: TurnPolicyRow;
   candidates: DecisionV2['memory_candidates'];
   decision_id: string;
   trace_id: string;
 }): Promise<void> {
+  const rejectedCandidates = params.candidates.filter(isUrlOrPriceLikeMemoryCandidate);
+  const safeCandidates = params.candidates.filter((candidate) => !isUrlOrPriceLikeMemoryCandidate(candidate));
+
+  if (rejectedCandidates.length > 0) {
+    // Best-effort, like every other post-commit write here: an audit failure
+    // must never cost the (already safely filtered) memory recording below.
+    await auditLog({
+      action: 'agent.decision.memory_candidate_rejected',
+      entity_type: 'agent_decision',
+      entity_id: params.decision_id,
+      payload: {
+        rejected: rejectedCandidates.map((candidate) => ({
+          type: candidate.type,
+          key: candidate.key,
+          reason: 'URL_OR_PRICE_LIKE',
+        })),
+      },
+      event_key: `decision:${params.decision_id}:memory_candidates_rejected`,
+      correlation_id: params.trace_id,
+      causation_id: params.turn.id,
+    }).catch((error) => {
+      logger.error({
+        event: 'orchestration.memory.reject_audit_failed',
+        trace_id: params.trace_id,
+        decision_id: params.decision_id,
+        error: String(error),
+      });
+    });
+  }
+
+  if (safeCandidates.length === 0) return;
+
   try {
     const batchMessages = await loadMemorySourceMessages(params.turn);
     const outcome = await selectMemories(
@@ -571,7 +733,7 @@ async function recordTurnMemories(params: {
           contact_status: params.turn.contact_status,
           consent_status: params.turn.consent_status ?? 'unknown',
         },
-        candidates: params.candidates,
+        candidates: safeCandidates,
       },
       {
         store: memoryStore,
@@ -653,8 +815,13 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
   };
   const payloadHash = sha256Hex(semanticPayload);
   const messageIdentity = input.botpress_message_id ?? 'none';
+  // Set only on the branch that actually transitions delivery to
+  // `submitted`. Read after the transaction commits — never inside it, so a
+  // Sheets/outbox failure can NEVER abort or revert the delivery state
+  // change it follows (spec §5: "no revierte mensaje ni decisión").
+  let paymentLinkSignal: PaymentLinkProjectionSignal | null = null;
 
-  return withSerializableTransaction(async (db) => {
+  const result: DeliveryReportResult = await withSerializableTransaction(async (db) => {
     // The delivery is locked before anything else: the attempt it is on is what
     // gives this report an identity, and that number has to be read under the
     // same lock that will later refuse to move a row whose attempt advanced.
@@ -803,6 +970,11 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
           WHERE id = ${delivery.outbox_id}::uuid
         `;
       }
+
+      // Fase 4 — Sheets (spec §5): only after delivery is confirmed, and only
+      // for the one action that projects a lead signal today. A read, never a
+      // write — the actual enqueue happens after this transaction commits.
+      paymentLinkSignal = await loadPaymentLinkProjectionSignal(db, input.outbound_id, input.trace_id);
     } else {
       if (!input.error_code) throw new DeliveryReportConflictError('Failed report requires error_code');
       if (delivery.state === 'submitted') throw new DeliveryReportConflictError('Submitted delivery cannot be downgraded');
@@ -857,5 +1029,122 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
       outbound_id: input.outbound_id,
       delivery_status: input.status,
     };
+  });
+
+  if (result.status === 'recorded' && paymentLinkSignal) {
+    // Never throw out of here: an outbox failure must never surface as a
+    // failure of THIS call, which already committed the canonical delivery
+    // state. The row stays pending/retryable for the cron flush worker.
+    await enqueuePaymentLinkSentProjection(paymentLinkSignal).catch((error) => {
+      logger.error({
+        event: 'orchestration.payment_link.projection_enqueue_failed',
+        trace_id: input.trace_id,
+        outbound_id: input.outbound_id,
+        error: String(error),
+      });
+    });
+  }
+
+  return result;
+}
+
+interface PaymentLinkProjectionSignal {
+  readonly planCode: string;
+  readonly contactId: string;
+  readonly phone: string;
+  readonly traceId: string;
+}
+
+/**
+ * Reads the decision behind this outbound, inside the SAME transaction that
+ * just confirmed delivery: only a `send_payment_link` decision produces a
+ * signal, and everything else (the plan and the customer identity to write)
+ * comes straight from that decision's own turn — never a second guess.
+ */
+async function loadPaymentLinkProjectionSignal(
+  db: DbClient,
+  outboundId: string,
+  traceId: string,
+): Promise<PaymentLinkProjectionSignal | null> {
+  const rows = await db<Array<{
+    business_action: { type?: string; plan_code?: string } | null;
+    contact_id: string;
+    phone: string;
+  }>>`
+    SELECT ad.business_action, m.contact_id, c.phone
+    FROM agent_decisions AS ad
+    JOIN messages AS m ON m.id = ad.turn_id
+    JOIN contacts AS c ON c.id = m.contact_id
+    WHERE ad.outbound_message_id = ${outboundId}::uuid
+    LIMIT 1
+  `;
+  const row = rows[0];
+  if (!row || row.business_action?.type !== 'send_payment_link' || !row.business_action.plan_code) {
+    return null;
+  }
+  return {
+    planCode: row.business_action.plan_code,
+    contactId: row.contact_id,
+    phone: row.phone,
+    traceId,
+  };
+}
+
+/**
+ * Enqueues the `payment_link_sent` row (spec §5: `etapa_comercial=proposal`,
+ * `estado_pago=pendiente`, `plan=<plan_code>`). Fails closed and silent at
+ * every missing-configuration step — no Sheets config, no resolvable
+ * workspace — because none of that may ever block or revert the delivery
+ * this runs after. `enqueueLeadProjection` itself can also throw
+ * (retry-exhausted or a DB error); the caller wraps this whole function in
+ * `.catch()` for exactly that reason.
+ */
+async function enqueuePaymentLinkSentProjection(signal: PaymentLinkProjectionSignal): Promise<void> {
+  const sheets = loadSheetsProjectionConfig();
+  if (!sheets) {
+    logger.info({
+      event: 'orchestration.payment_link.projection_skipped',
+      trace_id: signal.traceId,
+      reason: 'SHEETS_NOT_CONFIGURED',
+    });
+    return;
+  }
+  let workspaceSlug: string;
+  try {
+    workspaceSlug = loadBusinessWorkspaceConfig().workspaceSlug;
+  } catch {
+    logger.warn({
+      event: 'orchestration.payment_link.projection_skipped',
+      trace_id: signal.traceId,
+      reason: 'MISSING_WORKSPACE_CONFIG',
+    });
+    return;
+  }
+  const workspaceRows = await sql<Array<{ id: string }>>`
+    SELECT id FROM workspaces WHERE slug = ${workspaceSlug} AND status = 'active' LIMIT 1
+  `;
+  const workspaceId = workspaceRows[0]?.id;
+  if (!workspaceId) {
+    logger.warn({
+      event: 'orchestration.payment_link.projection_skipped',
+      trace_id: signal.traceId,
+      reason: 'WORKSPACE_NOT_FOUND',
+    });
+    return;
+  }
+  await enqueueLeadProjection({
+    workspaceId,
+    contactId: signal.contactId,
+    spreadsheetId: sheets.spreadsheetId,
+    tabName: sheets.tabName,
+    telefono: signal.phone,
+    etapaComercial: 'proposal',
+    cursoInteres: '',
+    plan: signal.planCode,
+    estadoPago: 'pendiente',
+    fechaPago: '',
+    callId: '',
+    ultimaSenal: 'payment_link_sent',
+    traceId: signal.traceId,
   });
 }

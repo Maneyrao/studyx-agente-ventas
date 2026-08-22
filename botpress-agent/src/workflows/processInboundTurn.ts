@@ -2,6 +2,7 @@ import { Autonomous, Workflow, configuration, context, z } from '@botpress/runti
 import { claimBatch } from '../actions/claimBatch'
 import { commitDecision } from '../actions/commitDecision'
 import { dispatchCall } from '../actions/dispatchCall'
+import { flushLeadProjection } from '../actions/flushLeadProjection'
 import { ingestTurn } from '../actions/ingestTurn'
 import { reportDelivery } from '../actions/reportDelivery'
 import { transcribeAudio } from '../actions/transcribeAudio'
@@ -513,6 +514,11 @@ export const processInboundTurn = new Workflow({
                 model: decisionModel,
                 prompt_version: AGENT_A_PROMPT_VERSION,
               },
+              // Batch fencing pair (spec §8): lets the backend try
+              // `completeBatch` right after this commit or its replay,
+              // never before and never on a rejected decision.
+              batch_id: owned.batch.id,
+              claim_token: owned.batch.claim_token,
             },
           }),
         { maxAttempts: 1 }
@@ -521,6 +527,16 @@ export const processInboundTurn = new Workflow({
       state.decisionId = committed.decision_id
       state.outboundId = committed.outbound?.id ?? null
       state.phase = 'decision_committed'
+      // Passthrough-only field (spec §8): whether the claimed batch actually
+      // reached `completed`. Never gates anything here — a non-`completed`/
+      // `duplicate` value is the backend's reconciler's job, not this
+      // workflow's; this is purely so it is visible in the trace.
+      safeLog('studyx.turn.batch_completion', {
+        trace_id: input.trace_id,
+        turn_id: owned.turn_id,
+        batch_id: owned.batch.id,
+        batch_completion: committed.batch_completion ?? null,
+      })
     } catch (error) {
       timings.commit_ms = Date.now() - commitStartedAt
       state.phase = 'paused_error'
@@ -682,6 +698,27 @@ export const processInboundTurn = new Workflow({
       })
       emitTimings()
       return resultFromState(state, input.trace_id)
+    }
+
+    // ---- Opcional: adelantar el flush de Sheets ---------------------------
+    // El backend ya encoló la proyección `payment_link_sent` (si corresponde)
+    // dentro de `report-botpress-submission`. Este paso es puramente una
+    // optimización de latencia percibida por el operador: pide drenar el
+    // outbox unos segundos antes del próximo tick del cron. Nunca bloquea ni
+    // afecta el resultado del turno — un fallo queda para el cron/runner
+    // (spec §5).
+    try {
+      await step(
+        'flush-lead-projection',
+        () => flushLeadProjection.execute({ client, input: { trace_id: input.trace_id } }),
+        { maxAttempts: 1 }
+      )
+    } catch (error) {
+      safeLog('studyx.turn.projection_flush_skipped', {
+        trace_id: input.trace_id,
+        turn_id: owned.turn_id,
+        error_code: errorCode(error),
+      })
     }
 
     state.phase = committed.next_state

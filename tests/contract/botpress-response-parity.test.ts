@@ -341,4 +341,27 @@ describe('decision schema parity', () => {
     expect(actions).not.toContain('send_pricing_info');
     expect(actions).not.toContain('schedule_followup');
   });
+
+  it('keeps send_payment_link in sync between Botpress and the API route (spec §4)', () => {
+    // The ADK side: the producer schema must be able to emit the action at
+    // all, and it must never carry a link or a price — those are backend
+    // configuration, resolved only after the plan is revalidated.
+    const paymentAction = schemaBlock('SendPaymentLinkActionSchema');
+    expect(paymentAction).toContain('send_payment_link');
+    expect(paymentAction).toContain("z.enum(['monthly_12', 'monthly_6', 'one_time'])");
+    expect(paymentAction).toContain('.strict()');
+    expect(paymentAction).not.toMatch(/\burl\b|\bprice\b|\blink\b/i);
+
+    const decisionActions = schemaBlock('DecisionBusinessActionSchema');
+    expect(decisionActions).toContain('SendPaymentLinkActionSchema');
+
+    // The backend side: the same action, with the same three plan codes,
+    // must be an accepted shape of the v4 business_action union — otherwise
+    // every real `send_payment_link` decision would be rejected as a 400
+    // before ever reaching `assertDecisionBusinessActionPermitted`'s deeper
+    // (plan-matches-batch, offering-exists) rules.
+    expect(DECISION_ROUTE).toContain("type: z.literal('send_payment_link')");
+    expect(DECISION_ROUTE).toContain("plan_code: z.enum(['monthly_12', 'monthly_6', 'one_time'])");
+    expect(DECISION_ROUTE).toContain('offering_sku: z.string().trim().min(1).max(128).nullable()');
+  });
 });

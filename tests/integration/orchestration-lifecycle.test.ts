@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
 import {
   processInboundMessage,
@@ -15,6 +15,17 @@ import {
 } from '@/lib/services/decision.service';
 import { sql } from '@/lib/db/orchestrator';
 import { getRecentMessages } from '@/lib/services/memory.service';
+import {
+  claimBatch,
+  DEFAULT_CONTEXT_LIMITS,
+} from '@/features/orchestration/application/claim-batch';
+import { commitClaimedDecision } from '@/features/orchestration/application/commit-claimed-decision';
+import { orchestrationStore } from '@/features/orchestration/adapters/postgres-orchestration-store';
+import {
+  PostgresKnowledgeRetriever,
+  PostgresMemoryRetriever,
+} from '@/features/orchestration/adapters/postgres-retrievers';
+import { EMBEDDING_DIMENSIONS } from '@/lib/embeddings/gemini';
 
 const databaseInspection = process.env.TEST_DATABASE_URL;
 const run = databaseInspection ? describe : describe.skip;
@@ -227,6 +238,118 @@ run('canonical orchestration lifecycle', () => {
       reason_code: 'MISSING_OFFERING',
       confidence: 0.84,
     });
+  });
+
+  it('rejects a URL-bearing or price-bearing memory candidate before it ever reaches selected_memories', async () => {
+    const accepted = await processInboundMessage(envelope({
+      message: {
+        type: 'text',
+        text: 'Prefiero pagar por este link y con este presupuesto',
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    }));
+
+    const committed = await commitAgentDecision({
+      turn_id: accepted.turn_id,
+      trace_id: randomUUID(),
+      decision: {
+        schema_version: 2,
+        intent: 'commercial',
+        kind: 'reply',
+        response: 'Dale, te confirmo por acá.',
+        response_type: 'commercial_reply',
+        confidence: 0.9,
+        reason_code: 'MEMORY_GUARD_TEST',
+        business_action: null,
+        memory_candidates: [
+          {
+            type: 'preference',
+            key: 'payment_channel',
+            value: 'Prefiere pagar por este link https://example.com/promo-link',
+            source_quote: 'Prefiero pagar por este link https://example.com/promo-link',
+            confidence: 0.9,
+          },
+          {
+            type: 'constraint',
+            key: 'budget_hint',
+            value: 'Sólo puede pagar USD 50.00 por mes',
+            source_quote: 'Sólo puede pagar USD 50.00 por mes',
+            confidence: 0.85,
+          },
+          {
+            type: 'constraint',
+            key: 'price_offer_dollars',
+            value: 'Quiere pagar 100 dolares',
+            source_quote: 'Quiere pagar 100 dolares',
+            confidence: 0.88,
+          },
+          {
+            type: 'constraint',
+            key: 'price_offer_usd_shorthand',
+            value: 'Ofrece u$s 360 por el curso',
+            source_quote: 'Ofrece u$s 360 por el curso',
+            confidence: 0.87,
+          },
+          // Spanish time expressions: decimal-shaped, but no currency
+          // context — must be KEPT, not filtered. Chat scenario 20 depends
+          // on capturing exactly these schedule preferences.
+          {
+            type: 'preference',
+            key: 'study_hours',
+            value: 'Prefiere estudiar de 20.30 a 22.00 hs',
+            source_quote: 'Prefiere estudiar de 20.30 a 22.00 hs',
+            confidence: 0.9,
+          },
+          {
+            type: 'preference',
+            key: 'preferred_shift',
+            value: 'Turno de las 8,30',
+            source_quote: 'turno de las 8,30',
+            confidence: 0.9,
+          },
+          {
+            type: 'preference',
+            key: 'schedule',
+            value: 'night',
+            source_quote: 'Prefiero pagar por este link y con este presupuesto',
+            confidence: 0.9,
+          },
+        ],
+        missing_information: [],
+        next_state: 'completed',
+      },
+      model: { provider: 'botpress', model: 'test-model', prompt_version: 'v-memory-guard' },
+    });
+    expect(committed.status).toBe('committed');
+    // `commitAgentDecision` awaits `recordTurnMemories` fully before
+    // returning (Fase 4 memory selection runs on its own connection but
+    // synchronously, after the canonical commit) — no need to wait further.
+
+    const memories = await db!<Array<{ memory_key: string }>>`
+      SELECT memory_key FROM selected_memories WHERE decision_id = ${committed.decision_id}::uuid
+    `;
+    // Neither a URL-bearing nor a currency-context price-bearing candidate
+    // lands in selected_memories, in ANY status
+    // (proposed/accepted/rejected/active) — they never reach
+    // `selectMemories` at all. A decimal-shaped time expression with NO
+    // currency context is not price-like and must be kept, same as any
+    // other clean candidate.
+    expect(memories.map((row) => row.memory_key).sort()).toEqual(
+      ['preferred_shift', 'schedule', 'study_hours'].sort()
+    );
+
+    const audits = await db!<Array<{ payload: Record<string, unknown> }>>`
+      SELECT payload FROM audit_log
+      WHERE entity_id = ${committed.decision_id}::uuid AND action = 'agent.decision.memory_candidate_rejected'
+    `;
+    expect(audits).toHaveLength(1);
+    expect(audits[0].payload.rejected).toEqual([
+      { type: 'preference', key: 'payment_channel', reason: 'URL_OR_PRICE_LIKE' },
+      { type: 'constraint', key: 'budget_hint', reason: 'URL_OR_PRICE_LIKE' },
+      { type: 'constraint', key: 'price_offer_dollars', reason: 'URL_OR_PRICE_LIKE' },
+      { type: 'constraint', key: 'price_offer_usd_shorthand', reason: 'URL_OR_PRICE_LIKE' },
+    ]);
   });
 
   it.each(['opt_out', 'human_request'] as const)(
@@ -500,5 +623,358 @@ run('canonical orchestration lifecycle', () => {
       if (priorKey === undefined) delete process.env.GEMINI_API_KEY;
       else process.env.GEMINI_API_KEY = priorKey;
     }
+  });
+});
+
+/**
+ * Fase 4 — pago, batch y latencia (docs/contracts/agent-a-operational-mvp.md
+ * §4, §7, §8). A `send_payment_link` action is revalidated in the backend —
+ * never trusted from the model — and closing the batch is a separate step
+ * that must never duplicate the decision it follows.
+ */
+run('Fase 4 — pago y cierre de batch', () => {
+  const PAYMENT_WORKSPACE_SLUG = `test-payment-lifecycle-${randomUUID().slice(0, 8)}`;
+  const PAYMENT_LINK_12M = 'https://buy.stripe.com/test_12m_lifecycle';
+  const savedEnv: Partial<Record<string, string>> = {};
+
+  /** Deterministic stand-in for the embedding provider; no network key needed. */
+  function fakeEmbedding(): Promise<number[]> {
+    return Promise.resolve(Array.from({ length: EMBEDDING_DIMENSIONS }, (_, i) => (i === 0 ? 1 : 0)));
+  }
+
+  const claimDeps = {
+    store: orchestrationStore,
+    embedding: { embed: fakeEmbedding },
+    memory: new PostgresMemoryRetriever(sql),
+    knowledge: new PostgresKnowledgeRetriever(sql),
+    limits: DEFAULT_CONTEXT_LIMITS,
+  };
+
+  beforeAll(async () => {
+    // A bare workspace row is enough: these tests always pass
+    // `offering_sku: null`, so the canonical offering revalidation never
+    // needs a seeded offering to pass.
+    await db!`INSERT INTO workspaces (slug, display_name) VALUES (${PAYMENT_WORKSPACE_SLUG}, 'Payment Lifecycle Test')`;
+    for (const key of ['BUSINESS_WORKSPACE_SLUG', 'PAYMENT_LINK_12M', 'PAYMENT_LINK_6M', 'PAYMENT_LINK_CONTADO']) {
+      savedEnv[key] = process.env[key];
+    }
+    process.env.BUSINESS_WORKSPACE_SLUG = PAYMENT_WORKSPACE_SLUG;
+    process.env.PAYMENT_LINK_12M = PAYMENT_LINK_12M;
+    process.env.PAYMENT_LINK_6M = 'https://buy.stripe.com/test_6m_lifecycle';
+    process.env.PAYMENT_LINK_CONTADO = 'https://buy.stripe.com/test_contado_lifecycle';
+  });
+
+  afterAll(() => {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  function paymentInbound() {
+    return envelope({
+      message: {
+        type: 'text',
+        text: 'Quiero pagar en 12 cuotas',
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    });
+  }
+
+  function paymentDecision(turnId: string, overrides: { responseText?: string; traceId?: string } = {}) {
+    return {
+      turn_id: turnId,
+      trace_id: overrides.traceId ?? randomUUID(),
+      decision: {
+        schema_version: 4 as const,
+        intent: 'commercial' as const,
+        kind: 'reply' as const,
+        response: overrides.responseText ?? 'Perfecto, te paso el link del plan de 12 cuotas.',
+        response_type: 'commercial_reply' as const,
+        business_action: {
+          type: 'send_payment_link' as const,
+          plan_code: 'monthly_12' as const,
+          offering_sku: null,
+        },
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'completed' as const,
+        reason_code: 'PLAN_CHOSEN',
+        confidence: 0.95,
+        retrieval_used: null,
+      },
+      model: { provider: 'botpress' as const, model: 'test-model', prompt_version: 'v4-payment' },
+    };
+  }
+
+  it('materializes only the configured URL and strips any model-authored one', async () => {
+    const accepted = await processInboundMessage(paymentInbound());
+    const rogueUrl = 'https://evil.example.com/steal';
+
+    const committed = await commitAgentDecision(paymentDecision(accepted.turn_id, {
+      responseText: `Perfecto, acá tenés el link: ${rogueUrl}`,
+    }));
+
+    expect(committed.status).toBe('committed');
+    const content = committed.outbound!.content;
+    expect(content).toContain(PAYMENT_LINK_12M);
+    expect(content).not.toContain(rogueUrl);
+    // Only the canonical URL survives — the model-authored one is gone, not
+    // just deduplicated alongside it.
+    expect(content.match(/https?:\/\/\S+/g)).toEqual([PAYMENT_LINK_12M]);
+
+    const stored = await db!<Array<{ business_action: unknown }>>`
+      SELECT business_action FROM agent_decisions WHERE id = ${committed.decision_id}::uuid
+    `;
+    // Action + plan only — never a link or a price.
+    expect(stored[0].business_action).toEqual({
+      type: 'send_payment_link',
+      plan_code: 'monthly_12',
+      offering_sku: null,
+    });
+
+    const audits = await db!<Array<{ payload: Record<string, unknown> }>>`
+      SELECT payload FROM audit_log
+      WHERE entity_id = ${committed.decision_id}::uuid AND action = 'agent.decision.payment_link_urls_stripped'
+    `;
+    expect(audits).toHaveLength(1);
+    expect(audits[0].payload.stripped_urls).toEqual([rogueUrl]);
+  });
+
+  it('produces one decision and one outbound under replay of the same inbound', async () => {
+    const accepted = await processInboundMessage(paymentInbound());
+    const input = paymentDecision(accepted.turn_id);
+
+    const first = await commitAgentDecision(input);
+    const replay = await commitAgentDecision({ ...input, trace_id: randomUUID() });
+
+    expect(first.status).toBe('committed');
+    expect(replay.status).toBe('duplicate');
+    expect(replay.decision_id).toBe(first.decision_id);
+    expect(replay.outbound?.id).toBe(first.outbound?.id);
+
+    const counts = await db!<Array<{ decisions: number; deliveries: number }>>`
+      SELECT
+        (SELECT count(*)::integer FROM agent_decisions WHERE turn_id = ${accepted.turn_id}::uuid) AS decisions,
+        (SELECT count(*)::integer FROM outbound_deliveries WHERE message_id = ${first.outbound!.id}::uuid) AS deliveries
+    `;
+    expect(counts[0]).toEqual({ decisions: 1, deliveries: 1 });
+  });
+
+  it('closes the batch to completed on commit, and never duplicates it on replay', async () => {
+    const accepted = await processInboundMessage(paymentInbound());
+    await db!`UPDATE inbound_batches SET due_at = now() - interval '1 second' WHERE id = ${accepted.batch.id}::uuid`;
+
+    const claimed = await claimBatch(
+      { batch_id: accepted.batch.id, claimed_by: 'vitest-payment', trace_id: randomUUID() },
+      claimDeps
+    );
+    expect(claimed.outcome).toBe('claimed');
+    if (claimed.outcome !== 'claimed') return;
+
+    const committed = await commitClaimedDecision(
+      {
+        ...paymentDecision(claimed.turn_id),
+        batch_id: claimed.batch.id,
+        claim_token: claimed.batch.claim_token,
+      },
+      { store: orchestrationStore }
+    );
+    expect(committed.status).toBe('committed');
+    expect(committed.batch_completion).toBe('completed');
+
+    const batchRow = await db!<Array<{ state: string; lease_until: string | null }>>`
+      SELECT state, lease_until FROM inbound_batches WHERE id = ${claimed.batch.id}::uuid
+    `;
+    expect(batchRow[0]).toEqual({ state: 'completed', lease_until: null });
+
+    // A replay of the same decision must not duplicate anything, and the
+    // batch must stay completed — never revert to `claimed`.
+    const replay = await commitClaimedDecision(
+      {
+        ...paymentDecision(claimed.turn_id, { traceId: randomUUID() }),
+        batch_id: claimed.batch.id,
+        claim_token: claimed.batch.claim_token,
+      },
+      { store: orchestrationStore }
+    );
+    expect(replay.status).toBe('duplicate');
+    expect(replay.batch_completion).toBe('duplicate');
+
+    const batchRowAfterReplay = await db!<Array<{ state: string }>>`
+      SELECT state FROM inbound_batches WHERE id = ${claimed.batch.id}::uuid
+    `;
+    expect(batchRowAfterReplay[0].state).toBe('completed');
+  });
+
+  function ambiguousInbound() {
+    return envelope({
+      message: {
+        type: 'text',
+        text: 'Quiero comprar el curso ya',
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    });
+  }
+
+  it('a completeBatch stale_claim pauses without duplicating the decision or outbound', async () => {
+    const accepted = await processInboundMessage(paymentInbound());
+    await db!`UPDATE inbound_batches SET due_at = now() - interval '1 second' WHERE id = ${accepted.batch.id}::uuid`;
+
+    const claimed = await claimBatch(
+      { batch_id: accepted.batch.id, claimed_by: 'vitest-payment-close-fail', trace_id: randomUUID() },
+      claimDeps
+    );
+    expect(claimed.outcome).toBe('claimed');
+    if (claimed.outcome !== 'claimed') return;
+
+    // A claim_token that does not match the one the store actually issued —
+    // simulates the close arriving after another workflow already stole (or
+    // otherwise advanced) this batch's lease.
+    const wrongClaimToken = randomUUID();
+    const input = paymentDecision(claimed.turn_id);
+
+    const first = await commitClaimedDecision(
+      { ...input, batch_id: claimed.batch.id, claim_token: wrongClaimToken },
+      { store: orchestrationStore }
+    );
+    // The decision itself commits normally: closing the batch is a SEPARATE
+    // step, and its failure must never look like a decision failure.
+    expect(first.status).toBe('committed');
+    expect(first.batch_completion).toBe('stale_claim');
+
+    const batchRow = await db!<Array<{ state: string }>>`
+      SELECT state FROM inbound_batches WHERE id = ${claimed.batch.id}::uuid
+    `;
+    // Paused, not completed: left for the daily reconciler, never silently
+    // marked done.
+    expect(batchRow[0].state).toBe('claimed');
+
+    // Retrying (same wrong token) must not duplicate anything: the decision
+    // replay collapses to `duplicate`, and the close keeps failing the same
+    // way — never a thrown exception that could look like the commit itself
+    // failed.
+    const retry = await commitClaimedDecision(
+      { ...input, trace_id: randomUUID(), batch_id: claimed.batch.id, claim_token: wrongClaimToken },
+      { store: orchestrationStore }
+    );
+    expect(retry.status).toBe('duplicate');
+    expect(retry.decision_id).toBe(first.decision_id);
+    expect(retry.outbound?.id).toBe(first.outbound?.id);
+    expect(retry.batch_completion).toBe('stale_claim');
+
+    const counts = await db!<Array<{ decisions: number; deliveries: number }>>`
+      SELECT
+        (SELECT count(*)::integer FROM agent_decisions WHERE turn_id = ${claimed.turn_id}::uuid) AS decisions,
+        (SELECT count(*)::integer FROM outbound_deliveries WHERE message_id = ${first.outbound!.id}::uuid) AS deliveries
+    `;
+    expect(counts[0]).toEqual({ decisions: 1, deliveries: 1 });
+  });
+
+  it('a thrown completeBatch error pauses without duplicating, and is logged instead of surfaced', async () => {
+    const accepted = await processInboundMessage(paymentInbound());
+    await db!`UPDATE inbound_batches SET due_at = now() - interval '1 second' WHERE id = ${accepted.batch.id}::uuid`;
+
+    const claimed = await claimBatch(
+      { batch_id: accepted.batch.id, claimed_by: 'vitest-payment-close-throw', trace_id: randomUUID() },
+      claimDeps
+    );
+    expect(claimed.outcome).toBe('claimed');
+    if (claimed.outcome !== 'claimed') return;
+
+    // Only `completeBatch` is exercised by `commitClaimedDecision` — every
+    // other OrchestrationStore method is irrelevant to this test.
+    const failingStore = {
+      completeBatch: async () => {
+        throw new Error('SIMULATED_CLOSE_FAILURE');
+      },
+    } as unknown as typeof orchestrationStore;
+
+    const committed = await commitClaimedDecision(
+      { ...paymentDecision(claimed.turn_id), batch_id: claimed.batch.id, claim_token: claimed.batch.claim_token },
+      { store: failingStore }
+    );
+    expect(committed.status).toBe('committed');
+    expect(committed.batch_completion).toBe('error');
+
+    const batchRow = await db!<Array<{ state: string }>>`
+      SELECT state FROM inbound_batches WHERE id = ${claimed.batch.id}::uuid
+    `;
+    expect(batchRow[0].state).toBe('claimed');
+
+    const counts = await db!<Array<{ decisions: number }>>`
+      SELECT count(*)::integer AS decisions FROM agent_decisions WHERE turn_id = ${claimed.turn_id}::uuid
+    `;
+    expect(counts[0].decisions).toBe(1);
+  });
+
+  it('a send_payment_link refusal (422) leaves the batch claimed and persists nothing; a corrected clarification afterwards commits and completes it', async () => {
+    const accepted = await processInboundMessage(ambiguousInbound());
+    await db!`UPDATE inbound_batches SET due_at = now() - interval '1 second' WHERE id = ${accepted.batch.id}::uuid`;
+
+    const claimed = await claimBatch(
+      { batch_id: accepted.batch.id, claimed_by: 'vitest-payment-refusal', trace_id: randomUUID() },
+      claimDeps
+    );
+    expect(claimed.outcome).toBe('claimed');
+    if (claimed.outcome !== 'claimed') return;
+
+    // The batch's own message never names a plan — `allowed_payment_plan`
+    // cannot be derived, so the action must be refused, not guessed at.
+    await expect(commitClaimedDecision(
+      { ...paymentDecision(claimed.turn_id), batch_id: claimed.batch.id, claim_token: claimed.batch.claim_token },
+      { store: orchestrationStore }
+    )).rejects.toMatchObject({ reason: 'AMBIGUOUS_OR_ABSENT_CHOICE' });
+
+    const afterRefusal = await db!<Array<{ decisions: number; deliveries: number; batch_state: string }>>`
+      SELECT
+        (SELECT count(*)::integer FROM agent_decisions WHERE turn_id = ${claimed.turn_id}::uuid) AS decisions,
+        (SELECT count(*)::integer FROM outbound_deliveries od
+           JOIN agent_decisions ad ON ad.outbound_message_id = od.message_id
+           WHERE ad.turn_id = ${claimed.turn_id}::uuid) AS deliveries,
+        (SELECT state FROM inbound_batches WHERE id = ${claimed.batch.id}::uuid) AS batch_state
+    `;
+    // Ruling: the throw-to-422 path stays as is (matches request_call_now's
+    // existing refusal pattern) — nothing persisted, batch left `claimed`
+    // for the daily reconciler, never silently advanced.
+    expect(afterRefusal[0]).toEqual({ decisions: 0, deliveries: 0, batch_state: 'claimed' });
+
+    // Corrected retry: per spec §4.1 ("Una elección ausente o ambigua obliga
+    // a clarificar"), the agent clarifies instead of re-attempting the same
+    // ambiguous action — and the batch's claim is still live, so it commits
+    // normally and completes the batch it left open.
+    const clarified = await commitClaimedDecision(
+      {
+        turn_id: claimed.turn_id,
+        trace_id: randomUUID(),
+        decision: {
+          schema_version: 4 as const,
+          intent: 'commercial' as const,
+          kind: 'clarify' as const,
+          response: '¿Preferís 12 cuotas, 6 cuotas o pago al contado?',
+          response_type: 'clarification' as const,
+          business_action: null,
+          memory_candidates: [],
+          missing_information: ['payment_plan'],
+          next_state: 'waiting_user' as const,
+          reason_code: 'CLARIFY_PLAN',
+          confidence: 0.9,
+          retrieval_used: null,
+        },
+        model: { provider: 'botpress' as const, model: 'test-model', prompt_version: 'v4-payment' },
+        batch_id: claimed.batch.id,
+        claim_token: claimed.batch.claim_token,
+      },
+      { store: orchestrationStore }
+    );
+    expect(clarified.status).toBe('committed');
+    expect(clarified.batch_completion).toBe('completed');
+
+    const finalBatch = await db!<Array<{ state: string }>>`
+      SELECT state FROM inbound_batches WHERE id = ${claimed.batch.id}::uuid
+    `;
+    expect(finalBatch[0].state).toBe('completed');
   });
 });

@@ -11,13 +11,14 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { processInboundMessage, type InboundEnvelope } from '@/lib/services/ingestion.service';
 import {
   commitAgentDecision,
   recordDeliveryReport,
   DeliveryReportConflictError,
 } from '@/lib/services/decision.service';
+import { leadProjectionKey } from '@/lib/services/projection.service';
 import { PostgresReconciliationStore } from '@/features/orchestration/adapters/postgres-reconciliation-store';
 import { sql } from '@/lib/db/orchestrator';
 
@@ -343,5 +344,136 @@ run('un reporte pertenece a un intento y sólo a ese intento', () => {
     expect(result.status).toBe('recorded');
     expect(after.state).toBe('submitted');
     expect(after.provider_message_id).toBe(botpressMessageId);
+  });
+});
+
+/**
+ * Fase 4 — Sheets sólo después de la entrega confirmada
+ * (docs/contracts/agent-a-operational-mvp.md §5, §7). Un fallo de entrega
+ * nunca encola la proyección; una entrega confirmada encola exactamente una,
+ * incluso si el reporte se reproduce.
+ */
+run('la entrega gobierna la proyección payment_link_sent', () => {
+  let paymentWorkspaceId: string;
+  const PAYMENT_WORKSPACE_SLUG = `test-payment-fence-${randomUUID().slice(0, 8)}`;
+  const SPREADSHEET_ID = `test-sheet-${randomUUID()}`;
+  const TAB_NAME = 'Leads';
+  const savedEnv: Partial<Record<string, string>> = {};
+
+  beforeAll(async () => {
+    const rows = await sql<Array<{ id: string }>>`
+      INSERT INTO workspaces (slug, display_name) VALUES (${PAYMENT_WORKSPACE_SLUG}, 'Payment Fencing Test')
+      RETURNING id
+    `;
+    paymentWorkspaceId = rows[0].id;
+    for (const key of [
+      'BUSINESS_WORKSPACE_SLUG',
+      'PAYMENT_LINK_12M',
+      'PAYMENT_LINK_6M',
+      'PAYMENT_LINK_CONTADO',
+      'GOOGLE_SHEETS_SPREADSHEET_ID',
+      'GOOGLE_SHEETS_TAB_NAME',
+    ]) {
+      savedEnv[key] = process.env[key];
+    }
+    process.env.BUSINESS_WORKSPACE_SLUG = PAYMENT_WORKSPACE_SLUG;
+    process.env.PAYMENT_LINK_12M = 'https://buy.stripe.com/test_12m_fence';
+    process.env.PAYMENT_LINK_6M = 'https://buy.stripe.com/test_6m_fence';
+    process.env.PAYMENT_LINK_CONTADO = 'https://buy.stripe.com/test_contado_fence';
+    process.env.GOOGLE_SHEETS_SPREADSHEET_ID = SPREADSHEET_ID;
+    process.env.GOOGLE_SHEETS_TAB_NAME = TAB_NAME;
+  });
+
+  afterAll(() => {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  async function seedPaymentTurn(text: string) {
+    const context = await processInboundMessage(envelope(text));
+    const committed = await commitAgentDecision({
+      turn_id: context.turn_id,
+      trace_id: randomUUID(),
+      decision: {
+        schema_version: 4 as const,
+        intent: 'commercial' as const,
+        kind: 'reply' as const,
+        response: 'Perfecto, te paso el link del plan de 12 cuotas.',
+        response_type: 'commercial_reply' as const,
+        business_action: {
+          type: 'send_payment_link' as const,
+          plan_code: 'monthly_12' as const,
+          offering_sku: null,
+        },
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'completed' as const,
+        reason_code: 'PLAN_CHOSEN',
+        confidence: 0.95,
+        retrieval_used: null,
+      },
+      model: { provider: 'botpress' as const, model: 'test-model', prompt_version: 'v-fence-payment' },
+    });
+    const rows = await sql<Array<{ id: string; attempt_count: number }>>`
+      SELECT id, attempt_count FROM outbound_deliveries
+      WHERE message_id = ${committed.outbound!.id}::uuid
+    `;
+    return {
+      ...committed,
+      delivery_id: rows[0].id,
+      attempt: rows[0].attempt_count,
+      contact_id: context.contact.id,
+    };
+  }
+
+  async function projectionRows(contactId: string) {
+    return sql<Array<{ payload: Record<string, unknown> }>>`
+      SELECT payload FROM sheet_projection_rows
+      WHERE projection_key = ${leadProjectionKey(paymentWorkspaceId, contactId)}
+    `;
+  }
+
+  it('a failed delivery report never marks the link sent or enqueues a projection', async () => {
+    const turn = await seedPaymentTurn('Quiero pagar en 12 cuotas, opción fallida');
+    await recordDeliveryReport({
+      outbound_id: turn.outbound!.id,
+      trace_id: randomUUID(),
+      status: 'failed',
+      botpress_message_id: null,
+      replayed: false,
+      error_code: 'STUDYX_NETWORK_ERROR',
+      delivery_attempt: turn.attempt,
+    });
+
+    expect(await projectionRows(turn.contact_id)).toHaveLength(0);
+  });
+
+  it('a confirmed delivery enqueues exactly one payment_link_sent row, even under replay', async () => {
+    const turn = await seedPaymentTurn('Quiero pagar en 12 cuotas, opción confirmada');
+    const report = {
+      outbound_id: turn.outbound!.id,
+      trace_id: randomUUID(),
+      status: 'submitted_to_botpress' as const,
+      botpress_message_id: `bp-payment-${randomUUID()}`,
+      replayed: false,
+      error_code: null,
+      delivery_attempt: turn.attempt,
+    };
+
+    const first = await recordDeliveryReport(report);
+    expect(first.status).toBe('recorded');
+    const replay = await recordDeliveryReport({ ...report, trace_id: randomUUID(), replayed: true });
+    expect(replay.status).toBe('duplicate');
+
+    const rows = await projectionRows(turn.contact_id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].payload).toMatchObject({
+      etapa_comercial: 'proposal',
+      estado_pago: 'pendiente',
+      plan: 'monthly_12',
+      ultima_senal: 'payment_link_sent',
+    });
   });
 });

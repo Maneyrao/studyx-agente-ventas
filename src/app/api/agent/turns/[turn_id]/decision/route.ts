@@ -17,11 +17,12 @@ import {
 import { timedStage } from '@/lib/observability/structured-log';
 import { isRetryableTransactionError } from '@/lib/db/transaction';
 import {
-  commitAgentDecision,
   DecisionConflictError,
   DecisionPolicyError,
   DecisionTurnNotFoundError,
 } from '@/lib/services/decision.service';
+import { commitClaimedDecision } from '@/features/orchestration/application/commit-claimed-decision';
+import { orchestrationStore } from '@/features/orchestration/adapters/postgres-orchestration-store';
 
 /**
  * POST /api/agent/turns/:turn_id/decision
@@ -99,6 +100,16 @@ const businessActionV4Schema = z.discriminatedUnion('type', [
     reason: z.enum(REQUEST_CALL_NOW_REASONS),
     course_of_interest: z.string().trim().min(1).max(128).optional(),
   }).strict(),
+  // Shape only: the deep rules (plan_code must equal the batch-derived
+  // choice, offering_sku must be a canonical sku and never a URL/amount)
+  // live in the domain parser (`decision-v4.ts`'s `parseSendPaymentLinkAction`),
+  // invoked below via `assertDecisionBusinessActionPermitted`/`parseDecisionAnyVersion`
+  // — the same split already used for request_call_now.
+  z.object({
+    type: z.literal('send_payment_link'),
+    plan_code: z.enum(['monthly_12', 'monthly_6', 'one_time']),
+    offering_sku: z.string().trim().min(1).max(128).nullable(),
+  }).strict(),
 ]);
 
 const decisionV4Schema = z.object({
@@ -131,6 +142,11 @@ const schema = z.object({
     model: z.string().trim().min(1).max(256),
     prompt_version: z.string().trim().min(1).max(128),
   }).strict(),
+  // Both optional together: a caller with no claimed batch (predating
+  // batching, or a direct test) simply skips the batch close — see
+  // commit-claimed-decision.ts. Present on every real Botpress commit.
+  batch_id: z.string().uuid().nullable().optional(),
+  claim_token: z.string().uuid().nullable().optional(),
 }).strict();
 
 export async function POST(
@@ -159,7 +175,14 @@ export async function POST(
     const committed = await timedStage(
       'orchestration.decision_commit',
       { trace_id: parsed.data.trace_id, turn_id: parsed.data.turn_id },
-      () => commitAgentDecision(parsed.data)
+      () => commitClaimedDecision(
+        {
+          ...parsed.data,
+          batch_id: parsed.data.batch_id ?? null,
+          claim_token: parsed.data.claim_token ?? null,
+        },
+        { store: orchestrationStore }
+      )
     );
     return NextResponse.json(committed, { status: 200 });
   } catch (error) {

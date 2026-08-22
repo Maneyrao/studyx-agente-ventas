@@ -86,6 +86,36 @@ export function loadPaymentProviderConfig(
   };
 }
 
+/**
+ * The three owner-approved Stripe payment link env vars (spec §3, §9).
+ * `config-payment-link.resolver.ts` remains the sole authority that reads
+ * them and fails closed per-plan; this list only documents the names once so
+ * a caller (or a test building a synthetic env) has one place to look them
+ * up instead of re-discovering them in the resolver's private map.
+ */
+export const PAYMENT_LINK_ENV_VARS = ['PAYMENT_LINK_12M', 'PAYMENT_LINK_6M', 'PAYMENT_LINK_CONTADO'] as const;
+
+export interface SheetsProjectionConfig {
+  readonly spreadsheetId: string;
+  readonly tabName: string;
+}
+
+/**
+ * Where the Sheets outbox writes (spec §5, §9). Fails closed to `null`
+ * rather than throwing: a deployment without Sheets configured must still
+ * commit decisions and deliver messages normally — enqueueing the
+ * `payment_link_sent` projection is what gets skipped, never the canonical
+ * write it follows.
+ */
+export function loadSheetsProjectionConfig(
+  environment: NodeJS.ProcessEnv = process.env,
+): SheetsProjectionConfig | null {
+  const spreadsheetId = environment.GOOGLE_SHEETS_SPREADSHEET_ID?.trim();
+  const tabName = environment.GOOGLE_SHEETS_TAB_NAME?.trim();
+  if (!spreadsheetId || !tabName) return null;
+  return { spreadsheetId, tabName };
+}
+
 export type TelegramAgentBConfig = {
   botToken: string;
   webhookSecret: string;
