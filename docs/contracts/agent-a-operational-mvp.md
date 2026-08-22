@@ -68,11 +68,13 @@ PostgreSQL/Supabase es la fuente de verdad. `sheet_projection_rows` es el outbox
 
 Clave: `lead:<workspace_id>:<contact_id>`. Se usa `values.update` sobre un `row_number` reservado; nunca `append` como operación primaria.
 
+Existe exactamente una fila por `contact_id` (clave `lead:<workspace_id>:<contact_id>`); cada evento posterior actualiza esa misma fila reservada de forma idempotente vía `values.update` y nunca crea una fila duplicada.
+
 Columnas:
 
 ```text
-fecha_alta | contact_id | telefono | nombre | etapa_comercial | curso_interes |
-plan | estado_pago | fecha_pago | estado_alta | call_id | ultima_senal | trace_id
+fecha_alta | contact_id | nombre | apellido | email | telefono | etapa_comercial |
+curso_interes | plan | estado_pago | fecha_pago | estado_alta | call_id | ultima_senal | trace_id
 ```
 
 Reglas:

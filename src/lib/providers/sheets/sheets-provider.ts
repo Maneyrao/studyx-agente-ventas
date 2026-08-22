@@ -13,8 +13,10 @@
 export const SHEET_COLUMN_ORDER = [
   'fecha_alta',
   'contact_id',
-  'telefono',
   'nombre',
+  'apellido',
+  'email',
+  'telefono',
   'etapa_comercial',
   'curso_interes',
   'plan',

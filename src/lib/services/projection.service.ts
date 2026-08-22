@@ -45,7 +45,15 @@ export interface LeadProjectionInput {
   spreadsheetId: string;
   tabName: string;
   telefono: string;
-  nombre: string;
+  /**
+   * Optional: an event that doesn't carry identity data (e.g. a bare
+   * `payment_link_sent` update) omits these, and the merge below must not
+   * blank out whatever a previous event already projected for this same
+   * contact_id.
+   */
+  nombre?: string;
+  apellido?: string;
+  email?: string;
   etapaComercial: string;
   cursoInteres: string;
   plan: string;
@@ -81,6 +89,11 @@ function backoffSeconds(attemptCount: number): number {
  * 'hecha_por_operador'), so a new commercial signal can never clobber an
  * operator's manual mark. `fecha_alta` is likewise fixed at first insert.
  *
+ * `nombre`/`apellido`/`email` are optional per call: an event that omits one
+ * (e.g. a bare `payment_link_sent` update) falls back to whatever value the
+ * row already carries, so a partial later event can never blank out an
+ * identity a previous event projected for the same `contact_id`.
+ *
  * `row_number` is reserved once, on first insert, as
  * `MAX(row_number in this spreadsheet+tab) + 1`; a concurrent first insert
  * for a different lead can race on that reservation, so a unique-violation
@@ -105,8 +118,13 @@ export async function enqueueLeadProjection(
     const values: SheetRowValues = {
       fecha_alta: existing?.payload.fecha_alta ?? new Date().toISOString().slice(0, 10),
       contact_id: input.contactId,
+      // Identity fields are optional per event: an event that omits them
+      // (e.g. a bare payment update) must not blank out an identity a prior
+      // event already projected for this same contact_id.
+      nombre: input.nombre ?? existing?.payload.nombre ?? '',
+      apellido: input.apellido ?? existing?.payload.apellido ?? '',
+      email: input.email ?? existing?.payload.email ?? '',
       telefono: input.telefono,
-      nombre: input.nombre,
       etapa_comercial: input.etapaComercial,
       curso_interes: input.cursoInteres,
       plan: input.plan,

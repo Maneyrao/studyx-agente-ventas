@@ -19,6 +19,7 @@ const {
 } = await import('@/lib/services/projection.service');
 type LeadProjectionInput = Parameters<typeof enqueueLeadProjection>[0];
 const { FakeSheetsProvider } = await import('@/lib/providers/sheets/fake-sheets-provider');
+const { SHEET_COLUMN_ORDER } = await import('@/lib/providers/sheets/sheets-provider');
 
 /**
  * RED cases from the A3 plan (docs/contracts/agent-a-operational-mvp.md §5,
@@ -66,7 +67,10 @@ function leadInput(
     spreadsheetId,
     tabName: TAB_NAME,
     telefono: '+5491100000000',
-    nombre: 'Lead Test',
+    // nombre/apellido/email are intentionally NOT defaulted here: they are
+    // optional per event, and tests that care about the preserve-on-omit
+    // merge semantics must pass them explicitly via `overrides` to simulate
+    // an event that does or doesn't carry identity data.
     etapaComercial: 'proposal',
     cursoInteres: 'reparacion-celulares',
     plan: 'monthly_12',
@@ -114,6 +118,12 @@ async function drainPending() {
 
 run('sheet projection idempotency', () => {
   it('replaying enqueue 10x for the same lead keeps a single outbox row and a single sheet row', async () => {
+    // A prior run of this same suite against the same disposable DB can
+    // leave enqueue-only tests' rows pending (e.g. "two different contact_ids
+    // ..." below never flushes) — drain them first so this flush's global
+    // counts reflect only this test's own row.
+    await drainPending();
+
     const workspaceId = await workspaceFixture();
     const contactId = await contactFixture();
     const spreadsheetId = randomUUID();
@@ -217,5 +227,110 @@ run('sheet projection idempotency', () => {
     const finalRows = await outboxRowsFor(spreadsheetId, TAB_NAME);
     expect(finalRows[0].state).toBe('projected');
     expect(finalRows[0].attempt_count).toBe(2);
+  });
+
+  it('projects nombre/apellido/email into their own columns in the 15-column order', async () => {
+    // Isolate this flush from any pending row another test in this file left
+    // behind (claim_sheet_projection_rows claims globally, not per-spreadsheet).
+    await drainPending();
+
+    const workspaceId = await workspaceFixture();
+    const spreadsheetId = randomUUID();
+    const contactId = await contactFixture();
+
+    await enqueueLeadProjection(
+      leadInput(workspaceId, contactId, spreadsheetId, {
+        nombre: 'Ada',
+        apellido: 'Lovelace',
+        email: 'ada@example.com',
+      }),
+      { sql: db! },
+    );
+
+    const provider = new FakeSheetsProvider();
+    await flushSheetProjections({ worker_id: 'w-columns', limit: 5 }, { sql: db!, provider });
+
+    const rows = await outboxRowsFor(spreadsheetId, TAB_NAME);
+    const written = provider.rowAt(spreadsheetId, TAB_NAME, rows[0].row_number);
+    expect(written).toBeDefined();
+
+    // The 15-column contract order (docs/contracts/agent-a-operational-mvp.md §5):
+    // fecha_alta | contact_id | nombre | apellido | email | telefono | ...
+    expect(SHEET_COLUMN_ORDER.indexOf('nombre')).toBe(2);
+    expect(SHEET_COLUMN_ORDER.indexOf('apellido')).toBe(3);
+    expect(SHEET_COLUMN_ORDER.indexOf('email')).toBe(4);
+
+    const rowArray = SHEET_COLUMN_ORDER.map((column) => written!.values[column]);
+    expect(rowArray).toHaveLength(15);
+    expect(rowArray[2]).toBe('Ada');
+    expect(rowArray[3]).toBe('Lovelace');
+    expect(rowArray[4]).toBe('ada@example.com');
+  });
+
+  it('mixed events (replays plus a later identity-less payment update) stay on one row and never erase a previously projected identity', async () => {
+    await drainPending();
+
+    const workspaceId = await workspaceFixture();
+    const spreadsheetId = randomUUID();
+    const contactId = await contactFixture();
+
+    // First event carries full identity.
+    for (let i = 0; i < 3; i++) {
+      await enqueueLeadProjection(
+        leadInput(workspaceId, contactId, spreadsheetId, {
+          nombre: 'Ada',
+          apellido: 'Lovelace',
+          email: 'ada@example.com',
+        }),
+        { sql: db! },
+      );
+    }
+
+    // A later commercial signal (e.g. the payment-link action) carries no
+    // identity fields — it must not blank out what the first event set.
+    await enqueueLeadProjection(
+      leadInput(workspaceId, contactId, spreadsheetId, {
+        etapaComercial: 'proposal',
+        estadoPago: 'pendiente',
+        plan: 'monthly_12',
+        ultimaSenal: 'payment_link_sent',
+      }),
+      { sql: db! },
+    );
+
+    const rows = await outboxRowsFor(spreadsheetId, TAB_NAME);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].payload.nombre).toBe('Ada');
+    expect(rows[0].payload.apellido).toBe('Lovelace');
+    expect(rows[0].payload.email).toBe('ada@example.com');
+    expect(rows[0].payload.etapa_comercial).toBe('proposal');
+    expect(rows[0].payload.estado_pago).toBe('pendiente');
+    expect(rows[0].payload.plan).toBe('monthly_12');
+    expect(rows[0].payload.ultima_senal).toBe('payment_link_sent');
+
+    const provider = new FakeSheetsProvider();
+    const result = await flushSheetProjections({ worker_id: 'w-mixed', limit: 5 }, { sql: db!, provider });
+    expect(result.completed).toBe(1);
+    expect(provider.writtenRowCount).toBe(1);
+    const written = provider.rowAt(spreadsheetId, TAB_NAME, rows[0].row_number);
+    expect(written?.values.nombre).toBe('Ada');
+    expect(written?.values.apellido).toBe('Lovelace');
+    expect(written?.values.email).toBe('ada@example.com');
+  });
+
+  it('two different contact_ids never share a row even with identical identity fields', async () => {
+    const workspaceId = await workspaceFixture();
+    const spreadsheetId = randomUUID();
+    const contactA = await contactFixture();
+    const contactB = await contactFixture();
+
+    const shared = { nombre: 'Ada', apellido: 'Lovelace', email: 'ada@example.com' };
+    const a = await enqueueLeadProjection(leadInput(workspaceId, contactA, spreadsheetId, shared), { sql: db! });
+    const b = await enqueueLeadProjection(leadInput(workspaceId, contactB, spreadsheetId, shared), { sql: db! });
+
+    expect(a.rowNumber).not.toBe(b.rowNumber);
+    const rows = await outboxRowsFor(spreadsheetId, TAB_NAME);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.payload.contact_id).sort()).toEqual([contactA, contactB].sort());
   });
 });
