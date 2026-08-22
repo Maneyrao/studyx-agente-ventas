@@ -60,6 +60,10 @@ describe('evaluateCallOfferPolicy', () => {
 
     expect(result.allowedActions).toEqual(['request_call_now']);
     expect(result.openOffer).toBeNull();
+    expect(result.acceptedOffer).toEqual({
+      decisionId: 'offer-1',
+      expiresAt: minutesFromNow(1),
+    });
     expect(result.reason).toBe('OFFER_ACCEPTED');
   });
 

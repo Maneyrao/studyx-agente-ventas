@@ -324,6 +324,7 @@ run('sales_context at claim time', () => {
       mode: 'advising',
       course_of_interest: null,
       open_call_offer: null,
+      accepted_call_offer: null,
       active_call: null,
       allowed_actions: ['offer_call'],
       last_call_result: null,

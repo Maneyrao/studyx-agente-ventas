@@ -15,6 +15,7 @@ function claimed(overrides: {
   texts?: string[];
   allowedActions?: Array<'offer_call' | 'request_call_now'>;
   openOffer?: boolean;
+  acceptedOffer?: boolean;
   course?: string | null;
   route?: ClaimedTurn['deterministic_route'];
 }): ClaimedTurn {
@@ -69,6 +70,9 @@ function claimed(overrides: {
       open_call_offer: overrides.openOffer
         ? { decision_id: UUID, expires_at: '2026-08-16T00:15:00.000Z' }
         : null,
+      accepted_call_offer: overrides.acceptedOffer
+        ? { decision_id: UUID, expires_at: '2026-08-16T00:15:00.000Z' }
+        : null,
       active_call: null,
       allowed_actions: overrides.allowedActions ?? ['offer_call'],
       last_call_result: null,
@@ -115,7 +119,7 @@ describe('matchCallHandoffFastPath', () => {
       claimed({
         texts: ['sí'],
         allowedActions: ['request_call_now'],
-        openOffer: true,
+        acceptedOffer: true,
         route: 'call_accepted_offer',
       }),
     );

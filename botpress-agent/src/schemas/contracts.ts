@@ -339,6 +339,13 @@ export const SalesContextSchema = z.object({
       expires_at: z.string(),
     })
     .nullable(),
+  accepted_call_offer: z
+    .object({
+      decision_id: z.string().uuid(),
+      expires_at: z.string(),
+    })
+    .nullable()
+    .default(null),
   active_call: z
     .object({
       call_id: z.string().uuid(),
@@ -476,7 +483,7 @@ export const ClaimedTurnSchema = z.object({
     'call_direct_request',
     'call_accepted_offer',
     'call_acceptance_clarification',
-  ]).nullable(),
+  ]).nullable().default(null),
   diagnostics: z.object({
     timings: z.object({
       claim_total_ms: z.number().nonnegative(),
@@ -485,15 +492,31 @@ export const ClaimedTurnSchema = z.object({
       memory_search_ms: z.number().nonnegative(),
       knowledge_search_ms: z.number().nonnegative(),
       business_snapshot_ms: z.number().nonnegative(),
-    }).strict(),
+    }).passthrough(),
     counters: z.object({
       embedding_calls: z.number().int().nonnegative(),
       memory_search_calls: z.number().int().nonnegative(),
       knowledge_search_calls: z.number().int().nonnegative(),
       business_snapshot_calls: z.number().int().nonnegative(),
       catalog_calls: z.literal(0),
-    }).strict(),
-  }).strict(),
+    }).passthrough(),
+  }).passthrough().default({
+    timings: {
+      claim_total_ms: 0,
+      core_db_ms: 0,
+      shared_embedding_ms: 0,
+      memory_search_ms: 0,
+      knowledge_search_ms: 0,
+      business_snapshot_ms: 0,
+    },
+    counters: {
+      embedding_calls: 0,
+      memory_search_calls: 0,
+      knowledge_search_calls: 0,
+      business_snapshot_calls: 0,
+      catalog_calls: 0,
+    },
+  }),
   business_context: BusinessContextSchema.nullable().default(null),
   business_context_available: z.boolean().default(false),
   existing_result: ExistingResultSchema,

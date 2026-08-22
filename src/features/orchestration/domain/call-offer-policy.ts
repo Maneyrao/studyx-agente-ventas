@@ -46,12 +46,14 @@ export interface CallOfferPolicyFacts {
 export interface CallOfferPolicyResult {
   allowedActions: Array<'offer_call' | 'request_call_now'>;
   openOffer: { decisionId: string; expiresAt: string } | null;
+  /** Live offer consumed by an acceptance on this turn, retained as evidence. */
+  acceptedOffer: { decisionId: string; expiresAt: string } | null;
   cooldownUntil: string | null;
   reason: string;
 }
 
 function noSalesAction(reason: string): CallOfferPolicyResult {
-  return { allowedActions: [], openOffer: null, cooldownUntil: null, reason };
+  return { allowedActions: [], openOffer: null, acceptedOffer: null, cooldownUntil: null, reason };
 }
 
 /** The live open offer, recomputed against `now`, or null once it has expired. */
@@ -89,6 +91,7 @@ export function evaluateCallOfferPolicy(facts: CallOfferPolicyFacts): CallOfferP
     return {
       allowedActions: ['request_call_now'],
       openOffer: null,
+      acceptedOffer: null,
       cooldownUntil,
       reason: 'DIRECT_REQUEST',
     };
@@ -98,6 +101,7 @@ export function evaluateCallOfferPolicy(facts: CallOfferPolicyFacts): CallOfferP
     return {
       allowedActions: [],
       openOffer: null,
+      acceptedOffer: null,
       cooldownUntil: new Date(nowMs + DECLINE_COOLDOWN_MS).toISOString(),
       reason: 'DECLINED',
     };
@@ -110,16 +114,24 @@ export function evaluateCallOfferPolicy(facts: CallOfferPolicyFacts): CallOfferP
       return {
         allowedActions: ['request_call_now'],
         openOffer: null,
+        acceptedOffer: openOffer,
         cooldownUntil,
         reason: 'OFFER_ACCEPTED',
       };
     }
     if (cooldownUntil !== null) {
-      return { allowedActions: [], openOffer: null, cooldownUntil, reason: 'DECLINE_COOLDOWN_ACTIVE' };
+      return {
+        allowedActions: [],
+        openOffer: null,
+        acceptedOffer: null,
+        cooldownUntil,
+        reason: 'DECLINE_COOLDOWN_ACTIVE',
+      };
     }
     return {
       allowedActions: [],
       openOffer: null,
+      acceptedOffer: null,
       cooldownUntil: null,
       reason: facts.openOffer !== null ? 'OFFER_EXPIRED' : 'NO_OPEN_OFFER',
     };
@@ -128,10 +140,28 @@ export function evaluateCallOfferPolicy(facts: CallOfferPolicyFacts): CallOfferP
   // model_required: the text itself settled nothing. The only thing this
   // policy adds is whether the model may proactively *offer* a call.
   if (cooldownUntil !== null) {
-    return { allowedActions: [], openOffer, cooldownUntil, reason: 'DECLINE_COOLDOWN_ACTIVE' };
+    return {
+      allowedActions: [],
+      openOffer,
+      acceptedOffer: null,
+      cooldownUntil,
+      reason: 'DECLINE_COOLDOWN_ACTIVE',
+    };
   }
   if (openOffer !== null) {
-    return { allowedActions: [], openOffer, cooldownUntil: null, reason: 'OFFER_PENDING_RESPONSE' };
+    return {
+      allowedActions: [],
+      openOffer,
+      acceptedOffer: null,
+      cooldownUntil: null,
+      reason: 'OFFER_PENDING_RESPONSE',
+    };
   }
-  return { allowedActions: ['offer_call'], openOffer: null, cooldownUntil: null, reason: 'ELIGIBLE_FOR_OFFER' };
+  return {
+    allowedActions: ['offer_call'],
+    openOffer: null,
+    acceptedOffer: null,
+    cooldownUntil: null,
+    reason: 'ELIGIBLE_FOR_OFFER',
+  };
 }

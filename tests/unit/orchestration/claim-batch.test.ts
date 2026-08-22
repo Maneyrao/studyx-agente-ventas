@@ -12,6 +12,11 @@ import type {
   OrchestrationStore,
 } from '@/features/orchestration/ports/orchestration-store';
 import type { BusinessContextView } from '@/features/orchestration/domain/business-context';
+import { matchCallHandoffFastPath } from '../../../botpress-agent/src/utils/call-handoff-fast-path';
+import {
+  ClaimedTurnSchema,
+  type ClaimedTurn as BotpressClaimedTurn,
+} from '../../../botpress-agent/src/schemas/contracts';
 
 /**
  * The use case is exercised entirely through its ports — no database, no HTTP.
@@ -65,6 +70,31 @@ function callFacts(overrides: Partial<ClaimedCallFacts> = {}): ClaimedCallFacts 
     last_call_result: null,
     last_decline_at: null,
     ...overrides,
+  };
+}
+
+type ClaimedResult = Extract<Awaited<ReturnType<typeof claimBatch>>, { outcome: 'claimed' }>;
+
+function withWireUuids(result: ClaimedResult) {
+  return {
+    ...result,
+    trace_id: '00000000-0000-4000-8000-000000000001',
+    turn_id: '00000000-0000-4000-8000-000000000002',
+    batch: {
+      ...result.batch,
+      id: '00000000-0000-4000-8000-000000000003',
+      claim_token: '00000000-0000-4000-8000-000000000004',
+      conversation_id: '00000000-0000-4000-8000-000000000005',
+      contact_id: '00000000-0000-4000-8000-000000000006',
+    },
+    contact: { ...result.contact, id: '00000000-0000-4000-8000-000000000006' },
+    context: {
+      ...result.context,
+      batch_messages: result.context.batch_messages.map((message, index) => ({
+        ...message,
+        id: `00000000-0000-4000-8000-${String(index + 10).padStart(12, '0')}`,
+      })),
+    },
   };
 }
 
@@ -237,6 +267,59 @@ describe('claimBatch', () => {
     expect(serialized).not.toContain('Ana');
     expect(serialized).not.toContain('contact-1');
     expect(serialized).not.toContain('¿cuánto sale el curso?');
+  });
+
+  it('lets new Botpress parse a legacy backend claim without hot-path fields', async () => {
+    const result = await claimBatch(input, buildDeps());
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+    const legacyBackendPayload: Record<string, unknown> = { ...withWireUuids(result) };
+    delete legacyBackendPayload.deterministic_route;
+    delete legacyBackendPayload.diagnostics;
+
+    const parsed = ClaimedTurnSchema.parse(legacyBackendPayload);
+    expect(parsed.deterministic_route).toBeNull();
+    expect(parsed.diagnostics).toEqual({
+      timings: {
+        claim_total_ms: 0,
+        core_db_ms: 0,
+        shared_embedding_ms: 0,
+        memory_search_ms: 0,
+        knowledge_search_ms: 0,
+        business_snapshot_ms: 0,
+      },
+      counters: {
+        embedding_calls: 0,
+        memory_search_calls: 0,
+        knowledge_search_calls: 0,
+        business_snapshot_calls: 0,
+        catalog_calls: 0,
+      },
+    });
+  });
+
+  it('accepts additive future diagnostics without invalidating a claim', async () => {
+    const result = await claimBatch(input, buildDeps());
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+    const wireResult = withWireUuids(result);
+    const parsed = ClaimedTurnSchema.parse({
+      ...wireResult,
+      diagnostics: {
+        ...wireResult.diagnostics,
+        schema_version: 2,
+        timings: { ...wireResult.diagnostics.timings, provider_queue_ms: 7 },
+        counters: { ...wireResult.diagnostics.counters, snapshot_cache_hits: 1 },
+      },
+    });
+
+    expect((parsed.diagnostics as unknown as Record<string, unknown>).schema_version).toBe(2);
+    expect(
+      (parsed.diagnostics.timings as unknown as Record<string, unknown>).provider_queue_ms,
+    ).toBe(7);
+    expect(
+      (parsed.diagnostics.counters as unknown as Record<string, unknown>).snapshot_cache_hits,
+    ).toBe(1);
   });
 
   it('degrades to structured context when the memory index fails', async () => {
@@ -525,6 +608,7 @@ describe('claimBatch sales_context', () => {
       mode: 'advising',
       course_of_interest: null,
       open_call_offer: null,
+      accepted_call_offer: null,
       active_call: null,
       allowed_actions: ['offer_call'],
       last_call_result: null,
@@ -560,6 +644,80 @@ describe('claimBatch sales_context', () => {
     // The current message is an unrelated question, not a settling reply,
     // so no action is granted while the offer is still pending a response.
     expect(result.sales_context.allowed_actions).toEqual([]);
+  });
+
+  it('carries accepted-offer identity through claim into one Botpress call request', async () => {
+    const wireIds = {
+      trace: '00000000-0000-4000-8000-000000000001',
+      batch: '00000000-0000-4000-8000-000000000002',
+      claimToken: '00000000-0000-4000-8000-000000000003',
+      conversation: '00000000-0000-4000-8000-000000000004',
+      contact: '00000000-0000-4000-8000-000000000005',
+      turn: '00000000-0000-4000-8000-000000000006',
+      message: '00000000-0000-4000-8000-000000000007',
+      offer: '00000000-0000-4000-8000-000000000008',
+    };
+    const messages = [
+      {
+        id: wireIds.message,
+        conversation_seq: 1,
+        content: 'dale',
+        created_at: '2026-08-11T12:00:00.000Z',
+        message_type: 'text',
+      },
+    ];
+    const deps = buildDeps({
+      claimResult: claim({
+        batch_id: wireIds.batch,
+        claim_token: wireIds.claimToken,
+        conversation_id: wireIds.conversation,
+        contact_id: wireIds.contact,
+      }),
+      factsResult: facts({
+        contact: { ...facts().contact, id: wireIds.contact },
+        representative_turn_id: wireIds.turn,
+      }),
+      messagesResult: messages,
+      callFactsResult: callFacts({
+        open_offer: {
+          decision_id: wireIds.offer,
+          offered_at: '2026-08-11T11:58:00.000Z',
+        },
+      }),
+      now: () => '2026-08-11T12:00:00.000Z',
+    });
+
+    const result = await claimBatch(
+      { batch_id: wireIds.batch, claimed_by: 'workflow-1', trace_id: wireIds.trace },
+      deps,
+    );
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+    expect(result.deterministic_route).toBe('call_accepted_offer');
+    expect(result.sales_context.open_call_offer).toBeNull();
+    expect(
+      (result.sales_context as unknown as {
+        accepted_call_offer: { decision_id: string; expires_at: string } | null;
+      }).accepted_call_offer,
+    ).toEqual({
+      decision_id: wireIds.offer,
+      expires_at: '2026-08-11T12:13:00.000Z',
+    });
+
+    const wireClaim = ClaimedTurnSchema.parse(result) as BotpressClaimedTurn;
+    expect(wireClaim.sales_context.accepted_call_offer).toEqual({
+      decision_id: wireIds.offer,
+      expires_at: '2026-08-11T12:13:00.000Z',
+    });
+    const decision = matchCallHandoffFastPath(wireClaim);
+    expect(decision).toMatchObject({
+      response_type: 'call_confirmation',
+      business_action: {
+        type: 'request_call_now',
+        reason: 'accepted_offer',
+      },
+    });
+    expect(decision?.business_action).not.toBeNull();
   });
 
   it('lets an expired offer fall back to advising and eligible for a new one', async () => {

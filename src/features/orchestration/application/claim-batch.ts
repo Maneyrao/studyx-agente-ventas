@@ -107,6 +107,8 @@ export interface ClaimedSalesContext {
   readonly mode: 'advising' | 'awaiting_call_consent' | 'call_pending' | 'in_call' | 'post_call';
   readonly course_of_interest: string | null;
   readonly open_call_offer: { readonly decision_id: string; readonly expires_at: string } | null;
+  /** Live offer consumed by this turn's explicit acceptance. */
+  readonly accepted_call_offer: { readonly decision_id: string; readonly expires_at: string } | null;
   readonly active_call: { readonly call_id: string; readonly status: string } | null;
   readonly allowed_actions: Array<'offer_call' | 'request_call_now'>;
   readonly last_call_result: { readonly call_id: string; readonly result: string | null; readonly ended_at: string } | null;
@@ -273,12 +275,12 @@ function deterministicRoute(input: {
   }
   if (signal.type === 'call_acceptance') {
     if (
-      input.salesContext.open_call_offer
+      input.salesContext.accepted_call_offer
       && input.salesContext.allowed_actions.includes('request_call_now')
     ) {
       return 'call_accepted_offer';
     }
-    if (!input.salesContext.open_call_offer) return 'call_acceptance_clarification';
+    if (!input.salesContext.accepted_call_offer) return 'call_acceptance_clarification';
   }
   return null;
 }
@@ -338,6 +340,12 @@ function buildSalesContext(input: {
   const openCallOffer = policyResult.openOffer
     ? { decision_id: policyResult.openOffer.decisionId, expires_at: policyResult.openOffer.expiresAt }
     : null;
+  const acceptedCallOffer = policyResult.acceptedOffer
+    ? {
+        decision_id: policyResult.acceptedOffer.decisionId,
+        expires_at: policyResult.acceptedOffer.expiresAt,
+      }
+    : null;
 
   return {
     mode: deriveSalesMode({
@@ -347,6 +355,7 @@ function buildSalesContext(input: {
     }),
     course_of_interest: null,
     open_call_offer: openCallOffer,
+    accepted_call_offer: acceptedCallOffer,
     active_call: input.callFacts.active_call,
     allowed_actions: policyResult.allowedActions,
     last_call_result: input.callFacts.last_call_result,

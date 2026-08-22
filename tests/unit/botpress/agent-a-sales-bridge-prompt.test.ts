@@ -91,7 +91,7 @@ function claimedTurn(overrides: {
 
 describe('AGENT_A_PROMPT_VERSION', () => {
   it('is the pinned sales-bridge version', () => {
-    expect(AGENT_A_PROMPT_VERSION).toBe('studyx-agent-a-sales-v3');
+    expect(AGENT_A_PROMPT_VERSION).toBe('studyx-agent-a-sales-v4');
   });
 });
 
@@ -243,13 +243,11 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(instructions).toMatch(/declined call[\s\S]*contact_preference/i);
   });
 
-  it('limits checkout to the three owner-approved payment plans', () => {
+  it('limits checkout structurally to the three configured payment plans without static prices', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
-    expect(instructions).toMatch(/exactly three payment options/i);
-    expect(instructions).toContain('12 monthly\n  payments of USD 30');
-    expect(instructions).toContain('6 monthly payments of USD 60');
-    expect(instructions).toContain('one single payment of\n  USD 360');
-    expect(instructions).toMatch(/There is no fourth option/i);
+    expect(instructions).toMatch(/three canonical configured (payment )?options/i);
+    expect(instructions).not.toMatch(/USD\s*(?:360|30|60)|(?:360|30|60)\.00/i);
+    expect(instructions).toMatch(/never (invent|offer).*(fourth|another|different).*option/i);
     expect(instructions).toMatch(/ONLY after the customer explicitly chooses/i);
     expect(instructions).toMatch(/exactly one.*payment link|one.*payment link/i);
     expect(instructions).toMatch(/Apple Pay/i);
@@ -349,6 +347,94 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(instructions.match(/video_hibrido_unico/g)).toHaveLength(1);
   });
 
+  it('projects each StudyX commercial value exactly once from the fenced snapshot', () => {
+    const claimed = claimedTurn({});
+    ;(claimed as { business_context?: unknown }).business_context = {
+      as_of: '2026-08-21T15:00:00.000Z',
+      prices_assertable: true,
+      workspace: {
+        slug: 'studyx-production',
+        display_name: 'StudyX',
+        environment: 'production',
+        default_locale: 'es-AR',
+        timezone: 'America/Argentina/Buenos_Aires',
+        payment_options: [
+          {
+            code: 'monthly_12',
+            label: '12 pagos mensuales de USD 30 (total USD 360)',
+            total: { amount: '360.00', currency: 'USD' },
+            installments: 12,
+            installment_amount: '30.00',
+            payment_link: 'https://buy.stripe.com/studyx-12',
+          },
+          {
+            code: 'monthly_6',
+            label: '6 pagos mensuales de USD 60 (total USD 360)',
+            total: { amount: '360.00', currency: 'USD' },
+            installments: 6,
+            installment_amount: '60.00',
+            payment_link: 'https://buy.stripe.com/studyx-6',
+          },
+          {
+            code: 'one_time',
+            label: 'Pago único de USD 360',
+            total: { amount: '360.00', currency: 'USD' },
+            installments: 1,
+            installment_amount: '360.00',
+            payment_link: 'https://buy.stripe.com/studyx-once',
+          },
+        ],
+      },
+      offerings: [
+        {
+          code: 'studyx_course',
+          display_name: 'Curso StudyX',
+          offering_type: 'course',
+          description: 'Curso completo.',
+          value_proposition: null,
+          price_type: 'fixed',
+          price: { amount: '360.00', currency: 'USD' },
+          price_assertable: true,
+          billing_interval: null,
+          modality: 'online',
+          schedules: [],
+          certification: true,
+          hours_per_month: null,
+          classes: null,
+          modules: null,
+          includes: [],
+          syllabus_published: true,
+          language: 'Spanish',
+          min_age: null,
+          policies: {
+            allowed_promise: 'Acceso al curso según los términos configurados.',
+            forbidden_promises: [],
+            price_message:
+              'Precio total USD 360: 12 pagos de USD 30, 6 pagos de USD 60 o pago único de USD 360.',
+          },
+        },
+      ],
+      qualification_fields: [],
+      injection_suspected_count: 0,
+      offerings_truncated: 0,
+    }
+    ;(claimed as { business_context_available?: boolean }).business_context_available = true
+
+    const instructions = buildAgentASalesBridgeInstructions(claimed);
+    const start = instructions.indexOf('UNTRUSTED_CONTEXT_START');
+    const end = instructions.indexOf('UNTRUSTED_CONTEXT_END');
+    const staticInstructions = instructions.slice(0, start);
+    const fenced = instructions.slice(start, end);
+
+    expect(staticInstructions).not.toMatch(/USD\s*(?:360|30|60)|(?:360|30|60)\.00/i);
+    expect(fenced.match(/360\.00/g)).toHaveLength(1);
+    expect(fenced.match(/(?<!\d)30\.00(?!\d)/g)).toHaveLength(1);
+    expect(fenced.match(/(?<!\d)60\.00(?!\d)/g)).toHaveLength(1);
+    expect(fenced.match(/https:\/\/buy\.stripe\.com\/studyx-/g)).toHaveLength(3);
+    expect(fenced).not.toContain('price_message');
+    expect(fenced).not.toContain('Precio total USD 360');
+  });
+
   it('degrades the one business snapshot to prices_assertable=false when unavailable', () => {
     const claimed = claimedTurn({});
     // Even a contradictory transport flag must fail closed when the snapshot
@@ -367,6 +453,79 @@ describe('buildAgentASalesBridgeInstructions', () => {
       qualification_fields: [],
     });
     expect(payload.business_snapshot_available).toBe(false);
+    expect(instructions).not.toMatch(/USD\s*(?:360|30|60)|(?:360|30|60)\.00/i);
+  });
+
+  it('removes all price amounts and payment links when the snapshot is not assertable', () => {
+    const claimed = claimedTurn({});
+    ;(claimed as { business_context?: unknown }).business_context = {
+      as_of: '2026-08-21T15:00:00.000Z',
+      prices_assertable: false,
+      workspace: {
+        slug: 'studyx-production',
+        display_name: 'StudyX',
+        environment: 'production',
+        default_locale: 'es-AR',
+        timezone: 'America/Argentina/Buenos_Aires',
+        payment_options: [
+          {
+            code: 'monthly_12',
+            label: '12 pagos de USD 30',
+            total: { amount: '360.00', currency: 'USD' },
+            installments: 12,
+            installment_amount: '30.00',
+            payment_link: 'https://buy.stripe.com/should-not-leak',
+          },
+        ],
+      },
+      offerings: [
+        {
+          code: 'studyx_course',
+          display_name: 'Curso StudyX',
+          offering_type: 'course',
+          description: null,
+          value_proposition: null,
+          price_type: 'fixed',
+          price: { amount: '360.00', currency: 'USD' },
+          price_assertable: true,
+          billing_interval: null,
+          modality: 'online',
+          schedules: [],
+          certification: null,
+          hours_per_month: null,
+          classes: null,
+          modules: null,
+          includes: [],
+          syllabus_published: null,
+          language: null,
+          min_age: null,
+          policies: {
+            allowed_promise: null,
+            forbidden_promises: [],
+            price_message: 'Precio USD 360 o cuotas de USD 30.',
+          },
+        },
+      ],
+      qualification_fields: [],
+      injection_suspected_count: 0,
+      offerings_truncated: 0,
+    }
+    ;(claimed as { business_context_available?: boolean }).business_context_available = true
+
+    const instructions = buildAgentASalesBridgeInstructions(claimed);
+    const start = instructions.indexOf('UNTRUSTED_CONTEXT_START');
+    const end = instructions.indexOf('UNTRUSTED_CONTEXT_END');
+    const payload = JSON.parse(instructions.slice(start, end).split('\n').slice(1, -1).join('\n'));
+
+    expect(payload.business_snapshot.prices_assertable).toBe(false);
+    expect(payload.business_snapshot.workspace.payment_options).toEqual([]);
+    expect(payload.business_snapshot.offerings[0].price).toBeNull();
+    expect(payload.business_snapshot.offerings[0].price_assertable).toBe(false);
+    expect(instructions).not.toMatch(/USD\s*(?:360|30|60)|(?:360|30|60)\.00/i);
+    expect(instructions).not.toContain('https://buy.stripe.com/should-not-leak');
+    expect(instructions).toMatch(
+      /prices_assertable is false[\s\S]*never (quote|name)[\s\S]*price[\s\S]*payment link/i,
+    );
   });
 
   it('defensively removes current batch messages from recent turns before fencing', () => {

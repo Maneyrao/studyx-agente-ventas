@@ -82,12 +82,12 @@ export function matchCallHandoffFastPath(claimed: ClaimedTurn): Decision | null 
   }
 
   if (claimed.deterministic_route === 'call_accepted_offer') {
-    if (!allowed.includes('request_call_now') || !claimed.sales_context.open_call_offer) return null
+    if (!allowed.includes('request_call_now') || !claimed.sales_context.accepted_call_offer) return null
     return callConfirmation('accepted_offer', course)
   }
 
   if (claimed.deterministic_route === 'call_acceptance_clarification') {
-    if (claimed.sales_context.open_call_offer) return null
+    if (claimed.sales_context.accepted_call_offer) return null
     return ambiguousAcceptanceClarification()
   }
 

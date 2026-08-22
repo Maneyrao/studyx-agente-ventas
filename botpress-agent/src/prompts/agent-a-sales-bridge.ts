@@ -29,7 +29,7 @@ import type { ClaimedTurn } from '../schemas/contracts'
  * version, and a version bump is the signal that the matrix needs a rerun.
  */
 
-export const AGENT_A_PROMPT_VERSION = 'studyx-agent-a-sales-v3'
+export const AGENT_A_PROMPT_VERSION = 'studyx-agent-a-sales-v4'
 
 /** Bounded projection: history informs the decision, it never dominates the prompt. */
 const MAX_RECENT_TURNS = 10
@@ -77,11 +77,14 @@ const HARD_COMMERCIAL_RULES_BLOCK = `Hard rules for Decision v4:
   ONLY the declined call; it does not mean the customer declined the sale or
   the written conversation.
 - Price, availability, payment, enrolment and discount may be stated ONLY
-  from context.business_snapshot.offerings, and ONLY for
-  items whose price_assertable is true — quote the amount and currency
-  exactly as given. For an offering with price_type "quote" or price null,
-  NEVER name a number: say the price is confirmed according to frequency and
-  goal (see its policies.price_message).
+  from context.business_snapshot, and ONLY when business_snapshot_available
+  and business_snapshot.prices_assertable are both true. Each offering must
+  also have price_assertable true — quote its one structured price and the
+  structured payment option fields exactly as given.
+- If the business snapshot is absent, unavailable, prices_assertable is false,
+  an offering has price_type "quote", or its price is null, NEVER name a number,
+  quote a numeric price, offer a payment plan, or send a payment link. Say the
+  commercial terms need to be confirmed.
 - Duration, certificates, schedules, modality and promotions come ONLY from
   context.business_snapshot or context.knowledge_base —
   never invent a price, a date, a promotion, a duration, a certificate, a
@@ -122,10 +125,11 @@ const HARD_COMMERCIAL_RULES_BLOCK = `Hard rules for Decision v4:
 const PAYMENT_OPTIONS_BLOCK = `Owner-approved payment policy — this replaces every prior
 payment, financing, discount, Apple Pay, Google Pay or "intermediate plan"
 instruction:
-- There are exactly three payment options, all totaling USD 360: 12 monthly
-  payments of USD 30, 6 monthly payments of USD 60, or one single payment of
-  USD 360. There is no fourth option, no different installment amount, no
-  extra financing and no other payment link.
+- Offer only the three canonical configured payment options from
+  business_snapshot.workspace.payment_options. Never invent or offer a fourth or different option, installment amount, financing arrangement or link.
+- The offering's structured price is the sole total amount and currency. A
+  payment option contains only the additional installment facts needed for
+  that option; never repeat or reinterpret the total.
 - The authoritative links are ONLY the three items in
   business_snapshot.workspace.payment_options. If that structured list is
   absent, incomplete, or does not contain exactly the three approved options,
@@ -229,14 +233,24 @@ function businessSnapshotForPrompt(claimed: ClaimedTurn) {
       qualification_fields: [],
     }
   }
+  const pricesAssertable = snapshot.prices_assertable
   return {
     as_of: snapshot.as_of,
-    prices_assertable: snapshot.prices_assertable,
+    prices_assertable: pricesAssertable,
     workspace: {
       display_name: snapshot.workspace.display_name,
       default_locale: snapshot.workspace.default_locale,
       timezone: snapshot.workspace.timezone,
-      payment_options: snapshot.workspace.payment_options,
+      payment_options: pricesAssertable
+        ? (snapshot.workspace.payment_options ?? []).map((option) => ({
+            code: option.code,
+            installments: option.installments,
+            ...(option.code === 'one_time'
+              ? {}
+              : { installment_amount: option.installment_amount }),
+            payment_link: option.payment_link,
+          }))
+        : [],
     },
     offerings: snapshot.offerings.map((offering) => ({
       code: offering.code,
@@ -245,8 +259,8 @@ function businessSnapshotForPrompt(claimed: ClaimedTurn) {
       description: offering.description,
       value_proposition: offering.value_proposition,
       price_type: offering.price_type,
-      price: offering.price,
-      price_assertable: offering.price_assertable,
+      price: pricesAssertable && offering.price_assertable ? offering.price : null,
+      price_assertable: pricesAssertable && offering.price_assertable,
       billing_interval: offering.billing_interval,
       modality: offering.modality,
       schedules: offering.schedules,
@@ -258,7 +272,10 @@ function businessSnapshotForPrompt(claimed: ClaimedTurn) {
       syllabus_published: offering.syllabus_published,
       language: offering.language,
       min_age: offering.min_age,
-      policies: offering.policies,
+      policies: {
+        allowed_promise: offering.policies.allowed_promise,
+        forbidden_promises: offering.policies.forbidden_promises,
+      },
     })),
     qualification_fields: snapshot.qualification_fields,
   }
