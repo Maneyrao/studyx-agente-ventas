@@ -35,7 +35,26 @@ const PRICE_BEARING_STUDYX_KNOWLEDGE = [
       'Cuando elige una opción se comparte el link de Stripe. No ofrecer descuentos ni una cuarta opción de pago.',
     similarity: 0.95,
   },
+  {
+    source_uri: 'studyx://faq/fees',
+    title: 'Preguntas frecuentes',
+    content: 'El curso cuesta 360 dólares y se abona en 12 mensualidades, sin costo adicional.',
+    similarity: 0.94,
+  },
+  {
+    source_uri: 'https://buy.stripe.com/hidden-checkout',
+    title: 'Continuidad académica',
+    content: 'La inscripción continúa desde este recurso.',
+    similarity: 0.93,
+  },
 ];
+
+const NON_COMMERCIAL_STUDYX_KNOWLEDGE = {
+  source_uri: 'studyx://curriculum/interviews',
+  title: 'Práctica de entrevistas',
+  content: 'Incluye simulaciones y devolución pedagógica sobre las respuestas del alumno.',
+  similarity: 0.92,
+};
 
 function claimedTurn(overrides: {
   texts?: string[];
@@ -366,7 +385,10 @@ describe('buildAgentASalesBridgeInstructions', () => {
 
   it('projects each StudyX commercial value exactly once from the fenced snapshot', () => {
     const claimed = claimedTurn({});
-    claimed.context.knowledge_base = PRICE_BEARING_STUDYX_KNOWLEDGE;
+    claimed.context.knowledge_base = [
+      ...PRICE_BEARING_STUDYX_KNOWLEDGE,
+      NON_COMMERCIAL_STUDYX_KNOWLEDGE,
+    ];
     claimed.context.knowledge_base_available = true;
     ;(claimed as { business_context?: unknown }).business_context = {
       as_of: '2026-08-21T15:00:00.000Z',
@@ -444,6 +466,7 @@ describe('buildAgentASalesBridgeInstructions', () => {
     const end = instructions.indexOf('UNTRUSTED_CONTEXT_END');
     const staticInstructions = instructions.slice(0, start);
     const fenced = instructions.slice(start, end);
+    const payload = JSON.parse(fenced.split('\n').slice(1, -1).join('\n'));
 
     expect(staticInstructions).not.toMatch(/USD\s*(?:360|30|60)|(?:360|30|60)\.00/i);
     expect(fenced.match(/360\.00/g)).toHaveLength(1);
@@ -453,8 +476,21 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(fenced).not.toContain('USD 360');
     expect(fenced).not.toContain('studyx://policy/commercial-limits');
     expect(fenced).not.toContain('studyx://sales/close');
+    expect(fenced).not.toContain('hidden-checkout');
+    expect(fenced).not.toContain('cuesta 360 dólares');
     expect(fenced).not.toContain('price_message');
     expect(fenced).not.toContain('Precio total USD 360');
+    expect(payload.knowledge_base).toEqual([
+      {
+        title: NON_COMMERCIAL_STUDYX_KNOWLEDGE.title,
+        content: NON_COMMERCIAL_STUDYX_KNOWLEDGE.content,
+        similarity: NON_COMMERCIAL_STUDYX_KNOWLEDGE.similarity,
+      },
+    ]);
+    expect(payload.knowledge_base_commercial_items_dropped).toBe(4);
+    expect(staticInstructions).not.toMatch(
+      /pricing[\s\S]{0,120}(?:context\.)?knowledge_base/i,
+    );
   });
 
   it('degrades the one business snapshot to prices_assertable=false when unavailable', () => {

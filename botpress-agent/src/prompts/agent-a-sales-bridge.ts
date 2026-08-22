@@ -196,8 +196,10 @@ const STYLE_AND_COPY_BLOCK = `Style and copy:
   course works, what they receive, then payment options. Do not promise
   employment, professional licensing, legal validity, a refund, a live-class
   schedule or an academic outcome unless it is grounded in the context.
-- Every fact you use for pricing, duration or certificates must come from
-  context.business_snapshot or context.knowledge_base — never invent one.`
+- Every pricing, payment, discount or checkout fact must come ONLY from
+  context.business_snapshot. Duration and certificate facts may come from
+  context.business_snapshot or the commercially-sanitized knowledge_base —
+  never invent one.`
 
 const WHATSAPP_FALLBACK_BLOCK = `WhatsApp fallback after a declined call:
 - A call decline is not a sales decline and is not a conversation decline.
@@ -281,8 +283,24 @@ function businessSnapshotForPrompt(claimed: ClaimedTurn) {
   }
 }
 
-const COMMERCIAL_KNOWLEDGE_PATTERN =
-  /(?:\b(?:usd|ars|eur|gbp|precio|price|valor|pago|pagos|payment|payments|cuota|cuotas|installment|installments|financiaci[oó]n|financing|descuento|discount|stripe|paypal|apple\s+pay|google\s+pay)\b|[$€£]|https?:\/\/(?:buy\.)?stripe\.com)/iu
+const COMMERCIAL_KNOWLEDGE_PATTERNS = [
+  /[$€£]/i,
+  /\b(?:usd|ars|eur|gbp|dolar(?:es)?|peso(?:s)?|euro(?:s)?)\b/i,
+  /\b(?:precio(?:s)?|price(?:s)?|costo(?:s)?|cuesta(?:n)?|tarifa(?:s)?|fee(?:s)?|checkout)\b/i,
+  /\b(?:pago(?:s)?|pagar|abona(?:r|do|dos)?|abono(?:s)?|mensualidad(?:es)?|cuota(?:s)?|installment(?:s)?|financiacion|financing)\b/i,
+  /\b(?:descuento(?:s)?|discount(?:s)?|reembolso(?:s)?|refund(?:s)?|promocion(?:es)?)\b/i,
+  /\b(?:politica\s+de\s+devolucion|devolucion\s+(?:de\s+dinero|monetaria|del\s+pago))\b/i,
+  /\b(?:stripe|paypal|apple\s+pay|google\s+pay)\b/i,
+]
+
+function normalizeCommercialText(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
+function carriesCommercialKnowledge(item: ClaimedTurn['context']['knowledge_base'][number]): boolean {
+  const searchable = normalizeCommercialText(`${item.source_uri}\n${item.title}\n${item.content}`)
+  return COMMERCIAL_KNOWLEDGE_PATTERNS.some((pattern) => pattern.test(searchable))
+}
 
 /**
  * Pricing/payment facts have one authority: the fenced business snapshot.
@@ -291,9 +309,13 @@ const COMMERCIAL_KNOWLEDGE_PATTERN =
  * duplicate or resurrect a price when the snapshot fails closed.
  */
 function nonCommercialKnowledgeForPrompt(claimed: ClaimedTurn) {
-  return claimed.context.knowledge_base.filter(
-    (item) => !COMMERCIAL_KNOWLEDGE_PATTERN.test(`${item.title}\n${item.content}`)
-  )
+  return claimed.context.knowledge_base
+    .filter((item) => !carriesCommercialKnowledge(item))
+    .map((item) => ({
+      title: item.title,
+      content: item.content,
+      similarity: item.similarity,
+    }))
 }
 
 /**
