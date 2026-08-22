@@ -127,7 +127,7 @@ function claimedTurn(overrides: {
 
 describe('AGENT_A_PROMPT_VERSION', () => {
   it('is the pinned sales-bridge version', () => {
-    expect(AGENT_A_PROMPT_VERSION).toBe('studyx-agent-a-sales-v4');
+    expect(AGENT_A_PROMPT_VERSION).toBe('studyx-agent-a-sales-v5');
   });
 });
 
@@ -623,5 +623,63 @@ describe('buildAgentASalesBridgeInstructions', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
     expect(instructions).not.toMatch(/there is no human to escalate to/i);
     expect(instructions).not.toMatch(/no (call|voice) (path|feature) exists/i);
+  });
+
+  it('defines a deterministic priority order for conflicting customer signals', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
+    expect(instructions).toMatch(/priority order|orden de prioridad/i);
+    expect(instructions).toMatch(
+      /opt[- ]out[\s\S]*(complaint|reclamo)[\s\S]*(direct call|pedido directo de llamada)[\s\S]*(call decline|rechazo de llamada)[\s\S]*(commercial|consulta comercial)/i,
+    );
+  });
+
+  it('treats the current customer correction as newer than stale memory without changing canonical business facts', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
+    expect(instructions).toMatch(/current batch|lote actual/i);
+    expect(instructions).toMatch(/correction|corrige|correcci[oó]n/i);
+    expect(instructions).toMatch(/older|anterior|vieja|stale/i);
+    expect(instructions).toMatch(/canonical business|hechos can[oó]nicos del negocio/i);
+  });
+
+  it('gives a concise objection-handling sequence without inventing concessions', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
+    expect(instructions).toMatch(/objection|objeci[oó]n/i);
+    expect(instructions).toMatch(/acknowledge|reconoc[eé]/i);
+    expect(instructions).toMatch(/grounded|fundamentad/i);
+    expect(instructions).toMatch(/discount|descuento/i);
+    expect(instructions).toMatch(/next step|siguiente paso/i);
+  });
+
+  it('clarifies an ambiguous payment-link request instead of choosing a plan', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
+    expect(instructions).toMatch(/ambiguous|ambiguo/i);
+    expect(instructions).toMatch(/payment link|enlace de pago/i);
+    expect(instructions).toMatch(/clarif|which option|qu[eé] opci[oó]n/i);
+    expect(instructions).toMatch(/never choose|no elijas|no elegir/i);
+  });
+
+  it('forbids the model from ever writing, pasting or typing a payment URL itself', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
+    expect(instructions).toMatch(/never write, paste, or type a payment url/i);
+    expect(instructions).toMatch(/never (?:be )?free text/i);
+  });
+
+  it('sends the payment link only via the typed send_payment_link business_action, never as prose', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
+    expect(instructions).toMatch(/"type":"send_payment_link"/);
+    expect(instructions).toMatch(/"plan_code"/);
+    expect(instructions).toMatch(/"offering_sku"/);
+    expect(instructions).toMatch(/backend appends exactly\s+one payment link/i);
+    expect(instructions).toContain('send_payment_link","plan_code":c,"offering_sku":s|null');
+  });
+
+  it('handles an unverified paid claim without confirming access or automatically resending checkout', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
+    expect(instructions).toMatch(/already paid|ya pag[oó]|dice que pag[oó]/i);
+    expect(instructions).toMatch(/pending verification|pendiente de verificaci[oó]n/i);
+    expect(instructions).toMatch(/do not resend|no reenv[ií]es|no volver a enviar/i);
+    expect(instructions).toMatch(
+      /unless (?:the customer|they)(?: explicitly)? asks|salvo que (?:el cliente|lo) pida/i,
+    );
   });
 });

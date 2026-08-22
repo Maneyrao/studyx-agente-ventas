@@ -1,6 +1,6 @@
 # Matriz de escenarios — piloto de Telegram
 
-Versión de instrucciones: **`studyx-agent-a-sales-v2`**
+Versión de instrucciones: **`studyx-agent-a-sales-v5`**
 (`AGENT_A_PROMPT_VERSION` en `botpress-agent/src/prompts/agent-a-sales-bridge.ts`).
 Cambiar el prompt obliga a subir esa versión y a re-correr toda la matriz: una
 fila que pasó con otra versión no es evidencia de nada.
@@ -195,6 +195,7 @@ decisión), para no entrenar el prompt contra los tests.
 | 2026-08-17 | baseline-v1.1 | `agent-a-sales-bridge-v1.1` | gemini-3.5-flash | 13/21 | `docs/evidence/aburridont-matrix-baseline-v1.1.json` |
 | 2026-08-17 | v2-iter1 | `aburridont-agent-a-sales-bridge-v2` | gemini-2.5-flash | 18/21 | `docs/evidence/aburridont-matrix-v2-iter1.json` |
 | 2026-08-17 | v2.1-iter2 | `aburridont-agent-a-sales-bridge-v2.1` | — | bloqueada | `docs/evidence/aburridont-matrix-v2.1-iter2.json` (HTTP 429: cuota del día agotada en 3.6/3.5/2.5-flash) |
+| 2026-08-22 | studyx-v5-pre-chat | `studyx-agent-a-sales-v5` | gemini-2.5-flash | parcial: 6 casos verdes; 1 timeout del proveedor; resto no ejecutado | corrida interrumpida para evitar consumir cuota tras una petición colgada; no constituye aprobación completa |
 
 Fallos del baseline clasificados por regla:
 - **Contrato v3 vs v4** (A10, A12, A17): el prompt v1.1 instruye

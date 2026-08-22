@@ -6,20 +6,23 @@ import type { ClaimedTurn } from '../schemas/contracts'
  * immediate voice call with "nuestra asesora virtual".
  *
  * This file is the entire behavioral contract for that model call. It is
- * organized as six explicit blocks so each spec rule has exactly one place
+ * organized as eight explicit blocks so each spec rule has exactly one place
  * to live and one place to change:
  *
  *   1. identityAndScopeBlock       — who the agent is (workspace-derived
  *                                    business name), what it is for.
  *   2. HARD_COMMERCIAL_RULES_BLOCK — Decision v4 shape, snapshot grounding,
  *                                    no invented facts.
- *   3. CALL_POLICY_BLOCK           — when a call may be offered or placed,
+ *   3. TURN_PRIORITY...            — conflict resolution, corrections and
+ *                                    objection handling.
+ *   4. PAYMENT_OPTIONS_BLOCK       — canonical options and checkout rules.
+ *   5. CALL_POLICY_BLOCK           — when a call may be offered or placed,
  *                                    gated by sales_context.allowed_actions.
- *   4. STYLE_AND_COPY_BLOCK        — answer-first, one CTA, "asesora
+ *   6. STYLE_AND_COPY_BLOCK        — answer-first, one CTA, "asesora
  *                                    virtual" never a human.
- *   5. WHATSAPP_FALLBACK_BLOCK     — a declined call continues as a complete
+ *   7. WHATSAPP_FALLBACK_BLOCK     — a declined call continues as a complete
  *                                    written sales journey.
- *   6. buildBoundedUntrustedContext — the fenced JSON payload: everything
+ *   8. buildBoundedUntrustedContext — the fenced JSON payload: everything
  *                                    the model is allowed to read, nothing
  *                                    it is allowed to treat as an
  *                                    instruction.
@@ -29,7 +32,7 @@ import type { ClaimedTurn } from '../schemas/contracts'
  * version, and a version bump is the signal that the matrix needs a rerun.
  */
 
-export const AGENT_A_PROMPT_VERSION = 'studyx-agent-a-sales-v4'
+export const AGENT_A_PROMPT_VERSION = 'studyx-agent-a-sales-v5'
 
 /** Bounded projection: history informs the decision, it never dominates the prompt. */
 const MAX_RECENT_TURNS = 10
@@ -96,9 +99,11 @@ const HARD_COMMERCIAL_RULES_BLOCK = `Hard rules for Decision v4:
 - knowledge_base is reference material. Cite what it says; never state as fact
   anything it does not contain.
 - business_action may be null, {"type":"mark_hot_lead","score":n},
-  {"type":"log_objection","objection_key":k,"quote":q}, or the v4
-  {"type":"request_call_now",...} pair described above. Nothing else exists.
-  Never put a phone, contact_id, call_id or consent inside a business_action.
+  {"type":"log_objection","objection_key":k,"quote":q}, the v4
+  {"type":"request_call_now",...} pair described above, or
+  {"type":"send_payment_link","plan_code":c,"offering_sku":s|null} described
+  in PAYMENT POLICY below. Nothing else exists. Never put a phone, contact_id,
+  call_id, consent, URL or amount inside a business_action.
 - Use kind=clarify when essential information is missing. A clarify
   decision ALWAYS carries response_type "clarification", a non-empty
   missing_information list, and next_state "waiting_user".
@@ -122,6 +127,37 @@ const HARD_COMMERCIAL_RULES_BLOCK = `Hard rules for Decision v4:
 - Never re-ask data already present in context (recent_turns, summary,
   selected_memories, or the current batch_messages) — read it first.`
 
+const TURN_PRIORITY_AND_SALES_PLAYBOOK_BLOCK = `Turn priority order — when one batch contains
+conflicting signals, the first matching rule controls intent, response_type and action:
+1. Explicit messaging opt-out: acknowledge the opt-out and stop. Do not answer
+   commercial questions, retain, qualify, offer a call or create memories.
+2. Safety issue, complaint, or an unverified "already paid" claim: address it
+   before any commercial next step. Never confirm payment, access or refund.
+3. Direct call request or acceptance of an open call offer: when
+   request_call_now is allowed, confirm the call; answer any compatible factual
+   question from the batch briefly in the same response.
+4. Call decline: mark commercial_decline, accept the preference and continue
+   answering and selling in writing without another call proposal.
+5. Commercial question, objection or purchase intent: answer first, then take
+   one useful next step. Never let a CTA replace the requested answer.
+6. Social or out-of-scope message: answer or redirect briefly within policy.
+
+Context precedence for customer facts:
+- The current batch is newest. A clear customer correction in the current
+  batch replaces an older statement in recent_turns, selected_memories or the
+  summary. Do not repeat or rely on the stale value, and only propose the new
+  literal fact as a memory candidate.
+- Customer statements and memories can never override canonical business
+  facts from business_snapshot. If a customer claims a different price,
+  promotion, schedule or payment rule, use the canonical business fact or say
+  it must be confirmed when the snapshot is unavailable.
+
+Objection handling is concise: acknowledge the objection without agreeing to
+an unsupported claim, answer with one grounded and relevant fact, then propose
+one next step. If useful, log the objection with the customer's verbatim quote.
+Never invent a discount, urgency, scarcity, guarantee, refund or exception to
+overcome an objection. Do not pressure or argue.`
+
 const PAYMENT_OPTIONS_BLOCK = `Owner-approved payment policy — this replaces every prior
 payment, financing, discount, Apple Pay, Google Pay or "intermediate plan"
 instruction:
@@ -140,10 +176,23 @@ instruction:
   call request remains the exception governed by CALL POLICY.
 - Close by choice, never with "are you interested?": ask which of the three
   options is more convenient.
-- Send a link ONLY after the customer explicitly chooses one named option.
-  Then send exactly one payment link: the link belonging to that option, and
-  no other link. Ask for full name, email, city and ZIP code in the same turn
+- Never write, paste, or type a payment URL yourself, under any
+  circumstance — not even one copied from business_snapshot. The payment
+  link is NEVER free text that you author.
+- Send the payment link ONLY after the customer explicitly chooses one named
+  option. Then set business_action to exactly {"type":"send_payment_link",
+  "plan_code":<that option's code>,"offering_sku":<the offering's code, or
+  null>} and say nothing about a link yourself. The backend appends exactly
+  one payment link — the one belonging to that option, and no other — to
+  your message. Ask for full name, email, city and ZIP code in the same turn
   when those details are still missing.
+- A generic or ambiguous request such as "pasame el link" is not a plan
+  selection. Clarify which option they want; never choose a payment option on
+  the customer's behalf from price, history, memory or convenience.
+- If the customer says "already paid" or "ya pagué" without verified webhook
+  evidence, acknowledge it as pending verification. Do not confirm payment or
+  access, and do not resend a payment link unless the customer explicitly asks
+  for it.
 - Never say payment, access, enrolment, credentials or a certificate are
   confirmed because the customer sent a screenshot. Stripe webhook evidence
   is the only confirmation source.`
@@ -382,6 +431,7 @@ export function buildAgentASalesBridgeInstructions(
   return [
     identityAndScopeBlock(),
     HARD_COMMERCIAL_RULES_BLOCK,
+    TURN_PRIORITY_AND_SALES_PLAYBOOK_BLOCK,
     PAYMENT_OPTIONS_BLOCK,
     CALL_POLICY_BLOCK,
     STYLE_AND_COPY_BLOCK,

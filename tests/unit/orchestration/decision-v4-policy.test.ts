@@ -165,6 +165,163 @@ describe('parseDecisionV4 — call_offer', () => {
   });
 });
 
+function paymentLinkDecision(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return v4({
+    response: 'Perfecto, va tu plan de 12 meses.',
+    response_type: 'commercial_reply',
+    reason_code: 'PAYMENT_PLAN_CHOSEN',
+    business_action: {
+      type: 'send_payment_link',
+      plan_code: 'monthly_12',
+      offering_sku: null,
+    },
+    ...overrides,
+  });
+}
+
+describe('parseDecisionV4 — send_payment_link', () => {
+  it('accepts the canonical action with a null offering_sku', () => {
+    const parsed = parseDecisionV4(paymentLinkDecision());
+    expect(parsed.business_action).toEqual({
+      type: 'send_payment_link',
+      plan_code: 'monthly_12',
+      offering_sku: null,
+    });
+  });
+
+  it('accepts a canonical string offering_sku', () => {
+    const parsed = parseDecisionV4(
+      paymentLinkDecision({
+        business_action: {
+          type: 'send_payment_link',
+          plan_code: 'monthly_6',
+          offering_sku: 'studyx_course',
+        },
+      }),
+    );
+    expect(parsed.business_action).toEqual({
+      type: 'send_payment_link',
+      plan_code: 'monthly_6',
+      offering_sku: 'studyx_course',
+    });
+  });
+
+  it('accepts every one of the three canonical plan codes', () => {
+    for (const plan_code of ['monthly_12', 'monthly_6', 'one_time']) {
+      expect(
+        codeOf(
+          paymentLinkDecision({
+            business_action: { type: 'send_payment_link', plan_code, offering_sku: null },
+          }),
+        ),
+      ).toBe('PARSED');
+    }
+  });
+
+  it('rejects an unknown plan_code', () => {
+    expect(
+      codeOf(
+        paymentLinkDecision({
+          business_action: { type: 'send_payment_link', plan_code: 'weekly', offering_sku: null },
+        }),
+      ),
+    ).toBe('INVALID_BUSINESS_ACTION');
+  });
+
+  it('rejects a missing plan_code', () => {
+    expect(
+      codeOf(
+        paymentLinkDecision({
+          business_action: { type: 'send_payment_link', offering_sku: null },
+        }),
+      ),
+    ).toBe('INVALID_BUSINESS_ACTION');
+  });
+
+  it('rejects a URL embedded in offering_sku', () => {
+    expect(
+      codeOf(
+        paymentLinkDecision({
+          business_action: {
+            type: 'send_payment_link',
+            plan_code: 'monthly_12',
+            offering_sku: 'https://buy.stripe.com/whatever',
+          },
+        }),
+      ),
+    ).toBe('INVALID_BUSINESS_ACTION');
+  });
+
+  it('rejects an amount-shaped offering_sku', () => {
+    for (const sku of ['30.00', 'USD 360', '$30']) {
+      expect(
+        codeOf(
+          paymentLinkDecision({
+            business_action: { type: 'send_payment_link', plan_code: 'monthly_12', offering_sku: sku },
+          }),
+        ),
+      ).toBe('INVALID_BUSINESS_ACTION');
+    }
+  });
+
+  it('rejects a URL smuggled under an unknown field name', () => {
+    expect(
+      codeOf(
+        paymentLinkDecision({
+          business_action: {
+            type: 'send_payment_link',
+            plan_code: 'monthly_12',
+            offering_sku: null,
+            payment_link: 'https://buy.stripe.com/hidden',
+          },
+        }),
+      ),
+    ).toBe('INVALID_BUSINESS_ACTION');
+  });
+
+  it('rejects an amount smuggled under an unknown field name', () => {
+    expect(
+      codeOf(
+        paymentLinkDecision({
+          business_action: {
+            type: 'send_payment_link',
+            plan_code: 'monthly_12',
+            offering_sku: null,
+            amount: '360.00',
+          },
+        }),
+      ),
+    ).toBe('INVALID_BUSINESS_ACTION');
+  });
+
+  it('rejects send_payment_link paired with suppress', () => {
+    expect(
+      codeOf(
+        paymentLinkDecision({
+          kind: 'suppress',
+          response: null,
+          response_type: null,
+        }),
+      ),
+    ).toBe('SUPPRESS_HAS_SIDE_EFFECT');
+  });
+
+  it('coexists with, but is distinct from, request_call_now — the two never mix', () => {
+    expect(
+      codeOf(
+        paymentLinkDecision({
+          response_type: 'call_confirmation',
+          business_action: {
+            type: 'send_payment_link',
+            plan_code: 'monthly_12',
+            offering_sku: null,
+          },
+        }),
+      ),
+    ).toBe('INVALID_CALL_REQUEST');
+  });
+});
+
 describe('parseDecisionAnyVersion — compatibility', () => {
   it('dispatches v2, v3 and v4 by schema_version', () => {
     const base = {

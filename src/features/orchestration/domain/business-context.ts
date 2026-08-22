@@ -144,7 +144,7 @@ export interface BusinessContextView {
  * Agent A prompt fails closed unless all three owner-approved StudyX options
  * are present and internally consistent.
  */
-export type PaymentPlanCode = 'monthly_12' | 'monthly_6' | 'one_time';
+export type PaymentPlanCode = import('../../payments/domain/payment-link').PaymentPlanCode;
 
 export interface PaymentOptionView {
   readonly code: PaymentPlanCode;

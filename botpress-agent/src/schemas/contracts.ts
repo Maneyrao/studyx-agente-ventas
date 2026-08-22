@@ -130,6 +130,24 @@ export const RequestCallNowActionSchema = z.object({
   course_of_interest: z.string().min(1).max(128).optional(),
 }).strict()
 
+/**
+ * The typed payment-link action (spec §4). `offering_sku` is a canonical sku
+ * string or null — never a URL or an amount. The producer side enforces the
+ * same shape rule as `.strict()` gives request_call_now: an unknown key is
+ * exactly where a URL or an amount would be smuggled in under another name.
+ * The link itself never rides in this action; the backend resolves it from
+ * configuration only, after revalidating plan_code against the customer's
+ * explicit choice in the current batch.
+ */
+export const SendPaymentLinkActionSchema = z.object({
+  type: z.literal('send_payment_link'),
+  plan_code: z.enum(['monthly_12', 'monthly_6', 'one_time']),
+  offering_sku: z.string().min(1).max(128)
+    .refine((value) => !/https?:\/\//i.test(value), 'OFFERING_SKU_LOOKS_LIKE_URL')
+    .refine((value) => !/\d[.,]\d{2}|\busd\b|\bars\b|[$€£]/i.test(value), 'OFFERING_SKU_LOOKS_LIKE_AMOUNT')
+    .nullable(),
+}).strict()
+
 export const DecisionBusinessActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('mark_hot_lead'), score: z.number().min(0).max(1) }).strict(),
   z.object({
@@ -138,6 +156,7 @@ export const DecisionBusinessActionSchema = z.discriminatedUnion('type', [
     quote: z.string().min(1).max(1024),
   }).strict(),
   RequestCallNowActionSchema,
+  SendPaymentLinkActionSchema,
 ])
 
 export const DecisionResponseTypeSchema = z.enum([

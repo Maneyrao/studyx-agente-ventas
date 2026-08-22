@@ -15,6 +15,13 @@ import {
   parseBusinessAction,
   parseDecisionV3,
 } from './decision-v3';
+import {
+  PAYMENT_PLAN_CODES,
+  PaymentPlanCode,
+  SendPaymentLinkAction,
+} from '../../payments/domain/payment-link';
+
+export type { SendPaymentLinkAction };
 
 /**
  * Decision schema v4 — the frozen call protocol between Agent A and the
@@ -64,7 +71,8 @@ export interface RequestCallNowAction {
 export type DecisionV4BusinessAction =
   | { type: 'mark_hot_lead'; score: number }
   | { type: 'log_objection'; objection_key: string; quote: string }
-  | RequestCallNowAction;
+  | RequestCallNowAction
+  | SendPaymentLinkAction;
 
 export interface DecisionV4 {
   schema_version: 4;
@@ -117,6 +125,48 @@ function parseRequestCallNow(value: Record<string, unknown>): RequestCallNowActi
   return action;
 }
 
+const SEND_PAYMENT_LINK_FIELDS = new Set(['type', 'plan_code', 'offering_sku']);
+
+// A canonical offering sku is a short opaque slug. Anything shaped like a
+// URL or a monetary amount is exactly what the model must never be able to
+// smuggle into this action — plan/link/amount all come from the backend,
+// never from the model, so any such shape is rejected outright rather than
+// stripped or coerced.
+const URL_LIKE_PATTERN = /https?:\/\//i;
+const AMOUNT_LIKE_PATTERN = /\d[.,]\d{2}|\busd\b|\bars\b|[$€£]/i;
+
+function isCanonicalOfferingSku(value: string): boolean {
+  if (value.trim() === '' || value.length > 128) return false;
+  return !URL_LIKE_PATTERN.test(value) && !AMOUNT_LIKE_PATTERN.test(value);
+}
+
+function parseSendPaymentLinkAction(value: Record<string, unknown>): SendPaymentLinkAction {
+  // Strict allowlist, same discipline as request_call_now: an unknown key
+  // here is exactly where a URL or an amount would get smuggled in under a
+  // different name.
+  if (Object.keys(value).some((key) => !SEND_PAYMENT_LINK_FIELDS.has(key))) {
+    throw new DecisionValidationError('INVALID_BUSINESS_ACTION');
+  }
+  if (
+    typeof value.plan_code !== 'string'
+    || !(PAYMENT_PLAN_CODES as readonly string[]).includes(value.plan_code)
+  ) {
+    throw new DecisionValidationError('INVALID_BUSINESS_ACTION');
+  }
+  let offering_sku: string | null = null;
+  if (value.offering_sku !== null && value.offering_sku !== undefined) {
+    if (typeof value.offering_sku !== 'string' || !isCanonicalOfferingSku(value.offering_sku)) {
+      throw new DecisionValidationError('INVALID_BUSINESS_ACTION');
+    }
+    offering_sku = value.offering_sku;
+  }
+  return {
+    type: 'send_payment_link',
+    plan_code: value.plan_code as PaymentPlanCode,
+    offering_sku,
+  };
+}
+
 function parseV4BusinessAction(value: unknown): DecisionV4BusinessAction | null {
   if (value === null || value === undefined) return null;
   if (!isRecord(value)) {
@@ -124,6 +174,9 @@ function parseV4BusinessAction(value: unknown): DecisionV4BusinessAction | null 
   }
   if (value.type === 'request_call_now') {
     return parseRequestCallNow(value);
+  }
+  if (value.type === 'send_payment_link') {
+    return parseSendPaymentLinkAction(value);
   }
   if (value.type !== 'mark_hot_lead' && value.type !== 'log_objection') {
     throw new DecisionValidationError('INVALID_BUSINESS_ACTION');
