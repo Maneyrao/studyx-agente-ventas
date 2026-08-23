@@ -48,6 +48,7 @@ function rawContext(overrides: Partial<RawBusinessContext> = {}): RawBusinessCon
           ],
         },
         audience: { language: 'Spanish', min_age: 18 },
+        metadata: { academy: 'Academia de Tecnología' },
         guardrails: {
           allowed_promise: 'Destrabar el inglés hablado en contextos laborales IT.',
           forbidden_promises: ['fluidez total en 3 meses'],
@@ -110,6 +111,14 @@ describe('buildBusinessContextView', () => {
     const group = view.offerings.find((offering) => offering.code === 'group_it_english');
     expect(group?.price).toEqual({ amount: '85000.00', currency: 'ARS' });
     expect(group?.price_assertable).toBe(true);
+  });
+
+  it('exposes the owner-authored academy for consultative catalog navigation', () => {
+    const view = buildBusinessContextView(rawContext());
+    expect(view.offerings[0].academy).toBe('Academia de Tecnología');
+    // Legacy offerings without a category stay explicit instead of being
+    // guessed from their course name or description.
+    expect(view.offerings[1].academy).toBeNull();
   });
 
   it('gives a quote offering no price field at all', () => {

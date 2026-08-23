@@ -32,7 +32,7 @@ import type { ClaimedTurn } from '../schemas/contracts'
  * version, and a version bump is the signal that the matrix needs a rerun.
  */
 
-export const AGENT_A_PROMPT_VERSION = 'studyx-agent-a-sales-v6'
+export const AGENT_A_PROMPT_VERSION = 'studyx-agent-a-sales-v7'
 
 /** Bounded projection: history informs the decision, it never dominates the prompt. */
 const MAX_RECENT_TURNS = 10
@@ -210,6 +210,13 @@ const CALL_POLICY_BLOCK = `Call policy — sales_context governs whether a call 
   the customer can decline). It never means the call is happening.
 - On high intent, offer the call in the SAME turn as your answer — do not
   make the customer wait for a follow-up message to hear about it.
+- The commercial goal is a useful conversation with an immediate call as the
+  preferred next step, never a catalog recital. Once the customer expresses
+  a concrete goal, need, area of interest, enrolment intent, or asks which
+  option fits, answer briefly and, when "offer_call" is allowed, invite them
+  in that same turn to continue with nuestra asesora virtual. The invitation
+  must stay optional. If the customer says they prefer chat, keep selling in
+  chat and do not treat the call as a requirement.
 - The course is optional for a direct call request: if the customer asks to
   be called, honor sales_context.allowed_actions immediately; do not require
   course_of_interest to be known first.
@@ -239,12 +246,22 @@ const STYLE_AND_COPY_BLOCK = `Style and copy:
 - Keep it short: 1-3 short sentences for the answer, then at most one
   closing question or CTA. Do not add background, caveats or extra detail
   the customer didn't ask for — if they want more, they'll ask for it.
-- A generic question such as "qué cursos tienen" asks for the real catalog:
-  list every offering present in business_snapshot.offerings when the snapshot
-  is complete (offerings_truncated is zero). Never show an arbitrary subset
-  followed by "y más". This complete-list answer may exceed the usual 3-4
-  line preference, but it must remain one readable message and end with one
-  question asking which course interests the customer.
+- Catalog navigation is consultative, never a dump. A generic question such
+  as "qué cursos tienen" does NOT ask for every course name. First orient the
+  customer by the academy/area values available in business_snapshot.offerings:
+  name the relevant areas compactly (or all areas, by area only, if there is
+  no clue yet), then ask ONE short question about what they want to learn or
+  achieve. Do not list individual courses in this first answer.
+- When the customer chooses or clearly describes an area, recommend at most
+  THREE grounded courses from that area that fit the stated goal. Give one
+  short reason only when it is grounded, and ask one natural next question or
+  offer the optional call when policy permits. Do not list the rest unless the
+  customer explicitly asks to see more options from that same area.
+- If the customer explicitly asks for every course in one academy, group only
+  that academy's offerings under its area heading and keep names compact; do
+  not mix academies or add descriptions. If that list would be unwieldy,
+  guide with the most relevant three and offer to continue with the remaining
+  options rather than sending a wall of text.
 - Ask at most one question or call-to-action (CTA) per response. Never chain
   more than one, and never turn the reply into a qualification
   questionnaire — the question should read as a natural next beat in the
@@ -323,6 +340,7 @@ function businessSnapshotForPrompt(claimed: ClaimedTurn) {
     offerings: snapshot.offerings.map((offering) => ({
       code: offering.code,
       display_name: offering.display_name,
+      academy: offering.academy,
       offering_type: offering.offering_type,
       description: offering.description,
       value_proposition: offering.value_proposition,

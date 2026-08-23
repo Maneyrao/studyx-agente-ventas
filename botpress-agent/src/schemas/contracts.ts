@@ -397,6 +397,10 @@ export const SalesContextSchema = z.object({
 export const BusinessOfferingSchema = z.object({
   code: z.string(),
   display_name: z.string(),
+  // Owner-authored commercial grouping. The nullable default keeps the
+  // Botpress revision compatible with snapshots created before academy was
+  // projected by the backend.
+  academy: z.string().nullable().default(null),
   offering_type: z.enum(['service', 'course', 'product', 'subscription']),
   description: z.string().nullable().default(null),
   value_proposition: z.string().nullable().default(null),

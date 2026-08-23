@@ -5,7 +5,7 @@ import { Eval } from '@botpress/evals'
  * `../docs/testing/agent-a-chat-scenarios-v5.md`, expressed as ADK evals.
  *
  * Prompt under test: `src/prompts/agent-a-sales-bridge.ts`,
- * AGENT_A_PROMPT_VERSION = 'studyx-agent-a-sales-v6'.
+ * AGENT_A_PROMPT_VERSION = 'studyx-agent-a-sales-v7'.
  *
  * Every turn carries at least one deterministic assertion (`not_contains` /
  * `matches` / `contains`) for the doc's "Nunca debe ocurrir" column, plus one
@@ -101,7 +101,7 @@ export const scn01 = new Eval({
 // ── 2. Catálogo ──────────────────────────────────────────────────────────
 export const scn02 = new Eval({
   name: 'scn-02-catalog-summary',
-  description: 'Doc scenario 2: catalog question gets a grounded summary, not an invented or endless list.',
+  description: 'Doc scenario 2: catalog question is guided by academy/area, never an invented or endless list.',
   type: 'regression',
   tags: ['scenarios-v5', 'venta', 'scn-02'],
   conversation: [
@@ -114,7 +114,7 @@ export const scn02 = new Eval({
           { not_contains: 'Marketing Digital' },
           {
             llm_judge:
-              'Gives a grounded answer about the StudyX course catalog. It never invents a course that is not part of the real catalog. Listing every real course in one readable message is acceptable (prompt v6 mandates the complete list when the snapshot is complete); what fails is inventing courses, refusing to name any, or producing an unreadable wall of duplicated text.',
+              'Gives a grounded, short orientation to the StudyX catalog by academy/area and asks one question about what the customer wants to learn or achieve. It does not enumerate every course name, invent a course, or produce a long brochure-like wall of text.',
           },
         ],
       },

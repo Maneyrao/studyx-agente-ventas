@@ -127,7 +127,7 @@ function claimedTurn(overrides: {
 
 describe('AGENT_A_PROMPT_VERSION', () => {
   it('is the pinned sales-bridge version', () => {
-    expect(AGENT_A_PROMPT_VERSION).toBe('studyx-agent-a-sales-v6');
+    expect(AGENT_A_PROMPT_VERSION).toBe('studyx-agent-a-sales-v7');
   });
 });
 
@@ -228,6 +228,51 @@ describe('buildAgentASalesBridgeInstructions', () => {
   it('requires answering the actual question before any call CTA', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
     expect(instructions).toMatch(/answer(s)? .*before.*(call|cta)/i);
+  });
+
+  it('guides a broad catalog question by academy instead of dumping every course', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
+    expect(instructions).toMatch(/Catalog navigation is consultative, never a dump/i);
+    expect(instructions).toMatch(/does NOT ask for every course name/i);
+    expect(instructions).toMatch(/academy\/area values/i);
+    expect(instructions).toMatch(/Do not list individual courses in this first answer/i);
+    expect(instructions).toMatch(/at most\s+THREE grounded courses/i);
+    expect(instructions).not.toMatch(/list every offering present/i);
+  });
+
+  it('puts the canonical academy beside each offering in the fenced snapshot', () => {
+    const claimed = claimedTurn({});
+    ;(claimed as { business_context?: unknown }).business_context = {
+      as_of: '2026-08-23T00:00:00.000Z',
+      prices_assertable: true,
+      workspace: {
+        slug: 'studyx-production', display_name: 'StudyX', environment: 'production',
+        default_locale: 'es-AR', timezone: 'America/Argentina/Buenos_Aires', payment_options: [],
+      },
+      offerings: [{
+        code: 'marketing_digital', display_name: 'Marketing Digital', academy: 'Academia de Marketing',
+        offering_type: 'course', description: null, value_proposition: null, price_type: 'fixed',
+        price: { amount: '360.00', currency: 'USD' }, price_assertable: true, billing_interval: 'custom',
+        modality: 'online', schedules: [], certification: null, hours_per_month: null, classes: 16,
+        modules: null, includes: [], syllabus_published: true, language: 'Spanish', min_age: 18,
+        policies: { allowed_promise: null, forbidden_promises: [], price_message: null },
+      }],
+      qualification_fields: [], injection_suspected_count: 0, offerings_truncated: 0,
+    };
+    ;(claimed as { business_context_available?: boolean }).business_context_available = true;
+
+    const instructions = buildAgentASalesBridgeInstructions(claimed);
+    const start = instructions.indexOf('UNTRUSTED_CONTEXT_START');
+    const end = instructions.indexOf('UNTRUSTED_CONTEXT_END');
+    const payload = JSON.parse(instructions.slice(start, end).split('\n').slice(1, -1).join('\n'));
+    expect(payload.business_snapshot.offerings[0].academy).toBe('Academia de Marketing');
+  });
+
+  it('makes an immediate virtual call the preferred optional next step while preserving chat sales', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
+    expect(instructions).toMatch(/immediate\s+call as the\s+preferred\s+next step/i);
+    expect(instructions).toMatch(/If the customer says they prefer chat, keep selling\s+in\s+chat/i);
+    expect(instructions).toMatch(/when "offer_call" is allowed/i);
   });
 
   it('caps the response to at most one question or CTA, never a questionnaire', () => {

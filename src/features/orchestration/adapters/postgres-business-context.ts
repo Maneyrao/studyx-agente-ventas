@@ -61,7 +61,7 @@ export class PostgresBusinessContextStore implements BusinessContextStore {
           FROM (
             SELECT code, display_name, offering_type, description, value_proposition,
                    price_type, price_amount::text AS price_amount, currency,
-                   billing_interval, delivery, guardrails, audience
+                   billing_interval, delivery, guardrails, audience, metadata
             FROM offerings
             WHERE workspace_id = w.id AND status = 'active'
             ORDER BY code
@@ -115,7 +115,7 @@ export class PostgresBusinessContextStore implements BusinessContextStore {
           FROM (
             SELECT code, display_name, offering_type, description, value_proposition,
                    price_type, price_amount::text AS price_amount, currency,
-                   billing_interval, delivery, guardrails, audience
+                   billing_interval, delivery, guardrails, audience, metadata
             FROM offerings
             WHERE workspace_id = w.id AND status = 'active'
             ORDER BY code

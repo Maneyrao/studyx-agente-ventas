@@ -41,6 +41,11 @@ export interface RawOfferingRow {
   readonly delivery: Record<string, unknown>;
   readonly guardrails: Record<string, unknown>;
   readonly audience: Record<string, unknown>;
+  /**
+   * Owner-authored grouping metadata. It is optional for legacy workspaces;
+   * StudyX stores the canonical academy under `metadata.academy`.
+   */
+  readonly metadata?: Record<string, unknown>;
 }
 
 export interface RawQualificationFieldRow {
@@ -72,6 +77,11 @@ export interface OfferingSchedule {
 export interface BusinessOfferingView {
   readonly code: string;
   readonly display_name: string;
+  /**
+   * A customer-facing area used to guide broad catalog questions. Null keeps
+   * legacy offerings fail-closed: the model must not invent a category.
+   */
+  readonly academy: string | null;
   readonly offering_type: RawOfferingRow['offering_type'];
   readonly description: string | null;
   readonly value_proposition: string | null;
@@ -339,10 +349,16 @@ function buildOfferingView(
   const delivery = offering.delivery ?? {};
   const guardrails = offering.guardrails ?? {};
   const audience = offering.audience ?? {};
+  const metadata = offering.metadata ?? {};
 
   return {
     code: offering.code,
     display_name: offering.display_name,
+    academy: cleanText(
+      typeof metadata.academy === 'string' ? metadata.academy : null,
+      128,
+      tally
+    ),
     offering_type: offering.offering_type,
     description: cleanText(offering.description, limits.maxTextChars, tally),
     value_proposition: cleanText(offering.value_proposition, limits.maxTextChars, tally),
