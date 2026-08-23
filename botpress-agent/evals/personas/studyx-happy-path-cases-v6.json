@@ -1,0 +1,118 @@
+{
+  "schema_version": "1.0",
+  "prompt_version": "studyx-agent-a-sales-v6",
+  "catalog_source": "studyx_manual_1",
+  "suite": "happy-path-sales",
+  "cases": [
+    {
+      "id": "happy_01_directo_12m",
+      "name": "Compra directa en 12 pagos",
+      "course": "Marketing Digital",
+      "turns": [
+        "Hola, quiero hacer Marketing Digital. ¿Cuántas clases tiene?",
+        "Perfecto, quiero inscribirme con el plan de 12 pagos.",
+        "Soy Ana Prueba, ana.happy01+{{run_id}}@example.com, Miami, ZIP 33101."
+      ],
+      "ideal_result": {
+        "course_fact": "16 clases",
+        "plan_code": "monthly_12",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "final_state": "payment_link_sent"
+      }
+    },
+    {
+      "id": "happy_02_recomendacion_6m",
+      "name": "Recomendación y cierre en 6 pagos",
+      "course": "Community Manager",
+      "turns": [
+        "Quiero trabajar manejando redes sociales, pero no sé qué curso elegir.",
+        "Quiero aprender contenido, campañas y atención de clientes online.",
+        "Community Manager me sirve. Quiero anotarme con las 6 cuotas de 60 dólares.",
+        "Soy Bruno Prueba, bruno.happy02+{{run_id}}@example.com, Orlando, ZIP 32801."
+      ],
+      "ideal_result": {
+        "diagnostic_questions_max_per_turn": 1,
+        "recommended_course": "Community Manager",
+        "course_fact": "16 clases",
+        "plan_code": "monthly_6",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "final_state": "payment_link_sent"
+      }
+    },
+    {
+      "id": "happy_03_consulta_y_contado",
+      "name": "Consulta del temario y pago único",
+      "course": "Organizador Profesional de Eventos Sociales",
+      "turns": [
+        "Me interesa organizar eventos sociales. ¿Tienen algún curso para eso?",
+        "¿Qué aprendería y cuántas clases son?",
+        "Me sirve. Quiero pagar los 360 dólares de contado.",
+        "Soy Carla Prueba, carla.happy03+{{run_id}}@example.com, Tampa, ZIP 33602."
+      ],
+      "ideal_result": {
+        "recommended_course": "Organizador Profesional de Eventos Sociales",
+        "course_fact": "20 clases",
+        "answer_grounded_in_manual": true,
+        "plan_code": "one_time",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "final_state": "payment_link_sent"
+      }
+    },
+    {
+      "id": "happy_04_objecion_resuelta",
+      "name": "Objeción de precio resuelta sin descuento",
+      "course": "Maquillaje Profesional",
+      "turns": [
+        "Quiero estudiar Maquillaje Profesional. ¿Cuánto cuesta?",
+        "Me parece mucho para pagarlo de una vez.",
+        "La opción de 30 dólares por mes me sirve. Quiero esa.",
+        "Soy Daniela Prueba, daniela.happy04+{{run_id}}@example.com, Houston, ZIP 77002."
+      ],
+      "ideal_result": {
+        "course_fact": "38 clases",
+        "invented_discount": false,
+        "plan_code": "monthly_12",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "final_state": "payment_link_sent"
+      }
+    },
+    {
+      "id": "happy_05_sin_llamada_con_memoria",
+      "name": "Venta por chat con corrección de preferencia",
+      "course": "Inglés 3",
+      "turns": [
+        "Estoy pensando en Inglés 1.",
+        "Prefiero que no me llamen; quiero resolverlo por mensajes.",
+        "En realidad necesito inglés para entrevistas y situaciones reales. Me interesa Inglés 3.",
+        "Confirmame cuál elegí y cuántas clases tiene.",
+        "Correcto. Lo pago de contado.",
+        "Soy Esteban Prueba, esteban.happy05+{{run_id}}@example.com, Dallas, ZIP 75201."
+      ],
+      "ideal_result": {
+        "call_requested": false,
+        "current_course_memory": "Inglés 3",
+        "superseded_course_memory": "Inglés 1",
+        "course_fact": "21 clases",
+        "plan_code": "one_time",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "final_state": "payment_link_sent"
+      }
+    }
+  ],
+  "global_success_criteria": [
+    "Una única respuesta por turno.",
+    "No vuelve a saludar dentro de la misma conversación.",
+    "Todos los cursos y cantidades de clases provienen del manual oficial.",
+    "No inventa descuentos, acreditaciones, garantías ni modalidades de pago.",
+    "No envía un link antes de una elección explícita del plan y de obtener los datos requeridos.",
+    "Envía exactamente un link correspondiente al plan elegido.",
+    "Persiste conversación, decisión, memoria y curso vigente.",
+    "Genera exactamente una proyección idempotente hacia Sheets.",
+    "Registra prompt_version, trace_id, latencia, transcript y evidencia de aprobación."
+  ]
+}
