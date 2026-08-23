@@ -170,16 +170,15 @@ export const DEFAULT_BUSINESS_CONTEXT_LIMITS: BusinessContextLimits = {
   // per-field maxTextChars and the other per-array caps below). Must stay
   // above the largest real workspace's active offering count, or offerings
   // past this count are cut from both the catalog endpoints and the agent's
-  // own prompt context. StudyX now seeds its full catalog — 82 active
-  // offerings (verified 2026-08-23) — and the prompt's complete-catalog rule
-  // only activates when offerings_truncated is zero, so a ceiling below the
-  // real count silently disables that rule on top of trimming the list. The
-  // offering texts are short (≈4.3KB across all 82), so the full catalog fits
-  // comfortably; 120 leaves headroom for new courses. A breach of this bound
-  // is no longer silent: it sets BusinessContextView.offerings_truncated,
-  // which callers log (see catalog/route.ts's `catalog.capped` and
-  // claim-batch.ts's `orchestration.claim.business_context_truncated`).
-  maxOfferings: 120,
+  // own prompt context. StudyX (production) currently seeds 14 verified
+  // offerings out of a documented ~28-30 course catalog
+  // (docs/analysis/ANALISIS-STUDYX-CONTEXTO-VS-SITIO.md), so 40 leaves
+  // headroom for the rest of that catalog to be seeded without silently
+  // truncating again. A breach of this bound is no longer silent: it sets
+  // BusinessContextView.offerings_truncated, which callers log (see
+  // catalog/route.ts's `catalog.capped` and claim-batch.ts's
+  // `orchestration.claim.business_context_truncated`).
+  maxOfferings: 40,
   maxTextChars: 400,
   maxSchedules: 6,
   maxQualificationFields: 12,
