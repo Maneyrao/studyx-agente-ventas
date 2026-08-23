@@ -1,0 +1,123 @@
+{
+  "schema_version": "1.0",
+  "prompt_version": "studyx-agent-a-sales-v6",
+  "catalog_source": "studyx_manual_1",
+  "data_policy": "synthetic_only",
+  "personas": [
+    {
+      "id": "decidido_alta_intencion",
+      "name": "Cliente decidido",
+      "goal": "Comprar Marketing Digital con el plan de 12 pagos.",
+      "profile": "Sabe qué curso quiere, hace pocas preguntas y desea resolver la inscripción rápido.",
+      "turns": [
+        "Hola, quiero hacer Marketing Digital. ¿Cuántas clases tiene?",
+        "Perfecto, quiero inscribirme.",
+        "Prefiero 12 pagos mensuales.",
+        "Soy Martín Prueba, martin.eval+{{run_id}}@example.com, vivo en Miami y mi ZIP es 33101."
+      ],
+      "expected": [
+        "Responde que Marketing Digital tiene 16 clases.",
+        "No inventa condiciones ni descuentos.",
+        "Solicita solamente los datos necesarios.",
+        "Envía exactamente una vez el link monthly_12.",
+        "Persiste el curso, el plan y los datos sintéticos.",
+        "Genera o actualiza una única fila de Sheets."
+      ]
+    },
+    {
+      "id": "indeciso_necesita_recomendacion",
+      "name": "Cliente indeciso",
+      "goal": "Encontrar un curso relacionado con ventas y negocios.",
+      "profile": "Tiene intención real, pero no conoce el catálogo y necesita orientación sin recibir un interrogatorio.",
+      "turns": [
+        "Quiero estudiar algo para mejorar mi trabajo, pero no sé qué curso elegir.",
+        "Trabajo vendiendo servicios y me cuesta negociar y cerrar clientes.",
+        "Contame un poco sobre Especialista en Ventas.",
+        "¿Cuántas clases tiene y qué se aprende?",
+        "Por ahora prefiero seguir hablando por acá, no quiero una llamada."
+      ],
+      "expected": [
+        "Hace una sola pregunta diagnóstica por mensaje.",
+        "Recomienda Especialista en Ventas usando el manual.",
+        "Informa 16 clases y contenido respaldado.",
+        "Respeta el rechazo de la llamada y continúa por chat.",
+        "No vuelve a ofrecer una llamada inmediatamente."
+      ]
+    },
+    {
+      "id": "sensible_al_precio",
+      "name": "Cliente sensible al precio",
+      "goal": "Evaluar Fotografía Profesional y comprar con el plan de 6 pagos.",
+      "profile": "Está interesado, pero objeta el precio y busca descuentos o modalidades inexistentes.",
+      "turns": [
+        "Me interesa Fotografía Profesional. ¿Cuánto cuesta?",
+        "Me parece caro, ¿no tienen descuento o alguna cuota más barata?",
+        "¿Cuáles son las tres formas de pago?",
+        "Bueno, elijo las 6 cuotas de 60 dólares.",
+        "Soy Laura Evaluación, laura.eval+{{run_id}}@example.com, Orlando, ZIP 32801."
+      ],
+      "expected": [
+        "Maneja la objeción sin discutir ni inventar descuentos.",
+        "Ofrece únicamente 12 pagos de USD 30, 6 pagos de USD 60 o un pago de USD 360.",
+        "No muestra ningún link antes de la elección explícita.",
+        "Envía exactamente una vez el link monthly_6.",
+        "Registra el interés y la elección correcta en memoria y Sheets."
+      ]
+    },
+    {
+      "id": "desconfiado_verificador",
+      "name": "Cliente desconfiado",
+      "goal": "Verificar legitimidad, modalidad y certificado antes de decidir.",
+      "profile": "Pregunta por acreditación, devolución, plataforma y seguridad del pago; compra sólo si las respuestas son precisas.",
+      "turns": [
+        "Estoy viendo el curso de Excel Integral, pero antes quiero saber si el certificado es oficial.",
+        "¿Las clases son online? ¿Cómo entro al campus y envío ejercicios?",
+        "¿Me garantizan trabajo cuando termine?",
+        "¿Y si pago y después me arrepiento, me devuelven el dinero?",
+        "Entiendo. Todavía no quiero pagar; mandame primero la información del curso."
+      ],
+      "expected": [
+        "Explica el alcance del certificado sin afirmar homologación o título oficial.",
+        "Describe sólo la plataforma y modalidad respaldadas por el manual.",
+        "No garantiza empleo.",
+        "No inventa una política de devolución y reconoce la información no confirmada.",
+        "No envía links ni fuerza el cierre."
+      ]
+    },
+    {
+      "id": "rechaza_llamada_corrige_preferencia",
+      "name": "Cliente que cambia de opinión",
+      "goal": "Probar continuidad por chat, corrección de memoria y pago contado.",
+      "profile": "Rechaza la llamada, cambia de curso durante la conversación y espera que el agente recuerde la última preferencia.",
+      "turns": [
+        "Hola, estaba interesado en Inglés 1.",
+        "No quiero que me llamen, prefiero resolver todo por mensajes.",
+        "En realidad cambié de idea: quiero Inglés 2, no Inglés 1.",
+        "¿Cuál de los dos cursos elegí finalmente y cuántas clases tiene?",
+        "Quiero pagarlo de contado, el pago único de 360.",
+        "Soy Diego Simulación, diego.eval+{{run_id}}@example.com, Tampa, ZIP 33602."
+      ],
+      "expected": [
+        "Continúa por chat y no insiste con la llamada.",
+        "Reemplaza Inglés 1 por Inglés 2 como preferencia vigente.",
+        "Recuerda Inglés 2 y responde que tiene 12 clases.",
+        "No vuelve a saludar durante la misma conversación.",
+        "Envía exactamente una vez el link one_time.",
+        "La memoria y Sheets reflejan únicamente la preferencia corregida."
+      ]
+    }
+  ],
+  "evidence_required": [
+    "run_id",
+    "persona_id",
+    "prompt_version",
+    "trace_ids",
+    "transcript",
+    "agent_decisions",
+    "memory_before_after",
+    "payment_links_sent",
+    "sheet_projection_rows",
+    "latency_ms_per_turn",
+    "pass_fail_with_reasons"
+  ]
+}
