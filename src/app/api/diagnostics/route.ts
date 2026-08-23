@@ -7,6 +7,7 @@ import {
   probePgvector,
   probePostgres,
 } from '@/features/observability/adapters/probes';
+import { runDiagnosticsProbes } from '@/features/observability/application/run-diagnostics-probes';
 import { withTrace } from '@/lib/observability/structured-log';
 
 /**
@@ -35,12 +36,12 @@ export async function GET(request: NextRequest) {
   // Gemini is a real, bounded embedding call here — not a key-presence check.
   // /api/diagnostics is the ops-facing poll, not the hot path, so the cost of
   // one small request is acceptable; it must never run on every turn.
-  const [postgres, pgvector, backlog, gemini] = await Promise.all([
-    probePostgres(),
-    probePgvector(),
-    probeDerivedBacklog(),
-    probeGeminiEmbedding(),
-  ]);
+  const [postgres, pgvector, backlog, gemini] = await runDiagnosticsProbes({
+    postgres: probePostgres,
+    pgvector: probePgvector,
+    backlog: probeDerivedBacklog,
+    gemini: probeGeminiEmbedding,
+  });
 
   const verdict = evaluateReadiness([
     postgres,
