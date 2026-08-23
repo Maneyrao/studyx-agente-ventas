@@ -25,6 +25,13 @@ import {
  * from a double is trivial.
  */
 
+describe('default retrieval thresholds', () => {
+  it('keeps contact-scoped memory recall broader than tenant knowledge recall', () => {
+    expect(DEFAULT_CONTEXT_LIMITS.memoryMinSimilarity).toBe(0.65);
+    expect(DEFAULT_CONTEXT_LIMITS.knowledgeMinSimilarity).toBe(0.75);
+  });
+});
+
 function claim(overrides: Partial<BatchClaim> = {}): BatchClaim {
   return {
     outcome: 'claimed',

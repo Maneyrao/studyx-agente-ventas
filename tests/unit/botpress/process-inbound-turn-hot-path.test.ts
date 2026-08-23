@@ -273,6 +273,115 @@ describe('processInboundTurn hot path', () => {
     expect(serializedTimingLog).not.toContain('¿Cuánto sale el curso?');
     expect(serializedTimingLog).not.toContain('user-test');
   });
+
+  async function runModelDecision(output: Record<string, unknown>) {
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => ({
+      is: () => true,
+      output,
+      iterations: [],
+    }));
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(),
+      state: processingState(),
+      step,
+      execute,
+      client: {},
+      signal: new AbortController().signal,
+      workflow: { id: 'workflow-test' },
+    });
+
+    return actionSpies.commit.mock.calls[0]?.[0]?.input?.decision;
+  }
+
+  it('commits a soft call offer when the backend explicitly allows offer_call', async () => {
+    const decision = await runModelDecision({
+      schema_version: 4,
+      intent: 'commercial',
+      kind: 'reply',
+      response: '¿Querés que nuestra asesora virtual te llame y te oriente?',
+      response_type: 'call_offer',
+      confidence: 0.9,
+      reason_code: 'CALL_OFFER',
+      business_action: null,
+      memory_candidates: [],
+      missing_information: [],
+      next_state: 'waiting_user',
+      retrieval_used: null,
+    });
+
+    expect(decision).toMatchObject({
+      kind: 'reply',
+      response_type: 'call_offer',
+      reason_code: 'CALL_OFFER',
+    });
+  });
+
+  it('degrades an unauthorized model response to an allowed text reply instead of silence', async () => {
+    const claimed = claimedResponse();
+    claimed.sales_context.allowed_actions = [];
+    actionSpies.claim.mockResolvedValue(claimed);
+
+    const decision = await runModelDecision({
+      schema_version: 4,
+      intent: 'commercial',
+      kind: 'reply',
+      response: 'Te llamamos ahora.',
+      response_type: 'call_offer',
+      confidence: 0.9,
+      reason_code: 'UNAUTHORIZED_CALL_OFFER',
+      business_action: null,
+      memory_candidates: [],
+      missing_information: [],
+      next_state: 'waiting_user',
+      retrieval_used: null,
+    });
+
+    expect(decision).toMatchObject({
+      kind: 'reply',
+      response_type: 'commercial_reply',
+      reason_code: 'RESPONSE_TYPE_NOT_ALLOWED',
+    });
+    expect(decision.response).toBeTruthy();
+  });
+
+  it('removes a repeated greeting when prior turns prove the conversation already started', async () => {
+    const claimed = claimedResponse();
+    (claimed.context as { recent_turns: Array<{
+      direction: 'inbound' | 'outbound';
+      content: string;
+      created_at: string;
+    }> }).recent_turns = [{
+      direction: 'outbound',
+      content: 'Hola, ¿qué curso te interesa?',
+      created_at: '2026-08-21T11:59:00.000Z',
+    }];
+    actionSpies.claim.mockResolvedValue(claimed);
+
+    const decision = await runModelDecision({
+      schema_version: 4,
+      intent: 'commercial',
+      kind: 'reply',
+      response: '¡Hola! Tenemos cursos de salud, tecnología y negocios.',
+      response_type: 'commercial_reply',
+      confidence: 0.9,
+      reason_code: 'CATALOG_REPLY',
+      business_action: null,
+      memory_candidates: [],
+      missing_information: [],
+      next_state: 'waiting_user',
+      retrieval_used: null,
+    });
+
+    expect(decision.response).toBe('Tenemos cursos de salud, tecnología y negocios.');
+  });
 });
 
 describe('requestStudyxJson timeout default', () => {

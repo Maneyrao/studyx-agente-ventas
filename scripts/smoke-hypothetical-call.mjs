@@ -92,7 +92,7 @@ process.env.DATABASE_URL = TEST_DATABASE_URL;
 const { randomUUID, randomBytes } = await import('node:crypto');
 
 const { processInboundMessage } = await import('@/lib/services/ingestion.service');
-const { commitAgentDecision, DecisionPolicyError } = await import('@/lib/services/decision.service');
+const { commitAgentDecision } = await import('@/lib/services/decision.service');
 const { dispatchCall } = await import('@/features/calls/application/dispatch-call');
 const { PostgresCallStore } = await import('@/features/calls/adapters/postgres-call-store');
 const { PostgresContextReceiptStore } = await import('@/features/calls/adapters/postgres-context-receipt-store');

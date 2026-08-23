@@ -145,6 +145,40 @@ function technicalFallback(): Decision {
   }
 }
 
+function allowedTextFallback(claimed: ClaimedTurn, reasonCode: string): Decision {
+  const allowed = claimed.policy.allowed_response_types
+  const responseType = allowed.includes('technical_fallback')
+    ? 'technical_fallback'
+    : allowed.includes('commercial_reply')
+      ? 'commercial_reply'
+      : null
+
+  if (!responseType) return suppress(reasonCode)
+
+  return {
+    schema_version: 3,
+    intent: 'unknown',
+    kind: 'reply',
+    response: 'No pude completar esa respuesta. ¿Podés reformularme la consulta?',
+    response_type: responseType,
+    business_action: null,
+    memory_candidates: [],
+    missing_information: [],
+    next_state: 'waiting_user',
+    reason_code: reasonCode,
+    confidence: 1,
+    retrieval_used: null,
+  }
+}
+
+const LEADING_GREETING = /^(?:[¡¿\s]*)?(?:hola|buen\s+d[ií]a|buenas\s+tardes|buenas\s+noches|buenas)(?:\s*[,!:.—-]\s*|\s+)/iu
+
+function withoutRepeatedGreeting(response: string, claimed: ClaimedTurn): string {
+  if (claimed.context.recent_turns.length === 0) return response
+  const continuation = response.replace(LEADING_GREETING, '').trim()
+  return continuation.length > 0 ? continuation : response
+}
+
 /**
  * Local validation, run before the decision ever leaves this process. Next.js
  * re-validates all of it and holds final authority; doing it here as well is
@@ -154,17 +188,25 @@ function normalizeDecision(decision: Decision, claimed: ClaimedTurn): Decision {
   if (decision.kind === 'suppress') return suppress(decision.reason_code)
 
   if (!decision.response || !decision.response_type) {
-    return suppress('INVALID_DECISION_SHAPE')
+    return allowedTextFallback(claimed, 'INVALID_DECISION_SHAPE')
   }
 
-  // El claim publica sólo los 8 response types conversacionales; los de
-  // llamada (call_offer/call_confirmation) nunca llegan por esta vía, así que
-  // una decisión del modelo que los use queda suprimida acá.
-  if (!(claimed.policy.allowed_response_types as string[]).includes(decision.response_type)) {
-    return suppress('RESPONSE_TYPE_NOT_ALLOWED')
+  const standardResponseAllowed = (claimed.policy.allowed_response_types as string[])
+    .includes(decision.response_type)
+  const callResponseAllowed =
+    (decision.response_type === 'call_offer'
+      && claimed.sales_context.allowed_actions.includes('offer_call'))
+    || (decision.response_type === 'call_confirmation'
+      && claimed.sales_context.allowed_actions.includes('request_call_now'))
+
+  if (!standardResponseAllowed && !callResponseAllowed) {
+    return allowedTextFallback(claimed, 'RESPONSE_TYPE_NOT_ALLOWED')
   }
 
-  return decision
+  return {
+    ...decision,
+    response: withoutRepeatedGreeting(decision.response, claimed),
+  }
 }
 
 export const processInboundTurn = new Workflow({

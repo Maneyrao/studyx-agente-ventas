@@ -75,9 +75,11 @@ export interface ContextLimits {
 export const DEFAULT_CONTEXT_LIMITS: ContextLimits = {
   recentTurns: 10,
   // 2-5 memories. Beyond that the recalled text starts outweighing the
-  // structured facts it is supposed to lose against.
+  // structured facts it is supposed to lose against. Memory is contact-scoped,
+  // so a slightly broader threshold is safe and supports meta-questions such
+  // as "¿qué objetivo te conté?" whose wording differs from the stored fact.
   memoryResults: 5,
-  memoryMinSimilarity: 0.75,
+  memoryMinSimilarity: 0.65,
   memoryMaxChars: 512,
   knowledgeResults: 5,
   knowledgeMinSimilarity: 0.75,

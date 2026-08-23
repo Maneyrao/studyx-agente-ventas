@@ -25,6 +25,15 @@ export class Workflow<TDefinition = unknown> {
   }
 }
 
+/** Records action definitions so their handlers can be exercised in unit tests. */
+export class Action<TDefinition = unknown, TOutput = unknown> {
+  definition: TDefinition;
+  declare readonly __output?: TOutput;
+  constructor(definition: TDefinition) {
+    this.definition = definition;
+  }
+}
+
 /** Minimal structured-exit surface used by workflow generation tests. */
 class Exit<TDefinition = unknown> {
   definition: TDefinition;

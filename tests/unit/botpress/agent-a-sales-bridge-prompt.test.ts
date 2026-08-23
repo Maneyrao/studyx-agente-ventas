@@ -127,11 +127,27 @@ function claimedTurn(overrides: {
 
 describe('AGENT_A_PROMPT_VERSION', () => {
   it('is the pinned sales-bridge version', () => {
-    expect(AGENT_A_PROMPT_VERSION).toBe('studyx-agent-a-sales-v5');
+    expect(AGENT_A_PROMPT_VERSION).toBe('studyx-agent-a-sales-v6');
   });
 });
 
 describe('buildAgentASalesBridgeInstructions', () => {
+  it('requires memory values to stay literally grounded instead of renaming the course', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
+
+    expect(instructions).toMatch(
+      /Do not\s+rename, canonicalize or enrich the value with words absent from that source_quote/,
+    );
+  });
+
+  it('sends an explicitly selected payment link without inventing a profile form', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
+
+    expect(instructions).toContain('Never make sending the chosen link conditional on profile data');
+    expect(instructions).toMatch(/If\s+qualification_fields is empty, ask for no profile fields/);
+    expect(instructions).not.toContain('Ask for full name, email, city and ZIP code');
+  });
+
   it('derives the sales identity from the fenced business snapshot, with no hardcoded brand', () => {
     const withBusiness = claimedTurn({});
     ;(withBusiness as { business_context?: unknown }).business_context = {
@@ -147,6 +163,7 @@ describe('buildAgentASalesBridgeInstructions', () => {
       offerings: [],
       qualification_fields: [],
       injection_suspected_count: 0,
+      offerings_truncated: 0,
     }
     ;(withBusiness as { business_context_available?: boolean }).business_context_available = true
     const instructions = buildAgentASalesBridgeInstructions(withBusiness);
@@ -359,6 +376,7 @@ describe('buildAgentASalesBridgeInstructions', () => {
       ],
       qualification_fields: [],
       injection_suspected_count: 0,
+      offerings_truncated: 0,
     };
     const claimed = claimedTurn({});
     ;(claimed as { business_context?: unknown }).business_context = businessContext
@@ -372,6 +390,7 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(payload.business_snapshot.workspace.display_name).toBe('Aburridont — Inglés IT (Sandbox)');
     expect(payload.business_snapshot.as_of).toBe('2026-08-16T00:00:00.000Z');
     expect(payload.business_snapshot.prices_assertable).toBe(true);
+    expect(payload.business_snapshot.offerings_truncated).toBe(0);
     expect(payload.business_snapshot.offerings[0].price).toEqual({ amount: '85000.00', currency: 'ARS' });
     expect(payload.business_snapshot_available).toBe(true);
     expect(payload).not.toHaveProperty('catalog');
@@ -506,6 +525,7 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(payload.business_snapshot).toEqual({
       as_of: null,
       prices_assertable: false,
+      offerings_truncated: 0,
       workspace: null,
       offerings: [],
       qualification_fields: [],

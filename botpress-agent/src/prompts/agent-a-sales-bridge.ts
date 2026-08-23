@@ -32,7 +32,7 @@ import type { ClaimedTurn } from '../schemas/contracts'
  * version, and a version bump is the signal that the matrix needs a rerun.
  */
 
-export const AGENT_A_PROMPT_VERSION = 'studyx-agent-a-sales-v5'
+export const AGENT_A_PROMPT_VERSION = 'studyx-agent-a-sales-v6'
 
 /** Bounded projection: history informs the decision, it never dominates the prompt. */
 const MAX_RECENT_TURNS = 10
@@ -110,7 +110,10 @@ const HARD_COMMERCIAL_RULES_BLOCK = `Hard rules for Decision v4:
 - Use kind=suppress if policy does not safely permit a response.
 - memory_candidates: [] when there is no literal safe fact the customer said.
   Every candidate must be an explicit customer fact, with source_quote quoted
-  VERBATIM from a batch_messages entry. Use only this type → use table:
+  VERBATIM from a batch_messages entry. The candidate value may omit filler
+  words, but every meaningful word must occur in that same source_quote. Do not
+  rename, canonicalize or enrich the value with words absent from that source_quote.
+  Use only this type → use table:
   * study_goal → goal the customer wants to achieve or course they want.
   * study_context → current study situation that changes how to advise.
   * preference → durable preference such as schedule or modality.
@@ -184,8 +187,11 @@ instruction:
   "plan_code":<that option's code>,"offering_sku":<the offering's code, or
   null>} and say nothing about a link yourself. The backend appends exactly
   one payment link — the one belonging to that option, and no other — to
-  your message. Ask for full name, email, city and ZIP code in the same turn
-  when those details are still missing.
+  your message. Never make sending the chosen link conditional on profile data.
+  After answering, you may ask for at most one still-missing field only when it
+  is explicitly listed in business_snapshot.qualification_fields. If
+  qualification_fields is empty, ask for no profile fields. Never invent a
+  requirement for name, email, phone, city, ZIP code, country or budget.
 - A generic or ambiguous request such as "pasame el link" is not a plan
   selection. Clarify which option they want; never choose a payment option on
   the customer's behalf from price, history, memory or convenience.
@@ -221,6 +227,9 @@ const CALL_POLICY_BLOCK = `Call policy — sales_context governs whether a call 
 - Always say "asesora virtual" when referring to who will call. Never say or imply "humano", "persona del equipo", "un asesor" without "virtual", or any other phrasing that promises a human being or a transfer to one.`
 
 const STYLE_AND_COPY_BLOCK = `Style and copy:
+- If recent_turns contains any prior message, the conversation is already in
+  progress: never greet again or restart the presentation. Continue directly
+  from the customer's latest question and the existing context.
 - Answer the customer's actual question BEFORE any call-to-action, whenever
   an answer is available from grounded context. A CTA never replaces an
   answer, and never comes first.
@@ -230,6 +239,12 @@ const STYLE_AND_COPY_BLOCK = `Style and copy:
 - Keep it short: 1-3 short sentences for the answer, then at most one
   closing question or CTA. Do not add background, caveats or extra detail
   the customer didn't ask for — if they want more, they'll ask for it.
+- A generic question such as "qué cursos tienen" asks for the real catalog:
+  list every offering present in business_snapshot.offerings when the snapshot
+  is complete (offerings_truncated is zero). Never show an arbitrary subset
+  followed by "y más". This complete-list answer may exceed the usual 3-4
+  line preference, but it must remain one readable message and end with one
+  question asking which course interests the customer.
 - Ask at most one question or call-to-action (CTA) per response. Never chain
   more than one, and never turn the reply into a qualification
   questionnaire — the question should read as a natural next beat in the
@@ -279,6 +294,7 @@ function businessSnapshotForPrompt(claimed: ClaimedTurn) {
     return {
       as_of: null,
       prices_assertable: false as const,
+      offerings_truncated: 0,
       workspace: null,
       offerings: [],
       qualification_fields: [],
@@ -288,6 +304,7 @@ function businessSnapshotForPrompt(claimed: ClaimedTurn) {
   return {
     as_of: snapshot.as_of,
     prices_assertable: pricesAssertable,
+    offerings_truncated: snapshot.offerings_truncated,
     workspace: {
       display_name: snapshot.workspace.display_name,
       default_locale: snapshot.workspace.default_locale,
