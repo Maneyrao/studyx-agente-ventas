@@ -9,6 +9,7 @@
 
 # testing
 /coverage
+/botpress-agent/evals/results/
 
 # next.js
 /.next/
