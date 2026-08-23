@@ -114,7 +114,7 @@ export const scn02 = new Eval({
           { not_contains: 'Marketing Digital' },
           {
             llm_judge:
-              'Gives a grounded, brief summary of the StudyX course catalog. It never invents a course that is not part of the real catalog, and it does not dump the entire catalog as an exhaustive, interminable list.',
+              'Gives a grounded answer about the StudyX course catalog. It never invents a course that is not part of the real catalog. Listing every real course in one readable message is acceptable (prompt v6 mandates the complete list when the snapshot is complete); what fails is inventing courses, refusing to name any, or producing an unreadable wall of duplicated text.',
           },
         ],
       },

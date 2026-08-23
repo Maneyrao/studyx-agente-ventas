@@ -171,7 +171,13 @@ function allowedTextFallback(claimed: ClaimedTurn, reasonCode: string): Decision
   }
 }
 
-const LEADING_GREETING = /^(?:[¡¿\s]*)?(?:hola|buen\s+d[ií]a|buenas\s+tardes|buenas\s+noches|buenas)(?:\s*[,!:.—-]\s*|\s+)/iu
+// Two tiers on purpose: multi-word salutations (buen día, buenas tardes…)
+// are unambiguous and may be followed by anything, but the bare one-word
+// forms (hola, buenas) only count as a salutation when punctuation follows.
+// A bare `buenas\s+` would eat the first word of legitimate replies like
+// "Buenas noticias, el diplomado…" → "noticias, el diplomado…".
+const LEADING_GREETING =
+  /^(?:[¡¿\s]*)?(?:(?:buen\s+d[ií]a|buenas\s+tardes|buenas\s+noches)(?:\s*[,!:.—-]\s*|\s+)|(?:hola|buenas)\s*[,!:.—-]\s*)/iu
 
 function withoutRepeatedGreeting(response: string, claimed: ClaimedTurn): string {
   if (claimed.context.recent_turns.length === 0) return response

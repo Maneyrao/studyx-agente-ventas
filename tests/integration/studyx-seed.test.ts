@@ -119,18 +119,29 @@ run('seed studyx (production)', () => {
     }
   });
 
-  it('exactamente una offering (barista) tiene source_url en metadata', async () => {
-    const rows = await db!<Array<{ code: string }>>`
-      SELECT o.code FROM offerings o JOIN workspaces w ON w.id = o.workspace_id
-      WHERE w.slug = ${WS} AND o.metadata ? 'source_url'`;
-    expect(rows).toHaveLength(1);
-    expect(rows[0].code).toBe('barista');
+  it('cada offering carga la configuración comercial confirmada por el dueño (USD 360, 20-ago-2026)', async () => {
+    // La migración 20260820113000 superseded al seed: el precio hipotético
+    // 1200/699 fue reemplazado por la realidad confirmada (total USD 360,
+    // tres opciones de pago). El invariante vigente es que TODAS las
+    // offerings del workspace llevan esa marca — no la proveniencia
+    // source_url del seed original, que esa migración retiró.
+    const rows = await db!<Array<{ code: string; metadata: Record<string, unknown> }>>`
+      SELECT o.code, o.metadata FROM offerings o JOIN workspaces w ON w.id = o.workspace_id
+      WHERE w.slug = ${WS}`;
+    expect(rows).toHaveLength(14);
+    for (const r of rows) {
+      expect(r.metadata.payment_options_owner_confirmed, `owner flag for ${r.code}`).toBe(true);
+      expect(Number(r.metadata.total_price_usd), `total for ${r.code}`).toBe(360);
+    }
   });
 
   it('siembra las 9 fuentes de conocimiento del análisis', async () => {
+    // El workspace además carga 14 temarios como source_type='offering'
+    // (seed studyx-temarios.sql); las 9 fuentes del análisis son las de los
+    // demás tipos.
     const rows = await db!<Array<{ title: string }>>`
       SELECT k.title FROM knowledge_sources k JOIN workspaces w ON w.id = k.workspace_id
-      WHERE w.slug = ${WS}`;
+      WHERE w.slug = ${WS} AND k.source_type <> 'offering'`;
     // Ambos lados con el mismo comparador: los títulos llevan acentos y el
     // orden por code units no coincide con el alfabético.
     expect(rows.map((r) => r.title).sort()).toEqual(
@@ -148,12 +159,16 @@ run('seed studyx (production)', () => {
     );
   });
 
-  it('la política comercial cita los límites de los T&C', async () => {
-    const rows = await db!`
+  it('la política comercial cita los límites confirmados por el dueño', async () => {
+    // La migración 20260820113000 reescribió esta fuente con la
+    // configuración comercial confirmada (USD 360, tres opciones). El texto
+    // literal del T&C del seed original ya no es el contenido vigente.
+    const rows = await db!<Array<{ content: string }>>`
       SELECT content FROM knowledge_sources k JOIN workspaces w ON w.id = k.workspace_id
-      WHERE w.slug = ${WS} AND k.source_type = 'policy'`;
-    expect(rows.length).toBeGreaterThanOrEqual(1);
-    expect(rows[0].content).toContain('No somos una entidad educativa con licencia');
+      WHERE w.slug = ${WS} AND k.title = 'Límites comerciales (T&C literales)'`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].content).toContain('USD 360');
+    expect(rows[0].content).toContain('NUNCA promete');
   });
 
   it('la política recuperable nombra únicamente los tres pagos autorizados', async () => {

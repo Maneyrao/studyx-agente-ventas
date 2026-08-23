@@ -583,9 +583,9 @@ run('selected_memories — end to end from a committed decision', () => {
           {
             // Nunca lo dijo. La cita no existe en el lote.
             type: 'constraint',
-            key: 'presupuesto',
-            value: 'tiene 50000 pesos disponibles',
-            source_quote: 'Tengo 50000 pesos disponibles',
+            key: 'ritmo_estudio',
+            value: 'solo puede estudiar los martes',
+            source_quote: 'Solo puedo estudiar los martes',
             confidence: 0.99,
           },
         ],
@@ -619,11 +619,67 @@ run('selected_memories — end to end from a committed decision', () => {
       embedding_state: 'pending',
     });
     expect(rows[1]).toMatchObject({
-      memory_key: 'presupuesto',
+      memory_key: 'ritmo_estudio',
       status: 'rejected',
       rejection_reason: 'QUOTE_NOT_FOUND',
       embedding_state: 'skip',
     });
+  });
+
+  it('keeps price-like candidates out of selected_memories entirely and records the rejection in audit_log', async () => {
+    // Spec §4: "no registrar link ni precio como memoria seleccionada". The
+    // guard in decision.service drops URL/price-shaped candidates BEFORE
+    // selection, so not even a `rejected` row carries the amount's text into
+    // selected_memories; the trail lives in audit_log without the raw value.
+    const turn = await seedTurn('Tengo 50000 pesos disponibles');
+    const trace = randomUUID();
+
+    const committed = await commitAgentDecision({
+      turn_id: turn.id,
+      trace_id: trace,
+      decision: {
+        schema_version: 2,
+        intent: 'commercial',
+        kind: 'reply',
+        response: 'Genial, te cuento las opciones.',
+        response_type: 'commercial_reply',
+        business_action: null,
+        memory_candidates: [
+          {
+            // Grounded (la cita existe) pero con monto: el guard debe frenarlo igual.
+            type: 'constraint',
+            key: 'presupuesto',
+            value: 'tiene 50000 pesos disponibles',
+            source_quote: 'Tengo 50000 pesos disponibles',
+            confidence: 0.99,
+          },
+        ],
+        missing_information: [],
+        next_state: 'completed',
+        reason_code: 'ANSWER_OPTIONS',
+        confidence: 0.9,
+      },
+      model: { provider: 'botpress', model: 'test-model', prompt_version: 'v-memory' },
+    });
+
+    expect(committed.status).toBe('committed');
+
+    const rows = await sql<Array<{ id: string }>>`
+      SELECT id FROM selected_memories WHERE decision_id = ${committed.decision_id}::uuid
+    `;
+    expect(rows).toHaveLength(0);
+
+    const audit = await sql<Array<{ payload: { rejected: Array<{ key: string; reason: string }> } }>>`
+      SELECT payload FROM audit_log
+      WHERE action = 'agent.decision.memory_candidate_rejected'
+        AND entity_id = ${committed.decision_id}::uuid
+    `;
+    expect(audit).toHaveLength(1);
+    expect(audit[0].payload.rejected).toEqual([
+      { type: 'constraint', key: 'presupuesto', reason: 'URL_OR_PRICE_LIKE' },
+    ]);
+    // El texto del monto no viaja al audit: sólo type/key/reason.
+    expect(JSON.stringify(audit[0].payload)).not.toContain('50000');
   });
 
   it('keeps the turn committed when the memory store is unreachable', async () => {

@@ -382,6 +382,37 @@ describe('processInboundTurn hot path', () => {
 
     expect(decision.response).toBe('Tenemos cursos de salud, tecnología y negocios.');
   });
+
+  it('keeps a mid-conversation reply intact when "Buenas" starts a sentence but is not a salutation', async () => {
+    const claimed = claimedResponse();
+    (claimed.context as { recent_turns: Array<{
+      direction: 'inbound' | 'outbound';
+      content: string;
+      created_at: string;
+    }> }).recent_turns = [{
+      direction: 'outbound',
+      content: 'Hola, ¿qué curso te interesa?',
+      created_at: '2026-08-21T11:59:00.000Z',
+    }];
+    actionSpies.claim.mockResolvedValue(claimed);
+
+    const decision = await runModelDecision({
+      schema_version: 4,
+      intent: 'commercial',
+      kind: 'reply',
+      response: 'Buenas noticias, el diplomado tiene plan en cuotas desde 30 USD.',
+      response_type: 'commercial_reply',
+      confidence: 0.9,
+      reason_code: 'PRICE_REPLY',
+      business_action: null,
+      memory_candidates: [],
+      missing_information: [],
+      next_state: 'waiting_user',
+      retrieval_used: null,
+    });
+
+    expect(decision.response).toBe('Buenas noticias, el diplomado tiene plan en cuotas desde 30 USD.');
+  });
 });
 
 describe('requestStudyxJson timeout default', () => {
