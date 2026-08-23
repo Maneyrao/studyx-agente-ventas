@@ -1,0 +1,347 @@
+{
+  "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+  "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+  "extracted_at": "2026-08-23",
+  "source_of_truth": true,
+  "catalog_rule": "Los 40 cursos enumerados en el catálogo inicial de las páginas 1 y 2 son los cursos activos.",
+  "platform_topics": [
+    "Ingreso al campus",
+    "Campus por dentro",
+    "Clases en vivo y cómo acceder",
+    "Calendario de eventos",
+    "Insignias",
+    "Todos los cursos",
+    "Ingreso a las clases",
+    "Consultas al profesor paso a paso",
+    "Cómo ingresar a una clase y enviar ejercicios"
+  ],
+  "ambiguities": [
+    {
+      "topic": "Ceremonial y Protocolo",
+      "detail": "Se menciona una sola vez en la página 16 como parte de Academia Cultural, pero no aparece en el catálogo inicial ni tiene descripción o cantidad de clases.",
+      "sales_status": "no_ofrecer_hasta_confirmacion"
+    }
+  ],
+  "courses": [
+    {
+      "code": "vino_cata_maridaje",
+      "name": "Introducción al Vino, la Cata y el Maridaje",
+      "academy": "Academia Gastronómica",
+      "classes": 19,
+      "source_page": 9,
+      "description": "En este curso orientamos el aprendizaje a conocer la elaboración de los vinos tintos, blancos, rosados y algunos especiales como espumosos y dulces. Determinar el origen, la variedad, antigüedad, elaboración y otras características de las diferentes variedades de vinos, conocer también los diferentes maridajes para que resulte exitosa la combinación entre la comida y la bebida. Los puntos más importantes que veremos son: Elaboración de los vinos en diferentes partes del mundo, la degustación, como diferenciarlos por color, aroma, sabor. Los diferentes tipos de vinos, de uvas, variedad de maridajes acorde al vino que se elija. Cuenta con 19 clases, 6 ejercicios y 1 examen final."
+    },
+    {
+      "code": "introduccion_catering",
+      "name": "Introducción al Catering",
+      "academy": "Academia Gastronómica",
+      "classes": 20,
+      "source_page": 9,
+      "description": "En este curso analizamos las diferentes opciones, adecuadas a todo tipo de público, las necesidades de alimentos y bebidas según el evento y los menús adaptados para cada ocasión. Nos centramos en la organización del servicio, la planificación de los presupuestos y el cálculo de bebidas para reuniones sociales. Los puntos más importantes que veremos son: El armado del propio emprendimiento con los conceptos básicos sobre el catering, la importancia del menú, como se debe planificar, los diferentes tipos de catering que se pueden ofrecer a los clientes, como promocionar nuestro negocio, ideas de maridaje para nuestro catering y como sacar presupuestos a la hora de ofrecer el servicio. Se compone de 20 clases y 1 examen final"
+    },
+    {
+      "code": "sushi_principiantes",
+      "name": "Sushi para Principiantes",
+      "academy": "Academia Gastronómica",
+      "classes": 10,
+      "source_page": 8,
+      "description": "Este curso está diseñado para que los alumnos aprendan todo lo necesario sobre el mundo del sushi, el paso a paso de recetas únicas, con más de 120 piezas diferentes para ser un verdadero sushi man cuenta también con la enseñanza de otras comidas y postres japoneses. Los puntos más importantes que veremos son: Las herramientas necesarias para la elaboración correcta del sushi, el arroz que se debe utilizar y la cocción justa, técnicas de enrollado, recetario de sushi y de otras comidas y postres japoneses. Se compone de 10 clases, 4 exámenes parciales y 1 examen final"
+    },
+    {
+      "code": "entrenamiento_funcional",
+      "name": "Entrenamiento Funcional",
+      "academy": "Academia de Salud y Bienestar",
+      "classes": 16,
+      "source_page": 9,
+      "description": "El curso está diseñado para empezar desde cero, cualquier persona puede realizarlo sin límites de edad ni de ningún otro tipo de limitación. Aquí encontrarán todos los conceptos necesarios para un abordaje completo de la actividad, desde anatomía, fisiología, ejercitaciones, variantes, preparación de clases, rutinas y mucho más, porque sabemos que lo más importante para un profesor es el conocimiento, si puedes entenderlo vas a poder explicarlo. Los puntos más importantes que veremos son: Se divide en 3 módulos en los cuales veremos en primer lugar beneficios de este tipo de entrenamiento, la anatomía del cuerpo, las articulaciones y la importancia de cuidarlas a la hora de ejercitarse y las función de los huesos y cuál es la forma de no dañarlos. En el módulo número 2 veremos el sistema muscular, los tipos de músculos, su función, la importancia de la frecuencia cardiaca, los ejercicios para ejercitar a cada uno de los músculos, series, repeticiones, descansos y distintos circuitos y por último en el módulo número 3 veremos la importancia de la entrada en calor, las diferentes partes del cuerpo que trabajan al ejercitarse, coordinación y cómo planificar una clase. Cuenta con 16 clases, 8 exámenes parciales y 1 examen parcial"
+    },
+    {
+      "code": "nutricion_alimentacion",
+      "name": "Nutrición y Alimentación Saludable",
+      "academy": "Academia de Salud y Bienestar",
+      "classes": 16,
+      "source_page": 9,
+      "description": "El objetivo de realizar este curso es que se lleven los alumnos una enseñanza y aprendizaje correcto de lo que es una buena alimentación, para eso vamos a ir viendo temas con respecto a la nutrición, qué nos van a ayudar a tener herramientas para saber lo que es realmente una alimentación saludable. Los puntos más importantes que veremos son: Los conceptos básicos sobre la nutrición en las diferentes edades, maneras de poder alimentarse de manera saludable pero deliciosa e ideas sobre distintos platillos. Cuenta con 16 clases, 4 exámenes parciales y 1 examen final"
+    },
+    {
+      "code": "marketing_digital",
+      "name": "Marketing Digital",
+      "academy": "Academia de Marketing",
+      "classes": 16,
+      "source_page": 10,
+      "description": "En este diplomado lograremos desarrollar estrategias exitosas para comunicar de forma eficaz y potenciar tu negocio. En este curso aprenderás las principales áreas dentro del mundo digital: Redes Sociales, contenido, tácticas, métricas y herramientas web. Los puntos más importantes que veremos son: la diferencia entre marketing digital y marketing tradicional, introducción a las redes sociales, qué estrategias hay que tener en cuenta, cómo se miden las métricas en las redes y la planificación. Cuenta con 16 clases y 1 examen final."
+    },
+    {
+      "code": "community_manager",
+      "name": "Community Manager",
+      "academy": "Academia de Marketing",
+      "classes": 16,
+      "source_page": 10,
+      "description": "Aprenderemos a manejar, optimizar y administrar de forma profesional tus redes sociales: crear estrategias de Social Media, hacer campañas digitales, actuar en una crisis y medir el éxito de tu negocio online. Los puntos más importantes que veremos son: El marketing de contenidos, la planificación, estrategias y atención al cliente online, campañas digitales y cómo hacer el presupuesto. Cuenta con 16 clases, 15 actividades y 1 examen final."
+    },
+    {
+      "code": "especialista_marketing",
+      "name": "Especialista en Marketing",
+      "academy": "Academia de Marketing",
+      "classes": 17,
+      "source_page": 10,
+      "description": "Al aprender marketing podrás analizar los mercados, mejorar la distribución y logística de tu emprendimiento, crear una campaña de publicidad y comunicación, posicionar tu marca y entender cuáles son las necesidades de tus clientes. Los puntos más importantes que veremos son: Conceptos generales del marketing, la planeación estratégica, investigación de mercados, ciclo de vida del producto, publicidad y promoción y relaciones públicas. Se compone de 17 clases, 7 ejercicios y 1 examen final."
+    },
+    {
+      "code": "introduccion_ecommerce",
+      "name": "Introducción al Ecommerce",
+      "academy": "Academia de Marketing",
+      "classes": 8,
+      "source_page": 10,
+      "description": "En este diplomado brindaremos todas las herramientas necesarias para vender productos en internet, comenzando desde los fundamentos básicos, pasando por el desarrollo de un plan de acción con objetivos. Enseñaremos las diferentes plataformas y estrategias para atraer al público a tu sitio web, tanto gratuitas como pagas. Los puntos más importantes que veremos son: El contenido lo vamos a ver dividido en 5 segmentos, en primer lugar veremos la INTRODUCCIÓN AL ECOMMERCE donde aprenderemos las ventajas del ecommerce, porque es conveniente tener un sitio web, diferentes maneras de desarrollar una web de ecommerce, en segundo lugar CREANDO UN SITIO WEB brindaremos las diferentes herramientas para crear tu ecommerce, elección de presupuesto adecuado al tamaño de tu negocio, la estructura en tu web, aspectos legales, la logística y el diseño. En tercer lugar el PLANEAMIENTO ESTRATÉGICO veremos el plan de marketing, auditoria de la competencia, modelos de clientes, luego casi llegando al final en cuarto lugar veremos ATRAYENDO A CLIENTES en donde aprenderemos el marketing de contenidos, la creación de los mismos, anuncios en plataformas y programación de contenidos. Y por último MEDICIÓN Y OPTIMIZACIÓN donde veremos que es un KPI (indicador de calidad) y cómo debemos analizar los datos de nuestra web. Cuenta con 8 clases, 3 exámenes parciales y 1 examen final."
+    },
+    {
+      "code": "fotografia_celulares_tiendas_online",
+      "name": "Fotografía con Celulares para Tiendas Online",
+      "academy": "Academia de Marketing",
+      "classes": 20,
+      "source_page": 11,
+      "description": "En este curso vamos a ver cómo aprovechar al máximo la cámara de nuestro celular, técnicas de iluminación, conceptos de fotografía y exposición, edición y retoque de los productos, creación de videos promocionales y cómo aplicar todo a nuestra red social preferida para el impulso de nuestro negocio. Los puntos más importantes que veremos son: Lo vamos a ver divididos en dos segmentos, en primer lugar FOTOGRAFIA CON CELULAR en donde veremos una introducción a dispositivos móviles, como mejorar la calidad de imagen, controlar la luz y los tipos de iluminación, que se debe tomar en cuenta a la hora de fotografiar nuestro producto, el manejo de las sombras y la diferencia entre fondo blanco y negro y todos sus beneficios y el segundo segmento será de CREACION DE CONTENIDO Y EDICION DE FOTOGRAFIAS donde aprenderemos sobre las redes sociales, la edición y los retoques que podemos darle a nuestras imágenes con el celular, creación de fondos para nuestras fotografías, conceptos de videos, filmación, tomas y cortes, creación del feed para instagram y llegando al final el armado de nuestra tienda online. Cuenta con 20 clases, 3 ejercicios, 1 examen parcial y 1 examen final"
+    },
+    {
+      "code": "influencers_creadores_contenidos",
+      "name": "Influencers y Creadores de Contenidos",
+      "academy": "Academia de Marketing",
+      "classes": 20,
+      "source_page": 11,
+      "description": "En este diplomado veremos y te enseñaremos cómo lograr y crear tu propia comunidad, sobre temas que te gusten y apasionen, con contenidos originales y gran empatía en las diferentes redes sociales, logrando interactuar y estrechar lazos con los seguidores para poder convertirte en un verdadero influencer. Los puntos más importantes que veremos son: introducción a las redes sociales, el marketing de contenidos para influenciadores, cómo crear contenido, introducción a instagram, youtube y como monetizarlo, hashtag y estadísticas. Cuenta con 20 clases, 9 exámenes parciales y 1 examen final."
+    },
+    {
+      "code": "publicidad_redes_sociales",
+      "name": "Publicidad en Redes Sociales",
+      "academy": "Academia de Marketing",
+      "classes": 10,
+      "source_page": 11,
+      "description": "Con este curso aprenderemos a hacer publicidad en Facebook e instagram y generar anuncios de forma eficiente en plataformas para público específico como twitter y linkedln. Los puntos más importantes que veremos son: Introducción a las redes sociales, marketing, creación de contenidos, estadísticas en diferentes redes sociales, como se debe monetizar tu trabajo y la interacción con diferentes marcas e influencers. Cuenta con 10 clases, 5 exámenes parciales y 1 examen final."
+    },
+    {
+      "code": "maquillaje_profesional",
+      "name": "Maquillaje Profesional",
+      "academy": "Academia de Moda y Belleza",
+      "classes": 38,
+      "source_page": 11,
+      "description": "El curso plantea como meta específica lograr conocimientos para trabajar como maquillador profesional, reconociendo los materiales de trabajo, tipo de pieles, forma de rostros, gustos del cliente y asesoramientos necesarios en cada trabajo. Pudiendo realizar un maquillaje profesional y duradero. Cuenta con 38 clases, 20 exámenes parciales, 3 ejercicios y 1 examen final."
+    },
+    {
+      "code": "unas_gelificadas",
+      "name": "Uñas Gelificadas",
+      "academy": "Academia de Moda y Belleza",
+      "classes": 25,
+      "source_page": 12,
+      "description": "Incorporar conocimientos y habilidades propias de la construcción de uñas en gel en las manos. Acompañar y asesorar a cualquier persona que desee efectuar un cambio de imagen en sus manos. Saber evaluar los diferentes casos teniendo en cuenta la forma de las uñas, y la anatomía de las manos para realizar de la forma más estéticamente natural la construcción de las uñas en gel. Diferenciar las diferentes patologías en las uñas evaluando conscientemente lo que se ajusta a cada caso. Cuenta con 25 clases, 5 actividades, 9 exámenes parciales y 1 examen final."
+    },
+    {
+      "code": "camaras_seguridad",
+      "name": "Instalación y Configuración de Cámaras de Seguridad",
+      "academy": "Academia de Oficios",
+      "classes": 12,
+      "source_page": 12,
+      "description": "En este diplomado le brindaremos a los participantes los conocimientos necesarios y técnicos, para la instalación y configuración de Cámaras de Seguridad en comercios, casas, galpones o empresas, permitiendo visualizarlas en diferentes componentes (TV, PC y/o Celulares). Incorporar toda la terminología correspondiente para manejarse en este rubro y aprender a manejar las diferentes herramientas que demanda este tipo de instalación. Cuenta con 12 clases y 1 examen final."
+    },
+    {
+      "code": "aires_acondicionados",
+      "name": "Instalación de Aires Acondicionados",
+      "academy": "Academia de Oficios",
+      "classes": 9,
+      "source_page": 12,
+      "description": "El propósito del curso de instalador es el de instruir a todas las personas a que puedan emprender las tareas de instalación y puesta en marcha de equipos de Aire Acondicionado. Cada usuario tiene intereses particulares sobre el equipo a instalar referentes a su ubicación y disposición de las unidades, necesidades a satisfacer, instalación de las cañerías, resultado y funcionamiento del equipo instalado. Pretendiendo un nivel de terminación adecuado. Cuenta con 9 clases y 1 examen final."
+    },
+    {
+      "code": "energia_solar_fotovoltaica",
+      "name": "Energía Solar Fotovoltaica",
+      "academy": "Academia de Oficios",
+      "classes": 8,
+      "source_page": 12,
+      "description": "Conocer el componente más importante en las instalaciones fotovoltaicas, los módulos fotovoltaicos, únicos dispositivos capaces de convertir directamente la energía luminosa procedente del sol en energía eléctrica continua e introducirnos en la energía solar fotovoltaica, que es la transformación de la luz solar en energía. Cuenta con 8 clases, 4 exámenes parciales y 1 examen final."
+    },
+    {
+      "code": "armado_reparacion_pc",
+      "name": "Armado y Reparación de PC",
+      "academy": "Academia de Oficios",
+      "classes": 22,
+      "source_page": 12,
+      "description": "Este curso abarca el mantenimiento de computadoras de escritorio desde cero con casos reales otorgando las herramientas necesarias para que el futuro técnico sepa cuándo reparar y cuándo reemplazar los componentes dañados como también asesorar a sus clientes con las mejores soluciones a su equipamiento. Cuenta con 22 clases, 10 exámenes parciales y 1 examen final."
+    },
+    {
+      "code": "reparacion_celulares",
+      "name": "Reparación de Celulares",
+      "academy": "Academia de Oficios",
+      "classes": 20,
+      "source_page": 13,
+      "description": "Los objetivos de este curso son: lograr que el alumno conozca la evolución de la telefonía celular, hasta el desarrollo total de los Smartphone que tenemos en la actualidad, saber manipular distintas herramientas de medición, adquirir el conocimiento para poder realizar distintas reparaciones (tales como cambios de módulos, reparación de pines y de integrados de teléfonos celulares). Lograr manipular conceptos de programación, y aprender cómo reprogramar o proteger un teléfono celular, de distintas marcas. Este curso cuenta con 20 clases, 4 actividades, 5 exámenes parciales y 1 examen final."
+    },
+    {
+      "code": "redes_informaticas",
+      "name": "Redes Informáticas",
+      "academy": "Academia de Oficios",
+      "classes": 16,
+      "source_page": 13,
+      "description": "Este curso te permitirá conocer el funcionamiento de las redes informáticas, y cada uno de los elementos y dispositivos que la componen. Entender las diferentes capas que interactúan para poder transmitir la información y distribuirla alrededor del mundo y saber: ● Estructurar la arquitectura de una red ● Determinar la funcionalidad de los dispositivos de red ● Comprender las capas de un modelo de red ● Conocer las diferencias entre los modelos de redes que existen. Este diplomado cuenta con 16 clases, 8 exámenes parciales y 1 examen final."
+    },
+    {
+      "code": "decoracion_de_interiores",
+      "name": "Decoración de Interiores",
+      "academy": "Academia de Emprendedores",
+      "classes": 33,
+      "source_page": 13,
+      "description": "Este curso invita a los participantes a formarse en el oficio de Decorador de Interiores, aprendiendo sus primeros pasos en el mundo del diseño y la decoración. Mostrándoles los inicios, tendencias, estilos, herramientas, materiales, consejos. Cuenta con 33 clases, 12 ejercicios, 7 exámenes parciales y 1 examen final."
+    },
+    {
+      "code": "fotografia_profesional",
+      "name": "Fotografía Profesional",
+      "academy": "Academia de Emprendedores",
+      "classes": 41,
+      "source_page": 13,
+      "description": "Este curso está apuntado a todo aquel que quiera conocer desde cero el proceso fotográfico actual, con esto nos referimos al digital. En el momento que fue creado este contenido contamos con una enorme cantidad de dispositivos aptos para realizar fotografías. A lo largo del curso se verán contenidos y prácticas buscando que el alumno logré controlar los principales parámetros de fotografía, manejo de cámara y edición. Cuenta con 41 clases, 1 examen parcial y 1 examen final."
+    },
+    {
+      "code": "organizador_eventos_sociales",
+      "name": "Organizador Profesional de Eventos Sociales",
+      "academy": "Academia de Emprendedores",
+      "classes": 20,
+      "source_page": 13,
+      "description": "Durante estas clases virtuales, aprenderás conceptos, términos del rubro de eventos, para aplicar en el armado y desarrollo de tu empresa de eventos. Contiene material inspirador para trabajar en equipo. Este curso se destaca por brindar herramientas teóricas y prácticas, no solo para convertirte en un OPE, sino también para vender tus servicios, incluye clases especiales para potenciar tu emprendimiento en redes sociales. Este diplomado cuenta con 20 clases, 1 trabajo práctico, 5 exámenes parciales y 1 examen final."
+    },
+    {
+      "code": "organizacion_baby_shower",
+      "name": "Organización de Baby Shower",
+      "academy": "Academia de Emprendedores",
+      "classes": 21,
+      "source_page": 14,
+      "description": "Celebrar la vida es parte de la magia de un Organizador de Eventos de Baby Shower, trabajar en un momento tan especial como la dulce espera de un bebé es un momento de emociones para la familia como para todo el personal que trabaja en el evento. Destacar emociones nos sensibiliza como profesional y eso es clave en este tipo de festejo que tiene como fin festejar la llegada de un nuevo miembro al hogar.Este diplomado cuenta con 21 clases, 1 trabajo práctico, exámenes parciales y 1 examen parcial."
+    },
+    {
+      "code": "paisajismo_jardineria",
+      "name": "Paisajismo y Jardinería",
+      "academy": "Academia de Emprendedores",
+      "classes": 23,
+      "source_page": 14,
+      "description": "El curso tiene como objetivo brindar al alumno todas las variedades que se le pueden presentar en el momento de intervenir en un paisaje natural, capacitarlo en el estudio y el reconocimiento del espacio exterior tales como jardines delanteros, traseros, terrazas, balcones y en el ámbito público en parques y plazas, aprendiendo a analizar los componentes naturales y materiales posibles a utilizar. También le aportará conocimientos varios sobre las especies vegetales, los cuidados que requieren y los estilos de diseño.Este diplomado cuenta con 23 clases, 7 exámenes parciales y 1 examen final."
+    },
+    {
+      "code": "estrategias_emprender",
+      "name": "Estrategias para Emprender",
+      "academy": "Academia de Emprendedores",
+      "classes": 20,
+      "source_page": 14,
+      "description": "En este curso proponemos claves fundamentales para emprender un negocio con éxito, a través de estrategias efectivas para no fallar en el intento. Emprender requiere inversión, tiempo, esfuerzo y sobre todo, mucha inteligencia a la hora de planificar. Los invitamos a adentrarse en el fascinante mundo del emprendedurismo para transformar el presente en un futuro mejor.Este diplomado cuenta con 20 clases, 6 exámenes parciales y 1 examen parcial"
+    },
+    {
+      "code": "instagram_emprendedores",
+      "name": "Instagram para Emprendedores",
+      "academy": "Academia de Emprendedores",
+      "classes": 10,
+      "source_page": 14,
+      "description": "El curso está pensado para que los emprendedores puedan desarrollar sus negocios y consigan mayor visibilidad. Instagram es la red social más activa, que permite potenciar los emprendimientos con sus productos y servicios. Permite estar en el mapa de los usuarios que están cerca colocando la ubicación o seleccionando la etiqueta correcta. Este diplomado cuenta con 10 clases, 6 exámenes parciales y 1 examen final."
+    },
+    {
+      "code": "diseno_corel_draw",
+      "name": "Diseño Gráfico con Corel Draw",
+      "academy": "Academia de Diseño Informático",
+      "classes": 16,
+      "source_page": 14,
+      "description": "Es sumamente necesario entender la tarea de un diseñador gráfico y con el profesionalismo que debemos encarar nuestro trabajo para poder hacerlo de la mejor manera. Vamos a encontrar aquellos que opinen que nuestra tarea es la de “embellecer” una pieza gráfica, de rellenar espacios, de hacerlos atractivos y nuestra tarea va mucho más allá de eso. Este diplomado cuenta con 16 clases, 1 trabajo práctico integrador, 10 ejercicios y 1 examen final."
+    },
+    {
+      "code": "diseno_photoshop",
+      "name": "Diseño Gráfico con Photoshop",
+      "academy": "Academia de Diseño Informático",
+      "classes": 16,
+      "source_page": 14,
+      "description": "Este diplomado cuenta con 16 clases, 8 ejercicios y 1 examen final."
+    },
+    {
+      "code": "diseno_illustrator",
+      "name": "Diseño Gráfico con Illustrator",
+      "academy": "Academia de Diseño Informático",
+      "classes": 17,
+      "source_page": 15,
+      "description": "Este diplomado cuenta con 17 clases, 17 ejercicios, 6 exámenes parciales y 1 examen final."
+    },
+    {
+      "code": "autocad_interiores",
+      "name": "AutoCAD orientado al Diseño de Interiores",
+      "academy": "Academia de Diseño Informático",
+      "classes": 11,
+      "source_page": 15,
+      "description": "En este Curso de AutoCAD vamos a adquirir el conocimiento práctico y teórico para dominar las técnicas de dibujo en forma digital y realizar planos técnicos en dos dimensiones. El curso está apuntado a los alumnos de las áreas de decoración de interiores, diseños efímeros y diseño de mobiliario. Este diplomado cuenta con 11 clases y 1 examen final."
+    },
+    {
+      "code": "excel_integral",
+      "name": "Excel Integral",
+      "academy": "Academia de Negocios",
+      "classes": 17,
+      "source_page": 15,
+      "description": "Recomendamos este curso, con el que aprenderá las herramientas elementales, diferente tipos de fórmulas y funciones, gráficos, resúmenes de información, entre otras tantas actividades que puede realizar con este programa. Este diplomado cuenta con 17 clases, 1 exámenes parciales y 1 examen final."
+    },
+    {
+      "code": "especialista_ventas",
+      "name": "Especialista en Ventas",
+      "academy": "Academia de Negocios",
+      "classes": 16,
+      "source_page": 15,
+      "description": "A través de este curso obtendrás todas las aptitudes necesarias para poder optimizar tus recursos y potenciar tus ventas. Aprenderás diferentes técnicas de negociación, así como también a realizar un discurso asertivo. Veras todas las características de la escucha activa. Podrás convertir a tus consumidores en clientes con estrategias de fidelización.Este diplomado cuenta con 16 clases, 5 ejercicios, 1 trabajo práctico y 1 examen final."
+    },
+    {
+      "code": "coaching_liderazgo",
+      "name": "Coaching y Liderazgo",
+      "academy": "Academia de Negocios",
+      "classes": 16,
+      "source_page": 15,
+      "description": "En este curso permitiremos desarrollar actitudes, capacidades y habilidades que posibiliten enfrentar adecuadamente los desafíos del mercado laboral, en especial a nivel gerencial. Reconocer las competencias conversacionales como factor clave para el incremento de la productividad. Desarrollar habilidades que permitan al alumno lograr relaciones laborales efectivas y realizar sus tareas cotidianas de forma más eficiente y eficaz. Incorporar el aprendizaje de una nueva visión que les permita expandir sus posibilidades de éxito.Este diplomado cuenta con 16 clases, 4 trabajos prácticos y 1 examen final."
+    },
+    {
+      "code": "comunicacion_interna_empresas",
+      "name": "Comunicación Interna en Empresas",
+      "academy": "Academia de Negocios",
+      "classes": 20,
+      "source_page": 15,
+      "description": "En este curso, brindaremos las estrategias necesarias para gestionar e integrar adecuadamente un equipo humano de una empresa. El objetivo es incrementar el vínculo cordial entre los empleados, a fin de aumentar su productividad y desempeño.Este diplomado cuenta con 20 clases, 6 exámenes parciales y 1 examen final."
+    },
+    {
+      "code": "introduccion_criptomonedas",
+      "name": "Introducción a las Criptomonedas",
+      "academy": "Academia de Negocios",
+      "classes": 21,
+      "source_page": 15,
+      "description": "El objetivo de este curso es lograr que el alumno se familiarice con los conceptos básicos del mundo de las criptomonedas. Es un curso introductorio, que no requiere conocimientos previos, y está apuntado a todos aquellos interesados en entender qué es y cómo funciona el mundo cripto. Repasaremos la historia de la criptografía y las principales monedas virtuales. Analizaremos en profundidad el Bitcoin y buscaremos entender cuál es el potencial que las criptomonedas tienen para cambiar para siempre la forma en la que utilizamos, ahorramos e invertimos nuestro dinero. Este diplomado cuenta con 21 clases, 3 exámenes parciales y 1 examen final."
+    },
+    {
+      "code": "oratoria",
+      "name": "Oratoria",
+      "academy": "Academia Cultural",
+      "classes": 20,
+      "source_page": 16,
+      "description": "En este curso, analizaremos las claves de la oratoria, facilitando herramientas esenciales para lograr buenos resultados comunicaciones y alcanzar un feedback sin ruidos ni complicaciones con los interlocutores. Desde la postura frente al otro hasta la dicción y la pérdida del miedo a hablar en público, desarrollaremos un ABC imprescindible para que puedan convertirse en juiciosos oradores y, así, llegar a buen puerto en cualquier ámbito que se les presente. Este diplomado cuenta con 20 clases, 6 exámenes parciales, 2 ejercicios y 1 examen final."
+    },
+    {
+      "code": "ingles_1",
+      "name": "Inglés 1",
+      "academy": "Academia Cultural",
+      "classes": 12,
+      "source_page": 16,
+      "description": "El objetivo de este curso es que el alumno adquiera conocimientos de inglés que perduren en el tiempo a través del aprendizaje y la lectura de materiales teóricos que pueda aplicar y apropiar en la práctica. Se trabajará en acercar al estudiante a la lengua de forma natural, se explicarán los conceptos básicos del idioma, se ayudará a estructurar conversaciones y comunicaciones escritas y orales simples pero efectivas, se motivará a cada persona a poner en práctica lo aprendido en producciones originales dentro y fuera del aula para comprender e interactuar con los hablantes nativos y no nativos.Este diplomado cuenta con 12 clases, 4 exámenes parciales y 1 examen final."
+    },
+    {
+      "code": "ingles_2",
+      "name": "Inglés 2",
+      "academy": "Academia Cultural",
+      "classes": 12,
+      "source_page": 16,
+      "description": "En este diplomado el alumno se adentrará en los modos, en cómo entablar una conversación y podrá aplicar todo lo aprendido. Este diplomado cuenta con 12 clases, 3 exámenes parciales y 1 examen final."
+    },
+    {
+      "code": "ingles_3",
+      "name": "Inglés 3",
+      "academy": "Academia Cultural",
+      "classes": 21,
+      "source_page": 16,
+      "description": "En este diplomado el alumno adquirirá conocimientos sobre gramática y vocabulario que le dará las herramientas necesarias para poder desenvolverse en los distintos contextos presentados en el curso, tales como en el aeropuerto, en una entrevista laboral, etc. Se brindará ayuda visual, audios, videos y diversas actividades que ayudarán al alumno a adquirir y practicar los temas presentados. La comunicación y el uso del inglés en la vida real son los principales tópicos en este curso.Este diplomado cuenta con 21 clases, 3 exámenes parciales y 1 examen final."
+    }
+  ]
+}
