@@ -258,12 +258,14 @@ describe('buildBusinessContextView', () => {
     expect(view.offerings_truncated).toBe(0);
   });
 
-  it('keeps the default ceiling above the documented real StudyX catalog size, so seeding the rest of it cannot silently truncate again', () => {
-    // docs/analysis/ANALISIS-STUDYX-CONTEXTO-VS-SITIO.md records ~28 published
-    // diplomado fichas and 30 store products; the 14 seeded today are only
-    // the verified subset. This pins the regression from Task 3's fix round:
-    // a cap raised without headroom just changes the value of the same bug.
-    expect(DEFAULT_BUSINESS_CONTEXT_LIMITS.maxOfferings).toBeGreaterThanOrEqual(30);
+  it('keeps the default ceiling above the real seeded StudyX catalog size, so the whole catalog reaches the agent without silent truncation', () => {
+    // The full StudyX catalog is now seeded: 82 active offerings (verified
+    // 2026-08-23 against the local cluster). The prompt-side complete-catalog
+    // rule only fires when offerings_truncated is zero, so a default below the
+    // real count doesn't just trim the list — it permanently disables that
+    // rule. Headroom above 82 keeps the next seeded course from re-triggering
+    // the same silent truncation this test exists to pin.
+    expect(DEFAULT_BUSINESS_CONTEXT_LIMITS.maxOfferings).toBeGreaterThanOrEqual(100);
   });
 
   it('keeps headroom above the eight forbidden promises StudyX seeds, so adding a ninth guardrail cannot drop it silently', () => {
