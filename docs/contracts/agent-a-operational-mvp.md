@@ -53,7 +53,7 @@ La decisión v4 admite una acción nueva:
 
 `offering_sku` admite `null`. El backend:
 
-1. Deriva `allowed_payment_plan` del mensaje actual mediante reglas determinísticas: `12 meses/12 cuotas`, `6 meses/6 cuotas` o `contado/pago único`. Una elección ausente o ambigua obliga a clarificar.
+1. Deriva `allowed_payment_plan` del mensaje actual mediante reglas determinísticas: `12 meses/12 cuotas/12 pagos`, `6 meses/6 cuotas/6 pagos` o `contado/pago único/todo junto`. Una elección ausente o ambigua obliga a clarificar.
 2. Revalida que `plan_code` coincida con `allowed_payment_plan` y que el offering exista en el business snapshot canónico.
 3. Obtiene la URL desde configuración; nunca de la respuesta del modelo.
 4. Agrega al texto del modelo un bloque fijo con etiqueta y link.

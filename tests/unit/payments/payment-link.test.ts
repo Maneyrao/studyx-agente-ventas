@@ -115,6 +115,32 @@ describe('derivePaymentChoiceFromBatch', () => {
     ).toBeNull();
   });
 
+  // Live-run finding: the original three phrase families per plan missed
+  // common real customer phrasings ("6 pagos", "todo junto", "12 pagos"),
+  // which fell through to AMBIGUOUS_OR_ABSENT_CHOICE and silenced the
+  // customer even though the model correctly emitted send_payment_link.
+  it('derives monthly_12 from "12 pagos" as well', () => {
+    expect(derivePaymentChoiceFromBatch([msg('quiero 12 pagos')])).toBe('monthly_12');
+  });
+
+  it('derives monthly_6 from "6 pagos" as well', () => {
+    expect(derivePaymentChoiceFromBatch([msg('Prefiero 6 pagos')])).toBe('monthly_6');
+  });
+
+  it('derives one_time from "todo junto", "un solo pago" or "pago total" as well', () => {
+    expect(derivePaymentChoiceFromBatch([msg('Pago todo junto')])).toBe('one_time');
+    expect(derivePaymentChoiceFromBatch([msg('prefiero un solo pago')])).toBe('one_time');
+    expect(derivePaymentChoiceFromBatch([msg('quiero hacer el pago total')])).toBe('one_time');
+  });
+
+  it('still returns null on ambiguity between the new phrasings', () => {
+    expect(derivePaymentChoiceFromBatch([msg('¿6 pagos o todo junto?')])).toBeNull();
+  });
+
+  it('still returns null for "pagos" without a plan-identifying number or phrase', () => {
+    expect(derivePaymentChoiceFromBatch([msg('quiero pagar en pagos')])).toBeNull();
+  });
+
   it('never derives from anything outside the messages passed in (no memory, no prior turn)', () => {
     // The function only ever sees what the caller passes as "current batch" —
     // simulating a prior-turn choice by simply not including it here.
