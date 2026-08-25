@@ -10,6 +10,7 @@ import {
  * types: adapters may populate it only after resolving one exact offering.
  */
 export interface CanonicalOfferingFactSource {
+  readonly display_name?: string;
   readonly price_type: 'fixed' | 'quote' | 'free';
   readonly price_amount: string | null;
   readonly currency: string | null;
@@ -82,6 +83,7 @@ function candidateFacts(offering: CanonicalOfferingFactSource): ProtectedFactRef
     facts.push(
       { kind: 'certification', value: 'la certificación no está especificada' },
       { kind: 'certification', value: 'la certificación no está informada' },
+      { kind: 'certification', value: 'certificación' },
     );
   }
 
@@ -117,6 +119,12 @@ function closedStatementPattern(fact: ProtectedFactRef): RegExp {
         'gu',
       );
     case 'certification':
+      if (normalize(fact.value) === 'certificación') {
+        return new RegExp(
+          `${sentenceStart}la\\s+certificaci[oó]n\\s+de\\s+curso\\s+autorizado\\s+no\\s+est[aá]\\s+especificada\\s+en\\s+la\\s+informaci[oó]n\\s+disponible${sentenceEnd}`,
+          'gu',
+        );
+      }
       return new RegExp(
         `${sentenceStart}${value}(?:\\s+en\\s+la\\s+información\\s+disponible)?${sentenceEnd}`,
         'gu',
@@ -161,6 +169,38 @@ function literalOccurrenceCount(content: string, value: string): number {
   return [...content.matchAll(new RegExp(escapeRegExp(value), 'gu'))].length;
 }
 
+function maskCanonicalNames(content: string, names: readonly string[]): string {
+  return names
+    .filter((name) => name.trim().length > 0)
+    .sort((left, right) => right.length - left.length)
+    .reduce(
+      (masked, name) => masked.replace(new RegExp(escapeRegExp(name), 'giu'), 'curso autorizado'),
+      content,
+    );
+}
+
+function occurrenceRanges(content: string, value: string): Array<{ start: number; end: number }> {
+  return [...content.matchAll(new RegExp(escapeRegExp(value), 'gu'))]
+    .map((match) => ({ start: match.index, end: match.index + value.length }));
+}
+
+function factOccursOnlyInsideCanonicalNames(
+  content: string,
+  fact: ProtectedFactRef,
+  offerings: readonly CanonicalCatalogOfferingSource[],
+): boolean {
+  const normalizedContent = normalize(content);
+  const factValue = normalize(fact.value);
+  const factRanges = occurrenceRanges(normalizedContent, factValue);
+  if (factRanges.length === 0) return false;
+  const nameRanges = offerings.flatMap((offering) =>
+    occurrenceRanges(normalizedContent, normalize(offering.display_name)),
+  );
+  return factRanges.every((factRange) => nameRanges.some((nameRange) => (
+    nameRange.start <= factRange.start && nameRange.end >= factRange.end
+  )));
+}
+
 function usesOnlyClosedCanonicalStatements(
   content: string,
   detectedFacts: readonly ProtectedFactRef[],
@@ -199,13 +239,16 @@ export function materializeCanonicalOfferingFacts(input: {
   readonly content: string;
   readonly offering: CanonicalOfferingFactSource;
 }): readonly ProtectedFactRef[] {
-  const inspection = inspectWithNoCapabilities(input.content);
+  const inspectedContent = input.offering.display_name
+    ? maskCanonicalNames(input.content, [input.offering.display_name])
+    : input.content;
+  const inspection = inspectWithNoCapabilities(inspectedContent);
   if (inspection.ok || inspection.reason !== 'UNAUTHORIZED_PROTECTED_FACT') return [];
   const supportedFacts = inspection.unauthorized_facts.filter(
     (fact) => fact.kind !== 'offering' && fact.kind !== 'promise',
   );
   if (supportedFacts.length === 0) return [];
-  if (!usesOnlyClosedCanonicalStatements(input.content, supportedFacts)) return [];
+  if (!usesOnlyClosedCanonicalStatements(inspectedContent, supportedFacts)) return [];
 
   const candidates = candidateFacts(input.offering);
   const candidateKeys = new Set(
@@ -225,8 +268,12 @@ export function materializeCanonicalCatalogFacts(input: {
   const inspection = inspectWithNoCapabilities(input.content);
   if (inspection.ok || inspection.reason !== 'UNAUTHORIZED_PROTECTED_FACT') return [];
   const offeringFacts = inspection.unauthorized_facts.filter((fact) => fact.kind === 'offering');
-  if (offeringFacts.length === 0) return [];
-  return offeringFacts.every((fact) => isFullyCanonicalOfferingAssertion(fact, input.offerings))
-    ? offeringFacts
-    : [];
+  if (!offeringFacts.every((fact) => isFullyCanonicalOfferingAssertion(fact, input.offerings))) {
+    return [];
+  }
+  const canonicalNameFacts = inspection.unauthorized_facts.filter((fact) => (
+    fact.kind === 'modality'
+    && factOccursOnlyInsideCanonicalNames(input.content, fact, input.offerings)
+  ));
+  return [...offeringFacts, ...canonicalNameFacts];
 }

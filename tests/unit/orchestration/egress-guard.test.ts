@@ -7,6 +7,10 @@ import {
   materializeCanonicalCatalogFacts,
   materializeCanonicalOfferingFacts,
 } from '@/features/orchestration/domain/canonical-offering-egress';
+import {
+  renderCourseDuration,
+  renderUnknownCertification,
+} from '@/features/orchestration/domain/canonical-commercial-copy';
 
 describe('authorized egress manifest', () => {
   it('keeps its content hash stable when authorization lists arrive in a different order', () => {
@@ -435,6 +439,28 @@ describe('authorized egress manifest', () => {
     expect(verifyAuthorizedEgress({ content, manifest })).toEqual({ ok: true });
   });
 
+  it('materializes the exact closed renderer output for duration and unknown certification', () => {
+    const offering = {
+      display_name: 'Decoración de Interiores',
+      price_type: 'fixed' as const,
+      price_amount: '360.00',
+      currency: 'USD',
+      delivery: { classes: 34, certification: null },
+    };
+    const content = [
+      renderCourseDuration({ displayName: offering.display_name, classes: 34 }),
+      renderUnknownCertification({ displayName: offering.display_name }),
+    ].join(' ');
+    const protectedFacts = materializeCanonicalOfferingFacts({ content, offering });
+    const manifest = buildAuthorizedEgress({ content, authorized_urls: [], protected_facts: protectedFacts });
+
+    expect(protectedFacts).toEqual([
+      { kind: 'duration', value: '34 clases' },
+      { kind: 'certification', value: 'certificación' },
+    ]);
+    expect(verifyAuthorizedEgress({ content, manifest })).toEqual({ ok: true });
+  });
+
   it.each([
     'El certificado es oficial y homologado.',
     'El certificado tiene validez internacional.',
@@ -467,6 +493,32 @@ describe('authorized egress manifest', () => {
         delivery: { classes: 16 },
       },
     })).toEqual([]);
+  });
+
+  it.each([
+    'Desde USD 360.',
+    'USD 360 por mes.',
+    'Incluye 16 clases adicionales.',
+    'El certificado es oficial.',
+    'La salida laboral está garantizada.',
+  ])('keeps the explicit adversarial claim unauthorized: %s', (content) => {
+    const protectedFacts = materializeCanonicalOfferingFacts({
+      content,
+      offering: {
+        display_name: 'Redes Informáticas',
+        price_type: 'fixed',
+        price_amount: '360.00',
+        currency: 'USD',
+        delivery: { classes: 16, certification: true },
+      },
+    });
+    const manifest = buildAuthorizedEgress({ content, authorized_urls: [], protected_facts: protectedFacts });
+
+    expect(protectedFacts).toEqual([]);
+    expect(verifyAuthorizedEgress({ content, manifest })).toMatchObject({
+      ok: false,
+      reason: 'UNAUTHORIZED_PROTECTED_FACT',
+    });
   });
 
   it.each([
@@ -512,6 +564,49 @@ describe('authorized egress manifest', () => {
       authorized_urls: [],
       protected_facts: protectedFacts,
     });
+
+    expect(verifyAuthorizedEgress({ content, manifest })).toEqual({ ok: true });
+  });
+
+  it('does not confuse online inside a canonical course name with a free modality claim', () => {
+    const content = [
+      'Te cuento sobre Fotografía con Celulares para Tiendas Online.',
+      'El curso de Fotografía con Celulares para Tiendas Online tiene 20 clases.',
+      'La modalidad de Fotografía con Celulares para Tiendas Online es online.',
+    ].join(' ');
+    const offerings = [{
+      code: 'fotografia_celulares_tiendas_online',
+      display_name: 'Fotografía con Celulares para Tiendas Online',
+    }];
+    const protectedFacts = [
+      ...materializeCanonicalCatalogFacts({ content, offerings }),
+      ...materializeCanonicalOfferingFacts({
+        content,
+        offering: {
+          display_name: 'Fotografía con Celulares para Tiendas Online',
+          price_type: 'fixed',
+          price_amount: '360.00',
+          currency: 'USD',
+          delivery: { classes: 20, modality: 'online' },
+        },
+      }),
+    ];
+    const manifest = buildAuthorizedEgress({ content, authorized_urls: [], protected_facts: protectedFacts });
+
+    expect(verifyAuthorizedEgress({ content, manifest })).toEqual({ ok: true });
+  });
+
+  it('authorizes online only as part of a canonical name in an ambiguous catalog response', () => {
+    const content = 'Encontré varias opciones: Fotografía Profesional, Fotografía con Celulares para Tiendas Online. ¿Cuál querés revisar?';
+    const offerings = [
+      { code: 'fotografia_profesional', display_name: 'Fotografía Profesional' },
+      {
+        code: 'fotografia_celulares_tiendas_online',
+        display_name: 'Fotografía con Celulares para Tiendas Online',
+      },
+    ];
+    const protectedFacts = materializeCanonicalCatalogFacts({ content, offerings });
+    const manifest = buildAuthorizedEgress({ content, authorized_urls: [], protected_facts: protectedFacts });
 
     expect(verifyAuthorizedEgress({ content, manifest })).toEqual({ ok: true });
   });

@@ -1,4 +1,5 @@
 import type { ClaimedTurn, Decision } from '../schemas/contracts'
+import { renderCatalogOptions } from './canonical-commercial-copy'
 import {
   CALL_HANDOFF_FAST_PATH_MODEL,
   matchCallHandoffFastPath,
@@ -17,8 +18,8 @@ import {
   PAYMENT_SELECTION_FAST_PATH_MODEL,
   matchContactCaptureFastPath,
   matchConversationCloseFastPath,
-  matchCourseDiscoveryFastPath,
-  matchCourseFactsFastPath,
+  matchCourseDiscoveryFastPathMatch,
+  matchCourseFactsFastPathMatch,
   matchPaymentComparisonFastPath,
   matchPaymentSelectionFastPath,
 } from './transaction-fast-path'
@@ -81,6 +82,7 @@ export type CommercialRouteResult =
       readonly reason: string
       readonly model: string
       readonly decision: Decision
+      readonly authorizedOfferingCode?: string
     }
   | {
       readonly kind: 'model_required'
@@ -164,6 +166,7 @@ function deterministicRoute(
   origin: DeterministicCommercialRouteOrigin,
   model: string,
   decision: Decision,
+  authorizedOfferingCode?: string,
 ): CommercialRouteResult {
   return {
     kind: 'deterministic',
@@ -171,6 +174,7 @@ function deterministicRoute(
     reason: decision.reason_code,
     model,
     decision,
+    ...(authorizedOfferingCode ? { authorizedOfferingCode } : {}),
   }
 }
 
@@ -334,7 +338,11 @@ function routeCatalogNavigationRequest(claimed: ClaimedTurn): CommercialRouteRes
       claimed,
       'catalog_navigation',
       'DETERMINISTIC_CATALOG_NAVIGATION',
-      `En ${requestedAcademy} tenemos ${offerings.map((offering) => offering.display_name).join(', ')}. ¿Cuál querés revisar?`,
+      renderCatalogOptions({
+        area: requestedAcademy,
+        names: offerings.map((offering) => offering.display_name),
+        maxItems: 3,
+      }),
       'catalog_offering_choice',
     )
   }
@@ -681,17 +689,23 @@ export function routeCommercialTurn(input: CommercialRouterInput): CommercialRou
 
   if (catalogRoute) return catalogRoute
 
-  const courseFacts = matchCourseFactsFastPath(claimed)
+  const courseFacts = matchCourseFactsFastPathMatch(claimed)
   if (courseFacts) {
-    return deterministicRoute('course_facts', COURSE_FACTS_FAST_PATH_MODEL, courseFacts)
+    return deterministicRoute(
+      'course_facts',
+      COURSE_FACTS_FAST_PATH_MODEL,
+      courseFacts.decision,
+      courseFacts.offeringCode ?? undefined,
+    )
   }
 
-  const courseDiscovery = matchCourseDiscoveryFastPath(claimed)
+  const courseDiscovery = matchCourseDiscoveryFastPathMatch(claimed)
   if (courseDiscovery) {
     return deterministicRoute(
       'course_discovery',
       COURSE_DISCOVERY_FAST_PATH_MODEL,
-      courseDiscovery,
+      courseDiscovery.decision,
+      courseDiscovery.offeringCode,
     )
   }
 

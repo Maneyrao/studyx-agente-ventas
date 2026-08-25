@@ -1,4 +1,10 @@
 import type { ClaimedTurn, Decision } from '../schemas/contracts'
+import {
+  renderCourseDuration,
+  renderCourseModality,
+  renderCoursePrice,
+  renderUnknownCertification,
+} from './canonical-commercial-copy'
 import { derivePaymentChoiceFromBatch } from './payment-choice'
 
 export const PAYMENT_SELECTION_FAST_PATH_MODEL = 'deterministic:payment-selection-fast-path-v1'
@@ -85,7 +91,14 @@ function canonicalCourseFromValue(
   return uniqueCourseAliasFromHistory(normalizedValue, canonicalNames)
 }
 
-export function matchCourseFactsFastPath(claimed: ClaimedTurn): Decision | null {
+export interface CourseFactsFastPathMatch {
+  readonly decision: Decision
+  readonly offeringCode: string | null
+}
+
+export function matchCourseFactsFastPathMatch(
+  claimed: ClaimedTurn,
+): CourseFactsFastPathMatch | null {
   if (!claimed.policy.may_respond || claimed.contact.blocked) return null
   if (!claimed.policy.allowed_response_types.includes('commercial_reply')) return null
   if (claimed.batch.message_count !== 1 || claimed.context.batch_messages.length !== 1) return null
@@ -167,7 +180,7 @@ export function matchCourseFactsFastPath(claimed: ClaimedTurn): Decision | null 
   )) return null
 
   const requestedFacts = [
-    asksClasses ? `El curso de ${courseName} tiene ${classes} clases.` : null,
+    asksClasses ? renderCourseDuration({ displayName: courseName, classes: classes! }) : null,
     asksRequirements
       ? `Los requisitos previos para ${courseName} no están especificados en la información disponible.`
       : null,
@@ -175,14 +188,18 @@ export function matchCourseFactsFastPath(claimed: ClaimedTurn): Decision | null 
       ? `Sí: el curso está orientado específicamente ${orientationMatch![1]} ${orientationMatch![2]}.`
       : null,
     asksPrice
-      ? `El precio de ${courseName} es ${offering!.price!.currency} ${Number(offering!.price!.amount)}.`
+      ? renderCoursePrice({
+          displayName: courseName,
+          currency: offering!.price!.currency,
+          amount: offering!.price!.amount,
+        })
       : null,
     asksPaymentOptions ? 'Podés elegir 12 cuotas, 6 cuotas o un pago único.' : null,
     asksRefund
       ? `La política de devolución o reembolso para ${courseName} no está especificada en la información disponible.`
       : null,
     asksCertification
-      ? 'La certificación no está especificada en la información disponible.'
+      ? renderUnknownCertification({ displayName: courseName })
       : null,
     asksSchedule
       ? (offering?.schedules.length
@@ -196,26 +213,40 @@ export function matchCourseFactsFastPath(claimed: ClaimedTurn): Decision | null 
       ? '¿Cuál te conviene más?'
       : '¿Querés que revisemos otro dato?'
   return {
-    schema_version: 4,
-    intent: 'commercial',
-    kind: 'reply',
-    response: `${requestedFacts.join(' ')} ${cta}`,
-    response_type: 'commercial_reply',
-    confidence: 1,
-    reason_code: 'DETERMINISTIC_COURSE_FACTS',
-    business_action: null,
-    memory_candidates: [],
-    missing_information: [],
-    next_state: 'waiting_user',
-    retrieval_used: {
-      kb: usedKnowledge,
-      long_term_memory: Boolean(claimed.sales_context.course_of_interest),
-      summary_version: null,
+    offeringCode: offering?.code ?? null,
+    decision: {
+      schema_version: 4,
+      intent: 'commercial',
+      kind: 'reply',
+      response: `${requestedFacts.join(' ')} ${cta}`,
+      response_type: 'commercial_reply',
+      confidence: 1,
+      reason_code: 'DETERMINISTIC_COURSE_FACTS',
+      business_action: null,
+      memory_candidates: [],
+      missing_information: [],
+      next_state: 'waiting_user',
+      retrieval_used: {
+        kb: usedKnowledge,
+        long_term_memory: Boolean(claimed.sales_context.course_of_interest),
+        summary_version: null,
+      },
     },
   }
 }
 
-export function matchCourseDiscoveryFastPath(claimed: ClaimedTurn): Decision | null {
+export function matchCourseFactsFastPath(claimed: ClaimedTurn): Decision | null {
+  return matchCourseFactsFastPathMatch(claimed)?.decision ?? null
+}
+
+export interface CourseDiscoveryFastPathMatch {
+  readonly decision: Decision
+  readonly offeringCode: string
+}
+
+export function matchCourseDiscoveryFastPathMatch(
+  claimed: ClaimedTurn,
+): CourseDiscoveryFastPathMatch | null {
   if (!claimed.policy.may_respond || claimed.contact.blocked) return null
   if (claimed.batch.message_count !== 1 || claimed.context.batch_messages.length !== 1) return null
   if (!claimed.business_context_available || !claimed.business_context) return null
@@ -232,11 +263,17 @@ export function matchCourseDiscoveryFastPath(claimed: ClaimedTurn): Decision | n
 
   const facts = [
     Number.isSafeInteger(offering.classes) && offering.classes! > 0
-      ? `El curso de ${canonicalName} tiene ${offering.classes} clases.`
+      ? renderCourseDuration({ displayName: canonicalName, classes: offering.classes! })
       : null,
-    offering.modality ? `La modalidad de ${canonicalName} es ${offering.modality}.` : null,
+    offering.modality
+      ? renderCourseModality({ displayName: canonicalName, modality: offering.modality })
+      : null,
     offering.price_assertable && offering.price
-      ? `El precio de ${canonicalName} es ${offering.price.currency} ${Number(offering.price.amount)}.`
+      ? renderCoursePrice({
+          displayName: canonicalName,
+          currency: offering.price.currency,
+          amount: offering.price.amount,
+        })
       : null,
   ].filter((fact): fact is string => Boolean(fact)).slice(0, 2)
   const details = facts.length > 0 ? ` ${facts.join(' ')}` : ''
@@ -248,19 +285,26 @@ export function matchCourseDiscoveryFastPath(claimed: ClaimedTurn): Decision | n
     : `Te cuento sobre ${canonicalName}.${details} ¿Qué te gustaría saber?`
 
   return {
-    schema_version: 4,
-    intent: 'commercial',
-    kind: 'reply',
-    response,
-    response_type: mayOfferCall ? 'call_offer' : 'commercial_reply',
-    confidence: 1,
-    reason_code: 'DETERMINISTIC_COURSE_DISCOVERY',
-    business_action: null,
-    memory_candidates: [],
-    missing_information: [],
-    next_state: 'waiting_user',
-    retrieval_used: RETRIEVAL_NONE,
+    offeringCode: offering.code,
+    decision: {
+      schema_version: 4,
+      intent: 'commercial',
+      kind: 'reply',
+      response,
+      response_type: mayOfferCall ? 'call_offer' : 'commercial_reply',
+      confidence: 1,
+      reason_code: 'DETERMINISTIC_COURSE_DISCOVERY',
+      business_action: null,
+      memory_candidates: [],
+      missing_information: [],
+      next_state: 'waiting_user',
+      retrieval_used: RETRIEVAL_NONE,
+    },
   }
+}
+
+export function matchCourseDiscoveryFastPath(claimed: ClaimedTurn): Decision | null {
+  return matchCourseDiscoveryFastPathMatch(claimed)?.decision ?? null
 }
 
 export function matchConversationCloseFastPath(claimed: ClaimedTurn): Decision | null {

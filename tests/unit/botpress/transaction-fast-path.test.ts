@@ -273,6 +273,25 @@ describe('transaction fast paths', () => {
     expect(decision?.response).not.toMatch(/computadora|internet|conocimientos básicos/i);
   });
 
+  it('uses the closed canonical copy for a 34-class course and unknown certification', () => {
+    const turn = claimed('¿Cuántas clases tiene y qué certificado entrega?');
+    turn.sales_context.course_of_interest = 'Decoración de Interiores';
+    turn.sales_context.offering_code = 'decoracion-interiores';
+    turn.business_context!.offerings[0] = {
+      ...turn.business_context!.offerings[0],
+      code: 'decoracion-interiores',
+      display_name: 'Decoración de Interiores',
+      classes: 34,
+      certification: null,
+    };
+
+    expect(matchCourseFactsFastPath(turn)?.response).toBe(
+      'El curso de Decoración de Interiores tiene 34 clases. '
+      + 'La certificación de Decoración de Interiores no está especificada en la información disponible. '
+      + '¿Querés que revisemos otro dato?',
+    );
+  });
+
   it('renders at most two requested facts followed by one CTA', () => {
     const decision = matchCourseFactsFastPath(claimed(
       '¿Cuántas clases tiene, qué requisitos pide, qué devolución ofrece, quién emite el certificado y qué horarios hay?',
@@ -412,7 +431,7 @@ describe('transaction fast paths', () => {
       '¿Hay horarios fijos o puedo entrar cuando quiera?',
     ));
 
-    expect(certificate?.response).toMatch(/certificación no está especificada.*información disponible/i);
+    expect(certificate?.response).toMatch(/certificación de Redes Informáticas no está especificada.*información disponible/i);
     expect(certificate?.response).not.toMatch(/válido oficialmente|lo emite StudyX/i);
     expect(schedule?.response).toMatch(/horarios fijos.*disponibilidad libre.*no están especificados/i);
     expect(schedule?.response).not.toMatch(/cuando quieras|24\/7|a tu ritmo/i);

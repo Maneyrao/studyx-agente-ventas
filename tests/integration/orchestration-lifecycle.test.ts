@@ -901,6 +901,16 @@ run('Fase 4 — pago y cierre de batch', () => {
           ${workspace[0].id}::uuid, 'course_other', 'Curso Distinto', 'course', 'active',
           'Offering diferente para probar aislamiento', 'fixed', 500, 'USD',
           ${db!.json({ classes: 20, modality: 'presencial', certification: false })}
+        ),
+        (
+          ${workspace[0].id}::uuid, 'redes_informaticas', 'Redes Informáticas', 'course', 'active',
+          'Offering canónico para copia comercial', 'fixed', 360, 'USD',
+          ${db!.json({ classes: 16, modality: 'online', certification: null })}
+        ),
+        (
+          ${workspace[0].id}::uuid, 'decoracion_interiores', 'Decoración de Interiores', 'course', 'active',
+          'Offering canónico para copia comercial', 'fixed', 360, 'USD',
+          ${db!.json({ classes: 34, modality: 'online', certification: null })}
         )
     `;
     for (const key of ['BUSINESS_WORKSPACE_SLUG', 'PAYMENT_LINK_12M', 'PAYMENT_LINK_6M', 'PAYMENT_LINK_CONTADO']) {
@@ -1011,6 +1021,38 @@ run('Fase 4 — pago y cierre de batch', () => {
     }]);
   });
 
+  it.each([
+    [
+      'Redes Informáticas',
+      'redes_informaticas',
+      'Te cuento sobre Redes Informáticas. El curso de Redes Informáticas tiene 16 clases. La modalidad de Redes Informáticas es online.',
+    ],
+    [
+      'Decoración de Interiores',
+      'decoracion_interiores',
+      'El curso de Decoración de Interiores tiene 34 clases. La certificación de Decoración de Interiores no está especificada en la información disponible.',
+    ],
+  ])('commits the canonical full-pipeline response for %s instead of the safe fallback', async (
+    _displayName,
+    offeringCode,
+    content,
+  ) => {
+    const accepted = await processInboundMessage(envelope());
+    const committed = await commitAgentDecision(groundedReply(
+      accepted.turn_id,
+      content,
+      offeringCode,
+    ));
+
+    expect(committed.status).toBe('committed');
+    expect(committed.outbound?.content).toBe(content);
+    expect(committed.outbound?.content).not.toMatch(/no tengo ese dato confirmado/i);
+    expect(verifyAuthorizedEgress({
+      content: committed.outbound!.content,
+      manifest: committed.outbound!.authorized_egress,
+    })).toEqual({ ok: true });
+  });
+
   it('replaces an unsupported offering claim with one safe deterministic fallback', async () => {
     const accepted = await processInboundMessage(envelope());
     const committed = await commitAgentDecision(groundedReply(
@@ -1030,6 +1072,7 @@ run('Fase 4 — pago y cierre de batch', () => {
 
   it.each([
     ['a different existing course code', 'El precio es USD 360.', 'course_other'],
+    ['an offering absent from the snapshot', 'El precio es USD 360.', 'missing_course'],
     ['no authorized course code', 'El precio es USD 360.', undefined],
     ['a different value', 'El precio es USD 361.', 'course_test'],
   ])('rejects a protected fact backed by %s without persisting anything', async (
