@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { configuration, secrets } from '@botpress/runtime';
 
 const { getOrCreate } = vi.hoisted(() => ({ getOrCreate: vi.fn() }));
 
@@ -61,6 +62,9 @@ function expectSecretsAbsent(records: Array<Record<string, unknown>>, secrets: s
 beforeEach(() => {
   getOrCreate.mockReset();
   getOrCreate.mockResolvedValue({ id: 'workflow-safe-reference' });
+  configuration.automationEnabled = true;
+  configuration.whatsappCanaryEnabled = true;
+  secrets.WHATSAPP_CANARY_PHONE_E164S = `+${successSecrets.phone}`;
 });
 
 afterEach(() => {
@@ -68,6 +72,50 @@ afterEach(() => {
 });
 
 describe('WhatsApp router log boundary', () => {
+  it('blocks a non-allowlisted WhatsApp identity before creating any workflow', async () => {
+    const deniedPhone = '5491198765432';
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+
+    await handler({
+      type: 'message',
+      channel: 'whatsapp.channel',
+      message: successMessage,
+      conversation: {
+        ...successConversation,
+        tags: { ...successConversation.tags, 'whatsapp:userPhone': deniedPhone },
+      },
+    });
+
+    expect(getOrCreate).not.toHaveBeenCalled();
+    const records = capturedRecords(info);
+    expect(records).toEqual([{
+      event: 'studyx.router.whatsapp_canary_blocked',
+      adapter: 'whatsapp',
+      trace_id: expect.any(String),
+      reason: 'WHATSAPP_CANARY_PHONE_NOT_ALLOWED',
+    }]);
+    expectSecretsAbsent(records, [deniedPhone, secrets.WHATSAPP_CANARY_PHONE_E164S]);
+  });
+
+  it('blocks official WhatsApp before workflow creation when automation is disabled', async () => {
+    configuration.automationEnabled = false;
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+
+    await handler({
+      type: 'message',
+      channel: 'whatsapp.channel',
+      message: successMessage,
+      conversation: successConversation,
+    });
+
+    expect(getOrCreate).not.toHaveBeenCalled();
+    expect(capturedRecords(info)).toEqual([{
+      event: 'studyx.router.whatsapp_canary_blocked',
+      adapter: 'whatsapp',
+      trace_id: expect.any(String),
+      reason: 'AUTOMATION_DISABLED',
+    }]);
+  });
   it('omits WhatsApp identifiers and payload values from workflow-start logs', async () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
 

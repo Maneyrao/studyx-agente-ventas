@@ -132,4 +132,13 @@ describe('WhatsApp go-live runbook', () => {
     expect(existsSync(runbookPath)).toBe(true);
     for (const link of links) expect(existsSync(resolve(runbookPath, '..', link))).toBe(true);
   });
+
+  it('requires the value-safe runtime attestation and pre-workflow canary gate', () => {
+    const runbook = readRunbook();
+
+    expect(runbook).toContain('adk run ./scripts/attest-whatsapp-canary.ts');
+    expect(runbook).toContain('{"valid":true,"count":1}');
+    expect(runbook).toMatch(/before.*workflow.*ingest.*decision.*call.*send/i);
+    expect(runbook).toMatch(/never.*phone.*secret.*value/i);
+  });
 });

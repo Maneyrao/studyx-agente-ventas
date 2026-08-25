@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  attestWhatsAppCanaryAllowlist,
   evaluateWhatsAppCanarySend,
   whatsappChannel,
 } from '../../../botpress-agent/src/channels/whatsapp.channel';
@@ -183,5 +184,25 @@ describe('evaluateWhatsAppCanarySend', () => {
 
     expect(serialized).not.toContain(tester);
     expect(serialized).not.toContain(other);
+  });
+});
+
+describe('attestWhatsAppCanaryAllowlist', () => {
+  it('attests exactly one strict non-synthetic E.164 tester without returning it', () => {
+    const tester = '+5491112345678';
+    const result = attestWhatsAppCanaryAllowlist(tester);
+
+    expect(result).toEqual({ valid: true, count: 1 });
+    expect(JSON.stringify(result)).not.toContain(tester);
+  });
+
+  it.each([
+    [undefined, { valid: false, count: 0 }],
+    ['', { valid: false, count: 0 }],
+    ['not-a-phone', { valid: false, count: 1 }],
+    ['+999123456789', { valid: false, count: 1 }],
+    ['+5491112345678,+5491198765432', { valid: false, count: 2 }],
+  ])('fails closed and returns only validity/count for %s', (allowlist, expected) => {
+    expect(attestWhatsAppCanaryAllowlist(allowlist)).toEqual(expected);
   });
 });

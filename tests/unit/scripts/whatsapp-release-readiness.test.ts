@@ -30,6 +30,9 @@ const botpress = {
   automationEnabled: false,
   whatsappCanaryEnabled: true,
   whatsappCanaryAllowlistConfigured: true,
+  orchestratorSecretConfigured: true,
+  signingSecretConfigured: true,
+  whatsappCanaryAttestation: { valid: true, count: 1 },
   whatsappDevelopmentIntegrationAvailable: true,
 };
 
@@ -129,6 +132,11 @@ describe('WhatsApp release readiness', () => {
     ['disabled canary', { botpress: { ...botpress, whatsappCanaryEnabled: false } }, 'whatsapp_canary'],
     ['enabled automation', { botpress: { ...botpress, automationEnabled: true } }, 'global_automation'],
     ['missing integration', { botpress: { ...botpress, whatsappDevelopmentIntegrationAvailable: false } }, 'whatsapp_development_integration'],
+    ['missing orchestrator secret', { botpress: { ...botpress, orchestratorSecretConfigured: false } }, 'botpress_secrets'],
+    ['missing signing secret', { botpress: { ...botpress, signingSecretConfigured: false } }, 'botpress_secrets'],
+    ['invalid canary attestation', { botpress: { ...botpress, whatsappCanaryAttestation: { valid: false, count: 1 } } }, 'whatsapp_canary_attestation'],
+    ['multi-tester attestation', { botpress: { ...botpress, whatsappCanaryAttestation: { valid: false, count: 2 } } }, 'whatsapp_canary_attestation'],
+    ['missing canary attestation', { botpress: { ...botpress, whatsappCanaryAttestation: null } }, 'whatsapp_canary_attestation'],
   ])('rejects %s', async (_label, overrides, expectedCheck) => {
     const result = await evaluateWhatsAppReleaseReadiness({
       target: 'development',
@@ -168,12 +176,28 @@ describe('WhatsApp release readiness', () => {
     });
   });
 
-  it('does not call a local or insecure backend', async () => {
+  it.each([
+    'http://localhost:3000',
+    'https://api.localhost',
+    'https://127.1',
+    'https://10.1.2.3',
+    'https://172.16.0.1',
+    'https://172.31.255.255',
+    'https://192.168.1.1',
+    'https://169.254.1.1',
+    'https://[::1]',
+    'https://[fc00::1]',
+    'https://[fdff::1]',
+    'https://[fe80::1]',
+    'https://user:password@api.studyx.example',
+    'not a url',
+  ])('does not call a non-public backend target %s', async (apiBaseUrl) => {
     const fetchImpl = vi.fn();
-    await evaluateWhatsAppReleaseReadiness({
+    const result = await evaluateWhatsAppReleaseReadiness({
       target: 'development', env: requiredEnv,
-      botpress: { ...botpress, apiBaseUrl: 'http://localhost:3000' }, fetchImpl,
+      botpress: { ...botpress, apiBaseUrl }, fetchImpl,
     });
+    expect(check(result, 'api_base_url')?.ok).toBe(false);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

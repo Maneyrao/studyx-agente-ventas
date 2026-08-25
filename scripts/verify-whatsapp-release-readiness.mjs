@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
+import { isIP } from 'node:net';
 
 const execFileAsync = promisify(execFile);
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -32,10 +33,31 @@ function hasValue(env, name) {
   return typeof env[name] === 'string' && env[name].trim() !== '';
 }
 
+function privateIpv4(hostname) {
+  const [a, b] = hostname.split('.').map(Number);
+  return a === 127 || a === 10 ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 169 && b === 254);
+}
+
+function privateIpv6(hostname) {
+  const normalized = hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (normalized === '::1') return true;
+  const first = Number.parseInt(normalized.split(':', 1)[0], 16);
+  return (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80;
+}
+
 function publicHttpsUrl(raw) {
   try {
     const url = new URL(raw);
-    return url.protocol === 'https:' && !['localhost', '127.0.0.1', '::1'].includes(url.hostname);
+    if (url.protocol !== 'https:' || url.username !== '' || url.password !== '') return false;
+    const hostname = url.hostname.replace(/\.$/, '').toLowerCase();
+    if (hostname === 'localhost' || hostname.endsWith('.localhost')) return false;
+    const ipVersion = isIP(hostname.replace(/^\[|\]$/g, ''));
+    if (ipVersion === 4 && privateIpv4(hostname)) return false;
+    if (ipVersion === 6 && privateIpv6(hostname)) return false;
+    return hostname !== '';
   } catch {
     return false;
   }
@@ -64,6 +86,11 @@ export async function evaluateWhatsAppReleaseReadiness({
 }) {
   const missing = REQUIRED_BACKEND_ENV.filter((name) => !hasValue(env, name));
   const apiIsPublicHttps = publicHttpsUrl(botpress.apiBaseUrl);
+  const missingBotpressSecrets = [
+    ['WHATSAPP_CANARY_PHONE_E164S', botpress.whatsappCanaryAllowlistConfigured],
+    ['STUDYX_ORCHESTRATOR_KEY', botpress.orchestratorSecretConfigured],
+    ['STUDYX_SIGNING_SECRET', botpress.signingSecretConfigured],
+  ].filter(([, configured]) => configured !== true).map(([name]) => name);
   const checks = [
     result('target', target === 'development', 'TARGET_MUST_BE_DEVELOPMENT'),
     result('api_base_url', apiIsPublicHttps, 'API_BASE_URL_MUST_BE_PUBLIC_HTTPS'),
@@ -82,9 +109,15 @@ export async function evaluateWhatsAppReleaseReadiness({
     result('global_automation', botpress.automationEnabled === false, 'GLOBAL_AUTOMATION_MUST_BE_DISABLED'),
     result('whatsapp_canary', botpress.whatsappCanaryEnabled === true, 'WHATSAPP_CANARY_MUST_BE_ENABLED'),
     result(
-      'whatsapp_canary_allowlist_secret',
-      botpress.whatsappCanaryAllowlistConfigured === true,
-      'WHATSAPP_CANARY_ALLOWLIST_SECRET_MISSING',
+      'botpress_secrets',
+      missingBotpressSecrets.length === 0,
+      missingBotpressSecrets.length ? `MISSING:${missingBotpressSecrets.join(',')}` : null,
+    ),
+    result(
+      'whatsapp_canary_attestation',
+      botpress.whatsappCanaryAttestation?.valid === true &&
+        botpress.whatsappCanaryAttestation?.count === 1,
+      'WHATSAPP_CANARY_ATTESTATION_INVALID',
     ),
     result(
       'whatsapp_development_integration',
@@ -161,13 +194,14 @@ export function availableWhatsAppIntegration(status, target) {
 async function readBotpressState(target) {
   const prod = target === 'production' ? ['--prod'] : [];
   const integrationTarget = target === 'production' ? 'prod' : 'dev';
-  const [apiBaseUrl, orchestratorKeyId, automationEnabled, whatsappCanaryEnabled, secretStatus, integrations] = await Promise.all([
+  const [apiBaseUrl, orchestratorKeyId, automationEnabled, whatsappCanaryEnabled, secretStatus, integrations, canaryAttestation] = await Promise.all([
     adkJson(['config:get', 'apiBaseUrl', ...prod, '--format', 'json']),
     adkJson(['config:get', 'orchestratorKeyId', ...prod, '--format', 'json']),
     adkJson(['config:get', 'automationEnabled', ...prod, '--format', 'json']),
     adkJson(['config:get', 'whatsappCanaryEnabled', ...prod, '--format', 'json']),
     adkJson(['secret', ...prod, '--format', 'json']),
     adkJson(['integrations', 'list', '--target', integrationTarget, '--format', 'json']),
+    adkJson(['run', './scripts/attest-whatsapp-canary.ts', ...prod]),
   ]);
   return {
     apiBaseUrl: unwrapValue(apiBaseUrl),
@@ -179,6 +213,17 @@ async function readBotpressState(target) {
       'WHATSAPP_CANARY_PHONE_E164S',
       target,
     ),
+    orchestratorSecretConfigured: configuredSecret(
+      secretStatus,
+      'STUDYX_ORCHESTRATOR_KEY',
+      target,
+    ),
+    signingSecretConfigured: configuredSecret(
+      secretStatus,
+      'STUDYX_SIGNING_SECRET',
+      target,
+    ),
+    whatsappCanaryAttestation: canaryAttestation,
     whatsappDevelopmentIntegrationAvailable: availableWhatsAppIntegration(integrations, target),
   };
 }

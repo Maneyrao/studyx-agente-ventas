@@ -18,13 +18,31 @@ type WhatsAppCanarySendInput = {
   automationEnabled: boolean
   whatsappCanaryEnabled: boolean
   allowlist: string | undefined
-  phoneE164: string
+  phoneE164: string | undefined
   log?: (event: Record<string, unknown>) => void
 }
 
 export type WhatsAppCanarySendDecision =
   | { allowed: true; reason: null }
   | { allowed: false; reason: WhatsAppCanaryBlockReason }
+
+export type WhatsAppCanaryAllowlistAttestation = {
+  valid: boolean
+  count: number
+}
+
+/** Value-safe proof used by release readiness; never returns an entry. */
+export function attestWhatsAppCanaryAllowlist(
+  allowlist: string | undefined,
+): WhatsAppCanaryAllowlistAttestation {
+  if (typeof allowlist !== 'string' || allowlist === '') return { valid: false, count: 0 }
+  const entries = allowlist.split(/[\n,]/).filter((entry) => entry !== '')
+  const valid = entries.length === 1 &&
+    entries[0] === allowlist &&
+    E164_PATTERN.test(entries[0]) &&
+    !entries[0].startsWith('+999')
+  return { valid, count: entries.length }
+}
 
 /**
  * Final, fail-closed WhatsApp egress authorization. The canary is deliberately
@@ -38,11 +56,7 @@ export function evaluateWhatsAppCanarySend(
     decision = { allowed: false, reason: 'AUTOMATION_DISABLED' }
   } else if (!input.whatsappCanaryEnabled) {
     decision = { allowed: false, reason: 'WHATSAPP_CANARY_DISABLED' }
-  } else if (
-    typeof input.allowlist !== 'string' ||
-    !E164_PATTERN.test(input.allowlist) ||
-    input.allowlist.startsWith('+999')
-  ) {
+  } else if (!attestWhatsAppCanaryAllowlist(input.allowlist).valid) {
     decision = { allowed: false, reason: 'WHATSAPP_CANARY_ALLOWLIST_INVALID' }
   } else if (input.phoneE164 !== input.allowlist) {
     decision = { allowed: false, reason: 'WHATSAPP_CANARY_PHONE_NOT_ALLOWED' }

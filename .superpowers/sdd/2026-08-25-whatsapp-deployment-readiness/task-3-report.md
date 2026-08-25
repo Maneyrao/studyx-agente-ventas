@@ -88,3 +88,30 @@ environment:
   closed.
 - Focal result after the envelope fix: 52/52 tests passed. The parser consumes
   status booleans and metadata names only; readiness still emits no values.
+
+## Final branch review fixes
+
+- RED proved that a non-allowlisted or globally disabled official WhatsApp
+  event still created a workflow. GREEN moves the same fail-closed gate ahead
+  of `processInboundTurn.getOrCreate`; therefore no StudyX ingest, persistence,
+  decision, payment, call dispatch, or send can occur. The pre-send gate stays
+  in place as defense-in-depth. Logs contain only trace/adapter/reason fields.
+- Release readiness now requires exact Botpress metadata presence for
+  `WHATSAPP_CANARY_PHONE_E164S`, `STUDYX_ORCHESTRATOR_KEY`, and
+  `STUDYX_SIGNING_SECRET`.
+- Public HTTPS validation rejects localhost and its subdomains, credentials in
+  URLs, malformed URLs, and loopback/private/link-local IPv4 and IPv6 literals.
+- `botpress-agent/scripts/attest-whatsapp-canary.ts` runs inside the selected
+  ADK runtime and emits only `{valid,count}`. Readiness requires exactly
+  `{valid:true,count:1}` and fails closed when the probe is missing or invalid.
+  No phone or secret value is returned or logged.
+- The Sandbox-only runbook documents both the runtime attestation and the
+  pre-workflow no-side-effect boundary. No external action was performed.
+
+TDD RED contained 25 failures across the gate, secret presence, network target,
+attestation, and runbook contracts. GREEN focal verification passed 88/88;
+the expanded channel/router/workflow/readiness/runbook regression passed
+134/134. Root and Botpress typechecks passed, and `adk check` returned valid
+with zero project errors or warnings (its blocked PostHog telemetry flush was
+non-functional noise). The local dry-run returned the expected safe nonzero
+result with named blockers and no values.
