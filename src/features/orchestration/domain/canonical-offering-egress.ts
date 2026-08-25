@@ -3,6 +3,12 @@ import {
   verifyAuthorizedEgress,
   type ProtectedFactRef,
 } from './egress-guard';
+import {
+  renderCourseDuration,
+  renderCourseModality,
+  renderCoursePrice,
+  renderUnknownCertification,
+} from './canonical-commercial-copy';
 
 /**
  * Small domain projection of the canonical offering fields that may authorize
@@ -97,46 +103,6 @@ function candidateFacts(offering: CanonicalOfferingFactSource): ProtectedFactRef
  * unfamiliar model phrasing fail closed and pushes normal commercial facts
  * through the deterministic templates.
  */
-function closedStatementPattern(fact: ProtectedFactRef): RegExp {
-  const value = escapeRegExp(normalize(fact.value));
-  const sentenceStart = String.raw`(?:^|[.!?]\s*)`;
-  const sentenceEnd = String.raw`(?=\s*[.!?]|$)`;
-
-  switch (fact.kind) {
-    case 'price':
-      return new RegExp(
-        `${sentenceStart}(?:(?:el\\s+)?precio(?:\\s+total)?(?:\\s+d(?:e|el)\\s+[^.!?]{1,100})?\\s+es|(?:el\\s+)?(?:curso|programa)(?:\\s+d(?:e|el)\\s+[^.!?]{1,100})?\\s+(?:cuesta|sale|vale)|(?:cuesta|sale|vale))\\s+${value}${sentenceEnd}`,
-        'gu',
-      );
-    case 'duration':
-      return new RegExp(
-        `${sentenceStart}(?:(?:el\\s+)?(?:curso|programa)(?:\\s+d(?:e|el)\\s+[^.!?]{1,100})?\\s+(?:tiene|consta\\s+de|dura)|(?:son|dura))\\s+${value}${sentenceEnd}`,
-        'gu',
-      );
-    case 'modality':
-      return new RegExp(
-        `${sentenceStart}(?:(?:la\\s+)?modalidad(?:\\s+d(?:e|el)\\s+[^.!?]{1,100})?\\s+es|(?:el\\s+)?(?:curso|programa)(?:\\s+d(?:e|el)\\s+[^.!?]{1,100})?\\s+es|es)\\s+${value}${sentenceEnd}`,
-        'gu',
-      );
-    case 'certification':
-      if (normalize(fact.value) === 'certificación') {
-        return new RegExp(
-          `${sentenceStart}la\\s+certificaci[oó]n\\s+de\\s+curso\\s+autorizado\\s+no\\s+est[aá]\\s+especificada\\s+en\\s+la\\s+informaci[oó]n\\s+disponible${sentenceEnd}`,
-          'gu',
-        );
-      }
-      return new RegExp(
-        `${sentenceStart}${value}(?:\\s+en\\s+la\\s+información\\s+disponible)?${sentenceEnd}`,
-        'gu',
-      );
-    case 'offering':
-    case 'promise':
-      // No free-form availability or commercial promise is authorized by the
-      // current catalog projection. Those require a future typed materializer.
-      return /(?!) /gu;
-  }
-}
-
 function isFullyCanonicalOfferingAssertion(
   fact: ProtectedFactRef,
   offerings: readonly CanonicalCatalogOfferingSource[],
@@ -163,10 +129,6 @@ function isFullyCanonicalOfferingAssertion(
     .trim();
 
   return matchedNames > 0 && remainder.length === 0;
-}
-
-function literalOccurrenceCount(content: string, value: string): number {
-  return [...content.matchAll(new RegExp(escapeRegExp(value), 'gu'))].length;
 }
 
 function maskCanonicalNames(content: string, names: readonly string[]): string {
@@ -201,16 +163,48 @@ function factOccursOnlyInsideCanonicalNames(
   )));
 }
 
-function usesOnlyClosedCanonicalStatements(
+function canonicalRendererStatements(offering: CanonicalOfferingFactSource): string[] {
+  const displayName = offering.display_name?.trim();
+  if (!displayName) return [];
+  const statements: string[] = [];
+  const amount = offering.price_type === 'fixed' ? canonicalAmount(offering.price_amount) : null;
+  const currency = offering.currency?.trim() ?? '';
+  if (amount !== null && currency.length > 0) {
+    statements.push(renderCoursePrice({ displayName, currency, amount }));
+  }
+  const classes = positiveInteger(offering.delivery.classes);
+  if (classes !== null) {
+    statements.push(renderCourseDuration({ displayName, classes }));
+  }
+  if (typeof offering.delivery.modality === 'string' && offering.delivery.modality.trim().length > 0) {
+    statements.push(renderCourseModality({
+      displayName,
+      modality: offering.delivery.modality.trim(),
+    }));
+  }
+  if (offering.delivery.certification !== true && offering.delivery.certification !== false) {
+    statements.push(renderUnknownCertification({ displayName }));
+  }
+  return statements;
+}
+
+function usesOnlyCanonicalRendererStatements(
   content: string,
   detectedFacts: readonly ProtectedFactRef[],
+  statements: readonly string[],
 ): boolean {
   const normalizedContent = normalize(content);
+  const statementRanges = statements.flatMap((statement) => (
+    occurrenceRanges(normalizedContent, normalize(statement))
+  ));
+  if (statementRanges.length === 0) return false;
   return detectedFacts.every((fact) => {
-    const value = normalize(fact.value);
-    const literalCount = literalOccurrenceCount(normalizedContent, value);
-    const closedCount = [...normalizedContent.matchAll(closedStatementPattern(fact))].length;
-    return literalCount > 0 && closedCount === literalCount;
+    const factRanges = occurrenceRanges(normalizedContent, normalize(fact.value));
+    return factRanges.length > 0 && factRanges.every((factRange) => (
+      statementRanges.some((statementRange) => (
+        statementRange.start <= factRange.start && statementRange.end >= factRange.end
+      ))
+    ));
   });
 }
 
@@ -239,16 +233,22 @@ export function materializeCanonicalOfferingFacts(input: {
   readonly content: string;
   readonly offering: CanonicalOfferingFactSource;
 }): readonly ProtectedFactRef[] {
-  const inspectedContent = input.offering.display_name
-    ? maskCanonicalNames(input.content, [input.offering.display_name])
-    : input.content;
+  const displayName = input.offering.display_name?.trim();
+  if (!displayName) return [];
+  const inspectedContent = maskCanonicalNames(input.content, [displayName]);
   const inspection = inspectWithNoCapabilities(inspectedContent);
   if (inspection.ok || inspection.reason !== 'UNAUTHORIZED_PROTECTED_FACT') return [];
   const supportedFacts = inspection.unauthorized_facts.filter(
     (fact) => fact.kind !== 'offering' && fact.kind !== 'promise',
   );
   if (supportedFacts.length === 0) return [];
-  if (!usesOnlyClosedCanonicalStatements(inspectedContent, supportedFacts)) return [];
+  const rendererStatements = canonicalRendererStatements(input.offering)
+    .map((statement) => maskCanonicalNames(statement, [displayName]));
+  if (!usesOnlyCanonicalRendererStatements(
+    inspectedContent,
+    supportedFacts,
+    rendererStatements,
+  )) return [];
 
   const candidates = candidateFacts(input.offering);
   const candidateKeys = new Set(

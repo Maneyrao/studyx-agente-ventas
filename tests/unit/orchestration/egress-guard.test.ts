@@ -416,10 +416,11 @@ describe('authorized egress manifest', () => {
   });
 
   it('materializes a closed unknown-certification statement when the catalog value is null', () => {
-    const content = 'La certificación no está especificada en la información disponible.';
+    const content = 'La certificación de Redes Informáticas no está especificada en la información disponible.';
     const protectedFacts = materializeCanonicalOfferingFacts({
       content,
       offering: {
+        display_name: 'Redes Informáticas',
         price_type: 'fixed',
         price_amount: '360.00',
         currency: 'USD',
@@ -434,7 +435,7 @@ describe('authorized egress manifest', () => {
 
     expect(protectedFacts).toEqual([{
       kind: 'certification',
-      value: 'la certificación no está especificada',
+      value: 'certificación',
     }]);
     expect(verifyAuthorizedEgress({ content, manifest })).toEqual({ ok: true });
   });
@@ -459,6 +460,31 @@ describe('authorized egress manifest', () => {
       { kind: 'certification', value: 'certificación' },
     ]);
     expect(verifyAuthorizedEgress({ content, manifest })).toEqual({ ok: true });
+  });
+
+  it.each([
+    'El precio de Decoración de Interiores es USD 360.',
+    'El curso de Decoración de Interiores tiene 16 clases.',
+    'La modalidad de Decoración de Interiores es online.',
+    'La certificación de Decoración de Interiores no está especificada en la información disponible.',
+  ])('does not authorize a canonical fact written for a different course: %s', (content) => {
+    const protectedFacts = materializeCanonicalOfferingFacts({
+      content,
+      offering: {
+        display_name: 'Redes Informáticas',
+        price_type: 'fixed',
+        price_amount: '360.00',
+        currency: 'USD',
+        delivery: { classes: 16, modality: 'online', certification: null },
+      },
+    });
+    const manifest = buildAuthorizedEgress({ content, authorized_urls: [], protected_facts: protectedFacts });
+
+    expect(protectedFacts).toEqual([]);
+    expect(verifyAuthorizedEgress({ content, manifest })).toMatchObject({
+      ok: false,
+      reason: 'UNAUTHORIZED_PROTECTED_FACT',
+    });
   });
 
   it.each([
@@ -522,14 +548,14 @@ describe('authorized egress manifest', () => {
   });
 
   it.each([
-    ['El precio del curso es USD 360.', { kind: 'price', value: 'usd 360' }],
-    ['El curso tiene 16 clases.', { kind: 'duration', value: '16 clases' }],
-    ['La modalidad es online.', { kind: 'modality', value: 'online' }],
-    ['Incluye certificado.', { kind: 'certification', value: 'incluye certificado' }],
+    ['El precio de Redes Informáticas es USD 360.', { kind: 'price', value: 'usd 360' }],
+    ['El curso de Redes Informáticas tiene 16 clases.', { kind: 'duration', value: '16 clases' }],
+    ['La modalidad de Redes Informáticas es online.', { kind: 'modality', value: 'online' }],
   ] as const)('still materializes the closed canonical assertion: %s', (content, expected) => {
     expect(materializeCanonicalOfferingFacts({
       content,
       offering: {
+        display_name: 'Redes Informáticas',
         price_type: 'fixed',
         price_amount: '360.00',
         currency: 'USD',
@@ -552,6 +578,7 @@ describe('authorized egress manifest', () => {
       ...materializeCanonicalOfferingFacts({
         content,
         offering: {
+          display_name: 'Redes Informáticas',
           price_type: 'fixed',
           price_amount: '360.00',
           currency: 'USD',

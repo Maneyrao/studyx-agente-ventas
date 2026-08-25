@@ -508,6 +508,47 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
+  it('propagates the offering resolved by the deterministic router into the canonical commit', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.context.batch_messages[0].content = '¿Cuántas clases tiene Redes Informáticas?';
+    claimed.business_context_available = true;
+    claimed.business_context = paymentBusinessContext();
+    claimed.sales_context.course_of_interest = null;
+    claimed.sales_context.offering_code = null;
+    actionSpies.claim.mockResolvedValue(claimed);
+
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => {
+      throw new Error('MODEL_MUST_NOT_RUN_FOR_CANONICAL_COURSE_FACTS');
+    });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(),
+      state: processingState(),
+      step,
+      execute,
+      client: {},
+      signal: new AbortController().signal,
+      workflow: { id: 'workflow-test' },
+    });
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(actionSpies.commit).toHaveBeenCalledTimes(1);
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      authorized_offering_code: 'redes-informaticas',
+      decision: {
+        reason_code: 'DETERMINISTIC_COURSE_FACTS',
+        response: expect.stringContaining('Redes Informáticas tiene 16 clases'),
+      },
+    });
+  });
+
   it('retries one transient model failure before using the customer-visible fallback', async () => {
     const step = Object.assign(
       async (

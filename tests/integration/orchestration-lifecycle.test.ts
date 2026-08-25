@@ -980,10 +980,9 @@ run('Fase 4 — pago y cierre de batch', () => {
   }
 
   it.each([
-    ['price', 'El precio es USD 360.', { kind: 'price', value: 'usd 360' }],
-    ['classes', 'Son 16 clases.', { kind: 'duration', value: '16 clases' }],
-    ['modality', 'La modalidad es online.', { kind: 'modality', value: 'online' }],
-    ['certification', 'Incluye certificado.', { kind: 'certification', value: 'incluye certificado' }],
+    ['price', 'El precio de Curso Test es USD 360.', { kind: 'price', value: 'usd 360' }],
+    ['classes', 'El curso de Curso Test tiene 16 clases.', { kind: 'duration', value: '16 clases' }],
+    ['modality', 'La modalidad de Curso Test es online.', { kind: 'modality', value: 'online' }],
   ])('authorizes the canonical %s fact for the exact active offering', async (_case, content, fact) => {
     const accepted = await processInboundMessage(envelope());
 

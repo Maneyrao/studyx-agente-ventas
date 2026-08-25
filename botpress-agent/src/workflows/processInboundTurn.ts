@@ -371,6 +371,9 @@ export const processInboundTurn = new Workflow({
       automationEnabled: configuration.automationEnabled,
       claimed: owned,
     })
+    const authorizedOfferingCode = commercialRoute.kind === 'deterministic'
+      ? commercialRoute.authorizedOfferingCode ?? owned.sales_context.offering_code
+      : owned.sales_context.offering_code
     safeLog('studyx.turn.commercial_route', {
       trace_id: input.trace_id,
       turn_id: owned.turn_id,
@@ -534,9 +537,10 @@ export const processInboundTurn = new Workflow({
             input: {
               turn_id: owned.turn_id,
               trace_id: input.trace_id,
-              // Canonical course identity from the claim; the backend
-              // re-resolves it before authorizing any protected fact.
-              authorized_offering_code: owned.sales_context.offering_code,
+              // Canonical course identity resolved by the deterministic route
+              // or preserved from the claim; the backend re-resolves it before
+              // authorizing any protected fact.
+              authorized_offering_code: authorizedOfferingCode,
               decision,
               model: {
                 provider: decisionProvider,
