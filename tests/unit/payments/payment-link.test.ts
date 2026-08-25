@@ -326,6 +326,25 @@ describe('materializePaymentLinkAction', () => {
     });
   });
 
+  it.each([
+    'Ahora sí, mandámelo después.',
+    'Ahora sí, mandámelo; solo consultaba.',
+    'Ahora sí, mandámelo si comprara.',
+  ])('lets a current veto override an apparent deferred-plan resume: %s', (content) => {
+    const result = materializePaymentLinkAction({
+      action: action({ plan_code: 'monthly_6' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
+      deferredPlanCode: 'monthly_6',
+      batchMessages: [msg(content)],
+      businessSnapshot,
+      contact: allowedContact(),
+      modelResponseText: null,
+      resolver,
+    });
+
+    expect(result).toEqual({ ok: false, reason: 'AMBIGUOUS_OR_ABSENT_CHOICE' });
+  });
+
   it('fails closed when the resolved URL is missing (partial config)', () => {
     const partialResolver = createConfigPaymentLinkResolver({ PAYMENT_LINK_12M: LINK_12M });
     const result = materializePaymentLinkAction({

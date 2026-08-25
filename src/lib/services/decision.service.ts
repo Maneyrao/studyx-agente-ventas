@@ -18,8 +18,8 @@ import { materializePaymentLinkAction } from '@/features/payments/application/ma
 import { createConfigPaymentLinkResolver } from '@/features/payments/adapters/config-payment-link.resolver';
 import { PAYMENT_PLAN_PRESENTATIONS } from '@/features/payments/domain/payment-link';
 import {
+  classifyCurrentPaymentIntent,
   deriveDeferredPaymentChoiceFromBatch,
-  derivePaymentChoiceFromBatch,
 } from '@/features/payments/domain/payment-choice-policy';
 import {
   buildAuthorizedEgress,
@@ -421,30 +421,12 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             ORDER BY conversation_seq ASC, created_at ASC, id ASC
           `;
 
-      const priorPaymentLinks = await db<Array<{ id: string }>>`
-        SELECT ad.id
-        FROM agent_decisions AS ad
-        JOIN messages AS prior_turn ON prior_turn.id = ad.turn_id
-        WHERE prior_turn.conversation_id = ${turn.conversation_id}::uuid
-          AND ad.outbound_message_id IS NOT NULL
-          AND ad.business_action ->> 'type' = 'send_payment_link'
-          AND ad.business_action ->> 'plan_code' = ${action.plan_code}
-          AND ad.business_action ->> 'offering_sku' = ${action.offering_sku}
-        LIMIT 1
-      `;
-
-      if (priorPaymentLinks.length > 0) {
-        // Cross-turn idempotency: acknowledge the existing proposal without
-        // emitting a second Stripe URL or a second payment_link_sent signal.
-        finalResponse = 'Ya te compartí el link de ese plan. Si necesitás que revisemos otra opción, decime.';
-        committedBusinessAction = null;
-      } else {
       // One extra canonical read, ONLY for payment or a response containing a
       // protected fact. A greeting/plain clarification does not pay this DB
       // latency. Payment and fact authorization reuse the same snapshot.
       const offerings = await loadCanonicalOfferings('payment_link');
       let deferredPlanCode: ReturnType<typeof deriveDeferredPaymentChoiceFromBatch> = null;
-      if (derivePaymentChoiceFromBatch(batchMessages) === null) {
+      if (classifyCurrentPaymentIntent(batchMessages).kind === 'resume') {
         const priorInboundMessages = await db<Array<{ content: string }>>`
           SELECT prior.content
           FROM messages AS prior
@@ -489,14 +471,35 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       if (!materialized.ok) {
         throw new DecisionPolicyError(materialized.reason);
       }
-      // `response_text` is only the model's OWN text, sanitized of any URL it
-      // had no authority to write (spec §4 steps 3-4): the fixed
-      // {label, url} block is a SEPARATE return value the caller must append
-      // — materializePaymentLinkAction never does this itself.
-      finalResponse = `${materialized.response_text}\n\n${materialized.block.label}: ${materialized.block.url}`.trim();
-      paymentLinkStrippedUrls = materialized.stripped_urls;
-      authorizedUrls = [materialized.block.url];
-      authorizedProtectedFacts = paymentPlanProtectedFacts(action.plan_code);
+
+      // Revalidation above must happen before this dedupe read. Otherwise a
+      // mismatched SKU or a current veto could obtain a friendly acknowledgement
+      // merely because an older valid link existed in the same conversation.
+      const priorPaymentLinks = await db<Array<{ id: string }>>`
+        SELECT ad.id
+        FROM agent_decisions AS ad
+        JOIN messages AS prior_turn ON prior_turn.id = ad.turn_id
+        WHERE prior_turn.conversation_id = ${turn.conversation_id}::uuid
+          AND ad.outbound_message_id IS NOT NULL
+          AND ad.business_action ->> 'type' = 'send_payment_link'
+          AND ad.business_action ->> 'plan_code' = ${action.plan_code}
+          AND ad.business_action ->> 'offering_sku' = ${action.offering_sku}
+        LIMIT 1
+      `;
+
+      if (priorPaymentLinks.length > 0) {
+        // Cross-turn idempotency: acknowledge the existing proposal without
+        // emitting a second Stripe URL or a second payment_link_sent signal.
+        finalResponse = 'Ya te compartí el link de ese plan. Si necesitás que revisemos otra opción, decime.';
+        committedBusinessAction = null;
+      } else {
+        // `response_text` is only the model's OWN text, sanitized of any URL it
+        // had no authority to write (spec §4 steps 3-4): the fixed
+        // {label, url} block is a SEPARATE return value the caller must append.
+        finalResponse = `${materialized.response_text}\n\n${materialized.block.label}: ${materialized.block.url}`.trim();
+        paymentLinkStrippedUrls = materialized.stripped_urls;
+        authorizedUrls = [materialized.block.url];
+        authorizedProtectedFacts = paymentPlanProtectedFacts(action.plan_code);
       }
     }
 
@@ -1037,12 +1040,6 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
   };
   const payloadHash = sha256Hex(semanticPayload);
   const messageIdentity = input.botpress_message_id ?? 'none';
-  // Set only on the branch that actually transitions delivery to
-  // `submitted`. Read after the transaction commits — never inside it, so a
-  // Sheets/outbox failure can NEVER abort or revert the delivery state
-  // change it follows (spec §5: "no revierte mensaje ni decisión").
-  let paymentLinkSignal: PaymentLinkProjectionSignal | null = null;
-
   const result: DeliveryReportResult = await withSerializableTransaction(async (db) => {
     // The delivery is locked before anything else: the attempt it is on is what
     // gives this report an identity, and that number has to be read under the
@@ -1193,10 +1190,17 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
         `;
       }
 
-      // Fase 4 — Sheets (spec §5): only after delivery is confirmed, and only
-      // for the one action that projects a lead signal today. A read, never a
-      // write — the actual enqueue happens after this transaction commits.
-      paymentLinkSignal = await loadPaymentLinkProjectionSignal(db, input.outbound_id, input.trace_id);
+      // Fase 4 — Sheets (spec §5): the durable projection row is created in
+      // the same transaction as delivery confirmation. A DB enqueue failure
+      // rolls both back, so replay can safely reconstruct exactly once.
+      const paymentLinkSignal = await loadPaymentLinkProjectionSignal(
+        db,
+        input.outbound_id,
+        input.trace_id,
+      );
+      if (paymentLinkSignal) {
+        await enqueuePaymentLinkSentProjection(paymentLinkSignal, db);
+      }
     } else {
       if (!input.error_code) throw new DeliveryReportConflictError('Failed report requires error_code');
       if (delivery.state === 'submitted') throw new DeliveryReportConflictError('Submitted delivery cannot be downgraded');
@@ -1252,20 +1256,6 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
       delivery_status: input.status,
     };
   });
-
-  if (result.status === 'recorded' && paymentLinkSignal) {
-    // Never throw out of here: an outbox failure must never surface as a
-    // failure of THIS call, which already committed the canonical delivery
-    // state. The row stays pending/retryable for the cron flush worker.
-    await enqueuePaymentLinkSentProjection(paymentLinkSignal).catch((error) => {
-      logger.error({
-        event: 'orchestration.payment_link.projection_enqueue_failed',
-        trace_id: input.trace_id,
-        outbound_id: input.outbound_id,
-        error: String(error),
-      });
-    });
-  }
 
   return result;
 }
@@ -1389,12 +1379,13 @@ async function loadPaymentLinkProjectionSignal(
  * Enqueues the `payment_link_sent` row (spec §5: `etapa_comercial=proposal`,
  * `estado_pago=pendiente`, `plan=<plan_code>`). Fails closed and silent at
  * every missing-configuration step — no Sheets config, no resolvable
- * workspace — because none of that may ever block or revert the delivery
- * this runs after. `enqueueLeadProjection` itself can also throw
- * (retry-exhausted or a DB error); the caller wraps this whole function in
- * `.catch()` for exactly that reason.
+ * workspace. Once configuration exists, DB enqueue failure must throw so the
+ * surrounding delivery transaction rolls back and a replay can reconstruct.
  */
-async function enqueuePaymentLinkSentProjection(signal: PaymentLinkProjectionSignal): Promise<void> {
+async function enqueuePaymentLinkSentProjection(
+  signal: PaymentLinkProjectionSignal,
+  db: DbClient,
+): Promise<void> {
   const sheets = loadSheetsProjectionConfig();
   if (!sheets) {
     logger.info({
@@ -1415,7 +1406,7 @@ async function enqueuePaymentLinkSentProjection(signal: PaymentLinkProjectionSig
     });
     return;
   }
-  const workspaceRows = await sql<Array<{ id: string }>>`
+  const workspaceRows = await db<Array<{ id: string }>>`
     SELECT id FROM workspaces WHERE slug = ${workspaceSlug} AND status = 'active' LIMIT 1
   `;
   const workspaceId = workspaceRows[0]?.id;
@@ -1432,7 +1423,7 @@ async function enqueuePaymentLinkSentProjection(signal: PaymentLinkProjectionSig
   // descartaba el sku y `curso_interes` quedaba vacío tras un cierre).
   let cursoInteres: string | undefined;
   if (signal.offeringSku) {
-    const offeringRows = await sql<Array<{ display_name: string }>>`
+    const offeringRows = await db<Array<{ display_name: string }>>`
       SELECT display_name FROM offerings
       WHERE workspace_id = ${workspaceId}::uuid AND code = ${signal.offeringSku}
       LIMIT 1
@@ -1443,7 +1434,7 @@ async function enqueuePaymentLinkSentProjection(signal: PaymentLinkProjectionSig
     // claim snapshot omitted a course outside its catalog window. Resolve the
     // latest accepted study goal against the canonical catalog at projection
     // time instead of writing an empty course or trusting free-form model text.
-    const offeringRows = await sql<Array<{ display_name: string }>>`
+    const offeringRows = await db<Array<{ display_name: string }>>`
       SELECT display_name FROM offerings
       WHERE workspace_id = ${workspaceId}::uuid AND status = 'active'
     `;
@@ -1470,5 +1461,5 @@ async function enqueuePaymentLinkSentProjection(signal: PaymentLinkProjectionSig
     callId: '',
     ultimaSenal: 'payment_link_sent',
     traceId: signal.traceId,
-  });
+  }, { sql: db });
 }

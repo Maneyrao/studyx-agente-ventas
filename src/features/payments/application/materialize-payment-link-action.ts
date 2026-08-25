@@ -6,7 +6,7 @@ import {
   isPaymentPlanCode,
   stripUnauthorizedUrls,
 } from '../domain/payment-link';
-import { PolicyBatchMessage, derivePaymentChoiceFromBatch } from '../domain/payment-choice-policy';
+import { PolicyBatchMessage, classifyCurrentPaymentIntent } from '../domain/payment-choice-policy';
 import { PaymentLinkResolver } from '../adapters/config-payment-link.resolver';
 
 export type { SendPaymentLinkAction };
@@ -101,16 +101,12 @@ export function materializePaymentLinkAction(
     return { ok: false, reason: 'INVALID_PLAN_CODE' };
   }
 
-  const directPlan = derivePaymentChoiceFromBatch(batchMessages);
-  const resumesDeferredPlan = directPlan === null && batchMessages.some((message) => {
-    const normalized = message.content
-      .normalize('NFD')
-      .replace(/\p{Diacritic}/gu, '')
-      .toLowerCase();
-    return /\bahora\s+si\b.{0,48}\b(?:manda|mandame|mandamelo|envia|enviame|pasame|comparti|compartime)(?:lo|la|me)?\b/u
-      .test(normalized);
-  });
-  const allowedPlan = directPlan ?? (resumesDeferredPlan ? deferredPlanCode ?? null : null);
+  const currentIntent = classifyCurrentPaymentIntent(batchMessages);
+  const allowedPlan = currentIntent.kind === 'direct'
+    ? currentIntent.planCode
+    : currentIntent.kind === 'resume'
+      ? deferredPlanCode ?? null
+      : null;
   if (allowedPlan === null) {
     return { ok: false, reason: 'AMBIGUOUS_OR_ABSENT_CHOICE' };
   }

@@ -1235,6 +1235,41 @@ run('Fase 4 — pago y cierre de batch', () => {
     expect(committed.outbound?.content).toContain('https://buy.stripe.com/test_6m_lifecycle');
   });
 
+  it.each([
+    ['mismatched claim SKU', 'Confirmo nuevamente las 12 cuotas.', 'course_other'],
+    ['current intent veto', 'Confirmo 12 cuotas, pero solo consultaba.', 'course_test'],
+  ])('revalidates %s before acknowledging a prior payment link', async (_case, text, authorizedSku) => {
+    const firstEnvelope = paymentInbound();
+    const first = await processInboundMessage(firstEnvelope);
+    await commitAgentDecision(paymentDecision(first.turn_id));
+    await db!`
+      UPDATE inbound_batches
+      SET state = 'completed', completed_at = now(), updated_at = now()
+      WHERE id = ${first.batch.id}::uuid
+    `;
+    const second = await processInboundMessage({
+      ...firstEnvelope,
+      external_message_id: `message-${randomUUID()}`,
+      trace_id: randomUUID(),
+      message: {
+        type: 'text',
+        text,
+        occurred_at: new Date(Date.now() + 1_000).toISOString(),
+        reply_to_external_message_id: firstEnvelope.external_message_id,
+      },
+    });
+
+    await expect(commitAgentDecision({
+      ...paymentDecision(second.turn_id),
+      authorized_offering_code: authorizedSku,
+    })).rejects.toMatchObject({ code: 'DECISION_REJECTED' });
+
+    const decisions = await db!<Array<{ count: number }>>`
+      SELECT count(*)::integer AS count FROM agent_decisions WHERE turn_id = ${second.turn_id}::uuid
+    `;
+    expect(decisions[0].count).toBe(0);
+  });
+
   it('does not emit the same payment link twice in one conversation', async () => {
     const firstEnvelope = paymentInbound();
     const first = await processInboundMessage(firstEnvelope);
