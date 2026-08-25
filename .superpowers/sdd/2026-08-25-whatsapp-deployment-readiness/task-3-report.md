@@ -115,3 +115,21 @@ the expanded channel/router/workflow/readiness/runbook regression passed
 with zero project errors or warnings (its blocked PostHog telemetry flush was
 non-functional noise). The local dry-run returned the expected safe nonzero
 result with named blockers and no values.
+
+## Final re-review R2
+
+- RED: the readiness suite failed 13 focused cases: realistic ADK 2.0.5
+  multi-line stdout could not yield an attestation, and unspecified,
+  IPv4-mapped private/link-local, multicast, and documentation IPv6 targets
+  were accepted.
+- GREEN: the runtime probe emits one uniquely framed
+  `STUDYX_WHATSAPP_CANARY_ATTESTATION=` line. Readiness extracts exactly one
+  matching line and accepts only the exact value-safe `{valid,count}` shape;
+  zero, duplicate, malformed, or expanded payloads fail closed without
+  returning or logging the allowlisted number.
+- Public HTTPS validation now fails closed outside current IPv6 global-unicast
+  space and explicitly excludes documentation/benchmark space. This covers
+  unspecified, IPv4-mapped, unique-local, link-local, site-local, multicast,
+  and the reviewed reserved targets.
+- Focused readiness result: 66/66 passed; readiness plus runbook regression
+  passed 73/73. Root and Botpress typechecks passed; `git diff --check` passed.

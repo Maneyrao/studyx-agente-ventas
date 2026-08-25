@@ -61,9 +61,13 @@ curl --fail --silent --show-error "$STUDYX_STAGING_API_URL/api/ready"
 node scripts/verify-whatsapp-release-readiness.mjs --target development --format json
 ```
 
-The runtime attestation must return exactly `{"valid":true,"count":1}`. It
-never prints the phone or any secret value. Any other shape or result is a
-hard no-go. The official WhatsApp canary gate runs before workflow creation, ingest, decision, call dispatch, or send; it also precedes payment, PII persistence, and every workflow network request. A non-allowlisted identity causes none of those side effects; the pre-send gate remains defense-in-depth.
+Among the ADK informational lines, the runtime attestation must contain exactly
+one `STUDYX_WHATSAPP_CANARY_ATTESTATION={"valid":true,"count":1}` line. Zero,
+duplicate, or malformed framed lines are a hard no-go. The payload never prints a phone or secret value. The official WhatsApp canary gate runs
+before workflow creation, ingest, decision, call dispatch, or send; it also
+precedes payment, PII persistence, and every workflow network request. A
+non-allowlisted identity causes none of those side effects; the pre-send gate
+remains defense-in-depth.
 
 `GET /api/health` is liveness: it proves the process responds. `GET /api/ready` is readiness: it proves required configuration and PostgreSQL permit traffic. The release verifier is the third readiness check: it checks public HTTPS, backend configuration, Botpress development integration status, Stripe test mode, the single tester allowlist, and safe switches. A failed check is a no-go; do not work around it.
 

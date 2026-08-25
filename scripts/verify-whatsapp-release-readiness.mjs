@@ -9,6 +9,7 @@ import { isIP } from 'node:net';
 const execFileAsync = promisify(execFile);
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const ADK = resolve(ROOT, 'botpress-agent/node_modules/.bin/adk');
+const WHATSAPP_CANARY_ATTESTATION_PREFIX = 'STUDYX_WHATSAPP_CANARY_ATTESTATION=';
 
 const REQUIRED_BACKEND_ENV = [
   'DATABASE_URL',
@@ -43,9 +44,14 @@ function privateIpv4(hostname) {
 
 function privateIpv6(hostname) {
   const normalized = hostname.replace(/^\[|\]$/g, '').toLowerCase();
-  if (normalized === '::1') return true;
+  if (normalized === '::' || normalized === '::1') return true;
   const first = Number.parseInt(normalized.split(':', 1)[0], 16);
-  return (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80;
+  if (!Number.isInteger(first)) return true;
+
+  // Fail closed to the currently allocated global-unicast block. This also
+  // excludes IPv4-mapped, unique-local, link-local, site-local and multicast.
+  if ((first & 0xe000) !== 0x2000) return true;
+  return normalized.startsWith('2001:db8:') || normalized.startsWith('2001:2:');
 }
 
 function publicHttpsUrl(raw) {
@@ -142,17 +148,49 @@ function unwrapValue(value) {
   return value;
 }
 
-async function adkJson(args) {
+async function adkStdout(args) {
   try {
     const { stdout } = await execFileAsync(ADK, args, {
       cwd: resolve(ROOT, 'botpress-agent'),
       timeout: 8000,
       maxBuffer: 1024 * 1024,
     });
+    return stdout;
+  } catch {
+    return null;
+  }
+}
+
+async function adkJson(args) {
+  const stdout = await adkStdout(args);
+  if (typeof stdout !== 'string') return null;
+  try {
     return JSON.parse(stdout);
   } catch {
     return null;
   }
+}
+
+export function parseWhatsAppCanaryAttestation(stdout) {
+  if (typeof stdout !== 'string') return null;
+  const framed = stdout.split(/\r?\n/).filter((line) =>
+    line.startsWith(WHATSAPP_CANARY_ATTESTATION_PREFIX));
+  if (framed.length !== 1) return null;
+
+  try {
+    const parsed = JSON.parse(framed[0].slice(WHATSAPP_CANARY_ATTESTATION_PREFIX.length));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const keys = Object.keys(parsed).sort();
+    if (keys.length !== 2 || keys[0] !== 'count' || keys[1] !== 'valid') return null;
+    if (typeof parsed.valid !== 'boolean' || !Number.isInteger(parsed.count) || parsed.count < 0) return null;
+    return { valid: parsed.valid, count: parsed.count };
+  } catch {
+    return null;
+  }
+}
+
+async function adkWhatsAppCanaryAttestation(args) {
+  return parseWhatsAppCanaryAttestation(await adkStdout(args));
 }
 
 function adkTargetName(target) {
@@ -201,7 +239,7 @@ async function readBotpressState(target) {
     adkJson(['config:get', 'whatsappCanaryEnabled', ...prod, '--format', 'json']),
     adkJson(['secret', ...prod, '--format', 'json']),
     adkJson(['integrations', 'list', '--target', integrationTarget, '--format', 'json']),
-    adkJson(['run', './scripts/attest-whatsapp-canary.ts', ...prod]),
+    adkWhatsAppCanaryAttestation(['run', './scripts/attest-whatsapp-canary.ts', ...prod]),
   ]);
   return {
     apiBaseUrl: unwrapValue(apiBaseUrl),

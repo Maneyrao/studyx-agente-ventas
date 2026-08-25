@@ -5,6 +5,7 @@ const {
   availableWhatsAppIntegration,
   configuredSecret,
   evaluateWhatsAppReleaseReadiness,
+  parseWhatsAppCanaryAttestation,
 } = readinessModule;
 
 const requiredEnv = {
@@ -54,6 +55,26 @@ function check(result: Awaited<ReturnType<typeof evaluateWhatsAppReleaseReadines
 }
 
 describe('Botpress structured readiness metadata', () => {
+  it('extracts one framed value-safe attestation from realistic ADK run output', () => {
+    const stdout = [
+      'ADK 2.0.5',
+      'Running ./scripts/attest-whatsapp-canary.ts in development...',
+      'STUDYX_WHATSAPP_CANARY_ATTESTATION={"valid":true,"count":1}',
+      'Run completed successfully',
+    ].join('\n');
+
+    expect(parseWhatsAppCanaryAttestation(stdout)).toEqual({ valid: true, count: 1 });
+  });
+
+  it.each([
+    ['no framed line', 'ADK 2.0.5\nRun completed successfully'],
+    ['duplicate framed lines', 'STUDYX_WHATSAPP_CANARY_ATTESTATION={"valid":true,"count":1}\nSTUDYX_WHATSAPP_CANARY_ATTESTATION={"valid":true,"count":1}'],
+    ['malformed JSON', 'STUDYX_WHATSAPP_CANARY_ATTESTATION={not-json}'],
+    ['unexpected payload fields', 'STUDYX_WHATSAPP_CANARY_ATTESTATION={"valid":true,"count":1,"phone":"+14155550123"}'],
+  ])('fails closed for %s in ADK run output', (_label, stdout) => {
+    expect(parseWhatsAppCanaryAttestation(stdout)).toBeNull();
+  });
+
   it('reads the set canary secret from the real ADK development envelope', () => {
     const status = {
       success: true,
@@ -186,9 +207,17 @@ describe('WhatsApp release readiness', () => {
     'https://192.168.1.1',
     'https://169.254.1.1',
     'https://[::1]',
+    'https://[::]',
+    'https://[::ffff:127.0.0.1]',
+    'https://[::ffff:10.1.2.3]',
+    'https://[::ffff:172.16.0.1]',
+    'https://[::ffff:192.168.1.1]',
+    'https://[::ffff:169.254.1.1]',
     'https://[fc00::1]',
     'https://[fdff::1]',
     'https://[fe80::1]',
+    'https://[ff02::1]',
+    'https://[2001:db8::1]',
     'https://user:password@api.studyx.example',
     'not a url',
   ])('does not call a non-public backend target %s', async (apiBaseUrl) => {
