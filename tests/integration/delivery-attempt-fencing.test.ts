@@ -15,10 +15,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { processInboundMessage, type InboundEnvelope } from '@/lib/services/ingestion.service';
 import {
   commitAgentDecision,
+  reconcileDeliveredPaymentProjections,
   recordDeliveryReport,
   DeliveryReportConflictError,
 } from '@/lib/services/decision.service';
 import { leadProjectionKey } from '@/lib/services/projection.service';
+import { reconcileOrchestration } from '@/features/orchestration/application/reconcile-orchestration';
 import { PostgresReconciliationStore } from '@/features/orchestration/adapters/postgres-reconciliation-store';
 import { sql } from '@/lib/db/orchestrator';
 
@@ -703,12 +705,20 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
     expect(counts[0]).toEqual({ actions: 1, links: 1, rows: 1 });
   });
 
-  it('rolls back delivery confirmation when the durable projection enqueue crashes, then replays to one row', async () => {
+  it('keeps physical delivery evidence when projection crashes, then the automatic reconciler converges without resend', async () => {
     const turn = await seedPaymentTurn('Quiero pagar en 12 cuotas, crash atómico');
     const suffix = randomUUID().replaceAll('-', '').slice(0, 12);
     const functionName = `test_fail_sheet_projection_${suffix}`;
     const triggerName = `test_fail_sheet_projection_trigger_${suffix}`;
     const projectionKey = leadProjectionKey(paymentWorkspaceId, turn.contact_id);
+    // This cluster intentionally keeps rows from prior local runs. Make this
+    // target the oldest candidate so the bounded production sweep must inspect
+    // it without depending on global test-database cleanliness.
+    await sql`
+      UPDATE agent_decisions
+      SET created_at = '2000-01-01T00:00:00Z'::timestamptz
+      WHERE outbound_message_id = ${turn.outbound!.id}::uuid
+    `;
     await sql.unsafe(`
       CREATE FUNCTION public.${functionName}() RETURNS trigger
       LANGUAGE plpgsql AS $$
@@ -734,7 +744,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
     };
 
     try {
-      await expect(recordDeliveryReport(report)).rejects.toThrow(/INJECTED_PAYMENT_PROJECTION_FAILURE/);
+      expect((await recordDeliveryReport(report)).status).toBe('recorded');
       const afterFailure = await sql<Array<{ state: string; reports: number; rows: number }>>`
         SELECT
           od.state,
@@ -746,7 +756,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
         WHERE od.message_id = ${turn.outbound!.id}::uuid
         GROUP BY od.state
       `;
-      expect(afterFailure[0]).toEqual({ state: 'leased', reports: 0, rows: 0 });
+      expect(afterFailure[0]).toEqual({ state: 'submitted', reports: 1, rows: 0 });
     } finally {
       await sql.unsafe(`
         DROP TRIGGER IF EXISTS ${triggerName} ON sheet_projection_rows;
@@ -754,8 +764,67 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       `);
     }
 
-    expect((await recordDeliveryReport({ ...report, trace_id: randomUUID(), replayed: true })).status)
-      .toBe('recorded');
+    const reconcileDeps = {
+      store,
+      reconcilePaymentProjections: reconcileDeliveredPaymentProjections,
+    };
+    const firstSweep = await reconcileOrchestration(
+      { trace_id: randomUUID(), grace_seconds: 60 },
+      reconcileDeps,
+    );
+    const targetAfterFirst = await sql<Array<{
+      id: string;
+      payload_hash: string;
+      updated_at: string;
+    }>>`
+      SELECT id, payload_hash, updated_at::text
+      FROM sheet_projection_rows
+      WHERE projection_key = ${projectionKey}
+    `;
+    const secondSweep = await reconcileOrchestration(
+      { trace_id: randomUUID(), grace_seconds: 60 },
+      reconcileDeps,
+    );
+    const targetAfterSecond = await sql<Array<{
+      id: string;
+      payload_hash: string;
+      updated_at: string;
+    }>>`
+      SELECT id, payload_hash, updated_at::text
+      FROM sheet_projection_rows
+      WHERE projection_key = ${projectionKey}
+    `;
+    expect(firstSweep.payment_projections.repaired).toBeGreaterThanOrEqual(1);
+    expect(secondSweep.payment_projections.failed).toBe(0);
+    expect(targetAfterSecond).toEqual(targetAfterFirst);
     expect(await projectionRows(turn.contact_id)).toHaveLength(1);
+
+    const durable = await sql<Array<{
+      state: string;
+      provider_message_id: string | null;
+      reports: number;
+      outbounds: number;
+      rows: number;
+    }>>`
+      SELECT
+        od.state,
+        od.provider_message_id,
+        count(DISTINCT dr.id)::integer AS reports,
+        count(DISTINCT outbound.id)::integer AS outbounds,
+        count(DISTINCT spr.id)::integer AS rows
+      FROM outbound_deliveries AS od
+      JOIN messages AS outbound ON outbound.id = od.message_id
+      LEFT JOIN delivery_reports AS dr ON dr.delivery_id = od.id
+      LEFT JOIN sheet_projection_rows AS spr ON spr.projection_key = ${projectionKey}
+      WHERE od.message_id = ${turn.outbound!.id}::uuid
+      GROUP BY od.state, od.provider_message_id
+    `;
+    expect(durable[0]).toEqual({
+      state: 'submitted',
+      provider_message_id: report.botpress_message_id,
+      reports: 1,
+      outbounds: 1,
+      rows: 1,
+    });
   });
 });

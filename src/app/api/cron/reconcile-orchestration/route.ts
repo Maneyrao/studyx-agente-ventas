@@ -5,6 +5,7 @@ import { reconciliationStore } from '@/features/orchestration/adapters/postgres-
 import { auditLog } from '@/lib/audit/logger';
 import { counter } from '@/lib/observability/counters';
 import { logger } from '@/lib/observability/structured-log';
+import { reconcileDeliveredPaymentProjections } from '@/lib/services/decision.service';
 
 /**
  * GET /api/cron/reconcile-orchestration
@@ -37,6 +38,7 @@ export async function GET(request: NextRequest) {
         audit: async (entry) => {
           await auditLog(entry);
         },
+        reconcilePaymentProjections: reconcileDeliveredPaymentProjections,
       }
     );
 
@@ -67,8 +69,9 @@ export async function GET(request: NextRequest) {
     if (result.orphaned_decisions > 0) {
       counter.increment('reconcile_orphaned_decisions', result.orphaned_decisions);
     }
-    if (result.deliveries.failed > 0) {
-      counter.increment('reconcile_failures', result.deliveries.failed);
+    const totalFailures = result.deliveries.failed + result.payment_projections.failed;
+    if (totalFailures > 0) {
+      counter.increment('reconcile_failures', totalFailures);
     }
 
     return NextResponse.json(result, { status: 200 });

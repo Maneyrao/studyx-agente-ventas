@@ -1190,17 +1190,6 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
         `;
       }
 
-      // Fase 4 — Sheets (spec §5): the durable projection row is created in
-      // the same transaction as delivery confirmation. A DB enqueue failure
-      // rolls both back, so replay can safely reconstruct exactly once.
-      const paymentLinkSignal = await loadPaymentLinkProjectionSignal(
-        db,
-        input.outbound_id,
-        input.trace_id,
-      );
-      if (paymentLinkSignal) {
-        await enqueuePaymentLinkSentProjection(paymentLinkSignal, db);
-      }
     } else {
       if (!input.error_code) throw new DeliveryReportConflictError('Failed report requires error_code');
       if (delivery.state === 'submitted') throw new DeliveryReportConflictError('Submitted delivery cannot be downgraded');
@@ -1256,6 +1245,23 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
       delivery_status: input.status,
     };
   });
+
+  if (result.delivery_status === 'submitted_to_botpress') {
+    // Physical provider evidence is already committed above and may never be
+    // rolled back by a derived projection. This eager attempt is best-effort;
+    // the scheduled reconciler reconstructs any missing row without sending.
+    try {
+      const signal = await loadPaymentLinkProjectionSignal(sql, input.outbound_id);
+      if (signal) await enqueuePaymentLinkSentProjection(signal, sql);
+    } catch (error) {
+      logger.error({
+        event: 'orchestration.payment_link.projection_enqueue_failed',
+        trace_id: input.trace_id,
+        outbound_id: input.outbound_id,
+        error: String(error),
+      });
+    }
+  }
 
   return result;
 }
@@ -1324,15 +1330,13 @@ function resolveCanonicalOfferingInterest(
 }
 
 /**
- * Reads the decision behind this outbound, inside the SAME transaction that
- * just confirmed delivery: only a `send_payment_link` decision produces a
- * signal, and everything else (the plan and the customer identity to write)
- * comes straight from that decision's own turn — never a second guess.
+ * Reconstructs the projection signal from the immutable decision behind this
+ * outbound. Only `send_payment_link` produces a signal; the plan and customer
+ * identity come from that decision's own turn, never from a second guess.
  */
 async function loadPaymentLinkProjectionSignal(
   db: DbClient,
   outboundId: string,
-  traceId: string,
 ): Promise<PaymentLinkProjectionSignal | null> {
   const rows = await db<Array<{
     business_action: { type?: string; plan_code?: string; offering_sku?: string | null } | null;
@@ -1340,9 +1344,11 @@ async function loadPaymentLinkProjectionSignal(
     phone: string;
     name: string | null;
     email: string | null;
+    decision_trace_id: string;
     memory_course_interest: string | null;
   }>>`
-    SELECT ad.business_action, m.contact_id, c.phone, c.name, c.email,
+    SELECT ad.business_action, ad.trace_id::text AS decision_trace_id,
+      m.contact_id, c.phone, c.name, c.email,
       course_memory.value_normalized AS memory_course_interest
     FROM agent_decisions AS ad
     JOIN messages AS m ON m.id = ad.turn_id
@@ -1371,7 +1377,7 @@ async function loadPaymentLinkProjectionSignal(
     phone: row.phone,
     contactName: row.name,
     contactEmail: row.email,
-    traceId,
+    traceId: row.decision_trace_id,
   };
 }
 
@@ -1379,13 +1385,13 @@ async function loadPaymentLinkProjectionSignal(
  * Enqueues the `payment_link_sent` row (spec §5: `etapa_comercial=proposal`,
  * `estado_pago=pendiente`, `plan=<plan_code>`). Fails closed and silent at
  * every missing-configuration step — no Sheets config, no resolvable
- * workspace. Once configuration exists, DB enqueue failure must throw so the
- * surrounding delivery transaction rolls back and a replay can reconstruct.
+ * workspace. Once configuration exists, DB enqueue failure throws so the
+ * caller can record the failed attempt and the scheduled reconciler can retry.
  */
 async function enqueuePaymentLinkSentProjection(
   signal: PaymentLinkProjectionSignal,
   db: DbClient,
-): Promise<void> {
+): Promise<'repaired' | 'unchanged' | 'skipped'> {
   const sheets = loadSheetsProjectionConfig();
   if (!sheets) {
     logger.info({
@@ -1393,7 +1399,7 @@ async function enqueuePaymentLinkSentProjection(
       trace_id: signal.traceId,
       reason: 'SHEETS_NOT_CONFIGURED',
     });
-    return;
+    return 'skipped';
   }
   let workspaceSlug: string;
   try {
@@ -1404,7 +1410,7 @@ async function enqueuePaymentLinkSentProjection(
       trace_id: signal.traceId,
       reason: 'MISSING_WORKSPACE_CONFIG',
     });
-    return;
+    return 'skipped';
   }
   const workspaceRows = await db<Array<{ id: string }>>`
     SELECT id FROM workspaces WHERE slug = ${workspaceSlug} AND status = 'active' LIMIT 1
@@ -1416,7 +1422,7 @@ async function enqueuePaymentLinkSentProjection(
       trace_id: signal.traceId,
       reason: 'WORKSPACE_NOT_FOUND',
     });
-    return;
+    return 'skipped';
   }
   // Interés canónico: el `offering_sku` de la decisión se proyecta como el
   // display_name canónico del catálogo (P1, informe 2026-08-23: el outbox
@@ -1444,7 +1450,7 @@ async function enqueuePaymentLinkSentProjection(
     ) ?? signal.memoryCourseInterest;
   }
   const identity = signal.contactName ? splitFullName(signal.contactName) : null;
-  await enqueueLeadProjection({
+  const projection = await enqueueLeadProjection({
     workspaceId,
     contactId: signal.contactId,
     spreadsheetId: sheets.spreadsheetId,
@@ -1462,4 +1468,75 @@ async function enqueuePaymentLinkSentProjection(
     ultimaSenal: 'payment_link_sent',
     traceId: signal.traceId,
   }, { sql: db });
+  return projection.changed ? 'repaired' : 'unchanged';
+}
+
+export interface DeliveredPaymentProjectionReconciliationResult {
+  readonly examined: number;
+  readonly repaired: number;
+  readonly unchanged: number;
+  readonly skipped: number;
+  readonly failed: number;
+}
+
+/**
+ * Repairs only the derived Sheet projection for already-submitted payment
+ * messages. It has no provider client and cannot create or resend a message.
+ */
+export async function reconcileDeliveredPaymentProjections(
+  input: { limit?: number } = {},
+): Promise<DeliveredPaymentProjectionReconciliationResult> {
+  const empty = { examined: 0, repaired: 0, unchanged: 0, skipped: 0, failed: 0 };
+  const sheets = loadSheetsProjectionConfig();
+  if (!sheets) return empty;
+  let workspaceSlug: string;
+  try {
+    workspaceSlug = loadBusinessWorkspaceConfig().workspaceSlug;
+  } catch {
+    return empty;
+  }
+  const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
+  const candidates = await sql<Array<{ outbound_id: string }>>`
+    SELECT ad.outbound_message_id AS outbound_id
+    FROM agent_decisions AS ad
+    JOIN messages AS turn ON turn.id = ad.turn_id
+    JOIN outbound_deliveries AS od ON od.message_id = ad.outbound_message_id
+    JOIN workspaces AS w ON w.slug = ${workspaceSlug} AND w.status = 'active'
+    LEFT JOIN offerings AS o
+      ON o.workspace_id = w.id
+      AND o.code = ad.business_action ->> 'offering_sku'
+      AND o.status = 'active'
+    LEFT JOIN sheet_projection_rows AS spr
+      ON spr.projection_key = 'lead:' || w.id::text || ':' || turn.contact_id::text
+    WHERE ad.business_action ->> 'type' = 'send_payment_link'
+      AND od.state IN ('submitted', 'delivered')
+      AND (
+        spr.id IS NULL
+        OR spr.payload ->> 'plan' IS DISTINCT FROM ad.business_action ->> 'plan_code'
+        OR spr.payload ->> 'curso_interes' IS DISTINCT FROM COALESCE(
+          o.display_name,
+          ad.business_action ->> 'offering_sku'
+        )
+      )
+    ORDER BY ad.created_at ASC, ad.id ASC
+    LIMIT ${limit}
+  `;
+  const result = { ...empty, examined: candidates.length };
+  for (const candidate of candidates) {
+    try {
+      const outcome = await withSerializableTransaction(async (db) => {
+        const signal = await loadPaymentLinkProjectionSignal(db, candidate.outbound_id);
+        return signal ? enqueuePaymentLinkSentProjection(signal, db) : 'skipped' as const;
+      });
+      result[outcome] += 1;
+    } catch (error) {
+      result.failed += 1;
+      logger.error({
+        event: 'orchestration.payment_link.projection_reconcile_failed',
+        outbound_id: candidate.outbound_id,
+        error: String(error),
+      });
+    }
+  }
+  return result;
 }

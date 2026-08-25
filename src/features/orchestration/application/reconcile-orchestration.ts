@@ -48,6 +48,13 @@ export interface ReconcileOrchestrationResult {
     readonly by_action: Record<DeliveryReconciliationAction, number>;
     readonly failed: number;
   };
+  readonly payment_projections: {
+    readonly examined: number;
+    readonly repaired: number;
+    readonly unchanged: number;
+    readonly skipped: number;
+    readonly failed: number;
+  };
   readonly orphaned_decisions: number;
   readonly findings: Array<{
     readonly kind: 'claim' | 'delivery' | 'decision';
@@ -68,6 +75,14 @@ export interface ReconcileOrchestrationDependencies {
     event_key: string;
     correlation_id: string;
   }) => Promise<void>;
+  /** Derived projection repair only. This dependency has no provider/send port. */
+  readonly reconcilePaymentProjections?: (input: { limit?: number }) => Promise<{
+    examined: number;
+    repaired: number;
+    unchanged: number;
+    skipped: number;
+    failed: number;
+  }>;
 }
 
 const EMPTY_ACTIONS: Record<DeliveryReconciliationAction, number> = {
@@ -189,6 +204,27 @@ export async function reconcileOrchestration(
     }
   }
 
+  let paymentProjections = {
+    examined: 0,
+    repaired: 0,
+    unchanged: 0,
+    skipped: 0,
+    failed: 0,
+  };
+  if (deps.reconcilePaymentProjections) {
+    try {
+      paymentProjections = await deps.reconcilePaymentProjections({
+        limit: input.delivery_limit,
+      });
+    } catch (error) {
+      paymentProjections.failed = 1;
+      log('orchestration.reconcile.payment_projections_failed', {
+        trace_id: input.trace_id,
+        error: String(error),
+      });
+    }
+  }
+
   // ── Decisiones sin outbound ──────────────────────────────────────────────
   // No se reparan desde acá: una decisión es inmutable después del commit, así
   // que lo único honesto es dejarlas visibles.
@@ -215,6 +251,7 @@ export async function reconcileOrchestration(
     trace_id: input.trace_id,
     claims: { examined: claims.length, abandoned, reclaimable },
     deliveries: { examined: stale.length, by_action: byAction, failed },
+    payment_projections: paymentProjections,
     orphaned_decisions: orphaned.length,
     findings,
   };
@@ -229,6 +266,9 @@ export async function reconcileOrchestration(
     abandoned_deliveries: byAction.abandon,
     orphaned_decisions: orphaned.length,
     failed,
+    payment_projections_examined: paymentProjections.examined,
+    payment_projections_repaired: paymentProjections.repaired,
+    payment_projections_failed: paymentProjections.failed,
   });
 
   return result;
