@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { evaluateWhatsAppReleaseReadiness } from '../../../scripts/verify-whatsapp-release-readiness.mjs';
+import * as readinessModule from '../../../scripts/verify-whatsapp-release-readiness.mjs';
+
+const {
+  availableWhatsAppIntegration,
+  configuredSecret,
+  evaluateWhatsAppReleaseReadiness,
+} = readinessModule;
 
 const requiredEnv = {
   DATABASE_URL: 'secret-database',
@@ -43,6 +49,55 @@ function healthyFetch() {
 function check(result: Awaited<ReturnType<typeof evaluateWhatsAppReleaseReadiness>>, name: string) {
   return result.checks.find((item) => item.name === name);
 }
+
+describe('Botpress structured readiness metadata', () => {
+  it('accepts a set required secret even though optional is false', () => {
+    const status = [{
+      name: 'WHATSAPP_CANARY_PHONE_E164S',
+      description: 'Canary tester allowlist',
+      optional: false,
+      set: true,
+    }];
+
+    expect(configuredSecret(status, 'WHATSAPP_CANARY_PHONE_E164S')).toBe(true);
+  });
+
+  it.each([
+    [[{
+      name: 'WHATSAPP_CANARY_PHONE_E164S',
+      description: 'Canary tester allowlist',
+      optional: false,
+      set: false,
+    }]],
+    [[{
+      name: 'ANOTHER_SECRET',
+      description: 'Unrelated',
+      optional: false,
+      set: true,
+    }]],
+  ])('rejects an unset or missing canary secret', (status) => {
+    expect(configuredSecret(status, 'WHATSAPP_CANARY_PHONE_E164S')).toBe(false);
+  });
+
+  it('accepts only the enabled pinned official WhatsApp integration', () => {
+    const status = [{
+      alias: 'whatsapp',
+      name: 'whatsapp',
+      version: '4.18.5',
+      enabled: true,
+    }];
+
+    expect(availableWhatsAppIntegration(status)).toBe(true);
+  });
+
+  it.each([
+    [[{ alias: 'whatsapp', name: 'whatsapp', version: '4.18.5', enabled: false }]],
+    [[{ alias: 'telegram', name: 'telegram', version: '1.0.0', enabled: true }]],
+    [[{ alias: 'whatsapp', name: 'whatsapp', version: '4.19.0', enabled: true }]],
+  ])('rejects disabled, missing, or wrong-version WhatsApp metadata', (status) => {
+    expect(availableWhatsAppIntegration(status)).toBe(false);
+  });
+});
 
 describe('WhatsApp release readiness', () => {
   it('passes only the safe development preflight shape', async () => {

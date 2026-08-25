@@ -56,3 +56,19 @@ performed, and no message was sent.
 - Preflight child commands are read-only, bounded by timeouts, and their raw
   output/errors are never forwarded into the result.
 - Readiness reasons contain configuration names and stable error codes only.
+
+## Review round 1
+
+Two metadata parsing defects were corrected with structured ADK fixtures:
+
+- RED: a configured required secret (`set:true`, `optional:false`) was rejected
+  by the former broad search for any nearby `false`.
+- RED: a disabled WhatsApp integration and an enabled wrong-version integration
+  were accepted by the former word search.
+- GREEN: secret readiness now requires one exact named entry with boolean
+  `set:true`; integration readiness requires one exact `whatsapp` alias/name,
+  pinned version `4.18.5`, and boolean `enabled:true`.
+- Text fallback was removed. Missing, malformed, duplicated, unset, disabled,
+  or wrong-version structured metadata fails closed.
+- Focal result after the fix: 44/44 tests passed. No metadata or secret value is
+  included in readiness output.

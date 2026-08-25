@@ -122,19 +122,31 @@ async function adkJson(args) {
   }
 }
 
-function configuredSecret(status, name) {
-  if (!status) return false;
-  const serialized = JSON.stringify(status);
-  const index = serialized.indexOf(name);
-  if (index < 0) return false;
-  const nearby = serialized.slice(index, index + 300).toLowerCase();
-  return !/(missing|unset|not.configured|false)/.test(nearby);
+function structuredEntries(status, collectionName) {
+  if (Array.isArray(status)) return status;
+  if (
+    status &&
+    typeof status === 'object' &&
+    Array.isArray(status[collectionName])
+  ) {
+    return status[collectionName];
+  }
+  return [];
 }
 
-function availableWhatsAppIntegration(status) {
-  if (!status) return false;
-  const serialized = JSON.stringify(status).toLowerCase();
-  return serialized.includes('whatsapp') && !/(whatsapp.{0,300}(disabled|unconfigured|unavailable|missing))/.test(serialized);
+export function configuredSecret(status, name) {
+  const matches = structuredEntries(status, 'secrets').filter((entry) =>
+    entry && typeof entry === 'object' && entry.name === name);
+  return matches.length === 1 && matches[0].set === true;
+}
+
+export function availableWhatsAppIntegration(status) {
+  const matches = structuredEntries(status, 'integrations').filter((entry) =>
+    entry && typeof entry === 'object' && entry.alias === 'whatsapp');
+  return matches.length === 1 &&
+    matches[0].name === 'whatsapp' &&
+    matches[0].version === '4.18.5' &&
+    matches[0].enabled === true;
 }
 
 async function readBotpressState(target) {
