@@ -1,4 +1,5 @@
 import { sql as orchestratorSql } from '@/lib/db/orchestrator';
+import { loadBusinessWorkspaceConfig, loadSheetsProjectionConfig } from '@/lib/config';
 import { jsonbParam } from '@/lib/db/json';
 import { getPostgresError, type DbClient } from '@/lib/db/types';
 import { sha256Hex } from '@/lib/idempotency/canonical-json';
@@ -54,12 +55,18 @@ export interface LeadProjectionInput {
   nombre?: string;
   apellido?: string;
   email?: string;
-  etapaComercial: string;
-  cursoInteres: string;
-  plan: string;
-  estadoPago: string;
-  fechaPago: string;
-  callId: string;
+  /**
+   * Commercial fields are optional for the same merge reason: an
+   * identity-only refresh (customer volunteered name/email after the link
+   * was already projected) must never blank out the commercial state a
+   * previous `payment_link_sent` event wrote for this contact_id.
+   */
+  etapaComercial?: string;
+  cursoInteres?: string;
+  plan?: string;
+  estadoPago?: string;
+  fechaPago?: string;
+  callId?: string;
   ultimaSenal: string;
   traceId: string;
 }
@@ -125,13 +132,13 @@ export async function enqueueLeadProjection(
       apellido: input.apellido ?? existing?.payload.apellido ?? '',
       email: input.email ?? existing?.payload.email ?? '',
       telefono: input.telefono,
-      etapa_comercial: input.etapaComercial,
-      curso_interes: input.cursoInteres,
-      plan: input.plan,
-      estado_pago: input.estadoPago,
-      fecha_pago: input.fechaPago,
+      etapa_comercial: input.etapaComercial ?? existing?.payload.etapa_comercial ?? '',
+      curso_interes: input.cursoInteres ?? existing?.payload.curso_interes ?? '',
+      plan: input.plan ?? existing?.payload.plan ?? '',
+      estado_pago: input.estadoPago ?? existing?.payload.estado_pago ?? '',
+      fecha_pago: input.fechaPago ?? existing?.payload.fecha_pago ?? '',
       estado_alta: existing?.payload.estado_alta ?? DEFAULT_ESTADO_ALTA,
-      call_id: input.callId,
+      call_id: input.callId ?? existing?.payload.call_id ?? '',
       ultima_senal: input.ultimaSenal,
       trace_id: input.traceId,
     };
@@ -184,6 +191,78 @@ export async function enqueueLeadProjection(
     }
   }
   throw new Error('ENQUEUE_LEAD_PROJECTION_RETRY_EXHAUSTED');
+}
+
+export interface LeadIdentityRefreshInput {
+  contactId: string;
+  phone: string;
+  nombre?: string;
+  apellido?: string;
+  email?: string;
+  traceId: string;
+}
+
+/**
+ * Refreshes the identity columns of an ALREADY projected lead row after the
+ * customer volunteered their name/email (typically after the payment link
+ * event created the row with an empty identity).
+ *
+ * Identity-only by design: when no `sheet_projection_rows` row exists for
+ * the contact this is a no-op — a customer who merely stated their name
+ * never becomes a Sheets lead by that fact alone; only a commercial signal
+ * (e.g. `payment_link_sent`) creates rows. Fails soft (logged, never thrown)
+ * because it runs adjacent to ingestion and must never break the turn.
+ */
+export async function refreshLeadIdentityProjection(
+  input: LeadIdentityRefreshInput,
+  deps: {
+    sql?: DbClient;
+    loadSheetsConfig?: typeof loadSheetsProjectionConfig;
+    loadWorkspaceConfig?: typeof loadBusinessWorkspaceConfig;
+  } = {},
+): Promise<'refreshed' | 'skipped'> {
+  const db = deps.sql ?? orchestratorSql;
+  try {
+    const sheets = (deps.loadSheetsConfig ?? loadSheetsProjectionConfig)();
+    if (!sheets) return 'skipped';
+    const workspaceSlug = (deps.loadWorkspaceConfig ?? loadBusinessWorkspaceConfig)().workspaceSlug;
+    const workspaceRows = await db<Array<{ id: string }>>`
+      SELECT id FROM workspaces WHERE slug = ${workspaceSlug} AND status = 'active' LIMIT 1
+    `;
+    const workspaceId = workspaceRows[0]?.id;
+    if (!workspaceId) return 'skipped';
+
+    const projectionKey = leadProjectionKey(workspaceId, input.contactId);
+    const existingRows = await db<Array<{ id: string }>>`
+      SELECT id FROM sheet_projection_rows WHERE projection_key = ${projectionKey} LIMIT 1
+    `;
+    if (existingRows.length === 0) return 'skipped';
+
+    await enqueueLeadProjection(
+      {
+        workspaceId,
+        contactId: input.contactId,
+        spreadsheetId: sheets.spreadsheetId,
+        tabName: sheets.tabName,
+        telefono: input.phone,
+        nombre: input.nombre,
+        apellido: input.apellido,
+        email: input.email,
+        ultimaSenal: 'contact_identity_captured',
+        traceId: input.traceId,
+      },
+      { sql: db },
+    );
+    return 'refreshed';
+  } catch (error) {
+    logger.warn({
+      event: 'projection.lead_identity_refresh_failed',
+      trace_id: input.traceId,
+      contact_id: input.contactId,
+      error: String(error),
+    });
+    return 'skipped';
+  }
 }
 
 export interface FlushSheetProjectionsInput {

@@ -24,6 +24,9 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@botpress/runtime": [
+        "./tests/helpers/botpress-runtime-stub.ts"
       ]
     },
     "target": "ES2017"

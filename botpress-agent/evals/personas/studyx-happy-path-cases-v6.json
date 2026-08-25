@@ -102,6 +102,45 @@
         "sheet_rows": 1,
         "final_state": "payment_link_sent"
       }
+    },
+    {
+      "id": "acceptance_matia_cambio_interes_chat",
+      "name": "Cambio de Inglés a Marketing Digital, venta por chat y pago en 6 cuotas",
+      "course": "Marketing Digital",
+      "turns": [
+        "Hola, estaba viendo los cursos de inglés. ¿Qué opciones tienen?",
+        "En realidad quiero algo totalmente distinto: me interesa Marketing Digital. No me llames, prefiero seguir por chat de WhatsApp.",
+        "Perfecto. ¿Cómo funciona y cuánto sale?",
+        "Dale, quiero avanzar. Mis datos: Matia Damonte, matidamonte@inventado.com. Elijo 6 pagos de USD 60."
+      ],
+      "ideal_result": {
+        "current_course": "Marketing Digital",
+        "no_call_after_turn": 2,
+        "no_payment_link_before_turn": 4,
+        "must_not_echo": "matidamonte@inventado.com",
+        "no_technical_fallback": true,
+        "plan_code": "monthly_6",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "final_state": "payment_link_sent"
+      }
+    },
+    {
+      "id": "happy_07_desconfiado_sin_compra",
+      "name": "Consulta de confianza sin intención inmediata de pago",
+      "course": "Excel Integral",
+      "turns": [
+        "Estoy viendo Excel Integral. ¿Cuántas clases tiene y el certificado es oficial?",
+        "¿Me garantizan trabajo cuando termine?",
+        "¿Y si pago y me arrepiento, tienen devolución?",
+        "Entiendo. Todavía no quiero pagar; solo quiero la información por acá."
+      ],
+      "ideal_result": {
+        "course_fact": "17 clases",
+        "payment_link_count": 0,
+        "no_technical_fallback": true,
+        "final_state": "waiting_user"
+      }
     }
   ],
   "global_success_criteria": [

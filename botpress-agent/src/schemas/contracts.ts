@@ -608,7 +608,7 @@ export const CommitDecisionInputSchema = z.object({
   trace_id: z.string().uuid(),
   decision: DecisionSchema,
   model: z.object({
-    provider: z.literal('botpress'),
+    provider: z.enum(['botpress', 'google-ai-direct', 'groq-direct']),
     model: z.string().min(1),
     prompt_version: z.string().min(1),
   }),

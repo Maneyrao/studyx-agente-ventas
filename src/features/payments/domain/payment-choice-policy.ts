@@ -14,10 +14,10 @@ import { PaymentPlanCode } from './payment-link';
  * never guess or fall back to a different plan.
  *
  * Covered phrasings per plan (spec §4 step 1):
- *   - monthly_12: "12 meses", "12 cuotas", "12 pagos"
- *   - monthly_6:  "6 meses", "6 cuotas", "6 pagos"
+ *   - monthly_12: "12 meses", "12 cuotas", "12 pagos", "USD 30 por mes"
+ *   - monthly_6:  "6 meses", "6 cuotas", "6 pagos", "USD 60 por mes"
  *   - one_time:   "contado", "pago único", "todo junto", "un solo pago",
- *                 "pago total"
+ *                 "pago total", "un único pago"
  */
 
 export interface PolicyBatchMessage {
@@ -32,11 +32,20 @@ function normalize(text: string): string {
 }
 
 const PLAN_PATTERNS: ReadonlyArray<{ readonly code: PaymentPlanCode; readonly pattern: RegExp }> = [
-  { code: 'monthly_12', pattern: /\b12\s*(?:meses|cuotas|pagos)\b/ },
-  { code: 'monthly_6', pattern: /\b6\s*(?:meses|cuotas|pagos)\b/ },
+  {
+    code: 'monthly_12',
+    pattern:
+      /(?:\b12\s*(?:meses|cuotas|pagos)\b|\b(?:usd\s*)?30\s*(?:usd|dolares?)?\s*(?:por\s+mes|mensuales?)\b|\bcuotas?\s+de\s*(?:usd\s*)?30(?:\s*(?:usd|dolares?))?\b)/,
+  },
+  {
+    code: 'monthly_6',
+    pattern:
+      /(?:\b6\s*(?:meses|cuotas|pagos)\b|\b(?:usd\s*)?60\s*(?:usd|dolares?)?\s*(?:por\s+mes|mensuales?)\b|\bcuotas?\s+de\s*(?:usd\s*)?60(?:\s*(?:usd|dolares?))?\b)/,
+  },
   {
     code: 'one_time',
-    pattern: /\b(?:contado|pago\s+unico|todo\s+junto|un\s+solo\s+pago|pago\s+total)\b/,
+    pattern:
+      /\b(?:contado|pago\s+unico|todo\s+junto|un\s+solo\s+pago|pago\s+total|(?:un\s+)?unico\s+pago)\b/,
   },
 ];
 

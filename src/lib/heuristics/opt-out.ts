@@ -1,8 +1,13 @@
 const OPT_OUT_PATTERNS = [
   /\b(?:dame|denme|darme)\s+de\s+baja\b/u,
-  /\b(?:no|nunca)\s+me\s+(?:escribas|escriban|contactes|contacten|mandes|manden)\b/u,
+  /\b(?:no|nunca)\s+me\s+(?:escribas|escriban|contactes|contacten)\b/u,
+  // "no me mandes" only revokes consent when its object is messaging in
+  // general ("mensajes", "nada más"). "No me mandes el link todavía" is a
+  // deferral of ONE artifact, not an opt-out (P0, informe 2026-08-23).
+  /\b(?:no|nunca)\s+me\s+(?:mandes|manden|envies|envien)\s+(?:mas\s+)?(?:mensajes|nada(?:\s+mas)?)\b/u,
   /\bno\s+quiero\s+(?:recibir\s+)?(?:mas\s+)?(?:mensajes|contacto)\b/u,
   /\b(?:deja|paren|para)\s+de\s+(?:escribirme|contactarme|mandarme\s+mensajes)\b/u,
+  /\b(?:sacame|saquenme|sacenme|borrame|borrenme|quitame|quitenme|eliminame|eliminenme)\s+de\s+la\s+lista\b/u,
   /^(?:stop|baja|desuscribir|unsubscribe)$/u,
 ];
 

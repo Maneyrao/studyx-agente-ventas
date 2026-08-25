@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildEmulatorEnvelope,
+  deriveEmulatorPhoneE164,
   type EmulatorEnvelopeInput,
 } from '../../../botpress-agent/src/channels/shared/emulator-envelope';
 
@@ -18,7 +19,21 @@ const validInput: EmulatorEnvelopeInput = {
 };
 
 describe('Emulator ingest envelope', () => {
-  it('places the configured E.164 identity exactly in the ingest envelope', () => {
+  it('derives a stable sandbox identity per conversation instead of merging test clients', () => {
+    const first = deriveEmulatorPhoneE164('+15550000001', 'conversation-1');
+    const replay = deriveEmulatorPhoneE164('+15550000001', 'conversation-1');
+    const second = deriveEmulatorPhoneE164('+15550000001', 'conversation-2');
+
+    expect(first).toMatch(/^\+999\d{12}$/);
+    expect(replay).toBe(first);
+    expect(second).not.toBe(first);
+  });
+
+  it('places the conversation-scoped sandbox identity in the ingest envelope', () => {
+    const expectedPhone = deriveEmulatorPhoneE164(
+      validInput.emulatorPhoneE164,
+      validInput.externalConversationId,
+    );
     expect(buildEmulatorEnvelope(validInput)).toEqual({
       schema_version: 1,
       source: 'botpress',
@@ -27,7 +42,7 @@ describe('Emulator ingest envelope', () => {
       external_message_id: 'message-1',
       external_conversation_id: 'conversation-1',
       external_user_id: 'botpress-user-1',
-      phone_e164: '+15550000001',
+      phone_e164: expectedPhone,
       trace_id: '11111111-1111-4111-8111-111111111111',
       message: {
         type: 'text',

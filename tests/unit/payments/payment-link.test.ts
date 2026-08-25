@@ -127,6 +127,21 @@ describe('derivePaymentChoiceFromBatch', () => {
     expect(derivePaymentChoiceFromBatch([msg('Prefiero 6 pagos')])).toBe('monthly_6');
   });
 
+  it('derives installment plans from their canonical monthly amount', () => {
+    expect(derivePaymentChoiceFromBatch([msg('La opción de 30 dólares por mes me sirve')])).toBe(
+      'monthly_12',
+    );
+    expect(derivePaymentChoiceFromBatch([msg('Quiero pagar USD 60 por mes')])).toBe('monthly_6');
+    expect(derivePaymentChoiceFromBatch([msg('Prefiero cuotas de 30 usd')])).toBe('monthly_12');
+    expect(derivePaymentChoiceFromBatch([msg('Me quedo con las cuotas de USD 60')])).toBe(
+      'monthly_6',
+    );
+  });
+
+  it('does not confuse a total of USD 360 with an installment choice', () => {
+    expect(derivePaymentChoiceFromBatch([msg('El curso cuesta 360 dólares, ¿verdad?')])).toBeNull();
+  });
+
   it('derives one_time from "todo junto", "un solo pago" or "pago total" as well', () => {
     expect(derivePaymentChoiceFromBatch([msg('Pago todo junto')])).toBe('one_time');
     expect(derivePaymentChoiceFromBatch([msg('prefiero un solo pago')])).toBe('one_time');
@@ -135,6 +150,16 @@ describe('derivePaymentChoiceFromBatch', () => {
 
   it('still returns null on ambiguity between the new phrasings', () => {
     expect(derivePaymentChoiceFromBatch([msg('¿6 pagos o todo junto?')])).toBeNull();
+  });
+
+  // Regresión P0 (informe 2026-08-23): "un único pago" es una elección válida
+  // de contado y el backend la rechazaba como AMBIGUOUS_OR_ABSENT_CHOICE.
+  it('derives one_time from the "un único pago" word order as well', () => {
+    expect(
+      derivePaymentChoiceFromBatch([msg('Quiero pagar los 360 dólares en un único pago')]),
+    ).toBe('one_time');
+    expect(derivePaymentChoiceFromBatch([msg('prefiero único pago')])).toBe('one_time');
+    expect(derivePaymentChoiceFromBatch([msg('quiero un unico pago')])).toBe('one_time');
   });
 
   it('still returns null for "pagos" without a plan-identifying number or phrase', () => {

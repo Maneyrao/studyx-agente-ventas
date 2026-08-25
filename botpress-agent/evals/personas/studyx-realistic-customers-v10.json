@@ -1,0 +1,630 @@
+{
+  "schema_version": "1.0",
+  "prompt_version": "studyx-agent-a-sales-v10",
+  "catalog_source": "studyx_manual_1",
+  "suite": "realistic-customer-registration",
+  "cases": [
+    {
+      "id": "real_01_indecisa_excel_marketing",
+      "name": "Indecisa entre Excel y Marketing",
+      "course": "Excel Integral",
+      "persona": { "segment": "indecisa", "traits": ["compara", "cambia de idea", "evita llamada"] },
+      "turns": [
+        "Hola, necesito estudiar algo para conseguir trabajo pero estoy entre Excel y Marketing Digital.",
+        "No sé, me gustan las redes pero también veo que piden mucho Excel. ¿Cuál me conviene?",
+        "No me llames todavía, prefiero pensarlo por acá. ¿Cuántas clases tiene Excel?",
+        "Bueno, Excel Integral entonces. ¿Me explicás los tres pagos?",
+        "Voy con los 12 pagos de 30 dólares.",
+        "Soy Lucía Ferrer, lucia.real01+{{run_id}}@example.com. Después completo el pago."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Excel Integral",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "17 clases",
+        "current_course": "Excel Integral",
+        "no_call_after_turn": 3,
+        "no_payment_link_before_turn": 5,
+        "plan_code": "monthly_12",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_02_indeciso_fotografia",
+      "name": "Indeciso entre fotografía profesional y celular",
+      "course": "Fotografía con Celulares para Tiendas Online",
+      "persona": { "segment": "indeciso", "traits": ["pregunta diferencias", "presupuesto limitado"] },
+      "turns": [
+        "Tengo una tienda online y no sé si hacer Fotografía Profesional o el curso con celular.",
+        "Solo tengo un iPhone, no cámara. ¿Igual me sirve alguno?",
+        "¿Cuántas clases tiene el de fotografía con celular y qué aprendería?",
+        "Creo que ese es más práctico para mí. Pero 360 de una no puedo.",
+        "Elijo las 6 cuotas de 60 dólares.",
+        "Me llamo Sergio Luna, sergio.real02+{{run_id}}@example.com."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Fotografía con Celulares para Tiendas Online",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "20 clases",
+        "plan_code": "monthly_6",
+        "payment_link_count": 1,
+        "no_payment_link_before_turn": 5,
+        "sheet_rows": 1,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_03_ingles_llamada_cancelada",
+      "name": "No sabe qué nivel de inglés y cancela llamada",
+      "course": "Inglés 2",
+      "persona": { "segment": "indecisa", "traits": ["quiere diagnóstico", "cancela llamada", "no compra aún"] },
+      "turns": [
+        "Quiero aprender inglés pero no tengo idea si soy nivel 1, 2 o 3.",
+        "Puedo leer algunas cosas, pero cuando hablan rápido no entiendo. Capaz una llamada ayuda.",
+        "Uy, es verdad, hoy no puedo atender. Mejor sigamos por mensaje.",
+        "Con lo que te conté, ¿cuál sería el punto de partida más razonable?",
+        "Perfecto, voy a revisar Inglés 2. Todavía no quiero pagar."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Inglés 2",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "current_course": "Inglés 2",
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_04_eventos_o_catering",
+      "name": "Indecisa entre eventos y catering",
+      "course": "Organizador Profesional de Eventos Sociales",
+      "persona": { "segment": "indecisa", "traits": ["explora dos rubros", "sin urgencia"] },
+      "turns": [
+        "Me gustaría emprender con fiestas, pero no sé si estudiar Eventos Sociales o Catering.",
+        "Me interesa coordinar todo, no cocinar. ¿Qué encaja mejor?",
+        "¿Qué se aprende en Organización de Eventos y cuántas clases tiene?",
+        "Me sirve la información. Este mes no puedo empezar, vuelvo más adelante."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Organizador Profesional de Eventos Sociales",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "20 clases",
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_05_maquillaje_consulta_familia",
+      "name": "Decide después de consultar a su familia",
+      "course": "Maquillaje Profesional",
+      "persona": { "segment": "indecisa", "traits": ["pausa decisión", "retoma", "sensible al precio"] },
+      "turns": [
+        "Quiero Maquillaje Profesional para empezar a trabajar por mi cuenta.",
+        "¿Son muchas clases? Me preocupa no poder sostener el pago.",
+        "Déjame hablarlo con mi familia, no me mandes link todavía.",
+        "Volví. Me dijeron que sí, pero necesito la opción más liviana por mes.",
+        "Confirmo el plan de 12 pagos de 30 dólares.",
+        "Soy Valeria Gómez, valeria.real05+{{run_id}}@example.com."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Maquillaje Profesional",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "38 clases",
+        "no_payment_link_before_turn": 5,
+        "plan_code": "monthly_12",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_06_marketing_pregunton",
+      "name": "Pregunta todo antes de pagar Marketing",
+      "course": "Marketing Digital",
+      "persona": { "segment": "preguntador", "traits": ["metódico", "pide temario", "verifica certificado"] },
+      "turns": [
+        "Estoy evaluando Marketing Digital. Primero: ¿cuántas clases son?",
+        "¿Qué temas incluye exactamente?",
+        "¿Necesito experiencia previa o herramientas pagas?",
+        "¿El certificado garantiza que me contraten?",
+        "Bien, gracias por ser claro. ¿Cuáles son las opciones de pago?",
+        "Elijo el pago único de 360 dólares.",
+        "Soy Tomás Rivas, tomas.real06+{{run_id}}@example.com."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Marketing Digital",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "16 clases",
+        "no_payment_link_before_turn": 6,
+        "plan_code": "one_time",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_07_solar_tecnico",
+      "name": "Técnico exigente consulta Energía Solar",
+      "course": "Energía Solar Fotovoltaica",
+      "persona": { "segment": "preguntador", "traits": ["técnico", "exige precisión", "no compra"] },
+      "turns": [
+        "Soy electricista y vi Energía Solar Fotovoltaica. ¿Cuántas clases son?",
+        "¿Incluye dimensionamiento, paneles e instalación o es solo introductorio?",
+        "¿Me habilita legalmente para firmar instalaciones?",
+        "¿Me garantizan trabajo al terminar?",
+        "Entendido. Necesito comparar el alcance, no voy a pagar hoy."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Energía Solar Fotovoltaica",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "8 clases",
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_08_camaras_llamada_cancelada",
+      "name": "Pregunta por cámaras, pide llamada y la cancela",
+      "course": "Instalación y Configuración de Cámaras de Seguridad",
+      "persona": { "segment": "preguntador", "traits": ["orientado a oficio", "cambia canal", "cierra"] },
+      "turns": [
+        "Quiero aprender a instalar cámaras de seguridad para ofrecer el servicio.",
+        "¿Cuántas clases tiene y qué equipos se ven?",
+        "¿Podemos hablar por llamada ahora?",
+        "No, pará, me surgió un trabajo y no puedo atender. Contestame por acá.",
+        "¿Qué formas de pago hay?",
+        "Listo, elijo 6 pagos de 60 dólares.",
+        "Soy Diego Paz, diego.real08+{{run_id}}@example.com."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Instalación y Configuración de Cámaras de Seguridad",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "12 clases",
+        "no_call_after_turn": 4,
+        "no_payment_link_before_turn": 6,
+        "plan_code": "monthly_6",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_09_nutricion_limites",
+      "name": "Pregunta por límites profesionales de Nutrición",
+      "course": "Nutrición y Alimentación Saludable",
+      "persona": { "segment": "preguntador", "traits": ["cuidadoso", "consulta habilitación", "informativo"] },
+      "turns": [
+        "Me interesa Nutrición y Alimentación Saludable. ¿Son 16 clases?",
+        "¿Con este curso puedo atender pacientes como nutricionista?",
+        "¿Puedo indicar dietas para enfermedades?",
+        "Gracias por aclararlo. Solo quería conocer el alcance, no deseo comprar ahora."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Nutrición y Alimentación Saludable",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "16 clases",
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_10_cripto_esceptico",
+      "name": "Escéptico pregunta por Criptomonedas",
+      "course": "Introducción a las Criptomonedas",
+      "persona": { "segment": "preguntador", "traits": ["escéptico", "pregunta riesgos", "rechaza promesas"] },
+      "turns": [
+        "¿El curso de Criptomonedas enseña a ganar plata seguro?",
+        "Entonces, ¿qué aprende concretamente alguien que empieza desde cero?",
+        "¿Cuántas clases tiene?",
+        "¿Ustedes me dicen qué moneda comprar?",
+        "Ok. No voy a comprar todavía, pero me sirve que no prometan ganancias."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Introducción a las Criptomonedas",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "21 clases",
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_11_regatea_precio",
+      "name": "Regatea y pide descuentos inexistentes",
+      "course": "Diseño Gráfico con Photoshop",
+      "persona": { "segment": "objetor", "traits": ["regatea", "insiste", "termina aceptando"] },
+      "turns": [
+        "Quiero Photoshop, pero seguro me podés hacer precio.",
+        "Si pago hoy, ¿me lo dejás a 200 dólares?",
+        "Dale, algún cupón o beca tiene que haber.",
+        "Bueno, no inventes descuentos. Decime las opciones oficiales.",
+        "Elijo 12 pagos de 30 dólares.",
+        "Soy Rocío Vidal, rocio.real11+{{run_id}}@example.com."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Diseño Gráfico con Photoshop",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "16 clases",
+        "no_payment_link_before_turn": 5,
+        "plan_code": "monthly_12",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_12_desconfiada_certificado",
+      "name": "Desconfía del certificado y la devolución",
+      "course": "Coaching y Liderazgo",
+      "persona": { "segment": "objetor", "traits": ["desconfiada", "pide garantías", "no compra"] },
+      "turns": [
+        "Vi Coaching y Liderazgo, pero no confío mucho en cursos online.",
+        "¿El certificado es oficial y reconocido por universidades?",
+        "¿Tienen devolución garantizada si no me gusta?",
+        "¿Me asegurás que voy a conseguir un ascenso?",
+        "Está bien, prefiero averiguar más. No me envíes ningún link."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Coaching y Liderazgo",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_13_exige_trabajo",
+      "name": "Exige garantía laboral",
+      "course": "Reparación de Celulares",
+      "persona": { "segment": "objetor", "traits": ["impaciente", "presiona", "demanda garantía"] },
+      "turns": [
+        "Necesito trabajo urgente. Si hago Reparación de Celulares, ¿me garantizan empleo?",
+        "No me respondas con vueltas: ¿sí o no consigo trabajo?",
+        "¿Cuántas clases son y qué podría aprender?",
+        "Sin garantía no pago. Dejémoslo acá por ahora."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Reparación de Celulares",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "20 clases",
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_14_compara_competencia",
+      "name": "Compara con cursos gratis y cuestiona el valor",
+      "course": "Community Manager",
+      "persona": { "segment": "objetor", "traits": ["comparador", "directo", "compra contado"] },
+      "turns": [
+        "Community Manager está gratis en YouTube. ¿Por qué pagaría el de ustedes?",
+        "Eso suena a respuesta de vendedor. ¿Qué incluye realmente y cuántas clases son?",
+        "¿Me prometés clientes cuando termine?",
+        "Bien, entiendo la diferencia y que no hay garantía. Quiero el pago único de 360 dólares.",
+        "Soy Pablo Núñez, pablo.real14+{{run_id}}@example.com."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Community Manager",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "16 clases",
+        "no_payment_link_before_turn": 4,
+        "plan_code": "one_time",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_15_cambia_plan_tres_veces",
+      "name": "Cambia tres veces el plan de pago",
+      "course": "Especialista en Ventas",
+      "persona": { "segment": "objetor", "traits": ["contradictorio", "recalcula", "confirma al final"] },
+      "turns": [
+        "Me interesa Especialista en Ventas. ¿Qué opciones de pago hay?",
+        "Creo que quiero las 6 cuotas.",
+        "No, esperá, quizá me conviene pagar todo junto.",
+        "Mmm, mejor 12 cuotas. No mandes nada hasta que confirme.",
+        "Confirmo definitivamente 12 pagos de 30 dólares.",
+        "Soy Mauro Gil, mauro.real15+{{run_id}}@example.com."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Especialista en Ventas",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "16 clases",
+        "no_payment_link_before_turn": 5,
+        "plan_code": "monthly_12",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_16_pc_llamada_a_chat",
+      "name": "Pide llamada inmediata y termina comprando por chat",
+      "course": "Armado y Reparación de PC",
+      "persona": { "segment": "cambio_canal", "traits": ["urgente", "cancela llamada", "cierra por chat"] },
+      "turns": [
+        "Quiero Armado y Reparación de PC. ¿Me podés llamar ya?",
+        "Uy, es verdad, estoy en el colectivo y no puedo hablar. Sigamos por acá.",
+        "¿Cuántas clases tiene y qué se aprende?",
+        "¿Qué opciones de pago ofrecen?",
+        "Quiero las 6 cuotas de 60 dólares.",
+        "Soy Agustín Mora, agustin.real16+{{run_id}}@example.com."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Armado y Reparación de PC",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "22 clases",
+        "no_call_after_turn": 2,
+        "no_payment_link_before_turn": 5,
+        "plan_code": "monthly_6",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_17_llamada_doble_cambio",
+      "name": "Solicita, cancela y vuelve a considerar llamada",
+      "course": "Oratoria",
+      "persona": { "segment": "cambio_canal", "traits": ["ansioso", "va y vuelve", "no compra"] },
+      "turns": [
+        "Me da mucha vergüenza hablar en público. Quiero saber de Oratoria y quizás una llamada.",
+        "Ahora sí, llamame.",
+        "No, cancelá, entró mi jefe.",
+        "Ya podría hablar, aunque mejor contame primero cuántas clases son.",
+        "Voy a pensarlo. No quiero pagar todavía ni coordinar llamada."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Oratoria",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "20 clases",
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_18_aires_prefiere_chat",
+      "name": "Acepta llamada y luego exige resolver todo por chat",
+      "course": "Instalación de Aires Acondicionados",
+      "persona": { "segment": "cambio_canal", "traits": ["práctico", "cambia canal", "cierra"] },
+      "turns": [
+        "Necesito aprender a instalar aires. Si querés llamame.",
+        "Pensándolo bien no atiendo números desconocidos. Todo por chat, por favor.",
+        "¿Cuántas clases son y es para principiantes?",
+        "Decime los planes oficiales.",
+        "Elijo 12 pagos de USD 30.",
+        "Soy Hernán Soto, hernan.real18+{{run_id}}@example.com."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Instalación de Aires Acondicionados",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "9 clases",
+        "no_call_after_turn": 2,
+        "no_payment_link_before_turn": 5,
+        "plan_code": "monthly_12",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_19_diseno_no_quiere_llamada",
+      "name": "Rechaza llamada varias veces",
+      "course": "Diseño Gráfico con Illustrator",
+      "persona": { "segment": "cambio_canal", "traits": ["reservada", "insiste en texto", "informativa"] },
+      "turns": [
+        "Busco Illustrator para diseñar logos, pero no quiero llamadas.",
+        "Solo respondeme por acá: ¿cuántas clases tiene?",
+        "¿Necesito saber Photoshop antes?",
+        "Gracias. Guardá que me interesa Illustrator, después vuelvo."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Diseño Gráfico con Illustrator",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "17 clases",
+        "no_call_after_turn": 1,
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_20_catering_horarios_imposibles",
+      "name": "No logra coordinar una llamada",
+      "course": "Introducción al Catering",
+      "persona": { "segment": "cambio_canal", "traits": ["agenda cambiante", "distraída", "no compra"] },
+      "turns": [
+        "Quiero Catering. ¿Podrían llamarme esta tarde?",
+        "Mejor no, trabajo hasta tarde. ¿A la noche?",
+        "Tampoco puedo hoy. Olvidemos la llamada y contame por mensaje.",
+        "¿Cuántas clases son y de qué trata?",
+        "Gracias, retomo cuando tenga horarios más claros."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Introducción al Catering",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "20 clases",
+        "no_call_after_turn": 3,
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_21_fragmentado_con_typo",
+      "name": "Escribe mensajes fragmentados y con errores",
+      "course": "Marketing Digital",
+      "persona": { "segment": "errático", "traits": ["mensajes cortos", "typos", "cierra"] },
+      "turns": [
+        "hola",
+        "markting",
+        "el curso digo",
+        "cuantas clases?",
+        "precio",
+        "quiero el de 12 pagos de 30",
+        "Nico Vera, nico.real21+{{run_id}}@example.com"
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Marketing Digital",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "16 clases",
+        "no_payment_link_before_turn": 6,
+        "plan_code": "monthly_12",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_22_retorna_despues_sushi",
+      "name": "Desaparece y retoma su interés",
+      "course": "Sushi para Principiantes",
+      "persona": { "segment": "errático", "traits": ["retoma tarde", "pide memoria", "cierra"] },
+      "turns": [
+        "Me interesa Sushi para Principiantes, ¿cuántas clases son?",
+        "Lo voy a pensar, ahora no puedo seguir.",
+        "Perdón, volví después de varios días. ¿Te acordás qué curso estaba viendo?",
+        "Sí, Sushi. Recordame las formas de pago.",
+        "Quiero pagar los 360 dólares en un único pago.",
+        "Soy Camila Rey, camila.real22+{{run_id}}@example.com."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Sushi para Principiantes",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "10 clases",
+        "current_course": "Sushi para Principiantes",
+        "no_payment_link_before_turn": 5,
+        "plan_code": "one_time",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_23_cambia_tres_cursos",
+      "name": "Cambia de curso tres veces",
+      "course": "Excel Integral",
+      "persona": { "segment": "errático", "traits": ["cambio de interés", "prueba memoria", "cierra"] },
+      "turns": [
+        "Quería Instagram para Emprendedores.",
+        "No, mejor Community Manager porque quiero trabajar de eso.",
+        "Pensándolo bien, para mi empleo actual necesito Excel Integral.",
+        "Confirmame cuál fue mi elección final y cuántas clases tiene.",
+        "Correcto. Elijo las 6 cuotas de 60 dólares.",
+        "Soy Florencia Cano, flor.real23+{{run_id}}@example.com."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Excel Integral",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "current_course": "Excel Integral",
+        "course_fact": "17 clases",
+        "no_payment_link_before_turn": 5,
+        "plan_code": "monthly_6",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_24_consulta_para_tercero",
+      "name": "Consulta ambigua para otra persona",
+      "course": "Uñas Gelificadas",
+      "persona": { "segment": "errático", "traits": ["consulta para tercero", "información incompleta", "no compra"] },
+      "turns": [
+        "Estoy averiguando Uñas Gelificadas para mi sobrina.",
+        "No sé qué edad mínima aceptan ni si necesita experiencia.",
+        "¿Cuántas clases tiene y qué incluye?",
+        "No tengo sus datos y no voy a pagar ahora. Solo mandame la información."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Uñas Gelificadas",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "25 clases",
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "real_25_sarcastico_community",
+      "name": "Sarcástico, desconfiado y finalmente comprador",
+      "course": "Community Manager",
+      "persona": { "segment": "errático", "traits": ["sarcástico", "desconfiado", "se contradice", "cierra"] },
+      "turns": [
+        "A ver, vendeme Community Manager sin decirme que voy a ser millonario 😅",
+        "¿Cuántas clases? Y no me tires una respuesta de robot.",
+        "Seguro después aparecen costos ocultos, ¿no?",
+        "Bueno, al menos sos directo. ¿Hay 12 pagos de 30 o entendí mal?",
+        "Dale, confirmo 12 pagos de USD 30.",
+        "Soy Iván Costa, ivan.real25+{{run_id}}@example.com."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Community Manager",
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "course_fact": "16 clases",
+        "no_payment_link_before_turn": 5,
+        "plan_code": "monthly_12",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "no_technical_fallback": true
+      }
+    }
+  ]
+}

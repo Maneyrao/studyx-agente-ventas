@@ -8,6 +8,7 @@ import { memoryStore } from '@/features/orchestration/adapters/postgres-memory-s
 import { getPostgresError, type DbClient } from '@/lib/db/types';
 import { sha256Hex } from '@/lib/idempotency/canonical-json';
 import { isExplicitOptOut } from '@/lib/heuristics/opt-out';
+import { splitFullName } from '@/lib/heuristics/contact-identity';
 import { registerMessage, type Message } from './message.service';
 import { enqueueLeadProjection } from './projection.service';
 import { auditLog } from '@/lib/audit/logger';
@@ -52,7 +53,7 @@ export interface CommitDecisionInput {
   trace_id: string;
   decision: AnyDecision;
   model: {
-    provider: 'botpress';
+    provider: 'botpress' | 'google-ai-direct' | 'groq-direct';
     model: string;
     prompt_version: string;
   };
@@ -1050,9 +1051,65 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
 
 interface PaymentLinkProjectionSignal {
   readonly planCode: string;
+  readonly offeringSku: string | null;
+  readonly memoryCourseInterest: string | null;
   readonly contactId: string;
   readonly phone: string;
+  readonly contactName: string | null;
+  readonly contactEmail: string | null;
   readonly traceId: string;
+}
+
+const GENERIC_OFFERING_ALIAS_WORDS = new Set([
+  'curso', 'introduccion', 'especialista', 'profesional', 'orientado',
+  'diseno', 'interiores', 'integral', 'formacion', 'programa',
+]);
+
+function normalizeOfferingText(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, ' ')
+    .trim();
+}
+
+function resolveCanonicalOfferingInterest(
+  memoryValue: string,
+  displayNames: readonly string[],
+): string | null {
+  const normalizedValue = normalizeOfferingText(memoryValue);
+  const exact = displayNames.find((name) => normalizeOfferingText(name) === normalizedValue);
+  if (exact) return exact;
+
+  const valueTokens = new Set(normalizedValue.split(' ').filter(Boolean));
+  const scores = new Map<string, number>();
+  const exactOwners = new Map<string, Set<string>>();
+  for (const displayName of displayNames) {
+    const identifyingTokens = normalizeOfferingText(displayName)
+      .split(' ')
+      .filter((token) => token.length >= 5 && !GENERIC_OFFERING_ALIAS_WORDS.has(token));
+    for (const token of identifyingTokens) {
+      const current = exactOwners.get(token) ?? new Set<string>();
+      current.add(displayName);
+      exactOwners.set(token, current);
+    }
+    const score = [...valueTokens].filter((sourceToken) => identifyingTokens.some((catalogToken) =>
+      sourceToken === catalogToken
+      || (sourceToken.length >= 4 && catalogToken.length >= 4
+        && (sourceToken.startsWith(catalogToken.slice(0, 4))
+          || catalogToken.startsWith(sourceToken.slice(0, 4))))
+    )).length;
+    if (score > 0) scores.set(displayName, score);
+  }
+  const ranked = [...scores.entries()].sort((left, right) => right[1] - left[1]);
+  if (ranked.length === 0 || (ranked[1]?.[1] ?? 0) === ranked[0][1]) return null;
+  const [winner, winningScore] = ranked[0];
+  const hasUniqueExactToken = [...valueTokens].some((token) => {
+    const owners = exactOwners.get(token);
+    return owners?.size === 1 && owners.has(winner);
+  });
+  return winningScore >= 2 || hasUniqueExactToken ? winner : null;
 }
 
 /**
@@ -1067,14 +1124,27 @@ async function loadPaymentLinkProjectionSignal(
   traceId: string,
 ): Promise<PaymentLinkProjectionSignal | null> {
   const rows = await db<Array<{
-    business_action: { type?: string; plan_code?: string } | null;
+    business_action: { type?: string; plan_code?: string; offering_sku?: string | null } | null;
     contact_id: string;
     phone: string;
+    name: string | null;
+    email: string | null;
+    memory_course_interest: string | null;
   }>>`
-    SELECT ad.business_action, m.contact_id, c.phone
+    SELECT ad.business_action, m.contact_id, c.phone, c.name, c.email,
+      course_memory.value_normalized AS memory_course_interest
     FROM agent_decisions AS ad
     JOIN messages AS m ON m.id = ad.turn_id
     JOIN contacts AS c ON c.id = m.contact_id
+    LEFT JOIN LATERAL (
+      SELECT sm.value_normalized
+      FROM selected_memories AS sm
+      WHERE sm.contact_id = m.contact_id
+        AND sm.status = 'active'
+        AND sm.memory_type = 'study_goal'
+      ORDER BY sm.valid_from DESC, sm.created_at DESC
+      LIMIT 1
+    ) AS course_memory ON true
     WHERE ad.outbound_message_id = ${outboundId}::uuid
     LIMIT 1
   `;
@@ -1084,8 +1154,12 @@ async function loadPaymentLinkProjectionSignal(
   }
   return {
     planCode: row.business_action.plan_code,
+    offeringSku: row.business_action.offering_sku ?? null,
+    memoryCourseInterest: row.memory_course_interest,
     contactId: row.contact_id,
     phone: row.phone,
+    contactName: row.name,
+    contactEmail: row.email,
     traceId,
   };
 }
@@ -1132,14 +1206,43 @@ async function enqueuePaymentLinkSentProjection(signal: PaymentLinkProjectionSig
     });
     return;
   }
+  // Interés canónico: el `offering_sku` de la decisión se proyecta como el
+  // display_name canónico del catálogo (P1, informe 2026-08-23: el outbox
+  // descartaba el sku y `curso_interes` quedaba vacío tras un cierre).
+  let cursoInteres: string | undefined;
+  if (signal.offeringSku) {
+    const offeringRows = await sql<Array<{ display_name: string }>>`
+      SELECT display_name FROM offerings
+      WHERE workspace_id = ${workspaceId}::uuid AND code = ${signal.offeringSku}
+      LIMIT 1
+    `;
+    cursoInteres = offeringRows[0]?.display_name ?? signal.offeringSku;
+  } else if (signal.memoryCourseInterest) {
+    // A fast payment decision can legitimately carry no SKU when the bounded
+    // claim snapshot omitted a course outside its catalog window. Resolve the
+    // latest accepted study goal against the canonical catalog at projection
+    // time instead of writing an empty course or trusting free-form model text.
+    const offeringRows = await sql<Array<{ display_name: string }>>`
+      SELECT display_name FROM offerings
+      WHERE workspace_id = ${workspaceId}::uuid AND status = 'active'
+    `;
+    cursoInteres = resolveCanonicalOfferingInterest(
+      signal.memoryCourseInterest,
+      offeringRows.map((row) => row.display_name),
+    ) ?? signal.memoryCourseInterest;
+  }
+  const identity = signal.contactName ? splitFullName(signal.contactName) : null;
   await enqueueLeadProjection({
     workspaceId,
     contactId: signal.contactId,
     spreadsheetId: sheets.spreadsheetId,
     tabName: sheets.tabName,
     telefono: signal.phone,
+    nombre: identity?.nombre,
+    apellido: identity?.apellido,
+    email: signal.contactEmail ?? undefined,
     etapaComercial: 'proposal',
-    cursoInteres: '',
+    cursoInteres,
     plan: signal.planCode,
     estadoPago: 'pendiente',
     fechaPago: '',

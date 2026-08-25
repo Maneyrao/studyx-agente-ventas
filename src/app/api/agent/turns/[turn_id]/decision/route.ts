@@ -138,7 +138,7 @@ const schema = z.object({
   trace_id: z.string().uuid(),
   decision: decisionSchema,
   model: z.object({
-    provider: z.literal('botpress'),
+    provider: z.enum(['botpress', 'google-ai-direct', 'groq-direct']),
     model: z.string().trim().min(1).max(256),
     prompt_version: z.string().trim().min(1).max(128),
   }).strict(),
