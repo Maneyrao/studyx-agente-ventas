@@ -20,6 +20,7 @@ function businessOffering(
   return {
     code,
     display_name: displayName,
+    aliases: [],
     academy,
     offering_type: 'course',
     description: null,
@@ -1033,6 +1034,73 @@ describe('routeCommercialTurn', () => {
       origin: 'advisory_model',
       reason: 'NO_DETERMINISTIC_MATCH',
     });
+  });
+
+  it('carries the canonical authorization resolved by a referential course discovery', () => {
+    const route = routeCommercialTurn({
+      automationEnabled: true,
+      claimed: claimedTurn({
+        texts: ['El de sacar fotos de productos con el celu.'],
+        courseOfInterest: null,
+        offeringCode: null,
+        recentInbound: [
+          'Estoy entre Fotografía Profesional y Fotografía con Celulares para Tiendas Online.',
+        ],
+        offerings: [
+          businessOffering('foto_celular', 'Fotografía con Celulares para Tiendas Online', 'Marketing'),
+          businessOffering('foto_profesional', 'Fotografía Profesional', 'Emprendedores'),
+        ],
+      }),
+    });
+
+    expect(route).toMatchObject({
+      kind: 'deterministic',
+      origin: 'course_discovery',
+      authorizedOfferingCode: 'foto_celular',
+    });
+  });
+
+  it('authorizes the sole alternative selected by an "el otro" course-fact question', () => {
+    const route = routeCommercialTurn({
+      automationEnabled: true,
+      claimed: claimedTurn({
+        texts: ['¿Y el otro cuántas clases tiene?'],
+        courseOfInterest: 'Fotografía con Celulares para Tiendas Online',
+        offeringCode: 'foto_celular',
+        recentInbound: [
+          'Estoy entre Fotografía Profesional y Fotografía con Celulares para Tiendas Online.',
+        ],
+        offerings: [
+          businessOffering('foto_celular', 'Fotografía con Celulares para Tiendas Online', 'Marketing'),
+          businessOffering('foto_profesional', 'Fotografía Profesional', 'Emprendedores'),
+        ],
+      }),
+    });
+
+    expect(route).toMatchObject({
+      kind: 'deterministic',
+      origin: 'course_facts',
+      authorizedOfferingCode: 'foto_profesional',
+    });
+  });
+
+  it('does not overwrite canonical course memory from a generic experience sentence', () => {
+    const claimed = claimedTurn({
+      texts: ['Nunca trabajé en ventas, ¿igual me sirve el curso?'],
+      courseOfInterest: 'Especialista en Ventas',
+      offeringCode: 'especialista_ventas',
+      offerings: [businessOffering('especialista_ventas', 'Especialista en Ventas', 'Negocios')],
+    });
+    const route = routeCommercialTurn({ automationEnabled: true, claimed });
+    if (route.kind === 'model_required') throw new Error('expected deterministic course facts');
+
+    const decision = applyDecisionPolicy(route.decision, claimed);
+
+    expect(decision.memory_candidates).not.toContainEqual(expect.objectContaining({
+      type: 'study_goal',
+      key: 'target_course',
+      value: 'ventas',
+    }));
   });
 
   it('returns the raw decision for exactly one later decision-policy application', () => {

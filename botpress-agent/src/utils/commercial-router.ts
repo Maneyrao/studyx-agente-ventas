@@ -118,13 +118,16 @@ const CATALOG_INTENT_PATTERN =
 const BARE_COURSE_SELECTION_PATTERN =
   // Clitic forms (pagarlo, abonarla…) must stay payment cues, not course
   // selections. Mirror of src/features/orchestration/domain/catalog-resolution.ts.
-  /\b(?:quiero|prefiero|elijo|elegi|selecciono|me quedo con|voy con|cambio a)\s+(?!(?:que|pagar(?:l[oa]s?)?|abonar(?:l[oa]s?)?|comprar(?:l[oa]s?)?|hablar|llamar|una llamada|un llamado|saber|consultar|continuar|seguir|el plan|un plan|plan|cuotas?|por chat|mas informacion|informacion|info|es[ae]|est[ae]|aquel(?:la)?|(?:(?:el|la|un|una)\s+)?(?:opcion|alternativa))\b)(?:el|la|un|una)?\s*[a-z][a-z0-9]*(?:\s+[a-z0-9]+){0,4}\b/u
+  /\b(?:quiero|prefiero|elijo|elegi|selecciono|me quedo con|voy con|cambio a)\s+(?!(?:que|pagar(?:l[oa]s?)?|abonar(?:l[oa]s?)?|comprar(?:l[oa]s?)?|hablar|llamar|una llamada|un llamado|saber|consultar|confirmar|verificar|revisar|continuar|seguir|el plan|un plan|plan|cuotas?|por chat|mas informacion|informacion|info|es[ae]|est[ae]|aquel(?:la)?|(?:(?:el|la|un|una)\s+)?(?:opcion|alternativa))\b)(?:el|la|un|una)?\s*[a-z][a-z0-9]*(?:\s+[a-z0-9]+){0,4}\b/u
 
 const PAYMENT_OR_LINK_CONTEXT_PATTERN =
   /\b(?:pag(?:o|ar|arlo|arla|arlos|arlas)?|cuotas?|dolares?|usd|link|plan(?:es)?|mensual(?:es)?|mes(?:es)?|pensar(?:lo|la)?|decidir)\b/u
 
 const EXPLICIT_COURSE_NOUN_PATTERN =
   /\b(?:curso|diplomado|capacitacion|formacion|programa)\b/u
+
+const NON_CATALOG_PROGRAM_CONTEXT_PATTERN =
+  /\b(?:sin|nunca|haber usado|usar|necesito|instalad\w*|software)\b.{0,48}\bprograma de\b/u
 
 /**
  * "Lo más parecido", "algo similar", "¿qué alternativas tienen?" — a request
@@ -209,7 +212,7 @@ function containsCatalogIntent(claimed: ClaimedTurn): boolean {
   return claimed.context.batch_messages.some((message) => {
     if (message.message_type !== 'text') return false
     const normalized = normalizedSignalText(message.content)
-    return CATALOG_INTENT_PATTERN.test(normalized)
+    return (CATALOG_INTENT_PATTERN.test(normalized) && !NON_CATALOG_PROGRAM_CONTEXT_PATTERN.test(normalized))
       || (
         BARE_COURSE_SELECTION_PATTERN.test(normalized)
         && !(

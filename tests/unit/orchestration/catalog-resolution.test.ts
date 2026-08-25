@@ -40,6 +40,44 @@ const CELLPHONES = offering(
 );
 
 describe('resolveCatalogRequest', () => {
+  it('keeps an administrative identity confirmation neutral to the remembered course', () => {
+    const text = 'Repetime con qué datos quedé anotada, quiero confirmar que están bien.';
+
+    expect(resolveCatalogRequest(text, snapshot([offering('excel', 'Excel Integral', null)]))).toEqual({
+      kind: 'no_catalog_intent',
+    });
+    expect(isCatalogRequestNeutral(text)).toBe(true);
+  });
+
+  it('does not treat design software prerequisites as a new course request', () => {
+    const text = '¿Se puede hacer sin haber usado nunca un programa de diseño?';
+    expect(resolveCatalogRequest(text, snapshot([
+      offering('autocad', 'AutoCAD orientado al Diseño de Interiores', 'Tecnología'),
+    ]))).toEqual({ kind: 'no_catalog_intent' });
+    expect(isCatalogRequestNeutral(text)).toBe(true);
+  });
+
+  it('resolves a descriptive "el de" reply against two previously presented course names', () => {
+    expect(resolveCatalogRequest(
+      'El de sacar fotos de productos con el celu.',
+      snapshot([
+        offering(
+          'foto_celular',
+          'Fotografía con Celulares para Tiendas Online',
+          'Marketing',
+          ['fotos de productos con el celu'],
+        ),
+        offering('foto_profesional', 'Fotografía Profesional', 'Emprendedores'),
+      ]),
+    )).toEqual({
+      kind: 'exact',
+      offeringCode: 'foto_celular',
+      displayName: 'Fotografía con Celulares para Tiendas Online',
+      academy: 'Marketing',
+      match: 'canonical',
+    });
+  });
+
   it('returns the canonical SKU and name for an exact course mention', () => {
     expect(resolveCatalogRequest('Quiero Marketing Digital', snapshot([MARKETING]))).toEqual({
       kind: 'exact',
@@ -293,6 +331,15 @@ describe('resolveCatalogRequest', () => {
         snapshot([MARKETING]),
       ),
     ).toEqual({ kind: 'no_catalog_intent' });
+  });
+
+  it('marks a generic course switch as a history boundary instead of a neutral follow-up', () => {
+    const message = 'Cambiemos de curso.';
+
+    expect(resolveCatalogRequest(message, snapshot([MARKETING]))).toEqual({
+      kind: 'no_catalog_intent',
+    });
+    expect(isCatalogRequestNeutral(message)).toBe(false);
   });
 
   it('keeps a colliding structural alias ambiguous', () => {

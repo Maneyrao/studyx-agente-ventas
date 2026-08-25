@@ -661,6 +661,7 @@ function businessOffering(
   return {
     code,
     display_name: displayName,
+    aliases: [],
     academy,
     offering_type: 'course',
     description: null,
@@ -957,6 +958,124 @@ describe('claimBatch business context', () => {
     expect(result.catalog_resolution).toEqual({ kind: 'no_catalog_intent' });
     expect(result.sales_context.course_of_interest).toBe('Inglés Nivel 3');
     expect(result.sales_context.offering_code).toBe('ingles_3');
+  });
+
+  it.each([
+    {
+      name: 'referential fact follow-up',
+      history: ['Quiero Decoración de Interiores'],
+      current: '¿Cuántas clases tiene el programa?',
+      expectedCode: 'decoracion_de_interiores',
+      expectedName: 'Decoración de Interiores',
+    },
+    {
+      name: 'payment confirmation',
+      history: ['Quiero Decoración de Interiores'],
+      current: 'Confirmo 6 cuotas',
+      expectedCode: 'decoracion_de_interiores',
+      expectedName: 'Decoración de Interiores',
+    },
+    {
+      name: 'explicit course switch',
+      history: ['Quiero Decoración de Interiores'],
+      current: 'Mejor Marketing Digital',
+      expectedCode: 'marketing_digital',
+      expectedName: 'Marketing Digital',
+    },
+    {
+      name: 'referential rejection',
+      history: ['Quiero Decoración de Interiores'],
+      current: 'No quiero ese curso',
+      expectedCode: null,
+      expectedName: null,
+    },
+    {
+      name: 'ambiguous new selection',
+      history: ['Quiero Decoración de Interiores'],
+      current: 'Quiero Fotografía',
+      expectedCode: null,
+      expectedName: null,
+    },
+  ])('enforces exact cross-turn SKU precedence for $name', async ({
+    history,
+    current,
+    expectedCode,
+    expectedName,
+  }) => {
+    const result = await claimBatch(input, {
+      ...buildDeps({
+        messagesResult: [{
+          id: 'm1',
+          conversation_seq: 1,
+          content: current,
+          created_at: '2026-08-11T12:00:00.000Z',
+          message_type: 'text',
+        }],
+        factsResult: facts({
+          recent_turns: history.map((content) => ({
+            direction: 'inbound' as const,
+            content,
+            created_at: '2026-08-11T11:59:00.000Z',
+          })),
+        }),
+      }),
+      business: {
+        load: vi.fn().mockResolvedValue(businessContextView({
+          offerings: [
+            businessOffering(
+              'decoracion_de_interiores',
+              'Decoración de Interiores',
+              'Diseño',
+            ),
+            businessOffering('marketing_digital', 'Marketing Digital', 'Marketing'),
+            businessOffering('fotografia_profesional', 'Fotografía Profesional', 'Fotografía'),
+            businessOffering(
+              'fotografia_celulares',
+              'Fotografía con Celulares para Tiendas Online',
+              'Fotografía',
+            ),
+          ],
+        })),
+      },
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.sales_context.offering_code).toBe(expectedCode);
+    expect(result.sales_context.course_of_interest).toBe(expectedName);
+  });
+
+  it('does not revive a historical SKU after a generic course correction', async () => {
+    const result = await claimBatch(input, {
+      ...buildDeps({
+        messagesResult: [{
+          id: 'm1',
+          conversation_seq: 1,
+          content: 'Cambiemos de curso.',
+          created_at: '2026-08-11T12:00:00.000Z',
+          message_type: 'text',
+        }],
+        factsResult: facts({
+          recent_turns: [{
+            direction: 'inbound',
+            content: 'Quiero Decoración de Interiores',
+            created_at: '2026-08-11T11:59:00.000Z',
+          }],
+        }),
+      }),
+      business: {
+        load: vi.fn().mockResolvedValue(businessContextView({
+          offerings: [businessOffering(
+            'decoracion_de_interiores',
+            'Decoración de Interiores',
+            'Diseño',
+          )],
+        })),
+      },
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.sales_context.offering_code).toBeNull();
+    expect(result.sales_context.course_of_interest).toBeNull();
   });
 
   it('preserves the exact historical SKU when homonymous courses exist', async () => {
