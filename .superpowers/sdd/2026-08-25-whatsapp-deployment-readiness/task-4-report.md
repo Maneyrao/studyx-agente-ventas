@@ -27,6 +27,14 @@ remain blocked pending explicit authorization.
 - Added a focused docs test for the required prerequisites, configuration
   names, gate ordering, eight scenarios, rollback order, no-PII evidence, and
   resolvable local runbook links.
+- Review fix: added presence-only coverage for `PAYMENT_LINK_12M`,
+  `PAYMENT_LINK_6M`, `PAYMENT_LINK_CONTADO`,
+  `GOOGLE_SHEETS_SPREADSHEET_ID`, and `GOOGLE_SHEETS_TAB_NAME`; no value is
+  documented or configured.
+- Review fix: added separate development and production Botpress deployment
+  procedures. Each requires its own explicit authorization and audit record,
+  begins with automation/canary/integration disabled, checks health and
+  readiness around `adk deploy`, and uses the existing disable-first rollback.
 
 ## TDD evidence
 
@@ -37,10 +45,14 @@ remain blocked pending explicit authorization.
 3. A TypeScript compatibility regression from dotAll regex flags was found by
    `npm run typecheck`; the test was corrected to use target-compatible regexes
    and the complete verification passed.
+4. Review RED: the expanded docs test failed for the five missing payment/Sheets
+   keys and missing development/production deploy procedures. GREEN: after
+   adding presence-only keys and ordered, auditable procedures, the docs test
+   passed 6/6.
 
 ## Verification
 
-- `npm test -- tests/unit/docs/whatsapp-go-live-runbook.test.ts tests/unit/botpress/whatsapp-channel.test.ts tests/unit/scripts/whatsapp-release-readiness.test.ts` — 57 passed.
+- `npm test -- tests/unit/docs/whatsapp-go-live-runbook.test.ts tests/unit/botpress/whatsapp-channel.test.ts tests/unit/scripts/whatsapp-release-readiness.test.ts` — 58 passed after the review fix.
 - `npm run typecheck` — passed.
 - `npm --prefix botpress-agent run typecheck` — passed.
 - `git diff --check` — passed.
@@ -59,3 +71,6 @@ remain blocked pending explicit authorization.
 - Evidence records IDs/hashes, counts, timestamps, statuses, and durations;
   it excludes raw customer data, phone numbers, tokens, payloads, and
   screenshots containing them.
+- The deployment procedures remain inert at the current 20/50 gate: they state
+  no external mutation until authorized and do not broaden the existing Task 5
+  or production authority.

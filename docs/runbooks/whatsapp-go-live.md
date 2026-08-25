@@ -33,17 +33,22 @@ CRON_SECRET
 GEMINI_API_KEY
 GOOGLE_SHEETS_CLIENT_EMAIL
 GOOGLE_SHEETS_PRIVATE_KEY
+GOOGLE_SHEETS_SPREADSHEET_ID
+GOOGLE_SHEETS_TAB_NAME
 PAYMENT_PROVIDER=stripe_test
 STRIPE_SECRET_KEY
 STRIPE_WEBHOOK_SECRET
 STRIPE_SUCCESS_URL
 STRIPE_CANCEL_URL
+PAYMENT_LINK_12M
+PAYMENT_LINK_6M
+PAYMENT_LINK_CONTADO
 BUSINESS_WORKSPACE_SLUG=studyx
 ```
 
 In Botpress, confirm the presence of `STUDYX_ORCHESTRATOR_KEY`, `STUDYX_SIGNING_SECRET`, `CRON_SECRET`, and exactly one `WHATSAPP_CANARY_PHONE_E164S` tester entry. Confirm non-secret configuration names and safe values by environment: `apiBaseUrl` is public HTTPS and points to the intended backend, `orchestratorKeyId` matches `ORCHESTRATOR_KEY_ID`, `automationEnabled` is off unless the authorized development tester is actively running, and `whatsappCanaryEnabled` is on only for that narrow canary.
 
-Stripe remains test-only: verify a signed event reaches `/api/webhooks/payments/stripe`, its `STRIPE_WEBHOOK_SECRET` verifies it, and the canonical payment state changes only for the expected test payment. Verify the Google Sheets projection separately: its outbox item is idempotently projected once using `GOOGLE_SHEETS_CLIENT_EMAIL` and `GOOGLE_SHEETS_PRIVATE_KEY`; the sheet is an operator projection, never the source of truth.
+Stripe remains test-only: verify a signed event reaches `/api/webhooks/payments/stripe`, its `STRIPE_WEBHOOK_SECRET` verifies it, and the canonical payment state changes only for the expected test payment. The canonical offer mapping resolves `PAYMENT_LINK_12M`, `PAYMENT_LINK_6M`, and `PAYMENT_LINK_CONTADO`; verify presence and the expected test-mode mapping without logging URLs. Verify the Google Sheets projection separately: its outbox item is idempotently projected once to `GOOGLE_SHEETS_SPREADSHEET_ID` / `GOOGLE_SHEETS_TAB_NAME` using `GOOGLE_SHEETS_CLIENT_EMAIL` and `GOOGLE_SHEETS_PRIVATE_KEY`; the sheet is an operator projection, never the source of truth.
 
 ## 2. Health, ready, and readiness commands
 
@@ -77,6 +82,28 @@ The sequence is deliberately written as gates. With the current 20/50 result, it
 7. **Production configuration gate.** Complete production secret/config verification by presence only: required Vercel and Botpress names, matching key IDs, Supabase migrations, catalog checksum, public HTTPS, Stripe test mode, Meta/Botpress integration status, and `/api/ready=ready`. A production code deploy with automation disabled is still a separate authorized action.
 8. **Production canary gate.** After a new production authorization, permit exactly one-number production canary, with the production integration disabled or canary-restricted until the tester is confirmed. Do not attach a customer-facing phone or enable Stripe live.
 9. **General availability gate.** The general availability approval requires a successful development 8/8, automation returned off, reviewed production dry-run, zero hard/security/idempotency failures, and an explicit new approval. This runbook never grants that approval.
+
+### Development Botpress deployment procedure
+
+This procedure is documentation only while R0 is 20/50: **no external mutation until authorized**. Before the deploy command, obtain a **separate explicit development deployment authorization**; the Sandbox/canary authorization alone is insufficient. Create an audit record with authorization reference, approver, operator, UTC start time, intended Botpress development environment, source commit, expected integration alias/version, and the assertion that no customer traffic is authorized.
+
+1. In the development environment, confirm the safe default readback: `automationEnabled=false`, `whatsappCanaryEnabled=false`, the WhatsApp integration is disabled, and no tester allowlist is used for sending.
+2. Run `npm --prefix botpress-agent run build` and `adk check --format json`. Against the already authorized public staging backend, run `/api/health` and `/api/ready`; record only status, trace ID, timestamp, and deployment/commit identifier.
+3. Reconfirm the selected environment is development in the Botpress control panel, then execute `adk deploy`. Record the command target/status and resulting deployment ID in the audit record; do not record configuration or secret values.
+4. Re-read the safe defaults and repeat `/api/health` and `/api/ready`. Do not enable integration, automation, canary, tester allowlist, or messages in this procedure. Those are a later, separately authorized development-canary action.
+
+**Rollback:** if the deployment is wrong or either readiness check fails, stop, keep `automationEnabled=false` and `whatsappCanaryEnabled=false`, leave the WhatsApp integration disabled, record the failure, and follow [Rollback](#6-rollback). Do not roll forward or send a probe message.
+
+### Production Botpress deployment procedure
+
+This procedure is also documentation only: **no external mutation until authorized**. Before the production deploy command, obtain a **separate explicit production deployment authorization**. It must be distinct from development, Sandbox, canary, general-availability, Meta, phone, and payment approvals. Create an audit record with authorization reference, approver, operator, UTC start time, intended Botpress production environment, source commit, reviewed dry-run identifier, and the assertion that no customer traffic is authorized.
+
+1. Confirm the reviewed command remains a preview only: `adk integrations copy --from dev --to prod --dry-run --format json`. In the production environment, confirm `automationEnabled=false`, `whatsappCanaryEnabled=false`, the WhatsApp integration is disabled, no production tester allowlist is active for sending, and Stripe remains test mode.
+2. Verify the production configuration by presence only and run `/api/health` and `/api/ready` against the selected public production backend. Record statuses, trace IDs, timestamps, source commit, and target; never record values, URLs, phone numbers, or credentials.
+3. Reconfirm the selected environment is production in the Botpress control panel, then execute `adk deploy`. Record the command target/status and resulting deployment ID in the audit record. This does not authorize integration enablement, automation, canary activation, a phone attachment, or a customer message.
+4. Re-read `automationEnabled=false` and `whatsappCanaryEnabled=false`, confirm the integration remains disabled, and repeat `/api/health` and `/api/ready`. A one-number production canary still requires its own subsequent authorization.
+
+**Rollback:** if the deployment is wrong or either readiness check fails, stop, keep `automationEnabled=false` and `whatsappCanaryEnabled=false`, leave the WhatsApp integration disabled, preserve the audit record, and follow [Rollback](#6-rollback). Do not roll forward or send a probe message.
 
 ## 4. Development canary — eight-scenario demo script
 

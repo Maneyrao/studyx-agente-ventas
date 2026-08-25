@@ -30,8 +30,10 @@ describe('WhatsApp go-live runbook', () => {
     const names = [
       'DATABASE_URL', 'ORCHESTRATOR_API_KEY', 'ORCHESTRATOR_KEY_ID', 'STUDYX_SIGNING_SECRET',
       'CRON_SECRET', 'GEMINI_API_KEY', 'GOOGLE_SHEETS_CLIENT_EMAIL', 'GOOGLE_SHEETS_PRIVATE_KEY',
+      'GOOGLE_SHEETS_SPREADSHEET_ID', 'GOOGLE_SHEETS_TAB_NAME',
       'PAYMENT_PROVIDER=stripe_test', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET',
       'STRIPE_SUCCESS_URL', 'STRIPE_CANCEL_URL', 'STUDYX_ORCHESTRATOR_KEY',
+      'PAYMENT_LINK_12M', 'PAYMENT_LINK_6M', 'PAYMENT_LINK_CONTADO',
       'WHATSAPP_CANARY_PHONE_E164S', 'apiBaseUrl', 'orchestratorKeyId',
       'automationEnabled', 'whatsappCanaryEnabled', 'Verify Token', 'Access Token',
       'Client Secret', 'Default Bot Phone Number ID', 'WABA ID',
@@ -45,6 +47,31 @@ describe('WhatsApp go-live runbook', () => {
     expect(runbook).toMatch(/approved\/test phone/i);
     expect(runbook).toMatch(/official.*Botpress.*integration/i);
     expect(runbook).toMatch(/Botpress\/Meta control panels/i);
+  });
+
+  it('defines separately authorized, auditable Botpress deploy procedures that begin disabled', () => {
+    const runbook = readRunbook();
+    const development = runbook.slice(
+      runbook.indexOf('### Development Botpress deployment procedure'),
+      runbook.indexOf('### Production Botpress deployment procedure'),
+    );
+    const production = runbook.slice(runbook.indexOf('### Production Botpress deployment procedure'));
+
+    for (const procedure of [development, production]) {
+      expect(procedure).toMatch(/separate explicit .*deployment authorization/i);
+      expectInOrder(procedure, [
+        'automationEnabled=false',
+        'whatsappCanaryEnabled=false',
+        '/api/health',
+        '/api/ready',
+        'adk deploy',
+        'Rollback',
+      ]);
+      expect(procedure).toMatch(/audit record/i);
+      expect(procedure).toMatch(/no external mutation until authorized/i);
+    }
+    expect(development).toMatch(/development environment/i);
+    expect(production).toMatch(/production environment/i);
   });
 
   it('orders the controlled promotion, deployment, and production-preview gates', () => {
