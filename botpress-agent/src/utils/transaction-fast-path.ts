@@ -312,17 +312,27 @@ export function matchPaymentSelectionFastPath(claimed: ClaimedTurn): Decision | 
     return null
   }
   const selectedCourse = claimed.sales_context.course_of_interest
+  const selectedOfferingCode = claimed.sales_context.offering_code
   const canonicalSelectedCourse = selectedCourse
     ? canonicalCourseFromValue(
         selectedCourse,
         claimed.business_context.offerings.map((offering) => offering.display_name),
       )
     : null
-  const offeringSku = canonicalSelectedCourse
-    ? claimed.business_context.offerings.find(
-        (offering) => normalizeCourse(offering.display_name) === normalizeCourse(canonicalSelectedCourse),
-      )?.code ?? null
+  const offeringByCode = selectedOfferingCode
+    ? claimed.business_context.offerings.find((offering) => (
+        offering.code === selectedOfferingCode
+        && (!selectedCourse
+          || normalizeCourse(offering.display_name) === normalizeCourse(selectedCourse))
+      )) ?? null
     : null
+  const offeringsByName = canonicalSelectedCourse
+    ? claimed.business_context.offerings.filter(
+        (offering) => normalizeCourse(offering.display_name) === normalizeCourse(canonicalSelectedCourse),
+      )
+    : []
+  const offeringSku = offeringByCode?.code
+    ?? (offeringsByName.length === 1 ? offeringsByName[0].code : null)
 
   const label = planCode === 'monthly_12'
     ? '12 cuotas mensuales'

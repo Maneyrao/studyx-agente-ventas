@@ -164,6 +164,7 @@ describe('claim response parity', () => {
     const salesContextSample: ClaimedTurn['sales_context'] = {
       mode: 'advising',
       course_of_interest: null,
+      offering_code: null,
       open_call_offer: null,
       accepted_call_offer: null,
       active_call: null,

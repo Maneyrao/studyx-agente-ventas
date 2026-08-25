@@ -26,9 +26,16 @@ function claimed(text: string, overrides: { name?: string | null; prices?: boole
       summary: { text: null, version: 0, updated_at: null }, selected_memories: [],
       long_term_memory_available: false, knowledge_base: [], knowledge_base_available: false,
       knowledge_base_dropped: 0, injection_suspected_count: 0 },
-    sales_context: { mode: 'advising', course_of_interest: 'Redes Informáticas', open_call_offer: null,
+    sales_context: { mode: 'advising', course_of_interest: 'Redes Informáticas', offering_code: 'redes-informaticas', open_call_offer: null,
       accepted_call_offer: null, active_call: null, allowed_actions: ['offer_call'], last_call_result: null },
+    catalog_resolution: { kind: 'no_catalog_intent' },
     deterministic_route: null,
+    diagnostics: {
+      timings: { claim_total_ms: 0, core_db_ms: 0, shared_embedding_ms: 0,
+        memory_search_ms: 0, knowledge_search_ms: 0, business_snapshot_ms: 0 },
+      counters: { embedding_calls: 0, memory_search_calls: 0, knowledge_search_calls: 0,
+        business_snapshot_calls: 0, catalog_calls: 0 },
+    },
     business_context_available: true,
     business_context: {
       as_of: '2026-08-13T00:00:00.000Z', prices_assertable: overrides.prices ?? true,
@@ -133,6 +140,23 @@ describe('transaction fast paths', () => {
     });
   });
 
+  it('keeps the durable canonical offering code when two courses share a display name', () => {
+    const turn = claimed('confirmo pago único');
+    turn.sales_context.course_of_interest = 'Inglés Inicial';
+    (turn.sales_context as typeof turn.sales_context & { offering_code: string | null })
+      .offering_code = 'ingles_sur';
+    const template = turn.business_context!.offerings[0];
+    turn.business_context!.offerings = [
+      { ...template, code: 'ingles_norte', display_name: 'Inglés Inicial', academy: 'Idiomas Norte' },
+      { ...template, code: 'ingles_sur', display_name: 'Inglés Inicial', academy: 'Idiomas Sur' },
+    ];
+
+    expect(matchPaymentSelectionFastPath(turn)?.business_action).toMatchObject({
+      type: 'send_payment_link',
+      offering_sku: 'ingles_sur',
+    });
+  });
+
   it('does not send a link for an ambiguous or unavailable payment choice', () => {
     expect(matchPaymentSelectionFastPath(claimed('pasame el link'))).toBeNull();
     expect(matchPaymentSelectionFastPath(claimed('12 cuotas o pago único'))).toBeNull();
@@ -188,8 +212,6 @@ describe('transaction fast paths', () => {
       created_at: '2026-08-13T00:00:00.000Z',
     }];
     turn.context.knowledge_base = [{
-      id: UUID,
-      document_id: UUID,
       source_uri: 'studyx://manual/redes',
       title: 'Manual StudyX — Redes Informáticas',
       content: 'Este diplomado cuenta con 16 clases, 8 exámenes parciales y 1 examen final.',

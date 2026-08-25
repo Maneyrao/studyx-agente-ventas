@@ -1,5 +1,10 @@
 import { evaluateTurnPolicy, type TurnPolicy } from '../domain/turn-policy';
 import type { BusinessContextView } from '../domain/business-context';
+import {
+  isCatalogRequestNeutral,
+  resolveCatalogRequest,
+  type CatalogResolution,
+} from '../domain/catalog-resolution';
 import { capRetrievedItems } from '../domain/retrieved-context';
 import {
   classifyBatchSalesSignal,
@@ -108,6 +113,8 @@ export interface ClaimBatchInput {
 export interface ClaimedSalesContext {
   readonly mode: 'advising' | 'awaiting_call_consent' | 'call_pending' | 'in_call' | 'post_call';
   readonly course_of_interest: string | null;
+  /** Stable catalog identity; display names are not unique across academies. */
+  readonly offering_code: string | null;
   readonly open_call_offer: { readonly decision_id: string; readonly expires_at: string } | null;
   /** Live offer consumed by this turn's explicit acceptance. */
   readonly accepted_call_offer: { readonly decision_id: string; readonly expires_at: string } | null;
@@ -154,6 +161,8 @@ export interface ClaimedTurn {
     readonly injection_suspected_count: number;
   };
   readonly sales_context: ClaimedSalesContext;
+  /** Current-batch catalog verdict from the same bounded business snapshot. */
+  readonly catalog_resolution: CatalogResolution;
   /** Backend-classified route consumed by Botpress; null means a model is required. */
   readonly deterministic_route:
     | 'greeting'
@@ -356,12 +365,72 @@ function buildSalesContext(input: {
       lastCallResult: input.callFacts.last_call_result,
     }),
     course_of_interest: null,
+    offering_code: null,
     open_call_offer: openCallOffer,
     accepted_call_offer: acceptedCallOffer,
     active_call: input.callFacts.active_call,
     allowed_actions: policyResult.allowedActions,
     last_call_result: input.callFacts.last_call_result,
   };
+}
+
+function resolveCatalogFromSnapshot(
+  messageTexts: readonly string[],
+  businessContext: BusinessContextView | null,
+): CatalogResolution {
+  return resolveCatalogRequest(
+    messageTexts,
+    businessContext === null
+      ? null
+      : {
+          offerings: businessContext.offerings,
+          offerings_truncated: businessContext.offerings_truncated,
+        },
+  );
+}
+
+/**
+ * Course state is derived, never guessed or persisted in a second state
+ * machine. The current batch wins. Only when it contains no catalog intent do
+ * we walk recent inbound turns backwards; an ambiguous, missing or unavailable
+ * newer request deliberately clears an older course instead of reviving it.
+ */
+function deriveCourseSelection(input: {
+  current: CatalogResolution;
+  currentMessageTexts: readonly string[];
+  recentTurns: readonly RecentTurn[];
+  businessContext: BusinessContextView | null;
+}): Pick<ClaimedSalesContext, 'course_of_interest' | 'offering_code'> {
+  if (input.current.kind === 'exact') {
+    return {
+      course_of_interest: input.current.displayName,
+      offering_code: input.current.offeringCode,
+    };
+  }
+  if (
+    input.current.kind !== 'no_catalog_intent'
+    || !isCatalogRequestNeutral(input.currentMessageTexts)
+    || input.businessContext === null
+  ) {
+    return { course_of_interest: null, offering_code: null };
+  }
+
+  for (const turn of input.recentTurns.slice().reverse()) {
+    if (turn.direction !== 'inbound') continue;
+    const historical = resolveCatalogFromSnapshot([turn.content], input.businessContext);
+    if (historical.kind === 'no_catalog_intent') {
+      if (isCatalogRequestNeutral(turn.content)) continue;
+      return { course_of_interest: null, offering_code: null };
+    }
+    if (historical.kind === 'exact') {
+      return {
+        course_of_interest: historical.displayName,
+        offering_code: historical.offeringCode,
+      };
+    }
+    return { course_of_interest: null, offering_code: null };
+  }
+  return { course_of_interest: null, offering_code: null };
 }
 
 export async function claimBatch(
@@ -438,7 +507,7 @@ export async function claimBatch(
 
   const query = retrievalQuery(batchMessages);
 
-  const salesContext = buildSalesContext({
+  const initialSalesContext = buildSalesContext({
     callFacts,
     // Each message is classified on its own, never joined into one string —
     // concatenation would blur an unambiguous short reply ("sí") into a
@@ -451,7 +520,7 @@ export async function claimBatch(
   const deterministic_route = deterministicRoute({
     batchMessages,
     policy,
-    salesContext,
+    salesContext: initialSalesContext,
   });
 
   // Commercial data is independent from vector retrieval, so start its one
@@ -625,6 +694,23 @@ export async function claimBatch(
   }
 
   await businessTask;
+  const catalog_resolution = resolveCatalogFromSnapshot(
+    batchMessages
+      .filter((message) => message.message_type === 'text')
+      .map((message) => message.content),
+    business_context,
+  );
+  const salesContext: ClaimedSalesContext = {
+    ...initialSalesContext,
+    ...deriveCourseSelection({
+      current: catalog_resolution,
+      currentMessageTexts: batchMessages
+        .filter((message) => message.message_type === 'text')
+        .map((message) => message.content),
+      recentTurns: facts.recent_turns,
+      businessContext: business_context,
+    }),
+  };
   timings.claim_total_ms = Math.max(0, monotonicNow() - claimStartedAt);
 
   log('orchestration.claim.timings', {
@@ -646,6 +732,7 @@ export async function claimBatch(
     knowledge_base_dropped,
     injection_suspected_count,
     business_context_available,
+    catalog_resolution: catalog_resolution.kind,
   });
 
   return {
@@ -684,6 +771,7 @@ export async function claimBatch(
       injection_suspected_count,
     },
     sales_context: salesContext,
+    catalog_resolution,
     deterministic_route,
     diagnostics: { timings, counters },
     business_context,
