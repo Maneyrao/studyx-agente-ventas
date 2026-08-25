@@ -122,26 +122,35 @@ async function adkJson(args) {
   }
 }
 
-function structuredEntries(status, collectionName) {
-  if (Array.isArray(status)) return status;
-  if (
-    status &&
-    typeof status === 'object' &&
-    Array.isArray(status[collectionName])
-  ) {
-    return status[collectionName];
-  }
-  return [];
+function adkTargetName(target) {
+  if (target === 'development') return 'dev';
+  if (target === 'production') return 'prod';
+  return null;
 }
 
-export function configuredSecret(status, name) {
-  const matches = structuredEntries(status, 'secrets').filter((entry) =>
+export function configuredSecret(status, name, target) {
+  const adkTarget = adkTargetName(target);
+  if (!adkTarget || !status || typeof status !== 'object' || status.success !== true) return false;
+  const entries = status[adkTarget];
+  if (!Array.isArray(entries)) return false;
+  const matches = entries.filter((entry) =>
     entry && typeof entry === 'object' && entry.name === name);
   return matches.length === 1 && matches[0].set === true;
 }
 
-export function availableWhatsAppIntegration(status) {
-  const matches = structuredEntries(status, 'integrations').filter((entry) =>
+export function availableWhatsAppIntegration(status, target) {
+  const adkTarget = adkTargetName(target);
+  if (
+    !adkTarget ||
+    !status ||
+    typeof status !== 'object' ||
+    status.ok !== true ||
+    status.target !== adkTarget ||
+    !status.data ||
+    typeof status.data !== 'object' ||
+    !Array.isArray(status.data.integrations)
+  ) return false;
+  const matches = status.data.integrations.filter((entry) =>
     entry && typeof entry === 'object' && entry.alias === 'whatsapp');
   return matches.length === 1 &&
     matches[0].name === 'whatsapp' &&
@@ -165,8 +174,12 @@ async function readBotpressState(target) {
     orchestratorKeyId: unwrapValue(orchestratorKeyId),
     automationEnabled: unwrapValue(automationEnabled),
     whatsappCanaryEnabled: unwrapValue(whatsappCanaryEnabled),
-    whatsappCanaryAllowlistConfigured: configuredSecret(secretStatus, 'WHATSAPP_CANARY_PHONE_E164S'),
-    whatsappDevelopmentIntegrationAvailable: availableWhatsAppIntegration(integrations),
+    whatsappCanaryAllowlistConfigured: configuredSecret(
+      secretStatus,
+      'WHATSAPP_CANARY_PHONE_E164S',
+      target,
+    ),
+    whatsappDevelopmentIntegrationAvailable: availableWhatsAppIntegration(integrations, target),
   };
 }
 

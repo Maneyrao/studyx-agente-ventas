@@ -72,3 +72,19 @@ Two metadata parsing defects were corrected with structured ADK fixtures:
   or wrong-version structured metadata fails closed.
 - Focal result after the fix: 44/44 tests passed. No metadata or secret value is
   included in readiness output.
+
+## Review round 2
+
+The parsers are now bound to the real ADK command envelopes and requested
+environment:
+
+- RED: `{success,dev,prod}` secret output and
+  `{ok,target,data:{integrations}}` integration output both failed their valid
+  development cases under the collection-only parser.
+- GREEN: `development` reads only `dev`; `production` reads only `prod`.
+  Integration metadata must additionally report the matching ADK target.
+- Failed commands, unknown or mismatched targets, malformed envelopes, unset
+  secrets, disabled integrations, missing aliases, and wrong versions all fail
+  closed.
+- Focal result after the envelope fix: 52/52 tests passed. The parser consumes
+  status booleans and metadata names only; readiness still emits no values.

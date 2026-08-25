@@ -51,51 +51,64 @@ function check(result: Awaited<ReturnType<typeof evaluateWhatsAppReleaseReadines
 }
 
 describe('Botpress structured readiness metadata', () => {
-  it('accepts a set required secret even though optional is false', () => {
-    const status = [{
-      name: 'WHATSAPP_CANARY_PHONE_E164S',
-      description: 'Canary tester allowlist',
-      optional: false,
-      set: true,
-    }];
+  it('reads the set canary secret from the real ADK development envelope', () => {
+    const status = {
+      success: true,
+      dev: [{
+        name: 'WHATSAPP_CANARY_PHONE_E164S',
+        description: 'Canary tester allowlist',
+        optional: false,
+        set: true,
+      }],
+      prod: [{
+        name: 'WHATSAPP_CANARY_PHONE_E164S',
+        description: 'Canary tester allowlist',
+        optional: false,
+        set: false,
+      }],
+    };
 
-    expect(configuredSecret(status, 'WHATSAPP_CANARY_PHONE_E164S')).toBe(true);
+    expect(configuredSecret(status, 'WHATSAPP_CANARY_PHONE_E164S', 'development')).toBe(true);
   });
 
   it.each([
-    [[{
-      name: 'WHATSAPP_CANARY_PHONE_E164S',
-      description: 'Canary tester allowlist',
-      optional: false,
-      set: false,
-    }]],
-    [[{
-      name: 'ANOTHER_SECRET',
-      description: 'Unrelated',
-      optional: false,
-      set: true,
-    }]],
-  ])('rejects an unset or missing canary secret', (status) => {
-    expect(configuredSecret(status, 'WHATSAPP_CANARY_PHONE_E164S')).toBe(false);
+    [{ success: false, dev: [], prod: [] }, 'development'],
+    [{ success: true, dev: [{ name: 'WHATSAPP_CANARY_PHONE_E164S', optional: false, set: false }], prod: [] }, 'development'],
+    [{ success: true, dev: [{ name: 'ANOTHER_SECRET', optional: false, set: true }], prod: [] }, 'development'],
+    [{ success: true, dev: [{ name: 'WHATSAPP_CANARY_PHONE_E164S', optional: false, set: true }], prod: [] }, 'production'],
+    [{ success: true, dev: [], prod: [] }, 'staging'],
+    [{ success: true, dev: 'malformed', prod: [] }, 'development'],
+  ])('rejects failed, unset, missing, wrong-target, or malformed secret envelopes', (status, target) => {
+    expect(configuredSecret(status, 'WHATSAPP_CANARY_PHONE_E164S', target)).toBe(false);
   });
 
-  it('accepts only the enabled pinned official WhatsApp integration', () => {
-    const status = [{
-      alias: 'whatsapp',
-      name: 'whatsapp',
-      version: '4.18.5',
-      enabled: true,
-    }];
+  it('reads the pinned enabled integration from the real ADK development envelope', () => {
+    const status = {
+      ok: true,
+      target: 'dev',
+      data: {
+        integrations: [{
+          alias: 'whatsapp',
+          name: 'whatsapp',
+          version: '4.18.5',
+          enabled: true,
+        }],
+      },
+    };
 
-    expect(availableWhatsAppIntegration(status)).toBe(true);
+    expect(availableWhatsAppIntegration(status, 'development')).toBe(true);
   });
 
   it.each([
-    [[{ alias: 'whatsapp', name: 'whatsapp', version: '4.18.5', enabled: false }]],
-    [[{ alias: 'telegram', name: 'telegram', version: '1.0.0', enabled: true }]],
-    [[{ alias: 'whatsapp', name: 'whatsapp', version: '4.19.0', enabled: true }]],
-  ])('rejects disabled, missing, or wrong-version WhatsApp metadata', (status) => {
-    expect(availableWhatsAppIntegration(status)).toBe(false);
+    [{ ok: false, target: 'dev', data: { integrations: [] } }, 'development'],
+    [{ ok: true, target: 'prod', data: { integrations: [{ alias: 'whatsapp', name: 'whatsapp', version: '4.18.5', enabled: true }] } }, 'development'],
+    [{ ok: true, target: 'dev', data: { integrations: [{ alias: 'whatsapp', name: 'whatsapp', version: '4.18.5', enabled: false }] } }, 'development'],
+    [{ ok: true, target: 'dev', data: { integrations: [{ alias: 'telegram', name: 'telegram', version: '1.0.0', enabled: true }] } }, 'development'],
+    [{ ok: true, target: 'dev', data: { integrations: [{ alias: 'whatsapp', name: 'whatsapp', version: '4.19.0', enabled: true }] } }, 'development'],
+    [{ ok: true, target: 'dev', data: { integrations: 'malformed' } }, 'development'],
+    [{ ok: true, target: 'dev' }, 'development'],
+  ])('rejects failed, wrong-target, disabled, missing, wrong-version, or malformed integration envelopes', (status, target) => {
+    expect(availableWhatsAppIntegration(status, target)).toBe(false);
   });
 });
 
