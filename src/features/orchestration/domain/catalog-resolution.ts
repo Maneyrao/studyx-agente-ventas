@@ -100,6 +100,9 @@ const EXPLICIT_COURSE_NOUN_PATTERN =
 const NON_CATALOG_PROGRAM_CONTEXT_PATTERN =
   /(?:\b(?:sin (?:haber )?(?:usado|usar)|nunca (?:haber )?(?:usado|usar|use))\b.{0,48}\bprograma de\b|\b(?:necesito|hace falta)\b.{0,24}\b(?:instalar|usar|tener instalado)\b.{0,24}\bprograma de\b)/u;
 
+const EXPLICIT_PROGRAM_INFORMATION_REQUEST_PATTERN =
+  /\b(?:necesito|quiero|busco|solicito)\b.{0,24}\b(?:informacion|info|datos|detalles)\b.{0,24}\b(?:del?|sobre(?: el)?)\s+programa de\b/u;
+
 const NEGATED_OFFERING_PREFIX_PATTERN =
   /(?:^|\s)(?:no quiero|no me interesa|no prefiero|no elijo|ya no quiero|descarto|cancelo)(?:\s+(?:hacer|estudiar|aprender|el|la|un|una|curso|programa|de)){0,4}\s*$/u;
 
@@ -393,7 +396,13 @@ function typoMatches(
 
 function hasCatalogIntent(messages: readonly string[]): boolean {
   return messages.some((message) => (
-    (CATALOG_INTENT_PATTERN.test(message) && !NON_CATALOG_PROGRAM_CONTEXT_PATTERN.test(message))
+    (
+      CATALOG_INTENT_PATTERN.test(message)
+      && (
+        !NON_CATALOG_PROGRAM_CONTEXT_PATTERN.test(message)
+        || EXPLICIT_PROGRAM_INFORMATION_REQUEST_PATTERN.test(message)
+      )
+    )
     || (
       BARE_COURSE_SELECTION_PATTERN.test(message)
       && !(

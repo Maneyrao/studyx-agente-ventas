@@ -129,6 +129,9 @@ const EXPLICIT_COURSE_NOUN_PATTERN =
 const NON_CATALOG_PROGRAM_CONTEXT_PATTERN =
   /(?:\b(?:sin (?:haber )?(?:usado|usar)|nunca (?:haber )?(?:usado|usar|use))\b.{0,48}\bprograma de\b|\b(?:necesito|hace falta)\b.{0,24}\b(?:instalar|usar|tener instalado)\b.{0,24}\bprograma de\b)/u
 
+const EXPLICIT_PROGRAM_INFORMATION_REQUEST_PATTERN =
+  /\b(?:necesito|quiero|busco|solicito)\b.{0,24}\b(?:informacion|info|datos|detalles)\b.{0,24}\b(?:del?|sobre(?: el)?)\s+programa de\b/u
+
 /**
  * "Lo más parecido", "algo similar", "¿qué alternativas tienen?" — a request
  * for the closest offer to something the catalog does not have. Left to the
@@ -212,7 +215,13 @@ function containsCatalogIntent(claimed: ClaimedTurn): boolean {
   return claimed.context.batch_messages.some((message) => {
     if (message.message_type !== 'text') return false
     const normalized = normalizedSignalText(message.content)
-    return (CATALOG_INTENT_PATTERN.test(normalized) && !NON_CATALOG_PROGRAM_CONTEXT_PATTERN.test(normalized))
+    return (
+      CATALOG_INTENT_PATTERN.test(normalized)
+      && (
+        !NON_CATALOG_PROGRAM_CONTEXT_PATTERN.test(normalized)
+        || EXPLICIT_PROGRAM_INFORMATION_REQUEST_PATTERN.test(normalized)
+      )
+    )
       || (
         BARE_COURSE_SELECTION_PATTERN.test(normalized)
         && !(

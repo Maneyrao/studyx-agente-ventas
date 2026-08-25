@@ -650,6 +650,30 @@ describe('routeCommercialTurn', () => {
     expect(route.origin).not.toBe('catalog_unavailable');
   });
 
+  it('prioritizes a later explicit unknown-program request over experience context', () => {
+    const text = 'Nunca usé un programa de diseño; necesito información del programa de Astronomía';
+    const route = routeCommercialTurn({
+      automationEnabled: true,
+      claimed: claimedTurn({
+        texts: [text],
+        courseOfInterest: null,
+        offeringCode: null,
+        catalogResolution: {
+          kind: 'not_found',
+          requestedText: text,
+          requestedArea: null,
+          alternativeCodes: [],
+        },
+      }),
+    });
+
+    expect(route).toMatchObject({
+      kind: 'deterministic',
+      origin: 'catalog_not_found',
+      reason: 'DETERMINISTIC_CATALOG_NOT_FOUND',
+    });
+  });
+
   it('preserves the direct-call request semantics already authorized by the claim', () => {
     const route = routeCommercialTurn({
       automationEnabled: true,

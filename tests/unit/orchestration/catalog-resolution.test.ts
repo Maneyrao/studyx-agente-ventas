@@ -78,6 +78,16 @@ describe('resolveCatalogRequest', () => {
     expect(isCatalogRequestNeutral(text)).toBe(false);
   });
 
+  it('lets a later explicit unknown-program request outrank experience context in the same message', () => {
+    const text = 'Nunca usé un programa de diseño; necesito información del programa de Astronomía';
+
+    expect(resolveCatalogRequest(text, snapshot([MARKETING]))).toMatchObject({
+      kind: 'not_found',
+      requestedText: text,
+    });
+    expect(isCatalogRequestNeutral(text)).toBe(false);
+  });
+
   it('resolves a descriptive "el de" reply against two previously presented course names', () => {
     expect(resolveCatalogRequest(
       'El de sacar fotos de productos con el celu.',
