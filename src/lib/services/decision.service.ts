@@ -1,3 +1,4 @@
+import type { ConversationChannel } from '@/lib/contracts/channel';
 import { withSerializableTransaction } from '@/lib/db/transaction';
 import { sql } from '@/lib/db/orchestrator';
 import { jsonbParam } from '@/lib/db/json';
@@ -118,7 +119,7 @@ interface TurnPolicyRow extends Message {
   consent_status: 'unknown' | 'granted' | 'revoked' | null;
   provider: string;
   integration_id: string;
-  channel: 'whatsapp' | 'voice';
+  channel: ConversationChannel;
   batch_id: string | null;
 }
 

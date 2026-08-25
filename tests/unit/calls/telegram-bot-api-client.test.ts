@@ -56,3 +56,104 @@ describe('TelegramBotApiClient', () => {
     expect(String(fetchImpl.mock.calls[0][0])).toContain('/answerCallbackQuery');
   });
 });
+
+/**
+ * Feature 007 — the classification the outbound send path relies on.
+ *
+ * These assert on `error_code`, never on `description`: Telegram publishes no
+ * error-string contract, so a wording change must not alter behaviour.
+ */
+describe('TelegramBotApiClient error classification', () => {
+  const respond = (status: number, body: Record<string, unknown>) =>
+    vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(body), {
+      status, headers: { 'content-type': 'application/json' },
+    }));
+
+  const send = (fetchImpl: ReturnType<typeof respond>) =>
+    new TelegramBotApiClient({ token: 't', fetchImpl, timeoutMs: 100 })
+      .sendMessage({ chatId: '123', text: 'hola' });
+
+  /** Runs a send expected to reject, and hands back the typed provider error. */
+  const failure = async (fetchImpl: ReturnType<typeof respond>): Promise<TelegramApiError> => {
+    try {
+      await send(fetchImpl);
+    } catch (error) {
+      return error as TelegramApiError;
+    }
+    throw new Error('expected the send to reject');
+  };
+
+  it('treats a blocked bot (403) as permanent and retires the identity', async () => {
+    const error = await failure(respond(403, {
+      ok: false, error_code: 403, description: 'Forbidden: bot was blocked by the user',
+    }));
+    expect(error).toBeInstanceOf(TelegramApiError);
+    expect(error.kind).toBe('permanent');
+    expect(error.retryable).toBe(false);
+    expect(error.retiresIdentity).toBe(true);
+  });
+
+  it('treats an unknown chat (400) as permanent', async () => {
+    const error = await failure(respond(400, {
+      ok: false, error_code: 400, description: 'Bad Request: chat not found',
+    }));
+    expect(error.kind).toBe('permanent');
+    expect(error.retiresIdentity).toBe(true);
+  });
+
+  // The one 400 that is worth retrying: the same message succeeds against the
+  // new chat id, so retiring the identity here would lose a reachable contact.
+  it('treats a supergroup migration (400 + migrate_to_chat_id) as transient', async () => {
+    const error = await failure(respond(400, {
+      ok: false, error_code: 400, description: 'Bad Request: group chat was upgraded',
+      parameters: { migrate_to_chat_id: -100123 },
+    }));
+    expect(error.kind).toBe('transient');
+    expect(error.retryable).toBe(true);
+    expect(error.migrateToChatId).toBe('-100123');
+    expect(error.retiresIdentity).toBe(false);
+  });
+
+  it('treats a bad token (401) as a configuration fault, not the contact’s', async () => {
+    const error = await failure(respond(401, { ok: false, error_code: 401, description: 'Unauthorized' }));
+    expect(error.kind).toBe('config_error');
+    expect(error.retiresIdentity).toBe(false);
+  });
+
+  it('treats a provider fault (5xx) as transient', async () => {
+    const error = await failure(respond(500, { ok: false, error_code: 500, description: 'Internal Server Error' }));
+    expect(error.kind).toBe('transient');
+    expect(error.retryable).toBe(true);
+  });
+
+  it('carries retry_after on a rate limit', async () => {
+    const error = await failure(respond(429, {
+      ok: false, error_code: 429, description: 'Too Many Requests: retry after 7',
+      parameters: { retry_after: 7 },
+    }));
+    expect(error.code).toBe('TELEGRAM_RATE_LIMITED');
+    expect(error.kind).toBe('transient');
+    expect(error.retryAfterSeconds).toBe(7);
+  });
+
+  // A timeout proves nothing: the message may already have reached the user.
+  // Collapsing it into a permanent failure would invite a duplicate resend.
+  it('reports a timeout as ambiguous, never as permanent', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockRejectedValue(new Error('aborted'));
+    await expect(send(fetchImpl)).rejects.toBeInstanceOf(TelegramAmbiguousError);
+  });
+
+  it('omits the inline keyboard when no callbacks are given', async () => {
+    const fetchImpl = respond(200, { ok: true, result: { message_id: 7 } });
+    await send(fetchImpl);
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).not.toHaveProperty('reply_markup');
+  });
+
+  it('still attaches the keyboard when callbacks are given', async () => {
+    const fetchImpl = respond(200, { ok: true, result: { message_id: 7 } });
+    await new TelegramBotApiClient({ token: 't', fetchImpl, timeoutMs: 100 }).sendMessage({
+      chatId: '1', text: 'x', correctCallbackData: 'a', incorrectCallbackData: 'b',
+    });
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).toHaveProperty('reply_markup');
+  });
+});

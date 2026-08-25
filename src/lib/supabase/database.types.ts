@@ -12,7 +12,7 @@ export interface Database {
           id: string;
           phone: string;
           status: 'prospecto' | 'cliente' | 'inactivo';
-          channel_origin: 'whatsapp' | 'voice';
+          channel_origin: 'whatsapp' | 'voice' | 'telegram';
           opted_in_at: string;
           name: string | null;
           email: string | null;

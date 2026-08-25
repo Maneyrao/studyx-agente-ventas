@@ -175,7 +175,7 @@ stateDiagram-v2
 | Cero handoff humano | ✅ | schema productor + política + CHECK | `decision-v3.test.ts` |
 | Acciones comerciales deshabilitadas | ✅ | lista blanca de dos acciones observacionales | `decision-v3-policy.test.ts` |
 | Evals conversacionales | ⛔ EXT-04 | `evals/*.eval.ts` escritas | requieren la integración `chat` |
-| Piloto real por Telegram | ⛔ EXT-05 | adapter listo | requiere `adk integrations add telegram` |
+| Piloto real por Telegram | 🟡 desbloqueado | entrega directa desde el orquestador (`src/features/messaging/`) | EXT-05 ya no aplica: no pasa por Botpress. Falta la corrida manual con el bot token real |
 | Worker de outbound (reenvío físico) | ❌ | — | ver «no implementado» |
 | Audio detrás de un puerto | ❌ | `transcribeAudio` se llama directo | — |
 | Pruebas de carga | ❌ | — | — |
@@ -208,3 +208,33 @@ bash scripts/verify-native-postgres-loop.sh   # equivale a test:db:reset-loop
 ```
 
 `supabase db lint` y `supabase test db` (pgTAP) siguen bloqueados por Docker.
+
+
+## Entrega outbound directa (feature 007)
+
+El orquestador entrega los mensajes salientes por sí mismo, en lugar de encolarlos
+para que un agente conversacional externo los entregue y reporte después. Es lo que
+permite que un flujo en vivo —una llamada de voz en curso— sepa si el mensaje salió
+antes de afirmarlo.
+
+| Pieza | Ubicación |
+|---|---|
+| Puerto de canal | `src/features/messaging/ports/message-channel.ts` |
+| Adapters | `adapters/telegram-message.channel.ts`, `adapters/whatsapp-cloud.channel.ts` |
+| Cliente Bot API | `adapters/telegram-bot-api.client.ts` (movido desde `features/calls/`) |
+| Caso de uso | `application/send-outbound-message.ts` |
+| Dominio puro | `domain/{eligibility,channel-selection,delivery-outcome}.ts` |
+| Identidades y permisos | `adapters/postgres-channel-identity-store.ts` |
+
+Decisiones que conviene no revertir sin leer `specs/008-direct-outbound-delivery/`:
+
+- **El éxito se registra como `submitted`, no `delivered`.** Los proveedores confirman
+  aceptación, no entrega al dispositivo, y no se procesan callbacks de estado.
+- **Un envío ambiguo (timeout, corte de red) nunca se reporta como enviado.** Queda
+  `failed_retryable` bajo la misma clave de idempotencia.
+- **La garantía de un solo envío son dos mecanismos, no uno**: el `UNIQUE (provider,
+  integration_id, idempotency_key)` impide una segunda fila, y el lease impide que dos
+  procesos envíen contra la misma fila.
+- **El gate de consentimiento compone `evaluateTurnPolicy()`**, no lo reimplementa.
+- **El candado `sandbox_identities` se verifica antes de contactar a cualquier proveedor.**
+- **No hay ruta HTTP**: el caso de uso es interno hasta que la integración con Retell lo consuma.

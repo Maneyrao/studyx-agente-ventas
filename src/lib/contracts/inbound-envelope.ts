@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const SourceSchema = z.literal('botpress');
-export const ChannelSchema = z.enum(['emulator', 'whatsapp']);
+export const ChannelSchema = z.enum(['emulator', 'whatsapp', 'telegram']);
 export const MessageTypeSchema = z.enum(['text', 'audio', 'image', 'unsupported']);
 
 export const AudioReferenceSchema = z.object({
