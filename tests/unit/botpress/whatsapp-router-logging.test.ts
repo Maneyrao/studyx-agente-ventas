@@ -49,7 +49,8 @@ const successMessage = {
 };
 
 function capturedRecords(info: ReturnType<typeof vi.spyOn>): Array<Record<string, unknown>> {
-  return info.mock.calls.map(([value]) => JSON.parse(String(value)) as Record<string, unknown>);
+  return info.mock.calls.map((call: unknown[]) =>
+    JSON.parse(String(call[0])) as Record<string, unknown>);
 }
 
 function expectSecretsAbsent(records: Array<Record<string, unknown>>, secrets: string[]): void {

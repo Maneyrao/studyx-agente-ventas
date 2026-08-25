@@ -1,11 +1,62 @@
 import type { ChannelAdapter, ChannelAdapterContext, ChannelAdapterResult } from './shared/normalize'
 import { resolveIntegrationId } from './shared/normalize'
+import { E164_PATTERN } from './shared/normalize'
 import { buildWhatsAppEnvelope } from './shared/whatsapp-envelope'
 
 const WHATSAPP_CHANNEL = 'whatsapp.channel'
 const UNSUPPORTED_MEDIA_TYPES = new Set(['image', 'audio', 'video', 'file'])
 const UNSUPPORTED_MEDIA_MARKER = '[whatsapp_media_no_soportado]'
 const UNSUPPORTED_TYPE_MARKER = '[whatsapp_tipo_no_soportado]'
+
+export type WhatsAppCanaryBlockReason =
+  | 'AUTOMATION_DISABLED'
+  | 'WHATSAPP_CANARY_DISABLED'
+  | 'WHATSAPP_CANARY_ALLOWLIST_INVALID'
+  | 'WHATSAPP_CANARY_PHONE_NOT_ALLOWED'
+
+type WhatsAppCanarySendInput = {
+  automationEnabled: boolean
+  whatsappCanaryEnabled: boolean
+  allowlist: string | undefined
+  phoneE164: string
+  log?: (event: Record<string, unknown>) => void
+}
+
+export type WhatsAppCanarySendDecision =
+  | { allowed: true; reason: null }
+  | { allowed: false; reason: WhatsAppCanaryBlockReason }
+
+/**
+ * Final, fail-closed WhatsApp egress authorization. The canary is deliberately
+ * limited to one strict E.164 tester and returns/logs reason codes only.
+ */
+export function evaluateWhatsAppCanarySend(
+  input: WhatsAppCanarySendInput,
+): WhatsAppCanarySendDecision {
+  let decision: WhatsAppCanarySendDecision
+  if (!input.automationEnabled) {
+    decision = { allowed: false, reason: 'AUTOMATION_DISABLED' }
+  } else if (!input.whatsappCanaryEnabled) {
+    decision = { allowed: false, reason: 'WHATSAPP_CANARY_DISABLED' }
+  } else if (
+    typeof input.allowlist !== 'string' ||
+    !E164_PATTERN.test(input.allowlist) ||
+    input.allowlist.startsWith('+999')
+  ) {
+    decision = { allowed: false, reason: 'WHATSAPP_CANARY_ALLOWLIST_INVALID' }
+  } else if (input.phoneE164 !== input.allowlist) {
+    decision = { allowed: false, reason: 'WHATSAPP_CANARY_PHONE_NOT_ALLOWED' }
+  } else {
+    decision = { allowed: true, reason: null }
+  }
+
+  input.log?.({
+    event: 'studyx.whatsapp_canary_gate',
+    allowed: decision.allowed,
+    reason: decision.reason,
+  })
+  return decision
+}
 
 type IncomingWhatsAppMessage = {
   id: string

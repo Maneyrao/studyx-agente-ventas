@@ -28,6 +28,7 @@ import { routeCommercialTurn } from '../utils/commercial-router'
 import { verifyAuthorizedEgressPortable } from '../utils/authorized-egress'
 import { generateGeminiDecision } from '../lib/decision/gemini-direct'
 import { generateGroqDecision } from '../lib/decision/groq-direct'
+import { evaluateWhatsAppCanarySend } from '../channels/whatsapp.channel'
 
 /**
  * One inbound turn, end to end.
@@ -685,8 +686,22 @@ export const processInboundTurn = new Workflow({
     try {
       delivery = await step(
         'submit-outbound-to-botpress',
-        () =>
-          client.createMessage({
+        () => {
+          if (input.channel === 'whatsapp') {
+            const canary = evaluateWhatsAppCanarySend({
+              automationEnabled: configuration.automationEnabled,
+              whatsappCanaryEnabled: configuration.whatsappCanaryEnabled === true,
+              allowlist: secrets.WHATSAPP_CANARY_PHONE_E164S,
+              phoneE164: input.phone_e164,
+              log: (event) => console.info(JSON.stringify(event)),
+            })
+            if (!canary.allowed) {
+              const blocked = new Error(canary.reason)
+              blocked.name = canary.reason
+              throw blocked
+            }
+          }
+          return client.createMessage({
             conversationId: input.botpress_conversation_id,
             // Un mensaje del bot se crea con el userId del BOT (así lo hace el
             // propio runtime en conversation.send). Con el userId del contacto
@@ -699,7 +714,8 @@ export const processInboundTurn = new Workflow({
               studyxOutboundId: committed.outbound!.id,
               studyxTraceId: input.trace_id,
             },
-          }) as Promise<{ message: { id: string } }>,
+          }) as Promise<{ message: { id: string } }>
+        },
         { maxAttempts: 1 }
       )
       timings.send_ms = Date.now() - sendStartedAt

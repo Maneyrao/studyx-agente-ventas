@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { whatsappChannel } from '../../../botpress-agent/src/channels/whatsapp.channel';
+import {
+  evaluateWhatsAppCanarySend,
+  whatsappChannel,
+} from '../../../botpress-agent/src/channels/whatsapp.channel';
 import type { ChannelAdapterContext } from '../../../botpress-agent/src/channels/shared/normalize';
 
 const conversation = {
@@ -109,5 +112,76 @@ describe('whatsappChannel.toEnvelope', () => {
       ctx({ message: { ...incomingText, direction: 'outgoing' } }),
     );
     expect(result).toEqual({ kind: 'skip', reason: 'UNSUPPORTED_MESSAGE' });
+  });
+});
+
+describe('evaluateWhatsAppCanarySend', () => {
+  const tester = '+5491112345678';
+  const other = '+5491198765432';
+
+  it('suppresses every official WhatsApp send while global automation is disabled', () => {
+    expect(evaluateWhatsAppCanarySend({
+      automationEnabled: false,
+      whatsappCanaryEnabled: true,
+      allowlist: tester,
+      phoneE164: tester,
+    })).toEqual({ allowed: false, reason: 'AUTOMATION_DISABLED' });
+  });
+
+  it('allows only an exact E.164 match for the single configured tester', () => {
+    const base = {
+      automationEnabled: true,
+      whatsappCanaryEnabled: true,
+      allowlist: tester,
+    };
+
+    expect(evaluateWhatsAppCanarySend({ ...base, phoneE164: tester })).toEqual({
+      allowed: true,
+      reason: null,
+    });
+    expect(evaluateWhatsAppCanarySend({ ...base, phoneE164: other })).toEqual({
+      allowed: false,
+      reason: 'WHATSAPP_CANARY_PHONE_NOT_ALLOWED',
+    });
+    expect(evaluateWhatsAppCanarySend({ ...base, phoneE164: tester.slice(1) })).toEqual({
+      allowed: false,
+      reason: 'WHATSAPP_CANARY_PHONE_NOT_ALLOWED',
+    });
+  });
+
+  it.each([undefined, '', 'not-a-phone', '+999123456789', `${tester},${other}`])(
+    'fails closed for malformed, empty, synthetic, or multi-tester allowlist %s',
+    (allowlist) => {
+      expect(evaluateWhatsAppCanarySend({
+        automationEnabled: true,
+        whatsappCanaryEnabled: true,
+        allowlist,
+        phoneE164: tester,
+      })).toEqual({ allowed: false, reason: 'WHATSAPP_CANARY_ALLOWLIST_INVALID' });
+    },
+  );
+
+  it('fails closed when the canary switch is disabled', () => {
+    expect(evaluateWhatsAppCanarySend({
+      automationEnabled: true,
+      whatsappCanaryEnabled: false,
+      allowlist: tester,
+      phoneE164: tester,
+    })).toEqual({ allowed: false, reason: 'WHATSAPP_CANARY_DISABLED' });
+  });
+
+  it('never returns or logs the tested phone or allowlist value', () => {
+    const logged: string[] = [];
+    const result = evaluateWhatsAppCanarySend({
+      automationEnabled: true,
+      whatsappCanaryEnabled: true,
+      allowlist: tester,
+      phoneE164: other,
+      log: (event) => logged.push(JSON.stringify(event)),
+    });
+    const serialized = JSON.stringify({ result, logged });
+
+    expect(serialized).not.toContain(tester);
+    expect(serialized).not.toContain(other);
   });
 });
