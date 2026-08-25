@@ -1,7 +1,14 @@
-# Runbook — piloto de Telegram
+# Runbook histórico — piloto de Telegram
 
-Telegram es el **único** canal real del piloto. WhatsApp queda fuera por
-completo de las fases 4–8.
+> **Estado histórico, no autoridad de activación.** Este documento conserva el
+> piloto de Telegram y sus decisiones de aislamiento. No autoriza una
+> integración, despliegue ni mensaje externo. La preparación vigente para el
+> demo controlado de WhatsApp Sandbox está en
+> [`runbooks/whatsapp-go-live.md`](runbooks/whatsapp-go-live.md): la regresión
+> actual es 20/50 y Task 5 permanece bloqueada hasta autorización explícita.
+
+Telegram fue el único canal real de este piloto histórico. WhatsApp quedó fuera
+de las fases 4–8 que documenta esta guía.
 
 Telegram es un adaptador de prueba, nada más. Ninguna regla comercial depende
 de él: internamente el recorrido es idéntico al que después usará WhatsApp.
