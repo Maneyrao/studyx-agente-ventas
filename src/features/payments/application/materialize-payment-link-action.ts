@@ -1,11 +1,12 @@
 import {
   PAYMENT_PLAN_PRESENTATIONS,
   PaymentLinkBlock,
+  type PaymentPlanCode,
   SendPaymentLinkAction,
   isPaymentPlanCode,
   stripUnauthorizedUrls,
 } from '../domain/payment-link';
-import { PolicyBatchMessage, derivePaymentChoiceFromBatch } from '../domain/payment-choice-policy';
+import { PolicyBatchMessage, classifyCurrentPaymentIntent } from '../domain/payment-choice-policy';
 import { PaymentLinkResolver } from '../adapters/config-payment-link.resolver';
 
 export type { SendPaymentLinkAction };
@@ -13,8 +14,8 @@ export type { SendPaymentLinkAction };
 /**
  * Every refusal reason the spec requires the action to fail closed on:
  * blocked contact, revoked consent, no/ambiguous explicit choice, a
- * plan_code that does not match that choice, an unknown offering, or
- * incomplete link configuration. None of these ever produce a link.
+ * plan_code that does not match that choice, a missing/unknown offering,
+ * or incomplete link configuration. None of these ever produce a link.
  */
 export type PaymentLinkRefusalReason =
   | 'CONTACT_BLOCKED'
@@ -22,6 +23,8 @@ export type PaymentLinkRefusalReason =
   | 'INVALID_PLAN_CODE'
   | 'AMBIGUOUS_OR_ABSENT_CHOICE'
   | 'PLAN_MISMATCH'
+  | 'OFFERING_REQUIRED'
+  | 'OFFERING_MISMATCH'
   | 'OFFERING_NOT_FOUND'
   | 'LINK_CONFIG_MISSING';
 
@@ -36,6 +39,10 @@ export interface MaterializePaymentLinkBusinessSnapshot {
 
 export interface MaterializePaymentLinkInput {
   readonly action: SendPaymentLinkAction;
+  /** Exact offering selected by the backend claim; never supplied by the model. */
+  readonly authorizedOfferingCode: string | null;
+  /** Backend-derived plan from a prior explicitly deferred selection. */
+  readonly deferredPlanCode?: PaymentPlanCode | null;
   /** The CURRENT batch only — never recent_turns, summary or memory. */
   readonly batchMessages: readonly PolicyBatchMessage[];
   /** The canonical business snapshot passed in as data; never queried here. */
@@ -73,7 +80,16 @@ export type MaterializePaymentLinkResult =
 export function materializePaymentLinkAction(
   input: MaterializePaymentLinkInput
 ): MaterializePaymentLinkResult {
-  const { action, batchMessages, businessSnapshot, contact, modelResponseText, resolver } = input;
+  const {
+    action,
+    authorizedOfferingCode,
+    deferredPlanCode,
+    batchMessages,
+    businessSnapshot,
+    contact,
+    modelResponseText,
+    resolver,
+  } = input;
 
   if (contact.blocked) {
     return { ok: false, reason: 'CONTACT_BLOCKED' };
@@ -85,7 +101,12 @@ export function materializePaymentLinkAction(
     return { ok: false, reason: 'INVALID_PLAN_CODE' };
   }
 
-  const allowedPlan = derivePaymentChoiceFromBatch(batchMessages);
+  const currentIntent = classifyCurrentPaymentIntent(batchMessages);
+  const allowedPlan = currentIntent.kind === 'direct'
+    ? currentIntent.planCode
+    : currentIntent.kind === 'resume'
+      ? deferredPlanCode ?? null
+      : null;
   if (allowedPlan === null) {
     return { ok: false, reason: 'AMBIGUOUS_OR_ABSENT_CHOICE' };
   }
@@ -96,11 +117,17 @@ export function materializePaymentLinkAction(
     return { ok: false, reason: 'PLAN_MISMATCH' };
   }
 
-  if (action.offering_sku !== null) {
-    const offeringExists = businessSnapshot.offerings.some((offering) => offering.code === action.offering_sku);
-    if (!offeringExists) {
-      return { ok: false, reason: 'OFFERING_NOT_FOUND' };
-    }
+  if (action.offering_sku === null) {
+    return { ok: false, reason: 'OFFERING_REQUIRED' };
+  }
+  if (authorizedOfferingCode === null || action.offering_sku !== authorizedOfferingCode) {
+    return { ok: false, reason: 'OFFERING_MISMATCH' };
+  }
+  const offeringExists = businessSnapshot.offerings.some(
+    (offering) => offering.code === action.offering_sku
+  );
+  if (!offeringExists) {
+    return { ok: false, reason: 'OFFERING_NOT_FOUND' };
   }
 
   const url = resolver.resolve(action.plan_code);

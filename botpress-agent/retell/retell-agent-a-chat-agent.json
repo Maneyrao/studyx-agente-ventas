@@ -1,0 +1,59 @@
+{
+  "response_engine": {
+    "type": "retell-llm",
+    "llm_id": "<REEMPLAZAR_CON_LLM_ID_DEVUELTO_POR_CREATE_RETELL_LLM>",
+    "version": 0
+  },
+  "agent_name": "StudyX - Agente A - WhatsApp Test",
+  "version_title": "studyx-agent-a-sales-v2",
+  "auto_close_message": "Gracias por escribirnos. La conversación finalizó.",
+  "end_chat_after_silence_ms": 3600000,
+  "language": "es-419",
+  "webhook_events": [
+    "chat_started",
+    "chat_ended",
+    "chat_analyzed"
+  ],
+  "webhook_timeout_ms": 10000,
+  "data_storage_setting": "everything_except_pii",
+  "data_storage_retention_days": 30,
+  "opt_in_signed_url": true,
+  "signed_url_expiration_ms": 86400000,
+  "post_chat_analysis_data": [
+    {
+      "type": "string",
+      "name": "call_preference",
+      "description": "accepted, declined, not_offered o unknown",
+      "examples": [
+        "declined"
+      ],
+      "required": true
+    },
+    {
+      "type": "string",
+      "name": "payment_option",
+      "description": "monthly_12, monthly_6, one_time o not_selected",
+      "examples": [
+        "monthly_12"
+      ],
+      "required": true
+    },
+    {
+      "type": "string",
+      "name": "conversation_outcome",
+      "description": "Resultado comercial resumido del chat",
+      "examples": [
+        "Rechazó la llamada y continuó asesorándose por WhatsApp"
+      ],
+      "required": true
+    }
+  ],
+  "post_chat_analysis_model": "gpt-4.1-mini",
+  "guardrail_config": {
+    "output_topics": [],
+    "input_topics": [
+      "platform_integrity_jailbreaking"
+    ]
+  },
+  "timezone": "America/Argentina/Buenos_Aires"
+}

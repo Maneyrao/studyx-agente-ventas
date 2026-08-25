@@ -122,11 +122,11 @@ describe('evaluateCallOfferPolicy', () => {
     expect(result.reason).toBe('DECLINE_COOLDOWN_ACTIVE');
   });
 
-  it('resumes offering once the decline cooldown has elapsed', () => {
+  it('does not re-offer later in the same conversation after a recorded decline', () => {
     const result = evaluateCallOfferPolicy(facts({ lastDeclineAt: minutesAgo(31) }));
 
-    expect(result.allowedActions).toEqual(['offer_call']);
-    expect(result.reason).toBe('ELIGIBLE_FOR_OFFER');
+    expect(result.allowedActions).toEqual([]);
+    expect(result.reason).toBe('CALL_DECLINED_IN_CONVERSATION');
   });
 
   it('does not offer again while an earlier offer is still awaiting a response', () => {

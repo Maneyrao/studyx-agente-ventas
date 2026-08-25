@@ -9,6 +9,8 @@ const actionSpies = vi.hoisted(() => ({
   delivery: vi.fn(),
   transcribe: vi.fn(),
   flush: vi.fn(),
+  geminiDecision: vi.fn(),
+  groqDecision: vi.fn(),
 }));
 
 vi.mock('../../../botpress-agent/src/actions/ingestTurn', () => ({
@@ -35,9 +37,16 @@ vi.mock('../../../botpress-agent/src/actions/transcribeAudio', () => ({
 vi.mock('../../../botpress-agent/src/actions/flushLeadProjection', () => ({
   flushLeadProjection: { execute: actionSpies.flush },
 }));
+vi.mock('../../../botpress-agent/src/lib/decision/gemini-direct', () => ({
+  generateGeminiDecision: actionSpies.geminiDecision,
+}));
+vi.mock('../../../botpress-agent/src/lib/decision/groq-direct', () => ({
+  generateGroqDecision: actionSpies.groqDecision,
+}));
 
-import { configuration } from '../../helpers/botpress-runtime-stub';
+import { configuration, secrets } from '../../helpers/botpress-runtime-stub';
 import { processInboundTurn } from '../../../botpress-agent/src/workflows/processInboundTurn';
+import type { ClaimedTurn } from '../../../botpress-agent/src/schemas/contracts';
 import { DEFAULT_REQUEST_TIMEOUT_MS, resolveRequestTimeoutMs } from '../../../botpress-agent/src/utils/http';
 import { dispatch } from '../../../botpress-agent/src/channels';
 
@@ -116,11 +125,13 @@ function claimedResponse() {
     sales_context: {
       mode: 'advising',
       course_of_interest: null,
+      offering_code: null,
       open_call_offer: null,
       active_call: null,
       allowed_actions: ['offer_call'],
       last_call_result: null,
     },
+    catalog_resolution: { kind: 'no_catalog_intent' as const },
     deterministic_route: null,
     diagnostics: {
       timings: {
@@ -142,6 +153,55 @@ function claimedResponse() {
     business_context: null,
     business_context_available: false,
     existing_result: null,
+  };
+}
+
+function paymentBusinessContext() {
+  return {
+    as_of: NOW,
+    prices_assertable: true,
+    workspace: {
+      slug: 'studyx',
+      display_name: 'StudyX',
+      environment: 'sandbox' as const,
+      default_locale: 'es-AR',
+      timezone: 'America/Argentina/Buenos_Aires',
+      payment_options: [{
+        code: 'one_time' as const,
+        label: 'Pago único',
+        total: { amount: '360.00' as const, currency: 'USD' as const },
+        installments: 1,
+        installment_amount: '360.00' as const,
+        payment_link: 'https://example.test/one-time',
+      }],
+    },
+    offerings: [{
+      code: 'redes-informaticas',
+      display_name: 'Redes Informáticas',
+      aliases: [],
+      academy: 'Tecnología',
+      offering_type: 'course' as const,
+      description: null,
+      value_proposition: null,
+      price_type: 'fixed' as const,
+      price: { amount: '360.00', currency: 'USD' },
+      price_assertable: true,
+      billing_interval: null,
+      modality: null,
+      schedules: [],
+      certification: null,
+      hours_per_month: null,
+      classes: 16,
+      modules: null,
+      includes: [],
+      syllabus_published: null,
+      language: null,
+      min_age: null,
+      policies: { allowed_promise: null, forbidden_promises: [], price_message: null },
+    }],
+    qualification_fields: [],
+    injection_suspected_count: 0,
+    offerings_truncated: 0,
   };
 }
 
@@ -203,7 +263,133 @@ describe('processInboundTurn hot path', () => {
       call_request: null,
     });
     actionSpies.flush.mockResolvedValue({ status: 'unavailable', completed: 0 });
+    actionSpies.delivery.mockResolvedValue({ status: 'recorded' });
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
+  });
+
+  async function runCommittedOutbound(outbound: Record<string, unknown>) {
+    actionSpies.commit.mockResolvedValue({
+      status: 'committed',
+      replayed: false,
+      trace_id: UUID,
+      turn_id: UUID,
+      decision_id: UUID,
+      next_state: 'completed',
+      outbound: {
+        id: UUID,
+        content: 'Contenido autorizado',
+        status: 'pending',
+        delivery_attempt: 1,
+        ...outbound,
+      },
+      call_request: null,
+    });
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-message-1' } }));
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => ({
+      is: () => true,
+      output: {
+        schema_version: 4,
+        intent: 'commercial',
+        kind: 'reply',
+        response: 'Contenido autorizado',
+        response_type: 'commercial_reply',
+        confidence: 1,
+        reason_code: 'ANSWER',
+        business_action: null,
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'completed',
+        retrieval_used: null,
+      },
+      iterations: [],
+    }));
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    const result = await handler({
+      input: workflowInput(),
+      state: processingState(),
+      step,
+      execute,
+      client: { createMessage },
+      signal: new AbortController().signal,
+      workflow: { id: 'workflow-test' },
+    });
+
+    return { createMessage, result };
+  }
+
+  it('blocks altered committed content before createMessage and reports a safe failure', async () => {
+    const { createMessage, result } = await runCommittedOutbound({
+      content: 'Contenido alterado',
+      authorized_egress: {
+        schema_version: 1,
+        content_hash: 'e2dee359447348131358a63664853c018f5db0fcb31835e30a0aac56badab6bd',
+        authorized_urls: [],
+        protected_facts: [],
+      },
+    });
+
+    expect(createMessage).not.toHaveBeenCalled();
+    expect(actionSpies.delivery).toHaveBeenCalledTimes(1);
+    expect(actionSpies.delivery.mock.calls[0]?.[0]?.input).toMatchObject({
+      status: 'failed',
+      botpress_message_id: null,
+      error_code: 'EGRESS_HASH_MISMATCH',
+    });
+    expect(result).toMatchObject({
+      status: 'paused_error',
+      delivery_status: 'failed',
+      error_code: 'EGRESS_HASH_MISMATCH',
+    });
+  });
+
+  it('blocks a hash-valid but unauthorized URL before createMessage', async () => {
+    const unauthorizedUrl = 'https://attacker.example/phish';
+    const { createMessage, result } = await runCommittedOutbound({
+      content: `Pagá acá: ${unauthorizedUrl}`,
+      authorized_egress: {
+        schema_version: 1,
+        content_hash: '02f4b7150b0623b3f814cfd7585249b57a180bdc4e12e0275bf3e292a525239a',
+        authorized_urls: [],
+        protected_facts: [],
+      },
+    });
+
+    expect(createMessage).not.toHaveBeenCalled();
+    expect(actionSpies.delivery.mock.calls[0]?.[0]?.input).toMatchObject({
+      status: 'failed',
+      error_code: 'EGRESS_UNAUTHORIZED_URL',
+    });
+    expect(result).toMatchObject({ error_code: 'EGRESS_UNAUTHORIZED_URL' });
+  });
+
+  it('sends exact authorized content once and reports only the successful submission', async () => {
+    const { createMessage, result } = await runCommittedOutbound({
+      authorized_egress: {
+        schema_version: 1,
+        content_hash: 'e2dee359447348131358a63664853c018f5db0fcb31835e30a0aac56badab6bd',
+        authorized_urls: [],
+        protected_facts: [],
+      },
+    });
+
+    expect(createMessage).toHaveBeenCalledTimes(1);
+    expect(actionSpies.delivery).toHaveBeenCalledTimes(1);
+    expect(actionSpies.delivery.mock.calls[0]?.[0]?.input).toMatchObject({
+      status: 'submitted_to_botpress',
+      botpress_message_id: 'bp-message-1',
+      error_code: null,
+    });
+    expect(result).toMatchObject({
+      status: 'completed',
+      delivery_status: 'submitted_to_botpress',
+    });
   });
 
   it('never invokes the standalone catalog action for a normal model turn', async () => {
@@ -244,6 +430,7 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ iterations: 2 }));
     expect(actionSpies.catalog).toHaveBeenCalledTimes(0);
     // No delivery happened (the mocked commit is rejected, `outbound: null`),
     // so the opportunistic Sheets flush must never run either — it is wired
@@ -272,6 +459,156 @@ describe('processInboundTurn hot path', () => {
     const serializedTimingLog = JSON.stringify(timingLog);
     expect(serializedTimingLog).not.toContain('¿Cuánto sale el curso?');
     expect(serializedTimingLog).not.toContain('user-test');
+  });
+
+  it('commits one deterministic opt-out acknowledgement without invoking a model', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.policy = {
+      may_respond: true,
+      allowed_response_types: ['opt_out_ack'],
+      reason: 'EXPLICIT_OPT_OUT_ACK_ONLY',
+    };
+    claimed.contact.blocked = true;
+    claimed.contact.consent_status = 'revoked';
+    claimed.context.batch_messages[0].content = 'Redes Informáticas, dame de baja';
+    claimed.context.batch_messages[0].opt_out_ack_eligible = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => {
+      throw new Error('MODEL_MUST_NOT_RUN_FOR_OPT_OUT_ACK');
+    });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+    const input = workflowInput();
+    input.message.text = 'Redes Informáticas, dame de baja';
+
+    await handler({
+      input,
+      state: processingState(),
+      step,
+      execute,
+      client: {},
+      signal: new AbortController().signal,
+      workflow: { id: 'workflow-test' },
+    });
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input?.decision).toMatchObject({
+      intent: 'opt_out',
+      kind: 'reply',
+      response_type: 'opt_out_ack',
+      reason_code: 'EXPLICIT_OPT_OUT_ACK',
+      business_action: null,
+      memory_candidates: [],
+      next_state: 'completed',
+    });
+  });
+
+  it('propagates the offering resolved by the deterministic router into the canonical commit', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.context.batch_messages[0].content = '¿Cuántas clases tiene Redes Informáticas?';
+    claimed.business_context_available = true;
+    claimed.business_context = paymentBusinessContext();
+    claimed.sales_context.course_of_interest = null;
+    claimed.sales_context.offering_code = null;
+    actionSpies.claim.mockResolvedValue(claimed);
+
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => {
+      throw new Error('MODEL_MUST_NOT_RUN_FOR_CANONICAL_COURSE_FACTS');
+    });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(),
+      state: processingState(),
+      step,
+      execute,
+      client: {},
+      signal: new AbortController().signal,
+      workflow: { id: 'workflow-test' },
+    });
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(actionSpies.commit).toHaveBeenCalledTimes(1);
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      authorized_offering_code: 'redes-informaticas',
+      decision: {
+        reason_code: 'DETERMINISTIC_COURSE_FACTS',
+        response: expect.stringContaining('Redes Informáticas tiene 16 clases'),
+      },
+    });
+  });
+
+  it('retries one transient model failure before using the customer-visible fallback', async () => {
+    const step = Object.assign(
+      async (
+        _name: string,
+        run: () => Promise<unknown>,
+        options?: { maxAttempts?: number },
+      ) => {
+        let lastError: unknown;
+        for (let attempt = 0; attempt < (options?.maxAttempts ?? 1); attempt += 1) {
+          try {
+            return await run();
+          } catch (error) {
+            lastError = error;
+          }
+        }
+        throw lastError;
+      },
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('transient model timeout'))
+      .mockResolvedValueOnce({
+        is: () => true,
+        output: {
+          schema_version: 3,
+          intent: 'commercial',
+          kind: 'reply',
+          response: 'Tenemos opciones de inglés y marketing. ¿Qué te gustaría aprender?',
+          response_type: 'commercial_reply',
+          confidence: 1,
+          reason_code: 'CATALOG_REPLY',
+          business_action: null,
+          memory_candidates: [],
+          missing_information: [],
+          next_state: 'waiting_user',
+          retrieval_used: null,
+        },
+        iterations: [],
+      });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(),
+      state: processingState(),
+      step,
+      execute,
+      client: {},
+      signal: new AbortController().signal,
+      workflow: { id: 'workflow-test' },
+    });
+
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input?.decision).toMatchObject({
+      response_type: 'commercial_reply',
+      reason_code: 'CATALOG_REPLY',
+    });
   });
 
   async function runModelDecision(output: Record<string, unknown>) {
@@ -383,6 +720,108 @@ describe('processInboundTurn hot path', () => {
     expect(decision.response).toBe('Tenemos cursos de salud, tecnología y negocios.');
   });
 
+  // Regresión P0 (informe 2026-08-23): un send_payment_link que el batch no
+  // autoriza terminaba en 422 (AMBIGUOUS_OR_ABSENT_CHOICE) y silencio. El
+  // workflow debe degradarlo a una clarificación explícita, nunca callar.
+  it('downgrades send_payment_link to a clarification when the batch names no plan', async () => {
+    const claimed = claimedResponse();
+    claimed.policy.allowed_response_types = ['commercial_reply', 'clarification'];
+    actionSpies.claim.mockResolvedValue(claimed);
+
+    const decision = await runModelDecision({
+      schema_version: 4,
+      intent: 'commercial',
+      kind: 'reply',
+      response: 'Te mando el link del plan de 12 cuotas.',
+      response_type: 'commercial_reply',
+      confidence: 0.9,
+      reason_code: 'PAYMENT_LINK',
+      business_action: { type: 'send_payment_link', plan_code: 'monthly_12', offering_sku: null },
+      memory_candidates: [],
+      missing_information: [],
+      next_state: 'waiting_user',
+      retrieval_used: null,
+    });
+
+    expect(decision).toMatchObject({
+      kind: 'clarify',
+      response_type: 'clarification',
+      business_action: null,
+      reason_code: 'AMBIGUOUS_OR_ABSENT_CHOICE',
+      next_state: 'waiting_user',
+    });
+    expect(decision.response).toBeTruthy();
+  });
+
+  it('downgrades send_payment_link to a clarification when the model plan contradicts the batch', async () => {
+    const claimed = claimedResponse();
+    claimed.policy.allowed_response_types = ['commercial_reply', 'clarification'];
+    claimed.context.batch_messages[0].content = 'Quiero las 12 cuotas de 30 dólares';
+    actionSpies.claim.mockResolvedValue(claimed);
+
+    const decision = await runModelDecision({
+      schema_version: 4,
+      intent: 'commercial',
+      kind: 'reply',
+      response: 'Perfecto, te paso el plan de 6 cuotas.',
+      response_type: 'commercial_reply',
+      confidence: 0.9,
+      reason_code: 'PAYMENT_LINK',
+      business_action: { type: 'send_payment_link', plan_code: 'monthly_6', offering_sku: null },
+      memory_candidates: [],
+      missing_information: [],
+      next_state: 'waiting_user',
+      retrieval_used: null,
+    });
+
+    expect(decision).toMatchObject({
+      kind: 'clarify',
+      response_type: 'clarification',
+      business_action: null,
+      reason_code: 'PLAN_MISMATCH',
+    });
+  });
+
+  it('keeps send_payment_link intact when the batch deterministically names the same plan', async () => {
+    const claimed = {
+      ...claimedResponse(),
+      sales_context: {
+        ...claimedResponse().sales_context,
+        course_of_interest: 'Redes Informáticas',
+        offering_code: 'redes-informaticas',
+      },
+      business_context: paymentBusinessContext(),
+      business_context_available: true,
+    };
+    claimed.policy.allowed_response_types = ['commercial_reply', 'clarification'];
+    claimed.context.batch_messages[0].content = 'Confirmo pago único de 360 dólares';
+    actionSpies.claim.mockResolvedValue(claimed);
+
+    const decision = await runModelDecision({
+      schema_version: 4,
+      intent: 'commercial',
+      kind: 'reply',
+      response: 'Perfecto, avanzamos con el pago único.',
+      response_type: 'commercial_reply',
+      confidence: 0.9,
+      reason_code: 'PAYMENT_LINK',
+      business_action: { type: 'send_payment_link', plan_code: 'one_time', offering_sku: null },
+      memory_candidates: [],
+      missing_information: [],
+      next_state: 'waiting_user',
+      retrieval_used: null,
+    });
+
+    expect(decision).toMatchObject({
+      kind: 'reply',
+      business_action: {
+        type: 'send_payment_link',
+        plan_code: 'one_time',
+        offering_sku: 'redes-informaticas',
+      },
+    });
+  });
+
   it('keeps a mid-conversation reply intact when "Buenas" starts a sentence but is not a salutation', async () => {
     const claimed = claimedResponse();
     (claimed.context as { recent_turns: Array<{
@@ -412,6 +851,213 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(decision.response).toBe('Buenas noticias, el diplomado tiene plan en cuotas desde 30 USD.');
+  });
+});
+
+describe('processInboundTurn — decision provider selection', () => {
+  const originalDecisionProvider = configuration.decisionProvider;
+  const originalGeminiApiKey = secrets.GEMINI_API_KEY;
+  const originalGroqApiKey = secrets.GROQ_API_KEY;
+
+  beforeEach(() => {
+    configuration.automationEnabled = true;
+    actionSpies.ingest.mockResolvedValue(ingestResponse());
+    actionSpies.claim.mockResolvedValue(claimedResponse());
+    actionSpies.commit.mockResolvedValue({
+      status: 'rejected',
+      replayed: false,
+      trace_id: UUID,
+      turn_id: UUID,
+      decision_id: UUID,
+      next_state: 'completed',
+      outbound: null,
+      call_request: null,
+    });
+    actionSpies.flush.mockResolvedValue({ status: 'unavailable', completed: 0 });
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    configuration.decisionProvider = originalDecisionProvider;
+    if (originalGeminiApiKey === undefined) {
+      delete secrets.GEMINI_API_KEY;
+    } else {
+      secrets.GEMINI_API_KEY = originalGeminiApiKey;
+    }
+    if (originalGroqApiKey === undefined) {
+      delete secrets.GROQ_API_KEY;
+    } else {
+      secrets.GROQ_API_KEY = originalGroqApiKey;
+    }
+  });
+
+  function invokeHandler(execute: ReturnType<typeof vi.fn>) {
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    return handler({
+      input: workflowInput(),
+      state: processingState(),
+      step,
+      execute,
+      client: {},
+      signal: new AbortController().signal,
+      workflow: { id: 'workflow-test' },
+    });
+  }
+
+  it('gemini_direct: calls the Gemini adapter directly with the same instructions shape and never calls execute', async () => {
+    configuration.decisionProvider = 'gemini_direct';
+    configuration.geminiDecisionModel = 'gemini-3.6-flash';
+    secrets.GEMINI_API_KEY = 'test-gemini-key';
+    actionSpies.geminiDecision.mockResolvedValue({
+      decision: {
+        schema_version: 3,
+        intent: 'commercial',
+        kind: 'reply',
+        response: 'Te cuento.',
+        response_type: 'commercial_reply',
+        confidence: 1,
+        reason_code: 'ANSWER',
+        business_action: null,
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'completed',
+        retrieval_used: null,
+      },
+      provider: 'google-ai-direct',
+      model: 'gemini-3.6-flash',
+      latencyMs: 123,
+    });
+    const execute = vi.fn();
+
+    await invokeHandler(execute);
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(actionSpies.geminiDecision).toHaveBeenCalledTimes(1);
+    expect(actionSpies.geminiDecision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: 'test-gemini-key',
+        model: 'gemini-3.6-flash',
+        instructions: expect.any(String),
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input?.decision).toMatchObject({
+      response_type: 'commercial_reply',
+      reason_code: 'ANSWER',
+    });
+
+    const logLines = vi.mocked(console.info).mock.calls.map(([line]) => String(line));
+    for (const line of logLines) {
+      expect(line).not.toContain('test-gemini-key');
+    }
+  });
+
+  it('botpress_managed: keeps calling execute and never calls the Gemini adapter', async () => {
+    configuration.decisionProvider = 'botpress_managed';
+    const execute = vi.fn(async () => ({
+      is: () => true,
+      output: {
+        schema_version: 3,
+        intent: 'commercial',
+        kind: 'reply',
+        response: 'Te cuento.',
+        response_type: 'commercial_reply',
+        confidence: 1,
+        reason_code: 'ANSWER',
+        business_action: null,
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'completed',
+        retrieval_used: null,
+      },
+      iterations: [],
+    }));
+
+    await invokeHandler(execute);
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(actionSpies.geminiDecision).not.toHaveBeenCalled();
+    expect(actionSpies.groqDecision).not.toHaveBeenCalled();
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input?.decision).toMatchObject({
+      response_type: 'commercial_reply',
+      reason_code: 'ANSWER',
+    });
+  });
+
+  it('groq_direct: calls Groq with the same instructions and never calls managed or Gemini', async () => {
+    configuration.decisionProvider = 'groq_direct';
+    configuration.groqDecisionModel = 'openai/gpt-oss-120b';
+    secrets.GROQ_API_KEY = 'test-groq-key';
+    actionSpies.groqDecision.mockResolvedValue({
+      decision: {
+        schema_version: 3,
+        intent: 'commercial',
+        kind: 'reply',
+        response: 'Te cuento.',
+        response_type: 'commercial_reply',
+        confidence: 1,
+        reason_code: 'ANSWER',
+        business_action: null,
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'completed',
+        retrieval_used: null,
+      },
+      provider: 'groq-direct',
+      model: 'openai/gpt-oss-120b',
+      latencyMs: 80,
+    });
+    const execute = vi.fn();
+
+    await invokeHandler(execute);
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(actionSpies.geminiDecision).not.toHaveBeenCalled();
+    expect(actionSpies.groqDecision).toHaveBeenCalledWith(expect.objectContaining({
+      apiKey: 'test-groq-key',
+      model: 'openai/gpt-oss-120b',
+      instructions: expect.stringContaining('COMPACT_AGENT_A_V15'),
+      signal: expect.any(AbortSignal),
+      timeoutMs: expect.any(Number),
+    }));
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input?.decision).toMatchObject({
+      response_type: 'commercial_reply',
+      reason_code: 'ANSWER',
+    });
+  });
+
+  it('gemini_direct: falls back to the existing technical fallback when GEMINI_API_KEY is missing, without throwing or logging the key', async () => {
+    configuration.decisionProvider = 'gemini_direct';
+    delete secrets.GEMINI_API_KEY;
+    const claimed = claimedResponse();
+    claimed.policy.allowed_response_types = ['commercial_reply', 'technical_fallback'];
+    actionSpies.claim.mockResolvedValue(claimed);
+    const execute = vi.fn();
+
+    await expect(invokeHandler(execute)).resolves.toBeDefined();
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(actionSpies.geminiDecision).not.toHaveBeenCalled();
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input?.decision).toMatchObject({
+      response_type: 'technical_fallback',
+      reason_code: 'MODEL_UNAVAILABLE',
+    });
+
+    // No PII and no key value in any log line — the error code naming the
+    // missing secret is fine (it carries no secret material), only the
+    // actual key value must never appear.
+    const logLines = vi.mocked(console.info).mock.calls.map(([line]) => String(line));
+    for (const line of logLines) {
+      expect(line).not.toContain('test-gemini-key');
+      expect(line).not.toContain('¿Cuánto sale el curso?');
+    }
   });
 });
 

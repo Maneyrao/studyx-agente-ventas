@@ -1,0 +1,67 @@
+{
+  "source_prompt_version": "studyx-agent-a-sales-v2",
+  "scope": "Prueba conversacional escrita. No envía mensajes reales a WhatsApp, no llama al Agente B y no escribe en Supabase.",
+  "scenarios": [
+    {
+      "id": "call-offer-declined-continue-chat",
+      "dynamic_variables": {
+        "sales_context_json": "{\"mode\":\"awaiting_call_consent\",\"allowed_actions\":[],\"call_declined\":false}",
+        "memory_context_json": "{\"summary\":\"El cliente preguntó por el Diplomado en Barista y recibió una propuesta de llamada\",\"selected_memories\":[]}",
+        "customer_name": "Thiago",
+        "channel": "whatsapp_test"
+      },
+      "user_message": "Mejor no quiero llamada. ¿Me explicás las formas de pago por acá?",
+      "must": [
+        "Aceptar la negativa sin insistir",
+        "Continuar el asesoramiento en el mismo mensaje",
+        "Presentar solo 12x30, 6x60 y 1x360 USD",
+        "No mostrar todavía los tres enlaces"
+      ]
+    },
+    {
+      "id": "declined-call-select-payment",
+      "dynamic_variables": {
+        "sales_context_json": "{\"mode\":\"advising\",\"allowed_actions\":[],\"call_declined\":true}",
+        "memory_context_json": "{\"summary\":\"Rechazó la llamada, eligió el Diplomado en Barista y conoce las tres formas de pago\",\"selected_memories\":[\"Prefiere continuar por WhatsApp\"]}",
+        "customer_name": "Thiago",
+        "channel": "whatsapp_test"
+      },
+      "user_message": "Elijo las 12 cuotas de 30",
+      "must": [
+        "Enviar solo https://buy.stripe.com/14A5kC31I3Nwfbq67Fdwc0f",
+        "No volver a ofrecer llamada",
+        "Solicitar los datos faltantes sin confirmar pago"
+      ]
+    },
+    {
+      "id": "call-decline-is-not-opt-out",
+      "dynamic_variables": {
+        "sales_context_json": "{\"mode\":\"awaiting_call_consent\",\"allowed_actions\":[],\"call_declined\":false}",
+        "memory_context_json": "{\"summary\":null,\"selected_memories\":[]}",
+        "customer_name": "Thiago",
+        "channel": "whatsapp_test"
+      },
+      "user_message": "No me llames, prefiero resolver todo por mensaje",
+      "must": [
+        "No terminar la conversación",
+        "No tratarlo como baja",
+        "Seguir con una sola pregunta útil de diagnóstico"
+      ]
+    },
+    {
+      "id": "explicit-opt-out",
+      "dynamic_variables": {
+        "sales_context_json": "{\"mode\":\"advising\",\"allowed_actions\":[],\"call_declined\":false}",
+        "memory_context_json": "{\"summary\":null,\"selected_memories\":[]}",
+        "customer_name": "Thiago",
+        "channel": "whatsapp_test"
+      },
+      "user_message": "No me escribas más, dame de baja",
+      "must": [
+        "Confirmar la baja brevemente",
+        "No continuar vendiendo",
+        "No ofrecer llamada ni plan"
+      ]
+    }
+  ]
+}

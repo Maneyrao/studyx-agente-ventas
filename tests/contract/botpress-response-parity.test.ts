@@ -13,6 +13,8 @@ import {
   parseDecisionV2,
 } from '@/features/orchestration/domain/decision';
 import { MemoryCandidateSchema } from '../../botpress-agent/src/schemas/contracts';
+import * as backendCommercialCopy from '@/features/orchestration/domain/canonical-commercial-copy';
+import * as botpressCommercialCopy from '../../botpress-agent/src/utils/canonical-commercial-copy';
 
 /**
  * The Botpress response schemas must describe what Next.js actually returns.
@@ -164,6 +166,7 @@ describe('claim response parity', () => {
     const salesContextSample: ClaimedTurn['sales_context'] = {
       mode: 'advising',
       course_of_interest: null,
+      offering_code: null,
       open_call_offer: null,
       accepted_call_offer: null,
       active_call: null,
@@ -271,6 +274,39 @@ describe('catalog response parity', () => {
     for (const key of Object.keys(sample)) {
       expect(block, `CatalogResponseSchema must declare ${key}`).toContain(`${key}:`);
     }
+  });
+});
+
+describe('canonical commercial copy parity', () => {
+  it.each([
+    ['duration', 'renderCourseDuration', {
+      displayName: 'Redes Informáticas', classes: 16,
+    }, 'El curso de Redes Informáticas tiene 16 clases.'],
+    ['price', 'renderCoursePrice', {
+      displayName: 'Decoración de Interiores', currency: 'USD', amount: '360.00',
+    }, 'El precio de Decoración de Interiores es USD 360.'],
+    ['modality', 'renderCourseModality', {
+      displayName: 'Redes Informáticas', modality: 'online',
+    }, 'La modalidad de Redes Informáticas es online.'],
+    ['unknown certification', 'renderUnknownCertification', {
+      displayName: 'Decoración de Interiores',
+    }, 'La certificación de Decoración de Interiores no está especificada en la información disponible.'],
+    ['catalog options', 'renderCatalogOptions', {
+      area: 'Diseño',
+      names: ['Decoración de Interiores', 'Paisajismo', 'AutoCAD', 'Corel Draw'],
+      maxItems: 3,
+    }, 'En Diseño tenemos Decoración de Interiores, Paisajismo, AutoCAD. ¿Cuál querés revisar?'],
+  ] as const)('renders identical closed %s copy in backend and Botpress', (
+    _case,
+    renderer,
+    input,
+    expected,
+  ) => {
+    const backend = backendCommercialCopy[renderer] as (value: typeof input) => string;
+    const botpress = botpressCommercialCopy[renderer] as (value: typeof input) => string;
+
+    expect(backend(input)).toBe(expected);
+    expect(botpress(input)).toBe(expected);
   });
 });
 

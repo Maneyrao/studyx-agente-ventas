@@ -9,6 +9,7 @@
 
 # testing
 /coverage
+/botpress-agent/evals/results/
 
 # next.js
 /.next/
@@ -43,3 +44,8 @@ next-env.d.ts
 
 # sdd worktrees
 /.worktrees/
+
+# Botpress ADK local dependency cache and secrets
+/botpress-agent/.adk/dependencies/
+/botpress-agent/.adk/secrets.json
+/botpress-agent/agent.local.json

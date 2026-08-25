@@ -9,9 +9,9 @@ página y el código no coincidan, gana el código y esta página es el bug.
 ```mermaid
 flowchart LR
   subgraph Canal["Botpress ADK · capa de canal"]
-    TG["Telegram sandbox<br/>(adapter listo · integración sin instalar)"]
+    TG["Telegram sandbox histórico<br/>(adapter listo · integración sin instalar)"]
     EMU[Emulator]
-    WA["WhatsApp<br/>(fuera de alcance)"]
+    WA["WhatsApp Sandbox<br/>(adapter + gate listos · demo externa bloqueada)"]
     ROUTER[conversations/router.ts<br/>único handler wildcard]
     WF[workflows/processInboundTurn]
   end
@@ -40,7 +40,7 @@ flowchart LR
 
   EMU --> ROUTER
   TG --> ROUTER
-  WA -.fuera de alcance.-> ROUTER
+  WA -.cuando haya autorización Sandbox.-> ROUTER
   ROUTER --> WF
   WF --> INGEST --> CE & MSG & BATCH
   WF --> CLAIM --> BATCH
@@ -175,11 +175,11 @@ stateDiagram-v2
 | Cero handoff humano | ✅ | schema productor + política + CHECK | `decision-v3.test.ts` |
 | Acciones comerciales deshabilitadas | ✅ | lista blanca de dos acciones observacionales | `decision-v3-policy.test.ts` |
 | Evals conversacionales | ⛔ EXT-04 | `evals/*.eval.ts` escritas | requieren la integración `chat` |
-| Piloto real por Telegram | 🟡 desbloqueado | entrega directa desde el orquestador (`src/features/messaging/`) | EXT-05 ya no aplica: no pasa por Botpress. Falta la corrida manual con el bot token real |
+| Piloto real por Telegram | 🟡 implementación local / ⛔ externo | entrega directa desde el orquestador (`src/features/messaging/`) | el caso de uso aún no tiene consumidor Retell y la corrida real requiere autorización explícita |
 | Worker de outbound (reenvío físico) | ❌ | — | ver «no implementado» |
 | Audio detrás de un puerto | ❌ | `transcribeAudio` se llama directo | — |
 | Pruebas de carga | ❌ | — | — |
-| WhatsApp oficial | ❌ fuera de alcance | — | — |
+| WhatsApp oficial Sandbox | 🟡 preparación local | adapter + canary gate + runbook | demo externa bloqueada: regresión 20/50, requiere 50/50 y autorización explícita |
 
 ## Desviaciones respecto de los planes escritos
 
@@ -197,6 +197,10 @@ stateDiagram-v2
    estados de la fase 1 sólo permite salir de ellos hacia `leased`. El veredicto
    vive en `reconciliation_state`.
 5. `docs/ROADMAP.md` invariante 6 todavía dice «OpenAI»; el proyecto usa Gemini.
+6. El texto Telegram-only de los runbooks describe el piloto histórico. La
+   autoridad vigente para la preparación de WhatsApp Sandbox es
+   [`runbooks/whatsapp-go-live.md`](runbooks/whatsapp-go-live.md); no autoriza
+   producción ni reemplaza una aprobación externa.
 
 ## Verificación: sin Docker
 

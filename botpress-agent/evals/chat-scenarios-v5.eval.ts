@@ -5,7 +5,7 @@ import { Eval } from '@botpress/evals'
  * `../docs/testing/agent-a-chat-scenarios-v5.md`, expressed as ADK evals.
  *
  * Prompt under test: `src/prompts/agent-a-sales-bridge.ts`,
- * AGENT_A_PROMPT_VERSION = 'studyx-agent-a-sales-v7'.
+ * AGENT_A_PROMPT_VERSION = 'studyx-agent-a-sales-v10'.
  *
  * Every turn carries at least one deterministic assertion (`not_contains` /
  * `matches` / `contains`) for the doc's "Nunca debe ocurrir" column, plus one

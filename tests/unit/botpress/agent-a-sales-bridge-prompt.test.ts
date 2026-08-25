@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest';
  */
 import {
   AGENT_A_PROMPT_VERSION,
+  buildAgentASalesBridgeCompactInstructions,
   buildAgentASalesBridgeInstructions,
 } from '../../../botpress-agent/src/prompts/agent-a-sales-bridge';
 import type { ClaimedTurn } from '../../../botpress-agent/src/schemas/contracts';
@@ -127,7 +128,30 @@ function claimedTurn(overrides: {
 
 describe('AGENT_A_PROMPT_VERSION', () => {
   it('is the pinned sales-bridge version', () => {
-    expect(AGENT_A_PROMPT_VERSION).toBe('studyx-agent-a-sales-v7');
+    expect(AGENT_A_PROMPT_VERSION).toBe('studyx-agent-a-sales-v15');
+  });
+});
+
+// v11 additions (informe 2026-08-23): refund fail-closed, identity
+// registration honesty, canonical offering_sku for the operator sheet.
+describe('v11 hard rules', () => {
+  it('forbids affirming or denying a refund policy and derives to inscripciones', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
+    expect(instructions).toMatch(/NEVER affirm NOR deny that a refund\/return\/guarantee/);
+    expect(instructions).toMatch(/equipo de inscripciones/);
+  });
+
+  it('forbids echoing the customer email and gates registration claims on contact.name', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
+    expect(instructions).toMatch(/NEVER write the customer's email address inside\s+any response/);
+    expect(instructions).toMatch(/registered ONLY when context\.contact\.name is\s+present/);
+  });
+
+  it('requires offering_sku to carry the canonical catalog code of the chosen offering', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
+    expect(instructions).toMatch(/offering_sku MUST be the exact "code"/);
+    expect(instructions).not.toMatch(/offering_sku[^\n]*null/i);
+    expect(instructions).toMatch(/clarif[^\n]*(?:course|offering)|(?:course|offering)[^\n]*clarif/i);
   });
 });
 
@@ -240,6 +264,13 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(instructions).not.toMatch(/list every offering present/i);
   });
 
+  it('includes the grounded class count when recommending a named course', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
+    expect(instructions).toMatch(
+      /when recommending a specific named course[\s\S]*include its structured classes count/i,
+    );
+  });
+
   it('puts the canonical academy beside each offering in the fenced snapshot', () => {
     const claimed = claimedTurn({});
     ;(claimed as { business_context?: unknown }).business_context = {
@@ -293,6 +324,9 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(instructions).toContain('offer_call');
     expect(instructions).toContain('request_call_now');
     expect(instructions).toMatch(/request_call_now.*only.*(allowed_actions|explicit consent)/i);
+    expect(instructions).toMatch(
+      /offer_call is only an allowed_actions token[\s\S]*response_type must be call_offer/i,
+    );
   });
 
   it('leaves the course optional for a direct call request', () => {
@@ -349,6 +383,13 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(instructions).toMatch(/ONLY after the customer explicitly chooses/i);
     expect(instructions).toMatch(/exactly one.*payment link|one.*payment link/i);
     expect(instructions).toMatch(/Apple Pay/i);
+  });
+
+  it('never repeats a payment action from history when the current batch only supplies profile data', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
+    expect(instructions).toMatch(
+      /send_payment_link is allowed only when the current batch_messages explicitly\s+chooses[\s\S]*never repeat that action from recent_turns/i,
+    );
   });
 
   it('enforces the supplied WhatsApp sales behavior without claiming a payment from a screenshot', () => {
@@ -445,6 +486,197 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(instructions.match(/Aburridont — Inglés IT \(Sandbox\)/g)).toHaveLength(1);
     expect(instructions.match(/85000\.00/g)).toHaveLength(1);
     expect(instructions.match(/video_hibrido_unico/g)).toHaveLength(1);
+  });
+
+  it('keeps a 40-course catalog below the direct-provider request budget', () => {
+    const claimed = claimedTurn({ texts: ['¿Qué cursos tienen disponibles?'] });
+    ;(claimed as { business_context?: unknown }).business_context = {
+      as_of: '2026-08-24T00:00:00.000Z',
+      prices_assertable: true,
+      workspace: {
+        slug: 'studyx', display_name: 'StudyX', environment: 'sandbox',
+        default_locale: 'es-AR', timezone: 'America/Argentina/Buenos_Aires',
+        payment_options: [],
+      },
+      offerings: Array.from({ length: 40 }, (_, index) => ({
+        code: `course_${index}`,
+        display_name: `Curso ${index}`,
+        academy: `Academia ${index % 5}`,
+        offering_type: 'course',
+        description: `Descripción pedagógica extensa ${index} `.repeat(12),
+        value_proposition: `Propuesta de valor extensa ${index} `.repeat(8),
+        price_type: 'fixed',
+        price: { amount: '360.00', currency: 'USD' },
+        price_assertable: true,
+        billing_interval: null,
+        modality: 'online',
+        schedules: [],
+        certification: true,
+        hours_per_month: null,
+        classes: 16,
+        modules: 4,
+        includes: ['material', 'acompañamiento'],
+        syllabus_published: true,
+        language: 'Spanish',
+        min_age: null,
+        policies: {
+          allowed_promise: 'Acceso según los términos configurados.',
+          forbidden_promises: ['No garantizar resultados laborales.'],
+          price_message: null,
+        },
+      })),
+      qualification_fields: [],
+      injection_suspected_count: 0,
+      offerings_truncated: 42,
+    };
+    ;(claimed as { business_context_available?: boolean }).business_context_available = true;
+
+    const instructions = buildAgentASalesBridgeInstructions(claimed);
+
+    expect(instructions.length).toBeLessThan(38_000);
+    expect(instructions).not.toContain('Descripción pedagógica extensa');
+    expect(instructions).toContain('"academy":"Academia 0"');
+    expect(instructions).toContain('"classes":16');
+  });
+
+  it('builds a Groq-safe compact contract without dropping critical sales rules', () => {
+    const claimed = claimedTurn({ texts: ['Prefiero seguir por chat. ¿Cuánto cuesta?'] });
+    const instructions = buildAgentASalesBridgeCompactInstructions(claimed);
+
+    expect(instructions.length).toBeLessThan(20_000);
+    expect(instructions).toContain('COMPACT_AGENT_A_V15');
+    expect(instructions).toMatch(/solo tres opciones de pago/i);
+    expect(instructions).toMatch(/request_call_now/i);
+    expect(instructions).toMatch(/rechaza la llamada/i);
+    expect(instructions).toMatch(/baja de mensajes/i);
+    expect(instructions).toMatch(/devoluciones/i);
+    expect(instructions).toMatch(/memory_candidates/i);
+    expect(instructions).toMatch(
+      /kind=clarify[\s\S]*missing_information[\s\S]*next_state=waiting_user/i,
+    );
+    expect(instructions).toMatch(
+      /kind=reply[\s\S]*response no puede ser null[\s\S]*response_type no puede ser null/i,
+    );
+    expect(instructions).toMatch(
+      /requisito[^.]*no informado[^.]*no está especificado/i,
+    );
+    expect(instructions).toContain('UNTRUSTED_CONTEXT_START');
+  });
+
+  it('keeps the selected canonical SKU in the compact snapshot when names are homonymous', () => {
+    const claimed = claimedTurn({
+      texts: ['Confirmo pago único'],
+      salesContext: {
+        course_of_interest: 'Inglés Inicial',
+        offering_code: 'ingles_selected',
+      },
+    });
+    const offering = (code: string) => ({
+      code,
+      display_name: 'Inglés Inicial',
+      academy: `Academia ${code}`,
+      offering_type: 'course' as const,
+      description: null,
+      value_proposition: null,
+      price_type: 'fixed' as const,
+      price: { amount: '360.00', currency: 'USD' },
+      price_assertable: true,
+      billing_interval: null,
+      modality: null,
+      schedules: [],
+      certification: null,
+      hours_per_month: null,
+      classes: 16,
+      modules: null,
+      includes: [],
+      syllabus_published: null,
+      language: null,
+      min_age: null,
+      policies: { allowed_promise: null, forbidden_promises: [], price_message: null },
+    });
+    ;(claimed as { business_context?: unknown }).business_context = {
+      as_of: '2026-08-24T00:00:00.000Z',
+      prices_assertable: true,
+      workspace: {
+        slug: 'studyx', display_name: 'StudyX', environment: 'sandbox',
+        default_locale: 'es-AR', timezone: 'America/Argentina/Buenos_Aires',
+        payment_options: [],
+      },
+      offerings: [
+        ...Array.from({ length: 13 }, (_, index) => offering(`ingles_${index}`)),
+        offering('ingles_selected'),
+      ],
+      qualification_fields: [],
+      injection_suspected_count: 0,
+      offerings_truncated: 0,
+    };
+    ;(claimed as { business_context_available?: boolean }).business_context_available = true;
+
+    const instructions = buildAgentASalesBridgeCompactInstructions(claimed);
+    const fenced = instructions
+      .split('UNTRUSTED_CONTEXT_START\n')[1]
+      .split('\nUNTRUSTED_CONTEXT_END')[0];
+    const payload = JSON.parse(fenced);
+
+    expect(payload.business_snapshot.offerings.map((item: { sku: string }) => item.sku))
+      .toContain('ingles_selected');
+  });
+
+  it('keeps a named course grounded without sending the entire catalog to Groq', () => {
+    const claimed = claimedTurn({
+      texts: ['Quiero anotarme en Redes Informáticas y saber cuántas clases tiene.'],
+    });
+    const offerings = Array.from({ length: 225 }, (_, index) => ({
+      code: index === 73 ? 'redes_informaticas' : `curso_${index}`,
+      display_name: index === 73 ? 'Redes Informáticas' : `Curso irrelevante ${index}`,
+      academy: index === 73 ? 'Academia de IT' : `Academia ${index % 6}`,
+      offering_type: 'course',
+      description: null,
+      value_proposition: null,
+      price_type: 'fixed',
+      price: { amount: '360.00', currency: 'USD' },
+      price_assertable: true,
+      billing_interval: null,
+      modality: 'online',
+      schedules: [],
+      certification: true,
+      hours_per_month: null,
+      classes: index === 73 ? 16 : 8,
+      modules: null,
+      includes: [],
+      syllabus_published: true,
+      language: 'Spanish',
+      min_age: 18,
+      policies: { allowed_promise: null, forbidden_promises: [], price_message: null },
+    }));
+    ;(claimed as { business_context?: unknown }).business_context = {
+      as_of: '2026-08-24T00:00:00.000Z',
+      prices_assertable: true,
+      workspace: {
+        slug: 'studyx-production', display_name: 'StudyX', environment: 'production',
+        default_locale: 'es-AR', timezone: 'America/Argentina/Buenos_Aires', payment_options: [],
+      },
+      offerings,
+      qualification_fields: [],
+      injection_suspected_count: 0,
+      offerings_truncated: 0,
+    };
+    ;(claimed as { business_context_available?: boolean }).business_context_available = true;
+
+    const instructions = buildAgentASalesBridgeCompactInstructions(claimed);
+    const start = instructions.indexOf('UNTRUSTED_CONTEXT_START');
+    const end = instructions.indexOf('UNTRUSTED_CONTEXT_END');
+    const payload = JSON.parse(instructions.slice(start, end).split('\n').slice(1, -1).join('\n'));
+
+    expect(instructions.length).toBeLessThan(14_000);
+    expect(payload.business_snapshot.areas).toContain('Academia de IT');
+    expect(payload.business_snapshot.offerings).toContainEqual(expect.objectContaining({
+      sku: 'redes_informaticas',
+      name: 'Redes Informáticas',
+      classes: 16,
+    }));
+    expect(payload.business_snapshot.offerings.length).toBeLessThanOrEqual(12);
+    expect(instructions).not.toContain('Curso irrelevante 224');
   });
 
   it('projects each StudyX commercial value exactly once from the fenced snapshot', () => {
@@ -735,7 +967,8 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(instructions).toMatch(/"plan_code"/);
     expect(instructions).toMatch(/"offering_sku"/);
     expect(instructions).toMatch(/backend appends exactly\s+one payment link/i);
-    expect(instructions).toContain('send_payment_link","plan_code":c,"offering_sku":s|null');
+    expect(instructions).toContain('send_payment_link","plan_code":c,"offering_sku":s}');
+    expect(instructions).not.toContain('offering_sku":s|null');
   });
 
   it('handles an unverified paid claim without confirming access or automatically resending checkout', () => {

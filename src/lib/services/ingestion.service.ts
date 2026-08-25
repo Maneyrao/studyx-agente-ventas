@@ -14,6 +14,8 @@ import { withSerializableTransaction } from '@/lib/db/transaction';
 import { jsonbParam } from '@/lib/db/json';
 import { sha256Hex } from '@/lib/idempotency/canonical-json';
 import { isExplicitOptOut } from '@/lib/heuristics/opt-out';
+import { extractContactIdentity, splitFullName } from '@/lib/heuristics/contact-identity';
+import { refreshLeadIdentityProjection } from './projection.service';
 import type { DbClient } from '@/lib/db/types';
 import type { DecisionResponseType } from '@/features/orchestration/domain/decision';
 import { evaluateTurnPolicy, type TurnPolicyReason } from '@/features/orchestration/domain/turn-policy';
@@ -152,8 +154,20 @@ interface InboundCore {
   conversation_id: string;
   replayed: boolean;
   explicit_opt_out: boolean;
+  /** Persisted transition evidence: true only for the first effective
+   * revocation, never for later repeated opt-out messages. */
+  opt_out_ack_eligible: boolean;
   consent_status: 'unknown' | 'granted' | 'revoked';
   batch: BatchMembership;
+  /** Identity the customer volunteered in THIS message, already persisted. */
+  captured_identity?: { name: string | null; email: string | null };
+}
+
+function optOutAckEligibleFromMetadata(metadata: unknown): boolean {
+  return typeof metadata === 'object'
+    && metadata !== null
+    && !Array.isArray(metadata)
+    && (metadata as Record<string, unknown>).opt_out_ack_eligible === true;
 }
 
 async function findExistingInbound(eventId: string, db: DbClient): Promise<InboundCore | null> {
@@ -201,7 +215,8 @@ async function findExistingInbound(eventId: string, db: DbClient): Promise<Inbou
     contact: row,
     conversation_id: row.conversation_id,
     replayed: true,
-    explicit_opt_out: row.consent_status === 'revoked',
+    explicit_opt_out: isExplicitOptOut(row.content),
+    opt_out_ack_eligible: optOutAckEligibleFromMetadata(row.metadata),
     consent_status: row.consent_status ?? 'unknown',
     // A replay must return the window the original message already belongs to,
     // never open a second one.
@@ -306,6 +321,28 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
       },
     });
     await db`SELECT id FROM contacts WHERE id = ${contact.id}::uuid FOR UPDATE`;
+
+    // Captura determinista y consentida de identidad: el cliente la escribió
+    // él mismo en este mensaje ("Soy Bruno Aguilar, bruno@…"). Última
+    // declaración gana; un mensaje sin identidad nunca borra la existente.
+    // P0 (informe 2026-08-23): el bot afirmaba registrar datos que ninguna
+    // pieza persistía — esta es la pieza que los persiste.
+    const capturedIdentity =
+      envelope.message.type === 'unsupported'
+        ? { name: null, email: null }
+        : extractContactIdentity(envelope.message.text);
+    if (capturedIdentity.name !== null || capturedIdentity.email !== null) {
+      await db`
+        UPDATE contacts
+        SET
+          name = COALESCE(${capturedIdentity.name}, name),
+          email = COALESCE(${capturedIdentity.email}, email),
+          updated_at = now()
+        WHERE id = ${contact.id}::uuid
+      `;
+      contact.name = capturedIdentity.name ?? contact.name;
+      contact.email = capturedIdentity.email ?? contact.email;
+    }
     mark('contact');
 
     const threads = await db<Array<{ id: string; contact_id: string }>>`
@@ -376,6 +413,16 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
     // Both branches surface the resulting consent themselves (RETURNING /
     // the function's current_status), so no separate final SELECT is needed.
     const explicitOptOut = isExplicitOptOut(envelope.message.text);
+    const priorPermission = explicitOptOut
+      ? await db<Array<{ consent_status: 'unknown' | 'granted' | 'revoked' }>>`
+          SELECT consent_status
+          FROM contact_channel_permissions
+          WHERE contact_id = ${contact.id}::uuid AND channel = ${channel}
+          FOR UPDATE
+        `
+      : [];
+    const optOutAckEligible = explicitOptOut
+      && (priorPermission[0]?.consent_status ?? 'unknown') !== 'revoked';
     let consentStatus: 'unknown' | 'granted' | 'revoked';
     if (explicitOptOut) {
       const consentRows = await db<Array<{ current_status: 'unknown' | 'granted' | 'revoked' | null }>>`
@@ -425,6 +472,7 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
         provider_message_id: envelope.provider_message_id ?? null,
         occurred_at: envelope.message.occurred_at,
         reply_to_external_message_id: envelope.message.reply_to_external_message_id,
+        opt_out_ack_eligible: optOutAckEligible,
       },
     }, {
       db,
@@ -479,15 +527,44 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
       conversation_id: conversationId,
       replayed: !reservation.was_created,
       explicit_opt_out: explicitOptOut,
+      opt_out_ack_eligible: optOutAckEligible,
       consent_status: consentStatus,
       batch,
+      captured_identity: capturedIdentity,
     };
   });
 }
 
 export async function processInboundMessage(envelope: InboundEnvelope): Promise<IngestContext> {
-  const { inbound, contact, conversation_id, replayed, explicit_opt_out, consent_status, batch } =
-    await persistInbound(envelope);
+  const {
+    inbound,
+    contact,
+    conversation_id,
+    replayed,
+    explicit_opt_out,
+    opt_out_ack_eligible,
+    consent_status,
+    batch,
+    captured_identity,
+  } = await persistInbound(envelope);
+
+  // Identidad recién capturada: si este contacto ya tiene una fila de lead en
+  // el outbox de Sheets (creada por un payment_link_sent anterior), se
+  // refresca nombre/apellido/email en esa fila. Nunca crea filas nuevas y
+  // falla en silencio registrado: jamás bloquea el turno.
+  if (!replayed && (captured_identity?.name || captured_identity?.email)) {
+    const { nombre, apellido } = captured_identity.name
+      ? splitFullName(captured_identity.name)
+      : { nombre: undefined, apellido: undefined };
+    await refreshLeadIdentityProjection({
+      contactId: contact.id,
+      phone: contact.phone,
+      nombre,
+      apellido,
+      email: captured_identity.email ?? undefined,
+      traceId: envelope.trace_id,
+    });
+  }
   // Fase 3: la ingesta no construye contexto. Recuperación semántica, base de
   // conocimiento y regeneración de resumen son trabajo derivado y se hacen una
   // sola vez, en el claim, por el workflow que realmente es dueño del lote.
@@ -510,7 +587,7 @@ export async function processInboundMessage(envelope: InboundEnvelope): Promise<
     lifecycle_status: contact.lifecycle_status,
     deleted_at: contact.deleted_at,
     consent_status,
-    explicit_opt_out,
+    explicit_opt_out: explicit_opt_out && opt_out_ack_eligible,
     unsupported_message: envelope.message.type === 'unsupported',
   });
 

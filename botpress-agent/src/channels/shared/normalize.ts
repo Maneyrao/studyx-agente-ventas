@@ -1,8 +1,10 @@
 import type { WorkflowInputSchema } from '../../schemas/contracts'
 import type { z } from '@botpress/runtime'
 
-// Re-exported for convenience; source of truth is `./emulator-envelope`.
+// Re-exported for adapter/config convenience; each envelope module remains the source of truth.
 export { E164_PATTERN, DEFAULT_DEVELOPMENT_EMULATOR_PHONE_E164 } from './emulator-envelope'
+export { normalizeWhatsAppPhone } from './whatsapp-envelope'
+export type { WhatsAppEnvelopeInput } from './whatsapp-envelope'
 
 export type CanonicalWorkflowInput = z.infer<typeof WorkflowInputSchema>
 

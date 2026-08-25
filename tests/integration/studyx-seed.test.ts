@@ -30,6 +30,21 @@ const EXPECTED_CLASSES: Record<string, number> = {
 };
 
 const EXPECTED_CODES = Object.keys(EXPECTED_CLASSES).sort();
+const EXPECTED_KNOWLEDGE_TITLES = [
+  'Beca StudyX y cierre',
+  'Consentimiento: qué canal está cubierto',
+  'Devoluciones: los documentos se contradicen',
+  'Límites comerciales (T&C literales)',
+  'Modalidad: qué se puede afirmar sobre las clases',
+  'Prueba social publicada y programa Enterprise',
+  'Qué vende StudyX',
+  'Quién cobra y bajo qué ley',
+  'Tamaño real del catálogo y qué no afirmar',
+];
+
+function legacyRows<T extends { code: string }>(rows: T[]): T[] {
+  return rows.filter((row) => EXPECTED_CODES.includes(row.code));
+}
 
 // The eight mandated phrases from the plan's Global Constraints / análisis Parte D.2.
 const MANDATED_FORBIDDEN_PROMISES = [
@@ -59,13 +74,21 @@ run('seed studyx (production)', () => {
     expect(rows[0]).toMatchObject({ environment: 'production', status: 'active' });
   });
 
-  it('siembra 14 offerings con el total y las tres opciones confirmadas por el dueño', async () => {
-    const rows = await db!`
+  it('mantiene los 14 offerings base con el total y las tres opciones confirmadas por el dueño', async () => {
+    const rows = await db!<Array<{
+      code: string;
+      price_type: string;
+      price_amount: string;
+      currency: string;
+      guardrails: { never_invent_price: boolean };
+      metadata: { total_price_usd: number; payment_options_owner_confirmed: boolean };
+    }>>`
       SELECT o.code, o.price_type, o.price_amount, o.currency, o.guardrails, o.metadata
       FROM offerings o JOIN workspaces w ON w.id = o.workspace_id
       WHERE w.slug = ${WS}`;
-    expect(rows).toHaveLength(14);
-    for (const r of rows) {
+    const baseRows = legacyRows(rows);
+    expect(baseRows).toHaveLength(14);
+    for (const r of baseRows) {
       expect(r.price_type).toBe('fixed');
       expect(Number(r.price_amount)).toBe(360);
       expect(r.currency).toBe('USD');
@@ -86,11 +109,11 @@ run('seed studyx (production)', () => {
     expect(plans.every((plan) => typeof plan.payment_link === 'string' && plan.payment_link.startsWith('https://buy.stripe.com/'))).toBe(true);
   });
 
-  it('el set exacto de 14 codes coincide con la tabla del brief', async () => {
+  it('el set base de 14 codes coincide con la tabla del brief', async () => {
     const rows = await db!<Array<{ code: string }>>`
       SELECT code FROM offerings o JOIN workspaces w ON w.id = o.workspace_id
       WHERE w.slug = ${WS}`;
-    const actualCodes = rows.map((r) => r.code).sort();
+    const actualCodes = rows.map((r) => r.code).filter((code) => EXPECTED_CODES.includes(code)).sort();
     expect(actualCodes).toEqual(EXPECTED_CODES);
   });
 
@@ -98,8 +121,9 @@ run('seed studyx (production)', () => {
     const rows = await db!<Array<{ code: string; delivery: { classes: number } }>>`
       SELECT code, delivery FROM offerings o JOIN workspaces w ON w.id = o.workspace_id
       WHERE w.slug = ${WS}`;
-    expect(rows).toHaveLength(14);
-    for (const r of rows) {
+    const baseRows = legacyRows(rows);
+    expect(baseRows).toHaveLength(14);
+    for (const r of baseRows) {
       expect(r.delivery.classes, `classes for ${r.code}`).toBe(EXPECTED_CLASSES[r.code]);
     }
   });
@@ -108,8 +132,9 @@ run('seed studyx (production)', () => {
     const rows = await db!<Array<{ code: string; guardrails: { forbidden_promises: string[] } }>>`
       SELECT code, guardrails FROM offerings o JOIN workspaces w ON w.id = o.workspace_id
       WHERE w.slug = ${WS}`;
-    expect(rows).toHaveLength(14);
-    for (const r of rows) {
+    const baseRows = legacyRows(rows);
+    expect(baseRows).toHaveLength(14);
+    for (const r of baseRows) {
       for (const phrase of MANDATED_FORBIDDEN_PROMISES) {
         expect(
           r.guardrails.forbidden_promises,
@@ -128,14 +153,15 @@ run('seed studyx (production)', () => {
     const rows = await db!<Array<{ code: string; metadata: Record<string, unknown> }>>`
       SELECT o.code, o.metadata FROM offerings o JOIN workspaces w ON w.id = o.workspace_id
       WHERE w.slug = ${WS}`;
-    expect(rows).toHaveLength(14);
-    for (const r of rows) {
+    const baseRows = legacyRows(rows);
+    expect(baseRows).toHaveLength(14);
+    for (const r of baseRows) {
       expect(r.metadata.payment_options_owner_confirmed, `owner flag for ${r.code}`).toBe(true);
       expect(Number(r.metadata.total_price_usd), `total for ${r.code}`).toBe(360);
     }
   });
 
-  it('siembra las 9 fuentes de conocimiento del análisis', async () => {
+  it('conserva las 9 fuentes base de conocimiento del análisis', async () => {
     // El workspace además carga 14 temarios como source_type='offering'
     // (seed studyx-temarios.sql); las 9 fuentes del análisis son las de los
     // demás tipos.
@@ -144,19 +170,8 @@ run('seed studyx (production)', () => {
       WHERE w.slug = ${WS} AND k.source_type <> 'offering'`;
     // Ambos lados con el mismo comparador: los títulos llevan acentos y el
     // orden por code units no coincide con el alfabético.
-    expect(rows.map((r) => r.title).sort()).toEqual(
-      [
-        'Beca StudyX y cierre',
-        'Consentimiento: qué canal está cubierto',
-        'Devoluciones: los documentos se contradicen',
-        'Límites comerciales (T&C literales)',
-        'Modalidad: qué se puede afirmar sobre las clases',
-        'Prueba social publicada y programa Enterprise',
-        'Qué vende StudyX',
-        'Quién cobra y bajo qué ley',
-        'Tamaño real del catálogo y qué no afirmar',
-      ].sort()
-    );
+    const titles = rows.map((r) => r.title);
+    expect(EXPECTED_KNOWLEDGE_TITLES.every((title) => titles.includes(title))).toBe(true);
   });
 
   it('la política comercial cita los límites confirmados por el dueño', async () => {

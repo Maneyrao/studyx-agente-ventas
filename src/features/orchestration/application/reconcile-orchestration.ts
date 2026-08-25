@@ -48,6 +48,15 @@ export interface ReconcileOrchestrationResult {
     readonly by_action: Record<DeliveryReconciliationAction, number>;
     readonly failed: number;
   };
+  readonly payment_projections: {
+    readonly status: 'ready' | 'disabled' | 'error';
+    readonly reason: string | null;
+    readonly examined: number;
+    readonly repaired: number;
+    readonly unchanged: number;
+    readonly skipped: number;
+    readonly failed: number;
+  };
   readonly orphaned_decisions: number;
   readonly findings: Array<{
     readonly kind: 'claim' | 'delivery' | 'decision';
@@ -68,6 +77,16 @@ export interface ReconcileOrchestrationDependencies {
     event_key: string;
     correlation_id: string;
   }) => Promise<void>;
+  /** Derived projection repair only. This dependency has no provider/send port. */
+  readonly reconcilePaymentProjections?: (input: { limit?: number }) => Promise<{
+    status: 'ready' | 'disabled' | 'error';
+    reason: string | null;
+    examined: number;
+    repaired: number;
+    unchanged: number;
+    skipped: number;
+    failed: number;
+  }>;
 }
 
 const EMPTY_ACTIONS: Record<DeliveryReconciliationAction, number> = {
@@ -77,6 +96,13 @@ const EMPTY_ACTIONS: Record<DeliveryReconciliationAction, number> = {
   pause_ambiguous: 0,
   wait: 0,
 };
+
+export function paymentProjectionReconciliationHttpStatus(
+  status: 'ready' | 'disabled' | 'error',
+): 200 | 500 | 503 {
+  if (status === 'ready') return 200;
+  return status === 'disabled' ? 503 : 500;
+}
 
 export async function reconcileOrchestration(
   input: ReconcileOrchestrationInput,
@@ -189,6 +215,31 @@ export async function reconcileOrchestration(
     }
   }
 
+  let paymentProjections = {
+    status: 'disabled' as 'ready' | 'disabled' | 'error',
+    reason: 'PAYMENT_PROJECTION_RECONCILER_NOT_CONFIGURED' as string | null,
+    examined: 0,
+    repaired: 0,
+    unchanged: 0,
+    skipped: 0,
+    failed: 0,
+  };
+  if (deps.reconcilePaymentProjections) {
+    try {
+      paymentProjections = await deps.reconcilePaymentProjections({
+        limit: input.delivery_limit,
+      });
+    } catch (error) {
+      paymentProjections.status = 'error';
+      paymentProjections.reason = 'RECONCILIATION_FAILED';
+      paymentProjections.failed = 1;
+      log('orchestration.reconcile.payment_projections_failed', {
+        trace_id: input.trace_id,
+        error: String(error),
+      });
+    }
+  }
+
   // ── Decisiones sin outbound ──────────────────────────────────────────────
   // No se reparan desde acá: una decisión es inmutable después del commit, así
   // que lo único honesto es dejarlas visibles.
@@ -215,6 +266,7 @@ export async function reconcileOrchestration(
     trace_id: input.trace_id,
     claims: { examined: claims.length, abandoned, reclaimable },
     deliveries: { examined: stale.length, by_action: byAction, failed },
+    payment_projections: paymentProjections,
     orphaned_decisions: orphaned.length,
     findings,
   };
@@ -229,6 +281,11 @@ export async function reconcileOrchestration(
     abandoned_deliveries: byAction.abandon,
     orphaned_decisions: orphaned.length,
     failed,
+    payment_projections_examined: paymentProjections.examined,
+    payment_projections_repaired: paymentProjections.repaired,
+    payment_projections_failed: paymentProjections.failed,
+    payment_projections_status: paymentProjections.status,
+    payment_projections_reason: paymentProjections.reason,
   });
 
   return result;

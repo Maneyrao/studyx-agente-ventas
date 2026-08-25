@@ -115,6 +115,7 @@ function buildDeps(options: {
     content: string;
     created_at: string;
     message_type: string;
+    opt_out_ack_eligible?: boolean;
   }>;
   embedding?: { embed(query: string): Promise<readonly number[]> };
   memory?: ClaimBatchDependencies['memory'];
@@ -506,6 +507,71 @@ describe('claimBatch', () => {
     expect(memory.search).not.toHaveBeenCalled();
   });
 
+  it('preserves the one opt-out acknowledgement for the batch that revoked consent', async () => {
+    const embedding = { embed: vi.fn().mockResolvedValue([0.125, -0.25]) };
+    const memory = { search: vi.fn().mockResolvedValue([]) };
+    const knowledge = { search: vi.fn().mockResolvedValue([]) };
+    const deps = buildDeps({
+      factsResult: facts({
+        contact: {
+          ...facts().contact,
+          lifecycle_status: 'blocked',
+          consent_status: 'revoked',
+        },
+      }),
+      messagesResult: [{
+        id: 'm1',
+        conversation_seq: 1,
+        content: 'Redes Informáticas, dame de baja',
+        created_at: '2026-08-11T12:00:00.000Z',
+        message_type: 'text',
+        opt_out_ack_eligible: true,
+      }],
+      embedding,
+      memory,
+      knowledge,
+    });
+
+    const result = await claimBatch(input, deps);
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.policy).toMatchObject({
+      may_respond: true,
+      allowed_response_types: ['opt_out_ack'],
+      reason: 'EXPLICIT_OPT_OUT_ACK_ONLY',
+      blocked: true,
+    });
+    expect(embedding.embed).not.toHaveBeenCalled();
+    expect(memory.search).not.toHaveBeenCalled();
+    expect(knowledge.search).not.toHaveBeenCalled();
+  });
+
+  it('does not acknowledge a repeated opt-out whose transition was already confirmed', async () => {
+    const memory = { search: vi.fn().mockResolvedValue([]) };
+    const deps = buildDeps({
+      factsResult: facts({ contact: { ...facts().contact, consent_status: 'revoked' } }),
+      messagesResult: [{
+        id: 'm1',
+        conversation_seq: 1,
+        content: 'Sacame de la lista definitivamente',
+        created_at: '2026-08-11T12:00:00.000Z',
+        message_type: 'text',
+        opt_out_ack_eligible: false,
+      }],
+      memory,
+    });
+
+    const result = await claimBatch(input, deps);
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.policy).toMatchObject({
+      may_respond: false,
+      allowed_response_types: [],
+      reason: 'CONSENT_REVOKED',
+    });
+    expect(memory.search).not.toHaveBeenCalled();
+  });
+
   it('clamps retrieval to the configured maximums', async () => {
     const many = Array.from({ length: 12 }, (_, index) => ({
       memory_id: `mem-${index}`,
@@ -587,6 +653,41 @@ function businessContextView(overrides: Partial<BusinessContextView> = {}): Busi
   };
 }
 
+function businessOffering(
+  code: string,
+  displayName: string,
+  academy: string | null,
+): BusinessContextView['offerings'][number] {
+  return {
+    code,
+    display_name: displayName,
+    aliases: [],
+    academy,
+    offering_type: 'course',
+    description: null,
+    value_proposition: null,
+    price_type: 'fixed',
+    price: { amount: '360.00', currency: 'USD' },
+    price_assertable: true,
+    billing_interval: null,
+    modality: null,
+    schedules: [],
+    certification: null,
+    hours_per_month: null,
+    classes: null,
+    modules: null,
+    includes: [],
+    syllabus_published: null,
+    language: null,
+    min_age: null,
+    policies: {
+      allowed_promise: null,
+      forbidden_promises: [],
+      price_message: null,
+    },
+  };
+}
+
 describe('claimBatch business context', () => {
   it('does not log a truncation event when every offering fits the cap', async () => {
     const log = vi.fn();
@@ -624,6 +725,655 @@ describe('claimBatch business context', () => {
       offerings_truncated: 3,
     });
   });
+
+  it('resolves the current catalog request from the already-loaded snapshot without another catalog call', async () => {
+    const messages = [{
+      id: 'm1',
+      conversation_seq: 1,
+      content: 'Quiero el curso de Inglés Nivel 3',
+      created_at: '2026-08-11T12:00:00.000Z',
+      message_type: 'text',
+    }];
+    const deps = {
+      ...buildDeps({ messagesResult: messages }),
+      business: {
+        load: vi.fn().mockResolvedValue(businessContextView({
+          offerings: [
+            businessOffering('ingles_3', 'Inglés Nivel 3', 'Idiomas'),
+            businessOffering('diseno_interiores', 'Diseño de Interiores', 'Diseño'),
+          ],
+        })),
+      },
+    };
+
+    const result = await claimBatch(input, deps);
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.catalog_resolution).toEqual({
+      kind: 'exact',
+      offeringCode: 'ingles_3',
+      displayName: 'Inglés Nivel 3',
+      academy: 'Idiomas',
+      match: 'canonical',
+    });
+    expect(result.sales_context.course_of_interest).toBe('Inglés Nivel 3');
+    expect(result.diagnostics.counters.catalog_calls).toBe(0);
+    expect(deps.business.load).toHaveBeenCalledTimes(1);
+    expect(ClaimedTurnSchema.parse(withWireUuids(result)).catalog_resolution).toEqual(
+      result.catalog_resolution,
+    );
+  });
+
+  it('distinguishes a real not-found result from an incomplete catalog', async () => {
+    const messages = [{
+      id: 'm1',
+      conversation_seq: 1,
+      content: 'Quiero aprender Python',
+      created_at: '2026-08-11T12:00:00.000Z',
+      message_type: 'text',
+    }];
+    const complete = businessContextView({
+      offerings: [businessOffering('ingles_3', 'Inglés Nivel 3', 'Idiomas')],
+    });
+    const completeResult = await claimBatch(input, {
+      ...buildDeps({ messagesResult: messages }),
+      business: { load: vi.fn().mockResolvedValue(complete) },
+    });
+    if (completeResult.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(completeResult.catalog_resolution).toMatchObject({
+      kind: 'not_found',
+      requestedText: 'Quiero aprender Python',
+    });
+    expect(completeResult.sales_context.course_of_interest).toBeNull();
+
+    const truncatedResult = await claimBatch(input, {
+      ...buildDeps({ messagesResult: messages }),
+      business: {
+        load: vi.fn().mockResolvedValue({ ...complete, offerings_truncated: 1 }),
+      },
+    });
+    if (truncatedResult.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(truncatedResult.catalog_resolution).toEqual({
+      kind: 'unavailable',
+      reason: 'snapshot_truncated',
+    });
+    expect(truncatedResult.sales_context.course_of_interest).toBeNull();
+  });
+
+  it('does not revive a historical course when the current batch selects an unknown course', async () => {
+    const messages = [{
+      id: 'm1',
+      conversation_seq: 1,
+      content: 'Quiero Python',
+      created_at: '2026-08-11T12:00:00.000Z',
+      message_type: 'text',
+    }];
+    const result = await claimBatch(input, {
+      ...buildDeps({
+        messagesResult: messages,
+        factsResult: facts({
+          recent_turns: [{
+            direction: 'inbound',
+            content: 'Quiero Inglés Nivel 3',
+            created_at: '2026-08-11T11:59:00.000Z',
+          }],
+        }),
+      }),
+      business: {
+        load: vi.fn().mockResolvedValue(businessContextView({
+          offerings: [businessOffering('ingles_3', 'Inglés Nivel 3', 'Idiomas')],
+        })),
+      },
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.catalog_resolution).toMatchObject({
+      kind: 'not_found',
+      requestedText: 'Quiero Python',
+    });
+    expect(result.sales_context.course_of_interest).toBeNull();
+    expect(result.sales_context.offering_code).toBeNull();
+  });
+
+  it('does not preserve a historical course after an explicit course negation', async () => {
+    const messages = [{
+      id: 'm1',
+      conversation_seq: 1,
+      content: 'No quiero Marketing Digital',
+      created_at: '2026-08-11T12:00:00.000Z',
+      message_type: 'text',
+    }];
+    const result = await claimBatch(input, {
+      ...buildDeps({
+        messagesResult: messages,
+        factsResult: facts({
+          recent_turns: [{
+            direction: 'inbound',
+            content: 'Quiero Marketing Digital',
+            created_at: '2026-08-11T11:59:00.000Z',
+          }],
+        }),
+      }),
+      business: {
+        load: vi.fn().mockResolvedValue(businessContextView({
+          offerings: [businessOffering('marketing_digital', 'Marketing Digital', 'Marketing')],
+        })),
+      },
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.catalog_resolution).toEqual({ kind: 'no_catalog_intent' });
+    expect(result.sales_context.course_of_interest).toBeNull();
+    expect(result.sales_context.offering_code).toBeNull();
+  });
+
+  it('does not preserve a batch course after the latest message cancels it', async () => {
+    const messages = [
+      {
+        id: 'm1',
+        conversation_seq: 1,
+        content: 'Quiero Marketing Digital',
+        created_at: '2026-08-11T12:00:00.000Z',
+        message_type: 'text',
+      },
+      {
+        id: 'm2',
+        conversation_seq: 2,
+        content: 'No mejor no',
+        created_at: '2026-08-11T12:00:01.000Z',
+        message_type: 'text',
+      },
+    ];
+    const result = await claimBatch(input, {
+      ...buildDeps({ messagesResult: messages }),
+      business: {
+        load: vi.fn().mockResolvedValue(businessContextView({
+          offerings: [businessOffering('marketing_digital', 'Marketing Digital', 'Marketing')],
+        })),
+      },
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.catalog_resolution).toEqual({ kind: 'no_catalog_intent' });
+    expect(result.sales_context.course_of_interest).toBeNull();
+    expect(result.sales_context.offering_code).toBeNull();
+  });
+
+  it('does not preserve a course identity when the current snapshot is truncated', async () => {
+    const messages = [{
+      id: 'm1',
+      conversation_seq: 1,
+      content: 'Quiero Marketing Digital',
+      created_at: '2026-08-11T12:00:00.000Z',
+      message_type: 'text',
+    }];
+    const result = await claimBatch(input, {
+      ...buildDeps({ messagesResult: messages }),
+      business: {
+        load: vi.fn().mockResolvedValue(businessContextView({
+          offerings: [businessOffering('marketing_digital', 'Marketing Digital', 'Marketing')],
+          offerings_truncated: 1,
+        })),
+      },
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.catalog_resolution).toEqual({
+      kind: 'unavailable',
+      reason: 'snapshot_truncated',
+    });
+    expect(result.sales_context.course_of_interest).toBeNull();
+    expect(result.sales_context.offering_code).toBeNull();
+  });
+
+  it('derives the last canonical course for a plan-only follow-up without treating the plan as a catalog request', async () => {
+    const messages = [{
+      id: 'm1',
+      conversation_seq: 1,
+      content: 'Elijo 12 cuotas',
+      created_at: '2026-08-11T12:00:00.000Z',
+      message_type: 'text',
+    }];
+    const deps = {
+      ...buildDeps({
+        messagesResult: messages,
+        factsResult: facts({
+          recent_turns: [{
+            direction: 'inbound',
+            content: 'Quiero hacer Inglés Nivel 3',
+            created_at: '2026-08-11T11:59:00.000Z',
+          }],
+        }),
+      }),
+      business: {
+        load: vi.fn().mockResolvedValue(businessContextView({
+          offerings: [businessOffering('ingles_3', 'Inglés Nivel 3', 'Idiomas')],
+        })),
+      },
+    };
+
+    const result = await claimBatch(input, deps);
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.catalog_resolution).toEqual({ kind: 'no_catalog_intent' });
+    expect(result.sales_context.course_of_interest).toBe('Inglés Nivel 3');
+    expect(result.sales_context.offering_code).toBe('ingles_3');
+  });
+
+  it.each([
+    {
+      name: 'referential fact follow-up',
+      history: ['Quiero Decoración de Interiores'],
+      current: '¿Cuántas clases tiene el programa?',
+      expectedCode: 'decoracion_de_interiores',
+      expectedName: 'Decoración de Interiores',
+    },
+    {
+      name: 'payment confirmation',
+      history: ['Quiero Decoración de Interiores'],
+      current: 'Confirmo 6 cuotas',
+      expectedCode: 'decoracion_de_interiores',
+      expectedName: 'Decoración de Interiores',
+    },
+    {
+      name: 'explicit course switch',
+      history: ['Quiero Decoración de Interiores'],
+      current: 'Mejor Marketing Digital',
+      expectedCode: 'marketing_digital',
+      expectedName: 'Marketing Digital',
+    },
+    {
+      name: 'referential rejection',
+      history: ['Quiero Decoración de Interiores'],
+      current: 'No quiero ese curso',
+      expectedCode: null,
+      expectedName: null,
+    },
+    {
+      name: 'ambiguous new selection',
+      history: ['Quiero Decoración de Interiores'],
+      current: 'Quiero Fotografía',
+      expectedCode: null,
+      expectedName: null,
+    },
+  ])('enforces exact cross-turn SKU precedence for $name', async ({
+    history,
+    current,
+    expectedCode,
+    expectedName,
+  }) => {
+    const result = await claimBatch(input, {
+      ...buildDeps({
+        messagesResult: [{
+          id: 'm1',
+          conversation_seq: 1,
+          content: current,
+          created_at: '2026-08-11T12:00:00.000Z',
+          message_type: 'text',
+        }],
+        factsResult: facts({
+          recent_turns: history.map((content) => ({
+            direction: 'inbound' as const,
+            content,
+            created_at: '2026-08-11T11:59:00.000Z',
+          })),
+        }),
+      }),
+      business: {
+        load: vi.fn().mockResolvedValue(businessContextView({
+          offerings: [
+            businessOffering(
+              'decoracion_de_interiores',
+              'Decoración de Interiores',
+              'Diseño',
+            ),
+            businessOffering('marketing_digital', 'Marketing Digital', 'Marketing'),
+            businessOffering('fotografia_profesional', 'Fotografía Profesional', 'Fotografía'),
+            businessOffering(
+              'fotografia_celulares',
+              'Fotografía con Celulares para Tiendas Online',
+              'Fotografía',
+            ),
+          ],
+        })),
+      },
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.sales_context.offering_code).toBe(expectedCode);
+    expect(result.sales_context.course_of_interest).toBe(expectedName);
+  });
+
+  it('does not revive a historical SKU after a generic course correction', async () => {
+    const result = await claimBatch(input, {
+      ...buildDeps({
+        messagesResult: [{
+          id: 'm1',
+          conversation_seq: 1,
+          content: 'Cambiemos de curso.',
+          created_at: '2026-08-11T12:00:00.000Z',
+          message_type: 'text',
+        }],
+        factsResult: facts({
+          recent_turns: [{
+            direction: 'inbound',
+            content: 'Quiero Decoración de Interiores',
+            created_at: '2026-08-11T11:59:00.000Z',
+          }],
+        }),
+      }),
+      business: {
+        load: vi.fn().mockResolvedValue(businessContextView({
+          offerings: [businessOffering(
+            'decoracion_de_interiores',
+            'Decoración de Interiores',
+            'Diseño',
+          )],
+        })),
+      },
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.sales_context.offering_code).toBeNull();
+    expect(result.sales_context.course_of_interest).toBeNull();
+  });
+
+  it('does not revive a historical SKU for a newly requested unavailable program', async () => {
+    const current = 'Necesito información del programa de Astronomía';
+    const result = await claimBatch(input, {
+      ...buildDeps({
+        messagesResult: [{
+          id: 'm1',
+          conversation_seq: 1,
+          content: current,
+          created_at: '2026-08-11T12:00:00.000Z',
+          message_type: 'text',
+        }],
+        factsResult: facts({
+          recent_turns: [{
+            direction: 'inbound',
+            content: 'Quiero Decoración de Interiores',
+            created_at: '2026-08-11T11:59:00.000Z',
+          }],
+        }),
+      }),
+      business: {
+        load: vi.fn().mockResolvedValue(businessContextView({
+          offerings: [businessOffering(
+            'decoracion_de_interiores',
+            'Decoración de Interiores',
+            'Diseño',
+          )],
+        })),
+      },
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.catalog_resolution).toMatchObject({ kind: 'not_found', requestedText: current });
+    expect(result.sales_context.offering_code).toBeNull();
+    expect(result.sales_context.course_of_interest).toBeNull();
+  });
+
+  it.each([
+    '¿Se puede hacer sin usar un programa de diseño?',
+    'Nunca usé un programa de diseño, ¿igual puedo hacer el curso?',
+  ])('preserves exact historical SKU for a program-requirement follow-up: %s', async (current) => {
+    const result = await claimBatch(input, {
+      ...buildDeps({
+        messagesResult: [{
+          id: 'm1',
+          conversation_seq: 1,
+          content: current,
+          created_at: '2026-08-11T12:00:00.000Z',
+          message_type: 'text',
+        }],
+        factsResult: facts({
+          recent_turns: [{
+            direction: 'inbound',
+            content: 'Quiero Decoración de Interiores',
+            created_at: '2026-08-11T11:59:00.000Z',
+          }],
+        }),
+      }),
+      business: {
+        load: vi.fn().mockResolvedValue(businessContextView({
+          offerings: [businessOffering(
+            'decoracion_de_interiores',
+            'Decoración de Interiores',
+            'Diseño',
+          )],
+        })),
+      },
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.catalog_resolution).toEqual({ kind: 'no_catalog_intent' });
+    expect(result.sales_context).toMatchObject({
+      offering_code: 'decoracion_de_interiores',
+      course_of_interest: 'Decoración de Interiores',
+    });
+  });
+
+  it('clears history when an experience clause is followed by an explicit unknown-program request', async () => {
+    const current = 'Nunca usé un programa de diseño; necesito información del programa de Astronomía';
+    const result = await claimBatch(input, {
+      ...buildDeps({
+        messagesResult: [{
+          id: 'm1',
+          conversation_seq: 1,
+          content: current,
+          created_at: '2026-08-11T12:00:00.000Z',
+          message_type: 'text',
+        }],
+        factsResult: facts({
+          recent_turns: [{
+            direction: 'inbound',
+            content: 'Quiero Decoración de Interiores',
+            created_at: '2026-08-11T11:59:00.000Z',
+          }],
+        }),
+      }),
+      business: {
+        load: vi.fn().mockResolvedValue(businessContextView({
+          offerings: [businessOffering(
+            'decoracion_de_interiores',
+            'Decoración de Interiores',
+            'Diseño',
+          )],
+        })),
+      },
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.catalog_resolution).toMatchObject({ kind: 'not_found', requestedText: current });
+    expect(result.sales_context.offering_code).toBeNull();
+    expect(result.sales_context.course_of_interest).toBeNull();
+  });
+
+  it('preserves the exact historical SKU when homonymous courses exist', async () => {
+    const messages = [{
+      id: 'm1',
+      conversation_seq: 1,
+      content: 'Elijo 12 cuotas',
+      created_at: '2026-08-11T12:00:00.000Z',
+      message_type: 'text',
+    }];
+    const result = await claimBatch(input, {
+      ...buildDeps({
+        messagesResult: messages,
+        factsResult: facts({
+          recent_turns: [{
+            direction: 'inbound',
+            content: 'Quiero ingles_sur',
+            created_at: '2026-08-11T11:59:00.000Z',
+          }],
+        }),
+      }),
+      business: {
+        load: vi.fn().mockResolvedValue(businessContextView({
+          offerings: [
+            businessOffering('ingles_norte', 'Inglés Inicial', 'Academia Norte'),
+            businessOffering('ingles_sur', 'Inglés Inicial', 'Academia Sur'),
+          ],
+        })),
+      },
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.catalog_resolution).toEqual({ kind: 'no_catalog_intent' });
+    expect(result.sales_context.course_of_interest).toBe('Inglés Inicial');
+    expect(result.sales_context.offering_code).toBe('ingles_sur');
+  });
+
+  it('clears historical SKU identity when the current selection is ambiguous', async () => {
+    const messages = [{
+      id: 'm1',
+      conversation_seq: 1,
+      content: 'Quiero Inglés Inicial',
+      created_at: '2026-08-11T12:00:00.000Z',
+      message_type: 'text',
+    }];
+    const result = await claimBatch(input, {
+      ...buildDeps({
+        messagesResult: messages,
+        factsResult: facts({
+          recent_turns: [{
+            direction: 'inbound',
+            content: 'Quiero ingles_sur',
+            created_at: '2026-08-11T11:59:00.000Z',
+          }],
+        }),
+      }),
+      business: {
+        load: vi.fn().mockResolvedValue(businessContextView({
+          offerings: [
+            businessOffering('ingles_norte', 'Inglés Inicial', 'Academia Norte'),
+            businessOffering('ingles_sur', 'Inglés Inicial', 'Academia Sur'),
+          ],
+        })),
+      },
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.catalog_resolution.kind).toBe('ambiguous');
+    expect(result.sales_context.course_of_interest).toBeNull();
+    expect(result.sales_context.offering_code).toBeNull();
+  });
+
+  it('does not let a neutral typo-like sentence replace historical course identity', async () => {
+    const messages = [{
+      id: 'm1',
+      conversation_seq: 1,
+      content: 'El oratorio está cerrado',
+      created_at: '2026-08-11T12:00:00.000Z',
+      message_type: 'text',
+    }];
+    const result = await claimBatch(input, {
+      ...buildDeps({
+        messagesResult: messages,
+        factsResult: facts({
+          recent_turns: [{
+            direction: 'inbound',
+            content: 'Quiero Marketing Digital',
+            created_at: '2026-08-11T11:59:00.000Z',
+          }],
+        }),
+      }),
+      business: {
+        load: vi.fn().mockResolvedValue(businessContextView({
+          offerings: [
+            businessOffering('oratoria', 'Oratoria', 'Comunicación'),
+            businessOffering('marketing_digital', 'Marketing Digital', 'Marketing'),
+          ],
+        })),
+      },
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.catalog_resolution).toEqual({ kind: 'no_catalog_intent' });
+    expect(result.sales_context.course_of_interest).toBe('Marketing Digital');
+    expect(result.sales_context.offering_code).toBe('marketing_digital');
+  });
+
+  it('preserves historical course identity through a generic schedule question', async () => {
+    const messages = [{
+      id: 'm1',
+      conversation_seq: 1,
+      content: '¿Tienen horarios los sábados?',
+      created_at: '2026-08-11T12:00:00.000Z',
+      message_type: 'text',
+    }];
+    const result = await claimBatch(input, {
+      ...buildDeps({
+        messagesResult: messages,
+        factsResult: facts({
+          recent_turns: [{
+            direction: 'inbound',
+            content: 'Quiero Marketing Digital',
+            created_at: '2026-08-11T11:59:00.000Z',
+          }],
+        }),
+      }),
+      business: {
+        load: vi.fn().mockResolvedValue(businessContextView({
+          offerings: [businessOffering('marketing_digital', 'Marketing Digital', 'Marketing')],
+        })),
+      },
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.catalog_resolution).toEqual({ kind: 'no_catalog_intent' });
+    expect(result.sales_context.course_of_interest).toBe('Marketing Digital');
+    expect(result.sales_context.offering_code).toBe('marketing_digital');
+  });
+
+  it('treats a greeting as neutral when the business snapshot is unavailable', async () => {
+    const messages = [{
+      id: 'm1',
+      conversation_seq: 1,
+      content: 'Hola',
+      created_at: '2026-08-11T12:00:00.000Z',
+      message_type: 'text',
+    }];
+    const result = await claimBatch(input, {
+      ...buildDeps({ messagesResult: messages }),
+      business: { load: vi.fn().mockResolvedValue(null) },
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.catalog_resolution).toEqual({ kind: 'no_catalog_intent' });
+    expect(result.sales_context.course_of_interest).toBeNull();
+    expect(result.sales_context.offering_code).toBeNull();
+  });
+
+  it('carries academy-qualified homonym identity into sales context', async () => {
+    const messages = [{
+      id: 'm1',
+      conversation_seq: 1,
+      content: 'Quiero Inglés Inicial en Academia Norte',
+      created_at: '2026-08-11T12:00:00.000Z',
+      message_type: 'text',
+    }];
+    const result = await claimBatch(input, {
+      ...buildDeps({ messagesResult: messages }),
+      business: {
+        load: vi.fn().mockResolvedValue(businessContextView({
+          offerings: [
+            businessOffering('ingles_norte', 'Inglés Inicial', 'Academia Norte'),
+            businessOffering('ingles_sur', 'Inglés Inicial', 'Academia Sur'),
+          ],
+        })),
+      },
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.catalog_resolution).toMatchObject({
+      kind: 'exact',
+      offeringCode: 'ingles_norte',
+    });
+    expect(result.sales_context.course_of_interest).toBe('Inglés Inicial');
+    expect(result.sales_context.offering_code).toBe('ingles_norte');
+  });
 });
 
 describe('claimBatch sales_context', () => {
@@ -637,6 +1387,7 @@ describe('claimBatch sales_context', () => {
     expect(result.sales_context).toEqual({
       mode: 'advising',
       course_of_interest: null,
+      offering_code: null,
       open_call_offer: null,
       accepted_call_offer: null,
       active_call: null,
@@ -811,7 +1562,7 @@ describe('claimBatch sales_context', () => {
     expect(result.sales_context.allowed_actions).toEqual([]);
   });
 
-  it('re-enables offer_call once the persisted decline cooldown has elapsed', async () => {
+  it('does not proactively re-offer a call later in the same conversation', async () => {
     const deps = buildDeps({
       callFactsResult: callFacts({ last_decline_at: '2026-08-11T11:20:00.000Z' }),
       now: () => '2026-08-11T12:00:00.000Z',
@@ -820,7 +1571,7 @@ describe('claimBatch sales_context', () => {
     const result = await claimBatch(input, deps);
     if (result.outcome !== 'claimed') throw new Error('expected a claim');
 
-    expect(result.sales_context.allowed_actions).toEqual(['offer_call']);
+    expect(result.sales_context.allowed_actions).toEqual([]);
   });
 
   it('reports in_call and grants no sales action while a call is connected', async () => {

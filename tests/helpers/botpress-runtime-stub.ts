@@ -9,19 +9,37 @@ import { z } from 'zod';
 
 export { z };
 
+interface ConversationDefinition {
+  readonly channel: string;
+  readonly handler: (input: {
+    type: string;
+    channel: string;
+    message: any;
+    conversation: { id: string };
+  }) => unknown;
+}
+
+interface WorkflowDefinition {
+  readonly handler: (input: any) => unknown;
+}
+
 /** Mirrors `new Conversation({ channel, handler })`: just records the definition. */
-export class Conversation<TDefinition = unknown> {
+export class Conversation<TDefinition extends ConversationDefinition = ConversationDefinition> {
   definition: TDefinition;
-  constructor(definition: TDefinition) {
+  constructor(definition: TDefinition & ConversationDefinition) {
     this.definition = definition;
   }
 }
 
 /** Records workflow definitions so orchestration behavior can run in unit tests. */
-export class Workflow<TDefinition = unknown> {
+export class Workflow<TDefinition extends WorkflowDefinition = WorkflowDefinition> {
   definition: TDefinition;
-  constructor(definition: TDefinition) {
+  constructor(definition: TDefinition & WorkflowDefinition) {
     this.definition = definition;
+  }
+
+  async getOrCreate(_input: unknown): Promise<{ id: string }> {
+    return { id: 'test-workflow-id' };
   }
 }
 
@@ -31,6 +49,10 @@ export class Action<TDefinition = unknown, TOutput = unknown> {
   declare readonly __output?: TOutput;
   constructor(definition: TDefinition) {
     this.definition = definition;
+  }
+
+  async execute(_input: unknown): Promise<TOutput> {
+    throw new Error('ACTION_EXECUTE_NOT_CONFIGURED');
   }
 }
 
@@ -58,6 +80,10 @@ export const configuration: {
   requestTimeoutMs: number;
   retryBaseDelayMs: number;
   retryMaxDelayMs: number;
+  automationEnabled: boolean;
+  decisionProvider: 'botpress_managed' | 'gemini_direct' | 'groq_direct';
+  geminiDecisionModel: string;
+  groqDecisionModel: string;
   [key: string]: unknown;
 } = {
   emulatorPhoneE164: '+59891234567',
@@ -66,6 +92,10 @@ export const configuration: {
   requestTimeoutMs: 2000,
   retryBaseDelayMs: 1,
   retryMaxDelayMs: 2,
+  automationEnabled: true,
+  decisionProvider: 'botpress_managed',
+  geminiDecisionModel: 'gemini-test',
+  groqDecisionModel: 'groq-test',
 };
 
 /** Test doubles for agent secrets; never real values. */

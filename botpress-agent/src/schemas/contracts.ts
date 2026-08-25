@@ -324,6 +324,7 @@ export const BatchMessageSchema = z.object({
   content: z.string(),
   created_at: z.string(),
   message_type: z.string(),
+  opt_out_ack_eligible: z.boolean().optional(),
 })
 
 export const SelectedMemorySchema = z.object({
@@ -352,6 +353,7 @@ export const KnowledgeItemSchema = z.object({
 export const SalesContextSchema = z.object({
   mode: z.enum(['advising', 'awaiting_call_consent', 'call_pending', 'in_call', 'post_call']),
   course_of_interest: z.string().nullable(),
+  offering_code: z.string().nullable().default(null),
   open_call_offer: z
     .object({
       decision_id: z.string().uuid(),
@@ -397,6 +399,7 @@ export const SalesContextSchema = z.object({
 export const BusinessOfferingSchema = z.object({
   code: z.string(),
   display_name: z.string(),
+  aliases: z.array(z.string().min(1).max(128)).max(12).default([]),
   // Owner-authored commercial grouping. The nullable default keeps the
   // Botpress revision compatible with snapshots created before academy was
   // projected by the backend.
@@ -472,6 +475,33 @@ export const BusinessContextSchema = z.object({
 
 export type BusinessContext = z.infer<typeof BusinessContextSchema>
 
+export const CatalogResolutionSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('no_catalog_intent') }).strict(),
+  z.object({
+    kind: z.literal('exact'),
+    offeringCode: z.string().min(1),
+    displayName: z.string().min(1),
+    academy: z.string().nullable(),
+    match: z.enum(['canonical', 'unique_typo']),
+  }).strict(),
+  z.object({
+    kind: z.literal('ambiguous'),
+    requestedText: z.string(),
+    candidateCodes: z.array(z.string().min(1)).min(2).max(3),
+    clarification: z.enum(['choose_offering', 'choose_area']),
+  }).strict(),
+  z.object({
+    kind: z.literal('not_found'),
+    requestedText: z.string(),
+    requestedArea: z.string().nullable(),
+    alternativeCodes: z.array(z.string().min(1)).max(3),
+  }).strict(),
+  z.object({
+    kind: z.literal('unavailable'),
+    reason: z.enum(['snapshot_missing', 'snapshot_truncated', 'snapshot_invalid']),
+  }).strict(),
+])
+
 export const ClaimedTurnSchema = z.object({
   outcome: z.literal('claimed'),
   trace_id: z.string().uuid(),
@@ -504,6 +534,10 @@ export const ClaimedTurnSchema = z.object({
     injection_suspected_count: z.number().int().default(0),
   }),
   sales_context: SalesContextSchema,
+  catalog_resolution: CatalogResolutionSchema.default({
+    kind: 'unavailable',
+    reason: 'snapshot_missing',
+  }),
   deterministic_route: z.enum([
     'greeting',
     'call_direct_request',
@@ -603,12 +637,42 @@ export const CatalogResponseSchema = z.object({
 
 export type CatalogResponse = z.infer<typeof CatalogResponseSchema>
 
+const AuthorizedHttpUrlSchema = z.string().min(1).refine((value) => {
+  if (/\s/u.test(value)) return false
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}, 'AUTHORIZED_EGRESS_URL_MUST_BE_HTTP')
+
+export const ProtectedFactRefSchema = z.object({
+  kind: z.enum(['price', 'duration', 'modality', 'certification', 'offering', 'promise']),
+  value: z.string().trim().min(1),
+}).strict()
+
+/** Exact wire mirror of the backend-owned v1 egress capability. */
+export const AuthorizedEgressSchema = z.object({
+  schema_version: z.literal(1),
+  content_hash: z.string().regex(/^[a-f0-9]{64}$/u),
+  authorized_urls: z.array(AuthorizedHttpUrlSchema),
+  protected_facts: z.array(ProtectedFactRefSchema),
+}).strict()
+
+export type AuthorizedEgress = z.infer<typeof AuthorizedEgressSchema>
+
 export const CommitDecisionInputSchema = z.object({
   turn_id: z.string().uuid(),
   trace_id: z.string().uuid(),
+  // Claim-time canonical identity (`sales_context.offering_code`) for the
+  // course this turn talks about. Only a lookup hint: the backend re-resolves
+  // it in its own live workspace snapshot before authorizing a single fact,
+  // so a stale or wrong code fails closed instead of authorizing anything.
+  authorized_offering_code: z.string().min(1).max(128).nullable().default(null),
   decision: DecisionSchema,
   model: z.object({
-    provider: z.literal('botpress'),
+    provider: z.enum(['botpress', 'google-ai-direct', 'groq-direct']),
     model: z.string().min(1),
     prompt_version: z.string().min(1),
   }),
@@ -631,6 +695,7 @@ export const CommitDecisionResponseSchema = z.object({
       // de "falló un intento que ya no corre", y sólo el primero puede llevar
       // a otro envío.
       delivery_attempt: z.number().int().min(1),
+      authorized_egress: AuthorizedEgressSchema,
     })
     .nullable()
     .default(null),

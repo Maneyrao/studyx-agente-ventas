@@ -100,6 +100,80 @@ async function forceDue(batchId: string): Promise<void> {
 }
 
 run('controlled context at claim time', () => {
+  it('preserves the exact historical SKU for a referential fact follow-up', async () => {
+    const workspaceSlug = `claim-course-${randomUUID().slice(0, 8)}`;
+    const workspaceRows = await db!<Array<{ id: string }>>`
+      INSERT INTO workspaces (slug, display_name)
+      VALUES (${workspaceSlug}, 'Course continuity fixture')
+      RETURNING id
+    `;
+    await db!`
+      INSERT INTO offerings (
+        workspace_id, code, display_name, offering_type, status, description,
+        price_type, price_amount, currency, delivery
+      ) VALUES (
+        ${workspaceRows[0].id}::uuid,
+        'decoracion_de_interiores',
+        'Decoración de Interiores',
+        'course',
+        'active',
+        'Fixture canónico de continuidad',
+        'fixed',
+        360,
+        'USD',
+        ${db!.json({ classes: 34, modality: 'online' })}
+      )
+    `;
+
+    const businessStore = new PostgresBusinessContextStore(db!);
+    const courseDeps = {
+      ...deps,
+      business: {
+        async load() {
+          const raw = await businessStore.loadBusinessContext(workspaceSlug);
+          return raw ? buildBusinessContextView(raw) : null;
+        },
+      },
+    };
+    const firstEnvelope = envelope({
+      message: {
+        type: 'text',
+        text: 'Quiero Decoración de Interiores',
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    });
+    const first = await processInboundMessage(firstEnvelope);
+    await forceDue(first.batch.id);
+    const selected = await claimBatch(
+      { batch_id: first.batch.id, claimed_by: 'workflow-course-1', trace_id: randomUUID() },
+      courseDeps,
+    );
+    if (selected.outcome !== 'claimed') throw new Error('expected first claim');
+    expect(selected.sales_context.offering_code).toBe('decoracion_de_interiores');
+    await orchestrationStore.completeBatch({
+      batch_id: first.batch.id,
+      claim_token: selected.batch.claim_token,
+    });
+
+    const second = await processInboundMessage(followUp(
+      firstEnvelope,
+      '¿Cuántas clases tiene el programa?',
+    ));
+    await forceDue(second.batch.id);
+    const followedUp = await claimBatch(
+      { batch_id: second.batch.id, claimed_by: 'workflow-course-2', trace_id: randomUUID() },
+      courseDeps,
+    );
+
+    if (followedUp.outcome !== 'claimed') throw new Error('expected follow-up claim');
+    expect(followedUp.catalog_resolution).toEqual({ kind: 'no_catalog_intent' });
+    expect(followedUp.sales_context).toMatchObject({
+      course_of_interest: 'Decoración de Interiores',
+      offering_code: 'decoracion_de_interiores',
+    });
+  });
+
   it('assembles the batch, structured facts and summary for the owner', async () => {
     const first = envelope();
     const a = await processInboundMessage(first);
@@ -286,7 +360,10 @@ run('controlled context at claim time', () => {
         schema_version: 2,
         intent: 'commercial',
         kind: 'reply',
-        response: 'El curso dura ocho semanas.',
+        // Free of protected commercial facts on purpose: this test exercises
+        // duplicate-commit surfacing, and an unauthorized duration/price here
+        // would now (correctly) be rejected by the egress guard instead.
+        response: 'Ya te confirmo la información del curso.',
         response_type: 'commercial_reply',
         business_action: null,
         memory_candidates: [],
@@ -323,6 +400,7 @@ run('sales_context at claim time', () => {
     expect(result.sales_context).toEqual({
       mode: 'advising',
       course_of_interest: null,
+      offering_code: null,
       open_call_offer: null,
       accepted_call_offer: null,
       active_call: null,

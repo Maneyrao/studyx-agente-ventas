@@ -18,6 +18,7 @@ vi.mock('../../../botpress-agent/src/workflows/processInboundTurn', () => ({
 // alias, so importing the stub directly yields the same module instance.
 import { configuration } from '../../helpers/botpress-runtime-stub';
 import router from '../../../botpress-agent/src/conversations/router';
+import { deriveEmulatorPhoneE164 } from '../../../botpress-agent/src/channels/shared/emulator-envelope';
 
 type RouterHandler = (props: {
   type: string;
@@ -146,7 +147,9 @@ describe('router dispatch for the emulator (webchat) channel', () => {
 
     expect(getOrCreate).toHaveBeenCalledTimes(1);
     const call = getOrCreate.mock.calls[0][0];
-    expect(call.input.phone_e164).toBe(configuration.emulatorPhoneE164);
+    expect(call.input.phone_e164).toBe(
+      deriveEmulatorPhoneE164(configuration.emulatorPhoneE164, 'conv_01EMU'),
+    );
     expect(call.key).toBe('turn:botpress:webchat:msg-emulator-1');
   });
 });

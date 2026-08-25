@@ -7,6 +7,7 @@ import type {
 import { logEvent } from './shared/normalize'
 import { emulatorChannel } from './emulator.channel'
 import { telegramChannel } from './telegram.channel'
+import { whatsappChannel } from './whatsapp.channel'
 
 /**
  * Registered channel adapters, in dispatch priority order.
@@ -15,7 +16,11 @@ import { telegramChannel } from './telegram.channel'
  * Adding a new canal means adding an entry here, NOT a second Conversation
  * with `channel: '*'`. Two wildcard handlers would process each message twice.
  */
-export const CHANNEL_ADAPTERS: ChannelAdapter[] = [emulatorChannel, telegramChannel]
+export const CHANNEL_ADAPTERS: ChannelAdapter[] = [
+  whatsappChannel,
+  telegramChannel,
+  emulatorChannel,
+]
 
 export type DispatchResult =
   | { kind: 'envelope'; adapter: string; input: CanonicalWorkflowInput }

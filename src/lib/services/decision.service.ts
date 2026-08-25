@@ -9,13 +9,35 @@ import { memoryStore } from '@/features/orchestration/adapters/postgres-memory-s
 import { getPostgresError, type DbClient } from '@/lib/db/types';
 import { sha256Hex } from '@/lib/idempotency/canonical-json';
 import { isExplicitOptOut } from '@/lib/heuristics/opt-out';
+import { splitFullName } from '@/lib/heuristics/contact-identity';
 import { registerMessage, type Message } from './message.service';
 import { enqueueLeadProjection } from './projection.service';
 import { auditLog } from '@/lib/audit/logger';
-import { loadBusinessWorkspaceConfig, loadSheetsProjectionConfig } from '@/lib/config';
+import {
+  loadBusinessWorkspaceConfig,
+  loadSheetsProjectionConfig,
+  type SheetsProjectionConfig,
+} from '@/lib/config';
 import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
 import { materializePaymentLinkAction } from '@/features/payments/application/materialize-payment-link-action';
 import { createConfigPaymentLinkResolver } from '@/features/payments/adapters/config-payment-link.resolver';
+import { PAYMENT_PLAN_PRESENTATIONS } from '@/features/payments/domain/payment-link';
+import {
+  classifyCurrentPaymentIntent,
+  deriveDeferredPaymentChoiceFromBatch,
+} from '@/features/payments/domain/payment-choice-policy';
+import {
+  buildAuthorizedEgress,
+  verifyAuthorizedEgress,
+  type AuthorizedEgressV1,
+  type ProtectedFactRef,
+} from '@/features/orchestration/domain/egress-guard';
+import {
+  materializeCanonicalCatalogFacts,
+  materializeCanonicalOfferingFacts,
+  responseNeedsOfferingFactAuthorization,
+} from '@/features/orchestration/domain/canonical-offering-egress';
+import type { RawOfferingRow } from '@/features/orchestration/domain/business-context';
 import {
   DecisionValidationError,
   type DecisionV2,
@@ -51,9 +73,15 @@ function retrievalUsedOf(decision: AnyDecision) {
 export interface CommitDecisionInput {
   turn_id: string;
   trace_id: string;
+  /**
+   * Claim-time canonical identity for facts in a non-payment response. This is
+   * only a lookup hint: the backend must resolve it exactly in its own live
+   * workspace snapshot before it authorizes a single fact.
+   */
+  authorized_offering_code?: string | null;
   decision: AnyDecision;
   model: {
-    provider: 'botpress';
+    provider: 'botpress' | 'google-ai-direct' | 'groq-direct';
     model: string;
     prompt_version: string;
   };
@@ -77,6 +105,8 @@ export interface CommitDecisionResult {
      * first of those may ever lead to another send.
      */
     delivery_attempt: number;
+    /** Exact backend authorization that must verify against `content` before any send. */
+    authorized_egress: AuthorizedEgressV1;
   } | null;
   /**
    * Present exactly when this decision reserved a call. On replay it carries
@@ -121,6 +151,10 @@ interface TurnPolicyRow extends Message {
   integration_id: string;
   channel: ConversationChannel;
   batch_id: string | null;
+  /** Contents carrying durable evidence that this batch caused the first
+   * effective opt-out transition. The representative turn is often the
+   * first message in a burst, so `content` alone is not authoritative. */
+  opt_out_ack_eligible_contents: string[];
 }
 
 interface DecisionRow {
@@ -134,6 +168,7 @@ interface DecisionRow {
   outbound_message_id: string | null;
   delivery_state: string | null;
   delivery_attempt: number | null;
+  authorized_egress: unknown;
 }
 
 const AGENT_DECISION_TURN_UNIQUE_CONSTRAINT = 'agent_decisions_turn_id_uq';
@@ -156,9 +191,11 @@ async function loadDecision(turnId: string, db: DbClient): Promise<DecisionRow |
       encode(ad.payload_hash, 'hex') AS payload_hash_hex,
       ad.outbound_message_id,
       od.state AS delivery_state,
-      od.attempt_count AS delivery_attempt
+      od.attempt_count AS delivery_attempt,
+      om.metadata -> 'authorized_egress' AS authorized_egress
     FROM agent_decisions AS ad
     LEFT JOIN outbound_deliveries AS od ON od.message_id = ad.outbound_message_id
+    LEFT JOIN messages AS om ON om.id = ad.outbound_message_id
     WHERE ad.turn_id = ${turnId}::uuid
     LIMIT 1
   `;
@@ -177,7 +214,19 @@ async function loadTurnPolicy(turnId: string, db: DbClient): Promise<TurnPolicyR
       ccp.consent_status,
       ct.provider,
       ct.integration_id,
-      conv.channel
+      conv.channel,
+      COALESCE((
+        SELECT array_agg(candidate.content ORDER BY candidate.conversation_seq, candidate.created_at, candidate.id)
+        FROM messages AS candidate
+        WHERE candidate.direction = 'inbound'
+          AND candidate.contact_id = m.contact_id
+          AND candidate.conversation_id = m.conversation_id
+          AND (
+            (m.batch_id IS NOT NULL AND candidate.batch_id = m.batch_id)
+            OR (m.batch_id IS NULL AND candidate.id = m.id)
+          )
+          AND candidate.metadata @> '{"opt_out_ack_eligible": true}'::jsonb
+      ), ARRAY[]::text[]) AS opt_out_ack_eligible_contents
     FROM messages AS m
     JOIN conversations AS conv ON conv.id = m.conversation_id
     JOIN contacts AS c ON c.id = m.contact_id
@@ -197,24 +246,77 @@ function validatePolicy(decision: AnyDecision, turn: TurnPolicyRow): void {
     || turn.lifecycle_status === 'blocked'
     || turn.lifecycle_status === 'deleted'
     || turn.deleted_at !== null;
-  const optOutAck = isExplicitOptOut(turn.content)
+  // Never infer acknowledgement eligibility from the representative message:
+  // in a burst it may precede the actual opt-out. Conversely, content alone
+  // would acknowledge every repeated opt-out. Require both persisted
+  // first-transition evidence and the domain heuristic as defense in depth.
+  const hasEligibleExplicitOptOut = turn.opt_out_ack_eligible_contents.some(isExplicitOptOut);
+  const optOutAck = hasEligibleExplicitOptOut
     && decision.intent === 'opt_out'
     && decision.response_type === 'opt_out_ack'
     && decision.response !== null;
 
-  if (blocked && decision.kind !== 'suppress') {
+  if (blocked && decision.kind !== 'suppress' && !optOutAck) {
     throw new DecisionPolicyError('CONTACT_BLOCKED');
   }
   if (turn.consent_status === 'revoked' && decision.kind !== 'suppress' && !optOutAck) {
     throw new DecisionPolicyError('CONSENT_REVOKED');
   }
-  if (decision.response_type === 'opt_out_ack' && !isExplicitOptOut(turn.content)) {
+  if (decision.response_type === 'opt_out_ack' && !hasEligibleExplicitOptOut) {
     throw new DecisionPolicyError('OPT_OUT_ACK_WITHOUT_OPT_OUT');
   }
 }
 
 function decisionPayload(input: CommitDecisionInput) {
-  return { turn_id: input.turn_id, decision: input.decision, model: input.model };
+  return {
+    turn_id: input.turn_id,
+    decision: input.decision,
+    model: input.model,
+    // Preserve the historical hash for legacy/omitted-null callers while a
+    // real capability identity remains part of the idempotency boundary.
+    ...(input.authorized_offering_code
+      ? { authorized_offering_code: input.authorized_offering_code }
+      : {}),
+  };
+}
+
+function egressPolicyError(reason: string): DecisionPolicyError {
+  return new DecisionPolicyError(`EGRESS_${reason}`);
+}
+
+function redactedUrlAuditEvidence(value: string) {
+  let scheme = 'invalid';
+  let hostHash: string | null = null;
+  try {
+    const parsed = new URL(value);
+    scheme = parsed.protocol.replace(/:$/u, '').toLowerCase();
+    // The hostname is attacker-controlled too (PII can be placed in a
+    // subdomain), so retain only a correlation-safe digest.
+    hostHash = sha256Hex(parsed.hostname.toLowerCase());
+  } catch {
+    // Invalid URL-like text still gets a stable fingerprint below.
+  }
+  return {
+    scheme,
+    host_hash: hostHash,
+    value_hash: sha256Hex(value),
+  };
+}
+
+function verifyPersistedEgress(content: string, manifest: unknown): AuthorizedEgressV1 {
+  const verification = verifyAuthorizedEgress({ content, manifest });
+  if (!verification.ok) throw egressPolicyError(verification.reason);
+  return manifest as AuthorizedEgressV1;
+}
+
+function paymentPlanProtectedFacts(
+  planCode: keyof typeof PAYMENT_PLAN_PRESENTATIONS
+): readonly ProtectedFactRef[] {
+  const presentation = PAYMENT_PLAN_PRESENTATIONS[planCode];
+  // The trusted fixed payment block contains this exact lexical price. The
+  // model never supplies either side of this authorization.
+  const amount = presentation.installment_amount.replace(/\.00$/u, '');
+  return [{ kind: 'price', value: `${presentation.currency} ${amount}` }];
 }
 
 function duplicateDecisionResult(
@@ -236,6 +338,7 @@ function duplicateDecisionResult(
       content: existing.response,
       status: mapDeliveryState(existing.delivery_state),
       delivery_attempt: Number(existing.delivery_attempt ?? 1),
+      authorized_egress: verifyPersistedEgress(existing.response, existing.authorized_egress),
     } : null,
     call_request: callRequest,
   };
@@ -280,6 +383,41 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     // memoria.
     let finalResponse = decision.response;
     let paymentLinkStrippedUrls: readonly string[] = [];
+    let authorizedUrls: readonly string[] = [];
+    let authorizedProtectedFacts: readonly ProtectedFactRef[] = [];
+    let committedBusinessAction = decision.business_action;
+    let canonicalOfferings: readonly RawOfferingRow[] | undefined;
+    let canonicalWorkspaceId: string | null = null;
+    let canonicalSnapshotAttempted = false;
+
+    const loadCanonicalOfferings = async (
+      purpose: 'payment_link' | 'protected_facts'
+    ): Promise<readonly RawOfferingRow[]> => {
+      if (canonicalSnapshotAttempted) return canonicalOfferings ?? [];
+      canonicalSnapshotAttempted = true;
+      try {
+        // Bound to THIS transaction's own connection, never the module-level
+        // pool: with a one-connection pool, a second checkout from inside the
+        // open transaction would wait on itself.
+        const snapshot = await new PostgresBusinessContextStore(db).loadBusinessCatalog(
+          loadBusinessWorkspaceConfig().workspaceSlug
+        );
+        canonicalWorkspaceId = snapshot?.workspace.id ?? null;
+        canonicalOfferings = snapshot?.offerings ?? [];
+      } catch (error) {
+        canonicalOfferings = [];
+        logger.error({
+          event: purpose === 'payment_link'
+            ? 'orchestration.payment_link.business_snapshot_unavailable'
+            : 'orchestration.egress.business_snapshot_unavailable',
+          trace_id: validatedInput.trace_id,
+          turn_id: turn.id,
+          error: String(error),
+        });
+      }
+      return canonicalOfferings;
+    };
+
     if (decision.schema_version === 4 && decision.business_action?.type === 'send_payment_link') {
       const action = decision.business_action;
       const batchMessages = turn.batch_id === null
@@ -290,33 +428,32 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             ORDER BY conversation_seq ASC, created_at ASC, id ASC
           `;
 
-      // One extra canonical read, ONLY here (spec §7): the offering must be
-      // revalidated against the live snapshot, never trusted from the model
-      // or from a stale claim-time copy. A snapshot failure degrades to "no
-      // offerings known" rather than crashing the whole commit — the action
-      // itself still fails closed via OFFERING_NOT_FOUND when it names one.
-      let offerings: readonly { code: string }[] = [];
-      try {
-        // Bound to THIS transaction's own connection, never the module-level
-        // pool: the pool is sized 1 in production (each serverless
-        // invocation gets one connection), so a second query on the shared
-        // `sql` singleton from inside an open transaction would starve
-        // waiting for a connection the transaction itself is holding.
-        const snapshot = await new PostgresBusinessContextStore(db).loadBusinessContext(
-          loadBusinessWorkspaceConfig().workspaceSlug
-        );
-        offerings = snapshot?.offerings ?? [];
-      } catch (error) {
-        logger.error({
-          event: 'orchestration.payment_link.business_snapshot_unavailable',
-          trace_id: validatedInput.trace_id,
-          turn_id: turn.id,
-          error: String(error),
-        });
+      // One extra canonical read, ONLY for payment or a response containing a
+      // protected fact. A greeting/plain clarification does not pay this DB
+      // latency. Payment and fact authorization reuse the same snapshot.
+      const offerings = await loadCanonicalOfferings('payment_link');
+      let deferredPlanCode: ReturnType<typeof deriveDeferredPaymentChoiceFromBatch> = null;
+      if (classifyCurrentPaymentIntent(batchMessages).kind === 'resume') {
+        const priorInboundMessages = await db<Array<{ content: string }>>`
+          SELECT prior.content
+          FROM messages AS prior
+          WHERE prior.conversation_id = ${turn.conversation_id}::uuid
+            AND prior.direction = 'inbound'
+            AND prior.conversation_seq < (
+              SELECT current_turn.conversation_seq
+              FROM messages AS current_turn
+              WHERE current_turn.id = ${turn.id}::uuid
+            )
+          ORDER BY prior.conversation_seq DESC, prior.created_at DESC, prior.id DESC
+          LIMIT 1
+        `;
+        deferredPlanCode = deriveDeferredPaymentChoiceFromBatch(priorInboundMessages);
       }
 
       const materialized = materializePaymentLinkAction({
         action,
+        authorizedOfferingCode: validatedInput.authorized_offering_code ?? null,
+        deferredPlanCode,
         batchMessages,
         businessSnapshot: { offerings },
         contact: {
@@ -341,12 +478,101 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       if (!materialized.ok) {
         throw new DecisionPolicyError(materialized.reason);
       }
-      // `response_text` is only the model's OWN text, sanitized of any URL it
-      // had no authority to write (spec §4 steps 3-4): the fixed
-      // {label, url} block is a SEPARATE return value the caller must append
-      // — materializePaymentLinkAction never does this itself.
-      finalResponse = `${materialized.response_text}\n\n${materialized.block.label}: ${materialized.block.url}`.trim();
-      paymentLinkStrippedUrls = materialized.stripped_urls;
+
+      // Revalidation above must happen before this dedupe read. Otherwise a
+      // mismatched SKU or a current veto could obtain a friendly acknowledgement
+      // merely because an older valid link existed in the same conversation.
+      const priorPaymentLinks = await db<Array<{ id: string }>>`
+        SELECT ad.id
+        FROM agent_decisions AS ad
+        JOIN messages AS prior_turn ON prior_turn.id = ad.turn_id
+        WHERE prior_turn.conversation_id = ${turn.conversation_id}::uuid
+          AND ad.outbound_message_id IS NOT NULL
+          AND ad.business_action ->> 'type' = 'send_payment_link'
+          AND ad.business_action ->> 'plan_code' = ${action.plan_code}
+          AND ad.business_action ->> 'offering_sku' = ${action.offering_sku}
+        LIMIT 1
+      `;
+
+      if (priorPaymentLinks.length > 0) {
+        // Cross-turn idempotency: acknowledge the existing proposal without
+        // emitting a second Stripe URL or a second payment_link_sent signal.
+        finalResponse = 'Ya te compartí el link de ese plan. Si necesitás que revisemos otra opción, decime.';
+        committedBusinessAction = null;
+      } else {
+        // `response_text` is only the model's OWN text, sanitized of any URL it
+        // had no authority to write (spec §4 steps 3-4): the fixed
+        // {label, url} block is a SEPARATE return value the caller must append.
+        finalResponse = `${materialized.response_text}\n\n${materialized.block.label}: ${materialized.block.url}`.trim();
+        paymentLinkStrippedUrls = materialized.stripped_urls;
+        authorizedUrls = [materialized.block.url];
+        authorizedProtectedFacts = paymentPlanProtectedFacts(action.plan_code);
+      }
+    }
+
+    if (finalResponse !== null && responseNeedsOfferingFactAuthorization(finalResponse)) {
+      const offerings = await loadCanonicalOfferings('protected_facts');
+      authorizedProtectedFacts = [
+        ...authorizedProtectedFacts,
+        ...materializeCanonicalCatalogFacts({ content: finalResponse, offerings }),
+      ];
+      if (validatedInput.authorized_offering_code) {
+        const exactMatches = offerings.filter(
+          (offering) => offering.code === validatedInput.authorized_offering_code
+        );
+        if (exactMatches.length === 1) {
+          authorizedProtectedFacts = [
+            ...authorizedProtectedFacts,
+            ...materializeCanonicalOfferingFacts({
+              content: finalResponse,
+              offering: exactMatches[0],
+            }),
+          ];
+        }
+      }
+    }
+
+    // The manifest is created from backend-owned capabilities, then verified
+    // against the exact final text before the first canonical write. A model
+    // URL or protected commercial claim has no route to the outbox merely by
+    // appearing in prose.
+    let authorizedEgress: AuthorizedEgressV1 | null = null;
+    if (finalResponse !== null) {
+      authorizedEgress = buildAuthorizedEgress({
+        content: finalResponse,
+        authorized_urls: authorizedUrls,
+        protected_facts: authorizedProtectedFacts,
+      });
+      const verification = verifyAuthorizedEgress({
+        content: finalResponse,
+        manifest: authorizedEgress,
+      });
+      if (!verification.ok) {
+        const mayUseSafeFallback = verification.reason === 'UNAUTHORIZED_PROTECTED_FACT'
+          && verification.unauthorized_facts.some(
+            (fact) => fact.kind === 'offering'
+              || fact.kind === 'promise'
+              || fact.kind === 'certification',
+          )
+          && committedBusinessAction === null;
+        if (!mayUseSafeFallback) throw egressPolicyError(verification.reason);
+
+        counter.increment('egress_safe_fallback', 1);
+        logger.warn({
+          event: 'orchestration.egress.safe_fallback',
+          trace_id: validatedInput.trace_id,
+          turn_id: turn.id,
+          reason: verification.reason,
+        });
+        finalResponse = 'No tengo ese dato confirmado en el catálogo. ¿Querés que revisemos otra opción?';
+        authorizedUrls = [];
+        authorizedProtectedFacts = [];
+        authorizedEgress = buildAuthorizedEgress({
+          content: finalResponse,
+          authorized_urls: [],
+          protected_facts: [],
+        });
+      }
     }
 
     const inserted = await db<Array<{ id: string }>>`
@@ -378,7 +604,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         ${decision.kind},
         ${finalResponse},
         ${decision.response_type},
-        ${jsonbParam(db, decision.business_action ?? null)},
+        ${jsonbParam(db, committedBusinessAction ?? null)},
         ${jsonbParam(db, retrievalUsedOf(decision))},
         ${jsonbParam(db, decision.memory_candidates)},
         ${decision.missing_information}::text[],
@@ -407,7 +633,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         entity_id: decisionId,
         payload: {
           turn_id: validatedInput.turn_id,
-          stripped_urls: paymentLinkStrippedUrls,
+          stripped_url_count: paymentLinkStrippedUrls.length,
+          stripped_url_evidence: paymentLinkStrippedUrls.map(redactedUrlAuditEvidence),
         },
         event_key: `decision:${decisionId}:stripped_urls`,
         correlation_id: validatedInput.trace_id,
@@ -469,6 +696,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             decision_id: decisionId,
             response_type: decision.response_type,
             model: validatedInput.model,
+            authorized_egress: authorizedEgress,
           },
         }, {
           db,
@@ -508,6 +736,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         trace_id: validatedInput.trace_id,
         content: message.content,
         response_type: decision.response_type,
+        authorized_egress: authorizedEgress,
       };
       const queued = await db<Array<{ delivery_id: string; outbox_id: string }>>`
         SELECT delivery_id, outbox_id
@@ -560,7 +789,47 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         content: message.content,
         status: 'pending',
         delivery_attempt: Number(leased[0]?.attempt_count ?? 1),
+        authorized_egress: authorizedEgress!,
       };
+
+      if (
+        committedBusinessAction?.type === 'send_payment_link'
+        && canonicalWorkspaceId
+      ) {
+        // The configured deployment, not model output, establishes the
+        // tenant/contact relation. The durable job is created before any
+        // physical send and therefore survives a later report/projection
+        // crash without having to rediscover tenant ownership from history.
+        await db`
+          INSERT INTO workspace_contacts (
+            workspace_id, contact_id, lifecycle_status, source_channel
+          ) VALUES (
+            ${canonicalWorkspaceId}::uuid,
+            ${turn.contact_id}::uuid,
+            'active',
+            ${turn.channel}
+          )
+          ON CONFLICT (workspace_id, contact_id) DO NOTHING
+        `;
+        await db`
+          INSERT INTO payment_projection_jobs (
+            decision_id, workspace_id, contact_id, outbound_message_id,
+            trace_id, offering_sku, plan_code, decision_created_at
+          )
+          SELECT
+            ad.id,
+            ${canonicalWorkspaceId}::uuid,
+            ${turn.contact_id}::uuid,
+            ${message.id}::uuid,
+            ad.trace_id,
+            ${committedBusinessAction.offering_sku},
+            ${committedBusinessAction.plan_code},
+            ad.created_at
+          FROM agent_decisions AS ad
+          WHERE ad.id = ${decisionId}::uuid
+          ON CONFLICT (decision_id) DO NOTHING
+        `;
+      }
     }
 
     await auditLog({
@@ -573,9 +842,10 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         intent: decision.intent,
         kind: decision.kind,
         response_type: decision.response_type,
-        business_action: decision.business_action?.type ?? null,
+        business_action: committedBusinessAction?.type ?? null,
         next_state: decision.next_state,
         outbound_id: outbound?.id ?? null,
+        egress_hash: outbound?.authorized_egress.content_hash ?? null,
         call_id: callRequest?.call_id ?? null,
       },
       event_key: `decision:${decisionId}:committed`,
@@ -816,12 +1086,6 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
   };
   const payloadHash = sha256Hex(semanticPayload);
   const messageIdentity = input.botpress_message_id ?? 'none';
-  // Set only on the branch that actually transitions delivery to
-  // `submitted`. Read after the transaction commits — never inside it, so a
-  // Sheets/outbox failure can NEVER abort or revert the delivery state
-  // change it follows (spec §5: "no revierte mensaje ni decisión").
-  let paymentLinkSignal: PaymentLinkProjectionSignal | null = null;
-
   const result: DeliveryReportResult = await withSerializableTransaction(async (db) => {
     // The delivery is locked before anything else: the attempt it is on is what
     // gives this report an identity, and that number has to be read under the
@@ -972,10 +1236,8 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
         `;
       }
 
-      // Fase 4 — Sheets (spec §5): only after delivery is confirmed, and only
-      // for the one action that projects a lead signal today. A read, never a
-      // write — the actual enqueue happens after this transaction commits.
-      paymentLinkSignal = await loadPaymentLinkProjectionSignal(db, input.outbound_id, input.trace_id);
+      await markPaymentProjectionJobDelivered(db, input.outbound_id);
+
     } else {
       if (!input.error_code) throw new DeliveryReportConflictError('Failed report requires error_code');
       if (delivery.state === 'submitted') throw new DeliveryReportConflictError('Submitted delivery cannot be downgraded');
@@ -1032,120 +1294,363 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
     };
   });
 
-  if (result.status === 'recorded' && paymentLinkSignal) {
-    // Never throw out of here: an outbox failure must never surface as a
-    // failure of THIS call, which already committed the canonical delivery
-    // state. The row stays pending/retryable for the cron flush worker.
-    await enqueuePaymentLinkSentProjection(paymentLinkSignal).catch((error) => {
+  if (result.delivery_status === 'submitted_to_botpress') {
+    // Physical provider evidence is already committed above and may never be
+    // rolled back by a derived projection. This eager attempt is best-effort;
+    // the scheduled reconciler reconstructs any missing row without sending.
+    try {
+      await projectPendingPaymentByOutbound(input.outbound_id);
+    } catch (error) {
       logger.error({
         event: 'orchestration.payment_link.projection_enqueue_failed',
         trace_id: input.trace_id,
         outbound_id: input.outbound_id,
         error: String(error),
       });
-    });
+    }
   }
 
   return result;
 }
 
+async function markPaymentProjectionJobDelivered(
+  db: DbClient,
+  outboundId: string,
+): Promise<void> {
+  const jobs = await db<Array<{
+    decision_id: string;
+    workspace_id: string;
+    contact_id: string;
+    decision_created_at: string;
+  }>>`
+    SELECT
+      job.decision_id,
+      job.workspace_id,
+      job.contact_id,
+      job.decision_created_at
+    FROM payment_projection_jobs AS job
+    JOIN workspace_contacts AS wc
+      ON wc.workspace_id = job.workspace_id
+      AND wc.contact_id = job.contact_id
+    WHERE job.outbound_message_id = ${outboundId}::uuid
+    FOR UPDATE OF wc, job
+  `;
+  const job = jobs[0];
+  if (!job) return;
+
+  const newer = await db<Array<{ exists: boolean }>>`
+    SELECT EXISTS (
+      SELECT 1
+      FROM payment_projection_jobs AS candidate
+      WHERE candidate.workspace_id = ${job.workspace_id}::uuid
+        AND candidate.contact_id = ${job.contact_id}::uuid
+        AND candidate.delivered_at IS NOT NULL
+        AND (
+          candidate.decision_created_at,
+          candidate.decision_id
+        ) > (
+          ${job.decision_created_at}::timestamptz,
+          ${job.decision_id}::uuid
+        )
+    ) AS exists
+  `;
+
+  if (newer[0]?.exists) {
+    await db`
+      UPDATE payment_projection_jobs
+      SET delivered_at = COALESCE(delivered_at, now()),
+          state = 'superseded'
+      WHERE decision_id = ${job.decision_id}::uuid
+    `;
+    return;
+  }
+
+  await db`
+    UPDATE payment_projection_jobs
+    SET state = 'superseded'
+    WHERE workspace_id = ${job.workspace_id}::uuid
+      AND contact_id = ${job.contact_id}::uuid
+      AND delivered_at IS NOT NULL
+      AND decision_id <> ${job.decision_id}::uuid
+      AND (
+        decision_created_at,
+        decision_id
+      ) < (
+        ${job.decision_created_at}::timestamptz,
+        ${job.decision_id}::uuid
+      )
+  `;
+  await db`
+    UPDATE payment_projection_jobs
+    SET delivered_at = COALESCE(delivered_at, now()),
+        state = 'pending',
+        projected_at = NULL
+    WHERE decision_id = ${job.decision_id}::uuid
+  `;
+}
+
 interface PaymentLinkProjectionSignal {
+  readonly decisionId: string;
+  readonly workspaceId: string;
   readonly planCode: string;
+  readonly offeringSku: string;
   readonly contactId: string;
   readonly phone: string;
+  readonly contactName: string | null;
+  readonly contactEmail: string | null;
   readonly traceId: string;
 }
 
+type PaymentProjectionReconciliationStatus = 'ready' | 'disabled' | 'error';
+type PaymentProjectionReconciliationReason =
+  | 'SHEETS_NOT_CONFIGURED'
+  | 'WORKSPACE_NOT_CONFIGURED'
+  | 'WORKSPACE_CONFIG_INVALID'
+  | 'WORKSPACE_NOT_FOUND'
+  | 'RECONCILIATION_FAILED'
+  | null;
+
+interface PaymentProjectionRuntime {
+  readonly workspaceId: string;
+  readonly sheets: SheetsProjectionConfig;
+}
+
+type PaymentProjectionRuntimeResolution =
+  | { status: 'ready'; reason: null; runtime: PaymentProjectionRuntime }
+  | { status: 'disabled'; reason: 'SHEETS_NOT_CONFIGURED' | 'WORKSPACE_NOT_CONFIGURED' }
+  | { status: 'error'; reason: 'WORKSPACE_CONFIG_INVALID' | 'WORKSPACE_NOT_FOUND' };
+
+async function resolvePaymentProjectionRuntime(
+  db: DbClient,
+): Promise<PaymentProjectionRuntimeResolution> {
+  const sheets = loadSheetsProjectionConfig();
+  if (!sheets) return { status: 'disabled', reason: 'SHEETS_NOT_CONFIGURED' };
+
+  let workspaceSlug: string;
+  try {
+    workspaceSlug = loadBusinessWorkspaceConfig().workspaceSlug;
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('INVALID_BUSINESS_CONFIG:')) {
+      return { status: 'error', reason: 'WORKSPACE_CONFIG_INVALID' };
+    }
+    return { status: 'disabled', reason: 'WORKSPACE_NOT_CONFIGURED' };
+  }
+  const workspaces = await db<Array<{ id: string }>>`
+    SELECT id
+    FROM workspaces
+    WHERE slug = ${workspaceSlug} AND status = 'active'
+    LIMIT 1
+  `;
+  if (!workspaces[0]) return { status: 'error', reason: 'WORKSPACE_NOT_FOUND' };
+  return {
+    status: 'ready',
+    reason: null,
+    runtime: { workspaceId: workspaces[0].id, sheets },
+  };
+}
+
 /**
- * Reads the decision behind this outbound, inside the SAME transaction that
- * just confirmed delivery: only a `send_payment_link` decision produces a
- * signal, and everything else (the plan and the customer identity to write)
- * comes straight from that decision's own turn — never a second guess.
+ * Loads one tenant-bound pending job after candidate acquisition. The job
+ * carries the immutable plan/SKU/trace; PII is joined only after the exact
+ * active workspace membership has been proven.
  */
 async function loadPaymentLinkProjectionSignal(
   db: DbClient,
-  outboundId: string,
-  traceId: string,
+  candidate: PaymentProjectionCandidate,
 ): Promise<PaymentLinkProjectionSignal | null> {
   const rows = await db<Array<{
-    business_action: { type?: string; plan_code?: string } | null;
+    decision_id: string;
+    workspace_id: string;
+    plan_code: string;
+    offering_sku: string;
     contact_id: string;
     phone: string;
+    name: string | null;
+    email: string | null;
+    trace_id: string;
   }>>`
-    SELECT ad.business_action, m.contact_id, c.phone
-    FROM agent_decisions AS ad
-    JOIN messages AS m ON m.id = ad.turn_id
-    JOIN contacts AS c ON c.id = m.contact_id
-    WHERE ad.outbound_message_id = ${outboundId}::uuid
+    SELECT
+      job.decision_id,
+      job.workspace_id,
+      job.plan_code,
+      job.offering_sku,
+      job.contact_id,
+      c.phone,
+      c.name,
+      c.email,
+      job.trace_id::text AS trace_id
+    FROM payment_projection_jobs AS job
+    JOIN workspace_contacts AS wc
+      ON wc.workspace_id = job.workspace_id
+      AND wc.contact_id = job.contact_id
+      AND wc.lifecycle_status = 'active'
+    JOIN contacts AS c ON c.id = job.contact_id
+    WHERE job.decision_id = ${candidate.decision_id}::uuid
+      AND job.workspace_id = ${candidate.workspace_id}::uuid
+      AND job.contact_id = ${candidate.contact_id}::uuid
+      AND job.outbound_message_id = ${candidate.outbound_message_id}::uuid
+      AND job.state = 'pending'
+    FOR UPDATE OF job
     LIMIT 1
   `;
   const row = rows[0];
-  if (!row || row.business_action?.type !== 'send_payment_link' || !row.business_action.plan_code) {
-    return null;
-  }
+  if (!row) return null;
   return {
-    planCode: row.business_action.plan_code,
+    decisionId: row.decision_id,
+    workspaceId: row.workspace_id,
+    planCode: row.plan_code,
+    offeringSku: row.offering_sku,
     contactId: row.contact_id,
     phone: row.phone,
-    traceId,
+    contactName: row.name,
+    contactEmail: row.email,
+    traceId: row.trace_id,
   };
 }
 
 /**
  * Enqueues the `payment_link_sent` row (spec §5: `etapa_comercial=proposal`,
- * `estado_pago=pendiente`, `plan=<plan_code>`). Fails closed and silent at
- * every missing-configuration step — no Sheets config, no resolvable
- * workspace — because none of that may ever block or revert the delivery
- * this runs after. `enqueueLeadProjection` itself can also throw
- * (retry-exhausted or a DB error); the caller wraps this whole function in
- * `.catch()` for exactly that reason.
+ * `estado_pago=pendiente`, `plan=<plan_code>`). Runtime configuration and
+ * tenant equality have already been validated. A DB enqueue failure throws so
+ * the pending job stays visible for the scheduled reconciler.
  */
-async function enqueuePaymentLinkSentProjection(signal: PaymentLinkProjectionSignal): Promise<void> {
-  const sheets = loadSheetsProjectionConfig();
-  if (!sheets) {
-    logger.info({
-      event: 'orchestration.payment_link.projection_skipped',
-      trace_id: signal.traceId,
-      reason: 'SHEETS_NOT_CONFIGURED',
-    });
-    return;
-  }
-  let workspaceSlug: string;
-  try {
-    workspaceSlug = loadBusinessWorkspaceConfig().workspaceSlug;
-  } catch {
-    logger.warn({
-      event: 'orchestration.payment_link.projection_skipped',
-      trace_id: signal.traceId,
-      reason: 'MISSING_WORKSPACE_CONFIG',
-    });
-    return;
-  }
-  const workspaceRows = await sql<Array<{ id: string }>>`
-    SELECT id FROM workspaces WHERE slug = ${workspaceSlug} AND status = 'active' LIMIT 1
+async function enqueuePaymentLinkSentProjection(
+  signal: PaymentLinkProjectionSignal,
+  runtime: PaymentProjectionRuntime,
+  db: DbClient,
+): Promise<'repaired' | 'unchanged'> {
+  if (signal.workspaceId !== runtime.workspaceId) throw new Error('PAYMENT_PROJECTION_TENANT_MISMATCH');
+  // Interés canónico: el `offering_sku` de la decisión se proyecta como el
+  // display_name canónico del catálogo (P1, informe 2026-08-23: el outbox
+  // descartaba el sku y `curso_interes` quedaba vacío tras un cierre).
+  const offeringRows = await db<Array<{ display_name: string }>>`
+    SELECT display_name FROM offerings
+    WHERE workspace_id = ${runtime.workspaceId}::uuid AND code = ${signal.offeringSku}
+    LIMIT 1
   `;
-  const workspaceId = workspaceRows[0]?.id;
-  if (!workspaceId) {
-    logger.warn({
-      event: 'orchestration.payment_link.projection_skipped',
-      trace_id: signal.traceId,
-      reason: 'WORKSPACE_NOT_FOUND',
-    });
-    return;
-  }
-  await enqueueLeadProjection({
-    workspaceId,
+  const cursoInteres = offeringRows[0]?.display_name ?? signal.offeringSku;
+  const identity = signal.contactName ? splitFullName(signal.contactName) : null;
+  const projection = await enqueueLeadProjection({
+    workspaceId: runtime.workspaceId,
     contactId: signal.contactId,
-    spreadsheetId: sheets.spreadsheetId,
-    tabName: sheets.tabName,
+    spreadsheetId: runtime.sheets.spreadsheetId,
+    tabName: runtime.sheets.tabName,
     telefono: signal.phone,
+    nombre: identity?.nombre,
+    apellido: identity?.apellido,
+    email: signal.contactEmail ?? undefined,
     etapaComercial: 'proposal',
-    cursoInteres: '',
+    cursoInteres,
     plan: signal.planCode,
     estadoPago: 'pendiente',
     fechaPago: '',
     callId: '',
     ultimaSenal: 'payment_link_sent',
     traceId: signal.traceId,
+  }, { sql: db });
+  return projection.changed ? 'repaired' : 'unchanged';
+}
+
+interface PaymentProjectionCandidate {
+  readonly decision_id: string;
+  readonly workspace_id: string;
+  readonly contact_id: string;
+  readonly outbound_message_id: string;
+}
+
+async function projectPaymentProjectionCandidate(
+  candidate: PaymentProjectionCandidate,
+  runtime: PaymentProjectionRuntime,
+): Promise<'repaired' | 'unchanged' | 'skipped'> {
+  return withSerializableTransaction(async (db) => {
+    const membership = await db<Array<{ id: string }>>`
+      SELECT id
+      FROM workspace_contacts
+      WHERE workspace_id = ${candidate.workspace_id}::uuid
+        AND contact_id = ${candidate.contact_id}::uuid
+        AND lifecycle_status = 'active'
+      FOR UPDATE
+    `;
+    if (!membership[0] || candidate.workspace_id !== runtime.workspaceId) return 'skipped';
+
+    const signal = await loadPaymentLinkProjectionSignal(db, candidate);
+    if (!signal) return 'skipped';
+    const outcome = await enqueuePaymentLinkSentProjection(signal, runtime, db);
+    await db`
+      UPDATE payment_projection_jobs
+      SET state = 'projected', projected_at = now()
+      WHERE decision_id = ${signal.decisionId}::uuid AND state = 'pending'
+    `;
+    return outcome;
   });
+}
+
+async function projectPendingPaymentByOutbound(outboundId: string): Promise<void> {
+  const resolved = await resolvePaymentProjectionRuntime(sql);
+  if (resolved.status !== 'ready') {
+    logger.warn({
+      event: 'orchestration.payment_link.projection_skipped',
+      outbound_id: outboundId,
+      status: resolved.status,
+      reason: resolved.reason,
+    });
+    return;
+  }
+  const candidates = await sql<PaymentProjectionCandidate[]>`
+    SELECT decision_id, workspace_id, contact_id, outbound_message_id
+    FROM payment_projection_jobs
+    WHERE outbound_message_id = ${outboundId}::uuid
+      AND workspace_id = ${resolved.runtime.workspaceId}::uuid
+      AND state = 'pending'
+    LIMIT 1
+  `;
+  if (candidates[0]) {
+    await projectPaymentProjectionCandidate(candidates[0], resolved.runtime);
+  }
+}
+
+export interface DeliveredPaymentProjectionReconciliationResult {
+  readonly status: PaymentProjectionReconciliationStatus;
+  readonly reason: PaymentProjectionReconciliationReason;
+  readonly examined: number;
+  readonly repaired: number;
+  readonly unchanged: number;
+  readonly skipped: number;
+  readonly failed: number;
+}
+
+/**
+ * Repairs only the derived Sheet projection for already-submitted payment
+ * messages. It has no provider client and cannot create or resend a message.
+ */
+export async function reconcileDeliveredPaymentProjections(
+  input: { limit?: number } = {},
+): Promise<DeliveredPaymentProjectionReconciliationResult> {
+  const empty = { examined: 0, repaired: 0, unchanged: 0, skipped: 0, failed: 0 };
+  const resolved = await resolvePaymentProjectionRuntime(sql);
+  if (resolved.status !== 'ready') return { ...resolved, ...empty };
+  const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
+  const candidates = await sql<PaymentProjectionCandidate[]>`
+    SELECT decision_id, workspace_id, contact_id, outbound_message_id
+    FROM payment_projection_jobs
+    WHERE workspace_id = ${resolved.runtime.workspaceId}::uuid
+      AND state = 'pending'
+    ORDER BY delivered_at ASC, decision_id ASC
+    LIMIT ${limit}
+  `;
+  const result = { status: 'ready' as const, reason: null, ...empty, examined: candidates.length };
+  for (const candidate of candidates) {
+    try {
+      const outcome = await projectPaymentProjectionCandidate(candidate, resolved.runtime);
+      result[outcome] += 1;
+    } catch (error) {
+      result.failed += 1;
+      logger.error({
+        event: 'orchestration.payment_link.projection_reconcile_failed',
+        outbound_id: candidate.outbound_message_id,
+        error: String(error),
+      });
+    }
+  }
+  return result;
 }

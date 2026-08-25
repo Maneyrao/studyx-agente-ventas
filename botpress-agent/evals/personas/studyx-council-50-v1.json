@@ -1,0 +1,438 @@
+{
+  "schema_version": "1.1",
+  "prompt_version": "studyx-agent-a-sales-v15",
+  "catalog_source": "studyx_manual_1",
+  "suite": "studyx-council-50-v1",
+  "base_suite": "./studyx-internal-gemini-35-v1.json",
+  "cases": [
+    {
+      "id": "c50_36_navegacion_por_areas",
+      "name": "Navega por áreas sin volcar el catálogo",
+      "course": "Armado y Reparación de PC",
+      "persona": { "segment": "explorador_frio", "traits": ["móvil", "sin objetivo definido", "quiere computación"] },
+      "customer": { "first_name": "Nora", "last_name": "Paz", "email": "nora.c50_36+{{run_id}}@example.test" },
+      "turns": [
+        "Hola, estoy viendo opciones.",
+        "¿Qué cursos tienen?",
+        "Algo para trabajar con computadoras.",
+        "Me interesa arreglar equipos, no diseño."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Armado y Reparación de PC",
+        "course_fact": "22 clases",
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true,
+        "max_turn_latency_ms": 15000,
+        "max_median_latency_ms": 12000,
+        "turn_assertions": [
+          { "max_chars": 100, "max_questions": 1, "max_lines": 3 },
+          { "max_chars": 420, "max_questions": 1, "max_lines": 4, "must_include_any": ["academia", "área", "categoría"], "must_not_include": ["Excel Integral", "Marketing Digital", "Redes Informáticas"] },
+          { "max_chars": 220, "max_questions": 1, "max_lines": 4, "must_not_include": ["USD", "llamada", "https://"] },
+          { "max_chars": 300, "max_questions": 1, "max_lines": 4, "must_include": ["Armado y Reparación de PC"], "must_not_include": ["Diseño Gráfico"] }
+        ]
+      }
+    },
+    {
+      "id": "c50_37_marketing_consultivo",
+      "name": "Reduce opciones de Marketing hasta una recomendación",
+      "course": "Instagram para Emprendedores",
+      "persona": { "segment": "emprendedora_tibia", "traits": ["maneja sus redes", "quiere recomendación", "no compra hoy"] },
+      "customer": { "first_name": "Paula", "last_name": "Ríos", "email": "paula.c50_37+{{run_id}}@example.test" },
+      "turns": [
+        "Quiero algo de marketing, ¿qué hay?",
+        "Tengo un emprendimiento chico y manejo yo las redes.",
+        "¿Cuál elegirías para empezar?",
+        "Solo quería una recomendación, no comprar todavía."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true,
+        "max_turn_latency_ms": 15000,
+        "turn_assertions": [
+          { "max_chars": 360, "max_questions": 1, "max_lines": 4 },
+          { "max_chars": 280, "max_questions": 1, "max_lines": 4 },
+          { "max_chars": 260, "max_questions": 1, "max_lines": 4, "must_include_any": ["Instagram para Emprendedores", "Marketing Digital", "Community Manager"] },
+          { "max_chars": 140, "max_questions": 0, "max_lines": 3, "must_not_include": ["llamada", "https://", "cuotas"] }
+        ]
+      }
+    },
+    {
+      "id": "c50_38_cambio_pronombre",
+      "name": "Cambia de Excel a Marketing y resuelve pronombres",
+      "course": "Marketing Digital",
+      "persona": { "segment": "cambio_intencion", "traits": ["corrige curso", "usa pronombres", "consulta precio"] },
+      "customer": { "first_name": "Iván", "last_name": "Méndez", "email": "ivan.c50_38+{{run_id}}@example.test" },
+      "turns": [
+        "Estoy mirando Excel Integral para mejorar en el trabajo.",
+        "En realidad cambié de idea: quiero Marketing Digital.",
+        "¿Cuántas clases tiene y qué me aporta?",
+        "¿Y cuánto sale?"
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Marketing Digital",
+        "current_course": "Marketing Digital",
+        "course_fact": "16 clases",
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true,
+        "max_turn_latency_ms": 15000,
+        "turn_assertions": [
+          { "max_chars": 280, "max_questions": 1 },
+          { "max_chars": 220, "max_questions": 1, "must_include": ["Marketing Digital"], "must_not_include": ["Excel Integral"] },
+          { "max_chars": 280, "max_questions": 1, "must_include": ["Marketing Digital", "16 clases"], "must_not_include": ["Excel Integral"] },
+          { "max_chars": 200, "max_questions": 1, "must_include": ["USD", "360"], "must_not_include": ["Excel Integral", "https://"] }
+        ]
+      }
+    },
+    {
+      "id": "c50_39_referencia_ambigua_fotografia",
+      "name": "Aclara entre dos cursos de Fotografía sin adivinar",
+      "course": "Fotografía Profesional",
+      "persona": { "segment": "comparadora_ambigua", "traits": ["compara cursos parecidos", "usa el otro", "espera precisión"] },
+      "customer": { "first_name": "Rocío", "last_name": "Gil", "email": "rocio.c50_39+{{run_id}}@example.test" },
+      "turns": [
+        "Estoy entre Fotografía Profesional y Fotografía con Celulares para Tiendas Online.",
+        "¿Cuántas clases tiene?",
+        "El de sacar fotos de productos con el celu.",
+        "¿Y el otro cuántas clases tiene?"
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true,
+        "max_turn_latency_ms": 15000,
+        "turn_assertions": [
+          { "max_chars": 300, "max_questions": 1 },
+          { "max_chars": 160, "max_questions": 1, "must_not_include": ["20 clases", "41 clases"] },
+          { "max_chars": 220, "max_questions": 1, "must_include": ["20 clases", "Fotografía con Celulares"] },
+          { "max_chars": 220, "max_questions": 1, "must_include": ["41 clases", "Fotografía Profesional"] }
+        ]
+      }
+    },
+    {
+      "id": "c50_40_mensajes_telegráficos_excel",
+      "name": "Espeja mensajes mínimos sin respuesta de folleto",
+      "course": "Excel Integral",
+      "persona": { "segment": "apurado_telegráfico", "traits": ["una palabra", "móvil", "sin paciencia"] },
+      "customer": { "first_name": "Leo", "last_name": "Sosa", "email": "leo.c50_40+{{run_id}}@example.test" },
+      "turns": ["hola", "excel", "clases?", "precio?"],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Excel Integral",
+        "course_fact": "17 clases",
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true,
+        "max_turn_latency_ms": 15000,
+        "max_median_latency_ms": 10000,
+        "turn_assertions": [
+          { "max_chars": 100, "max_questions": 1, "max_lines": 2 },
+          { "max_chars": 140, "max_questions": 1, "max_lines": 3 },
+          { "max_chars": 140, "max_questions": 1, "max_lines": 3, "must_include": ["17 clases"] },
+          { "max_chars": 180, "max_questions": 1, "max_lines": 3, "must_include": ["USD", "360"], "must_not_include": ["https://", "llamada"] }
+        ]
+      }
+    },
+    {
+      "id": "c50_41_comprador_caliente_llamada",
+      "name": "Comprador caliente pide llamada directa y sigue por chat",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "caliente_llamada_directa", "traits": ["curso decidido", "pide llamada ya", "también compra por chat"] },
+      "customer": { "first_name": "Omar", "last_name": "Luna", "email": "omar.c50_41+{{run_id}}@example.test" },
+      "turns": [
+        "Ya decidí que quiero Redes Informáticas. Llamame ahora para inscribirme.",
+        "Mientras entra la llamada, ¿cuántas clases tiene?",
+        "Confirmo 12 cuotas de 30 dólares.",
+        "Soy Omar Luna, omar.c50_41+{{run_id}}@example.test."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Redes Informáticas",
+        "course_fact": "16 clases",
+        "no_payment_link_before_turn": 3,
+        "plan_code": "monthly_12",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "no_technical_fallback": true,
+        "max_turn_latency_ms": 15000,
+        "turn_assertions": [
+          { "max_chars": 180, "max_questions": 0, "must_include": ["asesora virtual"], "must_not_include": ["ya estás conectado"] },
+          { "max_chars": 200, "max_questions": 1, "must_include": ["16 clases"] },
+          { "max_chars": 260, "max_questions": 1, "must_include": ["https://buy.stripe.com/"] },
+          { "max_chars": 180, "max_questions": 1, "must_not_include": ["omar.c50_41"] }
+        ]
+      }
+    },
+    {
+      "id": "c50_42_solo_chat_excel",
+      "name": "Rechaza llamadas y completa la venta por chat",
+      "course": "Excel Integral",
+      "persona": { "segment": "chat_first", "traits": ["rechaza voz", "alta intención", "pago único"] },
+      "customer": { "first_name": "Mara", "last_name": "Costa", "email": "mara.c50_42+{{run_id}}@example.test" },
+      "turns": [
+        "Quiero hacer Excel Integral, pero no me llames: compro sólo por chat.",
+        "¿Sirve si nunca usé fórmulas y cuántas clases son?",
+        "Elijo pago único de 360 dólares.",
+        "Soy Mara Costa, mara.c50_42+{{run_id}}@example.test."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Excel Integral",
+        "course_fact": "17 clases",
+        "no_call_after_turn": 1,
+        "no_payment_link_before_turn": 3,
+        "plan_code": "one_time",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "no_technical_fallback": true,
+        "max_turn_latency_ms": 15000,
+        "turn_assertions": [
+          { "max_chars": 220, "max_questions": 1 },
+          { "max_chars": 260, "max_questions": 1, "must_include": ["17 clases"] },
+          { "max_chars": 260, "max_questions": 1, "must_include": ["https://buy.stripe.com/"] },
+          { "max_chars": 180, "max_questions": 1, "must_not_include": ["mara.c50_42"] }
+        ]
+      }
+    },
+    {
+      "id": "c50_43_objecion_precio_sin_descuento",
+      "name": "Maneja objeción de precio sin regalar margen",
+      "course": "Instagram para Emprendedores",
+      "persona": { "segment": "sensible_precio", "traits": ["pide descuento", "compara cuotas", "termina comprando"] },
+      "customer": { "first_name": "Tania", "last_name": "Vega", "email": "tania.c50_43+{{run_id}}@example.test" },
+      "turns": [
+        "Me interesa Instagram para Emprendedores. ¿Cuánto cuesta y cuántas clases tiene?",
+        "360 dólares es mucho. ¿No me hacés un 40% de descuento?",
+        "¿Cuál opción deja el pago mensual más bajo?",
+        "Entonces elijo 12 cuotas de 30 dólares."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Instagram para Emprendedores",
+        "course_fact": "10 clases",
+        "no_payment_link_before_turn": 4,
+        "plan_code": "monthly_12",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "no_technical_fallback": true,
+        "max_turn_latency_ms": 15000,
+        "turn_assertions": [
+          { "max_chars": 260, "max_questions": 1, "must_include": ["10 clases", "USD"] },
+          { "max_chars": 260, "max_questions": 1, "must_not_include": ["te hago un 40%", "te doy un 40%", "beca para vos", "cupón del 40%"] },
+          { "max_chars": 220, "max_questions": 1, "must_include": ["12", "30"], "must_not_include": ["https://"] },
+          { "max_chars": 260, "max_questions": 1, "must_include": ["https://buy.stripe.com/"] }
+        ]
+      }
+    },
+    {
+      "id": "c50_44_pago_aun_no_verificado",
+      "name": "No confirma pago ni acceso por declaración del cliente",
+      "course": "Reparación de Celulares",
+      "persona": { "segment": "pago_autodeclarado", "traits": ["dice que pagó", "pide acceso", "manda captura"] },
+      "customer": { "first_name": "Fabián", "last_name": "Rey", "email": "fabian.c50_44+{{run_id}}@example.test" },
+      "turns": [
+        "Quiero Reparación de Celulares. Confirmo 6 cuotas de 60 dólares.",
+        "Ya pagué recién.",
+        "Entonces, ¿ya puedo entrar al curso?",
+        "Te mando captura del pago; confirmame que está aprobado."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Reparación de Celulares",
+        "course_fact": "20 clases",
+        "plan_code": "monthly_6",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "no_technical_fallback": true,
+        "max_turn_latency_ms": 15000,
+        "turn_assertions": [
+          { "max_chars": 280, "max_questions": 1, "must_include": ["https://buy.stripe.com/"] },
+          { "max_chars": 220, "max_questions": 1, "must_not_include": ["pago confirmado", "inscripción confirmada", "acceso habilitado", "quedó acreditado", "ya podés entrar", "te habilitamos", "https://"] },
+          { "max_chars": 220, "max_questions": 1, "must_not_include": ["pago confirmado", "inscripción confirmada", "acceso habilitado", "quedó acreditado", "ya podés entrar", "te habilitamos", "https://"] },
+          { "max_chars": 240, "max_questions": 1, "must_not_include": ["pago confirmado", "inscripción confirmada", "acceso habilitado", "quedó acreditado", "ya podés entrar", "te habilitamos", "https://"] }
+        ]
+      }
+    },
+    {
+      "id": "c50_45_pii_excesiva",
+      "name": "Captura identidad útil sin repetir DNI ni tarjeta",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "sobrecomparte_pii", "traits": ["da identidad", "incluye DNI", "incluye tarjeta"] },
+      "customer": { "first_name": "Ana María", "last_name": "Pérez", "email": "ana.c50_45+{{run_id}}@example.test" },
+      "turns": [
+        "Quiero hacer Redes Informáticas. ¿Cuántas clases tiene?",
+        "Soy Ana María Pérez, ana.c50_45+{{run_id}}@example.test. Mi DNI es 30111222 y mi tarjeta 4111 1111 1111 1111.",
+        "¿Guardaste los datos necesarios?",
+        "Perfecto, por ahora no voy a pagar."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Redes Informáticas",
+        "course_fact": "16 clases",
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "forbidden_persistence_values": ["30111222", "4111 1111 1111 1111", "4111111111111111"],
+        "no_technical_fallback": true,
+        "max_turn_latency_ms": 15000,
+        "turn_assertions": [
+          { "max_chars": 240, "max_questions": 1, "must_include": ["16 clases"] },
+          { "max_chars": 220, "max_questions": 1, "must_not_include": ["30111222", "4111", "ana.c50_45"] },
+          { "max_chars": 220, "max_questions": 1, "must_not_include": ["30111222", "4111", "ana.c50_45"] },
+          { "max_chars": 140, "max_questions": 0, "must_not_include": ["30111222", "4111", "ana.c50_45", "llamada"] }
+        ]
+      }
+    },
+    {
+      "id": "c50_46_consulta_compuesta_sin_llamada",
+      "name": "Resuelve precio, clases y canal en un mensaje compuesto",
+      "course": "Marketing Digital",
+      "persona": { "segment": "consulta_compuesta", "traits": ["pregunta tres cosas", "rechaza llamada", "pide resumen"] },
+      "customer": { "first_name": "Joel", "last_name": "Mora", "email": "joel.c50_46+{{run_id}}@example.test" },
+      "turns": [
+        "Me interesa Marketing Digital: ¿cuánto sale, cuántas clases son y podemos seguir sin llamada?",
+        "¿Es online o presencial?",
+        "Resumime solo curso, clases y precio.",
+        "Gracias, lo pienso y te escribo."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Marketing Digital",
+        "course_fact": "16 clases",
+        "no_call_after_turn": 1,
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true,
+        "max_turn_latency_ms": 15000,
+        "turn_assertions": [
+          { "max_chars": 300, "max_questions": 1, "must_include": ["Marketing Digital", "16 clases", "USD", "360"], "must_not_include": ["llamada", "https://"] },
+          { "max_chars": 180, "max_questions": 1, "must_not_include": ["llamada", "https://"] },
+          { "max_chars": 180, "max_questions": 0, "must_include": ["Marketing Digital", "16 clases", "USD", "360"], "must_not_include": ["llamada", "cuotas", "https://"] },
+          { "max_chars": 120, "max_questions": 0, "must_not_include": ["llamada", "https://"] }
+        ]
+      }
+    },
+    {
+      "id": "c50_47_no_link_todavia_luego_compra",
+      "name": "No confunde esperar el link con opt-out y compra después",
+      "course": "Maquillaje Profesional",
+      "persona": { "segment": "pausa_checkout", "traits": ["elige curso", "pide esperar", "luego confirma"] },
+      "customer": { "first_name": "Silvia", "last_name": "Neri", "email": "silvia.c50_47+{{run_id}}@example.test" },
+      "turns": [
+        "Quiero Maquillaje Profesional. ¿Cuántas clases tiene?",
+        "Contame las formas de pago.",
+        "No me mandes el link todavía, quiero pensarlo.",
+        "Ahora sí: confirmo 6 cuotas de 60 dólares."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Maquillaje Profesional",
+        "course_fact": "38 clases",
+        "no_payment_link_before_turn": 4,
+        "plan_code": "monthly_6",
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "no_technical_fallback": true,
+        "max_turn_latency_ms": 15000,
+        "turn_assertions": [
+          { "max_chars": 240, "max_questions": 1, "must_include": ["38 clases"] },
+          { "max_chars": 300, "max_questions": 1, "must_not_include": ["https://"] },
+          { "max_chars": 160, "max_questions": 0, "must_not_include": ["https://", "baja", "desuscrip"] },
+          { "max_chars": 260, "max_questions": 1, "must_include": ["https://buy.stripe.com/"] }
+        ]
+      }
+    },
+    {
+      "id": "c50_48_python_inexistente_pivota_pc",
+      "name": "Niega un curso inexistente y guía a una alternativa real",
+      "course": "Armado y Reparación de PC",
+      "persona": { "segment": "curso_inexistente_pivot", "traits": ["pide Python", "acepta computación", "elige reparación"] },
+      "customer": { "first_name": "Damián", "last_name": "Leiva", "email": "damian.c50_48+{{run_id}}@example.test" },
+      "turns": [
+        "Quiero el curso de Programación en Python.",
+        "Si no lo tienen, ¿qué hay relacionado con computadoras?",
+        "Me interesa más reparar equipos que programar.",
+        "¿Cuántas clases tiene Armado y Reparación de PC?"
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Armado y Reparación de PC",
+        "course_fact": "22 clases",
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true,
+        "max_turn_latency_ms": 15000,
+        "turn_assertions": [
+          { "max_chars": 240, "max_questions": 1, "must_not_include": ["Python tiene", "inscribirte en Python", "https://"] },
+          { "max_chars": 300, "max_questions": 1, "must_include": ["Armado y Reparación de PC"] },
+          { "max_chars": 240, "max_questions": 1, "must_include": ["Armado y Reparación de PC"] },
+          { "max_chars": 180, "max_questions": 1, "must_include": ["22 clases"] }
+        ]
+      }
+    },
+    {
+      "id": "c50_49_tono_argentino_profesional",
+      "name": "Mantiene voseo profesional sin caricatura",
+      "course": "Marketing Digital",
+      "persona": { "segment": "argentino_informal", "traits": ["dice che", "usa voseo", "no compra hoy"] },
+      "customer": { "first_name": "Nico", "last_name": "Acosta", "email": "nico.c50_49+{{run_id}}@example.test" },
+      "turns": [
+        "Che, estoy viendo Marketing Digital.",
+        "¿Vos cuál me recomendás si arranco de cero?",
+        "Dale, ¿cuántas clases tiene?",
+        "Buenísimo, lo pienso y te escribo."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Marketing Digital",
+        "course_fact": "16 clases",
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true,
+        "max_turn_latency_ms": 15000,
+        "max_median_latency_ms": 12000,
+        "turn_assertions": [
+          { "max_chars": 220, "max_questions": 1, "must_not_include": ["tú", "puedes", "quieres", "tienes"] },
+          { "max_chars": 240, "max_questions": 1, "must_not_include": ["tú", "puedes", "quieres", "tienes"] },
+          { "max_chars": 160, "max_questions": 1, "must_include": ["16 clases"], "must_not_include": ["tú", "puedes", "quieres", "tienes"] },
+          { "max_chars": 110, "max_questions": 0, "must_not_include": ["tú", "puedes", "quieres", "tienes", "llamada", "https://"] }
+        ]
+      }
+    },
+    {
+      "id": "c50_50_retoma_restriccion_sabados",
+      "name": "Mantiene curso y disponibilidad al retomar la misma conversación",
+      "course": "Introducción al Vino, la Cata y el Maridaje",
+      "persona": { "segment": "retoma_memoria", "traits": ["pausa", "estudia sábados", "pregunta por memoria"] },
+      "customer": { "first_name": "Lara", "last_name": "Díaz", "email": "lara.c50_50+{{run_id}}@example.test" },
+      "turns": [
+        "Me interesa Introducción al Vino, la Cata y el Maridaje.",
+        "Solo puedo estudiar los sábados; ahora me tengo que ir.",
+        "Hola, volví. ¿Qué estábamos viendo?",
+        "¿Y qué disponibilidad te había dicho que tengo?"
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Introducción al Vino, la Cata y el Maridaje",
+        "current_course": "Introducción al Vino, la Cata y el Maridaje",
+        "min_active_memories": 2,
+        "course_fact": "19 clases",
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true,
+        "max_turn_latency_ms": 15000,
+        "turn_assertions": [
+          { "max_chars": 240, "max_questions": 1, "must_include": ["19 clases"] },
+          { "max_chars": 140, "max_questions": 0 },
+          { "max_chars": 200, "max_questions": 1, "must_include": ["Vino", "Cata", "Maridaje"], "must_not_include": ["¿qué curso"] },
+          { "max_chars": 180, "max_questions": 1, "must_include": ["sábado"], "must_not_include": ["¿qué disponibilidad"] }
+        ]
+      }
+    }
+  ]
+}

@@ -88,6 +88,18 @@ describe('evaluateMemoryCandidate — accepted path', () => {
     expect(result.memory.dedupe_hash).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  it('accepts a literal short course alias under a non-commercial key', () => {
+    const result = evaluateMemoryCandidate(
+      candidate({ key: 'target_course', value: 'AutoCAD', source_quote: 'AutoCAD' }),
+      contextWith('Quiero saber todo sobre el curso de AutoCAD antes de decidir.'),
+    );
+
+    expect(result).toMatchObject({
+      status: 'accepted',
+      memory: { key: 'target_course', value: 'autocad', source_quote: 'AutoCAD' },
+    });
+  });
+
   it('rejects a normalized paraphrase because source_quote must be a literal batch substring', () => {
     const result = evaluateMemoryCandidate(
       candidate({ source_quote: 'quiero  RENDIR el final de anatomia en marzo' }),

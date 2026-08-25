@@ -1,4 +1,4 @@
-import { Autonomous, Workflow, configuration, context, z } from '@botpress/runtime'
+import { Autonomous, Workflow, configuration, context, secrets, z } from '@botpress/runtime'
 import { claimBatch } from '../actions/claimBatch'
 import { commitDecision } from '../actions/commitDecision'
 import { dispatchCall } from '../actions/dispatchCall'
@@ -17,10 +17,18 @@ import {
   type IngestResponse,
   type WorkflowResult,
 } from '../schemas/contracts'
-import { AGENT_A_PROMPT_VERSION, buildAgentASalesBridgeInstructions } from '../prompts/agent-a-sales-bridge'
-import { GREETING_FAST_PATH_MODEL, matchDeterministicGreeting } from '../utils/greeting'
-import { CALL_HANDOFF_FAST_PATH_MODEL, matchCallHandoffFastPath } from '../utils/call-handoff-fast-path'
+import {
+  AGENT_A_PROMPT_VERSION,
+  buildAgentASalesBridgeCompactInstructions,
+  buildAgentASalesBridgeInstructions,
+} from '../prompts/agent-a-sales-bridge'
 import { StudyxHttpError } from '../utils/http'
+import { applyDecisionPolicy, suppress, technicalFallback } from '../utils/decision-policy'
+import { routeCommercialTurn } from '../utils/commercial-router'
+import { verifyAuthorizedEgressPortable } from '../utils/authorized-egress'
+import { generateGeminiDecision } from '../lib/decision/gemini-direct'
+import { generateGroqDecision } from '../lib/decision/groq-direct'
+import { evaluateWhatsAppCanarySend } from '../channels/whatsapp.channel'
 
 /**
  * One inbound turn, end to end.
@@ -64,11 +72,12 @@ const DECISION_MODELS = [
 ] as const
 
 /**
- * One generation must reach the structured exit: the task has zero tools, so
- * there is nothing to iterate over. If evals ever show a single iteration
- * failing to exit, raise to 2 with evidence — never back to 3.
+ * A second iteration is available only when the first generated value fails
+ * the structured exit. Live eval evidence showed Gemini confusing the
+ * `offer_call` permission token with the `call_offer` response type; the
+ * correction iteration lets it repair that shape without exposing fallback.
  */
-const DECISION_ITERATIONS = 1
+const DECISION_ITERATIONS = 2
 
 /** Bounded: the window slides, but not forever. */
 const MAX_CLAIM_ATTEMPTS = 6
@@ -108,110 +117,6 @@ function resultFromState(state: z.infer<typeof workflowStateSchema>, traceId: st
     outbound_id: state.outboundId,
     delivery_status: state.deliveryStatus,
     error_code: state.errorCode,
-  }
-}
-
-function suppress(reasonCode: string): Decision {
-  return {
-    schema_version: 3,
-    intent: 'unknown',
-    kind: 'suppress',
-    response: null,
-    response_type: null,
-    business_action: null,
-    memory_candidates: [],
-    missing_information: [],
-    next_state: 'completed',
-    reason_code: reasonCode,
-    confidence: 1,
-    retrieval_used: null,
-  }
-}
-
-function technicalFallback(): Decision {
-  return {
-    schema_version: 3,
-    intent: 'unknown',
-    kind: 'reply',
-    response: 'No pude procesar tu consulta en este momento. Por favor, intentá nuevamente más tarde.',
-    response_type: 'technical_fallback',
-    business_action: null,
-    memory_candidates: [],
-    missing_information: [],
-    next_state: 'completed',
-    reason_code: 'MODEL_UNAVAILABLE',
-    confidence: 1,
-    retrieval_used: null,
-  }
-}
-
-function allowedTextFallback(claimed: ClaimedTurn, reasonCode: string): Decision {
-  const allowed = claimed.policy.allowed_response_types
-  const responseType = allowed.includes('technical_fallback')
-    ? 'technical_fallback'
-    : allowed.includes('commercial_reply')
-      ? 'commercial_reply'
-      : null
-
-  if (!responseType) return suppress(reasonCode)
-
-  return {
-    schema_version: 3,
-    intent: 'unknown',
-    kind: 'reply',
-    response: 'No pude completar esa respuesta. ¿Podés reformularme la consulta?',
-    response_type: responseType,
-    business_action: null,
-    memory_candidates: [],
-    missing_information: [],
-    next_state: 'waiting_user',
-    reason_code: reasonCode,
-    confidence: 1,
-    retrieval_used: null,
-  }
-}
-
-// Two tiers on purpose: multi-word salutations (buen día, buenas tardes…)
-// are unambiguous and may be followed by anything, but the bare one-word
-// forms (hola, buenas) only count as a salutation when punctuation follows.
-// A bare `buenas\s+` would eat the first word of legitimate replies like
-// "Buenas noticias, el diplomado…" → "noticias, el diplomado…".
-const LEADING_GREETING =
-  /^(?:[¡¿\s]*)?(?:(?:buen\s+d[ií]a|buenas\s+tardes|buenas\s+noches)(?:\s*[,!:.—-]\s*|\s+)|(?:hola|buenas)\s*[,!:.—-]\s*)/iu
-
-function withoutRepeatedGreeting(response: string, claimed: ClaimedTurn): string {
-  if (claimed.context.recent_turns.length === 0) return response
-  const continuation = response.replace(LEADING_GREETING, '').trim()
-  return continuation.length > 0 ? continuation : response
-}
-
-/**
- * Local validation, run before the decision ever leaves this process. Next.js
- * re-validates all of it and holds final authority; doing it here as well is
- * what keeps a bad decision from consuming a turn and a network round trip.
- */
-function normalizeDecision(decision: Decision, claimed: ClaimedTurn): Decision {
-  if (decision.kind === 'suppress') return suppress(decision.reason_code)
-
-  if (!decision.response || !decision.response_type) {
-    return allowedTextFallback(claimed, 'INVALID_DECISION_SHAPE')
-  }
-
-  const standardResponseAllowed = (claimed.policy.allowed_response_types as string[])
-    .includes(decision.response_type)
-  const callResponseAllowed =
-    (decision.response_type === 'call_offer'
-      && claimed.sales_context.allowed_actions.includes('offer_call'))
-    || (decision.response_type === 'call_confirmation'
-      && claimed.sales_context.allowed_actions.includes('request_call_now'))
-
-  if (!standardResponseAllowed && !callResponseAllowed) {
-    return allowedTextFallback(claimed, 'RESPONSE_TYPE_NOT_ALLOWED')
-  }
-
-  return {
-    ...decision,
-    response: withoutRepeatedGreeting(decision.response, claimed),
   }
 }
 
@@ -460,23 +365,23 @@ export const processInboundTurn = new Workflow({
       injection_suspected: owned.context.injection_suspected_count,
     })
 
-    // ---- Fast path determinista: saludo inequívoco -----------------------
-    // Un lote de UN mensaje que es exactamente un saludo no necesita modelo ni
-    // catálogo. La decisión igual se commitea en Next.js como cualquier otra:
-    // misma validación, mismo outbound, mismo envío único.
-    const automatable =
-      configuration.automationEnabled && owned.policy.may_respond && !owned.contact.blocked
-    // El fast path de llamada corre primero: un pedido directo o una
-    // aceptación inequívoca no necesitan catálogo ni modelo, y el backend
-    // re-valida el consentimiento en el commit de todas formas.
-    const callFastPath = automatable ? matchCallHandoffFastPath(owned) : null
-    const fastPathDecision = callFastPath ?? (automatable ? matchDeterministicGreeting(owned) : null)
-    if (fastPathDecision) {
-      safeLog(callFastPath ? 'studyx.turn.call_fast_path' : 'studyx.turn.greeting_fast_path', {
-        trace_id: input.trace_id,
-        turn_id: owned.turn_id,
-      })
-    }
+    // One pure router owns capability precedence for both this workflow and
+    // the local evaluator. It chooses a deterministic decision, suppression,
+    // or one model request; it never applies the final policy itself.
+    const commercialRoute = routeCommercialTurn({
+      automationEnabled: configuration.automationEnabled,
+      claimed: owned,
+    })
+    const authorizedOfferingCode = commercialRoute.kind === 'deterministic'
+      ? commercialRoute.authorizedOfferingCode ?? owned.sales_context.offering_code
+      : owned.sales_context.offering_code
+    safeLog('studyx.turn.commercial_route', {
+      trace_id: input.trace_id,
+      turn_id: owned.turn_id,
+      route_kind: commercialRoute.kind,
+      route_origin: commercialRoute.origin,
+      route_reason: commercialRoute.reason,
+    })
 
     // ---- Pasos 7-9: generar y validar localmente -------------------------
     // The claim already carries the one coherent business snapshot. The
@@ -484,47 +389,120 @@ export const processInboundTurn = new Workflow({
     // normal turn never performs a second commercial read.
     let decision: Decision
     let decisionModel: string = DECISION_MODELS[0]
+    let decisionProvider: 'botpress' | 'google-ai-direct' | 'groq-direct' = 'botpress'
     timings.model_ms = 0
-    if (!configuration.automationEnabled) {
-      decision = suppress('AUTOMATION_DISABLED')
-      decisionModel = 'policy:automation-disabled'
-    } else if (!owned.policy.may_respond || owned.contact.blocked) {
-      decision = suppress(owned.policy.reason ?? 'CONTACT_BLOCKED')
-      decisionModel = 'policy:suppressed'
-    } else if (fastPathDecision) {
-      decision = fastPathDecision
-      decisionModel = callFastPath ? CALL_HANDOFF_FAST_PATH_MODEL : GREETING_FAST_PATH_MODEL
+    if (commercialRoute.kind !== 'model_required') {
+      decision = commercialRoute.decision
+      decisionModel = commercialRoute.model
       timings.model_ms = 0
     } else {
       const modelStartedAt = Date.now()
       try {
-        decision = await step(
+        const generatedTurn = await step(
           'generate-structured-decision',
           async () => {
-            const instructions = buildAgentASalesBridgeInstructions(owned)
-            const generated = await execute({
-              instructions,
-              exits: [DecisionExit],
-              temperature: 0.1,
-              // Sin herramientas, una iteración debe alcanzar el exit
-              // estructurado. El array de modelos es failover, no balanceo.
-              model: [...DECISION_MODELS],
-              reasoningEffort: 'none',
-              iterations: DECISION_ITERATIONS,
-              signal,
-            })
-            if (!generated.is(DecisionExit)) throw new Error('DECISION_EXIT_NOT_REACHED')
-            safeLog('studyx.turn.model_generated', {
-              trace_id: input.trace_id,
-              turn_id: owned.turn_id,
-              model_chain: DECISION_MODELS.join('>'),
-              iterations_used: generated.iterations?.length ?? null,
-              instructions_chars: instructions.length,
-            })
-            return normalizeDecision(DecisionSchema.parse(generated.output), owned)
+            // The prompt is identical for both providers: only the executor
+            // differs below. This is the ONE call site where a raw model
+            // decision is parsed here. The single provider-independent policy
+            // call runs below after deterministic/model/fallback convergence.
+            const instructions = configuration.decisionProvider === 'groq_direct'
+              ? buildAgentASalesBridgeCompactInstructions(owned)
+              : buildAgentASalesBridgeInstructions(owned)
+            let rawDecision: Decision
+            let provider: 'botpress' | 'google-ai-direct' | 'groq-direct' = 'botpress'
+            let model: string = DECISION_MODELS[0]
+
+            if (configuration.decisionProvider === 'gemini_direct') {
+              const apiKey = secrets.GEMINI_API_KEY
+              if (typeof apiKey !== 'string' || apiKey === '') {
+                // No PII, no key: a fixed error code only. Caught below and
+                // routed through the same existing technical-fallback path
+                // as any other model failure.
+                throw new StudyxHttpError('GEMINI_API_KEY_MISSING', false)
+              }
+              const generated = await generateGeminiDecision({
+                instructions,
+                apiKey,
+                model: configuration.geminiDecisionModel ?? '',
+                signal,
+              })
+              rawDecision = generated.decision
+              provider = generated.provider
+              model = generated.model
+              safeLog('studyx.turn.model_generated', {
+                trace_id: input.trace_id,
+                turn_id: owned.turn_id,
+                provider: generated.provider,
+                model: generated.model,
+                latency_ms: generated.latencyMs,
+                schema_valid: true,
+              })
+            } else if (configuration.decisionProvider === 'groq_direct') {
+              const apiKey = secrets.GROQ_API_KEY
+              if (typeof apiKey !== 'string' || apiKey === '') {
+                throw new StudyxHttpError('GROQ_API_KEY_MISSING', false)
+              }
+              const generated = await generateGroqDecision({
+                instructions,
+                apiKey,
+                model: configuration.groqDecisionModel ?? '',
+                signal,
+                timeoutMs: configuration.requestTimeoutMs,
+              })
+              rawDecision = generated.decision
+              provider = generated.provider
+              model = generated.model
+              safeLog('studyx.turn.model_generated', {
+                trace_id: input.trace_id,
+                turn_id: owned.turn_id,
+                provider: generated.provider,
+                model: generated.model,
+                latency_ms: generated.latencyMs,
+                schema_valid: true,
+              })
+            } else {
+              const generated = await execute({
+                instructions,
+                exits: [DecisionExit],
+                temperature: 0.1,
+                // Sin herramientas, una iteración debe alcanzar el exit
+                // estructurado. El array de modelos es failover, no balanceo.
+                model: [...DECISION_MODELS],
+                reasoningEffort: 'none',
+                iterations: DECISION_ITERATIONS,
+                signal,
+              })
+              if (!generated.is(DecisionExit)) throw new Error('DECISION_EXIT_NOT_REACHED')
+              rawDecision = DecisionSchema.parse(generated.output)
+              safeLog('studyx.turn.model_generated', {
+                trace_id: input.trace_id,
+                turn_id: owned.turn_id,
+                model_chain: DECISION_MODELS.join('>'),
+                iterations_used: generated.iterations?.length ?? null,
+                instructions_chars: instructions.length,
+              })
+            }
+
+            return {
+              decision: rawDecision,
+              provider,
+              model,
+            }
           },
-          { maxAttempts: 1 }
+          // One bounded retry prevents a transient model timeout from becoming
+          // a customer-visible technical fallback. The step remains durable,
+          // and no business side effect exists before the decision is committed.
+          {
+            maxAttempts:
+              configuration.decisionProvider === 'gemini_direct'
+              || configuration.decisionProvider === 'groq_direct'
+                ? 1
+                : 2,
+          }
         )
+        decision = generatedTurn.decision
+        decisionProvider = generatedTurn.provider
+        decisionModel = generatedTurn.model
         timings.model_ms = Date.now() - modelStartedAt
       } catch (error) {
         timings.model_ms = Date.now() - modelStartedAt
@@ -539,6 +517,10 @@ export const processInboundTurn = new Workflow({
         decisionModel = 'policy:model-unavailable'
       }
     }
+
+    // Exactly one policy call for every route: deterministic, suppressed,
+    // model and technical fallback all converge here before commit.
+    decision = applyDecisionPolicy(decision, owned)
 
     if (Number.isFinite(occurredAtMs)) {
       timings.event_to_decision_ms = Math.max(0, Date.now() - occurredAtMs)
@@ -556,9 +538,13 @@ export const processInboundTurn = new Workflow({
             input: {
               turn_id: owned.turn_id,
               trace_id: input.trace_id,
+              // Canonical course identity resolved by the deterministic route
+              // or preserved from the claim; the backend re-resolves it before
+              // authorizing any protected fact.
+              authorized_offering_code: authorizedOfferingCode,
               decision,
               model: {
-                provider: 'botpress',
+                provider: decisionProvider,
                 model: decisionModel,
                 prompt_version: AGENT_A_PROMPT_VERSION,
               },
@@ -643,14 +629,79 @@ export const processInboundTurn = new Workflow({
       return resultFromState(state, input.trace_id)
     }
 
+    // ---- Última barrera antes del único envío físico ---------------------
+    // The backend owns the capability; this edge only verifies that the exact
+    // content received here is still the content it authorized. Any malformed
+    // or altered value is a terminal failed attempt, never a send retry.
+    const egressStartedAt = Date.now()
+    const egressVerification = await verifyAuthorizedEgressPortable({
+      content: committed.outbound.content,
+      manifest: committed.outbound.authorized_egress,
+    }).catch(() => ({ ok: false, reason: 'CRYPTO_UNAVAILABLE' } as const))
+    timings.egress_verify_ms = Date.now() - egressStartedAt
+    if (!egressVerification.ok) {
+      state.deliveryStatus = 'failed'
+      state.phase = 'paused_error'
+      state.errorCode = `EGRESS_${egressVerification.reason}`
+
+      try {
+        await step(
+          'report-egress-verification-failure',
+          () =>
+            reportDelivery.execute({
+              client,
+              input: {
+                outbound_id: committed.outbound!.id,
+                trace_id: input.trace_id,
+                status: 'failed',
+                botpress_message_id: null,
+                replayed: false,
+                error_code: state.errorCode,
+                delivery_attempt: committed.outbound!.delivery_attempt,
+              },
+            }),
+          { maxAttempts: 1 }
+        )
+      } catch (reportError) {
+        safeLog('studyx.turn.delivery_report_failed', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          error_code: errorCode(reportError),
+        })
+      }
+
+      safeLog('studyx.turn.egress_blocked', {
+        trace_id: input.trace_id,
+        turn_id: owned.turn_id,
+        outbound_id: committed.outbound.id,
+        reason: egressVerification.reason,
+      })
+      emitTimings()
+      return resultFromState(state, input.trace_id)
+    }
+
     // ---- Paso 11: un único envío físico ----------------------------------
     let delivery: { message: { id: string } }
     const sendStartedAt = Date.now()
     try {
       delivery = await step(
         'submit-outbound-to-botpress',
-        () =>
-          client.createMessage({
+        () => {
+          if (input.channel === 'whatsapp') {
+            const canary = evaluateWhatsAppCanarySend({
+              automationEnabled: configuration.automationEnabled,
+              whatsappCanaryEnabled: configuration.whatsappCanaryEnabled === true,
+              allowlist: secrets.WHATSAPP_CANARY_PHONE_E164S,
+              phoneE164: input.phone_e164,
+              log: (event) => console.info(JSON.stringify(event)),
+            })
+            if (!canary.allowed) {
+              const blocked = new Error(canary.reason)
+              blocked.name = canary.reason
+              throw blocked
+            }
+          }
+          return client.createMessage({
             conversationId: input.botpress_conversation_id,
             // Un mensaje del bot se crea con el userId del BOT (así lo hace el
             // propio runtime en conversation.send). Con el userId del contacto
@@ -663,7 +714,8 @@ export const processInboundTurn = new Workflow({
               studyxOutboundId: committed.outbound!.id,
               studyxTraceId: input.trace_id,
             },
-          }) as Promise<{ message: { id: string } }>,
+          }) as Promise<{ message: { id: string } }>
+        },
         { maxAttempts: 1 }
       )
       timings.send_ms = Date.now() - sendStartedAt
@@ -780,7 +832,7 @@ export const processInboundTurn = new Workflow({
     })
     emitTimings({
       model: decisionModel,
-      fast_path: fastPathDecision !== null,
+      fast_path: commercialRoute.kind === 'deterministic',
     })
     return resultFromState(state, input.trace_id)
   },

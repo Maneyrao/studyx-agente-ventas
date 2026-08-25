@@ -27,6 +27,7 @@ import {
 const LINK_12M = 'https://buy.stripe.com/studyx-12m';
 const LINK_6M = 'https://buy.stripe.com/studyx-6m';
 const LINK_CONTADO = 'https://buy.stripe.com/studyx-contado';
+const CANONICAL_OFFERING_SKU = 'studyx_course';
 
 const FULL_ENV = {
   PAYMENT_LINK_12M: LINK_12M,
@@ -43,7 +44,12 @@ function allowedContact() {
 }
 
 function action(overrides: Partial<SendPaymentLinkAction> = {}): SendPaymentLinkAction {
-  return { type: 'send_payment_link', plan_code: 'monthly_12', offering_sku: null, ...overrides };
+  return {
+    type: 'send_payment_link',
+    plan_code: 'monthly_12',
+    offering_sku: CANONICAL_OFFERING_SKU,
+    ...overrides,
+  };
 }
 
 describe('PAYMENT_PLAN_PRESENTATIONS', () => {
@@ -109,6 +115,16 @@ describe('derivePaymentChoiceFromBatch', () => {
     expect(derivePaymentChoiceFromBatch([])).toBeNull();
   });
 
+  it.each([
+    'Confirmo 12 cuotas; no me mandes el link todavía',
+    'Las 6 cuotas me sirven, pero mandamelo después',
+    'Solo consultaba por 12 pagos',
+    'Si comprara, elegiría 12 cuotas',
+    'Por ahora no quiero pagar en 6 cuotas',
+  ])('lets an explicit deferral override an otherwise identifiable plan: %s', (content) => {
+    expect(derivePaymentChoiceFromBatch([msg(content)])).toBeNull();
+  });
+
   it('returns null when the batch matches two or more plans (ambiguous)', () => {
     expect(
       derivePaymentChoiceFromBatch([msg('me sirven las 12 meses o las 6 cuotas, cual me recomendás?')]),
@@ -127,6 +143,21 @@ describe('derivePaymentChoiceFromBatch', () => {
     expect(derivePaymentChoiceFromBatch([msg('Prefiero 6 pagos')])).toBe('monthly_6');
   });
 
+  it('derives installment plans from their canonical monthly amount', () => {
+    expect(derivePaymentChoiceFromBatch([msg('La opción de 30 dólares por mes me sirve')])).toBe(
+      'monthly_12',
+    );
+    expect(derivePaymentChoiceFromBatch([msg('Quiero pagar USD 60 por mes')])).toBe('monthly_6');
+    expect(derivePaymentChoiceFromBatch([msg('Prefiero cuotas de 30 usd')])).toBe('monthly_12');
+    expect(derivePaymentChoiceFromBatch([msg('Me quedo con las cuotas de USD 60')])).toBe(
+      'monthly_6',
+    );
+  });
+
+  it('does not confuse a total of USD 360 with an installment choice', () => {
+    expect(derivePaymentChoiceFromBatch([msg('El curso cuesta 360 dólares, ¿verdad?')])).toBeNull();
+  });
+
   it('derives one_time from "todo junto", "un solo pago" or "pago total" as well', () => {
     expect(derivePaymentChoiceFromBatch([msg('Pago todo junto')])).toBe('one_time');
     expect(derivePaymentChoiceFromBatch([msg('prefiero un solo pago')])).toBe('one_time');
@@ -135,6 +166,16 @@ describe('derivePaymentChoiceFromBatch', () => {
 
   it('still returns null on ambiguity between the new phrasings', () => {
     expect(derivePaymentChoiceFromBatch([msg('¿6 pagos o todo junto?')])).toBeNull();
+  });
+
+  // Regresión P0 (informe 2026-08-23): "un único pago" es una elección válida
+  // de contado y el backend la rechazaba como AMBIGUOUS_OR_ABSENT_CHOICE.
+  it('derives one_time from the "un único pago" word order as well', () => {
+    expect(
+      derivePaymentChoiceFromBatch([msg('Quiero pagar los 360 dólares en un único pago')]),
+    ).toBe('one_time');
+    expect(derivePaymentChoiceFromBatch([msg('prefiero único pago')])).toBe('one_time');
+    expect(derivePaymentChoiceFromBatch([msg('quiero un unico pago')])).toBe('one_time');
   });
 
   it('still returns null for "pagos" without a plan-identifying number or phrase', () => {
@@ -206,7 +247,7 @@ describe('stripUnauthorizedUrls', () => {
 
 describe('materializePaymentLinkAction', () => {
   const resolver = createConfigPaymentLinkResolver(FULL_ENV);
-  const businessSnapshot = { offerings: [{ code: 'studyx_course' }] };
+  const businessSnapshot = { offerings: [{ code: CANONICAL_OFFERING_SKU }] };
 
   it('resolves the exact URL for each of the three plans on an explicit matching choice', () => {
     const cases: Array<[SendPaymentLinkAction['plan_code'], string, string]> = [
@@ -217,6 +258,7 @@ describe('materializePaymentLinkAction', () => {
     for (const [plan_code, phrase, expectedUrl] of cases) {
       const result = materializePaymentLinkAction({
         action: action({ plan_code }),
+        authorizedOfferingCode: CANONICAL_OFFERING_SKU,
         batchMessages: [msg(`quiero pagar ${phrase}`)],
         businessSnapshot,
         contact: allowedContact(),
@@ -235,6 +277,7 @@ describe('materializePaymentLinkAction', () => {
   it('refuses on an ambiguous or absent choice — no action, must clarify', () => {
     const result = materializePaymentLinkAction({
       action: action({ plan_code: 'monthly_12' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
       batchMessages: [msg('pasame el link porfa')],
       businessSnapshot,
       contact: allowedContact(),
@@ -244,10 +287,69 @@ describe('materializePaymentLinkAction', () => {
     expect(result).toEqual({ ok: false, reason: 'AMBIGUOUS_OR_ABSENT_CHOICE' });
   });
 
+  it('allows a strict "ahora sí" resume only for the exact previously deferred canonical plan', () => {
+    const input = {
+      action: action({ plan_code: 'monthly_6' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
+      deferredPlanCode: 'monthly_6',
+      batchMessages: [msg('Ahora sí, mandámelo.')],
+      businessSnapshot,
+      contact: allowedContact(),
+      modelResponseText: 'Perfecto.',
+      resolver,
+    } as Parameters<typeof materializePaymentLinkAction>[0] & {
+      deferredPlanCode: 'monthly_6';
+    };
+
+    const result = materializePaymentLinkAction(input);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.block.url).toBe(LINK_6M);
+  });
+
+  it('does not treat a generic link request as a resume of a deferred plan', () => {
+    const input = {
+      action: action({ plan_code: 'monthly_6' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
+      deferredPlanCode: 'monthly_6',
+      batchMessages: [msg('Pasame el link.')],
+      businessSnapshot,
+      contact: allowedContact(),
+      modelResponseText: null,
+      resolver,
+    } as Parameters<typeof materializePaymentLinkAction>[0] & {
+      deferredPlanCode: 'monthly_6';
+    };
+
+    expect(materializePaymentLinkAction(input)).toEqual({
+      ok: false,
+      reason: 'AMBIGUOUS_OR_ABSENT_CHOICE',
+    });
+  });
+
+  it.each([
+    'Ahora sí, mandámelo después.',
+    'Ahora sí, mandámelo; solo consultaba.',
+    'Ahora sí, mandámelo si comprara.',
+  ])('lets a current veto override an apparent deferred-plan resume: %s', (content) => {
+    const result = materializePaymentLinkAction({
+      action: action({ plan_code: 'monthly_6' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
+      deferredPlanCode: 'monthly_6',
+      batchMessages: [msg(content)],
+      businessSnapshot,
+      contact: allowedContact(),
+      modelResponseText: null,
+      resolver,
+    });
+
+    expect(result).toEqual({ ok: false, reason: 'AMBIGUOUS_OR_ABSENT_CHOICE' });
+  });
+
   it('fails closed when the resolved URL is missing (partial config)', () => {
     const partialResolver = createConfigPaymentLinkResolver({ PAYMENT_LINK_12M: LINK_12M });
     const result = materializePaymentLinkAction({
       action: action({ plan_code: 'monthly_6' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
       batchMessages: [msg('quiero las 6 meses')],
       businessSnapshot,
       contact: allowedContact(),
@@ -259,7 +361,12 @@ describe('materializePaymentLinkAction', () => {
 
   it('refuses an invalid plan_code', () => {
     const result = materializePaymentLinkAction({
-      action: { type: 'send_payment_link', plan_code: 'weekly' as SendPaymentLinkAction['plan_code'], offering_sku: null },
+      action: {
+        type: 'send_payment_link',
+        plan_code: 'weekly' as SendPaymentLinkAction['plan_code'],
+        offering_sku: CANONICAL_OFFERING_SKU,
+      },
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
       batchMessages: [msg('12 meses')],
       businessSnapshot,
       contact: allowedContact(),
@@ -272,6 +379,7 @@ describe('materializePaymentLinkAction', () => {
   it('forbids cross-plan fallback: batch chose monthly_6 but action names monthly_12', () => {
     const result = materializePaymentLinkAction({
       action: action({ plan_code: 'monthly_12' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
       batchMessages: [msg('quiero las 6 cuotas')],
       businessSnapshot,
       contact: allowedContact(),
@@ -284,6 +392,7 @@ describe('materializePaymentLinkAction', () => {
   it('refuses when offering_sku does not exist in the business snapshot', () => {
     const result = materializePaymentLinkAction({
       action: action({ plan_code: 'monthly_12', offering_sku: 'nonexistent-sku' }),
+      authorizedOfferingCode: 'nonexistent-sku',
       batchMessages: [msg('12 meses')],
       businessSnapshot,
       contact: allowedContact(),
@@ -293,25 +402,73 @@ describe('materializePaymentLinkAction', () => {
     expect(result).toEqual({ ok: false, reason: 'OFFERING_NOT_FOUND' });
   });
 
-  it('succeeds with a null offering_sku (no offering-specific check required)', () => {
+  it('refuses a catalog-valid SKU that differs from the exact claim-authorized SKU', () => {
+    const input = {
+      action: action({ plan_code: 'monthly_6', offering_sku: 'other_active_course' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
+      batchMessages: [msg('confirmo 6 cuotas')],
+      businessSnapshot: {
+        offerings: [
+          { code: CANONICAL_OFFERING_SKU },
+          { code: 'other_active_course' },
+        ],
+      },
+      contact: allowedContact(),
+      modelResponseText: null,
+      resolver,
+    } as Parameters<typeof materializePaymentLinkAction>[0] & {
+      authorizedOfferingCode: string;
+    };
+
+    expect(materializePaymentLinkAction(input)).toEqual({
+      ok: false,
+      reason: 'OFFERING_MISMATCH',
+    });
+  });
+
+  it('refuses a null offering_sku before consulting the link resolver', () => {
+    let resolveCalls = 0;
+    const observingResolver = {
+      resolve() {
+        resolveCalls += 1;
+        return LINK_12M;
+      },
+    };
     const result = materializePaymentLinkAction({
       action: action({ plan_code: 'monthly_12', offering_sku: null }),
+      authorizedOfferingCode: null,
       batchMessages: [msg('12 meses')],
       businessSnapshot,
       contact: allowedContact(),
       modelResponseText: null,
+      resolver: observingResolver,
+    });
+    expect(result).toEqual({ ok: false, reason: 'OFFERING_REQUIRED' });
+    expect(resolveCalls).toBe(0);
+  });
+
+  it.each([
+    ['an empty SKU', '', businessSnapshot],
+    ['an empty business snapshot', CANONICAL_OFFERING_SKU, { offerings: [] }],
+  ])('refuses %s as OFFERING_NOT_FOUND', (_case, offering_sku, snapshot) => {
+    const result = materializePaymentLinkAction({
+      action: action({ plan_code: 'monthly_12', offering_sku }),
+      authorizedOfferingCode: offering_sku,
+      batchMessages: [msg('12 meses')],
+      businessSnapshot: snapshot,
+      contact: allowedContact(),
+      modelResponseText: null,
       resolver,
     });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.stripped_urls).toEqual([]);
-    }
+
+    expect(result).toEqual({ ok: false, reason: 'OFFERING_NOT_FOUND' });
   });
 
   it('strips a free URL the model wrote into its own response text, keeping only the canonical link, and surfaces it as an audit signal', () => {
     const rogue = 'https://not-approved.example.com/pay';
     const result = materializePaymentLinkAction({
       action: action({ plan_code: 'monthly_12' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
       batchMessages: [msg('12 meses')],
       businessSnapshot,
       contact: allowedContact(),
@@ -331,6 +488,7 @@ describe('materializePaymentLinkAction', () => {
   it('refuses when the contact is blocked', () => {
     const result = materializePaymentLinkAction({
       action: action({ plan_code: 'monthly_12' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
       batchMessages: [msg('12 meses')],
       businessSnapshot,
       contact: { blocked: true, consent_status: 'allowed' },
@@ -343,6 +501,7 @@ describe('materializePaymentLinkAction', () => {
   it('refuses when consent is revoked', () => {
     const result = materializePaymentLinkAction({
       action: action({ plan_code: 'monthly_12' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
       batchMessages: [msg('12 meses')],
       businessSnapshot,
       contact: { blocked: false, consent_status: 'revoked' },

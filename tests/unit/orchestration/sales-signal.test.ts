@@ -24,12 +24,42 @@ describe('classifyDeterministicSalesSignal', () => {
     expect(classifyDeterministicSalesSignal('No me llames')).toEqual({ type: 'call_decline' });
   });
 
+  it.each([
+    'No me llamen',
+    'No quiero llamadas',
+    'Sin llamada',
+    'No por teléfono',
+    'Prefiero WhatsApp',
+    'Solo chat',
+    'No puedo atender llamadas',
+  ])('recognizes a call/channel refusal (%s)', (text) => {
+    expect(classifyDeterministicSalesSignal(text)).toEqual({ type: 'call_decline' });
+  });
+
   it.each(['Llamame', 'Llámame por favor', 'Podes llamarme'])(
     'recognizes variants of a direct call request (%s)',
     (text) => {
       expect(classifyDeterministicSalesSignal(text)).toEqual({ type: 'direct_call_request' });
     }
   );
+
+  it.each([
+    'Quiero que me llamen',
+    '¿Pueden llamarme?',
+    '¿Me llamás?',
+    'Quiero una llamada',
+    'Que me llame un asesor',
+    'Necesito hablar por teléfono',
+    'Comuníquense conmigo',
+  ])('recognizes an unambiguous direct-call paraphrase (%s)', (text) => {
+    expect(classifyDeterministicSalesSignal(text)).toEqual({ type: 'direct_call_request' });
+  });
+
+  it('lets a call negation win over a request token', () => {
+    expect(classifyDeterministicSalesSignal('No quiero que me llamen')).toEqual({
+      type: 'call_decline',
+    });
+  });
 
   it.each(['Sí', 'sí', 'Dale', 'De una', '¡Dale!', 'si.'])(
     'recognizes a short standalone acceptance (%s)',

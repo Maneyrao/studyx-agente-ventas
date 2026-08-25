@@ -21,6 +21,10 @@ export default defineConfig({
         .regex(E164_PATTERN, "emulatorPhoneE164 must be a strict E.164 identity")
         .default(DEFAULT_DEVELOPMENT_EMULATOR_PHONE_E164),
       automationEnabled: z.boolean().default(false),
+      whatsappCanaryEnabled: z.boolean().default(false),
+      decisionProvider: z.enum(['botpress_managed', 'gemini_direct', 'groq_direct']).default('botpress_managed'),
+      geminiDecisionModel: z.string().min(1).default('gemini-3.6-flash'),
+      groqDecisionModel: z.string().min(1).default('openai/gpt-oss-120b'),
     }),
   },
 
@@ -35,6 +39,10 @@ export default defineConfig({
       description:
         "Google AI Studio key used by transcribeAudio (Phase 4). Model: gemini-2.5-flash.",
     },
+    GROQ_API_KEY: {
+      description:
+        "Groq API key used by the Development-only direct decision provider.",
+    },
     TELEGRAM_BOT_A_TOKEN: {
       description:
         "Telegram Bot API token for the sandbox Bot A (Phase 2). Used to download voice notes for transcription.",
@@ -42,6 +50,10 @@ export default defineConfig({
     CRON_SECRET: {
       description:
         "Bearer token for /api/cron/flush-projections, used only by flushLeadProjection's opportunistic (best-effort, never blocking) Sheets-outbox flush. Same secret Next.js's cron routes already require — no value here, only the declaration; the value is provisioned per environment.",
+    },
+    WHATSAPP_CANARY_PHONE_E164S: {
+      description:
+        "One strict E.164 tester identity authorized for the supervised WhatsApp canary.",
     },
   },
 

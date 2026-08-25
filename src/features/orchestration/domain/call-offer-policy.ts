@@ -107,6 +107,20 @@ export function evaluateCallOfferPolicy(facts: CallOfferPolicyFacts): CallOfferP
     };
   }
 
+  // A proactive offer stays disabled for the rest of this conversation.
+  // An explicit direct request was handled above and always remains valid.
+  if (facts.lastDeclineAt !== null) {
+    return {
+      allowedActions: [],
+      openOffer: null,
+      acceptedOffer: null,
+      cooldownUntil,
+      reason: cooldownUntil === null
+        ? 'CALL_DECLINED_IN_CONVERSATION'
+        : 'DECLINE_COOLDOWN_ACTIVE',
+    };
+  }
+
   if (facts.signal.type === 'call_acceptance') {
     // A short "sí" only means something against a live offer; otherwise it
     // is not this policy's to interpret, and no action is granted.

@@ -1,5 +1,6 @@
-import { Conversation } from '@botpress/runtime'
+import { Conversation, configuration, secrets } from '@botpress/runtime'
 import { dispatch, logEvent } from '../channels'
+import { evaluateWhatsAppCanarySend } from '../channels/whatsapp.channel'
 import { processInboundTurn } from '../workflows/processInboundTurn'
 
 /**
@@ -30,16 +31,33 @@ export default new Conversation({
     })
 
     if (dispatched.kind === 'skip') {
+      const isWhatsApp = channelName === 'whatsapp.channel'
       logEvent('studyx.router.message_skipped', {
         adapter: dispatched.adapter,
         channel: channelName,
-        conversation_id: conversation.id,
+        ...(isWhatsApp ? { trace_id: traceId } : { conversation_id: conversation.id }),
         reason: dispatched.reason,
       })
       return
     }
 
     const { input, adapter } = dispatched
+    if (adapter === 'whatsapp') {
+      const canary = evaluateWhatsAppCanarySend({
+        automationEnabled: configuration.automationEnabled,
+        whatsappCanaryEnabled: configuration.whatsappCanaryEnabled === true,
+        allowlist: secrets.WHATSAPP_CANARY_PHONE_E164S,
+        phoneE164: input.phone_e164,
+      })
+      if (!canary.allowed) {
+        logEvent('studyx.router.whatsapp_canary_blocked', {
+          adapter,
+          trace_id: traceId,
+          reason: canary.reason,
+        })
+        return
+      }
+    }
     const workflowKey = `turn:botpress:${input.integration_id}:${input.external_message_id}`
 
     try {
@@ -51,14 +69,14 @@ export default new Conversation({
       logEvent('studyx.router.workflow_started', {
         adapter,
         trace_id: traceId,
-        external_message_id: input.external_message_id,
+        ...(adapter === 'whatsapp' ? {} : { external_message_id: input.external_message_id }),
         workflow_id: workflow.id,
       })
     } catch (error) {
       logEvent('studyx.router.workflow_start_failed', {
         adapter,
         trace_id: traceId,
-        external_message_id: input.external_message_id,
+        ...(adapter === 'whatsapp' ? {} : { external_message_id: input.external_message_id }),
         error_code: error instanceof Error ? error.name : 'UNKNOWN_ERROR',
       })
     }

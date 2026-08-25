@@ -15,7 +15,12 @@ El núcleo local está listo para un piloto supervisado:
 - HMAC, timestamp y secreto de orquestador para las rutas del agente.
 - Migraciones verificadas desde cero en tres clústeres PostgreSQL 17.
 
-El piloto real de WhatsApp sigue bloqueado hasta instalar/autenticar la integración oficial en Botpress. La automatización del adapter está deshabilitada por defecto.
+El único entregable de hoy es un **demo controlado de WhatsApp Sandbox**, no
+producción. La regresión local está en 20/50 (el gate es 50/50), por lo que no
+están autorizados despliegues, instalación/autorización de Botpress/Meta,
+secretos cloud ni mensajes. Task 5 (canary externa) sigue bloqueada hasta una
+autorización explícita; la automatización del adapter permanece deshabilitada
+por defecto.
 
 ## Configuración
 
@@ -64,12 +69,17 @@ npm run test:integration
 
 En macOS con PostgreSQL 17 y pgvector instalados, `bash scripts/verify-native-postgres-loop.sh` crea y migra tres clústeres aislados.
 
-## Despliegue seguro
+## WhatsApp: runbook y despliegue seguro
 
-1. Revisar y aplicar las migraciones `20260805010001` a `20260805010008` en staging.
-2. Rotar credenciales históricas antes de producción; editar una migración vieja no rota un secreto ya expuesto.
-3. Configurar los secretos equivalentes en Vercel y Botpress.
-4. Instalar la integración oficial de WhatsApp y confirmar sus IDs/tipos reales.
-5. Ejecutar el flujo completo en modo supervisado y reconciliar cualquier entrega ambigua sin reenviar a ciegas.
+El procedimiento controlado, las precondiciones de Meta/Botpress, los comandos
+de health/ready/readiness, las ocho pruebas, la evidencia sin PII, y el
+rollback están en [docs/runbooks/whatsapp-go-live.md](docs/runbooks/whatsapp-go-live.md).
+Ese documento separa demo Sandbox, canary de producción y disponibilidad
+general; no habilita producción.
+
+1. Llegar a la regresión local 50/50 y pasar ambos builds.
+2. Obtener autorización separada antes de cualquier mutación externa.
+3. Seguir el runbook por gates; primero Sandbox con un único tester.
+4. Conservar evidencia y reconciliar cualquier entrega ambigua sin reenviar a ciegas.
 
 La matriz de fallos y los límites actuales están en [docs/FAILURE_MATRIX.md](docs/FAILURE_MATRIX.md). La secuencia de trabajo está en [docs/ROADMAP.md](docs/ROADMAP.md).
