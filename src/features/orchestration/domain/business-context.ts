@@ -77,6 +77,8 @@ export interface OfferingSchedule {
 export interface BusinessOfferingView {
   readonly code: string;
   readonly display_name: string;
+  /** Configured customer-language aliases used only for canonical resolution. */
+  readonly aliases: string[];
   /**
    * A customer-facing area used to guide broad catalog questions. Null keeps
    * legacy offerings fail-closed: the model must not invent a category.
@@ -354,6 +356,7 @@ function buildOfferingView(
   return {
     code: offering.code,
     display_name: offering.display_name,
+    aliases: cleanStringList(metadata.aliases, 12, 128, tally),
     academy: cleanText(
       typeof metadata.academy === 'string' ? metadata.academy : null,
       128,

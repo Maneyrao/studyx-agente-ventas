@@ -178,6 +178,7 @@ function paymentBusinessContext() {
     offerings: [{
       code: 'redes-informaticas',
       display_name: 'Redes Informáticas',
+      aliases: [],
       academy: 'Tecnología',
       offering_type: 'course' as const,
       description: null,

@@ -98,7 +98,7 @@ const EXPLICIT_COURSE_NOUN_PATTERN =
   /\b(?:curso|diplomado|capacitacion|formacion|programa)\b/u;
 
 const NON_CATALOG_PROGRAM_CONTEXT_PATTERN =
-  /\b(?:sin|nunca|haber usado|usar|necesito|instalad\w*|software)\b.{0,48}\bprograma de\b/u;
+  /(?:\b(?:sin (?:haber )?usado|nunca (?:haber )?usado)\b.{0,48}\bprograma de\b|\b(?:necesito|hace falta)\b.{0,24}\b(?:instalar|usar|tener instalado)\b.{0,24}\bprograma de\b)/u;
 
 const NEGATED_OFFERING_PREFIX_PATTERN =
   /(?:^|\s)(?:no quiero|no me interesa|no prefiero|no elijo|ya no quiero|descarto|cancelo)(?:\s+(?:hacer|estudiar|aprender|el|la|un|una|curso|programa|de)){0,4}\s*$/u;

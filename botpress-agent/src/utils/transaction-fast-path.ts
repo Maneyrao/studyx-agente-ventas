@@ -129,6 +129,22 @@ export function matchCourseFactsFastPathMatch(
     message.content,
   ].map(normalizeCourse)
   let courseName = claimed.sales_context.course_of_interest
+  if (
+    courseName
+    && claimed.business_context
+    && /\b(?:el|la) otr[oa]\b/u.test(normalizedQuestion)
+  ) {
+    const offeringNames = claimed.business_context.offerings.map((offering) => offering.display_name)
+    const normalizedCurrent = normalizeCourse(courseName)
+    for (const historicalMessage of inboundMessages.slice(0, -1).reverse()) {
+      const named = offeringNames.filter((name) => historicalMessage.includes(normalizeCourse(name)))
+      const alternatives = named.filter((name) => normalizeCourse(name) !== normalizedCurrent)
+      if (named.length > 1 && alternatives.length === 1) {
+        courseName = alternatives[0]
+        break
+      }
+    }
+  }
   if (courseName && claimed.business_context) {
     courseName = canonicalCourseFromValue(
       courseName,

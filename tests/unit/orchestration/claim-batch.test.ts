@@ -1078,6 +1078,42 @@ describe('claimBatch business context', () => {
     expect(result.sales_context.course_of_interest).toBeNull();
   });
 
+  it('does not revive a historical SKU for a newly requested unavailable program', async () => {
+    const current = 'Necesito información del programa de Astronomía';
+    const result = await claimBatch(input, {
+      ...buildDeps({
+        messagesResult: [{
+          id: 'm1',
+          conversation_seq: 1,
+          content: current,
+          created_at: '2026-08-11T12:00:00.000Z',
+          message_type: 'text',
+        }],
+        factsResult: facts({
+          recent_turns: [{
+            direction: 'inbound',
+            content: 'Quiero Decoración de Interiores',
+            created_at: '2026-08-11T11:59:00.000Z',
+          }],
+        }),
+      }),
+      business: {
+        load: vi.fn().mockResolvedValue(businessContextView({
+          offerings: [businessOffering(
+            'decoracion_de_interiores',
+            'Decoración de Interiores',
+            'Diseño',
+          )],
+        })),
+      },
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.catalog_resolution).toMatchObject({ kind: 'not_found', requestedText: current });
+    expect(result.sales_context.offering_code).toBeNull();
+    expect(result.sales_context.course_of_interest).toBeNull();
+  });
+
   it('preserves the exact historical SKU when homonymous courses exist', async () => {
     const messages = [{
       id: 'm1',

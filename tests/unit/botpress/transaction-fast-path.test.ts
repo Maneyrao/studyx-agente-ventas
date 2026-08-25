@@ -49,7 +49,7 @@ function claimed(text: string, overrides: { name?: string | null; prices?: boole
           { code: 'one_time', label: 'Pago único', total: { amount: '360.00', currency: 'USD' },
             installments: 1, installment_amount: '360.00', payment_link: 'https://example.test/one' },
         ] }, offerings: [{
-          code: 'redes-informaticas', display_name: 'Redes Informáticas', academy: 'Oficios',
+          code: 'redes-informaticas', display_name: 'Redes Informáticas', aliases: [], academy: 'Oficios',
           offering_type: 'course', description: null, value_proposition: null, price_type: 'fixed',
           price: { amount: '360.00', currency: 'USD' }, price_assertable: true,
           billing_interval: null, modality: null, schedules: [], certification: null,

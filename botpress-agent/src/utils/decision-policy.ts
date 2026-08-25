@@ -223,6 +223,8 @@ function withDeterministicCourseMemory(decision: Decision, claimed: ClaimedTurn)
   const distinctCanonicalNames = [...new Set(canonicalCourseNames)]
   if (distinctCanonicalNames.length === 0) return decision
   const matches: Array<{ displayName: string; sourceQuote: string; sourceText: string }> = []
+  const nonSelectionExperienceContext =
+    /\b(?:nunca|sin)\b.{0,40}\b(?:trabaje|experiencia|use|hice|estudie|vendi)\w*\b/u
   for (const message of claimed.context.batch_messages) {
     if (message.message_type !== 'text') continue
     const normalizedMessage = normalizeCatalogText(message.content)
@@ -239,7 +241,7 @@ function withDeterministicCourseMemory(decision: Decision, claimed: ClaimedTurn)
         }
       }
     }
-    if (literalMatches === 0) {
+    if (literalMatches === 0 && !nonSelectionExperienceContext.test(normalizedMessage)) {
       const alias = uniqueCourseAliasMatch(message.content, distinctCanonicalNames)
       if (alias) matches.push({ ...alias, sourceText: message.content })
     }

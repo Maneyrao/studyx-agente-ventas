@@ -57,6 +57,17 @@ describe('resolveCatalogRequest', () => {
     expect(isCatalogRequestNeutral(text)).toBe(true);
   });
 
+  it.each([
+    'Necesito información del programa de Astronomía',
+    'Necesito información del programa de Marketing de Afiliados',
+  ])('keeps a genuinely requested unknown program fail-closed: %s', (text) => {
+    expect(resolveCatalogRequest(text, snapshot([MARKETING]))).toMatchObject({
+      kind: 'not_found',
+      requestedText: text,
+    });
+    expect(isCatalogRequestNeutral(text)).toBe(false);
+  });
+
   it('resolves a descriptive "el de" reply against two previously presented course names', () => {
     expect(resolveCatalogRequest(
       'El de sacar fotos de productos con el celu.',

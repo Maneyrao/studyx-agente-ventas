@@ -604,6 +604,30 @@ describe('routeCommercialTurn', () => {
     expect(route.decision.response).not.toMatch(/catálogo ahora/iu);
   });
 
+  it('routes a genuinely requested unknown program through the fail-closed catalog path', () => {
+    const text = 'Necesito información del programa de Astronomía';
+    const route = routeCommercialTurn({
+      automationEnabled: true,
+      claimed: claimedTurn({
+        texts: [text],
+        courseOfInterest: null,
+        offeringCode: null,
+        catalogResolution: {
+          kind: 'not_found',
+          requestedText: text,
+          requestedArea: null,
+          alternativeCodes: [],
+        },
+      }),
+    });
+
+    expect(route).toMatchObject({
+      kind: 'deterministic',
+      origin: 'catalog_not_found',
+      reason: 'DETERMINISTIC_CATALOG_NOT_FOUND',
+    });
+  });
+
   it('preserves the direct-call request semantics already authorized by the claim', () => {
     const route = routeCommercialTurn({
       automationEnabled: true,

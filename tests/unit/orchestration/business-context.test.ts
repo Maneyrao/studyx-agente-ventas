@@ -48,7 +48,10 @@ function rawContext(overrides: Partial<RawBusinessContext> = {}): RawBusinessCon
           ],
         },
         audience: { language: 'Spanish', min_age: 18 },
-        metadata: { academy: 'Academia de Tecnología' },
+        metadata: {
+          academy: 'Academia de Tecnología',
+          aliases: ['Inglés para programadores', 'Speaking IT'],
+        },
         guardrails: {
           allowed_promise: 'Destrabar el inglés hablado en contextos laborales IT.',
           forbidden_promises: ['fluidez total en 3 meses'],
@@ -119,6 +122,12 @@ describe('buildBusinessContextView', () => {
     // Legacy offerings without a category stay explicit instead of being
     // guessed from their course name or description.
     expect(view.offerings[1].academy).toBeNull();
+  });
+
+  it('exposes only bounded configured course aliases to the catalog resolver', () => {
+    const view = buildBusinessContextView(rawContext());
+    expect(view.offerings[0].aliases).toEqual(['Inglés para programadores', 'Speaking IT']);
+    expect(view.offerings[1].aliases).toEqual([]);
   });
 
   it('gives a quote offering no price field at all', () => {
