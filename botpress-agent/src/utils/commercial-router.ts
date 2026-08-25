@@ -127,7 +127,7 @@ const EXPLICIT_COURSE_NOUN_PATTERN =
   /\b(?:curso|diplomado|capacitacion|formacion|programa)\b/u
 
 const NON_CATALOG_PROGRAM_CONTEXT_PATTERN =
-  /(?:\b(?:sin (?:haber )?usado|nunca (?:haber )?usado)\b.{0,48}\bprograma de\b|\b(?:necesito|hace falta)\b.{0,24}\b(?:instalar|usar|tener instalado)\b.{0,24}\bprograma de\b)/u
+  /(?:\b(?:sin (?:haber )?(?:usado|usar)|nunca (?:haber )?(?:usado|usar|use))\b.{0,48}\bprograma de\b|\b(?:necesito|hace falta)\b.{0,24}\b(?:instalar|usar|tener instalado)\b.{0,24}\bprograma de\b)/u
 
 /**
  * "Lo más parecido", "algo similar", "¿qué alternativas tienen?" — a request

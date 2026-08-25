@@ -628,6 +628,28 @@ describe('routeCommercialTurn', () => {
     });
   });
 
+  it.each([
+    '¿Se puede hacer sin usar un programa de diseño?',
+    'Nunca usé un programa de diseño, ¿igual puedo hacer el curso?',
+  ])('does not mirror a program-requirement follow-up as unavailable catalog: %s', (text) => {
+    const route = routeCommercialTurn({
+      automationEnabled: true,
+      claimed: claimedTurn({
+        texts: [text],
+        courseOfInterest: 'Decoración de Interiores',
+        offeringCode: 'decoracion_de_interiores',
+        offerings: [businessOffering(
+          'decoracion_de_interiores',
+          'Decoración de Interiores',
+          'Diseño',
+        )],
+        catalogResolution: { kind: 'unavailable', reason: 'snapshot_missing' },
+      }),
+    });
+
+    expect(route.origin).not.toBe('catalog_unavailable');
+  });
+
   it('preserves the direct-call request semantics already authorized by the claim', () => {
     const route = routeCommercialTurn({
       automationEnabled: true,

@@ -1114,6 +1114,46 @@ describe('claimBatch business context', () => {
     expect(result.sales_context.course_of_interest).toBeNull();
   });
 
+  it.each([
+    '¿Se puede hacer sin usar un programa de diseño?',
+    'Nunca usé un programa de diseño, ¿igual puedo hacer el curso?',
+  ])('preserves exact historical SKU for a program-requirement follow-up: %s', async (current) => {
+    const result = await claimBatch(input, {
+      ...buildDeps({
+        messagesResult: [{
+          id: 'm1',
+          conversation_seq: 1,
+          content: current,
+          created_at: '2026-08-11T12:00:00.000Z',
+          message_type: 'text',
+        }],
+        factsResult: facts({
+          recent_turns: [{
+            direction: 'inbound',
+            content: 'Quiero Decoración de Interiores',
+            created_at: '2026-08-11T11:59:00.000Z',
+          }],
+        }),
+      }),
+      business: {
+        load: vi.fn().mockResolvedValue(businessContextView({
+          offerings: [businessOffering(
+            'decoracion_de_interiores',
+            'Decoración de Interiores',
+            'Diseño',
+          )],
+        })),
+      },
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.catalog_resolution).toEqual({ kind: 'no_catalog_intent' });
+    expect(result.sales_context).toMatchObject({
+      offering_code: 'decoracion_de_interiores',
+      course_of_interest: 'Decoración de Interiores',
+    });
+  });
+
   it('preserves the exact historical SKU when homonymous courses exist', async () => {
     const messages = [{
       id: 'm1',

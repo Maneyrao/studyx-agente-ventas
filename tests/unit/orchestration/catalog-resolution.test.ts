@@ -58,6 +58,16 @@ describe('resolveCatalogRequest', () => {
   });
 
   it.each([
+    '¿Se puede hacer sin usar un programa de diseño?',
+    'Nunca usé un programa de diseño, ¿igual puedo hacer el curso?',
+  ])('keeps a bounded program-requirement phrase neutral: %s', (text) => {
+    expect(resolveCatalogRequest(text, snapshot([MARKETING]))).toEqual({
+      kind: 'no_catalog_intent',
+    });
+    expect(isCatalogRequestNeutral(text)).toBe(true);
+  });
+
+  it.each([
     'Necesito información del programa de Astronomía',
     'Necesito información del programa de Marketing de Afiliados',
   ])('keeps a genuinely requested unknown program fail-closed: %s', (text) => {
