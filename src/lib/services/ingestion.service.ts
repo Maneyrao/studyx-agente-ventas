@@ -154,10 +154,20 @@ interface InboundCore {
   conversation_id: string;
   replayed: boolean;
   explicit_opt_out: boolean;
+  /** Persisted transition evidence: true only for the first effective
+   * revocation, never for later repeated opt-out messages. */
+  opt_out_ack_eligible: boolean;
   consent_status: 'unknown' | 'granted' | 'revoked';
   batch: BatchMembership;
   /** Identity the customer volunteered in THIS message, already persisted. */
   captured_identity?: { name: string | null; email: string | null };
+}
+
+function optOutAckEligibleFromMetadata(metadata: unknown): boolean {
+  return typeof metadata === 'object'
+    && metadata !== null
+    && !Array.isArray(metadata)
+    && (metadata as Record<string, unknown>).opt_out_ack_eligible === true;
 }
 
 async function findExistingInbound(eventId: string, db: DbClient): Promise<InboundCore | null> {
@@ -205,7 +215,8 @@ async function findExistingInbound(eventId: string, db: DbClient): Promise<Inbou
     contact: row,
     conversation_id: row.conversation_id,
     replayed: true,
-    explicit_opt_out: row.consent_status === 'revoked',
+    explicit_opt_out: isExplicitOptOut(row.content),
+    opt_out_ack_eligible: optOutAckEligibleFromMetadata(row.metadata),
     consent_status: row.consent_status ?? 'unknown',
     // A replay must return the window the original message already belongs to,
     // never open a second one.
@@ -389,6 +400,16 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
     // Both branches surface the resulting consent themselves (RETURNING /
     // the function's current_status), so no separate final SELECT is needed.
     const explicitOptOut = isExplicitOptOut(envelope.message.text);
+    const priorPermission = explicitOptOut
+      ? await db<Array<{ consent_status: 'unknown' | 'granted' | 'revoked' }>>`
+          SELECT consent_status
+          FROM contact_channel_permissions
+          WHERE contact_id = ${contact.id}::uuid AND channel = ${channel}
+          FOR UPDATE
+        `
+      : [];
+    const optOutAckEligible = explicitOptOut
+      && (priorPermission[0]?.consent_status ?? 'unknown') !== 'revoked';
     let consentStatus: 'unknown' | 'granted' | 'revoked';
     if (explicitOptOut) {
       const consentRows = await db<Array<{ current_status: 'unknown' | 'granted' | 'revoked' | null }>>`
@@ -438,6 +459,7 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
         provider_message_id: envelope.provider_message_id ?? null,
         occurred_at: envelope.message.occurred_at,
         reply_to_external_message_id: envelope.message.reply_to_external_message_id,
+        opt_out_ack_eligible: optOutAckEligible,
       },
     }, {
       db,
@@ -492,6 +514,7 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
       conversation_id: conversationId,
       replayed: !reservation.was_created,
       explicit_opt_out: explicitOptOut,
+      opt_out_ack_eligible: optOutAckEligible,
       consent_status: consentStatus,
       batch,
       captured_identity: capturedIdentity,
@@ -506,6 +529,7 @@ export async function processInboundMessage(envelope: InboundEnvelope): Promise<
     conversation_id,
     replayed,
     explicit_opt_out,
+    opt_out_ack_eligible,
     consent_status,
     batch,
     captured_identity,
@@ -550,7 +574,7 @@ export async function processInboundMessage(envelope: InboundEnvelope): Promise<
     lifecycle_status: contact.lifecycle_status,
     deleted_at: contact.deleted_at,
     consent_status,
-    explicit_opt_out,
+    explicit_opt_out: explicit_opt_out && opt_out_ack_eligible,
     unsupported_message: envelope.message.type === 'unsupported',
   });
 

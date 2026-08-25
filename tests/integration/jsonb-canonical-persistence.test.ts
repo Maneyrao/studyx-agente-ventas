@@ -134,7 +134,7 @@ run('canonical jsonb persistence', () => {
         schema_version: 2,
         intent: 'commercial',
         kind: 'reply',
-        response: 'El curso de ventas dura ocho semanas.',
+        response: 'Anoté tu interés para continuar la conversación.',
         response_type: 'commercial_reply',
         business_action: null,
         memory_candidates: [

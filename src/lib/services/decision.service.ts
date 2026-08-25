@@ -16,6 +16,19 @@ import { loadBusinessWorkspaceConfig, loadSheetsProjectionConfig } from '@/lib/c
 import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
 import { materializePaymentLinkAction } from '@/features/payments/application/materialize-payment-link-action';
 import { createConfigPaymentLinkResolver } from '@/features/payments/adapters/config-payment-link.resolver';
+import { PAYMENT_PLAN_PRESENTATIONS } from '@/features/payments/domain/payment-link';
+import {
+  buildAuthorizedEgress,
+  verifyAuthorizedEgress,
+  type AuthorizedEgressV1,
+  type ProtectedFactRef,
+} from '@/features/orchestration/domain/egress-guard';
+import {
+  materializeCanonicalCatalogFacts,
+  materializeCanonicalOfferingFacts,
+  responseNeedsOfferingFactAuthorization,
+} from '@/features/orchestration/domain/canonical-offering-egress';
+import type { RawOfferingRow } from '@/features/orchestration/domain/business-context';
 import {
   DecisionValidationError,
   type DecisionV2,
@@ -51,6 +64,12 @@ function retrievalUsedOf(decision: AnyDecision) {
 export interface CommitDecisionInput {
   turn_id: string;
   trace_id: string;
+  /**
+   * Claim-time canonical identity for facts in a non-payment response. This is
+   * only a lookup hint: the backend must resolve it exactly in its own live
+   * workspace snapshot before it authorizes a single fact.
+   */
+  authorized_offering_code?: string | null;
   decision: AnyDecision;
   model: {
     provider: 'botpress' | 'google-ai-direct' | 'groq-direct';
@@ -77,6 +96,8 @@ export interface CommitDecisionResult {
      * first of those may ever lead to another send.
      */
     delivery_attempt: number;
+    /** Exact backend authorization that must verify against `content` before any send. */
+    authorized_egress: AuthorizedEgressV1;
   } | null;
   /**
    * Present exactly when this decision reserved a call. On replay it carries
@@ -121,6 +142,10 @@ interface TurnPolicyRow extends Message {
   integration_id: string;
   channel: 'whatsapp' | 'voice';
   batch_id: string | null;
+  /** Contents carrying durable evidence that this batch caused the first
+   * effective opt-out transition. The representative turn is often the
+   * first message in a burst, so `content` alone is not authoritative. */
+  opt_out_ack_eligible_contents: string[];
 }
 
 interface DecisionRow {
@@ -134,6 +159,7 @@ interface DecisionRow {
   outbound_message_id: string | null;
   delivery_state: string | null;
   delivery_attempt: number | null;
+  authorized_egress: unknown;
 }
 
 const AGENT_DECISION_TURN_UNIQUE_CONSTRAINT = 'agent_decisions_turn_id_uq';
@@ -156,9 +182,11 @@ async function loadDecision(turnId: string, db: DbClient): Promise<DecisionRow |
       encode(ad.payload_hash, 'hex') AS payload_hash_hex,
       ad.outbound_message_id,
       od.state AS delivery_state,
-      od.attempt_count AS delivery_attempt
+      od.attempt_count AS delivery_attempt,
+      om.metadata -> 'authorized_egress' AS authorized_egress
     FROM agent_decisions AS ad
     LEFT JOIN outbound_deliveries AS od ON od.message_id = ad.outbound_message_id
+    LEFT JOIN messages AS om ON om.id = ad.outbound_message_id
     WHERE ad.turn_id = ${turnId}::uuid
     LIMIT 1
   `;
@@ -177,7 +205,19 @@ async function loadTurnPolicy(turnId: string, db: DbClient): Promise<TurnPolicyR
       ccp.consent_status,
       ct.provider,
       ct.integration_id,
-      conv.channel
+      conv.channel,
+      COALESCE((
+        SELECT array_agg(candidate.content ORDER BY candidate.conversation_seq, candidate.created_at, candidate.id)
+        FROM messages AS candidate
+        WHERE candidate.direction = 'inbound'
+          AND candidate.contact_id = m.contact_id
+          AND candidate.conversation_id = m.conversation_id
+          AND (
+            (m.batch_id IS NOT NULL AND candidate.batch_id = m.batch_id)
+            OR (m.batch_id IS NULL AND candidate.id = m.id)
+          )
+          AND candidate.metadata @> '{"opt_out_ack_eligible": true}'::jsonb
+      ), ARRAY[]::text[]) AS opt_out_ack_eligible_contents
     FROM messages AS m
     JOIN conversations AS conv ON conv.id = m.conversation_id
     JOIN contacts AS c ON c.id = m.contact_id
@@ -197,24 +237,77 @@ function validatePolicy(decision: AnyDecision, turn: TurnPolicyRow): void {
     || turn.lifecycle_status === 'blocked'
     || turn.lifecycle_status === 'deleted'
     || turn.deleted_at !== null;
-  const optOutAck = isExplicitOptOut(turn.content)
+  // Never infer acknowledgement eligibility from the representative message:
+  // in a burst it may precede the actual opt-out. Conversely, content alone
+  // would acknowledge every repeated opt-out. Require both persisted
+  // first-transition evidence and the domain heuristic as defense in depth.
+  const hasEligibleExplicitOptOut = turn.opt_out_ack_eligible_contents.some(isExplicitOptOut);
+  const optOutAck = hasEligibleExplicitOptOut
     && decision.intent === 'opt_out'
     && decision.response_type === 'opt_out_ack'
     && decision.response !== null;
 
-  if (blocked && decision.kind !== 'suppress') {
+  if (blocked && decision.kind !== 'suppress' && !optOutAck) {
     throw new DecisionPolicyError('CONTACT_BLOCKED');
   }
   if (turn.consent_status === 'revoked' && decision.kind !== 'suppress' && !optOutAck) {
     throw new DecisionPolicyError('CONSENT_REVOKED');
   }
-  if (decision.response_type === 'opt_out_ack' && !isExplicitOptOut(turn.content)) {
+  if (decision.response_type === 'opt_out_ack' && !hasEligibleExplicitOptOut) {
     throw new DecisionPolicyError('OPT_OUT_ACK_WITHOUT_OPT_OUT');
   }
 }
 
 function decisionPayload(input: CommitDecisionInput) {
-  return { turn_id: input.turn_id, decision: input.decision, model: input.model };
+  return {
+    turn_id: input.turn_id,
+    decision: input.decision,
+    model: input.model,
+    // Preserve the historical hash for legacy/omitted-null callers while a
+    // real capability identity remains part of the idempotency boundary.
+    ...(input.authorized_offering_code
+      ? { authorized_offering_code: input.authorized_offering_code }
+      : {}),
+  };
+}
+
+function egressPolicyError(reason: string): DecisionPolicyError {
+  return new DecisionPolicyError(`EGRESS_${reason}`);
+}
+
+function redactedUrlAuditEvidence(value: string) {
+  let scheme = 'invalid';
+  let hostHash: string | null = null;
+  try {
+    const parsed = new URL(value);
+    scheme = parsed.protocol.replace(/:$/u, '').toLowerCase();
+    // The hostname is attacker-controlled too (PII can be placed in a
+    // subdomain), so retain only a correlation-safe digest.
+    hostHash = sha256Hex(parsed.hostname.toLowerCase());
+  } catch {
+    // Invalid URL-like text still gets a stable fingerprint below.
+  }
+  return {
+    scheme,
+    host_hash: hostHash,
+    value_hash: sha256Hex(value),
+  };
+}
+
+function verifyPersistedEgress(content: string, manifest: unknown): AuthorizedEgressV1 {
+  const verification = verifyAuthorizedEgress({ content, manifest });
+  if (!verification.ok) throw egressPolicyError(verification.reason);
+  return manifest as AuthorizedEgressV1;
+}
+
+function paymentPlanProtectedFacts(
+  planCode: keyof typeof PAYMENT_PLAN_PRESENTATIONS
+): readonly ProtectedFactRef[] {
+  const presentation = PAYMENT_PLAN_PRESENTATIONS[planCode];
+  // The trusted fixed payment block contains this exact lexical price. The
+  // model never supplies either side of this authorization.
+  const amount = presentation.installment_amount.replace(/\.00$/u, '');
+  return [{ kind: 'price', value: `${presentation.currency} ${amount}` }];
 }
 
 function duplicateDecisionResult(
@@ -236,6 +329,7 @@ function duplicateDecisionResult(
       content: existing.response,
       status: mapDeliveryState(existing.delivery_state),
       delivery_attempt: Number(existing.delivery_attempt ?? 1),
+      authorized_egress: verifyPersistedEgress(existing.response, existing.authorized_egress),
     } : null,
     call_request: callRequest,
   };
@@ -280,6 +374,39 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     // memoria.
     let finalResponse = decision.response;
     let paymentLinkStrippedUrls: readonly string[] = [];
+    let authorizedUrls: readonly string[] = [];
+    let authorizedProtectedFacts: readonly ProtectedFactRef[] = [];
+    let committedBusinessAction = decision.business_action;
+    let canonicalOfferings: readonly RawOfferingRow[] | undefined;
+    let canonicalSnapshotAttempted = false;
+
+    const loadCanonicalOfferings = async (
+      purpose: 'payment_link' | 'protected_facts'
+    ): Promise<readonly RawOfferingRow[]> => {
+      if (canonicalSnapshotAttempted) return canonicalOfferings ?? [];
+      canonicalSnapshotAttempted = true;
+      try {
+        // Bound to THIS transaction's own connection, never the module-level
+        // pool: with a one-connection pool, a second checkout from inside the
+        // open transaction would wait on itself.
+        const snapshot = await new PostgresBusinessContextStore(db).loadBusinessCatalog(
+          loadBusinessWorkspaceConfig().workspaceSlug
+        );
+        canonicalOfferings = snapshot?.offerings ?? [];
+      } catch (error) {
+        canonicalOfferings = [];
+        logger.error({
+          event: purpose === 'payment_link'
+            ? 'orchestration.payment_link.business_snapshot_unavailable'
+            : 'orchestration.egress.business_snapshot_unavailable',
+          trace_id: validatedInput.trace_id,
+          turn_id: turn.id,
+          error: String(error),
+        });
+      }
+      return canonicalOfferings;
+    };
+
     if (decision.schema_version === 4 && decision.business_action?.type === 'send_payment_link') {
       const action = decision.business_action;
       const batchMessages = turn.batch_id === null
@@ -290,30 +417,28 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             ORDER BY conversation_seq ASC, created_at ASC, id ASC
           `;
 
-      // One extra canonical read, ONLY here (spec §7): the offering must be
-      // revalidated against the live snapshot, never trusted from the model
-      // or from a stale claim-time copy. A snapshot failure degrades to "no
-      // offerings known" rather than crashing the whole commit — the action
-      // itself still fails closed via OFFERING_NOT_FOUND when it names one.
-      let offerings: readonly { code: string }[] = [];
-      try {
-        // Bound to THIS transaction's own connection, never the module-level
-        // pool: the pool is sized 1 in production (each serverless
-        // invocation gets one connection), so a second query on the shared
-        // `sql` singleton from inside an open transaction would starve
-        // waiting for a connection the transaction itself is holding.
-        const snapshot = await new PostgresBusinessContextStore(db).loadBusinessContext(
-          loadBusinessWorkspaceConfig().workspaceSlug
-        );
-        offerings = snapshot?.offerings ?? [];
-      } catch (error) {
-        logger.error({
-          event: 'orchestration.payment_link.business_snapshot_unavailable',
-          trace_id: validatedInput.trace_id,
-          turn_id: turn.id,
-          error: String(error),
-        });
-      }
+      const priorPaymentLinks = await db<Array<{ id: string }>>`
+        SELECT ad.id
+        FROM agent_decisions AS ad
+        JOIN messages AS prior_turn ON prior_turn.id = ad.turn_id
+        WHERE prior_turn.conversation_id = ${turn.conversation_id}::uuid
+          AND ad.outbound_message_id IS NOT NULL
+          AND ad.business_action ->> 'type' = 'send_payment_link'
+          AND ad.business_action ->> 'plan_code' = ${action.plan_code}
+          AND ad.business_action ->> 'offering_sku' = ${action.offering_sku}
+        LIMIT 1
+      `;
+
+      if (priorPaymentLinks.length > 0) {
+        // Cross-turn idempotency: acknowledge the existing proposal without
+        // emitting a second Stripe URL or a second payment_link_sent signal.
+        finalResponse = 'Ya te compartí el link de ese plan. Si necesitás que revisemos otra opción, decime.';
+        committedBusinessAction = null;
+      } else {
+      // One extra canonical read, ONLY for payment or a response containing a
+      // protected fact. A greeting/plain clarification does not pay this DB
+      // latency. Payment and fact authorization reuse the same snapshot.
+      const offerings = await loadCanonicalOfferings('payment_link');
 
       const materialized = materializePaymentLinkAction({
         action,
@@ -347,6 +472,74 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       // — materializePaymentLinkAction never does this itself.
       finalResponse = `${materialized.response_text}\n\n${materialized.block.label}: ${materialized.block.url}`.trim();
       paymentLinkStrippedUrls = materialized.stripped_urls;
+      authorizedUrls = [materialized.block.url];
+      authorizedProtectedFacts = paymentPlanProtectedFacts(action.plan_code);
+      }
+    }
+
+    if (finalResponse !== null && responseNeedsOfferingFactAuthorization(finalResponse)) {
+      const offerings = await loadCanonicalOfferings('protected_facts');
+      authorizedProtectedFacts = [
+        ...authorizedProtectedFacts,
+        ...materializeCanonicalCatalogFacts({ content: finalResponse, offerings }),
+      ];
+      if (validatedInput.authorized_offering_code) {
+        const exactMatches = offerings.filter(
+          (offering) => offering.code === validatedInput.authorized_offering_code
+        );
+        if (exactMatches.length === 1) {
+          authorizedProtectedFacts = [
+            ...authorizedProtectedFacts,
+            ...materializeCanonicalOfferingFacts({
+              content: finalResponse,
+              offering: exactMatches[0],
+            }),
+          ];
+        }
+      }
+    }
+
+    // The manifest is created from backend-owned capabilities, then verified
+    // against the exact final text before the first canonical write. A model
+    // URL or protected commercial claim has no route to the outbox merely by
+    // appearing in prose.
+    let authorizedEgress: AuthorizedEgressV1 | null = null;
+    if (finalResponse !== null) {
+      authorizedEgress = buildAuthorizedEgress({
+        content: finalResponse,
+        authorized_urls: authorizedUrls,
+        protected_facts: authorizedProtectedFacts,
+      });
+      const verification = verifyAuthorizedEgress({
+        content: finalResponse,
+        manifest: authorizedEgress,
+      });
+      if (!verification.ok) {
+        const mayUseSafeFallback = verification.reason === 'UNAUTHORIZED_PROTECTED_FACT'
+          && verification.unauthorized_facts.some(
+            (fact) => fact.kind === 'offering'
+              || fact.kind === 'promise'
+              || fact.kind === 'certification',
+          )
+          && committedBusinessAction === null;
+        if (!mayUseSafeFallback) throw egressPolicyError(verification.reason);
+
+        counter.increment('egress_safe_fallback', 1);
+        logger.warn({
+          event: 'orchestration.egress.safe_fallback',
+          trace_id: validatedInput.trace_id,
+          turn_id: turn.id,
+          reason: verification.reason,
+        });
+        finalResponse = 'No tengo ese dato confirmado en el catálogo. ¿Querés que revisemos otra opción?';
+        authorizedUrls = [];
+        authorizedProtectedFacts = [];
+        authorizedEgress = buildAuthorizedEgress({
+          content: finalResponse,
+          authorized_urls: [],
+          protected_facts: [],
+        });
+      }
     }
 
     const inserted = await db<Array<{ id: string }>>`
@@ -378,7 +571,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         ${decision.kind},
         ${finalResponse},
         ${decision.response_type},
-        ${jsonbParam(db, decision.business_action ?? null)},
+        ${jsonbParam(db, committedBusinessAction ?? null)},
         ${jsonbParam(db, retrievalUsedOf(decision))},
         ${jsonbParam(db, decision.memory_candidates)},
         ${decision.missing_information}::text[],
@@ -407,7 +600,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         entity_id: decisionId,
         payload: {
           turn_id: validatedInput.turn_id,
-          stripped_urls: paymentLinkStrippedUrls,
+          stripped_url_count: paymentLinkStrippedUrls.length,
+          stripped_url_evidence: paymentLinkStrippedUrls.map(redactedUrlAuditEvidence),
         },
         event_key: `decision:${decisionId}:stripped_urls`,
         correlation_id: validatedInput.trace_id,
@@ -469,6 +663,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             decision_id: decisionId,
             response_type: decision.response_type,
             model: validatedInput.model,
+            authorized_egress: authorizedEgress,
           },
         }, {
           db,
@@ -508,6 +703,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         trace_id: validatedInput.trace_id,
         content: message.content,
         response_type: decision.response_type,
+        authorized_egress: authorizedEgress,
       };
       const queued = await db<Array<{ delivery_id: string; outbox_id: string }>>`
         SELECT delivery_id, outbox_id
@@ -560,6 +756,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         content: message.content,
         status: 'pending',
         delivery_attempt: Number(leased[0]?.attempt_count ?? 1),
+        authorized_egress: authorizedEgress!,
       };
     }
 
@@ -573,9 +770,10 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         intent: decision.intent,
         kind: decision.kind,
         response_type: decision.response_type,
-        business_action: decision.business_action?.type ?? null,
+        business_action: committedBusinessAction?.type ?? null,
         next_state: decision.next_state,
         outbound_id: outbound?.id ?? null,
+        egress_hash: outbound?.authorized_egress.content_hash ?? null,
         call_id: callRequest?.call_id ?? null,
       },
       event_key: `decision:${decisionId}:committed`,

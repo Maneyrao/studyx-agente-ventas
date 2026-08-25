@@ -47,6 +47,16 @@ function completeEvidence() {
     }],
     promptVersions: ['studyx-agent-a-sales-v11'],
     technicalFallbacks: 0,
+    runScope: {
+      sandboxExternalUserId: `eval:${RUN_ID}:real_01`,
+      externalConversationId: `local-eval-${RUN_ID}-conversation-1`,
+      conversationId: 'conversation-db-1',
+    },
+    turnEvidence: [
+      { turnNumber: 1, turnId: 'turn-1', decisionId: 'decision-1', traceId: 'trace-1', outboundMessageId: 'out-1' },
+      { turnNumber: 2, turnId: 'turn-2', decisionId: 'decision-2', traceId: 'trace-2', outboundMessageId: 'out-2' },
+      { turnNumber: 3, turnId: 'turn-3', decisionId: 'decision-3', traceId: 'trace-3', outboundMessageId: 'out-3' },
+    ],
   };
 }
 
@@ -192,6 +202,7 @@ describe('Agent A durable conversation evidence', () => {
       decisions: 2,
       decisionsWithTrace: 2,
       sheetRows: [],
+      turnEvidence: completeEvidence().turnEvidence.slice(0, 2),
     };
     const result = evaluatePersistenceEvidence(testCase, evidence, { runId: RUN_ID });
 
@@ -222,5 +233,122 @@ describe('Agent A durable conversation evidence', () => {
 
     expect(result.failures).toContain('forbidden_persistence_value_found:30111222');
     expect(result.checks.forbidden_persistence_values_found).toEqual(['30111222']);
+  });
+
+  it('accepts one legal acknowledgement followed by durable zero-outbound silence', () => {
+    const testCase = {
+      ...buyerCase(),
+      id: 'opt_out_case',
+      turns: ['Dame de baja', '¿Seguís ahí?'],
+      ideal_result: {
+        registered_contact: true,
+        sheet_rows: 0,
+        expected_response_count_by_turn: [1, 0] as Array<0 | 1>,
+      },
+    };
+    const evidence = {
+      ...completeEvidence(),
+      inboundMessages: 2,
+      outboundMessages: 1,
+      decisions: 2,
+      decisionsWithTrace: 2,
+      activeMemoryValues: [],
+      sheetRows: [],
+      runScope: {
+        sandboxExternalUserId: `eval:${RUN_ID}:opt_out_case`,
+        externalConversationId: `local-eval-${RUN_ID}-opt-out`,
+        conversationId: 'conversation-db-opt-out',
+      },
+      turnEvidence: [
+        { turnNumber: 1, turnId: 'turn-1', decisionId: 'decision-1', traceId: 'trace-1', outboundMessageId: 'out-1' },
+        { turnNumber: 2, turnId: 'turn-2', decisionId: 'decision-2', traceId: 'trace-2', outboundMessageId: null },
+      ],
+    };
+
+    const result = evaluatePersistenceEvidence(testCase, evidence, { runId: RUN_ID });
+
+    expect(result.failures).toEqual([]);
+    expect(result.checks).toMatchObject({
+      expected_outbound_messages: 1,
+      turn_outbound_counts: [1, 0],
+      run_scope_verified: true,
+    });
+  });
+
+  it('detects misplaced outbounds even when the aggregate total is correct', () => {
+    const testCase = {
+      ...buyerCase(),
+      id: 'turn_cardinality_case',
+      turns: ['Dame de baja', '¿Seguís ahí?'],
+      ideal_result: {
+        registered_contact: true,
+        sheet_rows: 0,
+        expected_response_count_by_turn: [1, 0] as Array<0 | 1>,
+      },
+    };
+    const evidence = {
+      ...completeEvidence(),
+      inboundMessages: 2,
+      outboundMessages: 1,
+      decisions: 2,
+      decisionsWithTrace: 2,
+      activeMemoryValues: [],
+      sheetRows: [],
+      runScope: {
+        sandboxExternalUserId: `eval:${RUN_ID}:turn_cardinality_case`,
+        externalConversationId: `local-eval-${RUN_ID}-cardinality`,
+        conversationId: 'conversation-db-cardinality',
+      },
+      turnEvidence: [
+        { turnNumber: 1, turnId: 'turn-1', decisionId: 'decision-1', traceId: 'trace-1', outboundMessageId: null },
+        { turnNumber: 2, turnId: 'turn-2', decisionId: 'decision-2', traceId: 'trace-2', outboundMessageId: 'out-2' },
+      ],
+    };
+
+    const result = evaluatePersistenceEvidence(testCase, evidence, { runId: RUN_ID });
+
+    expect(result.failures).toEqual(expect.arrayContaining([
+      'turn_1_expected_outbound_1_got_0',
+      'turn_2_expected_outbound_0_got_1',
+    ]));
+  });
+
+  it('fails evidence that is not scoped to the current run and case', () => {
+    const evidence = {
+      ...completeEvidence(),
+      runScope: {
+        sandboxExternalUserId: 'eval:another-run:real_01',
+        externalConversationId: 'local-eval-another-run-conversation',
+        conversationId: 'conversation-db-1',
+      },
+    };
+
+    const result = evaluatePersistenceEvidence(buyerCase(), evidence, { runId: RUN_ID });
+
+    expect(result.failures).toContain('persistence_evidence_not_run_scoped');
+    expect(result.checks.run_scope_verified).toBe(false);
+  });
+
+  it('does not accept a run id that appears only as an attacker-controlled substring', () => {
+    const evidence = {
+      ...completeEvidence(),
+      runScope: {
+        sandboxExternalUserId: `eval:${RUN_ID}:real_01`,
+        externalConversationId: `local-eval-attacker-${RUN_ID}-conversation`,
+        conversationId: 'conversation-db-1',
+      },
+    };
+
+    const result = evaluatePersistenceEvidence(buyerCase(), evidence, { runId: RUN_ID });
+
+    expect(result.failures).toContain('persistence_evidence_not_run_scoped');
+  });
+
+  it('fails when per-turn decision and outbound correlation evidence is absent', () => {
+    const evidence = { ...completeEvidence(), turnEvidence: undefined };
+
+    const result = evaluatePersistenceEvidence(buyerCase(), evidence, { runId: RUN_ID });
+
+    expect(result.failures).toContain('turn_scoped_persistence_evidence_missing');
   });
 });

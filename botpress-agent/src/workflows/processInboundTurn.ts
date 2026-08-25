@@ -22,22 +22,10 @@ import {
   buildAgentASalesBridgeCompactInstructions,
   buildAgentASalesBridgeInstructions,
 } from '../prompts/agent-a-sales-bridge'
-import { GREETING_FAST_PATH_MODEL, matchDeterministicGreeting } from '../utils/greeting'
-import { CALL_HANDOFF_FAST_PATH_MODEL, matchCallHandoffFastPath } from '../utils/call-handoff-fast-path'
-import {
-  CONVERSATION_CLOSE_FAST_PATH_MODEL,
-  CONTACT_CAPTURE_FAST_PATH_MODEL,
-  COURSE_DISCOVERY_FAST_PATH_MODEL,
-  COURSE_FACTS_FAST_PATH_MODEL,
-  PAYMENT_SELECTION_FAST_PATH_MODEL,
-  matchContactCaptureFastPath,
-  matchConversationCloseFastPath,
-  matchCourseDiscoveryFastPath,
-  matchCourseFactsFastPath,
-  matchPaymentSelectionFastPath,
-} from '../utils/transaction-fast-path'
 import { StudyxHttpError } from '../utils/http'
 import { applyDecisionPolicy, suppress, technicalFallback } from '../utils/decision-policy'
+import { routeCommercialTurn } from '../utils/commercial-router'
+import { verifyAuthorizedEgressPortable } from '../utils/authorized-egress'
 import { generateGeminiDecision } from '../lib/decision/gemini-direct'
 import { generateGroqDecision } from '../lib/decision/groq-direct'
 
@@ -376,65 +364,20 @@ export const processInboundTurn = new Workflow({
       injection_suspected: owned.context.injection_suspected_count,
     })
 
-    // ---- Fast path determinista: saludo inequívoco -----------------------
-    // Un lote de UN mensaje que es exactamente un saludo no necesita modelo ni
-    // catálogo. La decisión igual se commitea en Next.js como cualquier otra:
-    // misma validación, mismo outbound, mismo envío único.
-    const automatable =
-      configuration.automationEnabled && owned.policy.may_respond && !owned.contact.blocked
-    // El fast path de llamada corre primero: un pedido directo o una
-    // aceptación inequívoca no necesitan catálogo ni modelo, y el backend
-    // re-valida el consentimiento en el commit de todas formas.
-    const callFastPath = automatable ? matchCallHandoffFastPath(owned) : null
-    const paymentFastPath = !callFastPath && automatable ? matchPaymentSelectionFastPath(owned) : null
-    const contactFastPath = !callFastPath && !paymentFastPath && automatable
-      ? matchContactCaptureFastPath(owned)
-      : null
-    const courseFactsFastPath = !callFastPath && !paymentFastPath && !contactFastPath && automatable
-      ? matchCourseFactsFastPath(owned)
-      : null
-    const conversationCloseFastPath = !callFastPath && !paymentFastPath && !contactFastPath
-      && !courseFactsFastPath && automatable
-      ? matchConversationCloseFastPath(owned)
-      : null
-    const courseDiscoveryFastPath = !callFastPath && !paymentFastPath && !contactFastPath
-      && !courseFactsFastPath && !conversationCloseFastPath && automatable
-      ? matchCourseDiscoveryFastPath(owned)
-      : null
-    const greetingFastPath = !callFastPath && !paymentFastPath && !contactFastPath
-      && !courseFactsFastPath && !courseDiscoveryFastPath && automatable
-      ? matchDeterministicGreeting(owned)
-      : null
-    const fastPathDecision = callFastPath ?? paymentFastPath ?? contactFastPath
-      ?? courseFactsFastPath ?? conversationCloseFastPath ?? courseDiscoveryFastPath ?? greetingFastPath
-    const fastPathModel = callFastPath
-      ? CALL_HANDOFF_FAST_PATH_MODEL
-      : paymentFastPath
-        ? PAYMENT_SELECTION_FAST_PATH_MODEL
-        : contactFastPath
-          ? CONTACT_CAPTURE_FAST_PATH_MODEL
-          : courseFactsFastPath
-            ? COURSE_FACTS_FAST_PATH_MODEL
-            : conversationCloseFastPath
-              ? CONVERSATION_CLOSE_FAST_PATH_MODEL
-              : courseDiscoveryFastPath
-                ? COURSE_DISCOVERY_FAST_PATH_MODEL
-                : GREETING_FAST_PATH_MODEL
-    if (fastPathDecision) {
-      const fastPathEvent = callFastPath
-        ? 'studyx.turn.call_fast_path'
-        : paymentFastPath
-          ? 'studyx.turn.payment_fast_path'
-          : contactFastPath
-            ? 'studyx.turn.contact_fast_path'
-            : courseFactsFastPath
-              ? 'studyx.turn.course_facts_fast_path'
-              : 'studyx.turn.greeting_fast_path'
-      safeLog(fastPathEvent, {
-        trace_id: input.trace_id,
-        turn_id: owned.turn_id,
-      })
-    }
+    // One pure router owns capability precedence for both this workflow and
+    // the local evaluator. It chooses a deterministic decision, suppression,
+    // or one model request; it never applies the final policy itself.
+    const commercialRoute = routeCommercialTurn({
+      automationEnabled: configuration.automationEnabled,
+      claimed: owned,
+    })
+    safeLog('studyx.turn.commercial_route', {
+      trace_id: input.trace_id,
+      turn_id: owned.turn_id,
+      route_kind: commercialRoute.kind,
+      route_origin: commercialRoute.origin,
+      route_reason: commercialRoute.reason,
+    })
 
     // ---- Pasos 7-9: generar y validar localmente -------------------------
     // The claim already carries the one coherent business snapshot. The
@@ -444,15 +387,9 @@ export const processInboundTurn = new Workflow({
     let decisionModel: string = DECISION_MODELS[0]
     let decisionProvider: 'botpress' | 'google-ai-direct' | 'groq-direct' = 'botpress'
     timings.model_ms = 0
-    if (!configuration.automationEnabled) {
-      decision = suppress('AUTOMATION_DISABLED')
-      decisionModel = 'policy:automation-disabled'
-    } else if (!owned.policy.may_respond || owned.contact.blocked) {
-      decision = suppress(owned.policy.reason ?? 'CONTACT_BLOCKED')
-      decisionModel = 'policy:suppressed'
-    } else if (fastPathDecision) {
-      decision = fastPathDecision
-      decisionModel = fastPathModel
+    if (commercialRoute.kind !== 'model_required') {
+      decision = commercialRoute.decision
+      decisionModel = commercialRoute.model
       timings.model_ms = 0
     } else {
       const modelStartedAt = Date.now()
@@ -462,9 +399,8 @@ export const processInboundTurn = new Workflow({
           async () => {
             // The prompt is identical for both providers: only the executor
             // differs below. This is the ONE call site where a raw model
-            // decision becomes a policy-checked `Decision` — every provider
-            // routes through the same `applyDecisionPolicy` call at the end
-            // of this callback, never a provider-specific gate.
+            // decision is parsed here. The single provider-independent policy
+            // call runs below after deterministic/model/fallback convergence.
             const instructions = configuration.decisionProvider === 'groq_direct'
               ? buildAgentASalesBridgeCompactInstructions(owned)
               : buildAgentASalesBridgeInstructions(owned)
@@ -544,7 +480,7 @@ export const processInboundTurn = new Workflow({
             }
 
             return {
-              decision: applyDecisionPolicy(rawDecision, owned),
+              decision: rawDecision,
               provider,
               model,
             }
@@ -578,6 +514,10 @@ export const processInboundTurn = new Workflow({
       }
     }
 
+    // Exactly one policy call for every route: deterministic, suppressed,
+    // model and technical fallback all converge here before commit.
+    decision = applyDecisionPolicy(decision, owned)
+
     if (Number.isFinite(occurredAtMs)) {
       timings.event_to_decision_ms = Math.max(0, Date.now() - occurredAtMs)
     }
@@ -594,6 +534,9 @@ export const processInboundTurn = new Workflow({
             input: {
               turn_id: owned.turn_id,
               trace_id: input.trace_id,
+              // Canonical course identity from the claim; the backend
+              // re-resolves it before authorizing any protected fact.
+              authorized_offering_code: owned.sales_context.offering_code,
               decision,
               model: {
                 provider: decisionProvider,
@@ -677,6 +620,57 @@ export const processInboundTurn = new Workflow({
 
     if (committed.status === 'rejected' || !committed.outbound) {
       state.phase = committed.next_state
+      emitTimings()
+      return resultFromState(state, input.trace_id)
+    }
+
+    // ---- Última barrera antes del único envío físico ---------------------
+    // The backend owns the capability; this edge only verifies that the exact
+    // content received here is still the content it authorized. Any malformed
+    // or altered value is a terminal failed attempt, never a send retry.
+    const egressStartedAt = Date.now()
+    const egressVerification = await verifyAuthorizedEgressPortable({
+      content: committed.outbound.content,
+      manifest: committed.outbound.authorized_egress,
+    }).catch(() => ({ ok: false, reason: 'CRYPTO_UNAVAILABLE' } as const))
+    timings.egress_verify_ms = Date.now() - egressStartedAt
+    if (!egressVerification.ok) {
+      state.deliveryStatus = 'failed'
+      state.phase = 'paused_error'
+      state.errorCode = `EGRESS_${egressVerification.reason}`
+
+      try {
+        await step(
+          'report-egress-verification-failure',
+          () =>
+            reportDelivery.execute({
+              client,
+              input: {
+                outbound_id: committed.outbound!.id,
+                trace_id: input.trace_id,
+                status: 'failed',
+                botpress_message_id: null,
+                replayed: false,
+                error_code: state.errorCode,
+                delivery_attempt: committed.outbound!.delivery_attempt,
+              },
+            }),
+          { maxAttempts: 1 }
+        )
+      } catch (reportError) {
+        safeLog('studyx.turn.delivery_report_failed', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          error_code: errorCode(reportError),
+        })
+      }
+
+      safeLog('studyx.turn.egress_blocked', {
+        trace_id: input.trace_id,
+        turn_id: owned.turn_id,
+        outbound_id: committed.outbound.id,
+        reason: egressVerification.reason,
+      })
       emitTimings()
       return resultFromState(state, input.trace_id)
     }
@@ -818,7 +812,7 @@ export const processInboundTurn = new Workflow({
     })
     emitTimings({
       model: decisionModel,
-      fast_path: fastPathDecision !== null,
+      fast_path: commercialRoute.kind === 'deterministic',
     })
     return resultFromState(state, input.trace_id)
   },

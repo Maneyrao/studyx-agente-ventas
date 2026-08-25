@@ -128,7 +128,7 @@ function claimedTurn(overrides: {
 
 describe('AGENT_A_PROMPT_VERSION', () => {
   it('is the pinned sales-bridge version', () => {
-    expect(AGENT_A_PROMPT_VERSION).toBe('studyx-agent-a-sales-v14');
+    expect(AGENT_A_PROMPT_VERSION).toBe('studyx-agent-a-sales-v15');
   });
 });
 
@@ -150,6 +150,8 @@ describe('v11 hard rules', () => {
   it('requires offering_sku to carry the canonical catalog code of the chosen offering', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
     expect(instructions).toMatch(/offering_sku MUST be the exact "code"/);
+    expect(instructions).not.toMatch(/offering_sku[^\n]*null/i);
+    expect(instructions).toMatch(/clarif[^\n]*(?:course|offering)|(?:course|offering)[^\n]*clarif/i);
   });
 });
 
@@ -542,7 +544,7 @@ describe('buildAgentASalesBridgeInstructions', () => {
     const instructions = buildAgentASalesBridgeCompactInstructions(claimed);
 
     expect(instructions.length).toBeLessThan(20_000);
-    expect(instructions).toContain('COMPACT_AGENT_A_V14');
+    expect(instructions).toContain('COMPACT_AGENT_A_V15');
     expect(instructions).toMatch(/solo tres opciones de pago/i);
     expect(instructions).toMatch(/request_call_now/i);
     expect(instructions).toMatch(/rechaza la llamada/i);
@@ -559,6 +561,65 @@ describe('buildAgentASalesBridgeInstructions', () => {
       /requisito[^.]*no informado[^.]*no está especificado/i,
     );
     expect(instructions).toContain('UNTRUSTED_CONTEXT_START');
+  });
+
+  it('keeps the selected canonical SKU in the compact snapshot when names are homonymous', () => {
+    const claimed = claimedTurn({
+      texts: ['Confirmo pago único'],
+      salesContext: {
+        course_of_interest: 'Inglés Inicial',
+        offering_code: 'ingles_selected',
+      },
+    });
+    const offering = (code: string) => ({
+      code,
+      display_name: 'Inglés Inicial',
+      academy: `Academia ${code}`,
+      offering_type: 'course' as const,
+      description: null,
+      value_proposition: null,
+      price_type: 'fixed' as const,
+      price: { amount: '360.00', currency: 'USD' },
+      price_assertable: true,
+      billing_interval: null,
+      modality: null,
+      schedules: [],
+      certification: null,
+      hours_per_month: null,
+      classes: 16,
+      modules: null,
+      includes: [],
+      syllabus_published: null,
+      language: null,
+      min_age: null,
+      policies: { allowed_promise: null, forbidden_promises: [], price_message: null },
+    });
+    ;(claimed as { business_context?: unknown }).business_context = {
+      as_of: '2026-08-24T00:00:00.000Z',
+      prices_assertable: true,
+      workspace: {
+        slug: 'studyx', display_name: 'StudyX', environment: 'sandbox',
+        default_locale: 'es-AR', timezone: 'America/Argentina/Buenos_Aires',
+        payment_options: [],
+      },
+      offerings: [
+        ...Array.from({ length: 13 }, (_, index) => offering(`ingles_${index}`)),
+        offering('ingles_selected'),
+      ],
+      qualification_fields: [],
+      injection_suspected_count: 0,
+      offerings_truncated: 0,
+    };
+    ;(claimed as { business_context_available?: boolean }).business_context_available = true;
+
+    const instructions = buildAgentASalesBridgeCompactInstructions(claimed);
+    const fenced = instructions
+      .split('UNTRUSTED_CONTEXT_START\n')[1]
+      .split('\nUNTRUSTED_CONTEXT_END')[0];
+    const payload = JSON.parse(fenced);
+
+    expect(payload.business_snapshot.offerings.map((item: { sku: string }) => item.sku))
+      .toContain('ingles_selected');
   });
 
   it('keeps a named course grounded without sending the entire catalog to Groq', () => {
@@ -906,7 +967,8 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(instructions).toMatch(/"plan_code"/);
     expect(instructions).toMatch(/"offering_sku"/);
     expect(instructions).toMatch(/backend appends exactly\s+one payment link/i);
-    expect(instructions).toContain('send_payment_link","plan_code":c,"offering_sku":s|null');
+    expect(instructions).toContain('send_payment_link","plan_code":c,"offering_sku":s}');
+    expect(instructions).not.toContain('offering_sku":s|null');
   });
 
   it('handles an unverified paid claim without confirming access or automatically resending checkout', () => {

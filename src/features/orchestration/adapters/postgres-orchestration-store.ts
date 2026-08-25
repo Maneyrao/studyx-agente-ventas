@@ -159,13 +159,16 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
       content: string;
       created_at: Date;
       message_type: string | null;
+      opt_out_ack_eligible: boolean;
     }>>`
       SELECT
         m.id,
         m.conversation_seq,
         m.content,
         m.created_at,
-        COALESCE(m.metadata ->> 'message_type', 'text') AS message_type
+        COALESCE(m.metadata ->> 'message_type', 'text') AS message_type,
+        COALESCE(m.metadata ->> 'opt_out_ack_eligible', 'false') = 'true'
+          AS opt_out_ack_eligible
       FROM messages AS m
       JOIN inbound_batches AS b
         ON b.id = m.batch_id
@@ -181,6 +184,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
       content: row.content,
       created_at: row.created_at.toISOString(),
       message_type: row.message_type ?? 'text',
+      opt_out_ack_eligible: row.opt_out_ack_eligible,
     }));
   }
 
@@ -195,6 +199,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
       content: string;
       created_at: Date | string;
       message_type: string | null;
+      opt_out_ack_eligible: boolean;
     };
     type JsonRecentTurn = {
       direction: 'inbound' | 'outbound';
@@ -262,7 +267,9 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
               'conversation_seq', bm.conversation_seq,
               'content', bm.content,
               'created_at', bm.created_at,
-              'message_type', COALESCE(bm.metadata ->> 'message_type', 'text')
+              'message_type', COALESCE(bm.metadata ->> 'message_type', 'text'),
+              'opt_out_ack_eligible',
+                COALESCE(bm.metadata ->> 'opt_out_ack_eligible', 'false') = 'true'
             ) ORDER BY bm.conversation_seq
           )
           FROM messages AS bm
@@ -391,6 +398,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
         content: message.content,
         created_at: jsonIso(message.created_at)!,
         message_type: message.message_type ?? 'text',
+        opt_out_ack_eligible: message.opt_out_ack_eligible,
       })),
       call_facts: {
         open_offer: row.open_offer

@@ -59,6 +59,9 @@ export interface BatchMessage {
   readonly content: string;
   readonly created_at: string;
   readonly message_type: string;
+  /** True only for the first opt-out transition on this channel. Later
+   * repeated stop messages remain durable but must not produce another ack. */
+  readonly opt_out_ack_eligible?: boolean;
 }
 
 export interface StaleClaim {

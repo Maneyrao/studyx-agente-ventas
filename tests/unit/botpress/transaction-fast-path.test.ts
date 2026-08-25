@@ -6,6 +6,7 @@ import {
   matchCourseDiscoveryFastPath,
   matchCourseFactsFastPath,
   matchContactCaptureFastPath,
+  matchPaymentComparisonFastPath,
   matchPaymentSelectionFastPath,
 } from '../../../botpress-agent/src/utils/transaction-fast-path';
 
@@ -75,6 +76,19 @@ describe('transaction fast paths', () => {
     expect(decision?.response).not.toMatch(/llamada|pago|link/i);
   });
 
+  it('acknowledges a temporary payment-link pause without opting the customer out', () => {
+    const decision = matchConversationCloseFastPath(claimed(
+      'No me mandes el link todavía, quiero pensarlo.',
+    ));
+
+    expect(decision).toMatchObject({
+      intent: 'commercial_decline',
+      response_type: 'commercial_reply',
+      business_action: null,
+    });
+    expect(decision?.response).not.toMatch(/https?:\/\/|baja|desuscrip|\?/i);
+  });
+
   it('acknowledges a call cancellation and continues by chat', () => {
     const decision = matchConversationCloseFastPath(claimed(
       'Uy no, mejor cancelá la llamada. Seguimos por acá.',
@@ -82,6 +96,12 @@ describe('transaction fast paths', () => {
 
     expect(decision?.response).toMatch(/no avanzamos con la llamada.*seguimos por chat/i);
     expect(decision?.business_action).toBeNull();
+  });
+
+  it('does not collapse a call refusal that also asks a course fact', () => {
+    expect(matchConversationCloseFastPath(claimed(
+      'No quiero una llamada. ¿Cuántas clases tiene Redes Informáticas?',
+    ))).toBeNull();
   });
 
   it('guides a minimal unique course mention toward a call or continued chat', () => {
@@ -115,6 +135,21 @@ describe('transaction fast paths', () => {
 
     expect(decision?.response_type).toBe('commercial_reply');
     expect(decision?.response).not.toMatch(/llamada/i);
+  });
+
+  it('offers a call only when authorized and identifies our virtual advisor', () => {
+    const authorized = claimed('Redes Informáticas');
+    const unauthorized = claimed('Redes Informáticas');
+    unauthorized.sales_context.allowed_actions = [];
+
+    expect(matchCourseDiscoveryFastPath(authorized)).toMatchObject({
+      response_type: 'call_offer',
+      response: expect.stringMatching(/nuestra asesora virtual/i),
+    });
+    expect(matchCourseDiscoveryFastPath(unauthorized)).toMatchObject({
+      response_type: 'commercial_reply',
+    });
+    expect(matchCourseDiscoveryFastPath(unauthorized)?.response).not.toMatch(/llamada|asesora/i);
   });
 
   it.each([
@@ -163,6 +198,42 @@ describe('transaction fast paths', () => {
     expect(matchPaymentSelectionFastPath(claimed('confirmo 12 cuotas', { prices: false }))).toBeNull();
   });
 
+  it('compares the short and long payment plans without prices, links, or selecting one', () => {
+    const decision = matchPaymentComparisonFastPath(claimed(
+      '¿Cuál es la diferencia entre el plan corto y el plan largo de pago?',
+    ));
+
+    expect(decision).toMatchObject({
+      response_type: 'commercial_reply',
+      reason_code: 'DETERMINISTIC_PAYMENT_COMPARISON',
+      business_action: null,
+    });
+    expect(decision?.response).toMatch(/más cuotas.*cuota mensual más baja/i);
+    expect(decision?.response).not.toMatch(/USD|\$|https?:\/\/|\b(?:6|12|30|60|360)\b/i);
+  });
+
+  it('answers a one-time-payment advantage question without inventing benefits', () => {
+    const decision = matchPaymentComparisonFastPath(claimed(
+      'Si pago de una, ¿hay alguna ventaja además de terminar antes?',
+    ));
+
+    expect(decision).toMatchObject({
+      reason_code: 'DETERMINISTIC_PAYMENT_COMPARISON',
+      business_action: null,
+    });
+    expect(decision?.response).toMatch(/no tengo confirmada una ventaja adicional/i);
+    expect(decision?.response).not.toMatch(/inter[eé]s|acceso inmediato|descuento|https?:\/\//i);
+  });
+
+  it.each([
+    'Confirmo 12 cuotas; no me mandes el link todavía.',
+    'Confirmo 12 cuotas después.',
+    'Solo consultaba por las 12 cuotas.',
+    'Si comprara, elegiría 12 cuotas.',
+  ])('does not emit a payment action for a deferred or hypothetical selection: %s', (text) => {
+    expect(matchPaymentSelectionFastPath(claimed(text))).toBeNull();
+  });
+
   it('acknowledges an identity already captured by the backend without echoing it', () => {
     const decision = matchContactCaptureFastPath(claimed(
       'Soy Bruno Aguilar, bruno@example.test.',
@@ -200,6 +271,18 @@ describe('transaction fast paths', () => {
     expect(decision?.response).toContain('16 clases');
     expect(decision?.response).toMatch(/requisitos[^.]*no están especificados/i);
     expect(decision?.response).not.toMatch(/computadora|internet|conocimientos básicos/i);
+  });
+
+  it('renders at most two requested facts followed by one CTA', () => {
+    const decision = matchCourseFactsFastPath(claimed(
+      '¿Cuántas clases tiene, qué requisitos pide, qué devolución ofrece, quién emite el certificado y qué horarios hay?',
+    ));
+    const response = decision?.response ?? '';
+
+    expect(response).toContain('16 clases');
+    expect(response).toMatch(/requisitos[^.]*no están especificados/i);
+    expect(response).not.toMatch(/devolución|reembolso|certificado|horarios publicados|horarios fijos/i);
+    expect(response.match(/\?/gu) ?? []).toHaveLength(1);
   });
 
   it('uses a matching canonical knowledge chunk when the bounded offering window omitted the course', () => {
@@ -329,7 +412,7 @@ describe('transaction fast paths', () => {
       '¿Hay horarios fijos o puedo entrar cuando quiera?',
     ));
 
-    expect(certificate?.response).toMatch(/validez.*entidad emisora.*no están especificadas/i);
+    expect(certificate?.response).toMatch(/certificación no está especificada.*información disponible/i);
     expect(certificate?.response).not.toMatch(/válido oficialmente|lo emite StudyX/i);
     expect(schedule?.response).toMatch(/horarios fijos.*disponibilidad libre.*no están especificados/i);
     expect(schedule?.response).not.toMatch(/cuando quieras|24\/7|a tu ritmo/i);

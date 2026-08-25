@@ -34,24 +34,31 @@ function normalize(text: string): string {
 
 // Broader than a call decline: the customer wants no further contact at all,
 // not just no phone call.
-const OPT_OUT_PATTERNS: RegExp[] = [
-  /\bno me escribas? mas\b/,
-  /\bno me contactes? mas\b/,
-  /\bdejen? de (escribirme|contactarme|molestarme)\b/,
-  /\bno quiero (recibir )?mas mensajes\b/,
-  /\bbasta de mensajes\b/,
-  /\bdarme de baja\b/,
-  /\bunsubscribe\b/,
-];
-
 // Call-specific: the customer does not want to be called, but did not ask to
 // stop all contact.
-const CALL_DECLINE_PATTERNS: RegExp[] = [/\bno me llames?\b/, /\bno llames?\b/];
+const CALL_DECLINE_PATTERNS: RegExp[] = [
+  /\bno\s+(?:me\s+)?llam(?:es|en)?\b/,
+  /\bno\s+quiero\s+(?:una\s+|la\s+)?llamadas?\b/,
+  /\bno\s+quiero\s+que\s+me\s+llamen\b/,
+  /\bsin\s+llamadas?\b/,
+  /\bno\s+por\s+telefono\b/,
+  /\bprefiero\s+(?:whatsapp|chat|texto)\b/,
+  /\bsolo\s+(?:whatsapp|chat|texto)\b/,
+  /\bno\s+puedo\s+atender\s+llamadas?\b/,
+  /\bdeja\s+de\s+llamarme\b/,
+];
 
 const DIRECT_CALL_REQUEST_PATTERNS: RegExp[] = [
   /\bllamame\b/,
   /\bllamenme\b/,
   /\bpodes llamarme\b/,
+  /\b(?:quiero|necesito)\s+que\s+me\s+llamen\b/,
+  /\b(?:pueden|podrian|podes)\s+llamarme\b/,
+  /\bme\s+llamas\b/,
+  /\b(?:quiero|necesito)\s+una\s+llamada\b/,
+  /\bque\s+me\s+llame\s+(?:un|una)\s+asesor(?:a)?\b/,
+  /\bnecesito\s+hablar\s+por\s+telefono\b/,
+  /\bcomuniquense\s+conmigo\b/,
 ];
 
 // Only an exact short reply counts — the moment the customer adds words
@@ -64,7 +71,7 @@ export function classifyDeterministicSalesSignal(text: string): DeterministicSal
 
   // Negations run before affirmative patterns: "Sí, pero no me llames" must
   // classify as a decline even though it contains an affirmative "sí".
-  if (OPT_OUT_PATTERNS.some((pattern) => pattern.test(normalized))) {
+  if (isExplicitOptOut(text)) {
     return { type: 'opt_out' };
   }
   if (CALL_DECLINE_PATTERNS.some((pattern) => pattern.test(normalized))) {
@@ -110,3 +117,4 @@ export function classifyBatchSalesSignalWithIndex(texts: readonly string[]): {
   }
   return { signal: { type: 'model_required' }, index: null };
 }
+import { isExplicitOptOut } from '@/lib/heuristics/opt-out';

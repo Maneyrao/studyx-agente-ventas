@@ -97,6 +97,26 @@ function paymentPlanClarification(claimed: ClaimedTurn, reasonCode: string): Dec
   }
 }
 
+function paymentCourseClarification(claimed: ClaimedTurn): Decision {
+  const reasonCode = 'OFFERING_REQUIRED'
+  const allowed = claimed.policy.allowed_response_types
+  if (!allowed.includes('clarification')) return allowedTextFallback(claimed, reasonCode)
+  return {
+    schema_version: 4,
+    intent: 'commercial',
+    kind: 'clarify',
+    response: 'Antes de enviarte el link, confirmame por favor qué curso querés comprar.',
+    response_type: 'clarification',
+    business_action: null,
+    memory_candidates: [],
+    missing_information: ['course_of_interest'],
+    next_state: 'waiting_user',
+    reason_code: reasonCode,
+    confidence: 1,
+    retrieval_used: null,
+  }
+}
+
 // Two tiers on purpose: multi-word salutations (buen día, buenas tardes…)
 // are unambiguous and may be followed by anything, but the bare one-word
 // forms (hola, buenas) only count as a salutation when punctuation follows.
@@ -190,6 +210,10 @@ function uniqueCourseAliasMatch(
 }
 
 function withDeterministicCourseMemory(decision: Decision, claimed: ClaimedTurn): Decision {
+  // An opt-out acknowledgement may never create or refresh commercial
+  // memory, even when the same batch names a course before asking to stop.
+  if (decision.intent === 'opt_out') return decision
+
   const canonicalCourseNames = [
     ...(claimed.business_context?.offerings.map((offering) => offering.display_name) ?? []),
     ...claimed.context.knowledge_base
@@ -251,6 +275,39 @@ function withDeterministicCourseMemory(decision: Decision, claimed: ClaimedTurn)
   }
 }
 
+function canonicalPaymentOfferingCode(claimed: ClaimedTurn): string | null {
+  const offerings = claimed.business_context?.offerings ?? []
+  if (offerings.length === 0) return null
+
+  const resolution = claimed.catalog_resolution
+  if (resolution.kind === 'exact') {
+    const resolved = offerings.find((offering) => (
+      offering.code === resolution.offeringCode
+      && normalizeCatalogText(offering.display_name)
+        === normalizeCatalogText(resolution.displayName)
+    ))
+    return resolved?.code ?? null
+  }
+
+  if (resolution.kind !== 'no_catalog_intent') return null
+  const rememberedCourse = claimed.sales_context.course_of_interest
+  const rememberedOfferingCode = claimed.sales_context.offering_code
+  if (rememberedOfferingCode) {
+    const rememberedOffering = offerings.find((offering) => (
+      offering.code === rememberedOfferingCode
+      && (!rememberedCourse
+        || normalizeCatalogText(offering.display_name) === normalizeCatalogText(rememberedCourse))
+    ))
+    if (rememberedOffering) return rememberedOffering.code
+  }
+  if (!rememberedCourse) return null
+  const normalizedCourse = normalizeCatalogText(rememberedCourse)
+  const matches = offerings.filter(
+    (offering) => normalizeCatalogText(offering.display_name) === normalizedCourse,
+  )
+  return matches.length === 1 ? matches[0].code : null
+}
+
 /**
  * Local validation, run before the decision ever leaves this process. Next.js
  * re-validates all of it and holds final authority; doing it here as well is
@@ -262,6 +319,7 @@ export function applyDecisionPolicy(decision: Decision, claimed: ClaimedTurn): D
   if (!decision.response || !decision.response_type) {
     return allowedTextFallback(claimed, 'INVALID_DECISION_SHAPE')
   }
+  const response = decision.response
 
   const standardResponseAllowed = (claimed.policy.allowed_response_types as string[])
     .includes(decision.response_type)
@@ -290,10 +348,22 @@ export function applyDecisionPolicy(decision: Decision, claimed: ClaimedTurn): D
         derived === null ? 'AMBIGUOUS_OR_ABSENT_CHOICE' : 'PLAN_MISMATCH'
       ), claimed)
     }
+
+    const offeringCode = canonicalPaymentOfferingCode(claimed)
+    if (!offeringCode) {
+      return withDeterministicCourseMemory(paymentCourseClarification(claimed), claimed)
+    }
+    decision = {
+      ...decision,
+      business_action: {
+        ...decision.business_action,
+        offering_sku: offeringCode,
+      },
+    }
   }
 
   return withDeterministicCourseMemory({
     ...decision,
-    response: withoutRepeatedGreeting(decision.response, claimed),
+    response: withoutRepeatedGreeting(response, claimed),
   }, claimed)
 }

@@ -13,6 +13,7 @@ import {
   recordDeliveryReport,
   DeliveryReportConflictError,
 } from '@/lib/services/decision.service';
+import { verifyAuthorizedEgress } from '@/features/orchestration/domain/egress-guard';
 import { sql } from '@/lib/db/orchestrator';
 import { getRecentMessages } from '@/lib/services/memory.service';
 import {
@@ -53,7 +54,7 @@ function envelope(overrides: Partial<InboundEnvelope> = {}): InboundEnvelope {
   };
 }
 
-function reply(turnId: string, traceId = randomUUID(), content = 'El curso cuesta 100 pesos') {
+function reply(turnId: string, traceId = randomUUID(), content = 'Te cuento las opciones disponibles') {
   return {
     turn_id: turnId,
     trace_id: traceId,
@@ -165,6 +166,71 @@ run('canonical orchestration lifecycle', () => {
     const rejected = results.filter((result) => result.status === 'rejected');
     expect(rejected).toHaveLength(1);
     expect(rejected[0]).toMatchObject({ reason: expect.any(DecisionConflictError) });
+  });
+
+  it('binds every persisted outbound and its outbox payload to the same verified egress manifest', async () => {
+    const accepted = await processInboundMessage(envelope());
+    const committed = await commitAgentDecision(reply(accepted.turn_id));
+
+    expect(committed.outbound?.authorized_egress).toBeDefined();
+    expect(verifyAuthorizedEgress({
+      content: committed.outbound!.content,
+      manifest: committed.outbound!.authorized_egress,
+    })).toEqual({ ok: true });
+
+    const rows = await db!<Array<{
+      message_manifest: unknown;
+      outbox_manifest: unknown;
+    }>>`
+      SELECT
+        m.metadata -> 'authorized_egress' AS message_manifest,
+        oe.payload -> 'authorized_egress' AS outbox_manifest
+      FROM messages AS m
+      JOIN outbound_deliveries AS od ON od.message_id = m.id
+      JOIN outbox_events AS oe ON oe.delivery_id = od.id
+      WHERE m.id = ${committed.outbound!.id}::uuid
+    `;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].message_manifest).toEqual(committed.outbound!.authorized_egress);
+    expect(rows[0].outbox_manifest).toEqual(committed.outbound!.authorized_egress);
+  });
+
+  it.each([
+    ['an untyped URL', 'Mirá https://attacker.example/promo', 'EGRESS_UNAUTHORIZED_URL'],
+    ['an untyped protected fact', 'El precio total es USD 999.', 'EGRESS_UNAUTHORIZED_PROTECTED_FACT'],
+  ])('rejects %s before persisting a decision or outbox', async (_case, content, reason) => {
+    const accepted = await processInboundMessage(envelope());
+
+    await expect(commitAgentDecision(reply(accepted.turn_id, randomUUID(), content)))
+      .rejects.toMatchObject({ reason });
+
+    const counts = await db!<Array<{ decisions: number; deliveries: number; outbox: number }>>`
+      SELECT
+        (SELECT count(*)::integer FROM agent_decisions WHERE turn_id = ${accepted.turn_id}::uuid) AS decisions,
+        (SELECT count(*)::integer FROM outbound_deliveries AS od
+          JOIN messages AS m ON m.id = od.message_id
+          WHERE m.in_reply_to = ${accepted.turn_id}::uuid) AS deliveries,
+        (SELECT count(*)::integer FROM outbox_events AS oe
+          JOIN outbound_deliveries AS od ON od.id = oe.delivery_id
+          JOIN messages AS m ON m.id = od.message_id
+          WHERE m.in_reply_to = ${accepted.turn_id}::uuid) AS outbox
+    `;
+    expect(counts[0]).toEqual({ decisions: 0, deliveries: 0, outbox: 0 });
+  });
+
+  it('verifies the persisted manifest again before returning a duplicate outbound', async () => {
+    const accepted = await processInboundMessage(envelope());
+    const input = reply(accepted.turn_id);
+    const committed = await commitAgentDecision(input);
+
+    await db!`
+      UPDATE messages
+      SET metadata = jsonb_set(metadata, '{authorized_egress,content_hash}', to_jsonb(${'0'.repeat(64)}::text))
+      WHERE id = ${committed.outbound!.id}::uuid
+    `;
+
+    await expect(commitAgentDecision({ ...input, trace_id: randomUUID() }))
+      .rejects.toMatchObject({ reason: 'EGRESS_HASH_MISMATCH' });
   });
 
   it('persists every immutable Decision v2 field', async () => {
@@ -444,6 +510,147 @@ run('canonical orchestration lifecycle', () => {
     expect(acknowledgement.outbound?.status).toBe('pending');
   });
 
+  it('allows the one current opt-out acknowledgement after ingestion already blocked and revoked the contact', async () => {
+    const result = await processInboundMessage(envelope({
+      message: {
+        type: 'text',
+        text: 'No me escribas más',
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    }));
+    await db!`
+      UPDATE contacts
+      SET lifecycle_status = 'blocked', blocked_at = now(), blocked_reason = 'explicit-opt-out'
+      WHERE id = ${result.contact.id}::uuid
+    `;
+
+    const acknowledgement = await commitAgentDecision({
+      ...reply(result.turn_id),
+      decision: {
+        schema_version: 2,
+        intent: 'opt_out',
+        kind: 'reply',
+        response: 'Entendido. No volveremos a contactarte.',
+        response_type: 'opt_out_ack',
+        business_action: null,
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'completed',
+        reason_code: 'OPT_OUT_CONFIRMED',
+        confidence: 1,
+      },
+    });
+
+    expect(acknowledgement.status).toBe('committed');
+    expect(acknowledgement.outbound?.status).toBe('pending');
+  });
+
+  it('authorizes the first opt-out acknowledgement when the eligible message is later in the same batch', async () => {
+    const firstEnvelope = envelope({
+      message: {
+        type: 'text',
+        text: 'Quiero información de los cursos',
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    });
+    const first = await processInboundMessage(firstEnvelope);
+    const optOut = await processInboundMessage({
+      ...firstEnvelope,
+      external_message_id: `message-${randomUUID()}`,
+      trace_id: randomUUID(),
+      message: {
+        type: 'text',
+        text: 'Dame de baja',
+        occurred_at: new Date(Date.now() + 100).toISOString(),
+        reply_to_external_message_id: firstEnvelope.external_message_id,
+      },
+    });
+
+    expect(optOut.batch.id).toBe(first.batch.id);
+    expect(optOut.policy.allowed_response_types).toEqual(['opt_out_ack']);
+
+    const acknowledgement = await commitAgentDecision({
+      ...reply(first.turn_id),
+      decision: {
+        schema_version: 2,
+        intent: 'opt_out',
+        kind: 'reply',
+        response: 'Entendido. No volveremos a contactarte.',
+        response_type: 'opt_out_ack',
+        business_action: null,
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'completed',
+        reason_code: 'OPT_OUT_CONFIRMED',
+        confidence: 1,
+      },
+    });
+
+    expect(acknowledgement.status).toBe('committed');
+    expect(acknowledgement.outbound?.status).toBe('pending');
+  });
+
+  it('still rejects a normal reply when consent was revoked by an older turn', async () => {
+    const phone = `+54911${Math.floor(10_000_000 + Math.random() * 89_999_999)}`;
+    await processInboundMessage(envelope({
+      phone_e164: phone,
+      message: {
+        type: 'text',
+        text: 'No me escribas más',
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    }));
+    const later = await processInboundMessage(envelope({
+      phone_e164: phone,
+      message: {
+        type: 'text',
+        text: 'Quiero información',
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    }));
+
+    await expect(commitAgentDecision(reply(later.turn_id))).rejects.toMatchObject({
+      reason: 'CONSENT_REVOKED',
+    });
+  });
+
+  it('allows only the first opt-out acknowledgement and suppresses repeated opt-out messages', async () => {
+    const phone = `+54911${Math.floor(10_000_000 + Math.random() * 89_999_999)}`;
+    const first = await processInboundMessage(envelope({
+      phone_e164: phone,
+      message: {
+        type: 'text',
+        text: 'Dame de baja',
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    }));
+    const repeated = await processInboundMessage(envelope({
+      phone_e164: phone,
+      message: {
+        type: 'text',
+        text: 'Sacame de la lista definitivamente, por favor',
+        occurred_at: new Date(Date.now() + 1_000).toISOString(),
+        reply_to_external_message_id: null,
+      },
+    }));
+
+    expect(first.policy).toMatchObject({
+      may_respond: true,
+      allowed_response_types: ['opt_out_ack'],
+      reason: 'EXPLICIT_OPT_OUT_ACK_ONLY',
+    });
+    expect(repeated.policy).toMatchObject({
+      may_respond: false,
+      allowed_response_types: [],
+      reason: 'CONSENT_REVOKED',
+    });
+  });
+
   it('keeps WhatsApp consent open when the customer declines only a call', async () => {
     const callDecline = envelope({
       message: {
@@ -458,6 +665,30 @@ run('canonical orchestration lifecycle', () => {
     expect(result.contact.consent_status).not.toBe('revoked');
     expect(result.policy.allowed_response_types).toContain('commercial_reply');
     expect(result.policy.allowed_response_types).not.toContain('opt_out_ack');
+  });
+
+  it('distinguishes an unambiguous written opt-out from a channel-scoped call refusal', async () => {
+    const writtenOptOut = await processInboundMessage(envelope({
+      message: {
+        type: 'text',
+        text: 'Dejen de escribirme',
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    }));
+    const callOnly = await processInboundMessage(envelope({
+      message: {
+        type: 'text',
+        text: 'No me contactes por teléfono, escribime por WhatsApp',
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    }));
+
+    expect(writtenOptOut.contact.consent_status).toBe('revoked');
+    expect(writtenOptOut.policy.allowed_response_types).toEqual(['opt_out_ack']);
+    expect(callOnly.contact.consent_status).not.toBe('revoked');
+    expect(callOnly.policy.allowed_response_types).toContain('commercial_reply');
   });
 
   it('fails closed for a blocked contact', async () => {
@@ -651,10 +882,27 @@ run('Fase 4 — pago y cierre de batch', () => {
   };
 
   beforeAll(async () => {
-    // A bare workspace row is enough: these tests always pass
-    // `offering_sku: null`, so the canonical offering revalidation never
-    // needs a seeded offering to pass.
-    await db!`INSERT INTO workspaces (slug, display_name) VALUES (${PAYMENT_WORKSPACE_SLUG}, 'Payment Lifecycle Test')`;
+    const workspace = await db!<Array<{ id: string }>>`
+      INSERT INTO workspaces (slug, display_name)
+      VALUES (${PAYMENT_WORKSPACE_SLUG}, 'Payment Lifecycle Test')
+      RETURNING id
+    `;
+    await db!`
+      INSERT INTO offerings (
+        workspace_id, code, display_name, offering_type, status, description,
+        price_type, price_amount, currency, delivery
+      ) VALUES
+        (
+          ${workspace[0].id}::uuid, 'course_test', 'Curso Test', 'course', 'active',
+          'Offering canónico exclusivo del test', 'fixed', 360, 'USD',
+          ${db!.json({ classes: 16, modality: 'online', certification: true })}
+        ),
+        (
+          ${workspace[0].id}::uuid, 'course_other', 'Curso Distinto', 'course', 'active',
+          'Offering diferente para probar aislamiento', 'fixed', 500, 'USD',
+          ${db!.json({ classes: 20, modality: 'presencial', certification: false })}
+        )
+    `;
     for (const key of ['BUSINESS_WORKSPACE_SLUG', 'PAYMENT_LINK_12M', 'PAYMENT_LINK_6M', 'PAYMENT_LINK_CONTADO']) {
       savedEnv[key] = process.env[key];
     }
@@ -695,7 +943,7 @@ run('Fase 4 — pago y cierre de batch', () => {
         business_action: {
           type: 'send_payment_link' as const,
           plan_code: 'monthly_12' as const,
-          offering_sku: null,
+          offering_sku: 'course_test',
         },
         memory_candidates: [],
         missing_information: [],
@@ -708,9 +956,110 @@ run('Fase 4 — pago y cierre de batch', () => {
     };
   }
 
+  function groundedReply(
+    turnId: string,
+    content: string,
+    authorizedOfferingCode: string | null | undefined
+  ) {
+    return {
+      ...reply(turnId, randomUUID(), content),
+      ...(authorizedOfferingCode === undefined
+        ? {}
+        : { authorized_offering_code: authorizedOfferingCode }),
+    };
+  }
+
+  it.each([
+    ['price', 'El precio es USD 360.', { kind: 'price', value: 'usd 360' }],
+    ['classes', 'Son 16 clases.', { kind: 'duration', value: '16 clases' }],
+    ['modality', 'La modalidad es online.', { kind: 'modality', value: 'online' }],
+    ['certification', 'Incluye certificado.', { kind: 'certification', value: 'incluye certificado' }],
+  ])('authorizes the canonical %s fact for the exact active offering', async (_case, content, fact) => {
+    const accepted = await processInboundMessage(envelope());
+
+    const committed = await commitAgentDecision(groundedReply(
+      accepted.turn_id,
+      content,
+      'course_test'
+    ));
+
+    expect(committed.status).toBe('committed');
+    expect(committed.outbound?.content).toBe(content);
+    expect(committed.outbound?.authorized_egress).toMatchObject({
+      authorized_urls: [],
+      protected_facts: [fact],
+    });
+    expect(verifyAuthorizedEgress({
+      content,
+      manifest: committed.outbound!.authorized_egress,
+    })).toEqual({ ok: true });
+  });
+
+  it('authorizes a deterministic list only when every offering exists in the canonical catalog', async () => {
+    const accepted = await processInboundMessage(envelope());
+    const content = 'Tenemos Curso Test, Curso Distinto.';
+    const committed = await commitAgentDecision(groundedReply(
+      accepted.turn_id,
+      content,
+      undefined,
+    ));
+
+    expect(committed.outbound?.content).toBe(content);
+    expect(committed.outbound?.authorized_egress.protected_facts).toEqual([{
+      kind: 'offering',
+      value: 'tenemos curso test, curso distinto',
+    }]);
+  });
+
+  it('replaces an unsupported offering claim with one safe deterministic fallback', async () => {
+    const accepted = await processInboundMessage(envelope());
+    const committed = await commitAgentDecision(groundedReply(
+      accepted.turn_id,
+      'Sí, ofrecemos Programación en Python.',
+      undefined,
+    ));
+
+    expect(committed.status).toBe('committed');
+    expect(committed.outbound?.content).toMatch(/no tengo ese dato confirmado/i);
+    expect(committed.outbound?.content).not.toMatch(/programación en python/i);
+    expect(verifyAuthorizedEgress({
+      content: committed.outbound!.content,
+      manifest: committed.outbound!.authorized_egress,
+    })).toEqual({ ok: true });
+  });
+
+  it.each([
+    ['a different existing course code', 'El precio es USD 360.', 'course_other'],
+    ['no authorized course code', 'El precio es USD 360.', undefined],
+    ['a different value', 'El precio es USD 361.', 'course_test'],
+  ])('rejects a protected fact backed by %s without persisting anything', async (
+    _case,
+    content,
+    authorizedOfferingCode
+  ) => {
+    const accepted = await processInboundMessage(envelope());
+
+    await expect(commitAgentDecision(groundedReply(
+      accepted.turn_id,
+      content,
+      authorizedOfferingCode
+    ))).rejects.toMatchObject({ reason: 'EGRESS_UNAUTHORIZED_PROTECTED_FACT' });
+
+    const rows = await db!<Array<{ decisions: number; deliveries: number }>>`
+      SELECT
+        (SELECT count(*)::integer FROM agent_decisions
+          WHERE turn_id = ${accepted.turn_id}::uuid) AS decisions,
+        (SELECT count(*)::integer FROM outbound_deliveries AS od
+          JOIN messages AS m ON m.id = od.message_id
+          WHERE m.in_reply_to = ${accepted.turn_id}::uuid) AS deliveries
+    `;
+    expect(rows[0]).toEqual({ decisions: 0, deliveries: 0 });
+  });
+
   it('materializes only the configured URL and strips any model-authored one', async () => {
     const accepted = await processInboundMessage(paymentInbound());
-    const rogueUrl = 'https://evil.example.com/steal';
+    const auditCanary = `private-${randomUUID()}@example.test`;
+    const rogueUrl = `https://evil.example.com/steal?email=${encodeURIComponent(auditCanary)}`;
 
     const committed = await commitAgentDecision(paymentDecision(accepted.turn_id, {
       responseText: `Perfecto, acá tenés el link: ${rogueUrl}`,
@@ -723,6 +1072,15 @@ run('Fase 4 — pago y cierre de batch', () => {
     // Only the canonical URL survives — the model-authored one is gone, not
     // just deduplicated alongside it.
     expect(content.match(/https?:\/\/\S+/g)).toEqual([PAYMENT_LINK_12M]);
+    expect(committed.outbound!.authorized_egress).toMatchObject({
+      schema_version: 1,
+      authorized_urls: [PAYMENT_LINK_12M],
+      protected_facts: [{ kind: 'price', value: 'usd 30' }],
+    });
+    expect(verifyAuthorizedEgress({
+      content,
+      manifest: committed.outbound!.authorized_egress,
+    })).toEqual({ ok: true });
 
     const stored = await db!<Array<{ business_action: unknown }>>`
       SELECT business_action FROM agent_decisions WHERE id = ${committed.decision_id}::uuid
@@ -731,7 +1089,7 @@ run('Fase 4 — pago y cierre de batch', () => {
     expect(stored[0].business_action).toEqual({
       type: 'send_payment_link',
       plan_code: 'monthly_12',
-      offering_sku: null,
+      offering_sku: 'course_test',
     });
 
     const audits = await db!<Array<{ payload: Record<string, unknown> }>>`
@@ -739,7 +1097,60 @@ run('Fase 4 — pago y cierre de batch', () => {
       WHERE entity_id = ${committed.decision_id}::uuid AND action = 'agent.decision.payment_link_urls_stripped'
     `;
     expect(audits).toHaveLength(1);
-    expect(audits[0].payload.stripped_urls).toEqual([rogueUrl]);
+    expect(audits[0].payload).toMatchObject({
+      stripped_url_count: 1,
+      stripped_url_evidence: [{
+        scheme: 'https',
+        host_hash: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        value_hash: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      }],
+    });
+    expect(JSON.stringify(audits[0].payload)).not.toContain(auditCanary);
+    expect(JSON.stringify(audits[0].payload)).not.toContain('evil.example.com');
+    expect(JSON.stringify(audits[0].payload)).not.toContain('/steal');
+  });
+
+  it('does not emit the same payment link twice in one conversation', async () => {
+    const firstEnvelope = paymentInbound();
+    const first = await processInboundMessage(firstEnvelope);
+    const firstCommit = await commitAgentDecision(paymentDecision(first.turn_id));
+    await db!`
+      UPDATE inbound_batches
+      SET state = 'completed', completed_at = now(), updated_at = now()
+      WHERE id = ${first.batch.id}::uuid
+    `;
+
+    const second = await processInboundMessage({
+      ...firstEnvelope,
+      external_message_id: `message-${randomUUID()}`,
+      trace_id: randomUUID(),
+      message: {
+        type: 'text',
+        text: 'Confirmo nuevamente las 12 cuotas',
+        occurred_at: new Date(Date.now() + 1_000).toISOString(),
+        reply_to_external_message_id: firstEnvelope.external_message_id,
+      },
+    });
+    const secondCommit = await commitAgentDecision(paymentDecision(second.turn_id));
+
+    expect(firstCommit.outbound?.content).toContain(PAYMENT_LINK_12M);
+    expect(secondCommit.outbound?.content).toMatch(/ya te compartí el link/i);
+    expect(secondCommit.outbound?.content).not.toContain(PAYMENT_LINK_12M);
+
+    const rows = await db!<Array<{ payment_actions: number; link_messages: number }>>`
+      SELECT
+        count(*) FILTER (
+          WHERE ad.business_action ->> 'type' = 'send_payment_link'
+        )::integer AS payment_actions,
+        count(*) FILTER (
+          WHERE om.content LIKE ${`%${PAYMENT_LINK_12M}%`}
+        )::integer AS link_messages
+      FROM agent_decisions AS ad
+      JOIN messages AS turn ON turn.id = ad.turn_id
+      LEFT JOIN messages AS om ON om.id = ad.outbound_message_id
+      WHERE turn.conversation_id = ${first.conversation_id}::uuid
+    `;
+    expect(rows[0]).toEqual({ payment_actions: 1, link_messages: 1 });
   });
 
   it('produces one decision and one outbound under replay of the same inbound', async () => {
@@ -753,6 +1164,7 @@ run('Fase 4 — pago y cierre de batch', () => {
     expect(replay.status).toBe('duplicate');
     expect(replay.decision_id).toBe(first.decision_id);
     expect(replay.outbound?.id).toBe(first.outbound?.id);
+    expect(replay.outbound?.authorized_egress).toEqual(first.outbound?.authorized_egress);
 
     const counts = await db!<Array<{ decisions: number; deliveries: number }>>`
       SELECT

@@ -24,6 +24,23 @@ export type PersistenceEvidence = {
   sheetRows: SheetEvidence[];
   promptVersions: string[];
   technicalFallbacks: number;
+  /** Values read back from durable, run-correlated rows. The sandbox identity
+   * is created as `eval:<runId>:<caseId>` by the local evaluator. */
+  runScope?: {
+    sandboxExternalUserId: string | null;
+    externalConversationId: string;
+    conversationId: string;
+  };
+  /** One row per inbound turn, projected from the authoritative
+   * messages/agent_decisions relation rather than inferred from transcript
+   * ordering. */
+  turnEvidence?: Array<{
+    turnNumber: number;
+    turnId: string;
+    decisionId: string;
+    traceId: string | null;
+    outboundMessageId: string | null;
+  }>;
 };
 
 function normalized(value: string): string {
@@ -59,6 +76,12 @@ export function evaluatePersistenceEvidence(
     ? expected.min_ready_memory_embeddings
     : 0;
   const expectedSheetRows = typeof expected.sheet_rows === 'number' ? expected.sheet_rows : null;
+  const expectedResponseCounts = expected.expected_response_count_by_turn
+    ?? testCase.turns.map(() => 1 as const);
+  const expectedOutboundMessages = expectedResponseCounts.reduce<number>(
+    (total, count) => total + count,
+    0,
+  );
   const forbiddenPersistenceValues = Array.isArray(expected.forbidden_persistence_values)
     ? expected.forbidden_persistence_values.filter((value): value is string => typeof value === 'string')
     : [];
@@ -70,6 +93,53 @@ export function evaluatePersistenceEvidence(
   const identityVolunteered = customer !== null
     && testCase.turns.some((turn) => turn.includes(customer.email));
   const expectedEmail = customer ? expandRunId(customer.email, runId) : null;
+  const expectedSandboxExternalUserId = `eval:${runId}:${testCase.id}`;
+  const runScopeVerified = runId !== ''
+    && evidence.runScope?.sandboxExternalUserId === expectedSandboxExternalUserId
+    && evidence.runScope.externalConversationId.startsWith(`local-eval-${runId}-`)
+    && evidence.runScope.conversationId.trim() !== '';
+  if (runId !== '' && !runScopeVerified) failures.push('persistence_evidence_not_run_scoped');
+
+  const turnOutboundCounts: Array<number | null> = [];
+  if (runId !== '' && !evidence.turnEvidence) {
+    failures.push('turn_scoped_persistence_evidence_missing');
+  } else if (evidence.turnEvidence) {
+    if (evidence.turnEvidence.length !== testCase.turns.length) {
+      failures.push(
+        `expected_turn_evidence_${testCase.turns.length}_got_${evidence.turnEvidence.length}`,
+      );
+    }
+    const uniqueTurnIds = new Set(evidence.turnEvidence.map((turn) => turn.turnId));
+    const uniqueDecisionIds = new Set(evidence.turnEvidence.map((turn) => turn.decisionId));
+    const traceIds = evidence.turnEvidence
+      .map((turn) => turn.traceId)
+      .filter((traceId): traceId is string => typeof traceId === 'string' && traceId !== '');
+    if (uniqueTurnIds.size !== evidence.turnEvidence.length) failures.push('duplicate_turn_evidence');
+    if (uniqueDecisionIds.size !== evidence.turnEvidence.length) {
+      failures.push('duplicate_decision_evidence');
+    }
+    if (new Set(traceIds).size !== traceIds.length) failures.push('duplicate_turn_trace_id');
+
+    for (const [index, expectedOutboundCount] of expectedResponseCounts.entries()) {
+      const turnNumber = index + 1;
+      const matchingTurns = evidence.turnEvidence.filter((turn) => turn.turnNumber === turnNumber);
+      if (matchingTurns.length !== 1) {
+        failures.push(`turn_${turnNumber}_expected_one_decision_evidence_got_${matchingTurns.length}`);
+        turnOutboundCounts[index] = null;
+        continue;
+      }
+      const turn = matchingTurns[0]!;
+      if (turn.decisionId.trim() === '') failures.push(`turn_${turnNumber}_decision_id_missing`);
+      if (!turn.traceId?.trim()) failures.push(`turn_${turnNumber}_trace_id_missing`);
+      const actualOutboundCount = turn.outboundMessageId === null ? 0 : 1;
+      turnOutboundCounts[index] = actualOutboundCount;
+      if (actualOutboundCount !== expectedOutboundCount) {
+        failures.push(
+          `turn_${turnNumber}_expected_outbound_${expectedOutboundCount}_got_${actualOutboundCount}`,
+        );
+      }
+    }
+  }
   let contactIdentityPersisted: boolean | null = null;
   if (identityVolunteered && customer && expectedEmail) {
     const nameNormalized = normalized(evidence.contactName ?? '');
@@ -88,8 +158,8 @@ export function evaluatePersistenceEvidence(
   if (evidence.inboundMessages !== testCase.turns.length) {
     failures.push(`expected_inbound_messages_${testCase.turns.length}_got_${evidence.inboundMessages}`);
   }
-  if (evidence.outboundMessages !== testCase.turns.length) {
-    failures.push(`expected_outbound_messages_${testCase.turns.length}_got_${evidence.outboundMessages}`);
+  if (evidence.outboundMessages !== expectedOutboundMessages) {
+    failures.push(`expected_outbound_messages_${expectedOutboundMessages}_got_${evidence.outboundMessages}`);
   }
   if (evidence.decisions !== testCase.turns.length) {
     failures.push(`expected_decisions_${testCase.turns.length}_got_${evidence.decisions}`);
@@ -162,8 +232,12 @@ export function evaluatePersistenceEvidence(
       contact_email_present: evidence.contactEmail !== null && evidence.contactEmail !== '',
       contact_identity_persisted: contactIdentityPersisted,
       sandbox_registered: evidence.sandboxRegistered,
+      run_scope_verified: runScopeVerified,
+      run_scope: evidence.runScope ?? null,
       inbound_messages: evidence.inboundMessages,
       outbound_messages: evidence.outboundMessages,
+      expected_outbound_messages: expectedOutboundMessages,
+      turn_outbound_counts: turnOutboundCounts,
       decisions: evidence.decisions,
       decisions_with_trace: evidence.decisionsWithTrace,
       active_memories: evidence.activeMemoryValues.length,

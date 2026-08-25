@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "prompt_version": "studyx-agent-a-sales-v14",
+  "prompt_version": "studyx-agent-a-sales-v15",
   "catalog_source": "studyx_manual_1",
   "suite": "studyx-internal-gemini-35-v1",
   "cases": [
@@ -935,9 +935,18 @@
         "min_active_memories": 1,
         "payment_link_count": 0,
         "sheet_rows": 0,
-        "no_technical_fallback": true
+        "no_technical_fallback": true,
+        "catalog_absence_oracle": {
+          "requested_terms": [
+            "Python",
+            "programación",
+            "desarrollo web"
+          ],
+          "allowed_alternative_codes": [],
+          "require_complete_snapshot": true
+        }
       },
-      "notes": "El esquema no tiene un campo dedicado para 'curso inexistente'; se documenta como catalog_status en el nivel del caso (no verificado automáticamente por el runner)."
+      "notes": "Oracle ejecutable: ausencia, hechos, acciones, links y alternativas se validan por turno contra evidencia estructurada del snapshot/claim."
     },
     {
       "id": "g35_23_plan_inexistente_community",
@@ -1089,10 +1098,11 @@
         "En realidad ya no me interesa nada de esto. Dame de baja, no quiero recibir más mensajes de ustedes.",
         "Sacame de la lista definitivamente, por favor."
       ],
-      "ideal_result": {
-        "registered_contact": true,
-        "expected_interest": "Uñas Gelificadas",
-        "min_active_memories": 1,
+    "ideal_result": {
+      "registered_contact": true,
+      "expected_interest": "Uñas Gelificadas",
+      "expected_response_count_by_turn": [1, 1, 1, 0],
+      "min_active_memories": 1,
         "min_ready_memory_embeddings": 1,
         "course_fact": "25 clases",
         "payment_link_count": 0,

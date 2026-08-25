@@ -115,6 +115,7 @@ function buildDeps(options: {
     content: string;
     created_at: string;
     message_type: string;
+    opt_out_ack_eligible?: boolean;
   }>;
   embedding?: { embed(query: string): Promise<readonly number[]> };
   memory?: ClaimBatchDependencies['memory'];
@@ -503,6 +504,71 @@ describe('claimBatch', () => {
     if (result.outcome !== 'claimed') throw new Error('expected a claim');
     expect(result.policy.reason).toBe('CONSENT_REVOKED');
     expect(result.contact.consent_status).toBe('revoked');
+    expect(memory.search).not.toHaveBeenCalled();
+  });
+
+  it('preserves the one opt-out acknowledgement for the batch that revoked consent', async () => {
+    const embedding = { embed: vi.fn().mockResolvedValue([0.125, -0.25]) };
+    const memory = { search: vi.fn().mockResolvedValue([]) };
+    const knowledge = { search: vi.fn().mockResolvedValue([]) };
+    const deps = buildDeps({
+      factsResult: facts({
+        contact: {
+          ...facts().contact,
+          lifecycle_status: 'blocked',
+          consent_status: 'revoked',
+        },
+      }),
+      messagesResult: [{
+        id: 'm1',
+        conversation_seq: 1,
+        content: 'Redes Informáticas, dame de baja',
+        created_at: '2026-08-11T12:00:00.000Z',
+        message_type: 'text',
+        opt_out_ack_eligible: true,
+      }],
+      embedding,
+      memory,
+      knowledge,
+    });
+
+    const result = await claimBatch(input, deps);
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.policy).toMatchObject({
+      may_respond: true,
+      allowed_response_types: ['opt_out_ack'],
+      reason: 'EXPLICIT_OPT_OUT_ACK_ONLY',
+      blocked: true,
+    });
+    expect(embedding.embed).not.toHaveBeenCalled();
+    expect(memory.search).not.toHaveBeenCalled();
+    expect(knowledge.search).not.toHaveBeenCalled();
+  });
+
+  it('does not acknowledge a repeated opt-out whose transition was already confirmed', async () => {
+    const memory = { search: vi.fn().mockResolvedValue([]) };
+    const deps = buildDeps({
+      factsResult: facts({ contact: { ...facts().contact, consent_status: 'revoked' } }),
+      messagesResult: [{
+        id: 'm1',
+        conversation_seq: 1,
+        content: 'Sacame de la lista definitivamente',
+        created_at: '2026-08-11T12:00:00.000Z',
+        message_type: 'text',
+        opt_out_ack_eligible: false,
+      }],
+      memory,
+    });
+
+    const result = await claimBatch(input, deps);
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.policy).toMatchObject({
+      may_respond: false,
+      allowed_response_types: [],
+      reason: 'CONSENT_REVOKED',
+    });
     expect(memory.search).not.toHaveBeenCalled();
   });
 
@@ -1265,7 +1331,7 @@ describe('claimBatch sales_context', () => {
     expect(result.sales_context.allowed_actions).toEqual([]);
   });
 
-  it('re-enables offer_call once the persisted decline cooldown has elapsed', async () => {
+  it('does not proactively re-offer a call later in the same conversation', async () => {
     const deps = buildDeps({
       callFactsResult: callFacts({ last_decline_at: '2026-08-11T11:20:00.000Z' }),
       now: () => '2026-08-11T12:00:00.000Z',
@@ -1274,7 +1340,7 @@ describe('claimBatch sales_context', () => {
     const result = await claimBatch(input, deps);
     if (result.outcome !== 'claimed') throw new Error('expected a claim');
 
-    expect(result.sales_context.allowed_actions).toEqual(['offer_call']);
+    expect(result.sales_context.allowed_actions).toEqual([]);
   });
 
   it('reports in_call and grants no sales action while a call is connected', async () => {

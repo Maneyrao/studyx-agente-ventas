@@ -13,8 +13,8 @@ export type { SendPaymentLinkAction };
 /**
  * Every refusal reason the spec requires the action to fail closed on:
  * blocked contact, revoked consent, no/ambiguous explicit choice, a
- * plan_code that does not match that choice, an unknown offering, or
- * incomplete link configuration. None of these ever produce a link.
+ * plan_code that does not match that choice, a missing/unknown offering,
+ * or incomplete link configuration. None of these ever produce a link.
  */
 export type PaymentLinkRefusalReason =
   | 'CONTACT_BLOCKED'
@@ -22,6 +22,7 @@ export type PaymentLinkRefusalReason =
   | 'INVALID_PLAN_CODE'
   | 'AMBIGUOUS_OR_ABSENT_CHOICE'
   | 'PLAN_MISMATCH'
+  | 'OFFERING_REQUIRED'
   | 'OFFERING_NOT_FOUND'
   | 'LINK_CONFIG_MISSING';
 
@@ -96,11 +97,14 @@ export function materializePaymentLinkAction(
     return { ok: false, reason: 'PLAN_MISMATCH' };
   }
 
-  if (action.offering_sku !== null) {
-    const offeringExists = businessSnapshot.offerings.some((offering) => offering.code === action.offering_sku);
-    if (!offeringExists) {
-      return { ok: false, reason: 'OFFERING_NOT_FOUND' };
-    }
+  if (action.offering_sku === null) {
+    return { ok: false, reason: 'OFFERING_REQUIRED' };
+  }
+  const offeringExists = businessSnapshot.offerings.some(
+    (offering) => offering.code === action.offering_sku
+  );
+  if (!offeringExists) {
+    return { ok: false, reason: 'OFFERING_NOT_FOUND' };
   }
 
   const url = resolver.resolve(action.plan_code);

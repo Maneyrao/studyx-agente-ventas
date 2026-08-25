@@ -12,6 +12,14 @@ describe('isExplicitOptOut', () => {
     'Sacame de la lista definitivamente, por favor.',
     'Sáquenme de la lista',
     'Borrame de la lista',
+    'Dejen de escribirme',
+    'No quiero que me escriban más',
+    'No me hablen más',
+    'Paren los mensajes',
+    'Corten los mensajes',
+    'Quiero dejar de recibir mensajes',
+    'Desuscribime',
+    'No deseo recibir más comunicaciones',
   ])('detects an explicit no-contact request: %s', (text) => {
     expect(isExplicitOptOut(text)).toBe(true);
   });
@@ -29,6 +37,11 @@ describe('isExplicitOptOut', () => {
     'no me mandes el link aún',
     'Déjame hablarlo con mi familia, no me mandes link todavía',
     'No me mandes la info por mail, prefiero verla acá',
+    'No me contactes por teléfono, escribime por WhatsApp',
+    'No me contactes por llamada; sigamos por chat',
+    'No me escribas hoy, mandame mañana',
+    'No me mandes más mensajes de inglés, quiero Marketing',
+    'No quiero promociones, pero respondeme esta consulta',
   ])('does not confuse commercial rejection with opt-out: %s', (text) => {
     expect(isExplicitOptOut(text)).toBe(false);
   });

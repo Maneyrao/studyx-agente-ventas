@@ -286,7 +286,10 @@ run('controlled context at claim time', () => {
         schema_version: 2,
         intent: 'commercial',
         kind: 'reply',
-        response: 'El curso dura ocho semanas.',
+        // Free of protected commercial facts on purpose: this test exercises
+        // duplicate-commit surfacing, and an unauthorized duration/price here
+        // would now (correctly) be rejected by the egress guard instead.
+        response: 'Ya te confirmo la información del curso.',
         response_type: 'commercial_reply',
         business_action: null,
         memory_candidates: [],
@@ -323,6 +326,7 @@ run('sales_context at claim time', () => {
     expect(result.sales_context).toEqual({
       mode: 'advising',
       course_of_interest: null,
+      offering_code: null,
       open_call_offer: null,
       accepted_call_offer: null,
       active_call: null,

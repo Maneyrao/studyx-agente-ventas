@@ -25,6 +25,9 @@ function claimedTurn(overrides: {
   recent_turns?: Array<{ direction: 'inbound' | 'outbound'; content: string; created_at: string }>;
   offering_names?: string[];
   knowledge_names?: string[];
+  course_of_interest?: string | null;
+  offering_code?: string | null;
+  catalog_resolution?: ClaimedTurn['catalog_resolution'];
 } = {}): ClaimedTurn {
   return {
     outcome: 'claimed',
@@ -79,12 +82,14 @@ function claimedTurn(overrides: {
     },
     sales_context: {
       mode: 'advising',
-      course_of_interest: null,
+      course_of_interest: overrides.course_of_interest ?? null,
+      offering_code: overrides.offering_code ?? null,
       open_call_offer: null,
       active_call: null,
       allowed_actions: overrides.allowed_actions ?? ['offer_call'],
       last_call_result: null,
     },
+    catalog_resolution: overrides.catalog_resolution ?? { kind: 'no_catalog_intent' },
     deterministic_route: null,
     diagnostics: {
       timings: {
@@ -229,7 +234,7 @@ describe('applyDecisionPolicy — provider parity', () => {
     });
   });
 
-  it('pago inequívoco: send_payment_link stays intact when the batch deterministically names the same plan', () => {
+  it('pago sin curso canónico: clarifies instead of emitting an unscoped payment action', () => {
     const claimed = claimedTurn({
       allowed_response_types: ['commercial_reply', 'clarification'],
       batch_message_content: 'Confirmo pago único de 360 dólares',
@@ -244,9 +249,91 @@ describe('applyDecisionPolicy — provider parity', () => {
     );
 
     expect(decision).toMatchObject({
-      kind: 'reply',
-      business_action: { type: 'send_payment_link', plan_code: 'one_time', offering_sku: null },
+      kind: 'clarify',
+      response_type: 'clarification',
+      business_action: null,
+      reason_code: 'OFFERING_REQUIRED',
     });
+  });
+
+  it('derives the exact canonical SKU before preserving a payment action', () => {
+    const claimed = claimedTurn({
+      allowed_response_types: ['commercial_reply', 'clarification'],
+      batch_message_content: 'Confirmo pago único de 360 dólares',
+      offering_names: ['Redes Informáticas'],
+      course_of_interest: 'Redes Informáticas',
+      catalog_resolution: {
+        kind: 'exact',
+        offeringCode: 'course_0',
+        displayName: 'Redes Informáticas',
+        academy: 'Oficios',
+        match: 'canonical',
+      },
+    });
+
+    const decision = applyDecisionPolicy(
+      modelDecision({
+        business_action: {
+          type: 'send_payment_link',
+          plan_code: 'one_time',
+          offering_sku: null,
+        },
+      }),
+      claimed,
+    );
+
+    expect(decision.business_action).toEqual({
+      type: 'send_payment_link',
+      plan_code: 'one_time',
+      offering_sku: 'course_0',
+    });
+  });
+
+  it('replaces a model-selected SKU with the active canonical course', () => {
+    const claimed = claimedTurn({
+      allowed_response_types: ['commercial_reply', 'clarification'],
+      batch_message_content: 'Confirmo pago único',
+      offering_names: ['Redes Informáticas', 'Excel Integral'],
+      course_of_interest: 'Redes Informáticas',
+      catalog_resolution: { kind: 'no_catalog_intent' },
+    });
+
+    const decision = applyDecisionPolicy(
+      modelDecision({
+        business_action: {
+          type: 'send_payment_link',
+          plan_code: 'one_time',
+          offering_sku: 'course_1',
+        },
+      }),
+      claimed,
+    );
+
+    expect(decision.business_action).toMatchObject({ offering_sku: 'course_0' });
+  });
+
+  it('uses the durable offering code rather than guessing between homonymous courses', () => {
+    const claimed = claimedTurn({
+      allowed_response_types: ['commercial_reply', 'clarification'],
+      batch_message_content: 'Confirmo pago único',
+      offering_names: ['Inglés Inicial', 'Inglés Inicial'],
+      course_of_interest: 'Inglés Inicial',
+      offering_code: 'course_1',
+      catalog_resolution: { kind: 'no_catalog_intent' },
+    });
+
+    const decision = applyDecisionPolicy(
+      modelDecision({
+        business_action: {
+          type: 'send_payment_link',
+          plan_code: 'one_time',
+          offering_sku: 'course_0',
+        },
+      }),
+      claimed,
+    );
+
+    expect(decision.business_action).toMatchObject({ offering_sku: 'course_1' });
   });
 
   it('llamada permitida: a call_offer stays intact when the sales context explicitly allows offer_call', () => {

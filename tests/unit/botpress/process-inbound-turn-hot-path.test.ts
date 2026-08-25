@@ -46,6 +46,7 @@ vi.mock('../../../botpress-agent/src/lib/decision/groq-direct', () => ({
 
 import { configuration, secrets } from '../../helpers/botpress-runtime-stub';
 import { processInboundTurn } from '../../../botpress-agent/src/workflows/processInboundTurn';
+import type { ClaimedTurn } from '../../../botpress-agent/src/schemas/contracts';
 import { DEFAULT_REQUEST_TIMEOUT_MS, resolveRequestTimeoutMs } from '../../../botpress-agent/src/utils/http';
 import { dispatch } from '../../../botpress-agent/src/channels';
 
@@ -124,11 +125,13 @@ function claimedResponse() {
     sales_context: {
       mode: 'advising',
       course_of_interest: null,
+      offering_code: null,
       open_call_offer: null,
       active_call: null,
       allowed_actions: ['offer_call'],
       last_call_result: null,
     },
+    catalog_resolution: { kind: 'no_catalog_intent' as const },
     deterministic_route: null,
     diagnostics: {
       timings: {
@@ -150,6 +153,54 @@ function claimedResponse() {
     business_context: null,
     business_context_available: false,
     existing_result: null,
+  };
+}
+
+function paymentBusinessContext() {
+  return {
+    as_of: NOW,
+    prices_assertable: true,
+    workspace: {
+      slug: 'studyx',
+      display_name: 'StudyX',
+      environment: 'sandbox' as const,
+      default_locale: 'es-AR',
+      timezone: 'America/Argentina/Buenos_Aires',
+      payment_options: [{
+        code: 'one_time' as const,
+        label: 'Pago único',
+        total: { amount: '360.00' as const, currency: 'USD' as const },
+        installments: 1,
+        installment_amount: '360.00' as const,
+        payment_link: 'https://example.test/one-time',
+      }],
+    },
+    offerings: [{
+      code: 'redes-informaticas',
+      display_name: 'Redes Informáticas',
+      academy: 'Tecnología',
+      offering_type: 'course' as const,
+      description: null,
+      value_proposition: null,
+      price_type: 'fixed' as const,
+      price: { amount: '360.00', currency: 'USD' },
+      price_assertable: true,
+      billing_interval: null,
+      modality: null,
+      schedules: [],
+      certification: null,
+      hours_per_month: null,
+      classes: 16,
+      modules: null,
+      includes: [],
+      syllabus_published: null,
+      language: null,
+      min_age: null,
+      policies: { allowed_promise: null, forbidden_promises: [], price_message: null },
+    }],
+    qualification_fields: [],
+    injection_suspected_count: 0,
+    offerings_truncated: 0,
   };
 }
 
@@ -211,7 +262,133 @@ describe('processInboundTurn hot path', () => {
       call_request: null,
     });
     actionSpies.flush.mockResolvedValue({ status: 'unavailable', completed: 0 });
+    actionSpies.delivery.mockResolvedValue({ status: 'recorded' });
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
+  });
+
+  async function runCommittedOutbound(outbound: Record<string, unknown>) {
+    actionSpies.commit.mockResolvedValue({
+      status: 'committed',
+      replayed: false,
+      trace_id: UUID,
+      turn_id: UUID,
+      decision_id: UUID,
+      next_state: 'completed',
+      outbound: {
+        id: UUID,
+        content: 'Contenido autorizado',
+        status: 'pending',
+        delivery_attempt: 1,
+        ...outbound,
+      },
+      call_request: null,
+    });
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-message-1' } }));
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => ({
+      is: () => true,
+      output: {
+        schema_version: 4,
+        intent: 'commercial',
+        kind: 'reply',
+        response: 'Contenido autorizado',
+        response_type: 'commercial_reply',
+        confidence: 1,
+        reason_code: 'ANSWER',
+        business_action: null,
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'completed',
+        retrieval_used: null,
+      },
+      iterations: [],
+    }));
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    const result = await handler({
+      input: workflowInput(),
+      state: processingState(),
+      step,
+      execute,
+      client: { createMessage },
+      signal: new AbortController().signal,
+      workflow: { id: 'workflow-test' },
+    });
+
+    return { createMessage, result };
+  }
+
+  it('blocks altered committed content before createMessage and reports a safe failure', async () => {
+    const { createMessage, result } = await runCommittedOutbound({
+      content: 'Contenido alterado',
+      authorized_egress: {
+        schema_version: 1,
+        content_hash: 'e2dee359447348131358a63664853c018f5db0fcb31835e30a0aac56badab6bd',
+        authorized_urls: [],
+        protected_facts: [],
+      },
+    });
+
+    expect(createMessage).not.toHaveBeenCalled();
+    expect(actionSpies.delivery).toHaveBeenCalledTimes(1);
+    expect(actionSpies.delivery.mock.calls[0]?.[0]?.input).toMatchObject({
+      status: 'failed',
+      botpress_message_id: null,
+      error_code: 'EGRESS_HASH_MISMATCH',
+    });
+    expect(result).toMatchObject({
+      status: 'paused_error',
+      delivery_status: 'failed',
+      error_code: 'EGRESS_HASH_MISMATCH',
+    });
+  });
+
+  it('blocks a hash-valid but unauthorized URL before createMessage', async () => {
+    const unauthorizedUrl = 'https://attacker.example/phish';
+    const { createMessage, result } = await runCommittedOutbound({
+      content: `Pagá acá: ${unauthorizedUrl}`,
+      authorized_egress: {
+        schema_version: 1,
+        content_hash: '02f4b7150b0623b3f814cfd7585249b57a180bdc4e12e0275bf3e292a525239a',
+        authorized_urls: [],
+        protected_facts: [],
+      },
+    });
+
+    expect(createMessage).not.toHaveBeenCalled();
+    expect(actionSpies.delivery.mock.calls[0]?.[0]?.input).toMatchObject({
+      status: 'failed',
+      error_code: 'EGRESS_UNAUTHORIZED_URL',
+    });
+    expect(result).toMatchObject({ error_code: 'EGRESS_UNAUTHORIZED_URL' });
+  });
+
+  it('sends exact authorized content once and reports only the successful submission', async () => {
+    const { createMessage, result } = await runCommittedOutbound({
+      authorized_egress: {
+        schema_version: 1,
+        content_hash: 'e2dee359447348131358a63664853c018f5db0fcb31835e30a0aac56badab6bd',
+        authorized_urls: [],
+        protected_facts: [],
+      },
+    });
+
+    expect(createMessage).toHaveBeenCalledTimes(1);
+    expect(actionSpies.delivery).toHaveBeenCalledTimes(1);
+    expect(actionSpies.delivery.mock.calls[0]?.[0]?.input).toMatchObject({
+      status: 'submitted_to_botpress',
+      botpress_message_id: 'bp-message-1',
+      error_code: null,
+    });
+    expect(result).toMatchObject({
+      status: 'completed',
+      delivery_status: 'submitted_to_botpress',
+    });
   });
 
   it('never invokes the standalone catalog action for a normal model turn', async () => {
@@ -281,6 +458,54 @@ describe('processInboundTurn hot path', () => {
     const serializedTimingLog = JSON.stringify(timingLog);
     expect(serializedTimingLog).not.toContain('¿Cuánto sale el curso?');
     expect(serializedTimingLog).not.toContain('user-test');
+  });
+
+  it('commits one deterministic opt-out acknowledgement without invoking a model', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.policy = {
+      may_respond: true,
+      allowed_response_types: ['opt_out_ack'],
+      reason: 'EXPLICIT_OPT_OUT_ACK_ONLY',
+    };
+    claimed.contact.blocked = true;
+    claimed.contact.consent_status = 'revoked';
+    claimed.context.batch_messages[0].content = 'Redes Informáticas, dame de baja';
+    claimed.context.batch_messages[0].opt_out_ack_eligible = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => {
+      throw new Error('MODEL_MUST_NOT_RUN_FOR_OPT_OUT_ACK');
+    });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+    const input = workflowInput();
+    input.message.text = 'Redes Informáticas, dame de baja';
+
+    await handler({
+      input,
+      state: processingState(),
+      step,
+      execute,
+      client: {},
+      signal: new AbortController().signal,
+      workflow: { id: 'workflow-test' },
+    });
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input?.decision).toMatchObject({
+      intent: 'opt_out',
+      kind: 'reply',
+      response_type: 'opt_out_ack',
+      reason_code: 'EXPLICIT_OPT_OUT_ACK',
+      business_action: null,
+      memory_candidates: [],
+      next_state: 'completed',
+    });
   });
 
   it('retries one transient model failure before using the customer-visible fallback', async () => {
@@ -516,7 +741,16 @@ describe('processInboundTurn hot path', () => {
   });
 
   it('keeps send_payment_link intact when the batch deterministically names the same plan', async () => {
-    const claimed = claimedResponse();
+    const claimed = {
+      ...claimedResponse(),
+      sales_context: {
+        ...claimedResponse().sales_context,
+        course_of_interest: 'Redes Informáticas',
+        offering_code: 'redes-informaticas',
+      },
+      business_context: paymentBusinessContext(),
+      business_context_available: true,
+    };
     claimed.policy.allowed_response_types = ['commercial_reply', 'clarification'];
     claimed.context.batch_messages[0].content = 'Confirmo pago único de 360 dólares';
     actionSpies.claim.mockResolvedValue(claimed);
@@ -538,7 +772,11 @@ describe('processInboundTurn hot path', () => {
 
     expect(decision).toMatchObject({
       kind: 'reply',
-      business_action: { type: 'send_payment_link', plan_code: 'one_time', offering_sku: null },
+      business_action: {
+        type: 'send_payment_link',
+        plan_code: 'one_time',
+        offering_sku: 'redes-informaticas',
+      },
     });
   });
 
@@ -743,7 +981,7 @@ describe('processInboundTurn — decision provider selection', () => {
     expect(actionSpies.groqDecision).toHaveBeenCalledWith(expect.objectContaining({
       apiKey: 'test-groq-key',
       model: 'openai/gpt-oss-120b',
-      instructions: expect.stringContaining('COMPACT_AGENT_A_V14'),
+      instructions: expect.stringContaining('COMPACT_AGENT_A_V15'),
       signal: expect.any(AbortSignal),
       timeoutMs: expect.any(Number),
     }));

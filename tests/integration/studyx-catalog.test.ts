@@ -10,6 +10,7 @@ afterAll(async () => db?.end());
 
 const WS = 'studyx';
 const SEED_PATH = resolve(__dirname, '../../supabase/seed/studyx.sql');
+const MANUAL_SEED_PATH = resolve(__dirname, '../../supabase/seed/studyx-manual.sql');
 
 // El catálogo es la única fuente sancionada de precio para el agente. El dueño
 // confirmó USD 360 como total y los tres planes viven en workspace.metadata;
@@ -82,6 +83,7 @@ run('catálogo del agente con workspace studyx (production)', () => {
     // so this suite doesn't depend on anyone having seeded by hand.
     const seedSql = readFileSync(SEED_PATH, 'utf8');
     await db!.unsafe(seedSql);
+    await db!.unsafe(readFileSync(MANUAL_SEED_PATH, 'utf8'));
   });
 
   afterEach(() => {
@@ -89,10 +91,10 @@ run('catálogo del agente con workspace studyx (production)', () => {
     else process.env.BUSINESS_WORKSPACE_SLUG = originalSlug;
   });
 
-  it('lista los 14 diplomados', async () => {
+  it('lista los 40 cursos del catálogo oficial activo', async () => {
     process.env.BUSINESS_WORKSPACE_SLUG = WS;
     const res = await catalogList();
-    expect(res.items).toHaveLength(14);
+    expect(res.items).toHaveLength(40);
   });
 
   it('cada item expone el precio cobrable y ninguno filtra el monto de la beca', async () => {
@@ -105,15 +107,15 @@ run('catálogo del agente con workspace studyx (production)', () => {
     }
   });
 
-  it('el detalle de barista mantiene paridad con la lista y expone el precio cobrable', async () => {
+  it('el detalle de maquillaje profesional mantiene paridad con la lista y expone el precio cobrable', async () => {
     process.env.BUSINESS_WORKSPACE_SLUG = WS;
-    const detail = await catalogDetail('barista');
+    const detail = await catalogDetail('maquillaje_profesional');
     expect(detail.status).toBe(200);
     assertChargedPrice(detail.body);
     assertNoBecaLeak(detail.body);
 
     const list = await catalogList();
-    const listItem = list.items.find((item: { sku: string }) => item.sku === 'barista');
+    const listItem = list.items.find((item: { sku: string }) => item.sku === 'maquillaje_profesional');
     expect(listItem).toBeDefined();
     for (const key of Object.keys(listItem)) {
       expect(detail.body[key], `field ${key} must match the list item`).toEqual(listItem[key]);
@@ -130,12 +132,13 @@ run('catálogo del agente con workspace studyx (production)', () => {
     const overflow = DEFAULT_BUSINESS_CONTEXT_LIMITS.maxOfferings + 4;
     const workspace = await db!<{ id: string }[]>`SELECT id FROM workspaces WHERE slug = ${WS}`;
     const seeded = await db!<{ n: number }[]>`
-      SELECT count(*)::int AS n FROM offerings WHERE workspace_id = ${workspace[0].id}`;
+      SELECT count(*)::int AS n FROM offerings
+      WHERE workspace_id = ${workspace[0].id} AND status = 'active'`;
 
     // `code` orders the catalog, so a 'zzz_' prefix guarantees these land past
     // the cap and the 14 real diplomados keep their places.
     const fillerCodes = Array.from(
-      { length: overflow - seeded[0].n },
+      { length: Math.max(4, overflow - seeded[0].n) },
       (_, index) => `zzz_filler_${String(index).padStart(3, '0')}`
     );
     try {

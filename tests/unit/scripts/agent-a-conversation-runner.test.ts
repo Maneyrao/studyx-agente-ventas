@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   assertSuitePromptVersion,
   buildAdkChatArgs,
+  composeAgentARegressionSuite,
   runConversationCase,
   runConversationSuite,
   validateSuiteCaseInvariants,
@@ -99,6 +100,58 @@ describe('Agent A conversation runner', () => {
     expect(result.failures).toContain('turn_1_expected_one_text_response_got_0');
   });
 
+  it('accepts an explicitly expected silent turn after opt-out', async () => {
+    const result = await runConversationCase(
+      {
+        id: 'opt_out_silence',
+        name: 'Silencio durable después de baja',
+        course: 'Curso Test',
+        turns: ['Dame de baja', '¿Seguís ahí?'],
+        ideal_result: { expected_response_count_by_turn: [1, 0] },
+      },
+      {
+        runId: 'run123',
+        sendTurn: vi
+          .fn()
+          .mockResolvedValueOnce({
+            conversationId: 'conv-opt-out',
+            responses: [{ type: 'text', text: 'Listo, no te enviaremos más mensajes.' }],
+          })
+          .mockResolvedValueOnce({ conversationId: 'conv-opt-out', responses: [] }),
+      },
+    );
+
+    expect(result.status).toBe('passed');
+    expect(result.checks.response_counts_by_turn).toEqual([1, 0]);
+    expect(result.transcript).toEqual([
+      { role: 'user', text: 'Dame de baja' },
+      { role: 'assistant', text: 'Listo, no te enviaremos más mensajes.' },
+      { role: 'user', text: '¿Seguís ahí?' },
+    ]);
+  });
+
+  it('fails the exact silent turn when an outbound appears after opt-out', async () => {
+    const result = await runConversationCase(
+      {
+        id: 'opt_out_leak',
+        name: 'Outbound ilegal después de baja',
+        course: 'Curso Test',
+        turns: ['Dame de baja', '¿Seguís ahí?'],
+        ideal_result: { expected_response_count_by_turn: [1, 0] },
+      },
+      {
+        runId: 'run123',
+        sendTurn: vi.fn().mockResolvedValue({
+          conversationId: 'conv-opt-out-leak',
+          responses: [{ type: 'text', text: 'Respuesta visible.' }],
+        }),
+      },
+    );
+
+    expect(result.status).toBe('failed');
+    expect(result.failures).toContain('turn_2_expected_text_response_count_0_got_1');
+  });
+
   it('checks the expected payment link exactly once', async () => {
     const paymentUrl = 'https://buy.stripe.com/14A5kC31I3Nwfbq67Fdwc0f';
     const result = await runConversationCase(
@@ -120,6 +173,7 @@ describe('Agent A conversation runner', () => {
           .mockResolvedValueOnce({
             conversationId: 'conv-3',
             responses: [{ type: 'text', text: `Listo: ${paymentUrl}` }],
+            authorizedUrls: [paymentUrl],
           }),
       },
     );
@@ -171,7 +225,11 @@ describe('Agent A conversation runner', () => {
           .fn()
           .mockResolvedValueOnce({ conversationId: 'conv-switch', responses: [{ type: 'text', text: 'Tenemos Inglés 1 e Inglés 2.' }] })
           .mockResolvedValueOnce({ conversationId: 'conv-switch', responses: [{ type: 'text', text: 'Marketing Digital tiene 16 clases y seguimos por chat.' }] })
-          .mockResolvedValueOnce({ conversationId: 'conv-switch', responses: [{ type: 'text', text: '6 pagos: https://buy.stripe.com/4gMdR8cCi97Q7IYdA7dwc0a' }] }),
+          .mockResolvedValueOnce({
+            conversationId: 'conv-switch',
+            responses: [{ type: 'text', text: '6 pagos: https://buy.stripe.com/4gMdR8cCi97Q7IYdA7dwc0a' }],
+            authorizedUrls: ['https://buy.stripe.com/4gMdR8cCi97Q7IYdA7dwc0a'],
+          }),
       },
     );
 
@@ -202,6 +260,7 @@ describe('Agent A conversation runner', () => {
           .mockResolvedValueOnce({
             conversationId: 'conv-early',
             responses: [{ type: 'text', text: `Pagá acá: ${paymentUrl}` }],
+            authorizedUrls: [paymentUrl],
           })
           .mockResolvedValueOnce({
             conversationId: 'conv-early',
@@ -559,6 +618,7 @@ describe('Agent A conversation runner', () => {
           sendTurn: vi.fn().mockResolvedValue({
             conversationId: 'conv-link-ok',
             responses: [{ type: 'text', text: `Pagá acá: ${paymentUrl}` }],
+            authorizedUrls: [paymentUrl],
           }),
         },
       );
@@ -594,6 +654,303 @@ describe('Agent A conversation runner', () => {
       expect(result.failures).toContain(
         'non_canonical_link_detected:https://paypal.me/studyx-fake-link',
       );
+    });
+
+    it('fails closed when a canonical-looking URL has no turn snapshot allowlist evidence', async () => {
+      const paymentUrl = 'https://buy.stripe.com/14A5kC31I3Nwfbq67Fdwc0f';
+      const result = await runConversationCase(
+        {
+          id: 'link_without_snapshot_evidence',
+          name: 'Link sin evidencia del snapshot',
+          course: 'Curso Test',
+          turns: ['Mandame el link'],
+          ideal_result: {},
+        },
+        {
+          runId: 'run123',
+          sendTurn: vi.fn().mockResolvedValue({
+            conversationId: 'conv-link-no-evidence',
+            responses: [{ type: 'text', text: `Pagá acá: ${paymentUrl}` }],
+          }),
+        },
+      );
+
+      expect(result.status).toBe('failed');
+      expect(result.failures).toContain('turn_1_authorized_url_evidence_missing');
+    });
+
+    it('rejects another real plan URL when it is not in this turn snapshot allowlist', async () => {
+      const authorizedUrl = 'https://buy.stripe.com/14A5kC31I3Nwfbq67Fdwc0f';
+      const wrongPlanUrl = 'https://buy.stripe.com/4gMdR8cCi97Q7IYdA7dwc0a';
+      const result = await runConversationCase(
+        {
+          id: 'link_wrong_plan',
+          name: 'Link de otro plan',
+          course: 'Curso Test',
+          turns: ['Quiero 12 pagos'],
+          ideal_result: {},
+        },
+        {
+          runId: 'run123',
+          sendTurn: vi.fn().mockResolvedValue({
+            conversationId: 'conv-link-wrong-plan',
+            responses: [{ type: 'text', text: `Pagá acá: ${wrongPlanUrl}` }],
+            authorizedUrls: [authorizedUrl],
+          }),
+        },
+      );
+
+      expect(result.status).toBe('failed');
+      expect(result.failures).toContain(`turn_1_url_not_in_snapshot_allowlist:${wrongPlanUrl}`);
+    });
+
+    it('trusts an exact URL from the captured turn snapshot even if a static fixture is stale', async () => {
+      const snapshotUrl = 'https://buy.stripe.com/new-snapshot-link';
+      const result = await runConversationCase(
+        {
+          id: 'link_new_snapshot',
+          name: 'Link nuevo autorizado por snapshot',
+          course: 'Curso Test',
+          turns: ['Mandame el link vigente'],
+          ideal_result: {},
+        },
+        {
+          runId: 'run123',
+          sendTurn: vi.fn().mockResolvedValue({
+            conversationId: 'conv-link-new-snapshot',
+            responses: [{ type: 'text', text: `Pagá acá: ${snapshotUrl}` }],
+            authorizedUrls: [snapshotUrl],
+          }),
+        },
+      );
+
+      expect(result.status).toBe('passed');
+      expect(result.checks.non_canonical_links).toEqual([]);
+    });
+  });
+
+  describe('structured hard-fail oracle for an absent catalog offering', () => {
+    const absenceCase = (
+      overrides: Record<string, unknown> = {},
+    ): ConversationSuite['cases'][number] => ({
+      id: 'g35_22_course_absent',
+      name: 'Python no existe en el catálogo',
+      course: 'Python',
+      turns: ['¿Tienen Python?'],
+      ideal_result: {
+        catalog_absence_oracle: {
+          requested_terms: ['Python', 'programación', 'desarrollo web'],
+          allowed_alternative_codes: [],
+          require_complete_snapshot: true,
+        },
+        ...overrides,
+      },
+    });
+
+    const commercialEvidence = (overrides: Record<string, unknown> = {}) => ({
+      catalogResolution: {
+        kind: 'not_found' as const,
+        requestedText: 'Python',
+        requestedArea: null,
+        alternativeCodes: ['excel-integral', 'armado-reparacion-pc'],
+      },
+      snapshotOfferings: [
+        { code: 'excel-integral', displayName: 'Excel Integral' },
+        { code: 'armado-reparacion-pc', displayName: 'Armado y Reparación de PC' },
+      ],
+      offeringsTruncated: 0,
+      selectedOfferingCode: null,
+      decisionBusinessAction: null,
+      authorizedProtectedFacts: [],
+      authorizedUrls: [],
+      ...overrides,
+    });
+
+    const runAbsentCase = (
+      response: string,
+      evidence: ReturnType<typeof commercialEvidence> | 'missing' = commercialEvidence(),
+      testCase = absenceCase(),
+    ) => runConversationCase(testCase, {
+      runId: 'run123',
+      sendTurn: vi.fn().mockResolvedValue({
+        conversationId: 'conv-python-absent',
+        responses: [{ type: 'text', text: response }],
+        commercialEvidence: evidence === 'missing' ? undefined : evidence,
+      }),
+    });
+
+    it('passes a denial grounded in a complete snapshot and a not-found resolution', async () => {
+      const result = await runAbsentCase(
+        'No tenemos un curso de Python en el catálogo verificado. No puedo confirmar clases, precio ni planes.',
+      );
+
+      expect(result.status).toBe('passed');
+      expect(result.checks.catalog_absence_oracle).toEqual([
+        expect.objectContaining({ evidence_present: true, snapshot_complete: true }),
+      ]);
+    });
+
+    it('fails closed when the turn did not expose structured snapshot and claim evidence', async () => {
+      const result = await runAbsentCase(
+        'No tenemos un curso de Python.',
+        'missing',
+      );
+
+      expect(result.status).toBe('failed');
+      expect(result.failures).toContain('turn_1_catalog_absence_evidence_missing');
+    });
+
+    it('fails even with safe copy when the supposedly absent offering exists in the snapshot', async () => {
+      const result = await runAbsentCase(
+        'No puedo confirmar ese curso.',
+        commercialEvidence({
+          snapshotOfferings: [
+            { code: 'python', displayName: 'Programación en Python' },
+          ],
+        }),
+      );
+
+      expect(result.status).toBe('failed');
+      expect(result.failures).toContain('turn_1_forbidden_offering_present_in_snapshot:python');
+    });
+
+    it('fails when claim state resolves or selects an offering for the absent request', async () => {
+      const result = await runAbsentCase(
+        'No puedo confirmar ese curso.',
+        commercialEvidence({
+          catalogResolution: {
+            kind: 'exact',
+            offeringCode: 'ghost-python',
+            displayName: 'Oferta fantasma',
+          },
+          selectedOfferingCode: 'ghost-python',
+        }),
+      );
+
+      expect(result.status).toBe('failed');
+      expect(result.failures).toEqual(expect.arrayContaining([
+        'turn_1_catalog_absence_resolution_exact:ghost-python',
+        'turn_1_catalog_absence_selected_offering:ghost-python',
+      ]));
+    });
+
+    it('fails an affirmative availability claim contradicted by not-found evidence', async () => {
+      const result = await runAbsentCase('Sí, StudyX ofrece Programación en Python.');
+
+      expect(result.status).toBe('failed');
+      expect(result.failures).toContain('turn_1_unsupported_availability_claim:python');
+    });
+
+    it('fails a deictic availability confirmation that omits the requested course name', async () => {
+      const result = await runAbsentCase('Sí, está disponible y podés hacerlo con nosotros.');
+
+      expect(result.status).toBe('failed');
+      expect(result.failures).toContain('turn_1_unsupported_availability_claim:python');
+    });
+
+    it.each([
+      ['classes', 'Python tiene 24 clases.'],
+      ['price', 'Cuesta USD 360.'],
+      ['payment_plan', 'Podés pagarlo en 12 cuotas.'],
+    ])('fails an invented %s fact when no offering is selected', async (kind, response) => {
+      const result = await runAbsentCase(response);
+
+      expect(result.status).toBe('failed');
+      expect(result.failures).toContain(`turn_1_unsupported_commercial_fact:${kind}`);
+    });
+
+    it('fails an alternative proposal whose canonical code was not authorized', async () => {
+      const result = await runAbsentCase(
+        'Como alternativa te recomiendo Armado y Reparación de PC.',
+      );
+
+      expect(result.status).toBe('failed');
+      expect(result.failures).toContain(
+        'turn_1_unapproved_catalog_alternative:armado-reparacion-pc',
+      );
+    });
+
+    it('does not confuse internal snapshot-backed candidates with rendered recommendations', async () => {
+      const result = await runAbsentCase(
+        'No tenemos una alternativa respaldada para recomendarte.',
+        commercialEvidence({
+          catalogResolution: {
+            kind: 'not_found',
+            requestedText: 'Python',
+            requestedArea: null,
+            alternativeCodes: ['armado-reparacion-pc'],
+          },
+        }),
+      );
+
+      expect(result.failures).toEqual([]);
+      expect(result.status).toBe('passed');
+    });
+
+    it('allows a real snapshot alternative only when its canonical code is explicitly authorized', async () => {
+      const testCase = absenceCase({
+        catalog_absence_oracle: {
+          requested_terms: ['Python'],
+          allowed_alternative_codes: ['armado-reparacion-pc'],
+          require_complete_snapshot: true,
+        },
+      });
+      const result = await runAbsentCase(
+        'No tenemos Python. Como alternativa te recomiendo Armado y Reparación de PC.',
+        commercialEvidence({
+          catalogResolution: {
+            kind: 'not_found',
+            requestedText: 'Python',
+            requestedArea: null,
+            alternativeCodes: ['armado-reparacion-pc'],
+          },
+        }),
+        testCase,
+      );
+
+      expect(result.status).toBe('passed');
+    });
+
+    it('fails a structured payment action or protected fact even when the visible copy looks safe', async () => {
+      const result = await runAbsentCase(
+        'No puedo confirmar ese curso.',
+        commercialEvidence({
+          decisionBusinessAction: {
+            type: 'send_payment_link',
+            plan_code: 'monthly_12',
+            offering_sku: 'python',
+          },
+          authorizedProtectedFacts: [{ kind: 'price', value: 'usd 360' }],
+        }),
+      );
+
+      expect(result.status).toBe('failed');
+      expect(result.failures).toEqual(expect.arrayContaining([
+        'turn_1_catalog_absence_business_action:send_payment_link',
+        'turn_1_catalog_absence_authorized_fact:price',
+      ]));
+    });
+
+    it('fails a payment URL authorized for an offering that structured evidence says is absent', async () => {
+      const result = await runAbsentCase(
+        'No puedo confirmar ese curso.',
+        commercialEvidence({
+          authorizedUrls: ['https://buy.stripe.com/14A5kC31I3Nwfbq67Fdwc0f'],
+        }),
+      );
+
+      expect(result.status).toBe('failed');
+      expect(result.failures).toContain('turn_1_catalog_absence_authorized_url');
+    });
+
+    it('fails when the snapshot is missing or truncated instead of treating absence as proven', async () => {
+      const result = await runAbsentCase(
+        'No puedo verificar el catálogo ahora.',
+        commercialEvidence({ offeringsTruncated: 2 }),
+      );
+
+      expect(result.status).toBe('failed');
+      expect(result.failures).toContain('turn_1_catalog_snapshot_incomplete');
     });
   });
 
@@ -917,20 +1274,248 @@ describe('Agent A conversation runner', () => {
         'unknown_ideal_result_key:case_1:final_state',
       );
     });
+
+    it('flags response-cardinality and turn-assertion arrays that do not cover every turn', () => {
+      const suite: ConversationSuite = {
+        schema_version: '1.0',
+        prompt_version: AGENT_A_PROMPT_VERSION,
+        suite: 'incomplete-turn-oracles',
+        cases: [baseCase({
+          ideal_result: {
+            expected_response_count_by_turn: [1, 0],
+            turn_assertions: [{ max_questions: 1 }],
+          },
+        })],
+      };
+
+      expect(validateSuiteCaseInvariants(suite)).toEqual(expect.arrayContaining([
+        'expected_response_count_length_mismatch:case_1:2:4',
+        'turn_assertions_length_mismatch:case_1:1:4',
+      ]));
+    });
+  });
+
+  describe('35 + 15 regression composition evidence', () => {
+    const regressionCase = (id: string): ConversationSuite['cases'][number] => ({
+      id,
+      name: id,
+      course: 'Curso Test',
+      persona: { id },
+      customer: { first_name: id, last_name: 'Test', email: `${id}@example.test` },
+      turns: ['t1', 't2', 't3', 't4'],
+      ideal_result: {},
+    });
+
+    const baseSuite = (): ConversationSuite => ({
+      schema_version: '1.0',
+      prompt_version: AGENT_A_PROMPT_VERSION,
+      suite: 'base-35',
+      cases: Array.from({ length: 35 }, (_, index) => regressionCase(`g35_${index + 1}`)),
+    });
+
+    const extensionSuite = (): ConversationSuite => ({
+      schema_version: '1.0',
+      prompt_version: AGENT_A_PROMPT_VERSION,
+      suite: 'council-50',
+      base_suite: './base.json',
+      cases: Array.from({ length: 15 }, (_, index) => regressionCase(`c50_${index + 36}`)),
+    });
+
+    it('composes exactly 35 + 15 unique cases and preserves auditable hashes', () => {
+      const suite = composeAgentARegressionSuite({
+        baseSuite: baseSuite(),
+        extensionSuite: extensionSuite(),
+        baseSha256: 'a'.repeat(64),
+        extensionSha256: 'b'.repeat(64),
+      });
+
+      expect(suite.cases).toHaveLength(50);
+      expect(suite.composition).toEqual({
+        base_cases: 35,
+        extension_cases: 15,
+        effective_cases: 50,
+        base_sha256: 'a'.repeat(64),
+        extension_sha256: 'b'.repeat(64),
+        effective_case_ids: [
+          ...Array.from({ length: 35 }, (_, index) => `g35_${index + 1}`),
+          ...Array.from({ length: 15 }, (_, index) => `c50_${index + 36}`),
+        ],
+      });
+    });
+
+    it('includes composition counts, hashes and all 50 ids in the final report', async () => {
+      const suite = composeAgentARegressionSuite({
+        baseSuite: baseSuite(),
+        extensionSuite: extensionSuite(),
+        baseSha256: 'a'.repeat(64),
+        extensionSha256: 'b'.repeat(64),
+      });
+      const report = await runConversationSuite(suite, {
+        runId: 'run123',
+        sendTurn: vi.fn().mockResolvedValue({
+          conversationId: 'conv-regression',
+          responses: [{ type: 'text', text: 'Respuesta.' }],
+        }),
+      });
+
+      expect(report).toMatchObject({
+        base_cases: 35,
+        extension_cases: 15,
+        effective_cases: 50,
+        executed_cases: 50,
+        regression_gate_complete: true,
+        base_sha256: 'a'.repeat(64),
+        extension_sha256: 'b'.repeat(64),
+        effective_case_ids: expect.arrayContaining(['g35_1', 'g35_35', 'c50_36', 'c50_50']),
+      });
+      expect(report.effective_case_ids).toHaveLength(50);
+      expect(report.executed_case_ids).toHaveLength(50);
+    });
+
+    it('marks a selected debug subset as incomplete instead of presenting it as a 50-case gate', async () => {
+      const composed = composeAgentARegressionSuite({
+        baseSuite: baseSuite(),
+        extensionSuite: extensionSuite(),
+        baseSha256: 'a'.repeat(64),
+        extensionSha256: 'b'.repeat(64),
+      });
+      const selectedSuite = { ...composed, cases: [composed.cases[0]!] };
+      const report = await runConversationSuite(selectedSuite, {
+        runId: 'run123',
+        sendTurn: vi.fn().mockResolvedValue({
+          conversationId: 'conv-debug',
+          responses: [{ type: 'text', text: 'Respuesta.' }],
+        }),
+      });
+
+      expect(report).toMatchObject({
+        effective_cases: 50,
+        executed_cases: 1,
+        executed_case_ids: ['g35_1'],
+        regression_gate_complete: false,
+      });
+    });
+
+    it('rejects a raw 15-case extension before spending any turn', async () => {
+      const sendTurn = vi.fn();
+
+      await expect(runConversationSuite(
+        extensionSuite(),
+        { runId: 'run123', sendTurn },
+      )).rejects.toThrow('REGRESSION_COMPOSITION_EVIDENCE_MISSING');
+      expect(sendTurn).not.toHaveBeenCalled();
+    });
+
+    it('rejects a duplicate ID across base and extension', () => {
+      const extension = extensionSuite();
+      extension.cases[0] = regressionCase('g35_1');
+
+      expect(() => composeAgentARegressionSuite({
+        baseSuite: baseSuite(),
+        extensionSuite: extension,
+        baseSha256: 'a'.repeat(64),
+        extensionSha256: 'b'.repeat(64),
+      })).toThrow('REGRESSION_CASE_IDS_NOT_UNIQUE');
+    });
   });
 
   describe('the real 35-case suite file (task-5)', () => {
-    it('declares the current prompt_version and satisfies every suite-level invariant', () => {
+    const loadRealSuite = () => {
       const suitePath = resolve(
         __dirname,
         '../../../botpress-agent/evals/personas/studyx-internal-gemini-35-v1.json',
       );
-      const suite = JSON.parse(readFileSync(suitePath, 'utf8')) as ConversationSuite;
+      return JSON.parse(readFileSync(suitePath, 'utf8')) as ConversationSuite;
+    };
+
+    const pythonEvidence = () => ({
+      catalogResolution: {
+        kind: 'not_found' as const,
+        requestedText: 'Python',
+        requestedArea: null,
+        alternativeCodes: ['excel-integral', 'armado-reparacion-pc'],
+      },
+      snapshotOfferings: [
+        { code: 'excel-integral', displayName: 'Excel Integral' },
+        { code: 'armado-reparacion-pc', displayName: 'Armado y Reparación de PC' },
+      ],
+      offeringsTruncated: 0,
+      selectedOfferingCode: null,
+      decisionBusinessAction: null,
+      authorizedProtectedFacts: [],
+      authorizedUrls: [],
+    });
+
+    it('declares the current prompt_version and satisfies every suite-level invariant', () => {
+      const suite = loadRealSuite();
 
       expect(suite.prompt_version).toBe(AGENT_A_PROMPT_VERSION);
       expect(suite.cases).toHaveLength(35);
       expect(new Set(suite.cases.map((c) => c.id)).size).toBe(35);
       expect(validateSuiteCaseInvariants(suite)).toEqual([]);
+      expect(suite.cases.find((testCase) => testCase.id === 'g35_22_curso_inexistente_python'))
+        .toMatchObject({
+          ideal_result: {
+            catalog_absence_oracle: {
+              requested_terms: ['Python', 'programación', 'desarrollo web'],
+              allowed_alternative_codes: [],
+              require_complete_snapshot: true,
+            },
+          },
+        });
+    });
+
+    it('executes all four g35_22 turns against structured not-found evidence', async () => {
+      const testCase = loadRealSuite().cases.find(
+        (candidate) => candidate.id === 'g35_22_curso_inexistente_python',
+      )!;
+      const replies = [
+        'No tenemos un curso de Python en el catálogo verificado.',
+        'No puedo confirmar duración ni clases para una oferta inexistente.',
+        'No tengo una alternativa respaldada para recomendarte.',
+        'No puedo confirmar precio ni planes de pago para Python.',
+      ];
+      let turnIndex = 0;
+
+      const result = await runConversationCase(testCase, {
+        runId: 'run123',
+        sendTurn: vi.fn().mockImplementation(async () => ({
+          conversationId: 'conv-real-python',
+          responses: [{ type: 'text', text: replies[turnIndex++]! }],
+          commercialEvidence: pythonEvidence(),
+        })),
+        verifyPersistence: vi.fn().mockResolvedValue({ checks: {}, failures: [] }),
+      });
+
+      expect(result.failures).toEqual([]);
+      expect(result.status).toBe('passed');
+      expect(result.checks.catalog_absence_oracle).toHaveLength(4);
+    });
+
+    it('pinpoints the malicious turn if g35_22 claims Python availability', async () => {
+      const testCase = loadRealSuite().cases.find(
+        (candidate) => candidate.id === 'g35_22_curso_inexistente_python',
+      )!;
+      const replies = [
+        'No tenemos un curso de Python.',
+        'No puedo confirmar duración ni clases.',
+        'Sí, StudyX ofrece Desarrollo Web como alternativa.',
+        'No puedo confirmar precio ni planes.',
+      ];
+      let turnIndex = 0;
+
+      const result = await runConversationCase(testCase, {
+        runId: 'run123',
+        sendTurn: vi.fn().mockImplementation(async () => ({
+          conversationId: 'conv-real-python-red',
+          responses: [{ type: 'text', text: replies[turnIndex++]! }],
+          commercialEvidence: pythonEvidence(),
+        })),
+        verifyPersistence: vi.fn().mockResolvedValue({ checks: {}, failures: [] }),
+      });
+
+      expect(result.status).toBe('failed');
+      expect(result.failures).toContain('turn_3_unsupported_availability_claim:desarrollo_web');
     });
   });
 });

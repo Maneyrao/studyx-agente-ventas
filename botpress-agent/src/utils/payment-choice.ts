@@ -45,12 +45,20 @@ const PLAN_PATTERNS: ReadonlyArray<{ readonly code: PaymentPlanCode; readonly pa
   },
 ]
 
+const PAYMENT_DEFERRAL_PATTERNS: readonly RegExp[] = [
+  /\bno\s+me\s+(?:mandes|envies|pases|compartas)\s+(?:el\s+)?link\b/,
+  /\b(?:todavia\s+no|despues|mas\s+adelante|por\s+ahora\s+no)\b/,
+  /\b(?:solo|solamente)\s+(?:consultaba|preguntaba|averiguaba)\b/,
+  /\bsi\s+(?:comprara|me\s+anotara|me\s+inscribiera|eligiera)\b/,
+]
+
 export function derivePaymentChoiceFromBatch(
   messages: readonly PolicyBatchMessage[]
 ): PaymentPlanCode | null {
   const matched = new Set<PaymentPlanCode>()
   for (const message of messages) {
     const normalized = normalize(message.content ?? '')
+    if (PAYMENT_DEFERRAL_PATTERNS.some((pattern) => pattern.test(normalized))) return null
     for (const { code, pattern } of PLAN_PATTERNS) {
       if (pattern.test(normalized)) matched.add(code)
     }

@@ -1,8 +1,56 @@
 import { AGENT_A_PROMPT_VERSION } from '../../botpress-agent/src/prompts/agent-a-sales-bridge';
 
+export type AgentCatalogResolutionEvidence =
+  | { readonly kind: 'no_catalog_intent' }
+  | {
+      readonly kind: 'exact';
+      readonly offeringCode: string;
+      readonly displayName: string;
+    }
+  | {
+      readonly kind: 'ambiguous';
+      readonly requestedText: string;
+      readonly candidateCodes: readonly string[];
+    }
+  | {
+      readonly kind: 'not_found';
+      readonly requestedText: string;
+      readonly requestedArea: string | null;
+      readonly alternativeCodes: readonly string[];
+    }
+  | {
+      readonly kind: 'unavailable';
+      readonly reason: 'snapshot_missing' | 'snapshot_truncated' | 'snapshot_invalid';
+    };
+
+/** Plain evidence DTO emitted by the local transport boundary. The oracle
+ * remains independent from Botpress, PostgreSQL and the HTTP wire schema. */
+export type AgentCommercialEvidence = {
+  readonly catalogResolution: AgentCatalogResolutionEvidence;
+  readonly snapshotOfferings: readonly {
+    readonly code: string;
+    readonly displayName: string;
+  }[];
+  /** Null means that the authoritative snapshot was unavailable. */
+  readonly offeringsTruncated: number | null;
+  readonly selectedOfferingCode: string | null;
+  readonly decisionBusinessAction: ({ readonly type: string } & Record<string, unknown>) | null;
+  readonly authorizedProtectedFacts: readonly {
+    readonly kind: string;
+    readonly value: string;
+  }[];
+  readonly authorizedUrls: readonly string[];
+};
+
 export type AgentChatResult = {
   conversationId: string;
   responses: Array<{ type: string; text?: string }>;
+  /** Exact URL allowlist issued from the authoritative snapshot for this
+   * turn. Required whenever a visible response contains a URL. */
+  authorizedUrls?: readonly string[];
+  /** Structured claim/snapshot/action evidence used by hard-fail commercial
+   * oracles. It is never derived from the assistant prose. */
+  commercialEvidence?: AgentCommercialEvidence;
   /** Delay inserted only by the evaluator to respect shared provider quota. */
   evaluationPacingMs?: number;
 };
@@ -15,6 +63,15 @@ export type TurnQualityAssertion = {
   /** At least one semantically acceptable phrase must be present. */
   must_include_any?: string[];
   must_not_include?: string[];
+};
+
+export type CatalogAbsenceOracle = {
+  /** Offering families that this case proves are absent. */
+  requested_terms: string[];
+  /** Snapshot codes that may be proposed as alternatives in this case. */
+  allowed_alternative_codes: string[];
+  /** A missing or truncated snapshot invalidates the case instead of proving absence. */
+  require_complete_snapshot: boolean;
 };
 
 export type ConversationCase = {
@@ -59,6 +116,12 @@ export type ConversationCase = {
     /** Objective copy constraints evaluated against each assistant turn, not
      * against the aggregated transcript. Array index 0 corresponds to turn 1. */
     turn_assertions?: TurnQualityAssertion[];
+    /** Visible text cardinality for each inbound turn. The default is one;
+     * explicit zeroes model durable silence after opt-out. */
+    expected_response_count_by_turn?: Array<0 | 1>;
+    /** Hard-fail oracle for a requested offering that must not exist in the
+     * authoritative snapshot. */
+    catalog_absence_oracle?: CatalogAbsenceOracle;
     /** End-to-end wall-clock budget for every visible turn. */
     max_turn_latency_ms?: number;
     /** Case-wide median latency budget, useful for detecting systematic drag. */
@@ -111,8 +174,92 @@ export type ConversationSuite = {
   /** Optional relative path used by the file runner to extend a reviewed base
    * suite without duplicating hundreds of fixture lines. */
   base_suite?: string;
+  composition?: {
+    base_cases: number;
+    extension_cases: number;
+    effective_cases: number;
+    base_sha256: string;
+    extension_sha256: string;
+    effective_case_ids: string[];
+  };
   cases: ConversationCase[];
 };
+
+const REGRESSION_BASE_CASES = 35;
+const REGRESSION_EXTENSION_CASES = 15;
+const REGRESSION_EFFECTIVE_CASES = 50;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
+
+/**
+ * Composes the reviewed 35-case base and 15-case extension without losing
+ * the evidence needed to distinguish a real 50-case gate from a raw 15-case
+ * execution. File IO stays at the CLI boundary; this pure function receives
+ * the hashes computed from the exact source bytes that were parsed.
+ */
+export function composeAgentARegressionSuite(input: {
+  baseSuite: ConversationSuite;
+  extensionSuite: ConversationSuite;
+  baseSha256: string;
+  extensionSha256: string;
+}): ConversationSuite {
+  if (input.baseSuite.base_suite) throw new Error('NESTED_BASE_SUITE_NOT_SUPPORTED');
+  if (!input.extensionSuite.base_suite) throw new Error('REGRESSION_BASE_SUITE_REFERENCE_MISSING');
+  if (input.baseSuite.prompt_version !== input.extensionSuite.prompt_version) {
+    throw new Error('BASE_SUITE_PROMPT_VERSION_MISMATCH');
+  }
+  if (input.baseSuite.cases.length !== REGRESSION_BASE_CASES) {
+    throw new Error(`REGRESSION_BASE_CASE_COUNT_${input.baseSuite.cases.length}`);
+  }
+  if (input.extensionSuite.cases.length !== REGRESSION_EXTENSION_CASES) {
+    throw new Error(`REGRESSION_EXTENSION_CASE_COUNT_${input.extensionSuite.cases.length}`);
+  }
+  if (!SHA256_PATTERN.test(input.baseSha256) || !SHA256_PATTERN.test(input.extensionSha256)) {
+    throw new Error('REGRESSION_SOURCE_HASH_INVALID');
+  }
+
+  const cases = [...input.baseSuite.cases, ...input.extensionSuite.cases];
+  const effectiveCaseIds = cases.map((testCase) => testCase.id);
+  if (
+    cases.length !== REGRESSION_EFFECTIVE_CASES
+    || new Set(effectiveCaseIds).size !== REGRESSION_EFFECTIVE_CASES
+  ) {
+    throw new Error('REGRESSION_CASE_IDS_NOT_UNIQUE');
+  }
+
+  return {
+    ...input.extensionSuite,
+    cases,
+    composition: {
+      base_cases: REGRESSION_BASE_CASES,
+      extension_cases: REGRESSION_EXTENSION_CASES,
+      effective_cases: REGRESSION_EFFECTIVE_CASES,
+      base_sha256: input.baseSha256,
+      extension_sha256: input.extensionSha256,
+      effective_case_ids: effectiveCaseIds,
+    },
+  };
+}
+
+function assertRegressionCompositionEvidence(suite: ConversationSuite): void {
+  if (!suite.base_suite) return;
+  const composition = suite.composition;
+  if (!composition) throw new Error('REGRESSION_COMPOSITION_EVIDENCE_MISSING');
+  if (
+    composition.base_cases !== REGRESSION_BASE_CASES
+    || composition.extension_cases !== REGRESSION_EXTENSION_CASES
+    || composition.effective_cases !== REGRESSION_EFFECTIVE_CASES
+    || composition.effective_case_ids.length !== REGRESSION_EFFECTIVE_CASES
+    || new Set(composition.effective_case_ids).size !== REGRESSION_EFFECTIVE_CASES
+    || !SHA256_PATTERN.test(composition.base_sha256)
+    || !SHA256_PATTERN.test(composition.extension_sha256)
+  ) {
+    throw new Error('REGRESSION_COMPOSITION_EVIDENCE_INVALID');
+  }
+  const effectiveIds = new Set(composition.effective_case_ids);
+  if (suite.cases.some((testCase) => !effectiveIds.has(testCase.id))) {
+    throw new Error('REGRESSION_SELECTED_CASE_OUTSIDE_COMPOSITION');
+  }
+}
 
 const PAYMENT_URLS = {
   monthly_12: 'https://buy.stripe.com/14A5kC31I3Nwfbq67Fdwc0f',
@@ -120,12 +267,10 @@ const PAYMENT_URLS = {
   one_time: 'https://buy.stripe.com/9B64gy7hYesaaVa1Rpdwc0j',
 } as const;
 
-/** The only link domain the pipeline is ever allowed to send: the Stripe
- * checkout links configured in business_snapshot.workspace.payment_options.
- * Every other URL is by definition something the model authored itself,
- * which HARD_COMMERCIAL_RULES forbids outright. */
+/** URLs are extracted lexically and then compared byte-for-byte against the
+ * allowlist captured for their own turn. Static payment fixtures are used
+ * only by legacy plan assertions; they are not an authorization boundary. */
 const CANONICAL_PAYMENT_LINK_PREFIX = 'https://buy.stripe.com/';
-const CANONICAL_PAYMENT_LINKS = new Set(Object.values(PAYMENT_URLS));
 const URL_PATTERN = /https?:\/\/[^\s)\]"'<>]+/giu;
 
 /** Distinguishes an active PROPOSAL to call the customer from an incidental
@@ -205,6 +350,176 @@ function countOccurrences(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
 }
 
+function normalizeOracleText(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLocaleLowerCase('es')
+    .replace(/\s+/gu, ' ')
+    .trim();
+}
+
+const ABSENCE_CLAUSE_PATTERN =
+  /\b(?:no\s+(?:tenemos|tiene|ofrecemos|ofrece|dictamos|dicta|contamos|figura|aparece|esta\s+disponible)|no\s+(?:esta|aparece|figura)\s+en\s+(?:el\s+)?catalogo|no\s+(?:puedo|podemos)\s+(?:confirmar|verificar))\b/u;
+const AVAILABILITY_CLAIM_PATTERN =
+  /\b(?:(?:studyx\s+)?(?:tiene|tenemos|ofrece|ofrecemos|dicta|dictamos|cuenta\s+con|contamos\s+con)|(?:esta|se\s+encuentra)\s+disponible|podes\s+(?:estudiar|hacer|cursar|inscribirte))\b/u;
+const DEICTIC_AVAILABILITY_PATTERN =
+  /\b(?:si|claro|correcto)\b[^.!?;\n]{0,80}\b(?:(?:lo|ese\s+curso)\s+(?:tenemos|ofrecemos|dictamos)|(?:esta|se\s+encuentra)\s+disponible|(?:tenemos|ofrecemos|dictamos))\b/u;
+const COMMERCIAL_FACT_PATTERNS = [
+  ['classes', /\b\d+(?:[.,]\d+)?\s*(?:clases?|modulos?)\b/u],
+  [
+    'price',
+    /(?:\b(?:usd|ars|eur)\b|[$€])\s*\d|\b\d+(?:[.,]\d+)?\s*(?:dolares?|pesos?|euros?|usd|ars|eur)\b|\b(?:cuesta|sale|vale|precio\s+(?:es|de))\s*(?:\$|usd|ars|eur)?\s*\d+/u,
+  ],
+  [
+    'payment_plan',
+    /\b\d+\s*(?:cuotas?|pagos?)\b|\b(?:plan|pago)\s+(?:mensual|unico|de\s+contado|en\s+cuotas)\b/u,
+  ],
+] as const;
+const ALTERNATIVE_PROPOSAL_PATTERN =
+  /\b(?:alternativa|recomiendo|te\s+(?:puedo\s+)?ofrecer|te\s+puede\s+servir|lo\s+mas\s+parecido|podes\s+ver|tenemos|ofrecemos)\b/u;
+
+type CatalogAbsenceTurnCheck = {
+  evidence_present: boolean;
+  snapshot_complete: boolean;
+  catalog_resolution: string | null;
+  selected_offering_code: string | null;
+  approved_alternative_codes: string[];
+};
+
+function evaluateCatalogAbsenceTurn(input: {
+  oracle: CatalogAbsenceOracle;
+  evidence: AgentCommercialEvidence | undefined;
+  reply: string;
+  turnNumber: number;
+}): { check: CatalogAbsenceTurnCheck; failures: string[] } {
+  const { oracle, evidence, reply, turnNumber } = input;
+  const failures: string[] = [];
+  const prefix = `turn_${turnNumber}`;
+  if (!evidence) {
+    return {
+      check: {
+        evidence_present: false,
+        snapshot_complete: false,
+        catalog_resolution: null,
+        selected_offering_code: null,
+        approved_alternative_codes: [],
+      },
+      failures: [`${prefix}_catalog_absence_evidence_missing`],
+    };
+  }
+
+  const snapshotComplete = evidence.offeringsTruncated === 0
+    && evidence.snapshotOfferings.length > 0;
+  if (oracle.require_complete_snapshot && !snapshotComplete) {
+    failures.push(`${prefix}_catalog_snapshot_incomplete`);
+  }
+
+  const normalizedTerms = oracle.requested_terms.map((term) => ({
+    source: normalizeOracleText(term),
+    failureLabel: normalizeOracleText(term).replace(/\s+/gu, '_'),
+  }));
+  for (const offering of evidence.snapshotOfferings) {
+    const searchable = normalizeOracleText(`${offering.code} ${offering.displayName}`);
+    const forbiddenTerm = normalizedTerms.find((term) => searchable.includes(term.source));
+    if (forbiddenTerm) {
+      failures.push(`${prefix}_forbidden_offering_present_in_snapshot:${forbiddenTerm.failureLabel}`);
+      break;
+    }
+  }
+
+  const resolution = evidence.catalogResolution;
+  if (resolution.kind === 'exact') {
+    failures.push(`${prefix}_catalog_absence_resolution_exact:${resolution.offeringCode}`);
+  } else if (resolution.kind === 'ambiguous') {
+    failures.push(`${prefix}_catalog_absence_resolution_ambiguous`);
+  }
+  if (evidence.selectedOfferingCode) {
+    failures.push(`${prefix}_catalog_absence_selected_offering:${evidence.selectedOfferingCode}`);
+  }
+  if (evidence.decisionBusinessAction) {
+    failures.push(`${prefix}_catalog_absence_business_action:${evidence.decisionBusinessAction.type}`);
+  }
+  if (evidence.authorizedUrls.length > 0) {
+    failures.push(`${prefix}_catalog_absence_authorized_url`);
+  }
+  for (const fact of evidence.authorizedProtectedFacts) {
+    failures.push(`${prefix}_catalog_absence_authorized_fact:${fact.kind}`);
+  }
+
+  const snapshotCodes = new Set(evidence.snapshotOfferings.map((offering) => offering.code));
+  const resolutionAlternativeCodes = resolution.kind === 'not_found'
+    ? new Set(resolution.alternativeCodes)
+    : new Set<string>();
+  const manifestAllowedCodes = new Set(oracle.allowed_alternative_codes);
+  for (const code of manifestAllowedCodes) {
+    if (!snapshotCodes.has(code)) failures.push(`${prefix}_oracle_alternative_not_in_snapshot:${code}`);
+  }
+  for (const code of resolutionAlternativeCodes) {
+    if (!snapshotCodes.has(code)) {
+      failures.push(`${prefix}_resolution_alternative_not_in_snapshot:${code}`);
+    }
+  }
+  const approvedAlternativeCodes = [...manifestAllowedCodes].filter(
+    (code) => snapshotCodes.has(code) && resolutionAlternativeCodes.has(code),
+  );
+  const approvedAlternativeSet = new Set(approvedAlternativeCodes);
+
+  const normalizedReply = normalizeOracleText(reply);
+  const clauses = normalizedReply.split(
+    /(?:[.!?;\n]+|\bpero\b|\bsin\s+embargo\b|\baunque\b)/u,
+  );
+  let unsupportedAvailabilityTerm: string | null = null;
+  for (const clause of clauses) {
+    if (!AVAILABILITY_CLAIM_PATTERN.test(clause) || ABSENCE_CLAUSE_PATTERN.test(clause)) continue;
+    const term = normalizedTerms.find((candidate) => clause.includes(candidate.source));
+    if (term) {
+      unsupportedAvailabilityTerm = term.failureLabel;
+      break;
+    }
+  }
+  if (
+    !unsupportedAvailabilityTerm
+    && DEICTIC_AVAILABILITY_PATTERN.test(normalizedReply)
+    && !ABSENCE_CLAUSE_PATTERN.test(normalizedReply)
+  ) {
+    unsupportedAvailabilityTerm = normalizedTerms[0]?.failureLabel ?? 'requested_offering';
+  }
+  if (unsupportedAvailabilityTerm) {
+    failures.push(`${prefix}_unsupported_availability_claim:${unsupportedAvailabilityTerm}`);
+  }
+
+  for (const [kind, pattern] of COMMERCIAL_FACT_PATTERNS) {
+    if (pattern.test(normalizedReply)) {
+      failures.push(`${prefix}_unsupported_commercial_fact:${kind}`);
+    }
+  }
+
+  if (ALTERNATIVE_PROPOSAL_PATTERN.test(normalizedReply)) {
+    for (const offering of evidence.snapshotOfferings) {
+      const normalizedName = normalizeOracleText(offering.displayName);
+      const normalizedCode = normalizeOracleText(offering.code);
+      if (
+        (normalizedReply.includes(normalizedName) || normalizedReply.includes(normalizedCode))
+        && !approvedAlternativeSet.has(offering.code)
+      ) {
+        failures.push(`${prefix}_unapproved_catalog_alternative:${offering.code}`);
+      }
+    }
+  }
+
+  return {
+    check: {
+      evidence_present: true,
+      snapshot_complete: snapshotComplete,
+      catalog_resolution: resolution.kind,
+      selected_offering_code: evidence.selectedOfferingCode,
+      approved_alternative_codes: approvedAlternativeCodes,
+    },
+    failures,
+  };
+}
+
 export async function runConversationCase(
   testCase: ConversationCase,
   options: RunOptions,
@@ -213,6 +528,9 @@ export async function runConversationCase(
   const failures: string[] = [];
   const turnLatenciesMs: number[] = [];
   const assistantRepliesByTurn: string[] = [];
+  const responseCountsByTurn: number[] = [];
+  const authorizedUrlsByTurn: Array<readonly string[] | null> = [];
+  const commercialEvidenceByTurn: Array<AgentCommercialEvidence | undefined> = [];
   let conversationId: string | null = null;
 
   for (const [index, rawTurn] of testCase.turns.entries()) {
@@ -234,12 +552,28 @@ export async function runConversationCase(
           response.type === 'text' && typeof response.text === 'string',
       );
 
-      if (textResponses.length !== 1) {
-        failures.push(
-          `turn_${index + 1}_expected_one_text_response_got_${textResponses.length}`,
-        );
+      const expectedResponseCount =
+        testCase.ideal_result.expected_response_count_by_turn?.[index] ?? 1;
+      responseCountsByTurn[index] = textResponses.length;
+      if (textResponses.length !== expectedResponseCount) {
+        failures.push(expectedResponseCount === 1
+          ? `turn_${index + 1}_expected_one_text_response_got_${textResponses.length}`
+          : `turn_${index + 1}_expected_text_response_count_${expectedResponseCount}_got_${textResponses.length}`);
       }
       assistantRepliesByTurn[index] = textResponses.map((response) => response.text).join('\n');
+      const urls = assistantRepliesByTurn[index]!.match(URL_PATTERN) ?? [];
+      authorizedUrlsByTurn[index] = result.authorizedUrls ? [...result.authorizedUrls] : null;
+      commercialEvidenceByTurn[index] = result.commercialEvidence;
+      if (urls.length > 0 && !result.authorizedUrls) {
+        failures.push(`turn_${index + 1}_authorized_url_evidence_missing`);
+      } else if (result.authorizedUrls) {
+        const authorizedUrls = new Set(result.authorizedUrls);
+        for (const url of urls) {
+          if (!authorizedUrls.has(url)) {
+            failures.push(`turn_${index + 1}_url_not_in_snapshot_allowlist:${url}`);
+          }
+        }
+      }
       for (const response of textResponses) {
         transcript.push({ role: 'assistant', text: response.text });
       }
@@ -262,7 +596,26 @@ export async function runConversationCase(
     .filter((entry) => entry.role === 'assistant')
     .map((entry) => entry.text)
     .join('\n');
-  const checks: Record<string, unknown> = { turn_latencies_ms: turnLatenciesMs };
+  const checks: Record<string, unknown> = {
+    turn_latencies_ms: turnLatenciesMs,
+    response_counts_by_turn: responseCountsByTurn,
+    authorized_urls_by_turn: authorizedUrlsByTurn,
+  };
+
+  if (testCase.ideal_result.catalog_absence_oracle) {
+    const catalogAbsenceChecks: CatalogAbsenceTurnCheck[] = [];
+    for (const [index] of testCase.turns.entries()) {
+      const evaluated = evaluateCatalogAbsenceTurn({
+        oracle: testCase.ideal_result.catalog_absence_oracle,
+        evidence: commercialEvidenceByTurn[index],
+        reply: assistantRepliesByTurn[index] ?? '',
+        turnNumber: index + 1,
+      });
+      catalogAbsenceChecks.push(evaluated.check);
+      failures.push(...evaluated.failures);
+    }
+    checks.catalog_absence_oracle = catalogAbsenceChecks;
+  }
 
   if (testCase.ideal_result.turn_assertions) {
     const turnQuality = testCase.ideal_result.turn_assertions.map((assertion, index) => {
@@ -377,10 +730,8 @@ export async function runConversationCase(
   }
 
   if (testCase.ideal_result.no_payment_link_before_turn) {
-    const earlierReplies = transcript
-      .slice(0, (testCase.ideal_result.no_payment_link_before_turn - 1) * 2)
-      .filter((entry) => entry.role === 'assistant')
-      .map((entry) => entry.text)
+    const earlierReplies = assistantRepliesByTurn
+      .slice(0, testCase.ideal_result.no_payment_link_before_turn - 1)
       .join('\n');
     const earlyLinkCount = countOccurrences(earlierReplies, 'https://buy.stripe.com/');
     checks.payment_links_before_selected_turn = earlyLinkCount;
@@ -388,10 +739,8 @@ export async function runConversationCase(
   }
 
   if (testCase.ideal_result.no_call_after_turn) {
-    const laterReplies = transcript
-      .slice(testCase.ideal_result.no_call_after_turn * 2 - 1)
-      .filter((entry) => entry.role === 'assistant')
-      .map((entry) => entry.text)
+    const laterReplies = assistantRepliesByTurn
+      .slice(testCase.ideal_result.no_call_after_turn - 1)
       .join('\n');
     const callMentioned = /\bllamad[ao]/iu.test(laterReplies);
     checks.call_mentioned_after_decline = callMentioned;
@@ -405,13 +754,13 @@ export async function runConversationCase(
     if (callOffersAfterDecline > 1) failures.push('call_offer_repeated_after_decline');
   }
 
-  // No link outside the canonical Stripe payment-link domain may ever
-  // appear in a reply: the model never authors a URL itself.
+  // A URL is valid only when it exactly matches this turn's captured
+  // snapshot allowlist. Never substitute a static prefix or global fixture.
   {
-    const urls = assistantText.match(URL_PATTERN) ?? [];
-    const nonCanonicalLinks = urls.filter((url) => !CANONICAL_PAYMENT_LINKS.has(
-      url as (typeof PAYMENT_URLS)[keyof typeof PAYMENT_URLS],
-    ));
+    const nonCanonicalLinks = assistantRepliesByTurn.flatMap((reply, index) => {
+      const authorizedUrls = new Set(authorizedUrlsByTurn[index] ?? []);
+      return (reply.match(URL_PATTERN) ?? []).filter((url) => !authorizedUrls.has(url));
+    });
     checks.non_canonical_links = nonCanonicalLinks;
     for (const url of nonCanonicalLinks) {
       failures.push(`non_canonical_link_detected:${url}`);
@@ -504,6 +853,8 @@ const KNOWN_IDEAL_RESULT_KEYS = new Set([
   'sheet_rows',
   'forbidden_persistence_values',
   'turn_assertions',
+  'expected_response_count_by_turn',
+  'catalog_absence_oracle',
   'max_turn_latency_ms',
   'max_median_latency_ms',
 ]);
@@ -520,6 +871,10 @@ export function validateSuiteCaseInvariants(suite: ConversationSuite): string[] 
   const seenIds = new Set<string>();
   const seenEmails = new Set<string>();
   const seenPersonas = new Set<string>();
+
+  if (suite.base_suite && !suite.composition) {
+    violations.push('regression_composition_evidence_missing');
+  }
 
   for (const testCase of suite.cases) {
     for (const key of Object.keys(testCase.ideal_result)) {
@@ -551,6 +906,47 @@ export function validateSuiteCaseInvariants(suite: ConversationSuite): string[] 
     if (testCase.turns.length < MIN_TURNS_PER_CASE || testCase.turns.length > MAX_TURNS_PER_CASE) {
       violations.push(`turn_count_out_of_range:${testCase.id}:${testCase.turns.length}`);
     }
+    const expectedResponseCounts = testCase.ideal_result.expected_response_count_by_turn;
+    if (expectedResponseCounts && expectedResponseCounts.length !== testCase.turns.length) {
+      violations.push(
+        `expected_response_count_length_mismatch:${testCase.id}:` +
+          `${expectedResponseCounts.length}:${testCase.turns.length}`,
+      );
+    }
+    for (const [index, count] of expectedResponseCounts?.entries() ?? []) {
+      if (count !== 0 && count !== 1) {
+        violations.push(`invalid_expected_response_count:${testCase.id}:${index + 1}:${count}`);
+      }
+    }
+    const turnAssertions = testCase.ideal_result.turn_assertions;
+    if (turnAssertions && turnAssertions.length !== testCase.turns.length) {
+      violations.push(
+        `turn_assertions_length_mismatch:${testCase.id}:` +
+          `${turnAssertions.length}:${testCase.turns.length}`,
+      );
+    }
+    const catalogAbsenceOracle = testCase.ideal_result.catalog_absence_oracle;
+    if (catalogAbsenceOracle) {
+      const requestedTerms = catalogAbsenceOracle.requested_terms;
+      const alternativeCodes = catalogAbsenceOracle.allowed_alternative_codes;
+      if (
+        !Array.isArray(requestedTerms)
+        || requestedTerms.length === 0
+        || requestedTerms.some((term) => typeof term !== 'string' || term.trim() === '')
+      ) {
+        violations.push(`invalid_catalog_absence_requested_terms:${testCase.id}`);
+      }
+      if (
+        !Array.isArray(alternativeCodes)
+        || alternativeCodes.some((code) => typeof code !== 'string' || code.trim() === '')
+        || new Set(alternativeCodes).size !== alternativeCodes.length
+      ) {
+        violations.push(`invalid_catalog_absence_alternatives:${testCase.id}`);
+      }
+      if (typeof catalogAbsenceOracle.require_complete_snapshot !== 'boolean') {
+        violations.push(`invalid_catalog_absence_snapshot_requirement:${testCase.id}`);
+      }
+    }
   }
 
   return violations;
@@ -561,6 +957,7 @@ export async function runConversationSuite(
   options: RunOptions & { onCase?: (current: number, total: number, id: string) => void },
 ) {
   assertSuitePromptVersion(suite.prompt_version, AGENT_A_PROMPT_VERSION);
+  assertRegressionCompositionEvidence(suite);
 
   const results: ConversationCaseResult[] = [];
   for (const [index, testCase] of suite.cases.entries()) {
@@ -571,10 +968,21 @@ export async function runConversationSuite(
   }
 
   const passed = results.filter((result) => result.status === 'passed').length;
+  const executedCaseIds = results.map((result) => result.id);
+  const regressionGateComplete = suite.composition
+    ? executedCaseIds.length === suite.composition.effective_case_ids.length
+      && executedCaseIds.every(
+        (caseId, index) => caseId === suite.composition!.effective_case_ids[index],
+      )
+    : null;
   return {
     run_id: options.runId,
     suite: suite.suite,
     prompt_version: suite.prompt_version,
+    ...(suite.composition ?? {}),
+    executed_cases: executedCaseIds.length,
+    executed_case_ids: executedCaseIds,
+    regression_gate_complete: regressionGateComplete,
     started_at: new Date().toISOString(),
     summary: {
       total: results.length,

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -9,6 +9,7 @@ import postgres from 'postgres';
 import {
   assertSuitePromptVersion,
   buildAdkChatArgs,
+  composeAgentARegressionSuite,
   runConversationSuite,
   validateSuiteCaseInvariants,
   type AgentChatResult,
@@ -41,27 +42,9 @@ import {
   generateGeminiDecision,
 } from '../botpress-agent/src/lib/decision/gemini-direct';
 import { applyDecisionPolicy, technicalFallback } from '../botpress-agent/src/utils/decision-policy';
+import { routeCommercialTurn } from '../botpress-agent/src/utils/commercial-router';
 import { StudyxHttpError } from '../botpress-agent/src/utils/http';
-import {
-  CALL_HANDOFF_FAST_PATH_MODEL,
-  matchCallHandoffFastPath,
-} from '../botpress-agent/src/utils/call-handoff-fast-path';
-import {
-  GREETING_FAST_PATH_MODEL,
-  matchDeterministicGreeting,
-} from '../botpress-agent/src/utils/greeting';
-import {
-  CONVERSATION_CLOSE_FAST_PATH_MODEL,
-  CONTACT_CAPTURE_FAST_PATH_MODEL,
-  COURSE_DISCOVERY_FAST_PATH_MODEL,
-  COURSE_FACTS_FAST_PATH_MODEL,
-  PAYMENT_SELECTION_FAST_PATH_MODEL,
-  matchContactCaptureFastPath,
-  matchConversationCloseFastPath,
-  matchCourseDiscoveryFastPath,
-  matchCourseFactsFastPath,
-  matchPaymentSelectionFastPath,
-} from '../botpress-agent/src/utils/transaction-fast-path';
+import { deliverAuthorizedLocalOutbound } from './lib/local-authorized-delivery';
 
 const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -322,45 +305,17 @@ function createLocalTurnSender(
     }
     if (!claimed) throw new Error('LOCAL_CLAIM_RETRY_EXHAUSTED');
 
-    const callFastPath = matchCallHandoffFastPath(claimed);
-    const paymentFastPath = callFastPath ? null : matchPaymentSelectionFastPath(claimed);
-    const contactFastPath = callFastPath || paymentFastPath
-      ? null
-      : matchContactCaptureFastPath(claimed);
-    const courseFactsFastPath = callFastPath || paymentFastPath || contactFastPath
-      ? null
-      : matchCourseFactsFastPath(claimed);
-    const conversationCloseFastPath = callFastPath || paymentFastPath || contactFastPath || courseFactsFastPath
-      ? null
-      : matchConversationCloseFastPath(claimed);
-    const courseDiscoveryFastPath = callFastPath || paymentFastPath || contactFastPath || courseFactsFastPath || conversationCloseFastPath
-      ? null
-      : matchCourseDiscoveryFastPath(claimed);
-    const greetingFastPath = callFastPath || paymentFastPath || contactFastPath || courseFactsFastPath || conversationCloseFastPath || courseDiscoveryFastPath
-      ? null
-      : matchDeterministicGreeting(claimed);
-    const fastPathDecision = callFastPath ?? paymentFastPath ?? contactFastPath
-      ?? courseFactsFastPath ?? conversationCloseFastPath ?? courseDiscoveryFastPath ?? greetingFastPath;
-    const fastPathModel = callFastPath
-      ? CALL_HANDOFF_FAST_PATH_MODEL
-      : paymentFastPath
-        ? PAYMENT_SELECTION_FAST_PATH_MODEL
-        : contactFastPath
-          ? CONTACT_CAPTURE_FAST_PATH_MODEL
-          : courseFactsFastPath
-            ? COURSE_FACTS_FAST_PATH_MODEL
-            : conversationCloseFastPath
-              ? CONVERSATION_CLOSE_FAST_PATH_MODEL
-              : courseDiscoveryFastPath
-                ? COURSE_DISCOVERY_FAST_PATH_MODEL
-                : GREETING_FAST_PATH_MODEL;
+    const commercialRoute = routeCommercialTurn({
+      automationEnabled: true,
+      claimed,
+    });
     let decision: Decision;
     let provider: 'botpress' | 'groq-direct' | 'google-ai-direct';
     let decisionModel: string;
-    if (fastPathDecision) {
-      decision = fastPathDecision;
+    if (commercialRoute.kind !== 'model_required') {
+      decision = commercialRoute.decision;
       provider = 'botpress';
-      decisionModel = fastPathModel;
+      decisionModel = commercialRoute.model;
     } else {
       try {
         evaluationPacingMs += await paceModelProvider();
@@ -418,6 +373,7 @@ function createLocalTurnSender(
       body: {
         turn_id: claimed.turn_id,
         trace_id: traceId,
+        authorized_offering_code: claimed.sales_context.offering_code,
         decision,
         model: {
           provider,
@@ -431,32 +387,53 @@ function createLocalTurnSender(
       traceId,
       parse: (value) => CommitDecisionResponseSchema.parse(value),
     });
+    const commercialEvidence: NonNullable<AgentChatResult['commercialEvidence']> = {
+      catalogResolution: claimed.catalog_resolution,
+      snapshotOfferings: (claimed.business_context?.offerings ?? []).map((offering) => ({
+        code: offering.code,
+        displayName: offering.display_name,
+      })),
+      offeringsTruncated: claimed.business_context
+        ? claimed.business_context.offerings_truncated
+        : null,
+      selectedOfferingCode: claimed.sales_context.offering_code,
+      decisionBusinessAction: decision.business_action
+        ? { ...decision.business_action }
+        : null,
+      authorizedProtectedFacts:
+        committed.outbound?.authorized_egress.protected_facts ?? [],
+      authorizedUrls: committed.outbound?.authorized_egress.authorized_urls ?? [],
+    };
     if (!committed.outbound) {
-      return { conversationId, responses: [], evaluationPacingMs };
+      return { conversationId, responses: [], commercialEvidence, evaluationPacingMs };
     }
 
-    const localDeliveryMessageId = `local-eval-${randomUUID()}`;
-    await localSignedJson({
-      credentials,
-      path: `/api/agent/outbounds/${committed.outbound.id}/delivery`,
-      body: {
-        outbound_id: committed.outbound.id,
-        trace_id: traceId,
-        status: 'submitted_to_botpress',
-        botpress_message_id: localDeliveryMessageId,
-        replayed: false,
-        error_code: null,
-        delivery_attempt: committed.outbound.delivery_attempt,
+    const localDelivery = await deliverAuthorizedLocalOutbound({
+      trace_id: traceId,
+      outbound: committed.outbound,
+      createMessageId: () => `local-eval-${randomUUID()}`,
+      reportDelivery: async (report) => {
+        const reportIdentity = report.botpress_message_id ?? report.error_code ?? 'egress-blocked';
+        await localSignedJson({
+          credentials,
+          path: `/api/agent/outbounds/${committed.outbound!.id}/delivery`,
+          body: report,
+          idempotencyKey:
+            `delivery:${committed.outbound!.id}:${reportIdentity}:${report.status}`,
+          traceId,
+          parse: (value) => DeliveryReportResponseSchema.parse(value),
+        });
       },
-      idempotencyKey:
-        `delivery:${committed.outbound.id}:${localDeliveryMessageId}:submitted_to_botpress`,
-      traceId,
-      parse: (value) => DeliveryReportResponseSchema.parse(value),
+      afterSubmitted: () => flushLocalPostTurn(credentials, traceId),
     });
-    await flushLocalPostTurn(credentials, traceId);
+    if (localDelivery.kind === 'blocked') {
+      return { conversationId, responses: [], commercialEvidence, evaluationPacingMs };
+    }
     return {
       conversationId,
-      responses: [{ type: 'text', text: committed.outbound.content }],
+      responses: [{ type: 'text', text: localDelivery.content }],
+      authorizedUrls: [...committed.outbound.authorized_egress.authorized_urls],
+      commercialEvidence,
       evaluationPacingMs,
     };
   };
@@ -464,19 +441,19 @@ function createLocalTurnSender(
 
 async function main() {
   const suitePath = path.resolve(argument('--file') ?? defaultSuitePath);
-  const extensionSuite = JSON.parse(await readFile(suitePath, 'utf8')) as ConversationSuite;
+  const extensionSource = await readFile(suitePath);
+  const extensionSuite = JSON.parse(extensionSource.toString('utf8')) as ConversationSuite;
   let suite = extensionSuite;
   if (extensionSuite.base_suite) {
     const basePath = path.resolve(path.dirname(suitePath), extensionSuite.base_suite);
-    const baseSuite = JSON.parse(await readFile(basePath, 'utf8')) as ConversationSuite;
-    if (baseSuite.base_suite) throw new Error('NESTED_BASE_SUITE_NOT_SUPPORTED');
-    if (baseSuite.prompt_version !== extensionSuite.prompt_version) {
-      throw new Error('BASE_SUITE_PROMPT_VERSION_MISMATCH');
-    }
-    suite = {
-      ...extensionSuite,
-      cases: [...baseSuite.cases, ...extensionSuite.cases],
-    };
+    const baseSource = await readFile(basePath);
+    const baseSuite = JSON.parse(baseSource.toString('utf8')) as ConversationSuite;
+    suite = composeAgentARegressionSuite({
+      baseSuite,
+      extensionSuite,
+      baseSha256: createHash('sha256').update(baseSource).digest('hex'),
+      extensionSha256: createHash('sha256').update(extensionSource).digest('hex'),
+    });
   }
   const requestedCase = argument('--case');
   const startAtCase = argument('--start-at');
@@ -659,11 +636,37 @@ async function main() {
         ORDER BY ad.prompt_version
       `,
     ]);
-    const sandboxRows = await db<Array<{ present: boolean }>>`
-      SELECT EXISTS(
-        SELECT 1 FROM sandbox_identities WHERE contact_id = ${identity.contact_id}::uuid
-      ) AS present
-    `;
+    const [sandboxRows, turnEvidence] = await Promise.all([
+      db<Array<{ external_user_id: string }>>`
+        SELECT external_user_id
+        FROM sandbox_identities
+        WHERE provider = 'telegram_sandbox'
+          AND contact_id = ${identity.contact_id}::uuid
+          AND external_user_id = ${`eval:${runId}:${testCase.id}`}
+        LIMIT 1
+      `,
+      db<Array<{
+        turn_number: number;
+        turn_id: string;
+        decision_id: string;
+        trace_id: string | null;
+        outbound_message_id: string | null;
+      }>>`
+        SELECT
+          row_number() OVER (
+            ORDER BY m.conversation_seq ASC, m.created_at ASC, m.id ASC
+          )::integer AS turn_number,
+          m.id AS turn_id,
+          ad.id AS decision_id,
+          ad.trace_id::text AS trace_id,
+          ad.outbound_message_id::text AS outbound_message_id
+        FROM messages AS m
+        JOIN agent_decisions AS ad ON ad.turn_id = m.id
+        WHERE m.conversation_id = ${identity.conversation_id}::uuid
+          AND m.direction = 'inbound'
+        ORDER BY m.conversation_seq ASC, m.created_at ASC, m.id ASC
+      `,
+    ]);
     const count = counts[0] ?? {
       inbound: 0,
       outbound: 0,
@@ -676,7 +679,7 @@ async function main() {
       phone: identity.phone,
       contactName: identity.name,
       contactEmail: identity.email,
-      sandboxRegistered: sandboxRows[0]?.present ?? false,
+      sandboxRegistered: sandboxRows.length === 1,
       inboundMessages: count.inbound,
       outboundMessages: count.outbound,
       decisions: count.decisions,
@@ -693,6 +696,18 @@ async function main() {
         email: row.email ?? '',
       })),
       promptVersions: versions.map((item) => item.prompt_version),
+      runScope: {
+        sandboxExternalUserId: sandboxRows[0]?.external_user_id ?? null,
+        externalConversationId,
+        conversationId: identity.conversation_id,
+      },
+      turnEvidence: turnEvidence.map((turn) => ({
+        turnNumber: Number(turn.turn_number),
+        turnId: turn.turn_id,
+        decisionId: turn.decision_id,
+        traceId: turn.trace_id,
+        outboundMessageId: turn.outbound_message_id,
+      })),
     };
     return evaluatePersistenceEvidence(testCase, evidence, { runId });
   };
@@ -702,10 +717,21 @@ async function main() {
   const outputPath = path.join(outputDir, `happy-path-${runId}.json`);
   const writeCheckpoint = async (results: readonly import('./lib/agent-a-conversation-runner').ConversationCaseResult[]) => {
     const passed = results.filter((result) => result.status === 'passed').length;
+    const executedCaseIds = results.map((result) => result.id);
+    const regressionGateComplete = selectedSuite.composition
+      ? executedCaseIds.length === selectedSuite.composition.effective_cases
+        && selectedSuite.composition.effective_case_ids.every(
+          (id) => executedCaseIds.includes(id),
+        )
+      : false;
     await writeFile(outputPath, `${JSON.stringify({
       run_id: runId,
       suite: selectedSuite.suite,
       prompt_version: selectedSuite.prompt_version,
+      ...(selectedSuite.composition ?? {}),
+      executed_cases: executedCaseIds.length,
+      executed_case_ids: executedCaseIds,
+      regression_gate_complete: regressionGateComplete,
       checkpoint: true,
       summary: { total: results.length, passed, failed: results.length - passed },
       results,

@@ -27,6 +27,7 @@ import {
 const LINK_12M = 'https://buy.stripe.com/studyx-12m';
 const LINK_6M = 'https://buy.stripe.com/studyx-6m';
 const LINK_CONTADO = 'https://buy.stripe.com/studyx-contado';
+const CANONICAL_OFFERING_SKU = 'studyx_course';
 
 const FULL_ENV = {
   PAYMENT_LINK_12M: LINK_12M,
@@ -43,7 +44,12 @@ function allowedContact() {
 }
 
 function action(overrides: Partial<SendPaymentLinkAction> = {}): SendPaymentLinkAction {
-  return { type: 'send_payment_link', plan_code: 'monthly_12', offering_sku: null, ...overrides };
+  return {
+    type: 'send_payment_link',
+    plan_code: 'monthly_12',
+    offering_sku: CANONICAL_OFFERING_SKU,
+    ...overrides,
+  };
 }
 
 describe('PAYMENT_PLAN_PRESENTATIONS', () => {
@@ -107,6 +113,16 @@ describe('derivePaymentChoiceFromBatch', () => {
     expect(derivePaymentChoiceFromBatch([msg('hola, quiero info del curso')])).toBeNull();
     expect(derivePaymentChoiceFromBatch([msg('pasame el link porfa')])).toBeNull();
     expect(derivePaymentChoiceFromBatch([])).toBeNull();
+  });
+
+  it.each([
+    'Confirmo 12 cuotas; no me mandes el link todavía',
+    'Las 6 cuotas me sirven, pero mandamelo después',
+    'Solo consultaba por 12 pagos',
+    'Si comprara, elegiría 12 cuotas',
+    'Por ahora no quiero pagar en 6 cuotas',
+  ])('lets an explicit deferral override an otherwise identifiable plan: %s', (content) => {
+    expect(derivePaymentChoiceFromBatch([msg(content)])).toBeNull();
   });
 
   it('returns null when the batch matches two or more plans (ambiguous)', () => {
@@ -231,7 +247,7 @@ describe('stripUnauthorizedUrls', () => {
 
 describe('materializePaymentLinkAction', () => {
   const resolver = createConfigPaymentLinkResolver(FULL_ENV);
-  const businessSnapshot = { offerings: [{ code: 'studyx_course' }] };
+  const businessSnapshot = { offerings: [{ code: CANONICAL_OFFERING_SKU }] };
 
   it('resolves the exact URL for each of the three plans on an explicit matching choice', () => {
     const cases: Array<[SendPaymentLinkAction['plan_code'], string, string]> = [
@@ -284,7 +300,11 @@ describe('materializePaymentLinkAction', () => {
 
   it('refuses an invalid plan_code', () => {
     const result = materializePaymentLinkAction({
-      action: { type: 'send_payment_link', plan_code: 'weekly' as SendPaymentLinkAction['plan_code'], offering_sku: null },
+      action: {
+        type: 'send_payment_link',
+        plan_code: 'weekly' as SendPaymentLinkAction['plan_code'],
+        offering_sku: CANONICAL_OFFERING_SKU,
+      },
       batchMessages: [msg('12 meses')],
       businessSnapshot,
       contact: allowedContact(),
@@ -318,19 +338,40 @@ describe('materializePaymentLinkAction', () => {
     expect(result).toEqual({ ok: false, reason: 'OFFERING_NOT_FOUND' });
   });
 
-  it('succeeds with a null offering_sku (no offering-specific check required)', () => {
+  it('refuses a null offering_sku before consulting the link resolver', () => {
+    let resolveCalls = 0;
+    const observingResolver = {
+      resolve() {
+        resolveCalls += 1;
+        return LINK_12M;
+      },
+    };
     const result = materializePaymentLinkAction({
       action: action({ plan_code: 'monthly_12', offering_sku: null }),
       batchMessages: [msg('12 meses')],
       businessSnapshot,
       contact: allowedContact(),
       modelResponseText: null,
+      resolver: observingResolver,
+    });
+    expect(result).toEqual({ ok: false, reason: 'OFFERING_REQUIRED' });
+    expect(resolveCalls).toBe(0);
+  });
+
+  it.each([
+    ['an empty SKU', '', businessSnapshot],
+    ['an empty business snapshot', CANONICAL_OFFERING_SKU, { offerings: [] }],
+  ])('refuses %s as OFFERING_NOT_FOUND', (_case, offering_sku, snapshot) => {
+    const result = materializePaymentLinkAction({
+      action: action({ plan_code: 'monthly_12', offering_sku }),
+      batchMessages: [msg('12 meses')],
+      businessSnapshot: snapshot,
+      contact: allowedContact(),
+      modelResponseText: null,
       resolver,
     });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.stripped_urls).toEqual([]);
-    }
+
+    expect(result).toEqual({ ok: false, reason: 'OFFERING_NOT_FOUND' });
   });
 
   it('strips a free URL the model wrote into its own response text, keeping only the canonical link, and surfaces it as an audit signal', () => {

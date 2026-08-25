@@ -2,6 +2,7 @@ import type { ClaimedTurn, Decision } from '../schemas/contracts'
 import { derivePaymentChoiceFromBatch } from './payment-choice'
 
 export const PAYMENT_SELECTION_FAST_PATH_MODEL = 'deterministic:payment-selection-fast-path-v1'
+export const PAYMENT_COMPARISON_FAST_PATH_MODEL = 'deterministic:payment-comparison-fast-path-v1'
 export const CONTACT_CAPTURE_FAST_PATH_MODEL = 'deterministic:contact-capture-fast-path-v1'
 export const COURSE_FACTS_FAST_PATH_MODEL = 'deterministic:course-facts-fast-path-v1'
 export const COURSE_DISCOVERY_FAST_PATH_MODEL = 'deterministic:course-discovery-fast-path-v1'
@@ -165,45 +166,40 @@ export function matchCourseFactsFastPath(claimed: ClaimedTurn): Decision | null 
     || !offering.price
   )) return null
 
-  const classFact = asksClasses ? `El curso de ${courseName} tiene ${classes} clases.` : ''
-  const currentCourseMention = claimed.business_context
-    ? canonicalCourseFromValue(
-        normalizedQuestion,
-        claimed.business_context.offerings.map((candidate) => candidate.display_name),
-      ) === courseName
-    : false
-  const contextualClassFact = !asksClasses && currentCourseMention
-    && Number.isSafeInteger(classes) && classes! > 0 && classes! <= 999
-    ? `El curso de ${courseName} tiene ${classes} clases. `
-    : ''
-  const requirements = asksRequirements
-    ? `${classFact ? ' ' : ''}Los requisitos previos para ${courseName} no están especificados en la información disponible.`
-    : ''
-  const orientation = asksOrientation
-    ? `${classFact || requirements ? ' ' : ''}Sí: el curso está orientado específicamente ${orientationMatch![1]} ${orientationMatch![2]}.`
-    : ''
-  const price = asksPrice
-    ? `${classFact || requirements || orientation ? ' ' : ''}El precio de ${courseName} es ${offering!.price!.currency} ${Number(offering!.price!.amount)}. ¿Preferís 12 cuotas, 6 cuotas o un pago único?`
-    : ''
-  const paymentOptions = asksPaymentOptions
-    ? `${classFact || requirements || orientation || price ? ' ' : ''}Podés elegir 12 cuotas, 6 cuotas o un pago único. ¿Cuál te conviene más?`
-    : ''
-  const refund = asksRefund
-    ? `${classFact || requirements || orientation || price || paymentOptions ? ' ' : ''}La política de devolución o reembolso para ${courseName} no está especificada en la información disponible.`
-    : ''
-  const certification = asksCertification
-    ? `${classFact || requirements || orientation || price || paymentOptions || refund ? ' ' : ''}La validez y la entidad emisora del certificado de ${courseName} no están especificadas en la información disponible.`
-    : ''
-  const schedule = asksSchedule
-    ? `${classFact || requirements || orientation || price || paymentOptions || refund || certification ? ' ' : ''}${offering?.schedules.length
-      ? `Los horarios publicados para ${courseName} son ${offering.schedules.map((item) => `${item.days.join('/')} ${item.start ?? ''}-${item.end ?? ''}`.trim()).join(', ')}.`
-      : `Los horarios fijos y la disponibilidad libre para ${courseName} no están especificados en la información disponible.`}`
-    : ''
+  const requestedFacts = [
+    asksClasses ? `El curso de ${courseName} tiene ${classes} clases.` : null,
+    asksRequirements
+      ? `Los requisitos previos para ${courseName} no están especificados en la información disponible.`
+      : null,
+    asksOrientation
+      ? `Sí: el curso está orientado específicamente ${orientationMatch![1]} ${orientationMatch![2]}.`
+      : null,
+    asksPrice
+      ? `El precio de ${courseName} es ${offering!.price!.currency} ${Number(offering!.price!.amount)}.`
+      : null,
+    asksPaymentOptions ? 'Podés elegir 12 cuotas, 6 cuotas o un pago único.' : null,
+    asksRefund
+      ? `La política de devolución o reembolso para ${courseName} no está especificada en la información disponible.`
+      : null,
+    asksCertification
+      ? 'La certificación no está especificada en la información disponible.'
+      : null,
+    asksSchedule
+      ? (offering?.schedules.length
+          ? `Los horarios publicados para ${courseName} son ${offering.schedules.map((item) => `${item.days.join('/')} ${item.start ?? ''}-${item.end ?? ''}`.trim()).join(', ')}.`
+          : `Los horarios fijos y la disponibilidad libre para ${courseName} no están especificados en la información disponible.`)
+      : null,
+  ].filter((fact): fact is string => fact !== null).slice(0, 2)
+  const cta = asksPrice
+    ? '¿Preferís 12 cuotas, 6 cuotas o un pago único?'
+    : asksPaymentOptions
+      ? '¿Cuál te conviene más?'
+      : '¿Querés que revisemos otro dato?'
   return {
     schema_version: 4,
     intent: 'commercial',
     kind: 'reply',
-    response: `${contextualClassFact}${classFact}${requirements}${orientation}${price}${paymentOptions}${refund}${certification}${schedule}`,
+    response: `${requestedFacts.join(' ')} ${cta}`,
     response_type: 'commercial_reply',
     confidence: 1,
     reason_code: 'DETERMINISTIC_COURSE_FACTS',
@@ -236,20 +232,20 @@ export function matchCourseDiscoveryFastPath(claimed: ClaimedTurn): Decision | n
 
   const facts = [
     Number.isSafeInteger(offering.classes) && offering.classes! > 0
-      ? `${offering.classes} clases`
+      ? `El curso de ${canonicalName} tiene ${offering.classes} clases.`
       : null,
-    offering.modality ? `modalidad ${offering.modality}` : null,
+    offering.modality ? `La modalidad de ${canonicalName} es ${offering.modality}.` : null,
     offering.price_assertable && offering.price
-      ? `${offering.price.currency} ${Number(offering.price.amount)}`
+      ? `El precio de ${canonicalName} es ${offering.price.currency} ${Number(offering.price.amount)}.`
       : null,
   ].filter((fact): fact is string => Boolean(fact)).slice(0, 2)
-  const details = facts.length > 0 ? `: ${facts.join(' y ')}` : ''
+  const details = facts.length > 0 ? ` ${facts.join(' ')}` : ''
   const mayOfferCall = claimed.sales_context.allowed_actions.includes('offer_call')
     && !/\b(?:no (?:me gustan?|quiero|puedo) las? llamadas?|prefiero (?:texto|chat)|seguimos? por (?:aca|aqui|chat))\b/u
       .test(normalizeCourse(message.content))
   const response = mayOfferCall
-    ? `Te cuento sobre ${canonicalName}${details}. Si querés, podemos coordinar una llamada ahora; si preferís, seguimos por chat. ¿Cómo querés avanzar?`
-    : `Te cuento sobre ${canonicalName}${details}. ¿Qué te gustaría saber?`
+    ? `Te cuento sobre ${canonicalName}.${details} Si querés, podemos coordinar una llamada ahora con nuestra asesora virtual; si preferís, seguimos por chat. ¿Cómo querés avanzar?`
+    : `Te cuento sobre ${canonicalName}.${details} ¿Qué te gustaría saber?`
 
   return {
     schema_version: 4,
@@ -274,11 +270,17 @@ export function matchConversationCloseFastPath(claimed: ClaimedTurn): Decision |
   const message = claimed.context.batch_messages[0]
   if (message.message_type !== 'text') return null
   const normalized = normalizeCourse(message.content)
-  const isDeferredClose = /\b(?:lo voy a pensar|no me voy a anotar|averiguar nomas|por ahora no|lo voy a consultar|despues me anoto|dejame pensarlo)\b/u
+  const isDeferredClose = /\b(?:lo voy a pensar|no me voy a anotar|averiguar nomas|por ahora no|lo voy a consultar|despues me anoto|dejame pensarlo|quiero pensarlo)\b/u
     .test(normalized)
   const isCallDecline = /\b(?:(?:cancela|cancelo|cancelar|no|mejor)\b.{0,30}\bllamada|seguimos? por (?:aca|aqui|chat))\b/u
     .test(normalized)
+  const asksAboutCourse = (
+    /[?¿]/u.test(message.content)
+    && /\b(?:curso|diplomado|clases|requisit\w*|precio|pago|devolucion|certificad\w*|horarios?|modalidad)\b/u.test(normalized)
+  ) || /\b(?:que|cuales|cuantas|cuantos|como|cuando)\b.{0,60}\b(?:curso|diplomado|clases|requisit\w*|precio|pago|devolucion|certificad\w*|horarios?|modalidad)\b/u
+    .test(normalized)
   if (!isDeferredClose && !isCallDecline) return null
+  if (isCallDecline && asksAboutCourse) return null
 
   return {
     schema_version: 4,
@@ -355,6 +357,66 @@ export function matchPaymentSelectionFastPath(claimed: ClaimedTurn): Decision | 
     memory_candidates: [],
     missing_information: [],
     next_state: 'completed',
+    retrieval_used: RETRIEVAL_NONE,
+  }
+}
+
+export function matchPaymentComparisonFastPath(claimed: ClaimedTurn): Decision | null {
+  if (!claimed.policy.may_respond || claimed.contact.blocked) return null
+  if (!claimed.policy.allowed_response_types.includes('commercial_reply')) return null
+  if (claimed.batch.message_count !== 1 || claimed.context.batch_messages.length !== 1) return null
+  if (!claimed.business_context_available || !claimed.business_context) return null
+  const message = claimed.context.batch_messages[0]
+  if (message.message_type !== 'text') return null
+
+  const availablePlans = new Set(
+    claimed.business_context.workspace.payment_options.map((option) => option.code),
+  )
+  if (!availablePlans.has('monthly_12') || !availablePlans.has('monthly_6')) return null
+
+  const normalized = normalizeCourse(message.content)
+  const asksOneTimeAdvantage = (
+    /\b(?:pago de una|una sola vez|pago unico)\b/u.test(normalized)
+    && /\b(?:ventaja|beneficio|conviene)\b/u.test(normalized)
+  )
+  if (asksOneTimeAdvantage) {
+    if (!availablePlans.has('one_time')) return null
+    return {
+      schema_version: 4,
+      intent: 'commercial',
+      kind: 'reply',
+      response: 'No tengo confirmada una ventaja adicional por pagar de una; lo que cambia es la forma de pago. Podés elegir pago único, 6 cuotas o 12 cuotas. ¿Con cuál querés avanzar?',
+      response_type: 'commercial_reply',
+      confidence: 1,
+      reason_code: 'DETERMINISTIC_PAYMENT_COMPARISON',
+      business_action: null,
+      memory_candidates: [],
+      missing_information: [],
+      next_state: 'waiting_user',
+      retrieval_used: RETRIEVAL_NONE,
+    }
+  }
+  const comparesShortAndLong = (
+    /\bplan corto\b.{0,80}\bplan largo\b/u.test(normalized)
+    || /\bplan largo\b.{0,80}\bplan corto\b/u.test(normalized)
+    || /\b(?:6|seis)\b.{0,80}\b(?:12|doce)\b/u.test(normalized)
+    || /\b(?:12|doce)\b.{0,80}\b(?:6|seis)\b/u.test(normalized)
+  )
+  const asksComparison = /\b(?:diferencia|comparar|comparacion|cambia|conviene)\b/u.test(normalized)
+  if (!comparesShortAndLong || !asksComparison) return null
+
+  return {
+    schema_version: 4,
+    intent: 'commercial',
+    kind: 'reply',
+    response: 'El plan largo reparte el total en más cuotas y deja una cuota mensual más baja; el corto lo concentra en menos cuotas. ¿Cuál preferís?',
+    response_type: 'commercial_reply',
+    confidence: 1,
+    reason_code: 'DETERMINISTIC_PAYMENT_COMPARISON',
+    business_action: null,
+    memory_candidates: [],
+    missing_information: [],
+    next_state: 'waiting_user',
     retrieval_used: RETRIEVAL_NONE,
   }
 }

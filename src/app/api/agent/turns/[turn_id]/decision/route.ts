@@ -136,6 +136,9 @@ const decisionSchema = z
 const schema = z.object({
   turn_id: z.string().uuid(),
   trace_id: z.string().uuid(),
+  // Claim-time identity only. decision.service re-resolves this exact code in
+  // the configured workspace snapshot before it authorizes any response fact.
+  authorized_offering_code: z.string().trim().min(1).max(128).nullable().optional(),
   decision: decisionSchema,
   model: z.object({
     provider: z.enum(['botpress', 'google-ai-direct', 'groq-direct']),

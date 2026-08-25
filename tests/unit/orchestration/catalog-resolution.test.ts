@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isCatalogRequestNeutral,
   resolveCatalogRequest,
   type CatalogResolutionSnapshot,
   type CatalogSnapshotOffering,
@@ -192,6 +193,43 @@ describe('resolveCatalogRequest', () => {
     expect(
       resolveCatalogRequest('¿Tienen horarios los sábados?', snapshot([MARKETING])),
     ).toEqual({ kind: 'no_catalog_intent' });
+  });
+
+  it('does not treat a generic fact follow-up about the selected program as a new catalog search', () => {
+    expect(
+      resolveCatalogRequest('¿Cuántas clases tiene el programa completo?', snapshot([MARKETING])),
+    ).toEqual({ kind: 'no_catalog_intent' });
+  });
+
+  it('does not treat a demonstrative payment-plan choice as a new course selection', () => {
+    expect(
+      resolveCatalogRequest(
+        'Buenísimo. Lo quiero pagar en 6 cuotas de 60 dólares, ya elegí esa opción.',
+        snapshot([MARKETING]),
+      ),
+    ).toEqual({ kind: 'no_catalog_intent' });
+  });
+
+  it('does not treat a generic payment option as a course selection', () => {
+    expect(
+      resolveCatalogRequest(
+        'Mejor voy con la opción más liviana por mes. Confirmo 12 pagos de 30 dólares.',
+        snapshot([MARKETING]),
+      ),
+    ).toEqual({ kind: 'no_catalog_intent' });
+  });
+
+  it.each([
+    'Perfecto, quiero las 12 cuotas de 30 dólares.',
+    'Elijo los 12 pagos de 30 dólares.',
+    'Bueno, prefiero sacármelo de encima. Pago único de 360 dólares.',
+    'No me mandes el link todavía, quiero pensarlo.',
+    'Quiero the cheapest plan.',
+  ])('keeps payment and link-control language out of course selection: %s', (message) => {
+    expect(resolveCatalogRequest(message, snapshot([MARKETING]))).toEqual({
+      kind: 'no_catalog_intent',
+    });
+    expect(isCatalogRequestNeutral(message)).toBe(true);
   });
 
   it('returns at most three safe alternatives and prefers an explicitly named academy', () => {

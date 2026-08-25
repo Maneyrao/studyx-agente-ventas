@@ -12,6 +12,7 @@ import {
 } from '../domain/sales-signal';
 import { evaluateCallOfferPolicy } from '../domain/call-offer-policy';
 import { isTrivial } from '@/lib/heuristics/triviality';
+import { isExplicitOptOut } from '@/lib/heuristics/opt-out';
 import type {
   ActiveCallFact,
   BatchMessage,
@@ -494,14 +495,22 @@ export async function claimBatch(
   if (!core) throw new BatchFactsMissingError(claim.batch_id);
   const { facts, batch_messages: batchMessages, call_facts: callFacts } = core;
 
+  const explicitOptOut = batchMessages.some(
+    (message) => (
+      message.message_type === 'text'
+      && message.opt_out_ack_eligible === true
+      && isExplicitOptOut(message.content)
+    ),
+  );
   const policy = evaluateTurnPolicy({
     contact_status: facts.contact.status,
     lifecycle_status: facts.contact.lifecycle_status,
     deleted_at: facts.contact.deleted_at,
     consent_status: facts.contact.consent_status,
-    // The opt-out itself is recorded at ingest, which is what revokes consent;
-    // by claim time the revocation is the structured fact we trust.
-    explicit_opt_out: false,
+    // Ingest has already persisted the revocation by claim time. Preserve the
+    // current batch evidence as well: it is what authorizes the one legal
+    // acknowledgement and must not be confused with an older revocation.
+    explicit_opt_out: explicitOptOut,
     unsupported_message: facts.unsupported_message,
   });
 
@@ -522,13 +531,16 @@ export async function claimBatch(
     policy,
     salesContext: initialSalesContext,
   });
+  const optOutAcknowledgementOnly =
+    policy.allowed_response_types.length === 1
+    && policy.allowed_response_types[0] === 'opt_out_ack';
 
   // Commercial data is independent from vector retrieval, so start its one
   // bounded statement immediately and join it only before returning the claim.
   let business_context: BusinessContextView | null = null;
   let business_context_available = false;
   const businessTask = (async () => {
-    if (!policy.may_respond || !deps.business) return;
+    if (!policy.may_respond || optOutAcknowledgementOnly || !deps.business) return;
     counters.business_snapshot_calls += 1;
     const businessStartedAt = monotonicNow();
     try {
@@ -562,6 +574,7 @@ export async function claimBatch(
   // kind of work that should never happen.
   const shouldRetrieve =
     policy.may_respond
+    && !optOutAcknowledgementOnly
     && query.length > 0
     && deterministic_route === null
     && !isTrivial(query)

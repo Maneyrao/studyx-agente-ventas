@@ -324,6 +324,7 @@ export const BatchMessageSchema = z.object({
   content: z.string(),
   created_at: z.string(),
   message_type: z.string(),
+  opt_out_ack_eligible: z.boolean().optional(),
 })
 
 export const SelectedMemorySchema = z.object({
@@ -635,9 +636,39 @@ export const CatalogResponseSchema = z.object({
 
 export type CatalogResponse = z.infer<typeof CatalogResponseSchema>
 
+const AuthorizedHttpUrlSchema = z.string().min(1).refine((value) => {
+  if (/\s/u.test(value)) return false
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}, 'AUTHORIZED_EGRESS_URL_MUST_BE_HTTP')
+
+export const ProtectedFactRefSchema = z.object({
+  kind: z.enum(['price', 'duration', 'modality', 'certification', 'offering', 'promise']),
+  value: z.string().trim().min(1),
+}).strict()
+
+/** Exact wire mirror of the backend-owned v1 egress capability. */
+export const AuthorizedEgressSchema = z.object({
+  schema_version: z.literal(1),
+  content_hash: z.string().regex(/^[a-f0-9]{64}$/u),
+  authorized_urls: z.array(AuthorizedHttpUrlSchema),
+  protected_facts: z.array(ProtectedFactRefSchema),
+}).strict()
+
+export type AuthorizedEgress = z.infer<typeof AuthorizedEgressSchema>
+
 export const CommitDecisionInputSchema = z.object({
   turn_id: z.string().uuid(),
   trace_id: z.string().uuid(),
+  // Claim-time canonical identity (`sales_context.offering_code`) for the
+  // course this turn talks about. Only a lookup hint: the backend re-resolves
+  // it in its own live workspace snapshot before authorizing a single fact,
+  // so a stale or wrong code fails closed instead of authorizing anything.
+  authorized_offering_code: z.string().min(1).max(128).nullable().default(null),
   decision: DecisionSchema,
   model: z.object({
     provider: z.enum(['botpress', 'google-ai-direct', 'groq-direct']),
@@ -663,6 +694,7 @@ export const CommitDecisionResponseSchema = z.object({
       // de "falló un intento que ya no corre", y sólo el primero puede llevar
       // a otro envío.
       delivery_attempt: z.number().int().min(1),
+      authorized_egress: AuthorizedEgressSchema,
     })
     .nullable()
     .default(null),

@@ -366,6 +366,15 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       RETURNING id
     `;
     paymentWorkspaceId = rows[0].id;
+    await sql`
+      INSERT INTO offerings (
+        workspace_id, code, display_name, offering_type, status, description,
+        price_type, price_amount, currency
+      ) VALUES (
+        ${paymentWorkspaceId}::uuid, 'course_fence', 'Curso Fencing', 'course', 'active',
+        'Offering canónico del test', 'fixed', 360, 'USD'
+      )
+    `;
     for (const key of [
       'BUSINESS_WORKSPACE_SLUG',
       'PAYMENT_LINK_12M',
@@ -405,7 +414,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
         business_action: {
           type: 'send_payment_link' as const,
           plan_code: 'monthly_12' as const,
-          offering_sku: null,
+          offering_sku: 'course_fence',
         },
         memory_candidates: [],
         missing_information: [],

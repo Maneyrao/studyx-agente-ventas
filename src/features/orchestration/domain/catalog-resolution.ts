@@ -77,16 +77,25 @@ const METHOD_PRIORITY: Readonly<Record<LiteralMatchMethod, number>> = {
 };
 
 const CATALOG_INTENT_PATTERN =
-  /\b(?:curso(?:s)?|diplomado(?:s)?|capacitacion(?:es)?|formacion(?:es)?|programa(?:s)?|catalogo|oferta academica|academia|estudiar|aprender|inscribirme|inscribime|anotarme|anotame|busco)\b/u;
+  /(?:\b(?:cursos|diplomados|capacitaciones|formaciones|programas|catalogo|oferta academica|academia|estudiar|aprender|inscribirme|inscribime|anotarme|anotame|busco)\b|\b(?:curso|diplomado|capacitacion|formacion|programa)\s+de\s+[\p{L}\p{N}]|\b(?:tienen|ofrecen|hay)\b.{0,24}\b(?:curso|diplomado|capacitacion|formacion|programa)\b)/u;
 
 const SELECTION_CUE_PATTERN =
   /\b(?:prefiero|elijo|elegi|selecciono|me quedo con|voy con|quiero|mejor|cambio a)\b/gu;
 
 const BARE_COURSE_SELECTION_PATTERN =
-  /\b(?:quiero|prefiero|elijo|elegi|selecciono|me quedo con|voy con|cambio a)\s+(?!(?:que|pagar|abonar|hablar|llamar|una llamada|un llamado|saber|consultar|continuar|seguir|el plan|un plan|plan|cuotas?|por chat|mas informacion|informacion|info)\b)(?:el|la|un|una)?\s*[\p{L}][\p{L}\p{N}]*(?:\s+[\p{L}\p{N}]+){0,4}\b/u;
+  // Clitic forms (pagarlo, abonarla…) must stay payment cues, not course
+  // selections: "quiero pagarlo en 12 cuotas" cannot reset the remembered
+  // course. Mirrored in botpress-agent/src/utils/commercial-router.ts.
+  /\b(?:quiero|prefiero|elijo|elegi|selecciono|me quedo con|voy con|cambio a)\s+(?!(?:que|pagar(?:l[oa]s?)?|abonar(?:l[oa]s?)?|comprar(?:l[oa]s?)?|hablar|llamar|una llamada|un llamado|saber|consultar|continuar|seguir|el plan|un plan|plan|cuotas?|por chat|mas informacion|informacion|info|es[ae]|est[ae]|aquel(?:la)?|(?:(?:el|la|un|una)\s+)?(?:opcion|alternativa))\b)(?:el|la|un|una)?\s*[\p{L}][\p{L}\p{N}]*(?:\s+[\p{L}\p{N}]+){0,4}\b/u;
 
 const CATALOG_REJECTION_PATTERN =
   /\b(?:no quiero|no me interesa|no prefiero|no elijo|ya no quiero|descarto|cancelo|no mejor no|mejor no|dejalo|dejala|ninguno|ninguna)\b/u;
+
+const PAYMENT_OR_LINK_CONTEXT_PATTERN =
+  /\b(?:pag(?:o|ar|arlo|arla|arlos|arlas)?|cuotas?|dolares?|usd|link|plan(?:es)?|mensual(?:es)?|mes(?:es)?|pensar(?:lo|la)?|decidir)\b/u;
+
+const EXPLICIT_COURSE_NOUN_PATTERN =
+  /\b(?:curso|diplomado|capacitacion|formacion|programa)\b/u;
 
 const NEGATED_OFFERING_PREFIX_PATTERN =
   /(?:^|\s)(?:no quiero|no me interesa|no prefiero|no elijo|ya no quiero|descarto|cancelo)(?:\s+(?:hacer|estudiar|aprender|el|la|un|una|curso|programa|de)){0,4}\s*$/u;
@@ -382,7 +391,13 @@ function typoMatches(
 function hasCatalogIntent(messages: readonly string[]): boolean {
   return messages.some((message) => (
     CATALOG_INTENT_PATTERN.test(message)
-    || BARE_COURSE_SELECTION_PATTERN.test(message)
+    || (
+      BARE_COURSE_SELECTION_PATTERN.test(message)
+      && !(
+        PAYMENT_OR_LINK_CONTEXT_PATTERN.test(message)
+        && !EXPLICIT_COURSE_NOUN_PATTERN.test(message)
+      )
+    )
   ));
 }
 
@@ -394,11 +409,8 @@ function hasCatalogIntent(messages: readonly string[]): boolean {
  */
 export function isCatalogRequestNeutral(text: string | readonly string[]): boolean {
   const messages = toMessages(text);
-  return !messages.some((message) => (
-    CATALOG_INTENT_PATTERN.test(message)
-    || BARE_COURSE_SELECTION_PATTERN.test(message)
-    || CATALOG_REJECTION_PATTERN.test(message)
-  ));
+  return !hasCatalogIntent(messages)
+    && !messages.some((message) => CATALOG_REJECTION_PATTERN.test(message));
 }
 
 interface ExplicitAcademy {
