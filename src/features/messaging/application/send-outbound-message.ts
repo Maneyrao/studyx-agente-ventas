@@ -7,6 +7,10 @@ import { decideDeliveryOutcome, type SendOutcome } from '../domain/delivery-outc
 import { evaluateSendEligibility } from '../domain/eligibility';
 import { selectChannels } from '../domain/channel-selection';
 import type { ChannelIdentityStore } from '../ports/channel-identity-store';
+import type {
+  OutboundContentAuthorizer,
+  OutboundSideEffectAuthorizer,
+} from '../ports/outbound-authorization';
 import {
   AmbiguousChannelError,
   ConfirmedChannelError,
@@ -27,6 +31,9 @@ export const SendOutboundMessageInputSchema = z.object({
   contactId: z.string().uuid(),
   // 4096 is the shared ceiling of both providers.
   text: z.string().trim().min(1).max(4096),
+  authorizedEgress: z.unknown().refine((value) => value !== undefined, {
+    message: 'authorizedEgress is required',
+  }),
   idempotencyKey: z.string().trim().min(1).max(255),
   preferredChannel: z.enum(['telegram', 'whatsapp']).optional(),
   purpose: z.enum(['conversational', 'transactional', 'support', 'consent_confirmation']),
@@ -47,6 +54,8 @@ export interface SendOutboundMessageDeps {
   /** Configured channels, keyed by name. An absent channel is simply skipped. */
   channels: Partial<Record<MessagingChannelName, MessageChannel>>;
   preferenceOrder: MessagingChannelName[];
+  contentAuthorizer: OutboundContentAuthorizer;
+  sideEffectAuthorizer: OutboundSideEffectAuthorizer;
   db?: DbClient;
   now?: () => Date;
 }
@@ -80,6 +89,9 @@ export async function sendOutboundMessage(
     });
     return { outcome: 'rejected_by_policy', channel: null, providerMessageId: null, deliveryId: null, reason };
   };
+
+  const contentAuthorization = deps.contentAuthorizer.verify(input.text, input.authorizedEgress);
+  if (!contentAuthorization.allowed) return await refuse(contentAuthorization.reason);
 
   // 1–2. Tenant boundary, then the policy gate — both before any provider is
   // contacted and before anything is written.
@@ -119,6 +131,15 @@ export async function sendOutboundMessage(
     const channel = deps.channels[identity.channel];
     if (!channel) continue;
 
+    const sideEffectAuthorization = await deps.sideEffectAuthorizer.authorize({
+      workspaceId: input.workspaceId,
+      contactId: input.contactId,
+      channel: identity.channel,
+      destination: identity.destination,
+      purpose: input.purpose,
+    });
+    if (!sideEffectAuthorization.allowed) return await refuse(sideEffectAuthorization.reason);
+
     // 4. Idempotency, before anything is written.
     //
     // The ledger's UNIQUE (provider, integration_id, idempotency_key) is the
@@ -139,26 +160,18 @@ export async function sendOutboundMessage(
         continue;
       }
 
-      const messageId = await insertOutboundMessage(db, {
-        conversationId, contactId: input.contactId, text: input.text, idempotencyKey: input.idempotencyKey,
-      });
-
       try {
-        const [queued] = await db<Array<{ delivery_id: string }>>`
-          SELECT delivery_id
-          FROM enqueue_outbound_delivery(
-            ${messageId}::uuid,
-            ${channel.provider},
-            ${channel.integrationId},
-            ${identity.channel},
-            ${input.purpose},
-            ${identity.destination},
-            ${input.idempotencyKey},
-            ${jsonbParam(db, { text: input.text, purpose: input.purpose })},
-            ${3}
-          )
-        `;
-        deliveryId = queued.delivery_id;
+        deliveryId = await reserveOutboundDelivery(db, {
+          conversationId,
+          contactId: input.contactId,
+          text: input.text,
+          idempotencyKey: input.idempotencyKey,
+          provider: channel.provider,
+          integrationId: channel.integrationId,
+          channel: identity.channel,
+          purpose: input.purpose,
+          destination: identity.destination,
+        });
       } catch (error) {
         // Lost a race against a concurrent request carrying the same key. The
         // constraint did its job; read the winner's row and defer to it rather
@@ -290,22 +303,49 @@ async function resolveConversationId(
   return rows[0]?.id ?? null;
 }
 
-async function insertOutboundMessage(
+async function reserveOutboundDelivery(
   db: DbClient,
-  args: { conversationId: string; contactId: string; text: string; idempotencyKey: string },
+  args: {
+    conversationId: string;
+    contactId: string;
+    text: string;
+    idempotencyKey: string;
+    provider: string;
+    integrationId: string;
+    channel: MessagingChannelName;
+    purpose: SendOutboundMessageInput['purpose'];
+    destination: string;
+  },
 ): Promise<string> {
-  const rows = await db<Array<{ id: string }>>`
-    INSERT INTO messages (conversation_id, contact_id, direction, content, metadata)
-    VALUES (
-      ${args.conversationId}::uuid,
-      ${args.contactId}::uuid,
-      'outbound',
-      ${args.text},
-      ${jsonbParam(db, { origin: 'direct_outbound', idempotency_key: args.idempotencyKey })}
+  // One PostgreSQL statement makes message + delivery reservation atomic. If
+  // the delivery UNIQUE loses a race, the inserted message rolls back too.
+  const rows = await db<Array<{ delivery_id: string }>>`
+    WITH inserted_message AS (
+      INSERT INTO messages (conversation_id, contact_id, direction, content, metadata)
+      VALUES (
+        ${args.conversationId}::uuid,
+        ${args.contactId}::uuid,
+        'outbound',
+        ${args.text},
+        ${jsonbParam(db, { origin: 'direct_outbound', idempotency_key: args.idempotencyKey })}
+      )
+      RETURNING id
     )
-    RETURNING id
+    SELECT queued.delivery_id
+    FROM inserted_message AS message
+    CROSS JOIN LATERAL enqueue_outbound_delivery(
+      message.id,
+      ${args.provider},
+      ${args.integrationId},
+      ${args.channel},
+      ${args.purpose},
+      ${args.destination},
+      ${args.idempotencyKey},
+      ${jsonbParam(db, { text: args.text, purpose: args.purpose })},
+      ${3}
+    ) AS queued
   `;
-  return rows[0].id;
+  return rows[0].delivery_id;
 }
 
 interface LedgerRow {

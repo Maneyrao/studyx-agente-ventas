@@ -78,13 +78,19 @@ export class PostgresChannelIdentityStore implements ChannelIdentityStore {
       channel: MessagingChannelName;
       provider: string;
       integration_id: string;
-      external_conversation_id: string;
+      destination: string;
       last_seen_at: string;
     }>>`
-      SELECT ct.channel, ct.provider, ct.integration_id, ct.external_conversation_id, ct.last_seen_at
+      SELECT
+        ct.channel,
+        ct.provider,
+        ct.integration_id,
+        CASE WHEN ct.channel = 'whatsapp' THEN c.phone ELSE ct.external_conversation_id END AS destination,
+        ct.last_seen_at
       FROM channel_threads AS ct
       JOIN workspace_contacts AS wc
         ON wc.contact_id = ct.contact_id AND wc.workspace_id = ${workspaceId}::uuid
+      JOIN contacts AS c ON c.id = ct.contact_id
       WHERE ct.contact_id = ${contactId}::uuid
         AND ct.unusable_at IS NULL
         AND ct.channel IN ('whatsapp', 'telegram')
@@ -94,7 +100,7 @@ export class PostgresChannelIdentityStore implements ChannelIdentityStore {
       channel: row.channel,
       provider: row.provider,
       integrationId: row.integration_id,
-      destination: row.external_conversation_id,
+      destination: row.destination,
       lastSeenAt: row.last_seen_at,
     }));
   }

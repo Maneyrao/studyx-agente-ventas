@@ -4,6 +4,8 @@ import { openLocalTestDatabase } from '../helpers/db';
 import { sql } from '@/lib/db/orchestrator';
 import { sendOutboundMessage } from '@/features/messaging/application/send-outbound-message';
 import { PostgresChannelIdentityStore } from '@/features/messaging/adapters/postgres-channel-identity-store';
+import { AuthorizedEgressContentAuthorizer } from '@/features/messaging/adapters/authorized-egress-content-authorizer';
+import { buildAuthorizedEgress } from '@/features/orchestration/domain/egress-guard';
 import {
   AmbiguousChannelError,
   ConfirmedChannelError,
@@ -54,6 +56,7 @@ function recordingChannel(
 interface Fixture {
   workspaceId: string;
   contactId: string;
+  phone: string;
 }
 
 async function seedContact(options: {
@@ -100,7 +103,7 @@ async function seedContact(options: {
     const enabled = channel === 'telegram' ? options.telegram : options.whatsapp;
     if (!enabled) continue;
 
-    const destination = channel === 'telegram' ? `tg-${suffix}` : phone;
+    const destination = channel === 'telegram' ? `tg-${suffix}` : `bp-conversation-${suffix}`;
     const [thread] = await database<Array<{ id: string }>>`
       INSERT INTO channel_threads (contact_id, provider, integration_id, channel, external_conversation_id)
       VALUES (
@@ -126,17 +129,30 @@ async function seedContact(options: {
     `;
   }
 
-  return { workspaceId: workspace.id, contactId: contact.id };
+  return { workspaceId: workspace.id, contactId: contact.id, phone };
 }
 
-const request = (fixture: Fixture, over: Record<string, unknown> = {}) => ({
-  workspaceId: fixture.workspaceId,
-  contactId: fixture.contactId,
-  text: 'Tu link de pago: https://example.test/pay/abc',
-  idempotencyKey: `retell:${randomUUID()}`,
-  purpose: 'transactional' as const,
-  ...over,
-});
+const request = (
+  fixture: Pick<Fixture, 'workspaceId' | 'contactId'>,
+  over: Record<string, unknown> = {},
+) => {
+  const text = typeof over.text === 'string'
+    ? over.text
+    : 'Tu link de pago: https://example.test/pay/abc';
+  return {
+    workspaceId: fixture.workspaceId,
+    contactId: fixture.contactId,
+    text,
+    authorizedEgress: buildAuthorizedEgress({
+      content: text,
+      authorized_urls: ['https://example.test/pay/abc'],
+      protected_facts: [],
+    }),
+    idempotencyKey: `retell:${randomUUID()}`,
+    purpose: 'transactional' as const,
+    ...over,
+  };
+};
 
 run('direct outbound delivery', () => {
   let store: PostgresChannelIdentityStore;
@@ -149,7 +165,53 @@ run('direct outbound delivery', () => {
     identities: store,
     channels,
     preferenceOrder: ['whatsapp', 'telegram'] as Array<'whatsapp' | 'telegram'>,
+    contentAuthorizer: new AuthorizedEgressContentAuthorizer(),
+    sideEffectAuthorizer: {
+      authorize: async () => ({ allowed: true as const, reason: null }),
+    },
     db: db!,
+  });
+
+  it('rejects a tampered authorized egress before contacting a provider', async () => {
+    const fixture = await seedContact({ telegram: true });
+    const telegram = recordingChannel('telegram');
+    const authorized = request(fixture);
+
+    const result = await sendOutboundMessage(
+      { ...authorized, text: `${authorized.text}?redirect=evil.example` },
+      deps({ telegram }),
+    );
+
+    expect(result.outcome).toBe('rejected_by_policy');
+    expect(result.reason).toBe('EGRESS_HASH_MISMATCH');
+    expect(telegram.sends).toHaveLength(0);
+  });
+
+  it('requires a side-effect authorization before contacting a provider', async () => {
+    const fixture = await seedContact({ telegram: true });
+    const telegram = recordingChannel('telegram');
+    const guardedDeps = {
+      ...deps({ telegram }),
+      sideEffectAuthorizer: {
+        authorize: async () => ({ allowed: false as const, reason: 'AUTOMATION_DISABLED' }),
+      },
+    };
+
+    const result = await sendOutboundMessage(request(fixture), guardedDeps);
+
+    expect(result.outcome).toBe('rejected_by_policy');
+    expect(result.reason).toBe('AUTOMATION_DISABLED');
+    expect(telegram.sends).toHaveLength(0);
+  });
+
+  it('uses the canonical E.164 phone instead of a Botpress conversation id', async () => {
+    const fixture = await seedContact({ whatsapp: true, whatsappWindow: 'open' });
+    const whatsapp = recordingChannel('whatsapp');
+
+    const result = await sendOutboundMessage(request(fixture), deps({ whatsapp }));
+
+    expect(result.outcome).toBe('sent');
+    expect(whatsapp.sends).toEqual([fixture.phone]);
   });
 
   // Scenario 1 — the MVP promise.
@@ -238,6 +300,14 @@ run('direct outbound delivery', () => {
     const fulfilled = results.filter((r) => r.status === 'fulfilled');
     expect(fulfilled.length).toBeGreaterThan(0);
     expect(telegram.sends).toHaveLength(1);
+    const [{ count }] = await db!<Array<{ count: number }>>`
+      SELECT count(*)::int AS count
+      FROM messages
+      WHERE contact_id = ${fixture.contactId}::uuid
+        AND direction = 'outbound'
+        AND metadata ->> 'idempotency_key' = ${payload.idempotencyKey}
+    `;
+    expect(count).toBe(1);
   });
 
   // Scenario 3 — consent.
