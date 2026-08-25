@@ -255,7 +255,7 @@ async function flushLocalPostTurn(credentials: LocalCredentials, traceId: string
   }));
 }
 
-function createLocalTurnSender(
+export function createLocalTurnSender(
   credentials: LocalCredentials,
   runId: string,
   modelProvider: 'groq' | 'gemini',
@@ -831,7 +831,9 @@ async function main() {
   if (report.summary.failed > 0) process.exitCode = 1;
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}

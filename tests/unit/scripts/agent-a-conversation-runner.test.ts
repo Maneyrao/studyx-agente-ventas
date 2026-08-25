@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   assertSuitePromptVersion,
   buildAdkChatArgs,
@@ -10,7 +10,132 @@ import {
   validateSuiteCaseInvariants,
   type ConversationSuite,
 } from '../../../scripts/lib/agent-a-conversation-runner';
+import { createLocalTurnSender } from '../../../scripts/run-agent-a-conversations';
 import { AGENT_A_PROMPT_VERSION } from '../../../botpress-agent/src/prompts/agent-a-sales-bridge';
+
+const LOCAL_TRANSPORT_UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
+const LOCAL_TRANSPORT_NOW = '2026-08-21T12:00:00.000Z';
+
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+function localIngestResponse() {
+  return {
+    status: 'accepted',
+    replayed: false,
+    trace_id: LOCAL_TRANSPORT_UUID,
+    turn_id: LOCAL_TRANSPORT_UUID,
+    conversation_id: LOCAL_TRANSPORT_UUID,
+    batch: {
+      id: LOCAL_TRANSPORT_UUID,
+      state: 'waiting',
+      joined_existing: false,
+      due_at: LOCAL_TRANSPORT_NOW,
+      hard_deadline_at: LOCAL_TRANSPORT_NOW,
+      conversation_seq: 1,
+      message_count: 1,
+    },
+    policy: { may_respond: true, allowed_response_types: ['social_reply'], reason: null },
+    contact: {
+      id: LOCAL_TRANSPORT_UUID,
+      status: 'prospecto',
+      name: null,
+      blocked: false,
+      consent_status: 'allowed',
+    },
+    existing_result: null,
+  };
+}
+
+function localClaimedTurn() {
+  return {
+    outcome: 'claimed',
+    trace_id: LOCAL_TRANSPORT_UUID,
+    batch: {
+      id: LOCAL_TRANSPORT_UUID,
+      claim_token: LOCAL_TRANSPORT_UUID,
+      conversation_id: LOCAL_TRANSPORT_UUID,
+      contact_id: LOCAL_TRANSPORT_UUID,
+      lease_until: LOCAL_TRANSPORT_NOW,
+      hard_deadline_at: LOCAL_TRANSPORT_NOW,
+      message_count: 1,
+      stolen: false,
+    },
+    turn_id: LOCAL_TRANSPORT_UUID,
+    policy: { may_respond: true, allowed_response_types: ['social_reply'], reason: null },
+    contact: {
+      id: LOCAL_TRANSPORT_UUID,
+      status: 'prospecto',
+      name: null,
+      blocked: false,
+      consent_status: 'allowed',
+      opted_in_at: LOCAL_TRANSPORT_NOW,
+    },
+    context: {
+      batch_messages: [{
+        id: LOCAL_TRANSPORT_UUID,
+        conversation_seq: 1,
+        content: 'hola',
+        created_at: LOCAL_TRANSPORT_NOW,
+        message_type: 'text',
+      }],
+      recent_turns: [],
+      summary: { text: null, version: 0, updated_at: null },
+      selected_memories: [],
+      long_term_memory_available: false,
+      knowledge_base: [],
+      knowledge_base_available: false,
+      knowledge_base_dropped: 0,
+      injection_suspected_count: 0,
+    },
+    sales_context: {
+      mode: 'advising',
+      course_of_interest: 'Redes Informáticas',
+      offering_code: 'redes_informaticas',
+      open_call_offer: null,
+      accepted_call_offer: null,
+      active_call: null,
+      allowed_actions: ['offer_call'],
+      last_call_result: null,
+    },
+    catalog_resolution: {
+      kind: 'exact',
+      offeringCode: 'redes_informaticas',
+      displayName: 'Redes Informáticas',
+      academy: 'Tecnología',
+      match: 'canonical',
+    },
+    deterministic_route: 'greeting',
+    diagnostics: {
+      timings: {
+        claim_total_ms: 7,
+        core_db_ms: 2,
+        shared_embedding_ms: 1,
+        memory_search_ms: 1,
+        knowledge_search_ms: 1,
+        business_snapshot_ms: 2,
+      },
+      counters: {
+        embedding_calls: 1,
+        memory_search_calls: 1,
+        knowledge_search_calls: 1,
+        business_snapshot_calls: 1,
+        catalog_calls: 0,
+      },
+    },
+    business_context: null,
+    business_context_available: false,
+    existing_result: null,
+  };
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('Agent A conversation runner', () => {
   it('runs every turn in order and keeps the conversation id', async () => {
@@ -91,25 +216,25 @@ describe('Agent A conversation runner', () => {
     }]);
   });
 
-  it('persists a rejected commit payload with its claim-time authority chain', async () => {
-    const rejection = Object.assign(new Error('LOCAL_STUDYX_DECISION_REJECTED'), {
-      turnDiagnostic: {
-        catalogResolution: {
-          kind: 'exact' as const,
-          offeringCode: 'redes_informaticas',
-          displayName: 'Redes Informáticas',
-        },
-        selectedOfferingCode: 'redes_informaticas',
-        decisionBusinessAction: { type: 'course_interest', offering_code: 'redes_informaticas' },
-        authorizedProtectedFacts: [],
-        authorizedUrls: [],
-        commitError: {
-          status: 422,
-          error: 'DECISION_REJECTED',
-          reason: 'EGRESS_UNAUTHORIZED_PROTECTED_FACT',
-        },
-      },
-    });
+  it('persists an HTTP 422 commit rejection with its claim-time authority chain', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(jsonResponse(200, localIngestResponse()))
+      .mockResolvedValueOnce(jsonResponse(200, localClaimedTurn()))
+      .mockResolvedValueOnce(jsonResponse(422, {
+        error: 'DECISION_REJECTED',
+        reason: 'EGRESS_UNAUTHORIZED_PROTECTED_FACT',
+      })));
+    const sendTurn = createLocalTurnSender({
+      apiBaseUrl: 'http://127.0.0.1:3000',
+      orchestratorKey: 'test-orchestrator-key',
+      orchestratorKeyId: 'test-key-id',
+      signingSecret: 'test-signing-secret',
+      cronSecret: null,
+      geminiApiKey: 'test-gemini-key',
+      geminiModel: 'test-gemini-model',
+      groqApiKey: 'test-groq-key',
+      groqModel: 'test-groq-model',
+    }, 'authority-422', 'groq', 0);
     const result = await runConversationCase(
       {
         id: 'authority_chain_rejected',
@@ -120,13 +245,30 @@ describe('Agent A conversation runner', () => {
       },
       {
         runId: 'run123',
-        sendTurn: vi.fn().mockRejectedValue(rejection),
+        sendTurn,
       },
     );
 
     expect(result.failures).toContain('turn_1_error:LOCAL_STUDYX_DECISION_REJECTED');
     expect(result.turn_diagnostics).toEqual([
-      rejection.turnDiagnostic,
+      {
+        catalogResolution: {
+          kind: 'exact',
+          offeringCode: 'redes_informaticas',
+          displayName: 'Redes Informáticas',
+          academy: 'Tecnología',
+          match: 'canonical',
+        },
+        selectedOfferingCode: 'redes_informaticas',
+        decisionBusinessAction: null,
+        authorizedProtectedFacts: [],
+        authorizedUrls: [],
+        commitError: {
+          status: 422,
+          error: 'DECISION_REJECTED',
+          reason: 'EGRESS_UNAUTHORIZED_PROTECTED_FACT',
+        },
+      },
     ]);
   });
 
