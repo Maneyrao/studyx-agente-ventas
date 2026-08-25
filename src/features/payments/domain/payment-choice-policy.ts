@@ -56,6 +56,46 @@ const PAYMENT_DEFERRAL_PATTERNS: readonly RegExp[] = [
   /\bsi\s+(?:comprara|me\s+anotara|me\s+inscribiera|eligiera)\b/,
 ];
 
+const TEMPORAL_PAYMENT_DEFERRAL_PATTERNS: readonly RegExp[] = [
+  /\bno\s+me\s+(?:mandes|envies|pases|compartas)\s+(?:el\s+)?link\b/,
+  /\b(?:todavia\s+no|despues|mas\s+adelante|por\s+ahora\s+no)\b/,
+];
+
+const NON_COMMITTAL_PAYMENT_PATTERNS: readonly RegExp[] = [
+  /\b(?:solo|solamente)\s+(?:consultaba|preguntaba|averiguaba)\b/,
+  /\bsi\s+(?:comprara|me\s+anotara|me\s+inscribiera|eligiera)\b/,
+];
+
+function plansMentionedIn(normalized: string): Set<PaymentPlanCode> {
+  const matched = new Set<PaymentPlanCode>();
+  for (const { code, pattern } of PLAN_PATTERNS) {
+    if (pattern.test(normalized)) matched.add(code);
+  }
+  return matched;
+}
+
+/**
+ * Recovers only a real plan selection that was explicitly postponed. It is
+ * deliberately narrower than generic deferral: hypothetical and
+ * information-only phrases never become resumable purchase authority.
+ */
+export function deriveDeferredPaymentChoiceFromBatch(
+  messages: readonly PolicyBatchMessage[]
+): PaymentPlanCode | null {
+  const matched = new Set<PaymentPlanCode>();
+  let temporallyDeferred = false;
+  for (const message of messages) {
+    const normalized = normalize(message.content ?? '');
+    if (NON_COMMITTAL_PAYMENT_PATTERNS.some((pattern) => pattern.test(normalized))) return null;
+    if (TEMPORAL_PAYMENT_DEFERRAL_PATTERNS.some((pattern) => pattern.test(normalized))) {
+      temporallyDeferred = true;
+    }
+    for (const plan of plansMentionedIn(normalized)) matched.add(plan);
+  }
+  if (!temporallyDeferred || matched.size !== 1) return null;
+  return [...matched][0] ?? null;
+}
+
 export function derivePaymentChoiceFromBatch(
   messages: readonly PolicyBatchMessage[]
 ): PaymentPlanCode | null {
@@ -66,9 +106,7 @@ export function derivePaymentChoiceFromBatch(
     // This is the backend authority that prevents a model from turning
     // "12 cuotas, pero todavía no" into a live Stripe link.
     if (PAYMENT_DEFERRAL_PATTERNS.some((pattern) => pattern.test(normalized))) return null;
-    for (const { code, pattern } of PLAN_PATTERNS) {
-      if (pattern.test(normalized)) matched.add(code);
-    }
+    for (const plan of plansMentionedIn(normalized)) matched.add(plan);
   }
   if (matched.size !== 1) return null;
   const [only] = matched;

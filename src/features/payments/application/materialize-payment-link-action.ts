@@ -1,6 +1,7 @@
 import {
   PAYMENT_PLAN_PRESENTATIONS,
   PaymentLinkBlock,
+  type PaymentPlanCode,
   SendPaymentLinkAction,
   isPaymentPlanCode,
   stripUnauthorizedUrls,
@@ -23,6 +24,7 @@ export type PaymentLinkRefusalReason =
   | 'AMBIGUOUS_OR_ABSENT_CHOICE'
   | 'PLAN_MISMATCH'
   | 'OFFERING_REQUIRED'
+  | 'OFFERING_MISMATCH'
   | 'OFFERING_NOT_FOUND'
   | 'LINK_CONFIG_MISSING';
 
@@ -37,6 +39,10 @@ export interface MaterializePaymentLinkBusinessSnapshot {
 
 export interface MaterializePaymentLinkInput {
   readonly action: SendPaymentLinkAction;
+  /** Exact offering selected by the backend claim; never supplied by the model. */
+  readonly authorizedOfferingCode: string | null;
+  /** Backend-derived plan from a prior explicitly deferred selection. */
+  readonly deferredPlanCode?: PaymentPlanCode | null;
   /** The CURRENT batch only — never recent_turns, summary or memory. */
   readonly batchMessages: readonly PolicyBatchMessage[];
   /** The canonical business snapshot passed in as data; never queried here. */
@@ -74,7 +80,16 @@ export type MaterializePaymentLinkResult =
 export function materializePaymentLinkAction(
   input: MaterializePaymentLinkInput
 ): MaterializePaymentLinkResult {
-  const { action, batchMessages, businessSnapshot, contact, modelResponseText, resolver } = input;
+  const {
+    action,
+    authorizedOfferingCode,
+    deferredPlanCode,
+    batchMessages,
+    businessSnapshot,
+    contact,
+    modelResponseText,
+    resolver,
+  } = input;
 
   if (contact.blocked) {
     return { ok: false, reason: 'CONTACT_BLOCKED' };
@@ -86,7 +101,16 @@ export function materializePaymentLinkAction(
     return { ok: false, reason: 'INVALID_PLAN_CODE' };
   }
 
-  const allowedPlan = derivePaymentChoiceFromBatch(batchMessages);
+  const directPlan = derivePaymentChoiceFromBatch(batchMessages);
+  const resumesDeferredPlan = directPlan === null && batchMessages.some((message) => {
+    const normalized = message.content
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .toLowerCase();
+    return /\bahora\s+si\b.{0,48}\b(?:manda|mandame|mandamelo|envia|enviame|pasame|comparti|compartime)(?:lo|la|me)?\b/u
+      .test(normalized);
+  });
+  const allowedPlan = directPlan ?? (resumesDeferredPlan ? deferredPlanCode ?? null : null);
   if (allowedPlan === null) {
     return { ok: false, reason: 'AMBIGUOUS_OR_ABSENT_CHOICE' };
   }
@@ -99,6 +123,9 @@ export function materializePaymentLinkAction(
 
   if (action.offering_sku === null) {
     return { ok: false, reason: 'OFFERING_REQUIRED' };
+  }
+  if (authorizedOfferingCode === null || action.offering_sku !== authorizedOfferingCode) {
+    return { ok: false, reason: 'OFFERING_MISMATCH' };
   }
   const offeringExists = businessSnapshot.offerings.some(
     (offering) => offering.code === action.offering_sku

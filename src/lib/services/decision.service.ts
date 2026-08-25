@@ -18,6 +18,10 @@ import { materializePaymentLinkAction } from '@/features/payments/application/ma
 import { createConfigPaymentLinkResolver } from '@/features/payments/adapters/config-payment-link.resolver';
 import { PAYMENT_PLAN_PRESENTATIONS } from '@/features/payments/domain/payment-link';
 import {
+  deriveDeferredPaymentChoiceFromBatch,
+  derivePaymentChoiceFromBatch,
+} from '@/features/payments/domain/payment-choice-policy';
+import {
   buildAuthorizedEgress,
   verifyAuthorizedEgress,
   type AuthorizedEgressV1,
@@ -439,9 +443,28 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       // protected fact. A greeting/plain clarification does not pay this DB
       // latency. Payment and fact authorization reuse the same snapshot.
       const offerings = await loadCanonicalOfferings('payment_link');
+      let deferredPlanCode: ReturnType<typeof deriveDeferredPaymentChoiceFromBatch> = null;
+      if (derivePaymentChoiceFromBatch(batchMessages) === null) {
+        const priorInboundMessages = await db<Array<{ content: string }>>`
+          SELECT prior.content
+          FROM messages AS prior
+          WHERE prior.conversation_id = ${turn.conversation_id}::uuid
+            AND prior.direction = 'inbound'
+            AND prior.conversation_seq < (
+              SELECT current_turn.conversation_seq
+              FROM messages AS current_turn
+              WHERE current_turn.id = ${turn.id}::uuid
+            )
+          ORDER BY prior.conversation_seq DESC, prior.created_at DESC, prior.id DESC
+          LIMIT 1
+        `;
+        deferredPlanCode = deriveDeferredPaymentChoiceFromBatch(priorInboundMessages);
+      }
 
       const materialized = materializePaymentLinkAction({
         action,
+        authorizedOfferingCode: validatedInput.authorized_offering_code ?? null,
+        deferredPlanCode,
         batchMessages,
         businessSnapshot: { offerings },
         contact: {

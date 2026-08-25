@@ -944,6 +944,7 @@ run('Fase 4 — pago y cierre de batch', () => {
     return {
       turn_id: turnId,
       trace_id: overrides.traceId ?? randomUUID(),
+      authorized_offering_code: 'course_test',
       decision: {
         schema_version: 4 as const,
         intent: 'commercial' as const,
@@ -1150,6 +1151,88 @@ run('Fase 4 — pago y cierre de batch', () => {
     expect(JSON.stringify(audits[0].payload)).not.toContain(auditCanary);
     expect(JSON.stringify(audits[0].payload)).not.toContain('evil.example.com');
     expect(JSON.stringify(audits[0].payload)).not.toContain('/steal');
+  });
+
+  it('rejects a catalog-valid payment SKU that differs from the claim-authorized SKU', async () => {
+    const accepted = await processInboundMessage(paymentInbound());
+    const mismatched = {
+      ...paymentDecision(accepted.turn_id),
+      authorized_offering_code: 'course_other',
+    };
+
+    await expect(commitAgentDecision(mismatched)).rejects.toMatchObject({
+      code: 'DECISION_REJECTED',
+      reason: 'OFFERING_MISMATCH',
+    });
+
+    const persisted = await db!<Array<{ decisions: number; outbound: number }>>`
+      SELECT
+        count(ad.id)::integer AS decisions,
+        count(ad.outbound_message_id)::integer AS outbound
+      FROM messages AS turn
+      LEFT JOIN agent_decisions AS ad ON ad.turn_id = turn.id
+      WHERE turn.id = ${accepted.turn_id}::uuid
+    `;
+    expect(persisted[0]).toEqual({ decisions: 0, outbound: 0 });
+  });
+
+  it('resumes one exact deferred plan on a later explicit "ahora sí" turn', async () => {
+    const firstEnvelope = envelope({
+      message: {
+        type: 'text',
+        text: 'Confirmo 6 cuotas para Decoración de Interiores, pero mandámelo después.',
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    });
+    const first = await processInboundMessage(firstEnvelope);
+    const deferredDecision = {
+      ...paymentDecision(first.turn_id),
+      authorized_offering_code: 'decoracion_interiores',
+      decision: {
+        ...paymentDecision(first.turn_id).decision,
+        business_action: {
+          type: 'send_payment_link' as const,
+          plan_code: 'monthly_6' as const,
+          offering_sku: 'decoracion_interiores',
+        },
+      },
+    };
+    await expect(commitAgentDecision(deferredDecision)).rejects.toMatchObject({
+      reason: 'AMBIGUOUS_OR_ABSENT_CHOICE',
+    });
+    await db!`
+      UPDATE inbound_batches
+      SET state = 'completed', completed_at = now(), updated_at = now()
+      WHERE id = ${first.batch.id}::uuid
+    `;
+
+    const resumed = await processInboundMessage({
+      ...firstEnvelope,
+      external_message_id: `message-${randomUUID()}`,
+      trace_id: randomUUID(),
+      message: {
+        type: 'text',
+        text: 'Ahora sí, mandámelo.',
+        occurred_at: new Date(Date.now() + 1_000).toISOString(),
+        reply_to_external_message_id: firstEnvelope.external_message_id,
+      },
+    });
+    const resumedDecision = {
+      ...paymentDecision(resumed.turn_id),
+      authorized_offering_code: 'decoracion_interiores',
+      decision: {
+        ...paymentDecision(resumed.turn_id).decision,
+        business_action: {
+          type: 'send_payment_link' as const,
+          plan_code: 'monthly_6' as const,
+          offering_sku: 'decoracion_interiores',
+        },
+      },
+    };
+
+    const committed = await commitAgentDecision(resumedDecision);
+    expect(committed.outbound?.content).toContain('https://buy.stripe.com/test_6m_lifecycle');
   });
 
   it('does not emit the same payment link twice in one conversation', async () => {

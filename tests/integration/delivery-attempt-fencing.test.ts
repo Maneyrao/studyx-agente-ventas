@@ -370,10 +370,15 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       INSERT INTO offerings (
         workspace_id, code, display_name, offering_type, status, description,
         price_type, price_amount, currency
-      ) VALUES (
-        ${paymentWorkspaceId}::uuid, 'course_fence', 'Curso Fencing', 'course', 'active',
-        'Offering canónico del test', 'fixed', 360, 'USD'
-      )
+      ) VALUES
+        (
+          ${paymentWorkspaceId}::uuid, 'course_fence', 'Curso Fencing', 'course', 'active',
+          'Offering canónico del test', 'fixed', 360, 'USD'
+        ),
+        (
+          ${paymentWorkspaceId}::uuid, 'decoracion_interiores', 'Decoración de Interiores',
+          'course', 'active', 'Offering canónico para g35_02', 'fixed', 360, 'USD'
+        )
     `;
     for (const key of [
       'BUSINESS_WORKSPACE_SLUG',
@@ -405,6 +410,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
     const committed = await commitAgentDecision({
       turn_id: context.turn_id,
       trace_id: randomUUID(),
+      authorized_offering_code: 'course_fence',
       decision: {
         schema_version: 4 as const,
         intent: 'commercial' as const,
@@ -483,6 +489,106 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       estado_pago: 'pendiente',
       plan: 'monthly_12',
       ultima_senal: 'payment_link_sent',
+    });
+  });
+
+  it('projects Decoración/6 cuotas once across confirmation, delivery replay and a later repeated turn', async () => {
+    const firstEnvelope = envelope('Confirmo 6 cuotas para Decoración de Interiores.');
+    const firstContext = await processInboundMessage(firstEnvelope);
+    const paymentInput = (turnId: string) => ({
+      turn_id: turnId,
+      trace_id: randomUUID(),
+      authorized_offering_code: 'decoracion_interiores',
+      decision: {
+        schema_version: 4 as const,
+        intent: 'commercial' as const,
+        kind: 'reply' as const,
+        response: 'Perfecto, te paso el link del plan de 6 cuotas.',
+        response_type: 'commercial_reply' as const,
+        business_action: {
+          type: 'send_payment_link' as const,
+          plan_code: 'monthly_6' as const,
+          offering_sku: 'decoracion_interiores',
+        },
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'completed' as const,
+        reason_code: 'PLAN_CHOSEN',
+        confidence: 0.95,
+        retrieval_used: null,
+      },
+      model: { provider: 'botpress' as const, model: 'test-model', prompt_version: 'v-g35-02' },
+    });
+    const first = await commitAgentDecision(paymentInput(firstContext.turn_id));
+    const deliveryRows = await sql<Array<{ attempt_count: number }>>`
+      SELECT attempt_count FROM outbound_deliveries WHERE message_id = ${first.outbound!.id}::uuid
+    `;
+    const delivery = {
+      outbound_id: first.outbound!.id,
+      trace_id: randomUUID(),
+      status: 'submitted_to_botpress' as const,
+      botpress_message_id: `bp-g35-02-${randomUUID()}`,
+      replayed: false,
+      error_code: null,
+      delivery_attempt: deliveryRows[0].attempt_count,
+    };
+    expect((await recordDeliveryReport(delivery)).status).toBe('recorded');
+    expect((await recordDeliveryReport({ ...delivery, trace_id: randomUUID(), replayed: true })).status)
+      .toBe('duplicate');
+    await sql`
+      UPDATE inbound_batches
+      SET state = 'completed', completed_at = now(), updated_at = now()
+      WHERE id = ${firstContext.batch.id}::uuid
+    `;
+
+    const repeatedContext = await processInboundMessage({
+      ...firstEnvelope,
+      external_message_id: `message-${randomUUID()}`,
+      trace_id: randomUUID(),
+      message: {
+        type: 'text',
+        text: 'Confirmo nuevamente las 6 cuotas.',
+        occurred_at: new Date(Date.now() + 1_000).toISOString(),
+        reply_to_external_message_id: firstEnvelope.external_message_id,
+      },
+    });
+    const repeated = await commitAgentDecision(paymentInput(repeatedContext.turn_id));
+
+    expect(first.outbound?.content).toContain('https://buy.stripe.com/test_6m_fence');
+    expect(repeated.outbound?.content).toMatch(/ya te compartí el link/i);
+    expect(repeated.outbound?.content).not.toContain('https://buy.stripe.com/test_6m_fence');
+
+    const counts = await sql<Array<{
+      payment_actions: number;
+      link_messages: number;
+      sheet_rows: number;
+      sheet_plan: string;
+      sheet_course: string;
+    }>>`
+      SELECT
+        count(DISTINCT ad.id) FILTER (
+          WHERE ad.business_action ->> 'type' = 'send_payment_link'
+        )::integer AS payment_actions,
+        count(DISTINCT outbound.id) FILTER (
+          WHERE outbound.content LIKE '%https://buy.stripe.com/test_6m_fence%'
+        )::integer AS link_messages,
+        count(DISTINCT spr.id)::integer AS sheet_rows,
+        max(spr.payload ->> 'plan') AS sheet_plan,
+        max(spr.payload ->> 'curso_interes') AS sheet_course
+      FROM messages AS inbound
+      LEFT JOIN agent_decisions AS ad ON ad.turn_id = inbound.id
+      LEFT JOIN messages AS outbound ON outbound.id = ad.outbound_message_id
+      LEFT JOIN sheet_projection_rows AS spr
+        ON spr.projection_key = ${leadProjectionKey(paymentWorkspaceId, firstContext.contact.id)}
+      WHERE inbound.conversation_id = ${firstContext.conversation_id}::uuid
+        AND inbound.direction = 'inbound'
+    `;
+    expect(counts[0]).toEqual({
+      payment_actions: 1,
+      link_messages: 1,
+      sheet_rows: 1,
+      sheet_plan: 'monthly_6',
+      sheet_course: 'Decoración de Interiores',
     });
   });
 });
