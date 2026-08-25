@@ -445,6 +445,57 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
     };
   }
 
+  async function commitPaymentTurn(
+    turnId: string,
+    offeringSku: 'course_fence' | 'decoracion_interiores',
+    planCode: 'monthly_12' | 'monthly_6',
+    promptVersion: string,
+  ) {
+    return commitAgentDecision({
+      turn_id: turnId,
+      trace_id: randomUUID(),
+      authorized_offering_code: offeringSku,
+      decision: {
+        schema_version: 4 as const,
+        intent: 'commercial' as const,
+        kind: 'reply' as const,
+        response: `Confirmado: ${planCode}.`,
+        response_type: 'commercial_reply' as const,
+        business_action: {
+          type: 'send_payment_link' as const,
+          plan_code: planCode,
+          offering_sku: offeringSku,
+        },
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'completed' as const,
+        reason_code: 'PLAN_CHOSEN',
+        confidence: 0.95,
+        retrieval_used: null,
+      },
+      model: { provider: 'botpress' as const, model: 'test-model', prompt_version: promptVersion },
+    });
+  }
+
+  async function submitPayment(
+    committed: Awaited<ReturnType<typeof commitAgentDecision>>,
+    providerPrefix: string,
+  ) {
+    const deliveries = await sql<Array<{ attempt_count: number }>>`
+      SELECT attempt_count FROM outbound_deliveries
+      WHERE message_id = ${committed.outbound!.id}::uuid
+    `;
+    await recordDeliveryReport({
+      outbound_id: committed.outbound!.id,
+      trace_id: randomUUID(),
+      status: 'submitted_to_botpress',
+      botpress_message_id: `${providerPrefix}-${randomUUID()}`,
+      replayed: false,
+      error_code: null,
+      delivery_attempt: deliveries[0].attempt_count,
+    });
+  }
+
   async function projectionRows(contactId: string) {
     return sql<Array<{ payload: Record<string, unknown> }>>`
       SELECT payload FROM sheet_projection_rows
@@ -711,14 +762,6 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
     const functionName = `test_fail_sheet_projection_${suffix}`;
     const triggerName = `test_fail_sheet_projection_trigger_${suffix}`;
     const projectionKey = leadProjectionKey(paymentWorkspaceId, turn.contact_id);
-    // This cluster intentionally keeps rows from prior local runs. Make this
-    // target the oldest candidate so the bounded production sweep must inspect
-    // it without depending on global test-database cleanliness.
-    await sql`
-      UPDATE agent_decisions
-      SET created_at = '2000-01-01T00:00:00Z'::timestamptz
-      WHERE outbound_message_id = ${turn.outbound!.id}::uuid
-    `;
     await sql.unsafe(`
       CREATE FUNCTION public.${functionName}() RETURNS trigger
       LANGUAGE plpgsql AS $$
@@ -745,6 +788,13 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
 
     try {
       expect((await recordDeliveryReport(report)).status).toBe('recorded');
+      // The local cluster retains jobs from previous runs. Age only this test
+      // job so the bounded pending index must acquire it in the first page.
+      await sql`
+        UPDATE payment_projection_jobs
+        SET delivered_at = '2000-01-01T00:00:00Z'::timestamptz
+        WHERE outbound_message_id = ${turn.outbound!.id}::uuid
+      `;
       const afterFailure = await sql<Array<{ state: string; reports: number; rows: number }>>`
         SELECT
           od.state,
@@ -826,5 +876,171 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       outbounds: 1,
       rows: 1,
     });
+  });
+
+  it('never projects a foreign workspace payment or its contact PII into the configured tenant', async () => {
+    const foreignSlug = `foreign-payment-${randomUUID().slice(0, 8)}`;
+    const foreign = await sql<Array<{ id: string }>>`
+      INSERT INTO workspaces (slug, display_name)
+      VALUES (${foreignSlug}, 'Foreign Payment Workspace')
+      RETURNING id
+    `;
+    await sql`
+      INSERT INTO offerings (
+        workspace_id, code, display_name, offering_type, status, description,
+        price_type, price_amount, currency
+      ) VALUES (
+        ${foreign[0].id}::uuid, 'course_fence', 'Foreign Secret Course', 'course',
+        'active', 'Must never cross the tenant boundary', 'fixed', 999, 'USD'
+      )
+    `;
+
+    process.env.BUSINESS_WORKSPACE_SLUG = foreignSlug;
+    try {
+      const context = await processInboundMessage(envelope('Confirmo 12 cuotas del curso extranjero.'));
+      const committed = await commitPaymentTurn(
+        context.turn_id,
+        'course_fence',
+        'monthly_12',
+        'v-foreign-workspace',
+      );
+      await sql`
+        INSERT INTO workspace_contacts (workspace_id, contact_id, lifecycle_status)
+        VALUES (${foreign[0].id}::uuid, ${context.contact.id}::uuid, 'active')
+        ON CONFLICT (workspace_id, contact_id) DO NOTHING
+      `;
+      await submitPayment(committed, 'bp-foreign');
+
+      await sql`
+        UPDATE agent_decisions
+        SET created_at = '1990-01-01T00:00:00Z'::timestamptz
+        WHERE id = ${committed.decision_id}::uuid
+      `;
+      process.env.BUSINESS_WORKSPACE_SLUG = PAYMENT_WORKSPACE_SLUG;
+      await reconcileDeliveredPaymentProjections({ limit: 100 });
+
+      const leaked = await sql<Array<{ payload: Record<string, unknown> }>>`
+        SELECT payload FROM sheet_projection_rows
+        WHERE projection_key = ${leadProjectionKey(paymentWorkspaceId, context.contact.id)}
+      `;
+      expect(leaked).toHaveLength(0);
+    } finally {
+      process.env.BUSINESS_WORKSPACE_SLUG = PAYMENT_WORKSPACE_SLUG;
+    }
+  });
+
+  it('keeps only the latest delivered proposal authoritative across repeated sweeps', async () => {
+    const firstEnvelope = envelope('Confirmo 12 cuotas para Curso Fencing.');
+    const firstContext = await processInboundMessage(firstEnvelope);
+    const first = await commitPaymentTurn(
+      firstContext.turn_id,
+      'course_fence',
+      'monthly_12',
+      'v-history-a',
+    );
+    await submitPayment(first, 'bp-history-a');
+    await sql`
+      UPDATE inbound_batches
+      SET state = 'completed', completed_at = now(), updated_at = now()
+      WHERE id = ${firstContext.batch.id}::uuid
+    `;
+
+    const secondContext = await processInboundMessage({
+      ...firstEnvelope,
+      external_message_id: `message-${randomUUID()}`,
+      trace_id: randomUUID(),
+      message: {
+        ...firstEnvelope.message,
+        text: 'Ahora elijo 6 cuotas para Decoración de Interiores.',
+        occurred_at: new Date(Date.now() + 1_000).toISOString(),
+        reply_to_external_message_id: firstEnvelope.external_message_id,
+      },
+    });
+    const second = await commitPaymentTurn(
+      secondContext.turn_id,
+      'decoracion_interiores',
+      'monthly_6',
+      'v-history-b',
+    );
+    await submitPayment(second, 'bp-history-b');
+
+    await sql`
+      UPDATE agent_decisions
+      SET created_at = CASE id
+        WHEN ${first.decision_id}::uuid THEN '1991-01-01T00:00:00Z'::timestamptz
+        ELSE '1992-01-01T00:00:00Z'::timestamptz
+      END
+      WHERE id IN (${first.decision_id}::uuid, ${second.decision_id}::uuid)
+    `;
+
+    const sweep = async () => {
+      await reconcileDeliveredPaymentProjections({ limit: 100 });
+      const rows = await sql<Array<{
+        id: string;
+        payload_hash: string;
+        updated_at: string;
+        payload: Record<string, unknown>;
+      }>>`
+        SELECT id, payload_hash, updated_at::text, payload
+        FROM sheet_projection_rows
+        WHERE projection_key = ${leadProjectionKey(paymentWorkspaceId, firstContext.contact.id)}
+      `;
+      expect(rows).toHaveLength(1);
+      expect(rows[0].payload).toMatchObject({
+        plan: 'monthly_6',
+        curso_interes: 'Decoración de Interiores',
+      });
+      return rows[0];
+    };
+
+    const afterFirstSweep = await sweep();
+    const afterSecondSweep = await sweep();
+    expect(afterSecondSweep).toEqual(afterFirstSweep);
+  });
+
+  it('has a bounded pending-job index instead of scanning payment JSON history', async () => {
+    const indexes = await sql<Array<{ index_name: string | null }>>`
+      SELECT to_regclass('public.payment_projection_jobs_pending_idx')::text AS index_name
+    `;
+    expect(indexes[0].index_name).toBe('payment_projection_jobs_pending_idx');
+  });
+
+  it('reports missing Sheets configuration explicitly instead of ambiguous zero counts', async () => {
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+    const tabName = process.env.GOOGLE_SHEETS_TAB_NAME;
+    delete process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+    delete process.env.GOOGLE_SHEETS_TAB_NAME;
+    try {
+      const result = await reconcileDeliveredPaymentProjections();
+      expect(result).toMatchObject({
+        status: 'disabled',
+        reason: 'SHEETS_NOT_CONFIGURED',
+      });
+    } finally {
+      if (spreadsheetId === undefined) delete process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+      else process.env.GOOGLE_SHEETS_SPREADSHEET_ID = spreadsheetId;
+      if (tabName === undefined) delete process.env.GOOGLE_SHEETS_TAB_NAME;
+      else process.env.GOOGLE_SHEETS_TAB_NAME = tabName;
+    }
+  });
+
+  it('distinguishes absent workspace configuration from invalid configuration', async () => {
+    const workspaceSlug = process.env.BUSINESS_WORKSPACE_SLUG;
+    try {
+      delete process.env.BUSINESS_WORKSPACE_SLUG;
+      await expect(reconcileDeliveredPaymentProjections()).resolves.toMatchObject({
+        status: 'disabled',
+        reason: 'WORKSPACE_NOT_CONFIGURED',
+      });
+
+      process.env.BUSINESS_WORKSPACE_SLUG = 'INVALID WORKSPACE!';
+      await expect(reconcileDeliveredPaymentProjections()).resolves.toMatchObject({
+        status: 'error',
+        reason: 'WORKSPACE_CONFIG_INVALID',
+      });
+    } finally {
+      if (workspaceSlug === undefined) delete process.env.BUSINESS_WORKSPACE_SLUG;
+      else process.env.BUSINESS_WORKSPACE_SLUG = workspaceSlug;
+    }
   });
 });

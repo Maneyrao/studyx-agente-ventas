@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
-import { reconcileOrchestration } from '@/features/orchestration/application/reconcile-orchestration';
+import {
+  paymentProjectionReconciliationHttpStatus,
+  reconcileOrchestration,
+} from '@/features/orchestration/application/reconcile-orchestration';
 import { reconciliationStore } from '@/features/orchestration/adapters/postgres-reconciliation-store';
 import { auditLog } from '@/lib/audit/logger';
 import { counter } from '@/lib/observability/counters';
@@ -74,7 +77,9 @@ export async function GET(request: NextRequest) {
       counter.increment('reconcile_failures', totalFailures);
     }
 
-    return NextResponse.json(result, { status: 200 });
+    return NextResponse.json(result, {
+      status: paymentProjectionReconciliationHttpStatus(result.payment_projections.status),
+    });
   } catch (error) {
     logger.error({
       event: 'cron.reconcile_orchestration.failed',

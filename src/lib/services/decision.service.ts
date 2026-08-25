@@ -12,7 +12,11 @@ import { splitFullName } from '@/lib/heuristics/contact-identity';
 import { registerMessage, type Message } from './message.service';
 import { enqueueLeadProjection } from './projection.service';
 import { auditLog } from '@/lib/audit/logger';
-import { loadBusinessWorkspaceConfig, loadSheetsProjectionConfig } from '@/lib/config';
+import {
+  loadBusinessWorkspaceConfig,
+  loadSheetsProjectionConfig,
+  type SheetsProjectionConfig,
+} from '@/lib/config';
 import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
 import { materializePaymentLinkAction } from '@/features/payments/application/materialize-payment-link-action';
 import { createConfigPaymentLinkResolver } from '@/features/payments/adapters/config-payment-link.resolver';
@@ -382,6 +386,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     let authorizedProtectedFacts: readonly ProtectedFactRef[] = [];
     let committedBusinessAction = decision.business_action;
     let canonicalOfferings: readonly RawOfferingRow[] | undefined;
+    let canonicalWorkspaceId: string | null = null;
     let canonicalSnapshotAttempted = false;
 
     const loadCanonicalOfferings = async (
@@ -396,6 +401,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         const snapshot = await new PostgresBusinessContextStore(db).loadBusinessCatalog(
           loadBusinessWorkspaceConfig().workspaceSlug
         );
+        canonicalWorkspaceId = snapshot?.workspace.id ?? null;
         canonicalOfferings = snapshot?.offerings ?? [];
       } catch (error) {
         canonicalOfferings = [];
@@ -784,6 +790,45 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         delivery_attempt: Number(leased[0]?.attempt_count ?? 1),
         authorized_egress: authorizedEgress!,
       };
+
+      if (
+        committedBusinessAction?.type === 'send_payment_link'
+        && canonicalWorkspaceId
+      ) {
+        // The configured deployment, not model output, establishes the
+        // tenant/contact relation. The durable job is created before any
+        // physical send and therefore survives a later report/projection
+        // crash without having to rediscover tenant ownership from history.
+        await db`
+          INSERT INTO workspace_contacts (
+            workspace_id, contact_id, lifecycle_status, source_channel
+          ) VALUES (
+            ${canonicalWorkspaceId}::uuid,
+            ${turn.contact_id}::uuid,
+            'active',
+            ${turn.channel}
+          )
+          ON CONFLICT (workspace_id, contact_id) DO NOTHING
+        `;
+        await db`
+          INSERT INTO payment_projection_jobs (
+            decision_id, workspace_id, contact_id, outbound_message_id,
+            trace_id, offering_sku, plan_code, decision_created_at
+          )
+          SELECT
+            ad.id,
+            ${canonicalWorkspaceId}::uuid,
+            ${turn.contact_id}::uuid,
+            ${message.id}::uuid,
+            ad.trace_id,
+            ${committedBusinessAction.offering_sku},
+            ${committedBusinessAction.plan_code},
+            ad.created_at
+          FROM agent_decisions AS ad
+          WHERE ad.id = ${decisionId}::uuid
+          ON CONFLICT (decision_id) DO NOTHING
+        `;
+      }
     }
 
     await auditLog({
@@ -1190,6 +1235,8 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
         `;
       }
 
+      await markPaymentProjectionJobDelivered(db, input.outbound_id);
+
     } else {
       if (!input.error_code) throw new DeliveryReportConflictError('Failed report requires error_code');
       if (delivery.state === 'submitted') throw new DeliveryReportConflictError('Submitted delivery cannot be downgraded');
@@ -1251,8 +1298,7 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
     // rolled back by a derived projection. This eager attempt is best-effort;
     // the scheduled reconciler reconstructs any missing row without sending.
     try {
-      const signal = await loadPaymentLinkProjectionSignal(sql, input.outbound_id);
-      if (signal) await enqueuePaymentLinkSentProjection(signal, sql);
+      await projectPendingPaymentByOutbound(input.outbound_id);
     } catch (error) {
       logger.error({
         event: 'orchestration.payment_link.projection_enqueue_failed',
@@ -1266,10 +1312,87 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
   return result;
 }
 
+async function markPaymentProjectionJobDelivered(
+  db: DbClient,
+  outboundId: string,
+): Promise<void> {
+  const jobs = await db<Array<{
+    decision_id: string;
+    workspace_id: string;
+    contact_id: string;
+    decision_created_at: string;
+  }>>`
+    SELECT
+      job.decision_id,
+      job.workspace_id,
+      job.contact_id,
+      job.decision_created_at
+    FROM payment_projection_jobs AS job
+    JOIN workspace_contacts AS wc
+      ON wc.workspace_id = job.workspace_id
+      AND wc.contact_id = job.contact_id
+    WHERE job.outbound_message_id = ${outboundId}::uuid
+    FOR UPDATE OF wc, job
+  `;
+  const job = jobs[0];
+  if (!job) return;
+
+  const newer = await db<Array<{ exists: boolean }>>`
+    SELECT EXISTS (
+      SELECT 1
+      FROM payment_projection_jobs AS candidate
+      WHERE candidate.workspace_id = ${job.workspace_id}::uuid
+        AND candidate.contact_id = ${job.contact_id}::uuid
+        AND candidate.delivered_at IS NOT NULL
+        AND (
+          candidate.decision_created_at,
+          candidate.decision_id
+        ) > (
+          ${job.decision_created_at}::timestamptz,
+          ${job.decision_id}::uuid
+        )
+    ) AS exists
+  `;
+
+  if (newer[0]?.exists) {
+    await db`
+      UPDATE payment_projection_jobs
+      SET delivered_at = COALESCE(delivered_at, now()),
+          state = 'superseded'
+      WHERE decision_id = ${job.decision_id}::uuid
+    `;
+    return;
+  }
+
+  await db`
+    UPDATE payment_projection_jobs
+    SET state = 'superseded'
+    WHERE workspace_id = ${job.workspace_id}::uuid
+      AND contact_id = ${job.contact_id}::uuid
+      AND delivered_at IS NOT NULL
+      AND decision_id <> ${job.decision_id}::uuid
+      AND (
+        decision_created_at,
+        decision_id
+      ) < (
+        ${job.decision_created_at}::timestamptz,
+        ${job.decision_id}::uuid
+      )
+  `;
+  await db`
+    UPDATE payment_projection_jobs
+    SET delivered_at = COALESCE(delivered_at, now()),
+        state = 'pending',
+        projected_at = NULL
+    WHERE decision_id = ${job.decision_id}::uuid
+  `;
+}
+
 interface PaymentLinkProjectionSignal {
+  readonly decisionId: string;
+  readonly workspaceId: string;
   readonly planCode: string;
-  readonly offeringSku: string | null;
-  readonly memoryCourseInterest: string | null;
+  readonly offeringSku: string;
   readonly contactId: string;
   readonly phone: string;
   readonly contactName: string | null;
@@ -1277,184 +1400,140 @@ interface PaymentLinkProjectionSignal {
   readonly traceId: string;
 }
 
-const GENERIC_OFFERING_ALIAS_WORDS = new Set([
-  'curso', 'introduccion', 'especialista', 'profesional', 'orientado',
-  'diseno', 'interiores', 'integral', 'formacion', 'programa',
-]);
+type PaymentProjectionReconciliationStatus = 'ready' | 'disabled' | 'error';
+type PaymentProjectionReconciliationReason =
+  | 'SHEETS_NOT_CONFIGURED'
+  | 'WORKSPACE_NOT_CONFIGURED'
+  | 'WORKSPACE_CONFIG_INVALID'
+  | 'WORKSPACE_NOT_FOUND'
+  | 'RECONCILIATION_FAILED'
+  | null;
 
-function normalizeOfferingText(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/gu, ' ')
-    .trim();
+interface PaymentProjectionRuntime {
+  readonly workspaceId: string;
+  readonly sheets: SheetsProjectionConfig;
 }
 
-function resolveCanonicalOfferingInterest(
-  memoryValue: string,
-  displayNames: readonly string[],
-): string | null {
-  const normalizedValue = normalizeOfferingText(memoryValue);
-  const exact = displayNames.find((name) => normalizeOfferingText(name) === normalizedValue);
-  if (exact) return exact;
+type PaymentProjectionRuntimeResolution =
+  | { status: 'ready'; reason: null; runtime: PaymentProjectionRuntime }
+  | { status: 'disabled'; reason: 'SHEETS_NOT_CONFIGURED' | 'WORKSPACE_NOT_CONFIGURED' }
+  | { status: 'error'; reason: 'WORKSPACE_CONFIG_INVALID' | 'WORKSPACE_NOT_FOUND' };
 
-  const valueTokens = new Set(normalizedValue.split(' ').filter(Boolean));
-  const scores = new Map<string, number>();
-  const exactOwners = new Map<string, Set<string>>();
-  for (const displayName of displayNames) {
-    const identifyingTokens = normalizeOfferingText(displayName)
-      .split(' ')
-      .filter((token) => token.length >= 5 && !GENERIC_OFFERING_ALIAS_WORDS.has(token));
-    for (const token of identifyingTokens) {
-      const current = exactOwners.get(token) ?? new Set<string>();
-      current.add(displayName);
-      exactOwners.set(token, current);
+async function resolvePaymentProjectionRuntime(
+  db: DbClient,
+): Promise<PaymentProjectionRuntimeResolution> {
+  const sheets = loadSheetsProjectionConfig();
+  if (!sheets) return { status: 'disabled', reason: 'SHEETS_NOT_CONFIGURED' };
+
+  let workspaceSlug: string;
+  try {
+    workspaceSlug = loadBusinessWorkspaceConfig().workspaceSlug;
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('INVALID_BUSINESS_CONFIG:')) {
+      return { status: 'error', reason: 'WORKSPACE_CONFIG_INVALID' };
     }
-    const score = [...valueTokens].filter((sourceToken) => identifyingTokens.some((catalogToken) =>
-      sourceToken === catalogToken
-      || (sourceToken.length >= 4 && catalogToken.length >= 4
-        && (sourceToken.startsWith(catalogToken.slice(0, 4))
-          || catalogToken.startsWith(sourceToken.slice(0, 4))))
-    )).length;
-    if (score > 0) scores.set(displayName, score);
+    return { status: 'disabled', reason: 'WORKSPACE_NOT_CONFIGURED' };
   }
-  const ranked = [...scores.entries()].sort((left, right) => right[1] - left[1]);
-  if (ranked.length === 0 || (ranked[1]?.[1] ?? 0) === ranked[0][1]) return null;
-  const [winner, winningScore] = ranked[0];
-  const hasUniqueExactToken = [...valueTokens].some((token) => {
-    const owners = exactOwners.get(token);
-    return owners?.size === 1 && owners.has(winner);
-  });
-  return winningScore >= 2 || hasUniqueExactToken ? winner : null;
+  const workspaces = await db<Array<{ id: string }>>`
+    SELECT id
+    FROM workspaces
+    WHERE slug = ${workspaceSlug} AND status = 'active'
+    LIMIT 1
+  `;
+  if (!workspaces[0]) return { status: 'error', reason: 'WORKSPACE_NOT_FOUND' };
+  return {
+    status: 'ready',
+    reason: null,
+    runtime: { workspaceId: workspaces[0].id, sheets },
+  };
 }
 
 /**
- * Reconstructs the projection signal from the immutable decision behind this
- * outbound. Only `send_payment_link` produces a signal; the plan and customer
- * identity come from that decision's own turn, never from a second guess.
+ * Loads one tenant-bound pending job after candidate acquisition. The job
+ * carries the immutable plan/SKU/trace; PII is joined only after the exact
+ * active workspace membership has been proven.
  */
 async function loadPaymentLinkProjectionSignal(
   db: DbClient,
-  outboundId: string,
+  candidate: PaymentProjectionCandidate,
 ): Promise<PaymentLinkProjectionSignal | null> {
   const rows = await db<Array<{
-    business_action: { type?: string; plan_code?: string; offering_sku?: string | null } | null;
+    decision_id: string;
+    workspace_id: string;
+    plan_code: string;
+    offering_sku: string;
     contact_id: string;
     phone: string;
     name: string | null;
     email: string | null;
-    decision_trace_id: string;
-    memory_course_interest: string | null;
+    trace_id: string;
   }>>`
-    SELECT ad.business_action, ad.trace_id::text AS decision_trace_id,
-      m.contact_id, c.phone, c.name, c.email,
-      course_memory.value_normalized AS memory_course_interest
-    FROM agent_decisions AS ad
-    JOIN messages AS m ON m.id = ad.turn_id
-    JOIN contacts AS c ON c.id = m.contact_id
-    LEFT JOIN LATERAL (
-      SELECT sm.value_normalized
-      FROM selected_memories AS sm
-      WHERE sm.contact_id = m.contact_id
-        AND sm.status = 'active'
-        AND sm.memory_type = 'study_goal'
-      ORDER BY sm.valid_from DESC, sm.created_at DESC
-      LIMIT 1
-    ) AS course_memory ON true
-    WHERE ad.outbound_message_id = ${outboundId}::uuid
+    SELECT
+      job.decision_id,
+      job.workspace_id,
+      job.plan_code,
+      job.offering_sku,
+      job.contact_id,
+      c.phone,
+      c.name,
+      c.email,
+      job.trace_id::text AS trace_id
+    FROM payment_projection_jobs AS job
+    JOIN workspace_contacts AS wc
+      ON wc.workspace_id = job.workspace_id
+      AND wc.contact_id = job.contact_id
+      AND wc.lifecycle_status = 'active'
+    JOIN contacts AS c ON c.id = job.contact_id
+    WHERE job.decision_id = ${candidate.decision_id}::uuid
+      AND job.workspace_id = ${candidate.workspace_id}::uuid
+      AND job.contact_id = ${candidate.contact_id}::uuid
+      AND job.outbound_message_id = ${candidate.outbound_message_id}::uuid
+      AND job.state = 'pending'
+    FOR UPDATE OF job
     LIMIT 1
   `;
   const row = rows[0];
-  if (!row || row.business_action?.type !== 'send_payment_link' || !row.business_action.plan_code) {
-    return null;
-  }
+  if (!row) return null;
   return {
-    planCode: row.business_action.plan_code,
-    offeringSku: row.business_action.offering_sku ?? null,
-    memoryCourseInterest: row.memory_course_interest,
+    decisionId: row.decision_id,
+    workspaceId: row.workspace_id,
+    planCode: row.plan_code,
+    offeringSku: row.offering_sku,
     contactId: row.contact_id,
     phone: row.phone,
     contactName: row.name,
     contactEmail: row.email,
-    traceId: row.decision_trace_id,
+    traceId: row.trace_id,
   };
 }
 
 /**
  * Enqueues the `payment_link_sent` row (spec §5: `etapa_comercial=proposal`,
- * `estado_pago=pendiente`, `plan=<plan_code>`). Fails closed and silent at
- * every missing-configuration step — no Sheets config, no resolvable
- * workspace. Once configuration exists, DB enqueue failure throws so the
- * caller can record the failed attempt and the scheduled reconciler can retry.
+ * `estado_pago=pendiente`, `plan=<plan_code>`). Runtime configuration and
+ * tenant equality have already been validated. A DB enqueue failure throws so
+ * the pending job stays visible for the scheduled reconciler.
  */
 async function enqueuePaymentLinkSentProjection(
   signal: PaymentLinkProjectionSignal,
+  runtime: PaymentProjectionRuntime,
   db: DbClient,
-): Promise<'repaired' | 'unchanged' | 'skipped'> {
-  const sheets = loadSheetsProjectionConfig();
-  if (!sheets) {
-    logger.info({
-      event: 'orchestration.payment_link.projection_skipped',
-      trace_id: signal.traceId,
-      reason: 'SHEETS_NOT_CONFIGURED',
-    });
-    return 'skipped';
-  }
-  let workspaceSlug: string;
-  try {
-    workspaceSlug = loadBusinessWorkspaceConfig().workspaceSlug;
-  } catch {
-    logger.warn({
-      event: 'orchestration.payment_link.projection_skipped',
-      trace_id: signal.traceId,
-      reason: 'MISSING_WORKSPACE_CONFIG',
-    });
-    return 'skipped';
-  }
-  const workspaceRows = await db<Array<{ id: string }>>`
-    SELECT id FROM workspaces WHERE slug = ${workspaceSlug} AND status = 'active' LIMIT 1
-  `;
-  const workspaceId = workspaceRows[0]?.id;
-  if (!workspaceId) {
-    logger.warn({
-      event: 'orchestration.payment_link.projection_skipped',
-      trace_id: signal.traceId,
-      reason: 'WORKSPACE_NOT_FOUND',
-    });
-    return 'skipped';
-  }
+): Promise<'repaired' | 'unchanged'> {
+  if (signal.workspaceId !== runtime.workspaceId) throw new Error('PAYMENT_PROJECTION_TENANT_MISMATCH');
   // Interés canónico: el `offering_sku` de la decisión se proyecta como el
   // display_name canónico del catálogo (P1, informe 2026-08-23: el outbox
   // descartaba el sku y `curso_interes` quedaba vacío tras un cierre).
-  let cursoInteres: string | undefined;
-  if (signal.offeringSku) {
-    const offeringRows = await db<Array<{ display_name: string }>>`
-      SELECT display_name FROM offerings
-      WHERE workspace_id = ${workspaceId}::uuid AND code = ${signal.offeringSku}
-      LIMIT 1
-    `;
-    cursoInteres = offeringRows[0]?.display_name ?? signal.offeringSku;
-  } else if (signal.memoryCourseInterest) {
-    // A fast payment decision can legitimately carry no SKU when the bounded
-    // claim snapshot omitted a course outside its catalog window. Resolve the
-    // latest accepted study goal against the canonical catalog at projection
-    // time instead of writing an empty course or trusting free-form model text.
-    const offeringRows = await db<Array<{ display_name: string }>>`
-      SELECT display_name FROM offerings
-      WHERE workspace_id = ${workspaceId}::uuid AND status = 'active'
-    `;
-    cursoInteres = resolveCanonicalOfferingInterest(
-      signal.memoryCourseInterest,
-      offeringRows.map((row) => row.display_name),
-    ) ?? signal.memoryCourseInterest;
-  }
+  const offeringRows = await db<Array<{ display_name: string }>>`
+    SELECT display_name FROM offerings
+    WHERE workspace_id = ${runtime.workspaceId}::uuid AND code = ${signal.offeringSku}
+    LIMIT 1
+  `;
+  const cursoInteres = offeringRows[0]?.display_name ?? signal.offeringSku;
   const identity = signal.contactName ? splitFullName(signal.contactName) : null;
   const projection = await enqueueLeadProjection({
-    workspaceId,
+    workspaceId: runtime.workspaceId,
     contactId: signal.contactId,
-    spreadsheetId: sheets.spreadsheetId,
-    tabName: sheets.tabName,
+    spreadsheetId: runtime.sheets.spreadsheetId,
+    tabName: runtime.sheets.tabName,
     telefono: signal.phone,
     nombre: identity?.nombre,
     apellido: identity?.apellido,
@@ -1471,7 +1550,67 @@ async function enqueuePaymentLinkSentProjection(
   return projection.changed ? 'repaired' : 'unchanged';
 }
 
+interface PaymentProjectionCandidate {
+  readonly decision_id: string;
+  readonly workspace_id: string;
+  readonly contact_id: string;
+  readonly outbound_message_id: string;
+}
+
+async function projectPaymentProjectionCandidate(
+  candidate: PaymentProjectionCandidate,
+  runtime: PaymentProjectionRuntime,
+): Promise<'repaired' | 'unchanged' | 'skipped'> {
+  return withSerializableTransaction(async (db) => {
+    const membership = await db<Array<{ id: string }>>`
+      SELECT id
+      FROM workspace_contacts
+      WHERE workspace_id = ${candidate.workspace_id}::uuid
+        AND contact_id = ${candidate.contact_id}::uuid
+        AND lifecycle_status = 'active'
+      FOR UPDATE
+    `;
+    if (!membership[0] || candidate.workspace_id !== runtime.workspaceId) return 'skipped';
+
+    const signal = await loadPaymentLinkProjectionSignal(db, candidate);
+    if (!signal) return 'skipped';
+    const outcome = await enqueuePaymentLinkSentProjection(signal, runtime, db);
+    await db`
+      UPDATE payment_projection_jobs
+      SET state = 'projected', projected_at = now()
+      WHERE decision_id = ${signal.decisionId}::uuid AND state = 'pending'
+    `;
+    return outcome;
+  });
+}
+
+async function projectPendingPaymentByOutbound(outboundId: string): Promise<void> {
+  const resolved = await resolvePaymentProjectionRuntime(sql);
+  if (resolved.status !== 'ready') {
+    logger.warn({
+      event: 'orchestration.payment_link.projection_skipped',
+      outbound_id: outboundId,
+      status: resolved.status,
+      reason: resolved.reason,
+    });
+    return;
+  }
+  const candidates = await sql<PaymentProjectionCandidate[]>`
+    SELECT decision_id, workspace_id, contact_id, outbound_message_id
+    FROM payment_projection_jobs
+    WHERE outbound_message_id = ${outboundId}::uuid
+      AND workspace_id = ${resolved.runtime.workspaceId}::uuid
+      AND state = 'pending'
+    LIMIT 1
+  `;
+  if (candidates[0]) {
+    await projectPaymentProjectionCandidate(candidates[0], resolved.runtime);
+  }
+}
+
 export interface DeliveredPaymentProjectionReconciliationResult {
+  readonly status: PaymentProjectionReconciliationStatus;
+  readonly reason: PaymentProjectionReconciliationReason;
   readonly examined: number;
   readonly repaired: number;
   readonly unchanged: number;
@@ -1487,53 +1626,27 @@ export async function reconcileDeliveredPaymentProjections(
   input: { limit?: number } = {},
 ): Promise<DeliveredPaymentProjectionReconciliationResult> {
   const empty = { examined: 0, repaired: 0, unchanged: 0, skipped: 0, failed: 0 };
-  const sheets = loadSheetsProjectionConfig();
-  if (!sheets) return empty;
-  let workspaceSlug: string;
-  try {
-    workspaceSlug = loadBusinessWorkspaceConfig().workspaceSlug;
-  } catch {
-    return empty;
-  }
+  const resolved = await resolvePaymentProjectionRuntime(sql);
+  if (resolved.status !== 'ready') return { ...resolved, ...empty };
   const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
-  const candidates = await sql<Array<{ outbound_id: string }>>`
-    SELECT ad.outbound_message_id AS outbound_id
-    FROM agent_decisions AS ad
-    JOIN messages AS turn ON turn.id = ad.turn_id
-    JOIN outbound_deliveries AS od ON od.message_id = ad.outbound_message_id
-    JOIN workspaces AS w ON w.slug = ${workspaceSlug} AND w.status = 'active'
-    LEFT JOIN offerings AS o
-      ON o.workspace_id = w.id
-      AND o.code = ad.business_action ->> 'offering_sku'
-      AND o.status = 'active'
-    LEFT JOIN sheet_projection_rows AS spr
-      ON spr.projection_key = 'lead:' || w.id::text || ':' || turn.contact_id::text
-    WHERE ad.business_action ->> 'type' = 'send_payment_link'
-      AND od.state IN ('submitted', 'delivered')
-      AND (
-        spr.id IS NULL
-        OR spr.payload ->> 'plan' IS DISTINCT FROM ad.business_action ->> 'plan_code'
-        OR spr.payload ->> 'curso_interes' IS DISTINCT FROM COALESCE(
-          o.display_name,
-          ad.business_action ->> 'offering_sku'
-        )
-      )
-    ORDER BY ad.created_at ASC, ad.id ASC
+  const candidates = await sql<PaymentProjectionCandidate[]>`
+    SELECT decision_id, workspace_id, contact_id, outbound_message_id
+    FROM payment_projection_jobs
+    WHERE workspace_id = ${resolved.runtime.workspaceId}::uuid
+      AND state = 'pending'
+    ORDER BY delivered_at ASC, decision_id ASC
     LIMIT ${limit}
   `;
-  const result = { ...empty, examined: candidates.length };
+  const result = { status: 'ready' as const, reason: null, ...empty, examined: candidates.length };
   for (const candidate of candidates) {
     try {
-      const outcome = await withSerializableTransaction(async (db) => {
-        const signal = await loadPaymentLinkProjectionSignal(db, candidate.outbound_id);
-        return signal ? enqueuePaymentLinkSentProjection(signal, db) : 'skipped' as const;
-      });
+      const outcome = await projectPaymentProjectionCandidate(candidate, resolved.runtime);
       result[outcome] += 1;
     } catch (error) {
       result.failed += 1;
       logger.error({
         event: 'orchestration.payment_link.projection_reconcile_failed',
-        outbound_id: candidate.outbound_id,
+        outbound_id: candidate.outbound_message_id,
         error: String(error),
       });
     }

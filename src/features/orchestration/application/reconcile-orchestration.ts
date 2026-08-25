@@ -49,6 +49,8 @@ export interface ReconcileOrchestrationResult {
     readonly failed: number;
   };
   readonly payment_projections: {
+    readonly status: 'ready' | 'disabled' | 'error';
+    readonly reason: string | null;
     readonly examined: number;
     readonly repaired: number;
     readonly unchanged: number;
@@ -77,6 +79,8 @@ export interface ReconcileOrchestrationDependencies {
   }) => Promise<void>;
   /** Derived projection repair only. This dependency has no provider/send port. */
   readonly reconcilePaymentProjections?: (input: { limit?: number }) => Promise<{
+    status: 'ready' | 'disabled' | 'error';
+    reason: string | null;
     examined: number;
     repaired: number;
     unchanged: number;
@@ -92,6 +96,13 @@ const EMPTY_ACTIONS: Record<DeliveryReconciliationAction, number> = {
   pause_ambiguous: 0,
   wait: 0,
 };
+
+export function paymentProjectionReconciliationHttpStatus(
+  status: 'ready' | 'disabled' | 'error',
+): 200 | 500 | 503 {
+  if (status === 'ready') return 200;
+  return status === 'disabled' ? 503 : 500;
+}
 
 export async function reconcileOrchestration(
   input: ReconcileOrchestrationInput,
@@ -205,6 +216,8 @@ export async function reconcileOrchestration(
   }
 
   let paymentProjections = {
+    status: 'disabled' as 'ready' | 'disabled' | 'error',
+    reason: 'PAYMENT_PROJECTION_RECONCILER_NOT_CONFIGURED' as string | null,
     examined: 0,
     repaired: 0,
     unchanged: 0,
@@ -217,6 +230,8 @@ export async function reconcileOrchestration(
         limit: input.delivery_limit,
       });
     } catch (error) {
+      paymentProjections.status = 'error';
+      paymentProjections.reason = 'RECONCILIATION_FAILED';
       paymentProjections.failed = 1;
       log('orchestration.reconcile.payment_projections_failed', {
         trace_id: input.trace_id,
@@ -269,6 +284,8 @@ export async function reconcileOrchestration(
     payment_projections_examined: paymentProjections.examined,
     payment_projections_repaired: paymentProjections.repaired,
     payment_projections_failed: paymentProjections.failed,
+    payment_projections_status: paymentProjections.status,
+    payment_projections_reason: paymentProjections.reason,
   });
 
   return result;
