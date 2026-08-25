@@ -42,6 +42,21 @@ export type AgentCommercialEvidence = {
   readonly authorizedUrls: readonly string[];
 };
 
+export type ProtectedFactRef = {
+  readonly kind: 'price' | 'duration' | 'modality' | 'certification' | 'offering' | 'promise';
+  readonly value: string;
+};
+
+/** Claim-to-commit evidence captured locally for every executed turn. */
+export type AgentTurnDiagnostic = {
+  catalogResolution: AgentCatalogResolutionEvidence;
+  selectedOfferingCode: string | null;
+  decisionBusinessAction: Record<string, unknown> | null;
+  authorizedProtectedFacts: readonly ProtectedFactRef[];
+  authorizedUrls: readonly string[];
+  commitError: { status: number; error: string; reason: string | null } | null;
+};
+
 export type AgentChatResult = {
   conversationId: string;
   responses: Array<{ type: string; text?: string }>;
@@ -51,6 +66,8 @@ export type AgentChatResult = {
   /** Structured claim/snapshot/action evidence used by hard-fail commercial
    * oracles. It is never derived from the assistant prose. */
   commercialEvidence?: AgentCommercialEvidence;
+  /** Local authority-chain evidence captured before and after commit. */
+  turnDiagnostic?: AgentTurnDiagnostic;
   /** Delay inserted only by the evaluator to respect shared provider quota. */
   evaluationPacingMs?: number;
 };
@@ -137,9 +154,18 @@ export type ConversationCaseResult = {
   status: 'passed' | 'failed';
   conversation_id: string | null;
   transcript: TranscriptEntry[];
+  turn_diagnostics: Array<AgentTurnDiagnostic | null>;
   checks: Record<string, unknown>;
   failures: string[];
 };
+
+function diagnosticFromError(error: unknown): AgentTurnDiagnostic | null {
+  if (!error || typeof error !== 'object' || !('turnDiagnostic' in error)) return null;
+  const diagnostic = error.turnDiagnostic;
+  return diagnostic && typeof diagnostic === 'object'
+    ? diagnostic as AgentTurnDiagnostic
+    : null;
+}
 
 type RunOptions = {
   runId: string;
@@ -531,6 +557,7 @@ export async function runConversationCase(
   const responseCountsByTurn: number[] = [];
   const authorizedUrlsByTurn: Array<readonly string[] | null> = [];
   const commercialEvidenceByTurn: Array<AgentCommercialEvidence | undefined> = [];
+  const turnDiagnostics: Array<AgentTurnDiagnostic | null> = [];
   let conversationId: string | null = null;
 
   for (const [index, rawTurn] of testCase.turns.entries()) {
@@ -564,6 +591,7 @@ export async function runConversationCase(
       const urls = assistantRepliesByTurn[index]!.match(URL_PATTERN) ?? [];
       authorizedUrlsByTurn[index] = result.authorizedUrls ? [...result.authorizedUrls] : null;
       commercialEvidenceByTurn[index] = result.commercialEvidence;
+      turnDiagnostics[index] = result.turnDiagnostic ?? null;
       if (urls.length > 0 && !result.authorizedUrls) {
         failures.push(`turn_${index + 1}_authorized_url_evidence_missing`);
       } else if (result.authorizedUrls) {
@@ -585,6 +613,7 @@ export async function runConversationCase(
         });
       }
     } catch (error) {
+      turnDiagnostics[index] = diagnosticFromError(error);
       failures.push(
         `turn_${index + 1}_error:${error instanceof Error ? error.message : String(error)}`,
       );
@@ -829,6 +858,7 @@ export async function runConversationCase(
     status: failures.length === 0 ? 'passed' : 'failed',
     conversation_id: conversationId,
     transcript,
+    turn_diagnostics: turnDiagnostics,
     checks,
     failures,
   };

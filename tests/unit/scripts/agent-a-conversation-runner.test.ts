@@ -47,6 +47,89 @@ describe('Agent A conversation runner', () => {
     ]);
   });
 
+  it('persists the successful turn authority chain beside the transcript', async () => {
+    const result = await runConversationCase(
+      {
+        id: 'authority_chain_success',
+        name: 'Autoridad de turno exitosa',
+        course: 'Redes Informáticas',
+        turns: ['Quiero Redes Informáticas'],
+        ideal_result: {},
+      },
+      {
+        runId: 'run123',
+        sendTurn: vi.fn().mockResolvedValue({
+          conversationId: 'conv-authority-success',
+          responses: [{ type: 'text', text: 'Redes Informáticas tiene 16 clases.' }],
+          turnDiagnostic: {
+            catalogResolution: {
+              kind: 'exact',
+              offeringCode: 'redes_informaticas',
+              displayName: 'Redes Informáticas',
+            },
+            selectedOfferingCode: 'redes_informaticas',
+            decisionBusinessAction: { type: 'course_interest', offering_code: 'redes_informaticas' },
+            authorizedProtectedFacts: [{ kind: 'duration', value: '16 clases' }],
+            authorizedUrls: ['https://buy.stripe.com/redes'],
+            commitError: null,
+          },
+        }),
+      },
+    );
+
+    expect(result.turn_diagnostics).toEqual([{
+      catalogResolution: {
+        kind: 'exact',
+        offeringCode: 'redes_informaticas',
+        displayName: 'Redes Informáticas',
+      },
+      selectedOfferingCode: 'redes_informaticas',
+      decisionBusinessAction: { type: 'course_interest', offering_code: 'redes_informaticas' },
+      authorizedProtectedFacts: [{ kind: 'duration', value: '16 clases' }],
+      authorizedUrls: ['https://buy.stripe.com/redes'],
+      commitError: null,
+    }]);
+  });
+
+  it('persists a rejected commit payload with its claim-time authority chain', async () => {
+    const rejection = Object.assign(new Error('LOCAL_STUDYX_DECISION_REJECTED'), {
+      turnDiagnostic: {
+        catalogResolution: {
+          kind: 'exact' as const,
+          offeringCode: 'redes_informaticas',
+          displayName: 'Redes Informáticas',
+        },
+        selectedOfferingCode: 'redes_informaticas',
+        decisionBusinessAction: { type: 'course_interest', offering_code: 'redes_informaticas' },
+        authorizedProtectedFacts: [],
+        authorizedUrls: [],
+        commitError: {
+          status: 422,
+          error: 'DECISION_REJECTED',
+          reason: 'EGRESS_UNAUTHORIZED_PROTECTED_FACT',
+        },
+      },
+    });
+    const result = await runConversationCase(
+      {
+        id: 'authority_chain_rejected',
+        name: 'Autoridad de turno rechazada',
+        course: 'Redes Informáticas',
+        turns: ['Quiero Redes Informáticas'],
+        ideal_result: {},
+      },
+      {
+        runId: 'run123',
+        sendTurn: vi.fn().mockRejectedValue(rejection),
+      },
+    );
+
+    expect(result.failures).toContain('turn_1_error:LOCAL_STUDYX_DECISION_REJECTED');
+    expect(result.turn_diagnostics).toEqual([
+      rejection.turnDiagnostic,
+    ]);
+  });
+
   it('runs the caller pacing gate immediately before every external turn', async () => {
     const events: string[] = [];
     const result = await runConversationCase(

@@ -13,6 +13,7 @@ import {
   runConversationSuite,
   validateSuiteCaseInvariants,
   type AgentChatResult,
+  type AgentTurnDiagnostic,
   type ConversationSuite,
 } from './lib/agent-a-conversation-runner';
 import {
@@ -201,13 +202,37 @@ async function localSignedJson<T>(input: {
     },
     body,
   });
-  const payload = await response.json().catch(() => null) as { error?: unknown } | null;
+  const payload = await response.json().catch(() => null) as {
+    error?: unknown;
+    reason?: unknown;
+  } | null;
   const accepted = response.ok || input.acceptedStatuses?.includes(response.status);
   if (!accepted) {
     const safeCode = typeof payload?.error === 'string' ? payload.error : `HTTP_${response.status}`;
-    throw new Error(`LOCAL_STUDYX_${safeCode}`);
+    const reason = typeof payload?.reason === 'string' ? payload.reason : null;
+    throw new LocalStudyxHttpError(response.status, safeCode, reason);
   }
   return input.parse(payload);
+}
+
+class LocalStudyxHttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly error: string,
+    readonly reason: string | null,
+  ) {
+    super(`LOCAL_STUDYX_${error}`);
+    this.name = 'LocalStudyxHttpError';
+  }
+}
+
+function withTurnDiagnostic(error: unknown, turnDiagnostic: AgentTurnDiagnostic): Error & {
+  turnDiagnostic: AgentTurnDiagnostic;
+} {
+  const diagnosticError = error instanceof Error
+    ? error
+    : new Error(String(error));
+  return Object.assign(diagnosticError, { turnDiagnostic });
 }
 
 async function flushLocalPostTurn(credentials: LocalCredentials, traceId: string): Promise<void> {
@@ -367,26 +392,51 @@ function createLocalTurnSender(
     }
     decision = applyDecisionPolicy(decision, claimed);
 
-    const committed = await localSignedJson({
-      credentials,
-      path: `/api/agent/turns/${claimed.turn_id}/decision`,
-      body: {
-        turn_id: claimed.turn_id,
-        trace_id: traceId,
-        authorized_offering_code: claimed.sales_context.offering_code,
-        decision,
-        model: {
-          provider,
-          model: decisionModel,
-          prompt_version: AGENT_A_PROMPT_VERSION,
+    const claimTimeDiagnostic: AgentTurnDiagnostic = {
+      catalogResolution: claimed.catalog_resolution,
+      selectedOfferingCode: claimed.sales_context.offering_code,
+      decisionBusinessAction: decision.business_action
+        ? { ...decision.business_action }
+        : null,
+      authorizedProtectedFacts: [],
+      authorizedUrls: [],
+      commitError: null,
+    };
+
+    let committed;
+    try {
+      committed = await localSignedJson({
+        credentials,
+        path: `/api/agent/turns/${claimed.turn_id}/decision`,
+        body: {
+          turn_id: claimed.turn_id,
+          trace_id: traceId,
+          authorized_offering_code: claimed.sales_context.offering_code,
+          decision,
+          model: {
+            provider,
+            model: decisionModel,
+            prompt_version: AGENT_A_PROMPT_VERSION,
+          },
+          batch_id: claimed.batch.id,
+          claim_token: claimed.batch.claim_token,
         },
-        batch_id: claimed.batch.id,
-        claim_token: claimed.batch.claim_token,
-      },
-      idempotencyKey: `decision:${claimed.turn_id}`,
-      traceId,
-      parse: (value) => CommitDecisionResponseSchema.parse(value),
-    });
+        idempotencyKey: `decision:${claimed.turn_id}`,
+        traceId,
+        parse: (value) => CommitDecisionResponseSchema.parse(value),
+      });
+    } catch (error) {
+      const commitError = error instanceof LocalStudyxHttpError
+        ? { status: error.status, error: error.error, reason: error.reason }
+        : null;
+      throw withTurnDiagnostic(error, { ...claimTimeDiagnostic, commitError });
+    }
+    const turnDiagnostic: AgentTurnDiagnostic = {
+      ...claimTimeDiagnostic,
+      authorizedProtectedFacts:
+        committed.outbound?.authorized_egress.protected_facts ?? [],
+      authorizedUrls: committed.outbound?.authorized_egress.authorized_urls ?? [],
+    };
     const commercialEvidence: NonNullable<AgentChatResult['commercialEvidence']> = {
       catalogResolution: claimed.catalog_resolution,
       snapshotOfferings: (claimed.business_context?.offerings ?? []).map((offering) => ({
@@ -396,44 +446,61 @@ function createLocalTurnSender(
       offeringsTruncated: claimed.business_context
         ? claimed.business_context.offerings_truncated
         : null,
-      selectedOfferingCode: claimed.sales_context.offering_code,
+      selectedOfferingCode: turnDiagnostic.selectedOfferingCode,
       decisionBusinessAction: decision.business_action
         ? { ...decision.business_action }
         : null,
-      authorizedProtectedFacts:
-        committed.outbound?.authorized_egress.protected_facts ?? [],
-      authorizedUrls: committed.outbound?.authorized_egress.authorized_urls ?? [],
+      authorizedProtectedFacts: turnDiagnostic.authorizedProtectedFacts,
+      authorizedUrls: turnDiagnostic.authorizedUrls,
     };
     if (!committed.outbound) {
-      return { conversationId, responses: [], commercialEvidence, evaluationPacingMs };
+      return {
+        conversationId,
+        responses: [],
+        commercialEvidence,
+        turnDiagnostic,
+        evaluationPacingMs,
+      };
     }
 
-    const localDelivery = await deliverAuthorizedLocalOutbound({
-      trace_id: traceId,
-      outbound: committed.outbound,
-      createMessageId: () => `local-eval-${randomUUID()}`,
-      reportDelivery: async (report) => {
-        const reportIdentity = report.botpress_message_id ?? report.error_code ?? 'egress-blocked';
-        await localSignedJson({
-          credentials,
-          path: `/api/agent/outbounds/${committed.outbound!.id}/delivery`,
-          body: report,
-          idempotencyKey:
-            `delivery:${committed.outbound!.id}:${reportIdentity}:${report.status}`,
-          traceId,
-          parse: (value) => DeliveryReportResponseSchema.parse(value),
-        });
-      },
-      afterSubmitted: () => flushLocalPostTurn(credentials, traceId),
-    });
+    let localDelivery;
+    try {
+      localDelivery = await deliverAuthorizedLocalOutbound({
+        trace_id: traceId,
+        outbound: committed.outbound,
+        createMessageId: () => `local-eval-${randomUUID()}`,
+        reportDelivery: async (report) => {
+          const reportIdentity = report.botpress_message_id ?? report.error_code ?? 'egress-blocked';
+          await localSignedJson({
+            credentials,
+            path: `/api/agent/outbounds/${committed.outbound!.id}/delivery`,
+            body: report,
+            idempotencyKey:
+              `delivery:${committed.outbound!.id}:${reportIdentity}:${report.status}`,
+            traceId,
+            parse: (value) => DeliveryReportResponseSchema.parse(value),
+          });
+        },
+        afterSubmitted: () => flushLocalPostTurn(credentials, traceId),
+      });
+    } catch (error) {
+      throw withTurnDiagnostic(error, turnDiagnostic);
+    }
     if (localDelivery.kind === 'blocked') {
-      return { conversationId, responses: [], commercialEvidence, evaluationPacingMs };
+      return {
+        conversationId,
+        responses: [],
+        commercialEvidence,
+        turnDiagnostic,
+        evaluationPacingMs,
+      };
     }
     return {
       conversationId,
       responses: [{ type: 'text', text: localDelivery.content }],
       authorizedUrls: [...committed.outbound.authorized_egress.authorized_urls],
       commercialEvidence,
+      turnDiagnostic,
       evaluationPacingMs,
     };
   };

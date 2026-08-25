@@ -313,6 +313,13 @@ describe('Agent A durable conversation evidence', () => {
     ]));
   });
 
+  it('exposes durable per-turn decision and delivery evidence for local diagnostics', () => {
+    const evidence = completeEvidence();
+    const result = evaluatePersistenceEvidence(buyerCase(), evidence, { runId: RUN_ID });
+
+    expect(result.checks.turn_persistence_evidence).toEqual(evidence.turnEvidence);
+  });
+
   it('fails evidence that is not scoped to the current run and case', () => {
     const evidence = {
       ...completeEvidence(),

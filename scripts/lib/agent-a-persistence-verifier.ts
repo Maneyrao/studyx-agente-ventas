@@ -238,6 +238,7 @@ export function evaluatePersistenceEvidence(
       outbound_messages: evidence.outboundMessages,
       expected_outbound_messages: expectedOutboundMessages,
       turn_outbound_counts: turnOutboundCounts,
+      turn_persistence_evidence: evidence.turnEvidence ?? [],
       decisions: evidence.decisions,
       decisions_with_trace: evidence.decisionsWithTrace,
       active_memories: evidence.activeMemoryValues.length,
