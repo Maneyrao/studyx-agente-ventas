@@ -206,6 +206,7 @@ describe('WhatsApp release readiness', () => {
     'https://172.31.255.255',
     'https://192.168.1.1',
     'https://169.254.1.1',
+    'https://8.8.8.8',
     'https://[::1]',
     'https://[::]',
     'https://[::ffff:127.0.0.1]',
@@ -218,6 +219,9 @@ describe('WhatsApp release readiness', () => {
     'https://[fe80::1]',
     'https://[ff02::1]',
     'https://[2001:db8::1]',
+    'https://[2606:4700:4700::1111]',
+    'https://[3fff::1]',
+    'https://[2001:20::1]',
     'https://user:password@api.studyx.example',
     'not a url',
   ])('does not call a non-public backend target %s', async (apiBaseUrl) => {

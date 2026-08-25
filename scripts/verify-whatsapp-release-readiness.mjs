@@ -34,26 +34,6 @@ function hasValue(env, name) {
   return typeof env[name] === 'string' && env[name].trim() !== '';
 }
 
-function privateIpv4(hostname) {
-  const [a, b] = hostname.split('.').map(Number);
-  return a === 127 || a === 10 ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 169 && b === 254);
-}
-
-function privateIpv6(hostname) {
-  const normalized = hostname.replace(/^\[|\]$/g, '').toLowerCase();
-  if (normalized === '::' || normalized === '::1') return true;
-  const first = Number.parseInt(normalized.split(':', 1)[0], 16);
-  if (!Number.isInteger(first)) return true;
-
-  // Fail closed to the currently allocated global-unicast block. This also
-  // excludes IPv4-mapped, unique-local, link-local, site-local and multicast.
-  if ((first & 0xe000) !== 0x2000) return true;
-  return normalized.startsWith('2001:db8:') || normalized.startsWith('2001:2:');
-}
-
 function publicHttpsUrl(raw) {
   try {
     const url = new URL(raw);
@@ -61,8 +41,7 @@ function publicHttpsUrl(raw) {
     const hostname = url.hostname.replace(/\.$/, '').toLowerCase();
     if (hostname === 'localhost' || hostname.endsWith('.localhost')) return false;
     const ipVersion = isIP(hostname.replace(/^\[|\]$/g, ''));
-    if (ipVersion === 4 && privateIpv4(hostname)) return false;
-    if (ipVersion === 6 && privateIpv6(hostname)) return false;
+    if (ipVersion !== 0) return false;
     return hostname !== '';
   } catch {
     return false;

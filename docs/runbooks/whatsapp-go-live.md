@@ -69,7 +69,7 @@ precedes payment, PII persistence, and every workflow network request. A
 non-allowlisted identity causes none of those side effects; the pre-send gate
 remains defense-in-depth.
 
-`GET /api/health` is liveness: it proves the process responds. `GET /api/ready` is readiness: it proves required configuration and PostgreSQL permit traffic. The release verifier is the third readiness check: it checks public HTTPS, backend configuration, Botpress development integration status, Stripe test mode, the single tester allowlist, and safe switches. A failed check is a no-go; do not work around it.
+`GET /api/health` is liveness: it proves the process responds. `GET /api/ready` is readiness: it proves required configuration and PostgreSQL permit traffic. The release verifier is the third readiness check: it requires a public HTTPS DNS hostname (IP-literal API URLs are always rejected), backend configuration, Botpress development integration status, Stripe test mode, the single tester allowlist, and safe switches. A failed check is a no-go; do not work around it.
 
 ## 3. Controlled promotion sequence
 

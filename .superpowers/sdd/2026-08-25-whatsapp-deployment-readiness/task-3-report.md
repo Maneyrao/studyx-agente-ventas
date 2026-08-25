@@ -133,3 +133,14 @@ result with named blockers and no values.
   and the reviewed reserved targets.
 - Focused readiness result: 66/66 passed; readiness plus runbook regression
   passed 73/73. Root and Botpress typechecks passed; `git diff --check` passed.
+
+## Final re-review R3
+
+- RED: four focused cases proved the range classifier still accepted a public
+  IPv4 literal, a public IPv6 literal, `3fff::/20`, and ORCHIDv2.
+- GREEN: `API_BASE_URL` now requires a public HTTPS DNS hostname and rejects
+  every IPv4 or IPv6 literal. This removes dependency on a necessarily
+  incomplete reserved-address classification while preserving localhost and
+  malformed-host guards. Focused readiness passed 70/70; readiness plus
+  runbook regression passed 77/77. Root and Botpress typechecks and
+  `git diff --check` passed.
