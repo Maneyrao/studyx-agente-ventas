@@ -67,15 +67,10 @@ export function evaluateReadiness(probes: readonly DependencyProbe[]): Readiness
  * Environment variables the process cannot run without, checked by presence
  * only. Their values are secrets and never appear in a response or a log line.
  */
-export const REQUIRED_ENVIRONMENT = [
-  'DATABASE_URL',
-  'ORCHESTRATOR_API_KEY',
-  'ORCHESTRATOR_KEY_ID',
-  'STUDYX_SIGNING_SECRET',
-] as const;
+export const REQUIRED_ENVIRONMENT = AGENT_A_REQUIRED_ENVIRONMENT;
 
 /** Present = the feature works; absent = it degrades, and says so. */
-export const DEGRADABLE_ENVIRONMENT = ['GEMINI_API_KEY', 'CRON_SECRET'] as const;
+export const DEGRADABLE_ENVIRONMENT = [] as const;
 
 export function probeEnvironment(
   read: (name: string) => string | undefined
@@ -102,3 +97,4 @@ export function probeEnvironment(
     },
   ];
 }
+import { AGENT_A_REQUIRED_ENVIRONMENT } from '@/lib/config';

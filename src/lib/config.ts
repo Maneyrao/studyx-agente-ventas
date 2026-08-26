@@ -25,6 +25,28 @@ export type BusinessWorkspaceConfig = {
 
 const WORKSPACE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/;
 
+/**
+ * A commercial Agent A turn is only truthful when every named dependency is
+ * configured. Values never leave this module; readiness exposes presence only.
+ */
+export const AGENT_A_REQUIRED_ENVIRONMENT = [
+  'DATABASE_URL',
+  'BUSINESS_WORKSPACE_SLUG',
+  'ORCHESTRATOR_API_KEY',
+  'ORCHESTRATOR_KEY_ID',
+  'STUDYX_SIGNING_SECRET',
+  'CRON_SECRET',
+  'GEMINI_API_KEY',
+  'GEMINI_MODEL',
+  'PAYMENT_LINK_12M',
+  'PAYMENT_LINK_6M',
+  'PAYMENT_LINK_CONTADO',
+  'GOOGLE_SHEETS_CLIENT_EMAIL',
+  'GOOGLE_SHEETS_PRIVATE_KEY',
+  'GOOGLE_SHEETS_SPREADSHEET_ID',
+  'GOOGLE_SHEETS_TAB_NAME',
+] as const;
+
 export function loadBusinessWorkspaceConfig(
   environment: NodeJS.ProcessEnv = process.env,
 ): BusinessWorkspaceConfig {
@@ -34,6 +56,19 @@ export function loadBusinessWorkspaceConfig(
     throw new Error('INVALID_BUSINESS_CONFIG:BUSINESS_WORKSPACE_SLUG');
   }
   return { workspaceSlug: raw };
+}
+
+/**
+ * Gate used before an automated commercial turn. It intentionally returns
+ * only the validated workspace identity, not any credential or payment URL.
+ */
+export function loadAgentACommercialConfig(
+  environment: NodeJS.ProcessEnv = process.env,
+): BusinessWorkspaceConfig {
+  for (const key of AGENT_A_REQUIRED_ENVIRONMENT) {
+    if (!environment[key]?.trim()) throw new Error(`MISSING_AGENT_A_CONFIG:${key}`);
+  }
+  return loadBusinessWorkspaceConfig(environment);
 }
 
 export type PaymentProviderConfig =

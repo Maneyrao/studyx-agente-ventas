@@ -13,23 +13,15 @@ import {
 } from '@/features/orchestration/adapters/postgres-retrievers';
 import { businessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
 import { buildBusinessContextView } from '@/features/orchestration/domain/business-context';
-import { config, loadBusinessWorkspaceConfig } from '@/lib/config';
+import { config, loadAgentACommercialConfig } from '@/lib/config';
 import { logger, timedStage } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
 
 /**
- * The workspace is fixed by deployment configuration. A deployment without
- * BUSINESS_WORKSPACE_SLUG keeps claiming turns — business context simply
- * reports unavailable, and the agent answers without commercial facts.
+ * The workspace is fixed by deployment configuration. Commercial automation
+ * must not claim a turn without its complete configured source of truth.
  */
-function businessContextLoader() {
-  let workspaceSlug: string;
-  try {
-    workspaceSlug = loadBusinessWorkspaceConfig().workspaceSlug;
-  } catch (error) {
-    logger.warn({ event: 'orchestration.claim.business_config_missing', error: String(error) });
-    return undefined;
-  }
+function businessContextLoader(workspaceSlug: string) {
   return {
     async load() {
       const raw = await businessContextStore.loadBusinessContext(workspaceSlug);
@@ -100,6 +92,20 @@ export async function POST(
     );
   }
 
+  let workspaceSlug: string;
+  try {
+    workspaceSlug = loadAgentACommercialConfig().workspaceSlug;
+  } catch (error) {
+    const code = error instanceof Error ? error.message : 'AGENT_A_CONFIGURATION_INVALID';
+    logger.error({
+      event: 'orchestration.claim.agent_a_not_ready',
+      batch_id,
+      trace_id: parsed.data.trace_id,
+      error_code: code,
+    });
+    return NextResponse.json({ error: 'AGENT_A_NOT_READY', reason: code }, { status: 503 });
+  }
+
   try {
     const result = await timedStage(
       'orchestration.claim',
@@ -119,7 +125,7 @@ export async function POST(
           knowledgeMinSimilarity: config.kbMinSimilarity,
         },
         log: (event, fields) => logger.info({ event, ...fields }),
-        business: businessContextLoader(),
+        business: businessContextLoader(workspaceSlug),
       }
     )
     );

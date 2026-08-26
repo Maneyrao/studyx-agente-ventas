@@ -72,11 +72,10 @@ describe('probeEnvironment', () => {
     expect(probes.find((entry) => entry.name === 'configuration')!.status).toBe('down');
   });
 
-  it('reports a missing degradable variable as degraded, never as down', () => {
-    const probes = probeEnvironment(present(REQUIRED_ENVIRONMENT));
-    expect(probes.find((entry) => entry.name === 'configuration')!.status).toBe('ok');
-    const optional = probes.find((entry) => entry.name === 'configuration_optional')!;
-    expect(optional).toMatchObject({ required: false, status: 'degraded' });
-    expect(optional.detail).toContain('GEMINI_API_KEY');
+  it('treats Gemini and commercial configuration as required for Agent A', () => {
+    const probes = probeEnvironment(present(REQUIRED_ENVIRONMENT.filter((name) => name !== 'GEMINI_API_KEY')));
+    const configuration = probes.find((entry) => entry.name === 'configuration')!;
+    expect(configuration).toMatchObject({ required: true, status: 'down' });
+    expect(configuration.detail).toContain('GEMINI_API_KEY');
   });
 });
