@@ -566,14 +566,11 @@ describe('processInboundTurn hot path', () => {
       workflow: { id: 'workflow-test' },
     });
 
-    expect(execute).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledTimes(1);
     expect(actionSpies.commit).toHaveBeenCalledTimes(1);
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      authorized_offering_code: 'redes-informaticas',
-      decision: {
-        reason_code: 'DETERMINISTIC_COURSE_FACTS',
-        response: expect.stringContaining('Redes Informáticas tiene 16 clases'),
-      },
+      authorized_offering_code: null,
+      decision: { reason_code: 'MODEL_UNAVAILABLE' },
     });
   });
 
@@ -1050,7 +1047,7 @@ describe('processInboundTurn — decision provider selection', () => {
     expect(actionSpies.groqDecision).toHaveBeenCalledWith(expect.objectContaining({
       apiKey: 'test-groq-key',
       model: 'openai/gpt-oss-120b',
-      instructions: expect.stringContaining('COMPACT_AGENT_A_V15'),
+      instructions: expect.stringContaining('COMPACT_AGENT_A_V16'),
       signal: expect.any(AbortSignal),
       timeoutMs: expect.any(Number),
     }));
