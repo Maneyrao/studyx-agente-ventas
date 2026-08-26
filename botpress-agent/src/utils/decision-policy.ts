@@ -72,6 +72,63 @@ function allowedTextFallback(claimed: ClaimedTurn, reasonCode: string): Decision
   }
 }
 
+function advisorySensitiveFallback(
+  claimed: ClaimedTurn,
+  action: 'request_call_now' | 'send_payment_link',
+): Decision {
+  const allowed = claimed.policy.allowed_response_types
+  const responseType = allowed.includes('clarification')
+    ? 'clarification'
+    : allowed.includes('commercial_reply')
+      ? 'commercial_reply'
+      : null
+  if (!responseType) return suppress('MODEL_ADVISORY_ONLY')
+
+  return {
+    schema_version: 4,
+    intent: 'commercial',
+    kind: responseType === 'clarification' ? 'clarify' : 'reply',
+    response: action === 'send_payment_link'
+      ? 'Para enviarte el enlace correcto, confirmame qué curso y cuál de las tres opciones de pago elegís.'
+      : 'Puedo seguir asesorándote por acá. Si querés que gestionemos una llamada, pedímela de forma directa.',
+    response_type: responseType,
+    business_action: null,
+    memory_candidates: [],
+    missing_information: responseType === 'clarification'
+      ? [action === 'send_payment_link' ? 'payment_authorization' : 'call_authorization']
+      : [],
+    next_state: 'waiting_user',
+    reason_code: 'MODEL_ADVISORY_ONLY',
+    confidence: 1,
+    retrieval_used: null,
+  }
+}
+
+/**
+ * A language model may interpret and phrase a turn, but it never owns side
+ * effects or commercial state. Deterministic routes are the only source of
+ * executable actions. Sensitive model proposals are replaced with a useful
+ * clarification; internal proposals are retained only as text and stripped.
+ */
+export function constrainModelToAdvisory(
+  decision: Decision,
+  claimed: ClaimedTurn,
+): Decision {
+  const action = decision.business_action
+  if (action?.type === 'request_call_now' || action?.type === 'send_payment_link') {
+    return advisorySensitiveFallback(claimed, action.type)
+  }
+  if (decision.response_type === 'call_offer' || decision.response_type === 'call_confirmation') {
+    return advisorySensitiveFallback(claimed, 'request_call_now')
+  }
+  if (action === null) return decision
+  return {
+    ...decision,
+    business_action: null,
+    reason_code: 'MODEL_ADVISORY_ONLY',
+  }
+}
+
 /**
  * Deterministic downgrade for a `send_payment_link` the current batch cannot
  * authorize. Uses only the three canonical plan families by name (no amounts:

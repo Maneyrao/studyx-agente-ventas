@@ -23,7 +23,12 @@ import {
   buildAgentASalesBridgeInstructions,
 } from '../prompts/agent-a-sales-bridge'
 import { StudyxHttpError } from '../utils/http'
-import { applyDecisionPolicy, suppress, technicalFallback } from '../utils/decision-policy'
+import {
+  applyDecisionPolicy,
+  constrainModelToAdvisory,
+  suppress,
+  technicalFallback,
+} from '../utils/decision-policy'
 import { routeCommercialTurn } from '../utils/commercial-router'
 import { verifyAuthorizedEgressPortable } from '../utils/authorized-egress'
 import { generateGeminiDecision, MAX_GEMINI_DECISION_TIMEOUT_MS } from '../lib/decision/gemini-direct'
@@ -388,6 +393,7 @@ export const processInboundTurn = new Workflow({
     // standalone catalog action remains available to non-turn callers, but a
     // normal turn never performs a second commercial read.
     let decision: Decision
+    let decisionWasModel = false
     let decisionModel: string = DECISION_MODELS[0]
     let decisionProvider: 'botpress' | 'google-ai-direct' | 'groq-direct' = 'botpress'
     timings.model_ms = 0
@@ -505,6 +511,7 @@ export const processInboundTurn = new Workflow({
           }
         )
         decision = generatedTurn.decision
+        decisionWasModel = true
         decisionProvider = generatedTurn.provider
         decisionModel = generatedTurn.model
         timings.model_ms = Date.now() - modelStartedAt
@@ -524,6 +531,7 @@ export const processInboundTurn = new Workflow({
 
     // Exactly one policy call for every route: deterministic, suppressed,
     // model and technical fallback all converge here before commit.
+    if (decisionWasModel) decision = constrainModelToAdvisory(decision, owned)
     decision = applyDecisionPolicy(decision, owned)
 
     if (Number.isFinite(occurredAtMs)) {

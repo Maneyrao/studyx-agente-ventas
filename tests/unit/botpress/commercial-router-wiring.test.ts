@@ -30,4 +30,21 @@ describe('commercial router wiring parity', () => {
 
     expect(callSites).toHaveLength(1);
   });
+
+  it.each([
+    ['Botpress workflow', WORKFLOW],
+    ['local runner', RUNNER],
+  ])('%s constrains model output to advisory exactly once', async (_name, file) => {
+    const source = await readFile(file, 'utf8');
+    const callSites = source.match(/\bconstrainModelToAdvisory\s*\(/gu) ?? [];
+
+    expect(callSites).toHaveLength(1);
+    expect(source).toContain('if (decisionWasModel)');
+  });
+
+  it('local runner commits the same router-authorized course as Botpress', async () => {
+    const source = await readFile(RUNNER, 'utf8');
+
+    expect(source).toContain('authorized_offering_code: authorizedOfferingCode');
+  });
 });

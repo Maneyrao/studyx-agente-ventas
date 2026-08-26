@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { applyDecisionPolicy } from '../../../botpress-agent/src/utils/decision-policy';
+import {
+  applyDecisionPolicy,
+  constrainModelToAdvisory,
+} from '../../../botpress-agent/src/utils/decision-policy';
 import type { ClaimedTurn, Decision } from '../../../botpress-agent/src/schemas/contracts';
 
 /**
@@ -148,6 +151,38 @@ function modelDecision(overrides: Partial<Decision> = {}): Decision {
 }
 
 describe('applyDecisionPolicy — provider parity', () => {
+  it.each([
+    { type: 'mark_hot_lead', score: 0.9 } as const,
+    { type: 'log_objection', objection_key: 'price', quote: 'Es caro' } as const,
+    { type: 'request_call_now', reason: 'direct_request' } as const,
+    { type: 'send_payment_link', plan_code: 'monthly_12', offering_sku: 'course_0' } as const,
+  ])('treats model action $type as advisory and never executable', (businessAction) => {
+    const constrained = constrainModelToAdvisory(modelDecision({
+      business_action: businessAction,
+    }), claimedTurn({ allowed_response_types: ['commercial_reply', 'clarification'] }));
+
+    expect(constrained.business_action).toBeNull();
+  });
+
+  it('replaces a model-authored call confirmation with an allowed non-action reply', () => {
+    const constrained = constrainModelToAdvisory(modelDecision({
+      response: 'Te llamo ahora.',
+      response_type: 'call_confirmation',
+      business_action: { type: 'request_call_now', reason: 'direct_request' },
+    }), claimedTurn({
+      allowed_response_types: ['commercial_reply'],
+      allowed_actions: ['request_call_now'],
+    }));
+
+    expect(constrained).toMatchObject({
+      kind: 'reply',
+      response_type: 'commercial_reply',
+      business_action: null,
+      reason_code: 'MODEL_ADVISORY_ONLY',
+    });
+    expect(constrained.response).not.toContain('llamo');
+  });
+
   it('suppress válido: a suppress decision passes through as a clean suppress', () => {
     const claimed = claimedTurn();
     const decision = applyDecisionPolicy(

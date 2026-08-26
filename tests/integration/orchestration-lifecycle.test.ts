@@ -197,7 +197,6 @@ run('canonical orchestration lifecycle', () => {
 
   it.each([
     ['an untyped URL', 'Mirá https://attacker.example/promo', 'EGRESS_UNAUTHORIZED_URL'],
-    ['an untyped protected fact', 'El precio total es USD 999.', 'EGRESS_UNAUTHORIZED_PROTECTED_FACT'],
   ])('rejects %s before persisting a decision or outbox', async (_case, content, reason) => {
     const accepted = await processInboundMessage(envelope());
 
@@ -216,6 +215,18 @@ run('canonical orchestration lifecycle', () => {
           WHERE m.in_reply_to = ${accepted.turn_id}::uuid) AS outbox
     `;
     expect(counts[0]).toEqual({ decisions: 0, deliveries: 0, outbox: 0 });
+  });
+
+  it.each([
+    ['invented price', 'El precio total es USD 999.'],
+    ['invented duration', 'El curso tiene 99 clases.'],
+  ])('replaces an %s with a safe answer instead of returning 422', async (_case, content) => {
+    const accepted = await processInboundMessage(envelope());
+    const committed = await commitAgentDecision(reply(accepted.turn_id, randomUUID(), content));
+
+    expect(committed.status).toBe('committed');
+    expect(committed.outbound?.content).toMatch(/no tengo ese dato confirmado/i);
+    expect(committed.outbound?.content).not.toBe(content);
   });
 
   it('verifies the persisted manifest again before returning a duplicate outbound', async () => {
@@ -1097,28 +1108,22 @@ run('Fase 4 — pago y cierre de batch', () => {
     ['an offering absent from the snapshot', 'El precio es USD 360.', 'missing_course'],
     ['no authorized course code', 'El precio es USD 360.', undefined],
     ['a different value', 'El precio es USD 361.', 'course_test'],
-  ])('rejects a protected fact backed by %s without persisting anything', async (
+  ])('replaces a protected fact backed by %s with a safe answer', async (
     _case,
     content,
     authorizedOfferingCode
   ) => {
     const accepted = await processInboundMessage(envelope());
 
-    await expect(commitAgentDecision(groundedReply(
+    const committed = await commitAgentDecision(groundedReply(
       accepted.turn_id,
       content,
       authorizedOfferingCode
-    ))).rejects.toMatchObject({ reason: 'EGRESS_UNAUTHORIZED_PROTECTED_FACT' });
+    ));
 
-    const rows = await db!<Array<{ decisions: number; deliveries: number }>>`
-      SELECT
-        (SELECT count(*)::integer FROM agent_decisions
-          WHERE turn_id = ${accepted.turn_id}::uuid) AS decisions,
-        (SELECT count(*)::integer FROM outbound_deliveries AS od
-          JOIN messages AS m ON m.id = od.message_id
-          WHERE m.in_reply_to = ${accepted.turn_id}::uuid) AS deliveries
-    `;
-    expect(rows[0]).toEqual({ decisions: 0, deliveries: 0 });
+    expect(committed.status).toBe('committed');
+    expect(committed.outbound?.content).toMatch(/no tengo ese dato confirmado/i);
+    expect(committed.outbound?.content).not.toBe(content);
   });
 
   it('materializes only the configured URL and strips any model-authored one', async () => {

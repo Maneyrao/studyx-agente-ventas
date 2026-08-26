@@ -43,7 +43,11 @@ import {
   generateGeminiDecision,
   MAX_GEMINI_DECISION_TIMEOUT_MS,
 } from '../botpress-agent/src/lib/decision/gemini-direct';
-import { applyDecisionPolicy, technicalFallback } from '../botpress-agent/src/utils/decision-policy';
+import {
+  applyDecisionPolicy,
+  constrainModelToAdvisory,
+  technicalFallback,
+} from '../botpress-agent/src/utils/decision-policy';
 import { routeCommercialTurn } from '../botpress-agent/src/utils/commercial-router';
 import { deliverAuthorizedLocalOutbound } from './lib/local-authorized-delivery';
 
@@ -364,7 +368,11 @@ export function createLocalTurnSender(
       automationEnabled: true,
       claimed,
     });
+    const authorizedOfferingCode = commercialRoute.kind === 'deterministic'
+      ? commercialRoute.authorizedOfferingCode ?? claimed.sales_context.offering_code
+      : claimed.sales_context.offering_code;
     let decision: Decision;
+    let decisionWasModel = false;
     let provider: 'botpress' | 'groq-direct' | 'google-ai-direct';
     let decisionModel: string;
     let fallbackReason: string | null = null;
@@ -393,6 +401,7 @@ export function createLocalTurnSender(
               model: credentials.groqModel,
             });
         decision = generated.decision;
+        decisionWasModel = true;
         provider = generated.provider;
         decisionModel = generated.model;
       } catch (error) {
@@ -405,6 +414,7 @@ export function createLocalTurnSender(
       }
       latenciesMs.model_ms = Date.now() - modelStartedAt;
     }
+    if (decisionWasModel) decision = constrainModelToAdvisory(decision, claimed);
     decision = applyDecisionPolicy(decision, claimed);
 
     const claimTimeDiagnostic: AgentTurnDiagnostic = {
@@ -427,7 +437,7 @@ export function createLocalTurnSender(
         body: {
           turn_id: claimed.turn_id,
           trace_id: traceId,
-          authorized_offering_code: claimed.sales_context.offering_code,
+          authorized_offering_code: authorizedOfferingCode,
           decision,
           model: {
             provider,

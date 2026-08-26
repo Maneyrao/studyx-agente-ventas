@@ -129,7 +129,7 @@ function claimedTurn(overrides: {
 
 describe('AGENT_A_PROMPT_VERSION', () => {
   it('is the pinned sales-bridge version', () => {
-    expect(AGENT_A_PROMPT_VERSION).toBe('studyx-agent-a-sales-v16');
+    expect(AGENT_A_PROMPT_VERSION).toBe('studyx-agent-a-sales-v17');
   });
 });
 
@@ -148,11 +148,10 @@ describe('v11 hard rules', () => {
     expect(instructions).toMatch(/registered ONLY when context\.contact\.name is\s+present/);
   });
 
-  it('requires offering_sku to carry the canonical catalog code of the chosen offering', () => {
+  it('keeps canonical offering authorization out of the model prompt', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
-    expect(instructions).toMatch(/offering_sku MUST be the exact "code"/);
-    expect(instructions).not.toMatch(/offering_sku[^\n]*null/i);
-    expect(instructions).toMatch(/clarif[^\n]*(?:course|offering)|(?:course|offering)[^\n]*clarif/i);
+    expect(instructions).toMatch(/backend decides and authorizes course identity/i);
+    expect(instructions).not.toContain('offering_sku');
   });
 });
 
@@ -162,8 +161,8 @@ describe('buildAgentASalesBridgeInstructions', () => {
     const compactInstructions = buildAgentASalesBridgeCompactInstructions(claimedTurn({}));
     for (const instruction of [
       'responder primero', 'una sola pregunta', 'recomendar entre una y tres',
-      'ofrecer una llamada opcional', 'continuar y completar por chat',
-      'resolver la objeción', 'cerrar por elección', 'selección explícita',
+      'backend maneja cualquier llamada', 'continuar y completar por chat',
+      'resolver la objeción', 'cerrar por elección', 'decide exclusivamente el backend',
     ]) expect(instructions.toLowerCase()).toContain(instruction);
     expect(compactInstructions).toContain('SALES_PLAYBOOK_V16');
     expect(AGENT_A_SALES_PLAYBOOK_V16).toContain('SALES_PLAYBOOK_V16');
@@ -176,10 +175,10 @@ describe('buildAgentASalesBridgeInstructions', () => {
     );
   });
 
-  it('sends an explicitly selected payment link without inventing a profile form', () => {
+  it('leaves payment execution to the backend without inventing a profile form', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
 
-    expect(instructions).toContain('Never make sending the chosen link conditional on profile data');
+    expect(instructions).toContain('Never make the next step conditional on profile data');
     expect(instructions).toMatch(/If\s+qualification_fields is empty, ask for no profile fields/);
     expect(instructions).not.toContain('Ask for full name, email, city and ZIP code');
   });
@@ -212,15 +211,13 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(withoutBusiness).toContain('never invent one');
   });
 
-  it('instructs Decision v4 with the call protocol invariants', () => {
+  it('instructs Decision v4 as an advisory-only model contract', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
     expect(instructions).toContain('schema_version must be 4');
     expect(instructions).not.toContain('schema_version must be 3');
-    // call_offer is side-effect free…
-    expect(instructions).toMatch(/call_offer[\s\S]*(no side effect|nothing is dialed)/i);
-    // …and call_confirmation ⇔ request_call_now as an inseparable pair.
-    expect(instructions).toMatch(/call_confirmation[\s\S]*request_call_now[\s\S]*inseparable pair/i);
-    expect(instructions).toMatch(/direct_request[\s\S]*accepted_offer/);
+    expect(instructions).toMatch(/business_action must be null on every model response/i);
+    expect(instructions).toMatch(/Never use call_offer or call_confirmation/i);
+    expect(instructions).toMatch(/backend decides and authorizes/i);
   });
 
   it('marks conversational declines with intent commercial_decline for the cooldown', () => {
@@ -243,10 +240,10 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(instructions).toMatch(/stop messaging|do not write|no me escribas/i);
   });
 
-  it('honors a direct call request that arrives inside a multi-message burst', () => {
+  it('leaves every direct call request to the deterministic backend route', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
-    expect(instructions).toMatch(/direct call request[\s\S]*burst|burst[\s\S]*direct call request/i);
-    expect(instructions).toMatch(/answer the rest of the batch in the same response/i);
+    expect(instructions).toMatch(/Direct call requests[\s\S]*handled deterministically/i);
+    expect(instructions).toMatch(/Never claim a call is being placed/i);
   });
 
   it('treats qualification as conversational, never a prerequisite form', () => {
@@ -311,45 +308,38 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(payload.business_snapshot.offerings[0].academy).toBe('Academia de Marketing');
   });
 
-  it('makes an immediate virtual call the preferred optional next step while preserving chat sales', () => {
+  it('keeps call decisions in the backend while preserving chat sales', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
-    expect(instructions).toMatch(/immediate\s+call as the\s+preferred\s+next step/i);
-    expect(instructions).toMatch(/If the customer says they prefer chat, keep selling\s+in\s+chat/i);
-    expect(instructions).toMatch(/when "offer_call" is allowed/i);
+    expect(instructions).toMatch(/backend owns the call lifecycle/i);
+    expect(instructions).toMatch(/continue answering in writing/i);
+    expect(instructions).toMatch(/business_action null/i);
   });
 
   it('caps the response to at most one question or CTA, never a questionnaire', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
     expect(instructions).toMatch(/at most one question or (call-to-action|cta)/i);
-    expect(instructions).toMatch(/never .*(questionnaire|qualification questionnaire)/i);
+    expect(instructions).toMatch(/never[\s\S]{0,80}(questionnaire|qualification questionnaire)/i);
   });
 
-  it('says "asesora virtual" and forbids promising a human or a transfer', () => {
+  it('forbids the advisory model from promising a human, transfer or call outcome', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
-    expect(instructions).toContain('asesora virtual');
-    expect(instructions).toMatch(/never (say|promise|claim) .*(humano|human)/i);
+    expect(instructions).toMatch(/Never promise a human transfer or a call outcome/i);
   });
 
-  it('gates any call proposal on sales_context.allowed_actions', () => {
+  it('forbids any model-authored call proposal regardless of allowed_actions', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
-    expect(instructions).toContain('sales_context.allowed_actions');
-    expect(instructions).toContain('offer_call');
     expect(instructions).toContain('request_call_now');
-    expect(instructions).toMatch(/request_call_now.*only.*(allowed_actions|explicit consent)/i);
-    expect(instructions).toMatch(
-      /offer_call is only an allowed_actions token[\s\S]*response_type must be call_offer/i,
-    );
+    expect(instructions).toMatch(/Never emit call_offer, call_confirmation or request_call_now/i);
   });
 
-  it('leaves the course optional for a direct call request', () => {
+  it('does not turn course collection into a prerequisite for answering', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
-    expect(instructions).toMatch(/course.*optional/i);
+    expect(instructions).toMatch(/NEVER as a prerequisite before answering a question/i);
   });
 
-  it('forbids asking for email, budget, country or availability before an immediate call unless essential', () => {
+  it('forbids inventing identity or profile requirements before the next step', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
-    expect(instructions).toMatch(/email|budget|country|availability/i);
-    expect(instructions).toMatch(/unless essential/i);
+    expect(instructions).toMatch(/Never invent a\s+requirement for name, email, phone, city, ZIP code, country or budget/i);
   });
 
   it('forbids re-asking data already present in context', () => {
@@ -392,23 +382,21 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(instructions).toMatch(/three canonical configured (payment )?options/i);
     expect(instructions).not.toMatch(/USD\s*(?:360|30|60)|(?:360|30|60)\.00/i);
     expect(instructions).toMatch(/never (invent|offer).*(fourth|another|different).*option/i);
-    expect(instructions).toMatch(/ONLY after the customer explicitly chooses/i);
-    expect(instructions).toMatch(/exactly one.*payment link|one.*payment link/i);
+    expect(instructions).toMatch(/backend decides whether course and plan are explicit enough/i);
+    expect(instructions).toMatch(/Never claim a link was sent/i);
     expect(instructions).toMatch(/Apple Pay/i);
   });
 
   it('never repeats a payment action from history when the current batch only supplies profile data', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
-    expect(instructions).toMatch(
-      /send_payment_link is allowed only when the current batch_messages explicitly\s+chooses[\s\S]*never repeat that action from recent_turns/i,
-    );
+    expect(instructions).toMatch(/Never infer an executable payment action from recent_turns/i);
   });
 
   it('enforces the supplied WhatsApp sales behavior without claiming a payment from a screenshot', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
     expect(instructions).toMatch(/one diagnostic question/i);
     expect(instructions).toMatch(/One idea per message, maximum 3-4 short lines/i);
-    expect(instructions).toMatch(/never.*AI.*bot|AI.*bot.*never/i);
+    expect(instructions).toMatch(/never[\s\S]{0,100}AI, bot|AI, bot[\s\S]{0,100}never/i);
     expect(instructions).toMatch(/choice.?based close|close.*by choice/i);
     expect(instructions).toContain('screenshot can be acknowledged as received, but it is NOT payment');
     expect(instructions).toContain('Only a verified Stripe webhook is');
@@ -599,7 +587,7 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(instructions.length).toBeLessThan(20_000);
     expect(instructions).toContain('COMPACT_AGENT_A_V16');
     expect(instructions).toMatch(/solo tres opciones de pago/i);
-    expect(instructions).toMatch(/request_call_now/i);
+    expect(instructions).toMatch(/no uses call_offer, call_confirmation ni request_call_now/i);
     expect(instructions).toMatch(/rechaza la llamada/i);
     expect(instructions).toMatch(/baja de mensajes/i);
     expect(instructions).toMatch(/devoluciones/i);
@@ -1014,14 +1002,17 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(instructions).toMatch(/never (?:be )?free text/i);
   });
 
-  it('sends the payment link only via the typed send_payment_link business_action, never as prose', () => {
-    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
-    expect(instructions).toMatch(/"type":"send_payment_link"/);
-    expect(instructions).toMatch(/"plan_code"/);
-    expect(instructions).toMatch(/"offering_sku"/);
-    expect(instructions).toMatch(/backend appends exactly\s+one payment link/i);
-    expect(instructions).toContain('send_payment_link","plan_code":c,"offering_sku":s}');
-    expect(instructions).not.toContain('offering_sku":s|null');
+  it('keeps both model prompts advisory: the backend alone owns every action', () => {
+    for (const instructions of [
+      buildAgentASalesBridgeInstructions(claimedTurn({})),
+      buildAgentASalesBridgeCompactInstructions(claimedTurn({})),
+    ]) {
+      expect(instructions).toMatch(/business_action (?:must be|debe ser) null/i);
+      expect(instructions).toMatch(/backend.*(?:decide|owns|autoriza)/i);
+      expect(instructions).not.toMatch(/set business_action to exactly/i);
+      expect(instructions).not.toMatch(/business_action=\{"type":"send_payment_link"/i);
+      expect(instructions).not.toMatch(/business_action=\{"type":"request_call_now"/i);
+    }
   });
 
   it('handles an unverified paid claim without confirming access or automatically resending checkout', () => {

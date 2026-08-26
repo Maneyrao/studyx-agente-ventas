@@ -388,6 +388,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     let authorizedUrls: readonly string[] = [];
     let authorizedProtectedFacts: readonly ProtectedFactRef[] = [];
     let committedBusinessAction = decision.business_action;
+    let effectiveAuthorizedOfferingCode = validatedInput.authorized_offering_code;
     let canonicalOfferings: readonly RawOfferingRow[] | undefined;
     let canonicalWorkspaceId: string | null = null;
     let canonicalSnapshotAttempted = false;
@@ -540,6 +541,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           (offering) => offering.code === validatedInput.authorized_offering_code
         );
         if (exactMatches.length === 1) {
+          effectiveAuthorizedOfferingCode = exactMatches[0].code;
           authorizedProtectedFacts = [
             ...authorizedProtectedFacts,
             ...materializeCanonicalOfferingFacts({
@@ -547,6 +549,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
               offering: exactMatches[0],
             }),
           ];
+        } else {
+          effectiveAuthorizedOfferingCode = null;
         }
       }
     }
@@ -568,11 +572,6 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       });
       if (!verification.ok) {
         const mayUseSafeFallback = verification.reason === 'UNAUTHORIZED_PROTECTED_FACT'
-          && verification.unauthorized_facts.some(
-            (fact) => fact.kind === 'offering'
-              || fact.kind === 'promise'
-              || fact.kind === 'certification',
-          )
           && committedBusinessAction === null;
         if (!mayUseSafeFallback) throw egressPolicyError(verification.reason);
 
@@ -583,7 +582,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           turn_id: turn.id,
           reason: verification.reason,
         });
-        finalResponse = 'No tengo ese dato confirmado en el catálogo. ¿Querés que revisemos otra opción?';
+        finalResponse = 'No tengo ese dato confirmado en el catálogo. Decime qué curso te interesa y qué querés confirmar.';
         authorizedUrls = [];
         authorizedProtectedFacts = [];
         authorizedEgress = buildAuthorizedEgress({
@@ -854,12 +853,11 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     // Persist business identity independently from vector memory. This runs in
     // the same serializable decision transaction, so an outbound/decision can
     // never claim a course or payment transition that failed to become durable.
-    const requestedPayment = decision.schema_version === 4
-      && decision.business_action?.type === 'send_payment_link'
-      ? decision.business_action
+    const requestedPayment = committedBusinessAction?.type === 'send_payment_link'
+      ? committedBusinessAction
       : null;
     const selectedOfferingCode = requestedPayment?.offering_sku
-      ?? validatedInput.authorized_offering_code
+      ?? effectiveAuthorizedOfferingCode
       ?? null;
     const selectedPlan = requestedPayment && isSalesPaymentPlan(requestedPayment.plan_code)
       ? requestedPayment.plan_code
