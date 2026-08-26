@@ -131,6 +131,25 @@ run('GET /api/agent/tools/catalog/[sku] (offerings-backed)', () => {
     expect(detail.status).toBe(404);
   });
 
+  it('keeps the complete compact index independent of the bounded detail snapshot', async () => {
+    const workspace = await workspaceFixture();
+    for (let number = 1; number <= 41; number += 1) {
+      await addOffering({
+        workspaceId: workspace.id,
+        code: `CURSO-${String(number).padStart(2, '0')}`,
+      });
+    }
+
+    const store = new (await import('@/features/orchestration/adapters/postgres-business-context'))
+      .PostgresBusinessContextStore(db!);
+    const index = await store.loadCompleteIndex(workspace.slug);
+    const detail = await store.loadByCode(workspace.slug, 'CURSO-41');
+
+    expect(index?.offerings).toHaveLength(41);
+    expect(index?.offerings.at(-1)).toMatchObject({ code: 'CURSO-41' });
+    expect(detail?.offerings).toMatchObject([{ code: 'CURSO-41' }]);
+  });
+
   it('fails closed when BUSINESS_WORKSPACE_SLUG is not configured', async () => {
     delete process.env.BUSINESS_WORKSPACE_SLUG;
     const detail = await getDetail('CUALQUIERA');

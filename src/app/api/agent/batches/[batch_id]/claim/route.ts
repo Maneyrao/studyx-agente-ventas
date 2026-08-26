@@ -12,7 +12,10 @@ import {
   queryEmbedder,
 } from '@/features/orchestration/adapters/postgres-retrievers';
 import { businessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
-import { buildBusinessContextView } from '@/features/orchestration/domain/business-context';
+import {
+  buildBusinessContextView,
+  buildCatalogIndexView,
+} from '@/features/orchestration/domain/business-context';
 import { config, loadAgentACommercialConfig } from '@/lib/config';
 import { logger, timedStage } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
@@ -25,6 +28,14 @@ function businessContextLoader(workspaceSlug: string) {
   return {
     async load() {
       const raw = await businessContextStore.loadBusinessContext(workspaceSlug);
+      return raw ? buildBusinessContextView(raw) : null;
+    },
+    async loadCompleteIndex() {
+      const raw = await businessContextStore.loadCompleteIndex(workspaceSlug);
+      return raw ? buildCatalogIndexView(raw) : null;
+    },
+    async loadByCode(code: string) {
+      const raw = await businessContextStore.loadByCode(workspaceSlug, code);
       return raw ? buildBusinessContextView(raw) : null;
     },
   };

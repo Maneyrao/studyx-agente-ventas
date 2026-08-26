@@ -1,5 +1,6 @@
 import type {
   BusinessContextLimits,
+  RawCatalogIndex,
   RawBusinessContext,
 } from '../domain/business-context';
 
@@ -12,7 +13,17 @@ import type {
  * does not exist, which callers must treat as "no business context", not as
  * permission to fall back to another tenant's data.
  */
-export interface BusinessContextStore {
+/** Full identity index: all active offerings, but no prompt-sized details. */
+export interface CatalogIndexStore {
+  loadCompleteIndex(workspaceSlug: string): Promise<RawCatalogIndex | null>;
+}
+
+/** One canonical offering detail, tenant-scoped by the configured workspace. */
+export interface CatalogDetailStore {
+  loadByCode(workspaceSlug: string, code: string): Promise<RawBusinessContext | null>;
+}
+
+export interface BusinessContextStore extends CatalogIndexStore, CatalogDetailStore {
   loadBusinessContext(
     workspaceSlug: string,
     limits?: BusinessContextLimits

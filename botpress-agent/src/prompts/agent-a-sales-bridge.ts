@@ -337,12 +337,13 @@ const WHATSAPP_FALLBACK_BLOCK = `WhatsApp fallback after a declined call:
   an opt-out; then follow the opt-out policy and do not continue selling.`
 
 /**
- * Compact projection derived exclusively from the claim's one business
- * snapshot. No second catalog payload exists, so names, prices and modalities
- * can occur only once in the fenced context.
+ * The complete compact index establishes which offerings exist. The bounded
+ * business snapshot supplies detail only for the selected offering, so a
+ * prompt-size ceiling can never erase a course from canonical resolution.
  */
 function businessSnapshotForPrompt(claimed: ClaimedTurn) {
   const snapshot = claimed.business_context
+  const index = claimed.catalog_index
   if (!snapshot || !claimed.business_context_available) {
     return {
       as_of: null,
@@ -363,7 +364,13 @@ function businessSnapshotForPrompt(claimed: ClaimedTurn) {
         && (offering.code.toLocaleLowerCase('es') === interest
           || offering.display_name.toLocaleLowerCase('es') === interest)
     })?.code
-  const compactCatalog = snapshot.offerings.length > 12
+  const indexOfferings = index?.offerings ?? snapshot.offerings.map((offering) => ({
+    code: offering.code,
+    display_name: offering.display_name,
+    academy: offering.academy,
+    aliases: offering.aliases,
+  }))
+  const compactCatalog = indexOfferings.length > 12
   return {
     as_of: snapshot.as_of,
     prices_assertable: pricesAssertable,
@@ -383,13 +390,15 @@ function businessSnapshotForPrompt(claimed: ClaimedTurn) {
           }))
         : [],
     },
-    offerings: snapshot.offerings.map((offering) => {
+    offerings: indexOfferings.map((catalogEntry) => {
+      const offering = snapshot.offerings.find((candidate) => candidate.code === catalogEntry.code)
       const indexEntry = {
-        code: offering.code,
-        display_name: offering.display_name,
-        academy: offering.academy,
+        code: catalogEntry.code,
+        display_name: catalogEntry.display_name,
+        academy: catalogEntry.academy,
       }
-      if (compactCatalog && offering.code !== selectedOfferingCode) return indexEntry
+      if (compactCatalog && indexEntry.code !== selectedOfferingCode) return indexEntry
+      if (!offering) return indexEntry
       return {
         ...indexEntry,
         offering_type: offering.offering_type,

@@ -158,6 +158,50 @@ function buildDeps(options: {
 const input = { batch_id: 'batch-1', claimed_by: 'workflow-1', trace_id: 'trace-1' };
 
 describe('claimBatch', () => {
+  it('resolves an offering outside the bounded detail snapshot from the complete compact index', async () => {
+    const bounded = businessContextView({
+      offerings_truncated: 1,
+      offerings: [businessOffering('curso_01', 'Curso 01', 'Academia Test')],
+    });
+    const tailDetail = businessContextView({
+      offerings_truncated: 0,
+      offerings: [businessOffering('curso_41', 'Curso 41', 'Academia Test')],
+    });
+    const index = {
+      as_of: bounded.as_of,
+      offerings_total: 41,
+      offerings: Array.from({ length: 41 }, (_, index) => ({
+        code: `curso_${String(index + 1).padStart(2, '0')}`,
+        display_name: `Curso ${String(index + 1).padStart(2, '0')}`,
+        academy: 'Academia Test',
+        aliases: [],
+      })),
+      injection_suspected_count: 0,
+    };
+    const result = await claimBatch(input, {
+      ...buildDeps({ messagesResult: [{
+        id: 'm1', conversation_seq: 1, content: 'Quiero Curso 41',
+        created_at: '2026-08-11T12:00:00.000Z', message_type: 'text',
+      }] }),
+      business: {
+        load: vi.fn().mockResolvedValue(bounded),
+        loadCompleteIndex: vi.fn().mockResolvedValue(index),
+        loadByCode: vi.fn().mockResolvedValue(tailDetail),
+      },
+    });
+
+    expect(result).toMatchObject({
+      outcome: 'claimed',
+      catalog_resolution: { kind: 'exact', offeringCode: 'curso_41' },
+      sales_context: { offering_code: 'curso_41' },
+      catalog_index: { offerings_total: 41 },
+    });
+    if (result.outcome !== 'claimed') return;
+    expect(result.business_context?.offerings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'curso_41' }),
+    ]));
+  });
+
   it('returns the controlled context to the caller that owns the batch', async () => {
     const deps = buildDeps();
     const result = await claimBatch(input, deps);

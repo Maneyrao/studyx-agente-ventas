@@ -502,6 +502,19 @@ export const CatalogResolutionSchema = z.discriminatedUnion('kind', [
   }).strict(),
 ])
 
+/** Complete identity-only catalog; detailed facts stay in business_context. */
+export const CatalogIndexSchema = z.object({
+  as_of: z.string().min(1),
+  offerings_total: z.number().int().nonnegative(),
+  offerings: z.array(z.object({
+    code: z.string().min(1),
+    display_name: z.string().min(1),
+    academy: z.string().nullable(),
+    aliases: z.array(z.string().min(1).max(128)).max(12).default([]),
+  }).strict()),
+  injection_suspected_count: z.number().int().nonnegative().default(0),
+}).strict().nullable().default(null)
+
 export const ClaimedTurnSchema = z.object({
   outcome: z.literal('claimed'),
   trace_id: z.string().uuid(),
@@ -538,6 +551,7 @@ export const ClaimedTurnSchema = z.object({
     kind: 'unavailable',
     reason: 'snapshot_missing',
   }),
+  catalog_index: CatalogIndexSchema,
   deterministic_route: z.enum([
     'greeting',
     'call_direct_request',
@@ -558,7 +572,7 @@ export const ClaimedTurnSchema = z.object({
       memory_search_calls: z.number().int().nonnegative(),
       knowledge_search_calls: z.number().int().nonnegative(),
       business_snapshot_calls: z.number().int().nonnegative(),
-      catalog_calls: z.literal(0),
+      catalog_calls: z.number().int().nonnegative(),
     }).passthrough(),
   }).passthrough().default({
     timings: {

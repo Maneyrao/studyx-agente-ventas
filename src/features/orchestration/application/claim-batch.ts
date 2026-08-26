@@ -1,5 +1,5 @@
 import { evaluateTurnPolicy, type TurnPolicy } from '../domain/turn-policy';
-import type { BusinessContextView } from '../domain/business-context';
+import type { BusinessContextView, CatalogIndexView } from '../domain/business-context';
 import {
   isCatalogRequestNeutral,
   resolveCatalogRequest,
@@ -57,13 +57,15 @@ export interface ClaimBatchDependencies {
   /** Clock for the call-offer policy's offer-expiry and cooldown math. Defaults to the real time. */
   readonly now?: () => string;
   /**
-   * Loads the configured workspace's business context. Optional and
-   * degradable like retrieval: absence or failure yields
-   * `business_context: null` with the availability flag down, never a
-   * blocked turn. The workspace is fixed by backend configuration — this
-   * dependency takes no argument a caller could vary per request.
+   * Loads the configured workspace's bounded detail snapshot plus its complete
+   * compact identity index. The workspace is fixed by backend configuration —
+   * this dependency takes no argument a caller could vary per request.
    */
-  readonly business?: { load(): Promise<BusinessContextView | null> };
+  readonly business?: {
+    load(): Promise<BusinessContextView | null>;
+    loadCompleteIndex?(): Promise<CatalogIndexView | null>;
+    loadByCode?(code: string): Promise<BusinessContextView | null>;
+  };
 }
 
 export interface ContextLimits {
@@ -162,8 +164,10 @@ export interface ClaimedTurn {
     readonly injection_suspected_count: number;
   };
   readonly sales_context: ClaimedSalesContext;
-  /** Current-batch catalog verdict from the same bounded business snapshot. */
+  /** Current-batch catalog verdict from the complete compact identity index. */
   readonly catalog_resolution: CatalogResolution;
+  /** Complete compact index; detail payload remains separately bounded. */
+  readonly catalog_index: CatalogIndexView | null;
   /** Backend-classified route consumed by Botpress; null means a model is required. */
   readonly deterministic_route:
     | 'greeting'
@@ -185,7 +189,7 @@ export interface ClaimedTurn {
       readonly memory_search_calls: number;
       readonly knowledge_search_calls: number;
       readonly business_snapshot_calls: number;
-      readonly catalog_calls: 0;
+      readonly catalog_calls: number;
     };
   };
   /** Configured workspace's commercial facts; null when unavailable. */
@@ -377,17 +381,32 @@ function buildSalesContext(input: {
 
 function resolveCatalogFromSnapshot(
   messageTexts: readonly string[],
-  businessContext: BusinessContextView | null,
+  catalogIndex: CatalogIndexView | null,
 ): CatalogResolution {
   return resolveCatalogRequest(
     messageTexts,
-    businessContext === null
+    catalogIndex === null
       ? null
       : {
-          offerings: businessContext.offerings,
-          offerings_truncated: businessContext.offerings_truncated,
+          offerings: catalogIndex.offerings,
+          offerings_truncated: Math.max(0, catalogIndex.offerings_total - catalogIndex.offerings.length),
         },
   );
+}
+
+/** Transitional mirror for old in-process doubles/older producer revisions. */
+function indexFromBusinessContext(context: BusinessContextView): CatalogIndexView {
+  return {
+    as_of: context.as_of,
+    offerings_total: context.offerings.length + context.offerings_truncated,
+    offerings: context.offerings.map((offering) => ({
+      code: offering.code,
+      display_name: offering.display_name,
+      academy: offering.academy,
+      aliases: offering.aliases,
+    })),
+    injection_suspected_count: context.injection_suspected_count,
+  };
 }
 
 /**
@@ -400,7 +419,7 @@ function deriveCourseSelection(input: {
   current: CatalogResolution;
   currentMessageTexts: readonly string[];
   recentTurns: readonly RecentTurn[];
-  businessContext: BusinessContextView | null;
+  catalogIndex: CatalogIndexView | null;
 }): Pick<ClaimedSalesContext, 'course_of_interest' | 'offering_code'> {
   if (input.current.kind === 'exact') {
     return {
@@ -411,14 +430,14 @@ function deriveCourseSelection(input: {
   if (
     input.current.kind !== 'no_catalog_intent'
     || !isCatalogRequestNeutral(input.currentMessageTexts)
-    || input.businessContext === null
+    || input.catalogIndex === null
   ) {
     return { course_of_interest: null, offering_code: null };
   }
 
   for (const turn of input.recentTurns.slice().reverse()) {
     if (turn.direction !== 'inbound') continue;
-    const historical = resolveCatalogFromSnapshot([turn.content], input.businessContext);
+    const historical = resolveCatalogFromSnapshot([turn.content], input.catalogIndex);
     if (historical.kind === 'no_catalog_intent') {
       if (isCatalogRequestNeutral(turn.content)) continue;
       return { course_of_interest: null, offering_code: null };
@@ -455,7 +474,7 @@ export async function claimBatch(
     memory_search_calls: 0,
     knowledge_search_calls: 0,
     business_snapshot_calls: 0,
-    catalog_calls: 0 as const,
+    catalog_calls: 0,
   };
 
   const claim = await store.claimBatch({
@@ -539,12 +558,25 @@ export async function claimBatch(
   // bounded statement immediately and join it only before returning the claim.
   let business_context: BusinessContextView | null = null;
   let business_context_available = false;
+  let catalog_index: CatalogIndexView | null = null;
   const businessTask = (async () => {
     if (!policy.may_respond || optOutAcknowledgementOnly || !deps.business) return;
     counters.business_snapshot_calls += 1;
     const businessStartedAt = monotonicNow();
     try {
-      business_context = await deps.business.load();
+      const [contextResult, indexResult] = await Promise.all([
+        deps.business.load(),
+        deps.business.loadCompleteIndex
+          ? (counters.catalog_calls += 1, deps.business.loadCompleteIndex())
+          : Promise.resolve(null),
+      ]);
+      business_context = contextResult;
+      // Compatibility fallback preserves the old producer's explicit
+      // truncation signal. A truncated fallback remains unavailable; a full
+      // index is never fabricated from a partial detail payload.
+      catalog_index = indexResult ?? (
+        contextResult !== null ? indexFromBusinessContext(contextResult) : null
+      );
       business_context_available = business_context !== null;
       if (business_context === null) {
         log('orchestration.claim.business_context_missing', {
@@ -557,6 +589,22 @@ export async function claimBatch(
           batch_id: claim.batch_id,
           offerings_truncated: business_context.offerings_truncated,
         });
+      }
+      if (catalog_index === null) {
+        log('orchestration.claim.catalog_index_missing', {
+          trace_id: input.trace_id,
+          batch_id: claim.batch_id,
+        });
+      } else if (catalog_index.offerings_total !== catalog_index.offerings.length) {
+        log('orchestration.claim.catalog_index_incomplete', {
+          trace_id: input.trace_id,
+          batch_id: claim.batch_id,
+          offerings_total: catalog_index.offerings_total,
+          offerings_loaded: catalog_index.offerings.length,
+        });
+        // Preserve the explicit count mismatch for the resolver. It returns
+        // `snapshot_truncated` rather than collapsing useful diagnostics into
+        // the less actionable `snapshot_missing`.
       }
     } catch (error) {
       log('orchestration.claim.business_context_unavailable', {
@@ -711,8 +759,39 @@ export async function claimBatch(
     batchMessages
       .filter((message) => message.message_type === 'text')
       .map((message) => message.content),
-    business_context,
+    catalog_index,
   );
+
+  // The index identifies every real offering without bringing every detailed
+  // payload into the prompt. Once a course is exact, load only that detail and
+  // merge it into the bounded snapshot for factual answers and protected facts.
+  if (catalog_resolution.kind === 'exact' && deps.business?.loadByCode) {
+    counters.catalog_calls += 1;
+    try {
+      const detailContext = await deps.business.loadByCode(catalog_resolution.offeringCode);
+      const detail = detailContext?.offerings[0] ?? null;
+      if (detail !== null) {
+        // TypeScript cannot see the write performed by the joined async task;
+        // preserve the runtime value explicitly before choosing the merge path.
+        const currentContext = business_context as BusinessContextView | null;
+        if (currentContext === null) {
+          business_context = detailContext;
+          business_context_available = business_context !== null;
+        } else if (!currentContext.offerings.some((offering) => offering.code === detail.code)) {
+          business_context = {
+            ...currentContext,
+            offerings: [...currentContext.offerings, detail],
+          };
+        }
+      }
+    } catch (error) {
+      log('orchestration.claim.catalog_detail_unavailable', {
+        trace_id: input.trace_id,
+        batch_id: claim.batch_id,
+        error: String(error),
+      });
+    }
+  }
   const salesContext: ClaimedSalesContext = {
     ...initialSalesContext,
     ...deriveCourseSelection({
@@ -721,7 +800,7 @@ export async function claimBatch(
         .filter((message) => message.message_type === 'text')
         .map((message) => message.content),
       recentTurns: facts.recent_turns,
-      businessContext: business_context,
+      catalogIndex: catalog_index,
     }),
   };
   timings.claim_total_ms = Math.max(0, monotonicNow() - claimStartedAt);
@@ -785,6 +864,7 @@ export async function claimBatch(
     },
     sales_context: salesContext,
     catalog_resolution,
+    catalog_index,
     deterministic_route,
     diagnostics: { timings, counters },
     business_context,

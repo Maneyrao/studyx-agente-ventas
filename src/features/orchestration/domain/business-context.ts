@@ -67,6 +67,23 @@ export interface RawBusinessContext {
   readonly qualification_fields: RawQualificationFieldRow[];
 }
 
+/**
+ * Compact catalog identity read independently from the bounded offering-detail
+ * snapshot. It deliberately contains no price, description, or policy text:
+ * catalog existence must not depend on a prompt-size cap.
+ */
+export interface RawCatalogIndexRow {
+  readonly code: string;
+  readonly display_name: string;
+  readonly metadata: Record<string, unknown>;
+}
+
+export interface RawCatalogIndex {
+  readonly as_of: string;
+  readonly offerings_total: number;
+  readonly offerings: RawCatalogIndexRow[];
+}
+
 export interface OfferingSchedule {
   readonly days: string[];
   readonly start: string | null;
@@ -149,6 +166,21 @@ export interface BusinessContextView {
    * DEFAULT_BUSINESS_CONTEXT_LIMITS.maxOfferings for what the bound is.
    */
   readonly offerings_truncated: number;
+}
+
+export interface CatalogIndexOfferingView {
+  readonly code: string;
+  readonly display_name: string;
+  readonly academy: string | null;
+  readonly aliases: string[];
+}
+
+/** Complete, compact, sanitized identity index for canonical resolution. */
+export interface CatalogIndexView {
+  readonly as_of: string;
+  readonly offerings_total: number;
+  readonly offerings: CatalogIndexOfferingView[];
+  readonly injection_suspected_count: number;
 }
 
 /**
@@ -461,6 +493,29 @@ export function buildBusinessContextView(
     qualification_fields,
     injection_suspected_count: tally.suspected,
     offerings_truncated,
+  };
+}
+
+export function buildCatalogIndexView(raw: RawCatalogIndex): CatalogIndexView {
+  const tally: SanitizeTally = { suspected: 0 };
+  const offerings = raw.offerings
+    .map((offering): CatalogIndexOfferingView => ({
+      code: offering.code,
+      display_name: offering.display_name,
+      academy: cleanText(
+        typeof offering.metadata?.academy === 'string' ? offering.metadata.academy : null,
+        128,
+        tally,
+      ),
+      aliases: cleanStringList(offering.metadata?.aliases, 12, 128, tally),
+    }))
+    .sort((left, right) => left.code.localeCompare(right.code));
+
+  return {
+    as_of: raw.as_of,
+    offerings_total: raw.offerings_total,
+    offerings,
+    injection_suspected_count: tally.suspected,
   };
 }
 

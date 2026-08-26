@@ -30,6 +30,7 @@ function claimed(text: string, overrides: { name?: string | null; prices?: boole
     sales_context: { mode: 'advising', course_of_interest: 'Redes Informáticas', offering_code: 'redes-informaticas', open_call_offer: null,
       accepted_call_offer: null, active_call: null, allowed_actions: ['offer_call'], last_call_result: null },
     catalog_resolution: { kind: 'no_catalog_intent' },
+    catalog_index: null,
     deterministic_route: null,
     diagnostics: {
       timings: { claim_total_ms: 0, core_db_ms: 0, shared_embedding_ms: 0,

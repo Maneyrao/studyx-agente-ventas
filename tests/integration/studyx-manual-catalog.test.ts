@@ -134,6 +134,18 @@ run('StudyX official manual catalog', () => {
     expect(view.offerings_truncated).toBe(0);
   });
 
+  it('exposes all 40 identities through the complete compact index independently of detail limits', async () => {
+    const index = await new PostgresBusinessContextStore(db!).loadCompleteIndex(WS);
+    expect(index?.offerings_total).toBe(40);
+    expect(index?.offerings.map((offering) => offering.code)).toEqual(
+      manual.courses.map((course) => course.code).sort(),
+    );
+    const tail = manual.courses.map((course) => course.code).sort().at(-1)!;
+    const detail = await new PostgresBusinessContextStore(db!).loadByCode(WS, tail);
+    expect(detail?.offerings).toHaveLength(1);
+    expect(detail?.offerings[0]?.code).toBe(tail);
+  });
+
   it('is idempotent when the manual seed is replayed', async () => {
     await db!.unsafe(readFileSync(MANUAL_SEED_PATH, 'utf8'));
     const rows = await db!<Array<{ offerings: number; sources: number }>>`

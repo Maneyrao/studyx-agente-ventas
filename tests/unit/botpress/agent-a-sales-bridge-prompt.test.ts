@@ -551,6 +551,47 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(instructions).not.toContain('"classes":16');
   });
 
+  it('projects the complete compact index while retaining detail only for a course resolved past the old detail cap', () => {
+    const claimed = claimedTurn({
+      texts: ['Quiero Curso 41'],
+      salesContext: { offering_code: 'course_41', course_of_interest: 'Curso 41' },
+    });
+    ;(claimed as { business_context?: unknown }).business_context = {
+      as_of: '2026-08-24T00:00:00.000Z', prices_assertable: true,
+      workspace: { slug: 'studyx', display_name: 'StudyX', environment: 'sandbox', default_locale: 'es-AR', timezone: 'America/Argentina/Buenos_Aires', payment_options: [] },
+      offerings: [{
+        code: 'course_41', display_name: 'Curso 41', aliases: [], academy: 'Academia 1',
+        offering_type: 'course', description: null, value_proposition: null, price_type: 'fixed',
+        price: { amount: '360.00', currency: 'USD' }, price_assertable: true, billing_interval: null,
+        modality: 'online', schedules: [], certification: true, hours_per_month: null, classes: 16,
+        modules: 4, includes: [], syllabus_published: true, language: null, min_age: null,
+        policies: { allowed_promise: null, forbidden_promises: [], price_message: null },
+      }], qualification_fields: [], injection_suspected_count: 0, offerings_truncated: 1,
+    };
+    ;(claimed as { business_context_available?: boolean }).business_context_available = true;
+    ;(claimed as { catalog_index?: unknown }).catalog_index = {
+      as_of: '2026-08-24T00:00:00.000Z', offerings_total: 41,
+      offerings: Array.from({ length: 41 }, (_, index) => ({
+        code: `course_${index + 1}`, display_name: `Curso ${index + 1}`,
+        academy: `Academia ${(index + 1) % 5}`, aliases: [],
+      })), injection_suspected_count: 0,
+    };
+
+    const instructions = buildAgentASalesBridgeInstructions(claimed);
+    const start = instructions.indexOf('UNTRUSTED_CONTEXT_START');
+    const end = instructions.indexOf('UNTRUSTED_CONTEXT_END');
+    const payload = JSON.parse(instructions.slice(start, end).split('\n').slice(1, -1).join('\n'));
+    const offerings = payload.business_snapshot.offerings;
+
+    expect(offerings).toHaveLength(41);
+    expect(offerings.find((offering: { code: string }) => offering.code === 'course_1')).toEqual({
+      code: 'course_1', display_name: 'Curso 1', academy: 'Academia 1',
+    });
+    expect(offerings.find((offering: { code: string }) => offering.code === 'course_41')).toMatchObject({
+      code: 'course_41', price: { amount: '360.00', currency: 'USD' }, classes: 16,
+    });
+  });
+
   it('builds a Groq-safe compact contract without dropping critical sales rules', () => {
     const claimed = claimedTurn({ texts: ['Prefiero seguir por chat. ¿Cuánto cuesta?'] });
     const instructions = buildAgentASalesBridgeCompactInstructions(claimed);

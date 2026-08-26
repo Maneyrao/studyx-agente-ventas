@@ -203,6 +203,24 @@ describe('claim response parity', () => {
     expect(salesContextBlock).not.toMatch(/phone|credential|transcript|analysis/i);
   });
 
+  it('declares the complete compact catalog index separately from bounded offering detail', () => {
+    const sample: Pick<ClaimedTurn, 'catalog_index'> = {
+      catalog_index: {
+        as_of: '2026-08-26T00:00:00.000Z',
+        offerings_total: 40,
+        offerings: [{ code: 'curso_40', display_name: 'Curso 40', academy: 'Test', aliases: [] }],
+        injection_suspected_count: 0,
+      },
+    };
+    expect(sample.catalog_index?.offerings[0].code).toBe('curso_40');
+    const claimedBlock = schemaBlock('ClaimedTurnSchema');
+    expect(claimedBlock).toContain('catalog_index: CatalogIndexSchema');
+    const indexBlock = schemaBlock('CatalogIndexSchema');
+    for (const key of ['as_of', 'offerings_total', 'offerings', 'injection_suspected_count']) {
+      expect(indexBlock, `CatalogIndexSchema must declare ${key}`).toContain(`${key}:`);
+    }
+  });
+
   it('declares the backend fast-path route and PII-free hot-path diagnostics', () => {
     const sample: Pick<ClaimedTurn, 'deterministic_route' | 'diagnostics'> = {
       deterministic_route: null,
