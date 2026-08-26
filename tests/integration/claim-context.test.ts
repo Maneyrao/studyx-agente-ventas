@@ -399,6 +399,7 @@ run('sales_context at claim time', () => {
     if (result.outcome !== 'claimed') throw new Error('expected a claim');
     expect(result.sales_context).toEqual({
       mode: 'advising',
+      stage: 'exploring',
       course_of_interest: null,
       offering_code: null,
       open_call_offer: null,
