@@ -536,7 +536,7 @@ describe('buildAgentASalesBridgeInstructions', () => {
     expect(instructions.length).toBeLessThan(38_000);
     expect(instructions).not.toContain('Descripción pedagógica extensa');
     expect(instructions).toContain('"academy":"Academia 0"');
-    expect(instructions).toContain('"classes":16');
+    expect(instructions).not.toContain('"classes":16');
   });
 
   it('builds a Groq-safe compact contract without dropping critical sales rules', () => {

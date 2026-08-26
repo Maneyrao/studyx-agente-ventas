@@ -81,9 +81,10 @@ const HARD_COMMERCIAL_RULES_BLOCK = `Hard rules for Decision v4:
   the written conversation.
 - Price, availability, payment, enrolment and discount may be stated ONLY
   from context.business_snapshot, and ONLY when business_snapshot_available
-  and business_snapshot.prices_assertable are both true. Each offering must
-  also have price_assertable true — quote its one structured price and the
-  structured payment option fields exactly as given.
+  and business_snapshot.prices_assertable are both true. The catalog index
+  contains only code, name and academy; use detailed fields only when they are
+  present for the resolved or remembered offering, and quote its one
+  structured price and payment option fields exactly as given.
 - If the business snapshot is absent, unavailable, prices_assertable is false,
   an offering has price_type "quote", or its price is null, NEVER name a number,
   quote a numeric price, offer a payment plan, or send a payment link. Say the
@@ -342,6 +343,16 @@ function businessSnapshotForPrompt(claimed: ClaimedTurn) {
     }
   }
   const pricesAssertable = snapshot.prices_assertable
+  const batchText = claimed.context.batch_messages.map((message) => message.content).join(' ')
+  const paymentRelevant = /\b(?:pag(?:ar|o|os)?|precio(?:s)?|costo(?:s)?|cuesta(?:n)?|sale|cuota(?:s)?|mensualidad(?:es)?|link|compr(?:ar|o)|inscrib(?:ir|irme))\b/iu.test(batchText)
+  const selectedOfferingCode = claimed.sales_context.offering_code
+    ?? snapshot.offerings.find((offering) => {
+      const interest = claimed.sales_context.course_of_interest?.trim().toLocaleLowerCase('es')
+      return interest !== undefined && interest.length > 0
+        && (offering.code.toLocaleLowerCase('es') === interest
+          || offering.display_name.toLocaleLowerCase('es') === interest)
+    })?.code
+  const compactCatalog = snapshot.offerings.length > 12
   return {
     as_of: snapshot.as_of,
     prices_assertable: pricesAssertable,
@@ -350,7 +361,7 @@ function businessSnapshotForPrompt(claimed: ClaimedTurn) {
       display_name: snapshot.workspace.display_name,
       default_locale: snapshot.workspace.default_locale,
       timezone: snapshot.workspace.timezone,
-      payment_options: pricesAssertable
+      payment_options: pricesAssertable && paymentRelevant
         ? (snapshot.workspace.payment_options ?? []).map((option) => ({
             code: option.code,
             installments: option.installments,
@@ -361,20 +372,26 @@ function businessSnapshotForPrompt(claimed: ClaimedTurn) {
           }))
         : [],
     },
-    offerings: snapshot.offerings.map((offering) => ({
-      code: offering.code,
-      display_name: offering.display_name,
-      academy: offering.academy,
-      offering_type: offering.offering_type,
-      price_type: offering.price_type,
-      price: pricesAssertable && offering.price_assertable ? offering.price : null,
-      price_assertable: pricesAssertable && offering.price_assertable,
-      modality: offering.modality,
-      schedules: offering.schedules,
-      certification: offering.certification,
-      classes: offering.classes,
-      modules: offering.modules,
-    })),
+    offerings: snapshot.offerings.map((offering) => {
+      const indexEntry = {
+        code: offering.code,
+        display_name: offering.display_name,
+        academy: offering.academy,
+      }
+      if (compactCatalog && offering.code !== selectedOfferingCode) return indexEntry
+      return {
+        ...indexEntry,
+        offering_type: offering.offering_type,
+        price_type: offering.price_type,
+        price: pricesAssertable && offering.price_assertable ? offering.price : null,
+        price_assertable: pricesAssertable && offering.price_assertable,
+        modality: offering.modality,
+        schedules: offering.schedules,
+        certification: offering.certification,
+        classes: offering.classes,
+        modules: offering.modules,
+      }
+    }),
     qualification_fields: snapshot.qualification_fields,
   }
 }

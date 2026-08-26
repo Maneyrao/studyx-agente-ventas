@@ -890,27 +890,31 @@ run('Fase 4 — pago y cierre de batch', () => {
     await db!`
       INSERT INTO offerings (
         workspace_id, code, display_name, offering_type, status, description,
-        price_type, price_amount, currency, delivery
+        price_type, price_amount, currency, delivery, metadata
       ) VALUES
         (
           ${workspace[0].id}::uuid, 'course_test', 'Curso Test', 'course', 'active',
           'Offering canónico exclusivo del test', 'fixed', 360, 'USD',
-          ${db!.json({ classes: 16, modality: 'online', certification: true })}
+          ${db!.json({ classes: 16, modality: 'online', certification: true })},
+          ${db!.json({ academy: 'Tecnología' })}
         ),
         (
           ${workspace[0].id}::uuid, 'course_other', 'Curso Distinto', 'course', 'active',
           'Offering diferente para probar aislamiento', 'fixed', 500, 'USD',
-          ${db!.json({ classes: 20, modality: 'presencial', certification: false })}
+          ${db!.json({ classes: 20, modality: 'presencial', certification: false })},
+          ${db!.json({})}
         ),
         (
           ${workspace[0].id}::uuid, 'redes_informaticas', 'Redes Informáticas', 'course', 'active',
           'Offering canónico para copia comercial', 'fixed', 360, 'USD',
-          ${db!.json({ classes: 16, modality: 'online', certification: null })}
+          ${db!.json({ classes: 16, modality: 'online', certification: null })},
+          ${db!.json({})}
         ),
         (
           ${workspace[0].id}::uuid, 'decoracion_interiores', 'Decoración de Interiores', 'course', 'active',
           'Offering canónico para copia comercial', 'fixed', 360, 'USD',
-          ${db!.json({ classes: 34, modality: 'online', certification: null })}
+          ${db!.json({ classes: 34, modality: 'online', certification: null })},
+          ${db!.json({})}
         )
     `;
     for (const key of ['BUSINESS_WORKSPACE_SLUG', 'PAYMENT_LINK_12M', 'PAYMENT_LINK_6M', 'PAYMENT_LINK_CONTADO']) {
@@ -1019,6 +1023,24 @@ run('Fase 4 — pago y cierre de batch', () => {
       kind: 'offering',
       value: 'tenemos curso test, curso distinto',
     }]);
+  });
+
+  it('preserves a canonical academy name in an otherwise harmless Gemini answer', async () => {
+    const accepted = await processInboundMessage(envelope());
+    const content = 'Tenemos cursos de Tecnología. ¿Qué te gustaría aprender?';
+    const committed = await commitAgentDecision(groundedReply(
+      accepted.turn_id,
+      content,
+      undefined,
+    ));
+
+    expect(committed.status).toBe('committed');
+    expect(committed.outbound?.content).toBe(content);
+    expect(committed.outbound?.content).not.toMatch(/no tengo ese dato confirmado/i);
+    expect(verifyAuthorizedEgress({
+      content,
+      manifest: committed.outbound!.authorized_egress,
+    })).toEqual({ ok: true });
   });
 
   it.each([

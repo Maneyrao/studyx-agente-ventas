@@ -512,9 +512,26 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
 
     if (finalResponse !== null && responseNeedsOfferingFactAuthorization(finalResponse)) {
       const offerings = await loadCanonicalOfferings('protected_facts');
+      const catalogLabels = [
+        ...offerings.map((offering) => ({
+          code: offering.code,
+          display_name: offering.display_name,
+        })),
+        ...[...new Set(offerings.flatMap((offering) => {
+          const academy = offering.metadata?.academy;
+          return typeof academy === 'string' && academy.trim().length > 0 ? [academy.trim()] : [];
+        }))].map((academy) => ({
+          code: `academy:${academy}`,
+          // The catalog guard authorizes complete availability assertions. Keep
+          // the connective phrase in the synthetic label so both "curso de"
+          // and the natural plural "cursos de" are treated as one grounded
+          // academy assertion without widening the lexical detector.
+          display_name: `cursos de ${academy}`,
+        })),
+      ];
       authorizedProtectedFacts = [
         ...authorizedProtectedFacts,
-        ...materializeCanonicalCatalogFacts({ content: finalResponse, offerings }),
+        ...materializeCanonicalCatalogFacts({ content: finalResponse, offerings: catalogLabels }),
       ];
       if (validatedInput.authorized_offering_code) {
         const exactMatches = offerings.filter(
