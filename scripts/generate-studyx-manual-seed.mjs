@@ -62,6 +62,7 @@ const offeringRows = data.courses.map((course) => {
     source_sha256: data.source_sha256,
     source_page: course.source_page,
     academy: course.academy,
+    ...(course.aliases?.length ? { aliases: course.aliases } : {}),
     declared_classes: course.classes,
     total_price_usd: 360,
     payment_options_owner_confirmed: true,

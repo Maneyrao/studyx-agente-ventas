@@ -6,6 +6,7 @@ import {
   buildBusinessContextView,
   DEFAULT_BUSINESS_CONTEXT_LIMITS,
 } from '@/features/orchestration/domain/business-context';
+import { resolveCatalogRequest } from '@/features/orchestration/domain/catalog-resolution';
 import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
 import { openLocalTestDatabase } from '../helpers/db';
 
@@ -132,6 +133,22 @@ run('StudyX official manual catalog', () => {
     const view = buildBusinessContextView(raw!);
     expect(view.offerings).toHaveLength(40);
     expect(view.offerings_truncated).toBe(0);
+  });
+
+  it.each([
+    ['Quiero saber todo sobre el curso de AutoCAD', 'autocad_interiores'],
+    ['ola quiero aprender a reparar celu', 'reparacion_celulares'],
+    ['Me interesa publicidad redes', 'publicidad_redes_sociales'],
+    ['Quiero aprender Illustrator', 'diseno_illustrator'],
+  ])('resolves customer language %s to canonical course %s', async (message, code) => {
+    const raw = await new PostgresBusinessContextStore(db!).loadBusinessContext(WS);
+    expect(raw).not.toBeNull();
+    const view = buildBusinessContextView(raw!);
+
+    expect(resolveCatalogRequest(message, view)).toMatchObject({
+      kind: 'exact',
+      offeringCode: code,
+    });
   });
 
   it('exposes all 40 identities through the complete compact index independently of detail limits', async () => {

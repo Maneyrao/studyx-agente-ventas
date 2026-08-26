@@ -114,6 +114,7 @@
     {
       "code": "publicidad_redes_sociales",
       "name": "Publicidad en Redes Sociales",
+      "aliases": ["publicidad redes", "publicidad en redes"],
       "academy": "Academia de Marketing",
       "classes": 10,
       "source_page": 11,
@@ -170,6 +171,7 @@
     {
       "code": "reparacion_celulares",
       "name": "Reparación de Celulares",
+      "aliases": ["reparar celu", "reparar celulares", "arreglo de celulares"],
       "academy": "Academia de Oficios",
       "classes": 20,
       "source_page": 13,
@@ -258,6 +260,7 @@
     {
       "code": "diseno_illustrator",
       "name": "Diseño Gráfico con Illustrator",
+      "aliases": ["Illustrator", "curso de Illustrator"],
       "academy": "Academia de Diseño Informático",
       "classes": 17,
       "source_page": 15,
@@ -266,6 +269,7 @@
     {
       "code": "autocad_interiores",
       "name": "AutoCAD orientado al Diseño de Interiores",
+      "aliases": ["AutoCAD", "curso de AutoCAD"],
       "academy": "Academia de Diseño Informático",
       "classes": 11,
       "source_page": 15,
