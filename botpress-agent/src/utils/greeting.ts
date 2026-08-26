@@ -44,7 +44,7 @@ export function matchDeterministicGreeting(claimed: ClaimedTurn): Decision | nul
   if (message.message_type !== 'text') return null
 
   return {
-    schema_version: 3,
+    schema_version: 4,
     intent: 'social',
     kind: 'reply',
     response: buildGreetingResponse(claimed),

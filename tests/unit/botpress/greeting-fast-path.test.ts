@@ -86,8 +86,9 @@ describe('matchDeterministicGreeting', () => {
     });
   }
 
-  it('produces a decision that passes the full Decision v3 schema', () => {
+  it('produces a Decision v4 payload accepted by the canonical commit contract', () => {
     const decision = matchDeterministicGreeting(claimedTurn({ texts: ['hola'], route: 'greeting' }));
+    expect(decision?.schema_version).toBe(4);
     expect(() => DecisionSchema.parse(decision)).not.toThrow();
   });
 
