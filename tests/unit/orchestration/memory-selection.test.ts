@@ -88,16 +88,18 @@ describe('evaluateMemoryCandidate — accepted path', () => {
     expect(result.memory.dedupe_hash).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('accepts a literal short course alias under a non-commercial key', () => {
+  it.each([
+    ['course_of_interest', 'AutoCAD'],
+    ['target_course', 'AutoCAD'],
+    ['selected_offering_code', 'autocad'],
+    ['selected_payment_plan', 'monthly_12'],
+  ])('rejects canonical sales selection hidden under %s', (key, value) => {
     const result = evaluateMemoryCandidate(
-      candidate({ key: 'target_course', value: 'AutoCAD', source_quote: 'AutoCAD' }),
+      candidate({ key, value, source_quote: value }),
       contextWith('Quiero saber todo sobre el curso de AutoCAD antes de decidir.'),
     );
 
-    expect(result).toMatchObject({
-      status: 'accepted',
-      memory: { key: 'target_course', value: 'autocad', source_quote: 'AutoCAD' },
-    });
+    expect(result).toMatchObject({ status: 'rejected', reason: 'RESERVED_KEY' });
   });
 
   it('rejects a normalized paraphrase because source_quote must be a literal batch substring', () => {

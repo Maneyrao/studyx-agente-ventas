@@ -55,6 +55,10 @@ run('probes against a live database', () => {
       claimable: expect.any(Number),
       leased: expect.any(Number),
       dead_letter: expect.any(Number),
+      ready_current: expect.any(Number),
+      ready_rate: expect.any(Number),
+      real: expect.any(Object),
+      sandbox: expect.any(Object),
     }));
     expect(detail.knowledge_queue).toEqual(expect.objectContaining({
       claimable: expect.any(Number),

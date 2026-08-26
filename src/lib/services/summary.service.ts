@@ -7,6 +7,13 @@ import { config } from '@/lib/config';
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 const SUMMARY_TIMEOUT_MS = 20000;
 
+/**
+ * Summaries are deliberately disabled until they have their own durable,
+ * fenced queue. The request path never invokes this module; keeping that
+ * decision explicit avoids presenting a stale summary as active memory.
+ */
+export const SUMMARY_MODE: 'disabled_pending_durable_queue' | 'enabled' = 'disabled_pending_durable_queue';
+
 interface GeminiGenerateResponse {
   candidates?: Array<{
     content?: { parts?: Array<{ text?: unknown }> };
@@ -97,6 +104,9 @@ export interface RegeneratedSummary {
 }
 
 export async function regenerateSummary(contact_id: string): Promise<RegeneratedSummary> {
+  if (SUMMARY_MODE !== 'enabled') {
+    throw new Error('SUMMARY_DISABLED_PENDING_DURABLE_QUEUE');
+  }
   const messages = await getContactRecentMessages(contact_id);
 
   const prompt = buildSummaryPrompt(messages);

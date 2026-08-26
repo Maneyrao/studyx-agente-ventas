@@ -151,8 +151,8 @@ run('selected_memories — structural isolation', () => {
 });
 
 run('selected_memories — lifecycle', () => {
-  it('records “Me interesa Barista” as an active study goal queued for embedding', async () => {
-    const turn = await seedTurn('Me interesa Barista');
+  it('records a non-canonical goal as an active study goal queued for embedding', async () => {
+    const turn = await seedTurn('Quiero prepararme para conseguir trabajo rápido');
     const store = new PostgresMemoryStore(sql);
 
     const result = await selectMemories(
@@ -166,9 +166,9 @@ run('selected_memories — lifecycle', () => {
         structured_facts: FACTS,
         candidates: [{
           type: 'study_goal',
-          key: 'course_of_interest',
-          value: 'barista',
-          source_quote: 'Me interesa Barista',
+          key: 'employment_goal',
+          value: 'conseguir trabajo rapido',
+          source_quote: 'Quiero prepararme para conseguir trabajo rápido',
           confidence: 0.92,
         }],
       },
@@ -182,7 +182,7 @@ run('selected_memories — lifecycle', () => {
     `;
     expect(rows[0]).toEqual({
       memory_type: 'study_goal',
-      memory_key: 'course_of_interest',
+      memory_key: 'employment_goal',
       status: 'active',
       embedding_state: 'pending',
     });

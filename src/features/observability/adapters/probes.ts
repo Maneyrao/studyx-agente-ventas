@@ -174,7 +174,7 @@ export async function probeDerivedBacklog(db: DbClient = sql): Promise<Dependenc
             'last_error', (SELECT last_error_detail FROM embedding_jobs
               WHERE last_error_detail IS NOT NULL ORDER BY updated_at DESC LIMIT 1)
           ),
-          'selected_memory_queue', jsonb_build_object(
+            'selected_memory_queue', jsonb_build_object(
             'claimable', (SELECT count(*) FROM selected_memories
               WHERE embedding_available_at <= now() AND (
                 embedding_state IN ('pending', 'failed_retryable')
@@ -184,6 +184,43 @@ export async function probeDerivedBacklog(db: DbClient = sql): Promise<Dependenc
               WHERE embedding_state = 'leased' AND lease_until > now()),
             'dead_letter', (SELECT count(*) FROM selected_memories
               WHERE embedding_state IN ('dead_letter', 'failed')),
+            'ready_current', (SELECT count(*) FROM selected_memories
+              WHERE status = 'active'
+                AND embedding_state = 'ready'
+                AND embedding_epoch = ${EMBEDDING_EPOCH}),
+            'ready_rate', (
+              SELECT coalesce(round(
+                count(*) FILTER (
+                  WHERE embedding_state = 'ready' AND embedding_epoch = ${EMBEDDING_EPOCH}
+                )::numeric / nullif(count(*) FILTER (WHERE status = 'active'), 0),
+                4
+              ), 1)
+              FROM selected_memories
+              WHERE status = 'active'
+            ),
+            -- A sandbox identity is an explicit hard boundary. Report both
+            -- populations so test debt cannot be mistaken for a real-contact
+            -- memory outage (or vice versa).
+            'real', jsonb_build_object(
+              'claimable', (SELECT count(*) FROM selected_memories sm
+                WHERE NOT EXISTS (SELECT 1 FROM sandbox_identities si WHERE si.contact_id = sm.contact_id)
+                  AND sm.embedding_available_at <= now()
+                  AND (sm.embedding_state IN ('pending', 'failed_retryable')
+                    OR (sm.embedding_state = 'leased' AND sm.lease_until <= now()))),
+              'dead_letter', (SELECT count(*) FROM selected_memories sm
+                WHERE NOT EXISTS (SELECT 1 FROM sandbox_identities si WHERE si.contact_id = sm.contact_id)
+                  AND sm.embedding_state IN ('dead_letter', 'failed'))
+            ),
+            'sandbox', jsonb_build_object(
+              'claimable', (SELECT count(*) FROM selected_memories sm
+                WHERE EXISTS (SELECT 1 FROM sandbox_identities si WHERE si.contact_id = sm.contact_id)
+                  AND sm.embedding_available_at <= now()
+                  AND (sm.embedding_state IN ('pending', 'failed_retryable')
+                    OR (sm.embedding_state = 'leased' AND sm.lease_until <= now()))),
+              'dead_letter', (SELECT count(*) FROM selected_memories sm
+                WHERE EXISTS (SELECT 1 FROM sandbox_identities si WHERE si.contact_id = sm.contact_id)
+                  AND sm.embedding_state IN ('dead_letter', 'failed'))
+            ),
             'oldest_age_seconds', (SELECT floor(extract(epoch FROM now() - min(created_at)))
               FROM selected_memories WHERE embedding_state IN ('pending', 'failed_retryable')),
             'last_error', (SELECT embedding_last_error FROM selected_memories

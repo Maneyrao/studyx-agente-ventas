@@ -56,6 +56,20 @@ const RESERVED_KEYS = new Set([
   'matricula',
   'enrollment',
   'beca',
+  // Curso y plan no son preferencias semánticas: el agregado Sales es su
+  // única fuente de verdad. Guardarlos aquí permite que un vector viejo
+  // sobreviva a un cambio explícito de oferta o de plan.
+  'curso',
+  'course',
+  'course_of_interest',
+  'target_course',
+  'offering',
+  'offering_code',
+  'selected_offering_code',
+  'plan',
+  'plan_code',
+  'payment_plan',
+  'selected_payment_plan',
   'consentimiento',
   'consent',
   'opt_out',
