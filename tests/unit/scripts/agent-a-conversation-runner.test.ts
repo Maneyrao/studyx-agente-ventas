@@ -15,6 +15,10 @@ import { AGENT_A_PROMPT_VERSION } from '../../../botpress-agent/src/prompts/agen
 
 const LOCAL_TRANSPORT_UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
 const LOCAL_TRANSPORT_NOW = '2026-08-21T12:00:00.000Z';
+const V15_GREEN_CASE_IDS = JSON.parse(readFileSync(
+  resolve(__dirname, '../../fixtures/agent-a-v15-green-case-ids.json'),
+  'utf8',
+)) as string[];
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -1688,6 +1692,18 @@ describe('Agent A conversation runner', () => {
             },
           },
         });
+    });
+
+    it('keeps every approved v15 case in the effective 35 + 15 regression suite', () => {
+      const base = loadRealSuite();
+      const extension = JSON.parse(readFileSync(resolve(
+        __dirname,
+        '../../../botpress-agent/evals/personas/studyx-council-50-v1.json',
+      ), 'utf8')) as ConversationSuite;
+      const effectiveIds = new Set([...base.cases, ...extension.cases].map(({ id }) => id));
+      expect(V15_GREEN_CASE_IDS).toHaveLength(20);
+      expect(new Set(V15_GREEN_CASE_IDS).size).toBe(20);
+      for (const id of V15_GREEN_CASE_IDS) expect(effectiveIds.has(id)).toBe(true);
     });
 
     it('executes all four g35_22 turns against structured not-found evidence', async () => {
