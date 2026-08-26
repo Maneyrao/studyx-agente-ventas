@@ -267,7 +267,10 @@ describe('processInboundTurn hot path', () => {
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
   });
 
-  async function runCommittedOutbound(outbound: Record<string, unknown>) {
+  async function runCommittedOutbound(
+    outbound: Record<string, unknown>,
+    inputOverrides: Record<string, unknown> = {},
+  ) {
     actionSpies.commit.mockResolvedValue({
       status: 'committed',
       replayed: false,
@@ -312,7 +315,7 @@ describe('processInboundTurn hot path', () => {
     }).definition.handler;
 
     const result = await handler({
-      input: workflowInput(),
+      input: { ...workflowInput(), ...inputOverrides },
       state: processingState(),
       step,
       execute,
@@ -386,6 +389,30 @@ describe('processInboundTurn hot path', () => {
       botpress_message_id: 'bp-message-1',
       error_code: null,
     });
+    expect(result).toMatchObject({
+      status: 'completed',
+      delivery_status: 'submitted_to_botpress',
+    });
+  });
+
+  it('does not apply the WhatsApp canary gate to Telegram sandbox delivery', async () => {
+    configuration.whatsappCanaryEnabled = true;
+    secrets.WHATSAPP_CANARY_PHONE_E164S = '+5491100000000';
+
+    const { createMessage, result } = await runCommittedOutbound({
+      authorized_egress: {
+        schema_version: 1,
+        content_hash: 'e2dee359447348131358a63664853c018f5db0fcb31835e30a0aac56badab6bd',
+        authorized_urls: [],
+        protected_facts: [],
+      },
+    }, {
+      channel: 'whatsapp',
+      phone_e164: '+9998464326323',
+      sandbox_provider: 'telegram_sandbox',
+    });
+
+    expect(createMessage).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
       status: 'completed',
       delivery_status: 'submitted_to_botpress',
