@@ -83,7 +83,7 @@ const PRICE_PATTERN = new RegExp(
   'giu'
 );
 const DURATION_PATTERN = new RegExp(
-  String.raw`(?:\bno\s+(?:dura|son|tiene)\s+)?\b(?:\d+(?:[.,]\d+)?|${NUMBER_WORD_SEQUENCE})\s*(?:minutos?|horas?|d[ií]as?|semanas?|mes(?:es)?|a[nñ]os?|clases?|m[oó]dulos?)\b`,
+  String.raw`(?:\bno\s+(?:dura|son|tiene)\s+)?(?<!\bsus\s)\b(?:\d+(?:[.,]\d+)?|${NUMBER_WORD_SEQUENCE})\s*(?:minutos?|horas?|d[ií]as?|semanas?|mes(?:es)?|a[nñ]os?|clases?|m[oó]dulos?)\b`,
   'giu',
 );
 const MODALITY_PATTERN = /(?<!asesora )(?<!asesor )\b(?:no\s+(?:es|ser[aá])\s+)?(?:online|presencial(?:es)?|virtual(?:es)?|remot[oa]s?|h[ií]brid[oa]s?|asincr[oó]nic[oa]s?|sincr[oó]nic[oa]s?|autogestionad[oa]s?|a distancia|en l[ií]nea|a tu ritmo)\b/giu;

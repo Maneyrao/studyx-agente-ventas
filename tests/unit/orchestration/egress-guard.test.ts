@@ -595,6 +595,26 @@ describe('authorized egress manifest', () => {
     expect(verifyAuthorizedEgress({ content, manifest })).toEqual({ ok: true });
   });
 
+  it('allows grounded seller copy around an exact canonical offering', () => {
+    const content = 'Por lo que buscás, Redes Informáticas puede encajarte. ¿Querés revisar sus 16 clases?';
+    const offerings = [{ code: 'redes_informaticas', display_name: 'Redes Informáticas' }];
+    const protectedFacts = [
+      ...materializeCanonicalCatalogFacts({ content, offerings }),
+      ...materializeCanonicalOfferingFacts({
+        content,
+        offering: {
+          display_name: 'Redes Informáticas',
+          price_type: 'fixed',
+          price_amount: '360.00',
+          currency: 'USD',
+          delivery: { classes: 16 },
+        },
+      }),
+    ];
+    const manifest = buildAuthorizedEgress({ content, authorized_urls: [], protected_facts: protectedFacts });
+    expect(verifyAuthorizedEgress({ content, manifest })).toEqual({ ok: true });
+  });
+
   it('does not confuse online inside a canonical course name with a free modality claim', () => {
     const content = [
       'Te cuento sobre Fotografía con Celulares para Tiendas Online.',
