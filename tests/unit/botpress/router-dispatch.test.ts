@@ -25,6 +25,7 @@ type RouterHandler = (props: {
   channel: string;
   message: unknown;
   conversation: { id: string; alias?: string; integration?: string; tags?: Record<string, string> };
+  chat?: { clearTranscript: () => Promise<void>; saveTranscript: () => Promise<void> };
 }) => Promise<void>;
 
 const definition = (router as unknown as { definition: { channel: string; handler: RouterHandler } })
@@ -66,6 +67,48 @@ describe('router registration', () => {
 });
 
 describe('router dispatch for production Telegram events', () => {
+  it('clears the managed Botpress transcript before starting StudyX', async () => {
+    const chat = {
+      clearTranscript: vi.fn(async () => undefined),
+      saveTranscript: vi.fn(async () => undefined),
+    };
+
+    await definition.handler({
+      type: 'message',
+      channel: 'telegram.channel',
+      message: telegramInbound,
+      conversation: telegramConversation,
+      chat,
+    });
+
+    expect(chat.clearTranscript).toHaveBeenCalledTimes(1);
+    expect(chat.saveTranscript).toHaveBeenCalledTimes(1);
+    expect(chat.clearTranscript.mock.invocationCallOrder[0]).toBeLessThan(
+      getOrCreate.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('continues when managed transcript reset fails', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const chat = {
+      clearTranscript: vi.fn(async () => { throw new Error('quota'); }),
+      saveTranscript: vi.fn(async () => undefined),
+    };
+
+    await expect(definition.handler({
+      type: 'message',
+      channel: 'telegram.channel',
+      message: telegramInbound,
+      conversation: telegramConversation,
+      chat,
+    })).resolves.toBeUndefined();
+
+    expect(getOrCreate).toHaveBeenCalledTimes(1);
+    expect(info.mock.calls.map((call) => String(call[0]))).toContainEqual(
+      expect.stringContaining('studyx.router.transcript_reset_failed'),
+    );
+  });
+
   it('starts exactly one workflow for one inbound Telegram message', async () => {
     await definition.handler({
       type: 'message',
