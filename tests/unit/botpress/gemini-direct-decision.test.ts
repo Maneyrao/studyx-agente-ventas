@@ -11,7 +11,8 @@ import type { Decision } from '../../../botpress-agent/src/schemas/contracts';
  * TDD RED coverage for the direct-Gemini decision adapter. The adapter is
  * the ONLY thing under test here — no workflow wiring, no prompt
  * composition. `fetch` is fully faked so no network call is ever made and
- * no real backoff time is ever spent (fake timers drive the single retry).
+ * no real backoff time is ever spent. Interactive turns intentionally do not
+ * retry a model call: a late retry is worse than a fast safe fallback.
  */
 
 const API_KEY = 'sk-super-secret-gemini-key-do-not-leak';
@@ -348,45 +349,13 @@ describe('generateGeminiDecision — HTTP error taxonomy', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('retries exactly once on 429 and succeeds on the second attempt', async () => {
-    vi.useFakeTimers();
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(429, { error: 'rate limited' }))
-      .mockResolvedValueOnce(jsonResponse(200, geminiPayload(JSON.stringify(validDecision))));
+  it.each([429, 503])('does not retry interactive Gemini failures (%i)', async (status) => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(status, { error: 'transient' }));
 
-    const promise = generateGeminiDecision(baseInput());
-    await vi.advanceTimersByTimeAsync(1_000);
-    const result = await promise;
-
-    expect(result.decision).toEqual(validDecision);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it('retries exactly once on 503 and succeeds on the second attempt', async () => {
-    vi.useFakeTimers();
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(503, { error: 'unavailable' }))
-      .mockResolvedValueOnce(jsonResponse(200, geminiPayload(JSON.stringify(validDecision))));
-
-    const promise = generateGeminiDecision(baseInput());
-    await vi.advanceTimersByTimeAsync(1_000);
-    const result = await promise;
-
-    expect(result.decision).toEqual(validDecision);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it('gives up after exactly one retry when 429 persists', async () => {
-    vi.useFakeTimers();
-    fetchMock.mockResolvedValue(jsonResponse(429, { error: 'rate limited' }));
-
-    const promise = generateGeminiDecision(baseInput());
-    // Attach the rejection expectation before advancing timers so the
-    // rejection is never briefly unhandled once the retry exhausts.
-    const expectation = expect(promise).rejects.toMatchObject({ code: 'GEMINI_HTTP_429' });
-    await vi.advanceTimersByTimeAsync(1_000);
-    await expectation;
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await expect(generateGeminiDecision(baseInput())).rejects.toMatchObject({
+      code: `GEMINI_HTTP_${status}`,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -401,18 +370,35 @@ describe('generateGeminiDecision — abort handling', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('rejects promptly during backoff instead of waiting out the retry delay', async () => {
+  it('rejects promptly when the caller aborts an in-flight request', async () => {
     vi.useFakeTimers();
     const controller = new AbortController();
-    fetchMock.mockResolvedValueOnce(jsonResponse(429, { error: 'rate limited' }));
+    fetchMock.mockImplementationOnce((_url, init) => new Promise((_resolve, reject) => {
+      (init?.signal as AbortSignal).addEventListener('abort', () => {
+        reject(new DOMException('Aborted', 'AbortError'));
+      }, { once: true });
+    }));
 
     const promise = generateGeminiDecision(baseInput({ signal: controller.signal }));
-    // Let the first attempt run and enter backoff without letting the
-    // 200ms timer fire.
     await vi.advanceTimersByTimeAsync(0);
     controller.abort();
 
     await expect(promise).rejects.toMatchObject({ code: 'GEMINI_ABORTED' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts an in-flight request at the supplied timeout without a late retry', async () => {
+    vi.useFakeTimers();
+    fetchMock.mockImplementationOnce((_url, init) => new Promise((_resolve, reject) => {
+      (init?.signal as AbortSignal).addEventListener('abort', () => {
+        reject(new DOMException('Aborted', 'AbortError'));
+      }, { once: true });
+    }));
+
+    const promise = generateGeminiDecision(baseInput({ timeoutMs: 5_900 }));
+    const expectation = expect(promise).rejects.toMatchObject({ code: 'GEMINI_TIMEOUT' });
+    await vi.advanceTimersByTimeAsync(5_900);
+    await expectation;
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

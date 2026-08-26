@@ -26,7 +26,7 @@ import { StudyxHttpError } from '../utils/http'
 import { applyDecisionPolicy, suppress, technicalFallback } from '../utils/decision-policy'
 import { routeCommercialTurn } from '../utils/commercial-router'
 import { verifyAuthorizedEgressPortable } from '../utils/authorized-egress'
-import { generateGeminiDecision } from '../lib/decision/gemini-direct'
+import { generateGeminiDecision, MAX_GEMINI_DECISION_TIMEOUT_MS } from '../lib/decision/gemini-direct'
 import { generateGroqDecision } from '../lib/decision/groq-direct'
 import { evaluateWhatsAppCanarySend } from '../channels/whatsapp.channel'
 
@@ -425,6 +425,10 @@ export const processInboundTurn = new Workflow({
                 apiKey,
                 model: configuration.geminiDecisionModel ?? '',
                 signal,
+                timeoutMs: Math.min(
+                  configuration.requestTimeoutMs,
+                  MAX_GEMINI_DECISION_TIMEOUT_MS,
+                ),
               })
               rawDecision = generated.decision
               provider = generated.provider

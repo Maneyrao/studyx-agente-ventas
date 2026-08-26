@@ -29,15 +29,16 @@ const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models
 /** Only these statuses are worth a single retry; everything else is final. */
 const RETRYABLE_STATUSES = new Set([429, 503])
 
-/** Exactly one retry beyond the first attempt (2 attempts total). */
-const ADDITIONAL_RETRIES = 1
-
 /**
- * Small, bounded, fixed backoff before the single retry — short enough that
- * tests never need to sleep real time (fake timers drive `withFullJitterRetry`'s
- * internal, abort-aware sleep instead).
+ * A conversation turn has one model attempt. Retrying here turns a temporary
+ * provider hiccup into a customer-visible 20–40 second wait; the workflow
+ * falls back safely and durable jobs retain the only retry budget.
  */
-const RETRY_BACKOFF_MS = 200
+const ADDITIONAL_RETRIES = 0
+const RETRY_BACKOFF_MS = 0
+
+/** Leave room inside the 10s turn budget for claim, commit and channel send. */
+export const MAX_GEMINI_DECISION_TIMEOUT_MS = 6_000
 
 /**
  * Every Gemini-direct failure is a `StudyxHttpError` — the same
@@ -343,6 +344,35 @@ function normalizeBoundaryError(error: unknown): StudyxHttpError {
   return new StudyxHttpError('GEMINI_UNKNOWN_ERROR', false)
 }
 
+function composeTimeoutSignal(parent: AbortSignal, requestedMs: number | undefined): {
+  readonly signal: AbortSignal
+  readonly timedOut: () => boolean
+  readonly dispose: () => void
+} {
+  const timeoutMs = Math.min(
+    MAX_GEMINI_DECISION_TIMEOUT_MS,
+    Math.max(1, requestedMs ?? MAX_GEMINI_DECISION_TIMEOUT_MS),
+  )
+  const controller = new AbortController()
+  let timeoutTriggered = false
+  const abortFromParent = () => controller.abort()
+  const timer = setTimeout(() => {
+    timeoutTriggered = true
+    controller.abort()
+  }, timeoutMs)
+  parent.addEventListener('abort', abortFromParent, { once: true })
+  if (parent.aborted) controller.abort()
+
+  return {
+    signal: controller.signal,
+    timedOut: () => timeoutTriggered,
+    dispose: () => {
+      clearTimeout(timer)
+      parent.removeEventListener('abort', abortFromParent)
+    },
+  }
+}
+
 async function performAttempt(
   url: string,
   body: unknown,
@@ -427,12 +457,13 @@ export async function generateGeminiDecision(
   const url = buildGeminiUrl(model, input.apiKey)
   const body = buildRequestBody(input.instructions)
   const startedAt = Date.now()
+  const timeout = composeTimeoutSignal(input.signal, input.timeoutMs)
 
   try {
     const decision = await withFullJitterRetry(
-      () => performAttempt(url, body, input.signal),
+      () => performAttempt(url, body, timeout.signal),
       {
-        signal: input.signal,
+        signal: timeout.signal,
         additionalRetries: ADDITIONAL_RETRIES,
         baseDelayMs: RETRY_BACKOFF_MS,
         maxDelayMs: RETRY_BACKOFF_MS,
@@ -447,6 +478,9 @@ export async function generateGeminiDecision(
       latencyMs: Date.now() - startedAt,
     }
   } catch (error) {
+    if (timeout.timedOut()) return Promise.reject(new StudyxHttpError('GEMINI_TIMEOUT', false))
     throw normalizeBoundaryError(error)
+  } finally {
+    timeout.dispose()
   }
 }

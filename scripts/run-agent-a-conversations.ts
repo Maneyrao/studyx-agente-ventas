@@ -41,10 +41,10 @@ import {
 import {
   DEFAULT_GEMINI_MODEL,
   generateGeminiDecision,
+  MAX_GEMINI_DECISION_TIMEOUT_MS,
 } from '../botpress-agent/src/lib/decision/gemini-direct';
 import { applyDecisionPolicy, technicalFallback } from '../botpress-agent/src/utils/decision-policy';
 import { routeCommercialTurn } from '../botpress-agent/src/utils/commercial-router';
-import { StudyxHttpError } from '../botpress-agent/src/utils/http';
 import { deliverAuthorizedLocalOutbound } from './lib/local-authorized-delivery';
 
 const execFileAsync = promisify(execFile);
@@ -284,6 +284,8 @@ export function createLocalTurnSender(
   };
 
   return async (message: string, existingConversationId: string | null): Promise<AgentChatResult> => {
+    const turnStartedAt = Date.now();
+    const latenciesMs: Record<string, number> = {};
     const conversationId = existingConversationId ?? `local-eval-${runId}-${randomUUID()}`;
     const turnNumber = (turnCounters.get(conversationId) ?? 0) + 1;
     turnCounters.set(conversationId, turnNumber);
@@ -302,6 +304,7 @@ export function createLocalTurnSender(
       botpressConversationId: conversationId,
       botpressUserId: conversationId,
     });
+    const ingestStartedAt = Date.now();
     const ingested = await localSignedJson({
       credentials,
       path: '/api/agent/ingest',
@@ -310,8 +313,10 @@ export function createLocalTurnSender(
       traceId,
       parse: (value) => IngestResponseSchema.parse(value),
     });
+    latenciesMs.ingest_ms = Date.now() - ingestStartedAt;
 
     let claimed: ClaimedTurn | null = null;
+    const claimStartedAt = Date.now();
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const claim = await localSignedJson({
         credentials,
@@ -331,6 +336,7 @@ export function createLocalTurnSender(
       }
       await new Promise((resolve) => setTimeout(resolve, Math.max(10, claim.retry_after_ms)));
     }
+    latenciesMs.claim_ms = Date.now() - claimStartedAt;
     if (!claimed) throw new Error('LOCAL_CLAIM_RETRY_EXHAUSTED');
 
     const commercialRoute = routeCommercialTurn({
@@ -346,43 +352,25 @@ export function createLocalTurnSender(
       provider = 'botpress';
       decisionModel = commercialRoute.model;
     } else {
+      const modelStartedAt = Date.now();
       try {
         evaluationPacingMs += await paceModelProvider();
         const commonInput = {
           instructions: buildAgentASalesBridgeCompactInstructions(claimed),
           signal: new AbortController().signal,
-          timeoutMs: 12_000,
+          timeoutMs: MAX_GEMINI_DECISION_TIMEOUT_MS,
         };
-        let generated;
-        try {
-          generated = modelProvider === 'gemini'
-            ? await generateGeminiDecision({
-                ...commonInput,
-                apiKey: credentials.geminiApiKey,
-                model: credentials.geminiModel,
-              })
-            : await generateGroqDecision({
-                ...commonInput,
-                apiKey: credentials.groqApiKey,
-                model: credentials.groqModel,
-              });
-        } catch (primaryError) {
-          const transient = primaryError instanceof StudyxHttpError && primaryError.retryable;
-          if (!transient) throw primaryError;
-          const fallbackProvider = modelProvider === 'gemini' ? 'groq' : 'gemini';
-          console.error(`  cuota/transitorio en ${modelProvider}; failover local a ${fallbackProvider}`);
-          generated = fallbackProvider === 'gemini'
-            ? await generateGeminiDecision({
-                ...commonInput,
-                apiKey: credentials.geminiApiKey,
-                model: credentials.geminiModel,
-              })
-            : await generateGroqDecision({
-                ...commonInput,
-                apiKey: credentials.groqApiKey,
-                model: credentials.groqModel,
-              });
-        }
+        const generated = modelProvider === 'gemini'
+          ? await generateGeminiDecision({
+              ...commonInput,
+              apiKey: credentials.geminiApiKey,
+              model: credentials.geminiModel,
+            })
+          : await generateGroqDecision({
+              ...commonInput,
+              apiKey: credentials.groqApiKey,
+              model: credentials.groqModel,
+            });
         decision = generated.decision;
         provider = generated.provider;
         decisionModel = generated.model;
@@ -394,6 +382,7 @@ export function createLocalTurnSender(
         provider = modelProvider === 'gemini' ? 'google-ai-direct' : 'groq-direct';
         decisionModel = 'policy:model-unavailable';
       }
+      latenciesMs.model_ms = Date.now() - modelStartedAt;
     }
     decision = applyDecisionPolicy(decision, claimed);
 
@@ -409,6 +398,7 @@ export function createLocalTurnSender(
     };
 
     let committed;
+    const commitStartedAt = Date.now();
     try {
       committed = await localSignedJson({
         credentials,
@@ -436,6 +426,7 @@ export function createLocalTurnSender(
         : null;
       throw withTurnDiagnostic(error, { ...claimTimeDiagnostic, commitError });
     }
+    latenciesMs.commit_ms = Date.now() - commitStartedAt;
     const turnDiagnostic: AgentTurnDiagnostic = {
       ...claimTimeDiagnostic,
       authorizedProtectedFacts:
@@ -454,7 +445,7 @@ export function createLocalTurnSender(
         ? null
         : createHash('sha256').update(decision.response).digest('hex'),
       fallback_reason: fallbackReason,
-      latencies_ms: {},
+      latencies_ms: latenciesMs,
     };
     const commercialEvidence: NonNullable<AgentChatResult['commercialEvidence']> = {
       catalogResolution: claimed.catalog_resolution,
@@ -484,6 +475,7 @@ export function createLocalTurnSender(
     }
 
     let localDelivery;
+    const deliveryStartedAt = Date.now();
     try {
       localDelivery = await deliverAuthorizedLocalOutbound({
         trace_id: traceId,
@@ -506,6 +498,8 @@ export function createLocalTurnSender(
     } catch (error) {
       throw withTurnDiagnostic(error, turnDiagnostic);
     }
+    latenciesMs.delivery_ms = Date.now() - deliveryStartedAt;
+    latenciesMs.total_turn_ms = Date.now() - turnStartedAt;
     if (localDelivery.kind === 'blocked') {
       return {
         conversationId,

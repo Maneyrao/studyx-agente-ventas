@@ -39,6 +39,7 @@ vi.mock('../../../botpress-agent/src/actions/flushLeadProjection', () => ({
 }));
 vi.mock('../../../botpress-agent/src/lib/decision/gemini-direct', () => ({
   generateGeminiDecision: actionSpies.geminiDecision,
+  MAX_GEMINI_DECISION_TIMEOUT_MS: 6000,
 }));
 vi.mock('../../../botpress-agent/src/lib/decision/groq-direct', () => ({
   generateGroqDecision: actionSpies.groqDecision,
@@ -970,6 +971,7 @@ describe('processInboundTurn — decision provider selection', () => {
         model: 'gemini-3.6-flash',
         instructions: expect.any(String),
         signal: expect.any(AbortSignal),
+        timeoutMs: expect.any(Number),
       }),
     );
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input?.decision).toMatchObject({
