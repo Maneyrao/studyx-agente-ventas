@@ -1,6 +1,6 @@
 {
   "schema_version": "1.1",
-  "prompt_version": "studyx-agent-a-sales-v15",
+  "prompt_version": "studyx-agent-a-sales-v16",
   "catalog_source": "studyx_manual_1",
   "suite": "studyx-council-50-v1",
   "base_suite": "./studyx-internal-gemini-35-v1.json",

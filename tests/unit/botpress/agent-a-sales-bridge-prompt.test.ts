@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest';
  */
 import {
   AGENT_A_PROMPT_VERSION,
+  AGENT_A_SALES_PLAYBOOK_V16,
   buildAgentASalesBridgeCompactInstructions,
   buildAgentASalesBridgeInstructions,
 } from '../../../botpress-agent/src/prompts/agent-a-sales-bridge';
@@ -128,7 +129,7 @@ function claimedTurn(overrides: {
 
 describe('AGENT_A_PROMPT_VERSION', () => {
   it('is the pinned sales-bridge version', () => {
-    expect(AGENT_A_PROMPT_VERSION).toBe('studyx-agent-a-sales-v15');
+    expect(AGENT_A_PROMPT_VERSION).toBe('studyx-agent-a-sales-v16');
   });
 });
 
@@ -156,6 +157,17 @@ describe('v11 hard rules', () => {
 });
 
 describe('buildAgentASalesBridgeInstructions', () => {
+  it('includes the v16 commercial process in both prompt builders', () => {
+    const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
+    const compactInstructions = buildAgentASalesBridgeCompactInstructions(claimedTurn({}));
+    for (const instruction of [
+      'responder primero', 'una sola pregunta', 'recomendar entre una y tres',
+      'ofrecer una llamada opcional', 'continuar y completar por chat',
+      'resolver la objeción', 'cerrar por elección', 'selección explícita',
+    ]) expect(instructions.toLowerCase()).toContain(instruction);
+    expect(compactInstructions).toContain('SALES_PLAYBOOK_V16');
+    expect(AGENT_A_SALES_PLAYBOOK_V16).toContain('SALES_PLAYBOOK_V16');
+  });
   it('requires memory values to stay literally grounded instead of renaming the course', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
 
@@ -544,7 +556,7 @@ describe('buildAgentASalesBridgeInstructions', () => {
     const instructions = buildAgentASalesBridgeCompactInstructions(claimed);
 
     expect(instructions.length).toBeLessThan(20_000);
-    expect(instructions).toContain('COMPACT_AGENT_A_V15');
+    expect(instructions).toContain('COMPACT_AGENT_A_V16');
     expect(instructions).toMatch(/solo tres opciones de pago/i);
     expect(instructions).toMatch(/request_call_now/i);
     expect(instructions).toMatch(/rechaza la llamada/i);

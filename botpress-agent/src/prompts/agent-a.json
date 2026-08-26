@@ -1,7 +1,7 @@
 {
   "agent": "A",
   "name": "StudyX Sales Advisor",
-  "prompt_version": "studyx-agent-a-sales-v10",
+  "prompt_version": "studyx-agent-a-sales-v16",
   "format": "behavioral-config-copy",
   "executable": false,
   "source_file": "src/prompts/agent-a-sales-bridge.ts",
