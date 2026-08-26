@@ -663,7 +663,7 @@ describe('processInboundTurn hot path', () => {
     return actionSpies.commit.mock.calls[0]?.[0]?.input?.decision;
   }
 
-  it('commits a soft call offer when the backend explicitly allows offer_call', async () => {
+  it('keeps soft call offers advisory even when the backend could offer a call', async () => {
     const decision = await runModelDecision({
       schema_version: 4,
       intent: 'commercial',
@@ -681,8 +681,9 @@ describe('processInboundTurn hot path', () => {
 
     expect(decision).toMatchObject({
       kind: 'reply',
-      response_type: 'call_offer',
-      reason_code: 'CALL_OFFER',
+      response_type: 'commercial_reply',
+      reason_code: 'MODEL_ADVISORY_ONLY',
+      business_action: null,
     });
   });
 
@@ -709,7 +710,7 @@ describe('processInboundTurn hot path', () => {
     expect(decision).toMatchObject({
       kind: 'reply',
       response_type: 'commercial_reply',
-      reason_code: 'RESPONSE_TYPE_NOT_ALLOWED',
+      reason_code: 'MODEL_ADVISORY_ONLY',
     });
     expect(decision.response).toBeTruthy();
   });
@@ -772,7 +773,7 @@ describe('processInboundTurn hot path', () => {
       kind: 'clarify',
       response_type: 'clarification',
       business_action: null,
-      reason_code: 'AMBIGUOUS_OR_ABSENT_CHOICE',
+      reason_code: 'MODEL_ADVISORY_ONLY',
       next_state: 'waiting_user',
     });
     expect(decision.response).toBeTruthy();
@@ -803,7 +804,7 @@ describe('processInboundTurn hot path', () => {
       kind: 'clarify',
       response_type: 'clarification',
       business_action: null,
-      reason_code: 'PLAN_MISMATCH',
+      reason_code: 'MODEL_ADVISORY_ONLY',
     });
   });
 
