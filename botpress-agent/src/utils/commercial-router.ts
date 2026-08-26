@@ -10,17 +10,7 @@ import {
   matchDeterministicGreeting,
 } from './greeting'
 import {
-  CONVERSATION_CLOSE_FAST_PATH_MODEL,
-  CONTACT_CAPTURE_FAST_PATH_MODEL,
-  COURSE_DISCOVERY_FAST_PATH_MODEL,
-  COURSE_FACTS_FAST_PATH_MODEL,
-  PAYMENT_COMPARISON_FAST_PATH_MODEL,
   PAYMENT_SELECTION_FAST_PATH_MODEL,
-  matchContactCaptureFastPath,
-  matchConversationCloseFastPath,
-  matchCourseDiscoveryFastPathMatch,
-  matchCourseFactsFastPathMatch,
-  matchPaymentComparisonFastPath,
   matchPaymentSelectionFastPath,
 } from './transaction-fast-path'
 
@@ -35,11 +25,6 @@ export type DeterministicCommercialRouteOrigin =
   | 'opt_out_ack'
   | 'call_handoff'
   | 'payment_selection'
-  | 'payment_comparison'
-  | 'contact_capture'
-  | 'course_facts'
-  | 'conversation_close'
-  | 'course_discovery'
   | 'greeting'
   | CatalogCommercialRouteOrigin
 
@@ -73,6 +58,11 @@ export type CommercialRouteOrigin =
 export type ModelRequiredReason =
   | 'MULTI_MESSAGE_BATCH'
   | 'NEGATIVE_SIGNAL_REQUIRES_MODEL'
+  | 'OPEN_CATALOG_REQUIRES_SALES_MODEL'
+  | 'ADVISORY_REQUIRES_SALES_MODEL'
+  | 'COURSE_FACT_REQUIRES_SALES_MODEL'
+  | 'OBJECTION_REQUIRES_SALES_MODEL'
+  | 'CALL_DECLINE_REQUIRES_SALES_MODEL'
   | 'NO_DETERMINISTIC_MATCH'
 
 export type CommercialRouteResult =
@@ -532,6 +522,7 @@ function containsCallDecline(claimed: ClaimedTurn): boolean {
     /\bno llames?\b/u,
     /\bno quiero (?:una |la )?llamadas?\b/u,
     /\bdeja de llamarme\b/u,
+    /\b(?:prefiero|quiero) seguir por chat\b/u,
   ]
   return claimed.context.batch_messages.some((message) => {
     const normalized = normalizedSignalText(message.content)
@@ -617,17 +608,6 @@ export function routeCommercialTurn(input: CommercialRouterInput): CommercialRou
     )
   }
 
-  // Negative outcomes precede every positive commercial action. The close
-  // matcher can safely render its bounded cases without the model.
-  const conversationClose = matchConversationCloseFastPath(claimed)
-  if (conversationClose) {
-    return deterministicRoute(
-      'conversation_close',
-      CONVERSATION_CLOSE_FAST_PATH_MODEL,
-      conversationClose,
-    )
-  }
-
   const hasNegativeSignal = containsCallDecline(claimed)
     || containsCommercialDecline(claimed)
   const callHandoff = hasNegativeSignal ? null : matchCallHandoffFastPath(claimed)
@@ -640,33 +620,23 @@ export function routeCommercialTurn(input: CommercialRouterInput): CommercialRou
     return deterministicRoute('call_handoff', CALL_HANDOFF_FAST_PATH_MODEL, callHandoff)
   }
 
-  const catalogRoute = routeCatalogResolution(claimed)
   const isMultiMessageBatch = claimed.batch.message_count !== 1
     || claimed.context.batch_messages.length !== 1
 
   if (isMultiMessageBatch) {
-    if (hasNegativeSignal && catalogRoute) {
+    if (hasNegativeSignal) {
       return {
         kind: 'model_required',
         origin: 'advisory_model',
-        reason: 'NEGATIVE_SIGNAL_REQUIRES_MODEL',
+        reason: containsCallDecline(claimed)
+          ? 'CALL_DECLINE_REQUIRES_SALES_MODEL'
+          : 'NEGATIVE_SIGNAL_REQUIRES_MODEL',
       }
     }
-
-    if (catalogRoute) {
-      const paymentSelection = matchCatalogCompetingPaymentSelection(claimed)
-      if (paymentSelection) {
-        return deterministicRoute(
-          'payment_selection',
-          PAYMENT_SELECTION_FAST_PATH_MODEL,
-          paymentSelection,
-        )
-      }
-      return catalogRoute
+    const paymentSelection = matchCatalogCompetingPaymentSelection(claimed)
+    if (paymentSelection) {
+      return deterministicRoute('payment_selection', PAYMENT_SELECTION_FAST_PATH_MODEL, paymentSelection)
     }
-
-    // No other matcher may collapse one phrase while silently discarding the
-    // rest of the customer's burst.
     return {
       kind: 'model_required',
       origin: 'advisory_model',
@@ -678,7 +648,9 @@ export function routeCommercialTurn(input: CommercialRouterInput): CommercialRou
     return {
       kind: 'model_required',
       origin: 'advisory_model',
-      reason: 'NEGATIVE_SIGNAL_REQUIRES_MODEL',
+      reason: containsCallDecline(claimed)
+        ? 'CALL_DECLINE_REQUIRES_SALES_MODEL'
+        : 'NEGATIVE_SIGNAL_REQUIRES_MODEL',
     }
   }
 
@@ -695,51 +667,33 @@ export function routeCommercialTurn(input: CommercialRouterInput): CommercialRou
     )
   }
 
-  const paymentComparison = matchPaymentComparisonFastPath(claimed)
-  if (paymentComparison) {
-    return deterministicRoute(
-      'payment_comparison',
-      PAYMENT_COMPARISON_FAST_PATH_MODEL,
-      paymentComparison,
-    )
-  }
-
-  const contactCapture = matchContactCaptureFastPath(claimed)
-  if (contactCapture) {
-    return deterministicRoute(
-      'contact_capture',
-      CONTACT_CAPTURE_FAST_PATH_MODEL,
-      contactCapture,
-    )
-  }
-
-  if (catalogRoute) return catalogRoute
-
-  const courseFacts = matchCourseFactsFastPathMatch(claimed)
-  if (courseFacts) {
-    return deterministicRoute(
-      'course_facts',
-      COURSE_FACTS_FAST_PATH_MODEL,
-      courseFacts.decision,
-      courseFacts.offeringCode ?? undefined,
-    )
-  }
-
-  const courseDiscovery = matchCourseDiscoveryFastPathMatch(claimed)
-  if (courseDiscovery) {
-    return deterministicRoute(
-      'course_discovery',
-      COURSE_DISCOVERY_FAST_PATH_MODEL,
-      courseDiscovery.decision,
-      courseDiscovery.offeringCode,
-    )
-  }
-
   const greeting = matchDeterministicGreeting(claimed)
   if (greeting) {
     return deterministicRoute('greeting', GREETING_FAST_PATH_MODEL, greeting)
   }
 
+  const latest = normalizedSignalText(claimed.context.batch_messages.at(-1)?.content ?? '')
+  if (CATALOG_NAVIGATION_PATTERN.test(latest)) {
+    return { kind: 'model_required', origin: 'advisory_model', reason: 'OPEN_CATALOG_REQUIRES_SALES_MODEL' }
+  }
+  if (containsCatalogIntent(claimed) && !/\b(?:orientame|orientá|recomend(?:ame|á)|no s[eé])\b/u.test(latest)) {
+    return { kind: 'model_required', origin: 'advisory_model', reason: 'OPEN_CATALOG_REQUIRES_SALES_MODEL' }
+  }
+  if (EXPLICIT_COURSE_NOUN_PATTERN.test(latest)) {
+    return { kind: 'model_required', origin: 'advisory_model', reason: 'COURSE_FACT_REQUIRES_SALES_MODEL' }
+  }
+  if (/\b(?:clases?|duraci[oó]n|cu[aá]ntas?)\b/u.test(latest)) {
+    return { kind: 'model_required', origin: 'advisory_model', reason: 'COURSE_FACT_REQUIRES_SALES_MODEL' }
+  }
+  if (/\b(?:caro|cara|conviene|objeci[oó]n)\b/u.test(latest)) {
+    return { kind: 'model_required', origin: 'advisory_model', reason: 'OBJECTION_REQUIRES_SALES_MODEL' }
+  }
+  if (containsCatalogIntent(claimed)) {
+    return { kind: 'model_required', origin: 'advisory_model', reason: 'ADVISORY_REQUIRES_SALES_MODEL' }
+  }
+  if (PAYMENT_OR_LINK_CONTEXT_PATTERN.test(latest)) {
+    return { kind: 'model_required', origin: 'advisory_model', reason: 'ADVISORY_REQUIRES_SALES_MODEL' }
+  }
   return {
     kind: 'model_required',
     origin: 'advisory_model',

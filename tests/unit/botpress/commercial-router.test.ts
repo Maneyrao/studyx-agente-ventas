@@ -193,6 +193,44 @@ function expectDecisionRoute(
 
 describe('routeCommercialTurn', () => {
   it.each([
+    ['Me pasás los cursos disponibles?', 'OPEN_CATALOG_REQUIRES_SALES_MODEL'],
+    ['No sé qué estudiar, orientame', 'ADVISORY_REQUIRES_SALES_MODEL'],
+    ['¿Cuántas clases tiene Redes Informáticas?', 'COURSE_FACT_REQUIRES_SALES_MODEL'],
+    ['Es caro, no sé si me conviene', 'OBJECTION_REQUIRES_SALES_MODEL'],
+    ['Prefiero seguir por chat', 'CALL_DECLINE_REQUIRES_SALES_MODEL'],
+  ] as const)('%s is owned by the sales model', (message, reason) => {
+    const route = routeCommercialTurn({
+      automationEnabled: true,
+      claimed: claimedTurn({
+        texts: [message],
+        courseOfInterest: null,
+        offeringCode: null,
+        catalogResolution: { kind: 'no_catalog_intent' },
+      }),
+    });
+    expect(route).toMatchObject({ kind: 'model_required', origin: 'advisory_model', reason });
+  });
+
+  it.each([
+    ['dame de baja', 'opt_out_ack'],
+    ['llamame ahora', 'call_handoff'],
+    ['quiero 12 cuotas', 'payment_selection'],
+    ['hola', 'greeting'],
+  ] as const)('%s remains deterministic for safety/action handling', (message, origin) => {
+    const route = routeCommercialTurn({
+      automationEnabled: true,
+      claimed: claimedTurn({
+        texts: [message],
+        route: origin === 'call_handoff' ? 'call_direct_request' : origin === 'greeting' ? 'greeting' : null,
+        allowedActions: origin === 'call_handoff' ? ['request_call_now'] : undefined,
+        optOutAckEligible: origin === 'opt_out_ack',
+        allowedResponseTypes: origin === 'opt_out_ack' ? ['opt_out_ack'] : undefined,
+      }),
+    });
+    expect(route.kind).toBe('deterministic');
+    if (route.kind === 'deterministic') expect(route.origin).toBe(origin);
+  });
+  it.each([
     'Me pasas todos los cursos?',
     'Pasame info general, cuáles ofrecen?',
     'Qué opciones tienen?',
