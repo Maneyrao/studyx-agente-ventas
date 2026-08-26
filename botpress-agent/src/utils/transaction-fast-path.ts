@@ -122,6 +122,7 @@ export function matchCourseFactsFastPathMatch(
   if (!asksClasses && !asksRequirements && !asksOrientation && !asksPrice && !asksPaymentOptions
     && !asksRefund && !asksCertification && !asksSchedule) return null
 
+
   const inboundMessages = [
     ...claimed.context.recent_turns
       .filter((turn) => turn.direction === 'inbound')

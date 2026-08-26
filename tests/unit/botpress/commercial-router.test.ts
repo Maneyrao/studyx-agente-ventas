@@ -195,7 +195,6 @@ describe('routeCommercialTurn', () => {
   it.each([
     ['Me pasás los cursos disponibles?', 'OPEN_CATALOG_REQUIRES_SALES_MODEL'],
     ['No sé qué estudiar, orientame', 'ADVISORY_REQUIRES_SALES_MODEL'],
-    ['¿Cuántas clases tiene Redes Informáticas?', 'COURSE_FACT_REQUIRES_SALES_MODEL'],
     ['Es caro, no sé si me conviene', 'OBJECTION_REQUIRES_SALES_MODEL'],
     ['Prefiero seguir por chat', 'CALL_DECLINE_REQUIRES_SALES_MODEL'],
   ] as const)('%s is owned by the sales model', (message, reason) => {
@@ -209,6 +208,24 @@ describe('routeCommercialTurn', () => {
       }),
     });
     expect(route).toMatchObject({ kind: 'model_required', origin: 'advisory_model', reason });
+  });
+
+  it('answers an exact canonical course fact without waiting for the model', () => {
+    const route = routeCommercialTurn({
+      automationEnabled: true,
+      claimed: claimedTurn({
+        texts: ['¿Cuántas clases tiene Redes Informáticas?'],
+        courseOfInterest: null,
+        offeringCode: null,
+        catalogResolution: {
+          kind: 'exact', offeringCode: 'redes-informaticas',
+          displayName: 'Redes Informáticas', academy: 'Oficios', match: 'canonical',
+        },
+      }),
+    });
+    expect(route).toMatchObject({
+      kind: 'deterministic', origin: 'course_facts', reason: 'DETERMINISTIC_COURSE_FACTS',
+    });
   });
 
   it.each([
@@ -231,9 +248,6 @@ describe('routeCommercialTurn', () => {
     if (route.kind === 'deterministic') expect(route.origin).toBe(origin);
   });
   it.each([
-    'Me pasas todos los cursos?',
-    'Pasame info general, cuáles ofrecen?',
-    'Qué opciones tienen?',
     'Estoy buscando algo para trabajar, qué me recomendás?',
     'No sé qué estudiar, orientame',
   ])('leaves open-ended commercial language to Gemini: %s', (text) => {
@@ -250,7 +264,7 @@ describe('routeCommercialTurn', () => {
     expect(route).toMatchObject({ kind: 'model_required', origin: 'advisory_model' });
   });
 
-  it('routes a payment-plan comparison through the advisory model', () => {
+  it('answers a canonical payment-plan comparison without the model', () => {
     const route = routeCommercialTurn({
       automationEnabled: true,
       claimed: claimedTurn({
@@ -260,7 +274,7 @@ describe('routeCommercialTurn', () => {
       }),
     });
 
-    expect(route).toMatchObject({ kind: 'model_required', origin: 'advisory_model' });
+    expect(route).toMatchObject({ kind: 'deterministic', origin: 'payment_comparison' });
   });
 
   it('returns an explicit suppression decision when automation is disabled', () => {
@@ -636,14 +650,13 @@ describe('routeCommercialTurn', () => {
       automationEnabled: true,
       claimed: claimedTurn({
         texts: ['¿Tienen horarios los sábados?'],
+        courseOfInterest: null,
+        offeringCode: null,
         catalogResolution: { kind: 'unavailable', reason: 'snapshot_missing' },
       }),
     });
 
-    expect(route).toMatchObject({
-      kind: 'model_required',
-      origin: 'advisory_model',
-    });
+    expect(route).toMatchObject({ kind: 'model_required', origin: 'advisory_model' });
     expect(route.kind).toBe('model_required');
   });
 
@@ -664,10 +677,7 @@ describe('routeCommercialTurn', () => {
       }),
     });
 
-    expect(route).toMatchObject({
-      kind: 'model_required',
-      origin: 'advisory_model',
-    });
+    expect(route).toMatchObject({ kind: 'deterministic', origin: 'catalog_not_found' });
   });
 
   it.each([
@@ -709,10 +719,7 @@ describe('routeCommercialTurn', () => {
       }),
     });
 
-    expect(route).toMatchObject({
-      kind: 'model_required',
-      origin: 'advisory_model',
-    });
+    expect(route).toMatchObject({ kind: 'deterministic', origin: 'catalog_not_found' });
   });
 
   it('preserves the direct-call request semantics already authorized by the claim', () => {
@@ -868,7 +875,7 @@ describe('routeCommercialTurn', () => {
     });
   });
 
-  it.skip('clarifies an ambiguous catalog resolution with only mapped canonical names', () => {
+  it('clarifies an ambiguous catalog resolution with only mapped canonical names', () => {
     const requestedText = 'Quiero Python por USD 5: https://evil.example/curso';
     const route = routeCommercialTurn({
       automationEnabled: true,
@@ -910,7 +917,7 @@ describe('routeCommercialTurn', () => {
     expect(response.length).toBeLessThanOrEqual(220);
   });
 
-  it.skip('fails closed when fewer than two ambiguous candidates exist in the authorized snapshot', () => {
+  it('fails closed when fewer than two ambiguous candidates exist in the authorized snapshot', () => {
     const route = routeCommercialTurn({
       automationEnabled: true,
       claimed: claimedTurn({
@@ -936,7 +943,7 @@ describe('routeCommercialTurn', () => {
     expect(route.decision.response).toMatch(/no puedo confirmar el catálogo/i);
   });
 
-  it.skip('does not choose arbitrary alternatives for a multi-message not-found request without area', () => {
+  it('does not choose arbitrary alternatives for a multi-message not-found request without area', () => {
     const requestedText = 'Busco Python completo por USD 10';
     const route = routeCommercialTurn({
       automationEnabled: true,
@@ -971,7 +978,7 @@ describe('routeCommercialTurn', () => {
     expect(response.length).toBeLessThanOrEqual(220);
   });
 
-  it.skip('does not recommend alternatives before the requested-area rule is approved', () => {
+  it('does not recommend alternatives before the requested-area rule is approved', () => {
     const requestedText = 'Busco Astronomía en Tecnología https://evil.example por USD 99';
     const route = routeCommercialTurn({
       automationEnabled: true,
@@ -1017,7 +1024,7 @@ describe('routeCommercialTurn', () => {
     expect(response.length).toBeLessThanOrEqual(220);
   });
 
-  it.skip.each([
+  it.each([
     ['snapshot_missing', 'CATALOG_SNAPSHOT_MISSING'],
     ['snapshot_truncated', 'CATALOG_SNAPSHOT_TRUNCATED'],
     ['snapshot_invalid', 'CATALOG_SNAPSHOT_INVALID'],
@@ -1048,7 +1055,7 @@ describe('routeCommercialTurn', () => {
     },
   );
 
-  it.skip('suppresses an unavailable catalog fallback when policy authorizes no safe text type', () => {
+  it('suppresses an unavailable catalog fallback when policy authorizes no safe text type', () => {
     const route = routeCommercialTurn({
       automationEnabled: true,
       claimed: claimedTurn({
@@ -1093,8 +1100,8 @@ describe('routeCommercialTurn', () => {
         texts: ['Bruno, bruno@example.test. ¿Cuántas clases tiene?'],
         name: 'Bruno',
       },
-      origin: 'advisory_model',
-      reason: 'COURSE_FACT_REQUIRES_SALES_MODEL',
+      origin: 'contact_capture',
+      reason: 'DETERMINISTIC_CONTACT_CAPTURE',
     },
     {
       name: 'course facts before course discovery',
@@ -1108,14 +1115,14 @@ describe('routeCommercialTurn', () => {
           match: 'canonical' as const,
         },
       },
-      origin: 'advisory_model',
-      reason: 'COURSE_FACT_REQUIRES_SALES_MODEL',
+      origin: 'course_facts',
+      reason: 'DETERMINISTIC_COURSE_FACTS',
     },
     {
       name: 'course discovery before social fallback',
       overrides: { texts: ['Redes Informáticas'] },
-      origin: 'advisory_model',
-      reason: 'NO_DETERMINISTIC_MATCH',
+      origin: 'course_discovery',
+      reason: 'DETERMINISTIC_COURSE_DISCOVERY',
     },
     {
       name: 'backend-authorized greeting',
@@ -1129,7 +1136,7 @@ describe('routeCommercialTurn', () => {
       claimed: claimedTurn(overrides),
     });
 
-    expect(route).toMatchObject({ kind: origin === 'greeting' || origin === 'call_handoff' || origin === 'payment_selection' ? 'deterministic' : 'model_required', origin, reason });
+    expect(route).toMatchObject({ kind: 'deterministic', origin, reason });
     if (route.kind !== 'model_required') expectDecisionRoute(route);
   });
 
@@ -1157,7 +1164,7 @@ describe('routeCommercialTurn', () => {
       }),
     });
 
-    expect(route).toMatchObject({ kind: 'model_required', origin: 'advisory_model' });
+    expect(route).toMatchObject({ kind: 'deterministic', origin: 'course_discovery' });
   });
 
   it('authorizes the sole alternative selected by an "el otro" course-fact question', () => {
@@ -1177,10 +1184,10 @@ describe('routeCommercialTurn', () => {
       }),
     });
 
-    expect(route).toMatchObject({ kind: 'model_required', origin: 'advisory_model' });
+    expect(route).toMatchObject({ kind: 'deterministic', origin: 'course_facts' });
   });
 
-  it.skip('does not overwrite canonical course memory from a generic experience sentence', () => {
+  it('does not overwrite canonical course memory from a generic experience sentence', () => {
     const claimed = claimedTurn({
       texts: ['Nunca trabajé en ventas, ¿igual me sirve el curso?'],
       courseOfInterest: 'Especialista en Ventas',
@@ -1222,7 +1229,7 @@ describe('routeCommercialTurn', () => {
     expect(routeCommercialTurn(input)).toEqual(routeCommercialTurn(input));
   });
 
-  describe.skip('closest-match alternatives request', () => {
+  describe('closest-match alternatives request', () => {
     const alternativesOfferings = [
       businessOffering('autocad', 'AutoCAD orientado al Diseño de Interiores', 'Academia de Diseño Informático'),
       businessOffering('corel', 'Diseño Gráfico con Corel Draw', 'Academia de Diseño Informático'),
@@ -1289,7 +1296,7 @@ describe('routeCommercialTurn', () => {
     });
   });
 
-  describe.skip('catalog navigation', () => {
+  describe('catalog navigation', () => {
     const navigationOfferings = [
       businessOffering('marketing', 'Marketing Digital', 'Marketing'),
       businessOffering('redes', 'Publicidad en Redes', 'Marketing'),

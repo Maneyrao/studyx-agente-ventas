@@ -10,7 +10,17 @@ import {
   matchDeterministicGreeting,
 } from './greeting'
 import {
+  CONTACT_CAPTURE_FAST_PATH_MODEL,
+  CONVERSATION_CLOSE_FAST_PATH_MODEL,
+  COURSE_DISCOVERY_FAST_PATH_MODEL,
+  COURSE_FACTS_FAST_PATH_MODEL,
+  PAYMENT_COMPARISON_FAST_PATH_MODEL,
   PAYMENT_SELECTION_FAST_PATH_MODEL,
+  matchContactCaptureFastPath,
+  matchConversationCloseFastPath,
+  matchCourseDiscoveryFastPathMatch,
+  matchCourseFactsFastPathMatch,
+  matchPaymentComparisonFastPath,
   matchPaymentSelectionFastPath,
 } from './transaction-fast-path'
 
@@ -25,6 +35,11 @@ export type DeterministicCommercialRouteOrigin =
   | 'opt_out_ack'
   | 'call_handoff'
   | 'payment_selection'
+  | 'payment_comparison'
+  | 'course_facts'
+  | 'course_discovery'
+  | 'conversation_close'
+  | 'contact_capture'
   | 'greeting'
   | CatalogCommercialRouteOrigin
 
@@ -93,7 +108,6 @@ export interface CommercialRouterInput {
 }
 
 type CatalogResolution = ClaimedTurn['catalog_resolution']
-type BusinessOffering = NonNullable<ClaimedTurn['business_context']>['offerings'][number]
 type CatalogResponseType = 'clarification' | 'commercial_reply' | 'technical_fallback'
 
 const CATALOG_RETRIEVAL_NONE = {
@@ -229,23 +243,20 @@ function containsCatalogIntent(claimed: ClaimedTurn): boolean {
   })
 }
 
-function authorizedOfferingsByCode(
-  claimed: ClaimedTurn,
-  codes: readonly string[],
-): BusinessOffering[] {
-  if (!claimed.business_context_available || !claimed.business_context) return []
-  const byCode = new Map(
-    claimed.business_context.offerings.map((offering) => [offering.code, offering]),
-  )
-  const seen = new Set<string>()
-  const authorized: BusinessOffering[] = []
-  for (const code of codes) {
-    if (seen.has(code)) continue
-    seen.add(code)
-    const offering = byCode.get(code)
-    if (offering) authorized.push(offering)
-  }
-  return authorized
+function catalogEntriesByCode(claimed: ClaimedTurn, codes: readonly string[]) {
+  const entries = claimed.catalog_index?.offerings
+    ?? claimed.business_context?.offerings.map((offering) => ({
+      code: offering.code,
+      display_name: offering.display_name,
+      academy: offering.academy,
+      aliases: offering.aliases,
+    }))
+    ?? []
+  const byCode = new Map(entries.map((entry) => [entry.code, entry]))
+  return [...new Set(codes)].flatMap((code) => {
+    const entry = byCode.get(code)
+    return entry ? [entry] : []
+  })
 }
 
 function catalogResponseType(claimed: ClaimedTurn): CatalogResponseType | null {
@@ -321,12 +332,15 @@ function routeCatalogNavigationRequest(claimed: ClaimedTurn): CommercialRouteRes
   if (!message || message.message_type !== 'text') return null
   const normalized = normalizedSignalText(message.content)
   if (!CATALOG_NAVIGATION_PATTERN.test(normalized)) return null
-  if (!claimed.business_context_available || !claimed.business_context) {
+  const catalog = claimed.catalog_index?.offerings
+    ?? claimed.business_context?.offerings
+    ?? []
+  if (catalog.length === 0) {
     return unavailableCatalogRoute(claimed, 'CATALOG_SNAPSHOT_MISSING')
   }
 
   const academies = [...new Set(
-    claimed.business_context.offerings
+    catalog
       .map((offering) => offering.academy)
       .filter((academy): academy is string => Boolean(academy)),
   )]
@@ -337,7 +351,7 @@ function routeCatalogNavigationRequest(claimed: ClaimedTurn): CommercialRouteRes
   })
 
   if (requestedAcademy) {
-    const offerings = claimed.business_context.offerings
+    const offerings = catalog
       .filter((offering) => offering.academy === requestedAcademy)
       .slice(0, 3)
     if (offerings.length === 0) {
@@ -385,11 +399,14 @@ function routeCatalogAlternativesRequest(claimed: ClaimedTurn): CommercialRouteR
   if (!message || message.message_type !== 'text') return null
   if (!ALTERNATIVES_REQUEST_PATTERN.test(normalizedSignalText(message.content))) return null
 
-  if (!claimed.business_context_available || !claimed.business_context) {
+  const catalog = claimed.catalog_index?.offerings
+    ?? claimed.business_context?.offerings
+    ?? []
+  if (catalog.length === 0) {
     return unavailableCatalogRoute(claimed, 'CATALOG_SNAPSHOT_MISSING')
   }
   const academies: string[] = []
-  for (const offering of claimed.business_context.offerings) {
+  for (const offering of catalog) {
     if (offering.academy && !academies.includes(offering.academy)) {
       academies.push(offering.academy)
     }
@@ -418,7 +435,7 @@ function routeCatalogResolution(claimed: ClaimedTurn): CommercialRouteResult | n
   if (alternativesRequest) return alternativesRequest
 
   if (resolution.kind === 'ambiguous') {
-    const candidates = authorizedOfferingsByCode(claimed, resolution.candidateCodes).slice(0, 3)
+    const candidates = catalogEntriesByCode(claimed, resolution.candidateCodes).slice(0, 3)
     if (candidates.length < 2) {
       return unavailableCatalogRoute(claimed, 'CATALOG_CANDIDATES_UNAVAILABLE')
     }
@@ -620,6 +637,13 @@ export function routeCommercialTurn(input: CommercialRouterInput): CommercialRou
     return deterministicRoute('call_handoff', CALL_HANDOFF_FAST_PATH_MODEL, callHandoff)
   }
 
+  // A current explicit cancellation/deferral outranks a prior call/payment
+  // signal. It is still a normal WhatsApp conversation, never a silence.
+  const conversationClose = matchConversationCloseFastPath(claimed)
+  if (conversationClose) {
+    return deterministicRoute('conversation_close', CONVERSATION_CLOSE_FAST_PATH_MODEL, conversationClose)
+  }
+
   const isMultiMessageBatch = claimed.batch.message_count !== 1
     || claimed.context.batch_messages.length !== 1
 
@@ -637,6 +661,8 @@ export function routeCommercialTurn(input: CommercialRouterInput): CommercialRou
     if (paymentSelection) {
       return deterministicRoute('payment_selection', PAYMENT_SELECTION_FAST_PATH_MODEL, paymentSelection)
     }
+    const catalogRoute = routeCatalogResolution(claimed)
+    if (catalogRoute) return catalogRoute
     return {
       kind: 'model_required',
       origin: 'advisory_model',
@@ -658,12 +684,51 @@ export function routeCommercialTurn(input: CommercialRouterInput): CommercialRou
     return deterministicRoute('call_handoff', CALL_HANDOFF_FAST_PATH_MODEL, callHandoff)
   }
 
+  // Exact/ambiguous/not-found catalog ownership belongs to the backend. The
+  // model may recommend and explain, but it must never decide what exists.
+  const catalogRoute = routeCatalogResolution(claimed)
+  if (catalogRoute) return catalogRoute
+
   const paymentSelection = matchPaymentSelectionFastPath(claimed)
   if (paymentSelection) {
     return deterministicRoute(
       'payment_selection',
       PAYMENT_SELECTION_FAST_PATH_MODEL,
       paymentSelection,
+    )
+  }
+
+  const paymentComparison = matchPaymentComparisonFastPath(claimed)
+  if (paymentComparison) {
+    return deterministicRoute(
+      'payment_comparison',
+      PAYMENT_COMPARISON_FAST_PATH_MODEL,
+      paymentComparison,
+    )
+  }
+
+  const contactCapture = matchContactCaptureFastPath(claimed)
+  if (contactCapture) {
+    return deterministicRoute('contact_capture', CONTACT_CAPTURE_FAST_PATH_MODEL, contactCapture)
+  }
+
+  const courseFacts = matchCourseFactsFastPathMatch(claimed)
+  if (courseFacts) {
+    return deterministicRoute(
+      'course_facts',
+      COURSE_FACTS_FAST_PATH_MODEL,
+      courseFacts.decision,
+      courseFacts.offeringCode ?? undefined,
+    )
+  }
+
+  const courseDiscovery = matchCourseDiscoveryFastPathMatch(claimed)
+  if (courseDiscovery) {
+    return deterministicRoute(
+      'course_discovery',
+      COURSE_DISCOVERY_FAST_PATH_MODEL,
+      courseDiscovery.decision,
+      courseDiscovery.offeringCode,
     )
   }
 

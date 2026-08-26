@@ -566,11 +566,11 @@ describe('processInboundTurn hot path', () => {
       workflow: { id: 'workflow-test' },
     });
 
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).not.toHaveBeenCalled();
     expect(actionSpies.commit).toHaveBeenCalledTimes(1);
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      authorized_offering_code: null,
-      decision: { reason_code: 'MODEL_UNAVAILABLE' },
+      authorized_offering_code: 'redes-informaticas',
+      decision: { reason_code: 'DETERMINISTIC_COURSE_FACTS' },
     });
   });
 
