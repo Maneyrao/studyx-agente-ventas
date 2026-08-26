@@ -192,6 +192,30 @@ function expectDecisionRoute(
 }
 
 describe('routeCommercialTurn', () => {
+  it.each([
+    'Me pasas todos los cursos?',
+    'Pasame info general, cuáles ofrecen?',
+    'Qué opciones tienen?',
+    'Estoy buscando algo para trabajar, qué me recomendás?',
+    'No sé qué estudiar, orientame',
+  ])('leaves open-ended commercial language to Gemini: %s', (text) => {
+    const route = routeCommercialTurn({
+      automationEnabled: true,
+      claimed: claimedTurn({
+        texts: [text],
+        courseOfInterest: null,
+        offeringCode: null,
+        catalogResolution: { kind: 'not_found', requestedText: text, requestedArea: null, alternativeCodes: [] },
+      }),
+    });
+
+    expect(route).toEqual({
+      kind: 'model_required',
+      origin: 'advisory_model',
+      reason: 'NO_DETERMINISTIC_MATCH',
+    });
+  });
+
   it('routes a payment-plan comparison deterministically before the advisory model', () => {
     const route = routeCommercialTurn({
       automationEnabled: true,

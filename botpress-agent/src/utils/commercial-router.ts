@@ -145,6 +145,13 @@ const ALTERNATIVES_REQUEST_PATTERN =
 const CATALOG_NAVIGATION_PATTERN =
   /\b(?:(?:que|cuales) (?:cursos?|diplomados?|capacitaciones?|programas?) (?:tienen|tenes|tienes|ofrecen|hay)(?: disponibles?)?|(?:quiero|quisiera|me gustaria) (?:conocer|ver|saber)(?: cuales son)? (?:los )?(?:cursos?|diplomados?|capacitaciones?|programas?)(?: disponibles?)?|mostrar?me (?:los )?(?:cursos?|diplomados?|catalogo)|catalogo|oferta academica)\b/u
 
+// Only retain a deterministic not-found route when the customer explicitly
+// names an unknown program. Open-ended commercial language belongs to Gemini;
+// this guard prevents the old keyword router from answering it as a missing
+// course.
+const EXPLICIT_UNKNOWN_COURSE_PATTERN =
+  /\b(?:informaci[oó]n|info|detalles?|datos?)\b.{0,24}\b(?:del?|sobre)\s+(?:el\s+)?(?:curso|diplomado|capacitaci[oó]n|formaci[oó]n|programa)\s+de\s+[\p{L}\p{N}]{4,}/u
+
 const UNAVAILABLE_REASON_CODES: Readonly<Record<
   Extract<CatalogResolution, { kind: 'unavailable' }>['reason'],
   CatalogRouteReason
@@ -441,6 +448,13 @@ function routeCatalogResolution(claimed: ClaimedTurn): CommercialRouteResult | n
 
   if (resolution.kind === 'not_found') {
     if (!containsCatalogIntent(claimed)) return null
+    const latestText = claimed.context.batch_messages.at(-1)?.content ?? ''
+    if (claimed.batch.message_count === 1
+      && claimed.context.batch_messages.length === 1
+      && resolution.requestedArea === null
+      && !EXPLICIT_UNKNOWN_COURSE_PATTERN.test(normalizedSignalText(latestText))) {
+      return null
+    }
     if (resolution.requestedArea === null) {
       return catalogDecisionRoute(
         claimed,
