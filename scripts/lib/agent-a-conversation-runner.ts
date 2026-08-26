@@ -55,6 +55,8 @@ export type AgentTurnDiagnostic = {
   authorizedProtectedFacts: readonly ProtectedFactRef[];
   authorizedUrls: readonly string[];
   commitError: { status: number; error: string; reason: string | null } | null;
+  /** Semantic memories selected by pgvector before this model turn. */
+  selectedMemoryValues?: readonly string[];
 };
 
 export type AgentChatResult = {
@@ -140,6 +142,9 @@ export type ConversationCase = {
     /** Non-canonical preference/constraint/objection that must survive in
      * selected_memories and be retrievable through its vector embedding. */
     expected_vector_memory?: string;
+    /** One-based later turn that must receive the expected vector memory in
+     * its claim context, proving retrieval rather than persistence alone. */
+    expected_vector_memory_recalled_after_turn?: number;
     /** Canonical catalog label required specifically in the operator sheet. */
     expected_sheet_interest?: string;
     min_active_memories?: number;
@@ -778,6 +783,19 @@ export async function runConversationCase(
     if (!currentCoursePresent) failures.push('expected_current_course_missing');
   }
 
+  if (testCase.ideal_result.expected_vector_memory_recalled_after_turn !== undefined) {
+    const turnNumber = testCase.ideal_result.expected_vector_memory_recalled_after_turn;
+    const expectedMemory = testCase.ideal_result.expected_vector_memory;
+    const selectedValues = turnDiagnostics[turnNumber - 1]?.selectedMemoryValues ?? [];
+    const recalled = typeof expectedMemory === 'string'
+      && selectedValues.some((value) => (
+        value.toLocaleLowerCase('es').includes(expectedMemory.toLocaleLowerCase('es'))
+      ));
+    checks.vector_memory_recalled = recalled;
+    checks.vector_memory_recalled_turn = turnNumber;
+    if (!recalled) failures.push(`expected_vector_memory_not_recalled_on_turn_${turnNumber}`);
+  }
+
   if (testCase.ideal_result.no_payment_link_before_turn) {
     const earlierReplies = assistantRepliesByTurn
       .slice(0, testCase.ideal_result.no_payment_link_before_turn - 1)
@@ -898,6 +916,8 @@ const KNOWN_IDEAL_RESULT_KEYS = new Set([
   'no_technical_fallback',
   'registered_contact',
   'expected_interest',
+  'expected_vector_memory',
+  'expected_vector_memory_recalled_after_turn',
   'expected_sheet_interest',
   'min_active_memories',
   'min_ready_memory_embeddings',
@@ -967,6 +987,19 @@ export function validateSuiteCaseInvariants(suite: ConversationSuite): string[] 
     for (const [index, count] of expectedResponseCounts?.entries() ?? []) {
       if (count !== 0 && count !== 1) {
         violations.push(`invalid_expected_response_count:${testCase.id}:${index + 1}:${count}`);
+      }
+    }
+    const vectorRecallTurn = testCase.ideal_result.expected_vector_memory_recalled_after_turn;
+    if (vectorRecallTurn !== undefined) {
+      if (!testCase.ideal_result.expected_vector_memory?.trim()) {
+        violations.push(`vector_recall_memory_missing:${testCase.id}`);
+      }
+      if (
+        !Number.isInteger(vectorRecallTurn)
+        || vectorRecallTurn < 2
+        || vectorRecallTurn > testCase.turns.length
+      ) {
+        violations.push(`vector_recall_turn_out_of_range:${testCase.id}:${vectorRecallTurn}`);
       }
     }
     const turnAssertions = testCase.ideal_result.turn_assertions;

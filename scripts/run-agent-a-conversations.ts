@@ -21,7 +21,10 @@ import {
   type PersistenceEvidence,
 } from './lib/agent-a-persistence-verifier';
 import { AGENT_A_PROMPT_VERSION } from '../botpress-agent/src/prompts/agent-a-sales-bridge';
-import { buildAgentASalesBridgeCompactInstructions } from '../botpress-agent/src/prompts/agent-a-sales-bridge';
+import {
+  buildAgentASalesBridgeCompactInstructions,
+  buildAgentASalesBridgeInstructions,
+} from '../botpress-agent/src/prompts/agent-a-sales-bridge';
 import {
   ClaimResponseSchema,
   CommitDecisionResponseSchema,
@@ -279,6 +282,15 @@ async function flushLocalPostTurn(credentials: LocalCredentials, traceId: string
   }));
 }
 
+export function buildLocalProviderInstructions(
+  modelProvider: 'groq' | 'gemini',
+  claimed: ClaimedTurn,
+): string {
+  return modelProvider === 'gemini'
+    ? buildAgentASalesBridgeInstructions(claimed)
+    : buildAgentASalesBridgeCompactInstructions(claimed);
+}
+
 export function createLocalTurnSender(
   credentials: LocalCredentials,
   runId: string,
@@ -385,7 +397,7 @@ export function createLocalTurnSender(
       try {
         evaluationPacingMs += await paceModelProvider();
         const commonInput = {
-          instructions: buildAgentASalesBridgeCompactInstructions(claimed),
+          instructions: buildLocalProviderInstructions(modelProvider, claimed),
           signal: new AbortController().signal,
           timeoutMs: MAX_GEMINI_DECISION_TIMEOUT_MS,
         };
@@ -426,6 +438,7 @@ export function createLocalTurnSender(
       authorizedProtectedFacts: [],
       authorizedUrls: [],
       commitError: null,
+      selectedMemoryValues: claimed.context.selected_memories.map((memory) => memory.value),
     };
 
     let committed;

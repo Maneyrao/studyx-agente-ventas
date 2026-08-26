@@ -1,0 +1,104 @@
+{
+  "schema_version": "1.0",
+  "prompt_version": "studyx-agent-a-sales-v17",
+  "suite": "studyx-vector-memory-v1",
+  "cases": [
+    {
+      "id": "memory_01_disponibilidad",
+      "name": "Recuerda disponibilidad laboral",
+      "course": "Excel Integral",
+      "persona": { "type": "disponibilidad_restringida", "style": "directo" },
+      "customer": { "first_name": "Ana", "last_name": "Prado", "email": "ana.memory01+{{run_id}}@example.test" },
+      "turns": [
+        "Me interesa Excel Integral. Trabajo con turnos rotativos y sólo puedo estudiar de noche.",
+        "¿Cuántas clases tiene?",
+        "Antes de seguir, ¿qué te había contado sobre mi disponibilidad?",
+        "Gracias, por ahora sigo averiguando."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Excel Integral",
+        "expected_vector_memory": "turnos rotativos",
+        "expected_vector_memory_recalled_after_turn": 3,
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "memory_02_presupuesto",
+      "name": "Recuerda restricción de presupuesto",
+      "course": "Marketing Digital",
+      "persona": { "type": "presupuesto_ajustado", "style": "cauteloso" },
+      "customer": { "first_name": "Beto", "last_name": "Luna", "email": "beto.memory02+{{run_id}}@example.test" },
+      "turns": [
+        "Quiero aprender Marketing Digital, pero tengo un presupuesto muy ajustado.",
+        "¿Qué incluye el curso?",
+        "¿Qué limitación mía tendrías que considerar antes de recomendarme cómo avanzar?",
+        "Perfecto, lo voy a pensar."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Marketing Digital",
+        "expected_vector_memory": "presupuesto muy ajustado",
+        "expected_vector_memory_recalled_after_turn": 3,
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "memory_03_modalidad",
+      "name": "Recuerda preferencia de atención",
+      "course": "Community Manager",
+      "persona": { "type": "prefiere_chat", "style": "amable" },
+      "customer": { "first_name": "Cami", "last_name": "Sosa", "email": "cami.memory03+{{run_id}}@example.test" },
+      "turns": [
+        "Me interesa Community Manager. Prefiero seguir por texto y sin llamadas.",
+        "¿Cuántas clases son?",
+        "¿Por qué canal te dije que prefiero seguir?",
+        "Buenísimo, después retomo."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Community Manager",
+        "expected_vector_memory": "prefiero seguir por texto",
+        "expected_vector_memory_recalled_after_turn": 3,
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true,
+        "no_call_after_turn": 1
+      }
+    },
+    {
+      "id": "memory_04_objecion_retoma",
+      "name": "Retoma una objeción personal",
+      "course": "Especialista en Ventas",
+      "persona": { "type": "sin_experiencia", "style": "inseguro" },
+      "customer": { "first_name": "Dario", "last_name": "Neri", "email": "dario.memory04+{{run_id}}@example.test" },
+      "turns": [
+        "Me interesa Especialista en Ventas, pero me preocupa no tener experiencia previa.",
+        "¿Cuántas clases tiene?",
+        "Retomando lo anterior, ¿qué preocupación personal te había mencionado?",
+        "Gracias, con eso ya puedo decidir más adelante."
+      ],
+      "ideal_result": {
+        "registered_contact": true,
+        "expected_interest": "Especialista en Ventas",
+        "expected_vector_memory": "no tener experiencia previa",
+        "expected_vector_memory_recalled_after_turn": 3,
+        "min_active_memories": 1,
+        "min_ready_memory_embeddings": 1,
+        "payment_link_count": 0,
+        "sheet_rows": 0,
+        "no_technical_fallback": true
+      }
+    }
+  ]
+}

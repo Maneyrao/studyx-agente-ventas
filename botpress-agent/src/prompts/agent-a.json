@@ -1,7 +1,7 @@
 {
   "agent": "A",
   "name": "StudyX Sales Advisor",
-  "prompt_version": "studyx-agent-a-sales-v16",
+  "prompt_version": "studyx-agent-a-sales-v17",
   "format": "behavioral-config-copy",
   "executable": false,
   "source_file": "src/prompts/agent-a-sales-bridge.ts",
@@ -21,12 +21,10 @@
   "decision_contract": {
     "schema_version": 4,
     "one_response_per_turn": true,
-    "allowed_business_actions": [
-      "mark_hot_lead",
-      "log_objection",
-      "request_call_now"
-    ],
-    "call_response_types": ["call_offer", "call_confirmation"],
+    "allowed_business_actions": [],
+    "action_authority": "backend_only",
+    "model_role": "interpret_and_write_only",
+    "call_response_types": [],
     "clarification_requires": [
       "response_type=clarification",
       "missing_information no vacío",

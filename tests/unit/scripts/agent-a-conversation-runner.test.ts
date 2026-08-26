@@ -10,8 +10,12 @@ import {
   validateSuiteCaseInvariants,
   type ConversationSuite,
 } from '../../../scripts/lib/agent-a-conversation-runner';
-import { createLocalTurnSender } from '../../../scripts/run-agent-a-conversations';
+import {
+  buildLocalProviderInstructions,
+  createLocalTurnSender,
+} from '../../../scripts/run-agent-a-conversations';
 import { AGENT_A_PROMPT_VERSION } from '../../../botpress-agent/src/prompts/agent-a-sales-bridge';
+import type { ClaimedTurn } from '../../../botpress-agent/src/schemas/contracts';
 
 const LOCAL_TRANSPORT_UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
 const LOCAL_TRANSPORT_NOW = '2026-08-21T12:00:00.000Z';
@@ -55,7 +59,7 @@ function localIngestResponse() {
   };
 }
 
-function localClaimedTurn() {
+function localClaimedTurn(): ClaimedTurn {
   return {
     outcome: 'claimed',
     trace_id: LOCAL_TRANSPORT_UUID,
@@ -98,6 +102,7 @@ function localClaimedTurn() {
     },
     sales_context: {
       mode: 'advising',
+      stage: 'exploring',
       course_of_interest: 'Redes Informáticas',
       offering_code: 'redes_informaticas',
       open_call_offer: null,
@@ -113,6 +118,7 @@ function localClaimedTurn() {
       academy: 'Tecnología',
       match: 'canonical',
     },
+    catalog_index: null,
     deterministic_route: 'greeting',
     diagnostics: {
       timings: {
@@ -142,6 +148,12 @@ afterEach(() => {
 });
 
 describe('Agent A conversation runner', () => {
+  it('uses the full prompt for Gemini and the compact prompt only for Groq', () => {
+    expect(buildLocalProviderInstructions('gemini', localClaimedTurn()))
+      .not.toContain('COMPACT_AGENT_A_V16');
+    expect(buildLocalProviderInstructions('groq', localClaimedTurn()))
+      .toContain('COMPACT_AGENT_A_V16');
+  });
   it('runs every turn in order and keeps the conversation id', async () => {
     const sendTurn = vi
       .fn()
@@ -186,7 +198,7 @@ describe('Agent A conversation runner', () => {
           responses: [{ type: 'text', text: 'Respuesta.' }],
           runtime: {
             git_sha: 'f7f2fcf', transport: 'local', provider: 'gemini', model: 'gemini-test',
-            prompt_version: 'studyx-agent-a-sales-v16', route_origin: 'advisory_model',
+            prompt_version: AGENT_A_PROMPT_VERSION, route_origin: 'advisory_model',
             route_reason: 'OPEN_CATALOG_REQUIRES_SALES_MODEL', raw_response_hash: 'a'.repeat(64),
             committed_response_hash: 'b'.repeat(64), fallback_reason: null,
           },
@@ -196,7 +208,7 @@ describe('Agent A conversation runner', () => {
     expect(result.runtime).toEqual(expect.objectContaining({
       git_sha: expect.stringMatching(/^[0-9a-f]{7,40}$/),
       transport: 'local', provider: expect.any(String), model: expect.any(String),
-      prompt_version: 'studyx-agent-a-sales-v16', route_origin: expect.any(String), route_reason: expect.any(String),
+      prompt_version: AGENT_A_PROMPT_VERSION, route_origin: expect.any(String), route_reason: expect.any(String),
     }));
     expect(result.runtime).not.toHaveProperty('transcript');
   });
@@ -243,6 +255,58 @@ describe('Agent A conversation runner', () => {
       authorizedUrls: ['https://buy.stripe.com/redes'],
       commitError: null,
     }]);
+  });
+
+  it('verifies that a semantic memory is actually recalled on a later turn', async () => {
+    const diagnostics = [
+      { selectedMemoryValues: [] },
+      { selectedMemoryValues: ['prefiero estudiar de noche'] },
+    ];
+    const result = await runConversationCase(
+      {
+        id: 'vector_recall',
+        name: 'Retoma una preferencia',
+        course: 'Excel Integral',
+        turns: ['Prefiero estudiar de noche.', '¿Qué opción me recomendás?'],
+        ideal_result: {
+          expected_vector_memory: 'estudiar de noche',
+          expected_vector_memory_recalled_after_turn: 2,
+        },
+      },
+      {
+        runId: 'run123',
+        sendTurn: vi.fn()
+          .mockResolvedValueOnce({
+            conversationId: 'conv-vector',
+            responses: [{ type: 'text', text: 'Lo tengo en cuenta.' }],
+            turnDiagnostic: {
+              catalogResolution: { kind: 'no_catalog_intent' },
+              selectedOfferingCode: null,
+              decisionBusinessAction: null,
+              authorizedProtectedFacts: [],
+              authorizedUrls: [],
+              commitError: null,
+              ...diagnostics[0],
+            },
+          })
+          .mockResolvedValueOnce({
+            conversationId: 'conv-vector',
+            responses: [{ type: 'text', text: 'Te recomiendo una opción compatible.' }],
+            turnDiagnostic: {
+              catalogResolution: { kind: 'no_catalog_intent' },
+              selectedOfferingCode: null,
+              decisionBusinessAction: null,
+              authorizedProtectedFacts: [],
+              authorizedUrls: [],
+              commitError: null,
+              ...diagnostics[1],
+            },
+          }),
+      },
+    );
+
+    expect(result.status).toBe('passed');
+    expect(result.checks.vector_memory_recalled).toBe(true);
   });
 
   it('persists an HTTP 422 commit rejection with its claim-time authority chain', async () => {
@@ -292,6 +356,7 @@ describe('Agent A conversation runner', () => {
         decisionBusinessAction: null,
         authorizedProtectedFacts: [],
         authorizedUrls: [],
+        selectedMemoryValues: [],
         commitError: {
           status: 422,
           error: 'DECISION_REJECTED',
@@ -1547,6 +1612,35 @@ describe('Agent A conversation runner', () => {
         'turn_assertions_length_mismatch:case_1:1:4',
       ]));
     });
+
+    it('requires vector recall assertions to name a memory and a valid later turn', () => {
+      const missingMemory: ConversationSuite = {
+        schema_version: '1.0',
+        prompt_version: AGENT_A_PROMPT_VERSION,
+        suite: 'missing-vector-memory',
+        cases: [baseCase({
+          ideal_result: { expected_vector_memory_recalled_after_turn: 3 },
+        })],
+      };
+      const invalidTurn: ConversationSuite = {
+        schema_version: '1.0',
+        prompt_version: AGENT_A_PROMPT_VERSION,
+        suite: 'invalid-vector-turn',
+        cases: [baseCase({
+          ideal_result: {
+            expected_vector_memory: 'turnos rotativos',
+            expected_vector_memory_recalled_after_turn: 5,
+          },
+        })],
+      };
+
+      expect(validateSuiteCaseInvariants(missingMemory)).toContain(
+        'vector_recall_memory_missing:case_1',
+      );
+      expect(validateSuiteCaseInvariants(invalidTurn)).toContain(
+        'vector_recall_turn_out_of_range:case_1:5',
+      );
+    });
   });
 
   describe('35 + 15 regression composition evidence', () => {
@@ -1782,6 +1876,23 @@ describe('Agent A conversation runner', () => {
 
       expect(result.status).toBe('failed');
       expect(result.failures).toContain('turn_3_unsupported_availability_claim:desarrollo_web');
+    });
+  });
+
+  describe('the dedicated vector-memory suite', () => {
+    it('keeps semantic recall separate from canonical commercial state', () => {
+      const suite = JSON.parse(readFileSync(resolve(
+        __dirname,
+        '../../../botpress-agent/evals/personas/studyx-vector-memory-v1.json',
+      ), 'utf8')) as ConversationSuite;
+
+      expect(suite.prompt_version).toBe(AGENT_A_PROMPT_VERSION);
+      expect(suite.cases).toHaveLength(4);
+      expect(validateSuiteCaseInvariants(suite)).toEqual([]);
+      expect(suite.cases.every((testCase) => (
+        Boolean(testCase.ideal_result.expected_vector_memory)
+        && Boolean(testCase.ideal_result.expected_vector_memory_recalled_after_turn)
+      ))).toBe(true);
     });
   });
 });
