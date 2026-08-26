@@ -70,6 +70,21 @@ export type AgentChatResult = {
   turnDiagnostic?: AgentTurnDiagnostic;
   /** Delay inserted only by the evaluator to respect shared provider quota. */
   evaluationPacingMs?: number;
+  runtime?: AgentRuntimeEvidence;
+};
+
+export type AgentRuntimeEvidence = {
+  git_sha: string;
+  transport: 'local' | string;
+  provider: string;
+  model: string;
+  prompt_version: string;
+  route_origin: string;
+  route_reason: string;
+  raw_response_hash: string | null;
+  committed_response_hash: string | null;
+  fallback_reason: string | null;
+  latencies_ms?: Record<string, number>;
 };
 
 export type TurnQualityAssertion = {
@@ -157,6 +172,7 @@ export type ConversationCaseResult = {
   turn_diagnostics: Array<AgentTurnDiagnostic | null>;
   checks: Record<string, unknown>;
   failures: string[];
+  runtime?: AgentRuntimeEvidence;
 };
 
 function diagnosticFromError(error: unknown): AgentTurnDiagnostic | null {
@@ -557,6 +573,7 @@ export async function runConversationCase(
   const authorizedUrlsByTurn: Array<readonly string[] | null> = [];
   const commercialEvidenceByTurn: Array<AgentCommercialEvidence | undefined> = [];
   const turnDiagnostics: Array<AgentTurnDiagnostic | null> = [];
+  let runtime: AgentRuntimeEvidence | undefined;
   let conversationId: string | null = null;
 
   for (const [index, rawTurn] of testCase.turns.entries()) {
@@ -591,6 +608,7 @@ export async function runConversationCase(
       authorizedUrlsByTurn[index] = result.authorizedUrls ? [...result.authorizedUrls] : null;
       commercialEvidenceByTurn[index] = result.commercialEvidence;
       turnDiagnostics[index] = result.turnDiagnostic ?? null;
+      runtime ??= result.runtime;
       if (urls.length > 0 && !result.authorizedUrls) {
         failures.push(`turn_${index + 1}_authorized_url_evidence_missing`);
       } else if (result.authorizedUrls) {
@@ -860,6 +878,7 @@ export async function runConversationCase(
     turn_diagnostics: turnDiagnostics,
     checks,
     failures,
+    ...(runtime ? { runtime } : {}),
   };
 }
 

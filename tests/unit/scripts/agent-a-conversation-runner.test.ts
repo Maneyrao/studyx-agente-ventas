@@ -176,6 +176,31 @@ describe('Agent A conversation runner', () => {
     ]);
   });
 
+  it('records runtime parity evidence without transcript or PII fields', async () => {
+    const result = await runConversationCase(
+      { id: 'runtime_evidence', name: 'Runtime', course: 'Curso Test', turns: ['Hola'], ideal_result: {} },
+      {
+        runId: 'run123',
+        sendTurn: vi.fn().mockResolvedValue({
+          conversationId: 'conv-runtime',
+          responses: [{ type: 'text', text: 'Respuesta.' }],
+          runtime: {
+            git_sha: 'f7f2fcf', transport: 'local', provider: 'gemini', model: 'gemini-test',
+            prompt_version: 'studyx-agent-a-sales-v16', route_origin: 'advisory_model',
+            route_reason: 'OPEN_CATALOG_REQUIRES_SALES_MODEL', raw_response_hash: 'a'.repeat(64),
+            committed_response_hash: 'b'.repeat(64), fallback_reason: null,
+          },
+        }),
+      },
+    );
+    expect(result.runtime).toEqual(expect.objectContaining({
+      git_sha: expect.stringMatching(/^[0-9a-f]{7,40}$/),
+      transport: 'local', provider: expect.any(String), model: expect.any(String),
+      prompt_version: 'studyx-agent-a-sales-v16', route_origin: expect.any(String), route_reason: expect.any(String),
+    }));
+    expect(result.runtime).not.toHaveProperty('transcript');
+  });
+
   it('persists the successful turn authority chain beside the transcript', async () => {
     const result = await runConversationCase(
       {

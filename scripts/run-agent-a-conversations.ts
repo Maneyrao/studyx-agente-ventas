@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -261,6 +261,9 @@ export function createLocalTurnSender(
   modelProvider: 'groq' | 'gemini',
   minimumModelIntervalMs: number,
 ) {
+  const gitSha = process.env.GIT_COMMIT_SHA
+    ?? process.env.VERCEL_GIT_COMMIT_SHA
+    ?? execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   const turnCounters = new Map<string, number>();
   let previousModelStartedAt: number | null = minimumModelIntervalMs > 0 ? Date.now() : null;
 
@@ -337,6 +340,7 @@ export function createLocalTurnSender(
     let decision: Decision;
     let provider: 'botpress' | 'groq-direct' | 'google-ai-direct';
     let decisionModel: string;
+    let fallbackReason: string | null = null;
     if (commercialRoute.kind !== 'model_required') {
       decision = commercialRoute.decision;
       provider = 'botpress';
@@ -384,6 +388,7 @@ export function createLocalTurnSender(
         decisionModel = generated.model;
       } catch (error) {
         const errorCode = error instanceof Error ? error.message.slice(0, 128) : 'UNKNOWN';
+        fallbackReason = errorCode;
         console.error(`  proveedor local falló: ${errorCode}`);
         decision = technicalFallback();
         provider = modelProvider === 'gemini' ? 'google-ai-direct' : 'groq-direct';
@@ -437,6 +442,20 @@ export function createLocalTurnSender(
         committed.outbound?.authorized_egress.protected_facts ?? [],
       authorizedUrls: committed.outbound?.authorized_egress.authorized_urls ?? [],
     };
+    const runtimeBase = {
+      git_sha: gitSha,
+      transport: 'local' as const,
+      provider,
+      model: decisionModel,
+      prompt_version: AGENT_A_PROMPT_VERSION,
+      route_origin: commercialRoute.origin,
+      route_reason: commercialRoute.reason,
+      raw_response_hash: decision.response === null
+        ? null
+        : createHash('sha256').update(decision.response).digest('hex'),
+      fallback_reason: fallbackReason,
+      latencies_ms: {},
+    };
     const commercialEvidence: NonNullable<AgentChatResult['commercialEvidence']> = {
       catalogResolution: claimed.catalog_resolution,
       snapshotOfferings: (claimed.business_context?.offerings ?? []).map((offering) => ({
@@ -459,6 +478,7 @@ export function createLocalTurnSender(
         responses: [],
         commercialEvidence,
         turnDiagnostic,
+        runtime: { ...runtimeBase, committed_response_hash: null },
         evaluationPacingMs,
       };
     }
@@ -492,6 +512,7 @@ export function createLocalTurnSender(
         responses: [],
         commercialEvidence,
         turnDiagnostic,
+        runtime: { ...runtimeBase, committed_response_hash: null },
         evaluationPacingMs,
       };
     }
@@ -501,6 +522,10 @@ export function createLocalTurnSender(
       authorizedUrls: [...committed.outbound.authorized_egress.authorized_urls],
       commercialEvidence,
       turnDiagnostic,
+      runtime: {
+        ...runtimeBase,
+        committed_response_hash: createHash('sha256').update(committed.outbound.content).digest('hex'),
+      },
       evaluationPacingMs,
     };
   };
