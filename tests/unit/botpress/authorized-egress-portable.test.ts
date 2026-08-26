@@ -127,4 +127,24 @@ describe('portable authorized egress verifier', () => {
       reason: 'UNAUTHORIZED_PROTECTED_FACT',
     });
   });
+
+  it('accepts the backend-authorized deterministic course-discovery copy', async () => {
+    const content = [
+      'Te cuento sobre Marketing Digital.',
+      'El curso de Marketing Digital tiene 16 clases.',
+      'La modalidad de Marketing Digital es online.',
+      'Si querés, podemos coordinar una llamada ahora con nuestra asesora virtual; si preferís, seguimos por chat.',
+      '¿Cómo querés avanzar?',
+    ].join(' ');
+    const manifest = buildAuthorizedEgress({
+      content,
+      authorized_urls: [],
+      protected_facts: [
+        { kind: 'duration', value: '16 clases' },
+        { kind: 'modality', value: 'online' },
+      ],
+    });
+
+    await expect(verifyAuthorizedEgressPortable({ content, manifest })).resolves.toEqual({ ok: true });
+  });
 });

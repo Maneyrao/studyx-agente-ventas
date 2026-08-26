@@ -143,7 +143,7 @@ const ALTERNATIVES_REQUEST_PATTERN =
   /\b(?:(?:lo|el|la) mas parecid[oa]|mas parecido que (?:tienen|ofrecen|haya|tengan)|algo (?:parecido|similar|asi)|alguna alternativa|que alternativas?|opciones (?:parecidas|similares)|que otr[oa]s? (?:cursos?|cosas?|opciones?) (?:tienen|ofrecen|hay))\b/u
 
 const CATALOG_NAVIGATION_PATTERN =
-  /\b(?:(?:que|cuales) (?:cursos?|diplomados?|capacitaciones?|programas?) (?:tienen|ofrecen|hay)|mostrar?me (?:los )?(?:cursos?|diplomados?|catalogo)|catalogo|oferta academica)\b/u
+  /\b(?:(?:que|cuales) (?:cursos?|diplomados?|capacitaciones?|programas?) (?:tienen|tenes|tienes|ofrecen|hay)(?: disponibles?)?|(?:quiero|quisiera|me gustaria) (?:conocer|ver|saber)(?: cuales son)? (?:los )?(?:cursos?|diplomados?|capacitaciones?|programas?)(?: disponibles?)?|mostrar?me (?:los )?(?:cursos?|diplomados?|catalogo)|catalogo|oferta academica)\b/u
 
 const UNAVAILABLE_REASON_CODES: Readonly<Record<
   Extract<CatalogResolution, { kind: 'unavailable' }>['reason'],

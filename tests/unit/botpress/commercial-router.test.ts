@@ -1295,6 +1295,58 @@ describe('routeCommercialTurn', () => {
       expect(response.match(/\?/gu) ?? []).toHaveLength(1);
     });
 
+    it('recognizes the Rioplatense generic catalog phrasing used in chat', () => {
+      const route = routeCommercialTurn({
+        automationEnabled: true,
+        claimed: claimedTurn({
+          texts: ['¿Qué cursos tenés disponibles?'],
+          courseOfInterest: null,
+          offeringCode: null,
+          offerings: navigationOfferings,
+          catalogResolution: {
+            kind: 'not_found',
+            requestedText: '¿Qué cursos tenés disponibles?',
+            requestedArea: null,
+            alternativeCodes: [],
+          },
+        }),
+      });
+
+      expectDecisionRoute(route);
+      expect(route).toMatchObject({
+        kind: 'deterministic',
+        origin: 'catalog_navigation',
+        reason: 'DETERMINISTIC_CATALOG_NAVIGATION',
+      });
+      expect(route.decision.response).toMatch(/Marketing.*Tecnología/u);
+    });
+
+    it('recognizes a customer asking to discover the available courses', () => {
+      const text = 'Hola, quiero conocer los cursos disponibles';
+      const route = routeCommercialTurn({
+        automationEnabled: true,
+        claimed: claimedTurn({
+          texts: [text],
+          courseOfInterest: null,
+          offeringCode: null,
+          offerings: navigationOfferings,
+          catalogResolution: {
+            kind: 'not_found',
+            requestedText: text,
+            requestedArea: null,
+            alternativeCodes: [],
+          },
+        }),
+      });
+
+      expectDecisionRoute(route);
+      expect(route).toMatchObject({
+        kind: 'deterministic',
+        origin: 'catalog_navigation',
+        reason: 'DETERMINISTIC_CATALOG_NAVIGATION',
+      });
+    });
+
     it('lists at most three canonical offerings for a requested area', () => {
       const route = routeCommercialTurn({
         automationEnabled: true,
