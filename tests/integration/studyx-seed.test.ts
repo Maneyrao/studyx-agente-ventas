@@ -9,6 +9,7 @@ afterAll(async () => db?.end());
 
 const WS = 'studyx';
 const SEED_PATH = resolve(__dirname, '../../supabase/seed/studyx.sql');
+const MANUAL_SEED_PATH = resolve(__dirname, '../../supabase/seed/studyx-manual.sql');
 
 // code -> classes, from the task brief's table B.2. Sorted keys documented as
 // the exact set of 14 offerings that must exist for this workspace.
@@ -66,6 +67,13 @@ run('seed studyx (production)', () => {
   beforeAll(async () => {
     const seedSql = readFileSync(SEED_PATH, 'utf8');
     await db!.unsafe(seedSql);
+  });
+
+  // This suite deliberately exercises the legacy base seed. Restore the
+  // canonical manual overlay when it finishes so the shared, serial test
+  // database has one deterministic post-suite state regardless of file order.
+  afterAll(async () => {
+    await db!.unsafe(readFileSync(MANUAL_SEED_PATH, 'utf8'));
   });
 
   it('crea el workspace studyx en environment production', async () => {

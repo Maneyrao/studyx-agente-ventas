@@ -116,7 +116,7 @@ for migration_file in supabase/migrations/*.sql; do
 done
 
 if [[ "${SEED}" == "--seed" ]]; then
-  psql_run -f supabase/seed/dev.sql >/dev/null
+  psql_run -f supabase/seed.sql >/dev/null
 fi
 
 table_count="$(psql_run -tAc "SELECT count(*) FROM pg_tables WHERE schemaname = 'public';")"

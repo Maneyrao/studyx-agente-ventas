@@ -39,7 +39,9 @@ for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
   console.log(`[db-reset-loop] attempt ${attempt}/${ATTEMPTS}`);
   const result = spawnSync(
     'supabase',
-    ['db', 'reset', '--local', '--no-seed', '--yes'],
+    // `supabase/seed.sql` is the canonical ordered entrypoint. Omitting it
+    // would prove only migrations, not the catalog state Agent A actually uses.
+    ['db', 'reset', '--local', '--yes'],
     { cwd: process.cwd(), stdio: 'inherit', shell: false }
   );
 
