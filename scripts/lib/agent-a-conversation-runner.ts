@@ -135,8 +135,11 @@ export type ConversationCase = {
     no_technical_fallback?: boolean;
     /** Require durable evidence that this emulator conversation created its own contact. */
     registered_contact?: boolean;
-    /** Commercial interest that must survive as active structured memory. */
+    /** Canonical commercial interest that must survive in sales_context_states. */
     expected_interest?: string;
+    /** Non-canonical preference/constraint/objection that must survive in
+     * selected_memories and be retrievable through its vector embedding. */
+    expected_vector_memory?: string;
     /** Canonical catalog label required specifically in the operator sheet. */
     expected_sheet_interest?: string;
     min_active_memories?: number;

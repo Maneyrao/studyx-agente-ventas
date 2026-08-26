@@ -24,6 +24,14 @@ export type PersistenceEvidence = {
   sheetRows: SheetEvidence[];
   promptVersions: string[];
   technicalFallbacks: number;
+  /** Canonical sales memory. Course and payment plan authority lives here,
+   * never in semantic/vector memory. */
+  salesContext?: {
+    offeringCode: string | null;
+    offeringName: string | null;
+    paymentPlan: string | null;
+    stage: string | null;
+  } | null;
   /** Values read back from durable, run-correlated rows. The sandbox identity
    * is created as `eval:<runId>:<caseId>` by the local evaluator. */
   runScope?: {
@@ -63,12 +71,28 @@ export function evaluatePersistenceEvidence(
   const expectedInterest = typeof expected.expected_interest === 'string'
     ? expected.expected_interest
     : null;
+  const expectedVectorMemory = typeof expected.expected_vector_memory === 'string'
+    ? expected.expected_vector_memory
+    : null;
   const expectedSheetInterest = typeof expected.expected_sheet_interest === 'string'
     ? expected.expected_sheet_interest
     : expectedInterest;
-  const interestPersisted = expectedInterest === null || evidence.activeMemoryValues.some((value) =>
-    normalized(value).includes(normalized(expectedInterest)),
-  );
+  const structuredInterestPersisted = expectedInterest !== null
+    && evidence.salesContext?.offeringName !== null
+    && evidence.salesContext?.offeringName !== undefined
+    && normalized(evidence.salesContext.offeringName).includes(normalized(expectedInterest));
+  const semanticInterestPersisted = expectedInterest !== null
+    && evidence.activeMemoryValues.some((value) =>
+      normalized(value).includes(normalized(expectedInterest)),
+    );
+  const interestPersisted = expectedInterest === null
+    || structuredInterestPersisted
+    || semanticInterestPersisted;
+  const vectorMemoryPersisted = expectedVectorMemory === null
+    || evidence.activeMemoryValues.some((value) =>
+      normalized(value).includes(normalized(expectedVectorMemory)),
+    );
+  const vectorMemoryRequired = expectedVectorMemory !== null || !structuredInterestPersisted;
   const minimumMemories = typeof expected.min_active_memories === 'number'
     ? expected.min_active_memories
     : 0;
@@ -168,12 +192,13 @@ export function evaluatePersistenceEvidence(
     failures.push('decision_trace_ids_missing');
   }
   if (!interestPersisted) failures.push('expected_interest_not_persisted');
-  if (evidence.activeMemoryValues.length < minimumMemories) {
+  if (!vectorMemoryPersisted) failures.push('expected_vector_memory_not_persisted');
+  if (vectorMemoryRequired && evidence.activeMemoryValues.length < minimumMemories) {
     failures.push(
       `expected_active_memories_at_least_${minimumMemories}_got_${evidence.activeMemoryValues.length}`,
     );
   }
-  if (evidence.readyMemoryEmbeddings < minimumReadyEmbeddings) {
+  if (vectorMemoryRequired && evidence.readyMemoryEmbeddings < minimumReadyEmbeddings) {
     failures.push(
       `expected_ready_memory_embeddings_at_least_${minimumReadyEmbeddings}_got_${evidence.readyMemoryEmbeddings}`,
     );
@@ -184,6 +209,9 @@ export function evaluatePersistenceEvidence(
   if (expected.plan_code && evidence.sheetRows.length > 0) {
     const planMatches = evidence.sheetRows.every((row) => row.plan === expected.plan_code);
     if (!planMatches) failures.push('sheet_plan_mismatch');
+  }
+  if (expected.plan_code && evidence.salesContext?.paymentPlan !== expected.plan_code) {
+    failures.push('sales_context_plan_mismatch');
   }
 
   // The operator sheet is the deliverable: a buyer row must carry the
@@ -244,6 +272,12 @@ export function evaluatePersistenceEvidence(
       active_memories: evidence.activeMemoryValues.length,
       ready_memory_embeddings: evidence.readyMemoryEmbeddings,
       expected_interest_persisted: interestPersisted,
+      vector_memory_required: vectorMemoryRequired,
+      expected_vector_memory_persisted: vectorMemoryPersisted,
+      sales_context_course: evidence.salesContext?.offeringName ?? null,
+      sales_context_offering_code: evidence.salesContext?.offeringCode ?? null,
+      sales_context_plan: evidence.salesContext?.paymentPlan ?? null,
+      sales_context_stage: evidence.salesContext?.stage ?? null,
       sheet_rows: evidence.sheetRows.length,
       sheet_evidence: evidence.sheetRows,
       sheet_identity_projected: sheetIdentityProjected,

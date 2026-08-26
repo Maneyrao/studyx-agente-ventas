@@ -47,6 +47,12 @@ function completeEvidence() {
     }],
     promptVersions: ['studyx-agent-a-sales-v11'],
     technicalFallbacks: 0,
+    salesContext: {
+      offeringCode: 'excel_integral',
+      offeringName: 'Excel Integral',
+      paymentPlan: 'monthly_12',
+      stage: 'plan_selected',
+    },
     runScope: {
       sandboxExternalUserId: `eval:${RUN_ID}:real_01`,
       externalConversationId: `local-eval-${RUN_ID}-conversation-1`,
@@ -61,6 +67,63 @@ function completeEvidence() {
 }
 
 describe('Agent A durable conversation evidence', () => {
+  it('uses structured sales context as authority for course and plan without requiring a vector embedding', () => {
+    const evidence = {
+      ...completeEvidence(),
+      activeMemoryValues: [],
+      readyMemoryEmbeddings: 0,
+    };
+
+    const result = evaluatePersistenceEvidence(buyerCase(), evidence, { runId: RUN_ID });
+
+    expect(result.failures).toEqual([]);
+    expect(result.checks).toMatchObject({
+      expected_interest_persisted: true,
+      sales_context_course: 'Excel Integral',
+      sales_context_plan: 'monthly_12',
+      vector_memory_required: false,
+    });
+  });
+
+  it('still requires vector memory when the case explicitly expects a semantic preference', () => {
+    const testCase = {
+      ...buyerCase(),
+      ideal_result: {
+        ...buyerCase().ideal_result,
+        min_active_memories: 1,
+        min_ready_memory_embeddings: 1,
+        expected_vector_memory: 'solo puede estudiar los sábados',
+      },
+    };
+    const evidence = {
+      ...completeEvidence(),
+      activeMemoryValues: [],
+      readyMemoryEmbeddings: 0,
+    };
+
+    const result = evaluatePersistenceEvidence(testCase, evidence, { runId: RUN_ID });
+
+    expect(result.failures).toEqual(expect.arrayContaining([
+      'expected_vector_memory_not_persisted',
+      'expected_active_memories_at_least_1_got_0',
+      'expected_ready_memory_embeddings_at_least_1_got_0',
+    ]));
+  });
+
+  it('fails when the selected payment plan is absent from structured sales context', () => {
+    const evidence = {
+      ...completeEvidence(),
+      salesContext: {
+        ...completeEvidence().salesContext,
+        paymentPlan: null,
+      },
+    };
+
+    const result = evaluatePersistenceEvidence(buyerCase(), evidence, { runId: RUN_ID });
+
+    expect(result.failures).toContain('sales_context_plan_mismatch');
+  });
+
   it('accepts a distinct sandbox contact with complete turn, memory, identity and projection evidence', () => {
     const result = evaluatePersistenceEvidence(buyerCase(), completeEvidence(), { runId: RUN_ID });
 

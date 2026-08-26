@@ -694,10 +694,11 @@ async function main() {
         sheetRows: [],
         promptVersions: [],
         technicalFallbacks: 0,
+        salesContext: null,
       }, { runId });
     }
 
-    const [counts, memories, sheetRows, versions] = await Promise.all([
+    const [counts, memories, sheetRows, versions, salesContexts] = await Promise.all([
       db<Array<{
         inbound: number;
         outbound: number;
@@ -746,6 +747,24 @@ async function main() {
         JOIN messages AS m ON m.id = ad.turn_id
         WHERE m.conversation_id = ${identity.conversation_id}::uuid
         ORDER BY ad.prompt_version
+      `,
+      db<Array<{
+        offering_code: string | null;
+        offering_name: string | null;
+        payment_plan: string | null;
+        stage: string;
+      }>>`
+        SELECT
+          sc.selected_offering_code AS offering_code,
+          o.display_name AS offering_name,
+          sc.selected_payment_plan AS payment_plan,
+          sc.stage
+        FROM sales_context_states AS sc
+        LEFT JOIN offerings AS o
+          ON o.workspace_id = sc.workspace_id
+         AND o.code = sc.selected_offering_code
+        WHERE sc.contact_id = ${identity.contact_id}::uuid
+        LIMIT 1
       `,
     ]);
     const [sandboxRows, turnEvidence] = await Promise.all([
@@ -797,6 +816,12 @@ async function main() {
       decisions: count.decisions,
       decisionsWithTrace: count.decisions_with_trace,
       technicalFallbacks: count.technical_fallbacks,
+      salesContext: salesContexts[0] ? {
+        offeringCode: salesContexts[0].offering_code,
+        offeringName: salesContexts[0].offering_name,
+        paymentPlan: salesContexts[0].payment_plan,
+        stage: salesContexts[0].stage,
+      } : null,
       activeMemoryValues: memories.map((item) => item.value_normalized),
       readyMemoryEmbeddings: memories.filter((item) => item.embedding_state === 'ready').length,
       sheetRows: sheetRows.map((row) => ({
