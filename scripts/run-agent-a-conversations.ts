@@ -153,7 +153,7 @@ async function loadLocalCredentials(primaryProvider: 'groq' | 'gemini'): Promise
   };
 
   return {
-    apiBaseUrl: 'http://127.0.0.1:3000',
+    apiBaseUrl: localApiBaseUrl(),
     orchestratorKey: value('STUDYX_ORCHESTRATOR_KEY', ['ORCHESTRATOR_API_KEY']),
     orchestratorKeyId: process.env.ORCHESTRATOR_KEY_ID ?? envFile.ORCHESTRATOR_KEY_ID ?? 'botpress-dev',
     signingSecret: value('STUDYX_SIGNING_SECRET'),
@@ -169,6 +169,26 @@ async function loadLocalCredentials(primaryProvider: 'groq' | 'gemini'): Promise
       ?? (primaryProvider === 'groq' ? argument('--model') : null)
       ?? DEFAULT_GROQ_MODEL,
   };
+}
+
+/** A local evaluator must never be pointed at a deployed API by accident. */
+function localApiBaseUrl(): string {
+  const raw = argument('--api-base-url') ?? 'http://127.0.0.1:3000';
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error('INVALID_LOCAL_API_BASE_URL');
+  }
+  if (
+    url.protocol !== 'http:'
+    || !['127.0.0.1', 'localhost'].includes(url.hostname)
+    || !url.port
+    || url.pathname !== '/'
+  ) {
+    throw new Error('REFUSING_NON_LOCAL_API_BASE_URL');
+  }
+  return url.toString();
 }
 
 async function localSignedJson<T>(input: {
@@ -260,6 +280,7 @@ export function createLocalTurnSender(
   runId: string,
   modelProvider: 'groq' | 'gemini',
   minimumModelIntervalMs: number,
+  skipPostTurnCrons = false,
 ) {
   const gitSha = process.env.GIT_COMMIT_SHA
     ?? process.env.VERCEL_GIT_COMMIT_SHA
@@ -493,7 +514,11 @@ export function createLocalTurnSender(
             parse: (value) => DeliveryReportResponseSchema.parse(value),
           });
         },
-        afterSubmitted: () => flushLocalPostTurn(credentials, traceId),
+        // Evals must opt in to queue drains: payment projection could otherwise
+        // reach a real Sheets destination while validating a local database.
+        afterSubmitted: skipPostTurnCrons
+          ? async () => undefined
+          : () => flushLocalPostTurn(credentials, traceId),
       });
     } catch (error) {
       throw withTurnDiagnostic(error, turnDiagnostic);
@@ -591,6 +616,7 @@ async function main() {
         runId,
         localModelProvider,
         minimumTurnIntervalMs,
+        process.argv.includes('--skip-post-turn-crons'),
       )
     : sendAdkTurn;
   const verifyDatabase = process.argv.includes('--verify-db');
