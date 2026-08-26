@@ -15,7 +15,8 @@
     "test:agent-a": "tsx scripts/run-agent-a-conversations.ts",
     "test:db:reset-loop": "node scripts/verify-db-reset-loop.mjs",
     "test:db:lint": "supabase db lint --local --level error --fail-on error",
-    "test:db:invariants": "supabase test db"
+    "test:db:invariants": "supabase test db",
+    "release:manifest": "node scripts/generate-release-manifest.mjs"
   },
   "dependencies": {
     "googleapis": "^176.0.0",
