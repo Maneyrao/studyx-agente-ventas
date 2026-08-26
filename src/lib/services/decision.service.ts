@@ -19,6 +19,8 @@ import {
   type SheetsProjectionConfig,
 } from '@/lib/config';
 import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
+import { PostgresSalesContextStore } from '@/features/sales/adapters/postgres-sales-context-store';
+import { isSalesPaymentPlan } from '@/features/sales/domain/sales-context';
 import { materializePaymentLinkAction } from '@/features/payments/application/materialize-payment-link-action';
 import { createConfigPaymentLinkResolver } from '@/features/payments/adapters/config-payment-link.resolver';
 import { PAYMENT_PLAN_PRESENTATIONS } from '@/features/payments/domain/payment-link';
@@ -847,6 +849,36 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           ON CONFLICT (decision_id) DO NOTHING
         `;
       }
+    }
+
+    // Persist business identity independently from vector memory. This runs in
+    // the same serializable decision transaction, so an outbound/decision can
+    // never claim a course or payment transition that failed to become durable.
+    const requestedPayment = decision.schema_version === 4
+      && decision.business_action?.type === 'send_payment_link'
+      ? decision.business_action
+      : null;
+    const selectedOfferingCode = requestedPayment?.offering_sku
+      ?? validatedInput.authorized_offering_code
+      ?? null;
+    const selectedPlan = requestedPayment && isSalesPaymentPlan(requestedPayment.plan_code)
+      ? requestedPayment.plan_code
+      : null;
+    if (selectedOfferingCode !== null || selectedPlan !== null) {
+      const stage = requestedPayment && committedBusinessAction?.type === 'send_payment_link'
+        ? 'payment_link_sent'
+        : selectedPlan !== null
+          ? 'plan_selected'
+          : 'course_selected';
+      await new PostgresSalesContextStore(db).transition({
+        workspace_slug: loadBusinessWorkspaceConfig().workspaceSlug,
+        contact_id: turn.contact_id,
+        conversation_id: turn.conversation_id,
+        source_turn_id: turn.id,
+        selected_offering_code: selectedOfferingCode,
+        selected_payment_plan: selectedPlan,
+        stage,
+      });
     }
 
     await auditLog({

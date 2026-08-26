@@ -1,5 +1,6 @@
 import { evaluateTurnPolicy, type TurnPolicy } from '../domain/turn-policy';
 import type { BusinessContextView, CatalogIndexView } from '../domain/business-context';
+import type { SalesContextState } from '@/features/sales/domain/sales-context';
 import {
   isCatalogRequestNeutral,
   resolveCatalogRequest,
@@ -66,6 +67,8 @@ export interface ClaimBatchDependencies {
     loadCompleteIndex?(): Promise<CatalogIndexView | null>;
     loadByCode?(code: string): Promise<BusinessContextView | null>;
   };
+  /** Durable commercial state. It outranks history/vector but not this batch. */
+  readonly sales?: { load(contactId: string): Promise<SalesContextState | null> };
 }
 
 export interface ContextLimits {
@@ -115,6 +118,7 @@ export interface ClaimBatchInput {
  */
 export interface ClaimedSalesContext {
   readonly mode: 'advising' | 'awaiting_call_consent' | 'call_pending' | 'in_call' | 'post_call';
+  readonly stage: SalesContextState['stage'];
   readonly course_of_interest: string | null;
   /** Stable catalog identity; display names are not unique across academies. */
   readonly offering_code: string | null;
@@ -369,6 +373,7 @@ function buildSalesContext(input: {
       openCallOffer,
       lastCallResult: input.callFacts.last_call_result,
     }),
+    stage: 'exploring',
     course_of_interest: null,
     offering_code: null,
     open_call_offer: openCallOffer,
@@ -559,16 +564,18 @@ export async function claimBatch(
   let business_context: BusinessContextView | null = null;
   let business_context_available = false;
   let catalog_index: CatalogIndexView | null = null;
+  let persisted_sales_context: SalesContextState | null = null;
   const businessTask = (async () => {
     if (!policy.may_respond || optOutAcknowledgementOnly || !deps.business) return;
     counters.business_snapshot_calls += 1;
     const businessStartedAt = monotonicNow();
     try {
-      const [contextResult, indexResult] = await Promise.all([
+      const [contextResult, indexResult, salesContextResult] = await Promise.all([
         deps.business.load(),
         deps.business.loadCompleteIndex
           ? (counters.catalog_calls += 1, deps.business.loadCompleteIndex())
           : Promise.resolve(null),
+        deps.sales ? deps.sales.load(facts.contact.id) : Promise.resolve(null),
       ]);
       business_context = contextResult;
       // Compatibility fallback preserves the old producer's explicit
@@ -577,6 +584,7 @@ export async function claimBatch(
       catalog_index = indexResult ?? (
         contextResult !== null ? indexFromBusinessContext(contextResult) : null
       );
+      persisted_sales_context = salesContextResult;
       business_context_available = business_context !== null;
       if (business_context === null) {
         log('orchestration.claim.business_context_missing', {
@@ -792,16 +800,29 @@ export async function claimBatch(
       });
     }
   }
+  const currentSelection = deriveCourseSelection({
+    current: catalog_resolution,
+    currentMessageTexts: batchMessages
+      .filter((message) => message.message_type === 'text')
+      .map((message) => message.content),
+    recentTurns: facts.recent_turns,
+    catalogIndex: catalog_index,
+  });
+  // Assigned in the joined commercial-context task; make that async boundary
+  // explicit to TypeScript without changing the runtime ordering.
+  const persistedState = persisted_sales_context as SalesContextState | null;
+  const persistedOffering = persistedState?.selected_offering_code ?? null;
+  const resolvedCatalogIndex = catalog_index as CatalogIndexView | null;
+  const persistedDisplayName = persistedOffering === null
+    ? null
+    : resolvedCatalogIndex?.offerings.find((offering) => offering.code === persistedOffering)?.display_name ?? null;
+  const selection = currentSelection.offering_code === null && persistedOffering !== null
+    ? { course_of_interest: persistedDisplayName, offering_code: persistedOffering }
+    : currentSelection;
   const salesContext: ClaimedSalesContext = {
     ...initialSalesContext,
-    ...deriveCourseSelection({
-      current: catalog_resolution,
-      currentMessageTexts: batchMessages
-        .filter((message) => message.message_type === 'text')
-        .map((message) => message.content),
-      recentTurns: facts.recent_turns,
-      catalogIndex: catalog_index,
-    }),
+    stage: persistedState?.stage ?? initialSalesContext.stage,
+    ...selection,
   };
   timings.claim_total_ms = Math.max(0, monotonicNow() - claimStartedAt);
 

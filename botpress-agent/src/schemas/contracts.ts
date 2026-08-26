@@ -352,6 +352,10 @@ export const KnowledgeItemSchema = z.object({
  */
 export const SalesContextSchema = z.object({
   mode: z.enum(['advising', 'awaiting_call_consent', 'call_pending', 'in_call', 'post_call']),
+  stage: z.enum([
+    'exploring', 'qualified', 'course_selected', 'plan_selected',
+    'payment_link_sent', 'handoff', 'closed',
+  ]).default('exploring'),
   course_of_interest: z.string().nullable(),
   offering_code: z.string().nullable().default(null),
   open_call_offer: z

@@ -165,6 +165,7 @@ describe('claim response parity', () => {
   it('declares sales_context, the bounded call context handed to Agent A on every claim', () => {
     const salesContextSample: ClaimedTurn['sales_context'] = {
       mode: 'advising',
+      stage: 'exploring',
       course_of_interest: null,
       offering_code: null,
       open_call_offer: null,

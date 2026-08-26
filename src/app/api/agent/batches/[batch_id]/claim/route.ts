@@ -12,6 +12,7 @@ import {
   queryEmbedder,
 } from '@/features/orchestration/adapters/postgres-retrievers';
 import { businessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
+import { salesContextStore } from '@/features/sales/adapters/postgres-sales-context-store';
 import {
   buildBusinessContextView,
   buildCatalogIndexView,
@@ -137,6 +138,7 @@ export async function POST(
         },
         log: (event, fields) => logger.info({ event, ...fields }),
         business: businessContextLoader(workspaceSlug),
+        sales: { load: (contactId) => salesContextStore.load(workspaceSlug, contactId) },
       }
     )
     );

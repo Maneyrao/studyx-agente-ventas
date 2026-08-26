@@ -27,7 +27,7 @@ function claimed(text: string, overrides: { name?: string | null; prices?: boole
       summary: { text: null, version: 0, updated_at: null }, selected_memories: [],
       long_term_memory_available: false, knowledge_base: [], knowledge_base_available: false,
       knowledge_base_dropped: 0, injection_suspected_count: 0 },
-    sales_context: { mode: 'advising', course_of_interest: 'Redes Informáticas', offering_code: 'redes-informaticas', open_call_offer: null,
+    sales_context: { mode: 'advising', stage: 'exploring', course_of_interest: 'Redes Informáticas', offering_code: 'redes-informaticas', open_call_offer: null,
       accepted_call_offer: null, active_call: null, allowed_actions: ['offer_call'], last_call_result: null },
     catalog_resolution: { kind: 'no_catalog_intent' },
     catalog_index: null,

@@ -202,6 +202,32 @@ describe('claimBatch', () => {
     ]));
   });
 
+  it('uses durable sales state after a restart when the current batch has no newer selection', async () => {
+    const business = businessContextView({
+      offerings: [businessOffering('redes', 'Redes Informáticas', 'Tecnología')],
+    });
+    const result = await claimBatch(input, {
+      ...buildDeps({ messagesResult: [{
+        id: 'm1', conversation_seq: 1, content: '¿Qué horarios tienen?',
+        created_at: '2026-08-11T12:00:00.000Z', message_type: 'text',
+      }] }),
+      business: { load: vi.fn().mockResolvedValue(business) },
+      sales: { load: vi.fn().mockResolvedValue({
+        workspace_id: 'workspace-1', contact_id: 'contact-1', conversation_id: 'conversation-1',
+        selected_offering_code: 'redes', selected_payment_plan: 'monthly_12',
+        stage: 'plan_selected', source_turn_id: 'turn-0', version: 3,
+        updated_at: '2026-08-10T00:00:00.000Z',
+      }) },
+    });
+
+    expect(result).toMatchObject({
+      outcome: 'claimed',
+      sales_context: {
+        offering_code: 'redes', course_of_interest: 'Redes Informáticas', stage: 'plan_selected',
+      },
+    });
+  });
+
   it('returns the controlled context to the caller that owns the batch', async () => {
     const deps = buildDeps();
     const result = await claimBatch(input, deps);
@@ -1430,6 +1456,7 @@ describe('claimBatch sales_context', () => {
     // nothing on its own, so the policy is free to offer.
     expect(result.sales_context).toEqual({
       mode: 'advising',
+      stage: 'exploring',
       course_of_interest: null,
       offering_code: null,
       open_call_offer: null,
