@@ -93,7 +93,7 @@ export interface IngestContext {
 export interface InboundEnvelope {
   schema_version: 1;
   source: 'botpress';
-  channel: 'emulator' | 'whatsapp';
+  channel: 'emulator' | 'whatsapp' | 'telegram';
   integration_id: string;
   external_message_id: string;
   provider_message_id?: string;
@@ -232,8 +232,21 @@ async function findExistingInbound(eventId: string, db: DbClient): Promise<Inbou
   };
 }
 
+/**
+ * Logical channel a transport belongs to.
+ *
+ * `emulator` keeps mapping to `whatsapp`: it simulates a WhatsApp conversation,
+ * and every row already stored under it must keep the same meaning. Only a
+ * genuinely different transport gets a channel of its own — without this,
+ * every inbound identity is filed as WhatsApp and a Telegram contact can never
+ * be reached on Telegram.
+ */
+function resolveLogicalChannel(envelope: InboundEnvelope): 'whatsapp' | 'telegram' {
+  return envelope.channel === 'telegram' ? 'telegram' : 'whatsapp';
+}
+
 async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
-  const channel = 'whatsapp' as const;
+  const channel = resolveLogicalChannel(envelope);
   // sandbox_provider (e.g. 'telegram_sandbox') wins over the default derivation so
   // the sandbox lives on its own row in channel_events / channel_threads (their
   // UNIQUE constraints include `provider`) and never collides with production.

@@ -9,18 +9,17 @@ import { z } from 'zod';
 
 export { z };
 
+type RuntimeHandler = {
+  bivarianceHack(input: unknown): unknown;
+}['bivarianceHack'];
+
 interface ConversationDefinition {
   readonly channel: string;
-  readonly handler: (input: {
-    type: string;
-    channel: string;
-    message: any;
-    conversation: { id: string };
-  }) => unknown;
+  readonly handler: RuntimeHandler;
 }
 
 interface WorkflowDefinition {
-  readonly handler: (input: any) => unknown;
+  readonly handler: RuntimeHandler;
 }
 
 /** Mirrors `new Conversation({ channel, handler })`: just records the definition. */
@@ -39,6 +38,7 @@ export class Workflow<TDefinition extends WorkflowDefinition = WorkflowDefinitio
   }
 
   async getOrCreate(_input: unknown): Promise<{ id: string }> {
+    void _input;
     return { id: 'test-workflow-id' };
   }
 }
@@ -52,6 +52,7 @@ export class Action<TDefinition = unknown, TOutput = unknown> {
   }
 
   async execute(_input: unknown): Promise<TOutput> {
+    void _input;
     throw new Error('ACTION_EXECUTE_NOT_CONFIGURED');
   }
 }

@@ -150,3 +150,90 @@ export function loadTelegramAgentBConfig(
     voiceProvider,
   };
 }
+
+export type MessagingChannelName = 'telegram' | 'whatsapp';
+
+export type TelegramChannelConfig = {
+  botToken: string;
+  /** Identifies the integration instance inside the delivery ledger. */
+  integrationId: string;
+  requestTimeoutMs: number;
+};
+
+export type WhatsAppChannelConfig = {
+  accessToken: string;
+  phoneNumberId: string;
+  /**
+   * Graph API version, pinned on purpose. Meta ships breaking changes between
+   * versions, so the bump is a reviewed decision and never an implicit default.
+   */
+  graphApiVersion: string;
+  integrationId: string;
+  requestTimeoutMs: number;
+};
+
+export type MessagingChannelsConfig = {
+  telegram: TelegramChannelConfig | null;
+  whatsapp: WhatsAppChannelConfig | null;
+  /** Deterministic fallback order used when the caller states no preference. */
+  channelPreference: MessagingChannelName[];
+};
+
+const GRAPH_API_VERSION_PATTERN = /^v[0-9]+\.[0-9]+$/;
+
+function parseChannelPreference(raw: string | undefined): MessagingChannelName[] {
+  const fallback: MessagingChannelName[] = ['whatsapp', 'telegram'];
+  if (!raw?.trim()) return fallback;
+  const parsed = raw.split(',').map((part) => part.trim()).filter(Boolean);
+  for (const name of parsed) {
+    if (name !== 'telegram' && name !== 'whatsapp') {
+      throw new Error(`INVALID_MESSAGING_CONFIG:MESSAGING_CHANNEL_PREFERENCE:${name}`);
+    }
+  }
+  const deduped = [...new Set(parsed)] as MessagingChannelName[];
+  return deduped.length > 0 ? deduped : fallback;
+}
+
+/**
+ * Outbound messaging channels the orchestrator delivers through itself.
+ *
+ * A channel is configured or absent, never half-configured: partial credentials
+ * would fail at send time, in the middle of a live call, instead of at boot.
+ */
+export function loadMessagingChannelsConfig(
+  environment: NodeJS.ProcessEnv = process.env,
+): MessagingChannelsConfig {
+  const telegramToken = environment.TELEGRAM_AGENT_B_BOT_TOKEN?.trim();
+  const telegram: TelegramChannelConfig | null = telegramToken
+    ? {
+      botToken: telegramToken,
+      integrationId: environment.MESSAGING_TELEGRAM_INTEGRATION_ID?.trim() || 'telegram-bot',
+      requestTimeoutMs: parsePositiveInt(environment.MESSAGING_REQUEST_TIMEOUT_MS, 5_000),
+    }
+    : null;
+
+  const whatsappToken = environment.WHATSAPP_CLOUD_ACCESS_TOKEN?.trim();
+  let whatsapp: WhatsAppChannelConfig | null = null;
+  if (whatsappToken) {
+    for (const key of ['WHATSAPP_CLOUD_PHONE_NUMBER_ID', 'WHATSAPP_CLOUD_GRAPH_API_VERSION'] as const) {
+      if (!environment[key]?.trim()) throw new Error(`MISSING_MESSAGING_CONFIG:${key}`);
+    }
+    const graphApiVersion = environment.WHATSAPP_CLOUD_GRAPH_API_VERSION!.trim();
+    if (!GRAPH_API_VERSION_PATTERN.test(graphApiVersion)) {
+      throw new Error('INVALID_MESSAGING_CONFIG:WHATSAPP_CLOUD_GRAPH_API_VERSION');
+    }
+    whatsapp = {
+      accessToken: whatsappToken,
+      phoneNumberId: environment.WHATSAPP_CLOUD_PHONE_NUMBER_ID!.trim(),
+      graphApiVersion,
+      integrationId: environment.MESSAGING_WHATSAPP_INTEGRATION_ID?.trim() || 'whatsapp-cloud',
+      requestTimeoutMs: parsePositiveInt(environment.MESSAGING_REQUEST_TIMEOUT_MS, 5_000),
+    };
+  }
+
+  return {
+    telegram,
+    whatsapp,
+    channelPreference: parseChannelPreference(environment.MESSAGING_CHANNEL_PREFERENCE),
+  };
+}

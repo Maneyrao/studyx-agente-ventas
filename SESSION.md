@@ -188,6 +188,56 @@ Stripe *después* de tener documentado que el negocio usa Authorize.Net.
 Buena noticia arquitectónica: si cambia el PSP, **el puerto y todo el ledger
 se reutilizan tal cual**; sólo se tira el adapter.
 
+Siguiente paso: ejecutar el piloto de Telegram siguiendo
+`docs/PILOT_RUNBOOK.md` y llenar `docs/PILOT_MATRIX.md`.
+
+**EXT-05 dejó de ser bloqueante** (2026-08-18, feature 008). El piloto ya no
+depende de que la integración `telegram` esté instalada en Botpress Cloud: el
+orquestador entrega los mensajes salientes por sí mismo contra la Bot API. Falta
+la corrida manual contra un chat real, que necesita el bot token de producción.
+
+## Feature 008 — Entrega outbound directa multicanal
+
+Rama `feat/008-direct-outbound-delivery`. Artefactos en
+`specs/008-direct-outbound-delivery/`.
+
+Estado: implementada y verificada salvo la corrida manual del piloto.
+`src/features/messaging/` expone `sendOutboundMessage()`, un caso de uso interno
+y sincrónico que entrega por Telegram o WhatsApp y devuelve un resultado
+concluyente. No expone ruta HTTP: su consumidor será la integración con Retell.
+
+### Drift de esquema resuelto (2026-08-18)
+
+`supabase db reset` estaba roto: `20260805000001_universal_business_memory.sql` y
+`20260809020001_phase6_knowledge_base.sql` creaban ambas `knowledge_chunks`,
+modelando cosas distintas (la primera chunkea `knowledge_sources` con pipeline
+asíncrono; la segunda chunkea `knowledge_documents` para retrieval). Como la
+primera ordena antes, ganaba el nombre y Phase 6 fallaba.
+
+Producción ya había sido reparada a mano con un rename a
+`legacy_knowledge_chunks_20260805`, pero ese cambio no estaba en ninguna
+migración: de ahí el drift. Se formalizó agregando ese mismo `ALTER TABLE ...
+RENAME TO` al final de `20260805000001`.
+
+Resultado verificado: las 43 migraciones aplican limpio desde cero y el esquema
+resultante coincide con el de producción, incluido el orden de columnas de
+`knowledge_chunks`. La integración pasó de 22 fallos a 1.
+
+### Pendiente detectado al reparar el drift
+
+`memory_embeddings.embedding` quedó en `vector(1536)` mientras el resto del
+sistema usa 768 (Gemini). Ninguna de las cinco migraciones de la serie 768 la
+tocó, porque la tabla venía de la migración que estaba en conflicto. El cron
+`memory-maintenance` reclama esas filas vía `claim_memory_embeddings`, así que
+escribir un embedding real ahí fallaría por dimensión.
+
+Es el único test de integración que sigue rojo (`embedding-dimensions`). Ese test
+también ve `legacy_knowledge_chunks_20260805` en 1536; como está jubilada y
+vacía, la decisión es bajarla o excluirla del chequeo.
+
+Arreglarlo toca dimensiones de columnas vector en una base con datos: requiere
+decidir qué pasa con las filas existentes. Queda para una tarea propia.
+
 A revisar: en `stripe-checkout-provider.ts:63-69` el
 `assertRealSideEffectAllowed` está *dentro* del `if (environment === 'live')`
 que siempre tira después — en `stripe_test` un contacto sandbox no queda

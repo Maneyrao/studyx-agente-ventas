@@ -296,7 +296,6 @@ const PAYMENT_URLS = {
 /** URLs are extracted lexically and then compared byte-for-byte against the
  * allowlist captured for their own turn. Static payment fixtures are used
  * only by legacy plan assertions; they are not an authorization boundary. */
-const CANONICAL_PAYMENT_LINK_PREFIX = 'https://buy.stripe.com/';
 const URL_PATTERN = /https?:\/\/[^\s)\]"'<>]+/giu;
 
 /** Distinguishes an active PROPOSAL to call the customer from an incidental
