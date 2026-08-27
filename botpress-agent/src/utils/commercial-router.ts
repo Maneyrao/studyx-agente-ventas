@@ -644,6 +644,13 @@ export function routeCommercialTurn(input: CommercialRouterInput): CommercialRou
     return deterministicRoute('conversation_close', CONVERSATION_CLOSE_FAST_PATH_MODEL, conversationClose)
   }
 
+  // Claim owns the greeting classifier. A burst made exclusively of greetings
+  // is conclusive, so it must skip the generic multi-message model gate.
+  const greeting = matchDeterministicGreeting(claimed)
+  if (greeting) {
+    return deterministicRoute('greeting', GREETING_FAST_PATH_MODEL, greeting)
+  }
+
   const isMultiMessageBatch = claimed.batch.message_count !== 1
     || claimed.context.batch_messages.length !== 1
 
@@ -730,11 +737,6 @@ export function routeCommercialTurn(input: CommercialRouterInput): CommercialRou
       courseDiscovery.decision,
       courseDiscovery.offeringCode,
     )
-  }
-
-  const greeting = matchDeterministicGreeting(claimed)
-  if (greeting) {
-    return deterministicRoute('greeting', GREETING_FAST_PATH_MODEL, greeting)
   }
 
   const latest = normalizedSignalText(claimed.context.batch_messages.at(-1)?.content ?? '')

@@ -541,6 +541,33 @@ describe('claimBatch', () => {
     expect(knowledge.search).not.toHaveBeenCalled();
   });
 
+  it('classifies a burst made only of greetings before embedding or model work', async () => {
+    const embedding = { embed: vi.fn().mockResolvedValue([0.1, 0.2]) };
+    const memory = { search: vi.fn().mockResolvedValue([]) };
+    const knowledge = { search: vi.fn().mockResolvedValue([]) };
+    const deps = buildDeps({
+      embedding,
+      memory,
+      knowledge,
+      messagesResult: ['Buen día', 'Hola'].map((content, index) => ({
+        id: `greeting-${index + 1}`,
+        conversation_seq: index + 1,
+        content,
+        created_at: '2026-08-11T12:00:00.000Z',
+        message_type: 'text',
+      })),
+    });
+
+    const result = await claimBatch(input, deps);
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.deterministic_route).toBe('greeting');
+    expect(result.diagnostics.counters.embedding_calls).toBe(0);
+    expect(embedding.embed).not.toHaveBeenCalled();
+    expect(memory.search).not.toHaveBeenCalled();
+    expect(knowledge.search).not.toHaveBeenCalled();
+  });
+
   it('never retrieves for a blocked contact', async () => {
     const memory = { search: vi.fn().mockResolvedValue([]) };
     const knowledge = { search: vi.fn().mockResolvedValue([]) };

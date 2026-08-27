@@ -275,16 +275,19 @@ function deterministicRoute(input: {
   policy: TurnPolicy;
   salesContext: ClaimedSalesContext;
 }): ClaimedTurn['deterministic_route'] {
-  if (input.batchMessages.length !== 1) return null;
-  const message = input.batchMessages[0];
-  if (message.message_type !== 'text') return null;
-
   if (
     input.policy.allowed_response_types.includes('social_reply')
-    && EXACT_GREETINGS.has(normalizeGreeting(message.content))
+    && input.batchMessages.length > 0
+    && input.batchMessages.every((message) => (
+      message.message_type === 'text' && EXACT_GREETINGS.has(normalizeGreeting(message.content))
+    ))
   ) {
     return 'greeting';
   }
+
+  if (input.batchMessages.length !== 1) return null;
+  const message = input.batchMessages[0];
+  if (message.message_type !== 'text') return null;
 
   const signal = classifyDeterministicSalesSignal(message.content);
   if (

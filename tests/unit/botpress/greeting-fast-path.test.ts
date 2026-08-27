@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 /**
- * Deterministic greeting fast path: only an unambiguous, single-message
- * greeting skips the model. Anything with an actual question — or any batch
- * with more than one message — must go through the LLM. The produced decision
- * must satisfy the full Decision v3 schema so it commits through Next.js like
- * any other decision.
+ * Deterministic greeting fast path: a backend-authorized batch made only of
+ * greetings skips the model. Anything with an actual question must go through
+ * the LLM. The produced decision must satisfy the full Decision v3 schema so
+ * it commits through Next.js like any other decision.
  */
 import {
   GREETING_FAST_PATH_MODEL,
@@ -136,6 +135,16 @@ describe('matchDeterministicGreeting', () => {
 
   it('does not reclassify greeting text when the backend route is null', () => {
     expect(matchDeterministicGreeting(claimedTurn({ texts: ['hola'], route: null }))).toBeNull();
+  });
+
+  it('accepts a backend-authorized burst made only of greetings', () => {
+    const decision = matchDeterministicGreeting(
+      claimedTurn({ texts: ['Buen día', 'Hola'], route: 'greeting' }),
+    );
+    expect(decision).toMatchObject({
+      response_type: 'social_reply',
+      reason_code: 'DETERMINISTIC_GREETING',
+    });
   });
 
   it('trusts the backend route instead of maintaining a second text classifier', () => {

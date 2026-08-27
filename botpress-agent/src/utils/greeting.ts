@@ -36,12 +36,11 @@ function buildGreetingResponse(claimed: ClaimedTurn): string {
 
 export function matchDeterministicGreeting(claimed: ClaimedTurn): Decision | null {
   if (claimed.deterministic_route !== 'greeting') return null
-  if (claimed.batch.message_count !== 1) return null
-  if (claimed.context.batch_messages.length !== 1) return null
   if (!claimed.policy.allowed_response_types.includes('social_reply')) return null
-
-  const message = claimed.context.batch_messages[0]
-  if (message.message_type !== 'text') return null
+  if (
+    claimed.context.batch_messages.length === 0
+    || claimed.context.batch_messages.some((message) => message.message_type !== 'text')
+  ) return null
 
   return {
     schema_version: 4,

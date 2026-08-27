@@ -487,7 +487,9 @@ describe('routeCommercialTurn', () => {
     {
       name: 'a greeting followed by a question',
       texts: ['Hola', '¿Cuánto sale?'],
-      route: 'greeting' as const,
+      // Claim only authorizes `greeting` when every message in the burst is
+      // a greeting; this batch must still reach the commercial model.
+      route: null,
     },
     {
       name: 'a payment choice followed by a call decline',
@@ -501,6 +503,22 @@ describe('routeCommercialTurn', () => {
     });
 
     expect(result).toMatchObject({ kind: 'model_required', origin: 'advisory_model' });
+  });
+
+  it('routes a backend-authorized greeting-only burst without invoking a model', () => {
+    const result = routeCommercialTurn({
+      automationEnabled: true,
+      claimed: claimedTurn({
+        texts: ['Buen día', 'Hola'],
+        route: 'greeting',
+      }),
+    });
+
+    expect(result).toMatchObject({
+      kind: 'deterministic',
+      origin: 'greeting',
+      reason: 'DETERMINISTIC_GREETING',
+    });
   });
 
   it.each([
