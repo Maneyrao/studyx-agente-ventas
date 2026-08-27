@@ -28,6 +28,12 @@ export type DispatchResult =
 
 /** Pick the first matching adapter, run its normalizer, return either an envelope or a skip reason. */
 export function dispatch(ctx: ChannelAdapterContext): DispatchResult {
+  // The wildcard Botpress conversation also observes callbacks and lifecycle
+  // notifications. They are not channel failures and must never start an
+  // inbound workflow or be mislabeled as CHANNEL_UNSUPPORTED.
+  if (ctx.type !== 'message') {
+    return { kind: 'skip', adapter: null, reason: 'EVENT_TYPE_UNSUPPORTED' }
+  }
   const adapter = CHANNEL_ADAPTERS.find((a) => a.matches(ctx))
   if (!adapter) {
     return { kind: 'skip', adapter: null, reason: 'CHANNEL_UNSUPPORTED' }

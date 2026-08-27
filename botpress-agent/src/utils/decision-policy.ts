@@ -1,5 +1,12 @@
 import type { ClaimedTurn, Decision } from '../schemas/contracts'
-import { derivePaymentChoiceFromBatch } from './payment-choice'
+import {
+  derivePaymentChoiceFromBatch,
+  isExplicitPaymentLinkRequest,
+} from './payment-choice'
+import {
+  catalogGuidanceForTurn,
+  normalizeCatalogGuidanceText,
+} from './catalog-guidance'
 
 /**
  * Post-model policy: normalization plus the deterministic guardrails a raw
@@ -49,14 +56,28 @@ export function technicalFallback(): Decision {
 export function modelUnavailableFallback(claimed: ClaimedTurn): Decision {
   const allowed = claimed.policy.allowed_response_types
   if (!allowed.includes('commercial_reply')) return technicalFallback()
+  const guidance = catalogGuidanceForTurn(claimed)
   const course = claimed.sales_context.course_of_interest?.trim()
+  const latest = normalizeCatalogGuidanceText(
+    claimed.context.batch_messages.at(-1)?.content ?? '',
+  )
+  const response = guidance?.response
+    ?? (/\b(?:prefiero|quiero|sigamos|seguir|continuar)\b.{0,32}\b(?:chat|texto|sin llamada|no quiero llamada)\b/u.test(latest)
+      ? 'Seguimos por chat, sin problema. ¿Con qué parte de la compra querés avanzar?'
+      : /\b(?:cuanto\s+(?:sale|cuesta)|precio|costo|valor)\b/u.test(latest)
+        ? course
+          ? `Sigo con ${course}. ¿Querés que confirme el precio y los planes disponibles?`
+          : 'Puedo confirmar el precio canónico. ¿De qué curso querés saberlo?'
+      : /\b(?:caro|cara|presupuesto|conviene)\b/u.test(latest)
+        ? 'Puedo ayudarte a ordenar la consulta según tu presupuesto. ¿Qué te preocupa del precio?'
+        : course
+          ? `Sigo con ${course}. ¿Qué aspecto querés confirmar?`
+          : 'Puedo seguir ayudándote por acá. ¿Podés contarme la consulta en una frase?')
   return {
     schema_version: 4,
     intent: 'commercial',
     kind: 'reply',
-    response: course
-      ? `Sigo con ${course}. ¿Qué dato querés confirmar?`
-      : 'Quiero ayudarte con la consulta. ¿Qué dato querés confirmar?',
+    response,
     response_type: 'commercial_reply',
     business_action: null,
     memory_candidates: [],
@@ -484,13 +505,16 @@ export function applyDecisionPolicy(decision: Decision, claimed: ClaimedTurn): D
   // the customer in silence. Downgrade it here to an explicit clarification:
   // no link goes out, but the turn always answers (P0, informe 2026-08-23).
   if (decision.business_action?.type === 'send_payment_link') {
-    const derived = derivePaymentChoiceFromBatch(
-      claimed.context.batch_messages.map((message) => ({ content: message.content }))
-    )
-    if (derived !== decision.business_action.plan_code) {
+    const batchMessages = claimed.context.batch_messages.map((message) => ({ content: message.content }))
+    const currentPlan = derivePaymentChoiceFromBatch(batchMessages)
+    const authorizedPlan = currentPlan
+      ?? (isExplicitPaymentLinkRequest(batchMessages)
+        ? claimed.sales_context.selected_payment_plan
+        : null)
+    if (authorizedPlan !== decision.business_action.plan_code) {
       return withDeterministicMemories(paymentPlanClarification(
         claimed,
-        derived === null ? 'AMBIGUOUS_OR_ABSENT_CHOICE' : 'PLAN_MISMATCH'
+        authorizedPlan === null ? 'AMBIGUOUS_OR_ABSENT_CHOICE' : 'PLAN_MISMATCH'
       ), claimed)
     }
 

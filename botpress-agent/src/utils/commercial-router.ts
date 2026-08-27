@@ -1,14 +1,22 @@
 import type { ClaimedTurn, Decision } from '../schemas/contracts'
-import { renderCatalogOptions } from './canonical-commercial-copy'
 import {
   CALL_HANDOFF_FAST_PATH_MODEL,
   matchCallHandoffFastPath,
 } from './call-handoff-fast-path'
+import {
+  catalogGuidanceForTurn,
+  hasGenericCatalogGuidanceIntent,
+  normalizeCatalogGuidanceText,
+} from './catalog-guidance'
 import { suppress } from './decision-policy'
 import {
   GREETING_FAST_PATH_MODEL,
   matchDeterministicGreeting,
 } from './greeting'
+import {
+  derivePaymentChoiceFromBatch,
+  type PaymentPlanCode,
+} from './payment-choice'
 import {
   CONTACT_CAPTURE_FAST_PATH_MODEL,
   CONVERSATION_CLOSE_FAST_PATH_MODEL,
@@ -88,6 +96,7 @@ export type CommercialRouteResult =
       readonly model: string
       readonly decision: Decision
       readonly authorizedOfferingCode?: string
+      readonly authorizedPaymentPlan?: PaymentPlanCode
     }
   | {
       readonly kind: 'model_required'
@@ -146,9 +155,6 @@ const EXPLICIT_PROGRAM_INFORMATION_REQUEST_PATTERN =
 const ALTERNATIVES_REQUEST_PATTERN =
   /\b(?:(?:lo|el|la) mas parecid[oa]|mas parecido que (?:tienen|ofrecen|haya|tengan)|algo (?:parecido|similar|asi)|alguna alternativa|que alternativas?|opciones (?:parecidas|similares)|que otr[oa]s? (?:cursos?|cosas?|opciones?) (?:tienen|ofrecen|hay))\b/u
 
-const CATALOG_NAVIGATION_PATTERN =
-  /\b(?:(?:que|cuales) (?:cursos?|diplomados?|capacitaciones?|programas?) (?:tienen|tenes|tienes|ofrecen|hay)(?: disponibles?)?|(?:quiero|quisiera|me gustaria) (?:conocer|ver|saber)(?: cuales son)? (?:los )?(?:cursos?|diplomados?|capacitaciones?|programas?)(?: disponibles?)?|mostrar?me (?:los )?(?:cursos?|diplomados?|catalogo)|catalogo|oferta academica)\b/u
-
 // Only retain a deterministic not-found route when the customer explicitly
 // names an unknown program. Open-ended commercial language belongs to Gemini;
 // this guard prevents the old keyword router from answering it as a missing
@@ -184,6 +190,7 @@ function deterministicRoute(
   model: string,
   decision: Decision,
   authorizedOfferingCode?: string,
+  authorizedPaymentPlan?: PaymentPlanCode,
 ): CommercialRouteResult {
   return {
     kind: 'deterministic',
@@ -192,6 +199,48 @@ function deterministicRoute(
     model,
     decision,
     ...(authorizedOfferingCode ? { authorizedOfferingCode } : {}),
+    ...(authorizedPaymentPlan ? { authorizedPaymentPlan } : {}),
+  }
+}
+
+function authorizedPaymentPlan(
+  claimed: ClaimedTurn,
+  decision: Decision,
+  offeringCode: string | undefined,
+): PaymentPlanCode | undefined {
+  if (!offeringCode) return undefined
+  if (decision.business_action?.type === 'send_payment_link') {
+    return decision.business_action.plan_code
+  }
+  return derivePaymentChoiceFromBatch(
+    claimed.context.batch_messages.map((message) => ({ content: message.content })),
+  ) ?? undefined
+}
+
+function authorizedPaymentOfferingCode(claimed: ClaimedTurn): string | undefined {
+  if (claimed.sales_context.offering_code) return claimed.sales_context.offering_code
+  const course = normalizeCatalogGuidanceText(claimed.sales_context.course_of_interest ?? '')
+  if (!course) return undefined
+  const matches = (claimed.business_context?.offerings ?? []).filter(
+    (offering) => normalizeCatalogGuidanceText(offering.display_name) === course,
+  )
+  return matches.length === 1 ? matches[0].code : undefined
+}
+
+function paymentOfferingClarification(): Decision {
+  return {
+    schema_version: 4,
+    intent: 'commercial',
+    kind: 'clarify',
+    response: 'Perfecto. ¿Para qué curso querés elegir ese plan?',
+    response_type: 'clarification',
+    confidence: 1,
+    reason_code: 'OFFERING_REQUIRED',
+    business_action: null,
+    memory_candidates: [],
+    missing_information: ['course_of_interest'],
+    next_state: 'waiting_user',
+    retrieval_used: null,
   }
 }
 
@@ -213,13 +262,7 @@ function optOutAcknowledgement(): Decision {
 }
 
 function normalizedSignalText(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/gu, ' ')
-    .replace(/\s+/gu, ' ')
-    .trim()
+  return normalizeCatalogGuidanceText(value)
 }
 
 function containsCatalogIntent(claimed: ClaimedTurn): boolean {
@@ -326,60 +369,17 @@ function unavailableCatalogRoute(
 function routeCatalogNavigationRequest(claimed: ClaimedTurn): CommercialRouteResult | null {
   if (claimed.catalog_resolution.kind !== 'no_catalog_intent'
     && claimed.catalog_resolution.kind !== 'not_found') return null
-  if (claimed.sales_context.offering_code !== null) return null
-  if (claimed.batch.message_count !== 1 || claimed.context.batch_messages.length !== 1) return null
-  const message = claimed.context.batch_messages[0]
-  if (!message || message.message_type !== 'text') return null
-  const normalized = normalizedSignalText(message.content)
-  if (!CATALOG_NAVIGATION_PATTERN.test(normalized)) return null
-  const catalog = claimed.catalog_index?.offerings
-    ?? claimed.business_context?.offerings
-    ?? []
-  if (catalog.length === 0) {
-    return unavailableCatalogRoute(claimed, 'CATALOG_SNAPSHOT_MISSING')
-  }
-
-  const academies = [...new Set(
-    catalog
-      .map((offering) => offering.academy)
-      .filter((academy): academy is string => Boolean(academy)),
-  )]
-  const requestedAcademy = academies.find((academy) => {
-    const canonical = normalizedSignalText(academy)
-    const concise = canonical.replace(/^(?:academia|area)(?: de)? /u, '')
-    return normalized.includes(canonical) || (concise.length >= 4 && normalized.includes(concise))
-  })
-
-  if (requestedAcademy) {
-    const offerings = catalog
-      .filter((offering) => offering.academy === requestedAcademy)
-      .slice(0, 3)
-    if (offerings.length === 0) {
-      return unavailableCatalogRoute(claimed, 'CATALOG_CANDIDATES_UNAVAILABLE')
-    }
-    return catalogDecisionRoute(
-      claimed,
-      'catalog_navigation',
-      'DETERMINISTIC_CATALOG_NAVIGATION',
-      renderCatalogOptions({
-        area: requestedAcademy,
-        names: offerings.map((offering) => offering.display_name),
-        maxItems: 3,
-      }),
-      'catalog_offering_choice',
-    )
-  }
-
-  const visibleAcademies = academies.slice(0, 3)
-  if (visibleAcademies.length === 0) {
-    return unavailableCatalogRoute(claimed, 'CATALOG_CANDIDATES_UNAVAILABLE')
-  }
+  if (claimed.catalog_resolution.kind === 'not_found'
+    && claimed.catalog_resolution.requestedArea !== null
+    && !hasGenericCatalogGuidanceIntent(claimed)) return null
+  const guidance = catalogGuidanceForTurn(claimed)
+  if (!guidance) return null
   return catalogDecisionRoute(
     claimed,
     'catalog_navigation',
     'DETERMINISTIC_CATALOG_NAVIGATION',
-    `Podemos orientarte por estas áreas: ${visibleAcademies.join(', ')}. ¿Cuál te interesa?`,
-    'catalog_area',
+    guidance.response,
+    guidance.missingInformation,
   )
 }
 
@@ -666,7 +666,16 @@ export function routeCommercialTurn(input: CommercialRouterInput): CommercialRou
     }
     const paymentSelection = matchCatalogCompetingPaymentSelection(claimed)
     if (paymentSelection) {
-      return deterministicRoute('payment_selection', PAYMENT_SELECTION_FAST_PATH_MODEL, paymentSelection)
+      const offeringCode = authorizedPaymentOfferingCode(claimed)
+      return deterministicRoute(
+        'payment_selection',
+        PAYMENT_SELECTION_FAST_PATH_MODEL,
+        offeringCode ? paymentSelection : paymentOfferingClarification(),
+        offeringCode,
+        offeringCode
+          ? authorizedPaymentPlan(claimed, paymentSelection, offeringCode)
+          : undefined,
+      )
     }
     const catalogRoute = routeCatalogResolution(claimed)
     if (catalogRoute) return catalogRoute
@@ -698,10 +707,15 @@ export function routeCommercialTurn(input: CommercialRouterInput): CommercialRou
 
   const paymentSelection = matchPaymentSelectionFastPath(claimed)
   if (paymentSelection) {
+    const offeringCode = authorizedPaymentOfferingCode(claimed)
     return deterministicRoute(
       'payment_selection',
       PAYMENT_SELECTION_FAST_PATH_MODEL,
-      paymentSelection,
+      offeringCode ? paymentSelection : paymentOfferingClarification(),
+      offeringCode,
+      offeringCode
+        ? authorizedPaymentPlan(claimed, paymentSelection, offeringCode)
+        : undefined,
     )
   }
 
@@ -740,9 +754,6 @@ export function routeCommercialTurn(input: CommercialRouterInput): CommercialRou
   }
 
   const latest = normalizedSignalText(claimed.context.batch_messages.at(-1)?.content ?? '')
-  if (CATALOG_NAVIGATION_PATTERN.test(latest)) {
-    return { kind: 'model_required', origin: 'advisory_model', reason: 'OPEN_CATALOG_REQUIRES_SALES_MODEL' }
-  }
   if (containsCatalogIntent(claimed) && !/\b(?:orientame|orientá|recomend(?:ame|á)|no s[eé])\b/u.test(latest)) {
     return { kind: 'model_required', origin: 'advisory_model', reason: 'OPEN_CATALOG_REQUIRES_SALES_MODEL' }
   }

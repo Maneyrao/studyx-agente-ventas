@@ -380,6 +380,9 @@ export const processInboundTurn = new Workflow({
     const authorizedOfferingCode = commercialRoute.kind === 'deterministic'
       ? commercialRoute.authorizedOfferingCode ?? owned.sales_context.offering_code
       : owned.sales_context.offering_code
+    const authorizedPaymentPlan = commercialRoute.kind === 'deterministic'
+      ? commercialRoute.authorizedPaymentPlan ?? null
+      : null
     safeLog('studyx.turn.commercial_route', {
       trace_id: input.trace_id,
       turn_id: owned.turn_id,
@@ -555,6 +558,9 @@ export const processInboundTurn = new Workflow({
               // or preserved from the claim; the backend re-resolves it before
               // authorizing any protected fact.
               authorized_offering_code: authorizedOfferingCode,
+              // A deterministic current-batch selection only. The backend
+              // re-derives it before persisting plan_selected.
+              authorized_payment_plan: authorizedPaymentPlan,
               decision,
               model: {
                 provider: decisionProvider,

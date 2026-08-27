@@ -152,6 +152,12 @@ run('agent a call handoff — reservation', () => {
       SELECT event_type FROM call_events WHERE call_id = ${sessions[0].id}::uuid
     `;
     expect(events).toEqual([{ event_type: 'requested' }]);
+    const salesState = await db!<Array<{ stage: string }>>`
+      SELECT stage FROM sales_context_states WHERE contact_id = (
+        SELECT contact_id FROM messages WHERE id = ${turnId}::uuid
+      )
+    `;
+    expect(salesState).toEqual([{ stage: 'handoff' }]);
   });
 
   it('ten identical replays return the same call_id and keep one session', async () => {

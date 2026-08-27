@@ -105,6 +105,7 @@ function localClaimedTurn(): ClaimedTurn {
       stage: 'exploring',
       course_of_interest: 'Redes Informáticas',
       offering_code: 'redes_informaticas',
+      selected_payment_plan: null,
       open_call_offer: null,
       accepted_call_offer: null,
       active_call: null,

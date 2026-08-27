@@ -27,7 +27,7 @@ function claimed(text: string, overrides: { name?: string | null; prices?: boole
       summary: { text: null, version: 0, updated_at: null }, selected_memories: [],
       long_term_memory_available: false, knowledge_base: [], knowledge_base_available: false,
       knowledge_base_dropped: 0, injection_suspected_count: 0 },
-    sales_context: { mode: 'advising', stage: 'exploring', course_of_interest: 'Redes Informáticas', offering_code: 'redes-informaticas', open_call_offer: null,
+    sales_context: { mode: 'advising', stage: 'exploring', course_of_interest: 'Redes Informáticas', offering_code: 'redes-informaticas', selected_payment_plan: null, open_call_offer: null,
       accepted_call_offer: null, active_call: null, allowed_actions: ['offer_call'], last_call_result: null },
     catalog_resolution: { kind: 'no_catalog_intent' },
     catalog_index: null,
@@ -97,6 +97,10 @@ describe('transaction fast paths', () => {
 
     expect(decision?.response).toMatch(/no avanzamos con la llamada.*seguimos por chat/i);
     expect(decision?.business_action).toBeNull();
+    expect(decision).toMatchObject({
+      reason_code: 'DETERMINISTIC_CALL_DECLINE_CONTINUE',
+      next_state: 'waiting_user',
+    });
   });
 
   it('does not collapse a call refusal that also asks a course fact', () => {
@@ -169,15 +173,20 @@ describe('transaction fast paths', () => {
     ['confirmo 12 cuotas de 30 dólares', 'monthly_12'],
     ['me quedo con las 6 cuotas de 60', 'monthly_6'],
     ['confirmo pago único de 360 dólares', 'one_time'],
-  ])('turns an exact payment selection into a valid canonical action: %s', (text, plan) => {
+  ])('confirms an exact payment selection without sending a link yet: %s', (text, plan) => {
     const decision = matchPaymentSelectionFastPath(claimed(text));
-    expect(DecisionSchema.parse(decision).business_action).toMatchObject({
-      type: 'send_payment_link', plan_code: plan, offering_sku: 'redes-informaticas',
+    expect(DecisionSchema.parse(decision)).toMatchObject({
+      business_action: null,
+      reason_code: 'DETERMINISTIC_PAYMENT_SELECTION',
     });
+    expect(decision?.response).toContain(plan === 'monthly_12'
+      ? '12 cuotas'
+      : plan === 'monthly_6' ? '6 cuotas' : 'pago único');
+    expect(decision?.response).not.toMatch(/comparto|envío|acá.*link|https?:\/\//iu);
   });
 
   it('keeps the durable canonical offering code when two courses share a display name', () => {
-    const turn = claimed('confirmo pago único');
+    const turn = claimed('confirmo pago único y pasame el link');
     turn.sales_context.course_of_interest = 'Inglés Inicial';
     (turn.sales_context as typeof turn.sales_context & { offering_code: string | null })
       .offering_code = 'ingles_sur';
@@ -197,6 +206,27 @@ describe('transaction fast paths', () => {
     expect(matchPaymentSelectionFastPath(claimed('pasame el link'))).toBeNull();
     expect(matchPaymentSelectionFastPath(claimed('12 cuotas o pago único'))).toBeNull();
     expect(matchPaymentSelectionFastPath(claimed('confirmo 12 cuotas', { prices: false }))).toBeNull();
+  });
+
+  it('sends the link when the same turn explicitly chooses a plan and requests it', () => {
+    expect(matchPaymentSelectionFastPath(
+      claimed('Confirmo 12 cuotas y pasame el link'),
+    )?.business_action).toMatchObject({
+      type: 'send_payment_link',
+      plan_code: 'monthly_12',
+      offering_sku: 'redes-informaticas',
+    });
+  });
+
+  it('sends the link from a durable selected plan when the customer asks on the next turn', () => {
+    const turn = claimed('Ahora sí, pasame el link');
+    turn.sales_context.selected_payment_plan = 'monthly_12';
+
+    expect(matchPaymentSelectionFastPath(turn)?.business_action).toMatchObject({
+      type: 'send_payment_link',
+      plan_code: 'monthly_12',
+      offering_sku: 'redes-informaticas',
+    });
   });
 
   it('compares the short and long payment plans without prices, links, or selecting one', () => {

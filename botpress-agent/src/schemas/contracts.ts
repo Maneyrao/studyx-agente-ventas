@@ -358,6 +358,7 @@ export const SalesContextSchema = z.object({
   ]).default('exploring'),
   course_of_interest: z.string().nullable(),
   offering_code: z.string().nullable().default(null),
+  selected_payment_plan: z.enum(['monthly_12', 'monthly_6', 'one_time']).nullable().default(null),
   open_call_offer: z
     .object({
       decision_id: z.string().uuid(),
@@ -688,6 +689,7 @@ export const CommitDecisionInputSchema = z.object({
   // it in its own live workspace snapshot before authorizing a single fact,
   // so a stale or wrong code fails closed instead of authorizing anything.
   authorized_offering_code: z.string().min(1).max(128).nullable().default(null),
+  authorized_payment_plan: z.enum(['monthly_12', 'monthly_6', 'one_time']).nullable().default(null),
   decision: DecisionSchema,
   model: z.object({
     provider: z.enum(['botpress', 'google-ai-direct', 'groq-direct']),

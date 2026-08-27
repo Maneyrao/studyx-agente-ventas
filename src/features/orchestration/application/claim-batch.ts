@@ -122,6 +122,8 @@ export interface ClaimedSalesContext {
   readonly course_of_interest: string | null;
   /** Stable catalog identity; display names are not unique across academies. */
   readonly offering_code: string | null;
+  /** Durable backend-selected plan; never inferred from semantic memory. */
+  readonly selected_payment_plan: SalesContextState['selected_payment_plan'];
   readonly open_call_offer: { readonly decision_id: string; readonly expires_at: string } | null;
   /** Live offer consumed by this turn's explicit acceptance. */
   readonly accepted_call_offer: { readonly decision_id: string; readonly expires_at: string } | null;
@@ -379,6 +381,7 @@ function buildSalesContext(input: {
     stage: 'exploring',
     course_of_interest: null,
     offering_code: null,
+    selected_payment_plan: null,
     open_call_offer: openCallOffer,
     accepted_call_offer: acceptedCallOffer,
     active_call: input.callFacts.active_call,
@@ -825,6 +828,7 @@ export async function claimBatch(
   const salesContext: ClaimedSalesContext = {
     ...initialSalesContext,
     stage: persistedState?.stage ?? initialSalesContext.stage,
+    selected_payment_plan: persistedState?.selected_payment_plan ?? null,
     ...selection,
   };
   timings.claim_total_ms = Math.max(0, monotonicNow() - claimStartedAt);

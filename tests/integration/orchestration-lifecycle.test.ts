@@ -995,6 +995,127 @@ run('Fase 4 — pago y cierre de batch', () => {
     };
   }
 
+  it('persists the initial commercial state as exploring', async () => {
+    const accepted = await processInboundMessage(envelope({
+      message: {
+        type: 'text',
+        text: 'Quiero estudiar algo',
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    }));
+
+    await commitAgentDecision(reply(
+      accepted.turn_id,
+      randomUUID(),
+      'Te ayudo a explorar las opciones disponibles.',
+    ));
+
+    const states = await db!<Array<{ stage: string; selected_payment_plan: string | null }>>`
+      SELECT state.stage, state.selected_payment_plan
+      FROM sales_context_states AS state
+      JOIN messages AS turn ON turn.contact_id = state.contact_id
+      WHERE turn.id = ${accepted.turn_id}::uuid
+    `;
+    expect(states).toEqual([{ stage: 'exploring', selected_payment_plan: null }]);
+  });
+
+  it('closes only a genuinely deferred commercial conversation', async () => {
+    const accepted = await processInboundMessage(envelope({
+      message: {
+        type: 'text',
+        text: 'Por ahora no me voy a anotar, lo voy a pensar.',
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    }));
+
+    await commitAgentDecision({
+      turn_id: accepted.turn_id,
+      trace_id: randomUUID(),
+      decision: {
+        schema_version: 4,
+        intent: 'commercial_decline',
+        kind: 'reply',
+        response: 'Entendido. Cuando quieras retomarlo, seguimos por acá.',
+        response_type: 'commercial_reply',
+        business_action: null,
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'completed',
+        reason_code: 'DETERMINISTIC_DEFERRED_CLOSE',
+        confidence: 1,
+        retrieval_used: null,
+      },
+      model: { provider: 'botpress', model: 'deterministic', prompt_version: 'v4-close' },
+    });
+
+    const states = await db!<Array<{ stage: string }>>`
+      SELECT state.stage
+      FROM sales_context_states AS state
+      JOIN messages AS turn ON turn.contact_id = state.contact_id
+      WHERE turn.id = ${accepted.turn_id}::uuid
+    `;
+    expect(states).toEqual([{ stage: 'closed' }]);
+  });
+
+  it('re-derives and persists a plan selection without sending a payment link', async () => {
+    const accepted = await processInboundMessage(paymentInbound());
+
+    const committed = await commitAgentDecision({
+      turn_id: accepted.turn_id,
+      trace_id: randomUUID(),
+      authorized_offering_code: 'course_test',
+      authorized_payment_plan: 'monthly_12',
+      decision: {
+        schema_version: 4,
+        intent: 'commercial',
+        kind: 'reply',
+        response: 'Perfecto, elegiste 12 cuotas. Cuando quieras, pedime el link seguro.',
+        response_type: 'commercial_reply',
+        business_action: null,
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'waiting_user',
+        reason_code: 'DETERMINISTIC_PAYMENT_SELECTION',
+        confidence: 1,
+        retrieval_used: null,
+      },
+      model: { provider: 'botpress', model: 'deterministic', prompt_version: 'v4-payment' },
+    });
+
+    expect(committed.outbound?.content).not.toContain('https://');
+    const states = await db!<Array<{
+      stage: string;
+      selected_offering_code: string | null;
+      selected_payment_plan: string | null;
+    }>>`
+      SELECT state.stage, state.selected_offering_code, state.selected_payment_plan
+      FROM sales_context_states AS state
+      JOIN messages AS turn ON turn.contact_id = state.contact_id
+      WHERE turn.id = ${accepted.turn_id}::uuid
+    `;
+    expect(states).toEqual([{
+      stage: 'plan_selected',
+      selected_offering_code: 'course_test',
+      selected_payment_plan: 'monthly_12',
+    }]);
+  });
+
+  it('rejects a claim-authorized plan that the current batch did not select', async () => {
+    const accepted = await processInboundMessage(paymentInbound());
+    const forged = {
+      ...reply(accepted.turn_id),
+      authorized_offering_code: 'course_test',
+      authorized_payment_plan: 'monthly_6' as const,
+    };
+
+    await expect(commitAgentDecision(forged)).rejects.toMatchObject({
+      code: 'DECISION_REJECTED',
+      reason: 'PAYMENT_PLAN_MISMATCH',
+    });
+  });
+
   it.each([
     ['price', 'El precio de Curso Test es USD 360.', { kind: 'price', value: 'usd 360' }],
     ['classes', 'El curso de Curso Test tiene 16 clases.', { kind: 'duration', value: '16 clases' }],
@@ -1260,6 +1381,59 @@ run('Fase 4 — pago y cierre de batch', () => {
 
     const committed = await commitAgentDecision(resumedDecision);
     expect(committed.outbound?.content).toContain('https://buy.stripe.com/test_6m_lifecycle');
+  });
+
+  it('resumes the durable selected plan on a later explicit link request', async () => {
+    const firstEnvelope = paymentInbound();
+    const first = await processInboundMessage(firstEnvelope);
+    await commitAgentDecision({
+      turn_id: first.turn_id,
+      trace_id: randomUUID(),
+      authorized_offering_code: 'course_test',
+      authorized_payment_plan: 'monthly_12',
+      decision: {
+        schema_version: 4,
+        intent: 'commercial',
+        kind: 'reply',
+        response: 'Perfecto, elegiste 12 cuotas. Cuando quieras, pedime el link seguro.',
+        response_type: 'commercial_reply',
+        business_action: null,
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'waiting_user',
+        reason_code: 'DETERMINISTIC_PAYMENT_SELECTION',
+        confidence: 1,
+        retrieval_used: null,
+      },
+      model: { provider: 'botpress', model: 'deterministic', prompt_version: 'v4-payment' },
+    });
+    await db!`
+      UPDATE inbound_batches
+      SET state = 'completed', completed_at = now(), updated_at = now()
+      WHERE id = ${first.batch.id}::uuid
+    `;
+
+    const resumed = await processInboundMessage({
+      ...firstEnvelope,
+      external_message_id: `message-${randomUUID()}`,
+      trace_id: randomUUID(),
+      message: {
+        type: 'text',
+        text: 'Ahora sí, pasame el link.',
+        occurred_at: new Date(Date.now() + 1_000).toISOString(),
+        reply_to_external_message_id: firstEnvelope.external_message_id,
+      },
+    });
+    const committed = await commitAgentDecision(paymentDecision(resumed.turn_id));
+
+    expect(committed.outbound?.content).toContain(PAYMENT_LINK_12M);
+    const states = await db!<Array<{ stage: string; selected_payment_plan: string | null }>>`
+      SELECT state.stage, state.selected_payment_plan
+      FROM sales_context_states AS state
+      JOIN messages AS turn ON turn.contact_id = state.contact_id
+      WHERE turn.id = ${resumed.turn_id}::uuid
+    `;
+    expect(states).toEqual([{ stage: 'payment_link_sent', selected_payment_plan: 'monthly_12' }]);
   });
 
   it.each([

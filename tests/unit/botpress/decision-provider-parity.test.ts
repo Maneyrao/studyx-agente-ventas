@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyDecisionPolicy,
   constrainModelToAdvisory,
+  modelUnavailableFallback,
 } from '../../../botpress-agent/src/utils/decision-policy';
 import type { ClaimedTurn, Decision } from '../../../botpress-agent/src/schemas/contracts';
 
@@ -27,9 +28,11 @@ function claimedTurn(overrides: {
   batch_message_content?: string;
   recent_turns?: Array<{ direction: 'inbound' | 'outbound'; content: string; created_at: string }>;
   offering_names?: string[];
+  offering_areas?: string[];
   knowledge_names?: string[];
   course_of_interest?: string | null;
   offering_code?: string | null;
+  selected_payment_plan?: ClaimedTurn['sales_context']['selected_payment_plan'];
   catalog_resolution?: ClaimedTurn['catalog_resolution'];
 } = {}): ClaimedTurn {
   return {
@@ -87,6 +90,7 @@ function claimedTurn(overrides: {
       mode: 'advising',
       course_of_interest: overrides.course_of_interest ?? null,
       offering_code: overrides.offering_code ?? null,
+      selected_payment_plan: overrides.selected_payment_plan ?? null,
       open_call_offer: null,
       active_call: null,
       allowed_actions: overrides.allowed_actions ?? ['offer_call'],
@@ -117,7 +121,9 @@ function claimedTurn(overrides: {
       workspace: { slug: 'studyx', display_name: 'StudyX', environment: 'sandbox',
         default_locale: 'es-AR', timezone: 'America/Argentina/Buenos_Aires', payment_options: [] },
       offerings: overrides.offering_names.map((display_name, index) => ({
-        code: `course_${index}`, display_name, academy: null, offering_type: 'course',
+        code: `course_${index}`, display_name,
+        academy: overrides.offering_areas?.[index] ?? null,
+        offering_type: 'course',
         description: null, value_proposition: null, price_type: 'fixed',
         price: { amount: '360.00', currency: 'USD' }, price_assertable: true,
         billing_interval: null, modality: null, schedules: [], certification: null,
@@ -151,6 +157,110 @@ function modelDecision(overrides: Partial<Decision> = {}): Decision {
 }
 
 describe('applyDecisionPolicy — provider parity', () => {
+  describe('contextual model-unavailable fallback', () => {
+    const catalogNames = [
+      'Inglés Inicial',
+      'Diseño Gráfico',
+      'Marketing Digital',
+      'Publicidad en Redes',
+      'Ventas por Internet',
+      'Copywriting Comercial',
+      'Cocina Profesional',
+    ];
+    const catalogAreas = [
+      'Academia Cultural',
+      'Academia de Diseño Informático',
+      'Academia de Marketing',
+      'Academia de Marketing',
+      'Academia de Marketing',
+      'Academia de Marketing',
+      'Academia Gastronómica',
+    ];
+
+    it('answers a generic catalog question from canonical areas without exposing course names', () => {
+      const fallback = modelUnavailableFallback(claimedTurn({
+        batch_message_content: 'Información de los cursos?',
+        offering_names: catalogNames,
+        offering_areas: catalogAreas,
+        catalog_resolution: {
+          kind: 'not_found',
+          requestedText: 'Información de los cursos?',
+          requestedArea: null,
+          alternativeCodes: [],
+        },
+      }));
+
+      expect(fallback.response).toMatch(/Cultural.*Diseño Informático.*Marketing.*Gastronómica/u);
+      expect(fallback.response).not.toMatch(/Inglés Inicial|Diseño Gráfico|Marketing Digital/u);
+      expect(fallback.response?.match(/\?/gu) ?? []).toHaveLength(1);
+    });
+
+    it('answers an area choice with at most three canonical courses', () => {
+      const fallback = modelUnavailableFallback(claimedTurn({
+        batch_message_content: 'Me interesa marketing',
+        offering_names: catalogNames,
+        offering_areas: catalogAreas,
+      }));
+
+      expect(fallback.response).toMatch(/Marketing Digital.*Publicidad en Redes.*Ventas por Internet/u);
+      expect(fallback.response).not.toMatch(/Copywriting Comercial|Cocina Profesional/u);
+      expect(fallback.response?.match(/\?/gu) ?? []).toHaveLength(1);
+    });
+
+    it('keeps the selected canonical course and asks one concrete follow-up', () => {
+      const fallback = modelUnavailableFallback(claimedTurn({
+        batch_message_content: '¿Tiene certificado?',
+        course_of_interest: 'Marketing Digital',
+        offering_code: 'course_2',
+        offering_names: catalogNames,
+        offering_areas: catalogAreas,
+      }));
+
+      expect(fallback.response).toContain('Marketing Digital');
+      expect(fallback.response).not.toContain('Quiero ayudarte con la consulta');
+      expect(fallback.response?.match(/\?/gu) ?? []).toHaveLength(1);
+    });
+
+    it('preserves a non-catalog objection instead of asking what datum to confirm', () => {
+      const fallback = modelUnavailableFallback(claimedTurn({
+        batch_message_content: 'Es caro, no sé si me conviene',
+        offering_names: catalogNames,
+        offering_areas: catalogAreas,
+      }));
+
+      expect(fallback.response).toMatch(/precio|opciones de pago|presupuesto/iu);
+      expect(fallback.response).not.toContain('¿Qué dato querés confirmar?');
+      expect(fallback.response?.match(/\?/gu) ?? []).toHaveLength(1);
+    });
+
+    it('respects a call rejection and keeps the conversation in chat', () => {
+      const fallback = modelUnavailableFallback(claimedTurn({
+        batch_message_content: 'Prefiero seguir por chat, no quiero llamada',
+        offering_names: catalogNames,
+        offering_areas: catalogAreas,
+      }));
+
+      expect(fallback.response).toMatch(/seguimos|continuamos/iu);
+      expect(fallback.response).toMatch(/chat|acá/iu);
+      expect(fallback.response).not.toMatch(/llamamos|te llamo|agendar/iu);
+      expect(fallback.response?.match(/\?/gu) ?? []).toHaveLength(1);
+    });
+
+    it('keeps a negated topic excluded when the provider is unavailable', () => {
+      const fallback = modelUnavailableFallback(claimedTurn({
+        batch_message_content: 'En realidad quiero algo que no tenga que ver con inglés',
+        course_of_interest: 'Inglés Inicial',
+        offering_code: 'course_0',
+        offering_names: catalogNames,
+        offering_areas: catalogAreas,
+      }));
+
+      expect(fallback.response).toMatch(/dejamos ingl[eé]s de lado/iu);
+      expect(fallback.response).not.toMatch(/Inglés Inicial/u);
+      expect(fallback.response?.match(/\?/gu) ?? []).toHaveLength(1);
+    });
+  });
+
   it.each([
     { type: 'mark_hot_lead', score: 0.9 } as const,
     { type: 'log_objection', objection_key: 'price', quote: 'Es caro' } as const,
@@ -162,6 +272,29 @@ describe('applyDecisionPolicy — provider parity', () => {
     }), claimedTurn({ allowed_response_types: ['commercial_reply', 'clarification'] }));
 
     expect(constrained.business_action).toBeNull();
+  });
+
+  it('keeps a deterministic link action when the current turn requests the durably selected plan', () => {
+    const claimed = claimedTurn({
+      batch_message_content: 'Ahora sí, pasame el link',
+      course_of_interest: 'Marketing Digital',
+      offering_code: 'course_0',
+      selected_payment_plan: 'monthly_12',
+      offering_names: ['Marketing Digital'],
+    });
+    const deterministic = modelDecision({
+      business_action: {
+        type: 'send_payment_link',
+        plan_code: 'monthly_12',
+        offering_sku: 'course_0',
+      },
+    });
+
+    expect(applyDecisionPolicy(deterministic, claimed).business_action).toEqual({
+      type: 'send_payment_link',
+      plan_code: 'monthly_12',
+      offering_sku: 'course_0',
+    });
   });
 
   it('replaces a model-authored call confirmation with an allowed non-action reply', () => {

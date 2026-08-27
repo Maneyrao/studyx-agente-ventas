@@ -5,7 +5,10 @@ import {
   renderCoursePrice,
   renderUnknownCertification,
 } from './canonical-commercial-copy'
-import { derivePaymentChoiceFromBatch } from './payment-choice'
+import {
+  derivePaymentChoiceFromBatch,
+  isExplicitPaymentLinkRequest,
+} from './payment-choice'
 
 export const PAYMENT_SELECTION_FAST_PATH_MODEL = 'deterministic:payment-selection-fast-path-v1'
 export const PAYMENT_COMPARISON_FAST_PATH_MODEL = 'deterministic:payment-comparison-fast-path-v1'
@@ -388,11 +391,13 @@ export function matchConversationCloseFastPath(claimed: ClaimedTurn): Decision |
       : 'Entendido. Cuando quieras retomarlo o tengas otra duda, seguimos por acá.',
     response_type: 'commercial_reply',
     confidence: 1,
-    reason_code: 'DETERMINISTIC_DEFERRED_CLOSE',
+    reason_code: isCallDecline
+      ? 'DETERMINISTIC_CALL_DECLINE_CONTINUE'
+      : 'DETERMINISTIC_DEFERRED_CLOSE',
     business_action: null,
     memory_candidates: [],
     missing_information: [],
-    next_state: 'completed',
+    next_state: isCallDecline ? 'waiting_user' : 'completed',
     retrieval_used: RETRIEVAL_NONE,
   }
 }
@@ -403,9 +408,11 @@ export function matchPaymentSelectionFastPath(claimed: ClaimedTurn): Decision | 
   if (claimed.batch.message_count !== 1 || claimed.context.batch_messages.length !== 1) return null
   if (!claimed.business_context_available || !claimed.business_context?.prices_assertable) return null
 
-  const planCode = derivePaymentChoiceFromBatch(
-    claimed.context.batch_messages.map((message) => ({ content: message.content })),
-  )
+  const batchMessages = claimed.context.batch_messages.map((message) => ({ content: message.content }))
+  const directPlanCode = derivePaymentChoiceFromBatch(batchMessages)
+  const linkRequested = isExplicitPaymentLinkRequest(batchMessages)
+  const planCode = directPlanCode
+    ?? (linkRequested ? claimed.sales_context.selected_payment_plan : null)
   if (!planCode) return null
   if (!claimed.business_context.workspace.payment_options.some((option) => option.code === planCode)) {
     return null
@@ -438,22 +445,27 @@ export function matchPaymentSelectionFastPath(claimed: ClaimedTurn): Decision | 
     : planCode === 'monthly_6'
       ? '6 cuotas mensuales'
       : 'un pago único'
+  const sendsLink = linkRequested
   return {
     schema_version: 4,
     intent: 'commercial',
     kind: 'reply',
-    response: `Perfecto, elegiste ${label}. Te comparto el link seguro para continuar.`,
+    response: sendsLink
+      ? `Perfecto, elegiste ${label}. Te comparto el link seguro para continuar.`
+      : `Perfecto, elegiste ${label}. Cuando quieras avanzar, pedime el link seguro.`,
     response_type: 'commercial_reply',
     confidence: 1,
     reason_code: 'DETERMINISTIC_PAYMENT_SELECTION',
-    business_action: {
-      type: 'send_payment_link',
-      plan_code: planCode,
-      offering_sku: offeringSku,
-    },
+    business_action: sendsLink
+      ? {
+          type: 'send_payment_link',
+          plan_code: planCode,
+          offering_sku: offeringSku,
+        }
+      : null,
     memory_candidates: [],
     missing_information: [],
-    next_state: 'completed',
+    next_state: sendsLink ? 'completed' : 'waiting_user',
     retrieval_used: RETRIEVAL_NONE,
   }
 }

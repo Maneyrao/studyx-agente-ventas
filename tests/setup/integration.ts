@@ -1,6 +1,10 @@
 import { inspectLocalTestDatabaseUrl } from '../helpers/db';
 
 process.env.TZ = 'UTC';
+// Decision commits now persist the commercial state on every turn. The real
+// deployment requires this setting, so integration tests use the canonical
+// seeded workspace unless a suite deliberately overrides or deletes it.
+process.env.BUSINESS_WORKSPACE_SLUG ??= 'studyx';
 
 const database = inspectLocalTestDatabaseUrl(process.env.TEST_DATABASE_URL);
 

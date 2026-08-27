@@ -402,6 +402,7 @@ run('sales_context at claim time', () => {
       stage: 'exploring',
       course_of_interest: null,
       offering_code: null,
+      selected_payment_plan: null,
       open_call_offer: null,
       accepted_call_offer: null,
       active_call: null,

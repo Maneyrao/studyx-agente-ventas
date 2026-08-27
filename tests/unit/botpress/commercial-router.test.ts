@@ -193,7 +193,6 @@ function expectDecisionRoute(
 
 describe('routeCommercialTurn', () => {
   it.each([
-    ['Me pasás los cursos disponibles?', 'OPEN_CATALOG_REQUIRES_SALES_MODEL'],
     ['No sé qué estudiar, orientame', 'ADVISORY_REQUIRES_SALES_MODEL'],
     ['Es caro, no sé si me conviene', 'OBJECTION_REQUIRES_SALES_MODEL'],
     ['Prefiero seguir por chat', 'CALL_DECLINE_REQUIRES_SALES_MODEL'],
@@ -609,7 +608,7 @@ describe('routeCommercialTurn', () => {
     })).toMatchObject({ kind: 'model_required', origin: 'advisory_model', reason: 'CALL_DECLINE_REQUIRES_SALES_MODEL' });
   });
 
-  it('lets an authorized multi-message payment selection outrank catalog without preserving an offering', () => {
+  it('asks for the course when a multi-message plan selection has no canonical offering', () => {
     const claimed = claimedTurn({
       texts: ['Busco Python', 'Confirmo 12 cuotas'],
       courseOfInterest: null,
@@ -626,15 +625,14 @@ describe('routeCommercialTurn', () => {
     expect(route).toMatchObject({
       kind: 'deterministic',
       origin: 'payment_selection',
-      reason: 'DETERMINISTIC_PAYMENT_SELECTION',
+      reason: 'OFFERING_REQUIRED',
       decision: {
-        business_action: {
-          type: 'send_payment_link',
-          plan_code: 'monthly_12',
-          offering_sku: null,
-        },
+        kind: 'clarify',
+        business_action: null,
+        missing_information: ['course_of_interest'],
       },
     });
+    expect(route.kind === 'deterministic' ? route.authorizedPaymentPlan : undefined).toBeUndefined();
     expectDecisionRoute(route);
 
     const afterPolicy = applyDecisionPolicy(route.decision, claimed);
@@ -867,12 +865,10 @@ describe('routeCommercialTurn', () => {
       origin: 'payment_selection',
       reason: 'DETERMINISTIC_PAYMENT_SELECTION',
       model: 'deterministic:payment-selection-fast-path-v1',
+      authorizedPaymentPlan: 'monthly_12',
       decision: {
-        business_action: {
-          type: 'send_payment_link',
-          plan_code: 'monthly_12',
-          offering_sku: 'redes-informaticas',
-        },
+        business_action: null,
+        next_state: 'waiting_user',
       },
     });
     expectDecisionRoute(route);
@@ -1373,14 +1369,23 @@ describe('routeCommercialTurn', () => {
 
   describe('catalog navigation', () => {
     const navigationOfferings = [
-      businessOffering('marketing', 'Marketing Digital', 'Marketing'),
-      businessOffering('redes', 'Publicidad en Redes', 'Marketing'),
-      businessOffering('ventas', 'Ventas por Internet', 'Marketing'),
-      businessOffering('copy', 'Copywriting Comercial', 'Marketing'),
-      businessOffering('excel', 'Excel Integral', 'Tecnología'),
+      businessOffering('ingles-1', 'Inglés 1', 'Academia Cultural'),
+      businessOffering('ingles-2', 'Inglés 2', 'Academia Cultural'),
+      businessOffering('ingles-3', 'Inglés 3', 'Academia Cultural'),
+      businessOffering('diseno', 'Diseño Gráfico', 'Academia de Diseño Informático'),
+      businessOffering('emprender', 'Emprendimientos', 'Academia de Emprendedores'),
+      businessOffering('marketing', 'Marketing Digital', 'Academia de Marketing'),
+      businessOffering('redes', 'Publicidad en Redes', 'Academia de Marketing'),
+      businessOffering('ventas', 'Ventas por Internet', 'Academia de Marketing'),
+      businessOffering('copy', 'Copywriting Comercial', 'Academia de Marketing'),
+      businessOffering('belleza', 'Belleza Integral', 'Academia de Moda y Belleza'),
+      businessOffering('negocios', 'Administración', 'Academia de Negocios'),
+      businessOffering('oficios', 'Redes Informáticas', 'Academia de Oficios'),
+      businessOffering('salud', 'Bienestar Integral', 'Academia de Salud y Bienestar'),
+      businessOffering('gastronomia', 'Cocina Profesional', 'Academia Gastronómica'),
     ];
 
-    it('orients a generic catalog request by at most three canonical areas', () => {
+    it('orients a generic catalog request with every canonical area and no course list', () => {
       const route = routeCommercialTurn({
         automationEnabled: true,
         claimed: claimedTurn({
@@ -1398,9 +1403,81 @@ describe('routeCommercialTurn', () => {
         reason: 'DETERMINISTIC_CATALOG_NAVIGATION',
       });
       const response = route.decision.response ?? '';
-      expect(response).toMatch(/Marketing.*Tecnología/u);
-      expect(response).not.toMatch(/Marketing Digital|Publicidad en Redes|Excel Integral/u);
+      expect(response).toMatch(/Cultural.*Diseño Informático.*Emprendedores.*Marketing/u);
+      expect(response).toMatch(/Moda y Belleza.*Negocios.*Oficios.*Salud y Bienestar.*Gastronómica/u);
+      expect(response).not.toMatch(/Inglés 1|Marketing Digital|Publicidad en Redes/u);
       expect(response.match(/\?/gu) ?? []).toHaveLength(1);
+    });
+
+    it.each([
+      'Info de los cursos',
+      'Información de los cursos?',
+      '¿Cuáles hay disponibles?',
+      '¿Qué ofrecen?',
+      'Quiero estudiar algo',
+      'Hola, ¿qué cursos tienen?',
+      'Me pasás los cursos disponibles?',
+    ])('resolves the real generic catalog phrasing without a model: %s', (text) => {
+      const route = routeCommercialTurn({
+        automationEnabled: true,
+        claimed: claimedTurn({
+          texts: [text],
+          courseOfInterest: null,
+          offeringCode: null,
+          offerings: navigationOfferings,
+          catalogResolution: {
+            kind: 'not_found',
+            requestedText: text,
+            requestedArea: null,
+            alternativeCodes: [],
+          },
+        }),
+      });
+
+      expectDecisionRoute(route);
+      expect(route).toMatchObject({
+        kind: 'deterministic',
+        origin: 'catalog_navigation',
+        reason: 'DETERMINISTIC_CATALOG_NAVIGATION',
+      });
+      expect(route.decision.response).not.toMatch(/Inglés 1|Marketing Digital|Diseño Gráfico/u);
+      expect(route.decision.response?.match(/\?/gu) ?? []).toHaveLength(1);
+    });
+
+    it.each([
+      {
+        texts: ['Info de los cursos', 'Hola información', '??'],
+        catalogResolution: {
+          kind: 'not_found' as const,
+          requestedText: 'Info de los cursos\nHola información\n??',
+          requestedArea: null,
+          alternativeCodes: [],
+        },
+      },
+      {
+        texts: ['Hola', 'Quiero ver los cursos'],
+        catalogResolution: { kind: 'no_catalog_intent' as const },
+      },
+    ])('answers the catalog request in a message burst without restarting: $texts', ({ texts, catalogResolution }) => {
+      const route = routeCommercialTurn({
+        automationEnabled: true,
+        claimed: claimedTurn({
+          texts,
+          courseOfInterest: null,
+          offeringCode: null,
+          offerings: navigationOfferings,
+          catalogResolution,
+        }),
+      });
+
+      expectDecisionRoute(route);
+      expect(route).toMatchObject({
+        kind: 'deterministic',
+        origin: 'catalog_navigation',
+        reason: 'DETERMINISTIC_CATALOG_NAVIGATION',
+      });
+      expect(route.decision.response).not.toMatch(/No pude verificar|Inglés 1|Marketing Digital/u);
+      expect(route.decision.response?.match(/\?/gu) ?? []).toHaveLength(1);
     });
 
     it('recognizes the Rioplatense generic catalog phrasing used in chat', () => {
@@ -1426,7 +1503,7 @@ describe('routeCommercialTurn', () => {
         origin: 'catalog_navigation',
         reason: 'DETERMINISTIC_CATALOG_NAVIGATION',
       });
-      expect(route.decision.response).toMatch(/Marketing.*Tecnología/u);
+      expect(route.decision.response).toMatch(/Diseño Informático.*Marketing/u);
     });
 
     it('recognizes a customer asking to discover the available courses', () => {
@@ -1459,7 +1536,7 @@ describe('routeCommercialTurn', () => {
       const route = routeCommercialTurn({
         automationEnabled: true,
         claimed: claimedTurn({
-          texts: ['¿Qué cursos tienen de Marketing?'],
+          texts: ['¿Qué cursos tienen de Academia de Marketing?'],
           courseOfInterest: null,
           offeringCode: null,
           offerings: navigationOfferings,
@@ -1474,8 +1551,78 @@ describe('routeCommercialTurn', () => {
       });
       const response = route.decision.response ?? '';
       expect(response).toMatch(/Marketing Digital.*Publicidad en Redes.*Ventas por Internet/u);
-      expect(response).not.toMatch(/Copywriting Comercial|Excel Integral/u);
+      expect(response).not.toMatch(/Copywriting Comercial|Diseño Gráfico/u);
       expect(response.match(/\?/gu) ?? []).toHaveLength(1);
+    });
+
+    it.each(['Marketing', 'Me interesa marketing'])('lists at most three canonical courses when the customer chooses an area: %s', (text) => {
+      const route = routeCommercialTurn({
+        automationEnabled: true,
+        claimed: claimedTurn({
+          texts: [text],
+          courseOfInterest: null,
+          offeringCode: null,
+          offerings: navigationOfferings,
+          recentInbound: ['Podemos orientarte por áreas. ¿Qué te gustaría aprender?'],
+          catalogResolution: { kind: 'no_catalog_intent' },
+        }),
+      });
+
+      expectDecisionRoute(route);
+      expect(route).toMatchObject({
+        kind: 'deterministic',
+        origin: 'catalog_navigation',
+        reason: 'DETERMINISTIC_CATALOG_NAVIGATION',
+      });
+      expect(route.decision.response).toMatch(/Marketing Digital.*Publicidad en Redes.*Ventas por Internet/u);
+      expect(route.decision.response).not.toMatch(/Copywriting Comercial|Diseño Gráfico/u);
+      expect(route.decision.response?.match(/\?/gu) ?? []).toHaveLength(1);
+    });
+
+    it('lists the three canonical English levels for the supervised-smoke phrasing', () => {
+      const route = routeCommercialTurn({
+        automationEnabled: true,
+        claimed: claimedTurn({
+          texts: ['Me interesa inglés'],
+          courseOfInterest: null,
+          offeringCode: null,
+          offerings: navigationOfferings,
+          recentInbound: ['Tenemos varias áreas. ¿Qué te gustaría aprender?'],
+          catalogResolution: { kind: 'no_catalog_intent' },
+        }),
+      });
+
+      expectDecisionRoute(route);
+      expect(route).toMatchObject({
+        kind: 'deterministic',
+        origin: 'catalog_navigation',
+        reason: 'DETERMINISTIC_CATALOG_NAVIGATION',
+      });
+      expect(route.decision.response).toMatch(/Inglés 1.*Inglés 2.*Inglés 3/u);
+      expect(route.decision.response?.match(/\?/gu) ?? []).toHaveLength(1);
+    });
+
+    it('does not recommend the negated topic when the customer asks for something different', () => {
+      const route = routeCommercialTurn({
+        automationEnabled: true,
+        claimed: claimedTurn({
+          texts: ['En realidad quiero algo que no tenga que ver con inglés'],
+          courseOfInterest: 'Inglés 1',
+          offeringCode: 'ingles-1',
+          offerings: navigationOfferings,
+          catalogResolution: { kind: 'no_catalog_intent' },
+        }),
+      });
+
+      expect(route).toMatchObject({
+        kind: 'deterministic',
+        origin: 'catalog_navigation',
+        reason: 'DETERMINISTIC_CATALOG_NAVIGATION',
+      });
+      if (route.kind !== 'deterministic') throw new Error('expected deterministic route');
+      expect(route.decision.response).toMatch(/dejamos ingl[eé]s de lado/iu);
+      expect(route.decision.response).not.toMatch(/Inglés 1|Inglés 2|Inglés 3/u);
+      expect(route.decision.response?.match(/\?/gu) ?? []).toHaveLength(1);
     });
   });
 });

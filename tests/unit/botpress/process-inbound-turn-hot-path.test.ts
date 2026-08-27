@@ -48,7 +48,11 @@ vi.mock('../../../botpress-agent/src/lib/decision/groq-direct', () => ({
 import { configuration, secrets } from '../../helpers/botpress-runtime-stub';
 import { processInboundTurn } from '../../../botpress-agent/src/workflows/processInboundTurn';
 import type { ClaimedTurn } from '../../../botpress-agent/src/schemas/contracts';
-import { DEFAULT_REQUEST_TIMEOUT_MS, resolveRequestTimeoutMs } from '../../../botpress-agent/src/utils/http';
+import {
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  resolveRequestTimeoutMs,
+  StudyxHttpError,
+} from '../../../botpress-agent/src/utils/http';
 import { dispatch } from '../../../botpress-agent/src/channels';
 
 const UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
@@ -575,6 +579,49 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
+  it('propagates a deterministic plan selection without sending a payment link', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.context.batch_messages[0].content = 'Confirmo pago único';
+    claimed.business_context_available = true;
+    claimed.business_context = paymentBusinessContext();
+    claimed.sales_context.course_of_interest = 'Redes Informáticas';
+    claimed.sales_context.offering_code = 'redes-informaticas';
+    claimed.sales_context.selected_payment_plan = null;
+    actionSpies.claim.mockResolvedValue(claimed);
+
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => {
+      throw new Error('MODEL_MUST_NOT_RUN_FOR_PAYMENT_SELECTION');
+    });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(),
+      state: processingState(),
+      step,
+      execute,
+      client: {},
+      signal: new AbortController().signal,
+      workflow: { id: 'workflow-test' },
+    });
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      authorized_offering_code: 'redes-informaticas',
+      authorized_payment_plan: 'one_time',
+      decision: {
+        reason_code: 'DETERMINISTIC_PAYMENT_SELECTION',
+        business_action: null,
+        next_state: 'waiting_user',
+      },
+    });
+  });
+
   it('retries one transient model failure before using the customer-visible fallback', async () => {
     const step = Object.assign(
       async (
@@ -808,7 +855,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('keeps send_payment_link intact when the batch deterministically names the same plan', async () => {
+  it('keeps send_payment_link intact when the batch names the plan and explicitly asks for the link', async () => {
     const claimed = {
       ...claimedResponse(),
       sales_context: {
@@ -820,7 +867,7 @@ describe('processInboundTurn hot path', () => {
       business_context_available: true,
     };
     claimed.policy.allowed_response_types = ['commercial_reply', 'clarification'];
-    claimed.context.batch_messages[0].content = 'Confirmo pago único de 360 dólares';
+    claimed.context.batch_messages[0].content = 'Confirmo pago único de 360 dólares y pasame el link';
     actionSpies.claim.mockResolvedValue(claimed);
 
     const decision = await runModelDecision({
@@ -1060,6 +1107,29 @@ describe('processInboundTurn — decision provider selection', () => {
     });
   });
 
+  it('groq_direct: turns one 429 into a bounded contextual fallback', async () => {
+    configuration.decisionProvider = 'groq_direct';
+    configuration.groqDecisionModel = 'openai/gpt-oss-120b';
+    secrets.GROQ_API_KEY = 'test-groq-key';
+    actionSpies.groqDecision.mockRejectedValue(
+      new StudyxHttpError('GROQ_HTTP_429', false),
+    );
+    const execute = vi.fn();
+
+    await expect(invokeHandler(execute)).resolves.toBeDefined();
+
+    expect(actionSpies.groqDecision).toHaveBeenCalledTimes(1);
+    expect(actionSpies.geminiDecision).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input?.decision).toMatchObject({
+      response_type: 'commercial_reply',
+      reason_code: 'MODEL_UNAVAILABLE',
+      next_state: 'waiting_user',
+    });
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input?.decision.response)
+      .toMatch(/presupuesto|precio/i);
+  });
+
   it('gemini_direct: degrades to a conversational reply when GEMINI_API_KEY is missing', async () => {
     configuration.decisionProvider = 'gemini_direct';
     delete secrets.GEMINI_API_KEY;
@@ -1128,7 +1198,11 @@ describe('router dispatch — non-message callbacks never reach the workflow dis
       conversation,
       traceId: 'trace-callback-1',
     });
-    expect(result.kind).toBe('skip');
+    expect(result).toEqual({
+      kind: 'skip',
+      adapter: null,
+      reason: 'EVENT_TYPE_UNSUPPORTED',
+    });
   });
 
   it('still dispatches an ordinary inbound text message on the same channel', () => {

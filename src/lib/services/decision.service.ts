@@ -27,6 +27,7 @@ import { PAYMENT_PLAN_PRESENTATIONS } from '@/features/payments/domain/payment-l
 import {
   classifyCurrentPaymentIntent,
   deriveDeferredPaymentChoiceFromBatch,
+  derivePaymentChoiceFromBatch,
 } from '@/features/payments/domain/payment-choice-policy';
 import {
   buildAuthorizedEgress,
@@ -81,6 +82,8 @@ export interface CommitDecisionInput {
    * workspace snapshot before it authorizes a single fact.
    */
   authorized_offering_code?: string | null;
+  /** Claim-time deterministic plan selection; re-derived from the batch. */
+  authorized_payment_plan?: 'monthly_12' | 'monthly_6' | 'one_time' | null;
   decision: AnyDecision;
   model: {
     provider: 'botpress' | 'google-ai-direct' | 'groq-direct';
@@ -279,6 +282,9 @@ function decisionPayload(input: CommitDecisionInput) {
     ...(input.authorized_offering_code
       ? { authorized_offering_code: input.authorized_offering_code }
       : {}),
+    ...(input.authorized_payment_plan
+      ? { authorized_payment_plan: input.authorized_payment_plan }
+      : {}),
   };
 }
 
@@ -392,6 +398,36 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     let canonicalOfferings: readonly RawOfferingRow[] | undefined;
     let canonicalWorkspaceId: string | null = null;
     let canonicalSnapshotAttempted = false;
+    const workspaceSlug = loadBusinessWorkspaceConfig().workspaceSlug;
+    const salesContextStore = new PostgresSalesContextStore(db);
+    const existingSalesContext = await salesContextStore.load(workspaceSlug, turn.contact_id);
+    let loadedBatchMessages: Array<{ content: string }> | null = null;
+
+    const loadBatchMessages = async (): Promise<Array<{ content: string }>> => {
+      if (loadedBatchMessages !== null) return loadedBatchMessages;
+      loadedBatchMessages = turn.batch_id === null
+        ? [{ content: turn.content }]
+        : await db<Array<{ content: string }>>`
+            SELECT content FROM messages
+            WHERE batch_id = ${turn.batch_id}::uuid AND direction = 'inbound'
+            ORDER BY conversation_seq ASC, created_at ASC, id ASC
+          `;
+      return loadedBatchMessages;
+    };
+
+    const authorizedPaymentPlan = validatedInput.authorized_payment_plan ?? null;
+    if (authorizedPaymentPlan !== null) {
+      const backendDerivedPlan = derivePaymentChoiceFromBatch(await loadBatchMessages());
+      if (backendDerivedPlan !== authorizedPaymentPlan) {
+        throw new DecisionPolicyError('PAYMENT_PLAN_MISMATCH');
+      }
+      if (
+        effectiveAuthorizedOfferingCode === null
+        && !existingSalesContext?.selected_offering_code
+      ) {
+        throw new DecisionPolicyError('PAYMENT_OFFERING_REQUIRED');
+      }
+    }
 
     const loadCanonicalOfferings = async (
       purpose: 'payment_link' | 'protected_facts'
@@ -403,7 +439,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         // pool: with a one-connection pool, a second checkout from inside the
         // open transaction would wait on itself.
         const snapshot = await new PostgresBusinessContextStore(db).loadBusinessCatalog(
-          loadBusinessWorkspaceConfig().workspaceSlug
+          workspaceSlug
         );
         canonicalWorkspaceId = snapshot?.workspace.id ?? null;
         canonicalOfferings = snapshot?.offerings ?? [];
@@ -423,13 +459,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
 
     if (decision.schema_version === 4 && decision.business_action?.type === 'send_payment_link') {
       const action = decision.business_action;
-      const batchMessages = turn.batch_id === null
-        ? [{ content: turn.content }]
-        : await db<Array<{ content: string }>>`
-            SELECT content FROM messages
-            WHERE batch_id = ${turn.batch_id}::uuid AND direction = 'inbound'
-            ORDER BY conversation_seq ASC, created_at ASC, id ASC
-          `;
+      const batchMessages = await loadBatchMessages();
 
       // One extra canonical read, ONLY for payment or a response containing a
       // protected fact. A greeting/plain clarification does not pay this DB
@@ -437,20 +467,26 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       const offerings = await loadCanonicalOfferings('payment_link');
       let deferredPlanCode: ReturnType<typeof deriveDeferredPaymentChoiceFromBatch> = null;
       if (classifyCurrentPaymentIntent(batchMessages).kind === 'resume') {
-        const priorInboundMessages = await db<Array<{ content: string }>>`
-          SELECT prior.content
-          FROM messages AS prior
-          WHERE prior.conversation_id = ${turn.conversation_id}::uuid
-            AND prior.direction = 'inbound'
-            AND prior.conversation_seq < (
-              SELECT current_turn.conversation_seq
-              FROM messages AS current_turn
-              WHERE current_turn.id = ${turn.id}::uuid
-            )
-          ORDER BY prior.conversation_seq DESC, prior.created_at DESC, prior.id DESC
-          LIMIT 1
-        `;
-        deferredPlanCode = deriveDeferredPaymentChoiceFromBatch(priorInboundMessages);
+        const resumesPersistedSelection = existingSalesContext?.selected_payment_plan === action.plan_code
+          && existingSalesContext.selected_offering_code === action.offering_sku;
+        if (resumesPersistedSelection) {
+          deferredPlanCode = existingSalesContext.selected_payment_plan;
+        } else {
+          const priorInboundMessages = await db<Array<{ content: string }>>`
+            SELECT prior.content
+            FROM messages AS prior
+            WHERE prior.conversation_id = ${turn.conversation_id}::uuid
+              AND prior.direction = 'inbound'
+              AND prior.conversation_seq < (
+                SELECT current_turn.conversation_seq
+                FROM messages AS current_turn
+                WHERE current_turn.id = ${turn.id}::uuid
+              )
+            ORDER BY prior.conversation_seq DESC, prior.created_at DESC, prior.id DESC
+            LIMIT 1
+          `;
+          deferredPlanCode = deriveDeferredPaymentChoiceFromBatch(priorInboundMessages);
+        }
       }
 
       const materialized = materializePaymentLinkAction({
@@ -858,26 +894,41 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       : null;
     const selectedOfferingCode = requestedPayment?.offering_sku
       ?? effectiveAuthorizedOfferingCode
+      ?? existingSalesContext?.selected_offering_code
       ?? null;
     const selectedPlan = requestedPayment && isSalesPaymentPlan(requestedPayment.plan_code)
       ? requestedPayment.plan_code
-      : null;
-    if (selectedOfferingCode !== null || selectedPlan !== null) {
-      const stage = requestedPayment && committedBusinessAction?.type === 'send_payment_link'
-        ? 'payment_link_sent'
-        : selectedPlan !== null
-          ? 'plan_selected'
-          : 'course_selected';
-      await new PostgresSalesContextStore(db).transition({
-        workspace_slug: loadBusinessWorkspaceConfig().workspaceSlug,
-        contact_id: turn.contact_id,
-        conversation_id: turn.conversation_id,
-        source_turn_id: turn.id,
-        selected_offering_code: selectedOfferingCode,
-        selected_payment_plan: selectedPlan,
-        stage,
-      });
-    }
+      : authorizedPaymentPlan;
+    const closesCommercialConversation = decision.intent === 'opt_out'
+      || (
+        decision.intent === 'commercial_decline'
+        && decision.next_state === 'completed'
+        && decision.reason_code === 'DETERMINISTIC_DEFERRED_CLOSE'
+      );
+    const sameOfferingAsBefore = effectiveAuthorizedOfferingCode !== null
+      && effectiveAuthorizedOfferingCode === existingSalesContext?.selected_offering_code;
+    const stage = callRequest !== null
+      ? 'handoff'
+      : closesCommercialConversation
+        ? 'closed'
+        : requestedPayment !== null
+          ? 'payment_link_sent'
+          : selectedPlan !== null
+            ? 'plan_selected'
+            : effectiveAuthorizedOfferingCode !== null
+              && (!sameOfferingAsBefore || existingSalesContext?.stage === 'exploring'
+                || existingSalesContext?.stage === 'qualified' || existingSalesContext?.stage === 'closed')
+              ? 'course_selected'
+              : existingSalesContext?.stage ?? 'exploring';
+    await salesContextStore.transition({
+      workspace_slug: workspaceSlug,
+      contact_id: turn.contact_id,
+      conversation_id: turn.conversation_id,
+      source_turn_id: turn.id,
+      selected_offering_code: selectedOfferingCode,
+      selected_payment_plan: selectedPlan,
+      stage,
+    });
 
     await auditLog({
       action: 'agent.decision.committed',

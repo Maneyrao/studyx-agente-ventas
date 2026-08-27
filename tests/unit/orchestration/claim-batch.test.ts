@@ -223,7 +223,8 @@ describe('claimBatch', () => {
     expect(result).toMatchObject({
       outcome: 'claimed',
       sales_context: {
-        offering_code: 'redes', course_of_interest: 'Redes Informáticas', stage: 'plan_selected',
+        offering_code: 'redes', course_of_interest: 'Redes Informáticas',
+        selected_payment_plan: 'monthly_12', stage: 'plan_selected',
       },
     });
   });
@@ -1486,6 +1487,7 @@ describe('claimBatch sales_context', () => {
       stage: 'exploring',
       course_of_interest: null,
       offering_code: null,
+      selected_payment_plan: null,
       open_call_offer: null,
       accepted_call_offer: null,
       active_call: null,

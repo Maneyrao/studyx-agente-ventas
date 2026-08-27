@@ -78,3 +78,16 @@ export function derivePaymentChoiceFromBatch(
   const [only] = matched
   return only ?? null
 }
+
+const EXPLICIT_PAYMENT_LINK_REQUEST_PATTERN =
+  /(?:\b(?:manda|mandame|mandamelo|envia|enviame|pasame|comparti|compartime)\b.{0,24}\b(?:link|enlace)\b|\b(?:link|enlace)\b.{0,24}\b(?:manda|mandame|envia|enviame|pasame|comparti|compartime)\b)/u
+
+export function isExplicitPaymentLinkRequest(
+  messages: readonly PolicyBatchMessage[],
+): boolean {
+  return messages.some((message) => {
+    const normalized = normalize(message.content ?? '')
+    if (PAYMENT_DEFERRAL_PATTERNS.some((pattern) => pattern.test(normalized))) return false
+    return EXPLICIT_PAYMENT_LINK_REQUEST_PATTERN.test(normalized)
+  })
+}

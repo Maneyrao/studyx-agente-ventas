@@ -139,6 +139,7 @@ const schema = z.object({
   // Claim-time identity only. decision.service re-resolves this exact code in
   // the configured workspace snapshot before it authorizes any response fact.
   authorized_offering_code: z.string().trim().min(1).max(128).nullable().optional(),
+  authorized_payment_plan: z.enum(['monthly_12', 'monthly_6', 'one_time']).nullable().optional(),
   decision: decisionSchema,
   model: z.object({
     provider: z.enum(['botpress', 'google-ai-direct', 'groq-direct']),

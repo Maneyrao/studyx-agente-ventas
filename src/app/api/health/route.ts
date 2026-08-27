@@ -12,15 +12,21 @@ import { NextResponse } from 'next/server';
  */
 export const dynamic = 'force-dynamic';
 
+function releaseCommit(): string | null {
+  const candidate = process.env.STUDYX_RELEASE_SHA ?? process.env.VERCEL_GIT_COMMIT_SHA;
+  return candidate && /^[a-f0-9]{40}$/u.test(candidate) ? candidate : null;
+}
+
 export async function GET() {
   return NextResponse.json(
     {
       status: 'ok',
       service: 'studyx-agente-ventas',
       timestamp: new Date().toISOString(),
-      // Set by Vercel; absent locally. Useful for telling two deployments apart
-      // in a log drain.
-      commit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+      // Vercel fills its native value for Git deployments. CLI deployments
+      // inject STUDYX_RELEASE_SHA explicitly so the same endpoint always
+      // proves the exact source commit instead of returning an empty marker.
+      commit: releaseCommit(),
       region: process.env.VERCEL_REGION ?? null,
     },
     { status: 200 }
