@@ -1,5 +1,9 @@
 import { sql } from '@/lib/db/orchestrator';
 import type { DbClient } from '@/lib/db/types';
+import {
+  buildBusinessContextView,
+  type RawBusinessContext,
+} from '@/features/orchestration/domain/business-context';
 import type { DependencyProbe } from '../domain/readiness';
 import {
   EMBEDDING_EPOCH,
@@ -53,6 +57,93 @@ export async function probePostgres(db: DbClient = sql): Promise<DependencyProbe
       required: true,
       status: 'down',
       detail: String(error).slice(0, 200),
+      latency_ms: Date.now() - startedAt,
+    };
+  }
+}
+
+/**
+ * Required: an Agent A deployment with a reachable database but no configured
+ * commercial snapshot cannot answer catalog or payment questions truthfully.
+ */
+export async function probeCommercialSnapshot(
+  readWorkspace: () => { workspaceSlug: string },
+  store: { loadBusinessContext: (workspaceSlug: string) => Promise<RawBusinessContext | null> },
+): Promise<DependencyProbe> {
+  const startedAt = Date.now();
+  let workspaceSlug: string;
+  try {
+    workspaceSlug = readWorkspace().workspaceSlug;
+  } catch {
+    return {
+      name: 'commercial_snapshot',
+      required: true,
+      status: 'down',
+      detail: 'workspace_configuration_invalid',
+      latency_ms: Date.now() - startedAt,
+    };
+  }
+  try {
+    const raw = await withTimeout(store.loadBusinessContext(workspaceSlug));
+    if (raw === null) {
+      return {
+        name: 'commercial_snapshot',
+        required: true,
+        status: 'down',
+        detail: 'workspace_not_found_or_inactive',
+        latency_ms: Date.now() - startedAt,
+      };
+    }
+    const snapshot = buildBusinessContextView(raw);
+    if (snapshot.offerings.length === 0) {
+      return {
+        name: 'commercial_snapshot',
+        required: true,
+        status: 'down',
+        detail: 'catalog_empty',
+        latency_ms: Date.now() - startedAt,
+      };
+    }
+    if (snapshot.offerings_truncated > 0) {
+      return {
+        name: 'commercial_snapshot',
+        required: true,
+        status: 'down',
+        detail: 'catalog_truncated',
+        latency_ms: Date.now() - startedAt,
+      };
+    }
+    if (snapshot.workspace.payment_options.length === 0) {
+      return {
+        name: 'commercial_snapshot',
+        required: true,
+        status: 'down',
+        detail: 'payment_options_unavailable',
+        latency_ms: Date.now() - startedAt,
+      };
+    }
+    if (!snapshot.prices_assertable) {
+      return {
+        name: 'commercial_snapshot',
+        required: true,
+        status: 'down',
+        detail: 'catalog_prices_not_assertable',
+        latency_ms: Date.now() - startedAt,
+      };
+    }
+    return {
+      name: 'commercial_snapshot',
+      required: true,
+      status: 'ok',
+      detail: null,
+      latency_ms: Date.now() - startedAt,
+    };
+  } catch {
+    return {
+      name: 'commercial_snapshot',
+      required: true,
+      status: 'down',
+      detail: 'catalog_snapshot_unavailable',
       latency_ms: Date.now() - startedAt,
     };
   }
