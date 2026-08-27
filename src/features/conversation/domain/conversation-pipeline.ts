@@ -160,6 +160,12 @@ export interface CanonicalFactRefV1 {
   readonly payment_plan?: SalesPaymentPlan;
 }
 
+export interface CanonicalFactV1 extends CanonicalFactRefV1 {
+  readonly source: 'business_snapshot' | 'payment_config';
+  readonly value: string;
+  readonly area_code?: string;
+}
+
 export interface ComposedNarrativeV1 {
   readonly schema_version: 1;
   readonly narrative: {

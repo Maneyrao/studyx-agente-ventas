@@ -100,6 +100,13 @@ export const CanonicalFactRefV1Schema = z.object({
   payment_plan: PaymentPlanSchema.optional(),
 }).strict();
 
+export const ConversationPlanResponseV1Schema = z.object({
+  plan: TurnPlanV1Schema,
+  fact_refs: z.array(CanonicalFactRefV1Schema).max(32),
+  state_version: z.number().int().nonnegative(),
+  plan_hash: z.string().regex(/^[a-f0-9]{64}$/),
+}).strict();
+
 export const ComposedNarrativeV1Schema = z.object({
   schema_version: z.literal(1),
   narrative: z.object({
@@ -117,4 +124,5 @@ export const ComposedNarrativeV1Schema = z.object({
 export type ConversationMoveV1 = z.infer<typeof ConversationMoveV1Schema>;
 export type TurnPlanV1 = z.infer<typeof TurnPlanV1Schema>;
 export type CanonicalFactRefV1 = z.infer<typeof CanonicalFactRefV1Schema>;
+export type ConversationPlanResponseV1 = z.infer<typeof ConversationPlanResponseV1Schema>;
 export type ComposedNarrativeV1 = z.infer<typeof ComposedNarrativeV1Schema>;
