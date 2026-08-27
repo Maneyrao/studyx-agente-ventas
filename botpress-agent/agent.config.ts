@@ -5,7 +5,7 @@ import {
 } from "./src/channels/shared/emulator-envelope";
 
 export default defineConfig({
-  name: "Studyx",
+  name: "STUDYX",
   description:
     "StudyX sales conversation adapter. Next.js and Supabase remain the source of truth.",
 
