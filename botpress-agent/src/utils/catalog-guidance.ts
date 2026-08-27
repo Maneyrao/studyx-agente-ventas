@@ -1,5 +1,8 @@
 import type { ClaimedTurn } from '../schemas/contracts'
-import { renderCatalogOptions } from './canonical-commercial-copy'
+import {
+  renderCatalogAreaGuidance,
+  renderCatalogOptions,
+} from './canonical-commercial-copy'
 
 type CatalogOffering = {
   readonly code: string
@@ -68,12 +71,6 @@ function catalogOfferings(claimed: ClaimedTurn): readonly CatalogOffering[] {
 
 function academyLabel(academy: string): string {
   return academy.replace(/^Academia(?: de)?\s+/iu, '').trim()
-}
-
-function joinSpanish(values: readonly string[]): string {
-  if (values.length <= 1) return values[0] ?? ''
-  if (values.length === 2) return `${values[0]} y ${values[1]}`
-  return `${values.slice(0, -1).join(', ')} y ${values.at(-1)}`
 }
 
 function containsTerm(text: string, term: string): boolean {
@@ -166,9 +163,12 @@ export function catalogGuidanceForTurn(claimed: ClaimedTurn): CatalogGuidance | 
   )]
   const excludedTopic = negatedCatalogTopic(messages, offerings)
   if (excludedTopic && academies.length > 0) {
+    const areaGuidance = renderCatalogAreaGuidance({
+      areas: academies.map(academyLabel),
+    })
     return {
       kind: 'generic',
-      response: `Perfecto, dejamos ${excludedTopic} de lado. Tenemos opciones en ${joinSpanish(academies.map(academyLabel))}. ¿Qué te gustaría aprender?`,
+      response: `Perfecto, dejamos ${excludedTopic} de lado. ${areaGuidance}`,
       missingInformation: 'catalog_area',
     }
   }
@@ -205,7 +205,7 @@ export function catalogGuidanceForTurn(claimed: ClaimedTurn): CatalogGuidance | 
   const labels = academies.map(academyLabel)
   return {
     kind: 'generic',
-    response: `Tenemos opciones en ${joinSpanish(labels)}. ¿Qué te gustaría aprender?`,
+    response: renderCatalogAreaGuidance({ areas: labels }),
     missingInformation: 'catalog_area',
   }
 }

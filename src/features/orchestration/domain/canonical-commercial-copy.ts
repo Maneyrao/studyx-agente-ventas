@@ -24,6 +24,10 @@ export interface CatalogOptionsCopyInput {
   readonly maxItems: number;
 }
 
+export interface CatalogAreaGuidanceCopyInput {
+  readonly areas: readonly string[];
+}
+
 function renderDecimal(amount: string): string {
   return amount.replace(/(\.\d*?[1-9])0+$/u, '$1').replace(/\.0+$/u, '');
 }
@@ -47,4 +51,14 @@ export function renderUnknownCertification(input: UnknownCertificationCopyInput)
 export function renderCatalogOptions(input: CatalogOptionsCopyInput): string {
   const names = input.names.slice(0, Math.max(0, input.maxItems));
   return `En ${input.area} tenemos ${names.join(', ')}. ¿Cuál querés revisar?`;
+}
+
+function joinSpanish(values: readonly string[]): string {
+  if (values.length <= 1) return values[0] ?? '';
+  if (values.length === 2) return `${values[0]} y ${values[1]}`;
+  return `${values.slice(0, -1).join(', ')} y ${values.at(-1)}`;
+}
+
+export function renderCatalogAreaGuidance(input: CatalogAreaGuidanceCopyInput): string {
+  return `Podemos orientarte por estas áreas: ${joinSpanish(input.areas)}. ¿Cuál te interesa?`;
 }
