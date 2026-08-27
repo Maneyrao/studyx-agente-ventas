@@ -1,7 +1,7 @@
 import type { ClaimedTurn, Decision } from '../schemas/contracts'
 import {
-  derivePaymentChoiceFromBatch,
-  isExplicitPaymentLinkRequest,
+  classifyCurrentPaymentIntent,
+  hasTemporalPaymentDeferral,
 } from './payment-choice'
 import {
   catalogGuidanceForTurn,
@@ -506,11 +506,18 @@ export function applyDecisionPolicy(decision: Decision, claimed: ClaimedTurn): D
   // no link goes out, but the turn always answers (P0, informe 2026-08-23).
   if (decision.business_action?.type === 'send_payment_link') {
     const batchMessages = claimed.context.batch_messages.map((message) => ({ content: message.content }))
-    const currentPlan = derivePaymentChoiceFromBatch(batchMessages)
-    const authorizedPlan = currentPlan
-      ?? (isExplicitPaymentLinkRequest(batchMessages)
+    const currentIntent = classifyCurrentPaymentIntent(batchMessages)
+    const previousInbound = [...claimed.context.recent_turns]
+      .reverse()
+      .find((turn) => turn.direction === 'inbound')
+    const resumesDeferredSelection = currentIntent.kind === 'resume'
+      && previousInbound !== undefined
+      && hasTemporalPaymentDeferral([{ content: previousInbound.content }])
+    const authorizedPlan = currentIntent.kind === 'direct'
+      ? currentIntent.planCode ?? claimed.sales_context.selected_payment_plan
+      : resumesDeferredSelection
         ? claimed.sales_context.selected_payment_plan
-        : null)
+        : null
     if (authorizedPlan !== decision.business_action.plan_code) {
       return withDeterministicMemories(paymentPlanClarification(
         claimed,

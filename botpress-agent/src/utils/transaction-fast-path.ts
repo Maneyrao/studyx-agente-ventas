@@ -6,8 +6,9 @@ import {
   renderUnknownCertification,
 } from './canonical-commercial-copy'
 import {
-  derivePaymentChoiceFromBatch,
-  isExplicitPaymentLinkRequest,
+  classifyCurrentPaymentIntent,
+  derivePaymentPlanSelectionFromBatch,
+  hasTemporalPaymentDeferral,
 } from './payment-choice'
 
 export const PAYMENT_SELECTION_FAST_PATH_MODEL = 'deterministic:payment-selection-fast-path-v1'
@@ -409,10 +410,18 @@ export function matchPaymentSelectionFastPath(claimed: ClaimedTurn): Decision | 
   if (!claimed.business_context_available || !claimed.business_context?.prices_assertable) return null
 
   const batchMessages = claimed.context.batch_messages.map((message) => ({ content: message.content }))
-  const directPlanCode = derivePaymentChoiceFromBatch(batchMessages)
-  const linkRequested = isExplicitPaymentLinkRequest(batchMessages)
-  const planCode = directPlanCode
-    ?? (linkRequested ? claimed.sales_context.selected_payment_plan : null)
+  const currentIntent = classifyCurrentPaymentIntent(batchMessages)
+  const selectedCurrentPlan = derivePaymentPlanSelectionFromBatch(batchMessages)
+  const previousInbound = [...claimed.context.recent_turns]
+    .reverse()
+    .find((turn) => turn.direction === 'inbound')
+  const resumesDeferredSelection = currentIntent.kind === 'resume'
+    && previousInbound !== undefined
+    && hasTemporalPaymentDeferral([{ content: previousInbound.content }])
+  const planCode = selectedCurrentPlan
+    ?? (currentIntent.kind === 'direct' || resumesDeferredSelection
+      ? claimed.sales_context.selected_payment_plan
+      : null)
   if (!planCode) return null
   if (!claimed.business_context.workspace.payment_options.some((option) => option.code === planCode)) {
     return null
@@ -445,7 +454,7 @@ export function matchPaymentSelectionFastPath(claimed: ClaimedTurn): Decision | 
     : planCode === 'monthly_6'
       ? '6 cuotas mensuales'
       : 'un pago único'
-  const sendsLink = linkRequested
+  const sendsLink = currentIntent.kind === 'direct' || resumesDeferredSelection
   return {
     schema_version: 4,
     intent: 'commercial',

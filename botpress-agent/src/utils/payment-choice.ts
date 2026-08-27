@@ -50,33 +50,100 @@ const NARRATIVE_CONTADO_PATTERN =
 const EXPLICIT_ONE_TIME_WITHOUT_CONTADO_PATTERN =
   /\b(?:pago\s+unico|todo\s+junto|un\s+solo\s+pago|pago\s+total|(?:un\s+)?unico\s+pago)\b/
 
-const PAYMENT_DEFERRAL_PATTERNS: readonly RegExp[] = [
+const TEMPORAL_PAYMENT_DEFERRAL_PATTERNS: readonly RegExp[] = [
   /\bno\s+me\s+(?:mandes|envies|pases|compartas)\s+(?:el\s+)?link\b/,
   /\b(?:todavia\s+no|despues|mas\s+adelante|por\s+ahora\s+no)\b/,
-  /\b(?:solo|solamente)\s+(?:consultaba|preguntaba|averiguaba)\b/,
-  /\bsi\s+(?:comprara|me\s+anotara|me\s+inscribiera|eligiera)\b/,
 ]
 
-export function derivePaymentChoiceFromBatch(
+const NON_COMMITTAL_PAYMENT_PATTERNS: readonly RegExp[] = [
+  /\b(?:solo|solamente)\s+(?:consultaba|preguntaba|averiguaba)\b/,
+  /\bsi\s+(?:comprara|me\s+anotara|me\s+inscribiera|eligiera)\b/,
+  /[?¿]/,
+  /\b(?:estoy\s+(?:pensando|viendo)|capaz|quizas|tal\s+vez|podria)\b/,
+]
+
+const EXPLICIT_PAYMENT_RESUME_PATTERN = /\bahora\s+si\b/u
+
+const EXPLICIT_PAYMENT_COMMITMENT_PATTERN =
+  /\b(?:confirmo|quiero\s+pagar(?:l[oa]s?)?|lo\s+quiero\s+pagar|me\s+quedo\s+con|elijo|elegi|ya\s+(?:elegi|me\s+decidi)|me\s+decido|voy\s+con)\b/u
+
+function plansMentionedIn(normalized: string): Set<PaymentPlanCode> {
+  const matched = new Set<PaymentPlanCode>()
+  for (const { code, pattern } of PLAN_PATTERNS) {
+    if (!pattern.test(normalized)) continue
+    if (
+      code === 'one_time'
+      && NARRATIVE_CONTADO_PATTERN.test(normalized)
+      && !EXPLICIT_ONE_TIME_WITHOUT_CONTADO_PATTERN.test(normalized)
+    ) continue
+    matched.add(code)
+  }
+  return matched
+}
+
+export type CurrentPaymentIntent =
+  | { readonly kind: 'direct'; readonly planCode: PaymentPlanCode | null }
+  | { readonly kind: 'resume' }
+  | { readonly kind: 'veto' }
+  | { readonly kind: 'none' }
+
+export function classifyCurrentPaymentIntent(
+  messages: readonly PolicyBatchMessage[]
+): CurrentPaymentIntent {
+  const normalizedMessages = messages.map((message) => normalize(message.content ?? ''))
+  if (normalizedMessages.some((message) => (
+    TEMPORAL_PAYMENT_DEFERRAL_PATTERNS.some((pattern) => pattern.test(message))
+  ))) return { kind: 'veto' }
+
+  const matched = new Set<PaymentPlanCode>()
+  for (const message of normalizedMessages) {
+    for (const plan of plansMentionedIn(message)) matched.add(plan)
+  }
+  if (matched.size > 1) return { kind: 'none' }
+  const nonCommittal = normalizedMessages.some((message) => (
+    NON_COMMITTAL_PAYMENT_PATTERNS.some((pattern) => pattern.test(message))
+  ))
+  const explicitlyCommitted = normalizedMessages.some((message) => (
+    EXPLICIT_PAYMENT_COMMITMENT_PATTERN.test(message)
+    || isExplicitPaymentLinkRequest([{ content: message }])
+  ))
+  if (nonCommittal) return { kind: 'none' }
+  if (matched.size === 1) {
+    return { kind: 'direct', planCode: [...matched][0]! }
+  }
+  if (explicitlyCommitted) return { kind: 'direct', planCode: null }
+  if (normalizedMessages.some((message) => EXPLICIT_PAYMENT_RESUME_PATTERN.test(message))) {
+    return { kind: 'resume' }
+  }
+  return { kind: 'none' }
+}
+
+export function derivePaymentPlanSelectionFromBatch(
   messages: readonly PolicyBatchMessage[]
 ): PaymentPlanCode | null {
   const matched = new Set<PaymentPlanCode>()
   for (const message of messages) {
     const normalized = normalize(message.content ?? '')
-    if (PAYMENT_DEFERRAL_PATTERNS.some((pattern) => pattern.test(normalized))) return null
-    for (const { code, pattern } of PLAN_PATTERNS) {
-      if (!pattern.test(normalized)) continue
-      if (
-        code === 'one_time'
-        && NARRATIVE_CONTADO_PATTERN.test(normalized)
-        && !EXPLICIT_ONE_TIME_WITHOUT_CONTADO_PATTERN.test(normalized)
-      ) continue
-      matched.add(code)
-    }
+    for (const plan of plansMentionedIn(normalized)) matched.add(plan)
   }
   if (matched.size !== 1) return null
-  const [only] = matched
-  return only ?? null
+  return [...matched][0] ?? null
+}
+
+export function hasTemporalPaymentDeferral(
+  messages: readonly PolicyBatchMessage[]
+): boolean {
+  return messages.some((message) => {
+    const normalized = normalize(message.content ?? '')
+    return TEMPORAL_PAYMENT_DEFERRAL_PATTERNS.some((pattern) => pattern.test(normalized))
+  })
+}
+
+export function derivePaymentChoiceFromBatch(
+  messages: readonly PolicyBatchMessage[]
+): PaymentPlanCode | null {
+  const intent = classifyCurrentPaymentIntent(messages)
+  return intent.kind === 'direct' ? intent.planCode : null
 }
 
 const EXPLICIT_PAYMENT_LINK_REQUEST_PATTERN =
@@ -87,7 +154,7 @@ export function isExplicitPaymentLinkRequest(
 ): boolean {
   return messages.some((message) => {
     const normalized = normalize(message.content ?? '')
-    if (PAYMENT_DEFERRAL_PATTERNS.some((pattern) => pattern.test(normalized))) return false
+    if (TEMPORAL_PAYMENT_DEFERRAL_PATTERNS.some((pattern) => pattern.test(normalized))) return false
     return EXPLICIT_PAYMENT_LINK_REQUEST_PATTERN.test(normalized)
   })
 }

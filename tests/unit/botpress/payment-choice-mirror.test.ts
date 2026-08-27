@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { derivePaymentChoiceFromBatch as backendDerive } from '../../../src/features/payments/domain/payment-choice-policy';
-import { derivePaymentChoiceFromBatch as mirrorDerive } from '../../../botpress-agent/src/utils/payment-choice';
+import {
+  classifyCurrentPaymentIntent as backendClassify,
+  derivePaymentChoiceFromBatch as backendDerive,
+  derivePaymentPlanSelectionFromBatch as backendSelection,
+} from '../../../src/features/payments/domain/payment-choice-policy';
+import {
+  classifyCurrentPaymentIntent as mirrorClassify,
+  derivePaymentChoiceFromBatch as mirrorDerive,
+  derivePaymentPlanSelectionFromBatch as mirrorSelection,
+} from '../../../botpress-agent/src/utils/payment-choice';
 
 /**
  * The Botpress workflow carries a MIRROR of the backend's deterministic
@@ -43,5 +51,7 @@ describe('payment-choice mirror parity (botpress-agent vs backend)', () => {
   it.each(CORPUS)('derives the same plan for: %s', (text) => {
     const messages = [{ content: text }];
     expect(mirrorDerive(messages)).toBe(backendDerive(messages));
+    expect(mirrorSelection(messages)).toBe(backendSelection(messages));
+    expect(mirrorClassify(messages)).toEqual(backendClassify(messages));
   });
 });

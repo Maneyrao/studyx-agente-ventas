@@ -383,6 +383,9 @@ export function createLocalTurnSender(
     const authorizedOfferingCode = commercialRoute.kind === 'deterministic'
       ? commercialRoute.authorizedOfferingCode ?? claimed.sales_context.offering_code
       : claimed.sales_context.offering_code;
+    const authorizedPaymentPlan = commercialRoute.kind === 'deterministic'
+      ? commercialRoute.authorizedPaymentPlan ?? null
+      : null;
     let decision: Decision;
     let decisionWasModel = false;
     let provider: 'botpress' | 'groq-direct' | 'google-ai-direct';
@@ -451,6 +454,7 @@ export function createLocalTurnSender(
           turn_id: claimed.turn_id,
           trace_id: traceId,
           authorized_offering_code: authorizedOfferingCode,
+          authorized_payment_plan: authorizedPaymentPlan,
           decision,
           model: {
             provider,
