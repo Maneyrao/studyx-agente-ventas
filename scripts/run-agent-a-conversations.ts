@@ -49,7 +49,7 @@ import {
 import {
   applyDecisionPolicy,
   constrainModelToAdvisory,
-  technicalFallback,
+  modelUnavailableFallback,
 } from '../botpress-agent/src/utils/decision-policy';
 import { routeCommercialTurn } from '../botpress-agent/src/utils/commercial-router';
 import { deliverAuthorizedLocalOutbound } from './lib/local-authorized-delivery';
@@ -420,7 +420,7 @@ export function createLocalTurnSender(
         const errorCode = error instanceof Error ? error.message.slice(0, 128) : 'UNKNOWN';
         fallbackReason = errorCode;
         console.error(`  proveedor local falló: ${errorCode}`);
-        decision = technicalFallback();
+        decision = modelUnavailableFallback(claimed);
         provider = modelProvider === 'gemini' ? 'google-ai-direct' : 'groq-direct';
         decisionModel = 'policy:model-unavailable';
       }

@@ -53,6 +53,23 @@ describe('extractContactIdentity', () => {
     expect(captured.name).toBeNull();
     expect(captured.email).toBeNull();
   });
+
+  it('applies an explicit surname correction to the existing full name', () => {
+    expect(extractContactIdentity(
+      'Che, esperá, me equivoqué: es Suárez con tilde, y el email real es milena@example.com.',
+      'Milena Suares',
+    )).toEqual({
+      name: 'Milena Suárez',
+      email: 'milena@example.com',
+    });
+  });
+
+  it('does not manufacture a full name from a surname correction without an existing identity', () => {
+    expect(extractContactIdentity('Me equivoqué: es Suárez con tilde.', null)).toEqual({
+      name: null,
+      email: null,
+    });
+  });
 });
 
 describe('splitFullName', () => {

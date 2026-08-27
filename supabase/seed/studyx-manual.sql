@@ -105,7 +105,7 @@ INSERT INTO offerings (
     '{"language":"Spanish"}'::jsonb,
     '{"modality":"online","classes":20,"source":"MANUAL CAPACITACION STUDYX 1.docx.pdf"}'::jsonb,
     '{"never_invent_price":true,"forbidden_promises":["certificación verificada","título oficial","homologación","matrícula profesional","salida laboral garantizada","horarios de clases en vivo","política de devoluciones"]}'::jsonb,
-    '{"canonical_source":"studyx_manual_1","source_file":"MANUAL CAPACITACION STUDYX 1.docx.pdf","source_sha256":"47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1","source_page":11,"academy":"Academia de Marketing","declared_classes":20,"total_price_usd":360,"payment_options_owner_confirmed":true,"price_source":"owner-confirmed 2026-08-20"}'::jsonb
+    '{"canonical_source":"studyx_manual_1","source_file":"MANUAL CAPACITACION STUDYX 1.docx.pdf","source_sha256":"47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1","source_page":11,"academy":"Academia de Marketing","aliases":["fotos de productos con el celu","fotografía de productos con celular"],"declared_classes":20,"total_price_usd":360,"payment_options_owner_confirmed":true,"price_source":"owner-confirmed 2026-08-20"}'::jsonb
   ),
 (
     gen_random_uuid(), 'b0000000-0000-4000-8000-000000000001', 'influencers_creadores_contenidos',

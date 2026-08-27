@@ -27,7 +27,7 @@ import {
   applyDecisionPolicy,
   constrainModelToAdvisory,
   suppress,
-  technicalFallback,
+  modelUnavailableFallback,
 } from '../utils/decision-policy'
 import { routeCommercialTurn } from '../utils/commercial-router'
 import { verifyAuthorizedEgressPortable } from '../utils/authorized-egress'
@@ -522,8 +522,9 @@ export const processInboundTurn = new Workflow({
           turn_id: owned.turn_id,
           error_code: errorCode(error),
         })
-        decision = owned.policy.allowed_response_types.includes('technical_fallback')
-          ? technicalFallback()
+        decision = owned.policy.allowed_response_types.includes('commercial_reply')
+          || owned.policy.allowed_response_types.includes('technical_fallback')
+          ? modelUnavailableFallback(owned)
           : suppress('MODEL_UNAVAILABLE')
         decisionModel = 'policy:model-unavailable'
       }

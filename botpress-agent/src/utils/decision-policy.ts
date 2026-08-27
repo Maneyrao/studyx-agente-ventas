@@ -46,6 +46,28 @@ export function technicalFallback(): Decision {
   }
 }
 
+export function modelUnavailableFallback(claimed: ClaimedTurn): Decision {
+  const allowed = claimed.policy.allowed_response_types
+  if (!allowed.includes('commercial_reply')) return technicalFallback()
+  const course = claimed.sales_context.course_of_interest?.trim()
+  return {
+    schema_version: 4,
+    intent: 'commercial',
+    kind: 'reply',
+    response: course
+      ? `Sigo con ${course}. ¿Qué dato querés confirmar?`
+      : 'Quiero ayudarte con la consulta. ¿Qué dato querés confirmar?',
+    response_type: 'commercial_reply',
+    business_action: null,
+    memory_candidates: [],
+    missing_information: [],
+    next_state: 'waiting_user',
+    reason_code: 'MODEL_UNAVAILABLE',
+    confidence: 1,
+    retrieval_used: null,
+  }
+}
+
 function allowedTextFallback(claimed: ClaimedTurn, reasonCode: string): Decision {
   const allowed = claimed.policy.allowed_response_types
   const responseType = allowed.includes('technical_fallback')

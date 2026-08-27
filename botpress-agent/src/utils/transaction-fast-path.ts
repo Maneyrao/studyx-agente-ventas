@@ -88,6 +88,7 @@ function canonicalCourseFromValue(
     normalizedValue.includes(normalizeCourse(name)),
   )
   if (literalMatches.length === 1) return literalMatches[0]
+  if (literalMatches.length > 1) return null
   return uniqueCourseAliasFromHistory(normalizedValue, canonicalNames)
 }
 
@@ -130,6 +131,7 @@ export function matchCourseFactsFastPathMatch(
     message.content,
   ].map(normalizeCourse)
   let courseName = claimed.sales_context.course_of_interest
+  let unresolvedCourseNames: string[] = []
   if (
     courseName
     && claimed.business_context
@@ -155,8 +157,35 @@ export function matchCourseFactsFastPathMatch(
   if (!courseName && claimed.business_context) {
     const offeringNames = claimed.business_context.offerings.map((offering) => offering.display_name)
     for (const historicalMessage of inboundMessages.slice().reverse()) {
+      const literalNames = offeringNames.filter((name) =>
+        historicalMessage.includes(normalizeCourse(name)),
+      )
+      if (literalNames.length > 1) unresolvedCourseNames = literalNames.slice(0, 2)
       courseName = canonicalCourseFromValue(historicalMessage, offeringNames)
       if (courseName) break
+    }
+  }
+  if (
+    !courseName
+    && unresolvedCourseNames.length > 1
+    && claimed.policy.allowed_response_types.includes('clarification')
+  ) {
+    return {
+      offeringCode: null,
+      decision: {
+        schema_version: 4,
+        intent: 'commercial',
+        kind: 'clarify',
+        response: `¿Te referís a ${unresolvedCourseNames[0]} o ${unresolvedCourseNames[1]}?`,
+        response_type: 'clarification',
+        confidence: 1,
+        reason_code: 'DETERMINISTIC_COURSE_AMBIGUITY',
+        business_action: null,
+        memory_candidates: [],
+        missing_information: ['course_choice'],
+        next_state: 'waiting_user',
+        retrieval_used: RETRIEVAL_NONE,
+      },
     }
   }
   if (!courseName && claimed.context.knowledge_base_available) {
@@ -270,15 +299,22 @@ export function matchCourseDiscoveryFastPathMatch(
   const message = claimed.context.batch_messages[0]
   if (message.message_type !== 'text') return null
 
+  const exactResolution = claimed.catalog_resolution.kind === 'exact'
+    ? claimed.catalog_resolution
+    : null
   const offeringNames = claimed.business_context.offerings.map((offering) => offering.display_name)
-  const canonicalName = canonicalCourseFromValue(message.content, offeringNames)
-  if (!canonicalName) return null
-  const offering = claimed.business_context.offerings.find(
-    (candidate) => candidate.display_name === canonicalName,
+  const inferredName = exactResolution?.displayName
+    ?? canonicalCourseFromValue(message.content, offeringNames)
+  if (!inferredName) return null
+  const offering = claimed.business_context.offerings.find((candidate) =>
+    exactResolution
+      ? candidate.code === exactResolution.offeringCode
+      : candidate.display_name === inferredName,
   )
   if (!offering) return null
+  const canonicalName = offering.display_name
 
-  const facts = [
+  const canonicalFact = [
     Number.isSafeInteger(offering.classes) && offering.classes! > 0
       ? renderCourseDuration({ displayName: canonicalName, classes: offering.classes! })
       : null,
@@ -292,14 +328,14 @@ export function matchCourseDiscoveryFastPathMatch(
           amount: offering.price.amount,
         })
       : null,
-  ].filter((fact): fact is string => Boolean(fact)).slice(0, 2)
-  const details = facts.length > 0 ? ` ${facts.join(' ')}` : ''
+  ].find((fact): fact is string => Boolean(fact))
+  const answer = canonicalFact ?? `Te cuento sobre ${canonicalName}.`
   const mayOfferCall = claimed.sales_context.allowed_actions.includes('offer_call')
     && !/\b(?:no (?:me gustan?|quiero|puedo) las? llamadas?|prefiero (?:texto|chat)|seguimos? por (?:aca|aqui|chat))\b/u
       .test(normalizeCourse(message.content))
   const response = mayOfferCall
-    ? `Te cuento sobre ${canonicalName}.${details} Si querés, podemos coordinar una llamada ahora con nuestra asesora virtual; si preferís, seguimos por chat. ¿Cómo querés avanzar?`
-    : `Te cuento sobre ${canonicalName}.${details} ¿Qué te gustaría saber?`
+    ? `${answer} Si querés, coordinamos una llamada ahora con nuestra asesora virtual o seguimos por chat. ¿Cómo preferís avanzar?`
+    : `${answer} ¿Qué te gustaría saber?`
 
   return {
     offeringCode: offering.code,

@@ -1060,7 +1060,7 @@ describe('processInboundTurn — decision provider selection', () => {
     });
   });
 
-  it('gemini_direct: falls back to the existing technical fallback when GEMINI_API_KEY is missing, without throwing or logging the key', async () => {
+  it('gemini_direct: degrades to a conversational reply when GEMINI_API_KEY is missing', async () => {
     configuration.decisionProvider = 'gemini_direct';
     delete secrets.GEMINI_API_KEY;
     const claimed = claimedResponse();
@@ -1073,8 +1073,9 @@ describe('processInboundTurn — decision provider selection', () => {
     expect(execute).not.toHaveBeenCalled();
     expect(actionSpies.geminiDecision).not.toHaveBeenCalled();
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input?.decision).toMatchObject({
-      response_type: 'technical_fallback',
+      response_type: 'commercial_reply',
       reason_code: 'MODEL_UNAVAILABLE',
+      next_state: 'waiting_user',
     });
 
     // No PII and no key value in any log line — the error code naming the

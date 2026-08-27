@@ -1165,6 +1165,63 @@ describe('routeCommercialTurn', () => {
     });
 
     expect(route).toMatchObject({ kind: 'deterministic', origin: 'course_discovery' });
+    if (route.kind !== 'model_required') expect(route.decision.response?.length).toBeLessThanOrEqual(220);
+  });
+
+  it('uses the backend exact catalog resolution for colloquial course language', () => {
+    const route = routeCommercialTurn({
+      automationEnabled: true,
+      claimed: claimedTurn({
+        texts: ['La primera opción.'],
+        courseOfInterest: null,
+        offeringCode: null,
+        catalogResolution: {
+          kind: 'exact',
+          offeringCode: 'foto_celular',
+          displayName: 'Fotografía con Celulares para Tiendas Online',
+          academy: 'Marketing',
+          match: 'canonical',
+        },
+        offerings: [
+          businessOffering('foto_celular', 'Fotografía con Celulares para Tiendas Online', 'Marketing'),
+          businessOffering('foto_profesional', 'Fotografía Profesional', 'Emprendedores'),
+        ],
+      }),
+    });
+
+    expect(route).toMatchObject({
+      kind: 'deterministic',
+      origin: 'course_discovery',
+      authorizedOfferingCode: 'foto_celular',
+    });
+    if (route.kind !== 'model_required') {
+      expect(route.decision.response).toMatch(/Fotografía con Celulares.*16 clases/u);
+    }
+  });
+
+  it('clarifies a course fact from an unresolved two-course history', () => {
+    const route = routeCommercialTurn({
+      automationEnabled: true,
+      claimed: claimedTurn({
+        texts: ['¿Cuántas clases tiene?'],
+        courseOfInterest: null,
+        offeringCode: null,
+        recentInbound: [
+          'Estoy entre Fotografía Profesional y Fotografía con Celulares para Tiendas Online.',
+        ],
+        offerings: [
+          businessOffering('foto_celular', 'Fotografía con Celulares para Tiendas Online', 'Marketing'),
+          businessOffering('foto_profesional', 'Fotografía Profesional', 'Emprendedores'),
+        ],
+      }),
+    });
+
+    expect(route).toMatchObject({ kind: 'deterministic', origin: 'course_facts' });
+    if (route.kind !== 'model_required') {
+      expect(route.decision).toMatchObject({ kind: 'clarify', response_type: 'clarification' });
+      expect(route.decision.response).not.toMatch(/20 clases|41 clases/u);
+      expect(route.decision.response?.length).toBeLessThanOrEqual(160);
+    }
   });
 
   it('authorizes the sole alternative selected by an "el otro" course-fact question', () => {

@@ -33,13 +33,21 @@ const LEADING_NAME_BEFORE_EMAIL_PATTERN = new RegExp(
   'u',
 );
 
+const CORRECTED_SURNAME_PATTERN = new RegExp(
+  `(?:mi\\s+apellido(?:\\s+correcto)?\\s+es|me\\s+equivoqu[eé].{0,48}?\\bes)\\s+(${NAME_TOKEN})(?=\\s*(?:con\\s+tilde|[,;.:!?]|$))`,
+  'iu',
+);
+
 function isPlausibleName(candidate: string): boolean {
   const tokens = candidate.trim().split(/\s+/u);
   if (tokens.length === 0 || tokens.length > 4) return false;
   return tokens.every((token) => /^[A-ZÁÉÍÓÚÜÑ]/u.test(token));
 }
 
-export function extractContactIdentity(text: string): CapturedContactIdentity {
+export function extractContactIdentity(
+  text: string,
+  existingName: string | null = null,
+): CapturedContactIdentity {
   const email = EMAIL_PATTERN.exec(text)?.[0] ?? null;
 
   let name: string | null = null;
@@ -49,6 +57,16 @@ export function extractContactIdentity(text: string): CapturedContactIdentity {
   } else if (email) {
     const leading = LEADING_NAME_BEFORE_EMAIL_PATTERN.exec(text);
     if (leading && isPlausibleName(leading[1])) name = leading[1].trim();
+  }
+
+  if (name === null && existingName) {
+    const correctedSurname = CORRECTED_SURNAME_PATTERN.exec(text)?.[1] ?? null;
+    if (correctedSurname && isPlausibleName(correctedSurname)) {
+      const existingTokens = existingName.trim().split(/\s+/u);
+      if (existingTokens.length >= 2) {
+        name = [...existingTokens.slice(0, -1), correctedSurname].join(' ');
+      }
+    }
   }
 
   return { name, email };

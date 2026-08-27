@@ -139,6 +139,7 @@ run('StudyX official manual catalog', () => {
     ['Quiero saber todo sobre el curso de AutoCAD', 'autocad_interiores'],
     ['ola quiero aprender a reparar celu', 'reparacion_celulares'],
     ['Me interesa publicidad redes', 'publicidad_redes_sociales'],
+    ['El de sacar fotos de productos con el celu', 'fotografia_celulares_tiendas_online'],
     ['Quiero aprender Illustrator', 'diseno_illustrator'],
   ])('resolves customer language %s to canonical course %s', async (message, code) => {
     const raw = await new PostgresBusinessContextStore(db!).loadBusinessContext(WS);

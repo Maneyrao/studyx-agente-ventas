@@ -330,7 +330,7 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
     const capturedIdentity =
       envelope.message.type === 'unsupported'
         ? { name: null, email: null }
-        : extractContactIdentity(envelope.message.text);
+        : extractContactIdentity(envelope.message.text, contact.name);
     if (capturedIdentity.name !== null || capturedIdentity.email !== null) {
       await db`
         UPDATE contacts
