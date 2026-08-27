@@ -17,7 +17,11 @@ import {
   buildBusinessContextView,
   buildCatalogIndexView,
 } from '@/features/orchestration/domain/business-context';
-import { config, loadAgentACommercialConfig } from '@/lib/config';
+import {
+  config,
+  loadAgentACommercialConfig,
+  loadConversationPipelineConfig,
+} from '@/lib/config';
 import { logger, timedStage } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
 
@@ -139,6 +143,7 @@ export async function POST(
         log: (event, fields) => logger.info({ event, ...fields }),
         business: businessContextLoader(workspaceSlug),
         sales: { load: (contactId) => salesContextStore.load(workspaceSlug, contactId) },
+        conversationPipelineEnabled: loadConversationPipelineConfig().enabled,
       }
     )
     );

@@ -69,6 +69,8 @@ export interface ClaimBatchDependencies {
   };
   /** Durable commercial state. It outranks history/vector but not this batch. */
   readonly sales?: { load(contactId: string): Promise<SalesContextState | null> };
+  /** Single backend-owned rollout flag projected into the claimed contract. */
+  readonly conversationPipelineEnabled?: boolean;
 }
 
 export interface ContextLimits {
@@ -170,6 +172,9 @@ export interface ClaimedTurn {
     readonly injection_suspected_count: number;
   };
   readonly sales_context: ClaimedSalesContext;
+  readonly features: {
+    readonly conversation_pipeline_v1_enabled: boolean;
+  };
   /** Current-batch catalog verdict from the complete compact identity index. */
   readonly catalog_resolution: CatalogResolution;
   /** Complete compact index; detail payload remains separately bounded. */
@@ -891,6 +896,9 @@ export async function claimBatch(
       injection_suspected_count,
     },
     sales_context: salesContext,
+    features: {
+      conversation_pipeline_v1_enabled: deps.conversationPipelineEnabled === true,
+    },
     catalog_resolution,
     catalog_index,
     deterministic_route,

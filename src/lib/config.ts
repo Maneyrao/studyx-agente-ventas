@@ -17,6 +17,14 @@ export const config = {
   kbMinSimilarity: parseFloat01(process.env.KB_MIN_SIMILARITY, 0.75),
 };
 
+export function loadConversationPipelineConfig(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): { enabled: boolean } {
+  return {
+    enabled: environment.CONVERSATION_PIPELINE_V1_ENABLED?.trim().toLowerCase() === 'true',
+  };
+}
+
 export type BusinessWorkspaceConfig = {
   /** Slug of the tenant whose data this deployment serves. Backend-derived:
    * model output never selects the workspace. */

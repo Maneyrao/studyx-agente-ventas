@@ -552,6 +552,9 @@ export const ClaimedTurnSchema = z.object({
     injection_suspected_count: z.number().int().default(0),
   }),
   sales_context: SalesContextSchema,
+  features: z.object({
+    conversation_pipeline_v1_enabled: z.boolean().default(false),
+  }).strict().optional(),
   catalog_resolution: CatalogResolutionSchema.default({
     kind: 'unavailable',
     reason: 'snapshot_missing',

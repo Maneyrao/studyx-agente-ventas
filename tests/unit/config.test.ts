@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AGENT_A_REQUIRED_ENVIRONMENT,
   loadAgentACommercialConfig,
+  loadConversationPipelineConfig,
 } from '@/lib/config';
 
 const environment = Object.fromEntries(
@@ -23,5 +24,20 @@ describe('loadAgentACommercialConfig', () => {
   it('keeps the workspace slug validation on the mandatory commercial path', () => {
     expect(() => loadAgentACommercialConfig({ ...environment, BUSINESS_WORKSPACE_SLUG: 'wrong slug' }))
       .toThrow('INVALID_BUSINESS_CONFIG:BUSINESS_WORKSPACE_SLUG');
+  });
+});
+
+describe('loadConversationPipelineConfig', () => {
+  it('is disabled unless the exact true value is configured', () => {
+    expect(loadConversationPipelineConfig({})).toEqual({ enabled: false });
+    expect(loadConversationPipelineConfig({ CONVERSATION_PIPELINE_V1_ENABLED: '' }))
+      .toEqual({ enabled: false });
+    expect(loadConversationPipelineConfig({ CONVERSATION_PIPELINE_V1_ENABLED: 'invalid' }))
+      .toEqual({ enabled: false });
+  });
+
+  it('accepts a trimmed case-insensitive true value', () => {
+    expect(loadConversationPipelineConfig({ CONVERSATION_PIPELINE_V1_ENABLED: ' TRUE ' }))
+      .toEqual({ enabled: true });
   });
 });
