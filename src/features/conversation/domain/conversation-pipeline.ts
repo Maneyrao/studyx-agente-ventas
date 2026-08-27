@@ -78,6 +78,35 @@ export interface ConversationMoveV1 {
   readonly confidence: number;
 }
 
+export interface ConversationStateV1 {
+  readonly workspace_id: string;
+  readonly conversation_id: string;
+  readonly contact_id: string;
+  readonly selected_offering_code: string | null;
+  readonly selected_payment_plan: SalesPaymentPlan | null;
+  readonly stage: SalesContextStage;
+  readonly call_preference: CallPreferenceV1;
+  readonly call_offer_status: CallOfferStatusV1;
+  readonly awaiting_reply: AwaitingReplyV1;
+  readonly source_turn_id: string | null;
+  readonly version: number;
+  readonly created_at: string;
+  readonly updated_at: string;
+}
+
+export interface ConversationStateTransitionV1 {
+  readonly workspace_slug: string;
+  readonly conversation_id: string;
+  readonly contact_id: string;
+  readonly selected_offering_code: string | null;
+  readonly selected_payment_plan: SalesPaymentPlan | null;
+  readonly stage: SalesContextStage;
+  readonly call_preference: CallPreferenceV1;
+  readonly call_offer_status: CallOfferStatusV1;
+  readonly awaiting_reply: AwaitingReplyV1;
+  readonly source_turn_id: string | null;
+}
+
 export type CanonicalFactRequestV1 =
   | { readonly kind: 'area_options'; readonly limit: 1 | 2 | 3 }
   | { readonly kind: 'course_options'; readonly area_code: string; readonly limit: 1 | 2 | 3 }
