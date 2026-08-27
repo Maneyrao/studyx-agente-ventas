@@ -5,7 +5,7 @@ import {
 import { buildConversationInterpreterInstructionsV1 } from '../../prompts/conversation-interpreter-v1'
 
 export const DEFAULT_CONVERSATION_INTERPRETER_MODEL = 'openai/gpt-oss-20b'
-export const CONVERSATION_INTERPRETER_TIMEOUT_MS = 1_800
+export const CONVERSATION_INTERPRETER_TIMEOUT_MS = 5_000
 const GROQ_CHAT_COMPLETIONS_URL = 'https://api.groq.com/openai/v1/chat/completions'
 
 type PaymentPlan = 'monthly_12' | 'monthly_6' | 'one_time'
@@ -37,10 +37,26 @@ export interface ConversationInterpreterInputV1 {
 }
 
 export class ConversationInterpreterError extends Error {
-  constructor(public readonly code: string) {
+  constructor(
+    public readonly code: string,
+    public readonly provider_code: string | null = null,
+  ) {
     super(code)
     this.name = 'ConversationInterpreterError'
   }
+}
+
+function sanitizedProviderErrorCode(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null
+  const error = (payload as { error?: unknown }).error
+  if (!error || typeof error !== 'object') return null
+  for (const candidate of [
+    (error as { code?: unknown }).code,
+    (error as { type?: unknown }).type,
+  ]) {
+    if (typeof candidate === 'string' && /^[a-z0-9_.-]{1,64}$/iu.test(candidate)) return candidate
+  }
+  return null
 }
 
 export interface GeneratedConversationMoveV1 {
@@ -112,8 +128,25 @@ function omitNullReferences(value: unknown): unknown {
   return output
 }
 
+function applyStructuralVetoes(
+  move: ConversationMoveV1,
+  context: ConversationInterpreterInputV1 | undefined,
+): ConversationMoveV1 {
+  const moves = new Set([move.move, ...move.secondary_moves])
+  const vetoes = new Set(move.vetoes)
+  if (moves.has('decline_call')) vetoes.add('call')
+  if (moves.has('defer_payment')) vetoes.add('payment_link')
+  if (moves.has('decline_purchase')) vetoes.add('purchase')
+  if (context?.sales_context.awaiting_reply === 'call_or_chat' && moves.has('continue_by_chat')) {
+    vetoes.add('call')
+  }
+  if (vetoes.size === move.vetoes.length) return move
+  return ConversationMoveV1Schema.parse({ ...move, vetoes: [...vetoes] })
+}
+
 export async function generateGroqConversationMoveV1(input: {
   readonly instructions: string
+  readonly context?: ConversationInterpreterInputV1
   readonly apiKey: string
   readonly signal: AbortSignal
   readonly model?: string
@@ -143,8 +176,9 @@ export async function generateGroqConversationMoveV1(input: {
             { role: 'user', content: 'Return the single structured conversation move.' },
           ],
           temperature: 0,
+          reasoning_effort: 'medium',
           stream: false,
-          max_completion_tokens: 320,
+          max_completion_tokens: 1_024,
           response_format: {
             type: 'json_schema',
             json_schema: { name: 'studyx_conversation_move_v1', strict: true, schema: moveJsonSchema() },
@@ -158,7 +192,15 @@ export async function generateGroqConversationMoveV1(input: {
       }
       throw new ConversationInterpreterError('INTERPRETER_NETWORK_ERROR')
     }
-    if (!response.ok) throw new ConversationInterpreterError(`INTERPRETER_HTTP_${response.status}`)
+    if (!response.ok) {
+      let providerCode: string | null = null
+      try {
+        providerCode = sanitizedProviderErrorCode(await response.clone().json())
+      } catch {
+        // Status remains authoritative when the provider body is absent or malformed.
+      }
+      throw new ConversationInterpreterError(`INTERPRETER_HTTP_${response.status}`, providerCode)
+    }
     let payload: unknown
     try {
       payload = await response.json()
@@ -180,7 +222,12 @@ export async function generateGroqConversationMoveV1(input: {
       }))
       throw new ConversationInterpreterError('INTERPRETER_SCHEMA_INVALID')
     }
-    return { move: parsed.data, provider: 'groq-direct', model, latency_ms: Date.now() - startedAt }
+    return {
+      move: applyStructuralVetoes(parsed.data, input.context),
+      provider: 'groq-direct',
+      model,
+      latency_ms: Date.now() - startedAt,
+    }
   } finally {
     clearTimeout(timeout)
     input.signal.removeEventListener('abort', parentAbort)
@@ -207,5 +254,5 @@ export async function interpretConversationMoveV1(
   const candidate = wrappedMove && typeof wrappedMove === 'object' ? wrappedMove : generated
   const parsed = ConversationMoveV1Schema.safeParse(candidate)
   if (!parsed.success) throw new ConversationInterpreterError('INTERPRETER_SCHEMA_INVALID')
-  return parsed.data
+  return applyStructuralVetoes(parsed.data, input)
 }

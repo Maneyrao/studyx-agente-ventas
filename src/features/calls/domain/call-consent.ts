@@ -45,6 +45,65 @@ export type VoiceConsentVerdict =
         | 'CALL_CONFIRMATION_REQUIRED';
     };
 
+export interface AuthorizedVoiceConsentFacts {
+  readonly mode: 'direct_request' | 'accepted_offer';
+  readonly sourceIndex: number;
+  readonly now: string;
+  readonly openOffer: VoiceConsentFacts['openOffer'];
+}
+
+function acceptedOpenOffer(
+  now: string,
+  openOffer: VoiceConsentFacts['openOffer'],
+): VoiceConsentVerdict {
+  if (openOffer === null) return { allowed: false, code: 'CALL_OFFER_MISSING' };
+  const age = Date.parse(now) - Date.parse(openOffer.offeredAt);
+  if (!Number.isFinite(age) || age > VOICE_OFFER_LIFETIME_MS) {
+    return { allowed: false, code: 'CALL_OFFER_EXPIRED' };
+  }
+  return {
+    allowed: true,
+    mode: 'accepted_offer',
+    offeredByDecisionId: openOffer.decisionId,
+    sourceIndex: 0,
+  };
+}
+
+/**
+ * A semantic interpreter may establish meaning, but it cannot extend the
+ * lifetime of a durable call offer. This policy applies the same temporal
+ * authority boundary as the deterministic path without re-reading prose.
+ */
+export function evaluateAuthorizedVoiceConsent(
+  facts: AuthorizedVoiceConsentFacts,
+): VoiceConsentVerdict {
+  if (facts.mode === 'direct_request') {
+    return {
+      allowed: true,
+      mode: 'direct_request',
+      offeredByDecisionId: null,
+      sourceIndex: facts.sourceIndex,
+    };
+  }
+  const verdict = acceptedOpenOffer(facts.now, facts.openOffer);
+  return verdict.allowed ? { ...verdict, sourceIndex: facts.sourceIndex } : verdict;
+}
+
+/**
+ * Prefer exact evidence from the existing deterministic classifier. Semantic
+ * paraphrases have no token-level provenance, so their safe fallback remains
+ * the newest message in the interpreted batch.
+ */
+export function selectAuthorizedVoiceConsentSourceIndex(input: {
+  readonly mode: AuthorizedVoiceConsentFacts['mode'];
+  readonly texts: readonly string[];
+}): number {
+  const { signal, index } = classifyBatchSalesSignalWithIndex(input.texts);
+  const matches = (input.mode === 'direct_request' && signal.type === 'direct_call_request')
+    || (input.mode === 'accepted_offer' && signal.type === 'call_acceptance');
+  return matches && index !== null ? index : input.texts.length - 1;
+}
+
 export function evaluateVoiceConsent(facts: VoiceConsentFacts): VoiceConsentVerdict {
   const { signal, index } = classifyBatchSalesSignalWithIndex(facts.texts);
 
@@ -55,19 +114,8 @@ export function evaluateVoiceConsent(facts: VoiceConsentFacts): VoiceConsentVerd
     return { allowed: true, mode: 'direct_request', offeredByDecisionId: null, sourceIndex: index! };
   }
   if (signal.type === 'call_acceptance') {
-    if (facts.openOffer === null) {
-      return { allowed: false, code: 'CALL_OFFER_MISSING' };
-    }
-    const age = Date.parse(facts.now) - Date.parse(facts.openOffer.offeredAt);
-    if (!Number.isFinite(age) || age > VOICE_OFFER_LIFETIME_MS) {
-      return { allowed: false, code: 'CALL_OFFER_EXPIRED' };
-    }
-    return {
-      allowed: true,
-      mode: 'accepted_offer',
-      offeredByDecisionId: facts.openOffer.decisionId,
-      sourceIndex: index!,
-    };
+    const verdict = acceptedOpenOffer(facts.now, facts.openOffer);
+    return verdict.allowed ? { ...verdict, sourceIndex: index! } : verdict;
   }
   return { allowed: false, code: 'CALL_CONFIRMATION_REQUIRED' };
 }

@@ -736,6 +736,35 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
+  it('keeps V1 behind the automation kill switch even when the feature flag is projected', async () => {
+    configuration.automationEnabled = false;
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = { conversation_pipeline_v1_enabled: true };
+    claimed.context.batch_messages[0].content = 'Necesito orientación comercial';
+    actionSpies.claim.mockResolvedValue(claimed);
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => { throw new Error('MODEL_MUST_NOT_RUN'); });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute, client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.conversationInterpreter).not.toHaveBeenCalled();
+    expect(actionSpies.plan).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: null,
+      decision: { reason_code: 'AUTOMATION_DISABLED', business_action: null },
+    });
+  });
+
   it('projects an authorized backend call acceptance through the V1 planner without a model call', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = { conversation_pipeline_v1_enabled: true };

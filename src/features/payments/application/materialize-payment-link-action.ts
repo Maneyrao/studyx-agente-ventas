@@ -28,6 +28,21 @@ export type PaymentLinkRefusalReason =
   | 'OFFERING_NOT_FOUND'
   | 'LINK_CONFIG_MISSING';
 
+type MaterializedPaymentLinkSuccess = Extract<MaterializePaymentLinkResult, { readonly ok: true }>;
+
+/**
+ * The configured resolver is the final URL authority. Snapshot-authored prose
+ * may already contain that exact URL; otherwise append the fixed canonical
+ * block after the materializer has removed every stale or foreign URL.
+ */
+export function assembleMaterializedPaymentResponse(
+  materialized: MaterializedPaymentLinkSuccess,
+): string {
+  const response = materialized.response_text.trim();
+  if (response.includes(materialized.block.url)) return response;
+  return `${response}\n\n${materialized.block.label}: ${materialized.block.url}`.trim();
+}
+
 export interface MaterializePaymentLinkContact {
   readonly blocked: boolean;
   readonly consent_status: 'allowed' | 'revoked' | 'unknown';

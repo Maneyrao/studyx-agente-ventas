@@ -21,6 +21,7 @@ import {
 import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
 import { PostgresSalesContextStore } from '@/features/sales/adapters/postgres-sales-context-store';
 import { PostgresConversationStateStoreV1 } from '@/features/conversation/adapters/postgres-conversation-state-store';
+import { PostgresOrchestrationStore } from '@/features/orchestration/adapters/postgres-orchestration-store';
 import {
   ConversationPlanMismatchError,
   prepareConversationPipelineCommitV1,
@@ -28,7 +29,10 @@ import {
 import { CanonicalResponseAssemblyError } from '@/features/conversation/domain/canonical-response-assembler';
 import type { ParsedConversationPipelineCommitV1 } from '@/features/conversation/adapters/conversation-pipeline-schema';
 import { isSalesPaymentPlan } from '@/features/sales/domain/sales-context';
-import { materializePaymentLinkAction } from '@/features/payments/application/materialize-payment-link-action';
+import {
+  assembleMaterializedPaymentResponse,
+  materializePaymentLinkAction,
+} from '@/features/payments/application/materialize-payment-link-action';
 import { createConfigPaymentLinkResolver } from '@/features/payments/adapters/config-payment-link.resolver';
 import { PAYMENT_PLAN_PRESENTATIONS } from '@/features/payments/domain/payment-link';
 import {
@@ -71,6 +75,7 @@ import {
   reserveCallForDecision,
   type ReservedCallRequest,
 } from '@/features/calls/application/request-call';
+import { selectAuthorizedVoiceConsentSourceIndex } from '@/features/calls/domain/call-consent';
 
 /**
  * The wire accepts every frozen schema version. Each one is a strict superset
@@ -431,7 +436,10 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           composition: validatedInput.conversation_pipeline_v1.composition,
           business_context: rawBusiness ? buildBusinessContextView(rawBusiness) : null,
           catalog_index: rawCatalogIndex ? buildCatalogIndexView(rawCatalogIndex) : null,
-        }, { state_store: new PostgresConversationStateStoreV1(db) });
+        }, {
+          state_store: new PostgresConversationStateStoreV1(db),
+          call_facts: new PostgresOrchestrationStore(db),
+        });
       } catch (error) {
         if (error instanceof ConversationPlanMismatchError
           || error instanceof CanonicalResponseAssemblyError) {
@@ -615,7 +623,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         finalResponse = 'Ya te compartí el link de ese plan. Si necesitás que revisemos otra opción, decime.';
         committedBusinessAction = null;
       } else if (preparedPipeline) {
-        finalResponse = decision.response;
+        finalResponse = assembleMaterializedPaymentResponse(materialized);
         paymentLinkStrippedUrls = materialized.stripped_urls;
         authorizedUrls = [materialized.block.url];
         authorizedProtectedFacts = paymentPlanProtectedFacts(action.plan_code);
@@ -801,6 +809,12 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
               WHERE batch_id = ${turn.batch_id}::uuid AND direction = 'inbound'
               ORDER BY conversation_seq ASC, created_at ASC, id ASC
             `;
+        const authorizedSourceIndex = preparedPipeline
+          ? selectAuthorizedVoiceConsentSourceIndex({
+              mode: decision.business_action.reason,
+              texts: consentMessages.map((message) => message.content),
+            })
+          : -1;
         callRequest = await reserveCallForDecision(db, {
           turn_id: validatedInput.turn_id,
           trace_id: validatedInput.trace_id,
@@ -814,7 +828,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             ? {
                 authorized_conversation_move: {
                   mode: decision.business_action.reason,
-                  source_message_id: consentMessages[consentMessages.length - 1]!.id,
+                  source_message_id: consentMessages[authorizedSourceIndex]!.id,
                 },
               }
             : {}),

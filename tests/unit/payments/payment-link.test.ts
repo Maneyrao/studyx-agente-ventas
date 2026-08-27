@@ -24,6 +24,7 @@ import {
 } from '../../../src/features/payments/domain/payment-choice-policy';
 import { createConfigPaymentLinkResolver } from '../../../src/features/payments/adapters/config-payment-link.resolver';
 import {
+  assembleMaterializedPaymentResponse,
   materializePaymentLinkAction,
   type SendPaymentLinkAction,
 } from '../../../src/features/payments/application/materialize-payment-link-action';
@@ -360,6 +361,27 @@ describe('materializePaymentLinkAction', () => {
       modelResponseText: null,
       resolver,
     })).toEqual({ ok: false, reason: 'PLAN_MISMATCH' });
+  });
+
+  it('renders exactly the configured URL when canonical snapshot metadata is stale', () => {
+    const staleUrl = 'https://buy.stripe.com/stale-snapshot-link';
+    const result = materializePaymentLinkAction({
+      action: action({ plan_code: 'monthly_6' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
+      backendAuthorizedPlanCode: 'monthly_6',
+      batchMessages: [msg('Retomemos el paso pendiente de la operación')],
+      businessSnapshot,
+      contact: allowedContact(),
+      modelResponseText: `Perfecto. ${staleUrl}`,
+      resolver,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const rendered = assembleMaterializedPaymentResponse(result);
+    expect(rendered).not.toContain(staleUrl);
+    expect(rendered.split(LINK_6M)).toHaveLength(2);
+    expect(result.stripped_urls).toEqual([staleUrl]);
   });
 
   it('allows a strict "ahora sí" resume only for the exact previously deferred canonical plan', () => {

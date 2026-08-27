@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConversationMoveV1Schema } from '../../../botpress-agent/src/schemas/conversation-pipeline';
 import {
   DEFAULT_CONVERSATION_INTERPRETER_MODEL,
+  CONVERSATION_INTERPRETER_TIMEOUT_MS,
   ConversationInterpreterError,
   generateGroqConversationMoveV1,
   interpretConversationMoveV1,
@@ -72,7 +73,7 @@ describe('conversation interpreter V1', () => {
 
   it('builds bounded instructions from complete batch and structured context', () => {
     const instructions = buildConversationInterpreterInstructionsV1(baseInput);
-    expect(CONVERSATION_INTERPRETER_PROMPT_VERSION).toBe('studyx-conversation-interpreter-v1');
+    expect(CONVERSATION_INTERPRETER_PROMPT_VERSION).toBe('studyx-conversation-interpreter-v1.3');
     expect(instructions).toContain('Necesito orientación');
     expect(instructions).toContain('call_or_chat');
     expect(instructions).toContain('redes-informaticas');
@@ -93,6 +94,40 @@ describe('conversation interpreter V1', () => {
     })).rejects.toMatchObject({ code: 'INTERPRETER_SCHEMA_INVALID' });
   });
 
+  it('derives vetoes from structured decline and deferral moves without phrase matching', async () => {
+    const declined = await interpretConversationMoveV1(baseInput, {
+      generate: async () => ({
+        schema_version: 1, move: 'decline_call', secondary_moves: [], vetoes: [], confidence: 0.94,
+      }),
+    });
+    expect(declined.vetoes).toEqual(['call']);
+
+    const deferred = await interpretConversationMoveV1({
+      ...baseInput,
+      sales_context: { ...baseInput.sales_context, awaiting_reply: 'payment_confirmation' as const },
+    }, {
+      generate: async () => ({
+        schema_version: 1, move: 'defer_payment', secondary_moves: [], vetoes: [], confidence: 0.94,
+      }),
+    });
+    expect(deferred.vetoes).toEqual(['payment_link']);
+  });
+
+  it('preserves a primary call decline when written continuation is also compatible', async () => {
+    const move = await interpretConversationMoveV1(baseInput, {
+      generate: async () => ({
+        schema_version: 1,
+        move: 'decline_call',
+        secondary_moves: ['continue_by_chat'],
+        vetoes: [],
+        confidence: 0.94,
+      }),
+    });
+    expect(move).toMatchObject({
+      move: 'decline_call', secondary_moves: ['continue_by_chat'], vetoes: ['call'],
+    });
+  });
+
   it('uses one Groq strict-schema request with the fast model and no retries', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(response(200, {
       choices: [{ message: { content: JSON.stringify({
@@ -102,17 +137,20 @@ describe('conversation interpreter V1', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await generateGroqConversationMoveV1({
-      instructions: 'contract', apiKey: 'test-key', signal: new AbortController().signal,
+      instructions: 'contract', context: baseInput,
+      apiKey: 'test-key', signal: new AbortController().signal,
     });
 
     expect(result.move.move).toBe('continue_by_chat');
+    expect(result.move.vetoes).toContain('call');
     expect(result.model).toBe(DEFAULT_CONVERSATION_INTERPRETER_MODEL);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const body = JSON.parse(String(fetchMock.mock.calls[0]![1]?.body));
     expect(body.response_format).toMatchObject({
       type: 'json_schema', json_schema: { name: 'studyx_conversation_move_v1', strict: true },
     });
-    expect(body.max_completion_tokens).toBeLessThanOrEqual(320);
+    expect(body.reasoning_effort).toBe('medium');
+    expect(body.max_completion_tokens).toBe(1_024);
   });
 
   it('times out at the bounded interpreter budget without retrying', async () => {
@@ -127,7 +165,8 @@ describe('conversation interpreter V1', () => {
     const assertion = expect(pending).rejects.toEqual(expect.objectContaining<Partial<ConversationInterpreterError>>({
       code: 'INTERPRETER_TIMEOUT',
     }));
-    await vi.advanceTimersByTimeAsync(1_801);
+    expect(CONVERSATION_INTERPRETER_TIMEOUT_MS).toBe(5_000);
+    await vi.advanceTimersByTimeAsync(CONVERSATION_INTERPRETER_TIMEOUT_MS + 1);
     await assertion;
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

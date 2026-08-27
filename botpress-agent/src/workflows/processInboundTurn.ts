@@ -503,7 +503,8 @@ export const processInboundTurn = new Workflow({
     let pipelineFailureDecision: Decision | null = null
     let pipelineDecisionProvider: 'botpress' | 'groq-direct' = 'groq-direct'
     let pipelineDecisionModel = 'conversation-pipeline-v1'
-    const pipelineEligible = owned.features?.conversation_pipeline_v1_enabled === true
+    const pipelineEligible = configuration.automationEnabled
+      && owned.features?.conversation_pipeline_v1_enabled === true
       && owned.policy.may_respond
       && owned.policy.allowed_response_types.includes('commercial_reply')
     const deterministicPipelineMove = pipelineEligible
@@ -539,6 +540,7 @@ export const processInboundTurn = new Workflow({
                 'interpret-conversation-move-v1',
                 () => generateGroqConversationMoveV1({
                   instructions: buildConversationInterpreterInstructionsV1(interpreterInput!),
+                  context: interpreterInput!,
                   apiKey,
                   signal,
                 }),

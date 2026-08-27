@@ -28,6 +28,8 @@ export interface PlanConversationTurnInputV1 {
   readonly move: ConversationMoveV1;
   readonly sales_context: ConversationStateV1;
   readonly business_context: PlanningBusinessContextV1;
+  /** Current backend call ledger capability; semantic meaning cannot grant it. */
+  readonly proactive_call_offer_allowed?: boolean;
 }
 
 type StateIdentity = Pick<ConversationStateV1, 'workspace_id' | 'conversation_id' | 'contact_id'>;
@@ -204,7 +206,8 @@ function planSingle(
   if (kind === 'ask_course_information') {
     const offeringCode = resolveOffering(move.course_reference, business) ?? state.selected_offering_code;
     if (!offeringCode) return unchangedPlan(state, 'guide_course_choice', ['course_selection']);
-    const offerCall = shouldOfferCall({ ...state, selected_offering_code: offeringCode }, vetoes);
+    const offerCall = input.proactive_call_offer_allowed !== false
+      && shouldOfferCall({ ...state, selected_offering_code: offeringCode }, vetoes);
     return {
       ...unchangedPlan(state, 'explain_selected_course'),
       next_stage: 'course_selected',

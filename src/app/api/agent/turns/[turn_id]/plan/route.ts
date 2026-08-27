@@ -4,6 +4,7 @@ import { ConversationMoveV1Schema } from '@/features/conversation/adapters/conve
 import { PostgresConversationStateStoreV1 } from '@/features/conversation/adapters/postgres-conversation-state-store';
 import { authoritativelyPlanConversationTurnV1 } from '@/features/conversation/application/plan-conversation-turn';
 import { businessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
+import { orchestrationStore } from '@/features/orchestration/adapters/postgres-orchestration-store';
 import {
   buildBusinessContextView,
   buildCatalogIndexView,
@@ -92,7 +93,10 @@ export async function POST(
         move: parsed.data.move,
         business_context: rawBusiness ? buildBusinessContextView(rawBusiness) : null,
         catalog_index: rawIndex ? buildCatalogIndexView(rawIndex) : null,
-      }, { state_store: new PostgresConversationStateStoreV1() }),
+      }, {
+        state_store: new PostgresConversationStateStoreV1(),
+        call_facts: orchestrationStore,
+      }),
     );
     return NextResponse.json(result, { status: 200 });
   } catch (error) {

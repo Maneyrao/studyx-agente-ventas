@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { DbClient } from '@/lib/db/types';
 import { jsonbParam } from '@/lib/db/json';
 import { CallEventSchema } from '@/lib/contracts/call-event';
-import { evaluateVoiceConsent } from '../domain/call-consent';
+import { evaluateAuthorizedVoiceConsent, evaluateVoiceConsent } from '../domain/call-consent';
 import { hashCallContext, parseCallContext } from '../domain/call-context';
 
 /**
@@ -107,18 +107,13 @@ export async function reserveCallForDecision(
   if (input.authorized_conversation_move && authorizedIndex < 0) {
     throw new CallRequestRejectedError('CALL_CONFIRMATION_REQUIRED');
   }
-  if (input.authorized_conversation_move?.mode === 'accepted_offer' && !openOffer) {
-    throw new CallRequestRejectedError('CALL_CONFIRMATION_REQUIRED');
-  }
   const verdict = input.authorized_conversation_move
-    ? {
-        allowed: true as const,
+    ? evaluateAuthorizedVoiceConsent({
         mode: input.authorized_conversation_move.mode,
-        offeredByDecisionId: input.authorized_conversation_move.mode === 'accepted_offer'
-          ? openOffer?.decisionId ?? null
-          : null,
         sourceIndex: authorizedIndex,
-      }
+        now: nowIso,
+        openOffer,
+      })
     : evaluateVoiceConsent({
         texts: input.consent_messages.map((message) => message.content),
         now: nowIso,

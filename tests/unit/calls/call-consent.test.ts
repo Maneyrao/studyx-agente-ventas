@@ -6,7 +6,11 @@ import { describe, expect, it } from 'vitest';
  * batch and the open offer window (15 minutes). The newest decisive message
  * wins, and a negation always beats any affirmative word.
  */
-import { evaluateVoiceConsent } from '@/features/calls/domain/call-consent';
+import {
+  evaluateAuthorizedVoiceConsent,
+  evaluateVoiceConsent,
+  selectAuthorizedVoiceConsentSourceIndex,
+} from '@/features/calls/domain/call-consent';
 
 const NOW = '2026-08-16T12:00:00.000Z';
 const OFFER_DECISION_ID = '9c858901-8a57-4791-81fe-4c483003b3c2';
@@ -102,5 +106,35 @@ describe('evaluateVoiceConsent', () => {
         openOffer: offerAgedMinutes(1),
       }),
     ).toEqual({ allowed: false, code: 'CALL_CONFIRMATION_REQUIRED' });
+  });
+});
+
+describe('semantic voice consent authorization', () => {
+  it('applies the same offer lifetime to a semantic acceptance', () => {
+    expect(evaluateAuthorizedVoiceConsent({
+      mode: 'accepted_offer', sourceIndex: 0, now: NOW, openOffer: offerAgedMinutes(16),
+    })).toEqual({ allowed: false, code: 'CALL_OFFER_EXPIRED' });
+    expect(evaluateAuthorizedVoiceConsent({
+      mode: 'accepted_offer', sourceIndex: 0, now: NOW, openOffer: offerAgedMinutes(14),
+    })).toEqual({
+      allowed: true, mode: 'accepted_offer', offeredByDecisionId: OFFER_DECISION_ID, sourceIndex: 0,
+    });
+  });
+
+  it('keeps a direct semantic request independent from a prior offer', () => {
+    expect(evaluateAuthorizedVoiceConsent({
+      mode: 'direct_request', sourceIndex: 1, now: NOW, openOffer: null,
+    })).toEqual({
+      allowed: true, mode: 'direct_request', offeredByDecisionId: null, sourceIndex: 1,
+    });
+  });
+
+  it('uses the existing batch classifier to retain the actual consent evidence when available', () => {
+    expect(selectAuthorizedVoiceConsentSourceIndex({
+      mode: 'direct_request', texts: ['llamame y lo vemos', 'gracias'],
+    })).toBe(0);
+    expect(selectAuthorizedVoiceConsentSourceIndex({
+      mode: 'direct_request', texts: ['Coordinemos una comunicación por voz', 'gracias'],
+    })).toBe(1);
   });
 });

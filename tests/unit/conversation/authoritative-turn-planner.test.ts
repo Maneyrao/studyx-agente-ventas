@@ -124,4 +124,32 @@ describe('authoritative conversation planner V1', () => {
 
     expect(second.plan_hash).toBe(first.plan_hash);
   });
+
+  it('does not offer a call when the authoritative call ledger denies that capability', async () => {
+    const result = await authoritativelyPlanConversationTurnV1({
+      turn: { workspace_id: workspaceId, conversation_id: conversationId, contact_id: contactId },
+      workspace_slug: 'studyx',
+      move: {
+        schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
+        course_reference: 'Curso de Redes', confidence: 0.96,
+      },
+      business_context: business,
+      catalog_index: catalog,
+    }, {
+      state_store: emptyStateStore,
+      call_facts: {
+        async loadClaimedCallFacts() {
+          return {
+            open_offer: null,
+            active_call: { call_id: '00000000-0000-4000-8000-000000000004', status: 'in_progress' },
+            last_call_result: null,
+            last_decline_at: null,
+          };
+        },
+      },
+    });
+
+    expect(result.plan.should_offer_call).toBe(false);
+    expect(result.plan.next_call_offer_status).toBe('not_offered');
+  });
 });

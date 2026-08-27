@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { BusinessContextView, CatalogIndexView } from '@/features/orchestration/domain/business-context';
 import type { ConversationStateStoreV1 } from '../ports/conversation-state-store';
+import type { OrchestrationStore } from '@/features/orchestration/ports/orchestration-store';
 import type {
   CanonicalFactRefV1,
   ConversationMoveV1,
@@ -38,6 +39,7 @@ export interface AuthoritativeConversationPlanInputV1 {
 
 export interface AuthoritativeConversationPlanDependenciesV1 {
   readonly state_store: Pick<ConversationStateStoreV1, 'load'>;
+  readonly call_facts?: Pick<OrchestrationStore, 'loadClaimedCallFacts'>;
 }
 
 export function buildPlanningBusinessContextV1(
@@ -83,16 +85,27 @@ export async function authoritativelyPlanConversationTurnV1(
   input: AuthoritativeConversationPlanInputV1,
   deps: AuthoritativeConversationPlanDependenciesV1,
 ): Promise<AuthoritativeConversationPlanV1> {
-  const loaded = await deps.state_store.load(
-    input.workspace_slug,
-    input.turn.conversation_id,
-    input.turn.contact_id,
-  );
+  const [loaded, callFacts] = await Promise.all([
+    deps.state_store.load(
+      input.workspace_slug,
+      input.turn.conversation_id,
+      input.turn.contact_id,
+    ),
+    deps.call_facts?.loadClaimedCallFacts({
+      conversation_id: input.turn.conversation_id,
+      contact_id: input.turn.contact_id,
+    }) ?? Promise.resolve(null),
+  ]);
   const state = loaded ?? createDefaultConversationStateV1(input.turn);
+  const proactiveCallOfferAllowed = callFacts === null
+    || (callFacts.open_offer === null
+      && callFacts.active_call === null
+      && callFacts.last_decline_at === null);
   const plan = planConversationTurn({
     move: input.move,
     sales_context: state,
     business_context: buildPlanningBusinessContextV1(input.business_context, input.catalog_index),
+    proactive_call_offer_allowed: proactiveCallOfferAllowed,
   });
   const registry = buildCanonicalFactRegistry({
     business_context: input.business_context,

@@ -1,6 +1,7 @@
 import type { BusinessContextView, CatalogIndexView } from '@/features/orchestration/domain/business-context';
 import type { DecisionV4 } from '@/features/orchestration/domain/decision-v4';
 import type { ConversationStateStoreV1 } from '../ports/conversation-state-store';
+import type { OrchestrationStore } from '@/features/orchestration/ports/orchestration-store';
 import type {
   ComposedNarrativeV1,
   ConversationMoveV1,
@@ -116,6 +117,7 @@ export async function prepareConversationPipelineCommitV1(input: {
   readonly catalog_index: CatalogIndexView | null;
 }, deps: {
   readonly state_store: ConversationStateStoreV1;
+  readonly call_facts?: Pick<OrchestrationStore, 'loadClaimedCallFacts'>;
 }): Promise<{
   readonly decision: DecisionV4;
   readonly plan: TurnPlanV1;
@@ -134,7 +136,7 @@ export async function prepareConversationPipelineCommitV1(input: {
     move: input.move,
     business_context: input.business_context,
     catalog_index: input.catalog_index,
-  }, { state_store: deps.state_store });
+  }, { state_store: deps.state_store, call_facts: deps.call_facts });
   if (authoritative.plan_hash !== input.expected_plan_hash) {
     throw new ConversationPlanMismatchError();
   }
