@@ -91,16 +91,26 @@ type ConversationMoveKindV1 =
 interface ConversationMoveV1 {
   schema_version: 1;
   move: ConversationMoveKindV1;
+  secondary_moves: readonly ConversationMoveKindV1[];
+  vetoes: readonly ConversationVetoV1[];
   course_reference?: string;
   area_reference?: string;
   payment_plan?: 'monthly_12' | 'monthly_6' | 'one_time';
   confidence: number; // 0..1
 }
+
+type ConversationVetoV1 =
+  | 'call'
+  | 'payment_link'
+  | 'purchase';
 ```
 
 Reglas:
 
 - `course_reference`, `area_reference` y `payment_plan` sólo aparecen cuando el mensaje los aporta o cuando `awaiting_reply` permite resolver inequívocamente una elipsis.
+- `secondary_moves` contiene como máximo dos movimientos distintos del primario, sin duplicados y sin `unknown` ni `greeting`.
+- `vetoes` contiene valores únicos y tiene precedencia absoluta: un veto de llamada, link o compra impide la acción correspondiente aunque el movimiento primario o secundario parezca solicitarla.
+- El planner procesa primero vetoes, después el movimiento primario y por último movimientos secundarios compatibles. Dos movimientos incompatibles producen aclaración sin acción.
 - Las referencias del modelo son texto no confiable. El backend las resuelve contra el índice canónico; nunca se persisten como códigos sin esa resolución.
 - `confidence` no autoriza acciones. Por debajo del umbral configurado, el planner trata el movimiento como `unknown`.
 - Una negación o ambigüedad no puede convertirse en llamada, link, proyección ni cierre de compra.
@@ -118,6 +128,7 @@ interface ConversationInterpreterInputV1 {
     selected_offering_code: string | null;
     selected_payment_plan: PaymentPlanCode | null;
     call_preference: CallPreference;
+    call_offer_status: CallOfferStatus;
     awaiting_reply: AwaitingReply;
   };
   catalog: {
@@ -138,6 +149,8 @@ interface ConversationInterpreterInputV1 {
 ```ts
 type CallPreference = 'unknown' | 'call' | 'chat' | 'declined';
 
+type CallOfferStatus = 'not_offered' | 'offered' | 'accepted' | 'declined';
+
 type AwaitingReply =
   | 'none'
   | 'area_choice'
@@ -154,6 +167,7 @@ interface SalesConversationStateV1 {
   selected_payment_plan: PaymentPlanCode | null;
   stage: SalesContextStage;
   call_preference: CallPreference;
+  call_offer_status: CallOfferStatus;
   awaiting_reply: AwaitingReply;
   source_turn_id: string | null;
   version: number;
@@ -163,10 +177,12 @@ interface SalesConversationStateV1 {
 Invariantes:
 
 - la identidad del estado es `(workspace_id, conversation_id)`, no el contacto;
-- una conversación nueva crea estado con `call_preference='unknown'` y `awaiting_reply='none'`;
+- una conversación nueva crea estado con `call_preference='unknown'`, `call_offer_status='not_offered'` y `awaiting_reply='none'`;
 - dos conversaciones del mismo contacto no comparten preferencia, curso, plan ni pregunta pendiente;
+- `should_offer_call` sólo puede pasar a `true` con `call_offer_status='not_offered'`; al emitir la oferta el commit persiste `offered`, por lo que no puede ofrecerse una segunda vez;
 - `chat` o `declined` impiden volver a ofrecer o preguntar llamada/chat en esa conversación;
-- una solicitud directa posterior de llamada cambia `call_preference` a `call` y puede habilitar la acción de llamada bajo las reglas existentes;
+- elegir chat o rechazar la llamada después de una oferta persiste `call_offer_status='declined'`;
+- aceptar una oferta o pedir directamente una llamada persiste `call_offer_status='accepted'`; una solicitud directa posterior cambia `call_preference` a `call` y puede habilitar la acción bajo las reglas existentes sin volver a ofrecerla;
 - seleccionar otro curso limpia `selected_payment_plan` y cualquier `awaiting_reply` incompatible;
 - postergar un pago conserva curso y plan, fija `awaiting_reply='payment_confirmation'` cuando corresponde y no genera link;
 - enviar el link fija `awaiting_reply='none'`; el job de proyección sigue siendo único por decisión/outbound;
@@ -202,15 +218,44 @@ type AllowedBusinessActionV1 =
       payment_plan: PaymentPlanCode;
     };
 
+type CanonicalFactRequestV1 =
+  | { kind: 'area_options'; limit: 1 | 2 | 3 }
+  | { kind: 'course_options'; area_code: string; limit: 1 | 2 | 3 }
+  | {
+      kind:
+        | 'offering_name'
+        | 'offering_description'
+        | 'offering_duration'
+        | 'offering_modality';
+      offering_code: string;
+    }
+  | { kind: 'payment_options'; offering_code: string }
+  | {
+      kind: 'payment_link';
+      offering_code: string;
+      payment_plan: PaymentPlanCode;
+    };
+
+type MissingInformationV1 =
+  | 'area_reference'
+  | 'course_reference'
+  | 'course_selection'
+  | 'course_information_topic'
+  | 'call_or_chat_choice'
+  | 'payment_plan'
+  | 'payment_confirmation'
+  | 'catalog_snapshot';
+
 interface TurnPlanV1 {
   schema_version: 1;
   next_stage: SalesContextStage;
   response_goal: ResponseGoalV1;
-  canonical_fact_requests: readonly string[];
+  canonical_fact_requests: readonly CanonicalFactRequestV1[];
   allowed_business_action: AllowedBusinessActionV1;
-  missing_information: readonly string[];
+  missing_information: readonly MissingInformationV1[];
   should_offer_call: boolean;
   next_call_preference: CallPreference;
+  next_call_offer_status: CallOfferStatus;
   next_awaiting_reply: AwaitingReply;
   selected_offering_code: string | null;
   selected_payment_plan: PaymentPlanCode | null;
@@ -236,10 +281,11 @@ Reglas centrales del planner:
 - `continue_by_chat` con `awaiting_reply='call_or_chat'` fija preferencia `chat`; sin oferta previa no cambia autoridad y continúa o aclara según el contexto disponible;
 - `decline_call` fija `declined`, continúa asesorando y no cierra la venta;
 - una solicitud directa de llamada puede reemplazar `chat` o `declined` por `call`;
-- `should_offer_call` sólo puede ser `true` una vez y únicamente con preferencia `unknown`, curso seleccionado y etapa apta;
+- `should_offer_call` sólo puede ser `true` con preferencia `unknown`, `call_offer_status='not_offered'`, curso seleccionado y etapa apta;
 - seleccionar plan sólo lo persiste y deja `payment_confirmation`; no envía link;
 - `request_payment_link` requiere curso, plan, intención no negada y validación backend del batch actual;
 - `defer_payment`, negaciones, baja confianza o `unknown` nunca producen acción;
+- los vetoes se aplican antes de autorizar cualquier `allowed_business_action`; nunca se degradan a una simple sugerencia;
 - opt-out continúa teniendo precedencia fuera del pipeline semántico.
 
 ### 4.5 Facts canónicos
@@ -265,7 +311,7 @@ interface CanonicalFactV1 {
 
 IDs estables siguen el formato interno versionado, por ejemplo `offering:<code>:duration:v1`; el cliente nunca depende de ese formato. El registro se construye desde el snapshot de Supabase ya reclamado. El link sólo se materializa después de la revalidación de pago existente y nunca se entrega al compositor antes de ser autorizado.
 
-`canonical_fact_requests` es una solicitud del planner, no una autorización. El backend devuelve únicamente IDs existentes, consistentes con curso/plan y permitidos para el objetivo de respuesta.
+`canonical_fact_requests` es una unión discriminada y estricta: no acepta strings libres, clases desconocidas ni combinaciones sin el código requerido. Es una solicitud del planner, no una autorización. El backend devuelve únicamente IDs existentes, consistentes con curso/plan y permitidos para el objetivo de respuesta.
 
 El compositor no recibe `CanonicalFactV1.value`. Recibe sólo descriptores sin valor:
 
@@ -297,7 +343,7 @@ interface ComposedNarrativeV1 {
 Reglas:
 
 - el compositor recibe el `TurnPlanV1`, `CanonicalFactRefV1[]` sin valores y contexto del cliente estrictamente necesario;
-- `used_fact_ids` debe ser subconjunto de los facts entregados y de `canonical_fact_requests`;
+- `used_fact_ids` debe ser subconjunto de los fact refs materializados a partir de `canonical_fact_requests`;
 - la narrativa puede conectar, explicar encaje con el objetivo declarado y formular la siguiente pregunta;
 - precio, duración, modalidad, nombres/listados de cursos y links no se copian desde la narrativa: se insertan mediante bloques renderizados desde `used_fact_ids`;
 - un fact ID desconocido, duplicado, no solicitado o incompatible hace fallar la composición de forma cerrada;
@@ -343,7 +389,7 @@ Flag único: `CONVERSATION_PIPELINE_V1_ENABLED`.
 - con `false`, el flujo actual permanece byte-for-byte en su selección de ruta;
 - con `true`, sólo los turnos elegibles atraviesan intérprete/planner/compositor;
 - saludo, opt-out y acciones transaccionales ya concluyentes conservan caminos determinísticos;
-- la migración es backward-compatible: agrega estructura antes de que el flag se active;
+- la migración es backward-compatible: crea tablas V1 independientes antes de que el flag se active y no altera las tablas legadas;
 - desactivar el flag revierte el comportamiento sin borrar estado ni datos.
 
 No se activa en producción durante la implementación. El orden de promoción es:
@@ -358,20 +404,18 @@ No se activa en producción durante la implementación. El orden de promoción e
 
 ## 7. Migración PostgreSQL
 
-La migración siguiente a `20260827010001_sales_context_states.sql` hará el estado realmente conversacional:
+La migración siguiente a `20260827010001_sales_context_states.sql` crea almacenamiento V1 nuevo y no altera claves, constraints ni semántica de las tablas legadas:
 
-- agrega `call_preference` con `NOT NULL DEFAULT 'unknown'` y CHECK del enum;
-- agrega `awaiting_reply` con `NOT NULL DEFAULT 'none'` y CHECK del enum;
-- agrega `conversation_id` a eventos si aún no está;
-- reemplaza la identidad `(workspace_id, contact_id)` por `(workspace_id, conversation_id)`;
-- conserva índice por contacto para consulta/auditoría, sin usarlo como identidad;
-- actualiza la FK de eventos y su unicidad a `(workspace_id, conversation_id, state_version)`;
-- no elimina filas ni reescribe hechos existentes;
-- los registros existentes conservan su `conversation_id` y reciben defaults seguros;
-- RLS y grants existentes se mantienen;
+- crea `conversation_sales_context_states_v1` con PK `(workspace_id, conversation_id)`;
+- crea `conversation_sales_context_state_events_v1` con FK y unicidad `(workspace_id, conversation_id, state_version)`;
+- incluye `contact_id`, curso, plan, etapa, `call_preference`, `call_offer_status`, `awaiting_reply`, `source_turn_id`, versión y timestamps;
+- define CHECKs estrictos para los tres enums conversacionales y los stages/planes existentes;
+- conserva índice por contacto para consulta y auditoría, sin usarlo como identidad;
+- no modifica, elimina, backfillea ni reescribe `sales_context_states` o `sales_context_state_events`;
+- replica RLS y grants mínimos del store legado en las tablas V1;
 - la migración debe pasar tres ciclos PostgreSQL aislados antes de cualquier aplicación remota.
 
-El store cambia a `load(workspaceSlug, conversationId, contactId)` y verifica los tres valores. El upsert usa `(workspace_id, conversation_id)`. Una transición escribe el estado completo; `null` deja de significar implícitamente “conservar”, para poder limpiar el plan al cambiar curso. Replay se cerca por `source_turn_id` y versión dentro de la transacción serializable.
+Se crea un puerto/store V1 separado con `load(workspaceSlug, conversationId, contactId)`. Con el flag apagado, claim y commit continúan usando exclusivamente el store legado. Con el flag activo, usan exclusivamente el store V1; una conversación sin fila empieza con defaults seguros y no importa estado por contacto desde tablas legadas. El upsert usa `(workspace_id, conversation_id)`, una transición escribe el estado completo y `null` permite limpiar el plan al cambiar curso. Replay se cerca por `source_turn_id` y versión dentro de la transacción serializable.
 
 ## 8. Fallback contextual
 
@@ -390,22 +434,23 @@ El fallback nunca crea llamada, link, proyección ni cambio irreversible.
 
 ## 9. Presupuesto de latencia y observabilidad
 
-Métrica principal: desde recepción del evento hasta `submitted_to_botpress`, excluyendo tiempo deliberado de batching ya registrado por separado.
+Métrica principal: `event_to_visible_outbound_ms`, desde `occurred_at` del primer evento absorbido por el batch hasta que `createMessage` confirma el outbound entregado a la integración de Telegram. El batching está incluido. Como Botpress no expone un receipt físico de pantalla, el canary correlaciona esa métrica con confirmación visual del mensaje; nunca se presenta el ACK de Botpress por sí solo como prueba física.
 
-Objetivo: p95 menor a 8 segundos en canary.
+Objetivo: p95 menor a 10 segundos en canary.
 
 Presupuesto por etapa:
 
 | Etapa | p95 máximo |
 | --- | ---: |
+| batching desde el primer evento | 2.50 s |
 | ingest + claim + context | 1.50 s |
-| intérprete rápido | 1.50 s |
-| resolución + planner + facts | 0.25 s |
-| compositor, sólo cuando aplica | 2.75 s |
-| commit + egress | 1.00 s |
-| submit + report | 1.00 s |
-| margen | 0.00 s |
-| total | 8.00 s |
+| intérprete rápido | 1.25 s |
+| resolución + planner + facts | 0.35 s |
+| compositor, sólo cuando aplica | 2.00 s |
+| commit + egress | 0.90 s |
+| submit + report | 0.80 s |
+| margen | 0.70 s |
+| total | 10.00 s |
 
 Timeouts duros iniciales:
 
@@ -422,10 +467,10 @@ Logs estructurados, sin contenido del cliente:
 - response_goal, next_stage, awaiting_reply y si hubo acción permitida;
 - cantidad de facts solicitados/usados;
 - latencia/timeout del compositor;
-- duración total y fast-path;
+- `event_to_visible_outbound_ms`, batching y fast-path;
 - IDs de trace/turn/decision/outbound existentes.
 
-El gate de canary requiere muestra suficiente para calcular p95 y ningún turno por encima del timeout total del workflow por causa del pipeline.
+El gate de canary requiere muestra suficiente para calcular p95 sobre la métrica completa, confirmación visual correlacionada y ningún turno por encima del timeout total del workflow por causa del pipeline.
 
 ## 10. Estrategia TDD por capas
 
@@ -434,6 +479,9 @@ Cada capa empieza con un test que falla por ausencia del contrato o comportamien
 ### Capa A — contratos
 
 - Zod acepta cada movimiento válido y rechaza campos extra o combinaciones inválidas;
+- `secondary_moves` rechaza más de dos elementos, duplicados y movimientos incompatibles;
+- vetoes de llamada/link/compra prevalecen sobre movimientos primarios y secundarios;
+- `canonical_fact_requests` y `missing_information` rechazan strings libres y variantes fuera de sus unions;
 - paridad Botpress/backend;
 - compositor rechaza facts desconocidos o no solicitados;
 - el feature flag ausente es falso.
@@ -442,6 +490,8 @@ Cada capa empieza con un test que falla por ausencia del contrato o comportamien
 
 - conversación nueva resetea preferencia y pregunta pendiente;
 - dos conversaciones del mismo contacto permanecen aisladas;
+- una oferta persiste `call_offer_status='offered'` y ningún turno posterior vuelve a ofrecerla;
+- chat/rechazo/aceptación actualizan el estado de oferta sin bloquear una solicitud directa posterior;
 - cambio de curso limpia plan;
 - replay no incrementa versión dos veces;
 - concurrencia serializa sin perder preferencia ni duplicar eventos;
@@ -456,6 +506,7 @@ Cada capa empieza con un test que falla por ausencia del contrato o comportamien
 - selección de plan espera confirmación;
 - postergación bloquea link y reanudación explícita lo habilita una vez;
 - negaciones, baja confianza y ambigüedad cierran sin acciones;
+- intención compuesta conserva movimientos compatibles y sus vetoes impiden efectos contradictorios;
 - catálogo indisponible conserva objetivo sin inventar facts.
 
 ### Capa D — intérprete y compositor
@@ -492,6 +543,8 @@ Conversaciones obligatorias:
 10. replay del mismo turno;
 11. dos commits concurrentes;
 12. exactamente un `payment_projection_job` y un outbound de link.
+13. intención compuesta con veto de llamada o link y cero acción vetada.
+14. una oferta de llamada por conversación aun bajo replay y concurrencia.
 
 Los oráculos verifican intención, códigos canónicos, estado, actions, manifests, cantidad de outbounds/jobs y ausencia de invenciones. No dependen de igualdad textual salvo copy canónico renderizado.
 
@@ -508,7 +561,7 @@ Antes de revisar el diff:
 - escaneo de secretos y artefactos generados;
 - evidencia RED y GREEN por capa;
 - conteo exacto de links, outbounds y proyecciones;
-- reporte de latencia local y canary.
+- reporte de `event_to_visible_outbound_ms` local y canary, incluyendo batching.
 
 Después de gates verdes se presenta el diff y sus riesgos. No hay push, migración remota, Vercel, Botpress prod ni Telegram real sin revisión humana y autorización explícita de promoción.
 
@@ -524,6 +577,7 @@ Se traza evento → workflow → ingest → claim → intérprete → planner �
 
 - move semántico correcto;
 - `call_preference='chat'` y `awaiting_reply` correcto;
+- `call_offer_status` demuestra una única oferta;
 - cero segunda oferta de llamada;
 - hechos canónicos por IDs;
 - mismo SHA en backend y Botpress;
@@ -535,7 +589,7 @@ Se traza evento → workflow → ingest → claim → intérprete → planner �
 | --- | --- |
 | dos llamadas de modelo exceden p95 | compositor opcional, modelos rápidos, timeouts sin retry y fallback determinístico |
 | drift de contratos espejados | pruebas de paridad y schemas estrictos |
-| migración cambia identidad histórica | migración aditiva con backfill por conversation_id y ciclos aislados |
+| estado V1 diverge del legado | tablas V1 independientes, flag único y cero importación implícita desde el store legado |
 | modelo inventa facts en narrativa | facts por ID, bloques canónicos, compositor sin links y guard final intacto |
 | preferencia se filtra entre conversaciones | PK por conversation_id y carga con prueba de contact/workspace |
 | replay duplica link/proyección | fencing existente más test vertical concurrente |
@@ -547,6 +601,8 @@ El diseño queda implementado cuando:
 
 - no se agrega ninguna regex ni lista de frases para resolver los nuevos movimientos;
 - contratos, planner y persistencia cumplen las invariantes anteriores;
+- secondary moves y vetoes acotados resuelven intenciones compuestas sin autorizar acciones contradictorias;
+- `call_offer_status` demuestra que la oferta ocurre como máximo una vez por conversación;
 - las conversaciones obligatorias pasan end-to-end;
 - 12 o más paráfrasis held-out se interpretan semánticamente sin estar copiadas a producción;
 - exactamente un link y una proyección aparecen en el recorrido de compra;
@@ -554,6 +610,6 @@ El diseño queda implementado cuando:
 - una solicitud directa posterior sí puede pedir llamada;
 - facts y egress se autorizan por IDs/códigos, no por prosa;
 - el flag permanece falso por defecto;
-- p95 de canary es menor a 8 segundos;
+- p95 de `event_to_visible_outbound_ms`, incluyendo batching, es menor a 10 segundos;
 - producción sólo se promueve después de revisión y autorización explícita;
 - el smoke supervisado confirma el recorrido y el SHA común.
