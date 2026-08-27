@@ -35,6 +35,8 @@ const CORPUS = [
   'me sirven las 12 meses o las 6 cuotas, cuál me recomendás?',
   'Mejor todavía, prefiero el plan corto de menos tiempo. Esperá antes de mandar nada.',
   'No, esperá, mejor pago todo de una vez, así termino antes.',
+  'Antes de seguir, ¿qué te había contado sobre mi disponibilidad?',
+  'Ya te había contado mi situación',
 ];
 
 describe('payment-choice mirror parity (botpress-agent vs backend)', () => {

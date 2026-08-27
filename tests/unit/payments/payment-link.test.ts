@@ -178,6 +178,15 @@ describe('derivePaymentChoiceFromBatch', () => {
     expect(derivePaymentChoiceFromBatch([msg('quiero un unico pago')])).toBe('one_time');
   });
 
+  it('does not confuse the verb "contar" with a cash payment choice', () => {
+    expect(
+      derivePaymentChoiceFromBatch([
+        msg('Antes de seguir, ¿qué te había contado sobre mi disponibilidad?'),
+      ]),
+    ).toBeNull();
+    expect(derivePaymentChoiceFromBatch([msg('Ya te había contado mi situación')])).toBeNull();
+  });
+
   it('still returns null for "pagos" without a plan-identifying number or phrase', () => {
     expect(derivePaymentChoiceFromBatch([msg('quiero pagar en pagos')])).toBeNull();
   });

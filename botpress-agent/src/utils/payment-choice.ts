@@ -45,6 +45,11 @@ const PLAN_PATTERNS: ReadonlyArray<{ readonly code: PaymentPlanCode; readonly pa
   },
 ]
 
+const NARRATIVE_CONTADO_PATTERN =
+  /\b(?:(?:me|te|le|nos|les)\s+)?(?:habia|habias|habiamos|habian|he|has|ha|hemos|han)\s+contado\b/
+const EXPLICIT_ONE_TIME_WITHOUT_CONTADO_PATTERN =
+  /\b(?:pago\s+unico|todo\s+junto|un\s+solo\s+pago|pago\s+total|(?:un\s+)?unico\s+pago)\b/
+
 const PAYMENT_DEFERRAL_PATTERNS: readonly RegExp[] = [
   /\bno\s+me\s+(?:mandes|envies|pases|compartas)\s+(?:el\s+)?link\b/,
   /\b(?:todavia\s+no|despues|mas\s+adelante|por\s+ahora\s+no)\b/,
@@ -60,7 +65,13 @@ export function derivePaymentChoiceFromBatch(
     const normalized = normalize(message.content ?? '')
     if (PAYMENT_DEFERRAL_PATTERNS.some((pattern) => pattern.test(normalized))) return null
     for (const { code, pattern } of PLAN_PATTERNS) {
-      if (pattern.test(normalized)) matched.add(code)
+      if (!pattern.test(normalized)) continue
+      if (
+        code === 'one_time'
+        && NARRATIVE_CONTADO_PATTERN.test(normalized)
+        && !EXPLICIT_ONE_TIME_WITHOUT_CONTADO_PATTERN.test(normalized)
+      ) continue
+      matched.add(code)
     }
   }
   if (matched.size !== 1) return null

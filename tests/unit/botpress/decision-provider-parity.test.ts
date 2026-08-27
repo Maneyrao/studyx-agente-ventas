@@ -406,6 +406,36 @@ describe('applyDecisionPolicy — provider parity', () => {
     });
   });
 
+  it.each([
+    {
+      text: 'Me interesa Excel Integral. Trabajo con turnos rotativos y sólo puedo estudiar de noche.',
+      expected: { type: 'constraint', key: 'schedule_constraint', value: 'turnos rotativos y sólo puedo estudiar de noche' },
+    },
+    {
+      text: 'Quiero aprender Marketing Digital, pero tengo un presupuesto muy ajustado.',
+      expected: { type: 'constraint', key: 'budget_constraint', value: 'presupuesto muy ajustado' },
+    },
+    {
+      text: 'Me interesa Community Manager. Prefiero seguir por texto y sin llamadas.',
+      expected: { type: 'contact_preference', key: 'preferred_contact_channel', value: 'Prefiero seguir por texto y sin llamadas' },
+    },
+    {
+      text: 'Me interesa Especialista en Ventas, pero me preocupa no tener experiencia previa.',
+      expected: { type: 'objection', key: 'experience_concern', value: 'no tener experiencia previa' },
+    },
+  ])('keeps a literal personal $expected.type even on a deterministic commercial reply', ({ text, expected }) => {
+    const decision = applyDecisionPolicy(modelDecision(), claimedTurn({
+      batch_message_content: text,
+      offering_names: ['Excel Integral', 'Marketing Digital', 'Community Manager', 'Especialista en Ventas'],
+    }));
+
+    expect(decision.memory_candidates).toContainEqual(expect.objectContaining({
+      ...expected,
+      source_quote: expect.stringContaining(expected.value),
+      confidence: 1,
+    }));
+  });
+
   it('does not guess a course when two catalog names occur or the mention is explicitly negative', () => {
     const ambiguous = applyDecisionPolicy(modelDecision(), claimedTurn({
       batch_message_content: 'Comparo Fotografía Profesional con Fotografía con Celulares.',

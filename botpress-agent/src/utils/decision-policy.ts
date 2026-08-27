@@ -356,6 +356,70 @@ function withDeterministicCourseMemory(decision: Decision, claimed: ClaimedTurn)
   }
 }
 
+type LiteralMemoryCandidate = Decision['memory_candidates'][number]
+
+const LITERAL_PERSONAL_MEMORY_PATTERNS: ReadonlyArray<{
+  readonly type: LiteralMemoryCandidate['type']
+  readonly key: string
+  readonly pattern: RegExp
+}> = [
+  {
+    type: 'constraint',
+    key: 'schedule_constraint',
+    pattern: /\b(turnos?\s+rotativos?\s+y\s+s[oó]lo\s+puedo\s+estudiar\s+de\s+noche)\b/iu,
+  },
+  {
+    type: 'constraint',
+    key: 'budget_constraint',
+    pattern: /\b(presupuesto\s+muy\s+ajustado)\b/iu,
+  },
+  {
+    type: 'contact_preference',
+    key: 'preferred_contact_channel',
+    pattern: /\b(prefiero\s+seguir\s+por\s+texto\s+y\s+sin\s+llamadas)\b/iu,
+  },
+  {
+    type: 'objection',
+    key: 'experience_concern',
+    pattern: /\b((?:no\s+tener|sin)\s+experiencia\s+previa)\b/iu,
+  },
+]
+
+/**
+ * Clear, literal customer facts must survive deterministic commercial routes
+ * and model timeouts. This only proposes grounded memory candidates; the
+ * backend still applies the structural/sensitive-data admission policy before
+ * anything reaches selected_memories.
+ */
+function withLiteralPersonalMemories(decision: Decision, claimed: ClaimedTurn): Decision {
+  if (decision.intent === 'opt_out') return decision
+  const derived: LiteralMemoryCandidate[] = []
+  for (const message of claimed.context.batch_messages) {
+    if (message.message_type !== 'text') continue
+    for (const rule of LITERAL_PERSONAL_MEMORY_PATTERNS) {
+      const sourceQuote = message.content.match(rule.pattern)?.[1]?.trim()
+      if (!sourceQuote) continue
+      derived.push({
+        type: rule.type,
+        key: rule.key,
+        value: sourceQuote,
+        source_quote: sourceQuote,
+        confidence: 1,
+      })
+    }
+  }
+  if (derived.length === 0) return decision
+  const merged = new Map<string, LiteralMemoryCandidate>()
+  for (const candidate of [...decision.memory_candidates, ...derived]) {
+    merged.set(`${candidate.type}:${candidate.key}:${normalizeCatalogText(candidate.value)}`, candidate)
+  }
+  return { ...decision, memory_candidates: [...merged.values()].slice(0, 10) }
+}
+
+function withDeterministicMemories(decision: Decision, claimed: ClaimedTurn): Decision {
+  return withLiteralPersonalMemories(withDeterministicCourseMemory(decision, claimed), claimed)
+}
+
 function canonicalPaymentOfferingCode(claimed: ClaimedTurn): string | null {
   const offerings = claimed.business_context?.offerings ?? []
   if (offerings.length === 0) return null
@@ -424,7 +488,7 @@ export function applyDecisionPolicy(decision: Decision, claimed: ClaimedTurn): D
       claimed.context.batch_messages.map((message) => ({ content: message.content }))
     )
     if (derived !== decision.business_action.plan_code) {
-      return withDeterministicCourseMemory(paymentPlanClarification(
+      return withDeterministicMemories(paymentPlanClarification(
         claimed,
         derived === null ? 'AMBIGUOUS_OR_ABSENT_CHOICE' : 'PLAN_MISMATCH'
       ), claimed)
@@ -432,7 +496,7 @@ export function applyDecisionPolicy(decision: Decision, claimed: ClaimedTurn): D
 
     const offeringCode = canonicalPaymentOfferingCode(claimed)
     if (!offeringCode) {
-      return withDeterministicCourseMemory(paymentCourseClarification(claimed), claimed)
+      return withDeterministicMemories(paymentCourseClarification(claimed), claimed)
     }
     decision = {
       ...decision,
@@ -443,7 +507,7 @@ export function applyDecisionPolicy(decision: Decision, claimed: ClaimedTurn): D
     }
   }
 
-  return withDeterministicCourseMemory({
+  return withDeterministicMemories({
     ...decision,
     response: withoutRepeatedGreeting(response, claimed),
   }, claimed)
