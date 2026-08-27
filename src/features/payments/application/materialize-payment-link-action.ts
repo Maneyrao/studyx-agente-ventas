@@ -43,6 +43,8 @@ export interface MaterializePaymentLinkInput {
   readonly authorizedOfferingCode: string | null;
   /** Backend-derived plan from a prior explicitly deferred selection. */
   readonly deferredPlanCode?: PaymentPlanCode | null;
+  /** Durable plan selected before a planless current confirmation. */
+  readonly selectedPlanCode?: PaymentPlanCode | null;
   /** The CURRENT batch only — never recent_turns, summary or memory. */
   readonly batchMessages: readonly PolicyBatchMessage[];
   /** The canonical business snapshot passed in as data; never queried here. */
@@ -84,6 +86,7 @@ export function materializePaymentLinkAction(
     action,
     authorizedOfferingCode,
     deferredPlanCode,
+    selectedPlanCode,
     batchMessages,
     businessSnapshot,
     contact,
@@ -103,7 +106,7 @@ export function materializePaymentLinkAction(
 
   const currentIntent = classifyCurrentPaymentIntent(batchMessages);
   const allowedPlan = currentIntent.kind === 'direct'
-    ? currentIntent.planCode
+    ? currentIntent.planCode ?? selectedPlanCode ?? null
     : currentIntent.kind === 'resume'
       ? deferredPlanCode ?? null
       : null;

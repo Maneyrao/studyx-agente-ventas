@@ -17,7 +17,11 @@ import {
   isStripePaymentLinkUrl,
   stripUnauthorizedUrls,
 } from '../../../src/features/payments/domain/payment-link';
-import { derivePaymentChoiceFromBatch } from '../../../src/features/payments/domain/payment-choice-policy';
+import {
+  classifyCurrentPaymentIntent,
+  derivePaymentChoiceFromBatch,
+  derivePaymentPlanSelectionFromBatch,
+} from '../../../src/features/payments/domain/payment-choice-policy';
 import { createConfigPaymentLinkResolver } from '../../../src/features/payments/adapters/config-payment-link.resolver';
 import {
   materializePaymentLinkAction,
@@ -198,6 +202,42 @@ describe('derivePaymentChoiceFromBatch', () => {
   });
 });
 
+describe('deterministic payment-link authorization', () => {
+  it.each([
+    ['Confirmo 12 cuotas de 30 dólares', 'monthly_12'],
+    ['Quiero pagarlo en 6 cuotas de 60 dólares', 'monthly_6'],
+    ['Pago único de 360 dólares', 'one_time'],
+    ['Me quedo con las 6 cuotas', 'monthly_6'],
+  ] as const)('authorizes a committed choice: %s', (content, planCode) => {
+    expect(classifyCurrentPaymentIntent([msg(content)])).toEqual({
+      kind: 'direct',
+      planCode,
+    });
+  });
+
+  it.each([
+    '¿Cómo serían las 12 cuotas?',
+    'Estoy pensando en 6 cuotas',
+    'Si comprara, elegiría pago único',
+  ])('persists a tentative plan without authorizing a link: %s', (content) => {
+    expect(derivePaymentPlanSelectionFromBatch([msg(content)])).not.toBeNull();
+    expect(classifyCurrentPaymentIntent([msg(content)])).toEqual({ kind: 'none' });
+  });
+
+  it.each([
+    'Confirmo 12 cuotas, pero no me mandes el link todavía',
+    'Me quedo con 6 cuotas; mandámelo después',
+    'Pago único, pero por ahora no',
+  ])('lets a current veto block the link while retaining the selected plan: %s', (content) => {
+    expect(derivePaymentPlanSelectionFromBatch([msg(content)])).not.toBeNull();
+    expect(classifyCurrentPaymentIntent([msg(content)])).toEqual({ kind: 'veto' });
+  });
+
+  it('classifies a planless "ahora sí" as a resumable authorization', () => {
+    expect(classifyCurrentPaymentIntent([msg('Ahora sí.')])).toEqual({ kind: 'resume' });
+  });
+});
+
 describe('createConfigPaymentLinkResolver', () => {
   it('resolves each of the three plans to its exact configured URL', () => {
     const resolver = createConfigPaymentLinkResolver(FULL_ENV);
@@ -333,6 +373,24 @@ describe('materializePaymentLinkAction', () => {
       ok: false,
       reason: 'AMBIGUOUS_OR_ABSENT_CHOICE',
     });
+  });
+
+  it.each([
+    '¿Cómo serían las 12 cuotas?',
+    'Estoy pensando en 12 cuotas',
+    'Si comprara, elegiría 12 cuotas',
+  ])('refuses a tentative selection as payment authority: %s', (content) => {
+    const result = materializePaymentLinkAction({
+      action: action({ plan_code: 'monthly_12' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
+      batchMessages: [msg(content)],
+      businessSnapshot,
+      contact: allowedContact(),
+      modelResponseText: null,
+      resolver,
+    });
+
+    expect(result).toEqual({ ok: false, reason: 'AMBIGUOUS_OR_ABSENT_CHOICE' });
   });
 
   it.each([

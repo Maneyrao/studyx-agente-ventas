@@ -54,13 +54,6 @@ const NARRATIVE_CONTADO_PATTERN =
 const EXPLICIT_ONE_TIME_WITHOUT_CONTADO_PATTERN =
   /\b(?:pago\s+unico|todo\s+junto|un\s+solo\s+pago|pago\s+total|(?:un\s+)?unico\s+pago)\b/;
 
-const PAYMENT_DEFERRAL_PATTERNS: readonly RegExp[] = [
-  /\bno\s+me\s+(?:mandes|envies|pases|compartas)\s+(?:el\s+)?link\b/,
-  /\b(?:todavia\s+no|despues|mas\s+adelante|por\s+ahora\s+no)\b/,
-  /\b(?:solo|solamente)\s+(?:consultaba|preguntaba|averiguaba)\b/,
-  /\bsi\s+(?:comprara|me\s+anotara|me\s+inscribiera|eligiera)\b/,
-];
-
 const TEMPORAL_PAYMENT_DEFERRAL_PATTERNS: readonly RegExp[] = [
   /\bno\s+me\s+(?:mandes|envies|pases|compartas)\s+(?:el\s+)?link\b/,
   /\b(?:todavia\s+no|despues|mas\s+adelante|por\s+ahora\s+no)\b/,
@@ -69,10 +62,26 @@ const TEMPORAL_PAYMENT_DEFERRAL_PATTERNS: readonly RegExp[] = [
 const NON_COMMITTAL_PAYMENT_PATTERNS: readonly RegExp[] = [
   /\b(?:solo|solamente)\s+(?:consultaba|preguntaba|averiguaba)\b/,
   /\bsi\s+(?:comprara|me\s+anotara|me\s+inscribiera|eligiera)\b/,
+  /[?¿]/,
+  /\b(?:estoy\s+(?:pensando|viendo)|capaz|quizas|tal\s+vez|podria)\b/,
 ];
 
 const EXPLICIT_PAYMENT_RESUME_PATTERN =
-  /\bahora\s+si\b.{0,48}\b(?:manda|mandame|mandamelo|envia|enviame|pasame|comparti|compartime)(?:lo|la|me)?\b/u;
+  /\bahora\s+si\b/u;
+
+const EXPLICIT_PAYMENT_COMMITMENT_PATTERN =
+  /\b(?:confirmo|quiero\s+pagar(?:l[oa]s?)?|lo\s+quiero\s+pagar|me\s+quedo\s+con|elijo|elegi|ya\s+(?:elegi|me\s+decidi)|me\s+decido|voy\s+con)\b/u;
+
+const EXPLICIT_PAYMENT_LINK_REQUEST_PATTERN =
+  /(?:\b(?:manda|mandame|mandamelo|envia|enviame|pasame|comparti|compartime)\b.{0,24}\b(?:link|enlace)\b|\b(?:link|enlace)\b.{0,24}\b(?:manda|mandame|envia|enviame|pasame|comparti|compartime)\b)/u;
+
+function isExplicitPaymentLinkRequest(messages: readonly PolicyBatchMessage[]): boolean {
+  return messages.some((message) => {
+    const normalized = normalize(message.content ?? '');
+    if (TEMPORAL_PAYMENT_DEFERRAL_PATTERNS.some((pattern) => pattern.test(normalized))) return false;
+    return EXPLICIT_PAYMENT_LINK_REQUEST_PATTERN.test(normalized);
+  });
+}
 
 function plansMentionedIn(normalized: string): Set<PaymentPlanCode> {
   const matched = new Set<PaymentPlanCode>();
@@ -89,7 +98,7 @@ function plansMentionedIn(normalized: string): Set<PaymentPlanCode> {
 }
 
 export type CurrentPaymentIntent =
-  | { readonly kind: 'direct'; readonly planCode: PaymentPlanCode }
+  | { readonly kind: 'direct'; readonly planCode: PaymentPlanCode | null }
   | { readonly kind: 'resume' }
   | { readonly kind: 'veto' }
   | { readonly kind: 'none' };
@@ -100,7 +109,7 @@ export function classifyCurrentPaymentIntent(
 ): CurrentPaymentIntent {
   const normalizedMessages = messages.map((message) => normalize(message.content ?? ''));
   if (normalizedMessages.some((message) => (
-    PAYMENT_DEFERRAL_PATTERNS.some((pattern) => pattern.test(message))
+    TEMPORAL_PAYMENT_DEFERRAL_PATTERNS.some((pattern) => pattern.test(message))
   ))) {
     return { kind: 'veto' };
   }
@@ -109,12 +118,49 @@ export function classifyCurrentPaymentIntent(
   for (const message of normalizedMessages) {
     for (const plan of plansMentionedIn(message)) matched.add(plan);
   }
-  if (matched.size === 1) return { kind: 'direct', planCode: [...matched][0]! };
   if (matched.size > 1) return { kind: 'none' };
+  const nonCommittal = normalizedMessages.some((message) => (
+    NON_COMMITTAL_PAYMENT_PATTERNS.some((pattern) => pattern.test(message))
+  ));
+  const explicitlyCommitted = normalizedMessages.some((message) => (
+    EXPLICIT_PAYMENT_COMMITMENT_PATTERN.test(message)
+    || isExplicitPaymentLinkRequest([{ content: message }])
+  ));
+  if (nonCommittal) return { kind: 'none' };
+  if (matched.size === 1) {
+    return { kind: 'direct', planCode: [...matched][0]! };
+  }
+  if (explicitlyCommitted) return { kind: 'direct', planCode: null };
   if (normalizedMessages.some((message) => EXPLICIT_PAYMENT_RESUME_PATTERN.test(message))) {
     return { kind: 'resume' };
   }
   return { kind: 'none' };
+}
+
+/**
+ * The unique plan mentioned in the current batch, independent from checkout
+ * authority. A tentative question or a temporal deferral can select a plan
+ * for durable context while still being unable to authorize a link.
+ */
+export function derivePaymentPlanSelectionFromBatch(
+  messages: readonly PolicyBatchMessage[]
+): PaymentPlanCode | null {
+  const matched = new Set<PaymentPlanCode>();
+  for (const message of messages) {
+    const normalized = normalize(message.content ?? '');
+    for (const plan of plansMentionedIn(normalized)) matched.add(plan);
+  }
+  if (matched.size !== 1) return null;
+  return [...matched][0] ?? null;
+}
+
+export function hasTemporalPaymentDeferral(
+  messages: readonly PolicyBatchMessage[]
+): boolean {
+  return messages.some((message) => {
+    const normalized = normalize(message.content ?? '');
+    return TEMPORAL_PAYMENT_DEFERRAL_PATTERNS.some((pattern) => pattern.test(normalized));
+  });
 }
 
 /**

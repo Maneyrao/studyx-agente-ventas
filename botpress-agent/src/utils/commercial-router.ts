@@ -14,7 +14,7 @@ import {
   matchDeterministicGreeting,
 } from './greeting'
 import {
-  derivePaymentChoiceFromBatch,
+  derivePaymentPlanSelectionFromBatch,
   type PaymentPlanCode,
 } from './payment-choice'
 import {
@@ -212,7 +212,7 @@ function authorizedPaymentPlan(
   if (decision.business_action?.type === 'send_payment_link') {
     return decision.business_action.plan_code
   }
-  return derivePaymentChoiceFromBatch(
+  return derivePaymentPlanSelectionFromBatch(
     claimed.context.batch_messages.map((message) => ({ content: message.content })),
   ) ?? undefined
 }

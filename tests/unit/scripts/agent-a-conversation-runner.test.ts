@@ -144,6 +144,73 @@ function localClaimedTurn(): ClaimedTurn {
   };
 }
 
+function localPaymentClaimedTurn(): ClaimedTurn {
+  const claimed = localClaimedTurn();
+  return {
+    ...claimed,
+    policy: {
+      may_respond: true,
+      allowed_response_types: ['commercial_reply', 'clarification', 'technical_fallback'],
+      reason: null,
+    },
+    context: {
+      ...claimed.context,
+      batch_messages: [{
+        ...claimed.context.batch_messages[0],
+        content: 'Confirmo 12 cuotas de 30 dólares.',
+      }],
+    },
+    catalog_resolution: { kind: 'no_catalog_intent' },
+    business_context_available: true,
+    business_context: {
+      as_of: LOCAL_TRANSPORT_NOW,
+      prices_assertable: true,
+      workspace: {
+        slug: 'studyx',
+        display_name: 'StudyX',
+        environment: 'sandbox',
+        default_locale: 'es-AR',
+        timezone: 'America/Argentina/Buenos_Aires',
+        payment_options: [{
+          code: 'monthly_12',
+          label: '12 pagos',
+          total: { amount: '360.00', currency: 'USD' },
+          installments: 12,
+          installment_amount: '30.00',
+          payment_link: 'https://example.test/12',
+        }],
+      },
+      offerings: [{
+        code: 'redes_informaticas',
+        display_name: 'Redes Informáticas',
+        aliases: [],
+        academy: 'Tecnología',
+        offering_type: 'course',
+        description: null,
+        value_proposition: null,
+        price_type: 'fixed',
+        price: { amount: '360.00', currency: 'USD' },
+        price_assertable: true,
+        billing_interval: null,
+        modality: null,
+        schedules: [],
+        certification: null,
+        hours_per_month: null,
+        classes: 16,
+        modules: null,
+        includes: [],
+        syllabus_published: null,
+        language: null,
+        min_age: null,
+        policies: { allowed_promise: null, forbidden_promises: [], price_message: null },
+      }],
+      qualification_fields: [],
+      injection_suspected_count: 0,
+      offerings_truncated: 0,
+    },
+  };
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -365,6 +432,41 @@ describe('Agent A conversation runner', () => {
         },
       },
     ]);
+  });
+
+  it('sends the deterministic payment-plan authority in the local commit payload', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(200, localIngestResponse()))
+      .mockResolvedValueOnce(jsonResponse(200, localPaymentClaimedTurn()))
+      .mockResolvedValueOnce(jsonResponse(200, {
+        status: 'committed',
+        replayed: false,
+        trace_id: LOCAL_TRANSPORT_UUID,
+        turn_id: LOCAL_TRANSPORT_UUID,
+        decision_id: LOCAL_TRANSPORT_UUID,
+        next_state: 'waiting_user',
+        outbound: null,
+        call_request: null,
+        batch_completion: 'completed',
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const sendTurn = createLocalTurnSender({
+      apiBaseUrl: 'http://127.0.0.1:3000',
+      orchestratorKey: 'test-orchestrator-key',
+      orchestratorKeyId: 'test-key-id',
+      signingSecret: 'test-signing-secret',
+      cronSecret: null,
+      geminiApiKey: 'test-gemini-key',
+      geminiModel: 'test-gemini-model',
+      groqApiKey: 'test-groq-key',
+      groqModel: 'test-groq-model',
+    }, 'payment-authority', 'groq', 0);
+
+    await sendTurn('Confirmo 12 cuotas de 30 dólares.', null);
+
+    const commitBody = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
+    expect(commitBody.authorized_payment_plan).toBe('monthly_12');
   });
 
   it('runs the caller pacing gate immediately before every external turn', async () => {

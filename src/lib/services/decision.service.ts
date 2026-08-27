@@ -27,7 +27,8 @@ import { PAYMENT_PLAN_PRESENTATIONS } from '@/features/payments/domain/payment-l
 import {
   classifyCurrentPaymentIntent,
   deriveDeferredPaymentChoiceFromBatch,
-  derivePaymentChoiceFromBatch,
+  derivePaymentPlanSelectionFromBatch,
+  hasTemporalPaymentDeferral,
 } from '@/features/payments/domain/payment-choice-policy';
 import {
   buildAuthorizedEgress,
@@ -417,7 +418,12 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
 
     const authorizedPaymentPlan = validatedInput.authorized_payment_plan ?? null;
     if (authorizedPaymentPlan !== null) {
-      const backendDerivedPlan = derivePaymentChoiceFromBatch(await loadBatchMessages());
+      const batchMessages = await loadBatchMessages();
+      const currentPaymentIntent = classifyCurrentPaymentIntent(batchMessages);
+      const backendDerivedPlan = derivePaymentPlanSelectionFromBatch(batchMessages)
+        ?? (currentPaymentIntent.kind === 'direct' || currentPaymentIntent.kind === 'resume'
+          ? existingSalesContext?.selected_payment_plan ?? null
+          : null);
       if (backendDerivedPlan !== authorizedPaymentPlan) {
         throw new DecisionPolicyError('PAYMENT_PLAN_MISMATCH');
       }
@@ -467,32 +473,35 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       const offerings = await loadCanonicalOfferings('payment_link');
       let deferredPlanCode: ReturnType<typeof deriveDeferredPaymentChoiceFromBatch> = null;
       if (classifyCurrentPaymentIntent(batchMessages).kind === 'resume') {
-        const resumesPersistedSelection = existingSalesContext?.selected_payment_plan === action.plan_code
-          && existingSalesContext.selected_offering_code === action.offering_sku;
-        if (resumesPersistedSelection) {
+        const priorInboundMessages = await db<Array<{ content: string }>>`
+          SELECT prior.content
+          FROM messages AS prior
+          WHERE prior.conversation_id = ${turn.conversation_id}::uuid
+            AND prior.direction = 'inbound'
+            AND prior.conversation_seq < (
+              SELECT current_turn.conversation_seq
+              FROM messages AS current_turn
+              WHERE current_turn.id = ${turn.id}::uuid
+            )
+          ORDER BY prior.conversation_seq DESC, prior.created_at DESC, prior.id DESC
+          LIMIT 1
+        `;
+        deferredPlanCode = deriveDeferredPaymentChoiceFromBatch(priorInboundMessages);
+        if (
+          deferredPlanCode === null
+          && hasTemporalPaymentDeferral(priorInboundMessages)
+          && existingSalesContext?.selected_payment_plan === action.plan_code
+          && existingSalesContext.selected_offering_code === action.offering_sku
+        ) {
           deferredPlanCode = existingSalesContext.selected_payment_plan;
-        } else {
-          const priorInboundMessages = await db<Array<{ content: string }>>`
-            SELECT prior.content
-            FROM messages AS prior
-            WHERE prior.conversation_id = ${turn.conversation_id}::uuid
-              AND prior.direction = 'inbound'
-              AND prior.conversation_seq < (
-                SELECT current_turn.conversation_seq
-                FROM messages AS current_turn
-                WHERE current_turn.id = ${turn.id}::uuid
-              )
-            ORDER BY prior.conversation_seq DESC, prior.created_at DESC, prior.id DESC
-            LIMIT 1
-          `;
-          deferredPlanCode = deriveDeferredPaymentChoiceFromBatch(priorInboundMessages);
         }
       }
 
       const materialized = materializePaymentLinkAction({
         action,
-        authorizedOfferingCode: validatedInput.authorized_offering_code ?? null,
+        authorizedOfferingCode: effectiveAuthorizedOfferingCode ?? null,
         deferredPlanCode,
+        selectedPlanCode: existingSalesContext?.selected_payment_plan ?? null,
         batchMessages,
         businessSnapshot: { offerings },
         contact: {

@@ -55,6 +55,7 @@ type ClaimedOverrides = {
   acceptedOffer?: boolean;
   courseOfInterest?: string | null;
   offeringCode?: string | null;
+  selectedPaymentPlan?: ClaimedTurn['sales_context']['selected_payment_plan'];
   name?: string | null;
   recentInbound?: string[];
   catalogResolution?: ClaimedTurn['catalog_resolution'];
@@ -124,6 +125,7 @@ function claimedTurn(overrides: ClaimedOverrides = {}): ClaimedTurn {
         ? 'Redes Informáticas'
         : overrides.courseOfInterest,
       offering_code: overrides.offeringCode ?? null,
+      selected_payment_plan: overrides.selectedPaymentPlan ?? null,
       open_call_offer: null,
       accepted_call_offer: overrides.acceptedOffer
         ? { decision_id: UUID, expires_at: '2026-08-25T12:15:00.000Z' }
@@ -854,7 +856,7 @@ describe('routeCommercialTurn', () => {
     });
   });
 
-  it('routes a valid payment choice deterministically without authoring a URL or payment fact', () => {
+  it('authorizes the link for a committed payment choice without authoring the URL', () => {
     const route = routeCommercialTurn({
       automationEnabled: true,
       claimed: claimedTurn({ texts: ['Confirmo las 12 cuotas'] }),
@@ -867,8 +869,12 @@ describe('routeCommercialTurn', () => {
       model: 'deterministic:payment-selection-fast-path-v1',
       authorizedPaymentPlan: 'monthly_12',
       decision: {
-        business_action: null,
-        next_state: 'waiting_user',
+        business_action: {
+          type: 'send_payment_link',
+          plan_code: 'monthly_12',
+          offering_sku: 'redes-informaticas',
+        },
+        next_state: 'completed',
       },
     });
     expectDecisionRoute(route);
@@ -882,10 +888,53 @@ describe('routeCommercialTurn', () => {
       claimed: claimedTurn({ texts: ['Confirmo 12 cuotas; no me mandes el link todavía.'] }),
     });
 
-    expect(route).toEqual({
-      kind: 'model_required',
-      origin: 'advisory_model',
-      reason: 'ADVISORY_REQUIRES_SALES_MODEL',
+    expect(route).toMatchObject({
+      kind: 'deterministic',
+      origin: 'payment_selection',
+      authorizedPaymentPlan: 'monthly_12',
+      decision: {
+        business_action: null,
+        next_state: 'waiting_user',
+      },
+    });
+  });
+
+  it('persists a tentative plan without authorizing its link', () => {
+    const route = routeCommercialTurn({
+      automationEnabled: true,
+      claimed: claimedTurn({ texts: ['¿Cómo serían las 6 cuotas?'] }),
+    });
+
+    expect(route).toMatchObject({
+      kind: 'deterministic',
+      origin: 'payment_selection',
+      authorizedPaymentPlan: 'monthly_6',
+      decision: { business_action: null, next_state: 'waiting_user' },
+    });
+  });
+
+  it('authorizes "ahora sí" only when the previous turn postponed the selected plan', () => {
+    const route = routeCommercialTurn({
+      automationEnabled: true,
+      claimed: claimedTurn({
+        texts: ['Ahora sí.'],
+        selectedPaymentPlan: 'monthly_6',
+        offeringCode: 'redes-informaticas',
+        recentInbound: ['Mandame el link después.'],
+      }),
+    });
+
+    expect(route).toMatchObject({
+      kind: 'deterministic',
+      origin: 'payment_selection',
+      authorizedPaymentPlan: 'monthly_6',
+      decision: {
+        business_action: {
+          type: 'send_payment_link',
+          plan_code: 'monthly_6',
+          offering_sku: 'redes-informaticas',
+        },
+      },
     });
   });
 
