@@ -1,6 +1,6 @@
 import type { ConversationInterpreterInputV1 } from '../lib/conversation/conversation-interpreter'
 
-export const CONVERSATION_INTERPRETER_PROMPT_VERSION = 'studyx-conversation-interpreter-v1.3'
+export const CONVERSATION_INTERPRETER_PROMPT_VERSION = 'studyx-conversation-interpreter-v1.5'
 
 const CONTRACT = `You are a semantic interpreter for one StudyX sales conversation turn.
 Return only ConversationMoveV1. Interpret meaning; never write customer-facing copy and never
@@ -45,7 +45,14 @@ the requested advice.
 Distinguish channel choice from rejection: use decline_call when the primary meaning is refusal,
 discomfort or inability regarding voice contact and written continuation is only inferred. Use
 continue_by_chat when the customer affirmatively chooses written conversation. Do not replace an
-explicit call rejection with a merely inferred chat preference.
+explicit call rejection with a merely inferred chat preference. When written continuation is
+affirmatively expressed, it remains the primary move even if the same turn also ends or dismisses
+voice contact; represent the voice boundary with a call veto, not with decline_call as a primary or
+secondary move. Use decline_call only when no affirmative written-channel choice is expressed, and
+never add continue_by_chat merely because written continuation would be a convenient default.
+Rejecting, disliking or being unable to use voice does not itself affirm the written channel, even
+when the last agent question presented those two options. Do not infer a channel choice by
+elimination; keep decline_call when the written preference is absent.
 
 Use vetoes for explicit prohibitions. decline_call entails a call veto, defer_payment entails a
 payment_link veto, and decline_purchase entails a purchase veto. Choosing written conversation instead of a currently
