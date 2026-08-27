@@ -103,4 +103,25 @@ describe('authoritative conversation planner V1', () => {
       payment_plans: ['monthly_12'],
     });
   });
+
+  it('keeps the plan hash stable when only snapshot read timestamps change', async () => {
+    const input = {
+      turn: { workspace_id: workspaceId, conversation_id: conversationId, contact_id: contactId },
+      workspace_slug: 'studyx',
+      move: {
+        schema_version: 1 as const, move: 'ask_course_information' as const,
+        secondary_moves: [], vetoes: [], confidence: 0.96,
+      },
+    };
+    const first = await authoritativelyPlanConversationTurnV1({
+      ...input, business_context: business, catalog_index: catalog,
+    }, { state_store: emptyStateStore });
+    const second = await authoritativelyPlanConversationTurnV1({
+      ...input,
+      business_context: { ...business, as_of: '2026-08-27T15:00:01.000Z' },
+      catalog_index: { ...catalog, as_of: '2026-08-27T15:00:01.000Z' },
+    }, { state_store: emptyStateStore });
+
+    expect(second.plan_hash).toBe(first.plan_hash);
+  });
 });

@@ -4,6 +4,7 @@ import { commitDecision } from '../actions/commitDecision'
 import { dispatchCall } from '../actions/dispatchCall'
 import { flushLeadProjection } from '../actions/flushLeadProjection'
 import { ingestTurn } from '../actions/ingestTurn'
+import { planConversation } from '../actions/planConversation'
 import { reportDelivery } from '../actions/reportDelivery'
 import { transcribeAudio } from '../actions/transcribeAudio'
 import {
@@ -33,6 +34,22 @@ import { routeCommercialTurn } from '../utils/commercial-router'
 import { verifyAuthorizedEgressPortable } from '../utils/authorized-egress'
 import { generateGeminiDecision, MAX_GEMINI_DECISION_TIMEOUT_MS } from '../lib/decision/gemini-direct'
 import { generateGroqDecision } from '../lib/decision/groq-direct'
+import {
+  generateGroqConversationMoveV1,
+  type ConversationInterpreterInputV1,
+} from '../lib/conversation/conversation-interpreter'
+import {
+  composeConversationNarrativeWithFallbackV1,
+} from '../lib/conversation/conversation-composer'
+import {
+  ComposedNarrativeV1Schema,
+  type ConversationPipelineCommitV1,
+} from '../schemas/conversation-pipeline'
+import {
+  CONVERSATION_INTERPRETER_PROMPT_VERSION,
+  buildConversationInterpreterInstructionsV1,
+} from '../prompts/conversation-interpreter-v1'
+import { CONVERSATION_COMPOSER_PROMPT_VERSION } from '../prompts/conversation-composer-v1'
 import { evaluateWhatsAppCanarySend } from '../channels/whatsapp.channel'
 
 /**
@@ -93,6 +110,88 @@ const DecisionExit = new Autonomous.Exit({
   schema: DecisionSchema,
 })
 
+const ComposerExit = new Autonomous.Exit({
+  name: 'conversation_narrative_v1',
+  description: 'Return value-free narrative and the authorized fact IDs it should accompany.',
+  schema: ComposedNarrativeV1Schema,
+})
+
+function areaCode(value: string | null): string | null {
+  if (!value) return null
+  let output = ''
+  let pendingSeparator = false
+  for (const character of value.trim().toLocaleLowerCase('es').normalize('NFD')) {
+    const code = character.codePointAt(0) ?? 0
+    if (code >= 0x0300 && code <= 0x036f) continue
+    const separator = character === ' ' || character === '\t' || character === '\n' || character === '\r'
+    if (separator) {
+      pendingSeparator = output.length > 0
+      continue
+    }
+    if (pendingSeparator) output += '-'
+    output += character
+    pendingSeparator = false
+  }
+  return output || null
+}
+
+function buildInterpreterInput(owned: ClaimedTurn): ConversationInterpreterInputV1 | null {
+  const state = owned.conversation_state_v1
+  if (!state) return null
+  let lastAgentQuestion: string | null = null
+  for (let index = owned.context.recent_turns.length - 1; index >= 0; index -= 1) {
+    const turn = owned.context.recent_turns[index]
+    if (turn.direction === 'outbound') {
+      lastAgentQuestion = turn.content
+      break
+    }
+  }
+  const areas = new Map<string, string>()
+  const offerings = (owned.catalog_index?.offerings ?? []).map((offering) => {
+    const code = areaCode(offering.academy)
+    if (code && offering.academy) areas.set(code, offering.academy)
+    return {
+      code: offering.code,
+      display_name: offering.display_name,
+      area_code: code,
+      aliases: offering.aliases,
+    }
+  })
+  return {
+    batch_messages: owned.context.batch_messages.map((message) => ({
+      id: message.id,
+      text: message.content,
+    })),
+    last_agent_question: lastAgentQuestion,
+    sales_context: state,
+    catalog: {
+      areas: [...areas].map(([code, display_name]) => ({ code, display_name })),
+      offerings,
+      payment_plans: (owned.business_context?.workspace.payment_options ?? []).map((option, index) => ({
+        code: option.code,
+        position: index + 1,
+      })),
+    },
+  }
+}
+
+function pipelinePlaceholder(): Decision {
+  return {
+    schema_version: 4,
+    intent: 'commercial',
+    kind: 'reply',
+    response: 'El backend preparará la respuesta autorizada.',
+    response_type: 'commercial_reply',
+    confidence: 1,
+    reason_code: 'CONVERSATION_PIPELINE_V1_PENDING_BACKEND',
+    business_action: null,
+    memory_candidates: [],
+    missing_information: [],
+    next_state: 'waiting_user',
+    retrieval_used: null,
+  }
+}
+
 const workflowStateSchema = z.object({
   phase: ProcessingStateSchema.default('received'),
   turnId: z.string().uuid().nullable().default(null),
@@ -146,7 +245,7 @@ export const processInboundTurn = new Workflow({
     // stages that actually re-run.
     const workflowStartedAt = Date.now()
     const timings: Record<string, number> = {}
-    const occurredAtMs = Date.parse(input.message.occurred_at ?? '')
+    let occurredAtMs = Date.parse(input.message.occurred_at ?? '')
     if (Number.isFinite(occurredAtMs)) {
       timings.telegram_to_router_ms = Math.max(0, workflowStartedAt - occurredAtMs)
     }
@@ -358,6 +457,15 @@ export const processInboundTurn = new Workflow({
 
     const owned = claimed
     state.turnId = owned.turn_id
+    const batchEventTimes = owned.context.batch_messages
+      .map((message) => Date.parse(message.occurred_at ?? message.created_at))
+      .filter((value) => Number.isFinite(value))
+    if (batchEventTimes.length > 0) {
+      const firstBatchEventAtMs = Math.min(...batchEventTimes)
+      occurredAtMs = Number.isFinite(occurredAtMs)
+        ? Math.min(occurredAtMs, firstBatchEventAtMs)
+        : firstBatchEventAtMs
+    }
     Object.assign(timings, owned.diagnostics.timings, owned.diagnostics.counters)
     safeLog('studyx.turn.claimed', {
       trace_id: input.trace_id,
@@ -391,6 +499,125 @@ export const processInboundTurn = new Workflow({
       route_reason: commercialRoute.reason,
     })
 
+    let pipelineCommit: ConversationPipelineCommitV1 | null = null
+    let pipelineFailureDecision: Decision | null = null
+    let pipelineDecisionProvider: 'botpress' | 'groq-direct' = 'groq-direct'
+    let pipelineDecisionModel = 'conversation-pipeline-v1'
+    const pipelineEligible = owned.features?.conversation_pipeline_v1_enabled === true
+      && owned.policy.may_respond
+      && owned.policy.allowed_response_types.includes('commercial_reply')
+    const deterministicPipelineMove = pipelineEligible
+      && (owned.deterministic_route === 'call_direct_request'
+        || owned.deterministic_route === 'call_accepted_offer')
+      ? {
+          schema_version: 1 as const,
+          move: 'request_call' as const,
+          secondary_moves: [],
+          vetoes: [],
+          confidence: 1,
+        }
+      : null
+    const interpreterInput = pipelineEligible
+      && owned.deterministic_route === null
+      ? buildInterpreterInput(owned)
+      : null
+    if (deterministicPipelineMove || interpreterInput) {
+      try {
+        const interpreted = deterministicPipelineMove
+          ? {
+              move: deterministicPipelineMove,
+              model: `backend:${owned.deterministic_route}`,
+              latency_ms: 0,
+            }
+          : await (async () => {
+              const apiKey = secrets.GROQ_API_KEY
+              if (typeof apiKey !== 'string' || apiKey === '') {
+                throw new StudyxHttpError('GROQ_API_KEY_MISSING', false)
+              }
+              const interpreterStartedAt = Date.now()
+              const generated = await step(
+                'interpret-conversation-move-v1',
+                () => generateGroqConversationMoveV1({
+                  instructions: buildConversationInterpreterInstructionsV1(interpreterInput!),
+                  apiKey,
+                  signal,
+                }),
+                { maxAttempts: 1 },
+              )
+              timings.interpreter_ms = Date.now() - interpreterStartedAt
+              return generated
+            })()
+        if (deterministicPipelineMove) {
+          timings.interpreter_ms = 0
+          pipelineDecisionProvider = 'botpress'
+          pipelineDecisionModel = interpreted.model
+        }
+
+        const plannerStartedAt = Date.now()
+        const planned = await step(
+          'plan-conversation-turn-v1',
+          () => planConversation.execute({
+            client,
+            input: {
+              turn_id: owned.turn_id,
+              trace_id: input.trace_id,
+              move: interpreted.move,
+            },
+          }),
+          { maxAttempts: 1 },
+        )
+        timings.planner_ms = Date.now() - plannerStartedAt
+
+        const composerStartedAt = Date.now()
+        const composition = await step(
+          'compose-conversation-narrative-v1',
+          () => composeConversationNarrativeWithFallbackV1({
+            plan: planned.plan,
+            fact_refs: planned.fact_refs,
+            customer_goal: null,
+          }, {
+            signal,
+            generate: async ({ instructions, signal: composerSignal }) => {
+              const generated = await execute({
+                instructions,
+                exits: [ComposerExit],
+                temperature: 0.2,
+                model: 'google-ai:gemini-3.6-flash',
+                reasoningEffort: 'none',
+                iterations: 1,
+                signal: composerSignal,
+              })
+              if (!generated.is(ComposerExit)) throw new Error('COMPOSER_EXIT_NOT_REACHED')
+              return generated.output
+            },
+          }),
+          { maxAttempts: 1 },
+        )
+        timings.composer_ms = Date.now() - composerStartedAt
+        pipelineCommit = {
+          move: interpreted.move,
+          plan_hash: planned.plan_hash,
+          composition,
+        }
+        safeLog('studyx.turn.conversation_pipeline_v1_planned', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          move: interpreted.move.move,
+          secondary_move_count: interpreted.move.secondary_moves.length,
+          veto_count: interpreted.move.vetoes.length,
+          interpreter_model: interpreted.model,
+          interpreter_latency_ms: interpreted.latency_ms,
+        })
+      } catch (error) {
+        safeLog('studyx.turn.conversation_pipeline_v1_failed', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          error_code: errorCode(error),
+        })
+        pipelineFailureDecision = modelUnavailableFallback(owned)
+      }
+    }
+
     // ---- Pasos 7-9: generar y validar localmente -------------------------
     // The claim already carries the one coherent business snapshot. The
     // standalone catalog action remains available to non-turn callers, but a
@@ -400,7 +627,14 @@ export const processInboundTurn = new Workflow({
     let decisionModel: string = DECISION_MODELS[0]
     let decisionProvider: 'botpress' | 'google-ai-direct' | 'groq-direct' = 'botpress'
     timings.model_ms = 0
-    if (commercialRoute.kind !== 'model_required') {
+    if (pipelineCommit) {
+      decision = pipelinePlaceholder()
+      decisionProvider = pipelineDecisionProvider
+      decisionModel = pipelineDecisionModel
+    } else if (pipelineFailureDecision) {
+      decision = pipelineFailureDecision
+      decisionModel = 'policy:conversation-pipeline-v1-unavailable'
+    } else if (commercialRoute.kind !== 'model_required') {
       decision = commercialRoute.decision
       decisionModel = commercialRoute.model
       timings.model_ms = 0
@@ -561,11 +795,14 @@ export const processInboundTurn = new Workflow({
               // A deterministic current-batch selection only. The backend
               // re-derives it before persisting plan_selected.
               authorized_payment_plan: authorizedPaymentPlan,
+              conversation_pipeline_v1: pipelineCommit,
               decision,
               model: {
                 provider: decisionProvider,
                 model: decisionModel,
-                prompt_version: AGENT_A_PROMPT_VERSION,
+                prompt_version: pipelineCommit
+                  ? `${CONVERSATION_INTERPRETER_PROMPT_VERSION}+${CONVERSATION_COMPOSER_PROMPT_VERSION}`
+                  : AGENT_A_PROMPT_VERSION,
               },
               // Batch fencing pair (spec §8): lets the backend try
               // `completeBatch` right after this commit or its replay,
@@ -741,6 +978,14 @@ export const processInboundTurn = new Workflow({
         { maxAttempts: 1 }
       )
       timings.send_ms = Date.now() - sendStartedAt
+      if (Number.isFinite(occurredAtMs)) {
+        // Returned createMessage is the first edge-owned proof that the
+        // outbound is visible to the Botpress channel. Because the origin is
+        // the inbound event timestamp, this includes the batching window.
+        timings.event_to_visible_outbound_ms = Math.max(0, Date.now() - occurredAtMs)
+        timings.event_to_visible_outbound_over_budget =
+          timings.event_to_visible_outbound_ms >= 10_000 ? 1 : 0
+      }
     } catch (error) {
       timings.send_ms = Date.now() - sendStartedAt
       state.deliveryStatus = 'failed'

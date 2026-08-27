@@ -36,12 +36,6 @@ export const ConversationMoveV1Schema = z.object({
     context.addIssue({ code: 'custom', path: ['vetoes'], message: 'DUPLICATE_VETO' });
   }
   const moves = new Set([value.move, ...value.secondary_moves]);
-  if (value.vetoes.includes('call') && moves.has('request_call')) {
-    context.addIssue({ code: 'custom', path: ['vetoes'], message: 'CALL_REQUEST_VETOED' });
-  }
-  if ((value.vetoes.includes('payment_link') || value.vetoes.includes('purchase')) && moves.has('request_payment_link')) {
-    context.addIssue({ code: 'custom', path: ['vetoes'], message: 'PAYMENT_LINK_REQUEST_VETOED' });
-  }
   if (value.course_reference && ![...moves].some((move) => COURSE_REFERENCE_MOVES.has(move))) {
     context.addIssue({ code: 'custom', path: ['course_reference'], message: 'COURSE_REFERENCE_NOT_APPLICABLE' });
   }
@@ -121,8 +115,15 @@ export const ComposedNarrativeV1Schema = z.object({
   }
 });
 
+export const ConversationPipelineCommitV1Schema = z.object({
+  move: ConversationMoveV1Schema,
+  plan_hash: z.string().regex(/^[a-f0-9]{64}$/),
+  composition: ComposedNarrativeV1Schema,
+}).strict();
+
 export type ConversationMoveV1 = z.infer<typeof ConversationMoveV1Schema>;
 export type TurnPlanV1 = z.infer<typeof TurnPlanV1Schema>;
 export type CanonicalFactRefV1 = z.infer<typeof CanonicalFactRefV1Schema>;
 export type ConversationPlanResponseV1 = z.infer<typeof ConversationPlanResponseV1Schema>;
 export type ComposedNarrativeV1 = z.infer<typeof ComposedNarrativeV1Schema>;
+export type ConversationPipelineCommitV1 = z.infer<typeof ConversationPipelineCommitV1Schema>;

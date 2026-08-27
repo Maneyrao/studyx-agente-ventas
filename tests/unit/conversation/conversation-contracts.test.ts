@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   ComposedNarrativeV1Schema,
+  ConversationPipelineCommitV1Schema,
   ConversationMoveV1Schema,
   TurnPlanV1Schema,
 } from '@/features/conversation/adapters/conversation-pipeline-schema';
 import {
   ComposedNarrativeV1Schema as BotpressComposedNarrativeV1Schema,
+  ConversationPipelineCommitV1Schema as BotpressConversationPipelineCommitV1Schema,
   ConversationMoveV1Schema as BotpressConversationMoveV1Schema,
   TurnPlanV1Schema as BotpressTurnPlanV1Schema,
 } from '../../../botpress-agent/src/schemas/conversation-pipeline';
@@ -55,6 +57,9 @@ describe('conversation pipeline V1 contracts', () => {
       .toEqual(BotpressTurnPlanV1Schema.parse(validPlan));
     expect(ComposedNarrativeV1Schema.parse(validComposition))
       .toEqual(BotpressComposedNarrativeV1Schema.parse(validComposition));
+    const commit = { move: validMove, plan_hash: 'a'.repeat(64), composition: validComposition };
+    expect(ConversationPipelineCommitV1Schema.parse(commit))
+      .toEqual(BotpressConversationPipelineCommitV1Schema.parse(commit));
   });
 
   it.each([
@@ -64,13 +69,21 @@ describe('conversation pipeline V1 contracts', () => {
     },
     { ...validMove, secondary_moves: ['ask_course_information'] },
     { ...validMove, secondary_moves: ['unknown'] },
-    { ...validMove, move: 'request_call', secondary_moves: [], vetoes: ['call'] },
-    { ...validMove, move: 'request_payment_link', secondary_moves: [], vetoes: ['payment_link'] },
     { ...validMove, confidence: 1.01 },
     { ...validMove, invented_authority: true },
   ])('rejects invalid or contradictory moves in both mirrors', (payload) => {
     expect(ConversationMoveV1Schema.safeParse(payload).success).toBe(false);
     expect(BotpressConversationMoveV1Schema.safeParse(payload).success).toBe(false);
+  });
+
+  it('accepts a positive-looking move with an explicit veto so the planner can fail closed', () => {
+    for (const payload of [
+      { ...validMove, move: 'request_call', secondary_moves: [], vetoes: ['call'] },
+      { ...validMove, move: 'request_payment_link', secondary_moves: [], vetoes: ['payment_link'] },
+    ]) {
+      expect(ConversationMoveV1Schema.safeParse(payload).success).toBe(true);
+      expect(BotpressConversationMoveV1Schema.safeParse(payload).success).toBe(true);
+    }
   });
 
   it('rejects free-form fact requests and missing-information values', () => {

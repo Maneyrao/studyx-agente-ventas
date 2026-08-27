@@ -3,6 +3,11 @@ export interface CourseDurationCopyInput {
   readonly classes: number;
 }
 
+export interface CourseDurationValueCopyInput {
+  readonly displayName: string;
+  readonly duration: string;
+}
+
 export interface CoursePriceCopyInput {
   readonly displayName: string;
   readonly currency: string;
@@ -34,6 +39,11 @@ function renderDecimal(amount: string): string {
 
 export function renderCourseDuration(input: CourseDurationCopyInput): string {
   return `El curso de ${input.displayName} tiene ${input.classes} ${input.classes === 1 ? 'clase' : 'clases'}.`;
+}
+
+/** Renders a duration value that was already materialized from canonical data. */
+export function renderCourseDurationValue(input: CourseDurationValueCopyInput): string {
+  return `El curso de ${input.displayName} tiene ${input.duration}.`;
 }
 
 export function renderCoursePrice(input: CoursePriceCopyInput): string {

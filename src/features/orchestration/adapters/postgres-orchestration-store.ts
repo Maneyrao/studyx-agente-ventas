@@ -198,6 +198,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
       conversation_seq: string | number;
       content: string;
       created_at: Date | string;
+      occurred_at?: string;
       message_type: string | null;
       opt_out_ack_eligible: boolean;
     };
@@ -267,6 +268,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
               'conversation_seq', bm.conversation_seq,
               'content', bm.content,
               'created_at', bm.created_at,
+              'occurred_at', bm.metadata ->> 'occurred_at',
               'message_type', COALESCE(bm.metadata ->> 'message_type', 'text'),
               'opt_out_ack_eligible',
                 COALESCE(bm.metadata ->> 'opt_out_ack_eligible', 'false') = 'true'
@@ -397,6 +399,9 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
         conversation_seq: Number(message.conversation_seq),
         content: message.content,
         created_at: jsonIso(message.created_at)!,
+        ...(typeof message.occurred_at === 'string'
+          ? { occurred_at: message.occurred_at }
+          : {}),
         message_type: message.message_type ?? 'text',
         opt_out_ack_eligible: message.opt_out_ack_eligible,
       })),

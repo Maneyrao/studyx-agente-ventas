@@ -241,10 +241,15 @@ function planSingle(
   }
   if (kind === 'request_call') {
     if (vetoes.has('call')) return unchangedPlan(state, 'clarify_current_step', ['call_or_chat_choice']);
+    const acceptedOffer = state.call_offer_status === 'offered'
+      && state.awaiting_reply === 'call_or_chat';
     return {
       ...unchangedPlan(state, 'confirm_call_request'),
       next_stage: 'handoff',
-      allowed_business_action: { type: 'request_call_now', reason: 'direct_request' },
+      allowed_business_action: {
+        type: 'request_call_now',
+        reason: acceptedOffer ? 'accepted_offer' : 'direct_request',
+      },
       next_call_preference: 'call',
       next_call_offer_status: 'accepted',
       next_awaiting_reply: 'none',

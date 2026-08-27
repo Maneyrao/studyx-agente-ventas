@@ -2,7 +2,7 @@
 
 Fecha: 2026-08-27
 
-Estado: propuesta aprobada en chat; pendiente de revisión de esta especificación
+Estado: especificación aprobada con enmiendas; implementación local detrás del flag en validación
 
 Alcance: Agente A, Botpress, orquestador Next.js y estado comercial PostgreSQL
 

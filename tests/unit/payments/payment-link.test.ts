@@ -336,6 +336,32 @@ describe('materializePaymentLinkAction', () => {
     expect(result).toEqual({ ok: false, reason: 'AMBIGUOUS_OR_ABSENT_CHOICE' });
   });
 
+  it('accepts only the plan rederived by the backend V1 planner for semantic wording', () => {
+    const result = materializePaymentLinkAction({
+      action: action({ plan_code: 'monthly_6' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
+      backendAuthorizedPlanCode: 'monthly_6',
+      batchMessages: [msg('Retomemos el paso pendiente de la operación')],
+      businessSnapshot,
+      contact: allowedContact(),
+      modelResponseText: 'Perfecto.',
+      resolver,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.block.url).toBe(LINK_6M);
+
+    expect(materializePaymentLinkAction({
+      action: action({ plan_code: 'one_time' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
+      backendAuthorizedPlanCode: 'monthly_6',
+      batchMessages: [msg('Retomemos el paso pendiente de la operación')],
+      businessSnapshot,
+      contact: allowedContact(),
+      modelResponseText: null,
+      resolver,
+    })).toEqual({ ok: false, reason: 'PLAN_MISMATCH' });
+  });
+
   it('allows a strict "ahora sí" resume only for the exact previously deferred canonical plan', () => {
     const input = {
       action: action({ plan_code: 'monthly_6' }),

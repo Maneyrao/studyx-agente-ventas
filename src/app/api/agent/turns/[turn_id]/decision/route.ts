@@ -23,6 +23,7 @@ import {
 } from '@/lib/services/decision.service';
 import { commitClaimedDecision } from '@/features/orchestration/application/commit-claimed-decision';
 import { orchestrationStore } from '@/features/orchestration/adapters/postgres-orchestration-store';
+import { ConversationPipelineCommitV1Schema } from '@/features/conversation/adapters/conversation-pipeline-schema';
 
 /**
  * POST /api/agent/turns/:turn_id/decision
@@ -140,6 +141,7 @@ const schema = z.object({
   // the configured workspace snapshot before it authorizes any response fact.
   authorized_offering_code: z.string().trim().min(1).max(128).nullable().optional(),
   authorized_payment_plan: z.enum(['monthly_12', 'monthly_6', 'one_time']).nullable().optional(),
+  conversation_pipeline_v1: ConversationPipelineCommitV1Schema.nullable().optional(),
   decision: decisionSchema,
   model: z.object({
     provider: z.enum(['botpress', 'google-ai-direct', 'groq-direct']),

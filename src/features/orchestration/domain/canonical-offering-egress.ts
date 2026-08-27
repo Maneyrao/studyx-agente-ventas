@@ -5,6 +5,7 @@ import {
 } from './egress-guard';
 import {
   renderCourseDuration,
+  renderCourseDurationValue,
   renderCourseModality,
   renderCoursePrice,
   renderUnknownCertification,
@@ -64,6 +65,10 @@ function candidateFacts(offering: CanonicalOfferingFactSource): ProtectedFactRef
   const modules = positiveInteger(offering.delivery.modules);
   if (modules !== null) {
     facts.push({ kind: 'duration', value: `${modules} ${modules === 1 ? 'módulo' : 'módulos'}` });
+  }
+  const hoursPerMonth = positiveInteger(offering.delivery.hours_per_month);
+  if (hoursPerMonth !== null) {
+    facts.push({ kind: 'duration', value: `${hoursPerMonth} horas por mes` });
   }
 
   if (typeof offering.delivery.modality === 'string' && offering.delivery.modality.trim().length > 0) {
@@ -175,6 +180,20 @@ function canonicalRendererStatements(offering: CanonicalOfferingFactSource): str
   const classes = positiveInteger(offering.delivery.classes);
   if (classes !== null) {
     statements.push(renderCourseDuration({ displayName, classes }));
+  }
+  const modules = positiveInteger(offering.delivery.modules);
+  if (modules !== null) {
+    statements.push(renderCourseDurationValue({
+      displayName,
+      duration: `${modules} ${modules === 1 ? 'módulo' : 'módulos'}`,
+    }));
+  }
+  const hoursPerMonth = positiveInteger(offering.delivery.hours_per_month);
+  if (hoursPerMonth !== null) {
+    statements.push(renderCourseDurationValue({
+      displayName,
+      duration: `${hoursPerMonth} horas por mes`,
+    }));
   }
   if (typeof offering.delivery.modality === 'string' && offering.delivery.modality.trim().length > 0) {
     statements.push(renderCourseModality({

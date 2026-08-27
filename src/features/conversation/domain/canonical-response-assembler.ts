@@ -4,6 +4,10 @@ import type {
   ComposedNarrativeV1,
   TurnPlanV1,
 } from './conversation-pipeline';
+import {
+  renderCourseDurationValue,
+  renderCourseModality,
+} from '@/features/orchestration/domain/canonical-commercial-copy';
 
 export class CanonicalResponseAssemblyError extends Error {
   constructor(public readonly code: string) {
@@ -20,13 +24,23 @@ function narrativeText(composition: ComposedNarrativeV1): string[] {
   ].filter((value): value is string => value !== null);
 }
 
-function renderFact(fact: CanonicalFactV1): string {
+function renderFact(
+  fact: CanonicalFactV1,
+  offeringNames: ReadonlyMap<string, string>,
+): string {
+  const displayName = fact.offering_code
+    ? offeringNames.get(fact.offering_code)
+    : undefined;
   switch (fact.kind) {
     case 'area_name': return `• ${fact.value}`;
     case 'offering_name': return `• ${fact.value}`;
     case 'offering_description': return `Descripción: ${fact.value}`;
-    case 'offering_duration': return `Duración: ${fact.value}`;
-    case 'offering_modality': return `Modalidad: ${fact.value}`;
+    case 'offering_duration': return displayName
+      ? renderCourseDurationValue({ displayName, duration: fact.value })
+      : `Duración: ${fact.value}`;
+    case 'offering_modality': return displayName
+      ? renderCourseModality({ displayName, modality: fact.value })
+      : `Modalidad: ${fact.value}`;
     case 'payment_plan_label': return `• ${fact.value}`;
     case 'payment_plan_price': return `Importe: ${fact.value}`;
     case 'payment_link': return fact.value;
@@ -77,7 +91,10 @@ export function assembleCanonicalConversationResponseV1(input: {
     }
   }
 
-  const blocks = selectedFacts.map(renderFact);
+  const offeringNames = new Map(selectedFacts
+    .filter((fact) => fact.kind === 'offering_name' && fact.offering_code)
+    .map((fact) => [fact.offering_code!, fact.value]));
+  const blocks = selectedFacts.map((fact) => renderFact(fact, offeringNames));
   const callOffer = input.plan.should_offer_call
     ? ['¿Preferís que sigamos por chat o querés solicitar una llamada?']
     : [];

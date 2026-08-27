@@ -68,8 +68,6 @@ export function buildPlanningBusinessContextV1(
 function planHash(input: {
   readonly turn: AuthoritativeConversationPlanInputV1['turn'];
   readonly state_version: number;
-  readonly business_as_of: string | null;
-  readonly catalog_as_of: string | null;
   readonly plan: TurnPlanV1;
   readonly fact_refs: readonly CanonicalFactRefV1[];
 }): string {
@@ -107,8 +105,6 @@ export async function authoritativelyPlanConversationTurnV1(
   const hashInput = {
     turn: input.turn,
     state_version: state.version,
-    business_as_of: input.business_context?.as_of ?? null,
-    catalog_as_of: input.catalog_index?.as_of ?? null,
     plan,
     fact_refs: refs,
   };

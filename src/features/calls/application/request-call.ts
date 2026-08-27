@@ -49,6 +49,11 @@ export interface ReserveCallInput {
    * burst; the decisive message becomes consent_source_message_id.
    */
   consent_messages: ReadonlyArray<{ id: string; content: string }>;
+  /** Backend-planned semantic authorization; references one current-batch message. */
+  authorized_conversation_move?: {
+    mode: 'direct_request' | 'accepted_offer';
+    source_message_id: string;
+  };
   course_of_interest: string | null;
   prompt_version: string;
   now?: () => Date;
@@ -94,11 +99,31 @@ export async function reserveCallForDecision(
   if (input.consent_messages.length === 0) {
     throw new CallRequestRejectedError('CALL_CONFIRMATION_REQUIRED');
   }
-  const verdict = evaluateVoiceConsent({
-    texts: input.consent_messages.map((message) => message.content),
-    now: nowIso,
-    openOffer,
-  });
+  const authorizedIndex = input.authorized_conversation_move
+    ? input.consent_messages.findIndex(
+        (message) => message.id === input.authorized_conversation_move!.source_message_id,
+      )
+    : -1;
+  if (input.authorized_conversation_move && authorizedIndex < 0) {
+    throw new CallRequestRejectedError('CALL_CONFIRMATION_REQUIRED');
+  }
+  if (input.authorized_conversation_move?.mode === 'accepted_offer' && !openOffer) {
+    throw new CallRequestRejectedError('CALL_CONFIRMATION_REQUIRED');
+  }
+  const verdict = input.authorized_conversation_move
+    ? {
+        allowed: true as const,
+        mode: input.authorized_conversation_move.mode,
+        offeredByDecisionId: input.authorized_conversation_move.mode === 'accepted_offer'
+          ? openOffer?.decisionId ?? null
+          : null,
+        sourceIndex: authorizedIndex,
+      }
+    : evaluateVoiceConsent({
+        texts: input.consent_messages.map((message) => message.content),
+        now: nowIso,
+        openOffer,
+      });
   if (!verdict.allowed) {
     throw new CallRequestRejectedError(verdict.code);
   }

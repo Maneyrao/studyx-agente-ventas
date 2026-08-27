@@ -20,6 +20,13 @@ import {
 } from '@/lib/config';
 import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
 import { PostgresSalesContextStore } from '@/features/sales/adapters/postgres-sales-context-store';
+import { PostgresConversationStateStoreV1 } from '@/features/conversation/adapters/postgres-conversation-state-store';
+import {
+  ConversationPlanMismatchError,
+  prepareConversationPipelineCommitV1,
+} from '@/features/conversation/application/prepare-conversation-pipeline-commit';
+import { CanonicalResponseAssemblyError } from '@/features/conversation/domain/canonical-response-assembler';
+import type { ParsedConversationPipelineCommitV1 } from '@/features/conversation/adapters/conversation-pipeline-schema';
 import { isSalesPaymentPlan } from '@/features/sales/domain/sales-context';
 import { materializePaymentLinkAction } from '@/features/payments/application/materialize-payment-link-action';
 import { createConfigPaymentLinkResolver } from '@/features/payments/adapters/config-payment-link.resolver';
@@ -41,7 +48,11 @@ import {
   materializeCanonicalOfferingFacts,
   responseNeedsOfferingFactAuthorization,
 } from '@/features/orchestration/domain/canonical-offering-egress';
-import type { RawOfferingRow } from '@/features/orchestration/domain/business-context';
+import {
+  buildBusinessContextView,
+  buildCatalogIndexView,
+  type RawOfferingRow,
+} from '@/features/orchestration/domain/business-context';
 import {
   DecisionValidationError,
   type DecisionV2,
@@ -85,6 +96,8 @@ export interface CommitDecisionInput {
   authorized_offering_code?: string | null;
   /** Claim-time deterministic plan selection; re-derived from the batch. */
   authorized_payment_plan?: 'monthly_12' | 'monthly_6' | 'one_time' | null;
+  /** Meaning and value-free composition; backend replans before using either. */
+  conversation_pipeline_v1?: ParsedConversationPipelineCommitV1 | null;
   decision: AnyDecision;
   model: {
     provider: 'botpress' | 'google-ai-direct' | 'groq-direct';
@@ -286,6 +299,9 @@ function decisionPayload(input: CommitDecisionInput) {
     ...(input.authorized_payment_plan
       ? { authorized_payment_plan: input.authorized_payment_plan }
       : {}),
+    ...(input.conversation_pipeline_v1
+      ? { conversation_pipeline_v1: input.conversation_pipeline_v1 }
+      : {}),
   };
 }
 
@@ -381,6 +397,51 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
 
     const turn = await loadTurnPolicy(validatedInput.turn_id, db);
     turnContext = turn;
+    const workspaceSlug = loadBusinessWorkspaceConfig().workspaceSlug;
+    let preparedPipeline: Awaited<ReturnType<typeof prepareConversationPipelineCommitV1>> | null = null;
+    if (validatedInput.conversation_pipeline_v1) {
+      const businessStore = new PostgresBusinessContextStore(db);
+      const [rawBusiness, rawCatalogIndex, workspaceRows] = await Promise.all([
+        businessStore.loadBusinessContext(workspaceSlug),
+        businessStore.loadCompleteIndex(workspaceSlug),
+        db<Array<{ id: string }>>`
+          SELECT workspace.id
+          FROM workspaces AS workspace
+          JOIN workspace_contacts AS membership
+            ON membership.workspace_id = workspace.id
+           AND membership.contact_id = ${turn.contact_id}::uuid
+          WHERE workspace.slug = ${workspaceSlug}
+            AND workspace.status = 'active'
+          LIMIT 1
+        `,
+      ]);
+      const workspaceId = rawBusiness?.workspace.id ?? workspaceRows[0]?.id;
+      if (!workspaceId) throw new DecisionPolicyError('CONVERSATION_PIPELINE_CONTEXT_NOT_FOUND');
+      try {
+        preparedPipeline = await prepareConversationPipelineCommitV1({
+          turn: {
+            id: turn.id,
+            workspace_id: workspaceId,
+            conversation_id: turn.conversation_id,
+            contact_id: turn.contact_id,
+          },
+          workspace_slug: workspaceSlug,
+          move: validatedInput.conversation_pipeline_v1.move,
+          expected_plan_hash: validatedInput.conversation_pipeline_v1.plan_hash,
+          composition: validatedInput.conversation_pipeline_v1.composition,
+          business_context: rawBusiness ? buildBusinessContextView(rawBusiness) : null,
+          catalog_index: rawCatalogIndex ? buildCatalogIndexView(rawCatalogIndex) : null,
+        }, { state_store: new PostgresConversationStateStoreV1(db) });
+      } catch (error) {
+        if (error instanceof ConversationPlanMismatchError
+          || error instanceof CanonicalResponseAssemblyError) {
+          throw new DecisionPolicyError(error.code);
+        }
+        throw error;
+      }
+      decision = parseDecisionAnyVersion(preparedPipeline.decision);
+      assertDecisionBusinessActionPermitted(decision);
+    }
     validatePolicy(decision, turn);
 
     // Fase 4 — pago (spec §4). Revalidado en el backend, nunca confiado del
@@ -393,13 +454,13 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     let finalResponse = decision.response;
     let paymentLinkStrippedUrls: readonly string[] = [];
     let authorizedUrls: readonly string[] = [];
-    let authorizedProtectedFacts: readonly ProtectedFactRef[] = [];
+    let authorizedProtectedFacts: readonly ProtectedFactRef[] = preparedPipeline?.authorized_protected_facts ?? [];
     let committedBusinessAction = decision.business_action;
-    let effectiveAuthorizedOfferingCode = validatedInput.authorized_offering_code;
+    let effectiveAuthorizedOfferingCode = preparedPipeline?.authorized_offering_code
+      ?? validatedInput.authorized_offering_code;
     let canonicalOfferings: readonly RawOfferingRow[] | undefined;
     let canonicalWorkspaceId: string | null = null;
     let canonicalSnapshotAttempted = false;
-    const workspaceSlug = loadBusinessWorkspaceConfig().workspaceSlug;
     const salesContextStore = new PostgresSalesContextStore(db);
     const existingSalesContext = await salesContextStore.load(workspaceSlug, turn.contact_id);
     let loadedBatchMessages: Array<{ content: string }> | null = null;
@@ -416,11 +477,14 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       return loadedBatchMessages;
     };
 
-    const authorizedPaymentPlan = validatedInput.authorized_payment_plan ?? null;
+    const authorizedPaymentPlan = preparedPipeline?.authorized_payment_plan
+      ?? validatedInput.authorized_payment_plan
+      ?? null;
     if (authorizedPaymentPlan !== null) {
       const batchMessages = await loadBatchMessages();
       const currentPaymentIntent = classifyCurrentPaymentIntent(batchMessages);
-      const backendDerivedPlan = derivePaymentPlanSelectionFromBatch(batchMessages)
+      const backendDerivedPlan = preparedPipeline?.plan.selected_payment_plan
+        ?? derivePaymentPlanSelectionFromBatch(batchMessages)
         ?? (currentPaymentIntent.kind === 'direct' || currentPaymentIntent.kind === 'resume'
           ? existingSalesContext?.selected_payment_plan ?? null
           : null);
@@ -502,6 +566,9 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         authorizedOfferingCode: effectiveAuthorizedOfferingCode ?? null,
         deferredPlanCode,
         selectedPlanCode: existingSalesContext?.selected_payment_plan ?? null,
+        backendAuthorizedPlanCode: preparedPipeline?.plan.allowed_business_action.type === 'send_payment_link'
+          ? preparedPipeline.plan.allowed_business_action.payment_plan
+          : null,
         batchMessages,
         businessSnapshot: { offerings },
         contact: {
@@ -547,6 +614,11 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         // emitting a second Stripe URL or a second payment_link_sent signal.
         finalResponse = 'Ya te compartí el link de ese plan. Si necesitás que revisemos otra opción, decime.';
         committedBusinessAction = null;
+      } else if (preparedPipeline) {
+        finalResponse = decision.response;
+        paymentLinkStrippedUrls = materialized.stripped_urls;
+        authorizedUrls = [materialized.block.url];
+        authorizedProtectedFacts = paymentPlanProtectedFacts(action.plan_code);
       } else {
         // `response_text` is only the model's OWN text, sanitized of any URL it
         // had no authority to write (spec §4 steps 3-4): the fixed
@@ -558,7 +630,11 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       }
     }
 
-    if (finalResponse !== null && responseNeedsOfferingFactAuthorization(finalResponse)) {
+    if (
+      !preparedPipeline
+      && finalResponse !== null
+      && responseNeedsOfferingFactAuthorization(finalResponse)
+    ) {
       const offerings = await loadCanonicalOfferings('protected_facts');
       const catalogLabels = [
         ...offerings.map((offering) => ({
@@ -581,9 +657,9 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         ...authorizedProtectedFacts,
         ...materializeCanonicalCatalogFacts({ content: finalResponse, offerings: catalogLabels }),
       ];
-      if (validatedInput.authorized_offering_code) {
+      if (effectiveAuthorizedOfferingCode) {
         const exactMatches = offerings.filter(
-          (offering) => offering.code === validatedInput.authorized_offering_code
+          (offering) => offering.code === effectiveAuthorizedOfferingCode
         );
         if (exactMatches.length === 1) {
           effectiveAuthorizedOfferingCode = exactMatches[0].code;
@@ -734,6 +810,14 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           contact_name: turn.contact_name,
           phone: turn.phone,
           consent_messages: consentMessages,
+          ...(preparedPipeline
+            ? {
+                authorized_conversation_move: {
+                  mode: decision.business_action.reason,
+                  source_message_id: consentMessages[consentMessages.length - 1]!.id,
+                },
+              }
+            : {}),
           course_of_interest: decision.business_action.course_of_interest ?? null,
           prompt_version: validatedInput.model.prompt_version,
         });
@@ -938,6 +1022,9 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       selected_payment_plan: selectedPlan,
       stage,
     });
+    if (preparedPipeline) {
+      await new PostgresConversationStateStoreV1(db).transition(preparedPipeline.transition);
+    }
 
     await auditLog({
       action: 'agent.decision.committed',

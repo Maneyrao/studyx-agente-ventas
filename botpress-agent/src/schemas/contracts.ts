@@ -1,4 +1,5 @@
 import { z } from '@botpress/runtime'
+import { ConversationPipelineCommitV1Schema } from './conversation-pipeline'
 
 export const SourceSchema = z.literal('botpress')
 export const ChannelSchema = z.enum(['emulator', 'whatsapp'])
@@ -323,6 +324,7 @@ export const BatchMessageSchema = z.object({
   conversation_seq: z.number().int(),
   content: z.string(),
   created_at: z.string(),
+  occurred_at: z.string().optional(),
   message_type: z.string(),
   opt_out_ack_eligible: z.boolean().optional(),
 })
@@ -708,6 +710,7 @@ export const CommitDecisionInputSchema = z.object({
   // so a stale or wrong code fails closed instead of authorizing anything.
   authorized_offering_code: z.string().min(1).max(128).nullable().default(null),
   authorized_payment_plan: z.enum(['monthly_12', 'monthly_6', 'one_time']).nullable().default(null),
+  conversation_pipeline_v1: ConversationPipelineCommitV1Schema.nullable().default(null),
   decision: DecisionSchema,
   model: z.object({
     provider: z.enum(['botpress', 'google-ai-direct', 'groq-direct']),

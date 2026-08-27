@@ -58,6 +58,8 @@ export interface BatchMessage {
   readonly conversation_seq: number;
   readonly content: string;
   readonly created_at: string;
+  /** Provider event time retained in message metadata; absent only on legacy rows. */
+  readonly occurred_at?: string;
   readonly message_type: string;
   /** True only for the first opt-out transition on this channel. Later
    * repeated stop messages remain durable but must not produce another ack. */

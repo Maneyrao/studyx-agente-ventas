@@ -41,15 +41,6 @@ export const ConversationMoveV1Schema = z.object({
     context.addIssue({ code: 'custom', path: ['vetoes'], message: 'DUPLICATE_VETO' });
   }
   const moves = new Set([value.move, ...secondary]);
-  if (value.vetoes.includes('call') && moves.has('request_call')) {
-    context.addIssue({ code: 'custom', path: ['vetoes'], message: 'CALL_REQUEST_VETOED' });
-  }
-  if (
-    (value.vetoes.includes('payment_link') || value.vetoes.includes('purchase'))
-    && moves.has('request_payment_link')
-  ) {
-    context.addIssue({ code: 'custom', path: ['vetoes'], message: 'PAYMENT_LINK_REQUEST_VETOED' });
-  }
   if (value.course_reference && ![...moves].some((move) => COURSE_REFERENCE_MOVES.has(move))) {
     context.addIssue({ code: 'custom', path: ['course_reference'], message: 'COURSE_REFERENCE_NOT_APPLICABLE' });
   }
@@ -114,4 +105,11 @@ export const ComposedNarrativeV1Schema = z.object({
   }
 });
 
+export const ConversationPipelineCommitV1Schema = z.object({
+  move: ConversationMoveV1Schema,
+  plan_hash: z.string().regex(/^[a-f0-9]{64}$/),
+  composition: ComposedNarrativeV1Schema,
+}).strict();
+
 export type ParsedConversationMoveV1 = z.infer<typeof ConversationMoveV1Schema>;
+export type ParsedConversationPipelineCommitV1 = z.infer<typeof ConversationPipelineCommitV1Schema>;

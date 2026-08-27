@@ -45,6 +45,11 @@ export interface MaterializePaymentLinkInput {
   readonly deferredPlanCode?: PaymentPlanCode | null;
   /** Durable plan selected before a planless current confirmation. */
   readonly selectedPlanCode?: PaymentPlanCode | null;
+  /**
+   * Optional authorization produced by the backend V1 planner after it
+   * reloaded conversation state and reapplied vetoes. Never model-authored.
+   */
+  readonly backendAuthorizedPlanCode?: PaymentPlanCode | null;
   /** The CURRENT batch only — never recent_turns, summary or memory. */
   readonly batchMessages: readonly PolicyBatchMessage[];
   /** The canonical business snapshot passed in as data; never queried here. */
@@ -87,6 +92,7 @@ export function materializePaymentLinkAction(
     authorizedOfferingCode,
     deferredPlanCode,
     selectedPlanCode,
+    backendAuthorizedPlanCode,
     batchMessages,
     businessSnapshot,
     contact,
@@ -105,11 +111,13 @@ export function materializePaymentLinkAction(
   }
 
   const currentIntent = classifyCurrentPaymentIntent(batchMessages);
-  const allowedPlan = currentIntent.kind === 'direct'
-    ? currentIntent.planCode ?? selectedPlanCode ?? null
-    : currentIntent.kind === 'resume'
-      ? deferredPlanCode ?? null
-      : null;
+  const allowedPlan = backendAuthorizedPlanCode ?? (
+    currentIntent.kind === 'direct'
+      ? currentIntent.planCode ?? selectedPlanCode ?? null
+      : currentIntent.kind === 'resume'
+        ? deferredPlanCode ?? null
+        : null
+  );
   if (allowedPlan === null) {
     return { ok: false, reason: 'AMBIGUOUS_OR_ABSENT_CHOICE' };
   }

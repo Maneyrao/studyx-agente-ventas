@@ -132,6 +132,14 @@ describe('planConversationTurn', () => {
       should_offer_call: false,
       next_call_offer_status: 'offered',
     });
+    const accepted = plan(move('request_call'), state({
+      selected_offering_code: 'redes-informaticas', stage: 'course_selected',
+      call_offer_status: first.next_call_offer_status,
+      awaiting_reply: first.next_awaiting_reply,
+    }));
+    expect(accepted.allowed_business_action).toEqual({
+      type: 'request_call_now', reason: 'accepted_offer',
+    });
   });
 
   it('resolves a canonical course and clears a plan selected for another course', () => {
@@ -203,6 +211,18 @@ describe('planConversationTurn', () => {
       should_offer_call: false,
       allowed_business_action: { type: 'none' },
     });
+  });
+
+  it('lets an explicit veto cancel the primary transactional move', () => {
+    const current = state({
+      selected_offering_code: 'redes-informaticas',
+      selected_payment_plan: 'monthly_12',
+      stage: 'plan_selected',
+    });
+    expect(plan(move('request_call', { vetoes: ['call'] }), current).allowed_business_action)
+      .toEqual({ type: 'none' });
+    expect(plan(move('request_payment_link', { vetoes: ['payment_link'] }), current).allowed_business_action)
+      .toEqual({ type: 'none' });
   });
 
   it('fails closed on low confidence, ambiguity or an unavailable catalog', () => {

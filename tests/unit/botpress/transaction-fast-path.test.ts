@@ -173,16 +173,22 @@ describe('transaction fast paths', () => {
     ['confirmo 12 cuotas de 30 dólares', 'monthly_12'],
     ['me quedo con las 6 cuotas de 60', 'monthly_6'],
     ['confirmo pago único de 360 dólares', 'one_time'],
-  ])('confirms an exact payment selection without sending a link yet: %s', (text, plan) => {
+  ])('authorizes the exact confirmed payment selection for backend link materialization: %s', (text, plan) => {
     const decision = matchPaymentSelectionFastPath(claimed(text));
     expect(DecisionSchema.parse(decision)).toMatchObject({
-      business_action: null,
+      business_action: {
+        type: 'send_payment_link',
+        plan_code: plan,
+        offering_sku: 'redes-informaticas',
+      },
       reason_code: 'DETERMINISTIC_PAYMENT_SELECTION',
+      next_state: 'completed',
     });
     expect(decision?.response).toContain(plan === 'monthly_12'
       ? '12 cuotas'
       : plan === 'monthly_6' ? '6 cuotas' : 'pago único');
-    expect(decision?.response).not.toMatch(/comparto|envío|acá.*link|https?:\/\//iu);
+    expect(decision?.response).toMatch(/comparto.*link/iu);
+    expect(decision?.response).not.toMatch(/https?:\/\//iu);
   });
 
   it('keeps the durable canonical offering code when two courses share a display name', () => {
@@ -262,7 +268,11 @@ describe('transaction fast paths', () => {
     'Solo consultaba por las 12 cuotas.',
     'Si comprara, elegiría 12 cuotas.',
   ])('does not emit a payment action for a deferred or hypothetical selection: %s', (text) => {
-    expect(matchPaymentSelectionFastPath(claimed(text))).toBeNull();
+    expect(matchPaymentSelectionFastPath(claimed(text))).toMatchObject({
+      business_action: null,
+      reason_code: 'DETERMINISTIC_PAYMENT_SELECTION',
+      next_state: 'waiting_user',
+    });
   });
 
   it('acknowledges an identity already captured by the backend without echoing it', () => {

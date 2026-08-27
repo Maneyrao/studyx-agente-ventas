@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const actionSpies = vi.hoisted(() => ({
   ingest: vi.fn(),
   claim: vi.fn(),
+  plan: vi.fn(),
   catalog: vi.fn(),
   commit: vi.fn(),
   dispatch: vi.fn(),
@@ -11,6 +12,7 @@ const actionSpies = vi.hoisted(() => ({
   flush: vi.fn(),
   geminiDecision: vi.fn(),
   groqDecision: vi.fn(),
+  conversationInterpreter: vi.fn(),
 }));
 
 vi.mock('../../../botpress-agent/src/actions/ingestTurn', () => ({
@@ -18,6 +20,9 @@ vi.mock('../../../botpress-agent/src/actions/ingestTurn', () => ({
 }));
 vi.mock('../../../botpress-agent/src/actions/claimBatch', () => ({
   claimBatch: { execute: actionSpies.claim },
+}));
+vi.mock('../../../botpress-agent/src/actions/planConversation', () => ({
+  planConversation: { execute: actionSpies.plan },
 }));
 vi.mock('../../../botpress-agent/src/actions/lookupCatalog', () => ({
   lookupCatalog: { execute: actionSpies.catalog },
@@ -43,6 +48,9 @@ vi.mock('../../../botpress-agent/src/lib/decision/gemini-direct', () => ({
 }));
 vi.mock('../../../botpress-agent/src/lib/decision/groq-direct', () => ({
   generateGroqDecision: actionSpies.groqDecision,
+}));
+vi.mock('../../../botpress-agent/src/lib/conversation/conversation-interpreter', () => ({
+  generateGroqConversationMoveV1: actionSpies.conversationInterpreter,
 }));
 
 import { configuration, secrets } from '../../helpers/botpress-runtime-stub';
@@ -249,6 +257,7 @@ function processingState() {
 describe('processInboundTurn hot path', () => {
   beforeEach(() => {
     configuration.automationEnabled = true;
+    secrets.GROQ_API_KEY = 'gsk-local-test-only';
     actionSpies.ingest.mockResolvedValue(ingestResponse());
     actionSpies.claim.mockResolvedValue(claimedResponse());
     actionSpies.catalog.mockResolvedValue({
@@ -269,6 +278,37 @@ describe('processInboundTurn hot path', () => {
     });
     actionSpies.flush.mockResolvedValue({ status: 'unavailable', completed: 0 });
     actionSpies.delivery.mockResolvedValue({ status: 'recorded' });
+    actionSpies.conversationInterpreter.mockResolvedValue({
+      move: {
+        schema_version: 1,
+        move: 'continue_by_chat',
+        secondary_moves: [],
+        vetoes: [],
+        confidence: 0.95,
+      },
+      provider: 'groq-direct',
+      model: 'openai/gpt-oss-20b',
+      latency_ms: 120,
+    });
+    actionSpies.plan.mockResolvedValue({
+      plan: {
+        schema_version: 1,
+        next_stage: 'course_selected',
+        response_goal: 'acknowledge_chat_preference',
+        canonical_fact_requests: [],
+        allowed_business_action: { type: 'none' },
+        missing_information: [],
+        should_offer_call: false,
+        next_call_preference: 'chat',
+        next_call_offer_status: 'declined',
+        next_awaiting_reply: 'none',
+        selected_offering_code: 'redes-informaticas',
+        selected_payment_plan: null,
+      },
+      fact_refs: [],
+      state_version: 2,
+      plan_hash: 'a'.repeat(64),
+    });
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
   });
 
@@ -378,6 +418,11 @@ describe('processInboundTurn hot path', () => {
   });
 
   it('sends exact authorized content once and reports only the successful submission', async () => {
+    const claimed = claimedResponse();
+    (claimed.context.batch_messages[0] as typeof claimed.context.batch_messages[number] & {
+      occurred_at?: string;
+    }).occurred_at = new Date(Date.now() - 5_000).toISOString();
+    actionSpies.claim.mockResolvedValue(claimed);
     const { createMessage, result } = await runCommittedOutbound({
       authorized_egress: {
         schema_version: 1,
@@ -398,6 +443,15 @@ describe('processInboundTurn hot path', () => {
       status: 'completed',
       delivery_status: 'submitted_to_botpress',
     });
+    const timingLog = vi.mocked(console.info).mock.calls
+      .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
+      .find((entry) => entry.event === 'studyx.turn.timings');
+    expect(timingLog).toMatchObject({
+      event_to_visible_outbound_ms: expect.any(Number),
+      event_to_visible_outbound_over_budget: expect.any(Number),
+      batch_wait_ms: expect.any(Number),
+    });
+    expect(Number(timingLog?.event_to_visible_outbound_ms)).toBeGreaterThanOrEqual(4_500);
   });
 
   it('does not apply the WhatsApp canary gate to Telegram sandbox delivery', async () => {
@@ -579,7 +633,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('propagates a deterministic plan selection without sending a payment link', async () => {
+  it('propagates an explicit deterministic payment confirmation to backend materialization', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.context.batch_messages[0].content = 'Confirmo pago único';
     claimed.business_context_available = true;
@@ -616,9 +670,138 @@ describe('processInboundTurn hot path', () => {
       authorized_payment_plan: 'one_time',
       decision: {
         reason_code: 'DETERMINISTIC_PAYMENT_SELECTION',
-        business_action: null,
-        next_state: 'waiting_user',
+        business_action: {
+          type: 'send_payment_link',
+          plan_code: 'one_time',
+          offering_sku: 'redes-informaticas',
+        },
+        next_state: 'completed',
       },
+    });
+  });
+
+  it('runs interpreter → authoritative planner → value-free composition only when V1 is enabled', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = { conversation_pipeline_v1_enabled: true };
+    claimed.conversation_state_v1 = {
+      selected_offering_code: 'redes-informaticas',
+      selected_payment_plan: null,
+      stage: 'course_selected',
+      call_preference: 'unknown',
+      call_offer_status: 'offered',
+      awaiting_reply: 'call_or_chat',
+      version: 2,
+    };
+    claimed.context.batch_messages[0].content = 'Mantengamos este intercambio en formato escrito';
+    claimed.catalog_index = {
+      as_of: NOW,
+      offerings_total: 1,
+      offerings: [{
+        code: 'redes-informaticas', display_name: 'Redes Informáticas',
+        academy: 'Tecnología', aliases: [],
+      }],
+      injection_suspected_count: 0,
+    };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => { throw new Error('COMPOSER_MUST_BE_SKIPPED'); });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute, client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.conversationInterpreter).toHaveBeenCalledTimes(1);
+    expect(actionSpies.plan).toHaveBeenCalledTimes(1);
+    expect(execute).not.toHaveBeenCalled();
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: {
+        move: { move: 'continue_by_chat' },
+        plan_hash: 'a'.repeat(64),
+        composition: {
+          used_fact_ids: [],
+          narrative: { opening: 'Perfecto, seguimos por chat.' },
+        },
+      },
+      decision: { reason_code: 'CONVERSATION_PIPELINE_V1_PENDING_BACKEND' },
+    });
+  });
+
+  it('projects an authorized backend call acceptance through the V1 planner without a model call', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = { conversation_pipeline_v1_enabled: true };
+    claimed.deterministic_route = 'call_accepted_offer';
+    claimed.conversation_state_v1 = {
+      selected_offering_code: 'redes-informaticas', selected_payment_plan: null,
+      stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'offered',
+      awaiting_reply: 'call_or_chat', version: 2,
+    };
+    claimed.context.batch_messages[0].content = 'Sí';
+    actionSpies.claim.mockResolvedValue(claimed);
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => { throw new Error('MODEL_MUST_NOT_RUN'); });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute, client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.conversationInterpreter).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+    expect(actionSpies.plan).toHaveBeenCalledWith(expect.objectContaining({
+      input: expect.objectContaining({ move: expect.objectContaining({ move: 'request_call' }) }),
+    }));
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: { move: { move: 'request_call', confidence: 1 } },
+      model: { provider: 'botpress', model: 'backend:call_accepted_offer' },
+    });
+  });
+
+  it('fails closed on interpreter timeout without invoking the legacy model or planner', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = { conversation_pipeline_v1_enabled: true };
+    claimed.conversation_state_v1 = {
+      selected_offering_code: 'redes-informaticas', selected_payment_plan: null,
+      stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
+      awaiting_reply: 'none', version: 1,
+    };
+    claimed.context.batch_messages[0].content = 'Necesito una orientación específica';
+    actionSpies.claim.mockResolvedValue(claimed);
+    actionSpies.conversationInterpreter.mockRejectedValueOnce(new Error('INTERPRETER_TIMEOUT'));
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute, client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.plan).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: null,
+      decision: { business_action: null },
     });
   });
 
