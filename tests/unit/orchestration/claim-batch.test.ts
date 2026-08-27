@@ -243,6 +243,34 @@ describe('claimBatch', () => {
     expect(result.context.recent_turns).toHaveLength(1);
   });
 
+  it('projects conversation-scoped V1 state only when the rollout flag is enabled', async () => {
+    const load = vi.fn().mockResolvedValue({
+      workspace_id: 'workspace-1', conversation_id: 'conversation-1', contact_id: 'contact-1',
+      selected_offering_code: 'redes', selected_payment_plan: 'monthly_6', stage: 'plan_selected',
+      call_preference: 'chat', call_offer_status: 'declined', awaiting_reply: 'payment_confirmation',
+      source_turn_id: 'turn-0', version: 4,
+      created_at: '2026-08-27T00:00:00.000Z', updated_at: '2026-08-27T00:01:00.000Z',
+    });
+    const enabled = await claimBatch(input, {
+      ...buildDeps(), conversationPipelineEnabled: true, conversationState: { load },
+    });
+    const disabled = await claimBatch(input, {
+      ...buildDeps(), conversationPipelineEnabled: false, conversationState: { load },
+    });
+
+    expect(enabled).toMatchObject({
+      outcome: 'claimed',
+      conversation_state_v1: {
+        selected_offering_code: 'redes', selected_payment_plan: 'monthly_6', stage: 'plan_selected',
+        call_preference: 'chat', call_offer_status: 'declined',
+        awaiting_reply: 'payment_confirmation', version: 4,
+      },
+    });
+    expect(disabled).toMatchObject({ outcome: 'claimed', conversation_state_v1: null });
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(load).toHaveBeenCalledWith('conversation-1', 'contact-1');
+  });
+
   it('loads facts, batch messages and call facts through one core snapshot port', async () => {
     const deps = buildDeps();
 

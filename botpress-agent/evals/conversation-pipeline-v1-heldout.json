@@ -1,0 +1,14 @@
+[
+  {"id":"chat_after_offer_01","message":"Me sirve más continuar por escrito en este medio","awaiting_reply":"call_or_chat","call_offer_status":"offered","expected_move":"continue_by_chat"},
+  {"id":"chat_after_offer_02","message":"Dejemos la charla de voz y avancemos desde acá","awaiting_reply":"call_or_chat","call_offer_status":"offered","expected_move":"continue_by_chat"},
+  {"id":"chat_after_offer_03","message":"Estoy en una reunión, contame por mensajes","awaiting_reply":"call_or_chat","call_offer_status":"offered","expected_move":"continue_by_chat","expected_vetoes":["call"]},
+  {"id":"chat_without_offer_01","message":"La conversación la quiero mantener escrita","awaiting_reply":"none","call_offer_status":"not_offered","expected_move":"continue_by_chat"},
+  {"id":"decline_call_01","message":"La comunicación telefónica no me resulta cómoda","awaiting_reply":"call_or_chat","call_offer_status":"offered","expected_move":"decline_call","expected_vetoes":["call"]},
+  {"id":"later_call_request_01","message":"Cambié de idea: coordinemos la comunicación por voz","awaiting_reply":"none","call_offer_status":"declined","expected_move":"request_call"},
+  {"id":"area_choice_01","message":"La rama vinculada con computación es la que busco","awaiting_reply":"area_choice","call_offer_status":"not_offered","expected_move":"select_area"},
+  {"id":"course_choice_01","message":"De esas alternativas prefiero la formación sobre infraestructura de redes","awaiting_reply":"course_choice","call_offer_status":"not_offered","expected_move":"select_course"},
+  {"id":"plan_choice_01","message":"Entre esas formas elijo la opción intermedia","awaiting_reply":"payment_plan","call_offer_status":"declined","expected_move":"select_payment_plan","expected_payment_plan":"monthly_6"},
+  {"id":"defer_payment_01","message":"Conservá esa elección pero la operación queda para otro momento","awaiting_reply":"payment_confirmation","call_offer_status":"declined","expected_move":"defer_payment","expected_vetoes":["payment_link"]},
+  {"id":"resume_payment_01","message":"Retomemos el paso pendiente y compartime el acceso de cobro","awaiting_reply":"payment_confirmation","call_offer_status":"declined","expected_move":"request_payment_link"},
+  {"id":"compound_info_chat_01","message":"Explicame la duración y mantené la atención únicamente por escrito","awaiting_reply":"call_or_chat","call_offer_status":"offered","expected_move":"ask_course_information","expected_secondary_moves":["continue_by_chat"],"expected_vetoes":["call"]}
+]

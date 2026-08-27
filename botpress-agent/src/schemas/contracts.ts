@@ -555,6 +555,21 @@ export const ClaimedTurnSchema = z.object({
   features: z.object({
     conversation_pipeline_v1_enabled: z.boolean().default(false),
   }).strict().optional(),
+  conversation_state_v1: z.object({
+    selected_offering_code: z.string().min(1).nullable(),
+    selected_payment_plan: z.enum(['monthly_12', 'monthly_6', 'one_time']).nullable(),
+    stage: z.enum([
+      'exploring', 'qualified', 'course_selected', 'plan_selected',
+      'payment_link_sent', 'handoff', 'closed',
+    ]),
+    call_preference: z.enum(['unknown', 'call', 'chat', 'declined']),
+    call_offer_status: z.enum(['not_offered', 'offered', 'accepted', 'declined']),
+    awaiting_reply: z.enum([
+      'none', 'area_choice', 'course_choice', 'call_or_chat',
+      'payment_plan', 'payment_confirmation',
+    ]),
+    version: z.number().int().nonnegative(),
+  }).strict().nullable().optional(),
   catalog_resolution: CatalogResolutionSchema.default({
     kind: 'unavailable',
     reason: 'snapshot_missing',

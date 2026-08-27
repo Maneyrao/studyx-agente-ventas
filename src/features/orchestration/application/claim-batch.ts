@@ -1,6 +1,7 @@
 import { evaluateTurnPolicy, type TurnPolicy } from '../domain/turn-policy';
 import type { BusinessContextView, CatalogIndexView } from '../domain/business-context';
 import type { SalesContextState } from '@/features/sales/domain/sales-context';
+import type { ConversationStateV1 } from '@/features/conversation/domain/conversation-pipeline';
 import {
   isCatalogRequestNeutral,
   resolveCatalogRequest,
@@ -69,6 +70,10 @@ export interface ClaimBatchDependencies {
   };
   /** Durable commercial state. It outranks history/vector but not this batch. */
   readonly sales?: { load(contactId: string): Promise<SalesContextState | null> };
+  /** Conversation-scoped V1 state. Read only when its rollout flag is on. */
+  readonly conversationState?: {
+    load(conversationId: string, contactId: string): Promise<ConversationStateV1 | null>;
+  };
   /** Single backend-owned rollout flag projected into the claimed contract. */
   readonly conversationPipelineEnabled?: boolean;
 }
@@ -175,6 +180,16 @@ export interface ClaimedTurn {
   readonly features: {
     readonly conversation_pipeline_v1_enabled: boolean;
   };
+  readonly conversation_state_v1: Pick<
+    ConversationStateV1,
+    | 'selected_offering_code'
+    | 'selected_payment_plan'
+    | 'stage'
+    | 'call_preference'
+    | 'call_offer_status'
+    | 'awaiting_reply'
+    | 'version'
+  > | null;
   /** Current-batch catalog verdict from the complete compact identity index. */
   readonly catalog_resolution: CatalogResolution;
   /** Complete compact index; detail payload remains separately bounded. */
@@ -576,6 +591,7 @@ export async function claimBatch(
   let business_context_available = false;
   let catalog_index: CatalogIndexView | null = null;
   let persisted_sales_context: SalesContextState | null = null;
+  let persisted_conversation_state: ConversationStateV1 | null = null;
   const businessTask = (async () => {
     if (!policy.may_respond || optOutAcknowledgementOnly || !deps.business) return;
     counters.business_snapshot_calls += 1;
@@ -633,6 +649,21 @@ export async function claimBatch(
       });
     } finally {
       timings.business_snapshot_ms = Math.max(0, monotonicNow() - businessStartedAt);
+    }
+  })();
+  const conversationStateTask = (async () => {
+    if (!deps.conversationPipelineEnabled || !deps.conversationState) return;
+    try {
+      persisted_conversation_state = await deps.conversationState.load(
+        claim.conversation_id!,
+        facts.contact.id,
+      );
+    } catch (error) {
+      log('orchestration.claim.conversation_state_v1_unavailable', {
+        trace_id: input.trace_id,
+        batch_id: claim.batch_id,
+        error: String(error),
+      });
     }
   })();
 
@@ -773,7 +804,7 @@ export async function claimBatch(
     }
   }
 
-  await businessTask;
+  await Promise.all([businessTask, conversationStateTask]);
   const catalog_resolution = resolveCatalogFromSnapshot(
     batchMessages
       .filter((message) => message.message_type === 'text')
@@ -836,6 +867,28 @@ export async function claimBatch(
     selected_payment_plan: persistedState?.selected_payment_plan ?? null,
     ...selection,
   };
+  const persistedConversationState = persisted_conversation_state as ConversationStateV1 | null;
+  const conversationStateV1 = deps.conversationPipelineEnabled
+    ? persistedConversationState
+      ? {
+          selected_offering_code: persistedConversationState.selected_offering_code,
+          selected_payment_plan: persistedConversationState.selected_payment_plan,
+          stage: persistedConversationState.stage,
+          call_preference: persistedConversationState.call_preference,
+          call_offer_status: persistedConversationState.call_offer_status,
+          awaiting_reply: persistedConversationState.awaiting_reply,
+          version: persistedConversationState.version,
+        }
+      : {
+          selected_offering_code: salesContext.offering_code,
+          selected_payment_plan: salesContext.selected_payment_plan,
+          stage: salesContext.stage,
+          call_preference: 'unknown' as const,
+          call_offer_status: salesContext.open_call_offer ? 'offered' as const : 'not_offered' as const,
+          awaiting_reply: salesContext.open_call_offer ? 'call_or_chat' as const : 'none' as const,
+          version: 0,
+        }
+    : null;
   timings.claim_total_ms = Math.max(0, monotonicNow() - claimStartedAt);
 
   log('orchestration.claim.timings', {
@@ -899,6 +952,7 @@ export async function claimBatch(
     features: {
       conversation_pipeline_v1_enabled: deps.conversationPipelineEnabled === true,
     },
+    conversation_state_v1: conversationStateV1,
     catalog_resolution,
     catalog_index,
     deterministic_route,
