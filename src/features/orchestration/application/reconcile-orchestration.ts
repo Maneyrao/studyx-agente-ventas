@@ -57,6 +57,12 @@ export interface ReconcileOrchestrationResult {
     readonly skipped: number;
     readonly failed: number;
   };
+  readonly memory_projections: {
+    readonly examined: number;
+    readonly completed: number;
+    readonly rejected: number;
+    readonly failed: number;
+  };
   readonly orphaned_decisions: number;
   readonly findings: Array<{
     readonly kind: 'claim' | 'delivery' | 'decision';
@@ -85,6 +91,12 @@ export interface ReconcileOrchestrationDependencies {
     repaired: number;
     unchanged: number;
     skipped: number;
+    failed: number;
+  }>;
+  readonly projectAgentAMemories?: (input: { limit?: number }) => Promise<{
+    examined: number;
+    completed: number;
+    rejected: number;
     failed: number;
   }>;
 }
@@ -240,6 +252,19 @@ export async function reconcileOrchestration(
     }
   }
 
+  let memoryProjections = { examined: 0, completed: 0, rejected: 0, failed: 0 };
+  if (deps.projectAgentAMemories) {
+    try {
+      memoryProjections = await deps.projectAgentAMemories({ limit: input.delivery_limit });
+    } catch (error) {
+      memoryProjections.failed = 1;
+      log('orchestration.reconcile.memory_projections_failed', {
+        trace_id: input.trace_id,
+        error_code: error instanceof Error ? error.name : 'MEMORY_PROJECTION_FAILED',
+      });
+    }
+  }
+
   // ── Decisiones sin outbound ──────────────────────────────────────────────
   // No se reparan desde acá: una decisión es inmutable después del commit, así
   // que lo único honesto es dejarlas visibles.
@@ -267,6 +292,7 @@ export async function reconcileOrchestration(
     claims: { examined: claims.length, abandoned, reclaimable },
     deliveries: { examined: stale.length, by_action: byAction, failed },
     payment_projections: paymentProjections,
+    memory_projections: memoryProjections,
     orphaned_decisions: orphaned.length,
     findings,
   };
@@ -286,6 +312,10 @@ export async function reconcileOrchestration(
     payment_projections_failed: paymentProjections.failed,
     payment_projections_status: paymentProjections.status,
     payment_projections_reason: paymentProjections.reason,
+    memory_projections_examined: memoryProjections.examined,
+    memory_projections_completed: memoryProjections.completed,
+    memory_projections_rejected: memoryProjections.rejected,
+    memory_projections_failed: memoryProjections.failed,
   });
 
   return result;

@@ -4,8 +4,6 @@ import { sql } from '@/lib/db/orchestrator';
 import { jsonbParam } from '@/lib/db/json';
 import { logger } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
-import { selectMemories } from '@/features/orchestration/application/select-memories';
-import { memoryStore } from '@/features/orchestration/adapters/postgres-memory-store';
 import { getPostgresError, type DbClient } from '@/lib/db/types';
 import { sha256Hex } from '@/lib/idempotency/canonical-json';
 import { isExplicitOptOut } from '@/lib/heuristics/opt-out';
@@ -22,6 +20,7 @@ import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/
 import { PostgresSalesContextStore } from '@/features/sales/adapters/postgres-sales-context-store';
 import { PostgresConversationStateStoreV1 } from '@/features/conversation/adapters/postgres-conversation-state-store';
 import { PostgresOrchestrationStore } from '@/features/orchestration/adapters/postgres-orchestration-store';
+import { enqueueAgentAMemoryProjectionJobs } from '@/features/memory/application/project-agent-a-memories';
 import {
   ConversationPlanMismatchError,
   prepareConversationPipelineCommitV1,
@@ -389,7 +388,6 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
   }
   const validatedInput = { ...input, decision };
   const payloadHash = sha256Hex(decisionPayload(validatedInput));
-  let turnContext: TurnPolicyRow | null = null;
 
   const commit = async (): Promise<CommitDecisionResult> => {
   try {
@@ -401,7 +399,6 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       }
 
     const turn = await loadTurnPolicy(validatedInput.turn_id, db);
-    turnContext = turn;
     const workspaceSlug = loadBusinessWorkspaceConfig().workspaceSlug;
     let preparedPipeline: Awaited<ReturnType<typeof prepareConversationPipelineCommitV1>> | null = null;
     if (validatedInput.conversation_pipeline_v1) {
@@ -766,6 +763,14 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       RETURNING id
     `;
     const decisionId = inserted[0].id;
+    if (decision.memory_candidates.length > 0) {
+      await enqueueAgentAMemoryProjectionJobs({
+        db,
+        decision_id: decisionId,
+        turn_id: turn.id,
+        candidates: decision.memory_candidates,
+      });
+    }
     let outbound: CommitDecisionResult['outbound'] = null;
 
     // A non-empty list here is an injection/jailbreak signal: the model
@@ -1093,150 +1098,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
 
   const result = await commit();
 
-  // Fase 4 — memoria selectiva.
-  //
-  // Corre DESPUÉS del commit y en su propia conexión, a propósito. Adentro de
-  // la transacción serializable, un solo INSERT rechazado dejaría la
-  // transacción abortada y se llevaría puesta la decisión y el outbound: una
-  // memoria jamás puede costar una respuesta al cliente. Un duplicado tampoco
-  // reescribe nada, porque `commitAgentDecision` es idempotente por turno y una
-  // repetición sale por `duplicate` sin volver a entrar acá.
-  const turn = turnContext as TurnPolicyRow | null;
-  if (result.status === 'committed' && turn && decision.memory_candidates.length > 0) {
-    await recordTurnMemories({
-      turn,
-      candidates: decision.memory_candidates,
-      decision_id: result.decision_id,
-      trace_id: validatedInput.trace_id,
-    });
-  }
-
   return result;
-}
-
-/**
- * The messages a citation may point at: the whole claimed batch, in stable
- * order. Falls back to the representative turn when the inbound predates
- * batching, so an older row can still produce a verifiable memory.
- */
-async function loadMemorySourceMessages(turn: TurnPolicyRow) {
-  return sql<Array<{ id: string; content: string }>>`
-    SELECT id, content
-    FROM messages
-    WHERE direction = 'inbound'
-      AND contact_id = ${turn.contact_id}::uuid
-      AND conversation_id = ${turn.conversation_id}::uuid
-      AND (
-        (${turn.batch_id}::uuid IS NOT NULL AND batch_id = ${turn.batch_id}::uuid)
-        OR (${turn.batch_id}::uuid IS NULL AND id = ${turn.id}::uuid)
-      )
-    ORDER BY conversation_seq NULLS LAST, created_at
-  `;
-}
-
-/**
- * "no registrar link ni precio como memoria seleccionada" (spec §4) is
- * structural for `send_payment_link` itself — the typed action never carries
- * a link or a price at all. This is the behavioral half of that rule: even a
- * well-formed `memory_candidate` whose free text happens to contain a URL or
- * a price-like amount (model hallucination, injection, or a bad generation)
- * must never reach `selected_memories`. Mirrors the same two patterns
- * `decision-v4.ts` already uses to reject a URL/amount-shaped
- * `offering_sku`, applied here to `value`/`source_quote` instead.
- */
-const MEMORY_CANDIDATE_URL_PATTERN = /https?:\/\//i;
-// Requires CURRENCY CONTEXT, not just a decimal-shaped number: a bare
-// `\d[.,]\d{2}` false-positived on Spanish time expressions ("de 20.30 a
-// 22.00", "turno de las 8,30") — exactly the schedule preferences the
-// memory system exists to capture. A number only counts as price-like when
-// it sits next to a currency symbol or a currency word (either order), and
-// a currency word alone (without an adjacent number) is not enough either.
-const MEMORY_CANDIDATE_AMOUNT_PATTERN =
-  /[$€£]\s*\d|\d+(?:[.,]\d{2,3})?\s*\b(?:usd|u\$s|ars|d[oó]lares?|pesos)\b|\b(?:usd|u\$s|ars)\b\s*\d+/i;
-
-function isUrlOrPriceLikeMemoryCandidate(candidate: DecisionV2['memory_candidates'][number]): boolean {
-  const text = `${candidate.value} ${candidate.source_quote}`;
-  return MEMORY_CANDIDATE_URL_PATTERN.test(text) || MEMORY_CANDIDATE_AMOUNT_PATTERN.test(text);
-}
-
-async function recordTurnMemories(params: {
-  turn: TurnPolicyRow;
-  candidates: DecisionV2['memory_candidates'];
-  decision_id: string;
-  trace_id: string;
-}): Promise<void> {
-  const rejectedCandidates = params.candidates.filter(isUrlOrPriceLikeMemoryCandidate);
-  const safeCandidates = params.candidates.filter((candidate) => !isUrlOrPriceLikeMemoryCandidate(candidate));
-
-  if (rejectedCandidates.length > 0) {
-    // Best-effort, like every other post-commit write here: an audit failure
-    // must never cost the (already safely filtered) memory recording below.
-    await auditLog({
-      action: 'agent.decision.memory_candidate_rejected',
-      entity_type: 'agent_decision',
-      entity_id: params.decision_id,
-      payload: {
-        rejected: rejectedCandidates.map((candidate) => ({
-          type: candidate.type,
-          key: candidate.key,
-          reason: 'URL_OR_PRICE_LIKE',
-        })),
-      },
-      event_key: `decision:${params.decision_id}:memory_candidates_rejected`,
-      correlation_id: params.trace_id,
-      causation_id: params.turn.id,
-    }).catch((error) => {
-      logger.error({
-        event: 'orchestration.memory.reject_audit_failed',
-        trace_id: params.trace_id,
-        decision_id: params.decision_id,
-        error: String(error),
-      });
-    });
-  }
-
-  if (safeCandidates.length === 0) return;
-
-  try {
-    const batchMessages = await loadMemorySourceMessages(params.turn);
-    const outcome = await selectMemories(
-      {
-        contact_id: params.turn.contact_id,
-        conversation_id: params.turn.conversation_id,
-        source_batch_id: params.turn.batch_id,
-        decision_id: params.decision_id,
-        trace_id: params.trace_id,
-        batch_messages: batchMessages,
-        structured_facts: {
-          contact_name: params.turn.contact_name,
-          contact_status: params.turn.contact_status,
-          consent_status: params.turn.consent_status ?? 'unknown',
-        },
-        candidates: safeCandidates,
-      },
-      {
-        store: memoryStore,
-        log: (event, fields) => logger.info({ event, ...fields }),
-      }
-    );
-
-    if (outcome.accepted.length > 0) counter.increment('memory_accepted', outcome.accepted.length);
-    if (outcome.rejected.length > 0) counter.increment('memory_rejected', outcome.rejected.length);
-    if (outcome.duplicates > 0) counter.increment('memory_duplicate', outcome.duplicates);
-    if (outcome.superseded.length > 0) {
-      counter.increment('memory_superseded', outcome.superseded.length);
-    }
-  } catch (error) {
-    // Already-degraded path: `selectMemories` swallows per-candidate failures,
-    // so reaching here means the batch could not even be read. The turn is
-    // committed and delivered either way.
-    logger.error({
-      event: 'orchestration.memory.selection_failed',
-      trace_id: params.trace_id,
-      decision_id: params.decision_id,
-      error: String(error),
-    });
-  }
 }
 
 export interface DeliveryReportInput {

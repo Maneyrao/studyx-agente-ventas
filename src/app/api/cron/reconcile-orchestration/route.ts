@@ -9,6 +9,7 @@ import { auditLog } from '@/lib/audit/logger';
 import { counter } from '@/lib/observability/counters';
 import { logger } from '@/lib/observability/structured-log';
 import { reconcileDeliveredPaymentProjections } from '@/lib/services/decision.service';
+import { projectAgentAMemories } from '@/features/memory/application/project-agent-a-memories';
 
 /**
  * GET /api/cron/reconcile-orchestration
@@ -42,6 +43,10 @@ export async function GET(request: NextRequest) {
           await auditLog(entry);
         },
         reconcilePaymentProjections: reconcileDeliveredPaymentProjections,
+        projectAgentAMemories: (input) => projectAgentAMemories(input, {
+          log: (event, fields) => logger.info({ event, ...fields }),
+          audit: auditLog,
+        }),
       }
     );
 
@@ -72,7 +77,9 @@ export async function GET(request: NextRequest) {
     if (result.orphaned_decisions > 0) {
       counter.increment('reconcile_orphaned_decisions', result.orphaned_decisions);
     }
-    const totalFailures = result.deliveries.failed + result.payment_projections.failed;
+    const totalFailures = result.deliveries.failed
+      + result.payment_projections.failed
+      + result.memory_projections.failed;
     if (totalFailures > 0) {
       counter.increment('reconcile_failures', totalFailures);
     }

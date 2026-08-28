@@ -9,6 +9,8 @@ import { selectMemories } from '@/features/orchestration/application/select-memo
 import { memoryDedupeHash } from '@/features/orchestration/domain/memory-selection';
 import { EMBEDDING_DIMENSIONS, EMBEDDING_EPOCH } from '@/lib/embeddings/gemini';
 import { sql } from '@/lib/db/orchestrator';
+import { projectAgentAMemories } from '@/features/memory/application/project-agent-a-memories';
+import { auditLog } from '@/lib/audit/logger';
 
 /**
  * Fase 4 against a real database.
@@ -598,6 +600,7 @@ run('selected_memories — end to end from a committed decision', () => {
     });
 
     expect(committed.status).toBe('committed');
+    await projectAgentAMemories({ limit: 10 }, { db: sql, audit: auditLog });
 
     const rows = await sql<Array<{
       status: string;
@@ -628,7 +631,7 @@ run('selected_memories — end to end from a committed decision', () => {
 
   it('keeps price-like candidates out of selected_memories entirely and records the rejection in audit_log', async () => {
     // Spec §4: "no registrar link ni precio como memoria seleccionada". The
-    // guard in decision.service drops URL/price-shaped candidates BEFORE
+    // asynchronous projector drops URL/price-shaped candidates BEFORE
     // selection, so not even a `rejected` row carries the amount's text into
     // selected_memories; the trail lives in audit_log without the raw value.
     const turn = await seedTurn('Tengo 50000 pesos disponibles');
@@ -663,6 +666,7 @@ run('selected_memories — end to end from a committed decision', () => {
     });
 
     expect(committed.status).toBe('committed');
+    await projectAgentAMemories({ limit: 10 }, { db: sql, audit: auditLog });
 
     const rows = await sql<Array<{ id: string }>>`
       SELECT id FROM selected_memories WHERE decision_id = ${committed.decision_id}::uuid
@@ -716,6 +720,12 @@ run('selected_memories — end to end from a committed decision', () => {
 
       expect(committed.status).toBe('committed');
       expect(committed.outbound).not.toBeNull();
+      const projection = await projectAgentAMemories({ limit: 10 }, { db: sql });
+      expect(projection.failed).toBeGreaterThanOrEqual(1);
+      await expect(sql<Array<{ status: string }>>`
+        SELECT status FROM agent_a_memory_projection_jobs
+        WHERE decision_id = ${committed.decision_id}::uuid
+      `).resolves.toEqual([{ status: 'failed' }]);
     } finally {
       await sql`ALTER TABLE selected_memories_hidden RENAME TO selected_memories`;
     }
