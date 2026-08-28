@@ -76,12 +76,12 @@ export class PostgresConversationStateStoreV1 implements ConversationStateStoreV
         INSERT INTO conversation_sales_context_states_v1 (
           workspace_id, conversation_id, contact_id,
           selected_offering_code, selected_payment_plan, stage,
-          call_preference, call_offer_status, awaiting_reply, source_turn_id
+          call_preference, call_offer_status, call_offer_count, awaiting_reply, source_turn_id
         )
         SELECT
           eligible.workspace_id, ${input.conversation_id}::uuid, ${input.contact_id}::uuid,
           ${input.selected_offering_code}, ${input.selected_payment_plan}, ${input.stage},
-          ${input.call_preference}, ${input.call_offer_status}, ${input.awaiting_reply},
+          ${input.call_preference}, ${input.call_offer_status}, ${input.call_offer_count ?? 0}, ${input.awaiting_reply},
           ${input.source_turn_id}::uuid
         FROM eligible
         WHERE NOT EXISTS (SELECT 1 FROM prior_source)
@@ -92,6 +92,11 @@ export class PostgresConversationStateStoreV1 implements ConversationStateStoreV
             stage = EXCLUDED.stage,
             call_preference = EXCLUDED.call_preference,
             call_offer_status = EXCLUDED.call_offer_status,
+            call_offer_count = CASE
+              WHEN ${input.call_offer_count ?? null}::smallint IS NULL
+                THEN conversation_sales_context_states_v1.call_offer_count
+              ELSE EXCLUDED.call_offer_count
+            END,
             awaiting_reply = EXCLUDED.awaiting_reply,
             source_turn_id = EXCLUDED.source_turn_id,
             version = conversation_sales_context_states_v1.version + 1,
@@ -103,12 +108,12 @@ export class PostgresConversationStateStoreV1 implements ConversationStateStoreV
         INSERT INTO conversation_sales_context_state_events_v1 (
           workspace_id, conversation_id, contact_id, state_version, source_turn_id,
           selected_offering_code, selected_payment_plan, stage,
-          call_preference, call_offer_status, awaiting_reply
+          call_preference, call_offer_status, call_offer_count, awaiting_reply
         )
         SELECT
           workspace_id, conversation_id, contact_id, version, source_turn_id,
           selected_offering_code, selected_payment_plan, stage,
-          call_preference, call_offer_status, awaiting_reply
+          call_preference, call_offer_status, call_offer_count, awaiting_reply
         FROM upserted
         ON CONFLICT DO NOTHING
       ), resolved AS (

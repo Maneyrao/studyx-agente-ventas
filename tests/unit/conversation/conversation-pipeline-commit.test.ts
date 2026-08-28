@@ -49,6 +49,7 @@ function state(overrides: Partial<ConversationStateV1> = {}): ConversationStateV
     workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact,
     selected_offering_code: 'redes-informaticas', selected_payment_plan: null,
     stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
+    call_offer_count: 0,
     awaiting_reply: 'none', source_turn_id: null, version: 2,
     created_at: index.as_of, updated_at: index.as_of, ...overrides,
   };
@@ -62,6 +63,36 @@ function store(current: ConversationStateV1): ConversationStateStoreV1 {
 }
 
 describe('prepareConversationPipelineCommitV1', () => {
+  it('authorizes the second bounded offer while the first offer is still unanswered', async () => {
+    const planned = await authoritativelyPlanConversationTurnV1({
+      turn: { workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx',
+      move: {
+        schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [], confidence: 0.96,
+      },
+      business_context: business,
+      catalog_index: index,
+    }, {
+      state_store: store(state({ call_offer_status: 'offered', call_offer_count: 1, awaiting_reply: 'call_or_chat' })),
+      call_facts: {
+        async loadClaimedCallFacts() {
+          return {
+            open_offer: { decision_id: ids.turn, offered_at: index.as_of },
+            active_call: null,
+            last_call_result: null,
+            last_decline_at: null,
+          };
+        },
+      },
+    });
+
+    expect(planned.plan).toMatchObject({
+      should_offer_call: true,
+      next_call_offer_count: 2,
+      next_call_offer_status: 'offered',
+    });
+  });
+
   it('replans, compares the hash and builds a canonical call offer decision', async () => {
     const stateStore = store(state());
     const move = {

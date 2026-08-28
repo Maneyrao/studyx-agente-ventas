@@ -42,6 +42,7 @@ export function createDefaultConversationStateV1(identity: StateIdentity): Conve
     stage: 'exploring',
     call_preference: 'unknown',
     call_offer_status: 'not_offered',
+    call_offer_count: 0,
     awaiting_reply: 'none',
     source_turn_id: null,
     version: 0,
@@ -103,6 +104,7 @@ function unchangedPlan(
     should_offer_call: false,
     next_call_preference: state.call_preference,
     next_call_offer_status: state.call_offer_status,
+    next_call_offer_count: state.call_offer_count,
     next_awaiting_reply: state.awaiting_reply,
     selected_offering_code: state.selected_offering_code,
     selected_payment_plan: state.selected_payment_plan,
@@ -117,6 +119,7 @@ function asState(plan: TurnPlanV1, previous: ConversationStateV1): ConversationS
     selected_payment_plan: plan.selected_payment_plan,
     call_preference: plan.next_call_preference,
     call_offer_status: plan.next_call_offer_status,
+    call_offer_count: plan.next_call_offer_count,
     awaiting_reply: plan.next_awaiting_reply,
   };
 }
@@ -143,7 +146,9 @@ function factsForOffering(offeringCode: string): CanonicalFactRequestV1[] {
 function shouldOfferCall(state: ConversationStateV1, vetoes: ReadonlySet<ConversationVetoV1>): boolean {
   return state.selected_offering_code !== null
     && state.call_preference === 'unknown'
-    && state.call_offer_status === 'not_offered'
+    && state.call_offer_count < 2
+    && state.call_offer_status !== 'accepted'
+    && state.call_offer_status !== 'declined'
     && !vetoes.has('call');
 }
 
@@ -214,6 +219,9 @@ function planSingle(
       canonical_fact_requests: factsForOffering(offeringCode),
       should_offer_call: offerCall,
       next_call_offer_status: offerCall ? 'offered' : state.call_offer_status,
+      next_call_offer_count: offerCall
+        ? (Math.min(2, state.call_offer_count + 1) as 1 | 2)
+        : state.call_offer_count,
       next_awaiting_reply: offerCall ? 'call_or_chat' : state.awaiting_reply,
       selected_offering_code: offeringCode,
     };

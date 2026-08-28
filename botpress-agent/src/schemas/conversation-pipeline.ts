@@ -79,6 +79,7 @@ export const TurnPlanV1Schema = z.object({
   should_offer_call: z.boolean(),
   next_call_preference: z.enum(['unknown', 'call', 'chat', 'declined']),
   next_call_offer_status: z.enum(['not_offered', 'offered', 'accepted', 'declined']),
+  next_call_offer_count: z.union([z.literal(0), z.literal(1), z.literal(2)]),
   next_awaiting_reply: z.enum(['none', 'area_choice', 'course_choice', 'call_or_chat', 'payment_plan', 'payment_confirmation']),
   selected_offering_code: z.string().min(1).nullable(),
   selected_payment_plan: PaymentPlanSchema.nullable(),

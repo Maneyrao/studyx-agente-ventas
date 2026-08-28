@@ -17,6 +17,7 @@ describe('planConversation Botpress action contract', () => {
         should_offer_call: true,
         next_call_preference: 'unknown',
         next_call_offer_status: 'offered',
+        next_call_offer_count: 1,
         next_awaiting_reply: 'call_or_chat',
         selected_offering_code: 'redes-informaticas',
         selected_payment_plan: null,

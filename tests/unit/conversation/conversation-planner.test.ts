@@ -113,24 +113,38 @@ describe('planConversationTurn', () => {
     });
   });
 
-  it('offers a call at most once per conversation', () => {
+  it('offers a call at most twice per conversation while the preference remains unknown', () => {
     const first = plan(move('ask_course_information'), state({
       selected_offering_code: 'redes-informaticas', stage: 'course_selected',
     }));
     const second = plan(move('ask_course_information'), state({
       selected_offering_code: 'redes-informaticas', stage: 'course_selected',
       call_offer_status: first.next_call_offer_status,
+      call_offer_count: first.next_call_offer_count,
       awaiting_reply: first.next_awaiting_reply,
+    }));
+    const exhausted = plan(move('ask_course_information'), state({
+      selected_offering_code: 'redes-informaticas', stage: 'course_selected',
+      call_offer_status: second.next_call_offer_status,
+      call_offer_count: second.next_call_offer_count,
+      awaiting_reply: second.next_awaiting_reply,
     }));
 
     expect(first).toMatchObject({
       should_offer_call: true,
       next_call_offer_status: 'offered',
+      next_call_offer_count: 1,
       next_awaiting_reply: 'call_or_chat',
     });
     expect(second).toMatchObject({
+      should_offer_call: true,
+      next_call_offer_status: 'offered',
+      next_call_offer_count: 2,
+    });
+    expect(exhausted).toMatchObject({
       should_offer_call: false,
       next_call_offer_status: 'offered',
+      next_call_offer_count: 2,
     });
     const accepted = plan(move('request_call'), state({
       selected_offering_code: 'redes-informaticas', stage: 'course_selected',

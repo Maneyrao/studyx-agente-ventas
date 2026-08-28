@@ -87,6 +87,7 @@ export interface ConversationStateV1 {
   readonly stage: SalesContextStage;
   readonly call_preference: CallPreferenceV1;
   readonly call_offer_status: CallOfferStatusV1;
+  readonly call_offer_count: 0 | 1 | 2;
   readonly awaiting_reply: AwaitingReplyV1;
   readonly source_turn_id: string | null;
   readonly version: number;
@@ -103,6 +104,7 @@ export interface ConversationStateTransitionV1 {
   readonly stage: SalesContextStage;
   readonly call_preference: CallPreferenceV1;
   readonly call_offer_status: CallOfferStatusV1;
+  readonly call_offer_count?: 0 | 1 | 2;
   readonly awaiting_reply: AwaitingReplyV1;
   readonly source_turn_id: string | null;
 }
@@ -140,6 +142,7 @@ export interface TurnPlanV1 {
   readonly should_offer_call: boolean;
   readonly next_call_preference: CallPreferenceV1;
   readonly next_call_offer_status: CallOfferStatusV1;
+  readonly next_call_offer_count: 0 | 1 | 2;
   readonly next_awaiting_reply: AwaitingReplyV1;
   readonly selected_offering_code: string | null;
   readonly selected_payment_plan: SalesPaymentPlan | null;

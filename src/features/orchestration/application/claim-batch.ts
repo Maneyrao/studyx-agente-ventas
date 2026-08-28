@@ -187,6 +187,7 @@ export interface ClaimedTurn {
     | 'stage'
     | 'call_preference'
     | 'call_offer_status'
+    | 'call_offer_count'
     | 'awaiting_reply'
     | 'version'
   > | null;
@@ -876,6 +877,7 @@ export async function claimBatch(
           stage: persistedConversationState.stage,
           call_preference: persistedConversationState.call_preference,
           call_offer_status: persistedConversationState.call_offer_status,
+          call_offer_count: persistedConversationState.call_offer_count,
           awaiting_reply: persistedConversationState.awaiting_reply,
           version: persistedConversationState.version,
         }
@@ -885,6 +887,7 @@ export async function claimBatch(
           stage: salesContext.stage,
           call_preference: 'unknown' as const,
           call_offer_status: salesContext.open_call_offer ? 'offered' as const : 'not_offered' as const,
+          call_offer_count: salesContext.open_call_offer ? 1 as const : 0 as const,
           awaiting_reply: salesContext.open_call_offer ? 'call_or_chat' as const : 'none' as const,
           version: 0,
         }

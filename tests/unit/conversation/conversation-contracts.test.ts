@@ -34,6 +34,7 @@ const validPlan = {
   should_offer_call: false,
   next_call_preference: 'chat',
   next_call_offer_status: 'declined',
+  next_call_offer_count: 1,
   next_awaiting_reply: 'none',
   selected_offering_code: 'redes-informaticas',
   selected_payment_plan: null,

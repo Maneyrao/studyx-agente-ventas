@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyDecisionPolicy,
+  classifyBrainFailureReason,
   constrainModelToAdvisory,
   modelUnavailableFallback,
 } from '../../../botpress-agent/src/utils/decision-policy';
@@ -157,6 +158,16 @@ function modelDecision(overrides: Partial<Decision> = {}): Decision {
 }
 
 describe('applyDecisionPolicy — provider parity', () => {
+  it.each([
+    ['BRAIN_TIMEOUT', true, 'timeout'],
+    ['BRAIN_RATE_LIMITED', true, 'rate_limited'],
+    ['BRAIN_INVALID_SCHEMA', true, 'invalid_schema'],
+    ['BRAIN_UNKNOWN_FACT_ID', true, 'policy_rejected'],
+    ['BRAIN_TIMEOUT', false, 'catalog_unavailable'],
+  ] as const)('classifies %s without inspecting customer text', (code, catalogAvailable, expected) => {
+    expect(classifyBrainFailureReason(code, catalogAvailable)).toBe(expected);
+  });
+
   describe('contextual model-unavailable fallback', () => {
     const catalogNames = [
       'Inglés Inicial',

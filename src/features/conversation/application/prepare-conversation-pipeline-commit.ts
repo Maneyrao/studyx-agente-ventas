@@ -170,6 +170,7 @@ export async function prepareConversationPipelineCommitV1(input: {
       stage: authoritative.plan.next_stage,
       call_preference: authoritative.plan.next_call_preference,
       call_offer_status: authoritative.plan.next_call_offer_status,
+      call_offer_count: authoritative.plan.next_call_offer_count,
       awaiting_reply: authoritative.plan.next_awaiting_reply,
       source_turn_id: input.turn.id,
     },

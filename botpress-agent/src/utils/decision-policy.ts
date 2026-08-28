@@ -53,7 +53,34 @@ export function technicalFallback(): Decision {
   }
 }
 
-export function modelUnavailableFallback(claimed: ClaimedTurn): Decision {
+export type BrainFailureReason =
+  | 'timeout'
+  | 'rate_limited'
+  | 'invalid_schema'
+  | 'policy_rejected'
+  | 'catalog_unavailable'
+
+/** Maps provider/policy codes only; customer text never participates. */
+export function classifyBrainFailureReason(
+  code: string,
+  catalogAvailable: boolean,
+): BrainFailureReason {
+  if (!catalogAvailable) return 'catalog_unavailable'
+  if (code === 'BRAIN_TIMEOUT' || code === 'TimeoutError' || code === 'AbortError') return 'timeout'
+  if (code === 'BRAIN_RATE_LIMITED' || code === 'GROQ_HTTP_429') return 'rate_limited'
+  if (
+    code === 'BRAIN_INVALID_SCHEMA'
+    || code === 'BRAIN_INVALID_JSON'
+    || code === 'BRAIN_INVALID_RESPONSE'
+    || code === 'BRAIN_EMPTY_RESPONSE'
+  ) return 'invalid_schema'
+  return 'policy_rejected'
+}
+
+export function modelUnavailableFallback(
+  claimed: ClaimedTurn,
+  brainFailureReason?: BrainFailureReason,
+): Decision {
   const allowed = claimed.policy.allowed_response_types
   if (!allowed.includes('commercial_reply')) return technicalFallback()
   const guidance = catalogGuidanceForTurn(claimed)
@@ -83,7 +110,9 @@ export function modelUnavailableFallback(claimed: ClaimedTurn): Decision {
     memory_candidates: [],
     missing_information: [],
     next_state: 'waiting_user',
-    reason_code: 'MODEL_UNAVAILABLE',
+    reason_code: brainFailureReason
+      ? `BRAIN_FALLBACK_${brainFailureReason.toUpperCase()}`
+      : 'MODEL_UNAVAILABLE',
     confidence: 1,
     retrieval_used: null,
   }

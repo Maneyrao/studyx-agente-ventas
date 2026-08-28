@@ -370,6 +370,7 @@ run('conversation pipeline V1 vertical', () => {
       stage: 'payment_link_sent',
       call_preference: 'call',
       call_offer_status: 'accepted',
+      call_offer_count: 1,
       awaiting_reply: 'none',
     });
   });

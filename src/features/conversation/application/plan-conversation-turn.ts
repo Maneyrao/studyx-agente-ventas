@@ -97,9 +97,11 @@ export async function authoritativelyPlanConversationTurnV1(
     }) ?? Promise.resolve(null),
   ]);
   const state = loaded ?? createDefaultConversationStateV1(input.turn);
+  // An unresolved first offer is the evidence that makes a later, final
+  // reminder meaningful. The conversation-local counter owns that two-offer
+  // budget; only an active call or durable decline disables it outright.
   const proactiveCallOfferAllowed = callFacts === null
-    || (callFacts.open_offer === null
-      && callFacts.active_call === null
+    || (callFacts.active_call === null
       && callFacts.last_decline_at === null);
   const plan = planConversationTurn({
     move: input.move,

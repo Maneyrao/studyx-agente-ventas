@@ -26,6 +26,7 @@ import {
 import { StudyxHttpError } from '../utils/http'
 import {
   applyDecisionPolicy,
+  classifyBrainFailureReason,
   constrainModelToAdvisory,
   suppress,
   modelUnavailableFallback,
@@ -624,12 +625,19 @@ export const processInboundTurn = new Workflow({
           sales_behavior_version: STUDYX_SALES_BEHAVIOR_VERSION,
         })
       } catch (error) {
+        const failureCode = errorCode(error)
+        const brainFailureReason = classifyBrainFailureReason(
+          failureCode,
+          owned.business_context_available && owned.catalog_index !== null,
+        )
         safeLog('studyx.turn.conversation_pipeline_v1_failed', {
           trace_id: input.trace_id,
           turn_id: owned.turn_id,
-          error_code: errorCode(error),
+          error_code: failureCode,
+          brain_source: 'fallback',
+          brain_failure_reason: brainFailureReason,
         })
-        pipelineFailureDecision = modelUnavailableFallback(owned)
+        pipelineFailureDecision = modelUnavailableFallback(owned, brainFailureReason)
       }
     }
 

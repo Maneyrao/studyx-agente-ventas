@@ -63,6 +63,7 @@ run('conversation_sales_context_states_v1', () => {
       stage: 'plan_selected',
       call_preference: 'chat',
       call_offer_status: 'declined',
+      call_offer_count: 1,
       awaiting_reply: 'payment_confirmation',
     });
     const conversationB = await store.transition({
@@ -75,6 +76,7 @@ run('conversation_sales_context_states_v1', () => {
       stage: 'exploring',
       call_preference: 'unknown',
       call_offer_status: 'not_offered',
+      call_offer_count: 0,
       awaiting_reply: 'none',
     });
 
@@ -82,12 +84,14 @@ run('conversation_sales_context_states_v1', () => {
       conversation_id: data.conversationA,
       call_preference: 'chat',
       call_offer_status: 'declined',
+      call_offer_count: 1,
       selected_payment_plan: 'monthly_12',
     });
     expect(conversationB).toMatchObject({
       conversation_id: data.conversationB,
       call_preference: 'unknown',
       call_offer_status: 'not_offered',
+      call_offer_count: 0,
       selected_payment_plan: null,
       version: 1,
     });
@@ -128,21 +132,22 @@ run('conversation_sales_context_states_v1', () => {
       workspace_slug: 'studyx', conversation_id: data.conversationA, contact_id: data.contactId,
       source_turn_id: data.turnsA[0], selected_offering_code: data.offeringA,
       selected_payment_plan: null, stage: 'course_selected' as const, call_preference: 'unknown' as const,
-      call_offer_status: 'offered' as const, awaiting_reply: 'call_or_chat' as const,
+      call_offer_status: 'offered' as const, call_offer_count: 1 as const,
+      awaiting_reply: 'call_or_chat' as const,
     };
 
     const first = await store.transition(input);
     const replay = await store.transition(input);
     expect(replay).toEqual(first);
 
-    const events = await db!<Array<{ state_version: number }>>`
-      SELECT state_version
+    const events = await db!<Array<{ state_version: number; call_offer_count: number }>>`
+      SELECT state_version, call_offer_count
       FROM conversation_sales_context_state_events_v1
       WHERE workspace_id = ${first.workspace_id}::uuid
         AND conversation_id = ${data.conversationA}::uuid
       ORDER BY state_version
     `;
-    expect(events).toEqual([{ state_version: 1 }]);
+    expect(events).toEqual([{ state_version: 1, call_offer_count: 1 }]);
   });
 
   it('serializes concurrent transitions into unique state versions', async () => {
