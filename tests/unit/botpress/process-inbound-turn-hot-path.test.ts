@@ -337,7 +337,7 @@ describe('processInboundTurn hot path', () => {
       async (_name: string, run: () => Promise<unknown>) => run(),
       { sleep: vi.fn(async () => undefined) },
     );
-    const execute = vi.fn(async () => ({
+    const execute = vi.fn(async (_request: { instructions: string }) => ({
       is: () => true,
       output: {
         schema_version: 4,
@@ -710,7 +710,18 @@ describe('processInboundTurn hot path', () => {
       async (_name: string, run: () => Promise<unknown>) => run(),
       { sleep: vi.fn(async () => undefined) },
     );
-    const execute = vi.fn(async () => { throw new Error('COMPOSER_MUST_BE_SKIPPED'); });
+    const execute = vi.fn(async (_request: { instructions: string }) => ({
+      is: () => true,
+      output: {
+        schema_version: 1,
+        narrative: {
+          opening: 'Perfecto, seguimos por chat.',
+          explanation: 'Te acompaño por este medio.',
+          next_question: '¿Qué aspecto querés revisar?',
+        },
+        used_fact_ids: [],
+      },
+    }));
     const handler = (processInboundTurn as unknown as {
       definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
     }).definition.handler;
@@ -722,17 +733,25 @@ describe('processInboundTurn hot path', () => {
 
     expect(actionSpies.conversationInterpreter).toHaveBeenCalledTimes(1);
     expect(actionSpies.plan).toHaveBeenCalledTimes(1);
-    expect(execute).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0]?.[0]?.instructions).toContain('studyx-sales-behavior-v1');
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       conversation_pipeline_v1: {
         move: { move: 'continue_by_chat' },
         plan_hash: 'a'.repeat(64),
         composition: {
           used_fact_ids: [],
-          narrative: { opening: 'Perfecto, seguimos por chat.' },
+          narrative: {
+            opening: 'Perfecto, seguimos por chat.',
+            explanation: 'Te acompaño por este medio.',
+            next_question: '¿Qué aspecto querés revisar?',
+          },
         },
       },
       decision: { reason_code: 'CONVERSATION_PIPELINE_V1_PENDING_BACKEND' },
+      model: {
+        prompt_version: 'studyx-conversation-interpreter-v1.5+studyx-conversation-composer-v2+studyx-sales-behavior-v1',
+      },
     });
   });
 
@@ -776,6 +795,25 @@ describe('processInboundTurn hot path', () => {
     };
     claimed.context.batch_messages[0].content = 'Sí';
     actionSpies.claim.mockResolvedValue(claimed);
+    actionSpies.plan.mockResolvedValueOnce({
+      plan: {
+        schema_version: 1,
+        next_stage: 'handoff',
+        response_goal: 'confirm_call_request',
+        canonical_fact_requests: [],
+        allowed_business_action: { type: 'request_call_now', reason: 'accepted_offer' },
+        missing_information: [],
+        should_offer_call: false,
+        next_call_preference: 'call',
+        next_call_offer_status: 'accepted',
+        next_awaiting_reply: 'none',
+        selected_offering_code: 'redes-informaticas',
+        selected_payment_plan: null,
+      },
+      fact_refs: [],
+      state_version: 3,
+      plan_hash: 'b'.repeat(64),
+    });
     const step = Object.assign(
       async (_name: string, run: () => Promise<unknown>) => run(),
       { sleep: vi.fn(async () => undefined) },

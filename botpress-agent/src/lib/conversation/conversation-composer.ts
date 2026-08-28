@@ -4,9 +4,9 @@ import {
   type ComposedNarrativeV1,
   type TurnPlanV1,
 } from '../../schemas/conversation-pipeline'
-import { buildConversationComposerInstructionsV1 } from '../../prompts/conversation-composer-v1'
+import { buildConversationComposerInstructionsV2 } from '../../prompts/conversation-composer-v2'
 
-export { buildConversationComposerInstructionsV1 }
+export { buildConversationComposerInstructionsV2 }
 
 export const CONVERSATION_COMPOSER_TIMEOUT_MS = 3_000
 
@@ -24,8 +24,19 @@ export class ConversationComposerError extends Error {
 }
 
 const NARRATIVE_GOALS = new Set<TurnPlanV1['response_goal']>([
+  'greet_and_discover',
+  'guide_area_choice',
+  'guide_course_choice',
   'explain_selected_course',
   'continue_course_advice',
+  'offer_call_or_chat',
+  'acknowledge_chat_preference',
+  'acknowledge_call_decline',
+  'present_payment_options',
+  'confirm_selected_plan',
+  'acknowledge_payment_deferral',
+  'clarify_current_step',
+  'catalog_temporarily_unavailable',
 ])
 
 export function shouldComposeNarrativeV1(plan: TurnPlanV1): boolean {
@@ -87,7 +98,7 @@ export async function composeConversationNarrativeV1(
   },
 ): Promise<ComposedNarrativeV1> {
   const generated = await deps.generate({
-    instructions: buildConversationComposerInstructionsV1(input),
+    instructions: buildConversationComposerInstructionsV2(input),
     signal: deps.signal ?? new AbortController().signal,
   })
   const wrapped = generated && typeof generated === 'object' && !Array.isArray(generated)

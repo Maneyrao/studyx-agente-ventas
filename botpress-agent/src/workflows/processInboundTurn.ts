@@ -49,7 +49,8 @@ import {
   CONVERSATION_INTERPRETER_PROMPT_VERSION,
   buildConversationInterpreterInstructionsV1,
 } from '../prompts/conversation-interpreter-v1'
-import { CONVERSATION_COMPOSER_PROMPT_VERSION } from '../prompts/conversation-composer-v1'
+import { CONVERSATION_COMPOSER_PROMPT_VERSION } from '../prompts/conversation-composer-v2'
+import { STUDYX_SALES_BEHAVIOR_VERSION } from '../prompts/studyx-sales-behavior-v1'
 import { evaluateWhatsAppCanarySend } from '../channels/whatsapp.channel'
 
 /**
@@ -609,6 +610,8 @@ export const processInboundTurn = new Workflow({
           veto_count: interpreted.move.vetoes.length,
           interpreter_model: interpreted.model,
           interpreter_latency_ms: interpreted.latency_ms,
+          composer_prompt_version: CONVERSATION_COMPOSER_PROMPT_VERSION,
+          sales_behavior_version: STUDYX_SALES_BEHAVIOR_VERSION,
         })
       } catch (error) {
         safeLog('studyx.turn.conversation_pipeline_v1_failed', {
@@ -803,7 +806,7 @@ export const processInboundTurn = new Workflow({
                 provider: decisionProvider,
                 model: decisionModel,
                 prompt_version: pipelineCommit
-                  ? `${CONVERSATION_INTERPRETER_PROMPT_VERSION}+${CONVERSATION_COMPOSER_PROMPT_VERSION}`
+                  ? `${CONVERSATION_INTERPRETER_PROMPT_VERSION}+${CONVERSATION_COMPOSER_PROMPT_VERSION}+${STUDYX_SALES_BEHAVIOR_VERSION}`
                   : AGENT_A_PROMPT_VERSION,
               },
               // Batch fencing pair (spec §8): lets the backend try
