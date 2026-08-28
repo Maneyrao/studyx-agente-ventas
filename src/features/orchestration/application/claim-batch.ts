@@ -76,6 +76,9 @@ export interface ClaimBatchDependencies {
   };
   /** Single backend-owned rollout flag projected into the claimed contract. */
   readonly conversationPipelineEnabled?: boolean;
+  /** Independent Agent A brain rollout controls. They are mutually exclusive at config load. */
+  readonly agentABrainEnabled?: boolean;
+  readonly agentABrainShadow?: boolean;
 }
 
 export interface ContextLimits {
@@ -179,6 +182,8 @@ export interface ClaimedTurn {
   readonly sales_context: ClaimedSalesContext;
   readonly features: {
     readonly conversation_pipeline_v1_enabled: boolean;
+    readonly agent_a_brain_v1_enabled: boolean;
+    readonly agent_a_brain_v1_shadow: boolean;
   };
   readonly conversation_state_v1: Pick<
     ConversationStateV1,
@@ -652,8 +657,11 @@ export async function claimBatch(
       timings.business_snapshot_ms = Math.max(0, monotonicNow() - businessStartedAt);
     }
   })();
+  const conversationStateEnabled = deps.conversationPipelineEnabled === true
+    || deps.agentABrainEnabled === true
+    || deps.agentABrainShadow === true;
   const conversationStateTask = (async () => {
-    if (!deps.conversationPipelineEnabled || !deps.conversationState) return;
+    if (!conversationStateEnabled || !deps.conversationState) return;
     try {
       persisted_conversation_state = await deps.conversationState.load(
         claim.conversation_id!,
@@ -869,7 +877,7 @@ export async function claimBatch(
     ...selection,
   };
   const persistedConversationState = persisted_conversation_state as ConversationStateV1 | null;
-  const conversationStateV1 = deps.conversationPipelineEnabled
+  const conversationStateV1 = conversationStateEnabled
     ? persistedConversationState
       ? {
           selected_offering_code: persistedConversationState.selected_offering_code,
@@ -954,6 +962,8 @@ export async function claimBatch(
     sales_context: salesContext,
     features: {
       conversation_pipeline_v1_enabled: deps.conversationPipelineEnabled === true,
+      agent_a_brain_v1_enabled: deps.agentABrainEnabled === true,
+      agent_a_brain_v1_shadow: deps.agentABrainShadow === true,
     },
     conversation_state_v1: conversationStateV1,
     catalog_resolution,

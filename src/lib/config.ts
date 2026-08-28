@@ -25,6 +25,26 @@ export function loadConversationPipelineConfig(
   };
 }
 
+export type AgentABrainRolloutMode = 'legacy' | 'shadow' | 'authoritative' | 'invalid';
+
+export interface AgentABrainConfig {
+  readonly enabled: boolean;
+  readonly shadow: boolean;
+  readonly mode: AgentABrainRolloutMode;
+  readonly ready: boolean;
+}
+
+export function loadAgentABrainConfig(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): AgentABrainConfig {
+  const enabled = environment.AGENT_A_BRAIN_V1_ENABLED?.trim().toLowerCase() === 'true';
+  const shadow = environment.AGENT_A_BRAIN_V1_SHADOW?.trim().toLowerCase() === 'true';
+  if (enabled && shadow) return { enabled, shadow, mode: 'invalid', ready: false };
+  if (enabled) return { enabled, shadow, mode: 'authoritative', ready: true };
+  if (shadow) return { enabled, shadow, mode: 'shadow', ready: true };
+  return { enabled, shadow, mode: 'legacy', ready: true };
+}
+
 export type BusinessWorkspaceConfig = {
   /** Slug of the tenant whose data this deployment serves. Backend-derived:
    * model output never selects the workspace. */

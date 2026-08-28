@@ -4,6 +4,7 @@ import {
   REQUIRED_ENVIRONMENT,
   evaluateReadiness,
   probeEnvironment,
+  probeAgentABrainConfiguration,
   type DependencyProbe,
 } from '@/features/observability/domain/readiness';
 
@@ -45,6 +46,18 @@ describe('evaluateReadiness', () => {
 
   it('is ready with no probes at all rather than inventing a failure', () => {
     expect(evaluateReadiness([])).toMatchObject({ status: 'ready', ready: true });
+  });
+});
+
+describe('probeAgentABrainConfiguration', () => {
+  it('marks enabled plus shadow as a required configuration failure', () => {
+    expect(probeAgentABrainConfiguration({ enabled: true, shadow: true, mode: 'invalid', ready: false }))
+      .toMatchObject({ name: 'agent_a_brain_configuration', required: true, status: 'down' });
+  });
+
+  it('does not expose flags as a failure in any valid rollout mode', () => {
+    expect(probeAgentABrainConfiguration({ enabled: false, shadow: true, mode: 'shadow', ready: true }))
+      .toMatchObject({ status: 'ok', detail: null });
   });
 });
 

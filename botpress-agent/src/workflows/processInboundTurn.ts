@@ -44,6 +44,10 @@ import {
 } from '../lib/conversation/conversation-composer'
 import { buildAgentAContextV1 } from '../lib/conversation/agent-a-context'
 import {
+  DEFAULT_AGENT_A_BRAIN_MODEL,
+  generateAgentATurnProposalV1,
+} from '../lib/conversation/agent-a-brain'
+import {
   ComposedNarrativeV1Schema,
   type ConversationPipelineCommitV1,
 } from '../schemas/conversation-pipeline'
@@ -53,6 +57,7 @@ import {
 } from '../prompts/conversation-interpreter-v1'
 import { CONVERSATION_COMPOSER_PROMPT_VERSION } from '../prompts/conversation-composer-v2'
 import { STUDYX_SALES_BEHAVIOR_VERSION } from '../prompts/studyx-sales-behavior-v1'
+import { AGENT_A_BRAIN_PROMPT_VERSION } from '../prompts/agent-a-brain-v1'
 import { evaluateWhatsAppCanarySend } from '../channels/whatsapp.channel'
 
 /**
@@ -178,7 +183,7 @@ function buildInterpreterInput(owned: ClaimedTurn): ConversationInterpreterInput
   }
 }
 
-function pipelinePlaceholder(): Decision {
+function pipelinePlaceholder(memoryCandidates: Decision['memory_candidates'] = []): Decision {
   return {
     schema_version: 4,
     intent: 'commercial',
@@ -188,7 +193,7 @@ function pipelinePlaceholder(): Decision {
     confidence: 1,
     reason_code: 'CONVERSATION_PIPELINE_V1_PENDING_BACKEND',
     business_action: null,
-    memory_candidates: [],
+    memory_candidates: memoryCandidates,
     missing_information: [],
     next_state: 'waiting_user',
     retrieval_used: null,
@@ -515,11 +520,138 @@ export const processInboundTurn = new Workflow({
     let pipelineFailureDecision: Decision | null = null
     let pipelineDecisionProvider: 'botpress' | 'groq-direct' = 'groq-direct'
     let pipelineDecisionModel = 'conversation-pipeline-v1'
-    const pipelineEligible = configuration.automationEnabled
-      && owned.features?.conversation_pipeline_v1_enabled === true
+    let pipelinePromptVersion = `${CONVERSATION_INTERPRETER_PROMPT_VERSION}+${CONVERSATION_COMPOSER_PROMPT_VERSION}+${STUDYX_SALES_BEHAVIOR_VERSION}`
+    let pipelineMemoryCandidates: Decision['memory_candidates'] = []
+    const conversationalBaseEligible = configuration.automationEnabled
       && owned.policy.may_respond
       && owned.policy.allowed_response_types.includes('commercial_reply')
-    const deterministicPipelineMove = pipelineEligible
+    const brainAuthoritative = owned.features?.agent_a_brain_v1_enabled === true
+    const brainShadow = owned.features?.agent_a_brain_v1_shadow === true
+    const legacyPipelineEligible = conversationalBaseEligible
+      && owned.features?.conversation_pipeline_v1_enabled === true
+    const brainEligible = conversationalBaseEligible
+      && (brainAuthoritative || brainShadow)
+      && owned.deterministic_route === null
+      && agentABrainContext !== null
+
+    if (brainEligible) {
+      try {
+        const apiKey = secrets.GROQ_API_KEY
+        if (typeof apiKey !== 'string' || apiKey === '') {
+          throw new StudyxHttpError('GROQ_API_KEY_MISSING', false)
+        }
+        const generated = await step(
+          'generate-agent-a-turn-proposal-v1',
+          () => generateAgentATurnProposalV1({
+            context: agentABrainContext,
+            apiKey,
+            signal,
+            model: typeof configuration.agentABrainModel === 'string'
+              ? configuration.agentABrainModel
+              : DEFAULT_AGENT_A_BRAIN_MODEL,
+          }),
+          { maxAttempts: 1 },
+        )
+        timings.agent_a_brain_ms = generated.latency_ms
+
+        if (brainShadow) {
+          const currentCount = agentABrainContext.commercial_state.call_offer_count
+          safeLog('studyx.turn.agent_a_brain_v1', {
+            trace_id: input.trace_id,
+            turn_id: owned.turn_id,
+            rollout_mode: 'shadow',
+            brain_prompt_version: AGENT_A_BRAIN_PROMPT_VERSION,
+            brain_model: generated.model,
+            brain_source: 'model',
+            brain_failure_reason: null,
+            context_recent_turn_count: agentABrainContext.turn.recent_turns.length,
+            context_memory_count: agentABrainContext.customer.memories.length,
+            used_memory_count: generated.proposal.used_memory_ids.length,
+            call_offer_transition: `${currentCount}->${currentCount}`,
+            proposed_action_type: generated.proposal.proposed_action.type,
+            authorized_action_type: 'none',
+          })
+        } else {
+          const plannerStartedAt = Date.now()
+          const planned = await step(
+            'plan-agent-a-turn-v1',
+            () => planConversation.execute({
+              client,
+              input: {
+                turn_id: owned.turn_id,
+                trace_id: input.trace_id,
+                move: generated.proposal.move,
+              },
+            }),
+            { maxAttempts: 1 },
+          )
+          timings.planner_ms = Date.now() - plannerStartedAt
+          const plannedFactIds = new Set(planned.fact_refs.map((fact: { id: string }) => fact.id))
+          const composition = ComposedNarrativeV1Schema.parse({
+            schema_version: 1,
+            narrative: {
+              opening: generated.proposal.response.messages[0],
+              explanation: generated.proposal.response.messages[1] ?? null,
+              next_question: generated.proposal.response.messages[2] ?? null,
+            },
+            used_fact_ids: generated.proposal.used_fact_ids.filter((id: string) => plannedFactIds.has(id)),
+          })
+          pipelineCommit = {
+            move: generated.proposal.move,
+            plan_hash: planned.plan_hash,
+            composition,
+          }
+          pipelineDecisionProvider = 'groq-direct'
+          pipelineDecisionModel = generated.model
+          pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
+          pipelineMemoryCandidates = generated.proposal.memory_candidates
+          safeLog('studyx.turn.agent_a_brain_v1', {
+            trace_id: input.trace_id,
+            turn_id: owned.turn_id,
+            rollout_mode: 'authoritative',
+            brain_prompt_version: AGENT_A_BRAIN_PROMPT_VERSION,
+            brain_model: generated.model,
+            brain_source: 'model',
+            brain_failure_reason: null,
+            context_recent_turn_count: agentABrainContext.turn.recent_turns.length,
+            context_memory_count: agentABrainContext.customer.memories.length,
+            used_memory_count: generated.proposal.used_memory_ids.length,
+            call_offer_transition: `${agentABrainContext.commercial_state.call_offer_count}->${planned.plan.next_call_offer_count}`,
+            proposed_action_type: generated.proposal.proposed_action.type,
+            authorized_action_type: planned.plan.allowed_business_action.type,
+          })
+        }
+      } catch (error) {
+        const failureCode = errorCode(error)
+        const brainFailureReason = classifyBrainFailureReason(
+          failureCode,
+          owned.business_context_available && owned.catalog_index !== null,
+        )
+        safeLog('studyx.turn.agent_a_brain_v1', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          rollout_mode: brainShadow ? 'shadow' : 'authoritative',
+          brain_prompt_version: AGENT_A_BRAIN_PROMPT_VERSION,
+          brain_model: typeof configuration.agentABrainModel === 'string'
+            ? configuration.agentABrainModel
+            : DEFAULT_AGENT_A_BRAIN_MODEL,
+          brain_source: 'fallback',
+          brain_failure_reason: brainFailureReason,
+          context_recent_turn_count: agentABrainContext.turn.recent_turns.length,
+          context_memory_count: agentABrainContext.customer.memories.length,
+          used_memory_count: 0,
+          call_offer_transition: `${agentABrainContext.commercial_state.call_offer_count}->${agentABrainContext.commercial_state.call_offer_count}`,
+          proposed_action_type: 'none',
+          authorized_action_type: 'none',
+        })
+        if (brainAuthoritative) {
+          pipelineFailureDecision = modelUnavailableFallback(owned, brainFailureReason)
+        }
+      }
+    }
+
+    const deterministicPipelineMove = conversationalBaseEligible
+      && (legacyPipelineEligible || brainAuthoritative)
       && (owned.deterministic_route === 'call_direct_request'
         || owned.deterministic_route === 'call_accepted_offer')
       ? {
@@ -530,11 +662,12 @@ export const processInboundTurn = new Workflow({
           confidence: 1,
         }
       : null
-    const interpreterInput = pipelineEligible
+    const interpreterInput = legacyPipelineEligible
+      && !brainAuthoritative
       && owned.deterministic_route === null
       ? buildInterpreterInput(owned)
       : null
-    if (deterministicPipelineMove || interpreterInput) {
+    if (!pipelineCommit && !pipelineFailureDecision && (deterministicPipelineMove || interpreterInput)) {
       try {
         const interpreted = deterministicPipelineMove
           ? {
@@ -651,7 +784,7 @@ export const processInboundTurn = new Workflow({
     let decisionProvider: 'botpress' | 'google-ai-direct' | 'groq-direct' = 'botpress'
     timings.model_ms = 0
     if (pipelineCommit) {
-      decision = pipelinePlaceholder()
+      decision = pipelinePlaceholder(pipelineMemoryCandidates)
       decisionProvider = pipelineDecisionProvider
       decisionModel = pipelineDecisionModel
     } else if (pipelineFailureDecision) {
@@ -824,7 +957,7 @@ export const processInboundTurn = new Workflow({
                 provider: decisionProvider,
                 model: decisionModel,
                 prompt_version: pipelineCommit
-                  ? `${CONVERSATION_INTERPRETER_PROMPT_VERSION}+${CONVERSATION_COMPOSER_PROMPT_VERSION}+${STUDYX_SALES_BEHAVIOR_VERSION}`
+                  ? pipelinePromptVersion
                   : AGENT_A_PROMPT_VERSION,
               },
               // Batch fencing pair (spec §8): lets the backend try

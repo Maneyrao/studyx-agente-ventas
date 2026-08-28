@@ -373,5 +373,30 @@ run('conversation pipeline V1 vertical', () => {
       call_offer_count: 1,
       awaiting_reply: 'none',
     });
+
+    const memoryTurnText = 'Mi objetivo es conseguir trabajo en tecnología';
+    const memoryTurn = await prepareTurn(memoryTurnText, move('continue_by_chat'));
+    const memoryCommit = await commitClaimedDecision({
+      ...memoryTurn.commitInput,
+      decision: {
+        ...memoryTurn.commitInput.decision,
+        memory_candidates: [{
+          type: 'study_goal' as const,
+          key: 'career_goal',
+          value: 'conseguir trabajo en tecnología',
+          source_quote: memoryTurnText,
+          confidence: 0.97,
+        }],
+      },
+    }, { store: orchestrationStore });
+    expect(memoryCommit.status).toBe('committed');
+    await expect(db!<Array<{ candidate: { key: string }; status: string }>>`
+      SELECT candidate, status
+      FROM agent_a_memory_projection_jobs
+      WHERE decision_id = ${memoryCommit.decision_id}::uuid
+    `).resolves.toEqual([{
+      candidate: expect.objectContaining({ key: 'career_goal' }),
+      status: 'pending',
+    }]);
   });
 });

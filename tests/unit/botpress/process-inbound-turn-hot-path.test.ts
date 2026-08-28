@@ -12,6 +12,7 @@ const actionSpies = vi.hoisted(() => ({
   flush: vi.fn(),
   geminiDecision: vi.fn(),
   groqDecision: vi.fn(),
+  agentABrain: vi.fn(),
   conversationInterpreter: vi.fn(),
 }));
 
@@ -51,6 +52,10 @@ vi.mock('../../../botpress-agent/src/lib/decision/groq-direct', () => ({
 }));
 vi.mock('../../../botpress-agent/src/lib/conversation/conversation-interpreter', () => ({
   generateGroqConversationMoveV1: actionSpies.conversationInterpreter,
+}));
+vi.mock('../../../botpress-agent/src/lib/conversation/agent-a-brain', () => ({
+  generateAgentATurnProposalV1: actionSpies.agentABrain,
+  DEFAULT_AGENT_A_BRAIN_MODEL: 'openai/gpt-oss-120b',
 }));
 
 import { configuration, secrets } from '../../helpers/botpress-runtime-stub';
@@ -257,6 +262,7 @@ function processingState() {
 describe('processInboundTurn hot path', () => {
   beforeEach(() => {
     configuration.automationEnabled = true;
+    configuration.decisionProvider = 'botpress_managed';
     secrets.GROQ_API_KEY = 'gsk-local-test-only';
     actionSpies.ingest.mockResolvedValue(ingestResponse());
     actionSpies.claim.mockResolvedValue(claimedResponse());
@@ -290,6 +296,18 @@ describe('processInboundTurn hot path', () => {
       model: 'openai/gpt-oss-20b',
       latency_ms: 120,
     });
+    actionSpies.agentABrain.mockResolvedValue({
+      proposal: {
+        schema_version: 1,
+        move: {
+          schema_version: 1, move: 'continue_by_chat', secondary_moves: [], vetoes: [], confidence: 0.97,
+        },
+        response: { messages: ['Perfecto, seguimos por chat.', '¿Qué aspecto querés revisar?'] },
+        proposed_action: { type: 'none' },
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+      },
+      provider: 'groq-direct', model: 'openai/gpt-oss-120b', latency_ms: 180, attempt_count: 1,
+    });
     actionSpies.plan.mockResolvedValue({
       plan: {
         schema_version: 1,
@@ -301,6 +319,7 @@ describe('processInboundTurn hot path', () => {
         should_offer_call: false,
         next_call_preference: 'chat',
         next_call_offer_status: 'declined',
+        next_call_offer_count: 1,
         next_awaiting_reply: 'none',
         selected_offering_code: 'redes-informaticas',
         selected_payment_plan: null,
@@ -310,6 +329,166 @@ describe('processInboundTurn hot path', () => {
       plan_hash: 'a'.repeat(64),
     });
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
+  });
+
+  it.each([
+    ['legacy', false, false, 0, 0, 1],
+    ['shadow', false, true, 1, 0, 1],
+    ['authoritative', true, false, 1, 1, 0],
+  ] as const)(
+    'routes the %s brain rollout without shadow mutation',
+    async (_mode, enabled, shadow, expectedBrainCalls, expectedPlannerCalls, expectedLegacyCalls) => {
+      const claimed = claimedResponse() as unknown as ClaimedTurn;
+      claimed.features = {
+        conversation_pipeline_v1_enabled: false,
+        agent_a_brain_v1_enabled: enabled,
+        agent_a_brain_v1_shadow: shadow,
+      } as never;
+      claimed.conversation_state_v1 = {
+        selected_offering_code: 'redes-informaticas', selected_payment_plan: null,
+        stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'offered',
+        call_offer_count: 1, awaiting_reply: 'call_or_chat', version: 2,
+      };
+      claimed.context.batch_messages[0].content = 'CANARY_MESSAGE_7c1b sigamos por escrito';
+      claimed.contact.name = 'CANARY_EMAIL_test@example.com';
+      claimed.catalog_index = {
+        as_of: NOW, offerings_total: 1,
+        offerings: [{ code: 'redes-informaticas', display_name: 'Redes Informáticas', academy: 'Tecnología', aliases: [] }],
+        injection_suspected_count: 0,
+      };
+      claimed.business_context = paymentBusinessContext();
+      claimed.business_context_available = true;
+      actionSpies.claim.mockResolvedValue(claimed);
+
+      const step = Object.assign(
+        async (_name: string, run: () => Promise<unknown>) => run(),
+        { sleep: vi.fn(async () => undefined) },
+      );
+      const execute = vi.fn(async () => ({
+        is: () => true,
+        output: {
+          schema_version: 4, intent: 'commercial', kind: 'reply', response: 'Seguimos.',
+          response_type: 'commercial_reply', confidence: 1, reason_code: 'LEGACY_ANSWER',
+          business_action: null, memory_candidates: [], missing_information: [],
+          next_state: 'waiting_user', retrieval_used: null,
+        },
+        iterations: [],
+      }));
+      const handler = (processInboundTurn as unknown as {
+        definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+      }).definition.handler;
+
+      await handler({
+        input: { ...workflowInput(), phone_e164: '+5491100000000' },
+        state: processingState(), step, execute, client: {},
+        signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+      });
+
+      expect(actionSpies.agentABrain).toHaveBeenCalledTimes(expectedBrainCalls);
+      expect(actionSpies.plan).toHaveBeenCalledTimes(expectedPlannerCalls);
+      expect(execute).toHaveBeenCalledTimes(expectedLegacyCalls);
+      const commitInput = actionSpies.commit.mock.calls[0]?.[0]?.input;
+      if (_mode === 'authoritative') {
+        expect(commitInput).toMatchObject({
+          conversation_pipeline_v1: {
+            move: { move: 'continue_by_chat' },
+            composition: {
+              narrative: {
+                opening: 'Perfecto, seguimos por chat.',
+                explanation: '¿Qué aspecto querés revisar?',
+                next_question: null,
+              },
+            },
+          },
+          model: { prompt_version: 'studyx-agent-a-brain-v1' },
+        });
+      } else {
+        expect(commitInput).toMatchObject({
+          conversation_pipeline_v1: null,
+          decision: { reason_code: 'LEGACY_ANSWER' },
+        });
+      }
+
+      const logs = vi.mocked(console.info).mock.calls.map(([line]) => String(line));
+      for (const line of logs) {
+        expect(line).not.toContain('CANARY_MESSAGE_7c1b');
+        expect(line).not.toContain('CANARY_EMAIL_test@example.com');
+        expect(line).not.toContain('+5491100000000');
+      }
+      if (_mode !== 'legacy') {
+        const brainLog = logs.map((line) => JSON.parse(line) as Record<string, unknown>)
+          .find((entry) => entry.event === 'studyx.turn.agent_a_brain_v1');
+        expect(brainLog).toMatchObject({
+          brain_prompt_version: 'studyx-agent-a-brain-v1',
+          brain_model: 'openai/gpt-oss-120b',
+          brain_source: 'model',
+          context_recent_turn_count: 0,
+          context_memory_count: 0,
+          used_memory_count: 0,
+          proposed_action_type: 'none',
+        });
+      }
+    },
+  );
+
+  it('fails closed contextually when the authoritative brain is unavailable', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.conversation_state_v1 = {
+      selected_offering_code: 'redes-informaticas', selected_payment_plan: null,
+      stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'offered',
+      call_offer_count: 1, awaiting_reply: 'call_or_chat', version: 2,
+    };
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 1,
+      offerings: [{ code: 'redes-informaticas', display_name: 'Redes Informáticas', academy: 'Tecnología', aliases: [] }],
+      injection_suspected_count: 0,
+    };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    claimed.sales_context.course_of_interest = 'Redes Informáticas';
+    claimed.sales_context.offering_code = 'redes-informaticas';
+    actionSpies.claim.mockResolvedValue(claimed);
+    actionSpies.agentABrain.mockRejectedValue(new StudyxHttpError('BRAIN_RATE_LIMITED', false));
+
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => {
+      throw new Error('LEGACY_MODEL_MUST_NOT_RUN_AFTER_AUTHORITATIVE_FAILURE');
+    });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute, client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.plan).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: null,
+      decision: {
+        reason_code: 'BRAIN_FALLBACK_RATE_LIMITED',
+        business_action: null,
+      },
+    });
+    const brainLog = vi.mocked(console.info).mock.calls
+      .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
+      .find((entry) => entry.event === 'studyx.turn.agent_a_brain_v1');
+    expect(brainLog).toMatchObject({
+      rollout_mode: 'authoritative',
+      brain_source: 'fallback',
+      brain_failure_reason: 'rate_limited',
+      authorized_action_type: 'none',
+    });
   });
 
   async function runCommittedOutbound(

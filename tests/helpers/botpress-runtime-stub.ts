@@ -85,6 +85,7 @@ export const configuration: {
   decisionProvider: 'botpress_managed' | 'gemini_direct' | 'groq_direct';
   geminiDecisionModel: string;
   groqDecisionModel: string;
+  agentABrainModel: string;
   [key: string]: unknown;
 } = {
   emulatorPhoneE164: '+59891234567',
@@ -97,6 +98,7 @@ export const configuration: {
   decisionProvider: 'botpress_managed',
   geminiDecisionModel: 'gemini-test',
   groqDecisionModel: 'groq-test',
+  agentABrainModel: 'openai/gpt-oss-120b',
 };
 
 /** Test doubles for agent secrets; never real values. */

@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import {
   evaluateReadiness,
+  probeAgentABrainConfiguration,
   probeEnvironment,
 } from '@/features/observability/domain/readiness';
 import { probeCommercialSnapshot, probePostgres } from '@/features/observability/adapters/probes';
 import { businessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
-import { loadBusinessWorkspaceConfig } from '@/lib/config';
+import { loadAgentABrainConfig, loadBusinessWorkspaceConfig } from '@/lib/config';
 import { withTrace } from '@/lib/observability/structured-log';
 
 /**
@@ -28,6 +29,7 @@ export async function GET() {
 
   const verdict = evaluateReadiness([
     ...probeEnvironment((name: string) => process.env[name]).filter((probe) => probe.required),
+    probeAgentABrainConfiguration(loadAgentABrainConfig()),
     await probePostgres(),
     await probeCommercialSnapshot(loadBusinessWorkspaceConfig, businessContextStore),
   ]);

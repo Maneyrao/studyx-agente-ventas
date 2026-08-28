@@ -9,7 +9,11 @@ import {
   buildBusinessContextView,
   buildCatalogIndexView,
 } from '@/features/orchestration/domain/business-context';
-import { loadBusinessWorkspaceConfig, loadConversationPipelineConfig } from '@/lib/config';
+import {
+  loadAgentABrainConfig,
+  loadBusinessWorkspaceConfig,
+  loadConversationPipelineConfig,
+} from '@/lib/config';
 import { sql } from '@/lib/db/orchestrator';
 import { timedStage } from '@/lib/observability/structured-log';
 
@@ -55,7 +59,11 @@ export async function POST(
   request: NextRequest,
   context: { params: Promise<{ turn_id: string }> },
 ) {
-  if (!loadConversationPipelineConfig().enabled) {
+  const brainConfig = loadAgentABrainConfig();
+  if (!brainConfig.ready) {
+    return NextResponse.json({ error: 'AGENT_A_BRAIN_CONFIGURATION_INVALID' }, { status: 503 });
+  }
+  if (!loadConversationPipelineConfig().enabled && !brainConfig.enabled) {
     return NextResponse.json({ error: 'CONVERSATION_PIPELINE_V1_DISABLED' }, { status: 409 });
   }
   let body: unknown;

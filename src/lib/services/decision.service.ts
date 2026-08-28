@@ -444,7 +444,14 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         }
         throw error;
       }
-      decision = parseDecisionAnyVersion(preparedPipeline.decision);
+      // The brain can propose only literal, current-batch memory candidates.
+      // The authoritative planner replaces every commercial field, but these
+      // candidates remain attached to the decision so the async projector can
+      // revalidate and persist them after commit.
+      decision = parseDecisionAnyVersion({
+        ...preparedPipeline.decision,
+        memory_candidates: validatedInput.decision.memory_candidates,
+      });
       assertDecisionBusinessActionPermitted(decision);
     }
     validatePolicy(decision, turn);

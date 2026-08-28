@@ -25,6 +25,7 @@ export default defineConfig({
       decisionProvider: z.enum(['botpress_managed', 'gemini_direct', 'groq_direct']).default('botpress_managed'),
       geminiDecisionModel: z.string().min(1).default('gemini-3.6-flash'),
       groqDecisionModel: z.string().min(1).default('openai/gpt-oss-120b'),
+      agentABrainModel: z.string().min(1).default('openai/gpt-oss-120b'),
     }),
   },
 

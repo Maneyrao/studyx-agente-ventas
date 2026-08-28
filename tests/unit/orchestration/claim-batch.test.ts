@@ -271,6 +271,31 @@ describe('claimBatch', () => {
     expect(load).toHaveBeenCalledWith('conversation-1', 'contact-1');
   });
 
+  it('projects brain rollout flags and loads conversation state in shadow mode', async () => {
+    const load = vi.fn().mockResolvedValue(null);
+    const result = await claimBatch(input, {
+      ...buildDeps(),
+      agentABrainEnabled: false,
+      agentABrainShadow: true,
+      conversationState: { load },
+    });
+
+    expect(result).toMatchObject({
+      outcome: 'claimed',
+      features: {
+        agent_a_brain_v1_enabled: false,
+        agent_a_brain_v1_shadow: true,
+      },
+      conversation_state_v1: {
+        call_preference: 'unknown',
+        call_offer_status: 'not_offered',
+        call_offer_count: 0,
+        awaiting_reply: 'none',
+      },
+    });
+    expect(load).toHaveBeenCalledOnce();
+  });
+
   it('loads facts, batch messages and call facts through one core snapshot port', async () => {
     const deps = buildDeps();
 

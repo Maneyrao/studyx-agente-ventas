@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AGENT_A_REQUIRED_ENVIRONMENT,
   loadAgentACommercialConfig,
+  loadAgentABrainConfig,
   loadConversationPipelineConfig,
 } from '@/lib/config';
 
@@ -39,5 +40,23 @@ describe('loadConversationPipelineConfig', () => {
   it('accepts a trimmed case-insensitive true value', () => {
     expect(loadConversationPipelineConfig({ CONVERSATION_PIPELINE_V1_ENABLED: ' TRUE ' }))
       .toEqual({ enabled: true });
+  });
+});
+
+describe('loadAgentABrainConfig', () => {
+  it.each([
+    [{}, { enabled: false, shadow: false, mode: 'legacy', ready: true }],
+    [{ AGENT_A_BRAIN_V1_SHADOW: 'true' }, { enabled: false, shadow: true, mode: 'shadow', ready: true }],
+    [{ AGENT_A_BRAIN_V1_ENABLED: 'true' }, { enabled: true, shadow: false, mode: 'authoritative', ready: true }],
+    [{ AGENT_A_BRAIN_V1_ENABLED: 'true', AGENT_A_BRAIN_V1_SHADOW: 'true' },
+      { enabled: true, shadow: true, mode: 'invalid', ready: false }],
+  ] as const)('maps %j to an explicit rollout mode', (input, expected) => {
+    expect(loadAgentABrainConfig(input)).toEqual(expected);
+  });
+
+  it('fails closed for non-boolean values', () => {
+    expect(loadAgentABrainConfig({
+      AGENT_A_BRAIN_V1_ENABLED: 'yes', AGENT_A_BRAIN_V1_SHADOW: '1',
+    })).toEqual({ enabled: false, shadow: false, mode: 'legacy', ready: true });
   });
 });

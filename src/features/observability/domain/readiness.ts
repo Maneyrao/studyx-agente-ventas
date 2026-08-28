@@ -1,3 +1,8 @@
+import {
+  AGENT_A_REQUIRED_ENVIRONMENT,
+  type AgentABrainConfig,
+} from '@/lib/config';
+
 /**
  * How a set of dependency probes becomes an HTTP verdict.
  *
@@ -97,4 +102,12 @@ export function probeEnvironment(
     },
   ];
 }
-import { AGENT_A_REQUIRED_ENVIRONMENT } from '@/lib/config';
+export function probeAgentABrainConfiguration(config: AgentABrainConfig): DependencyProbe {
+  return {
+    name: 'agent_a_brain_configuration',
+    required: true,
+    status: config.ready ? 'ok' : 'down',
+    detail: config.ready ? null : 'enabled_and_shadow_are_mutually_exclusive',
+    latency_ms: null,
+  };
+}

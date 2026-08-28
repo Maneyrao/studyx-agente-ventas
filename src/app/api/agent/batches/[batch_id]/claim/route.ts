@@ -21,6 +21,7 @@ import {
 import {
   config,
   loadAgentACommercialConfig,
+  loadAgentABrainConfig,
   loadConversationPipelineConfig,
 } from '@/lib/config';
 import { logger, timedStage } from '@/lib/observability/structured-log';
@@ -124,6 +125,10 @@ export async function POST(
   }
 
   try {
+    const brainConfig = loadAgentABrainConfig();
+    if (!brainConfig.ready) {
+      return NextResponse.json({ error: 'AGENT_A_BRAIN_CONFIGURATION_INVALID' }, { status: 503 });
+    }
     const conversationStateStore = new PostgresConversationStateStoreV1();
     const result = await timedStage(
       'orchestration.claim',
@@ -153,6 +158,8 @@ export async function POST(
           ),
         },
         conversationPipelineEnabled: loadConversationPipelineConfig().enabled,
+        agentABrainEnabled: brainConfig.enabled,
+        agentABrainShadow: brainConfig.shadow,
       }
     )
     );
