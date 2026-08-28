@@ -41,6 +41,7 @@ import {
 import {
   composeConversationNarrativeWithFallbackV1,
 } from '../lib/conversation/conversation-composer'
+import { buildAgentAContextV1 } from '../lib/conversation/agent-a-context'
 import {
   ComposedNarrativeV1Schema,
   type ConversationPipelineCommitV1,
@@ -478,6 +479,15 @@ export const processInboundTurn = new Workflow({
       long_term_memory_available: owned.context.long_term_memory_available,
       injection_suspected: owned.context.injection_suspected_count,
     })
+    const agentABrainContext = buildAgentAContextV1(owned)
+    if (agentABrainContext) {
+      safeLog('studyx.turn.agent_a_context_built', {
+        trace_id: input.trace_id,
+        turn_id: owned.turn_id,
+        context_recent_turn_count: agentABrainContext.turn.recent_turns.length,
+        context_memory_count: agentABrainContext.customer.memories.length,
+      })
+    }
 
     // One pure router owns capability precedence for both this workflow and
     // the local evaluator. It chooses a deterministic decision, suppression,

@@ -566,6 +566,7 @@ export const ClaimedTurnSchema = z.object({
     ]),
     call_preference: z.enum(['unknown', 'call', 'chat', 'declined']),
     call_offer_status: z.enum(['not_offered', 'offered', 'accepted', 'declined']),
+    call_offer_count: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(),
     awaiting_reply: z.enum([
       'none', 'area_choice', 'course_choice', 'call_or_chat',
       'payment_plan', 'payment_confirmation',

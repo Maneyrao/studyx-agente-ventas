@@ -547,6 +547,75 @@ describe('processInboundTurn hot path', () => {
     expect(serializedTimingLog).not.toContain('user-test');
   });
 
+  it('builds the brain context from the claimed memory snapshot without another catalog read', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null,
+      selected_payment_plan: null,
+      stage: 'exploring',
+      call_preference: 'unknown',
+      call_offer_status: 'not_offered',
+      call_offer_count: 0,
+      awaiting_reply: 'none',
+      version: 1,
+    };
+    claimed.context.selected_memories = [{
+      memory_id: 'memory-relevant',
+      type: 'study_goal',
+      key: 'career_goal',
+      value: 'busca salida laboral',
+      source_quote: 'Quiero estudiar para conseguir trabajo',
+      similarity: 0.93,
+      recorded_at: NOW,
+    }];
+    actionSpies.claim.mockResolvedValue(claimed);
+
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => ({
+      is: () => true,
+      output: {
+        schema_version: 4,
+        intent: 'commercial',
+        kind: 'reply',
+        response: 'Te ayudo a encontrar una opción.',
+        response_type: 'commercial_reply',
+        confidence: 1,
+        reason_code: 'ANSWER',
+        business_action: null,
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'waiting_user',
+        retrieval_used: null,
+      },
+      iterations: [],
+    }));
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(),
+      state: processingState(),
+      step,
+      execute,
+      client: {},
+      signal: new AbortController().signal,
+      workflow: { id: 'workflow-test' },
+    });
+
+    const contextLog = vi.mocked(console.info).mock.calls
+      .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
+      .find((entry) => entry.event === 'studyx.turn.agent_a_context_built');
+    expect(contextLog).toMatchObject({
+      context_recent_turn_count: 0,
+      context_memory_count: 1,
+    });
+    expect(actionSpies.catalog).not.toHaveBeenCalled();
+  });
+
   it('commits one deterministic opt-out acknowledgement without invoking a model', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.policy = {
