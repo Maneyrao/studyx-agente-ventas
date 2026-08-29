@@ -88,7 +88,22 @@ export function modelUnavailableFallback(
   const latest = normalizeCatalogGuidanceText(
     claimed.context.batch_messages.at(-1)?.content ?? '',
   )
-  const response = guidance?.response
+  const currentBatch = normalizeCatalogGuidanceText(
+    claimed.context.batch_messages.map((message) => message.content).join(' '),
+  )
+  const businessName = claimed.business_context?.workspace.display_name?.trim() || 'StudyX'
+  const socialResponse = /^hola+$/u.test(latest)
+    ? `¡Hola! 😊 Soy la asesora virtual de ${businessName}. ¿Qué te gustaría aprender?`
+    : /\b(?:quien sos|quienes son|con quien hablo|de donde me hablas)\b/u.test(latest)
+      ? `Soy la asesora virtual de ${businessName}. Estoy para orientarte y ayudarte a elegir una formación. ¿Qué te gustaría aprender?`
+      : /\b(?:como estas|todo bien|como va)\b/u.test(latest)
+        ? `¡Bien, gracias! 😊 ¿Qué te gustaría aprender o consultar?`
+        : null
+  const genericInformationRequest = /^(?:(?:quiero|necesito|busco|dame|pasame)\s+)?(?:toda\s+la\s+)?(?:informacion|info|detalles?)$/u.test(currentBatch)
+  const response = socialResponse
+    ?? (genericInformationRequest
+      ? 'Claro. Contame qué te gustaría aprender o qué área te interesa y te ayudo a encontrar una opción.'
+      : guidance?.response)
     ?? (/\b(?:prefiero|quiero|sigamos|seguir|continuar)\b.{0,32}\b(?:chat|texto|sin llamada|no quiero llamada)\b/u.test(latest)
       ? 'Seguimos por chat, sin problema. ¿Con qué parte de la compra querés avanzar?'
       : /\b(?:cuanto\s+(?:sale|cuesta)|precio|costo|valor)\b/u.test(latest)

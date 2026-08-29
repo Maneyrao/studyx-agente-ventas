@@ -232,6 +232,39 @@ describe('applyDecisionPolicy — provider parity', () => {
       expect(fallback.response?.match(/\?/gu) ?? []).toHaveLength(1);
     });
 
+    it.each([
+      ['Holaa', /hola/iu],
+      ['¿Quién sos?', /asesora virtual de StudyX/iu],
+      ['¿De dónde me hablás?', /StudyX/iu],
+      ['¿Cómo estás?', /bien|gracias/iu],
+    ])('answers the current social message %j without reviving a stale course', (message, expected) => {
+      const fallback = modelUnavailableFallback(claimedTurn({
+        batch_message_content: message,
+        course_of_interest: 'Especialista en Ventas',
+        offering_code: 'course_2',
+        offering_names: catalogNames,
+        offering_areas: catalogAreas,
+      }));
+
+      expect(fallback.response).toMatch(expected);
+      expect(fallback.response).not.toContain('Especialista en Ventas');
+      expect(fallback.business_action).toBeNull();
+    });
+
+    it('does not revive a stale course for a generic information request', () => {
+      const fallback = modelUnavailableFallback(claimedTurn({
+        batch_message_content: 'Quiero información',
+        course_of_interest: 'Especialista en Ventas',
+        offering_code: 'course_2',
+        offering_names: catalogNames,
+        offering_areas: catalogAreas,
+      }));
+
+      expect(fallback.response).not.toContain('Especialista en Ventas');
+      expect(fallback.response).toMatch(/qué.*(?:aprender|estudiar)|área/iu);
+      expect(fallback.business_action).toBeNull();
+    });
+
     it('preserves a non-catalog objection instead of asking what datum to confirm', () => {
       const fallback = modelUnavailableFallback(claimedTurn({
         batch_message_content: 'Es caro, no sé si me conviene',
