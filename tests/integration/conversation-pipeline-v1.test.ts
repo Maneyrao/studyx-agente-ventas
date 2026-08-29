@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PostgresConversationStateStoreV1 } from '@/features/conversation/adapters/postgres-conversation-state-store';
+import type { ParsedConversationPipelineCommitV1 } from '@/features/conversation/adapters/conversation-pipeline-schema';
 import { authoritativelyPlanConversationTurnV1 } from '@/features/conversation/application/plan-conversation-turn';
 import type { ConversationMoveV1 } from '@/features/conversation/domain/conversation-pipeline';
 import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
@@ -194,7 +195,11 @@ run('conversation pipeline V1 vertical', () => {
     return result;
   }
 
-  async function prepareTurn(text: string, interpretedMove: ConversationMoveV1) {
+  async function prepareTurn(
+    text: string,
+    interpretedMove: ConversationMoveV1,
+    composition?: ParsedConversationPipelineCommitV1['composition'],
+  ) {
     const input = envelope(text);
     const ingested = await processInboundMessage(input);
     await db!`
@@ -231,7 +236,7 @@ run('conversation pipeline V1 vertical', () => {
           vetoes: [...interpretedMove.vetoes],
         },
         plan_hash: planned.plan_hash,
-        composition: valueFreeComposition(planned.fact_refs.map((fact) => fact.id)),
+        composition: composition ?? valueFreeComposition(planned.fact_refs.map((fact) => fact.id)),
       },
       decision: placeholderDecision(),
       model: {
@@ -245,8 +250,12 @@ run('conversation pipeline V1 vertical', () => {
     return { claimed, planned, commitInput };
   }
 
-  async function commitTurn(text: string, interpretedMove: ConversationMoveV1) {
-    const prepared = await prepareTurn(text, interpretedMove);
+  async function commitTurn(
+    text: string,
+    interpretedMove: ConversationMoveV1,
+    composition?: ParsedConversationPipelineCommitV1['composition'],
+  ) {
+    const prepared = await prepareTurn(text, interpretedMove, composition);
     const committed = await commitClaimedDecision(prepared.commitInput, { store: orchestrationStore });
     expect(committed.status).toBe('committed');
     expect(committed.batch_completion).toBe('completed');
@@ -263,6 +272,26 @@ run('conversation pipeline V1 vertical', () => {
     const informed = await commitTurn(
       'Quiero conocer la formación de redes',
       move('ask_course_information', { course_reference: 'Redes Informáticas' }),
+      {
+        schema_version: 1,
+        narrative: {
+          opening: 'Por lo que buscás, Redes Informáticas puede encajarte.',
+          explanation: 'Te acompaño a evaluar si es la opción indicada para vos.',
+          next_question: '¿Querés que te cuente cómo seguir?',
+        },
+        used_fact_ids: [
+          'offering:redes-informaticas:name:v1',
+          'offering:redes-informaticas:description:v1',
+          'offering:redes-informaticas:duration:v1',
+          'offering:redes-informaticas:modality:v1',
+        ],
+      },
+    );
+    expect(informed.committed.outbound?.content).toContain(
+      'Por lo que buscás, Redes Informáticas puede encajarte.',
+    );
+    expect(informed.committed.outbound?.content).not.toContain(
+      'No tengo ese dato confirmado en el catálogo',
     );
     expect(informed.committed.outbound?.content).toContain('Redes Informáticas');
     expect(informed.committed.outbound?.content).toContain('24 clases');

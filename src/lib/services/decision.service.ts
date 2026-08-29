@@ -100,7 +100,7 @@ export interface CommitDecisionInput {
   authorized_offering_code?: string | null;
   /** Claim-time deterministic plan selection; re-derived from the batch. */
   authorized_payment_plan?: 'monthly_12' | 'monthly_6' | 'one_time' | null;
-  /** Meaning and value-free composition; backend replans before using either. */
+  /** Meaning and natural composition; backend replans and validates cited facts before using either. */
   conversation_pipeline_v1?: ParsedConversationPipelineCommitV1 | null;
   decision: AnyDecision;
   model: {

@@ -13,6 +13,7 @@ const actionSpies = vi.hoisted(() => ({
   geminiDecision: vi.fn(),
   groqDecision: vi.fn(),
   agentABrain: vi.fn(),
+  agentABrainGemini: vi.fn(),
   conversationInterpreter: vi.fn(),
 }));
 
@@ -55,8 +56,10 @@ vi.mock('../../../botpress-agent/src/lib/conversation/conversation-interpreter',
 }));
 vi.mock('../../../botpress-agent/src/lib/conversation/agent-a-brain', () => ({
   generateAgentATurnProposalV1: actionSpies.agentABrain,
+  generateGeminiAgentATurnProposalV1: actionSpies.agentABrainGemini,
   parseAgentATurnProposalV1: (raw: unknown) => raw,
   DEFAULT_AGENT_A_BRAIN_MODEL: 'openai/gpt-oss-120b',
+  DEFAULT_AGENT_A_BRAIN_GEMINI_MODEL: 'gemini-2.5-flash',
   buildSafeAgentABrainCompositionV1: ({ proposal, planned_fact_ids }: {
     proposal: { response: { messages: string[] } };
     planned_fact_ids: string[];
@@ -277,6 +280,7 @@ describe('processInboundTurn hot path', () => {
     configuration.automationEnabled = true;
     configuration.decisionProvider = 'botpress_managed';
     secrets.GROQ_API_KEY = 'gsk-local-test-only';
+    delete secrets.GEMINI_API_KEY;
     actionSpies.ingest.mockResolvedValue(ingestResponse());
     actionSpies.claim.mockResolvedValue(claimedResponse());
     actionSpies.catalog.mockResolvedValue({
@@ -575,6 +579,82 @@ describe('processInboundTurn hot path', () => {
       },
       model: { provider: 'botpress' },
     });
+  });
+
+  it('keeps the natural brain active through direct Gemini before any canned fallback', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null, selected_payment_plan: null,
+      stage: 'exploring', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 1,
+    };
+    claimed.context.batch_messages[0].content = 'Quiero algo vinculado con la salud';
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 1,
+      offerings: [{ code: 'entrenamiento-funcional', display_name: 'Entrenamiento Funcional', academy: 'Salud y Bienestar', aliases: [] }],
+      injection_suspected_count: 0,
+    };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+    actionSpies.agentABrain.mockRejectedValue(
+      Object.assign(new Error('provider failure'), { code: 'BRAIN_RATE_LIMITED' }),
+    );
+    actionSpies.agentABrainGemini.mockResolvedValue({
+      proposal: {
+        schema_version: 1,
+        move: {
+          schema_version: 1, move: 'select_area', secondary_moves: [], vetoes: [],
+          area_reference: 'Salud y Bienestar', confidence: 0.96,
+        },
+        response: {
+          messages: ['Perfecto, busquemos una formación que encaje con lo que querés lograr.'],
+        },
+        proposed_action: { type: 'none' },
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+      },
+      provider: 'google-ai-direct', model: 'gemini-2.5-flash', latency_ms: 180, attempt_count: 1,
+    });
+    secrets.GEMINI_API_KEY = 'test-gemini-key';
+
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => {
+      throw new Error('MANAGED_MODEL_MUST_NOT_RUN_WHEN_GEMINI_DIRECT_SUCCEEDS');
+    });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute, client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    const failoverFailure = vi.mocked(console.info).mock.calls
+      .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
+      .find((entry) => entry.event === 'studyx.turn.agent_a_brain_provider_failover_failed');
+    expect(failoverFailure).toBeUndefined();
+    expect(actionSpies.agentABrainGemini).toHaveBeenCalledTimes(1);
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: {
+        move: expect.objectContaining({ move: 'select_area' }),
+        composition: {
+          narrative: expect.objectContaining({
+            opening: expect.stringContaining('encaje con lo que querés lograr'),
+          }),
+        },
+      },
+      model: { provider: 'google-ai-direct', model: 'gemini-2.5-flash' },
+    });
+    expect(execute).not.toHaveBeenCalled();
   });
 
   async function runCommittedOutbound(

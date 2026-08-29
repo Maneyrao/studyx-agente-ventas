@@ -47,12 +47,12 @@ function renderFact(
   }
 }
 
-function includesCommercialValue(narrative: readonly string[], facts: readonly CanonicalFactV1[]): boolean {
+function mentionedFactIds(narrative: readonly string[], facts: readonly CanonicalFactV1[]): Set<string> {
   const normalizedNarrative = narrative.join('\n').toLocaleLowerCase('es');
-  return facts.some((fact) => {
+  return new Set(facts.filter((fact) => {
     const value = fact.value.trim().toLocaleLowerCase('es');
     return value.length > 0 && normalizedNarrative.includes(value);
-  });
+  }).map((fact) => fact.id));
 }
 
 export function assembleCanonicalConversationResponseV1(input: {
@@ -73,8 +73,10 @@ export function assembleCanonicalConversationResponseV1(input: {
     selectedFacts.push(fact);
   }
   const narrative = narrativeText(input.composition);
-  if (includesCommercialValue(narrative, input.facts)) {
-    throw new CanonicalResponseAssemblyError('COMPOSER_COPIED_CANONICAL_FACT');
+  const mentionedIds = mentionedFactIds(narrative, input.facts);
+  const selectedIds = new Set(input.composition.used_fact_ids);
+  if ([...mentionedIds].some((id) => !selectedIds.has(id))) {
+    throw new CanonicalResponseAssemblyError('COMPOSER_UNCITED_CANONICAL_FACT');
   }
   if (narrative.some((part) => part.includes('https://') || part.includes('http://'))) {
     throw new CanonicalResponseAssemblyError('COMPOSER_EMITTED_LINK');
@@ -94,7 +96,9 @@ export function assembleCanonicalConversationResponseV1(input: {
   const offeringNames = new Map(selectedFacts
     .filter((fact) => fact.kind === 'offering_name' && fact.offering_code)
     .map((fact) => [fact.offering_code!, fact.value]));
-  const blocks = selectedFacts.map((fact) => renderFact(fact, offeringNames));
+  const blocks = selectedFacts
+    .filter((fact) => !mentionedIds.has(fact.id))
+    .map((fact) => renderFact(fact, offeringNames));
   const callOffer = input.plan.should_offer_call
     ? ['¿Preferís que sigamos por chat o querés solicitar una llamada?']
     : [];

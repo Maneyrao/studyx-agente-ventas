@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentAContextV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
+import * as agentABrainModule from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
 import {
   AGENT_A_BRAIN_DEADLINE_MS,
   AgentABrainError,
@@ -114,6 +115,26 @@ describe('Agent A Brain V1', () => {
     expect(parsed.move.vetoes).toEqual(['call']);
   });
 
+  it('preserves natural sales prose when every commercial value cites an authorized fact', () => {
+    const natural = 'Podés estudiar Redes Informáticas con nosotros. Te acompaño a ver si encaja con lo que buscás.';
+    const composition = buildSafeAgentABrainCompositionV1({
+      proposal: parseAgentATurnProposalV1(proposal({
+        response: { messages: [natural, '¿Querés que te cuente cómo se cursa?'] },
+        used_fact_ids: ['offering:redes-informaticas:name:v1'],
+      }), context()),
+      context: context(),
+      response_goal: 'explain_selected_course',
+      planned_fact_ids: ['offering:redes-informaticas:name:v1'],
+    });
+
+    expect(composition.narrative).toEqual({
+      opening: natural,
+      explanation: '¿Querés que te cuente cómo se cursa?',
+      next_question: null,
+    });
+    expect(composition.used_fact_ids).toEqual(['offering:redes-informaticas:name:v1']);
+  });
+
   it('keeps narrative value-free and delegates all planned facts to canonical rendering', () => {
     const composition = buildSafeAgentABrainCompositionV1({
       proposal: parseAgentATurnProposalV1(proposal({
@@ -212,6 +233,41 @@ describe('Agent A Brain V1', () => {
     expect(body.response_format).toMatchObject({
       type: 'json_schema', json_schema: { name: 'studyx_agent_a_turn_proposal_v1', strict: true },
     });
+  });
+
+  it('can execute the same brain contract through direct Gemini when Groq is unavailable', async () => {
+    const generateWithGemini = (agentABrainModule as unknown as {
+      generateGeminiAgentATurnProposalV1?: (input: {
+        context: AgentAContextV1;
+        apiKey: string;
+        signal: AbortSignal;
+        model?: string;
+      }) => Promise<{
+        proposal: ReturnType<typeof parseAgentATurnProposalV1>;
+        provider: string;
+        model: string;
+      }>;
+    }).generateGeminiAgentATurnProposalV1;
+    expect(generateWithGemini).toBeTypeOf('function');
+
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      candidates: [{ content: { parts: [{ text: JSON.stringify(proposal()) }] } }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await generateWithGemini!({
+      context: context(), apiKey: 'gemini-test-key',
+      signal: new AbortController().signal, model: 'gemini-2.5-flash',
+    });
+
+    expect(result.provider).toBe('google-ai-direct');
+    expect(result.model).toBe('gemini-2.5-flash');
+    expect(result.proposal.response.messages).toEqual(proposal().response.messages);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toContain('/models/gemini-2.5-flash:generateContent');
+    const body = JSON.parse(String(init?.body));
+    expect(body.systemInstruction.parts[0].text).toContain('canonical_sales_behavior');
+    expect(body.generationConfig.responseMimeType).toBe('application/json');
   });
 
   it('classifies a 429 without retrying when Retry-After exceeds the remaining deadline', async () => {

@@ -42,7 +42,32 @@ describe('canonical response assembler V1', () => {
     expect(result.used_fact_ids).toEqual(composition.used_fact_ids);
   });
 
-  it('rejects unknown IDs and narrative that copies a canonical commercial value', () => {
+  it('keeps cited canonical facts inside natural prose without duplicating rigid blocks', () => {
+    const naturalComposition: ComposedNarrativeV1 = {
+      schema_version: 1,
+      narrative: {
+        opening: 'Redes Informáticas tiene 24 clases y se cursa online.',
+        explanation: 'Podemos ir viendo juntos si coincide con lo que buscás.',
+        next_question: '¿Querés que te cuente qué vas a aprender?',
+      },
+      used_fact_ids: refs.map((fact) => fact.id),
+    };
+
+    const result = assembleCanonicalConversationResponseV1({
+      plan: plan(), fact_refs: refs, facts, composition: naturalComposition,
+    });
+
+    expect(result.content).toBe([
+      naturalComposition.narrative.opening,
+      naturalComposition.narrative.explanation,
+      naturalComposition.narrative.next_question,
+    ].join('\n\n'));
+    expect(result.content.match(/Redes Informáticas/gu)).toHaveLength(1);
+    expect(result.content.match(/24 clases/gu)).toHaveLength(1);
+    expect(result.content.match(/online/gu)).toHaveLength(1);
+  });
+
+  it('rejects unknown IDs and commercial values that were not cited', () => {
     expect(() => assembleCanonicalConversationResponseV1({
       plan: plan(), fact_refs: refs, facts,
       composition: { ...composition, used_fact_ids: ['unknown'] },
@@ -51,9 +76,10 @@ describe('canonical response assembler V1', () => {
       plan: plan(), fact_refs: refs, facts,
       composition: {
         ...composition,
+        used_fact_ids: [facts[0].id, facts[2].id],
         narrative: { ...composition.narrative, explanation: 'Dura 24 clases.' },
       },
-    })).toThrow('COMPOSER_COPIED_CANONICAL_FACT');
+    })).toThrow('COMPOSER_UNCITED_CANONICAL_FACT');
   });
 
   it('requires and renders one canonical link for an authorized transaction', () => {
