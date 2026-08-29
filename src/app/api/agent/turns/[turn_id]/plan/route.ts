@@ -29,6 +29,10 @@ interface TurnIdentityRow {
 }
 
 async function loadTurnIdentity(turnId: string, workspaceSlug: string): Promise<TurnIdentityRow | null> {
+  // This deployment is pinned to one configured workspace. New inbound contacts
+  // are intentionally not workspace members until a later authorized business
+  // action, so tenant selection must come from server configuration—not from
+  // request or model data—and cannot require a workspace_contacts row here.
   const rows = await sql<TurnIdentityRow[]>`
     SELECT workspace.id AS workspace_id,
            message.conversation_id,
@@ -37,11 +41,8 @@ async function loadTurnIdentity(turnId: string, workspaceSlug: string): Promise<
     JOIN conversations AS conversation
       ON conversation.id = message.conversation_id
      AND conversation.contact_id = message.contact_id
-    JOIN workspace_contacts AS workspace_contact
-      ON workspace_contact.contact_id = message.contact_id
     JOIN workspaces AS workspace
-      ON workspace.id = workspace_contact.workspace_id
-     AND workspace.slug = ${workspaceSlug}
+      ON workspace.slug = ${workspaceSlug}
      AND workspace.status = 'active'
     WHERE message.id = ${turnId}::uuid
       AND message.direction = 'inbound'

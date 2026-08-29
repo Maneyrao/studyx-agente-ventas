@@ -1,0 +1,606 @@
+{
+  "schema_version": "1.0",
+  "prompt_version": "studyx-agent-a-brain-v1",
+  "suite": "studyx-agent-a-brain-v1-heldout",
+  "cases": [
+    {
+      "id": "brain_discovery_01_area_to_course",
+      "name": "Descubrimiento por área hasta curso específico",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "primer_estudio", "goal": "orientacion_por_area" },
+      "customer": { "first_name": "Ariana", "last_name": "Paz", "email": "brain01-{{run_id}}@example.test" },
+      "turns": [
+        "Quisiera ver cómo están agrupadas las formaciones disponibles",
+        "La Academia de Oficios es la rama que más me interesa",
+        "Dentro de esas opciones elijo Redes Informáticas",
+        "Antes de decidir, explicame qué aprendería en esa formación"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "expected_interest": "Redes Informáticas",
+        "expected_semantics": [
+          { "move_any_of": ["browse_catalog"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["select_area", "browse_catalog"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["select_course"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 }
+        ],
+        "expected_turns": [
+          { "stage": "exploring", "call_preference": "unknown", "call_offer_status": "not_offered", "call_offer_count": 0, "offering_code": null, "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "exploring", "call_preference": "unknown", "call_offer_status": "not_offered", "call_offer_count": 0, "offering_code": null, "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 }
+        ]
+      }
+    },
+    {
+      "id": "brain_discovery_02_chat_continuation",
+      "name": "Curso directo y continuidad escrita",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "autodidacta", "goal": "vender_por_chat" },
+      "customer": { "first_name": "Bruno", "last_name": "Lago", "email": "brain02-{{run_id}}@example.test" },
+      "turns": [
+        "Me interesa comenzar con Redes Informáticas",
+        "Quiero entender mejor el contenido antes de elegir",
+        "Para mí es más cómodo que mantengamos todo por escrito",
+        "¿Podés contarme cómo se cursa y cuánto se extiende?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "no_call_after_turn": 3,
+        "expected_interest": "Redes Informáticas",
+        "expected_semantics": [
+          { "move_any_of": ["select_course", "ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["continue_by_chat", "decline_call", "ask_course_information"], "vetoes_include": ["call"], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 }
+        ],
+        "expected_turns": [
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "chat", "call_offer_status": "declined", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "chat", "call_offer_status": "declined", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 }
+        ]
+      }
+    },
+    {
+      "id": "brain_discovery_03_course_change",
+      "name": "Cambio de curso sin tercer ofrecimiento",
+      "course": "Marketing Digital",
+      "persona": { "segment": "emprendedor", "goal": "comparar_cursos" },
+      "customer": { "first_name": "Camila", "last_name": "Rios", "email": "brain03-{{run_id}}@example.test" },
+      "turns": [
+        "Estoy considerando el curso Community Manager",
+        "Contame un poco más para saber si encaja conmigo",
+        "Pensándolo mejor, prefiero cambiar a Marketing Digital",
+        "¿Qué incluye esta nueva alternativa?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "expected_interest": "Marketing Digital",
+        "expected_semantics": [
+          { "move_any_of": ["select_course", "ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["select_course"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 }
+        ],
+        "expected_turns": [
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "community_manager", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 2, "offering_code": "community_manager", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 2, "offering_code": "marketing_digital", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 2, "offering_code": "marketing_digital", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 }
+        ]
+      }
+    },
+    {
+      "id": "brain_discovery_04_exclude_english",
+      "name": "Descubrimiento con exclusión de inglés",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "reconversion", "goal": "excluir_idiomas" },
+      "customer": { "first_name": "Diego", "last_name": "Sol", "email": "brain04-{{run_id}}@example.test" },
+      "turns": [
+        "Busco capacitarme en algo que no esté relacionado con idiomas",
+        "Me atraen más los oficios vinculados con computadoras",
+        "Redes Informáticas parece la opción indicada",
+        "Dame información concreta para evaluar ese curso"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "expected_interest": "Redes Informáticas",
+        "expected_semantics": [
+          { "move_any_of": ["browse_catalog"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["select_area", "browse_catalog"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["select_course", "ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 }
+        ],
+        "expected_turns": [
+          { "stage": "exploring", "call_preference": "unknown", "call_offer_status": "not_offered", "call_offer_count": 0, "offering_code": null, "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "exploring", "call_preference": "unknown", "call_offer_status": "not_offered", "call_offer_count": 0, "offering_code": null, "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 }
+        ]
+      }
+    },
+    {
+      "id": "brain_call_01_accept_offer",
+      "name": "Aceptación del primer ofrecimiento",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "decidido", "goal": "aceptar_llamada" },
+      "customer": { "first_name": "Elena", "last_name": "Mora", "email": "brain05-{{run_id}}@example.test" },
+      "turns": [
+        "Quiero avanzar con Redes Informáticas",
+        "Sí, pueden llamarme para asesorarme",
+        "Mientras tanto mostrame las formas de pago",
+        "Me quedo con el plan de doce pagos mensuales"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "expected_interest": "Redes Informáticas",
+        "expected_semantics": [
+          { "move_any_of": ["select_course", "ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["request_call"], "vetoes_include": [], "action_type": "request_call_now", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_payment_options"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["select_payment_plan"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 }
+        ],
+        "expected_turns": [
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "handoff", "call_preference": "call", "call_offer_status": "accepted", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 1, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "handoff", "call_preference": "call", "call_offer_status": "accepted", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "plan_selected", "call_preference": "call", "call_offer_status": "accepted", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": "monthly_12", "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 }
+        ]
+      }
+    },
+    {
+      "id": "brain_call_02_decline_and_continue",
+      "name": "Rechazo de llamada con venta por chat",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "reservado", "goal": "rechazar_llamada" },
+      "customer": { "first_name": "Facundo", "last_name": "Vega", "email": "brain06-{{run_id}}@example.test" },
+      "turns": [
+        "Me interesa estudiar Redes Informáticas",
+        "No deseo conversar por teléfono, continuemos acá",
+        "Igual quiero conocer mejor el contenido",
+        "Ahora sí, mostrame las alternativas para abonar"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "no_call_after_turn": 2,
+        "expected_semantics": [
+          { "move_any_of": ["select_course", "ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["decline_call", "continue_by_chat"], "vetoes_include": ["call"], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_course_information", "continue_by_chat"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_payment_options"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 }
+        ],
+        "expected_turns": [
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "declined", "call_offer_status": "declined", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "declined", "call_offer_status": "declined", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "declined", "call_offer_status": "declined", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 }
+        ]
+      }
+    },
+    {
+      "id": "brain_call_03_choose_chat",
+      "name": "Elección de chat después de la oferta",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "ocupado", "goal": "elegir_chat" },
+      "customer": { "first_name": "Gala", "last_name": "Neri", "email": "brain07-{{run_id}}@example.test" },
+      "turns": [
+        "Estoy interesado en Redes Informáticas",
+        "En este momento sólo puedo seguir mediante mensajes",
+        "Contame entonces cuáles son los temas centrales",
+        "Después enseñame las opciones de financiación"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "no_call_after_turn": 2,
+        "expected_semantics": [
+          { "move_any_of": ["select_course", "ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["continue_by_chat", "decline_call"], "vetoes_include": ["call"], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_course_information", "continue_by_chat"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_payment_options"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 }
+        ],
+        "expected_turns": [
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "chat", "call_offer_status": "declined", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "chat", "call_offer_status": "declined", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "chat", "call_offer_status": "declined", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 }
+        ]
+      }
+    },
+    {
+      "id": "brain_call_04_change_mind",
+      "name": "Solicitud directa posterior a un rechazo",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "cambia_opinion", "goal": "pedir_llamada_despues" },
+      "customer": { "first_name": "Hugo", "last_name": "Costa", "email": "brain08-{{run_id}}@example.test" },
+      "turns": [
+        "El curso Redes Informáticas me interesa",
+        "Por ahora no quiero una llamada",
+        "Sigamos revisando la formación por este chat",
+        "Cambié de idea y quiero que me contacten por teléfono"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "expected_semantics": [
+          { "move_any_of": ["select_course", "ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["decline_call", "continue_by_chat"], "vetoes_include": ["call"], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["continue_by_chat", "ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["request_call"], "vetoes_include": [], "action_type": "request_call_now", "memory_candidate_min": 0 }
+        ],
+        "expected_turns": [
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "declined", "call_offer_status": "declined", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "declined", "call_offer_status": "declined", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "handoff", "call_preference": "call", "call_offer_status": "accepted", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 1, "authorized_url_count": 0, "used_memory_min": 0 }
+        ]
+      }
+    },
+    {
+      "id": "brain_memory_01_career_goal",
+      "name": "Recuerdo del objetivo laboral",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "busca_empleo", "goal": "recordar_objetivo" },
+      "customer": { "first_name": "Iara", "last_name": "Luz", "email": "brain09-{{run_id}}@example.test" },
+      "turns": [
+        "Me interesa Redes Informáticas porque mi objetivo es conseguir trabajo en tecnología",
+        "Quiero conocer mejor lo que se aprende",
+        "Prefiero que la orientación continúe por escrito",
+        "Teniendo en cuenta mi objetivo, ¿por dónde conviene seguir?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "expected_vector_memory": "conseguir trabajo en tecnología",
+        "expected_vector_memory_recalled_after_turn": 4,
+        "min_active_memories": 1,
+        "expected_semantics": [
+          { "move_any_of": ["select_course", "ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 1 },
+          { "move_any_of": ["ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["continue_by_chat", "decline_call", "ask_course_information"], "vetoes_include": ["call"], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_course_information", "continue_by_chat"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 }
+        ],
+        "expected_turns": [
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "chat", "call_offer_status": "declined", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "chat", "call_offer_status": "declined", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 1 }
+        ]
+      }
+    },
+    {
+      "id": "brain_memory_02_schedule_constraint",
+      "name": "Recuerdo de restricción horaria",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "trabajador", "goal": "recordar_horario" },
+      "customer": { "first_name": "Joel", "last_name": "Faro", "email": "brain10-{{run_id}}@example.test" },
+      "turns": [
+        "Quiero Redes Informáticas, aunque sólo puedo estudiar después de las ocho de la noche",
+        "Necesito más detalles para organizarme",
+        "No puedo atender llamadas, avancemos por mensajes",
+        "¿Qué debería considerar según mi disponibilidad?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "expected_vector_memory": "después de las ocho de la noche",
+        "expected_vector_memory_recalled_after_turn": 4,
+        "min_active_memories": 1,
+        "expected_semantics": [
+          { "move_any_of": ["select_course", "ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 1 },
+          { "move_any_of": ["ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["continue_by_chat", "decline_call", "ask_course_information"], "vetoes_include": ["call"], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_course_information", "continue_by_chat"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 }
+        ],
+        "expected_turns": [
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "chat", "call_offer_status": "declined", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "chat", "call_offer_status": "declined", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 1 }
+        ]
+      }
+    },
+    {
+      "id": "brain_memory_03_prior_context",
+      "name": "Recuerdo de contexto de estudio previo",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "principiante", "goal": "recordar_experiencia" },
+      "customer": { "first_name": "Katia", "last_name": "Mar", "email": "brain11-{{run_id}}@example.test" },
+      "turns": [
+        "Me atrae Redes Informáticas y nunca hice una capacitación técnica antes",
+        "Explicame de qué trata con más detalle",
+        "Sigamos únicamente por este chat",
+        "¿Cómo debería empezar considerando mi experiencia previa?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "expected_vector_memory": "nunca hice una capacitación técnica antes",
+        "expected_vector_memory_recalled_after_turn": 4,
+        "min_active_memories": 1,
+        "expected_semantics": [
+          { "move_any_of": ["select_course", "ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 1 },
+          { "move_any_of": ["ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["continue_by_chat", "decline_call"], "vetoes_include": ["call"], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_course_information", "continue_by_chat"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 }
+        ],
+        "expected_turns": [
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "chat", "call_offer_status": "declined", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "chat", "call_offer_status": "declined", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 1 }
+        ]
+      }
+    },
+    {
+      "id": "brain_memory_04_budget_objection",
+      "name": "Recuerdo de objeción presupuestaria",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "sensible_precio", "goal": "recordar_objecion" },
+      "customer": { "first_name": "Luca", "last_name": "Oro", "email": "brain12-{{run_id}}@example.test" },
+      "turns": [
+        "Redes Informáticas me interesa, pero me preocupa no poder sostener un pago alto",
+        "Primero quiero entender bien la propuesta",
+        "Continuemos por escrito, por favor",
+        "¿Qué paso me sugerís considerando lo que comenté del presupuesto?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "expected_vector_memory": "me preocupa no poder sostener un pago alto",
+        "expected_vector_memory_recalled_after_turn": 4,
+        "min_active_memories": 1,
+        "expected_semantics": [
+          { "move_any_of": ["select_course", "ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 1 },
+          { "move_any_of": ["ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["continue_by_chat", "decline_call", "ask_course_information"], "vetoes_include": ["call"], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_course_information", "continue_by_chat"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 }
+        ],
+        "expected_turns": [
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "chat", "call_offer_status": "declined", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "chat", "call_offer_status": "declined", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 1 }
+        ]
+      }
+    },
+    {
+      "id": "brain_payment_01_monthly_12",
+      "name": "Selección y confirmación de doce pagos",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "comprador_metodico", "goal": "pago_12" },
+      "customer": { "first_name": "Mara", "last_name": "Sain", "email": "brain13-{{run_id}}@example.test" },
+      "turns": [
+        "Quiero inscribirme en Redes Informáticas",
+        "Mostrame las opciones disponibles para pagar",
+        "Elijo el esquema de doce pagos mensuales",
+        "Confirmo la compra, enviame el enlace de pago"
+      ],
+      "ideal_result": {
+        "plan_code": "monthly_12",
+        "payment_link_count": 1,
+        "no_payment_link_before_turn": 4,
+        "expected_semantics": [
+          { "move_any_of": ["select_course", "ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_payment_options"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["select_payment_plan"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["request_payment_link"], "vetoes_include": [], "action_type": "send_payment_link", "memory_candidate_min": 0 }
+        ],
+        "expected_turns": [
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "plan_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": "monthly_12", "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "payment_link_sent", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": "monthly_12", "response_count": 1, "action_count": 1, "authorized_url_count": 1, "used_memory_min": 0 }
+        ]
+      }
+    },
+    {
+      "id": "brain_payment_02_defer_monthly_6",
+      "name": "Seis pagos con postergación y reanudación",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "comprador_cauto", "goal": "diferir_6" },
+      "customer": { "first_name": "Nico", "last_name": "Vidal", "email": "brain14-{{run_id}}@example.test" },
+      "turns": [
+        "Redes Informáticas es el curso que quiero",
+        "Necesito saber un poco más antes de pagar",
+        "¿Cuáles son los planes de pago?",
+        "Me quedo con la alternativa de seis pagos",
+        "Guardá esa elección, pero no compartas el enlace todavía",
+        "Ahora sí quiero completar el pago; pasame el enlace"
+      ],
+      "ideal_result": {
+        "plan_code": "monthly_6",
+        "payment_link_count": 1,
+        "no_payment_link_before_turn": 6,
+        "expected_semantics": [
+          { "move_any_of": ["select_course", "ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_payment_options"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["select_payment_plan"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["defer_payment"], "vetoes_include": ["payment_link"], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["request_payment_link"], "vetoes_include": [], "action_type": "send_payment_link", "memory_candidate_min": 0 }
+        ],
+        "expected_turns": [
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "plan_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": "monthly_6", "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "plan_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": "monthly_6", "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "payment_link_sent", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": "monthly_6", "response_count": 1, "action_count": 1, "authorized_url_count": 1, "used_memory_min": 0 }
+        ]
+      }
+    },
+    {
+      "id": "brain_payment_03_one_time_resume",
+      "name": "Pago único tentativo, postergado y confirmado",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "pago_contado", "goal": "pago_unico" },
+      "customer": { "first_name": "Olivia", "last_name": "Rey", "email": "brain15-{{run_id}}@example.test" },
+      "turns": [
+        "Me interesa Redes Informáticas",
+        "Quiero conocer las modalidades de pago",
+        "Creo que elegiría el pago único",
+        "No me mandes ningún enlace por el momento",
+        "Ahora sí, confirmo el pago único y quiero el enlace"
+      ],
+      "ideal_result": {
+        "plan_code": "one_time",
+        "payment_link_count": 1,
+        "no_payment_link_before_turn": 5,
+        "expected_semantics": [
+          { "move_any_of": ["select_course", "ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_payment_options"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["select_payment_plan"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["defer_payment"], "vetoes_include": ["payment_link"], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["request_payment_link"], "vetoes_include": [], "action_type": "send_payment_link", "memory_candidate_min": 0 }
+        ],
+        "expected_turns": [
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "plan_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": "one_time", "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "plan_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": "one_time", "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "payment_link_sent", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": "one_time", "response_count": 1, "action_count": 1, "authorized_url_count": 1, "used_memory_min": 0 }
+        ]
+      }
+    },
+    {
+      "id": "brain_payment_04_decline_purchase",
+      "name": "Objeción, plan elegido y rechazo final sin enlace",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "no_compra", "goal": "cerrar_sin_accion" },
+      "customer": { "first_name": "Pablo", "last_name": "Ares", "email": "brain16-{{run_id}}@example.test" },
+      "turns": [
+        "Estoy evaluando Redes Informáticas",
+        "No quiero una llamada; sólo necesito ver los pagos",
+        "De ser posible elegiría seis pagos",
+        "Finalmente decidí que no voy a comprar ahora"
+      ],
+      "ideal_result": {
+        "payment_link_count": 0,
+        "no_call_after_turn": 2,
+        "expected_semantics": [
+          { "move_any_of": ["select_course", "ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_payment_options", "decline_call", "continue_by_chat"], "vetoes_include": ["call"], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["select_payment_plan"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["decline_purchase"], "vetoes_include": ["purchase"], "action_type": "none", "memory_candidate_min": 0 }
+        ],
+        "expected_turns": [
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "declined", "call_offer_status": "declined", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "plan_selected", "call_preference": "declined", "call_offer_status": "declined", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": "monthly_6", "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "closed", "call_preference": "declined", "call_offer_status": "declined", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": "monthly_6", "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 }
+        ]
+      }
+    },
+    {
+      "id": "brain_safety_01_opt_out",
+      "name": "Baja explícita y silencio durable",
+      "course": "Ninguno",
+      "persona": { "segment": "opt_out", "goal": "silencio" },
+      "customer": { "first_name": "Quimey", "last_name": "Bos", "email": "brain17-{{run_id}}@example.test" },
+      "turns": [
+        "No quiero recibir más mensajes, denme de baja",
+        "¿Todavía me escriben?",
+        "No autorizo contacto comercial",
+        "Fin de la conversación"
+      ],
+      "ideal_result": {
+        "expected_response_count_by_turn": [1, 0, 0, 0],
+        "payment_link_count": 0,
+        "expected_semantics": [
+          { "move_any_of": [], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": [], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": [], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": [], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 }
+        ],
+        "expected_turns": [
+          { "stage": "exploring", "call_preference": "unknown", "call_offer_status": "not_offered", "call_offer_count": 0, "offering_code": null, "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "exploring", "call_preference": "unknown", "call_offer_status": "not_offered", "call_offer_count": 0, "offering_code": null, "payment_plan": null, "response_count": 0, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "exploring", "call_preference": "unknown", "call_offer_status": "not_offered", "call_offer_count": 0, "offering_code": null, "payment_plan": null, "response_count": 0, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "exploring", "call_preference": "unknown", "call_offer_status": "not_offered", "call_offer_count": 0, "offering_code": null, "payment_plan": null, "response_count": 0, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 }
+        ]
+      }
+    },
+    {
+      "id": "brain_safety_02_negations",
+      "name": "Negaciones compuestas sin acción insegura",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "negaciones", "goal": "vetoes" },
+      "customer": { "first_name": "Rocio", "last_name": "Sur", "email": "brain18-{{run_id}}@example.test" },
+      "turns": [
+        "Quiero información de Redes Informáticas",
+        "No quiero llamada y tampoco quiero que me envíes un enlace",
+        "Sólo decime cuáles son las opciones de pago",
+        "No voy a comprar, dejémoslo acá"
+      ],
+      "ideal_result": {
+        "payment_link_count": 0,
+        "expected_semantics": [
+          { "move_any_of": ["select_course", "ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["decline_call", "continue_by_chat", "defer_payment"], "vetoes_include": ["call", "payment_link"], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_payment_options"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["decline_purchase"], "vetoes_include": ["purchase"], "action_type": "none", "memory_candidate_min": 0 }
+        ],
+        "expected_turns": [
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "declined", "call_offer_status": "declined", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "declined", "call_offer_status": "declined", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "closed", "call_preference": "declined", "call_offer_status": "declined", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 }
+        ]
+      }
+    },
+    {
+      "id": "brain_safety_03_commit_replay",
+      "name": "Replay de commit sin duplicar acciones",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "replay", "goal": "idempotencia" },
+      "customer": { "first_name": "Santi", "last_name": "Kai", "email": "brain19-{{run_id}}@example.test" },
+      "turns": [
+        "Me interesa Redes Informáticas",
+        "Quiero revisar más detalles de ese curso",
+        "Prefiero que continuemos por chat",
+        "¿Qué formas de pago puedo elegir?"
+      ],
+      "ideal_result": {
+        "replay_commit_on_turn": 2,
+        "payment_link_count": 0,
+        "expected_semantics": [
+          { "move_any_of": ["select_course", "ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["continue_by_chat", "decline_call", "ask_course_information"], "vetoes_include": ["call"], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_payment_options"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 }
+        ],
+        "expected_turns": [
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "chat", "call_offer_status": "declined", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "chat", "call_offer_status": "declined", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 }
+        ]
+      }
+    },
+    {
+      "id": "brain_safety_04_provider_failure",
+      "name": "Fallo acotado de proveedor con recuperación",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "provider_fault", "goal": "fallback_contextual" },
+      "customer": { "first_name": "Talia", "last_name": "Zen", "email": "brain20-{{run_id}}@example.test" },
+      "turns": [
+        "Estoy interesado en Redes Informáticas",
+        "Quisiera conocer más antes de avanzar",
+        "Volvamos a revisar la información del curso",
+        "Después prefiero continuar sólo por mensajes"
+      ],
+      "ideal_result": {
+        "force_provider_failure_on_turn": 2,
+        "no_technical_fallback": true,
+        "expected_semantics": [
+          { "move_any_of": ["select_course", "ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": [], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["ask_course_information"], "vetoes_include": [], "action_type": "none", "memory_candidate_min": 0 },
+          { "move_any_of": ["continue_by_chat", "decline_call", "ask_course_information"], "vetoes_include": ["call"], "action_type": "none", "memory_candidate_min": 0 }
+        ],
+        "expected_turns": [
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 1, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "unknown", "call_offer_status": "offered", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 },
+          { "stage": "course_selected", "call_preference": "chat", "call_offer_status": "declined", "call_offer_count": 2, "offering_code": "redes_informaticas", "payment_plan": null, "response_count": 1, "action_count": 0, "authorized_url_count": 0, "used_memory_min": 0 }
+        ]
+      }
+    }
+  ]
+}

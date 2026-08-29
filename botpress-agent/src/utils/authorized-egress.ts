@@ -120,6 +120,13 @@ function extractProtectedFacts(content: string): PortableProtectedFact[] {
     .map(({ fact }) => fact)
 }
 
+/** Shared pre-composition check: narrative may carry tone and questions, but
+ * every commercial claim and URL must be rendered later from backend facts. */
+export function isValueFreeNarrativePortable(content: string): boolean {
+  return extractUrlCandidates(content).length === 0
+    && extractProtectedFacts(content).length === 0
+}
+
 async function sha256Hex(value: string): Promise<string | null> {
   const subtle = globalThis.crypto?.subtle
   if (!subtle) return null

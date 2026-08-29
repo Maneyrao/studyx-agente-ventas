@@ -56,6 +56,18 @@ vi.mock('../../../botpress-agent/src/lib/conversation/conversation-interpreter',
 vi.mock('../../../botpress-agent/src/lib/conversation/agent-a-brain', () => ({
   generateAgentATurnProposalV1: actionSpies.agentABrain,
   DEFAULT_AGENT_A_BRAIN_MODEL: 'openai/gpt-oss-120b',
+  buildSafeAgentABrainCompositionV1: ({ proposal, planned_fact_ids }: {
+    proposal: { response: { messages: string[] } };
+    planned_fact_ids: string[];
+  }) => ({
+    schema_version: 1,
+    narrative: {
+      opening: proposal.response.messages[0],
+      explanation: proposal.response.messages[1] ?? null,
+      next_question: proposal.response.messages[2] ?? null,
+    },
+    used_fact_ids: planned_fact_ids,
+  }),
 }));
 
 import { configuration, secrets } from '../../helpers/botpress-runtime-stub';
@@ -453,7 +465,9 @@ describe('processInboundTurn hot path', () => {
     claimed.sales_context.course_of_interest = 'Redes Informáticas';
     claimed.sales_context.offering_code = 'redes-informaticas';
     actionSpies.claim.mockResolvedValue(claimed);
-    actionSpies.agentABrain.mockRejectedValue(new StudyxHttpError('BRAIN_RATE_LIMITED', false));
+    actionSpies.agentABrain.mockRejectedValue(
+      Object.assign(new Error('provider failure'), { code: 'BRAIN_RATE_LIMITED' }),
+    );
 
     const step = Object.assign(
       async (_name: string, run: () => Promise<unknown>) => run(),

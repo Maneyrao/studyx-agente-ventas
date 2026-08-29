@@ -37,7 +37,7 @@ function context(memoryValue = 'busca salida laboral'): AgentAContextV1 {
         code: 'redes-informaticas', display_name: 'Redes Informáticas', area_code: 'tecnologia',
         facts: [{ id: 'offering:redes-informaticas:name:v1', kind: 'offering_name', value: 'Redes Informáticas' }],
       },
-      areas: [{ code: 'tecnologia', display_name: 'Tecnología' }],
+      areas: [{ code: 'tecnologia', fact_id: 'area:tecnologia:name:v1', display_name: 'Tecnología' }],
       candidate_offerings: [],
       payment_plans: [{ code: 'monthly_12', label: '12 pagos mensuales de USD 30' }],
     },
@@ -60,6 +60,8 @@ describe('Agent A Brain V1 prompt', () => {
     expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v1');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('Backend policy and capabilities are authoritative');
+    expect(instructions).toContain('Resolve the current message against commercial_state.awaiting_reply');
+    expect(instructions).toContain('Do not phrase a call offer in response.messages');
     expect(instructions).toContain('<authorized_context>');
     expect(instructions).toContain('"memory-1"');
   });

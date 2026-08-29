@@ -185,6 +185,10 @@ describe('buildAgentAContextV1', () => {
     expect(context!.commercial_state.call_offer_status).toBe('offered');
     expect(context!.commercial_state.call_offer_count).toBe(1);
     expect(context!.catalog.candidate_offerings).toHaveLength(0);
+    expect(context!.catalog.areas[0]).toMatchObject({
+      code: 'tecnologia',
+      fact_id: 'area:tecnologia:name:v1',
+    });
     expect(context!.catalog.selected_offering?.facts.map((fact) => fact.kind)).toEqual([
       'offering_name', 'offering_description', 'offering_duration', 'offering_modality',
       'payment_plan_label', 'payment_plan_price',
@@ -204,6 +208,9 @@ describe('buildAgentAContextV1', () => {
     const context = buildAgentAContextV1(claimed);
     expect(context?.catalog.selected_offering).toBeNull();
     expect(context?.catalog.candidate_offerings).toHaveLength(3);
+    expect(context?.catalog.candidate_offerings[0]).toMatchObject({
+      fact_id: 'offering:redes-informaticas:name:v1',
+    });
 
     claimed.conversation_state_v1 = null;
     expect(buildAgentAContextV1(claimed)).toBeNull();

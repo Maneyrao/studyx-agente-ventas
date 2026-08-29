@@ -1,8 +1,38 @@
 # Mapa del orquestador StudyX
 
-Estado real del código al 2026-08-11 (fin de la fase 8), no el estado deseado.
+Estado real del código al 2026-08-28, no el estado deseado.
 Cada casilla dice si está implementada, verificada y con qué prueba. Cuando esta
 página y el código no coincidan, gana el código y esta página es el bug.
+
+## Agente A Brain V1 y frontera futura del Agente B
+
+```mermaid
+flowchart LR
+  CHANNEL[Telegram / WhatsApp] --> INGEST[ingest + batching]
+  INGEST --> CLAIM[claim + contexto acotado]
+  CLAIM --> BRAIN[Agent A Brain V1<br/>una propuesta estructurada]
+  BRAIN --> PLAN[POST /turns/:id/plan<br/>planner puro y facts canónicos]
+  PLAN --> COMPOSE[narrativa sin facts<br/>+ IDs del planner]
+  COMPOSE --> COMMIT[commit + egress + outbound]
+  COMMIT --> MEMORY[memory projection job<br/>post-commit]
+  COMMIT -->|request_call_now| VOICE[VoiceProvider port]
+  VOICE -.adapter futuro.-> RETELL[Agente B / Retell]
+```
+
+- `AGENT_A_BRAIN_V1_ENABLED=true` selecciona el cerebro de una llamada como
+  camino autoritativo. `AGENT_A_BRAIN_V1_SHADOW=true` lo observa sin mutar; los
+  dos flags no pueden estar activos a la vez y ambos quedan apagados por defecto.
+- El modelo propone significado, tono y memorias candidatas. El backend vuelve
+  a resolver curso, plan, facts, estado, llamada y link; el modelo no posee esas
+  capacidades.
+- La narrativa se valida como libre de URLs y hechos comerciales antes del
+  commit. Nombres, descripción, duración, modalidad, precio y link se renderizan
+  desde el snapshot canónico solicitado por el planner.
+- El cerebro nunca invoca Retell. Una llamada autorizada termina en
+  `request_call_now`; `VoiceProvider.placeCall/findCallByInternalId/cancelCall`
+  sigue siendo la única frontera pública que debe implementar el futuro Agente B.
+- Las memorias se extraen y vectorizan mediante jobs posteriores al commit. Una
+  caída de embedding no aumenta la latencia ni invalida el outbound ya confirmado.
 
 ## Fronteras
 

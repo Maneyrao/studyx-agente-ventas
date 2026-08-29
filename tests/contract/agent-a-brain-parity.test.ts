@@ -42,7 +42,7 @@ const validContext = {
         { id: 'offering:redes-informaticas:name', kind: 'offering_name', value: 'Redes Informáticas' },
       ],
     },
-    areas: [{ code: 'tecnologia', display_name: 'Tecnología' }],
+    areas: [{ code: 'tecnologia', fact_id: 'area:tecnologia:name:v1', display_name: 'Tecnología' }],
     candidate_offerings: [],
     payment_plans: [{ code: 'monthly_12', label: '12 pagos mensuales de USD 30' }],
   },

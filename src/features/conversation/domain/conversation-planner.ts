@@ -199,11 +199,18 @@ function planSingle(
     const offeringCode = resolveOffering(move.course_reference, business);
     if (!offeringCode) return unchangedPlan(state, 'guide_course_choice', ['course_reference']);
     const changed = offeringCode !== state.selected_offering_code;
+    const offerCall = input.proactive_call_offer_allowed !== false
+      && shouldOfferCall({ ...state, selected_offering_code: offeringCode }, vetoes);
     return {
       ...unchangedPlan(state, 'explain_selected_course'),
       next_stage: 'course_selected',
       canonical_fact_requests: factsForOffering(offeringCode),
-      next_awaiting_reply: 'none',
+      should_offer_call: offerCall,
+      next_call_offer_status: offerCall ? 'offered' : state.call_offer_status,
+      next_call_offer_count: offerCall
+        ? (Math.min(2, state.call_offer_count + 1) as 1 | 2)
+        : state.call_offer_count,
+      next_awaiting_reply: offerCall ? 'call_or_chat' : 'none',
       selected_offering_code: offeringCode,
       selected_payment_plan: changed ? null : state.selected_payment_plan,
     };
@@ -235,7 +242,7 @@ function planSingle(
         state.selected_offering_code ? [] : ['course_selection'],
       ),
       canonical_fact_requests: state.selected_offering_code
-        ? factsForOffering(state.selected_offering_code).slice(0, 2)
+        ? factsForOffering(state.selected_offering_code)
         : [],
       next_call_preference: acceptedChoice ? 'chat' : state.call_preference,
       next_call_offer_status: acceptedChoice ? 'declined' : state.call_offer_status,
@@ -337,19 +344,37 @@ export function planConversationTurn(input: PlanConversationTurnInputV1): TurnPl
   if (incompatible(moves, vetoes)) {
     return unchangedPlan(input.sales_context, 'clarify_current_step');
   }
+  if (
+    input.sales_context.awaiting_reply === 'call_or_chat'
+    && vetoes.has('call')
+    && !moves.includes('request_call')
+    && !moves.includes('decline_call')
+    && !moves.includes('continue_by_chat')
+  ) {
+    moves.push('continue_by_chat');
+  }
 
   let state = input.sales_context;
   let result = unchangedPlan(state);
+  let offeredCallThisTurn = false;
   const accumulatedRequests: CanonicalFactRequestV1[] = [];
   for (const kind of moves) {
-    result = planSingle(kind, input, state, vetoes);
+    result = planSingle(kind, {
+      ...input,
+      proactive_call_offer_allowed:
+        input.proactive_call_offer_allowed !== false && !offeredCallThisTurn,
+    }, state, vetoes);
+    if (result.next_call_offer_count > state.call_offer_count) offeredCallThisTurn = true;
     accumulatedRequests.push(...result.canonical_fact_requests);
     state = asState(result, state);
   }
   return {
     ...result,
     canonical_fact_requests: uniqueRequests(accumulatedRequests),
-    should_offer_call: vetoes.has('call') ? false : result.should_offer_call,
+    should_offer_call: !vetoes.has('call')
+      && offeredCallThisTurn
+      && result.next_call_preference === 'unknown'
+      && result.next_call_offer_status === 'offered',
     allowed_business_action:
       (vetoes.has('call') && result.allowed_business_action.type === 'request_call_now')
       || ((vetoes.has('payment_link') || vetoes.has('purchase'))

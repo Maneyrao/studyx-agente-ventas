@@ -62,10 +62,12 @@ export const AgentAContextV1Schema = z.object({
     }).strict().nullable(),
     areas: z.array(z.object({
       code: IdentifierSchema,
+      fact_id: IdentifierSchema,
       display_name: z.string().trim().min(1).max(240),
     }).strict()).max(24),
     candidate_offerings: z.array(z.object({
       code: IdentifierSchema,
+      fact_id: IdentifierSchema,
       display_name: z.string().trim().min(1).max(240),
       area_code: IdentifierSchema.nullable(),
     }).strict()).max(3),

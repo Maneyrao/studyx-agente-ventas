@@ -3,6 +3,7 @@ import type { AgentAContextV1 } from '../../../botpress-agent/src/schemas/agent-
 import {
   AGENT_A_BRAIN_DEADLINE_MS,
   AgentABrainError,
+  buildSafeAgentABrainCompositionV1,
   generateAgentATurnProposalV1,
   parseAgentATurnProposalV1,
 } from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
@@ -27,7 +28,7 @@ function context(): AgentAContextV1 {
         code: 'redes-informaticas', display_name: 'Redes Informáticas', area_code: 'tecnologia',
         facts: [{ id: 'offering:redes-informaticas:name:v1', kind: 'offering_name', value: 'Redes Informáticas' }],
       },
-      areas: [{ code: 'tecnologia', display_name: 'Tecnología' }],
+      areas: [{ code: 'tecnologia', fact_id: 'area:tecnologia:name:v1', display_name: 'Tecnología' }],
       candidate_offerings: [],
       payment_plans: [{ code: 'monthly_12', label: '12 pagos mensuales de USD 30' }],
     },
@@ -75,6 +76,115 @@ describe('Agent A Brain V1', () => {
     expect(parseAgentATurnProposalV1(proposal(), context()).response.messages).toHaveLength(2);
   });
 
+  it('drops semantically inapplicable optional references emitted by the structured provider', () => {
+    const parsed = parseAgentATurnProposalV1(proposal({
+      move: {
+        schema_version: 1,
+        move: 'select_course',
+        secondary_moves: [],
+        vetoes: [],
+        course_reference: 'Redes Informáticas',
+        area_reference: 'Tecnología',
+        payment_plan: null,
+        confidence: 0.95,
+      },
+    }), context());
+
+    expect(parsed.move).toMatchObject({
+      move: 'select_course',
+      course_reference: 'Redes Informáticas',
+    });
+    expect(parsed.move).not.toHaveProperty('area_reference');
+    expect(parsed.move).not.toHaveProperty('payment_plan');
+  });
+
+  it('removes duplicate secondary moves and vetoes without adding authority', () => {
+    const parsed = parseAgentATurnProposalV1(proposal({
+      move: {
+        schema_version: 1,
+        move: 'ask_course_information',
+        secondary_moves: ['ask_course_information', 'continue_by_chat', 'continue_by_chat'],
+        vetoes: ['call', 'call'],
+        course_reference: 'Redes Informáticas',
+        confidence: 0.95,
+      },
+    }), context());
+
+    expect(parsed.move.secondary_moves).toEqual(['continue_by_chat']);
+    expect(parsed.move.vetoes).toEqual(['call']);
+  });
+
+  it('keeps narrative value-free and delegates all planned facts to canonical rendering', () => {
+    const composition = buildSafeAgentABrainCompositionV1({
+      proposal: parseAgentATurnProposalV1(proposal({
+        response: {
+          messages: [
+            'Podemos estudiar de forma virtual.',
+            'Podemos revisar juntos lo que más te importa.',
+          ],
+        },
+      }), context()),
+      context: context(),
+      response_goal: 'explain_selected_course',
+      planned_fact_ids: [
+        'offering:redes-informaticas:name:v1',
+        'offering:redes-informaticas:description:v1',
+      ],
+    });
+
+    expect(composition.narrative).toEqual({
+      opening: 'Podemos revisar juntos lo que más te importa.',
+      explanation: null,
+      next_question: null,
+    });
+    expect(composition.used_fact_ids).toEqual([
+      'offering:redes-informaticas:name:v1',
+      'offering:redes-informaticas:description:v1',
+    ]);
+  });
+
+  it('uses contextual value-free copy when every model message is unsafe', () => {
+    const unsafeProposal = parseAgentATurnProposalV1(proposal({
+      response: { messages: ['Redes Informáticas dura 10 meses.'] },
+    }), context());
+
+    const firstOffer = buildSafeAgentABrainCompositionV1({
+      proposal: unsafeProposal,
+      context: context(),
+      response_goal: 'explain_selected_course',
+      planned_fact_ids: [],
+    });
+    const secondOffer = buildSafeAgentABrainCompositionV1({
+      proposal: unsafeProposal,
+      context: {
+        ...context(),
+        commercial_state: { ...context().commercial_state, call_offer_count: 1 },
+      },
+      response_goal: 'explain_selected_course',
+      planned_fact_ids: [],
+    });
+    const chatContinuation = buildSafeAgentABrainCompositionV1({
+      proposal: unsafeProposal,
+      context: {
+        ...context(),
+        commercial_state: {
+          ...context().commercial_state,
+          call_preference: 'chat',
+          call_offer_status: 'declined',
+          call_offer_count: 2,
+        },
+      },
+      response_goal: 'continue_course_advice',
+      planned_fact_ids: [],
+    });
+
+    expect(firstOffer.narrative.opening).not.toBe(secondOffer.narrative.opening);
+    expect(secondOffer.narrative.opening).not.toBe(chatContinuation.narrative.opening);
+    for (const composition of [firstOffer, secondOffer, chatContinuation]) {
+      expect(composition.narrative.opening).not.toMatch(/Redes|10 meses|https?:\/\//iu);
+    }
+  });
+
   it('rejects a model URL and evidence IDs outside the supplied context', () => {
     expect(() => parseAgentATurnProposalV1(proposal({
       response: { messages: ['Pagá en https://buy.stripe.com/model-link'] },
@@ -97,7 +207,8 @@ describe('Agent A Brain V1', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const body = JSON.parse(String(fetchMock.mock.calls[0]![1]?.body));
     expect(body.temperature).toBe(0.2);
-    expect(body.max_completion_tokens).toBe(1_500);
+    expect(body.reasoning_effort).toBe('low');
+    expect(body.max_completion_tokens).toBe(800);
     expect(body.response_format).toMatchObject({
       type: 'json_schema', json_schema: { name: 'studyx_agent_a_turn_proposal_v1', strict: true },
     });
@@ -111,7 +222,10 @@ describe('Agent A Brain V1', () => {
 
     await expect(generateAgentATurnProposalV1({
       context: context(), apiKey: 'test-key', signal: new AbortController().signal,
-    })).rejects.toEqual(expect.objectContaining<Partial<AgentABrainError>>({ code: 'BRAIN_RATE_LIMITED' }));
+    })).rejects.toEqual(expect.objectContaining<Partial<AgentABrainError>>({
+      code: 'BRAIN_RATE_LIMITED',
+      retry_after_ms: 10_000,
+    }));
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 

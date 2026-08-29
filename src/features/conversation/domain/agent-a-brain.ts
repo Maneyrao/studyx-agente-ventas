@@ -64,9 +64,14 @@ export interface AgentAContextV1 {
         readonly value: string;
       }>;
     } | null;
-    readonly areas: ReadonlyArray<{ readonly code: string; readonly display_name: string }>;
+    readonly areas: ReadonlyArray<{
+      readonly code: string;
+      readonly fact_id: string;
+      readonly display_name: string;
+    }>;
     readonly candidate_offerings: ReadonlyArray<{
       readonly code: string;
+      readonly fact_id: string;
       readonly display_name: string;
       readonly area_code: string | null;
     }>;

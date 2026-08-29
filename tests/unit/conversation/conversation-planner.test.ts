@@ -63,6 +63,33 @@ describe('planConversationTurn', () => {
       next_call_offer_status: 'declined',
       next_awaiting_reply: 'none',
       response_goal: 'acknowledge_chat_preference',
+      canonical_fact_requests: [
+        { kind: 'offering_name', offering_code: 'redes-informaticas' },
+        { kind: 'offering_description', offering_code: 'redes-informaticas' },
+        { kind: 'offering_duration', offering_code: 'redes-informaticas' },
+        { kind: 'offering_modality', offering_code: 'redes-informaticas' },
+      ],
+      should_offer_call: false,
+      allowed_business_action: { type: 'none' },
+    });
+  });
+
+  it('treats a structured call veto during a pending call choice as continuing by chat', () => {
+    const result = plan(move('ask_course_information', {
+      vetoes: ['call'],
+      course_reference: 'Redes Informáticas',
+    }), state({
+      selected_offering_code: 'redes-informaticas',
+      stage: 'course_selected',
+      call_offer_status: 'offered',
+      call_offer_count: 2,
+      awaiting_reply: 'call_or_chat',
+    }));
+
+    expect(result).toMatchObject({
+      next_call_preference: 'chat',
+      next_call_offer_status: 'declined',
+      next_awaiting_reply: 'none',
       should_offer_call: false,
       allowed_business_action: { type: 'none' },
     });
@@ -156,6 +183,38 @@ describe('planConversationTurn', () => {
     });
   });
 
+  it('uses the first call offer when a specific course is selected', () => {
+    const selected = plan(
+      move('select_course', { course_reference: 'Redes Informáticas' }),
+      state(),
+    );
+
+    expect(selected).toMatchObject({
+      selected_offering_code: 'redes-informaticas',
+      should_offer_call: true,
+      next_call_offer_status: 'offered',
+      next_call_offer_count: 1,
+      next_awaiting_reply: 'call_or_chat',
+    });
+  });
+
+  it('never spends both call offers inside one compound turn', () => {
+    const selected = plan(
+      move('select_course', {
+        course_reference: 'Redes Informáticas',
+        secondary_moves: ['ask_course_information'],
+      }),
+      state(),
+    );
+
+    expect(selected).toMatchObject({
+      should_offer_call: true,
+      next_call_offer_count: 1,
+      next_call_offer_status: 'offered',
+      next_awaiting_reply: 'call_or_chat',
+    });
+  });
+
   it('resolves a canonical course and clears a plan selected for another course', () => {
     const result = plan(move('select_course', { course_reference: 'Redes Informáticas' }), state({
       selected_offering_code: 'barista',
@@ -168,7 +227,8 @@ describe('planConversationTurn', () => {
       selected_offering_code: 'redes-informaticas',
       selected_payment_plan: null,
       next_stage: 'course_selected',
-      next_awaiting_reply: 'none',
+      next_awaiting_reply: 'call_or_chat',
+      next_call_offer_count: 1,
       allowed_business_action: { type: 'none' },
     });
   });

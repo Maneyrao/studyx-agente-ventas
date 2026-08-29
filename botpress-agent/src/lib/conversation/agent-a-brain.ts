@@ -3,14 +3,25 @@ import {
   type AgentAContextV1,
   type AgentATurnProposalV1,
 } from '../../schemas/agent-a-brain';
+import {
+  ComposedNarrativeV1Schema,
+  type ComposedNarrativeV1,
+  type TurnPlanV1,
+} from '../../schemas/conversation-pipeline';
 import { buildAgentABrainInstructionsV1 } from '../../prompts/agent-a-brain-v1';
+import { isValueFreeNarrativePortable } from '../../utils/authorized-egress';
 
 const GROQ_CHAT_COMPLETIONS_URL = 'https://api.groq.com/openai/v1/chat/completions';
 export const DEFAULT_AGENT_A_BRAIN_MODEL = 'openai/gpt-oss-120b';
 export const AGENT_A_BRAIN_DEADLINE_MS = 4_500;
 
 export class AgentABrainError extends Error {
-  constructor(public readonly code: string, public readonly status: number | null = null) {
+  constructor(
+    public readonly code: string,
+    public readonly status: number | null = null,
+    public readonly detail: string | null = null,
+    public readonly retry_after_ms: number | null = null,
+  ) {
     super(code);
     this.name = 'AgentABrainError';
   }
@@ -34,6 +45,12 @@ const MEMORY_TYPES = [
   'objection', 'timeline', 'contact_preference',
 ] as const;
 const PAYMENT_PLANS = ['monthly_12', 'monthly_6', 'one_time'] as const;
+const COURSE_REFERENCE_MOVES = new Set([
+  'select_course', 'ask_course_information', 'request_call', 'ask_payment_options',
+  'select_payment_plan', 'defer_payment', 'request_payment_link', 'decline_purchase',
+]);
+const AREA_REFERENCE_MOVES = new Set(['browse_catalog', 'select_area']);
+const PAYMENT_PLAN_MOVES = new Set(['select_payment_plan', 'defer_payment', 'request_payment_link']);
 
 function closedObject(properties: Record<string, unknown>) {
   return { type: 'object', properties, required: Object.keys(properties), additionalProperties: false };
@@ -96,8 +113,9 @@ function requestBody(context: AgentAContextV1, model: string): unknown {
       { role: 'user', content: 'Return only the single AgentATurnProposalV1 JSON object.' },
     ],
     temperature: 0.2,
+    reasoning_effort: 'low',
     stream: false,
-    max_completion_tokens: 1_500,
+    max_completion_tokens: 800,
     response_format: {
       type: 'json_schema',
       json_schema: {
@@ -130,21 +148,48 @@ function normalizeStrictProposal(value: unknown): unknown {
   for (const key of ['course_reference', 'area_reference', 'payment_plan']) {
     if (normalizedMove[key] === null || normalizedMove[key] === '') delete normalizedMove[key];
   }
+  if (Array.isArray(normalizedMove.secondary_moves)) {
+    normalizedMove.secondary_moves = [...new Set(normalizedMove.secondary_moves)]
+      .filter((kind) => kind !== normalizedMove.move);
+  }
+  if (Array.isArray(normalizedMove.vetoes)) {
+    normalizedMove.vetoes = [...new Set(normalizedMove.vetoes)];
+  }
+  const moveKinds = new Set([
+    normalizedMove.move,
+    ...(Array.isArray(normalizedMove.secondary_moves) ? normalizedMove.secondary_moves : []),
+  ].filter((item): item is string => typeof item === 'string'));
+  if (![...moveKinds].some((kind) => COURSE_REFERENCE_MOVES.has(kind))) {
+    delete normalizedMove.course_reference;
+  }
+  if (![...moveKinds].some((kind) => AREA_REFERENCE_MOVES.has(kind))) {
+    delete normalizedMove.area_reference;
+  }
+  if (![...moveKinds].some((kind) => PAYMENT_PLAN_MOVES.has(kind))) {
+    delete normalizedMove.payment_plan;
+  }
   return { ...proposal, move: normalizedMove };
 }
 
 function authorizedFactIds(context: AgentAContextV1): Set<string> {
   const ids = new Set(context.catalog.selected_offering?.facts.map((fact) => fact.id) ?? []);
-  for (const area of context.catalog.areas) ids.add(`area:${area.code}:name:v1`);
+  for (const area of context.catalog.areas) ids.add(area.fact_id);
   for (const offering of context.catalog.candidate_offerings) {
-    ids.add(`offering:${offering.code}:name:v1`);
+    ids.add(offering.fact_id);
   }
   return ids;
 }
 
 export function parseAgentATurnProposalV1(raw: unknown, context: AgentAContextV1): AgentATurnProposalV1 {
   const parsed = AgentATurnProposalV1Schema.safeParse(normalizeStrictProposal(raw));
-  if (!parsed.success) throw new AgentABrainError('BRAIN_INVALID_SCHEMA');
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    throw new AgentABrainError(
+      'BRAIN_INVALID_SCHEMA',
+      null,
+      first ? `${first.path.join('.') || 'root'}:${first.message}`.slice(0, 240) : null,
+    );
+  }
   const facts = authorizedFactIds(context);
   if (parsed.data.used_fact_ids.some((id) => !facts.has(id))) {
     throw new AgentABrainError('BRAIN_UNKNOWN_FACT_ID');
@@ -154,6 +199,93 @@ export function parseAgentATurnProposalV1(raw: unknown, context: AgentAContextV1
     throw new AgentABrainError('BRAIN_UNKNOWN_MEMORY_ID');
   }
   return parsed.data;
+}
+
+function normalizedCommercialValues(context: AgentAContextV1): string[] {
+  return [
+    ...(context.catalog.selected_offering?.facts.map((fact) => fact.value) ?? []),
+    ...context.catalog.areas.map((area) => area.display_name),
+    ...context.catalog.candidate_offerings.map((offering) => offering.display_name),
+    ...context.catalog.payment_plans.map((plan) => plan.label),
+  ]
+    .map((value) => value.normalize('NFKC').trim().toLocaleLowerCase('es'))
+    .filter((value) => value.length >= 3);
+}
+
+/**
+ * The model supplies meaning and tone; the planner supplies every commercial
+ * fact that may be rendered. Any prose that copied a supplied commercial
+ * value is dropped intact instead of being rewritten or trusted.
+ */
+export function buildSafeAgentABrainCompositionV1(input: {
+  readonly proposal: AgentATurnProposalV1;
+  readonly context: AgentAContextV1;
+  readonly response_goal: TurnPlanV1['response_goal'];
+  readonly planned_fact_ids: readonly string[];
+}): ComposedNarrativeV1 {
+  const commercialValues = normalizedCommercialValues(input.context);
+  const safeMessages = input.proposal.response.messages.filter((message) => {
+    const normalized = message.normalize('NFKC').toLocaleLowerCase('es');
+    return isValueFreeNarrativePortable(message)
+      && !commercialValues.some((value) => normalized.includes(value));
+  });
+  const messages = safeMessages.length > 0
+    ? safeMessages
+    : [safeContextualOpening(input.response_goal, input.context.commercial_state.call_offer_count)];
+
+  return ComposedNarrativeV1Schema.parse({
+    schema_version: 1,
+    narrative: {
+      opening: messages[0],
+      explanation: messages[1] ?? null,
+      next_question: messages[2] ?? null,
+    },
+    used_fact_ids: [...new Set(input.planned_fact_ids)],
+  });
+}
+
+function safeContextualOpening(
+  responseGoal: TurnPlanV1['response_goal'],
+  callOfferCount: 0 | 1 | 2,
+): string {
+  switch (responseGoal) {
+    case 'greet_and_discover':
+      return 'Contame qué te gustaría aprender y te ayudo a encontrar una opción.';
+    case 'guide_area_choice':
+      return 'Contame qué área te interesa y te ayudo a ordenar las opciones.';
+    case 'guide_course_choice':
+      return 'Elegí una de las opciones disponibles y seguimos desde ahí.';
+    case 'explain_selected_course':
+      return [
+        'Te comparto la información confirmada para que conozcas esta opción.',
+        'Amplío la información confirmada para que puedas evaluarla.',
+        'Seguimos con los datos confirmados de la formación elegida.',
+      ][callOfferCount]!;
+    case 'continue_course_advice':
+      return 'Seguimos por chat con la información que necesitás.';
+    case 'offer_call_or_chat':
+      return 'Podés elegir cómo preferís continuar.';
+    case 'acknowledge_chat_preference':
+      return 'Perfecto, seguimos por chat.';
+    case 'acknowledge_call_decline':
+      return 'Entendido, continuamos por este medio.';
+    case 'confirm_call_request':
+      return 'Perfecto, queda registrada tu solicitud.';
+    case 'present_payment_options':
+      return 'Estas son las opciones disponibles para que elijas cómo avanzar.';
+    case 'confirm_selected_plan':
+      return 'Queda registrada tu elección. Avisame cuando quieras avanzar.';
+    case 'acknowledge_payment_deferral':
+      return 'De acuerdo, lo dejamos para más adelante.';
+    case 'confirm_payment_link':
+      return 'Listo, te comparto el paso autorizado para continuar.';
+    case 'acknowledge_purchase_decline':
+      return 'Entendido. Si querés, podemos seguir revisando tus opciones.';
+    case 'catalog_temporarily_unavailable':
+      return 'Ahora no puedo consultar las opciones confirmadas. Podemos retomar tu objetivo apenas estén disponibles.';
+    case 'clarify_current_step':
+      return 'Decime cómo preferís continuar y te acompaño desde este punto.';
+  }
 }
 
 function retryAfterMs(response: Response): number | null {
@@ -224,6 +356,8 @@ export async function generateAgentATurnProposalV1(input: {
         throw new AgentABrainError(
           response.status === 429 ? 'BRAIN_RATE_LIMITED' : `BRAIN_HTTP_${response.status}`,
           response.status,
+          null,
+          delayMs,
         );
       }
 

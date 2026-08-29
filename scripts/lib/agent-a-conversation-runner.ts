@@ -1,4 +1,5 @@
 import { AGENT_A_PROMPT_VERSION } from '../../botpress-agent/src/prompts/agent-a-sales-bridge';
+import { AGENT_A_BRAIN_PROMPT_VERSION } from '../../botpress-agent/src/prompts/agent-a-brain-v1';
 
 export type AgentCatalogResolutionEvidence =
   | { readonly kind: 'no_catalog_intent' }
@@ -57,6 +58,31 @@ export type AgentTurnDiagnostic = {
   commitError: { status: number; error: string; reason: string | null } | null;
   /** Semantic memories selected by pgvector before this model turn. */
   selectedMemoryValues?: readonly string[];
+  /** IDs explicitly cited by the brain proposal for this turn. */
+  usedMemoryIds?: readonly string[];
+  /** Durable-memory candidates proposed by the brain before backend filtering. */
+  memoryCandidateCount?: number;
+  /** Backend-planned state after this turn; model prose is never inspected. */
+  conversationState?: {
+    readonly stage: string;
+    readonly call_preference: string;
+    readonly call_offer_status: string;
+    readonly call_offer_count: number;
+    readonly offering_code: string | null;
+    readonly payment_plan: string | null;
+    readonly awaiting_reply?: string;
+  };
+  conversationMove?: {
+    readonly move: string;
+    readonly secondary_moves: readonly string[];
+    readonly vetoes: readonly string[];
+    readonly confidence: number;
+  };
+  replayVerified?: boolean;
+  brainFailureReason?: string | null;
+  brainFailureCode?: string | null;
+  brainFailureDetail?: string | null;
+  brainTransportRetries?: number;
 };
 
 export type AgentChatResult = {
@@ -106,6 +132,31 @@ export type CatalogAbsenceOracle = {
   allowed_alternative_codes: string[];
   /** A missing or truncated snapshot invalidates the case instead of proving absence. */
   require_complete_snapshot: boolean;
+};
+
+export type AgentTurnExpectation = {
+  readonly stage: string;
+  readonly call_preference: 'unknown' | 'call' | 'chat' | 'declined';
+  readonly call_offer_status: 'not_offered' | 'offered' | 'accepted' | 'declined';
+  readonly call_offer_count: 0 | 1 | 2;
+  readonly offering_code: string | null;
+  readonly payment_plan: 'monthly_12' | 'monthly_6' | 'one_time' | null;
+  readonly response_count: 0 | 1;
+  readonly action_count: 0 | 1;
+  readonly authorized_url_count: number;
+  readonly used_memory_min: number;
+};
+
+export type AgentTurnSemanticExpectation = {
+  readonly move_any_of: Array<
+    | 'greeting' | 'browse_catalog' | 'select_area' | 'select_course'
+    | 'ask_course_information' | 'continue_by_chat' | 'request_call' | 'decline_call'
+    | 'ask_payment_options' | 'select_payment_plan' | 'defer_payment'
+    | 'request_payment_link' | 'decline_purchase' | 'unknown'
+  >;
+  readonly vetoes_include: Array<'call' | 'payment_link' | 'purchase'>;
+  readonly action_type: 'none' | 'request_call_now' | 'send_payment_link';
+  readonly memory_candidate_min: number;
 };
 
 export type ConversationCase = {
@@ -159,6 +210,14 @@ export type ConversationCase = {
     /** Visible text cardinality for each inbound turn. The default is one;
      * explicit zeroes model durable silence after opt-out. */
     expected_response_count_by_turn?: Array<0 | 1>;
+    /** Structured hard oracle for every turn in the Agent A brain suite. */
+    expected_turns?: AgentTurnExpectation[];
+    /** Structured semantic oracle. It accepts primary or secondary moves,
+     * while actions and vetoes remain exact backend-visible evidence. */
+    expected_semantics?: AgentTurnSemanticExpectation[];
+    /** Local fault-injection controls used only by the reviewed safety cases. */
+    force_provider_failure_on_turn?: number;
+    replay_commit_on_turn?: number;
     /** Hard-fail oracle for a requested offering that must not exist in the
      * authoritative snapshot. */
     catalog_absence_oracle?: CatalogAbsenceOracle;
@@ -183,6 +242,83 @@ export type ConversationCaseResult = {
   runtime?: AgentRuntimeEvidence;
 };
 
+export type AgentABrainSuiteRubric = {
+  readonly expected_cases: number;
+  readonly effectively_evaluated: number;
+  readonly hard_gate_passed: number;
+  readonly hard_gate_failed: number;
+  readonly naturalness_passed: number;
+  readonly naturalness_required: number;
+  readonly brain_latency_samples: number;
+  readonly brain_latency_p50_ms: number | null;
+  readonly brain_latency_p95_ms: number | null;
+  readonly brain_latency_budget_ms: 4_500;
+  readonly brain_latency_within_budget: boolean;
+  readonly ready: boolean;
+};
+
+function percentileNearestRank(values: readonly number[], percentile: number): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.max(0, Math.ceil(sorted.length * percentile) - 1)] ?? null;
+}
+
+function caseIsNatural(result: ConversationCaseResult): boolean {
+  const replies = result.transcript
+    .filter((entry) => entry.role === 'assistant')
+    .map((entry) => entry.text.trim());
+  if (replies.length === 0) return false;
+  if (replies.some((reply) => reply.length === 0 || reply.length > 1_500)) return false;
+  if (replies.some((reply) => reply.includes('No pude procesar tu consulta en este momento.'))) {
+    return false;
+  }
+  return replies.every((reply, index) => index === 0 || reply !== replies[index - 1]);
+}
+
+/** Hard business/state gates and conversational naturalness are deliberately
+ * separate: fluent prose can never conceal an unsafe action or missing turn. */
+export function evaluateAgentABrainSuiteRubric(
+  results: readonly ConversationCaseResult[],
+  expectedCases = 20,
+): AgentABrainSuiteRubric {
+  const effectivelyEvaluated = results.filter((result) => (
+    result.conversation_id !== null
+    && !result.failures.some((failure) => /turn_\d+_error:/u.test(failure))
+  )).length;
+  const hardGatePassed = results.filter((result) => result.status === 'passed').length;
+  const naturalnessPassed = results.filter(caseIsNatural).length;
+  const naturalnessRequired = Math.ceil(expectedCases * 0.9);
+  const brainLatencies = results.flatMap((result) => {
+    const samples = result.checks.brain_latencies_ms;
+    return Array.isArray(samples)
+      ? samples.filter((sample): sample is number => (
+          typeof sample === 'number' && Number.isFinite(sample) && sample >= 0
+        ))
+      : [];
+  });
+  const brainLatencyP50 = percentileNearestRank(brainLatencies, 0.5);
+  const brainLatencyP95 = percentileNearestRank(brainLatencies, 0.95);
+  const brainLatencyWithinBudget = brainLatencyP95 !== null && brainLatencyP95 <= 4_500;
+  return {
+    expected_cases: expectedCases,
+    effectively_evaluated: effectivelyEvaluated,
+    hard_gate_passed: hardGatePassed,
+    hard_gate_failed: results.length - hardGatePassed,
+    naturalness_passed: naturalnessPassed,
+    naturalness_required: naturalnessRequired,
+    brain_latency_samples: brainLatencies.length,
+    brain_latency_p50_ms: brainLatencyP50,
+    brain_latency_p95_ms: brainLatencyP95,
+    brain_latency_budget_ms: 4_500,
+    brain_latency_within_budget: brainLatencyWithinBudget,
+    ready: results.length === expectedCases
+      && effectivelyEvaluated === expectedCases
+      && hardGatePassed === expectedCases
+      && naturalnessPassed >= naturalnessRequired
+      && brainLatencyWithinBudget,
+  };
+}
+
 function diagnosticFromError(error: unknown): AgentTurnDiagnostic | null {
   if (!error || typeof error !== 'object' || !('turnDiagnostic' in error)) return null;
   const diagnostic = error.turnDiagnostic;
@@ -193,7 +329,14 @@ function diagnosticFromError(error: unknown): AgentTurnDiagnostic | null {
 
 type RunOptions = {
   runId: string;
-  sendTurn: (message: string, conversationId: string | null) => Promise<AgentChatResult>;
+  sendTurn: (
+    message: string,
+    conversationId: string | null,
+    evaluationControl?: {
+      readonly forceProviderFailure: boolean;
+      readonly replayCommit: boolean;
+    },
+  ) => Promise<AgentChatResult>;
   /** Optional external-provider pacing. The file runner uses this to respect
    * token-per-minute limits without coupling behavioral grading to Groq. */
   beforeTurn?: (input: {
@@ -576,6 +719,7 @@ export async function runConversationCase(
   const transcript: TranscriptEntry[] = [];
   const failures: string[] = [];
   const turnLatenciesMs: number[] = [];
+  const brainLatenciesMs: number[] = [];
   const assistantRepliesByTurn: string[] = [];
   const responseCountsByTurn: number[] = [];
   const authorizedUrlsByTurn: Array<readonly string[] | null> = [];
@@ -592,7 +736,11 @@ export async function runConversationCase(
     try {
       await options.beforeTurn?.({ testCase, turnNumber: index + 1 });
       const turnStartedAt = Date.now();
-      const result = await options.sendTurn(message, conversationId);
+      const forceProviderFailure = testCase.ideal_result.force_provider_failure_on_turn === index + 1;
+      const replayCommit = testCase.ideal_result.replay_commit_on_turn === index + 1;
+      const result: AgentChatResult = forceProviderFailure || replayCommit
+        ? await options.sendTurn(message, conversationId, { forceProviderFailure, replayCommit })
+        : await options.sendTurn(message, conversationId);
       turnLatenciesMs.push(Math.max(
         0,
         Date.now() - turnStartedAt - (result.evaluationPacingMs ?? 0),
@@ -617,6 +765,10 @@ export async function runConversationCase(
       commercialEvidenceByTurn[index] = result.commercialEvidence;
       turnDiagnostics[index] = result.turnDiagnostic ?? null;
       runtime ??= result.runtime;
+      const brainLatency = result.runtime?.latencies_ms?.agent_a_brain_ms;
+      if (typeof brainLatency === 'number' && Number.isFinite(brainLatency) && brainLatency >= 0) {
+        brainLatenciesMs.push(brainLatency);
+      }
       if (urls.length > 0 && !result.authorizedUrls) {
         failures.push(`turn_${index + 1}_authorized_url_evidence_missing`);
       } else if (result.authorizedUrls) {
@@ -652,9 +804,147 @@ export async function runConversationCase(
     .join('\n');
   const checks: Record<string, unknown> = {
     turn_latencies_ms: turnLatenciesMs,
+    brain_latencies_ms: brainLatenciesMs,
     response_counts_by_turn: responseCountsByTurn,
     authorized_urls_by_turn: authorizedUrlsByTurn,
+    brain_transport_retries: turnDiagnostics.reduce(
+      (total, diagnostic) => total + (diagnostic?.brainTransportRetries ?? 0),
+      0,
+    ),
   };
+  if (testCase.ideal_result.replay_commit_on_turn !== undefined) {
+    const turnNumber = testCase.ideal_result.replay_commit_on_turn;
+    const verified = turnDiagnostics[turnNumber - 1]?.replayVerified === true;
+    checks.replay_verified_turn = turnNumber;
+    checks.replay_verified = verified;
+    if (!verified) failures.push(`turn_${turnNumber}_replay_not_verified`);
+  }
+  if (testCase.ideal_result.force_provider_failure_on_turn !== undefined) {
+    const turnNumber = testCase.ideal_result.force_provider_failure_on_turn;
+    const reason = turnDiagnostics[turnNumber - 1]?.brainFailureReason ?? null;
+    checks.provider_failure_turn = turnNumber;
+    checks.provider_failure_reason = reason;
+    if (reason === null) failures.push(`turn_${turnNumber}_provider_failure_not_observed`);
+  }
+
+  const safeActionTypes = new Set(['request_call_now', 'send_payment_link']);
+  const expectedProviderFailureTurn = testCase.ideal_result.force_provider_failure_on_turn;
+  for (const [index, diagnostic] of turnDiagnostics.entries()) {
+    const actionType = typeof diagnostic?.decisionBusinessAction?.type === 'string'
+      ? diagnostic.decisionBusinessAction.type
+      : null;
+    if (
+      diagnostic?.brainFailureCode
+      && expectedProviderFailureTurn !== index + 1
+    ) {
+      failures.push(`turn_${index + 1}_brain_failure:${diagnostic.brainFailureCode}`);
+    }
+    if (actionType !== null && !safeActionTypes.has(actionType)) {
+      failures.push(`turn_${index + 1}_unsafe_action:${actionType}`);
+    }
+  }
+
+  if (testCase.ideal_result.expected_semantics) {
+    const semanticEvidence = testCase.ideal_result.expected_semantics.map((expected, index) => {
+      const turnNumber = index + 1;
+      const diagnostic = turnDiagnostics[index];
+      const interpretedMoves = diagnostic?.conversationMove
+        ? [diagnostic.conversationMove.move, ...diagnostic.conversationMove.secondary_moves]
+        : [];
+      if (
+        expected.move_any_of.length > 0
+        && !expected.move_any_of.some((move) => interpretedMoves.includes(move))
+      ) {
+        failures.push(
+          `turn_${turnNumber}_move_expected_${expected.move_any_of.join('|')}_got_` +
+          `${interpretedMoves.join('+') || 'none'}`,
+        );
+      }
+      const actualVetoes = new Set(diagnostic?.conversationMove?.vetoes ?? []);
+      for (const veto of expected.vetoes_include) {
+        if (!actualVetoes.has(veto)) failures.push(`turn_${turnNumber}_required_veto_missing:${veto}`);
+      }
+      const actualActionType = typeof diagnostic?.decisionBusinessAction?.type === 'string'
+        ? diagnostic.decisionBusinessAction.type
+        : 'none';
+      if (actualActionType !== expected.action_type) {
+        failures.push(
+          `turn_${turnNumber}_action_type_expected_${expected.action_type}_got_${actualActionType}`,
+        );
+      }
+      const memoryCandidateCount = diagnostic?.memoryCandidateCount ?? 0;
+      if (memoryCandidateCount < expected.memory_candidate_min) {
+        failures.push(
+          `turn_${turnNumber}_memory_candidate_min_${expected.memory_candidate_min}_got_` +
+          `${memoryCandidateCount}`,
+        );
+      }
+      return {
+        interpreted_moves: interpretedMoves,
+        vetoes: [...actualVetoes],
+        action_type: actualActionType,
+        memory_candidate_count: memoryCandidateCount,
+      };
+    });
+    checks.turn_semantic_evidence = semanticEvidence;
+  }
+
+  if (testCase.ideal_result.expected_turns) {
+    const expectations = testCase.ideal_result.expected_turns;
+    if (expectations.length !== testCase.turns.length) {
+      failures.push(`expected_turns_length_mismatch:${expectations.length}:${testCase.turns.length}`);
+    }
+    const stateEvidence = expectations.map((expected, index) => {
+      const turnNumber = index + 1;
+      const diagnostic = turnDiagnostics[index];
+      const actual = diagnostic?.conversationState;
+      if (!actual) {
+        failures.push(`turn_${turnNumber}_conversation_state_evidence_missing`);
+        return null;
+      }
+      const compare = (field: keyof typeof actual, expectedValue: string | number | null) => {
+        const actualValue = actual[field];
+        if (actualValue !== expectedValue) {
+          failures.push(
+            `turn_${turnNumber}_${field}_expected_${String(expectedValue)}_got_${String(actualValue)}`,
+          );
+        }
+      };
+      compare('stage', expected.stage);
+      compare('call_preference', expected.call_preference);
+      compare('call_offer_status', expected.call_offer_status);
+      compare('call_offer_count', expected.call_offer_count);
+      compare('offering_code', expected.offering_code);
+      compare('payment_plan', expected.payment_plan);
+      const responseCount = responseCountsByTurn[index] ?? 0;
+      if (responseCount !== expected.response_count) {
+        failures.push(
+          `turn_${turnNumber}_response_count_expected_${expected.response_count}_got_${responseCount}`,
+        );
+      }
+      const actionCount = diagnostic.decisionBusinessAction === null ? 0 : 1;
+      if (actionCount !== expected.action_count) {
+        failures.push(
+          `turn_${turnNumber}_action_count_expected_${expected.action_count}_got_${actionCount}`,
+        );
+      }
+      const urlCount = authorizedUrlsByTurn[index]?.length ?? 0;
+      if (urlCount !== expected.authorized_url_count) {
+        failures.push(
+          `turn_${turnNumber}_authorized_url_count_expected_${expected.authorized_url_count}_got_${urlCount}`,
+        );
+      }
+      const usedMemoryCount = diagnostic.usedMemoryIds?.length ?? 0;
+      if (usedMemoryCount < expected.used_memory_min) {
+        failures.push(
+          `turn_${turnNumber}_used_memory_min_${expected.used_memory_min}_got_${usedMemoryCount}`,
+        );
+      }
+      return { ...actual, response_count: responseCount, action_count: actionCount,
+        authorized_url_count: urlCount, used_memory_count: usedMemoryCount };
+    });
+    checks.turn_state_evidence = stateEvidence;
+  }
 
   if (testCase.ideal_result.catalog_absence_oracle) {
     const catalogAbsenceChecks: CatalogAbsenceTurnCheck[] = [];
@@ -925,6 +1215,10 @@ const KNOWN_IDEAL_RESULT_KEYS = new Set([
   'forbidden_persistence_values',
   'turn_assertions',
   'expected_response_count_by_turn',
+  'expected_turns',
+  'expected_semantics',
+  'force_provider_failure_on_turn',
+  'replay_commit_on_turn',
   'catalog_absence_oracle',
   'max_turn_latency_ms',
   'max_median_latency_ms',
@@ -989,6 +1283,19 @@ export function validateSuiteCaseInvariants(suite: ConversationSuite): string[] 
         violations.push(`invalid_expected_response_count:${testCase.id}:${index + 1}:${count}`);
       }
     }
+    const expectedTurns = testCase.ideal_result.expected_turns;
+    if (expectedTurns && expectedTurns.length !== testCase.turns.length) {
+      violations.push(
+        `expected_turns_length_mismatch:${testCase.id}:${expectedTurns.length}:${testCase.turns.length}`,
+      );
+    }
+    const expectedSemantics = testCase.ideal_result.expected_semantics;
+    if (expectedSemantics && expectedSemantics.length !== testCase.turns.length) {
+      violations.push(
+        `expected_semantics_length_mismatch:${testCase.id}:` +
+        `${expectedSemantics.length}:${testCase.turns.length}`,
+      );
+    }
     const vectorRecallTurn = testCase.ideal_result.expected_vector_memory_recalled_after_turn;
     if (vectorRecallTurn !== undefined) {
       if (!testCase.ideal_result.expected_vector_memory?.trim()) {
@@ -1040,7 +1347,12 @@ export async function runConversationSuite(
   suite: ConversationSuite,
   options: RunOptions & { onCase?: (current: number, total: number, id: string) => void },
 ) {
-  assertSuitePromptVersion(suite.prompt_version, AGENT_A_PROMPT_VERSION);
+  assertSuitePromptVersion(
+    suite.prompt_version,
+    suite.suite === 'studyx-agent-a-brain-v1-heldout'
+      ? AGENT_A_BRAIN_PROMPT_VERSION
+      : AGENT_A_PROMPT_VERSION,
+  );
   assertRegressionCompositionEvidence(suite);
 
   const results: ConversationCaseResult[] = [];
@@ -1073,6 +1385,10 @@ export async function runConversationSuite(
       passed,
       failed: results.length - passed,
     },
+    rubric: evaluateAgentABrainSuiteRubric(
+      results,
+      suite.suite === 'studyx-agent-a-brain-v1-heldout' ? 20 : results.length,
+    ),
     results,
   };
 }

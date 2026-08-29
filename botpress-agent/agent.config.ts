@@ -42,7 +42,7 @@ export default defineConfig({
     },
     GROQ_API_KEY: {
       description:
-        "Groq API key used by the Development-only direct decision provider.",
+        "Groq API key used by the bounded Agent A conversational brain.",
     },
     TELEGRAM_BOT_A_TOKEN: {
       description:

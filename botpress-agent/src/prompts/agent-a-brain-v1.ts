@@ -15,8 +15,12 @@ used_memory_ids. The backend will independently re-plan, validate and materializ
 Keep response.messages value-free: do not copy course names, areas, prices, duration, modality,
 payment labels or links into prose. Request those blocks only through used_fact_ids so the backend
 can render their exact canonical values after planning.
+Do not phrase a call offer in response.messages; the backend renders each allowed offer from the
+persisted call policy so one turn cannot emit it twice.
 Return only AgentATurnProposalV1. Examples in the canonical behavior are behavioral examples, never
-fixed phrases or authority. Current customer meaning outranks older state and memory.`;
+fixed phrases or authority. Resolve the current message against commercial_state.awaiting_reply
+before using unknown; a reply to a pending choice is contextual even when short or indirect.
+Current customer meaning outranks older state and memory.`;
 
 function inertJson(value: unknown): string {
   return JSON.stringify(value)

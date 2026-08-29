@@ -34,6 +34,10 @@ import {
   type Decision,
 } from '../botpress-agent/src/schemas/contracts';
 import {
+  ConversationPlanResponseV1Schema,
+  type ConversationPipelineCommitV1,
+} from '../botpress-agent/src/schemas/conversation-pipeline';
+import {
   DEFAULT_DEVELOPMENT_EMULATOR_PHONE_E164,
   buildEmulatorEnvelope,
 } from '../botpress-agent/src/channels/shared/emulator-envelope';
@@ -48,10 +52,18 @@ import {
 } from '../botpress-agent/src/lib/decision/gemini-direct';
 import {
   applyDecisionPolicy,
+  classifyBrainFailureReason,
   constrainModelToAdvisory,
   modelUnavailableFallback,
 } from '../botpress-agent/src/utils/decision-policy';
 import { routeCommercialTurn } from '../botpress-agent/src/utils/commercial-router';
+import { buildAgentAContextV1 } from '../botpress-agent/src/lib/conversation/agent-a-context';
+import {
+  AgentABrainError,
+  buildSafeAgentABrainCompositionV1,
+  generateAgentATurnProposalV1,
+} from '../botpress-agent/src/lib/conversation/agent-a-brain';
+import { AGENT_A_BRAIN_PROMPT_VERSION } from '../botpress-agent/src/prompts/agent-a-brain-v1';
 import { deliverAuthorizedLocalOutbound } from './lib/local-authorized-delivery';
 
 const execFileAsync = promisify(execFile);
@@ -61,6 +73,12 @@ const defaultSuitePath = path.join(
   botpressDir,
   'evals/personas/studyx-happy-path-cases-v6.json',
 );
+const namedSuites: Readonly<Record<string, string>> = {
+  'studyx-agent-a-brain-v1-heldout': path.join(
+    botpressDir,
+    'evals/personas/studyx-agent-a-brain-v1-heldout.json',
+  ),
+};
 
 function argument(name: string): string | null {
   const index = process.argv.indexOf(name);
@@ -147,7 +165,8 @@ function parseDotEnv(contents: string): Record<string, string> {
 }
 
 async function loadLocalCredentials(primaryProvider: 'groq' | 'gemini'): Promise<LocalCredentials> {
-  const envFile = parseDotEnv(await readFile(path.join(projectRoot, '.env.local'), 'utf8'));
+  const envFile = parseDotEnv(await readFile(path.join(projectRoot, '.env.local'), 'utf8')
+    .catch(() => ''));
   const adkSecrets = JSON.parse(
     await readFile(path.join(botpressDir, '.adk/secrets.json'), 'utf8'),
   ) as { dev?: Record<string, string> };
@@ -262,12 +281,17 @@ function withTurnDiagnostic(error: unknown, turnDiagnostic: AgentTurnDiagnostic)
   return Object.assign(diagnosticError, { turnDiagnostic });
 }
 
-async function flushLocalPostTurn(credentials: LocalCredentials, traceId: string): Promise<void> {
-  if (!credentials.cronSecret) return;
-  await Promise.all([
-    '/api/cron/flush-projections',
+async function flushLocalPostTurn(credentials: LocalCredentials, traceId: string): Promise<number> {
+  if (!credentials.cronSecret) return 0;
+  const startedAt = Date.now();
+  // Projection must precede embedding: both queues are post-commit and neither
+  // belongs to customer-visible latency, but recall on the next eval turn
+  // requires this deterministic order.
+  for (const route of [
+    '/api/cron/reconcile-orchestration',
     '/api/cron/memory-maintenance',
-  ].map(async (route) => {
+    '/api/cron/flush-projections',
+  ]) {
     try {
       await fetch(new URL(route, credentials.apiBaseUrl), {
         method: 'GET',
@@ -279,7 +303,8 @@ async function flushLocalPostTurn(credentials: LocalCredentials, traceId: string
     } catch {
       // These queues are durable and best-effort, exactly like the ADK action.
     }
-  }));
+  }
+  return Date.now() - startedAt;
 }
 
 export function buildLocalProviderInstructions(
@@ -320,7 +345,11 @@ export function createLocalTurnSender(
     return waitedMs;
   };
 
-  return async (message: string, existingConversationId: string | null): Promise<AgentChatResult> => {
+  return async (
+    message: string,
+    existingConversationId: string | null,
+    evaluationControl?: { readonly forceProviderFailure: boolean; readonly replayCommit: boolean },
+  ): Promise<AgentChatResult> => {
     const turnStartedAt = Date.now();
     const latenciesMs: Record<string, number> = {};
     const conversationId = existingConversationId ?? `local-eval-${runId}-${randomUUID()}`;
@@ -328,6 +357,7 @@ export function createLocalTurnSender(
     turnCounters.set(conversationId, turnNumber);
     const traceId = randomUUID();
     let evaluationPacingMs = 0;
+    let postCommitMaintenanceMs = 0;
     const externalMessageId = `local-eval:${runId}:${turnNumber}:${randomUUID()}`;
     const envelope = buildEmulatorEnvelope({
       emulatorPhoneE164: DEFAULT_DEVELOPMENT_EMULATOR_PHONE_E164,
@@ -390,8 +420,145 @@ export function createLocalTurnSender(
     let decisionWasModel = false;
     let provider: 'botpress' | 'groq-direct' | 'google-ai-direct';
     let decisionModel: string;
+    let promptVersion: string = AGENT_A_PROMPT_VERSION;
     let fallbackReason: string | null = null;
-    if (commercialRoute.kind !== 'model_required') {
+    let brainFailureReason: string | null = null;
+    let brainFailureCode: string | null = null;
+    let brainFailureDetail: string | null = null;
+    let conversationPipelineV1: ConversationPipelineCommitV1 | null = null;
+    let plannedBusinessAction: Record<string, unknown> | null = null;
+    let plannedConversationState: AgentTurnDiagnostic['conversationState'] = claimed.conversation_state_v1
+      ? {
+          stage: claimed.conversation_state_v1.stage,
+          call_preference: claimed.conversation_state_v1.call_preference,
+          call_offer_status: claimed.conversation_state_v1.call_offer_status,
+          call_offer_count: claimed.conversation_state_v1.call_offer_count ?? 0,
+          offering_code: claimed.conversation_state_v1.selected_offering_code,
+          payment_plan: claimed.conversation_state_v1.selected_payment_plan,
+          awaiting_reply: claimed.conversation_state_v1.awaiting_reply,
+        }
+      : undefined;
+    let usedMemoryIds: readonly string[] = [];
+    let memoryCandidateCount = 0;
+    let conversationMove: AgentTurnDiagnostic['conversationMove'];
+    let brainTransportRetries = 0;
+    const brainContext = buildAgentAContextV1(claimed);
+    const brainAuthoritative = claimed.features?.agent_a_brain_v1_enabled === true;
+    const brainEligible = brainAuthoritative
+      && claimed.deterministic_route === null
+      && claimed.policy.may_respond
+      && claimed.policy.allowed_response_types.includes('commercial_reply')
+      && brainContext !== null;
+
+    if (brainEligible) {
+      const modelStartedAt = Date.now();
+      try {
+        evaluationPacingMs += await paceModelProvider();
+        if (evaluationControl?.forceProviderFailure) throw new Error('BRAIN_TIMEOUT');
+        let generated: Awaited<ReturnType<typeof generateAgentATurnProposalV1>> | null = null;
+        for (let transportAttempt = 0; transportAttempt < 3; transportAttempt += 1) {
+          try {
+            generated = await generateAgentATurnProposalV1({
+              context: brainContext,
+              apiKey: credentials.groqApiKey,
+              model: credentials.groqModel,
+              signal: new AbortController().signal,
+            });
+            break;
+          } catch (error) {
+            const mayRetryRateLimit = error instanceof AgentABrainError
+              && error.code === 'BRAIN_RATE_LIMITED'
+              && transportAttempt < 2;
+            if (!mayRetryRateLimit) throw error;
+            const requestedBackoffMs = Math.max(
+              minimumModelIntervalMs,
+              error.retry_after_ms ?? 60_000 * (transportAttempt + 1),
+            );
+            if (requestedBackoffMs > 600_000) throw error;
+            console.error(`  429 de transporte; backoff ${requestedBackoffMs}ms`);
+            const backoffStartedAt = Date.now();
+            await new Promise((resolve) => setTimeout(resolve, requestedBackoffMs));
+            evaluationPacingMs += Date.now() - backoffStartedAt;
+            previousModelStartedAt = Date.now();
+            brainTransportRetries += 1;
+          }
+        }
+        if (generated === null) throw new Error('BRAIN_TRANSPORT_RETRY_EXHAUSTED');
+        latenciesMs.agent_a_brain_ms = generated.latency_ms;
+        conversationMove = {
+          move: generated.proposal.move.move,
+          secondary_moves: generated.proposal.move.secondary_moves,
+          vetoes: generated.proposal.move.vetoes,
+          confidence: generated.proposal.move.confidence,
+        };
+        const plannerStartedAt = Date.now();
+        const planned = await localSignedJson({
+          credentials,
+          path: `/api/agent/turns/${claimed.turn_id}/plan`,
+          body: { trace_id: traceId, move: generated.proposal.move },
+          idempotencyKey: `plan:${claimed.turn_id}`,
+          traceId,
+          parse: (value) => ConversationPlanResponseV1Schema.parse(value),
+        });
+        latenciesMs.planner_ms = Date.now() - plannerStartedAt;
+        conversationPipelineV1 = {
+          move: generated.proposal.move,
+          plan_hash: planned.plan_hash,
+          composition: buildSafeAgentABrainCompositionV1({
+            proposal: generated.proposal,
+            context: brainContext,
+            response_goal: planned.plan.response_goal,
+            planned_fact_ids: planned.fact_refs.map((fact) => fact.id),
+          }),
+        };
+        decision = {
+          schema_version: 4,
+          intent: 'commercial',
+          kind: 'reply',
+          response: 'El backend preparará la respuesta autorizada.',
+          response_type: 'commercial_reply',
+          confidence: 1,
+          reason_code: 'CONVERSATION_PIPELINE_V1_PENDING_BACKEND',
+          business_action: null,
+          memory_candidates: generated.proposal.memory_candidates,
+          missing_information: [],
+          next_state: 'waiting_user',
+          retrieval_used: null,
+        };
+        provider = generated.provider;
+        decisionModel = generated.model;
+        promptVersion = AGENT_A_BRAIN_PROMPT_VERSION;
+        plannedBusinessAction = planned.plan.allowed_business_action.type === 'none'
+          ? null
+          : { ...planned.plan.allowed_business_action };
+        plannedConversationState = {
+          stage: planned.plan.next_stage,
+          call_preference: planned.plan.next_call_preference,
+          call_offer_status: planned.plan.next_call_offer_status,
+          call_offer_count: planned.plan.next_call_offer_count,
+          offering_code: planned.plan.selected_offering_code,
+          payment_plan: planned.plan.selected_payment_plan,
+          awaiting_reply: planned.plan.next_awaiting_reply,
+        };
+        usedMemoryIds = generated.proposal.used_memory_ids;
+        memoryCandidateCount = generated.proposal.memory_candidates.length;
+      } catch (error) {
+        const code = error instanceof Error ? error.message.slice(0, 128) : 'UNKNOWN';
+        const reason = classifyBrainFailureReason(
+          code,
+          claimed.business_context_available && claimed.catalog_index !== null,
+        );
+        fallbackReason = reason;
+        brainFailureReason = reason;
+        brainFailureCode = code;
+        brainFailureDetail = error instanceof AgentABrainError ? error.detail : null;
+        decision = modelUnavailableFallback(claimed, reason);
+        provider = 'groq-direct';
+        decisionModel = 'policy:agent-a-brain-v1-unavailable';
+        promptVersion = AGENT_A_BRAIN_PROMPT_VERSION;
+      }
+      latenciesMs.model_ms = Date.now() - modelStartedAt;
+    } else if (commercialRoute.kind !== 'model_required') {
       decision = commercialRoute.decision;
       provider = 'botpress';
       decisionModel = commercialRoute.model;
@@ -435,13 +602,21 @@ export function createLocalTurnSender(
     const claimTimeDiagnostic: AgentTurnDiagnostic = {
       catalogResolution: claimed.catalog_resolution,
       selectedOfferingCode: claimed.sales_context.offering_code,
-      decisionBusinessAction: decision.business_action
+      decisionBusinessAction: plannedBusinessAction ?? (decision.business_action
         ? { ...decision.business_action }
-        : null,
+        : null),
       authorizedProtectedFacts: [],
       authorizedUrls: [],
       commitError: null,
       selectedMemoryValues: claimed.context.selected_memories.map((memory) => memory.value),
+      ...(brainEligible ? { usedMemoryIds } : {}),
+      ...(brainEligible ? { memoryCandidateCount } : {}),
+      ...(conversationMove ? { conversationMove } : {}),
+      ...(brainAuthoritative ? { brainTransportRetries } : {}),
+      ...(plannedConversationState ? { conversationState: plannedConversationState } : {}),
+      ...(brainAuthoritative ? { brainFailureReason } : {}),
+      ...(brainAuthoritative ? { brainFailureCode } : {}),
+      ...(brainAuthoritative ? { brainFailureDetail } : {}),
     };
 
     let committed;
@@ -455,11 +630,12 @@ export function createLocalTurnSender(
           trace_id: traceId,
           authorized_offering_code: authorizedOfferingCode,
           authorized_payment_plan: authorizedPaymentPlan,
+          conversation_pipeline_v1: conversationPipelineV1,
           decision,
           model: {
             provider,
             model: decisionModel,
-            prompt_version: AGENT_A_PROMPT_VERSION,
+            prompt_version: promptVersion,
           },
           batch_id: claimed.batch.id,
           claim_token: claimed.batch.claim_token,
@@ -475,18 +651,42 @@ export function createLocalTurnSender(
       throw withTurnDiagnostic(error, { ...claimTimeDiagnostic, commitError });
     }
     latenciesMs.commit_ms = Date.now() - commitStartedAt;
+    let replayVerified = false;
+    if (evaluationControl?.replayCommit) {
+      const replayed = await localSignedJson({
+        credentials,
+        path: `/api/agent/turns/${claimed.turn_id}/decision`,
+        body: {
+          turn_id: claimed.turn_id,
+          trace_id: traceId,
+          authorized_offering_code: authorizedOfferingCode,
+          authorized_payment_plan: authorizedPaymentPlan,
+          conversation_pipeline_v1: conversationPipelineV1,
+          decision,
+          model: { provider, model: decisionModel, prompt_version: promptVersion },
+          batch_id: claimed.batch.id,
+          claim_token: claimed.batch.claim_token,
+        },
+        idempotencyKey: `decision:${claimed.turn_id}`,
+        traceId,
+        parse: (value) => CommitDecisionResponseSchema.parse(value),
+      });
+      replayVerified = replayed.status === 'duplicate' && replayed.decision_id === committed.decision_id;
+      if (!replayVerified) throw new Error('LOCAL_REPLAY_NOT_IDEMPOTENT');
+    }
     const turnDiagnostic: AgentTurnDiagnostic = {
       ...claimTimeDiagnostic,
       authorizedProtectedFacts:
         committed.outbound?.authorized_egress.protected_facts ?? [],
       authorizedUrls: committed.outbound?.authorized_egress.authorized_urls ?? [],
+      ...(evaluationControl?.replayCommit ? { replayVerified } : {}),
     };
     const runtimeBase = {
       git_sha: gitSha,
       transport: 'local' as const,
       provider,
       model: decisionModel,
-      prompt_version: AGENT_A_PROMPT_VERSION,
+      prompt_version: promptVersion,
       route_origin: commercialRoute.origin,
       route_reason: commercialRoute.reason,
       raw_response_hash: decision.response === null
@@ -545,13 +745,16 @@ export function createLocalTurnSender(
         // reach a real Sheets destination while validating a local database.
         afterSubmitted: skipPostTurnCrons
           ? async () => undefined
-          : () => flushLocalPostTurn(credentials, traceId),
+          : async () => {
+              postCommitMaintenanceMs = await flushLocalPostTurn(credentials, traceId);
+            },
       });
     } catch (error) {
       throw withTurnDiagnostic(error, turnDiagnostic);
     }
     latenciesMs.delivery_ms = Date.now() - deliveryStartedAt;
     latenciesMs.total_turn_ms = Date.now() - turnStartedAt;
+    evaluationPacingMs += postCommitMaintenanceMs;
     if (localDelivery.kind === 'blocked') {
       return {
         conversationId,
@@ -578,7 +781,11 @@ export function createLocalTurnSender(
 }
 
 async function main() {
-  const suitePath = path.resolve(argument('--file') ?? defaultSuitePath);
+  const requestedSuite = argument('--suite');
+  if (requestedSuite && argument('--file')) throw new Error('SUITE_AND_FILE_CONFLICT');
+  const namedSuitePath = requestedSuite ? namedSuites[requestedSuite] : null;
+  if (requestedSuite && !namedSuitePath) throw new Error('UNKNOWN_AGENT_A_SUITE');
+  const suitePath = path.resolve(namedSuitePath ?? argument('--file') ?? defaultSuitePath);
   const extensionSource = await readFile(suitePath);
   const extensionSuite = JSON.parse(extensionSource.toString('utf8')) as ConversationSuite;
   let suite = extensionSuite;
@@ -625,7 +832,12 @@ async function main() {
   }
   // Abort before opening any DB connection or spending an adk chat call on a
   // suite frozen against a stale version of the Agent A prompt contract.
-  assertSuitePromptVersion(selectedSuite.prompt_version, AGENT_A_PROMPT_VERSION);
+  assertSuitePromptVersion(
+    selectedSuite.prompt_version,
+    selectedSuite.suite === 'studyx-agent-a-brain-v1-heldout'
+      ? AGENT_A_BRAIN_PROMPT_VERSION
+      : AGENT_A_PROMPT_VERSION,
+  );
 
   const runId = argument('--run-id') ?? makeRunId();
   const transport = argument('--transport') ?? 'adk';

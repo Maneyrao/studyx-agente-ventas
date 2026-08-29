@@ -211,6 +211,47 @@ function localPaymentClaimedTurn(): ClaimedTurn {
   };
 }
 
+function localBrainClaimedTurn(): ClaimedTurn {
+  const claimed = localPaymentClaimedTurn();
+  return {
+    ...claimed,
+    features: {
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    },
+    deterministic_route: null,
+    conversation_state_v1: {
+      selected_offering_code: 'redes_informaticas',
+      selected_payment_plan: null,
+      stage: 'course_selected',
+      call_preference: 'unknown',
+      call_offer_status: 'offered',
+      call_offer_count: 1,
+      awaiting_reply: 'call_or_chat',
+      version: 1,
+    },
+    catalog_index: {
+      as_of: LOCAL_TRANSPORT_NOW,
+      offerings_total: 1,
+      offerings: [{
+        code: 'redes_informaticas',
+        display_name: 'Redes Informáticas',
+        academy: 'Tecnología',
+        aliases: [],
+      }],
+      injection_suspected_count: 0,
+    },
+    context: {
+      ...claimed.context,
+      batch_messages: [{
+        ...claimed.context.batch_messages[0],
+        content: 'Prefiero mantener el intercambio por escrito',
+      }],
+    },
+  };
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -467,6 +508,69 @@ describe('Agent A conversation runner', () => {
 
     const commitBody = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
     expect(commitBody.authorized_payment_plan).toBe('monthly_12');
+  });
+
+  it('runs the same one-call brain, planner and canonical commit as production', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(200, localIngestResponse()))
+      .mockResolvedValueOnce(jsonResponse(200, localBrainClaimedTurn()))
+      .mockResolvedValueOnce(jsonResponse(200, {
+        choices: [{ message: { content: JSON.stringify({
+          schema_version: 1,
+          move: {
+            schema_version: 1, move: 'continue_by_chat', secondary_moves: [], vetoes: [], confidence: 0.98,
+          },
+          response: { messages: ['Perfecto, seguimos por acá.', '¿Qué aspecto querés revisar?'] },
+          proposed_action: { type: 'none' },
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+        }) } }],
+      }))
+      .mockResolvedValueOnce(jsonResponse(200, {
+        plan: {
+          schema_version: 1,
+          next_stage: 'course_selected', response_goal: 'acknowledge_chat_preference',
+          canonical_fact_requests: [], allowed_business_action: { type: 'none' },
+          missing_information: [], should_offer_call: false,
+          next_call_preference: 'chat', next_call_offer_status: 'declined',
+          next_call_offer_count: 1, next_awaiting_reply: 'none',
+          selected_offering_code: 'redes_informaticas', selected_payment_plan: null,
+        },
+        fact_refs: [], state_version: 1, plan_hash: 'a'.repeat(64),
+      }))
+      .mockResolvedValueOnce(jsonResponse(200, {
+        status: 'committed', replayed: false, trace_id: LOCAL_TRANSPORT_UUID,
+        turn_id: LOCAL_TRANSPORT_UUID, decision_id: LOCAL_TRANSPORT_UUID,
+        next_state: 'waiting_user', outbound: null, call_request: null,
+        batch_completion: 'completed',
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+    const sendTurn = createLocalTurnSender({
+      apiBaseUrl: 'http://127.0.0.1:3000',
+      orchestratorKey: 'test-orchestrator-key', orchestratorKeyId: 'test-key-id',
+      signingSecret: 'test-signing-secret', cronSecret: null,
+      geminiApiKey: 'test-gemini-key', geminiModel: 'test-gemini-model',
+      groqApiKey: 'test-groq-key', groqModel: 'openai/gpt-oss-120b',
+    }, 'brain-v1', 'groq', 0);
+
+    const result = await sendTurn('Prefiero mantener el intercambio por escrito', null);
+
+    const brainBody = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
+    expect(brainBody.response_format.json_schema.name).toBe('studyx_agent_a_turn_proposal_v1');
+    const commitBody = JSON.parse(String(fetchMock.mock.calls[4]?.[1]?.body));
+    expect(commitBody).toMatchObject({
+      conversation_pipeline_v1: {
+        move: { move: 'continue_by_chat' },
+        plan_hash: 'a'.repeat(64),
+      },
+      model: { prompt_version: 'studyx-agent-a-brain-v1' },
+    });
+    expect(result.turnDiagnostic).toMatchObject({
+      conversationState: {
+        stage: 'course_selected', call_preference: 'chat',
+        call_offer_status: 'declined', call_offer_count: 1,
+      },
+      usedMemoryIds: [],
+    });
   });
 
   it('runs the caller pacing gate immediately before every external turn', async () => {
@@ -821,6 +925,13 @@ describe('Agent A conversation runner', () => {
           conversationId: 'conv-paced',
           responses: [{ type: 'text', text: 'Respuesta.' }],
           evaluationPacingMs: 1_000,
+          runtime: {
+            git_sha: 'a'.repeat(40), transport: 'local', provider: 'groq-direct',
+            model: 'openai/gpt-oss-120b', prompt_version: 'studyx-agent-a-brain-v1',
+            route_origin: 'model', route_reason: 'MODEL_REQUIRED',
+            raw_response_hash: null, committed_response_hash: null, fallback_reason: null,
+            latencies_ms: { agent_a_brain_ms: 1_234 },
+          },
         }),
       },
     );
@@ -828,6 +939,7 @@ describe('Agent A conversation runner', () => {
 
     expect(result.status).toBe('passed');
     expect(result.checks.turn_latencies_ms).toEqual([1_501]);
+    expect(result.checks.brain_latencies_ms).toEqual([1_234]);
   });
 
   it('aborts a suite run with PROMPT_VERSION_MISMATCH before sending any turn when the suite declares a stale prompt_version', async () => {

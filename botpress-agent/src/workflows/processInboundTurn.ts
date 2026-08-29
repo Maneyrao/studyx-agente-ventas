@@ -45,6 +45,7 @@ import {
 import { buildAgentAContextV1 } from '../lib/conversation/agent-a-context'
 import {
   DEFAULT_AGENT_A_BRAIN_MODEL,
+  buildSafeAgentABrainCompositionV1,
   generateAgentATurnProposalV1,
 } from '../lib/conversation/agent-a-brain'
 import {
@@ -216,6 +217,13 @@ function safeLog(event: string, fields: Record<string, unknown>): void {
 
 function errorCode(error: unknown): string {
   if (error instanceof StudyxHttpError) return error.code
+  if (
+    error !== null
+    && typeof error === 'object'
+    && 'code' in error
+    && typeof error.code === 'string'
+    && error.code.startsWith('BRAIN_')
+  ) return error.code.slice(0, 128)
   if (error instanceof Error && error.name) return error.name.slice(0, 128)
   return 'UNKNOWN_ERROR'
 }
@@ -586,15 +594,11 @@ export const processInboundTurn = new Workflow({
             { maxAttempts: 1 },
           )
           timings.planner_ms = Date.now() - plannerStartedAt
-          const plannedFactIds = new Set(planned.fact_refs.map((fact: { id: string }) => fact.id))
-          const composition = ComposedNarrativeV1Schema.parse({
-            schema_version: 1,
-            narrative: {
-              opening: generated.proposal.response.messages[0],
-              explanation: generated.proposal.response.messages[1] ?? null,
-              next_question: generated.proposal.response.messages[2] ?? null,
-            },
-            used_fact_ids: generated.proposal.used_fact_ids.filter((id: string) => plannedFactIds.has(id)),
+          const composition = buildSafeAgentABrainCompositionV1({
+            proposal: generated.proposal,
+            context: agentABrainContext,
+            response_goal: planned.plan.response_goal,
+            planned_fact_ids: planned.fact_refs.map((fact: { id: string }) => fact.id),
           })
           pipelineCommit = {
             move: generated.proposal.move,

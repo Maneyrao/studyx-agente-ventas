@@ -113,6 +113,7 @@ export function buildAgentAContextV1(claimed: ClaimedTurn): AgentAContextV1 | nu
     .filter((offering): offering is NonNullable<typeof offering> => offering !== undefined)
     .map((offering) => ({
       code: offering.code,
+      fact_id: `offering:${offering.code}:name:v1`,
       display_name: offering.display_name,
       area_code: areaCode(offering.academy),
     }));
@@ -157,7 +158,11 @@ export function buildAgentAContextV1(claimed: ClaimedTurn): AgentAContextV1 | nu
     },
     catalog: {
       selected_offering: selectedOffering,
-      areas: [...areas].map(([code, display_name]) => ({ code, display_name })),
+      areas: [...areas].map(([code, display_name]) => ({
+        code,
+        fact_id: `area:${code}:name:v1`,
+        display_name,
+      })),
       candidate_offerings: selectedOffering ? [] : candidates,
       payment_plans: (claimed.business_context?.workspace.payment_options ?? []).map((option) => ({
         code: option.code,
