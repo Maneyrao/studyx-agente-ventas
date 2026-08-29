@@ -47,7 +47,9 @@ import {
   DEFAULT_AGENT_A_BRAIN_MODEL,
   buildSafeAgentABrainCompositionV1,
   generateAgentATurnProposalV1,
+  parseAgentATurnProposalV1,
 } from '../lib/conversation/agent-a-brain'
+import { AgentATurnProposalV1Schema } from '../schemas/agent-a-brain'
 import {
   ComposedNarrativeV1Schema,
   type ConversationPipelineCommitV1,
@@ -58,7 +60,10 @@ import {
 } from '../prompts/conversation-interpreter-v1'
 import { CONVERSATION_COMPOSER_PROMPT_VERSION } from '../prompts/conversation-composer-v2'
 import { STUDYX_SALES_BEHAVIOR_VERSION } from '../prompts/studyx-sales-behavior-v1'
-import { AGENT_A_BRAIN_PROMPT_VERSION } from '../prompts/agent-a-brain-v1'
+import {
+  AGENT_A_BRAIN_PROMPT_VERSION,
+  buildAgentABrainInstructionsV1,
+} from '../prompts/agent-a-brain-v1'
 import { evaluateWhatsAppCanarySend } from '../channels/whatsapp.channel'
 
 /**
@@ -124,6 +129,18 @@ const ComposerExit = new Autonomous.Exit({
   description: 'Return value-free narrative and the authorized fact IDs it should accompany.',
   schema: ComposedNarrativeV1Schema,
 })
+
+const AgentABrainExit = new Autonomous.Exit({
+  name: 'agent_a_turn_proposal_v1',
+  description: 'Return exactly one AgentATurnProposalV1 using the supplied canonical sales behavior.',
+  schema: AgentATurnProposalV1Schema,
+})
+
+const AGENT_A_BRAIN_MANAGED_MODELS = [
+  'google-ai:gemini-3.6-flash',
+  'google-ai:gemini-3.5-flash',
+  'anthropic:claude-haiku-4-5-20251001',
+] as const
 
 function areaCode(value: string | null): string | null {
   if (!value) return null
@@ -548,18 +565,67 @@ export const processInboundTurn = new Workflow({
         if (typeof apiKey !== 'string' || apiKey === '') {
           throw new StudyxHttpError('GROQ_API_KEY_MISSING', false)
         }
-        const generated = await step(
-          'generate-agent-a-turn-proposal-v1',
-          () => generateAgentATurnProposalV1({
-            context: agentABrainContext,
-            apiKey,
-            signal,
-            model: typeof configuration.agentABrainModel === 'string'
-              ? configuration.agentABrainModel
-              : DEFAULT_AGENT_A_BRAIN_MODEL,
-          }),
-          { maxAttempts: 1 },
-        )
+        let generated
+        try {
+          generated = await step(
+            'generate-agent-a-turn-proposal-v1',
+            () => generateAgentATurnProposalV1({
+              context: agentABrainContext,
+              apiKey,
+              signal,
+              model: typeof configuration.agentABrainModel === 'string'
+                ? configuration.agentABrainModel
+                : DEFAULT_AGENT_A_BRAIN_MODEL,
+            }),
+            { maxAttempts: 1 },
+          )
+        } catch (directError) {
+          // A provider quota must not replace the full sales brain with a
+          // canned response. Re-run the exact same bounded contract through
+          // Botpress' managed failover chain; if that also fails, preserve the
+          // original cause so the final fail-closed response remains observable.
+          try {
+            const managedStartedAt = Date.now()
+            generated = await step(
+              'generate-agent-a-turn-proposal-v1-managed',
+              async () => {
+                const managed = await execute({
+                  instructions: buildAgentABrainInstructionsV1(agentABrainContext),
+                  exits: [AgentABrainExit],
+                  temperature: 0.2,
+                  model: [...AGENT_A_BRAIN_MANAGED_MODELS],
+                  reasoningEffort: 'low',
+                  iterations: 2,
+                  signal,
+                })
+                if (!managed.is(AgentABrainExit)) throw new Error('AGENT_A_BRAIN_EXIT_NOT_REACHED')
+                return {
+                  proposal: parseAgentATurnProposalV1(managed.output, agentABrainContext),
+                  provider: 'botpress' as const,
+                  model: AGENT_A_BRAIN_MANAGED_MODELS.join('>'),
+                  latency_ms: Date.now() - managedStartedAt,
+                  attempt_count: 1 as const,
+                }
+              },
+              { maxAttempts: 1 },
+            )
+            safeLog('studyx.turn.agent_a_brain_provider_failover', {
+              trace_id: input.trace_id,
+              turn_id: owned.turn_id,
+              from_provider: 'groq-direct',
+              to_provider: 'botpress',
+              direct_error_code: errorCode(directError),
+            })
+          } catch (managedError) {
+            safeLog('studyx.turn.agent_a_brain_provider_failover_failed', {
+              trace_id: input.trace_id,
+              turn_id: owned.turn_id,
+              direct_error_code: errorCode(directError),
+              managed_error_code: errorCode(managedError),
+            })
+            throw directError
+          }
+        }
         timings.agent_a_brain_ms = generated.latency_ms
 
         if (brainShadow) {
@@ -605,7 +671,7 @@ export const processInboundTurn = new Workflow({
             plan_hash: planned.plan_hash,
             composition,
           }
-          pipelineDecisionProvider = 'groq-direct'
+          pipelineDecisionProvider = generated.provider
           pipelineDecisionModel = generated.model
           pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
           pipelineMemoryCandidates = generated.proposal.memory_candidates

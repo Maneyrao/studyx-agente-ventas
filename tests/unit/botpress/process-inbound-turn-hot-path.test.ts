@@ -55,6 +55,7 @@ vi.mock('../../../botpress-agent/src/lib/conversation/conversation-interpreter',
 }));
 vi.mock('../../../botpress-agent/src/lib/conversation/agent-a-brain', () => ({
   generateAgentATurnProposalV1: actionSpies.agentABrain,
+  parseAgentATurnProposalV1: (raw: unknown) => raw,
   DEFAULT_AGENT_A_BRAIN_MODEL: 'openai/gpt-oss-120b',
   buildSafeAgentABrainCompositionV1: ({ proposal, planned_fact_ids }: {
     proposal: { response: { messages: string[] } };
@@ -486,7 +487,7 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(actionSpies.plan).not.toHaveBeenCalled();
-    expect(execute).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledTimes(1);
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       conversation_pipeline_v1: null,
       decision: {
@@ -502,6 +503,77 @@ describe('processInboundTurn hot path', () => {
       brain_source: 'fallback',
       brain_failure_reason: 'rate_limited',
       authorized_action_type: 'none',
+    });
+  });
+
+  it('uses the managed model with the same brain contract when Groq is rate limited', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null, selected_payment_plan: null,
+      stage: 'exploring', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 1,
+    };
+    claimed.context.batch_messages[0].content = 'Quiero información sobre algo de salud';
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 1,
+      offerings: [{ code: 'entrenamiento-funcional', display_name: 'Entrenamiento Funcional', academy: 'Salud y Bienestar', aliases: [] }],
+      injection_suspected_count: 0,
+    };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+    actionSpies.agentABrain.mockRejectedValue(
+      Object.assign(new Error('provider failure'), { code: 'BRAIN_RATE_LIMITED' }),
+    );
+
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => ({
+      is: () => true,
+      output: {
+        schema_version: 1,
+        move: {
+          schema_version: 1, move: 'select_area', secondary_moves: [], vetoes: [],
+          area_reference: 'Salud y Bienestar', confidence: 0.96,
+        },
+        response: { messages: ['Claro, te ayudo a encontrar una opción que encaje con lo que buscás.'] },
+        proposed_action: { type: 'none' },
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+      },
+      iterations: [],
+    }));
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute, client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.agentABrain).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(1);
+    const failoverFailure = vi.mocked(console.info).mock.calls
+      .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
+      .find((entry) => entry.event === 'studyx.turn.agent_a_brain_provider_failover_failed');
+    expect(failoverFailure).toBeUndefined();
+    expect(actionSpies.plan).toHaveBeenCalledWith(expect.objectContaining({
+      input: expect.objectContaining({
+        move: expect.objectContaining({ move: 'select_area', area_reference: 'Salud y Bienestar' }),
+      }),
+    }));
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: {
+        move: expect.objectContaining({ move: 'select_area' }),
+      },
+      model: { provider: 'botpress' },
     });
   });
 
