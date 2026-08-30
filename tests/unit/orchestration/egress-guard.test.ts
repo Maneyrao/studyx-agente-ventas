@@ -658,6 +658,25 @@ describe('authorized egress manifest', () => {
     expect(verifyAuthorizedEgress({ content, manifest })).toEqual({ ok: true });
   });
 
+  it('does not classify generic conversational guidance as a catalog availability claim', () => {
+    const content = 'Sí, tenemos varias opciones y te ayudo a encontrar la que mejor encaje con tu objetivo.';
+    const protectedFacts = materializeCanonicalCatalogFacts({
+      content,
+      offerings: [{ code: 'redes_informaticas', display_name: 'Redes Informáticas' }],
+    });
+    const manifest = buildAuthorizedEgress({
+      content,
+      authorized_urls: [],
+      protected_facts: protectedFacts,
+    });
+
+    expect(protectedFacts).toEqual([{
+      kind: 'offering',
+      value: 'sí, tenemos varias opciones y te ayudo a encontrar la que mejor encaje con tu objetivo',
+    }]);
+    expect(verifyAuthorizedEgress({ content, manifest })).toEqual({ ok: true });
+  });
+
   it.each([
     ['a null value', null],
     ['an unknown schema version', {

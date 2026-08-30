@@ -66,11 +66,16 @@ export function classifyBrainFailureReason(
   catalogAvailable: boolean,
 ): BrainFailureReason {
   if (!catalogAvailable) return 'catalog_unavailable'
-  if (code === 'BRAIN_TIMEOUT' || code === 'TimeoutError' || code === 'AbortError') return 'timeout'
-  if (code === 'BRAIN_RATE_LIMITED' || code === 'GROQ_HTTP_429') return 'rate_limited'
+  if (code === 'BRAIN_TIMEOUT' || code === 'BRAIN_OPENAI_TIMEOUT'
+    || code === 'TimeoutError' || code === 'AbortError') return 'timeout'
+  if (code === 'BRAIN_RATE_LIMITED' || code === 'BRAIN_OPENAI_RATE_LIMITED'
+    || code === 'GROQ_HTTP_429') return 'rate_limited'
   if (
     code === 'BRAIN_INVALID_SCHEMA'
     || code === 'BRAIN_INVALID_JSON'
+    || code === 'BRAIN_OPENAI_INVALID_JSON'
+    || code === 'BRAIN_OPENAI_INVALID_RESPONSE'
+    || code === 'BRAIN_OPENAI_EMPTY_RESPONSE'
     || code === 'BRAIN_INVALID_RESPONSE'
     || code === 'BRAIN_EMPTY_RESPONSE'
   ) return 'invalid_schema'

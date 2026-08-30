@@ -6,6 +6,7 @@ import {
   AgentABrainError,
   buildSafeAgentABrainCompositionV1,
   generateAgentATurnProposalV1,
+  generateOpenAIAgentATurnProposalV1,
   parseAgentATurnProposalV1,
 } from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
 
@@ -65,6 +66,12 @@ function providerResponse(status: number, body: unknown, headers: Record<string,
 
 function successBody(value: unknown) {
   return { choices: [{ message: { content: JSON.stringify(value) } }] };
+}
+
+function responsesSuccessBody(value: unknown) {
+  return {
+    output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(value) }] }],
+  };
 }
 
 afterEach(() => {
@@ -135,7 +142,42 @@ describe('Agent A Brain V1', () => {
     expect(composition.used_fact_ids).toEqual(['offering:redes-informaticas:name:v1']);
   });
 
-  it('keeps narrative value-free and delegates all planned facts to canonical rendering', () => {
+  it('keeps a natural call invitation separate so the authoritative planner can allow it', () => {
+    const composition = buildSafeAgentABrainCompositionV1({
+      proposal: parseAgentATurnProposalV1(proposal({
+        response: {
+          messages: ['Redes Informáticas puede ser una buena opción para lo que buscás.'],
+          call_offer: 'Si te sirve, podemos coordinar una llamada breve; si no, seguimos por acá.',
+        },
+      }), context()),
+      context: context(),
+      response_goal: 'explain_selected_course',
+      planned_fact_ids: ['offering:redes-informaticas:name:v1'],
+    });
+
+    expect(composition.narrative.opening).toContain('buena opción');
+    expect(composition.call_offer).toContain('seguimos por acá');
+  });
+
+  it('preserves ordinary sales language for backend egress validation instead of replacing it early', () => {
+    const natural = 'Sí, tenemos varias opciones y te ayudo a encontrar la que mejor encaje con tu objetivo.';
+    const composition = buildSafeAgentABrainCompositionV1({
+      proposal: parseAgentATurnProposalV1(proposal({
+        move: {
+          schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 0.95,
+        },
+        response: { messages: [natural] },
+        used_fact_ids: [],
+      }), context()),
+      context: context(),
+      response_goal: 'guide_area_choice',
+      planned_fact_ids: [],
+    });
+
+    expect(composition.narrative.opening).toBe(natural);
+  });
+
+  it('preserves natural prose and delegates commercial validation to the backend', () => {
     const composition = buildSafeAgentABrainCompositionV1({
       proposal: parseAgentATurnProposalV1(proposal({
         response: {
@@ -154,14 +196,11 @@ describe('Agent A Brain V1', () => {
     });
 
     expect(composition.narrative).toEqual({
-      opening: 'Podemos revisar juntos lo que más te importa.',
-      explanation: null,
+      opening: 'Podemos estudiar de forma virtual.',
+      explanation: 'Podemos revisar juntos lo que más te importa.',
       next_question: null,
     });
-    expect(composition.used_fact_ids).toEqual([
-      'offering:redes-informaticas:name:v1',
-      'offering:redes-informaticas:description:v1',
-    ]);
+    expect(composition.used_fact_ids).toEqual(['offering:redes-informaticas:name:v1']);
   });
 
   it('uses contextual value-free copy when every model message is unsafe', () => {
@@ -210,6 +249,9 @@ describe('Agent A Brain V1', () => {
     expect(() => parseAgentATurnProposalV1(proposal({
       response: { messages: ['Pagá en https://buy.stripe.com/model-link'] },
     }), context())).toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
+    expect(() => parseAgentATurnProposalV1(proposal({
+      response: { messages: ['El próximo inicio es {{FECHA}}.'] },
+    }), context())).toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
     expect(() => parseAgentATurnProposalV1(proposal({ used_fact_ids: ['fact-not-supplied'] }), context()))
       .toThrowError(expect.objectContaining({ code: 'BRAIN_UNKNOWN_FACT_ID' }));
     expect(() => parseAgentATurnProposalV1(proposal({ used_memory_ids: ['memory-not-supplied'] }), context()))
@@ -233,6 +275,55 @@ describe('Agent A Brain V1', () => {
     expect(body.response_format).toMatchObject({
       type: 'json_schema', json_schema: { name: 'studyx_agent_a_turn_proposal_v1', strict: true },
     });
+  });
+
+  it('uses OpenAI structured outputs with the complete brain prompt and no Groq-only knobs', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(200, responsesSuccessBody(proposal())));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await generateOpenAIAgentATurnProposalV1({
+      context: context(), apiKey: 'openai-test-key', signal: new AbortController().signal,
+      model: 'gpt-5.6-terra',
+    });
+
+    expect(result).toMatchObject({ provider: 'openai-direct', model: 'gpt-5.6-terra', attempt_count: 1 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('https://api.openai.com/v1/responses');
+    expect(init?.headers).toMatchObject({
+      authorization: 'Bearer openai-test-key',
+      'content-type': 'application/json',
+    });
+    const body = JSON.parse(String(init?.body));
+    expect(body).toMatchObject({
+      model: 'gpt-5.6-terra',
+      reasoning: { effort: 'none' },
+      store: false,
+      max_output_tokens: 800,
+      text: {
+        format: { type: 'json_schema', name: 'studyx_agent_a_turn_proposal_v1', strict: true },
+      },
+    });
+    expect(body).not.toHaveProperty('temperature');
+    expect(body.input[0].content[0].text).toContain('<canonical_sales_behavior');
+    expect(body.input[0].content[0].text).toContain('<authorized_context>');
+  });
+
+  it('fails closed with an OpenAI-specific error without exposing the provider body', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(providerResponse(
+      429,
+      { error: { message: 'CANARY_SECRET_PROVIDER_BODY' } },
+      { 'retry-after': '3' },
+    )));
+
+    await expect(generateOpenAIAgentATurnProposalV1({
+      context: context(), apiKey: 'openai-test-key', signal: new AbortController().signal,
+    })).rejects.toEqual(expect.objectContaining<Partial<AgentABrainError>>({
+      code: 'BRAIN_OPENAI_RATE_LIMITED',
+      status: 429,
+      retry_after_ms: 3_000,
+      detail: null,
+    }));
   });
 
   it('can execute the same brain contract through direct Gemini when Groq is unavailable', async () => {

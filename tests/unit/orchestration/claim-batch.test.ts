@@ -253,9 +253,11 @@ describe('claimBatch', () => {
     });
     const enabled = await claimBatch(input, {
       ...buildDeps(), conversationPipelineEnabled: true, conversationState: { load },
+      now: () => '2026-08-27T00:02:00.000Z',
     });
     const disabled = await claimBatch(input, {
       ...buildDeps(), conversationPipelineEnabled: false, conversationState: { load },
+      now: () => '2026-08-27T00:02:00.000Z',
     });
 
     expect(enabled).toMatchObject({

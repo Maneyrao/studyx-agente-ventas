@@ -13,6 +13,7 @@ const actionSpies = vi.hoisted(() => ({
   geminiDecision: vi.fn(),
   groqDecision: vi.fn(),
   agentABrain: vi.fn(),
+  agentABrainOpenAI: vi.fn(),
   agentABrainGemini: vi.fn(),
   conversationInterpreter: vi.fn(),
 }));
@@ -56,9 +57,12 @@ vi.mock('../../../botpress-agent/src/lib/conversation/conversation-interpreter',
 }));
 vi.mock('../../../botpress-agent/src/lib/conversation/agent-a-brain', () => ({
   generateAgentATurnProposalV1: actionSpies.agentABrain,
+  generateOpenAIAgentATurnProposalV1: actionSpies.agentABrainOpenAI,
   generateGeminiAgentATurnProposalV1: actionSpies.agentABrainGemini,
   parseAgentATurnProposalV1: (raw: unknown) => raw,
   DEFAULT_AGENT_A_BRAIN_MODEL: 'openai/gpt-oss-120b',
+  DEFAULT_AGENT_A_BRAIN_OPENAI_MODEL: 'gpt-5.6-terra',
+  DEFAULT_AGENT_A_BRAIN_OPENAI_FALLBACK_MODEL: 'gpt-5.6-luna',
   DEFAULT_AGENT_A_BRAIN_GEMINI_MODEL: 'gemini-2.5-flash',
   buildSafeAgentABrainCompositionV1: ({ proposal, planned_fact_ids }: {
     proposal: { response: { messages: string[] } };
@@ -280,6 +284,7 @@ describe('processInboundTurn hot path', () => {
     configuration.automationEnabled = true;
     configuration.decisionProvider = 'botpress_managed';
     secrets.GROQ_API_KEY = 'gsk-local-test-only';
+    delete secrets.OPENAI_API_KEY;
     delete secrets.GEMINI_API_KEY;
     actionSpies.ingest.mockResolvedValue(ingestResponse());
     actionSpies.claim.mockResolvedValue(claimedResponse());
@@ -417,7 +422,7 @@ describe('processInboundTurn hot path', () => {
               },
             },
           },
-          model: { prompt_version: 'studyx-agent-a-brain-v1' },
+          model: { prompt_version: 'studyx-agent-a-brain-v2' },
         });
       } else {
         expect(commitInput).toMatchObject({
@@ -436,7 +441,7 @@ describe('processInboundTurn hot path', () => {
         const brainLog = logs.map((line) => JSON.parse(line) as Record<string, unknown>)
           .find((entry) => entry.event === 'studyx.turn.agent_a_brain_v1');
         expect(brainLog).toMatchObject({
-          brain_prompt_version: 'studyx-agent-a-brain-v1',
+          brain_prompt_version: 'studyx-agent-a-brain-v2',
           brain_model: 'openai/gpt-oss-120b',
           brain_source: 'model',
           context_recent_turn_count: 0,
@@ -581,6 +586,73 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
+  it('uses OpenAI Terra as the primary authoritative brain when its production secret exists', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null, selected_payment_plan: null,
+      stage: 'exploring', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 1,
+    };
+    claimed.context.batch_messages[0].content = 'Quiero aprender algo relacionado con tecnología';
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 1,
+      offerings: [{ code: 'redes-informaticas', display_name: 'Redes Informáticas', academy: 'Tecnología', aliases: [] }],
+      injection_suspected_count: 0,
+    };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+    secrets.OPENAI_API_KEY = 'openai-local-test-only';
+    actionSpies.agentABrainOpenAI.mockResolvedValue({
+      proposal: {
+        schema_version: 1,
+        move: {
+          schema_version: 1, move: 'select_area', secondary_moves: [], vetoes: [],
+          area_reference: 'Tecnología', confidence: 0.98,
+        },
+        response: { messages: ['Buenísimo. Dentro de tecnología podemos buscar una opción que vaya con tu objetivo.'] },
+        proposed_action: { type: 'none' },
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+      },
+      provider: 'openai-direct', model: 'gpt-5.6-terra', latency_ms: 420, attempt_count: 1,
+    });
+
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => {
+      throw new Error('MANAGED_MODEL_MUST_NOT_RUN_WHEN_OPENAI_SUCCEEDS');
+    });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute, client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.agentABrainOpenAI).toHaveBeenCalledWith(expect.objectContaining({
+      apiKey: 'openai-local-test-only',
+      model: 'gpt-5.6-terra',
+    }));
+    expect(actionSpies.agentABrain).not.toHaveBeenCalled();
+    expect(actionSpies.agentABrainGemini).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: {
+        composition: { narrative: { opening: expect.stringContaining('Dentro de tecnología') } },
+      },
+      model: { provider: 'openai-direct', model: 'gpt-5.6-terra' },
+    });
+  });
+
   it('keeps the natural brain active through direct Gemini before any canned fallback', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
@@ -682,7 +754,7 @@ describe('processInboundTurn hot path', () => {
       async (_name: string, run: () => Promise<unknown>) => run(),
       { sleep: vi.fn(async () => undefined) },
     );
-    const execute = vi.fn(async (_request: { instructions: string }) => ({
+    const execute = vi.fn(async () => ({
       is: () => true,
       output: {
         schema_version: 4,
@@ -1124,18 +1196,21 @@ describe('processInboundTurn hot path', () => {
       async (_name: string, run: () => Promise<unknown>) => run(),
       { sleep: vi.fn(async () => undefined) },
     );
-    const execute = vi.fn(async (_request: { instructions: string }) => ({
-      is: () => true,
-      output: {
-        schema_version: 1,
-        narrative: {
-          opening: 'Perfecto, seguimos por chat.',
-          explanation: 'Te acompaño por este medio.',
-          next_question: '¿Qué aspecto querés revisar?',
+    const execute = vi.fn(async (request: { instructions: string }) => {
+      void request;
+      return {
+        is: () => true,
+        output: {
+          schema_version: 1,
+          narrative: {
+            opening: 'Perfecto, seguimos por chat.',
+            explanation: 'Te acompaño por este medio.',
+            next_question: '¿Qué aspecto querés revisar?',
+          },
+          used_fact_ids: [],
         },
-        used_fact_ids: [],
-      },
-    }));
+      };
+    });
     const handler = (processInboundTurn as unknown as {
       definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
     }).definition.handler;

@@ -27,6 +27,8 @@ import {
   PostgresMemoryRetriever,
 } from '@/features/orchestration/adapters/postgres-retrievers';
 import { EMBEDDING_DIMENSIONS } from '@/lib/embeddings/gemini';
+import { projectAgentAMemories } from '@/features/memory/application/project-agent-a-memories';
+import { auditLog } from '@/lib/audit/logger';
 
 const databaseInspection = process.env.TEST_DATABASE_URL;
 const run = databaseInspection ? describe : describe.skip;
@@ -387,7 +389,7 @@ run('canonical orchestration lifecycle', () => {
           },
           {
             type: 'preference',
-            key: 'schedule',
+            key: 'schedule_memory_guard',
             value: 'night',
             source_quote: 'Prefiero pagar por este link y con este presupuesto',
             confidence: 0.9,
@@ -399,9 +401,10 @@ run('canonical orchestration lifecycle', () => {
       model: { provider: 'botpress', model: 'test-model', prompt_version: 'v-memory-guard' },
     });
     expect(committed.status).toBe('committed');
-    // `commitAgentDecision` awaits `recordTurnMemories` fully before
-    // returning (Fase 4 memory selection runs on its own connection but
-    // synchronously, after the canonical commit) — no need to wait further.
+    // The canonical commit only enqueues durable projection jobs. Run the
+    // same bounded worker used by reconciliation before asserting the
+    // selected-memory projection.
+    await projectAgentAMemories({ limit: 10 }, { db: db!, audit: auditLog });
 
     const memories = await db!<Array<{ memory_key: string }>>`
       SELECT memory_key FROM selected_memories WHERE decision_id = ${committed.decision_id}::uuid
@@ -413,15 +416,15 @@ run('canonical orchestration lifecycle', () => {
     // currency context is not price-like and must be kept, same as any
     // other clean candidate.
     expect(memories.map((row) => row.memory_key).sort()).toEqual(
-      ['preferred_shift', 'schedule', 'study_hours'].sort()
+      ['preferred_shift', 'schedule_memory_guard', 'study_hours'].sort()
     );
 
     const audits = await db!<Array<{ payload: Record<string, unknown> }>>`
       SELECT payload FROM audit_log
       WHERE entity_id = ${committed.decision_id}::uuid AND action = 'agent.decision.memory_candidate_rejected'
     `;
-    expect(audits).toHaveLength(1);
-    expect(audits[0].payload.rejected).toEqual([
+    expect(audits).toHaveLength(4);
+    expect(audits.flatMap((row) => row.payload.rejected as unknown[])).toEqual([
       { type: 'preference', key: 'payment_channel', reason: 'URL_OR_PRICE_LIKE' },
       { type: 'constraint', key: 'budget_hint', reason: 'URL_OR_PRICE_LIKE' },
       { type: 'constraint', key: 'price_offer_dollars', reason: 'URL_OR_PRICE_LIKE' },

@@ -46,9 +46,12 @@ import { buildAgentAContextV1 } from '../lib/conversation/agent-a-context'
 import {
   DEFAULT_AGENT_A_BRAIN_MODEL,
   DEFAULT_AGENT_A_BRAIN_GEMINI_MODEL,
+  DEFAULT_AGENT_A_BRAIN_OPENAI_FALLBACK_MODEL,
+  DEFAULT_AGENT_A_BRAIN_OPENAI_MODEL,
   buildSafeAgentABrainCompositionV1,
   generateAgentATurnProposalV1,
   generateGeminiAgentATurnProposalV1,
+  generateOpenAIAgentATurnProposalV1,
   parseAgentATurnProposalV1,
 } from '../lib/conversation/agent-a-brain'
 import { AgentATurnProposalV1Schema, type AgentATurnProposalV1 } from '../schemas/agent-a-brain'
@@ -545,7 +548,7 @@ export const processInboundTurn = new Workflow({
 
     let pipelineCommit: ConversationPipelineCommitV1 | null = null
     let pipelineFailureDecision: Decision | null = null
-    let pipelineDecisionProvider: 'botpress' | 'google-ai-direct' | 'groq-direct' = 'groq-direct'
+    let pipelineDecisionProvider: 'botpress' | 'google-ai-direct' | 'groq-direct' | 'openai-direct' = 'botpress'
     let pipelineDecisionModel = 'conversation-pipeline-v1'
     let pipelinePromptVersion = `${CONVERSATION_INTERPRETER_PROMPT_VERSION}+${CONVERSATION_COMPOSER_PROMPT_VERSION}+${STUDYX_SALES_BEHAVIOR_VERSION}`
     let pipelineMemoryCandidates: Decision['memory_candidates'] = []
@@ -563,39 +566,94 @@ export const processInboundTurn = new Workflow({
 
     if (brainEligible) {
       try {
-        const apiKey = secrets.GROQ_API_KEY
-        if (typeof apiKey !== 'string' || apiKey === '') {
-          throw new StudyxHttpError('GROQ_API_KEY_MISSING', false)
-        }
         let generated: {
           proposal: AgentATurnProposalV1
-          provider: 'botpress' | 'google-ai-direct' | 'groq-direct'
+          provider: 'botpress' | 'google-ai-direct' | 'groq-direct' | 'openai-direct'
           model: string
           latency_ms: number
           attempt_count: number
         } | undefined
-        try {
-          generated = await step(
-            'generate-agent-a-turn-proposal-v1',
-            () => generateAgentATurnProposalV1({
-              context: agentABrainContext,
-              apiKey,
-              signal,
-              model: typeof configuration.agentABrainModel === 'string'
-                ? configuration.agentABrainModel
-                : DEFAULT_AGENT_A_BRAIN_MODEL,
-            }),
-            { maxAttempts: 1 },
-          )
-        } catch (directError) {
+        const openAIApiKey = secrets.OPENAI_API_KEY
+        let directError: unknown = new Error('OPENAI_API_KEY_MISSING')
+        let openAIFallbackError: unknown = new Error('OPENAI_FALLBACK_NOT_ATTEMPTED')
+        if (typeof openAIApiKey === 'string' && openAIApiKey.length > 0) {
+          try {
+            generated = await step(
+              'generate-agent-a-turn-proposal-v1-openai-primary',
+              () => generateOpenAIAgentATurnProposalV1({
+                context: agentABrainContext,
+                apiKey: openAIApiKey,
+                signal,
+                model: typeof configuration.agentABrainOpenAIModel === 'string'
+                  ? configuration.agentABrainOpenAIModel
+                  : DEFAULT_AGENT_A_BRAIN_OPENAI_MODEL,
+              }),
+              { maxAttempts: 1 },
+            )
+          } catch (error) {
+            directError = error
+            try {
+              generated = await step(
+                'generate-agent-a-turn-proposal-v1-openai-fallback',
+                () => generateOpenAIAgentATurnProposalV1({
+                  context: agentABrainContext,
+                  apiKey: openAIApiKey,
+                  signal,
+                  model: typeof configuration.agentABrainOpenAIFallbackModel === 'string'
+                    ? configuration.agentABrainOpenAIFallbackModel
+                    : DEFAULT_AGENT_A_BRAIN_OPENAI_FALLBACK_MODEL,
+                  timeout_ms: 3_000,
+                }),
+                { maxAttempts: 1 },
+              )
+              safeLog('studyx.turn.agent_a_brain_provider_failover', {
+                trace_id: input.trace_id,
+                turn_id: owned.turn_id,
+                from_provider: 'openai-direct-primary',
+                to_provider: 'openai-direct-fallback',
+                direct_error_code: errorCode(directError),
+              })
+            } catch (fallbackError) {
+              openAIFallbackError = fallbackError
+            }
+          }
+        }
+
+        if (generated === undefined && !(typeof openAIApiKey === 'string' && openAIApiKey.length > 0)) {
+          const apiKey = secrets.GROQ_API_KEY
+          if (typeof apiKey !== 'string' || apiKey === '') {
+            throw new StudyxHttpError('AGENT_A_BRAIN_PROVIDER_KEY_MISSING', false)
+          }
+          try {
+            generated = await step(
+              'generate-agent-a-turn-proposal-v1-groq-compatibility',
+              () => generateAgentATurnProposalV1({
+                context: agentABrainContext,
+                apiKey,
+                signal,
+                model: typeof configuration.agentABrainModel === 'string'
+                  ? configuration.agentABrainModel
+                  : DEFAULT_AGENT_A_BRAIN_MODEL,
+              }),
+              { maxAttempts: 1 },
+            )
+          } catch (error) {
+            directError = error
+          }
+        }
+
+        if (generated === undefined) {
           // A provider quota must not replace the full sales brain with a
           // canned response. First use the separately provisioned direct
           // Gemini boundary, which keeps the exact prompt and schema without
           // consuming Botpress AI Spend. Managed models remain the last model
           // failover before the contextual deterministic response.
-          let geminiError: unknown = new Error('GEMINI_API_KEY_MISSING')
+          let geminiError: unknown = typeof openAIApiKey === 'string' && openAIApiKey.length > 0
+            ? openAIFallbackError
+            : new Error('GEMINI_API_KEY_MISSING')
           const geminiApiKey = secrets.GEMINI_API_KEY
-          if (typeof geminiApiKey === 'string' && geminiApiKey.length > 0) {
+          if (!(typeof openAIApiKey === 'string' && openAIApiKey.length > 0)
+            && typeof geminiApiKey === 'string' && geminiApiKey.length > 0) {
             try {
               generated = await step(
                 'generate-agent-a-turn-proposal-v1-gemini',
@@ -891,7 +949,7 @@ export const processInboundTurn = new Workflow({
     let decision: Decision
     let decisionWasModel = false
     let decisionModel: string = DECISION_MODELS[0]
-    let decisionProvider: 'botpress' | 'google-ai-direct' | 'groq-direct' = 'botpress'
+    let decisionProvider: 'botpress' | 'google-ai-direct' | 'groq-direct' | 'openai-direct' = 'botpress'
     timings.model_ms = 0
     if (pipelineCommit) {
       decision = pipelinePlaceholder(pipelineMemoryCandidates)

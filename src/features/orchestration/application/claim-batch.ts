@@ -2,6 +2,7 @@ import { evaluateTurnPolicy, type TurnPolicy } from '../domain/turn-policy';
 import type { BusinessContextView, CatalogIndexView } from '../domain/business-context';
 import type { SalesContextState } from '@/features/sales/domain/sales-context';
 import type { ConversationStateV1 } from '@/features/conversation/domain/conversation-pipeline';
+import { effectiveConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
 import {
   isCatalogRequestNeutral,
   resolveCatalogRequest,
@@ -876,7 +877,13 @@ export async function claimBatch(
     selected_payment_plan: persistedState?.selected_payment_plan ?? null,
     ...selection,
   };
-  const persistedConversationState = persisted_conversation_state as ConversationStateV1 | null;
+  const rawPersistedConversationState = persisted_conversation_state as ConversationStateV1 | null;
+  const persistedConversationState = rawPersistedConversationState
+    ? effectiveConversationStateV1(
+        rawPersistedConversationState,
+        Date.parse((deps.now ?? (() => new Date().toISOString()))()),
+      )
+    : null;
   const conversationStateV1 = conversationStateEnabled
     ? persistedConversationState
       ? {

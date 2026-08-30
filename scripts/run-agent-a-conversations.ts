@@ -60,8 +60,11 @@ import { routeCommercialTurn } from '../botpress-agent/src/utils/commercial-rout
 import { buildAgentAContextV1 } from '../botpress-agent/src/lib/conversation/agent-a-context';
 import {
   AgentABrainError,
+  DEFAULT_AGENT_A_BRAIN_OPENAI_FALLBACK_MODEL,
+  DEFAULT_AGENT_A_BRAIN_OPENAI_MODEL,
   buildSafeAgentABrainCompositionV1,
   generateAgentATurnProposalV1,
+  generateOpenAIAgentATurnProposalV1,
 } from '../botpress-agent/src/lib/conversation/agent-a-brain';
 import { AGENT_A_BRAIN_PROMPT_VERSION } from '../botpress-agent/src/prompts/agent-a-brain-v1';
 import { deliverAuthorizedLocalOutbound } from './lib/local-authorized-delivery';
@@ -141,10 +144,13 @@ type LocalCredentials = {
   orchestratorKeyId: string;
   signingSecret: string;
   cronSecret: string | null;
-  geminiApiKey: string;
+  geminiApiKey?: string;
   geminiModel: string;
-  groqApiKey: string;
+  groqApiKey?: string;
   groqModel: string;
+  openaiApiKey?: string;
+  openaiModel?: string;
+  openaiFallbackModel?: string;
 };
 
 function parseDotEnv(contents: string): Record<string, string> {
@@ -177,6 +183,9 @@ async function loadLocalCredentials(primaryProvider: 'groq' | 'gemini'): Promise
     }
     throw new Error(`LOCAL_TRANSPORT_CREDENTIAL_MISSING:${name}`);
   };
+  const optionalValue = (name: string): string | undefined => (
+    process.env[name] ?? envFile[name] ?? adkSecrets.dev?.[name]
+  )?.trim() || undefined;
 
   return {
     apiBaseUrl: localApiBaseUrl(),
@@ -184,16 +193,23 @@ async function loadLocalCredentials(primaryProvider: 'groq' | 'gemini'): Promise
     orchestratorKeyId: process.env.ORCHESTRATOR_KEY_ID ?? envFile.ORCHESTRATOR_KEY_ID ?? 'botpress-dev',
     signingSecret: value('STUDYX_SIGNING_SECRET'),
     cronSecret: process.env.CRON_SECRET ?? envFile.CRON_SECRET ?? adkSecrets.dev?.CRON_SECRET ?? null,
-    geminiApiKey: value('GEMINI_API_KEY'),
+    geminiApiKey: optionalValue('GEMINI_API_KEY'),
     geminiModel: argument('--gemini-model')
       ?? (primaryProvider === 'gemini' ? argument('--model') : null)
       ?? process.env.GEMINI_MODEL
       ?? envFile.GEMINI_MODEL
       ?? DEFAULT_GEMINI_MODEL,
-    groqApiKey: value('GROQ_API_KEY'),
+    groqApiKey: optionalValue('GROQ_API_KEY'),
     groqModel: argument('--groq-model')
       ?? (primaryProvider === 'groq' ? argument('--model') : null)
       ?? DEFAULT_GROQ_MODEL,
+    openaiApiKey: optionalValue('OPENAI_API_KEY'),
+    openaiModel: argument('--openai-model')
+      ?? optionalValue('AGENT_A_BRAIN_OPENAI_MODEL')
+      ?? DEFAULT_AGENT_A_BRAIN_OPENAI_MODEL,
+    openaiFallbackModel: argument('--openai-fallback-model')
+      ?? optionalValue('AGENT_A_BRAIN_OPENAI_FALLBACK_MODEL')
+      ?? DEFAULT_AGENT_A_BRAIN_OPENAI_FALLBACK_MODEL,
   };
 }
 
@@ -418,7 +434,7 @@ export function createLocalTurnSender(
       : null;
     let decision: Decision;
     let decisionWasModel = false;
-    let provider: 'botpress' | 'groq-direct' | 'google-ai-direct';
+    let provider: 'botpress' | 'groq-direct' | 'google-ai-direct' | 'openai-direct';
     let decisionModel: string;
     let promptVersion: string = AGENT_A_PROMPT_VERSION;
     let fallbackReason: string | null = null;
@@ -456,31 +472,52 @@ export function createLocalTurnSender(
         evaluationPacingMs += await paceModelProvider();
         if (evaluationControl?.forceProviderFailure) throw new Error('BRAIN_TIMEOUT');
         let generated: Awaited<ReturnType<typeof generateAgentATurnProposalV1>> | null = null;
-        for (let transportAttempt = 0; transportAttempt < 3; transportAttempt += 1) {
+        if (credentials.openaiApiKey) {
           try {
-            generated = await generateAgentATurnProposalV1({
+            generated = await generateOpenAIAgentATurnProposalV1({
               context: brainContext,
-              apiKey: credentials.groqApiKey,
-              model: credentials.groqModel,
+              apiKey: credentials.openaiApiKey,
+              model: credentials.openaiModel ?? DEFAULT_AGENT_A_BRAIN_OPENAI_MODEL,
               signal: new AbortController().signal,
             });
-            break;
-          } catch (error) {
-            const mayRetryRateLimit = error instanceof AgentABrainError
-              && error.code === 'BRAIN_RATE_LIMITED'
-              && transportAttempt < 2;
-            if (!mayRetryRateLimit) throw error;
-            const requestedBackoffMs = Math.max(
-              minimumModelIntervalMs,
-              error.retry_after_ms ?? 60_000 * (transportAttempt + 1),
-            );
-            if (requestedBackoffMs > 600_000) throw error;
-            console.error(`  429 de transporte; backoff ${requestedBackoffMs}ms`);
-            const backoffStartedAt = Date.now();
-            await new Promise((resolve) => setTimeout(resolve, requestedBackoffMs));
-            evaluationPacingMs += Date.now() - backoffStartedAt;
-            previousModelStartedAt = Date.now();
+          } catch {
             brainTransportRetries += 1;
+            generated = await generateOpenAIAgentATurnProposalV1({
+              context: brainContext,
+              apiKey: credentials.openaiApiKey,
+              model: credentials.openaiFallbackModel ?? DEFAULT_AGENT_A_BRAIN_OPENAI_FALLBACK_MODEL,
+              timeout_ms: 3_000,
+              signal: new AbortController().signal,
+            });
+          }
+        } else {
+          if (!credentials.groqApiKey) throw new Error('LOCAL_TRANSPORT_CREDENTIAL_MISSING:GROQ_API_KEY');
+          for (let transportAttempt = 0; transportAttempt < 3; transportAttempt += 1) {
+            try {
+              generated = await generateAgentATurnProposalV1({
+                context: brainContext,
+                apiKey: credentials.groqApiKey,
+                model: credentials.groqModel,
+                signal: new AbortController().signal,
+              });
+              break;
+            } catch (error) {
+              const mayRetryRateLimit = error instanceof AgentABrainError
+                && error.code === 'BRAIN_RATE_LIMITED'
+                && transportAttempt < 2;
+              if (!mayRetryRateLimit) throw error;
+              const requestedBackoffMs = Math.max(
+                minimumModelIntervalMs,
+                error.retry_after_ms ?? 60_000 * (transportAttempt + 1),
+              );
+              if (requestedBackoffMs > 600_000) throw error;
+              console.error(`  429 de transporte; backoff ${requestedBackoffMs}ms`);
+              const backoffStartedAt = Date.now();
+              await new Promise((resolve) => setTimeout(resolve, requestedBackoffMs));
+              evaluationPacingMs += Date.now() - backoffStartedAt;
+              previousModelStartedAt = Date.now();
+              brainTransportRetries += 1;
+            }
           }
         }
         if (generated === null) throw new Error('BRAIN_TRANSPORT_RETRY_EXHAUSTED');
@@ -566,6 +603,12 @@ export function createLocalTurnSender(
       const modelStartedAt = Date.now();
       try {
         evaluationPacingMs += await paceModelProvider();
+        const providerApiKey = modelProvider === 'gemini'
+          ? credentials.geminiApiKey
+          : credentials.groqApiKey;
+        if (!providerApiKey) {
+          throw new Error(`LOCAL_TRANSPORT_CREDENTIAL_MISSING:${modelProvider === 'gemini' ? 'GEMINI_API_KEY' : 'GROQ_API_KEY'}`);
+        }
         const commonInput = {
           instructions: buildLocalProviderInstructions(modelProvider, claimed),
           signal: new AbortController().signal,
@@ -574,12 +617,12 @@ export function createLocalTurnSender(
         const generated = modelProvider === 'gemini'
           ? await generateGeminiDecision({
               ...commonInput,
-              apiKey: credentials.geminiApiKey,
+              apiKey: providerApiKey,
               model: credentials.geminiModel,
             })
           : await generateGroqDecision({
               ...commonInput,
-              apiKey: credentials.groqApiKey,
+              apiKey: providerApiKey,
               model: credentials.groqModel,
             });
         decision = generated.decision;

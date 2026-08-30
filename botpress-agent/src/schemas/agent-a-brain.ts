@@ -13,6 +13,9 @@ const IdentifierSchema = z.string().trim().min(1).max(160);
 const CustomerMessageSchema = z.string().trim().min(1).max(1_500).refine(
   (value) => !/https?:\/\//iu.test(value),
   'MODEL_RESPONSE_URL_FORBIDDEN',
+).refine(
+  (value) => !/\{\{[^}]+\}\}/u.test(value),
+  'MODEL_RESPONSE_PLACEHOLDER_FORBIDDEN',
 );
 
 const AgentAMemorySchema = z.object({
@@ -115,6 +118,7 @@ export const AgentATurnProposalV1Schema = z.object({
       z.tuple([CustomerMessageSchema, CustomerMessageSchema]),
       z.tuple([CustomerMessageSchema, CustomerMessageSchema, CustomerMessageSchema]),
     ]),
+    call_offer: CustomerMessageSchema.nullable().optional(),
   }).strict(),
   proposed_action: ProposedActionSchema,
   used_fact_ids: z.array(IdentifierSchema).max(32),

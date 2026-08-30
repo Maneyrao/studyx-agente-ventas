@@ -12,10 +12,14 @@ import { buildAgentABrainInstructionsV1 } from '../../prompts/agent-a-brain-v1';
 import { isValueFreeNarrativePortable } from '../../utils/authorized-egress';
 
 const GROQ_CHAT_COMPLETIONS_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 export const DEFAULT_AGENT_A_BRAIN_MODEL = 'openai/gpt-oss-120b';
+export const DEFAULT_AGENT_A_BRAIN_OPENAI_MODEL = 'gpt-5.6-terra';
+export const DEFAULT_AGENT_A_BRAIN_OPENAI_FALLBACK_MODEL = 'gpt-5.6-luna';
 export const DEFAULT_AGENT_A_BRAIN_GEMINI_MODEL = 'gemini-2.5-flash';
 export const AGENT_A_BRAIN_DEADLINE_MS = 4_500;
+export const AGENT_A_BRAIN_OPENAI_DEADLINE_MS = 6_000;
 export const AGENT_A_BRAIN_GEMINI_DEADLINE_MS = 8_000;
 
 export class AgentABrainError extends Error {
@@ -32,7 +36,7 @@ export class AgentABrainError extends Error {
 
 export interface GeneratedAgentATurnProposalV1 {
   readonly proposal: AgentATurnProposalV1;
-  readonly provider: 'groq-direct' | 'google-ai-direct';
+  readonly provider: 'groq-direct' | 'google-ai-direct' | 'openai-direct';
   readonly model: string;
   readonly latency_ms: number;
   readonly attempt_count: 1 | 2;
@@ -189,6 +193,7 @@ function proposalJsonSchema(): unknown {
     move,
     response: closedObject({
       messages: { type: 'array', minItems: 1, maxItems: 3, items: { type: 'string' } },
+      call_offer: { anyOf: [{ type: 'string' }, { type: 'null' }] },
     }),
     proposed_action: proposedAction,
     used_fact_ids: { type: 'array', maxItems: 32, items: { type: 'string' } },
@@ -239,6 +244,124 @@ function extractContent(payload: unknown): string | null {
   if (!message || typeof message !== 'object') return null;
   const content = (message as { content?: unknown }).content;
   return typeof content === 'string' ? content : null;
+}
+
+function extractResponsesContent(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const record = payload as Record<string, unknown>;
+  if (typeof record.output_text === 'string') return record.output_text;
+  if (!Array.isArray(record.output)) return null;
+  for (const output of record.output) {
+    if (!output || typeof output !== 'object') continue;
+    const content = (output as Record<string, unknown>).content;
+    if (!Array.isArray(content)) continue;
+    for (const item of content) {
+      if (!item || typeof item !== 'object') continue;
+      const candidate = item as Record<string, unknown>;
+      if (candidate.type === 'output_text' && typeof candidate.text === 'string') {
+        return candidate.text;
+      }
+    }
+  }
+  return null;
+}
+
+export async function generateOpenAIAgentATurnProposalV1(input: {
+  readonly context: AgentAContextV1;
+  readonly apiKey: string;
+  readonly signal: AbortSignal;
+  readonly model?: string;
+  readonly timeout_ms?: number;
+}): Promise<GeneratedAgentATurnProposalV1> {
+  const model = input.model?.trim() || DEFAULT_AGENT_A_BRAIN_OPENAI_MODEL;
+  const timeoutMs = Math.min(
+    AGENT_A_BRAIN_OPENAI_DEADLINE_MS,
+    Math.max(1, input.timeout_ms ?? AGENT_A_BRAIN_OPENAI_DEADLINE_MS),
+  );
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  let timedOut = false;
+  const parentAbort = () => controller.abort();
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  input.signal.addEventListener('abort', parentAbort, { once: true });
+  if (input.signal.aborted) controller.abort();
+
+  try {
+    let response: Response;
+    try {
+      response = await fetch(OPENAI_RESPONSES_URL, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${input.apiKey}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          input: [
+            {
+              role: 'developer',
+              content: [{ type: 'input_text', text: buildAgentABrainInstructionsV1(input.context) }],
+            },
+            {
+              role: 'user',
+              content: [{ type: 'input_text', text: 'Return only the single AgentATurnProposalV1 JSON object.' }],
+            },
+          ],
+          reasoning: { effort: 'none' },
+          store: false,
+          max_output_tokens: 800,
+          text: {
+            format: {
+              type: 'json_schema',
+              name: 'studyx_agent_a_turn_proposal_v1',
+              strict: true,
+              schema: proposalJsonSchema(),
+            },
+          },
+        }),
+        signal: controller.signal,
+      });
+    } catch {
+      throw new AgentABrainError(
+        timedOut ? 'BRAIN_OPENAI_TIMEOUT' : 'BRAIN_OPENAI_NETWORK_ERROR',
+      );
+    }
+    if (!response.ok) {
+      throw new AgentABrainError(
+        response.status === 429 ? 'BRAIN_OPENAI_RATE_LIMITED' : `BRAIN_OPENAI_HTTP_${response.status}`,
+        response.status,
+        null,
+        retryAfterMs(response),
+      );
+    }
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new AgentABrainError('BRAIN_OPENAI_INVALID_RESPONSE', response.status);
+    }
+    const content = extractResponsesContent(payload);
+    if (content === null) throw new AgentABrainError('BRAIN_OPENAI_EMPTY_RESPONSE', response.status);
+    let decoded: unknown;
+    try {
+      decoded = JSON.parse(content);
+    } catch {
+      throw new AgentABrainError('BRAIN_OPENAI_INVALID_JSON', response.status);
+    }
+    return {
+      proposal: parseAgentATurnProposalV1(decoded, input.context),
+      provider: 'openai-direct',
+      model,
+      latency_ms: Date.now() - startedAt,
+      attempt_count: 1,
+    };
+  } finally {
+    clearTimeout(timeout);
+    input.signal.removeEventListener('abort', parentAbort);
+  }
 }
 
 function normalizeStrictProposal(value: unknown): unknown {
@@ -311,20 +434,6 @@ function commercialValuesByFactId(context: AgentAContextV1): ReadonlyMap<string,
   return values;
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-}
-
-function maskAuthorizedValues(message: string, values: readonly string[]): string {
-  return [...values]
-    .filter((value) => value.trim().length >= 3)
-    .sort((left, right) => right.length - left.length)
-    .reduce(
-      (masked, value) => masked.replace(new RegExp(escapeRegExp(value), 'giu'), 'dato autorizado'),
-      message,
-    );
-}
-
 /**
  * The model owns the wording. Canonical values are allowed in that wording
  * only when the proposal cites their fact IDs and the authoritative planner
@@ -339,26 +448,19 @@ export function buildSafeAgentABrainCompositionV1(input: {
   const plannedIds = new Set(input.planned_fact_ids);
   const citedIds = new Set(input.proposal.used_fact_ids.filter((id) => plannedIds.has(id)));
   const valuesById = commercialValuesByFactId(input.context);
-  const authorizedValues = [...citedIds]
-    .map((id) => valuesById.get(id))
-    .filter((value): value is string => value !== undefined);
   const unauthorizedValues = [...valuesById]
     .filter(([id]) => !citedIds.has(id))
     .map(([, value]) => value.normalize('NFKC').trim().toLocaleLowerCase('es'))
     .filter((value) => value.length >= 3);
   const safeMessages = input.proposal.response.messages.filter((message) => {
     const normalized = message.normalize('NFKC').toLocaleLowerCase('es');
-    const usesAuthorizedValue = authorizedValues.some((value) => (
-      value.trim().length >= 3 && new RegExp(escapeRegExp(value), 'iu').test(message)
-    ));
-    // Once the model cites a fact that the planner independently selected,
-    // keep its natural seller phrasing intact. The backend still verifies the
-    // complete assembled response and blocks any extra invented fact or URL.
-    // Applying the lexical pre-guard here would reject harmless expressions
-    // such as "Podés estudiar <authorized course>" before that authority runs.
-    return (usesAuthorizedValue
-      || isValueFreeNarrativePortable(maskAuthorizedValues(message, authorizedValues)))
-      && !unauthorizedValues.some((value) => normalized.includes(value));
+    // This layer owns composition, not business truth. The structured parser
+    // already blocks URLs and unknown evidence IDs; the backend sees the exact
+    // text next and validates every protected commercial assertion against its
+    // canonical snapshot. Filtering by sales vocabulary here caused valid
+    // natural language (for example "tenemos opciones") to be replaced by a
+    // canned fallback before the authority boundary could inspect it.
+    return !unauthorizedValues.some((value) => normalized.includes(value));
   });
   const messages = safeMessages.length > 0
     ? safeMessages
@@ -371,7 +473,11 @@ export function buildSafeAgentABrainCompositionV1(input: {
       explanation: messages[1] ?? null,
       next_question: messages[2] ?? null,
     },
-    used_fact_ids: [...new Set(input.planned_fact_ids)],
+    call_offer: input.proposal.response.call_offer
+      && isValueFreeNarrativePortable(input.proposal.response.call_offer)
+      ? input.proposal.response.call_offer
+      : null,
+    used_fact_ids: [...citedIds],
   });
 }
 

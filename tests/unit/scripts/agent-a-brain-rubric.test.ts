@@ -32,7 +32,7 @@ describe('Agent A brain held-out rubric', () => {
     ), 'utf8')) as ConversationSuite;
     const clusters = ['discovery', 'call', 'memory', 'payment', 'safety'];
 
-    expect(suite.prompt_version).toBe('studyx-agent-a-brain-v1');
+    expect(suite.prompt_version).toBe('studyx-agent-a-brain-v2');
     expect(suite.cases).toHaveLength(20);
     expect(validateSuiteCaseInvariants(suite)).toEqual([]);
     for (const cluster of clusters) {

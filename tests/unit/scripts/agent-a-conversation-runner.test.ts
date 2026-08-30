@@ -515,15 +515,15 @@ describe('Agent A conversation runner', () => {
       .mockResolvedValueOnce(jsonResponse(200, localIngestResponse()))
       .mockResolvedValueOnce(jsonResponse(200, localBrainClaimedTurn()))
       .mockResolvedValueOnce(jsonResponse(200, {
-        choices: [{ message: { content: JSON.stringify({
+        output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify({
           schema_version: 1,
           move: {
             schema_version: 1, move: 'continue_by_chat', secondary_moves: [], vetoes: [], confidence: 0.98,
           },
-          response: { messages: ['Perfecto, seguimos por acá.', '¿Qué aspecto querés revisar?'] },
+          response: { messages: ['Perfecto, seguimos por acá.', '¿Qué aspecto querés revisar?'], call_offer: null },
           proposed_action: { type: 'none' },
           used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
-        }) } }],
+        }) }] }],
       }))
       .mockResolvedValueOnce(jsonResponse(200, {
         plan: {
@@ -550,19 +550,23 @@ describe('Agent A conversation runner', () => {
       signingSecret: 'test-signing-secret', cronSecret: null,
       geminiApiKey: 'test-gemini-key', geminiModel: 'test-gemini-model',
       groqApiKey: 'test-groq-key', groqModel: 'openai/gpt-oss-120b',
+      openaiApiKey: 'test-openai-key', openaiModel: 'gpt-5.6-terra',
+      openaiFallbackModel: 'gpt-5.6-luna',
     }, 'brain-v1', 'groq', 0);
 
     const result = await sendTurn('Prefiero mantener el intercambio por escrito', null);
 
     const brainBody = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
-    expect(brainBody.response_format.json_schema.name).toBe('studyx_agent_a_turn_proposal_v1');
+    expect(fetchMock.mock.calls[2]?.[0]).toBe('https://api.openai.com/v1/responses');
+    expect(brainBody.model).toBe('gpt-5.6-terra');
+    expect(brainBody.text.format.name).toBe('studyx_agent_a_turn_proposal_v1');
     const commitBody = JSON.parse(String(fetchMock.mock.calls[4]?.[1]?.body));
     expect(commitBody).toMatchObject({
       conversation_pipeline_v1: {
         move: { move: 'continue_by_chat' },
         plan_hash: 'a'.repeat(64),
       },
-      model: { prompt_version: 'studyx-agent-a-brain-v1' },
+      model: { prompt_version: 'studyx-agent-a-brain-v2' },
     });
     expect(result.turnDiagnostic).toMatchObject({
       conversationState: {
@@ -927,7 +931,7 @@ describe('Agent A conversation runner', () => {
           evaluationPacingMs: 1_000,
           runtime: {
             git_sha: 'a'.repeat(40), transport: 'local', provider: 'groq-direct',
-            model: 'openai/gpt-oss-120b', prompt_version: 'studyx-agent-a-brain-v1',
+            model: 'openai/gpt-oss-120b', prompt_version: 'studyx-agent-a-brain-v2',
             route_origin: 'model', route_reason: 'MODEL_REQUIRED',
             raw_response_hash: null, committed_response_hash: null, fallback_reason: null,
             latencies_ms: { agent_a_brain_ms: 1_234 },

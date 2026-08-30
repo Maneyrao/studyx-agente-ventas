@@ -7,6 +7,10 @@ import {
   prepareConversationPipelineCommitV1,
   ConversationPlanMismatchError,
 } from '@/features/conversation/application/prepare-conversation-pipeline-commit';
+import {
+  buildAuthorizedEgress,
+  verifyAuthorizedEgress,
+} from '@/features/orchestration/domain/egress-guard';
 
 const ids = {
   workspace: '00000000-0000-4000-8000-000000000001',
@@ -51,7 +55,7 @@ function state(overrides: Partial<ConversationStateV1> = {}): ConversationStateV
     stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
     call_offer_count: 0,
     awaiting_reply: 'none', source_turn_id: null, version: 2,
-    created_at: index.as_of, updated_at: index.as_of, ...overrides,
+    created_at: '2099-01-01T00:00:00.000Z', updated_at: '2099-01-01T00:00:00.000Z', ...overrides,
   };
 }
 
@@ -126,6 +130,49 @@ describe('prepareConversationPipelineCommitV1', () => {
     expect(prepared.transition).toMatchObject({
       source_turn_id: ids.turn, call_offer_status: 'offered', awaiting_reply: 'call_or_chat',
     });
+  });
+
+  it('authorizes a natural offering assertion only when it names the canonical course', async () => {
+    const stateStore = store(state());
+    const move = {
+      schema_version: 1 as const, move: 'ask_course_information' as const,
+      secondary_moves: [], vetoes: [], course_reference: 'Redes Informáticas', confidence: 0.96,
+    };
+    const planned = await authoritativelyPlanConversationTurnV1({
+      turn: { workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', move, business_context: business, catalog_index: index,
+    }, { state_store: stateStore });
+    const nameFact = planned.fact_refs.find((fact) => fact.kind === 'offering_name');
+    expect(nameFact).toBeDefined();
+
+    const prepared = await prepareConversationPipelineCommitV1({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', move, expected_plan_hash: planned.plan_hash,
+      composition: {
+        schema_version: 1,
+        narrative: {
+          opening: 'Podés estudiar Redes Informáticas con nosotros.',
+          explanation: 'Te acompaño a ver si encaja con tu objetivo.',
+          next_question: '¿Lo buscás para trabajar o para formación personal?',
+        },
+        used_fact_ids: [nameFact!.id],
+      },
+      business_context: business, catalog_index: index,
+    }, { state_store: stateStore });
+
+    expect(prepared.authorized_protected_facts).toContainEqual({
+      kind: 'offering',
+      value: 'podés estudiar redes informáticas con nosotros',
+    });
+    const manifest = buildAuthorizedEgress({
+      content: prepared.decision.response ?? '',
+      authorized_urls: [],
+      protected_facts: prepared.authorized_protected_facts,
+    });
+    expect(verifyAuthorizedEgress({
+      content: prepared.decision.response ?? '',
+      manifest,
+    })).toEqual({ ok: true });
   });
 
   it('rejects a stale or tampered plan hash before creating authority', async () => {

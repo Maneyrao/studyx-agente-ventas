@@ -10,6 +10,7 @@ import type {
 import {
   canonicalReferenceKey,
   createDefaultConversationStateV1,
+  effectiveConversationStateV1,
   planConversationTurn,
   type PlanningBusinessContextV1,
 } from '../domain/conversation-planner';
@@ -40,6 +41,7 @@ export interface AuthoritativeConversationPlanInputV1 {
 export interface AuthoritativeConversationPlanDependenciesV1 {
   readonly state_store: Pick<ConversationStateStoreV1, 'load'>;
   readonly call_facts?: Pick<OrchestrationStore, 'loadClaimedCallFacts'>;
+  readonly now?: () => number;
 }
 
 export function buildPlanningBusinessContextV1(
@@ -96,7 +98,9 @@ export async function authoritativelyPlanConversationTurnV1(
       contact_id: input.turn.contact_id,
     }) ?? Promise.resolve(null),
   ]);
-  const state = loaded ?? createDefaultConversationStateV1(input.turn);
+  const state = loaded
+    ? effectiveConversationStateV1(loaded, deps.now?.() ?? Date.now())
+    : createDefaultConversationStateV1(input.turn);
   // An unresolved first offer is the evidence that makes a later, final
   // reminder meaningful. The conversation-local counter owns that two-offer
   // budget; only an active call or durable decline disables it outright.

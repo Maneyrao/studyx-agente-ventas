@@ -15,6 +15,7 @@ import {
 } from '../domain/canonical-fact-registry';
 import { assembleCanonicalConversationResponseV1 } from '../domain/canonical-response-assembler';
 import type { ProtectedFactRef } from '@/features/orchestration/domain/egress-guard';
+import { materializeCanonicalCatalogFacts } from '@/features/orchestration/domain/canonical-offering-egress';
 
 export class ConversationPlanMismatchError extends Error {
   readonly code = 'CONVERSATION_PLAN_MISMATCH';
@@ -154,6 +155,13 @@ export async function prepareConversationPipelineCommitV1(input: {
     facts: materialized.facts,
     composition: input.composition,
   });
+  const catalogFacts = materializeCanonicalCatalogFacts({
+    content: assembled.content,
+    offerings: input.catalog_index?.offerings.map((offering) => ({
+      code: offering.code,
+      display_name: offering.display_name,
+    })) ?? [],
+  });
   return {
     decision: decisionFromPlan({
       move: input.move,
@@ -176,10 +184,13 @@ export async function prepareConversationPipelineCommitV1(input: {
     },
     authorized_offering_code: authoritative.plan.selected_offering_code,
     authorized_payment_plan: authoritative.plan.selected_payment_plan,
-    authorized_protected_facts: protectedFactsFromCanonicalSelection({
-      facts: materialized.facts,
-      used_fact_ids: input.composition.used_fact_ids,
-      business_context: input.business_context,
-    }),
+    authorized_protected_facts: [...new Map([
+      ...protectedFactsFromCanonicalSelection({
+        facts: materialized.facts,
+        used_fact_ids: input.composition.used_fact_ids,
+        business_context: input.business_context,
+      }),
+      ...catalogFacts,
+    ].map((fact) => [`${fact.kind}\u0000${fact.value}`, fact])).values()],
   };
 }

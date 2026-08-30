@@ -109,6 +109,7 @@ export const ComposedNarrativeV1Schema = z.object({
     explanation: z.string().trim().min(1).max(1_200).nullable(),
     next_question: z.string().trim().min(1).max(400).nullable(),
   }).strict(),
+  call_offer: z.string().trim().min(1).max(400).nullable().optional(),
   used_fact_ids: z.array(z.string().min(1)).max(32),
 }).strict().superRefine((value, context) => {
   if (new Set(value.used_fact_ids).size !== value.used_fact_ids.length) {

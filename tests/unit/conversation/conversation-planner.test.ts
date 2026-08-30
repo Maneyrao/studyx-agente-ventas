@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ConversationMoveV1, ConversationStateV1 } from '@/features/conversation/domain/conversation-pipeline';
 import {
   createDefaultConversationStateV1,
+  effectiveConversationStateV1,
   planConversationTurn,
   type PlanningBusinessContextV1,
 } from '@/features/conversation/domain/conversation-planner';
@@ -50,6 +51,33 @@ function plan(currentMove: ConversationMoveV1, currentState: ConversationStateV1
 }
 
 describe('planConversationTurn', () => {
+  it('expires stale conversational state without losing the concurrency version', () => {
+    const stale = state({
+      selected_offering_code: 'redes-informaticas',
+      selected_payment_plan: 'monthly_12',
+      stage: 'plan_selected',
+      call_preference: 'chat',
+      call_offer_status: 'declined',
+      call_offer_count: 2,
+      awaiting_reply: 'payment_confirmation',
+      version: 9,
+      created_at: '2026-08-01T00:00:00.000Z',
+      updated_at: '2026-08-01T00:00:00.000Z',
+    });
+
+    expect(effectiveConversationStateV1(stale, Date.parse('2026-08-03T00:00:00.000Z')))
+      .toMatchObject({
+        selected_offering_code: null,
+        selected_payment_plan: null,
+        stage: 'exploring',
+        call_preference: 'unknown',
+        call_offer_status: 'not_offered',
+        call_offer_count: 0,
+        awaiting_reply: 'none',
+        version: 9,
+      });
+  });
+
   it('accepts chat after a call choice and consumes the offer without asking again', () => {
     const result = plan(move('continue_by_chat'), state({
       selected_offering_code: 'redes-informaticas',

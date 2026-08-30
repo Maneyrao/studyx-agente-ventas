@@ -176,5 +176,6 @@ export interface ComposedNarrativeV1 {
     readonly explanation: string | null;
     readonly next_question: string | null;
   };
+  readonly call_offer?: string | null;
   readonly used_fact_ids: readonly string[];
 }

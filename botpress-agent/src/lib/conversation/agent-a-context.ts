@@ -101,7 +101,9 @@ export function buildAgentAContextV1(claimed: ClaimedTurn): AgentAContextV1 | nu
   const state = claimed.conversation_state_v1;
   if (!state) return null;
   const index = claimed.catalog_index?.offerings ?? [];
-  const selectedCode = state.selected_offering_code ?? claimed.sales_context.offering_code;
+  // Conversation state is authoritative. A legacy contact-level selection
+  // must not revive an old course after the conversation was reset.
+  const selectedCode = state.selected_offering_code;
   const selectedOffering = selectedCode ? selectedOfferingFacts(claimed, selectedCode) : null;
   const areas = new Map<string, string>();
   for (const offering of index) {

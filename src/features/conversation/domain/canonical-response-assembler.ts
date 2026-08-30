@@ -100,7 +100,8 @@ export function assembleCanonicalConversationResponseV1(input: {
     .filter((fact) => !mentionedIds.has(fact.id))
     .map((fact) => renderFact(fact, offeringNames));
   const callOffer = input.plan.should_offer_call
-    ? ['¿Preferís que sigamos por chat o querés solicitar una llamada?']
+    ? [input.composition.call_offer
+      ?? '¿Preferís que sigamos por chat o querés solicitar una llamada?']
     : [];
   const content = [
     input.composition.narrative.opening,

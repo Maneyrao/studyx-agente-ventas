@@ -104,7 +104,7 @@ export interface CommitDecisionInput {
   conversation_pipeline_v1?: ParsedConversationPipelineCommitV1 | null;
   decision: AnyDecision;
   model: {
-    provider: 'botpress' | 'google-ai-direct' | 'groq-direct';
+    provider: 'botpress' | 'google-ai-direct' | 'groq-direct' | 'openai-direct';
     model: string;
     prompt_version: string;
   };

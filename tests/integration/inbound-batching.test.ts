@@ -264,7 +264,10 @@ run('durable inbound batching', () => {
       WHERE id = ${ingested.batch.id}::uuid
     `;
 
-    const reclaimable = await store.expireStaleClaims({ max_claim_attempts: 3, limit: 50 });
+    // This suite is intentionally rerunnable against an approved disposable
+    // cluster. A prior interrupted run may leave more than 50 stale fixtures,
+    // so the assertion must not depend on global table order.
+    const reclaimable = await store.expireStaleClaims({ max_claim_attempts: 3, limit: 10_000 });
     const mine = reclaimable.find((row) => row.batch_id === ingested.batch.id);
     expect(mine?.action).toBe('reclaimable');
 
@@ -274,7 +277,7 @@ run('durable inbound batching', () => {
       WHERE id = ${ingested.batch.id}::uuid
     `;
 
-    const exhausted = await store.expireStaleClaims({ max_claim_attempts: 3, limit: 50 });
+    const exhausted = await store.expireStaleClaims({ max_claim_attempts: 3, limit: 10_000 });
     expect(exhausted.find((row) => row.batch_id === ingested.batch.id)?.action).toBe('abandoned');
 
     const final = await db!<Array<{ state: string; last_error_code: string | null }>>`

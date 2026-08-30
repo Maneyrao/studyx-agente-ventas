@@ -26,7 +26,12 @@ const facts: CanonicalFactV1[] = [
   { id: 'offering:redes-informaticas:duration:v1', kind: 'offering_duration', source: 'business_snapshot', value: '24 clases', offering_code: 'redes-informaticas' },
   { id: 'offering:redes-informaticas:modality:v1', kind: 'offering_modality', source: 'business_snapshot', value: 'online', offering_code: 'redes-informaticas' },
 ];
-const refs: CanonicalFactRefV1[] = facts.map(({ source: _source, value: _value, area_code: _area, ...ref }) => ref);
+const refs: CanonicalFactRefV1[] = facts.map((fact) => ({
+  id: fact.id,
+  kind: fact.kind,
+  ...(fact.offering_code ? { offering_code: fact.offering_code } : {}),
+  ...(fact.payment_plan ? { payment_plan: fact.payment_plan } : {}),
+}));
 const composition: ComposedNarrativeV1 = {
   schema_version: 1,
   narrative: { opening: 'Te cuento lo principal.', explanation: null, next_question: '¿Qué querés profundizar?' },
@@ -65,6 +70,36 @@ describe('canonical response assembler V1', () => {
     expect(result.content.match(/Redes Informáticas/gu)).toHaveLength(1);
     expect(result.content.match(/24 clases/gu)).toHaveLength(1);
     expect(result.content.match(/online/gu)).toHaveLength(1);
+  });
+
+  it('uses natural model call copy only when the authoritative plan allows the offer', () => {
+    const naturalOffer = 'Si te sirve, podemos coordinar una llamada breve; si no, seguimos por acá.';
+    const withOffer = assembleCanonicalConversationResponseV1({
+      plan: plan({ should_offer_call: true, next_call_offer_status: 'offered', next_call_offer_count: 1 }),
+      fact_refs: [],
+      facts: [],
+      composition: {
+        schema_version: 1,
+        narrative: { opening: 'Te ayudo a revisar esta opción.', explanation: null, next_question: null },
+        call_offer: naturalOffer,
+        used_fact_ids: [],
+      },
+    });
+    const withoutOffer = assembleCanonicalConversationResponseV1({
+      plan: plan({ should_offer_call: false }),
+      fact_refs: [],
+      facts: [],
+      composition: {
+        schema_version: 1,
+        narrative: { opening: 'Te ayudo a revisar esta opción.', explanation: null, next_question: null },
+        call_offer: naturalOffer,
+        used_fact_ids: [],
+      },
+    });
+
+    expect(withOffer.content).toContain(naturalOffer);
+    expect(withOffer.content).not.toContain('¿Preferís que sigamos por chat');
+    expect(withoutOffer.content).not.toContain(naturalOffer);
   });
 
   it('rejects unknown IDs and commercial values that were not cited', () => {

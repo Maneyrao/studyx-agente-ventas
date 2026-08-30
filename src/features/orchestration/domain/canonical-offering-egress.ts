@@ -128,12 +128,22 @@ function isFullyCanonicalOfferingAssertion(
   }
 
   remainder = remainder
-    .replace(/\b(?:s[ií]|studyx|ofrece(?:mos)?|tiene|tenemos|brinda(?:mos)?|da|damos|dicta(?:mos)?|contamos|con|disponemos|de|pod[eé]s|estudiar|el|la|los|las|un|una|curso|est[aá]|disponible|hay|podemos|inscribirte|en|te|recomiendo|nuestro|nuestra|y|e|o|para|vos|ti)\b/gu, ' ')
+    .replace(/\b(?:s[ií]|studyx|ofrece(?:mos)?|tiene|tenemos|brinda(?:mos)?|da|damos|dicta(?:mos)?|contamos|con|disponemos|de|pod[eé]s|estudiar|el|la|los|las|un|una|curso|est[aá]|disponible|hay|podemos|inscribirte|en|te|recomiendo|nuestro|nuestra|nosotros|y|e|o|para|vos|ti)\b/gu, ' ')
     .replace(/[,;:()\[\]{}\-–—/]+/gu, ' ')
     .replace(/\s+/gu, ' ')
     .trim();
 
   return matchedNames > 0 && remainder.length === 0;
+}
+
+function isGenericCatalogGuidanceAssertion(
+  fact: ProtectedFactRef,
+  offerings: readonly CanonicalCatalogOfferingSource[],
+): boolean {
+  if (offerings.length === 0) return false;
+  const value = normalize(fact.value);
+  if (offerings.some((offering) => value.includes(normalize(offering.display_name)))) return false;
+  return /^(?:s[ií][,:]?\s+)?(?:(?:studyx\s+)?(?:ofrece(?:mos)?|tenemos|brinda(?:mos)?|contamos\s+con|disponemos\s+de)|studyx\s+tiene)\s+(?:(?:varias|distintas|muchas|algunas)\s+)?(?:opciones|alternativas)(?:\s+(?:reales|disponibles|para\s+(?:vos|ti)))?(?:\s+y\s+.+)?$/u.test(value);
 }
 
 function maskCanonicalNames(content: string, names: readonly string[]): string {
@@ -287,7 +297,10 @@ export function materializeCanonicalCatalogFacts(input: {
   const inspection = inspectWithNoCapabilities(input.content);
   if (inspection.ok || inspection.reason !== 'UNAUTHORIZED_PROTECTED_FACT') return [];
   const offeringFacts = inspection.unauthorized_facts.filter((fact) => fact.kind === 'offering');
-  if (!offeringFacts.every((fact) => isFullyCanonicalOfferingAssertion(fact, input.offerings))) {
+  if (!offeringFacts.every((fact) => (
+    isFullyCanonicalOfferingAssertion(fact, input.offerings)
+    || isGenericCatalogGuidanceAssertion(fact, input.offerings)
+  ))) {
     return [];
   }
   const canonicalNameFacts = inspection.unauthorized_facts.filter((fact) => (

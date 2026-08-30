@@ -161,6 +161,9 @@ describe('applyDecisionPolicy — provider parity', () => {
   it.each([
     ['BRAIN_TIMEOUT', true, 'timeout'],
     ['BRAIN_RATE_LIMITED', true, 'rate_limited'],
+    ['BRAIN_OPENAI_RATE_LIMITED', true, 'rate_limited'],
+    ['BRAIN_OPENAI_TIMEOUT', true, 'timeout'],
+    ['BRAIN_OPENAI_INVALID_JSON', true, 'invalid_schema'],
     ['BRAIN_INVALID_SCHEMA', true, 'invalid_schema'],
     ['BRAIN_UNKNOWN_FACT_ID', true, 'policy_rejected'],
     ['BRAIN_TIMEOUT', false, 'catalog_unavailable'],

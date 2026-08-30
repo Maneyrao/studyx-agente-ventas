@@ -172,6 +172,25 @@ function claimedTurn(): ClaimedTurn {
 }
 
 describe('buildAgentAContextV1', () => {
+  it('does not revive a legacy sales selection after the conversation state was reset', () => {
+    const claimed = claimedTurn();
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      selected_offering_code: null,
+      selected_payment_plan: null,
+      stage: 'exploring',
+      call_preference: 'unknown',
+      call_offer_status: 'not_offered',
+      call_offer_count: 0,
+      awaiting_reply: 'none',
+    };
+
+    const context = buildAgentAContextV1(claimed);
+
+    expect(context?.commercial_state.selected_offering_code).toBeNull();
+    expect(context?.catalog.selected_offering).toBeNull();
+  });
+
   it('connects bounded recent turns, selected memories and canonical catalog without secrets', () => {
     const context = buildAgentAContextV1(claimedTurn());
     expect(context).not.toBeNull();

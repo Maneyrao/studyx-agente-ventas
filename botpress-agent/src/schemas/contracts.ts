@@ -716,7 +716,7 @@ export const CommitDecisionInputSchema = z.object({
   conversation_pipeline_v1: ConversationPipelineCommitV1Schema.nullable().default(null),
   decision: DecisionSchema,
   model: z.object({
-    provider: z.enum(['botpress', 'google-ai-direct', 'groq-direct']),
+    provider: z.enum(['botpress', 'google-ai-direct', 'groq-direct', 'openai-direct']),
     model: z.string().min(1),
     prompt_version: z.string().min(1),
   }),

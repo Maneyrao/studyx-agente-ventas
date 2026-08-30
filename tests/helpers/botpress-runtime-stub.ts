@@ -86,6 +86,8 @@ export const configuration: {
   geminiDecisionModel: string;
   groqDecisionModel: string;
   agentABrainModel: string;
+  agentABrainOpenAIModel: string;
+  agentABrainOpenAIFallbackModel: string;
   [key: string]: unknown;
 } = {
   emulatorPhoneE164: '+59891234567',
@@ -99,6 +101,8 @@ export const configuration: {
   geminiDecisionModel: 'gemini-test',
   groqDecisionModel: 'groq-test',
   agentABrainModel: 'openai/gpt-oss-120b',
+  agentABrainOpenAIModel: 'gpt-5.6-terra',
+  agentABrainOpenAIFallbackModel: 'gpt-5.6-luna',
 };
 
 /** Test doubles for agent secrets; never real values. */

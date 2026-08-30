@@ -1,7 +1,4 @@
 import type {
-  AwaitingReplyV1,
-  CallOfferStatusV1,
-  CallPreferenceV1,
   CanonicalFactRequestV1,
   ConversationMoveKindV1,
   ConversationMoveV1,
@@ -34,6 +31,8 @@ export interface PlanConversationTurnInputV1 {
 
 type StateIdentity = Pick<ConversationStateV1, 'workspace_id' | 'conversation_id' | 'contact_id'>;
 
+export const CONVERSATION_STATE_MAX_IDLE_MS = 24 * 60 * 60 * 1_000;
+
 export function createDefaultConversationStateV1(identity: StateIdentity): ConversationStateV1 {
   return {
     ...identity,
@@ -48,6 +47,24 @@ export function createDefaultConversationStateV1(identity: StateIdentity): Conve
     version: 0,
     created_at: '1970-01-01T00:00:00.000Z',
     updated_at: '1970-01-01T00:00:00.000Z',
+  };
+}
+
+export function effectiveConversationStateV1(
+  state: ConversationStateV1,
+  nowMs = Date.now(),
+): ConversationStateV1 {
+  const updatedAtMs = Date.parse(state.updated_at);
+  if (!Number.isFinite(updatedAtMs)
+    || nowMs < updatedAtMs
+    || nowMs - updatedAtMs <= CONVERSATION_STATE_MAX_IDLE_MS) {
+    return state;
+  }
+  return {
+    ...createDefaultConversationStateV1(state),
+    version: state.version,
+    created_at: state.created_at,
+    updated_at: state.updated_at,
   };
 }
 
