@@ -144,7 +144,7 @@ const schema = z.object({
   conversation_pipeline_v1: ConversationPipelineCommitV1Schema.nullable().optional(),
   decision: decisionSchema,
   model: z.object({
-    provider: z.enum(['botpress', 'google-ai-direct', 'groq-direct', 'openai-direct']),
+    provider: z.enum(['botpress', 'google-ai-direct', 'groq-direct', 'openai-direct', 'deepseek-direct']),
     model: z.string().trim().min(1).max(256),
     prompt_version: z.string().trim().min(1).max(128),
   }).strict(),

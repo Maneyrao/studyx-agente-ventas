@@ -121,6 +121,33 @@ describe('agent HTTP contract validation', () => {
     await expect(response.json()).resolves.toMatchObject({ error: 'TURN_ID_MISMATCH' });
   });
 
+  it('accepts deepseek-direct as decision provenance before checking identities', async () => {
+    const pathTurnId = randomUUID();
+    const { POST } = await import('@/app/api/agent/turns/[turn_id]/decision/route');
+    const response = await POST(jsonRequest(`/api/agent/turns/${pathTurnId}/decision`, {
+      turn_id: randomUUID(),
+      trace_id: randomUUID(),
+      decision: {
+        schema_version: 3,
+        intent: 'commercial',
+        kind: 'reply',
+        response: 'Te cuento.',
+        response_type: 'commercial_reply',
+        confidence: 1,
+        reason_code: 'ANSWER',
+        business_action: null,
+        retrieval_used: null,
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'waiting_user',
+      },
+      model: { provider: 'deepseek-direct', model: 'deepseek-v4-flash', prompt_version: 'brain-v2' },
+    }), { params: Promise.resolve({ turn_id: pathTurnId }) });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ error: 'TURN_ID_MISMATCH' });
+  });
+
   it('rejects the previous decision contract before checking identities or persistence', async () => {
     const pathTurnId = randomUUID();
     const { POST } = await import('@/app/api/agent/turns/[turn_id]/decision/route');

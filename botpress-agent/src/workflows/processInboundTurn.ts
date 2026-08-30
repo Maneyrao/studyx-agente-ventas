@@ -45,11 +45,13 @@ import {
 import { buildAgentAContextV1 } from '../lib/conversation/agent-a-context'
 import {
   DEFAULT_AGENT_A_BRAIN_MODEL,
+  DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
   DEFAULT_AGENT_A_BRAIN_GEMINI_MODEL,
   DEFAULT_AGENT_A_BRAIN_OPENAI_FALLBACK_MODEL,
   DEFAULT_AGENT_A_BRAIN_OPENAI_MODEL,
   buildSafeAgentABrainCompositionV1,
   generateAgentATurnProposalV1,
+  generateDeepSeekAgentATurnProposalV1,
   generateGeminiAgentATurnProposalV1,
   generateOpenAIAgentATurnProposalV1,
   parseAgentATurnProposalV1,
@@ -548,7 +550,7 @@ export const processInboundTurn = new Workflow({
 
     let pipelineCommit: ConversationPipelineCommitV1 | null = null
     let pipelineFailureDecision: Decision | null = null
-    let pipelineDecisionProvider: 'botpress' | 'google-ai-direct' | 'groq-direct' | 'openai-direct' = 'botpress'
+    let pipelineDecisionProvider: 'botpress' | 'google-ai-direct' | 'groq-direct' | 'openai-direct' | 'deepseek-direct' = 'botpress'
     let pipelineDecisionModel = 'conversation-pipeline-v1'
     let pipelinePromptVersion = `${CONVERSATION_INTERPRETER_PROMPT_VERSION}+${CONVERSATION_COMPOSER_PROMPT_VERSION}+${STUDYX_SALES_BEHAVIOR_VERSION}`
     let pipelineMemoryCandidates: Decision['memory_candidates'] = []
@@ -568,15 +570,34 @@ export const processInboundTurn = new Workflow({
       try {
         let generated: {
           proposal: AgentATurnProposalV1
-          provider: 'botpress' | 'google-ai-direct' | 'groq-direct' | 'openai-direct'
+          provider: 'botpress' | 'google-ai-direct' | 'groq-direct' | 'openai-direct' | 'deepseek-direct'
           model: string
           latency_ms: number
           attempt_count: number
         } | undefined
+        const deepSeekApiKey = secrets.DEEPSEEK_API_KEY
         const openAIApiKey = secrets.OPENAI_API_KEY
-        let directError: unknown = new Error('OPENAI_API_KEY_MISSING')
+        let directError: unknown = new Error('DEEPSEEK_API_KEY_MISSING')
         let openAIFallbackError: unknown = new Error('OPENAI_FALLBACK_NOT_ATTEMPTED')
-        if (typeof openAIApiKey === 'string' && openAIApiKey.length > 0) {
+        if (typeof deepSeekApiKey === 'string' && deepSeekApiKey.length > 0) {
+          try {
+            generated = await step(
+              'generate-agent-a-turn-proposal-v1-deepseek-primary',
+              () => generateDeepSeekAgentATurnProposalV1({
+                context: agentABrainContext,
+                apiKey: deepSeekApiKey,
+                signal,
+                model: typeof configuration.agentABrainDeepSeekModel === 'string'
+                  ? configuration.agentABrainDeepSeekModel
+                  : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
+              }),
+              { maxAttempts: 1 },
+            )
+          } catch (error) {
+            directError = error
+          }
+        }
+        if (generated === undefined && typeof openAIApiKey === 'string' && openAIApiKey.length > 0) {
           try {
             generated = await step(
               'generate-agent-a-turn-proposal-v1-openai-primary',
@@ -949,7 +970,7 @@ export const processInboundTurn = new Workflow({
     let decision: Decision
     let decisionWasModel = false
     let decisionModel: string = DECISION_MODELS[0]
-    let decisionProvider: 'botpress' | 'google-ai-direct' | 'groq-direct' | 'openai-direct' = 'botpress'
+    let decisionProvider: 'botpress' | 'google-ai-direct' | 'groq-direct' | 'openai-direct' | 'deepseek-direct' = 'botpress'
     timings.model_ms = 0
     if (pipelineCommit) {
       decision = pipelinePlaceholder(pipelineMemoryCandidates)

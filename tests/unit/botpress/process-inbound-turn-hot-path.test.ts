@@ -13,6 +13,7 @@ const actionSpies = vi.hoisted(() => ({
   geminiDecision: vi.fn(),
   groqDecision: vi.fn(),
   agentABrain: vi.fn(),
+  agentABrainDeepSeek: vi.fn(),
   agentABrainOpenAI: vi.fn(),
   agentABrainGemini: vi.fn(),
   conversationInterpreter: vi.fn(),
@@ -57,10 +58,12 @@ vi.mock('../../../botpress-agent/src/lib/conversation/conversation-interpreter',
 }));
 vi.mock('../../../botpress-agent/src/lib/conversation/agent-a-brain', () => ({
   generateAgentATurnProposalV1: actionSpies.agentABrain,
+  generateDeepSeekAgentATurnProposalV1: actionSpies.agentABrainDeepSeek,
   generateOpenAIAgentATurnProposalV1: actionSpies.agentABrainOpenAI,
   generateGeminiAgentATurnProposalV1: actionSpies.agentABrainGemini,
   parseAgentATurnProposalV1: (raw: unknown) => raw,
   DEFAULT_AGENT_A_BRAIN_MODEL: 'openai/gpt-oss-120b',
+  DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL: 'deepseek-v4-flash',
   DEFAULT_AGENT_A_BRAIN_OPENAI_MODEL: 'gpt-5.6-terra',
   DEFAULT_AGENT_A_BRAIN_OPENAI_FALLBACK_MODEL: 'gpt-5.6-luna',
   DEFAULT_AGENT_A_BRAIN_GEMINI_MODEL: 'gemini-2.5-flash',
@@ -284,6 +287,7 @@ describe('processInboundTurn hot path', () => {
     configuration.automationEnabled = true;
     configuration.decisionProvider = 'botpress_managed';
     secrets.GROQ_API_KEY = 'gsk-local-test-only';
+    delete secrets.DEEPSEEK_API_KEY;
     delete secrets.OPENAI_API_KEY;
     delete secrets.GEMINI_API_KEY;
     actionSpies.ingest.mockResolvedValue(ingestResponse());
@@ -650,6 +654,75 @@ describe('processInboundTurn hot path', () => {
         composition: { narrative: { opening: expect.stringContaining('Dentro de tecnología') } },
       },
       model: { provider: 'openai-direct', model: 'gpt-5.6-terra' },
+    });
+  });
+
+  it('uses DeepSeek Flash before every legacy provider when its production secret exists', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null, selected_payment_plan: null,
+      stage: 'exploring', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 1,
+    };
+    claimed.context.batch_messages[0].content = 'Busco algo para trabajar en tecnología';
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 1,
+      offerings: [{ code: 'redes-informaticas', display_name: 'Redes Informáticas', academy: 'Tecnología', aliases: [] }],
+      injection_suspected_count: 0,
+    };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+    secrets.DEEPSEEK_API_KEY = 'deepseek-local-test-only';
+    secrets.OPENAI_API_KEY = 'openai-must-not-be-used';
+    actionSpies.agentABrainDeepSeek.mockResolvedValue({
+      proposal: {
+        schema_version: 1,
+        move: {
+          schema_version: 1, move: 'select_area', secondary_moves: [], vetoes: [],
+          area_reference: 'Tecnología', confidence: 0.98,
+        },
+        response: { messages: ['Dale, veamos una opción de tecnología que te sirva para trabajar.'] },
+        proposed_action: { type: 'none' },
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+      },
+      provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 360, attempt_count: 1,
+    });
+
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => {
+      throw new Error('LEGACY_PROVIDER_MUST_NOT_RUN_WHEN_DEEPSEEK_SUCCEEDS');
+    });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute, client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledWith(expect.objectContaining({
+      apiKey: 'deepseek-local-test-only',
+      model: 'deepseek-v4-flash',
+    }));
+    expect(actionSpies.agentABrainOpenAI).not.toHaveBeenCalled();
+    expect(actionSpies.agentABrain).not.toHaveBeenCalled();
+    expect(actionSpies.agentABrainGemini).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: {
+        composition: { narrative: { opening: expect.stringContaining('tecnología') } },
+      },
+      model: { provider: 'deepseek-direct', model: 'deepseek-v4-flash' },
     });
   });
 

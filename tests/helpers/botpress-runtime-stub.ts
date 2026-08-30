@@ -86,6 +86,7 @@ export const configuration: {
   geminiDecisionModel: string;
   groqDecisionModel: string;
   agentABrainModel: string;
+  agentABrainDeepSeekModel: string;
   agentABrainOpenAIModel: string;
   agentABrainOpenAIFallbackModel: string;
   [key: string]: unknown;
@@ -101,6 +102,7 @@ export const configuration: {
   geminiDecisionModel: 'gemini-test',
   groqDecisionModel: 'groq-test',
   agentABrainModel: 'openai/gpt-oss-120b',
+  agentABrainDeepSeekModel: 'deepseek-v4-flash',
   agentABrainOpenAIModel: 'gpt-5.6-terra',
   agentABrainOpenAIFallbackModel: 'gpt-5.6-luna',
 };

@@ -309,6 +309,52 @@ describe('Agent A Brain V1', () => {
     expect(body.input[0].content[0].text).toContain('<authorized_context>');
   });
 
+  it('uses DeepSeek Flash through the Responses API with strict structured output and thinking disabled', async () => {
+    const generateWithDeepSeek = (agentABrainModule as unknown as {
+      generateDeepSeekAgentATurnProposalV1?: (input: {
+        context: AgentAContextV1;
+        apiKey: string;
+        signal: AbortSignal;
+        model?: string;
+      }) => Promise<{
+        proposal: ReturnType<typeof parseAgentATurnProposalV1>;
+        provider: string;
+        model: string;
+      }>;
+    }).generateDeepSeekAgentATurnProposalV1;
+    expect(generateWithDeepSeek).toBeTypeOf('function');
+
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(
+      200,
+      responsesSuccessBody(proposal()),
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await generateWithDeepSeek!({
+      context: context(), apiKey: 'deepseek-test-key', signal: new AbortController().signal,
+      model: 'deepseek-v4-flash',
+    });
+
+    expect(result).toMatchObject({ provider: 'deepseek-direct', model: 'deepseek-v4-flash' });
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('https://api.deepseek.com/responses');
+    expect(init?.headers).toMatchObject({
+      authorization: 'Bearer deepseek-test-key',
+      'content-type': 'application/json',
+    });
+    const body = JSON.parse(String(init?.body));
+    expect(body).toMatchObject({
+      model: 'deepseek-v4-flash',
+      reasoning: { effort: 'none' },
+      max_output_tokens: 800,
+      text: {
+        format: { type: 'json_schema', name: 'studyx_agent_a_turn_proposal_v1' },
+      },
+    });
+    expect(body.instructions).toContain('<canonical_sales_behavior');
+    expect(body.input).toContain('JSON');
+  });
+
   it('fails closed with an OpenAI-specific error without exposing the provider body', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(providerResponse(
       429,

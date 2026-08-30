@@ -26,6 +26,7 @@ export default defineConfig({
       geminiDecisionModel: z.string().min(1).default('gemini-3.6-flash'),
       groqDecisionModel: z.string().min(1).default('openai/gpt-oss-120b'),
       agentABrainModel: z.string().min(1).default('openai/gpt-oss-120b'),
+      agentABrainDeepSeekModel: z.string().min(1).default('deepseek-v4-flash'),
       agentABrainOpenAIModel: z.string().min(1).default('gpt-5.6-terra'),
       agentABrainOpenAIFallbackModel: z.string().min(1).default('gpt-5.6-luna'),
     }),
@@ -45,6 +46,10 @@ export default defineConfig({
     GROQ_API_KEY: {
       description:
         "Groq API key used by the bounded Agent A conversational brain.",
+    },
+    DEEPSEEK_API_KEY: {
+      description:
+        "DeepSeek API key used by the primary Agent A conversational brain. Provision directly in Botpress; never store it in Git.",
     },
     OPENAI_API_KEY: {
       description:

@@ -434,7 +434,7 @@ export function createLocalTurnSender(
       : null;
     let decision: Decision;
     let decisionWasModel = false;
-    let provider: 'botpress' | 'groq-direct' | 'google-ai-direct' | 'openai-direct';
+    let provider: 'botpress' | 'groq-direct' | 'google-ai-direct' | 'openai-direct' | 'deepseek-direct';
     let decisionModel: string;
     let promptVersion: string = AGENT_A_PROMPT_VERSION;
     let fallbackReason: string | null = null;

@@ -13,10 +13,12 @@ import { isValueFreeNarrativePortable } from '../../utils/authorized-egress';
 
 const GROQ_CHAT_COMPLETIONS_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
+const DEEPSEEK_RESPONSES_URL = 'https://api.deepseek.com/responses';
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 export const DEFAULT_AGENT_A_BRAIN_MODEL = 'openai/gpt-oss-120b';
 export const DEFAULT_AGENT_A_BRAIN_OPENAI_MODEL = 'gpt-5.6-terra';
 export const DEFAULT_AGENT_A_BRAIN_OPENAI_FALLBACK_MODEL = 'gpt-5.6-luna';
+export const DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL = 'deepseek-v4-flash';
 export const DEFAULT_AGENT_A_BRAIN_GEMINI_MODEL = 'gemini-2.5-flash';
 export const AGENT_A_BRAIN_DEADLINE_MS = 4_500;
 export const AGENT_A_BRAIN_OPENAI_DEADLINE_MS = 6_000;
@@ -36,10 +38,102 @@ export class AgentABrainError extends Error {
 
 export interface GeneratedAgentATurnProposalV1 {
   readonly proposal: AgentATurnProposalV1;
-  readonly provider: 'groq-direct' | 'google-ai-direct' | 'openai-direct';
+  readonly provider: 'groq-direct' | 'google-ai-direct' | 'openai-direct' | 'deepseek-direct';
   readonly model: string;
   readonly latency_ms: number;
   readonly attempt_count: 1 | 2;
+}
+
+export async function generateDeepSeekAgentATurnProposalV1(input: {
+  readonly context: AgentAContextV1;
+  readonly apiKey: string;
+  readonly signal: AbortSignal;
+  readonly model?: string;
+  readonly timeout_ms?: number;
+}): Promise<GeneratedAgentATurnProposalV1> {
+  const model = input.model?.trim() || DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL;
+  const timeoutMs = Math.min(
+    AGENT_A_BRAIN_OPENAI_DEADLINE_MS,
+    Math.max(1, input.timeout_ms ?? AGENT_A_BRAIN_OPENAI_DEADLINE_MS),
+  );
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  let timedOut = false;
+  const parentAbort = () => controller.abort();
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  input.signal.addEventListener('abort', parentAbort, { once: true });
+  if (input.signal.aborted) controller.abort();
+
+  try {
+    let response: Response;
+    try {
+      response = await fetch(DEEPSEEK_RESPONSES_URL, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${input.apiKey}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          instructions: buildAgentABrainInstructionsV1(input.context),
+          input: 'Return only the single AgentATurnProposalV1 JSON object.',
+          reasoning: { effort: 'none' },
+          temperature: 0.2,
+          stream: false,
+          max_output_tokens: 800,
+          text: {
+            format: {
+              type: 'json_schema',
+              name: 'studyx_agent_a_turn_proposal_v1',
+              schema: proposalJsonSchema(),
+            },
+          },
+        }),
+        signal: controller.signal,
+      });
+    } catch {
+      throw new AgentABrainError(
+        timedOut ? 'BRAIN_DEEPSEEK_TIMEOUT' : 'BRAIN_DEEPSEEK_NETWORK_ERROR',
+      );
+    }
+    if (!response.ok) {
+      throw new AgentABrainError(
+        response.status === 429
+          ? 'BRAIN_DEEPSEEK_RATE_LIMITED'
+          : `BRAIN_DEEPSEEK_HTTP_${response.status}`,
+        response.status,
+        null,
+        retryAfterMs(response),
+      );
+    }
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new AgentABrainError('BRAIN_DEEPSEEK_INVALID_RESPONSE', response.status);
+    }
+    const content = extractResponsesContent(payload);
+    if (content === null) throw new AgentABrainError('BRAIN_DEEPSEEK_EMPTY_RESPONSE', response.status);
+    let decoded: unknown;
+    try {
+      decoded = JSON.parse(content);
+    } catch {
+      throw new AgentABrainError('BRAIN_DEEPSEEK_INVALID_JSON', response.status);
+    }
+    return {
+      proposal: parseAgentATurnProposalV1(decoded, input.context),
+      provider: 'deepseek-direct',
+      model,
+      latency_ms: Date.now() - startedAt,
+      attempt_count: 1,
+    };
+  } finally {
+    clearTimeout(timeout);
+    input.signal.removeEventListener('abort', parentAbort);
+  }
 }
 
 function geminiRequestBody(context: AgentAContextV1): unknown {
