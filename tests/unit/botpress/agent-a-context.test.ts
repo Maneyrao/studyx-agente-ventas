@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildAgentAContextV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-context';
+import {
+  bindCurrentCatalogResolutionToMoveV1,
+  buildAgentAContextV1,
+} from '../../../botpress-agent/src/lib/conversation/agent-a-context';
 import type { ClaimedTurn } from '../../../botpress-agent/src/schemas/contracts';
 
 const UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
@@ -174,6 +177,11 @@ function claimedTurn(): ClaimedTurn {
 describe('buildAgentAContextV1', () => {
   it('does not revive a legacy sales selection after the conversation state was reset', () => {
     const claimed = claimedTurn();
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'Hola',
+    };
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
     claimed.conversation_state_v1 = {
       ...claimed.conversation_state_v1!,
       selected_offering_code: null,
@@ -189,6 +197,69 @@ describe('buildAgentAContextV1', () => {
 
     expect(context?.commercial_state.selected_offering_code).toBeNull();
     expect(context?.catalog.selected_offering).toBeNull();
+  });
+
+  it('projects an exact current course into the brain despite an older exploring state', () => {
+    const claimed = claimedTurn();
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'Especialista en Ventas, ¿me das información?',
+    };
+    claimed.catalog_resolution = {
+      kind: 'exact',
+      offeringCode: 'redes-informaticas',
+      displayName: 'Redes Informáticas',
+      academy: 'Tecnología',
+      match: 'canonical',
+    };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      selected_offering_code: null,
+      selected_payment_plan: 'monthly_12',
+      stage: 'exploring',
+      call_preference: 'unknown',
+      call_offer_status: 'not_offered',
+      call_offer_count: 0,
+      awaiting_reply: 'course_choice',
+    };
+
+    const context = buildAgentAContextV1(claimed);
+
+    expect(context?.commercial_state).toMatchObject({
+      selected_offering_code: 'redes-informaticas',
+      selected_payment_plan: null,
+      stage: 'course_selected',
+    });
+    expect(context?.catalog.selected_offering?.facts.map((fact) => fact.kind)).toEqual([
+      'offering_name', 'offering_description', 'offering_duration', 'offering_modality',
+      'payment_plan_label', 'payment_plan_price',
+    ]);
+    expect(context?.capabilities).toMatchObject({
+      may_offer_call: true,
+      may_present_payment_options: true,
+    });
+  });
+
+  it('binds an exact backend catalog resolution to a model move before planning', () => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = {
+      kind: 'exact',
+      offeringCode: 'redes-informaticas',
+      displayName: 'Redes Informáticas',
+      academy: 'Tecnología',
+      match: 'canonical',
+    };
+
+    expect(bindCurrentCatalogResolutionToMoveV1({
+      schema_version: 1,
+      move: 'ask_course_information',
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 0.96,
+    }, claimed)).toMatchObject({
+      move: 'ask_course_information',
+      course_reference: 'redes-informaticas',
+    });
   });
 
   it('connects bounded recent turns, selected memories and canonical catalog without secrets', () => {
@@ -224,6 +295,7 @@ describe('buildAgentAContextV1', () => {
     };
     claimed.sales_context.offering_code = null;
     claimed.sales_context.course_of_interest = null;
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
     const context = buildAgentAContextV1(claimed);
     expect(context?.catalog.selected_offering).toBeNull();
     expect(context?.catalog.candidate_offerings).toHaveLength(3);

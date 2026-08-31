@@ -3,11 +3,42 @@ import {
   type AgentAContextV1,
 } from '../../schemas/agent-a-brain';
 import type { ClaimedTurn } from '../../schemas/contracts';
+import type { ConversationMoveV1 } from '../../schemas/conversation-pipeline';
 
 const MEMORY_TYPES = new Set([
   'study_goal', 'study_context', 'preference', 'constraint',
   'objection', 'timeline', 'contact_preference',
 ]);
+
+const COURSE_BOUND_MOVES = new Set<ConversationMoveV1['move']>([
+  'select_course',
+  'ask_course_information',
+  'request_call',
+  'ask_payment_options',
+  'select_payment_plan',
+  'defer_payment',
+  'request_payment_link',
+  'decline_purchase',
+]);
+
+/**
+ * `catalog_resolution` was produced by the backend from the current batch and
+ * its complete canonical index. Bind that already-verified identity to a
+ * course-scoped semantic move so fluent model copy cannot advance without the
+ * same course reaching the authoritative planner.
+ */
+export function bindCurrentCatalogResolutionToMoveV1(
+  move: ConversationMoveV1,
+  claimed: ClaimedTurn,
+): ConversationMoveV1 {
+  if (claimed.catalog_resolution.kind !== 'exact') return move;
+  const kinds = [move.move, ...move.secondary_moves];
+  if (!kinds.some((kind) => COURSE_BOUND_MOVES.has(kind))) return move;
+  return {
+    ...move,
+    course_reference: claimed.catalog_resolution.offeringCode,
+  };
+}
 
 function areaCode(value: string | null): string | null {
   if (!value) return null;
@@ -101,9 +132,16 @@ export function buildAgentAContextV1(claimed: ClaimedTurn): AgentAContextV1 | nu
   const state = claimed.conversation_state_v1;
   if (!state) return null;
   const index = claimed.catalog_index?.offerings ?? [];
-  // Conversation state is authoritative. A legacy contact-level selection
-  // must not revive an old course after the conversation was reset.
-  const selectedCode = state.selected_offering_code;
+  // Persisted conversation state remains authoritative across turns. Within
+  // the current turn, an exact backend catalog resolution is newer evidence:
+  // expose its facts to the brain and clear any plan belonging to another
+  // course. The planner will persist the transition atomically at commit.
+  const currentCode = claimed.catalog_resolution.kind === 'exact'
+    ? claimed.catalog_resolution.offeringCode
+    : null;
+  const selectedCode = currentCode ?? state.selected_offering_code;
+  const currentCourseChanged = currentCode !== null
+    && currentCode !== state.selected_offering_code;
   const selectedOffering = selectedCode ? selectedOfferingFacts(claimed, selectedCode) : null;
   const areas = new Map<string, string>();
   for (const offering of index) {
@@ -120,7 +158,7 @@ export function buildAgentAContextV1(claimed: ClaimedTurn): AgentAContextV1 | nu
       area_code: areaCode(offering.academy),
     }));
   const callOfferCount = state.call_offer_count ?? (state.call_offer_status === 'not_offered' ? 0 : 1);
-  const selectedPlan = state.selected_payment_plan;
+  const selectedPlan = currentCourseChanged ? null : state.selected_payment_plan;
 
   return AgentAContextV1Schema.parse({
     schema_version: 1,
@@ -150,13 +188,13 @@ export function buildAgentAContextV1(claimed: ClaimedTurn): AgentAContextV1 | nu
         })),
     },
     commercial_state: {
-      selected_offering_code: state.selected_offering_code,
+      selected_offering_code: selectedCode,
       selected_payment_plan: selectedPlan,
-      stage: state.stage,
+      stage: currentCourseChanged ? 'course_selected' : state.stage,
       call_preference: state.call_preference,
       call_offer_status: state.call_offer_status,
       call_offer_count: callOfferCount,
-      awaiting_reply: state.awaiting_reply,
+      awaiting_reply: currentCourseChanged ? 'none' : state.awaiting_reply,
     },
     catalog: {
       selected_offering: selectedOffering,

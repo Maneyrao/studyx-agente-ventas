@@ -866,6 +866,92 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
+  it('binds the backend-resolved current course before planning a fluent brain reply', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null, selected_payment_plan: null,
+      stage: 'exploring', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'course_choice', version: 2,
+    };
+    claimed.context.batch_messages[0].content = 'Especialista en Ventas, ¿me das información?';
+    claimed.catalog_resolution = {
+      kind: 'exact', offeringCode: 'redes-informaticas', displayName: 'Redes Informáticas',
+      academy: 'Tecnología', match: 'canonical',
+    };
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 1,
+      offerings: [{
+        code: 'redes-informaticas', display_name: 'Redes Informáticas',
+        academy: 'Tecnología', aliases: [],
+      }],
+      injection_suspected_count: 0,
+    };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+    secrets.DEEPSEEK_API_KEY = 'deepseek-local-test-only';
+    actionSpies.agentABrainDeepSeek.mockResolvedValue({
+      proposal: {
+        schema_version: 1,
+        move: {
+          schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
+          confidence: 0.98,
+        },
+        response: { messages: ['Te cuento lo principal para que veas si encaja con vos.'] },
+        proposed_action: { type: 'none' },
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+      },
+      provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 300, attempt_count: 1,
+    });
+    actionSpies.plan.mockResolvedValueOnce({
+      plan: {
+        schema_version: 1,
+        next_stage: 'course_selected', response_goal: 'explain_selected_course',
+        canonical_fact_requests: [], allowed_business_action: { type: 'none' },
+        missing_information: [], should_offer_call: true,
+        next_call_preference: 'unknown', next_call_offer_status: 'offered', next_call_offer_count: 1,
+        next_awaiting_reply: 'call_or_chat', selected_offering_code: 'redes-informaticas',
+        selected_payment_plan: null,
+      },
+      fact_refs: [], state_version: 2, plan_hash: 'd'.repeat(64),
+    });
+
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute: vi.fn(), client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.plan).toHaveBeenCalledWith(expect.objectContaining({
+      input: expect.objectContaining({
+        move: expect.objectContaining({
+          move: 'ask_course_information',
+          course_reference: 'redes-informaticas',
+        }),
+      }),
+    }));
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: {
+        move: {
+          move: 'ask_course_information',
+          course_reference: 'redes-informaticas',
+        },
+      },
+    });
+  });
+
   it('lets the authoritative DeepSeek brain compose a greeting without an optional runtime flag', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {

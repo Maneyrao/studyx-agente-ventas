@@ -42,7 +42,10 @@ import {
 import {
   composeConversationNarrativeWithFallbackV1,
 } from '../lib/conversation/conversation-composer'
-import { buildAgentAContextV1 } from '../lib/conversation/agent-a-context'
+import {
+  bindCurrentCatalogResolutionToMoveV1,
+  buildAgentAContextV1,
+} from '../lib/conversation/agent-a-context'
 import {
   DEFAULT_AGENT_A_BRAIN_MODEL,
   DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
@@ -835,6 +838,10 @@ export const processInboundTurn = new Workflow({
           pipelineDecisionProvider = generated.provider
           pipelineDecisionModel = generated.model
           pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
+          const authoritativeMove = bindCurrentCatalogResolutionToMoveV1(
+            generated.proposal.move,
+            owned,
+          )
           const plannerStartedAt = Date.now()
           let planned: Awaited<ReturnType<typeof planConversation.execute>> | null = null
           try {
@@ -845,7 +852,7 @@ export const processInboundTurn = new Workflow({
                 input: {
                   turn_id: owned.turn_id,
                   trace_id: input.trace_id,
-                  move: generated.proposal.move,
+                  move: authoritativeMove,
                 },
               }),
               { maxAttempts: 1 },
@@ -881,7 +888,7 @@ export const processInboundTurn = new Workflow({
               planned_fact_ids: planned.fact_refs.map((fact: { id: string }) => fact.id),
             })
             pipelineCommit = {
-              move: generated.proposal.move,
+              move: authoritativeMove,
               plan_hash: planned.plan_hash,
               composition,
             }
@@ -985,6 +992,10 @@ export const processInboundTurn = new Workflow({
           pipelineDecisionProvider = 'botpress'
           pipelineDecisionModel = interpreted.model
         }
+        const authoritativeMove = bindCurrentCatalogResolutionToMoveV1(
+          interpreted.move,
+          owned,
+        )
 
         const plannerStartedAt = Date.now()
         const planned = await step(
@@ -994,7 +1005,7 @@ export const processInboundTurn = new Workflow({
             input: {
               turn_id: owned.turn_id,
               trace_id: input.trace_id,
-              move: interpreted.move,
+              move: authoritativeMove,
             },
           }),
           { maxAttempts: 1 },
@@ -1028,16 +1039,16 @@ export const processInboundTurn = new Workflow({
         )
         timings.composer_ms = Date.now() - composerStartedAt
         pipelineCommit = {
-          move: interpreted.move,
+          move: authoritativeMove,
           plan_hash: planned.plan_hash,
           composition,
         }
         safeLog('studyx.turn.conversation_pipeline_v1_planned', {
           trace_id: input.trace_id,
           turn_id: owned.turn_id,
-          move: interpreted.move.move,
-          secondary_move_count: interpreted.move.secondary_moves.length,
-          veto_count: interpreted.move.vetoes.length,
+          move: authoritativeMove.move,
+          secondary_move_count: authoritativeMove.secondary_moves.length,
+          veto_count: authoritativeMove.vetoes.length,
           interpreter_model: interpreted.model,
           interpreter_latency_ms: interpreted.latency_ms,
           composer_prompt_version: CONVERSATION_COMPOSER_PROMPT_VERSION,
