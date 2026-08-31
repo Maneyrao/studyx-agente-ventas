@@ -698,7 +698,7 @@ run('selected_memories — end to end from a committed decision', () => {
           schema_version: 2,
           intent: 'commercial',
           kind: 'reply',
-          response: 'Perfecto, tenemos comisiones nocturnas.',
+          response: 'Perfecto, voy a tener en cuenta tu preferencia de horario.',
           response_type: 'commercial_reply',
           business_action: null,
           memory_candidates: [

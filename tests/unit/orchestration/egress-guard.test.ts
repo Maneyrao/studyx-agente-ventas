@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildAuthorizedEgress,
+  retainAuthorizedEgressParagraphs,
   verifyAuthorizedEgress,
 } from '@/features/orchestration/domain/egress-guard';
 import {
@@ -54,6 +55,29 @@ describe('authorized egress manifest', () => {
     });
 
     expect(first.content_hash).not.toBe(second.content_hash);
+  });
+
+  it('retains only independently authorized model paragraphs', () => {
+    const content = 'StudyX ofrece una beca garantizada.\n\n¿Qué te gustaría aprender?';
+    const retained = retainAuthorizedEgressParagraphs({
+      content,
+      authorized_urls: [],
+      protected_facts: [],
+    });
+
+    expect(retained?.content).toBe('¿Qué te gustaría aprender?');
+    expect(verifyAuthorizedEgress({
+      content: retained!.content,
+      manifest: retained!.manifest,
+    })).toEqual({ ok: true });
+  });
+
+  it('does not use paragraph recovery to launder an unauthorized URL', () => {
+    expect(retainAuthorizedEgressParagraphs({
+      content: 'Más información: https://attacker.example/promo\n\n¿Qué querés estudiar?',
+      authorized_urls: [],
+      protected_facts: [],
+    })).toBeNull();
   });
 
   it('rejects replaying a valid manifest with different outbound content', () => {

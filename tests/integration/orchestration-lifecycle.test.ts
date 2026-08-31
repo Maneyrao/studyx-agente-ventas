@@ -219,16 +219,24 @@ run('canonical orchestration lifecycle', () => {
     expect(counts[0]).toEqual({ decisions: 0, deliveries: 0, outbox: 0 });
   });
 
-  it.each([
-    ['invented price', 'El precio total es USD 999.'],
-    ['invented duration', 'El curso tiene 99 clases.'],
-  ])('replaces an %s with a safe answer instead of returning 422', async (_case, content) => {
+  it('keeps only model-authored paragraphs that pass the egress guard', async () => {
     const accepted = await processInboundMessage(envelope());
-    const committed = await commitAgentDecision(reply(accepted.turn_id, randomUUID(), content));
+    const unsafeParagraph = 'StudyX ofrece una beca garantizada.';
+    const safeParagraph = '¿Qué te gustaría aprender?';
+    const committed = await commitAgentDecision(reply(
+      accepted.turn_id,
+      randomUUID(),
+      `${unsafeParagraph}\n\n${safeParagraph}`,
+    ));
 
     expect(committed.status).toBe('committed');
-    expect(committed.outbound?.content).toMatch(/no tengo ese dato confirmado/i);
-    expect(committed.outbound?.content).not.toBe(content);
+    expect(committed.outbound?.content).toBe(safeParagraph);
+    expect(committed.outbound?.content).not.toMatch(/no tengo ese dato confirmado/i);
+    expect(committed.outbound?.content).not.toContain(unsafeParagraph);
+    expect(verifyAuthorizedEgress({
+      content: committed.outbound!.content,
+      manifest: committed.outbound!.authorized_egress,
+    })).toEqual({ ok: true });
   });
 
   it('verifies the persisted manifest again before returning a duplicate outbound', async () => {
@@ -1210,7 +1218,7 @@ run('Fase 4 — pago y cierre de batch', () => {
     })).toEqual({ ok: true });
   });
 
-  it('replaces an unsupported offering claim with one safe deterministic fallback', async () => {
+  it('suppresses a fully unauthorized offering claim without sending canned copy', async () => {
     const accepted = await processInboundMessage(envelope());
     const committed = await commitAgentDecision(groundedReply(
       accepted.turn_id,
@@ -1219,12 +1227,29 @@ run('Fase 4 — pago y cierre de batch', () => {
     ));
 
     expect(committed.status).toBe('committed');
-    expect(committed.outbound?.content).toMatch(/no tengo ese dato confirmado/i);
-    expect(committed.outbound?.content).not.toMatch(/programación en python/i);
-    expect(verifyAuthorizedEgress({
-      content: committed.outbound!.content,
-      manifest: committed.outbound!.authorized_egress,
-    })).toEqual({ ok: true });
+    expect(committed.outbound).toBeNull();
+    const rows = await db!<Array<{
+      decision_kind: string;
+      response: string | null;
+      reason_code: string;
+      deliveries: number;
+    }>>`
+      SELECT
+        decision.decision_kind,
+        decision.response,
+        decision.reason_code,
+        (SELECT count(*)::integer FROM outbound_deliveries AS delivery
+          JOIN messages AS message ON message.id = delivery.message_id
+          WHERE message.in_reply_to = ${accepted.turn_id}::uuid) AS deliveries
+      FROM agent_decisions AS decision
+      WHERE decision.id = ${committed.decision_id}::uuid
+    `;
+    expect(rows).toEqual([{
+      decision_kind: 'suppress',
+      response: null,
+      reason_code: 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED',
+      deliveries: 0,
+    }]);
   });
 
   it.each([
@@ -1232,7 +1257,7 @@ run('Fase 4 — pago y cierre de batch', () => {
     ['an offering absent from the snapshot', 'El precio es USD 360.', 'missing_course'],
     ['no authorized course code', 'El precio es USD 360.', undefined],
     ['a different value', 'El precio es USD 361.', 'course_test'],
-  ])('replaces a protected fact backed by %s with a safe answer', async (
+  ])('suppresses a protected fact backed by %s without sending canned copy', async (
     _case,
     content,
     authorizedOfferingCode
@@ -1246,8 +1271,7 @@ run('Fase 4 — pago y cierre de batch', () => {
     ));
 
     expect(committed.status).toBe('committed');
-    expect(committed.outbound?.content).toMatch(/no tengo ese dato confirmado/i);
-    expect(committed.outbound?.content).not.toBe(content);
+    expect(committed.outbound).toBeNull();
   });
 
   it('materializes only the configured URL and strips any model-authored one', async () => {

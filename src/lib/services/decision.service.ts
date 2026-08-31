@@ -42,6 +42,7 @@ import {
 } from '@/features/payments/domain/payment-choice-policy';
 import {
   buildAuthorizedEgress,
+  retainAuthorizedEgressParagraphs,
   verifyAuthorizedEgress,
   type AuthorizedEgressV1,
   type ProtectedFactRef,
@@ -693,6 +694,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     // URL or protected commercial claim has no route to the outbox merely by
     // appearing in prose.
     let authorizedEgress: AuthorizedEgressV1 | null = null;
+    let egressSuppressed = false;
     if (finalResponse !== null) {
       authorizedEgress = buildAuthorizedEgress({
         content: finalResponse,
@@ -704,25 +706,54 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         manifest: authorizedEgress,
       });
       if (!verification.ok) {
-        const mayUseSafeFallback = verification.reason === 'UNAUTHORIZED_PROTECTED_FACT'
+        const mayRecoverModelProse = verification.reason === 'UNAUTHORIZED_PROTECTED_FACT'
           && committedBusinessAction === null;
-        if (!mayUseSafeFallback) throw egressPolicyError(verification.reason);
+        if (!mayRecoverModelProse) throw egressPolicyError(verification.reason);
 
-        counter.increment('egress_safe_fallback', 1);
-        logger.warn({
-          event: 'orchestration.egress.safe_fallback',
-          trace_id: validatedInput.trace_id,
-          turn_id: turn.id,
-          reason: verification.reason,
-        });
-        finalResponse = 'No tengo ese dato confirmado en el catálogo. Decime qué curso te interesa y qué querés confirmar.';
-        authorizedUrls = [];
-        authorizedProtectedFacts = [];
-        authorizedEgress = buildAuthorizedEgress({
+        const retained = retainAuthorizedEgressParagraphs({
           content: finalResponse,
-          authorized_urls: [],
-          protected_facts: [],
+          authorized_urls: authorizedUrls,
+          protected_facts: authorizedProtectedFacts,
         });
+        if (retained) {
+          counter.increment('egress_paragraphs_redacted', 1);
+          logger.warn({
+            event: 'orchestration.egress.paragraphs_redacted',
+            trace_id: validatedInput.trace_id,
+            turn_id: turn.id,
+            reason: verification.reason,
+          });
+          finalResponse = retained.content;
+          authorizedEgress = retained.manifest;
+        } else {
+          counter.increment('egress_response_suppressed', 1);
+          logger.warn({
+            event: 'orchestration.egress.response_suppressed',
+            trace_id: validatedInput.trace_id,
+            turn_id: turn.id,
+            reason: verification.reason,
+          });
+          decision = parseDecisionAnyVersion({
+            ...decision,
+            kind: 'suppress',
+            response: null,
+            response_type: null,
+            business_action: null,
+            memory_candidates: [],
+            missing_information: [],
+            next_state: 'completed',
+            reason_code: 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED',
+            confidence: 1,
+          });
+          finalResponse = null;
+          authorizedUrls = [];
+          authorizedProtectedFacts = [];
+          authorizedEgress = null;
+          committedBusinessAction = null;
+          preparedPipeline = null;
+          effectiveAuthorizedOfferingCode = null;
+          egressSuppressed = true;
+        }
       }
     }
 
@@ -1039,15 +1070,17 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
                 || existingSalesContext?.stage === 'qualified' || existingSalesContext?.stage === 'closed')
               ? 'course_selected'
               : existingSalesContext?.stage ?? 'exploring';
-    await salesContextStore.transition({
-      workspace_slug: workspaceSlug,
-      contact_id: turn.contact_id,
-      conversation_id: turn.conversation_id,
-      source_turn_id: turn.id,
-      selected_offering_code: selectedOfferingCode,
-      selected_payment_plan: selectedPlan,
-      stage,
-    });
+    if (!egressSuppressed) {
+      await salesContextStore.transition({
+        workspace_slug: workspaceSlug,
+        contact_id: turn.contact_id,
+        conversation_id: turn.conversation_id,
+        source_turn_id: turn.id,
+        selected_offering_code: selectedOfferingCode,
+        selected_payment_plan: selectedPlan,
+        stage,
+      });
+    }
     if (preparedPipeline) {
       await new PostgresConversationStateStoreV1(db).transition(preparedPipeline.transition);
     }

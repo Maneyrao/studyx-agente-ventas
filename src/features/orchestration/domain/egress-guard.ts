@@ -41,6 +41,17 @@ export interface VerifyAuthorizedEgressInput {
   readonly manifest: unknown;
 }
 
+export interface RetainAuthorizedEgressParagraphsInput {
+  readonly content: string;
+  readonly authorized_urls: readonly string[];
+  readonly protected_facts: readonly ProtectedFactRef[];
+}
+
+export interface RetainedAuthorizedEgress {
+  readonly content: string;
+  readonly manifest: AuthorizedEgressV1;
+}
+
 export type AuthorizedEgressVerification =
   | { readonly ok: true }
   | { readonly ok: false; readonly reason: 'INVALID_MANIFEST' }
@@ -280,4 +291,51 @@ export function verifyAuthorizedEgress(
   }
 
   return { ok: true };
+}
+
+/**
+ * Retains model-authored prose instead of replacing it with canned copy.
+ *
+ * This recovery is intentionally narrow: it is available only when the
+ * complete response failed because of an unauthorized protected fact. URL,
+ * manifest and hash failures remain fail-closed. Each retained paragraph must
+ * independently pass the same authorization manifest used for the full
+ * response, and the resulting text receives a fresh content-bound manifest.
+ */
+export function retainAuthorizedEgressParagraphs(
+  input: RetainAuthorizedEgressParagraphsInput
+): RetainedAuthorizedEgress | null {
+  const completeManifest = buildAuthorizedEgress(input);
+  const completeVerification = verifyAuthorizedEgress({
+    content: input.content,
+    manifest: completeManifest,
+  });
+  if (completeVerification.ok) {
+    return { content: input.content, manifest: completeManifest };
+  }
+  if (completeVerification.reason !== 'UNAUTHORIZED_PROTECTED_FACT') return null;
+
+  const authorizedParagraphs = input.content
+    .split(/\n\s*\n/gu)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph.length > 0)
+    .filter((paragraph) => {
+      const manifest = buildAuthorizedEgress({
+        content: paragraph,
+        authorized_urls: input.authorized_urls,
+        protected_facts: input.protected_facts,
+      });
+      return verifyAuthorizedEgress({ content: paragraph, manifest }).ok;
+    });
+
+  if (authorizedParagraphs.length === 0) return null;
+  const content = authorizedParagraphs.join('\n\n');
+  const manifest = buildAuthorizedEgress({
+    content,
+    authorized_urls: input.authorized_urls,
+    protected_facts: input.protected_facts,
+  });
+  return verifyAuthorizedEgress({ content, manifest }).ok
+    ? { content, manifest }
+    : null;
 }

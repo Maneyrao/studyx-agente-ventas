@@ -38,7 +38,8 @@ type CounterName =
   | 'catalog_lookups'
   | 'catalog_lookup_failures'
   | 'knowledge_injection_suspected'
-  | 'egress_safe_fallback'
+  | 'egress_paragraphs_redacted'
+  | 'egress_response_suppressed'
   // Reconciliación (fase 7). `reconcile_deliveries_ambiguous` es la métrica que
   // hay que mirar todos los días: cada unidad es un cliente que puede haber
   // recibido o no una respuesta, y ninguna máquina va a decidirlo.

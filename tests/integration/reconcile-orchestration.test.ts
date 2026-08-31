@@ -161,8 +161,8 @@ run('concurrent decisions on the same turn', () => {
     };
 
     const outcomes = await Promise.allSettled([
-      commitAgentDecision({ ...base, decision: decision('Sí, tenemos comisiones nocturnas.') }),
-      commitAgentDecision({ ...base, decision: decision('No, sólo dictamos de mañana.') }),
+      commitAgentDecision({ ...base, decision: decision('Te ayudo a revisar los horarios disponibles.') }),
+      commitAgentDecision({ ...base, decision: decision('Podemos continuar revisando el horario que buscás.') }),
     ]);
 
     const rejected = outcomes.filter((outcome) => outcome.status === 'rejected');
