@@ -158,6 +158,27 @@ function modelDecision(overrides: Partial<Decision> = {}): Decision {
 }
 
 describe('applyDecisionPolicy — provider parity', () => {
+  it('normalizes a clarification with no missing field before the backend boundary', () => {
+    const decision = applyDecisionPolicy(modelDecision({
+      kind: 'clarify',
+      response: '¿Querés que te muestre otras opciones?',
+      response_type: 'clarification',
+      missing_information: [],
+      next_state: 'waiting_user',
+    }), claimedTurn({
+      allowed_response_types: ['commercial_reply', 'clarification'],
+      batch_message_content: '¿Tenés más cursos disponibles?',
+    }));
+
+    expect(decision).toMatchObject({
+      kind: 'reply',
+      response: '¿Querés que te muestre otras opciones?',
+      response_type: 'commercial_reply',
+      missing_information: [],
+      next_state: 'waiting_user',
+    });
+  });
+
   it.each([
     ['BRAIN_TIMEOUT', true, 'timeout'],
     ['BRAIN_RATE_LIMITED', true, 'rate_limited'],

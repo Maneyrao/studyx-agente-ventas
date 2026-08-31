@@ -531,13 +531,32 @@ function canonicalPaymentOfferingCode(claimed: ClaimedTurn): string | null {
 export function applyDecisionPolicy(decision: Decision, claimed: ClaimedTurn): Decision {
   if (decision.kind === 'suppress') return suppress(decision.reason_code)
 
-  if (!decision.response || !decision.response_type) {
+  const response = decision.response
+  const responseType = decision.response_type
+  if (!response || !responseType) {
     return allowedTextFallback(claimed, 'INVALID_DECISION_SHAPE')
   }
-  const response = decision.response
+  let effectiveResponseType = responseType
 
+  // The backend correctly requires a structured missing field for a true
+  // clarification. Some model/provider outputs ask a conversational question
+  // while leaving that list empty; preserve their exact prose as a normal
+  // commercial reply instead of sending an invalid contract that strands the
+  // claimed batch. If commercial prose is not allowed, fail silently rather
+  // than substituting canned copy.
+  if (decision.kind === 'clarify' && decision.missing_information.length === 0) {
+    if (!(claimed.policy.allowed_response_types as string[]).includes('commercial_reply')) {
+      return suppress('INVALID_CLARIFICATION')
+    }
+    decision = {
+      ...decision,
+      kind: 'reply',
+      response_type: 'commercial_reply',
+    }
+    effectiveResponseType = 'commercial_reply'
+  }
   const standardResponseAllowed = (claimed.policy.allowed_response_types as string[])
-    .includes(decision.response_type)
+    .includes(effectiveResponseType)
   const callResponseAllowed =
     (decision.response_type === 'call_offer'
       && claimed.sales_context.allowed_actions.includes('offer_call'))
