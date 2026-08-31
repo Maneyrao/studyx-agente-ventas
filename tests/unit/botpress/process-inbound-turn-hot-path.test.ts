@@ -457,7 +457,7 @@ describe('processInboundTurn hot path', () => {
     },
   );
 
-  it('fails closed contextually when the authoritative brain is unavailable', async () => {
+  it('fails closed silently when the authoritative brain is unavailable', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       conversation_pipeline_v1_enabled: false,
@@ -504,7 +504,9 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       conversation_pipeline_v1: null,
       decision: {
-        reason_code: 'BRAIN_FALLBACK_RATE_LIMITED',
+        kind: 'suppress',
+        response: null,
+        reason_code: 'BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK',
         business_action: null,
       },
     });
@@ -786,6 +788,50 @@ describe('processInboundTurn hot path', () => {
         composition: { narrative: { opening: expect.stringContaining('¿Qué te gustaría aprender?') } },
       },
       model: { provider: 'deepseek-direct', model: 'deepseek-v4-flash' },
+    });
+  });
+
+  it('never replaces an unavailable authoritative brain with a deterministic greeting', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.deterministic_route = 'greeting';
+    claimed.context.batch_messages[0].content = 'Hola';
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null, selected_payment_plan: null,
+      stage: 'exploring', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 1,
+    };
+    claimed.catalog_index = { as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0 };
+    actionSpies.claim.mockResolvedValue(claimed);
+    secrets.DEEPSEEK_API_KEY = 'deepseek-local-test-only';
+    actionSpies.agentABrainDeepSeek.mockRejectedValueOnce(new Error('DEEPSEEK_UNAVAILABLE'));
+    actionSpies.agentABrain.mockRejectedValueOnce(new Error('GROQ_UNAVAILABLE'));
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => { throw new Error('MANAGED_UNAVAILABLE'); });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute, client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.plan).not.toHaveBeenCalled();
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: null,
+      decision: {
+        kind: 'suppress',
+        response: null,
+        reason_code: 'BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK',
+      },
     });
   });
 
@@ -1464,7 +1510,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('falls back to the authorized call route when the authoritative brain is unavailable', async () => {
+  it('does not execute a canned call route when the authoritative brain is unavailable', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       conversation_pipeline_v1_enabled: false,
@@ -1509,12 +1555,15 @@ describe('processInboundTurn hot path', () => {
       signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
-    expect(actionSpies.plan).toHaveBeenCalledWith(expect.objectContaining({
-      input: expect.objectContaining({ move: expect.objectContaining({ move: 'request_call' }) }),
-    }));
+    expect(actionSpies.plan).not.toHaveBeenCalled();
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      conversation_pipeline_v1: { move: { move: 'request_call', confidence: 1 } },
-      model: { provider: 'botpress', model: 'backend:call_accepted_offer' },
+      conversation_pipeline_v1: null,
+      decision: {
+        kind: 'suppress',
+        response: null,
+        business_action: null,
+        reason_code: 'BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK',
+      },
     });
   });
 

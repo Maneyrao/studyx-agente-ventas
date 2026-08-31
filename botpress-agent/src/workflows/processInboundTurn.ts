@@ -834,11 +834,12 @@ export const processInboundTurn = new Workflow({
           proposed_action_type: 'none',
           authorized_action_type: 'none',
         })
-        // An already-authorized backend route is the recovery path when every
-        // model provider is unavailable. This preserves the safety action
-        // without letting canned copy preempt a healthy authoritative brain.
-        if (brainAuthoritative && owned.deterministic_route === null) {
-          pipelineFailureDecision = modelUnavailableFallback(owned, brainFailureReason)
+        // Authoritative means the conversational brain owns all customer
+        // copy. Never substitute a catalog, greeting, call, or payment
+        // template when generation/planning fails: commit a silent decision
+        // and preserve the backend safety boundaries instead.
+        if (brainAuthoritative) {
+          pipelineFailureDecision = suppress('BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK')
         }
       }
     }
