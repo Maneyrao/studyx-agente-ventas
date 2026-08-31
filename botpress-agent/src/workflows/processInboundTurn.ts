@@ -1,4 +1,4 @@
-import { Autonomous, Workflow, configuration, context, secrets, z } from '@botpress/runtime'
+import { Autonomous, Workflow, adk, configuration, context, secrets, z } from '@botpress/runtime'
 import { claimBatch } from '../actions/claimBatch'
 import { commitDecision } from '../actions/commitDecision'
 import { dispatchCall } from '../actions/dispatchCall'
@@ -771,14 +771,43 @@ export const processInboundTurn = new Workflow({
                 gemini_error_code: errorCode(geminiError),
               })
             } catch (managedError) {
-              safeLog('studyx.turn.agent_a_brain_provider_failover_failed', {
-                trace_id: input.trace_id,
-                turn_id: owned.turn_id,
-                direct_error_code: errorCode(directError),
-                gemini_error_code: errorCode(geminiError),
-                managed_error_code: errorCode(managedError),
-              })
-              throw directError
+              try {
+                const extractStartedAt = Date.now()
+                const extracted = await step(
+                  'generate-agent-a-turn-proposal-v1-managed-extract',
+                  () => adk.zai.extract(
+                    `${buildAgentABrainInstructionsV1(agentABrainContext)}\n\nReturn only the single AgentATurnProposalV1 JSON object.`,
+                    AgentATurnProposalV1Schema,
+                  ),
+                  { maxAttempts: 1 },
+                )
+                generated = {
+                  proposal: parseAgentATurnProposalV1(extracted, agentABrainContext),
+                  provider: 'botpress',
+                  model: 'botpress-zai-extract',
+                  latency_ms: Date.now() - extractStartedAt,
+                  attempt_count: 1,
+                }
+                safeLog('studyx.turn.agent_a_brain_provider_failover', {
+                  trace_id: input.trace_id,
+                  turn_id: owned.turn_id,
+                  from_provider: 'botpress-autonomous',
+                  to_provider: 'botpress-zai-extract',
+                  direct_error_code: errorCode(directError),
+                  gemini_error_code: errorCode(geminiError),
+                  managed_error_code: errorCode(managedError),
+                })
+              } catch (extractError) {
+                safeLog('studyx.turn.agent_a_brain_provider_failover_failed', {
+                  trace_id: input.trace_id,
+                  turn_id: owned.turn_id,
+                  direct_error_code: errorCode(directError),
+                  gemini_error_code: errorCode(geminiError),
+                  managed_error_code: errorCode(managedError),
+                  extract_error_code: errorCode(extractError),
+                })
+                throw directError
+              }
             }
           }
         }

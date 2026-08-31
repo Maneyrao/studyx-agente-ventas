@@ -67,6 +67,16 @@ class Exit<TDefinition = unknown> {
 
 export const Autonomous = { Exit };
 
+export const adk = {
+  zai: {
+    async extract(_text: string, _schema: unknown): Promise<unknown> {
+      void _text;
+      void _schema;
+      throw new Error('ZAI_EXTRACT_NOT_CONFIGURED');
+    },
+  },
+};
+
 export const context = {
   get(key: string): string {
     return key === 'botId' ? 'test-bot-id' : '';

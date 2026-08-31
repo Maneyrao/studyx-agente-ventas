@@ -81,7 +81,7 @@ vi.mock('../../../botpress-agent/src/lib/conversation/agent-a-brain', () => ({
   }),
 }));
 
-import { configuration, secrets } from '../../helpers/botpress-runtime-stub';
+import { adk, configuration, secrets } from '../../helpers/botpress-runtime-stub';
 import { processInboundTurn } from '../../../botpress-agent/src/workflows/processInboundTurn';
 import type { ClaimedTurn } from '../../../botpress-agent/src/schemas/contracts';
 import {
@@ -518,6 +518,70 @@ describe('processInboundTurn hot path', () => {
       brain_source: 'fallback',
       brain_failure_reason: 'rate_limited',
       authorized_action_type: 'none',
+    });
+  });
+
+  it('uses Botpress managed extraction when every direct provider and autonomous exit fail', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.context.batch_messages[0].content = 'Holaa, ¿qué cursos tienen?';
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null, selected_payment_plan: null,
+      stage: 'exploring', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 1,
+    };
+    claimed.catalog_index = { as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0 };
+    actionSpies.claim.mockResolvedValue(claimed);
+    secrets.DEEPSEEK_API_KEY = 'invalid-deepseek-test-key';
+    secrets.OPENAI_API_KEY = 'invalid-openai-test-key';
+    actionSpies.agentABrainDeepSeek.mockRejectedValueOnce(new Error('DEEPSEEK_REJECTED'));
+    actionSpies.agentABrainOpenAI
+      .mockRejectedValueOnce(new Error('OPENAI_PRIMARY_REJECTED'))
+      .mockRejectedValueOnce(new Error('OPENAI_FALLBACK_REJECTED'));
+    const managedProposal = {
+      schema_version: 1 as const,
+      move: {
+        schema_version: 1 as const, move: 'browse_catalog' as const,
+        secondary_moves: [], vetoes: [], confidence: 0.97,
+      },
+      response: {
+        messages: ['¡Hola! Tenemos distintas áreas para explorar.', '¿Qué te gustaría aprender?'] as [string, string],
+      },
+      proposed_action: { type: 'none' as const },
+      used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+    };
+    vi.spyOn(adk.zai, 'extract').mockResolvedValueOnce(managedProposal);
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => {
+      throw new Error('AUTONOMOUS_EXIT_NOT_REACHED');
+    });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute, client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: {
+        move: { move: 'browse_catalog' },
+        composition: {
+          narrative: {
+            opening: '¡Hola! Tenemos distintas áreas para explorar.',
+            explanation: '¿Qué te gustaría aprender?',
+          },
+        },
+      },
+      model: { provider: 'botpress', model: 'botpress-zai-extract' },
     });
   });
 
