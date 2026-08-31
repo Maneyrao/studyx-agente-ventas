@@ -286,7 +286,6 @@ describe('processInboundTurn hot path', () => {
   beforeEach(() => {
     configuration.automationEnabled = true;
     configuration.decisionProvider = 'botpress_managed';
-    configuration.agentABrainModelFirstCanary = false;
     secrets.GROQ_API_KEY = 'gsk-local-test-only';
     delete secrets.DEEPSEEK_API_KEY;
     delete secrets.OPENAI_API_KEY;
@@ -727,8 +726,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('lets the authoritative DeepSeek brain compose a greeting in model-first canary mode', async () => {
-    configuration.agentABrainModelFirstCanary = true;
+  it('lets the authoritative DeepSeek brain compose a greeting without an optional runtime flag', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       conversation_pipeline_v1_enabled: false,
@@ -1466,8 +1464,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('falls back to the authorized call route when the model-first brain is unavailable', async () => {
-    configuration.agentABrainModelFirstCanary = true;
+  it('falls back to the authorized call route when the authoritative brain is unavailable', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       conversation_pipeline_v1_enabled: false,

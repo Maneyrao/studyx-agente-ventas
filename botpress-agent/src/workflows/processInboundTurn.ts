@@ -554,18 +554,17 @@ export const processInboundTurn = new Workflow({
     let pipelineDecisionModel = 'conversation-pipeline-v1'
     let pipelinePromptVersion = `${CONVERSATION_INTERPRETER_PROMPT_VERSION}+${CONVERSATION_COMPOSER_PROMPT_VERSION}+${STUDYX_SALES_BEHAVIOR_VERSION}`
     let pipelineMemoryCandidates: Decision['memory_candidates'] = []
-    const brainModelFirstCanary = configuration.agentABrainModelFirstCanary === true
+    const brainAuthoritative = owned.features?.agent_a_brain_v1_enabled === true
+    const brainShadow = owned.features?.agent_a_brain_v1_shadow === true
     const conversationalBaseEligible = configuration.automationEnabled
       && owned.policy.may_respond
       && (owned.policy.allowed_response_types.includes('commercial_reply')
-        || (brainModelFirstCanary && owned.policy.allowed_response_types.includes('social_reply')))
-    const brainAuthoritative = owned.features?.agent_a_brain_v1_enabled === true
-    const brainShadow = owned.features?.agent_a_brain_v1_shadow === true
+        || (brainAuthoritative && owned.policy.allowed_response_types.includes('social_reply')))
     const legacyPipelineEligible = conversationalBaseEligible
       && owned.features?.conversation_pipeline_v1_enabled === true
     const brainEligible = conversationalBaseEligible
       && (brainAuthoritative || brainShadow)
-      && (owned.deterministic_route === null || brainModelFirstCanary)
+      && (owned.deterministic_route === null || brainAuthoritative)
       && agentABrainContext !== null
 
     if (brainEligible) {
@@ -835,11 +834,10 @@ export const processInboundTurn = new Workflow({
           proposed_action_type: 'none',
           authorized_action_type: 'none',
         })
-        // In model-first canary mode an already-authorized backend route is
-        // the recovery path when every model provider is unavailable. This
-        // preserves the safety action without letting canned copy preempt a
-        // healthy conversational brain.
-        if (brainAuthoritative && !(brainModelFirstCanary && owned.deterministic_route !== null)) {
+        // An already-authorized backend route is the recovery path when every
+        // model provider is unavailable. This preserves the safety action
+        // without letting canned copy preempt a healthy authoritative brain.
+        if (brainAuthoritative && owned.deterministic_route === null) {
           pipelineFailureDecision = modelUnavailableFallback(owned, brainFailureReason)
         }
       }
