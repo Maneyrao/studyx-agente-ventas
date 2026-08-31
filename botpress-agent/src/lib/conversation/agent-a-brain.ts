@@ -21,6 +21,7 @@ export const DEFAULT_AGENT_A_BRAIN_OPENAI_FALLBACK_MODEL = 'gpt-5.6-luna';
 export const DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL = 'deepseek-v4-flash';
 export const DEFAULT_AGENT_A_BRAIN_GEMINI_MODEL = 'gemini-2.5-flash';
 export const AGENT_A_BRAIN_DEADLINE_MS = 4_500;
+export const AGENT_A_BRAIN_DEEPSEEK_DEADLINE_MS = 10_000;
 export const AGENT_A_BRAIN_OPENAI_DEADLINE_MS = 6_000;
 export const AGENT_A_BRAIN_GEMINI_DEADLINE_MS = 8_000;
 
@@ -59,8 +60,8 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
 }): Promise<GeneratedAgentATurnProposalV1> {
   const model = input.model?.trim() || DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL;
   const timeoutMs = Math.min(
-    AGENT_A_BRAIN_OPENAI_DEADLINE_MS,
-    Math.max(1, input.timeout_ms ?? AGENT_A_BRAIN_OPENAI_DEADLINE_MS),
+    AGENT_A_BRAIN_DEEPSEEK_DEADLINE_MS,
+    Math.max(1, input.timeout_ms ?? AGENT_A_BRAIN_DEEPSEEK_DEADLINE_MS),
   );
   const startedAt = Date.now();
   const controller = new AbortController();
@@ -119,7 +120,10 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
     try {
       payload = await response.json();
     } catch {
-      throw new AgentABrainError('BRAIN_DEEPSEEK_INVALID_RESPONSE', response.status);
+      throw new AgentABrainError(
+        timedOut ? 'BRAIN_DEEPSEEK_TIMEOUT' : 'BRAIN_DEEPSEEK_INVALID_RESPONSE',
+        response.status,
+      );
     }
     const content = extractResponsesContent(payload);
     if (content === null) throw new AgentABrainError('BRAIN_DEEPSEEK_EMPTY_RESPONSE', response.status);

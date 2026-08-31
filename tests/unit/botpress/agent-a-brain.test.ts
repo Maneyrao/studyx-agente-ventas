@@ -3,8 +3,10 @@ import type { AgentAContextV1 } from '../../../botpress-agent/src/schemas/agent-
 import * as agentABrainModule from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
 import {
   AGENT_A_BRAIN_DEADLINE_MS,
+  AGENT_A_BRAIN_DEEPSEEK_DEADLINE_MS,
   AgentABrainError,
   buildSafeAgentABrainCompositionV1,
+  generateDeepSeekAgentATurnProposalV1,
   generateAgentATurnProposalV1,
   generateOpenAIAgentATurnProposalV1,
   parseAgentATurnProposalV1,
@@ -362,6 +364,31 @@ describe('Agent A Brain V1', () => {
     expect(moveProperties.secondary_moves.items.enum).not.toContain('greeting');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('unknown');
     expect(moveProperties.vetoes.description).toContain('current customer message explicitly refuses');
+  });
+
+  it('allows DeepSeek ten seconds and classifies a timeout while reading the response body', async () => {
+    expect(AGENT_A_BRAIN_DEEPSEEK_DEADLINE_MS).toBe(10_000);
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockImplementation(async (_url, init) => ({
+      ok: true,
+      status: 200,
+      json: () => new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(new DOMException('Aborted', 'AbortError'));
+        }, { once: true });
+      }),
+    } as Response)));
+
+    const pending = generateDeepSeekAgentATurnProposalV1({
+      context: context(),
+      apiKey: 'deepseek-test-key',
+      signal: new AbortController().signal,
+    });
+    const timeoutAssertion = expect(pending).rejects.toEqual(
+      expect.objectContaining<Partial<AgentABrainError>>({ code: 'BRAIN_DEEPSEEK_TIMEOUT' }),
+    );
+    await vi.advanceTimersByTimeAsync(AGENT_A_BRAIN_DEEPSEEK_DEADLINE_MS + 1);
+    await timeoutAssertion;
   });
 
   it('fails closed with an OpenAI-specific error without exposing the provider body', async () => {
