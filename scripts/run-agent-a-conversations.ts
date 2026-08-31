@@ -60,10 +60,12 @@ import { routeCommercialTurn } from '../botpress-agent/src/utils/commercial-rout
 import { buildAgentAContextV1 } from '../botpress-agent/src/lib/conversation/agent-a-context';
 import {
   AgentABrainError,
+  DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
   DEFAULT_AGENT_A_BRAIN_OPENAI_FALLBACK_MODEL,
   DEFAULT_AGENT_A_BRAIN_OPENAI_MODEL,
   buildSafeAgentABrainCompositionV1,
   generateAgentATurnProposalV1,
+  generateDeepSeekAgentATurnProposalV1,
   generateOpenAIAgentATurnProposalV1,
 } from '../botpress-agent/src/lib/conversation/agent-a-brain';
 import { AGENT_A_BRAIN_PROMPT_VERSION } from '../botpress-agent/src/prompts/agent-a-brain-v1';
@@ -148,6 +150,8 @@ type LocalCredentials = {
   geminiModel: string;
   groqApiKey?: string;
   groqModel: string;
+  deepseekApiKey?: string;
+  deepseekModel?: string;
   openaiApiKey?: string;
   openaiModel?: string;
   openaiFallbackModel?: string;
@@ -203,6 +207,10 @@ async function loadLocalCredentials(primaryProvider: 'groq' | 'gemini'): Promise
     groqModel: argument('--groq-model')
       ?? (primaryProvider === 'groq' ? argument('--model') : null)
       ?? DEFAULT_GROQ_MODEL,
+    deepseekApiKey: optionalValue('DEEPSEEK_API_KEY'),
+    deepseekModel: argument('--deepseek-model')
+      ?? optionalValue('AGENT_A_BRAIN_DEEPSEEK_MODEL')
+      ?? DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
     openaiApiKey: optionalValue('OPENAI_API_KEY'),
     openaiModel: argument('--openai-model')
       ?? optionalValue('AGENT_A_BRAIN_OPENAI_MODEL')
@@ -338,6 +346,7 @@ export function createLocalTurnSender(
   modelProvider: 'groq' | 'gemini',
   minimumModelIntervalMs: number,
   skipPostTurnCrons = false,
+  strictBrainProvider: 'deepseek' | null = null,
 ) {
   const gitSha = process.env.GIT_COMMIT_SHA
     ?? process.env.VERCEL_GIT_COMMIT_SHA
@@ -472,7 +481,23 @@ export function createLocalTurnSender(
         evaluationPacingMs += await paceModelProvider();
         if (evaluationControl?.forceProviderFailure) throw new Error('BRAIN_TIMEOUT');
         let generated: Awaited<ReturnType<typeof generateAgentATurnProposalV1>> | null = null;
-        if (credentials.openaiApiKey) {
+        if (strictBrainProvider === 'deepseek' && !credentials.deepseekApiKey) {
+          throw new AgentABrainError('BRAIN_DEEPSEEK_REQUIRED');
+        }
+        if (credentials.deepseekApiKey) {
+          try {
+            generated = await generateDeepSeekAgentATurnProposalV1({
+              context: brainContext,
+              apiKey: credentials.deepseekApiKey,
+              model: credentials.deepseekModel ?? DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
+              signal: new AbortController().signal,
+            });
+          } catch (error) {
+            brainTransportRetries += 1;
+            if (strictBrainProvider === 'deepseek') throw error;
+          }
+        }
+        if (generated === null && credentials.openaiApiKey) {
           try {
             generated = await generateOpenAIAgentATurnProposalV1({
               context: brainContext,
@@ -490,7 +515,8 @@ export function createLocalTurnSender(
               signal: new AbortController().signal,
             });
           }
-        } else {
+        }
+        if (generated === null) {
           if (!credentials.groqApiKey) throw new Error('LOCAL_TRANSPORT_CREDENTIAL_MISSING:GROQ_API_KEY');
           for (let transportAttempt = 0; transportAttempt < 3; transportAttempt += 1) {
             try {
@@ -580,6 +606,7 @@ export function createLocalTurnSender(
         usedMemoryIds = generated.proposal.used_memory_ids;
         memoryCandidateCount = generated.proposal.memory_candidates.length;
       } catch (error) {
+        if (strictBrainProvider === 'deepseek') throw error;
         const code = error instanceof Error ? error.message.slice(0, 128) : 'UNKNOWN';
         const reason = classifyBrainFailureReason(
           code,

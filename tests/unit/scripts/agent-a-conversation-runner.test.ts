@@ -510,7 +510,7 @@ describe('Agent A conversation runner', () => {
     expect(commitBody.authorized_payment_plan).toBe('monthly_12');
   });
 
-  it('runs the same one-call brain, planner and canonical commit as production', async () => {
+  it('prioritizes DeepSeek for the same one-call brain, planner and canonical commit as production', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse(200, localIngestResponse()))
       .mockResolvedValueOnce(jsonResponse(200, localBrainClaimedTurn()))
@@ -550,6 +550,7 @@ describe('Agent A conversation runner', () => {
       signingSecret: 'test-signing-secret', cronSecret: null,
       geminiApiKey: 'test-gemini-key', geminiModel: 'test-gemini-model',
       groqApiKey: 'test-groq-key', groqModel: 'openai/gpt-oss-120b',
+      deepseekApiKey: 'test-deepseek-key', deepseekModel: 'deepseek-v4-flash',
       openaiApiKey: 'test-openai-key', openaiModel: 'gpt-5.6-terra',
       openaiFallbackModel: 'gpt-5.6-luna',
     }, 'brain-v1', 'groq', 0);
@@ -557,8 +558,8 @@ describe('Agent A conversation runner', () => {
     const result = await sendTurn('Prefiero mantener el intercambio por escrito', null);
 
     const brainBody = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
-    expect(fetchMock.mock.calls[2]?.[0]).toBe('https://api.openai.com/v1/responses');
-    expect(brainBody.model).toBe('gpt-5.6-terra');
+    expect(fetchMock.mock.calls[2]?.[0]).toBe('https://api.deepseek.com/responses');
+    expect(brainBody.model).toBe('deepseek-v4-flash');
     expect(brainBody.text.format.name).toBe('studyx_agent_a_turn_proposal_v1');
     const commitBody = JSON.parse(String(fetchMock.mock.calls[4]?.[1]?.body));
     expect(commitBody).toMatchObject({
@@ -566,7 +567,11 @@ describe('Agent A conversation runner', () => {
         move: { move: 'continue_by_chat' },
         plan_hash: 'a'.repeat(64),
       },
-      model: { prompt_version: 'studyx-agent-a-brain-v2' },
+      model: {
+        provider: 'deepseek-direct',
+        model: 'deepseek-v4-flash',
+        prompt_version: 'studyx-agent-a-brain-v2',
+      },
     });
     expect(result.turnDiagnostic).toMatchObject({
       conversationState: {
@@ -575,6 +580,29 @@ describe('Agent A conversation runner', () => {
       },
       usedMemoryIds: [],
     });
+  });
+
+  it('fails before planner and commit when the local lab requires DeepSeek and its call fails', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(200, localIngestResponse()))
+      .mockResolvedValueOnce(jsonResponse(200, localBrainClaimedTurn()))
+      .mockResolvedValueOnce(jsonResponse(503, { error: 'temporary_unavailable' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const sendTurn = createLocalTurnSender({
+      apiBaseUrl: 'http://127.0.0.1:3000',
+      orchestratorKey: 'test-orchestrator-key', orchestratorKeyId: 'test-key-id',
+      signingSecret: 'test-signing-secret', cronSecret: null,
+      geminiApiKey: 'test-gemini-key', geminiModel: 'test-gemini-model',
+      groqApiKey: 'test-groq-key', groqModel: 'openai/gpt-oss-120b',
+      deepseekApiKey: 'test-deepseek-key', deepseekModel: 'deepseek-v4-flash',
+      openaiApiKey: 'test-openai-key', openaiModel: 'gpt-5.6-terra',
+      openaiFallbackModel: 'gpt-5.6-luna',
+    }, 'strict-deepseek', 'groq', 0, true, 'deepseek');
+
+    await expect(sendTurn('Prefiero mantener el intercambio por escrito', null))
+      .rejects.toThrow('BRAIN_DEEPSEEK_HTTP_503');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[2]?.[0]).toBe('https://api.deepseek.com/responses');
   });
 
   it('runs the caller pacing gate immediately before every external turn', async () => {
