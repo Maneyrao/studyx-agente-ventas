@@ -44,6 +44,7 @@ import {
 } from '../lib/conversation/conversation-composer'
 import {
   bindCurrentCatalogResolutionToMoveV1,
+  bindCurrentConversationalIntentToMoveV1,
   buildAgentAContextV1,
 } from '../lib/conversation/agent-a-context'
 import {
@@ -838,8 +839,8 @@ export const processInboundTurn = new Workflow({
           pipelineDecisionProvider = generated.provider
           pipelineDecisionModel = generated.model
           pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
-          const authoritativeMove = bindCurrentCatalogResolutionToMoveV1(
-            generated.proposal.move,
+          const authoritativeMove = bindCurrentConversationalIntentToMoveV1(
+            bindCurrentCatalogResolutionToMoveV1(generated.proposal.move, owned),
             owned,
           )
           const plannerStartedAt = Date.now()
@@ -992,8 +993,8 @@ export const processInboundTurn = new Workflow({
           pipelineDecisionProvider = 'botpress'
           pipelineDecisionModel = interpreted.model
         }
-        const authoritativeMove = bindCurrentCatalogResolutionToMoveV1(
-          interpreted.move,
+        const authoritativeMove = bindCurrentConversationalIntentToMoveV1(
+          bindCurrentCatalogResolutionToMoveV1(interpreted.move, owned),
           owned,
         )
 

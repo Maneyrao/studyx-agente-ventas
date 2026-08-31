@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import {
   isCatalogRequestNeutral,
   resolveCatalogRequest,
@@ -40,6 +42,34 @@ const CELLPHONES = offering(
 );
 
 describe('resolveCatalogRequest', () => {
+  it('resolves the reviewed short catalog alias used with a price question', () => {
+    const manual = JSON.parse(readFileSync(
+      path.join(process.cwd(), 'supabase/seed/data/studyx-manual.json'),
+      'utf8',
+    )) as {
+      courses: Array<{
+        code: string;
+        name: string;
+        academy: string;
+        aliases?: string[];
+      }>;
+    };
+    const coaching = manual.courses.find((course) => course.code === 'coaching_liderazgo');
+    expect(coaching).toBeDefined();
+    expect(resolveCatalogRequest(
+      'Coaching, decime también precios',
+      snapshot([offering(
+        coaching!.code,
+        coaching!.name,
+        coaching!.academy,
+        coaching!.aliases,
+      )]),
+    )).toMatchObject({
+      kind: 'exact',
+      offeringCode: 'coaching_liderazgo',
+    });
+  });
+
   it('keeps an administrative identity confirmation neutral to the remembered course', () => {
     const text = 'Repetime con qué datos quedé anotada, quiero confirmar que están bien.';
 

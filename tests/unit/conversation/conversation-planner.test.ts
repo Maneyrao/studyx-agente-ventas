@@ -294,6 +294,20 @@ describe('planConversationTurn', () => {
     });
   });
 
+  it('acknowledges payment deferral without repeating options before a plan is selected', () => {
+    const deferred = plan(move('defer_payment', { vetoes: ['payment_link'] }), state({
+      selected_offering_code: 'redes-informaticas',
+      stage: 'course_selected',
+      awaiting_reply: 'payment_plan',
+    }));
+
+    expect(deferred).toMatchObject({
+      response_goal: 'acknowledge_payment_deferral',
+      next_awaiting_reply: 'payment_plan',
+      allowed_business_action: { type: 'none' },
+    });
+  });
+
   it('applies compound vetoes before any otherwise valid action', () => {
     const result = plan(move('ask_course_information', {
       secondary_moves: ['continue_by_chat', 'request_payment_link'],

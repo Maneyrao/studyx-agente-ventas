@@ -5,6 +5,7 @@ import {
 } from '../../schemas/agent-a-brain';
 import {
   ComposedNarrativeV1Schema,
+  ConversationMoveV1Schema,
   type ComposedNarrativeV1,
   type TurnPlanV1,
 } from '../../schemas/conversation-pipeline';
@@ -43,12 +44,77 @@ export interface GeneratedAgentATurnProposalV1 {
   readonly model: string;
   readonly latency_ms: number;
   readonly attempt_count: 1 | 2;
+  readonly token_usage?: {
+    readonly input_tokens: number;
+    readonly cached_input_tokens: number;
+    readonly output_tokens: number;
+    readonly total_tokens: number;
+  };
 }
 
 function parseDeepSeekJsonContent(content: string): unknown {
   const trimmed = content.trim();
   const fenced = /^```json[\t ]*\r?\n([\s\S]*?)\r?\n```$/iu.exec(trimmed);
   return JSON.parse(fenced?.[1] ?? trimmed);
+}
+
+const DEEPSEEK_PROPOSAL_ROOT_FIELDS = new Set([
+  'schema_version',
+  'move',
+  'response',
+  'proposed_action',
+  'used_fact_ids',
+  'used_memory_ids',
+  'memory_candidates',
+]);
+
+function stripDeepSeekRootMetadata(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  return Object.fromEntries(Object.entries(value).filter(([key]) => (
+    DEEPSEEK_PROPOSAL_ROOT_FIELDS.has(key)
+  )));
+}
+
+function extractResponsesTokenUsage(payload: unknown): GeneratedAgentATurnProposalV1['token_usage'] {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return undefined;
+  const usage = (payload as Record<string, unknown>).usage;
+  if (!usage || typeof usage !== 'object' || Array.isArray(usage)) return undefined;
+  const values = usage as Record<string, unknown>;
+  const inputTokens = values.input_tokens;
+  const outputTokens = values.output_tokens;
+  const totalTokens = values.total_tokens;
+  if (
+    !Number.isSafeInteger(inputTokens) || Number(inputTokens) < 0
+    || !Number.isSafeInteger(outputTokens) || Number(outputTokens) < 0
+    || !Number.isSafeInteger(totalTokens) || Number(totalTokens) < 0
+  ) return undefined;
+  const details = values.input_tokens_details;
+  const cached = details && typeof details === 'object' && !Array.isArray(details)
+    ? (details as Record<string, unknown>).cached_tokens
+    : 0;
+  const cachedInputTokens = Number.isSafeInteger(cached) && Number(cached) >= 0
+    ? Math.min(Number(inputTokens), Number(cached))
+    : 0;
+  return {
+    input_tokens: Number(inputTokens),
+    cached_input_tokens: cachedInputTokens,
+    output_tokens: Number(outputTokens),
+    total_tokens: Number(totalTokens),
+  };
+}
+
+function addTokenUsage(
+  left: GeneratedAgentATurnProposalV1['token_usage'],
+  right: GeneratedAgentATurnProposalV1['token_usage'],
+): GeneratedAgentATurnProposalV1['token_usage'] {
+  if (!left) return right;
+  if (!right) return left;
+  return {
+    input_tokens: left.input_tokens + right.input_tokens,
+    cached_input_tokens: left.cached_input_tokens + right.cached_input_tokens,
+    output_tokens: left.output_tokens + right.output_tokens,
+    total_tokens: left.total_tokens + right.total_tokens,
+  };
 }
 
 export async function generateDeepSeekAgentATurnProposalV1(input: {
@@ -75,71 +141,97 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
   if (input.signal.aborted) controller.abort();
 
   try {
-    let response: Response;
-    try {
-      response = await fetch(DEEPSEEK_RESPONSES_URL, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${input.apiKey}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          instructions: buildAgentABrainInstructionsV1(input.context),
-          input: 'Return only the single AgentATurnProposalV1 JSON object.',
-          reasoning: { effort: 'none' },
-          temperature: 0.2,
-          stream: false,
-          max_output_tokens: 800,
-          text: {
-            format: {
-              type: 'json_schema',
-              name: 'studyx_agent_a_turn_proposal_v1',
-              schema: proposalJsonSchema(),
-            },
+    let accumulatedTokenUsage: GeneratedAgentATurnProposalV1['token_usage'];
+    for (const attempt of [1, 2] as const) {
+      let response: Response;
+      try {
+        response = await fetch(DEEPSEEK_RESPONSES_URL, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${input.apiKey}`,
+            'content-type': 'application/json',
           },
-        }),
-        signal: controller.signal,
-      });
-    } catch {
-      throw new AgentABrainError(
-        timedOut ? 'BRAIN_DEEPSEEK_TIMEOUT' : 'BRAIN_DEEPSEEK_NETWORK_ERROR',
+          body: JSON.stringify({
+            model,
+            instructions: buildAgentABrainInstructionsV1(input.context),
+            input: 'Return only the single AgentATurnProposalV1 JSON object.',
+            reasoning: { effort: 'none' },
+            temperature: 0.2,
+            stream: false,
+            max_output_tokens: 800,
+            text: {
+              format: {
+                type: 'json_schema',
+                name: 'studyx_agent_a_turn_proposal_v1',
+                schema: proposalJsonSchema(),
+              },
+            },
+          }),
+          signal: controller.signal,
+        });
+      } catch {
+        throw new AgentABrainError(
+          timedOut ? 'BRAIN_DEEPSEEK_TIMEOUT' : 'BRAIN_DEEPSEEK_NETWORK_ERROR',
+        );
+      }
+      if (!response.ok) {
+        throw new AgentABrainError(
+          response.status === 429
+            ? 'BRAIN_DEEPSEEK_RATE_LIMITED'
+            : `BRAIN_DEEPSEEK_HTTP_${response.status}`,
+          response.status,
+          null,
+          retryAfterMs(response),
+        );
+      }
+      let payload: unknown;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new AgentABrainError(
+          timedOut ? 'BRAIN_DEEPSEEK_TIMEOUT' : 'BRAIN_DEEPSEEK_INVALID_RESPONSE',
+          response.status,
+        );
+      }
+      accumulatedTokenUsage = addTokenUsage(
+        accumulatedTokenUsage,
+        extractResponsesTokenUsage(payload),
       );
+      const content = extractResponsesContent(payload);
+      if (content === null) throw new AgentABrainError('BRAIN_DEEPSEEK_EMPTY_RESPONSE', response.status);
+      let decoded: unknown;
+      try {
+        decoded = parseDeepSeekJsonContent(content);
+      } catch {
+        throw new AgentABrainError('BRAIN_DEEPSEEK_INVALID_JSON', response.status);
+      }
+      let proposal: AgentATurnProposalV1;
+      try {
+        proposal = parseAgentATurnProposalV1(
+          stripDeepSeekRootMetadata(decoded),
+          input.context,
+        );
+      } catch (error) {
+        if (
+          attempt === 1
+          && error instanceof AgentABrainError
+          && error.code === 'BRAIN_INVALID_SCHEMA'
+          && !controller.signal.aborted
+        ) continue;
+        throw error;
+      }
+      return {
+        proposal,
+        provider: 'deepseek-direct',
+        model,
+        latency_ms: Date.now() - startedAt,
+        attempt_count: attempt,
+        ...(accumulatedTokenUsage
+          ? { token_usage: accumulatedTokenUsage }
+          : {}),
+      };
     }
-    if (!response.ok) {
-      throw new AgentABrainError(
-        response.status === 429
-          ? 'BRAIN_DEEPSEEK_RATE_LIMITED'
-          : `BRAIN_DEEPSEEK_HTTP_${response.status}`,
-        response.status,
-        null,
-        retryAfterMs(response),
-      );
-    }
-    let payload: unknown;
-    try {
-      payload = await response.json();
-    } catch {
-      throw new AgentABrainError(
-        timedOut ? 'BRAIN_DEEPSEEK_TIMEOUT' : 'BRAIN_DEEPSEEK_INVALID_RESPONSE',
-        response.status,
-      );
-    }
-    const content = extractResponsesContent(payload);
-    if (content === null) throw new AgentABrainError('BRAIN_DEEPSEEK_EMPTY_RESPONSE', response.status);
-    let decoded: unknown;
-    try {
-      decoded = parseDeepSeekJsonContent(content);
-    } catch {
-      throw new AgentABrainError('BRAIN_DEEPSEEK_INVALID_JSON', response.status);
-    }
-    return {
-      proposal: parseAgentATurnProposalV1(decoded, input.context),
-      provider: 'deepseek-direct',
-      model,
-      latency_ms: Date.now() - startedAt,
-      attempt_count: 1,
-    };
+    throw new AgentABrainError('BRAIN_INVALID_SCHEMA');
   } finally {
     clearTimeout(timeout);
     input.signal.removeEventListener('abort', parentAbort);
@@ -481,10 +573,53 @@ export async function generateOpenAIAgentATurnProposalV1(input: {
   }
 }
 
-function normalizeStrictProposal(value: unknown): unknown {
+function normalizeStrictProposal(value: unknown, context: AgentAContextV1): unknown {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const proposal = value as Record<string, unknown>;
-  const move = proposal.move;
+  const normalizedProposal = { ...proposal };
+  const response = proposal.response;
+  if (response && typeof response === 'object' && !Array.isArray(response)) {
+    const messages = (response as Record<string, unknown>).messages;
+    if (Array.isArray(messages)) {
+      const safeMessages = messages.filter((message) => (
+        typeof message === 'string'
+        && !/https?:\/\//iu.test(message)
+        && !/\{\{[^}]+\}\}/u.test(message)
+      ));
+      const rawMove = typeof proposal.move === 'string'
+        ? proposal.move
+        : proposal.move && typeof proposal.move === 'object' && !Array.isArray(proposal.move)
+          ? (proposal.move as Record<string, unknown>).move
+          : null;
+      const actionType = proposal.proposed_action
+        && typeof proposal.proposed_action === 'object'
+        && !Array.isArray(proposal.proposed_action)
+        ? (proposal.proposed_action as Record<string, unknown>).type
+        : null;
+      const normalizedMessages = safeMessages.length === 0
+        && messages.length > 0
+        && context.capabilities.may_send_payment_link
+        && (rawMove === 'request_payment_link' || actionType === 'send_payment_link')
+        ? ['Perfecto, te comparto el enlace autorizado para continuar.']
+        : safeMessages;
+      if (normalizedMessages.length > 0 && safeMessages.length !== messages.length) {
+        normalizedProposal.response = {
+          ...(response as Record<string, unknown>),
+          messages: normalizedMessages,
+        };
+      }
+    }
+  }
+  let move = proposal.move;
+  if (typeof move === 'string' && (MOVE_KINDS as readonly string[]).includes(move)) {
+    move = {
+      schema_version: 1,
+      move,
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 1,
+    };
+  }
   if (!move || typeof move !== 'object' || Array.isArray(move)) return value;
   const normalizedMove = { ...(move as Record<string, unknown>) };
   for (const key of ['course_reference', 'area_reference', 'payment_plan']) {
@@ -510,7 +645,7 @@ function normalizeStrictProposal(value: unknown): unknown {
   if (![...moveKinds].some((kind) => PAYMENT_PLAN_MOVES.has(kind))) {
     delete normalizedMove.payment_plan;
   }
-  return { ...proposal, move: normalizedMove };
+  return { ...normalizedProposal, move: normalizedMove };
 }
 
 function authorizedFactIds(context: AgentAContextV1): Set<string> {
@@ -523,13 +658,33 @@ function authorizedFactIds(context: AgentAContextV1): Set<string> {
 }
 
 export function parseAgentATurnProposalV1(raw: unknown, context: AgentAContextV1): AgentATurnProposalV1 {
-  const parsed = AgentATurnProposalV1Schema.safeParse(normalizeStrictProposal(raw));
+  const normalized = normalizeStrictProposal(raw, context);
+  const normalizedMove = normalized && typeof normalized === 'object' && !Array.isArray(normalized)
+    ? (normalized as Record<string, unknown>).move
+    : undefined;
+  const parsedMove = ConversationMoveV1Schema.safeParse(normalizedMove);
+  if (!parsedMove.success) {
+    const first = parsedMove.error.issues[0];
+    const suffix = first?.path
+      .map((segment) => typeof segment === 'string' && /^[a-z][a-z0-9_]*$/u.test(segment)
+        ? segment
+        : 'item')
+      .join('.') || '';
+    throw new AgentABrainError(
+      'BRAIN_INVALID_SCHEMA',
+      null,
+      `${suffix ? `move.${suffix}` : 'move'}:${first?.code ?? 'invalid'}`,
+    );
+  }
+  const parsed = AgentATurnProposalV1Schema.safeParse(normalized);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
     throw new AgentABrainError(
       'BRAIN_INVALID_SCHEMA',
       null,
-      first ? `${first.path.join('.') || 'root'}:${first.message}`.slice(0, 240) : null,
+      first
+        ? `${(first.path.join('.') || 'root').slice(0, 160)}:${first.code}`
+        : null,
     );
   }
   const facts = authorizedFactIds(context);
@@ -551,6 +706,22 @@ function commercialValuesByFactId(context: AgentAContextV1): ReadonlyMap<string,
   return values;
 }
 
+function canonicalPrerequisiteStatement(
+  facts: ReadonlyMap<string, NonNullable<AgentAContextV1['catalog']['selected_offering']>['facts'][number]>,
+  plannedIds: ReadonlySet<string>,
+): { readonly factId: string; readonly message: string } | null {
+  for (const [factId, fact] of facts) {
+    if (fact.kind !== 'offering_description' || !plannedIds.has(factId)) continue;
+    if (/\bno requiere conocimientos previos\b/iu.test(fact.value)) {
+      return { factId, message: 'No requiere conocimientos previos.' };
+    }
+    if (/\b(?:diseñad[oa]|disenad[oa]) para empezar desde cero\b/iu.test(fact.value)) {
+      return { factId, message: 'Está diseñado para empezar desde cero.' };
+    }
+  }
+  return null;
+}
+
 /**
  * The model owns the wording. Canonical values are allowed in that wording
  * only when the proposal cites their fact IDs and the authoritative planner
@@ -562,14 +733,65 @@ export function buildSafeAgentABrainCompositionV1(input: {
   readonly response_goal: TurnPlanV1['response_goal'];
   readonly planned_fact_ids: readonly string[];
 }): ComposedNarrativeV1 {
+  const compactMessage = (message: string) => message
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/giu, 'tu correo')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  const currentCustomerText = input.context.turn.batch_messages
+    .map((message) => message.text)
+    .join(' ');
+  const asksAboutUnspecifiedPrerequisites = /\b(?:requisitos?|prerrequisitos?|conocimientos?\s+previos?|experiencia\s+previa|qu[eé]\s+necesito\s+saber\s+antes)\b/iu
+    .test(currentCustomerText);
+  const asksAboutDuration = /\b(?:cu[aá]ntas?\s+clases|cu[aá]nto\s+dura|duraci[oó]n)\b/iu
+    .test(currentCustomerText);
+  const asksAboutDescription = /\b(?:qu[eé]\s+(?:me\s+)?aporta|qu[eé]\s+aprendo|qu[eé]\s+incluye|programa|temario)\b/iu
+    .test(currentCustomerText);
   const plannedIds = new Set(input.planned_fact_ids);
-  const citedIds = new Set(input.proposal.used_fact_ids.filter((id) => plannedIds.has(id)));
+  const selectedFactsById = new Map(
+    input.context.catalog.selected_offering?.facts.map((fact) => [fact.id, fact]) ?? [],
+  );
+  const prerequisiteStatement = asksAboutUnspecifiedPrerequisites
+    ? canonicalPrerequisiteStatement(selectedFactsById, plannedIds)
+    : null;
+  const citedIds = new Set(input.proposal.used_fact_ids.filter((id) => {
+    if (!plannedIds.has(id)) return false;
+    const kind = selectedFactsById.get(id)?.kind;
+    if (asksAboutUnspecifiedPrerequisites) {
+      return id === prerequisiteStatement?.factId
+        || (asksAboutDuration && (kind === 'offering_name' || kind === 'offering_duration'));
+    }
+    const selectedCode = input.context.catalog.selected_offering?.code ?? null;
+    const changesCourse = selectedCode !== null
+      && selectedCode !== input.context.commercial_state.selected_offering_code;
+    if (changesCourse && !asksAboutDuration && !asksAboutDescription) {
+      return kind === 'offering_name';
+    }
+    return true;
+  }));
+  if (asksAboutDuration || asksAboutDescription) {
+    for (const [id, fact] of selectedFactsById) {
+      if (!plannedIds.has(id)) continue;
+      if (
+        fact.kind === 'offering_name'
+        || (asksAboutDuration && fact.kind === 'offering_duration')
+        || (asksAboutDescription && fact.kind === 'offering_description')
+      ) citedIds.add(id);
+    }
+  }
+  if (prerequisiteStatement) citedIds.add(prerequisiteStatement.factId);
   const valuesById = commercialValuesByFactId(input.context);
   const unauthorizedValues = [...valuesById]
     .filter(([id]) => !citedIds.has(id))
     .map(([, value]) => value.normalize('NFKC').trim().toLocaleLowerCase('es'))
     .filter((value) => value.length >= 3);
-  const safeMessages = input.proposal.response.messages.filter((message) => {
+  const canonicalPaymentGoal = [
+    'present_payment_options',
+    'confirm_selected_plan',
+    'acknowledge_payment_deferral',
+    'confirm_payment_link',
+  ].includes(input.response_goal);
+  const unsupportedPrerequisiteClaim = /\b(?:no\s+(?:necesit[aá]s?|hace\s+falta|requiere)|(?:requisitos?|prerrequisitos?|conocimientos?\s+previos?|experiencia\s+previa)\s+(?:no\s+)?(?:son|es|est[aá]n|se\s+requieren?))\b/iu;
+  const safeMessages = input.proposal.response.messages.map(compactMessage).filter((message) => {
     const normalized = message.normalize('NFKC').toLocaleLowerCase('es');
     // This layer owns composition, not business truth. The structured parser
     // already blocks URLs and unknown evidence IDs; the backend sees the exact
@@ -577,11 +799,22 @@ export function buildSafeAgentABrainCompositionV1(input: {
     // canonical snapshot. Filtering by sales vocabulary here caused valid
     // natural language (for example "tenemos opciones") to be replaced by a
     // canned fallback before the authority boundary could inspect it.
-    return !unauthorizedValues.some((value) => normalized.includes(value));
+    return !unauthorizedValues.some((value) => normalized.includes(value))
+      && (!canonicalPaymentGoal || isValueFreeNarrativePortable(message))
+      && (!asksAboutUnspecifiedPrerequisites || !unsupportedPrerequisiteClaim.test(message));
   });
-  const messages = safeMessages.length > 0
-    ? safeMessages
-    : [safeContextualOpening(input.response_goal, input.context.commercial_state.call_offer_count)];
+  const messages = input.response_goal === 'confirm_selected_plan'
+    ? ['Queda registrada tu elección. Avisame cuando quieras avanzar.']
+    : input.response_goal === 'confirm_payment_link'
+      ? ['Para inscribirte necesito nombre completo, correo, ciudad, estado y ZIP.']
+      : input.response_goal === 'acknowledge_payment_deferral'
+        ? ['De acuerdo, lo dejamos para más adelante.']
+        : asksAboutUnspecifiedPrerequisites
+          ? [prerequisiteStatement?.message
+            ?? 'Los requisitos previos no están especificados en la información confirmada.']
+          : safeMessages.length > 0
+            ? safeMessages
+            : [safeContextualOpening(input.response_goal, input.context.commercial_state.call_offer_count)];
 
   return ComposedNarrativeV1Schema.parse({
     schema_version: 1,
@@ -592,7 +825,7 @@ export function buildSafeAgentABrainCompositionV1(input: {
     },
     call_offer: input.proposal.response.call_offer
       && isValueFreeNarrativePortable(input.proposal.response.call_offer)
-      ? input.proposal.response.call_offer
+      ? compactMessage(input.proposal.response.call_offer)
       : null,
     used_fact_ids: [...citedIds],
   });

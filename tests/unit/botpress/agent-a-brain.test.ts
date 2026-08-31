@@ -86,6 +86,14 @@ describe('Agent A Brain V1', () => {
     expect(parseAgentATurnProposalV1(proposal(), context()).response.messages).toHaveLength(2);
   });
 
+  it('reports only the safe schema path and issue code for a root contract failure', () => {
+    expect(() => parseAgentATurnProposalV1(proposal({ unexpected: true }), context()))
+      .toThrowError(expect.objectContaining({
+        code: 'BRAIN_INVALID_SCHEMA',
+        detail: 'root:unrecognized_keys',
+      }));
+  });
+
   it('drops semantically inapplicable optional references emitted by the structured provider', () => {
     const parsed = parseAgentATurnProposalV1(proposal({
       move: {
@@ -122,6 +130,20 @@ describe('Agent A Brain V1', () => {
 
     expect(parsed.move.secondary_moves).toEqual(['continue_by_chat']);
     expect(parsed.move.vetoes).toEqual(['call']);
+  });
+
+  it('normalizes only a known compact move enum into the closed move contract', () => {
+    const parsed = parseAgentATurnProposalV1(proposal({ move: 'ask_payment_options' }), context());
+
+    expect(parsed.move).toEqual({
+      schema_version: 1,
+      move: 'ask_payment_options',
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 1,
+    });
+    expect(() => parseAgentATurnProposalV1(proposal({ move: 'invented_move' }), context()))
+      .toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
   });
 
   it('preserves natural sales prose when every commercial value cites an authorized fact', () => {
@@ -260,6 +282,218 @@ describe('Agent A Brain V1', () => {
       .toThrowError(expect.objectContaining({ code: 'BRAIN_UNKNOWN_MEMORY_ID' }));
   });
 
+  it('drops only an unsafe secondary message so the backend can materialize an authorized link', () => {
+    const parsed = parseAgentATurnProposalV1(proposal({
+      response: {
+        messages: [
+          'Perfecto, te comparto el paso autorizado.',
+          'Usá https://example.invalid/model-authored-link',
+        ],
+      },
+    }), context());
+
+    expect(parsed.response.messages).toEqual([
+      'Perfecto, te comparto el paso autorizado.',
+    ]);
+  });
+
+  it('uses safe value-free copy when an authorized link turn contains only a model URL', () => {
+    const linkContext = {
+      ...context(),
+      commercial_state: {
+        ...context().commercial_state,
+        selected_payment_plan: 'monthly_12' as const,
+      },
+      capabilities: {
+        ...context().capabilities,
+        may_send_payment_link: true,
+        authorized_payment_plan: 'monthly_12' as const,
+      },
+    };
+    const parsed = parseAgentATurnProposalV1(proposal({
+      move: {
+        schema_version: 1,
+        move: 'request_payment_link',
+        secondary_moves: [],
+        vetoes: [],
+        payment_plan: 'monthly_12',
+        confidence: 0.98,
+      },
+      response: { messages: ['https://example.invalid/model-authored-link'] },
+      proposed_action: {
+        type: 'send_payment_link',
+        offering_code: 'redes-informaticas',
+        payment_plan: 'monthly_12',
+      },
+    }), linkContext);
+
+    expect(parsed.response.messages).toHaveLength(1);
+    expect(parsed.response.messages[0]).not.toMatch(/https?:\/\//u);
+  });
+
+  it('leaves a paraphrased payment amount to the canonical assembler', () => {
+    const composition = buildSafeAgentABrainCompositionV1({
+      proposal: parseAgentATurnProposalV1(proposal({
+        move: {
+          schema_version: 1,
+          move: 'select_payment_plan',
+          secondary_moves: [],
+          vetoes: [],
+          payment_plan: 'monthly_12',
+          confidence: 0.98,
+        },
+        response: {
+          messages: ['Perfecto, elegiste 12 cuotas de USD 30.'],
+          call_offer: null,
+        },
+      }), context()),
+      context: context(),
+      response_goal: 'confirm_selected_plan',
+      planned_fact_ids: [],
+    });
+
+    expect(composition.narrative.opening).toBe(
+      'Queda registrada tu elección. Avisame cuando quieras avanzar.',
+    );
+    expect(composition.narrative.opening).not.toMatch(/USD|30|cuotas/iu);
+  });
+
+  it('answers an unsupported prerequisite question from the absence of a canonical fact', () => {
+    const prerequisiteContext = context();
+    prerequisiteContext.catalog.selected_offering!.facts.push(
+      { id: 'offering:redes-informaticas:duration:v1', kind: 'offering_duration', value: '16 clases' },
+      { id: 'offering:redes-informaticas:modality:v1', kind: 'offering_modality', value: 'online' },
+    );
+    prerequisiteContext.turn.batch_messages[0] = {
+      ...prerequisiteContext.turn.batch_messages[0],
+      text: '¿Cuántas clases tiene y qué necesito saber antes de empezar?',
+    };
+    const composition = buildSafeAgentABrainCompositionV1({
+      proposal: parseAgentATurnProposalV1(proposal({
+        response: {
+          messages: [
+            'No necesitás conocimientos previos.\n\nPodés empezar desde cero.',
+            'La modalidad es online.',
+          ],
+          call_offer: null,
+        },
+        used_fact_ids: [
+          'offering:redes-informaticas:name:v1',
+          'offering:redes-informaticas:duration:v1',
+          'offering:redes-informaticas:modality:v1',
+        ],
+      }), prerequisiteContext),
+      context: prerequisiteContext,
+      response_goal: 'explain_selected_course',
+      planned_fact_ids: [
+        'offering:redes-informaticas:name:v1',
+        'offering:redes-informaticas:duration:v1',
+        'offering:redes-informaticas:modality:v1',
+      ],
+    });
+
+    expect(composition.narrative.opening).toBe(
+      'Los requisitos previos no están especificados en la información confirmada.',
+    );
+    expect(JSON.stringify(composition)).not.toMatch(/desde cero|no necesitás/iu);
+    expect(composition.used_fact_ids).toEqual([
+      'offering:redes-informaticas:name:v1',
+      'offering:redes-informaticas:duration:v1',
+    ]);
+  });
+
+  it('answers with a concise prerequisite statement when the canonical description confirms it', () => {
+    const prerequisiteContext = context();
+    prerequisiteContext.catalog.selected_offering!.facts.push({
+      id: 'offering:redes-informaticas:description:v1',
+      kind: 'offering_description',
+      value: 'Es un curso introductorio, que no requiere conocimientos previos, y explica las bases.',
+    });
+    prerequisiteContext.turn.batch_messages[0] = {
+      ...prerequisiteContext.turn.batch_messages[0],
+      text: '¿Necesito conocimientos previos?',
+    };
+
+    const composition = buildSafeAgentABrainCompositionV1({
+      proposal: parseAgentATurnProposalV1(proposal({
+        response: { messages: ['No requiere conocimientos previos.'], call_offer: null },
+        used_fact_ids: [
+          'offering:redes-informaticas:name:v1',
+          'offering:redes-informaticas:description:v1',
+        ],
+      }), prerequisiteContext),
+      context: prerequisiteContext,
+      response_goal: 'explain_selected_course',
+      planned_fact_ids: [
+        'offering:redes-informaticas:name:v1',
+        'offering:redes-informaticas:description:v1',
+      ],
+    });
+
+    expect(composition.narrative.opening).toBe('No requiere conocimientos previos.');
+    expect(composition.used_fact_ids).toContain(
+      'offering:redes-informaticas:description:v1',
+    );
+  });
+
+  it('compacts multiline model copy before canonical assembly', () => {
+    const composition = buildSafeAgentABrainCompositionV1({
+      proposal: parseAgentATurnProposalV1(proposal({
+        response: {
+          messages: ['Para avanzar necesito:\n- Nombre completo\n- Correo electrónico'],
+          call_offer: null,
+        },
+      }), context()),
+      context: context(),
+      response_goal: 'clarify_current_step',
+      planned_fact_ids: [],
+    });
+
+    expect(composition.narrative.opening).toBe(
+      'Para avanzar necesito: - Nombre completo - Correo electrónico',
+    );
+  });
+
+  it('does not echo a customer email from model-authored copy', () => {
+    const composition = buildSafeAgentABrainCompositionV1({
+      proposal: parseAgentATurnProposalV1(proposal({
+        response: {
+          messages: ['Quedó registrado el correo cliente@example.test.'],
+          call_offer: null,
+        },
+      }), context()),
+      context: context(),
+      response_goal: 'clarify_current_step',
+      planned_fact_ids: [],
+    });
+
+    expect(composition.narrative.opening).toBe('Quedó registrado el correo tu correo.');
+    expect(JSON.stringify(composition)).not.toContain('cliente@example.test');
+  });
+
+  it('uses bounded backend-owned copy for an authorized payment-link response', () => {
+    const composition = buildSafeAgentABrainCompositionV1({
+      proposal: parseAgentATurnProposalV1(proposal({
+        response: {
+          messages: [
+            'Para la inscripción necesito:\n- Nombre completo\n- Correo electrónico\n- Ciudad, estado y zip code',
+            'Cuando pagues, mandame una captura del comprobante.',
+          ],
+          call_offer: null,
+        },
+      }), context()),
+      context: context(),
+      response_goal: 'confirm_payment_link',
+      planned_fact_ids: [],
+    });
+
+    expect(composition.narrative).toEqual({
+      opening: 'Para inscribirte necesito nombre completo, correo, ciudad, estado y ZIP.',
+      explanation: null,
+      next_question: null,
+    });
+  });
+
   it('makes one strict structured request with the required budget', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(200, successBody(proposal())));
     vi.stubGlobal('fetch', fetchMock);
@@ -333,6 +567,12 @@ describe('Agent A Brain V1', () => {
           type: 'message',
           content: [{ type: 'output_text', text: `\`\`\`json\n${JSON.stringify(proposal())}\n\`\`\`` }],
         }],
+        usage: {
+          input_tokens: 1_200,
+          output_tokens: 180,
+          total_tokens: 1_380,
+          input_tokens_details: { cached_tokens: 200 },
+        },
       },
     ));
     vi.stubGlobal('fetch', fetchMock);
@@ -342,7 +582,16 @@ describe('Agent A Brain V1', () => {
       model: 'deepseek-v4-flash',
     });
 
-    expect(result).toMatchObject({ provider: 'deepseek-direct', model: 'deepseek-v4-flash' });
+    expect(result).toMatchObject({
+      provider: 'deepseek-direct',
+      model: 'deepseek-v4-flash',
+      token_usage: {
+        input_tokens: 1_200,
+        cached_input_tokens: 200,
+        output_tokens: 180,
+        total_tokens: 1_380,
+      },
+    });
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe('https://api.deepseek.com/responses');
     expect(init?.headers).toMatchObject({
@@ -364,6 +613,42 @@ describe('Agent A Brain V1', () => {
     expect(moveProperties.secondary_moves.items.enum).not.toContain('greeting');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('unknown');
     expect(moveProperties.vetoes.description).toContain('current customer message explicitly refuses');
+  });
+
+  it('retries one DeepSeek schema violation inside the same bounded deadline', async () => {
+    const invalidProposal = proposal({ response: { messages: [] } });
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(providerResponse(200, responsesSuccessBody(invalidProposal)))
+      .mockResolvedValueOnce(providerResponse(200, responsesSuccessBody(proposal())));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(generateDeepSeekAgentATurnProposalV1({
+      context: context(),
+      apiKey: 'deepseek-test-key',
+      signal: new AbortController().signal,
+    })).resolves.toMatchObject({
+      provider: 'deepseek-direct',
+      attempt_count: 2,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops non-authoritative DeepSeek root metadata before strict validation', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(
+      200,
+      responsesSuccessBody(proposal({ provider_commentary: 'non-authoritative' })),
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(generateDeepSeekAgentATurnProposalV1({
+      context: context(),
+      apiKey: 'deepseek-test-key',
+      signal: new AbortController().signal,
+    })).resolves.toMatchObject({
+      provider: 'deepseek-direct',
+      attempt_count: 1,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('allows DeepSeek ten seconds and classifies a timeout while reading the response body', async () => {

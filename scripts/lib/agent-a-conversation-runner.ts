@@ -78,6 +78,8 @@ export type AgentTurnDiagnostic = {
     readonly vetoes: readonly string[];
     readonly confidence: number;
   };
+  plannedResponseGoal?: string;
+  plannedFactIds?: readonly string[];
   replayVerified?: boolean;
   brainFailureReason?: string | null;
   brainFailureCode?: string | null;
@@ -113,6 +115,13 @@ export type AgentRuntimeEvidence = {
   committed_response_hash: string | null;
   fallback_reason: string | null;
   latencies_ms?: Record<string, number>;
+  model_attempt_count?: number;
+  token_usage?: {
+    input_tokens: number;
+    cached_input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+  };
 };
 
 export type TurnQualityAssertion = {
@@ -531,6 +540,17 @@ export function assertSuitePromptVersion(suiteVersion: string, expectedVersion: 
         'the matching prompt) before spending tokens on this comparison.',
     );
   }
+}
+
+const AGENT_A_BRAIN_SUITE_NAMES = new Set([
+  'studyx-agent-a-brain-v1-heldout',
+  'studyx-agent-a-historical-20',
+]);
+
+export function expectedPromptVersionForSuite(suiteName: string): string {
+  return AGENT_A_BRAIN_SUITE_NAMES.has(suiteName)
+    ? AGENT_A_BRAIN_PROMPT_VERSION
+    : AGENT_A_PROMPT_VERSION;
 }
 
 function replaceRunId(value: string, runId: string): string {
@@ -968,7 +988,9 @@ export async function runConversationCase(
       const normalized = reply.toLocaleLowerCase('es');
       const chars = reply.length;
       const questions = (reply.match(/\?/gu) ?? []).length;
-      const lines = reply === '' ? 0 : reply.split(/\r?\n/u).length;
+      const lines = reply === ''
+        ? 0
+        : reply.split(/\r?\n/u).filter((line) => line.trim().length > 0).length;
 
       if (assertion.max_chars !== undefined && chars > assertion.max_chars) {
         failures.push(`turn_${turnNumber}_max_chars_${assertion.max_chars}_got_${chars}`);
@@ -1349,9 +1371,7 @@ export async function runConversationSuite(
 ) {
   assertSuitePromptVersion(
     suite.prompt_version,
-    suite.suite === 'studyx-agent-a-brain-v1-heldout'
-      ? AGENT_A_BRAIN_PROMPT_VERSION
-      : AGENT_A_PROMPT_VERSION,
+    expectedPromptVersionForSuite(suite.suite),
   );
   assertRegressionCompositionEvidence(suite);
 

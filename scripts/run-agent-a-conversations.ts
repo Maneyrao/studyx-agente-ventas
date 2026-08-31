@@ -10,6 +10,7 @@ import {
   assertSuitePromptVersion,
   buildAdkChatArgs,
   composeAgentARegressionSuite,
+  expectedPromptVersionForSuite,
   runConversationSuite,
   validateSuiteCaseInvariants,
   type AgentChatResult,
@@ -57,7 +58,11 @@ import {
   modelUnavailableFallback,
 } from '../botpress-agent/src/utils/decision-policy';
 import { routeCommercialTurn } from '../botpress-agent/src/utils/commercial-router';
-import { buildAgentAContextV1 } from '../botpress-agent/src/lib/conversation/agent-a-context';
+import {
+  bindCurrentCatalogResolutionToMoveV1,
+  bindCurrentConversationalIntentToMoveV1,
+  buildAgentAContextV1,
+} from '../botpress-agent/src/lib/conversation/agent-a-context';
 import {
   AgentABrainError,
   DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
@@ -70,6 +75,8 @@ import {
 } from '../botpress-agent/src/lib/conversation/agent-a-brain';
 import { AGENT_A_BRAIN_PROMPT_VERSION } from '../botpress-agent/src/prompts/agent-a-brain-v1';
 import { deliverAuthorizedLocalOutbound } from './lib/local-authorized-delivery';
+import { createLocalEvalClaimCleanup } from './lib/local-eval-claim-cleanup';
+import { readOptionalJsonConfig } from './lib/optional-json-config';
 
 const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -175,10 +182,13 @@ function parseDotEnv(contents: string): Record<string, string> {
 }
 
 async function loadLocalCredentials(primaryProvider: 'groq' | 'gemini'): Promise<LocalCredentials> {
-  const envFile = parseDotEnv(await readFile(path.join(projectRoot, '.env.local'), 'utf8')
+  const credentialRoot = path.resolve(
+    process.env.STUDYX_LOCAL_CREDENTIALS_ROOT ?? projectRoot,
+  );
+  const envFile = parseDotEnv(await readFile(path.join(credentialRoot, '.env.local'), 'utf8')
     .catch(() => ''));
-  const adkSecrets = JSON.parse(
-    await readFile(path.join(botpressDir, '.adk/secrets.json'), 'utf8'),
+  const adkSecrets = await readOptionalJsonConfig(
+    path.join(credentialRoot, 'botpress-agent/.adk/secrets.json'),
   ) as { dev?: Record<string, string> };
   const value = (name: string, aliases: string[] = []) => {
     for (const key of [name, ...aliases]) {
@@ -347,6 +357,11 @@ export function createLocalTurnSender(
   minimumModelIntervalMs: number,
   skipPostTurnCrons = false,
   strictBrainProvider: 'deepseek' | null = null,
+  completeFailedClaim?: (input: {
+    readonly batchId: string;
+    readonly claimToken: string;
+    readonly errorCode: string;
+  }) => Promise<void>,
 ) {
   const gitSha = process.env.GIT_COMMIT_SHA
     ?? process.env.VERCEL_GIT_COMMIT_SHA
@@ -431,6 +446,8 @@ export function createLocalTurnSender(
     latenciesMs.claim_ms = Date.now() - claimStartedAt;
     if (!claimed) throw new Error('LOCAL_CLAIM_RETRY_EXHAUSTED');
 
+    try {
+
     const commercialRoute = routeCommercialTurn({
       automationEnabled: true,
       claimed,
@@ -466,7 +483,11 @@ export function createLocalTurnSender(
     let usedMemoryIds: readonly string[] = [];
     let memoryCandidateCount = 0;
     let conversationMove: AgentTurnDiagnostic['conversationMove'];
+    let plannedResponseGoal: string | undefined;
+    let plannedFactIds: readonly string[] | undefined;
     let brainTransportRetries = 0;
+    let modelTokenUsage: NonNullable<AgentChatResult['runtime']>['token_usage'];
+    let modelAttemptCount: number | undefined;
     const brainContext = buildAgentAContextV1(claimed);
     const brainAuthoritative = claimed.features?.agent_a_brain_v1_enabled === true;
     const brainEligible = brainAuthoritative
@@ -548,24 +569,32 @@ export function createLocalTurnSender(
         }
         if (generated === null) throw new Error('BRAIN_TRANSPORT_RETRY_EXHAUSTED');
         latenciesMs.agent_a_brain_ms = generated.latency_ms;
+        modelTokenUsage = generated.token_usage;
+        modelAttemptCount = generated.attempt_count;
+        const authoritativeMove = bindCurrentConversationalIntentToMoveV1(
+          bindCurrentCatalogResolutionToMoveV1(generated.proposal.move, claimed),
+          claimed,
+        );
         conversationMove = {
-          move: generated.proposal.move.move,
-          secondary_moves: generated.proposal.move.secondary_moves,
-          vetoes: generated.proposal.move.vetoes,
-          confidence: generated.proposal.move.confidence,
+          move: authoritativeMove.move,
+          secondary_moves: authoritativeMove.secondary_moves,
+          vetoes: authoritativeMove.vetoes,
+          confidence: authoritativeMove.confidence,
         };
         const plannerStartedAt = Date.now();
         const planned = await localSignedJson({
           credentials,
           path: `/api/agent/turns/${claimed.turn_id}/plan`,
-          body: { trace_id: traceId, move: generated.proposal.move },
+          body: { trace_id: traceId, move: authoritativeMove },
           idempotencyKey: `plan:${claimed.turn_id}`,
           traceId,
           parse: (value) => ConversationPlanResponseV1Schema.parse(value),
         });
+        plannedResponseGoal = planned.plan.response_goal;
+        plannedFactIds = planned.fact_refs.map((fact) => fact.id);
         latenciesMs.planner_ms = Date.now() - plannerStartedAt;
         conversationPipelineV1 = {
-          move: generated.proposal.move,
+          move: authoritativeMove,
           plan_hash: planned.plan_hash,
           composition: buildSafeAgentABrainCompositionV1({
             proposal: generated.proposal,
@@ -606,7 +635,31 @@ export function createLocalTurnSender(
         usedMemoryIds = generated.proposal.used_memory_ids;
         memoryCandidateCount = generated.proposal.memory_candidates.length;
       } catch (error) {
-        if (strictBrainProvider === 'deepseek') throw error;
+        if (strictBrainProvider === 'deepseek') {
+          const strictCode = error instanceof AgentABrainError
+            ? error.code
+            : error instanceof Error
+              ? error.message.slice(0, 128)
+              : 'UNKNOWN';
+          throw withTurnDiagnostic(error, {
+            catalogResolution: claimed.catalog_resolution,
+            selectedOfferingCode: claimed.sales_context.offering_code,
+            decisionBusinessAction: null,
+            authorizedProtectedFacts: [],
+            authorizedUrls: [],
+            commitError: null,
+            selectedMemoryValues: claimed.context.selected_memories.map((memory) => memory.value),
+            usedMemoryIds: [],
+            memoryCandidateCount: 0,
+            brainTransportRetries,
+            brainFailureReason: classifyBrainFailureReason(
+              strictCode,
+              claimed.business_context_available && claimed.catalog_index !== null,
+            ),
+            brainFailureCode: strictCode,
+            brainFailureDetail: error instanceof AgentABrainError ? error.detail : null,
+          });
+        }
         const code = error instanceof Error ? error.message.slice(0, 128) : 'UNKNOWN';
         const reason = classifyBrainFailureReason(
           code,
@@ -682,6 +735,8 @@ export function createLocalTurnSender(
       ...(brainEligible ? { usedMemoryIds } : {}),
       ...(brainEligible ? { memoryCandidateCount } : {}),
       ...(conversationMove ? { conversationMove } : {}),
+      ...(plannedResponseGoal ? { plannedResponseGoal } : {}),
+      ...(plannedFactIds ? { plannedFactIds } : {}),
       ...(brainAuthoritative ? { brainTransportRetries } : {}),
       ...(plannedConversationState ? { conversationState: plannedConversationState } : {}),
       ...(brainAuthoritative ? { brainFailureReason } : {}),
@@ -764,6 +819,8 @@ export function createLocalTurnSender(
         : createHash('sha256').update(decision.response).digest('hex'),
       fallback_reason: fallbackReason,
       latencies_ms: latenciesMs,
+      ...(modelAttemptCount ? { model_attempt_count: modelAttemptCount } : {}),
+      ...(modelTokenUsage ? { token_usage: modelTokenUsage } : {}),
     };
     const commercialEvidence: NonNullable<AgentChatResult['commercialEvidence']> = {
       catalogResolution: claimed.catalog_resolution,
@@ -847,6 +904,30 @@ export function createLocalTurnSender(
       },
       evaluationPacingMs,
     };
+    } catch (error) {
+      if (completeFailedClaim) {
+        const rawErrorCode = error instanceof AgentABrainError
+          ? error.code
+          : error instanceof LocalStudyxHttpError
+            ? error.error
+            : error instanceof Error
+              ? error.message
+              : 'LOCAL_EVAL_TURN_FAILED';
+        const errorCode = /^[A-Z][A-Z0-9_.:-]{0,127}$/u.test(rawErrorCode)
+          ? rawErrorCode
+          : 'LOCAL_EVAL_TURN_FAILED';
+        try {
+          await completeFailedClaim({
+            batchId: claimed.batch.id,
+            claimToken: claimed.batch.claim_token,
+            errorCode,
+          });
+        } catch {
+          throw new Error('LOCAL_EVAL_CLAIM_CLEANUP_FAILED', { cause: error });
+        }
+      }
+      throw error;
+    }
   };
 }
 
@@ -904,9 +985,7 @@ async function main() {
   // suite frozen against a stale version of the Agent A prompt contract.
   assertSuitePromptVersion(
     selectedSuite.prompt_version,
-    selectedSuite.suite === 'studyx-agent-a-brain-v1-heldout'
-      ? AGENT_A_BRAIN_PROMPT_VERSION
-      : AGENT_A_PROMPT_VERSION,
+    expectedPromptVersionForSuite(selectedSuite.suite),
   );
 
   const runId = argument('--run-id') ?? makeRunId();
@@ -919,6 +998,16 @@ async function main() {
   if (localModelProvider !== 'groq' && localModelProvider !== 'gemini') {
     throw new Error('INVALID_LOCAL_MODEL_PROVIDER');
   }
+  const strictBrainProviderArgument = argument('--strict-brain-provider');
+  if (strictBrainProviderArgument !== null && strictBrainProviderArgument !== 'deepseek') {
+    throw new Error('INVALID_STRICT_BRAIN_PROVIDER');
+  }
+  const strictBrainProvider = strictBrainProviderArgument === 'deepseek' ? 'deepseek' : null;
+  if (strictBrainProvider && transport !== 'local') throw new Error('STRICT_BRAIN_REQUIRES_LOCAL_TRANSPORT');
+  const verifyDatabase = process.argv.includes('--verify-db');
+  const db = verifyDatabase || (transport === 'local' && strictBrainProvider !== null)
+    ? postgres(localDatabaseUrl(), { max: 2 })
+    : null;
   const selectedSendTurn = transport === 'local'
     ? createLocalTurnSender(
         await loadLocalCredentials(localModelProvider),
@@ -926,10 +1015,10 @@ async function main() {
         localModelProvider,
         minimumTurnIntervalMs,
         process.argv.includes('--skip-post-turn-crons'),
+        strictBrainProvider,
+        strictBrainProvider && db ? createLocalEvalClaimCleanup(db) : undefined,
       )
     : sendAdkTurn;
-  const verifyDatabase = process.argv.includes('--verify-db');
-  const db = verifyDatabase ? postgres(localDatabaseUrl(), { max: 2 }) : null;
   let previousTurnStartedAt: number | null = null;
 
   const paceExternalProvider = async () => {

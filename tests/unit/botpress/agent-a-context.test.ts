@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   bindCurrentCatalogResolutionToMoveV1,
+  bindCurrentConversationalIntentToMoveV1,
   buildAgentAContextV1,
 } from '../../../botpress-agent/src/lib/conversation/agent-a-context';
 import type { ClaimedTurn } from '../../../botpress-agent/src/schemas/contracts';
@@ -260,6 +261,220 @@ describe('buildAgentAContextV1', () => {
       move: 'ask_course_information',
       course_reference: 'redes-informaticas',
     });
+  });
+
+  it('refuses to select either course when the backend resolution is ambiguous', () => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = {
+      kind: 'ambiguous',
+      requestedText: 'Estoy entre Fotografía Profesional y Fotografía con Celulares.',
+      candidateCodes: ['fotografia_profesional', 'fotografia_celulares'],
+      clarification: 'choose_offering',
+    };
+
+    expect(bindCurrentCatalogResolutionToMoveV1({
+      schema_version: 1,
+      move: 'select_course',
+      secondary_moves: [],
+      vetoes: [],
+      course_reference: 'fotografia_profesional',
+      confidence: 0.98,
+    }, claimed)).toEqual({
+      schema_version: 1,
+      move: 'unknown',
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 1,
+    });
+  });
+
+  it('binds an exact generic information request to catalog orientation', () => {
+    const claimed = claimedTurn();
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'Info',
+    };
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+
+    expect(bindCurrentConversationalIntentToMoveV1({
+      schema_version: 1,
+      move: 'greeting',
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 0.9,
+    }, claimed)).toEqual({
+      schema_version: 1,
+      move: 'browse_catalog',
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 1,
+    });
+  });
+
+  it('binds a current exact course plus price question as one combined semantic move', () => {
+    const claimed = claimedTurn();
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'Coaching, decime también precios',
+    };
+    claimed.catalog_resolution = {
+      kind: 'exact',
+      offeringCode: 'coaching_liderazgo',
+      displayName: 'Coaching y Liderazgo',
+      academy: 'Academia de Negocios',
+      match: 'canonical',
+    };
+    claimed.catalog_index!.offerings = [{
+      code: 'coaching_liderazgo',
+      display_name: 'Coaching y Liderazgo',
+      academy: 'Academia de Negocios',
+      aliases: ['Coaching', 'curso de Coaching'],
+    }];
+
+    expect(bindCurrentConversationalIntentToMoveV1({
+      schema_version: 1,
+      move: 'select_course',
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 0.95,
+      course_reference: 'coaching_liderazgo',
+    }, claimed)).toEqual({
+      schema_version: 1,
+      move: 'ask_course_information',
+      secondary_moves: ['ask_payment_options'],
+      vetoes: [],
+      confidence: 1,
+      course_reference: 'coaching_liderazgo',
+    });
+  });
+
+  it('preserves an explicit payment-plan choice when the same message names the course', () => {
+    const claimed = claimedTurn();
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'Coaching, elijo seis pagos',
+    };
+    claimed.catalog_resolution = {
+      kind: 'exact',
+      offeringCode: 'coaching_liderazgo',
+      displayName: 'Coaching y Liderazgo',
+      academy: 'Academia de Negocios',
+      match: 'canonical',
+    };
+    claimed.catalog_index!.offerings = [{
+      code: 'coaching_liderazgo',
+      display_name: 'Coaching y Liderazgo',
+      academy: 'Academia de Negocios',
+      aliases: ['Coaching', 'curso de Coaching'],
+    }];
+
+    expect(bindCurrentConversationalIntentToMoveV1({
+      schema_version: 1,
+      move: 'select_payment_plan',
+      secondary_moves: [],
+      vetoes: [],
+      payment_plan: 'monthly_6',
+      confidence: 0.98,
+      course_reference: 'coaching_liderazgo',
+    }, claimed)).toEqual({
+      schema_version: 1,
+      move: 'select_payment_plan',
+      secondary_moves: [],
+      vetoes: [],
+      payment_plan: 'monthly_6',
+      confidence: 0.98,
+      course_reference: 'coaching_liderazgo',
+    });
+  });
+
+  it('binds an exact academy mention to the canonical area before planning', () => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'Academia de Negocios',
+    };
+    claimed.catalog_index!.offerings = [
+      {
+        code: 'excel_integral', display_name: 'Excel Integral',
+        academy: 'Academia de Negocios', aliases: [],
+      },
+      {
+        code: 'marketing_digital', display_name: 'Marketing Digital',
+        academy: 'Academia de Marketing', aliases: [],
+      },
+    ];
+
+    expect(bindCurrentConversationalIntentToMoveV1({
+      schema_version: 1,
+      move: 'select_area',
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 0.95,
+    }, claimed)).toMatchObject({
+      move: 'select_area',
+      area_reference: 'Academia de Negocios',
+    });
+  });
+
+  it('does not turn a prior enrollment intent into premature link authority', () => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.context.recent_turns = [{
+      direction: 'inbound',
+      content: 'Quiero inscribirme en el curso.',
+      created_at: NOW,
+    }];
+
+    expect(bindCurrentConversationalIntentToMoveV1({
+      schema_version: 1,
+      move: 'select_payment_plan',
+      secondary_moves: [],
+      vetoes: [],
+      payment_plan: 'monthly_6',
+      confidence: 0.98,
+    }, claimed).secondary_moves).toEqual([]);
+  });
+
+  it('resumes a deferred link only when the customer explicitly says now yes', () => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.context.recent_turns = [{
+      direction: 'inbound',
+      content: 'No me mandes el link todavía, quiero pensarlo.',
+      created_at: NOW,
+    }];
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'Ahora sí: confirmo seis pagos.',
+    };
+
+    expect(bindCurrentConversationalIntentToMoveV1({
+      schema_version: 1,
+      move: 'select_payment_plan',
+      secondary_moves: [],
+      vetoes: [],
+      payment_plan: 'monthly_6',
+      confidence: 0.98,
+    }, claimed).secondary_moves).toEqual(['request_payment_link']);
+  });
+
+  it('never resumes a link when the current plan selection carries a payment veto', () => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'Ahora sí elijo seis pagos, pero todavía no me mandes el link.',
+    };
+
+    expect(bindCurrentConversationalIntentToMoveV1({
+      schema_version: 1,
+      move: 'select_payment_plan',
+      secondary_moves: [],
+      vetoes: ['payment_link'],
+      payment_plan: 'monthly_6',
+      confidence: 0.98,
+    }, claimed).secondary_moves).toEqual([]);
   });
 
   it('connects bounded recent turns, selected memories and canonical catalog without secrets', () => {

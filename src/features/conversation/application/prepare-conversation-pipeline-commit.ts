@@ -187,7 +187,7 @@ export async function prepareConversationPipelineCommitV1(input: {
     authorized_protected_facts: [...new Map([
       ...protectedFactsFromCanonicalSelection({
         facts: materialized.facts,
-        used_fact_ids: input.composition.used_fact_ids,
+        used_fact_ids: assembled.used_fact_ids,
         business_context: input.business_context,
       }),
       ...catalogFacts,

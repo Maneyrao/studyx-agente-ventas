@@ -625,7 +625,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       if (priorPaymentLinks.length > 0) {
         // Cross-turn idempotency: acknowledge the existing proposal without
         // emitting a second Stripe URL or a second payment_link_sent signal.
-        finalResponse = 'Ya te compartí el link de ese plan. Si necesitás que revisemos otra opción, decime.';
+        finalResponse = 'Entiendo. Revisá el mensaje anterior. Si necesitás ayuda, avisame y lo revisamos.';
         committedBusinessAction = null;
       } else if (preparedPipeline) {
         finalResponse = assembleMaterializedPaymentResponse(materialized);

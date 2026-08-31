@@ -21,6 +21,14 @@ const COURSE_BOUND_MOVES = new Set<ConversationMoveV1['move']>([
   'decline_purchase',
 ]);
 
+const PAYMENT_INTENT_MOVES = new Set<ConversationMoveV1['move']>([
+  'ask_payment_options',
+  'select_payment_plan',
+  'defer_payment',
+  'request_payment_link',
+  'decline_purchase',
+]);
+
 /**
  * `catalog_resolution` was produced by the backend from the current batch and
  * its complete canonical index. Bind that already-verified identity to a
@@ -31,12 +39,135 @@ export function bindCurrentCatalogResolutionToMoveV1(
   move: ConversationMoveV1,
   claimed: ClaimedTurn,
 ): ConversationMoveV1 {
+  if (claimed.catalog_resolution.kind === 'ambiguous') {
+    return {
+      schema_version: 1,
+      move: 'unknown',
+      secondary_moves: [],
+      vetoes: move.vetoes,
+      confidence: 1,
+    };
+  }
   if (claimed.catalog_resolution.kind !== 'exact') return move;
   const kinds = [move.move, ...move.secondary_moves];
   if (!kinds.some((kind) => COURSE_BOUND_MOVES.has(kind))) return move;
   return {
     ...move,
     course_reference: claimed.catalog_resolution.offeringCode,
+  };
+}
+
+/**
+ * A deliberately tiny current-batch classifier for the shortest commercial
+ * request. The model still writes the response, while the backend prevents an
+ * exact "info" request from being downgraded to a social greeting or from
+ * reviving an older course.
+ */
+export function bindCurrentConversationalIntentToMoveV1(
+  move: ConversationMoveV1,
+  claimed: ClaimedTurn,
+): ConversationMoveV1 {
+  const currentBatch = claimed.context.batch_messages
+    .filter((message) => message.message_type === 'text')
+    .map((message) => message.content)
+    .join(' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLocaleLowerCase('es')
+    .trim()
+    .replace(/[^a-z0-9]+/gu, ' ')
+    .trim();
+  const recentCustomerText = claimed.context.recent_turns
+    .filter((turn) => turn.direction === 'inbound')
+    .map((turn) => turn.content)
+    .join(' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLocaleLowerCase('es');
+  const explicitLinkRequest = /\b(?:pasame|mandame|enviame|comparti(?:me)?)\s+(?:el\s+)?(?:link|enlace)\b/u
+    .test(currentBatch);
+  const resumesDeferredLink = /\bahora\s+si\b/u.test(currentBatch)
+    && /\b(?:no\s+(?:me\s+)?(?:mandes|envies|compartas)\s+(?:el\s+)?(?:link|enlace)|todavia\s+no|quiero\s+pensarlo)\b/u
+      .test(recentCustomerText);
+  if (move.move === 'select_area') {
+    const normalizeArea = (value: string) => value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/gu, '')
+      .toLocaleLowerCase('es')
+      .replace(/[^a-z0-9]+/gu, ' ')
+      .trim();
+    const academies = [...new Set(
+      (claimed.catalog_index?.offerings ?? [])
+        .map((offering) => offering.academy)
+        .filter((academy): academy is string => Boolean(academy)),
+    )];
+    const matches = academies.filter((academy) => {
+      const normalized = normalizeArea(academy);
+      return normalized.length > 0 && ` ${currentBatch} `.includes(` ${normalized} `);
+    });
+    if (matches.length === 1) {
+      return { ...move, area_reference: matches[0] };
+    }
+  }
+  if (
+    move.move === 'select_payment_plan'
+    && move.payment_plan
+    && (explicitLinkRequest || resumesDeferredLink)
+    && !move.vetoes.includes('payment_link')
+    && !move.vetoes.includes('purchase')
+  ) {
+    return {
+      ...move,
+      secondary_moves: [...new Set([
+        ...move.secondary_moves,
+        'request_payment_link' as const,
+      ])].slice(0, 2),
+    };
+  }
+  if (claimed.catalog_resolution.kind === 'exact') {
+    const resolution = claimed.catalog_resolution;
+    const currentOffering = claimed.catalog_index?.offerings.find(
+      (offering) => offering.code === resolution.offeringCode,
+    );
+    const normalize = (value: string) => value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/gu, '')
+      .toLocaleLowerCase('es')
+      .replace(/[^a-z0-9]+/gu, ' ')
+      .trim();
+    const identityTerms = [
+      resolution.displayName,
+      resolution.offeringCode,
+      ...(currentOffering?.aliases ?? []),
+    ].map(normalize).filter(Boolean);
+    const paddedCurrentBatch = ` ${currentBatch} `;
+    const mentionsCurrentOffering = identityTerms.some(
+      (term) => paddedCurrentBatch.includes(` ${term} `),
+    );
+    const asksEconomicDetails = /\b(?:precio|precios|cuanto sale|cuanto cuesta|pagos|formas? de pago)\b/u
+      .test(currentBatch);
+    const alreadyRepresentsPaymentIntent = [move.move, ...move.secondary_moves]
+      .some((kind) => PAYMENT_INTENT_MOVES.has(kind));
+    if (mentionsCurrentOffering && asksEconomicDetails && !alreadyRepresentsPaymentIntent) {
+      return {
+        schema_version: 1,
+        move: 'ask_course_information',
+        secondary_moves: ['ask_payment_options'],
+        vetoes: move.vetoes,
+        confidence: 1,
+        course_reference: resolution.offeringCode,
+      };
+    }
+  }
+  if (!/^(?:(?:quiero|necesito|busco|dame|pasame) )?(?:toda la )?(?:informacion|info|detalles?)$/u.test(currentBatch)) {
+    return move;
+  }
+  return {
+    schema_version: 1,
+    move: 'browse_catalog',
+    secondary_moves: [],
+    vetoes: [],
+    confidence: 1,
   };
 }
 

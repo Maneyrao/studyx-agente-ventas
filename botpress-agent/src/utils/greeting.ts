@@ -28,8 +28,10 @@ function buildGreetingResponse(claimed: ClaimedTurn): string {
   const identity = businessName
     ? `Soy la asesora virtual de ${businessName}.`
     : 'Soy la asesora virtual del equipo.'
+  const firstName = claimed.contact.name?.trim().split(/\s+/u)[0] || null
+  const salutation = firstName ? `¡Hola, ${firstName}!` : '¡Hola!'
   return (
-    `¡Hola! 😊 ${identity} Puedo darte información sobre nuestros cursos, ` +
+    `${salutation} 😊 ${identity} Puedo darte información sobre nuestros cursos, ` +
     'modalidades y horarios. ¿En qué te puedo ayudar?'
   )
 }

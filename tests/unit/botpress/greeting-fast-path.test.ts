@@ -19,6 +19,7 @@ function claimedTurn(overrides: {
   allowed?: string[];
   messageType?: string;
   route?: ClaimedTurn['deterministic_route'];
+  contactName?: string | null;
 }): ClaimedTurn {
   const allowed = overrides.allowed ?? [
     'social_reply',
@@ -47,7 +48,7 @@ function claimedTurn(overrides: {
     contact: {
       id: UUID,
       status: 'prospecto',
-      name: null,
+      name: overrides.contactName ?? null,
       blocked: false,
       consent_status: 'allowed',
       opted_in_at: '2026-08-12T00:00:00.000Z',
@@ -117,6 +118,18 @@ describe('matchDeterministicGreeting', () => {
     const decision = matchDeterministicGreeting(claimedTurn({ texts: ['hola'], route: 'greeting' }));
     expect(decision!.response).not.toMatch(/StudyX|Aburridont/);
     expect(decision!.response).toContain('asesora virtual');
+  });
+
+  it('uses only the first name, once, when the contact name is known', () => {
+    const decision = matchDeterministicGreeting(claimedTurn({
+      texts: ['hola'],
+      route: 'greeting',
+      contactName: 'Sofía Ramírez',
+    }));
+
+    expect(decision!.response).toContain('¡Hola, Sofía!');
+    expect(decision!.response).not.toContain('Ramírez');
+    expect(decision!.response!.match(/Sofía/gu)).toHaveLength(1);
   });
 
   const ambiguous = [

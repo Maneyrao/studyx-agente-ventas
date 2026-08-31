@@ -72,6 +72,106 @@ describe('canonical response assembler V1', () => {
     expect(result.content.match(/online/gu)).toHaveLength(1);
   });
 
+  it('treats an exact prerequisite clause as evidence from its cited canonical description', () => {
+    const description: CanonicalFactV1 = {
+      id: 'offering:criptomonedas:description:v1',
+      kind: 'offering_description',
+      source: 'business_snapshot',
+      value: 'Es un curso introductorio, que no requiere conocimientos previos, y explica las bases.',
+      offering_code: 'criptomonedas',
+    };
+    const result = assembleCanonicalConversationResponseV1({
+      plan: plan({ selected_offering_code: 'criptomonedas' }),
+      fact_refs: [{
+        id: description.id,
+        kind: description.kind,
+        offering_code: description.offering_code,
+      }],
+      facts: [description],
+      composition: {
+        schema_version: 1,
+        narrative: {
+          opening: 'No requiere conocimientos previos.',
+          explanation: null,
+          next_question: null,
+        },
+        used_fact_ids: [description.id],
+      },
+    });
+
+    expect(result.content).toBe('No requiere conocimientos previos.');
+    expect(result.used_fact_ids).toEqual([description.id]);
+  });
+
+  it('completes an authorized area-choice response with its options and one brief question', () => {
+    const areaFacts: CanonicalFactV1[] = [
+      { id: 'area:oficios:name:v1', kind: 'area_name', source: 'business_snapshot', value: 'Academia de Oficios' },
+      { id: 'area:diseno:name:v1', kind: 'area_name', source: 'business_snapshot', value: 'Academia de Diseño Informático' },
+      { id: 'area:negocios:name:v1', kind: 'area_name', source: 'business_snapshot', value: 'Academia de Negocios' },
+    ];
+    const areaRefs: CanonicalFactRefV1[] = areaFacts.map(({ id, kind }) => ({ id, kind }));
+
+    const result = assembleCanonicalConversationResponseV1({
+      plan: plan({
+        response_goal: 'guide_area_choice',
+        selected_offering_code: null,
+        next_awaiting_reply: 'area_choice',
+      }),
+      fact_refs: areaRefs,
+      facts: areaFacts,
+      composition: {
+        schema_version: 1,
+        narrative: {
+          opening: 'Claro, te ayudo a orientarte.',
+          explanation: null,
+          next_question: null,
+        },
+        used_fact_ids: [],
+      },
+    });
+
+    expect(result.content).toContain('Academia de Oficios');
+    expect(result.content).toContain('Academia de Diseño Informático');
+    expect(result.content).toContain('Academia de Negocios');
+    expect(result.content.match(/\?/gu)).toHaveLength(1);
+    expect(result.used_fact_ids).toEqual(areaRefs.map((fact) => fact.id));
+  });
+
+  it('renders authorized payment labels once without repeated total amount blocks', () => {
+    const paymentFacts: CanonicalFactV1[] = [
+      { id: 'payment:redes-informaticas:monthly_12:label:v1', kind: 'payment_plan_label', source: 'business_snapshot', value: '12 pagos mensuales de USD 30', offering_code: 'redes-informaticas', payment_plan: 'monthly_12' },
+      { id: 'payment:redes-informaticas:monthly_12:price:v1', kind: 'payment_plan_price', source: 'business_snapshot', value: 'USD 360.00', offering_code: 'redes-informaticas', payment_plan: 'monthly_12' },
+      { id: 'payment:redes-informaticas:monthly_6:label:v1', kind: 'payment_plan_label', source: 'business_snapshot', value: '6 pagos mensuales de USD 60', offering_code: 'redes-informaticas', payment_plan: 'monthly_6' },
+      { id: 'payment:redes-informaticas:monthly_6:price:v1', kind: 'payment_plan_price', source: 'business_snapshot', value: 'USD 360.00', offering_code: 'redes-informaticas', payment_plan: 'monthly_6' },
+      { id: 'payment:redes-informaticas:one_time:label:v1', kind: 'payment_plan_label', source: 'business_snapshot', value: 'un pago único de USD 360', offering_code: 'redes-informaticas', payment_plan: 'one_time' },
+      { id: 'payment:redes-informaticas:one_time:price:v1', kind: 'payment_plan_price', source: 'business_snapshot', value: 'USD 360.00', offering_code: 'redes-informaticas', payment_plan: 'one_time' },
+    ];
+    const paymentRefs: CanonicalFactRefV1[] = paymentFacts.map(({ id, kind, offering_code, payment_plan }) => ({ id, kind, offering_code, payment_plan }));
+
+    const result = assembleCanonicalConversationResponseV1({
+      plan: plan({ response_goal: 'present_payment_options', next_awaiting_reply: 'payment_plan' }),
+      fact_refs: paymentRefs,
+      facts: paymentFacts,
+      composition: {
+        schema_version: 1,
+        narrative: {
+          opening: 'El valor total del programa es USD 360.',
+          explanation: null,
+          next_question: null,
+        },
+        used_fact_ids: paymentRefs.map((fact) => fact.id),
+      },
+    });
+
+    expect(result.content.match(/12 pagos mensuales de USD 30/gu)).toHaveLength(1);
+    expect(result.content.match(/6 pagos mensuales de USD 60/gu)).toHaveLength(1);
+    expect(result.content.match(/un pago único de USD 360/gu)).toHaveLength(1);
+    expect(result.content).not.toContain('Importe:');
+    expect(result.content.match(/USD 360/gu)).toHaveLength(1);
+    expect(result.content.match(/\?/gu)).toHaveLength(1);
+    expect(result.content).toContain('Estas son las opciones de pago disponibles.');
+  });
+
   it('uses natural model call copy only when the authoritative plan allows the offer', () => {
     const naturalOffer = 'Si te sirve, podemos coordinar una llamada breve; si no, seguimos por acá.';
     const withOffer = assembleCanonicalConversationResponseV1({
@@ -102,6 +202,67 @@ describe('canonical response assembler V1', () => {
     expect(withoutOffer.content).not.toContain(naturalOffer);
   });
 
+  it('keeps a payment choice and a simultaneous call offer to one principal question', () => {
+    const result = assembleCanonicalConversationResponseV1({
+      plan: plan({
+        response_goal: 'present_payment_options',
+        next_awaiting_reply: 'payment_plan',
+        should_offer_call: true,
+        next_call_offer_status: 'offered',
+        next_call_offer_count: 1,
+      }),
+      fact_refs: [],
+      facts: [],
+      composition: {
+        schema_version: 1,
+        narrative: { opening: 'Te cuento las opciones.', explanation: null, next_question: null },
+        call_offer: '¿Querés una llamada?',
+        used_fact_ids: [],
+      },
+    });
+
+    expect(result.content).toContain('solicitar una llamada');
+    expect(result.content).toContain('¿Cuál de estas opciones te resulta más conveniente?');
+    expect(result.content.match(/\?/gu)).toHaveLength(1);
+  });
+
+  it('does not repeat the canonical description when natural copy already answers with course facts', () => {
+    const courseFacts: CanonicalFactV1[] = [
+      { id: 'offering:coaching:name:v1', kind: 'offering_name', source: 'business_snapshot', value: 'Coaching y Liderazgo', offering_code: 'coaching' },
+      { id: 'offering:coaching:description:v1', kind: 'offering_description', source: 'business_snapshot', value: 'Academia de Negocios. 16 clases. Formación para desarrollar habilidades gerenciales.', offering_code: 'coaching' },
+      { id: 'offering:coaching:duration:v1', kind: 'offering_duration', source: 'business_snapshot', value: '16 clases', offering_code: 'coaching' },
+      { id: 'offering:coaching:modality:v1', kind: 'offering_modality', source: 'business_snapshot', value: 'online', offering_code: 'coaching' },
+    ];
+    const courseRefs: CanonicalFactRefV1[] = courseFacts.map(({ id, kind, offering_code }) => ({
+      id, kind, offering_code,
+    }));
+    const result = assembleCanonicalConversationResponseV1({
+      plan: plan({
+        selected_offering_code: 'coaching',
+        should_offer_call: true,
+        next_call_offer_status: 'offered',
+        next_call_offer_count: 1,
+      }),
+      fact_refs: courseRefs,
+      facts: courseFacts,
+      composition: {
+        schema_version: 1,
+        narrative: {
+          opening: 'Coaching y Liderazgo tiene 16 clases online y te ayuda a desarrollar habilidades gerenciales.',
+          explanation: null,
+          next_question: '¿Qué parte querés conocer mejor?',
+        },
+        call_offer: '¿Preferís que sigamos por chat o querés solicitar una llamada?',
+        used_fact_ids: courseRefs.map((fact) => fact.id),
+      },
+    });
+
+    expect(result.content.match(/16 clases/gu)).toHaveLength(1);
+    expect(result.content).not.toContain('Academia de Negocios. 16 clases.');
+    expect(result.content).toContain('también podés solicitar una llamada');
+    expect(result.content.match(/\?/gu)).toHaveLength(1);
+  });
+
   it('rejects unknown IDs and commercial values that were not cited', () => {
     expect(() => assembleCanonicalConversationResponseV1({
       plan: plan(), fact_refs: refs, facts,
@@ -117,7 +278,7 @@ describe('canonical response assembler V1', () => {
     })).toThrow('COMPOSER_UNCITED_CANONICAL_FACT');
   });
 
-  it('requires and renders one canonical link for an authorized transaction', () => {
+  it('materializes exactly one canonical link once the authoritative plan authorizes it', () => {
     const linkFact: CanonicalFactV1 = {
       id: 'payment:redes-informaticas:monthly_12:link:v1', kind: 'payment_link',
       source: 'payment_config', value: 'https://buy.stripe.com/test_only',
@@ -144,13 +305,25 @@ describe('canonical response assembler V1', () => {
     });
     expect(result.content.split(linkFact.value)).toHaveLength(2);
 
-    expect(() => assembleCanonicalConversationResponseV1({
+    const completed = assembleCanonicalConversationResponseV1({
       plan: plan({
         allowed_business_action: {
           type: 'send_payment_link', offering_code: 'redes-informaticas', payment_plan: 'monthly_12',
         },
       }),
       fact_refs: [linkRef], facts: [linkFact],
+      composition: { ...composition, used_fact_ids: [] },
+    });
+    expect(completed.content.split(linkFact.value)).toHaveLength(2);
+    expect(completed.used_fact_ids).toContain(linkFact.id);
+
+    expect(() => assembleCanonicalConversationResponseV1({
+      plan: plan({
+        allowed_business_action: {
+          type: 'send_payment_link', offering_code: 'redes-informaticas', payment_plan: 'monthly_12',
+        },
+      }),
+      fact_refs: [], facts: [],
       composition: { ...composition, used_fact_ids: [] },
     })).toThrow('PAYMENT_LINK_FACT_REQUIRED');
   });

@@ -316,7 +316,12 @@ function planSingle(
     };
   }
   if (kind === 'defer_payment') {
-    if (!state.selected_payment_plan) return unchangedPlan(state, 'present_payment_options', ['payment_plan']);
+    if (!state.selected_payment_plan) {
+      return {
+        ...unchangedPlan(state, 'acknowledge_payment_deferral'),
+        next_awaiting_reply: 'payment_plan',
+      };
+    }
     return {
       ...unchangedPlan(state, 'acknowledge_payment_deferral'),
       next_stage: 'plan_selected',

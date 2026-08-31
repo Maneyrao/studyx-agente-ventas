@@ -5,6 +5,7 @@ import {
   assertSuitePromptVersion,
   buildAdkChatArgs,
   composeAgentARegressionSuite,
+  expectedPromptVersionForSuite,
   runConversationCase,
   runConversationSuite,
   validateSuiteCaseInvariants,
@@ -15,6 +16,7 @@ import {
   createLocalTurnSender,
 } from '../../../scripts/run-agent-a-conversations';
 import { AGENT_A_PROMPT_VERSION } from '../../../botpress-agent/src/prompts/agent-a-sales-bridge';
+import { AGENT_A_BRAIN_PROMPT_VERSION } from '../../../botpress-agent/src/prompts/agent-a-brain-v1';
 import type { ClaimedTurn } from '../../../botpress-agent/src/schemas/contracts';
 
 const LOCAL_TRANSPORT_UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
@@ -570,7 +572,7 @@ describe('Agent A conversation runner', () => {
       model: {
         provider: 'deepseek-direct',
         model: 'deepseek-v4-flash',
-        prompt_version: 'studyx-agent-a-brain-v2',
+        prompt_version: 'studyx-agent-a-brain-v3',
       },
     });
     expect(result.turnDiagnostic).toMatchObject({
@@ -588,6 +590,7 @@ describe('Agent A conversation runner', () => {
       .mockResolvedValueOnce(jsonResponse(200, localBrainClaimedTurn()))
       .mockResolvedValueOnce(jsonResponse(503, { error: 'temporary_unavailable' }));
     vi.stubGlobal('fetch', fetchMock);
+    const completeFailedClaim = vi.fn().mockResolvedValue(undefined);
     const sendTurn = createLocalTurnSender({
       apiBaseUrl: 'http://127.0.0.1:3000',
       orchestratorKey: 'test-orchestrator-key', orchestratorKeyId: 'test-key-id',
@@ -597,12 +600,24 @@ describe('Agent A conversation runner', () => {
       deepseekApiKey: 'test-deepseek-key', deepseekModel: 'deepseek-v4-flash',
       openaiApiKey: 'test-openai-key', openaiModel: 'gpt-5.6-terra',
       openaiFallbackModel: 'gpt-5.6-luna',
-    }, 'strict-deepseek', 'groq', 0, true, 'deepseek');
+    }, 'strict-deepseek', 'groq', 0, true, 'deepseek', completeFailedClaim);
 
     await expect(sendTurn('Prefiero mantener el intercambio por escrito', null))
-      .rejects.toThrow('BRAIN_DEEPSEEK_HTTP_503');
+      .rejects.toMatchObject({
+        message: 'BRAIN_DEEPSEEK_HTTP_503',
+        turnDiagnostic: {
+          brainFailureCode: 'BRAIN_DEEPSEEK_HTTP_503',
+          brainFailureDetail: null,
+          brainTransportRetries: 1,
+        },
+      });
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls[2]?.[0]).toBe('https://api.deepseek.com/responses');
+    expect(completeFailedClaim).toHaveBeenCalledWith({
+      batchId: LOCAL_TRANSPORT_UUID,
+      claimToken: LOCAL_TRANSPORT_UUID,
+      errorCode: 'BRAIN_DEEPSEEK_HTTP_503',
+    });
   });
 
   it('runs the caller pacing gate immediately before every external turn', async () => {
@@ -888,7 +903,7 @@ describe('Agent A conversation runner', () => {
           })
           .mockResolvedValueOnce({
             conversationId: 'conv-quality',
-            responses: [{ type: 'text', text: 'Excel Integral tiene 17 clases.\nSeguimos por chat.' }],
+            responses: [{ type: 'text', text: 'Excel Integral tiene 17 clases.\n\nSeguimos por chat.' }],
           }),
       },
     );
@@ -1005,6 +1020,23 @@ describe('Agent A conversation runner', () => {
       expect(() =>
         assertSuitePromptVersion(AGENT_A_PROMPT_VERSION, AGENT_A_PROMPT_VERSION),
       ).not.toThrow();
+    });
+  });
+
+  describe('expectedPromptVersionForSuite', () => {
+    it('binds held-out and historical brain suites to the brain prompt contract', () => {
+      expect(expectedPromptVersionForSuite('studyx-agent-a-brain-v1-heldout')).toBe(
+        AGENT_A_BRAIN_PROMPT_VERSION,
+      );
+      expect(expectedPromptVersionForSuite('studyx-agent-a-historical-20')).toBe(
+        AGENT_A_BRAIN_PROMPT_VERSION,
+      );
+    });
+
+    it('keeps legacy sales suites bound to the sales prompt contract', () => {
+      expect(expectedPromptVersionForSuite('studyx-internal-gemini-35-v1')).toBe(
+        AGENT_A_PROMPT_VERSION,
+      );
     });
   });
 

@@ -608,7 +608,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
     const repeated = await commitAgentDecision(paymentInput(repeatedContext.turn_id));
 
     expect(first.outbound?.content).toContain('https://buy.stripe.com/test_6m_fence');
-    expect(repeated.outbound?.content).toMatch(/ya te compartí el link/i);
+    expect(repeated.outbound?.content).toMatch(/revisá el mensaje anterior/i);
     expect(repeated.outbound?.content).not.toContain('https://buy.stripe.com/test_6m_fence');
 
     const counts = await sql<Array<{
@@ -721,7 +721,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
     const linkResult = committed.find((result) => result.outbound?.content.includes('test_6m_fence'))!;
     const ackResult = committed.find((result) => !result.outbound?.content.includes('test_6m_fence'))!;
     expect(linkResult).toBeDefined();
-    expect(ackResult.outbound?.content).toMatch(/ya te compartí el link/i);
+    expect(ackResult.outbound?.content).toMatch(/revisá el mensaje anterior/i);
 
     const deliveryRows = await sql<Array<{ attempt_count: number }>>`
       SELECT attempt_count FROM outbound_deliveries WHERE message_id = ${linkResult.outbound!.id}::uuid

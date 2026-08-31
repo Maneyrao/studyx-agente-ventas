@@ -17,6 +17,7 @@ describe('Agent A local bridge worker', () => {
           STUDYX_SIGNING_SECRET: 'test-signing',
           DEEPSEEK_API_KEY: 'test-deepseek',
           STUDYX_WORKER_RUN_ID: 'test-worker-run',
+          TEST_DATABASE_URL: 'postgresql://postgres@127.0.0.1:55432/studyx_test',
         },
         timeout: 10_000,
       },

@@ -104,6 +104,46 @@ describe('authoritative conversation planner V1', () => {
     });
   });
 
+  it('materializes up to three canonical course choices for an academy selection', async () => {
+    const businessArea = {
+      ...business,
+      offerings: ['coaching', 'ventas', 'oratoria'].map((code, index) => ({
+        ...business.offerings[0],
+        code,
+        display_name: ['Coaching y Liderazgo', 'Especialista en Ventas', 'Oratoria'][index]!,
+        academy: 'Academia de Negocios',
+      })),
+    } satisfies BusinessContextView;
+    const catalogArea = {
+      ...catalog,
+      offerings_total: 3,
+      offerings: businessArea.offerings.map((offering) => ({
+        code: offering.code,
+        display_name: offering.display_name,
+        academy: offering.academy,
+        aliases: [],
+      })),
+    } satisfies CatalogIndexView;
+
+    const result = await authoritativelyPlanConversationTurnV1({
+      turn: { workspace_id: workspaceId, conversation_id: conversationId, contact_id: contactId },
+      workspace_slug: 'studyx',
+      move: {
+        schema_version: 1, move: 'select_area', secondary_moves: [], vetoes: [],
+        area_reference: 'Academia de Negocios', confidence: 1,
+      },
+      business_context: businessArea,
+      catalog_index: catalogArea,
+    }, { state_store: emptyStateStore });
+
+    expect(result.plan.response_goal).toBe('guide_course_choice');
+    expect(result.fact_refs.map((fact) => fact.id)).toEqual([
+      'offering:coaching:name:v1',
+      'offering:ventas:name:v1',
+      'offering:oratoria:name:v1',
+    ]);
+  });
+
   it('keeps the plan hash stable when only snapshot read timestamps change', async () => {
     const input = {
       turn: { workspace_id: workspaceId, conversation_id: conversationId, contact_id: contactId },

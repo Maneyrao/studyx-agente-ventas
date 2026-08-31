@@ -295,6 +295,7 @@
     {
       "code": "coaching_liderazgo",
       "name": "Coaching y Liderazgo",
+      "aliases": ["Coaching", "curso de Coaching"],
       "academy": "Academia de Negocios",
       "classes": 16,
       "source_page": 15,

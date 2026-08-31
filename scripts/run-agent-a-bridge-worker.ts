@@ -1,6 +1,10 @@
 import { createInterface } from 'node:readline';
 
+import postgres from 'postgres';
+
 import { createLocalTurnSender } from './run-agent-a-conversations';
+import { formatBridgeWorkerError } from './lib/bridge-worker-error';
+import { createLocalEvalClaimCleanup } from './lib/local-eval-claim-cleanup';
 
 type WorkerRequest = {
   readonly id: string;
@@ -36,6 +40,15 @@ function parseRequest(line: string): WorkerRequest {
 }
 
 async function main(): Promise<void> {
+  const databaseUrl = required('TEST_DATABASE_URL');
+  const database = new URL(databaseUrl);
+  if (
+    !['postgres:', 'postgresql:'].includes(database.protocol)
+    || database.hostname !== '127.0.0.1'
+    || !['55432', '55433', '55434', '55435'].includes(database.port)
+    || database.pathname !== '/studyx_test'
+  ) throw new Error('REFUSING_NON_LOCAL_TEST_DATABASE_URL');
+  const sql = postgres(databaseUrl, { max: 1, connection: { application_name: 'studyx_eval_claim_cleanup' } });
   const send = createLocalTurnSender({
     apiBaseUrl: required('STUDYX_LOCAL_API_BASE_URL'),
     orchestratorKey: optional('STUDYX_ORCHESTRATOR_KEY')
@@ -49,38 +62,43 @@ async function main(): Promise<void> {
     groqModel: optional('GROQ_MODEL') ?? 'openai/gpt-oss-120b',
     deepseekApiKey: required('DEEPSEEK_API_KEY'),
     deepseekModel: optional('DEEPSEEK_MODEL') ?? 'deepseek-v4-flash',
-  }, required('STUDYX_WORKER_RUN_ID'), 'groq', 0, true, 'deepseek');
+  }, required('STUDYX_WORKER_RUN_ID'), 'groq', 0, true, 'deepseek',
+  createLocalEvalClaimCleanup(sql));
   const completedTurns = new Map<string, number>();
   const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
   process.stdout.write(`${JSON.stringify({ type: 'ready' })}\n`);
 
-  for await (const line of input) {
-    let requestId = 'invalid';
-    try {
-      const request = parseRequest(line);
-      requestId = request.id;
-      const turnNumber = request.conversationId === null
-        ? 1
-        : (completedTurns.get(request.conversationId) ?? 0) + 1;
-      const result = await send(request.message, request.conversationId, {
-        forceProviderFailure: false,
-        replayCommit: request.configuration?.replayCommitOnTurn === turnNumber,
-      });
-      completedTurns.set(result.conversationId, turnNumber);
-      process.stdout.write(`${JSON.stringify({
-        type: 'response',
-        id: request.id,
-        ok: true,
-        result,
-      })}\n`);
-    } catch (error) {
-      process.stdout.write(`${JSON.stringify({
-        type: 'response',
-        id: requestId,
-        ok: false,
-        error: error instanceof Error ? error.message.slice(0, 256) : 'WORKER_ERROR',
-      })}\n`);
+  try {
+    for await (const line of input) {
+      let requestId = 'invalid';
+      try {
+        const request = parseRequest(line);
+        requestId = request.id;
+        const turnNumber = request.conversationId === null
+          ? 1
+          : (completedTurns.get(request.conversationId) ?? 0) + 1;
+        const result = await send(request.message, request.conversationId, {
+          forceProviderFailure: false,
+          replayCommit: request.configuration?.replayCommitOnTurn === turnNumber,
+        });
+        completedTurns.set(result.conversationId, turnNumber);
+        process.stdout.write(`${JSON.stringify({
+          type: 'response',
+          id: request.id,
+          ok: true,
+          result,
+        })}\n`);
+      } catch (error) {
+        process.stdout.write(`${JSON.stringify({
+          type: 'response',
+          id: requestId,
+          ok: false,
+          error: formatBridgeWorkerError(error),
+        })}\n`);
+      }
     }
+  } finally {
+    await sql.end({ timeout: 5 });
   }
 }
 
