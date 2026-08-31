@@ -27,6 +27,7 @@ export default defineConfig({
       groqDecisionModel: z.string().min(1).default('openai/gpt-oss-120b'),
       agentABrainModel: z.string().min(1).default('openai/gpt-oss-120b'),
       agentABrainDeepSeekModel: z.string().min(1).default('deepseek-v4-flash'),
+      agentABrainModelFirstCanary: z.boolean().default(false),
       agentABrainOpenAIModel: z.string().min(1).default('gpt-5.6-terra'),
       agentABrainOpenAIFallbackModel: z.string().min(1).default('gpt-5.6-luna'),
     }),

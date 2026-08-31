@@ -87,6 +87,7 @@ export const configuration: {
   groqDecisionModel: string;
   agentABrainModel: string;
   agentABrainDeepSeekModel: string;
+  agentABrainModelFirstCanary: boolean;
   agentABrainOpenAIModel: string;
   agentABrainOpenAIFallbackModel: string;
   [key: string]: unknown;
@@ -103,6 +104,7 @@ export const configuration: {
   groqDecisionModel: 'groq-test',
   agentABrainModel: 'openai/gpt-oss-120b',
   agentABrainDeepSeekModel: 'deepseek-v4-flash',
+  agentABrainModelFirstCanary: false,
   agentABrainOpenAIModel: 'gpt-5.6-terra',
   agentABrainOpenAIFallbackModel: 'gpt-5.6-luna',
 };

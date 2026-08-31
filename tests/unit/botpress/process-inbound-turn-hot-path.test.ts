@@ -286,6 +286,7 @@ describe('processInboundTurn hot path', () => {
   beforeEach(() => {
     configuration.automationEnabled = true;
     configuration.decisionProvider = 'botpress_managed';
+    configuration.agentABrainModelFirstCanary = false;
     secrets.GROQ_API_KEY = 'gsk-local-test-only';
     delete secrets.DEEPSEEK_API_KEY;
     delete secrets.OPENAI_API_KEY;
@@ -721,6 +722,70 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       conversation_pipeline_v1: {
         composition: { narrative: { opening: expect.stringContaining('tecnología') } },
+      },
+      model: { provider: 'deepseek-direct', model: 'deepseek-v4-flash' },
+    });
+  });
+
+  it('lets the authoritative DeepSeek brain compose a greeting in model-first canary mode', async () => {
+    configuration.agentABrainModelFirstCanary = true;
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.deterministic_route = 'greeting';
+    claimed.policy = { may_respond: true, allowed_response_types: ['social_reply'], reason: null };
+    claimed.context.batch_messages[0].content = 'Hola, ¿cómo estás?';
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null, selected_payment_plan: null,
+      stage: 'exploring', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 1,
+    };
+    claimed.catalog_index = { as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0 };
+    actionSpies.claim.mockResolvedValue(claimed);
+    secrets.DEEPSEEK_API_KEY = 'deepseek-local-test-only';
+    actionSpies.agentABrainDeepSeek.mockResolvedValue({
+      proposal: {
+        schema_version: 1,
+        move: {
+          schema_version: 1, move: 'greeting', secondary_moves: [], vetoes: [], confidence: 0.99,
+        },
+        response: { messages: ['¡Hola! Muy bien, gracias. ¿Qué te gustaría aprender?'] },
+        proposed_action: { type: 'none' },
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+      },
+      provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 300, attempt_count: 1,
+    });
+    actionSpies.plan.mockResolvedValueOnce({
+      plan: {
+        schema_version: 1,
+        next_stage: 'exploring', response_goal: 'greet_and_discover', canonical_fact_requests: [],
+        allowed_business_action: { type: 'none' }, missing_information: [], should_offer_call: false,
+        next_call_preference: 'unknown', next_call_offer_status: 'not_offered', next_call_offer_count: 0,
+        next_awaiting_reply: 'none', selected_offering_code: null, selected_payment_plan: null,
+      },
+      fact_refs: [], state_version: 2, plan_hash: 'c'.repeat(64),
+    });
+
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute: vi.fn(), client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: {
+        move: { move: 'greeting' },
+        composition: { narrative: { opening: expect.stringContaining('¿Qué te gustaría aprender?') } },
       },
       model: { provider: 'deepseek-direct', model: 'deepseek-v4-flash' },
     });
@@ -1392,6 +1457,61 @@ describe('processInboundTurn hot path', () => {
 
     expect(actionSpies.conversationInterpreter).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();
+    expect(actionSpies.plan).toHaveBeenCalledWith(expect.objectContaining({
+      input: expect.objectContaining({ move: expect.objectContaining({ move: 'request_call' }) }),
+    }));
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: { move: { move: 'request_call', confidence: 1 } },
+      model: { provider: 'botpress', model: 'backend:call_accepted_offer' },
+    });
+  });
+
+  it('falls back to the authorized call route when the model-first brain is unavailable', async () => {
+    configuration.agentABrainModelFirstCanary = true;
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.deterministic_route = 'call_accepted_offer';
+    claimed.conversation_state_v1 = {
+      selected_offering_code: 'redes-informaticas', selected_payment_plan: null,
+      stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'offered',
+      call_offer_count: 1, awaiting_reply: 'call_or_chat', version: 2,
+    };
+    claimed.context.batch_messages[0].content = 'Sí, llamame';
+    claimed.catalog_index = { as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0 };
+    actionSpies.claim.mockResolvedValue(claimed);
+    secrets.DEEPSEEK_API_KEY = 'deepseek-local-test-only';
+    actionSpies.agentABrainDeepSeek.mockRejectedValueOnce(new Error('DEEPSEEK_UNAVAILABLE'));
+    actionSpies.agentABrain.mockRejectedValueOnce(new Error('GROQ_UNAVAILABLE'));
+    actionSpies.plan.mockResolvedValueOnce({
+      plan: {
+        schema_version: 1, next_stage: 'handoff', response_goal: 'confirm_call_request',
+        canonical_fact_requests: [],
+        allowed_business_action: { type: 'request_call_now', reason: 'accepted_offer' },
+        missing_information: [], should_offer_call: false,
+        next_call_preference: 'call', next_call_offer_status: 'accepted', next_call_offer_count: 1,
+        next_awaiting_reply: 'none', selected_offering_code: 'redes-informaticas',
+        selected_payment_plan: null,
+      },
+      fact_refs: [], state_version: 3, plan_hash: 'b'.repeat(64),
+    });
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => { throw new Error('MANAGED_UNAVAILABLE'); });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute, client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
     expect(actionSpies.plan).toHaveBeenCalledWith(expect.objectContaining({
       input: expect.objectContaining({ move: expect.objectContaining({ move: 'request_call' }) }),
     }));
