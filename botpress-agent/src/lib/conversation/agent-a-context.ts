@@ -22,7 +22,6 @@ const COURSE_BOUND_MOVES = new Set<ConversationMoveV1['move']>([
 ]);
 
 const PAYMENT_INTENT_MOVES = new Set<ConversationMoveV1['move']>([
-  'ask_payment_options',
   'select_payment_plan',
   'defer_payment',
   'request_payment_link',

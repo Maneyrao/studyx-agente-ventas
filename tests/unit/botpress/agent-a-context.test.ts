@@ -333,7 +333,7 @@ describe('buildAgentAContextV1', () => {
 
     expect(bindCurrentConversationalIntentToMoveV1({
       schema_version: 1,
-      move: 'select_course',
+      move: 'ask_payment_options',
       secondary_moves: [],
       vetoes: [],
       confidence: 0.95,
