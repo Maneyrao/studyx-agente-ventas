@@ -149,7 +149,23 @@ export function assembleCanonicalConversationResponseV1(input: {
         },
         used_fact_ids: input.composition.used_fact_ids,
       }
-    : input.composition;
+    : input.plan.response_goal === 'guide_course_choice'
+      || input.plan.response_goal === 'guide_area_choice'
+      ? {
+          ...input.composition,
+          // Choice facts are a backend-owned list. Do not let a model-authored
+          // availability sentence suppress their deterministic bullet blocks:
+          // if that sentence later fails the egress guard, the choices would
+          // otherwise disappear with it.
+          narrative: {
+            opening: input.plan.response_goal === 'guide_course_choice'
+              ? 'Estas son algunas opciones disponibles.'
+              : 'Estas son algunas áreas disponibles.',
+            explanation: null,
+            next_question: input.composition.narrative.next_question,
+          },
+        }
+      : input.composition;
   const narrative = narrativeText(effectiveComposition);
   const mentionedIds = mentionedFactIds(narrative, input.facts);
   const selectedIds = new Set(selectedFactIds);

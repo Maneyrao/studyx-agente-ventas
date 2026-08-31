@@ -137,6 +137,42 @@ describe('canonical response assembler V1', () => {
     expect(result.used_fact_ids).toEqual(areaRefs.map((fact) => fact.id));
   });
 
+  it('keeps course-choice options deterministic when model prose already names every course', () => {
+    const optionFacts: CanonicalFactV1[] = [
+      { id: 'offering:coaching:name:v1', kind: 'offering_name', source: 'business_snapshot', value: 'Coaching y Liderazgo', offering_code: 'coaching' },
+      { id: 'offering:comunicacion:name:v1', kind: 'offering_name', source: 'business_snapshot', value: 'Comunicación Interna en Empresas', offering_code: 'comunicacion' },
+      { id: 'offering:ventas:name:v1', kind: 'offering_name', source: 'business_snapshot', value: 'Especialista en Ventas', offering_code: 'ventas' },
+    ];
+    const optionRefs: CanonicalFactRefV1[] = optionFacts.map(({ id, kind, offering_code }) => ({
+      id, kind, offering_code,
+    }));
+
+    const result = assembleCanonicalConversationResponseV1({
+      plan: plan({
+        response_goal: 'guide_course_choice',
+        selected_offering_code: null,
+        next_awaiting_reply: 'course_choice',
+      }),
+      fact_refs: optionRefs,
+      facts: optionFacts,
+      composition: {
+        schema_version: 1,
+        narrative: {
+          opening: 'Tenemos Coaching y Liderazgo, Comunicación Interna en Empresas y Especialista en Ventas.',
+          explanation: null,
+          next_question: '¿Cuál te gustaría conocer en detalle?',
+        },
+        used_fact_ids: optionRefs.map((fact) => fact.id),
+      },
+    });
+
+    expect(result.content.match(/^• /gmu)).toHaveLength(3);
+    expect(result.content).toContain('• Coaching y Liderazgo');
+    expect(result.content).toContain('• Comunicación Interna en Empresas');
+    expect(result.content).toContain('• Especialista en Ventas');
+    expect(result.content.match(/\?/gu)).toHaveLength(1);
+  });
+
   it('renders authorized payment labels once without repeated total amount blocks', () => {
     const paymentFacts: CanonicalFactV1[] = [
       { id: 'payment:redes-informaticas:monthly_12:label:v1', kind: 'payment_plan_label', source: 'business_snapshot', value: '12 pagos mensuales de USD 30', offering_code: 'redes-informaticas', payment_plan: 'monthly_12' },
