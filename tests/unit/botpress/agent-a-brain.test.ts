@@ -326,7 +326,12 @@ describe('Agent A Brain V1', () => {
 
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(
       200,
-      responsesSuccessBody(proposal()),
+      {
+        output: [{
+          type: 'message',
+          content: [{ type: 'output_text', text: `\`\`\`json\n${JSON.stringify(proposal())}\n\`\`\`` }],
+        }],
+      },
     ));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -353,6 +358,10 @@ describe('Agent A Brain V1', () => {
     });
     expect(body.instructions).toContain('<canonical_sales_behavior');
     expect(body.input).toContain('JSON');
+    const moveProperties = body.text.format.schema.properties.move.properties;
+    expect(moveProperties.secondary_moves.items.enum).not.toContain('greeting');
+    expect(moveProperties.secondary_moves.items.enum).not.toContain('unknown');
+    expect(moveProperties.vetoes.description).toContain('current customer message explicitly refuses');
   });
 
   it('fails closed with an OpenAI-specific error without exposing the provider body', async () => {

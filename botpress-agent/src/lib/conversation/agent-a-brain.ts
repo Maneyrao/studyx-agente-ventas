@@ -44,6 +44,12 @@ export interface GeneratedAgentATurnProposalV1 {
   readonly attempt_count: 1 | 2;
 }
 
+function parseDeepSeekJsonContent(content: string): unknown {
+  const trimmed = content.trim();
+  const fenced = /^```json[\t ]*\r?\n([\s\S]*?)\r?\n```$/iu.exec(trimmed);
+  return JSON.parse(fenced?.[1] ?? trimmed);
+}
+
 export async function generateDeepSeekAgentATurnProposalV1(input: {
   readonly context: AgentAContextV1;
   readonly apiKey: string;
@@ -119,7 +125,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
     if (content === null) throw new AgentABrainError('BRAIN_DEEPSEEK_EMPTY_RESPONSE', response.status);
     let decoded: unknown;
     try {
-      decoded = JSON.parse(content);
+      decoded = parseDeepSeekJsonContent(content);
     } catch {
       throw new AgentABrainError('BRAIN_DEEPSEEK_INVALID_JSON', response.status);
     }
@@ -240,6 +246,9 @@ const MOVE_KINDS = [
   'continue_by_chat', 'request_call', 'decline_call', 'ask_payment_options',
   'select_payment_plan', 'defer_payment', 'request_payment_link', 'decline_purchase', 'unknown',
 ] as const;
+const SECONDARY_MOVE_KINDS = MOVE_KINDS.filter(
+  (kind) => kind !== 'greeting' && kind !== 'unknown',
+);
 const MEMORY_TYPES = [
   'study_goal', 'study_context', 'preference', 'constraint',
   'objection', 'timeline', 'contact_preference',
@@ -261,8 +270,18 @@ function proposalJsonSchema(): unknown {
   const move = closedObject({
     schema_version: { type: 'integer', enum: [1] },
     move: { type: 'string', enum: [...MOVE_KINDS] },
-    secondary_moves: { type: 'array', maxItems: 2, items: { type: 'string', enum: [...MOVE_KINDS] } },
-    vetoes: { type: 'array', maxItems: 3, items: { type: 'string', enum: ['call', 'payment_link', 'purchase'] } },
+    secondary_moves: {
+      type: 'array',
+      maxItems: 2,
+      description: 'Additional distinct compatible intentions explicitly present in the current customer message. Never infer one and never include greeting or unknown.',
+      items: { type: 'string', enum: [...SECONDARY_MOVE_KINDS] },
+    },
+    vetoes: {
+      type: 'array',
+      maxItems: 3,
+      description: 'Include a veto only when the current customer message explicitly refuses that action: call, payment_link, or purchase. Otherwise return an empty array.',
+      items: { type: 'string', enum: ['call', 'payment_link', 'purchase'] },
+    },
     course_reference: nullableString,
     area_reference: nullableString,
     payment_plan: { anyOf: [{ type: 'string', enum: [...PAYMENT_PLANS] }, { type: 'null' }] },
