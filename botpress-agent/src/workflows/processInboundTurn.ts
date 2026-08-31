@@ -225,6 +225,43 @@ function pipelinePlaceholder(memoryCandidates: Decision['memory_candidates'] = [
   }
 }
 
+/**
+ * Preserve the model-owned conversation when the authoritative planner cannot
+ * authorize its move. This is deliberately a presentation-only decision:
+ * proposed actions, call offers and model-authored memories never cross the
+ * boundary. The backend still validates the exact text and canonical facts
+ * before it can become an outbound message.
+ */
+function brainAdvisoryOnlyDecision(
+  proposal: AgentATurnProposalV1,
+  claimed: ClaimedTurn,
+): Decision {
+  const allowed = claimed.policy.allowed_response_types as readonly string[]
+  const responseType = proposal.move.move === 'greeting' && allowed.includes('social_reply')
+    ? 'social_reply' as const
+    : allowed.includes('commercial_reply')
+      ? 'commercial_reply' as const
+      : allowed.includes('social_reply')
+        ? 'social_reply' as const
+        : null
+  if (responseType === null) return suppress('BRAIN_ADVISORY_RESPONSE_NOT_ALLOWED')
+
+  return DecisionSchema.parse({
+    schema_version: 4,
+    intent: responseType === 'social_reply' ? 'social' : 'commercial',
+    kind: 'reply',
+    response: proposal.response.messages.join('\n\n'),
+    response_type: responseType,
+    confidence: proposal.move.confidence,
+    reason_code: 'BRAIN_ADVISORY_ONLY_PLANNER_REJECTED',
+    business_action: null,
+    memory_candidates: [],
+    missing_information: [],
+    next_state: 'waiting_user',
+    retrieval_used: null,
+  })
+}
+
 const workflowStateSchema = z.object({
   phase: ProcessingStateSchema.default('received'),
   turnId: z.string().uuid().nullable().default(null),
@@ -766,50 +803,76 @@ export const processInboundTurn = new Workflow({
             authorized_action_type: 'none',
           })
         } else {
-          const plannerStartedAt = Date.now()
-          const planned = await step(
-            'plan-agent-a-turn-v1',
-            () => planConversation.execute({
-              client,
-              input: {
-                turn_id: owned.turn_id,
-                trace_id: input.trace_id,
-                move: generated.proposal.move,
-              },
-            }),
-            { maxAttempts: 1 },
-          )
-          timings.planner_ms = Date.now() - plannerStartedAt
-          const composition = buildSafeAgentABrainCompositionV1({
-            proposal: generated.proposal,
-            context: agentABrainContext,
-            response_goal: planned.plan.response_goal,
-            planned_fact_ids: planned.fact_refs.map((fact: { id: string }) => fact.id),
-          })
-          pipelineCommit = {
-            move: generated.proposal.move,
-            plan_hash: planned.plan_hash,
-            composition,
-          }
           pipelineDecisionProvider = generated.provider
           pipelineDecisionModel = generated.model
           pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
-          pipelineMemoryCandidates = generated.proposal.memory_candidates
-          safeLog('studyx.turn.agent_a_brain_v1', {
-            trace_id: input.trace_id,
-            turn_id: owned.turn_id,
-            rollout_mode: 'authoritative',
-            brain_prompt_version: AGENT_A_BRAIN_PROMPT_VERSION,
-            brain_model: generated.model,
-            brain_source: 'model',
-            brain_failure_reason: null,
-            context_recent_turn_count: agentABrainContext.turn.recent_turns.length,
-            context_memory_count: agentABrainContext.customer.memories.length,
-            used_memory_count: generated.proposal.used_memory_ids.length,
-            call_offer_transition: `${agentABrainContext.commercial_state.call_offer_count}->${planned.plan.next_call_offer_count}`,
-            proposed_action_type: generated.proposal.proposed_action.type,
-            authorized_action_type: planned.plan.allowed_business_action.type,
-          })
+          const plannerStartedAt = Date.now()
+          let planned: Awaited<ReturnType<typeof planConversation.execute>> | null = null
+          try {
+            planned = await step(
+              'plan-agent-a-turn-v1',
+              () => planConversation.execute({
+                client,
+                input: {
+                  turn_id: owned.turn_id,
+                  trace_id: input.trace_id,
+                  move: generated.proposal.move,
+                },
+              }),
+              { maxAttempts: 1 },
+            )
+          } catch (plannerError) {
+            timings.planner_ms = Date.now() - plannerStartedAt
+            pipelineFailureDecision = brainAdvisoryOnlyDecision(generated.proposal, owned)
+            safeLog('studyx.turn.agent_a_brain_v1', {
+              trace_id: input.trace_id,
+              turn_id: owned.turn_id,
+              rollout_mode: 'authoritative',
+              brain_prompt_version: AGENT_A_BRAIN_PROMPT_VERSION,
+              brain_model: generated.model,
+              brain_source: 'model',
+              brain_failure_reason: classifyBrainFailureReason(
+                errorCode(plannerError),
+                owned.business_context_available && owned.catalog_index !== null,
+              ),
+              context_recent_turn_count: agentABrainContext.turn.recent_turns.length,
+              context_memory_count: agentABrainContext.customer.memories.length,
+              used_memory_count: 0,
+              call_offer_transition: `${agentABrainContext.commercial_state.call_offer_count}->${agentABrainContext.commercial_state.call_offer_count}`,
+              proposed_action_type: generated.proposal.proposed_action.type,
+              authorized_action_type: 'none',
+            })
+          }
+          if (planned !== null) {
+            timings.planner_ms = Date.now() - plannerStartedAt
+            const composition = buildSafeAgentABrainCompositionV1({
+              proposal: generated.proposal,
+              context: agentABrainContext,
+              response_goal: planned.plan.response_goal,
+              planned_fact_ids: planned.fact_refs.map((fact: { id: string }) => fact.id),
+            })
+            pipelineCommit = {
+              move: generated.proposal.move,
+              plan_hash: planned.plan_hash,
+              composition,
+            }
+            pipelineMemoryCandidates = generated.proposal.memory_candidates
+            safeLog('studyx.turn.agent_a_brain_v1', {
+              trace_id: input.trace_id,
+              turn_id: owned.turn_id,
+              rollout_mode: 'authoritative',
+              brain_prompt_version: AGENT_A_BRAIN_PROMPT_VERSION,
+              brain_model: generated.model,
+              brain_source: 'model',
+              brain_failure_reason: null,
+              context_recent_turn_count: agentABrainContext.turn.recent_turns.length,
+              context_memory_count: agentABrainContext.customer.memories.length,
+              used_memory_count: generated.proposal.used_memory_ids.length,
+              call_offer_transition: `${agentABrainContext.commercial_state.call_offer_count}->${planned.plan.next_call_offer_count}`,
+              proposed_action_type: generated.proposal.proposed_action.type,
+              authorized_action_type: planned.plan.allowed_business_action.type,
+            })
+          }
         }
       } catch (error) {
         const failureCode = errorCode(error)
@@ -983,7 +1046,12 @@ export const processInboundTurn = new Workflow({
       decisionModel = pipelineDecisionModel
     } else if (pipelineFailureDecision) {
       decision = pipelineFailureDecision
-      decisionModel = 'policy:conversation-pipeline-v1-unavailable'
+      if (pipelineFailureDecision.reason_code === 'BRAIN_ADVISORY_ONLY_PLANNER_REJECTED') {
+        decisionProvider = pipelineDecisionProvider
+        decisionModel = pipelineDecisionModel
+      } else {
+        decisionModel = 'policy:conversation-pipeline-v1-unavailable'
+      }
     } else if (commercialRoute.kind !== 'model_required') {
       decision = commercialRoute.decision
       decisionModel = commercialRoute.model
@@ -1150,7 +1218,7 @@ export const processInboundTurn = new Workflow({
               model: {
                 provider: decisionProvider,
                 model: decisionModel,
-                prompt_version: pipelineCommit
+                prompt_version: pipelineCommit || pipelineFailureDecision?.reason_code.startsWith('BRAIN_')
                   ? pipelinePromptVersion
                   : AGENT_A_PROMPT_VERSION,
               },

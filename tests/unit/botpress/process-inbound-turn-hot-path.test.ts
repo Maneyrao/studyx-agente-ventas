@@ -521,6 +521,80 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
+  it('preserves DeepSeek wording but strips every action when the planner rejects it', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.context.batch_messages[0].content = '¿Solo tenés cursos de salud y bienestar?';
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null, selected_payment_plan: null,
+      stage: 'exploring', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 1,
+    };
+    claimed.catalog_index = { as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0 };
+    actionSpies.claim.mockResolvedValue(claimed);
+    secrets.DEEPSEEK_API_KEY = 'deepseek-local-test-only';
+    actionSpies.agentABrainDeepSeek.mockResolvedValueOnce({
+      proposal: {
+        schema_version: 1,
+        move: {
+          schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 0.98,
+        },
+        response: {
+          messages: [
+            'No, también tenemos opciones en tecnología, diseño y negocios.',
+            '¿Qué te gustaría aprender?',
+          ],
+          call_offer: 'Si querés, te llamo ahora.',
+        },
+        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+        used_fact_ids: [],
+        used_memory_ids: [],
+        memory_candidates: [{
+          type: 'preference', key: 'unsafe_planner_rejected_memory', value: 'llamada',
+          source_quote: 'te llamo', confidence: 0.9,
+        }],
+      },
+      provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 320, attempt_count: 1,
+    });
+    actionSpies.plan.mockRejectedValueOnce(
+      Object.assign(new Error('planner rejected action'), { code: 'CONVERSATION_PLAN_POLICY_REJECTED' }),
+    );
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => {
+      throw new Error('LEGACY_MODEL_MUST_NOT_RUN_AFTER_DEEPSEEK_SUCCEEDS');
+    });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute, client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: null,
+      decision: {
+        kind: 'reply',
+        response: 'No, también tenemos opciones en tecnología, diseño y negocios.\n\n¿Qué te gustaría aprender?',
+        response_type: 'commercial_reply',
+        reason_code: 'BRAIN_ADVISORY_ONLY_PLANNER_REJECTED',
+        business_action: null,
+        memory_candidates: [],
+      },
+      model: { provider: 'deepseek-direct', model: 'deepseek-v4-flash' },
+    });
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input.decision.response).not.toContain('te llamo');
+  });
+
   it('uses the managed model with the same brain contract when Groq is rate limited', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
