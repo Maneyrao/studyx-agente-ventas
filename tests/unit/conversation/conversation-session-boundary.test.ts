@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { ConversationMoveV1, ConversationStateV1 } from '@/features/conversation/domain/conversation-pipeline';
 import {
   CONVERSATION_SESSION_IDLE_MS,
+  CONVERSATION_STATE_MAX_IDLE_MS,
   createDefaultConversationStateV1,
   effectiveConversationStateV1,
   planConversationTurn,
   type PlanningBusinessContextV1,
 } from '@/features/conversation/domain/conversation-planner';
+import { loadConversationSessionConfig } from '@/lib/config';
 
 const business: PlanningBusinessContextV1 = {
   catalog_available: true,
@@ -105,6 +107,43 @@ describe('conversation session boundary', () => {
     expect(effective.awaiting_reply).toBe('none');
     expect(effective.selected_offering_code).toBe('coaching_liderazgo');
     expect(effective.version).toBe(7);
+  });
+
+  it('reads the session window from configuration', () => {
+    expect(loadConversationSessionConfig({ CONVERSATION_SESSION_IDLE_MINUTES: '90' }))
+      .toEqual({ sessionIdleMs: 90 * 60 * 1_000 });
+  });
+
+  it('falls back to the built-in default for an absent, invalid or non-positive value', () => {
+    for (const environment of [
+      {},
+      { CONVERSATION_SESSION_IDLE_MINUTES: 'x' },
+      { CONVERSATION_SESSION_IDLE_MINUTES: '0' },
+      { CONVERSATION_SESSION_IDLE_MINUTES: '-30' },
+    ]) {
+      expect(loadConversationSessionConfig(environment).sessionIdleMs)
+        .toBe(CONVERSATION_SESSION_IDLE_MS);
+    }
+  });
+
+  it('never lets configuration outlive the full-state expiry', () => {
+    expect(loadConversationSessionConfig({ CONVERSATION_SESSION_IDLE_MINUTES: '9999' }).sessionIdleMs)
+      .toBe(CONVERSATION_STATE_MAX_IDLE_MS);
+  });
+
+  it('applies the configured window instead of the default', () => {
+    const updatedAt = new Date('2026-08-31T10:00:00.000Z');
+    const stale = { ...dormantPurchase, updated_at: updatedAt.toISOString() };
+    const { sessionIdleMs } = loadConversationSessionConfig({
+      CONVERSATION_SESSION_IDLE_MINUTES: '30',
+    });
+
+    expect(effectiveConversationStateV1(
+      stale, updatedAt.getTime() + 31 * 60 * 1_000, sessionIdleMs,
+    ).awaiting_reply).toBe('none');
+    expect(effectiveConversationStateV1(
+      stale, updatedAt.getTime() + 29 * 60 * 1_000, sessionIdleMs,
+    ).awaiting_reply).toBe('payment_confirmation');
   });
 
   it('keeps a pending question alive inside the session idle window', () => {

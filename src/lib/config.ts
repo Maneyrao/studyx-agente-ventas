@@ -1,3 +1,7 @@
+import {
+  CONVERSATION_SESSION_IDLE_MS,
+  CONVERSATION_STATE_MAX_IDLE_MS,
+} from '@/features/conversation/domain/conversation-planner';
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
   const n = parseInt(raw ?? '', 10);
   return Number.isFinite(n) && n > 0 ? n : fallback;
@@ -22,6 +26,33 @@ export function loadConversationPipelineConfig(
 ): { enabled: boolean } {
   return {
     enabled: environment.CONVERSATION_PIPELINE_V1_ENABLED?.trim().toLowerCase() === 'true',
+  };
+}
+
+/**
+ * Ventana de sesión conversacional, en minutos.
+ *
+ * Gobierna cuándo una pregunta pendiente deja de estar pendiente: pasada la
+ * ventana, el próximo mensaje se lee por lo que dice y no como respuesta a algo
+ * preguntado horas antes. El default es deliberadamente conservador y NO está
+ * calibrado sobre tráfico real; es configurable justamente para poder ajustarlo
+ * sin desplegar código una vez que se midan los huecos de producción.
+ *
+ * Nunca puede superar la expiración total del estado: una pregunta no puede
+ * sobrevivir al estado que la contiene.
+ */
+export function loadConversationSessionConfig(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): { sessionIdleMs: number } {
+  const minutes = Number.parseInt(
+    environment.CONVERSATION_SESSION_IDLE_MINUTES?.trim() ?? '',
+    10,
+  );
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    return { sessionIdleMs: CONVERSATION_SESSION_IDLE_MS };
+  }
+  return {
+    sessionIdleMs: Math.min(minutes * 60 * 1_000, CONVERSATION_STATE_MAX_IDLE_MS),
   };
 }
 

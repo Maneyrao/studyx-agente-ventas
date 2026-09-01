@@ -3,6 +3,7 @@ import type { BusinessContextView, CatalogIndexView } from '../domain/business-c
 import type { SalesContextState } from '@/features/sales/domain/sales-context';
 import type { ConversationStateV1 } from '@/features/conversation/domain/conversation-pipeline';
 import { effectiveConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
+import { loadConversationSessionConfig } from '@/lib/config';
 import {
   isCatalogRequestNeutral,
   resolveCatalogRequest,
@@ -882,6 +883,7 @@ export async function claimBatch(
     ? effectiveConversationStateV1(
         rawPersistedConversationState,
         Date.parse((deps.now ?? (() => new Date().toISOString()))()),
+        loadConversationSessionConfig().sessionIdleMs,
       )
     : null;
   const conversationStateV1 = conversationStateEnabled

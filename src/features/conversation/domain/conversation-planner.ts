@@ -63,6 +63,7 @@ export function createDefaultConversationStateV1(identity: StateIdentity): Conve
 export function effectiveConversationStateV1(
   state: ConversationStateV1,
   nowMs = Date.now(),
+  sessionIdleMs = CONVERSATION_SESSION_IDLE_MS,
 ): ConversationStateV1 {
   const updatedAtMs = Date.parse(state.updated_at);
   if (!Number.isFinite(updatedAtMs) || nowMs < updatedAtMs) return state;
@@ -75,7 +76,7 @@ export function effectiveConversationStateV1(
       updated_at: state.updated_at,
     };
   }
-  if (idleMs > CONVERSATION_SESSION_IDLE_MS && state.awaiting_reply !== 'none') {
+  if (idleMs > sessionIdleMs && state.awaiting_reply !== 'none') {
     return { ...state, awaiting_reply: 'none' };
   }
   return state;

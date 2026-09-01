@@ -18,6 +18,7 @@ import {
   buildCanonicalFactRegistry,
   materializeCanonicalFactRequests,
 } from '../domain/canonical-fact-registry';
+import { loadConversationSessionConfig } from '@/lib/config';
 
 export interface AuthoritativeConversationPlanV1 {
   readonly plan: TurnPlanV1;
@@ -99,7 +100,11 @@ export async function authoritativelyPlanConversationTurnV1(
     }) ?? Promise.resolve(null),
   ]);
   const state = loaded
-    ? effectiveConversationStateV1(loaded, deps.now?.() ?? Date.now())
+    ? effectiveConversationStateV1(
+        loaded,
+        deps.now?.() ?? Date.now(),
+        loadConversationSessionConfig().sessionIdleMs,
+      )
     : createDefaultConversationStateV1(input.turn);
   // An unresolved first offer is the evidence that makes a later, final
   // reminder meaningful. The conversation-local counter owns that two-offer
