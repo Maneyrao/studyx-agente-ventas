@@ -1,3 +1,4 @@
+import { stripUnsupportedOperationalClaims } from './operational-promise-guard';
 import type {
   CanonicalFactRefV1,
   CanonicalFactV1,
@@ -212,14 +213,29 @@ export function assembleCanonicalConversationResponseV1(input: {
   // guard drops offending paragraphs individually and the bullets survive on
   // their own. The deterministic sentence is therefore only a fallback for a
   // composition that carries no opening at all — it must not overwrite one.
+  // No turn can enrol, register or grant access to anybody, so a sentence
+  // saying one of those already happened is removed before anything else runs.
+  // Only the offending sentence goes; the rest of the model's answer stands.
+  const composed: ComposedNarrativeV1 = {
+    ...input.composition,
+    narrative: {
+      opening: stripUnsupportedOperationalClaims(input.composition.narrative.opening ?? ''),
+      explanation: input.composition.narrative.explanation === null
+        ? null
+        : stripUnsupportedOperationalClaims(input.composition.narrative.explanation) || null,
+      next_question: input.composition.narrative.next_question === null
+        ? null
+        : stripUnsupportedOperationalClaims(input.composition.narrative.next_question) || null,
+    },
+  };
   const fallback = fallbackOpening(input.plan.response_goal);
   const effectiveComposition: ComposedNarrativeV1 = fallback !== null
-    && (input.composition.narrative.opening ?? '').trim().length === 0
+    && (composed.narrative.opening ?? '').trim().length === 0
     ? {
-        ...input.composition,
-        narrative: { ...input.composition.narrative, opening: fallback },
+        ...composed,
+        narrative: { ...composed.narrative, opening: fallback },
       }
-    : input.composition;
+    : composed;
   const narrative = narrativeText(effectiveComposition);
   const mentionedIds = mentionedFactIds(narrative, input.facts);
   const selectedIds = new Set(selectedFactIds);
