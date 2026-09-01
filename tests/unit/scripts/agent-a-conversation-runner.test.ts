@@ -572,7 +572,7 @@ describe('Agent A conversation runner', () => {
       model: {
         provider: 'deepseek-direct',
         model: 'deepseek-v4-flash',
-        prompt_version: 'studyx-agent-a-brain-v3',
+        prompt_version: 'studyx-agent-a-brain-v4',
       },
     });
     expect(result.turnDiagnostic).toMatchObject({

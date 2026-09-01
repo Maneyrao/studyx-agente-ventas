@@ -228,6 +228,57 @@ describe('V5 autoriza por estado, no por texto', () => {
     }
   });
 
+  it('no confunde una característica del producto con una afirmación sobre el cliente', () => {
+    // "acceso 24/7" describe qué incluye la formación. No dice nada sobre si
+    // ESTE cliente tiene acceso. El detector pedía un posesivo en el resto de
+    // los patrones y acá se le había escapado.
+    const nada = materializeStateFactsV1({
+      intake: undefined, planned_payment_reported: false,
+    });
+    for (const feature of [
+      'Cómo se estudia: online, clase en vivo grabada, acceso 24/7, profesores disponibles.',
+      'La plataforma tiene acceso 24/7 y el material queda disponible.',
+      'El campus está disponible todo el año.',
+    ]) {
+      expect(unsupportedOperationalAssertionsV1(feature, nada)).toEqual([]);
+    }
+  });
+
+  it('no marca una negación como si fuera la afirmación que niega', () => {
+    // Decir que algo NO ocurrió, o prohibir decirlo, es lo contrario de
+    // afirmarlo. Sin esto, el agente no podría escribir "todavía no puedo
+    // confirmar que el pago esté acreditado", que es justamente la frase
+    // honesta que queremos que pueda decir.
+    const nada = materializeStateFactsV1({
+      intake: undefined, planned_payment_reported: false,
+    });
+    for (const negated of [
+      'Todavía no puedo confirmar que el pago esté acreditado.',
+      'Que hayas avisado no es que el pago esté acreditado.',
+      'Nunca digas que una inscripción quedó cargada.',
+      'No te doy el alta: eso lo hace el equipo.',
+      'Tu acceso todavía no está habilitado.',
+    ]) {
+      expect(unsupportedOperationalAssertionsV1(negated, nada)).toEqual([]);
+    }
+  });
+
+  it('sigue marcando la afirmación positiva equivalente', () => {
+    // El control de la negación: si el detector dejara pasar todo lo que
+    // contiene un "no" en cualquier parte, sería trivial de evadir.
+    const nada = materializeStateFactsV1({
+      intake: undefined, planned_payment_reported: false,
+    });
+    for (const positive of [
+      'El pago está acreditado.',
+      'Tu inscripción quedó cargada.',
+      'Te doy el alta ahora mismo.',
+      'Tu acceso está habilitado.',
+    ]) {
+      expect(unsupportedOperationalAssertionsV1(positive, nada).length).toBeGreaterThan(0);
+    }
+  });
+
   it('el detector léxico sigue existiendo y ya no decide validez', () => {
     // Reconocer que una oración afirma un estado sigue siendo léxico. Lo que
     // cambia es quién decide si esa afirmación es cierta.

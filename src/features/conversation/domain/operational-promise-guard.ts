@@ -268,8 +268,12 @@ const ASSERTION_CLASSES: readonly {
     requires: UNREACHABLE_MILESTONE,
   },
   {
+    // El posesivo no es decoración: "acceso 24/7" es una característica del
+    // producto y no dice nada sobre si ESTE cliente tiene acceso. Sin el
+    // posesivo, el guard borraba la descripción del curso.
     pattern: new RegExp(
-      `${L}(?:acceso|campus)${R}[^.;]{0,30}${L}(?:habilitad|activ|listo|disponible)`,
+      `${L}(?:tu|su|el|mi)\\s+(?:acceso|campus)${R}[^.;]{0,30}`
+      + `${L}(?:habilitad|activad|listo|otorgad)`,
       'iu',
     ),
     requires: UNREACHABLE_MILESTONE,
@@ -285,6 +289,25 @@ const ASSERTION_CLASSES: readonly {
  * mientras «gestioné tu acceso» sí. La diferencia no es el sustantivo, es
  * quién actúa y cuándo.
  */
+/**
+ * Una oración que NIEGA el resultado, o que prohíbe afirmarlo, es lo contrario
+ * de una afirmación. Sin esto el agente no podría escribir «todavía no puedo
+ * confirmar que el pago esté acreditado», que es justamente la frase honesta
+ * que queremos que pueda decir — y el prompt no podría prohibir por escrito lo
+ * que el guard bloquea, que es el gate de § 08.
+ *
+ * La negación se busca ANTES del verbo de resultado dentro de la misma
+ * oración, no en cualquier parte: si bastara un «no» suelto, evadir el guard
+ * sería trivial.
+ */
+const NEGATED_ASSERTION = new RegExp(
+  '(?:^|[^\\p{L}])(?:'
+  + 'no|nunca|jam[áa]s|ni|sin|tampoco|todav[íi]a\\s+no|a[úu]n\\s+no'
+  + '|prohibid[oa]|evit[áa]|jam[áa]s\\s+digas'
+  + ')(?:[^\\p{L}]|$)',
+  'iu',
+);
+
 const ATTRIBUTED_TO_TEAM = /\b(?:el\s+equipo|una\s+persona|el\s+[áa]rea|lo\s+revisar)/iu;
 const AFTER_VERIFICATION = /\b(?:cuando|si\s+est[áa]\s+acreditad|una\s+vez\s+(?:que\s+)?(?:lo\s+)?verifi|tras\s+(?:la\s+)?verifica|revisar[áa])/iu;
 
@@ -306,7 +329,12 @@ export function detectOperationalStateAssertionsV1(
   for (const sentence of splitAssertionSentences(text)) {
     if (ATTRIBUTED_TO_TEAM.test(sentence) && AFTER_VERIFICATION.test(sentence)) continue;
     for (const { pattern, requires } of ASSERTION_CLASSES) {
-      if (pattern.test(sentence)) {
+      const match = pattern.exec(sentence);
+      if (match) {
+        // La negación cuenta sólo si precede al resultado dentro de la misma
+        // oración. "El pago está acreditado, no hace falta nada más" afirma;
+        // "no puedo confirmar que el pago esté acreditado" niega.
+        if (NEGATED_ASSERTION.test(sentence.slice(0, match.index + match[0].length))) break;
         found.push({ sentence, requires });
         break;
       }
