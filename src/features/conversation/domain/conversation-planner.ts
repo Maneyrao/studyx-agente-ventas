@@ -89,6 +89,8 @@ export function createDefaultConversationStateV1(identity: StateIdentity): Conve
     call_offer_count: 0,
     awaiting_reply: 'none',
     payment_reported_at: null,
+    human_review_requested_at: null,
+    consecutive_technical_fallbacks: 0,
     source_turn_id: null,
     version: 0,
     created_at: '1970-01-01T00:00:00.000Z',

@@ -3,20 +3,42 @@ import { sql } from '@/lib/db/orchestrator';
 import type {
   ConversationStateTransitionV1,
   ConversationStateV1,
+  TechnicalFallbackRecordV1,
 } from '../domain/conversation-pipeline';
 import type { ConversationStateStoreV1 } from '../ports/conversation-state-store';
 
-interface ConversationStateRowV1 extends Omit<ConversationStateV1, 'created_at' | 'updated_at'> {
+interface ConversationStateRowV1 extends Omit<
+  ConversationStateV1,
+  'created_at' | 'updated_at' | 'payment_reported_at' | 'human_review_requested_at'
+> {
   created_at: Date | string;
   updated_at: Date | string;
+  payment_reported_at: Date | string | null;
+  human_review_requested_at: Date | string | null;
 }
 
 function iso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
+function isoOrNull(value: Date | string | null): string | null {
+  return value === null ? null : iso(value);
+}
+
+/**
+ * `payment_reported_at` venía sin normalizar: el driver devuelve `Date` y el
+ * contrato declara `string`. La mentira era invisible mientras nadie comparara
+ * dos lecturas — dos `Date` con el mismo instante no son el mismo objeto, así
+ * que `toBe` falla y `===` en producción también.
+ */
 function mapRow(row: ConversationStateRowV1): ConversationStateV1 {
-  return { ...row, created_at: iso(row.created_at), updated_at: iso(row.updated_at) };
+  return {
+    ...row,
+    created_at: iso(row.created_at),
+    updated_at: iso(row.updated_at),
+    payment_reported_at: isoOrNull(row.payment_reported_at),
+    human_review_requested_at: isoOrNull(row.human_review_requested_at),
+  };
 }
 
 export class PostgresConversationStateStoreV1 implements ConversationStateStoreV1 {
@@ -77,13 +99,14 @@ export class PostgresConversationStateStoreV1 implements ConversationStateStoreV
           workspace_id, conversation_id, contact_id,
           selected_offering_code, selected_payment_plan, stage,
           call_preference, call_offer_status, call_offer_count, awaiting_reply,
-          payment_reported_at, source_turn_id
+          payment_reported_at, consecutive_technical_fallbacks, source_turn_id
         )
         SELECT
           eligible.workspace_id, ${input.conversation_id}::uuid, ${input.contact_id}::uuid,
           ${input.selected_offering_code}, ${input.selected_payment_plan}, ${input.stage},
           ${input.call_preference}, ${input.call_offer_status}, ${input.call_offer_count ?? 0}, ${input.awaiting_reply},
           CASE WHEN ${input.payment_reported} THEN now() END,
+          ${input.consecutive_technical_fallbacks ?? 0},
           ${input.source_turn_id}::uuid
         FROM eligible
         WHERE NOT EXISTS (SELECT 1 FROM prior_source)
@@ -106,6 +129,9 @@ export class PostgresConversationStateStoreV1 implements ConversationStateStoreV
               conversation_sales_context_states_v1.payment_reported_at,
               EXCLUDED.payment_reported_at
             ),
+            -- Una transición normal es un turno que salió bien: reinicia el
+            -- contador. La marca de revisión NO se toca: es histórica.
+            consecutive_technical_fallbacks = EXCLUDED.consecutive_technical_fallbacks,
             source_turn_id = EXCLUDED.source_turn_id,
             version = conversation_sales_context_states_v1.version + 1,
             updated_at = now()
@@ -144,4 +170,42 @@ export class PostgresConversationStateStoreV1 implements ConversationStateStoreV
     if (!rows[0]) throw new Error('CONVERSATION_STATE_V1_CONTEXT_NOT_FOUND');
     return mapRow(rows[0]);
   }
+  /**
+   * Turno técnico: escribe SÓLO el contador y, en el segundo consecutivo, la
+   * derivación. No toca curso, plan, etapa, preferencia de llamada ni
+   * `awaiting_reply` — ese turno no cambió nada comercial y no debe simular
+   * que sí.
+   *
+   * La idempotencia vive en el COALESCE y no en TypeScript a propósito: se
+   * evalúa contra la fila bloqueada, así que dos turnos concurrentes de la
+   * misma conversación no pueden producir dos derivaciones.
+   */
+  async recordTechnicalFallbackV1(input: TechnicalFallbackRecordV1): Promise<void> {
+    await this.db`
+      INSERT INTO conversation_sales_context_states_v1 (
+        workspace_id, conversation_id, contact_id, stage,
+        consecutive_technical_fallbacks, human_review_requested_at, source_turn_id
+      )
+      SELECT
+        workspace.id, ${input.conversation_id}::uuid, ${input.contact_id}::uuid, 'exploring',
+        ${input.consecutive_technical_fallbacks},
+        CASE WHEN ${input.request_human_review} THEN now() END,
+        ${input.source_turn_id}::uuid
+      FROM workspaces AS workspace
+      JOIN conversations AS conversation
+        ON conversation.id = ${input.conversation_id}::uuid
+       AND conversation.contact_id = ${input.contact_id}::uuid
+      WHERE workspace.slug = ${input.workspace_slug}
+        AND workspace.status = 'active'
+      ON CONFLICT (workspace_id, conversation_id) DO UPDATE
+      SET consecutive_technical_fallbacks = EXCLUDED.consecutive_technical_fallbacks,
+          human_review_requested_at = COALESCE(
+            conversation_sales_context_states_v1.human_review_requested_at,
+            EXCLUDED.human_review_requested_at
+          ),
+          version = conversation_sales_context_states_v1.version + 1,
+          updated_at = now()
+    `;
+  }
+
 }

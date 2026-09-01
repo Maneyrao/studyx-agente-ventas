@@ -47,6 +47,7 @@ const business = {
 const emptyStateStore: ConversationStateStoreV1 = {
   async load() { return null; },
   async transition() { throw new Error('planning must not persist state'); },
+  async recordTechnicalFallbackV1() { throw new Error('planning must not persist state'); },
 };
 
 describe('authoritative conversation planner V1', () => {

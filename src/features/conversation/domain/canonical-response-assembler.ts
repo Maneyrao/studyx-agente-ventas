@@ -1,3 +1,4 @@
+import { TECHNICAL_FALLBACK_TEXT_V1 } from './technical-fallback';
 import {
   stripModelAuthoredCallOffers,
   stripUnsupportedOperationalClaims,
@@ -163,7 +164,7 @@ function alreadyNamedByComposition(
  * nothing about courses, prices, enrolment or payment: it exists so the
  * customer gets a turn, not so the backend gets to answer for the model.
  */
-const LAST_RESORT_OPENING = 'Seguimos por acá. Contame cómo puedo ayudarte.';
+
 
 function fallbackOpening(responseGoal: TurnPlanV1['response_goal']): string | null {
   switch (responseGoal) {
@@ -362,7 +363,7 @@ export function assembleCanonicalConversationResponseV1(input: {
     // removed. This is the only case where a fixed sentence is right: the
     // alternative is silence, and silence after "ya pagué" is worse than a
     // short honest answer. It asserts nothing, so it can never be false.
-    return { content: LAST_RESORT_OPENING, used_fact_ids: [] };
+    return { content: TECHNICAL_FALLBACK_TEXT_V1, used_fact_ids: [] };
   }
   return { content, used_fact_ids: selectedFactIds };
 }

@@ -103,6 +103,14 @@ export interface ConversationStateV1 {
    * separate, external fact this field deliberately cannot express.
    */
   readonly payment_reported_at: string | null;
+  /**
+   * Cuándo la conversación quedó registrada para revisión tras dos fallos
+   * técnicos consecutivos. Es histórico: un turno exitoso posterior no lo
+   * borra, porque el equipo ya fue avisado y eso no se deshace.
+   */
+  readonly human_review_requested_at: string | null;
+  /** Fallbacks técnicos seguidos. Un turno exitoso lo reinicia a 0. */
+  readonly consecutive_technical_fallbacks: number;
   readonly source_turn_id: string | null;
   readonly version: number;
   readonly created_at: string;
@@ -121,7 +129,31 @@ export interface ConversationStateTransitionV1 {
   readonly call_offer_count?: 0 | 1 | 2;
   readonly awaiting_reply: AwaitingReplyV1;
   readonly payment_reported: boolean;
+  /**
+   * Una transición normal ES un turno que salió bien, así que reinicia el
+   * contador. Se deja opcional con default 0 a propósito: obligar a cada
+   * sitio a pasar 0 no agrega información, y omitirlo por descuido daría el
+   * valor correcto igual. El único camino que escribe un valor distinto es
+   * `recordTechnicalFallbackV1`.
+   */
+  readonly consecutive_technical_fallbacks?: number;
   readonly source_turn_id: string | null;
+}
+
+/**
+ * Escritura angosta para un turno técnico. Existe porque un turno que cayó a
+ * N3 no tiene curso, plan ni etapa que escribir — sólo el contador y, en el
+ * segundo consecutivo, la derivación. Forzar una transición completa exigiría
+ * inventar valores comerciales para un turno que deliberadamente no los tiene.
+ */
+export interface TechnicalFallbackRecordV1 {
+  readonly workspace_slug: string;
+  readonly conversation_id: string;
+  readonly contact_id: string;
+  readonly source_turn_id: string | null;
+  readonly consecutive_technical_fallbacks: number;
+  /** Idempotente: sólo escribe si `human_review_requested_at` es NULL. */
+  readonly request_human_review: boolean;
 }
 
 export type CanonicalFactRequestV1 =
