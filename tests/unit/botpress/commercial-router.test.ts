@@ -61,12 +61,18 @@ type ClaimedOverrides = {
   catalogResolution?: ClaimedTurn['catalog_resolution'];
   offerings?: BusinessOffering[];
   optOutAckEligible?: boolean;
+  conversationPipelineV1?: boolean;
 };
 
 function claimedTurn(overrides: ClaimedOverrides = {}): ClaimedTurn {
   const texts = overrides.texts ?? ['Quiero información'];
   return {
     outcome: 'claimed',
+    features: {
+      conversation_pipeline_v1_enabled: overrides.conversationPipelineV1 === true,
+      agent_a_brain_v1_enabled: overrides.conversationPipelineV1 === true,
+      agent_a_brain_v1_shadow: false,
+    },
     trace_id: UUID,
     batch: {
       id: UUID,
@@ -520,6 +526,22 @@ describe('routeCommercialTurn', () => {
       origin: 'greeting',
       reason: 'DETERMINISTIC_GREETING',
     });
+  });
+
+  it('classifies a greeting under the V1 pipeline but never composes its answer', () => {
+    // El fast path de saludo puede clasificar; bajo V1 no puede redactar ni
+    // saltear al planner. Escribir la respuesta es del modelo.
+    const result = routeCommercialTurn({
+      automationEnabled: true,
+      claimed: claimedTurn({
+        texts: ['Buenas tardes'],
+        route: 'greeting',
+        conversationPipelineV1: true,
+      }),
+    });
+
+    expect(result.kind).not.toBe('deterministic');
+    expect(JSON.stringify(result)).not.toContain('asesora virtual');
   });
 
   it.each([

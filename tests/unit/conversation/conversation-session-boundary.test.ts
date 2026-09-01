@@ -3,6 +3,7 @@ import type { ConversationMoveV1, ConversationStateV1 } from '@/features/convers
 import {
   CONVERSATION_SESSION_IDLE_MS,
   CONVERSATION_STATE_MAX_IDLE_MS,
+  isConversationSessionDormantV1,
   createDefaultConversationStateV1,
   effectiveConversationStateV1,
   planConversationTurn,
@@ -48,8 +49,17 @@ function move(
   };
 }
 
-function plan(currentMove: ConversationMoveV1, currentState: ConversationStateV1) {
-  return planConversationTurn({ move: currentMove, sales_context: currentState, business_context: business });
+function plan(
+  currentMove: ConversationMoveV1,
+  currentState: ConversationStateV1,
+  overrides: { session_dormant?: boolean } = {},
+) {
+  return planConversationTurn({
+    move: currentMove,
+    sales_context: currentState,
+    business_context: business,
+    ...overrides,
+  });
 }
 
 /** Production incident: `Buenas tardes` hours after a link was sent resumed the purchase. */
@@ -65,8 +75,20 @@ const dormantPurchase = state({
 });
 
 describe('conversation session boundary', () => {
-  it('opens a new commercial session when a greeting reopens a dormant purchase', () => {
-    const result = plan(move('greeting'), dormantPurchase);
+  it('keeps the live context when a greeting lands inside an active session', () => {
+    // Saludar a mitad de una conversación viva no es empezar de nuevo. El
+    // contexto comercial se conserva; el modelo decide qué decir con él.
+    const result = plan(move('greeting'), dormantPurchase, { session_dormant: false });
+
+    expect(result.response_goal).toBe('greet_and_discover');
+    expect(result.selected_offering_code).toBe('coaching_liderazgo');
+    expect(result.selected_payment_plan).toBe('monthly_6');
+    expect(result.next_stage).toBe('payment_link_sent');
+    expect(result.allowed_business_action).toEqual({ type: 'none' });
+  });
+
+  it('opens a new commercial session when a greeting lands on a dormant one', () => {
+    const result = plan(move('greeting'), dormantPurchase, { session_dormant: true });
 
     expect(result.response_goal).toBe('greet_and_discover');
     expect(result.selected_offering_code).toBeNull();
@@ -76,8 +98,22 @@ describe('conversation session boundary', () => {
     expect(result.canonical_fact_requests).toEqual([]);
   });
 
+  it('opens a new commercial session when a greeting lands on a terminal one', () => {
+    for (const stage of ['closed', 'handoff'] as const) {
+      const result = plan(
+        move('greeting'),
+        { ...dormantPurchase, stage },
+        { session_dormant: false },
+      );
+
+      expect(result.selected_offering_code).toBeNull();
+      expect(result.selected_payment_plan).toBeNull();
+      expect(result.next_stage).toBe('exploring');
+    }
+  });
+
   it('keeps the call ledger across a reopening greeting so a declined call is never re-offered', () => {
-    const result = plan(move('greeting'), dormantPurchase);
+    const result = plan(move('greeting'), dormantPurchase, { session_dormant: true });
 
     expect(result.next_call_preference).toBe('chat');
     expect(result.next_call_offer_status).toBe('declined');
@@ -85,14 +121,28 @@ describe('conversation session boundary', () => {
     expect(result.should_offer_call).toBe(false);
   });
 
-  it('never lets a greeting turn resume a payment link from inherited state', () => {
-    const result = plan(
-      move('greeting', { secondary_moves: ['request_payment_link'] }),
-      dormantPurchase,
-    );
+  it('never lets a greeting turn resume a payment link, dormant or not', () => {
+    for (const session_dormant of [true, false]) {
+      const result = plan(
+        move('greeting', { secondary_moves: ['request_payment_link'] }),
+        dormantPurchase,
+        { session_dormant },
+      );
 
-    expect(result.allowed_business_action).toEqual({ type: 'none' });
-    expect(result.next_stage).not.toBe('payment_link_sent');
+      expect(result.allowed_business_action).toEqual({ type: 'none' });
+    }
+  });
+
+  it('reports dormancy from the same window that expires a pending question', () => {
+    const updatedAt = new Date('2026-08-31T10:00:00.000Z');
+    const stale = { ...dormantPurchase, updated_at: updatedAt.toISOString() };
+
+    expect(isConversationSessionDormantV1(
+      stale, updatedAt.getTime() + CONVERSATION_SESSION_IDLE_MS + 1,
+    )).toBe(true);
+    expect(isConversationSessionDormantV1(
+      stale, updatedAt.getTime() + CONVERSATION_SESSION_IDLE_MS - 1,
+    )).toBe(false);
   });
 
   it('expires only the pending question after the session idle window', () => {

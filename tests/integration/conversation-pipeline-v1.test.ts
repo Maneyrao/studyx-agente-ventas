@@ -469,11 +469,39 @@ run('conversation pipeline V1 vertical', () => {
     expect(rows[0]).toEqual({ links: 1, projection_jobs: 1, payment_actions: 1 });
   });
 
-  // Continues the same conversation. `sales_context_states` (legacy) and
-  // `conversation_sales_context_states_v1` coexist, and the legacy row still
-  // holds monthly_12 from the journey above. A session that V1 closed must not
-  // be reopenable from it.
-  it('ignores a legacy plan that the V1 session already retired', async () => {
+  // Continues the same conversation. A greeting inside a live session is not a
+  // reopening: the customer is still here and the context is still theirs.
+  it('keeps the live commercial session when a greeting arrives minutes later', async () => {
+    const greeting = await commitTurn('Buenas tardes', move('greeting'));
+
+    const live = await stateStore.load(
+      workspaceSlug,
+      greeting.claimed.batch.conversation_id,
+      greeting.claimed.batch.contact_id,
+    );
+    expect(live).toMatchObject({
+      selected_offering_code: 'redes-informaticas',
+      selected_payment_plan: 'monthly_12',
+      stage: 'payment_link_sent',
+    });
+    expect(greeting.committed.outbound?.content).not.toContain(paymentLinks.monthly_12);
+  });
+
+  // The production incident: a greeting hours after a link was sent inherited
+  // the course, the plan and the pending payment question. `sales_context_states`
+  // (legacy) still holds monthly_12 and must not be able to reopen it either.
+  it('opens a new session when a greeting arrives on a conversation gone quiet', async () => {
+    const aged = await db!<Array<{ conversation_id: string; contact_id: string }>>`
+      UPDATE conversation_sales_context_states_v1
+      SET updated_at = now() - interval '9 hours'
+      WHERE conversation_id = (
+        SELECT conversation_id FROM conversation_sales_context_states_v1
+        ORDER BY updated_at DESC LIMIT 1
+      )
+      RETURNING conversation_id::text, contact_id::text
+    `;
+    expect(aged).toHaveLength(1);
+
     const greeting = await commitTurn('Buenas tardes', move('greeting'));
 
     const legacy = await salesStore.load(workspaceSlug, greeting.claimed.batch.contact_id);

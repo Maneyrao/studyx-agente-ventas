@@ -497,8 +497,10 @@ export function createLocalTurnSender(
       process.env.AGENT_A_ADVISOR_NAME?.trim() || null,
     );
     const brainAuthoritative = claimed.features?.agent_a_brain_v1_enabled === true;
+    // Igual que `processInboundTurn`: con el cerebro autoritativo, una ruta
+    // determinística clasifica pero no lo desplaza. Si el evaluador lo
+    // desplazara, mediría un camino que producción no usa.
     const brainEligible = brainAuthoritative
-      && claimed.deterministic_route === null
       && claimed.policy.may_respond
       && claimed.policy.allowed_response_types.includes('commercial_reply')
       && brainContext !== null;

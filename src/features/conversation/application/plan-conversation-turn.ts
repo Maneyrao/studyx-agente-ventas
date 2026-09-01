@@ -11,6 +11,7 @@ import {
   canonicalReferenceKey,
   createDefaultConversationStateV1,
   effectiveConversationStateV1,
+  isConversationSessionDormantV1,
   planConversationTurn,
   type PlanningBusinessContextV1,
 } from '../domain/conversation-planner';
@@ -117,6 +118,14 @@ export async function authoritativelyPlanConversationTurnV1(
     sales_context: state,
     business_context: buildPlanningBusinessContextV1(input.business_context, input.catalog_index),
     proactive_call_offer_allowed: proactiveCallOfferAllowed,
+    // Measured against the state as persisted, not the effective one: the
+    // effective copy already had its pending question expired by the same
+    // window, so reading dormancy from it would always come back false.
+    session_dormant: loaded !== null && isConversationSessionDormantV1(
+      loaded,
+      deps.now?.() ?? Date.now(),
+      loadConversationSessionConfig().sessionIdleMs,
+    ),
   });
   const registry = buildCanonicalFactRegistry({
     business_context: input.business_context,

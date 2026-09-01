@@ -27,6 +27,12 @@ export interface PlanConversationTurnInputV1 {
   readonly business_context: PlanningBusinessContextV1;
   /** Current backend call ledger capability; semantic meaning cannot grant it. */
   readonly proactive_call_offer_allowed?: boolean;
+  /**
+   * Whether the persisted session went quiet past the session window. Time is
+   * not readable from a plan, so the caller measures it with
+   * `isConversationSessionDormantV1` and hands the verdict in.
+   */
+  readonly session_dormant?: boolean;
 }
 
 type StateIdentity = Pick<ConversationStateV1, 'workspace_id' | 'conversation_id' | 'contact_id'>;
@@ -83,9 +89,36 @@ export function effectiveConversationStateV1(
 }
 
 /**
- * Reopening boundary. A greeting that arrives on top of commercial progress is
- * the customer starting over, not answering the last question: it closes the
- * previous commercial session and opens a fresh one. The call ledger and the
+ * Terminal stages. A conversation that closed or went to a human is over; the
+ * next greeting starts something new, no matter how recent it was.
+ */
+const TERMINAL_STAGES: ReadonlySet<ConversationStateV1['stage']> = new Set(['closed', 'handoff']);
+
+/**
+ * Whether the persisted session is dormant: quiet for longer than the session
+ * window, so a greeting on top of it reopens rather than continues. Uses the
+ * same window that expires a pending question, so both rules move together.
+ */
+export function isConversationSessionDormantV1(
+  state: ConversationStateV1,
+  nowMs = Date.now(),
+  sessionIdleMs = CONVERSATION_SESSION_IDLE_MS,
+): boolean {
+  const updatedAtMs = Date.parse(state.updated_at);
+  if (!Number.isFinite(updatedAtMs) || nowMs < updatedAtMs) return false;
+  return nowMs - updatedAtMs > sessionIdleMs;
+}
+
+/**
+ * Reopening boundary.
+ *
+ * A greeting is NOT by itself evidence that the customer is starting over —
+ * people say hello in the middle of a live conversation, and throwing away
+ * their course and plan there would be its own defect. What makes a greeting a
+ * reopening is the state it lands on: one that is terminal, or one that has
+ * been quiet past the session window.
+ *
+ * Reopening clears the commercial selection only. The call ledger and the
  * durable call preference survive — a customer who chose chat or declined a
  * call must never be offered one again — and so do identity, consent and the
  * concurrency version, so history and audit stay intact.
@@ -207,6 +240,11 @@ function incompatible(moves: readonly ConversationMoveKindV1[], vetoes: Readonly
     if (move === 'request_payment_link' && (vetoes.has('payment_link') || vetoes.has('purchase'))) return false;
     return true;
   }));
+  // A greeting carries no purchase intent. Reading "buenas tardes" as a
+  // request to resume a payment is what sent a link to a customer who had
+  // only said hello; the two moves cannot describe the same message.
+  if (active.has('greeting')
+    && (active.has('request_payment_link') || active.has('select_payment_plan'))) return true;
   if (active.has('request_call') && active.has('decline_call')) return true;
   if (active.has('request_call') && active.has('request_payment_link')) return true;
   if (active.has('request_payment_link') && (active.has('defer_payment') || active.has('decline_purchase'))) return true;
@@ -226,9 +264,10 @@ function planSingle(
   }
 
   if (kind === 'greeting') {
+    const reopens = input.session_dormant === true || TERMINAL_STAGES.has(state.stage);
     return {
-      ...unchangedPlan(reopenedSessionState(state), 'greet_and_discover'),
-      next_awaiting_reply: 'area_choice',
+      ...unchangedPlan(reopens ? reopenedSessionState(state) : state, 'greet_and_discover'),
+      next_awaiting_reply: reopens ? 'area_choice' : state.awaiting_reply,
     };
   }
   if (kind === 'browse_catalog') {

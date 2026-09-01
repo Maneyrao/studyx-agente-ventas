@@ -646,7 +646,15 @@ export function routeCommercialTurn(input: CommercialRouterInput): CommercialRou
 
   // Claim owns the greeting classifier. A burst made exclusively of greetings
   // is conclusive, so it must skip the generic multi-message model gate.
-  const greeting = matchDeterministicGreeting(claimed)
+  //
+  // Under the V1 conversation pipeline the classification is all this route
+  // may contribute: composing the answer here would put fixed identity copy in
+  // front of the customer AND skip the planner, so a greeting could never
+  // close a stale commercial session. The model writes it; the planner decides
+  // whether it reopens.
+  const greeting = claimed.features?.conversation_pipeline_v1_enabled === true
+    ? null
+    : matchDeterministicGreeting(claimed)
   if (greeting) {
     return deterministicRoute('greeting', GREETING_FAST_PATH_MODEL, greeting)
   }

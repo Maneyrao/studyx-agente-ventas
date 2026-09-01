@@ -19,12 +19,13 @@
       "turns": [
         "Me interesa la formación de Redes Informáticas",
         "¿Cuánto sale?",
-        "Dale, mandame el link para pagar",
+        "Elijo el pago único y mandame el link",
         "Buenas tardes"
       ],
       "ideal_result": {
         "no_technical_fallback": true,
         "expected_interest": "Redes Informáticas",
+        "no_payment_link_before_turn": 4,
         "payment_link_count": 1
       }
     },

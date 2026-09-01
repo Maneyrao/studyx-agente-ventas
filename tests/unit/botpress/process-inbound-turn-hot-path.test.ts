@@ -1059,6 +1059,58 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
+  it('lets a greeting reach the planner under the V1 pipeline instead of a canned answer', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      conversation_pipeline_v1_enabled: true,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.deterministic_route = 'greeting';
+    claimed.context.batch_messages[0].content = 'Buenas tardes';
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null, selected_payment_plan: null,
+      stage: 'exploring', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 1,
+    };
+    claimed.catalog_index = { as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0 };
+    actionSpies.claim.mockResolvedValue(claimed);
+    secrets.DEEPSEEK_API_KEY = 'deepseek-local-test-only';
+    actionSpies.agentABrainDeepSeek.mockResolvedValueOnce({
+      proposal: {
+        schema_version: 1,
+        move: {
+          schema_version: 1, move: 'greeting', secondary_moves: [], vetoes: [], confidence: 0.99,
+        },
+        response: { messages: ['Buenas tardes, ¿en qué te puedo ayudar hoy?'], call_offer: null },
+        proposed_action: { type: 'none' },
+        used_fact_ids: [],
+        used_memory_ids: [],
+        memory_candidates: [],
+      },
+      provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 210, attempt_count: 1,
+    });
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => { throw new Error('MODEL_MUST_NOT_RUN'); });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute, client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    // El planner corrió: sin eso un saludo no podría cerrar una sesión vieja.
+    expect(actionSpies.plan).toHaveBeenCalled();
+    const committed = actionSpies.commit.mock.calls[0]?.[0]?.input;
+    expect(committed?.conversation_pipeline_v1).not.toBeNull();
+    expect(JSON.stringify(committed)).not.toContain('asesora virtual');
+  });
+
   it('keeps the natural brain active through direct Gemini before any canned fallback', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
