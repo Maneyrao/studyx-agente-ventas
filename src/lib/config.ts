@@ -99,6 +99,16 @@ export interface AgentARolloutConfig {
    * evidencia que justificaría no necesitarla.
    */
   readonly singleRoute: boolean;
+  /**
+   * Gobierna V5 por estado (§ 05b): el egress autoriza una afirmación de
+   * estado citando un hecho materializado en vez de por coincidencia léxica.
+   *
+   * Apagado, el recorte es el de siempre. Encendido, el turno puede afirmar
+   * lo que la transición VA a escribir — y eso sólo es cierto si el outbound
+   * espera al commit durable (O2/O3). Por eso el flag existe: la capacidad
+   * nueva y la garantía de orden se encienden juntas o no se encienden.
+   */
+  readonly stateAssertions: boolean;
 }
 
 export function loadAgentARolloutConfig(
@@ -108,6 +118,7 @@ export function loadAgentARolloutConfig(
     contextScoping: environment.AGENT_A_CONTEXT_SCOPING?.trim().toLowerCase() === 'true',
     repairEnabled: environment.AGENT_A_REPAIR_ENABLED?.trim().toLowerCase() === 'true',
     singleRoute: environment.AGENT_A_SINGLE_ROUTE?.trim().toLowerCase() === 'true',
+    stateAssertions: environment.AGENT_A_STATE_ASSERTIONS?.trim().toLowerCase() === 'true',
   };
 }
 

@@ -1,8 +1,10 @@
 import { TECHNICAL_FALLBACK_TEXT_V1 } from './technical-fallback';
 import {
+  dropUnsupportedStateAssertionsV1,
   stripModelAuthoredCallOffers,
   stripUnsupportedOperationalClaims,
 } from './operational-promise-guard';
+import type { StateFactIdV1 } from './state-fact-registry';
 import type {
   CanonicalFactRefV1,
   CanonicalFactV1,
@@ -209,6 +211,15 @@ export function assembleCanonicalConversationResponseV1(input: {
   readonly fact_refs: readonly CanonicalFactRefV1[];
   readonly facts: readonly CanonicalFactV1[];
   readonly composition: ComposedNarrativeV1;
+  /**
+   * V5. Los hechos de estado que ESTE turno puede afirmar (§ 05b).
+   *
+   * `null` conserva la conducta previa —sólo el recorte léxico—, que es lo
+   * que corre con `AGENT_A_STATE_ASSERTIONS` apagado. No es un default por
+   * comodidad: es la ruta de rollback, y borrarla dejaría al recorte nuevo
+   * sin vuelta atrás.
+   */
+  readonly state_facts?: ReadonlySet<StateFactIdV1> | null;
 }): { readonly content: string; readonly used_fact_ids: readonly string[] } {
   const citedByComposition = new Set(input.composition.used_fact_ids);
   const refsById = new Map(input.fact_refs.map((ref) => [ref.id, ref]));
@@ -237,8 +248,13 @@ export function assembleCanonicalConversationResponseV1(input: {
   // The call ledger only means something if every visible offer spends one.
   // The assembler owns the single ledgered offer and appends it below, so an
   // offer inside the model's own narrative is always an unbudgeted extra.
+  // V5 corre PRIMERO: decide por el estado durable, y lo que autoriza no
+  // debería después caer por una coincidencia léxica del guard viejo.
+  const stateFacts = input.state_facts;
   const clean = (value: string): string => stripModelAuthoredCallOffers(
-    stripUnsupportedOperationalClaims(value),
+    stripUnsupportedOperationalClaims(
+      stateFacts ? dropUnsupportedStateAssertionsV1(value, stateFacts) : value,
+    ),
   );
   const composed: ComposedNarrativeV1 = {
     ...input.composition,

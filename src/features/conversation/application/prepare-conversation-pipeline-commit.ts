@@ -122,6 +122,14 @@ export async function prepareConversationPipelineCommitV1(input: {
   readonly composition: ComposedNarrativeV1;
   readonly business_context: BusinessContextView | null;
   readonly catalog_index: CatalogIndexView | null;
+  /**
+   * V5 por estado. Apagado —el default— el egress recorta como siempre.
+   *
+   * No tiene default `true` a propósito: la capacidad depende de que el
+   * outbound espere al commit durable, y encenderla desde acá sin decidirlo
+   * sería exactamente el acoplamiento que el flag existe para hacer visible.
+   */
+  readonly state_assertions_enabled?: boolean;
 }, deps: {
   readonly state_store: ConversationStateStoreV1;
   readonly call_facts?: Pick<OrchestrationStore, 'loadClaimedCallFacts'>;
@@ -165,6 +173,7 @@ export async function prepareConversationPipelineCommitV1(input: {
     fact_refs: authoritative.fact_refs,
     facts: materialized.facts,
     composition: input.composition,
+    state_facts: input.state_assertions_enabled === true ? authoritative.state_facts : null,
   });
   const catalogFacts = materializeCanonicalCatalogFacts({
     content: assembled.content,

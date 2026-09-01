@@ -354,3 +354,25 @@ export function unsupportedOperationalAssertionsV1(
   return detectOperationalStateAssertionsV1(text)
     .filter((assertion) => !materialized.has(assertion.requires));
 }
+
+/**
+ * Aplica V5: saca del texto las oraciones cuya afirmación de estado no tiene
+ * hecho materializado.
+ *
+ * Vive acá y no en el ensamblador para que el corte de oraciones sea el mismo
+ * que usó el detector. Si el ensamblador partiera el texto por su cuenta, una
+ * oración detectada podría no coincidir con ninguna de las que él separa, y el
+ * recorte fallaría en silencio dejando pasar exactamente lo que debía borrar.
+ */
+export function dropUnsupportedStateAssertionsV1(
+  text: string,
+  materialized: ReadonlySet<StateFactIdV1>,
+): string {
+  const unsupported = unsupportedOperationalAssertionsV1(text, materialized);
+  if (unsupported.length === 0) return text;
+  const drop = new Set(unsupported.map((assertion) => assertion.sentence));
+  return splitAssertionSentences(text)
+    .filter((sentence) => !drop.has(sentence))
+    .join(' ')
+    .trim();
+}

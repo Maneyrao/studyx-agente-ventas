@@ -17,6 +17,10 @@ import {
   type PlanningBusinessContextV1,
 } from '../domain/conversation-planner';
 import {
+  materializeStateFactsV1,
+  type StateFactIdV1,
+} from '../domain/state-fact-registry';
+import {
   buildCanonicalFactRegistry,
   materializeCanonicalFactRequests,
 } from '../domain/canonical-fact-registry';
@@ -27,6 +31,15 @@ export interface AuthoritativeConversationPlanV1 {
   readonly fact_refs: readonly CanonicalFactRefV1[];
   readonly state_version: number;
   readonly plan_hash: string;
+  /**
+   * V5. Qué puede afirmar este turno sobre el estado de la gestión (§ 05b).
+   *
+   * Se materializa acá porque es el único lugar que tiene las dos mitades: el
+   * intake que acaba de cargar y la transición PLANIFICADA. Calcularlo en el
+   * egress obligaría a releer el intake, y calcularlo en el planner de dominio
+   * no serviría: ese no ve el intake persistido.
+   */
+  readonly state_facts: ReadonlySet<StateFactIdV1>;
 }
 
 export interface AuthoritativeConversationPlanInputV1 {
@@ -155,5 +168,9 @@ export async function authoritativelyPlanConversationTurnV1(
     fact_refs: refs,
     state_version: state.version,
     plan_hash: planHash(hashInput),
+    state_facts: materializeStateFactsV1({
+      intake: contactIntake,
+      planned_payment_reported: plan.payment_reported,
+    }),
   };
 }

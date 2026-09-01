@@ -347,6 +347,49 @@ run('el outbound nunca precede a su commit durable', () => {
     }
   });
 
+  it('O2 sigue valiendo con V5 por estado encendida', async () => {
+    // El punto exacto del acoplamiento: V5 por estado permite afirmar lo que
+    // la transición VA a escribir, no lo ya escrito. Esa capacidad es una
+    // mentira si el outbound puede salir antes que el commit.
+    //
+    // Encender el flag no debilita O2: si la escritura durable falla, la
+    // afirmación autorizada tampoco se entrega.
+    const previo = process.env.AGENT_A_STATE_ASSERTIONS;
+    process.env.AGENT_A_STATE_ASSERTIONS = 'true';
+    try {
+      const prepared = await prepareTurn(
+        'Ya hice la transferencia',
+        move('report_payment'),
+        'Tengo registrado tu aviso de pago.',
+      );
+      const before = await outboundCountFor(prepared.claimed.batch.conversation_id);
+
+      const spy = vi
+        .spyOn(PostgresConversationStateStoreV1.prototype, 'transition')
+        .mockRejectedValue(new Error('INJECTED_COMMIT_FAILURE'));
+
+      await expect(
+        commitClaimedDecision(prepared.commitInput, { store: orchestrationStore }),
+      ).rejects.toThrow();
+
+      expect(spy).toHaveBeenCalled();
+      spy.mockRestore();
+
+      expect(await outboundCountFor(prepared.claimed.batch.conversation_id)).toBe(before);
+      const delivered = await db!<Array<{ content: string }>>`
+        SELECT content FROM messages
+        WHERE conversation_id = ${prepared.claimed.batch.conversation_id}::uuid
+          AND direction = 'outbound'
+      `;
+      for (const message of delivered) {
+        expect(message.content).not.toMatch(/tengo\s+registrado/iu);
+      }
+    } finally {
+      if (previo === undefined) delete process.env.AGENT_A_STATE_ASSERTIONS;
+      else process.env.AGENT_A_STATE_ASSERTIONS = previo;
+    }
+  });
+
   it('O2 · el fallo tampoco deja la fila de estado a medias', async () => {
     const rows = await db!<Array<{ count: string }>>`
       SELECT count(*)::text AS count FROM conversation_sales_context_states_v1

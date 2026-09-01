@@ -18,6 +18,7 @@ import {
 } from '@/features/payments/domain/payment-report-projection';
 import { auditLog } from '@/lib/audit/logger';
 import {
+  loadAgentARolloutConfig,
   loadBusinessWorkspaceConfig,
   loadSheetsProjectionConfig,
   type SheetsProjectionConfig,
@@ -482,6 +483,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           composition: validatedInput.conversation_pipeline_v1.composition,
           business_context: rawBusiness ? buildBusinessContextView(rawBusiness) : null,
           catalog_index: rawCatalogIndex ? buildCatalogIndexView(rawCatalogIndex) : null,
+          state_assertions_enabled: loadAgentARolloutConfig().stateAssertions,
         }, {
           state_store: new PostgresConversationStateStoreV1(db),
           call_facts: new PostgresOrchestrationStore(db),
