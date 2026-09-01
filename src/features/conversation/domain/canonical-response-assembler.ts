@@ -163,6 +163,13 @@ function fallbackOpening(responseGoal: TurnPlanV1['response_goal']): string | nu
     case 'present_payment_options': return 'Estas son las opciones de pago disponibles.';
     case 'guide_course_choice': return 'Estas son algunas opciones disponibles.';
     case 'guide_area_choice': return 'Estas son algunas áreas disponibles.';
+    // Goals whose whole answer can legitimately be a single sentence. If a
+    // guard removes that sentence there is nothing left, and a turn that
+    // assembles to nothing is silence — worse than the sentence it replaced.
+    case 'acknowledge_payment_report':
+      return 'Gracias por avisar. Queda registrado para que una persona lo revise.';
+    case 'confirm_current_state': return 'Te confirmo en qué punto quedamos.';
+    case 'request_contact_details': return 'Para dejarlo listo necesito unos datos tuyos.';
     default: return null;
   }
 }

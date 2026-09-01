@@ -57,13 +57,18 @@ function protectedFactsFromCanonicalSelection(input: {
   return [...new Map(facts.map((fact) => [`${fact.kind}\u0000${fact.value}`, fact])).values()];
 }
 
-function decisionFromPlan(input: {
+export function conversationDecisionFromPlanV1(input: {
   readonly move: ConversationMoveV1;
   readonly plan: TurnPlanV1;
   readonly response: string;
 }): DecisionV4 {
   const { plan, move } = input;
-  const isClarification = plan.response_goal === 'clarify_current_step';
+  // `clarify` is a decision that ASKS for something, which is why the decision
+  // validator requires missing_information on it. A plan that reached
+  // clarify_current_step with nothing missing is not asking anything — it is a
+  // reply — and calling it a clarification failed the whole turn.
+  const isClarification = plan.response_goal === 'clarify_current_step'
+    && plan.missing_information.length > 0;
   const requestsCall = plan.allowed_business_action.type === 'request_call_now';
   const businessAction: DecisionV4['business_action'] = requestsCall
     ? {
@@ -169,7 +174,7 @@ export async function prepareConversationPipelineCommitV1(input: {
     })) ?? [],
   });
   return {
-    decision: decisionFromPlan({
+    decision: conversationDecisionFromPlanV1({
       move: input.move,
       plan: authoritative.plan,
       response: assembled.content,
