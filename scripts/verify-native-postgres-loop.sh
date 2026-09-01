@@ -5,6 +5,12 @@ set -euo pipefail
 readonly PG17_BIN="/opt/homebrew/opt/postgresql@17/bin"
 readonly TEST_DATABASE="studyx_test"
 readonly TEST_USER="postgres"
+readonly PORT_BASE="${STUDYX_MIGRATION_LOOP_PORT_BASE:-55432}"
+
+if [[ ! "${PORT_BASE}" =~ ^[0-9]+$ ]] || (( PORT_BASE < 1024 || PORT_BASE > 65532 )); then
+  echo "STUDYX_MIGRATION_LOOP_PORT_BASE must be an integer between 1024 and 65532" >&2
+  exit 1
+fi
 
 if [[ ! -x "${PG17_BIN}/initdb" ]]; then
   echo "PostgreSQL 17 is not installed at ${PG17_BIN}" >&2
@@ -22,7 +28,7 @@ stop_active_cluster() {
 trap stop_active_cluster EXIT
 
 for iteration in 1 2 3; do
-  port=$((55432 + iteration))
+  port=$((PORT_BASE + iteration))
   active_cluster="$(mktemp -d "/private/tmp/studyx-pg17-loop-${iteration}.XXXXXX")"
 
   echo "migration loop ${iteration}/3 on port ${port}"
@@ -50,7 +56,20 @@ for iteration in 1 2 3; do
     -U "${TEST_USER}" \
     -d "${TEST_DATABASE}" \
     -v ON_ERROR_STOP=1 \
-    -c 'CREATE SCHEMA IF NOT EXISTS extensions; CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;' \
+    -c '
+      CREATE SCHEMA IF NOT EXISTS extensions;
+      CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
+      DO $roles$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $role$anon$role$) THEN
+          CREATE ROLE anon NOLOGIN;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $role$authenticated$role$) THEN
+          CREATE ROLE authenticated NOLOGIN;
+        END IF;
+      END
+      $roles$;
+    ' \
     >/dev/null
 
   for migration_file in supabase/migrations/*.sql; do
@@ -88,4 +107,3 @@ for iteration in 1 2 3; do
 done
 
 echo "all three isolated PostgreSQL migration loops passed"
-
