@@ -223,7 +223,23 @@ export function assembleCanonicalConversationResponseV1(input: {
   const narrative = narrativeText(effectiveComposition);
   const mentionedIds = mentionedFactIds(narrative, input.facts);
   const selectedIds = new Set(selectedFactIds);
-  if ([...mentionedIds].some((id) => !selectedIds.has(id))) {
+  // La comparación es por VALOR, no por id. Los tres planes comparten el mismo
+  // total canónico, así que escribir "USD 360" marca los tres hechos de precio
+  // como mencionados aunque el modelo haya citado uno solo. Rechazarlo por id
+  // castigaría un texto indistinguible de otro ya autorizado; lo que el guard
+  // debe impedir es afirmar un valor que el turno no tenía, y eso lo sigue
+  // haciendo: un valor sin ningún hecho seleccionado que lo respalde cae.
+  const authorizedValues = new Set(selectedFacts.map(
+    (fact) => `${fact.kind}\u0000${normalizeMentionText(fact.value)}`,
+  ));
+  const uncited = [...mentionedIds]
+    .filter((id) => !selectedIds.has(id))
+    .map((id) => factsById.get(id))
+    .filter((fact): fact is CanonicalFactV1 => fact !== undefined)
+    .filter((fact) => !authorizedValues.has(
+      `${fact.kind}\u0000${normalizeMentionText(fact.value)}`,
+    ));
+  if (uncited.length > 0) {
     throw new CanonicalResponseAssemblyError('COMPOSER_UNCITED_CANONICAL_FACT');
   }
   if (narrative.some((part) => part.includes('https://') || part.includes('http://'))) {

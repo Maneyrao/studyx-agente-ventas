@@ -170,6 +170,29 @@ describe('canonical response assembler keeps the model as author of the copy', (
     expect(result.content).toContain('6 pagos de USD 60');
   });
 
+  it('does not reject a value that another authorized fact carries identically', () => {
+    // Los tres planes comparten el mismo total canónico. Escribir "USD 360"
+    // marca los tres hechos de precio como mencionados aunque el modelo haya
+    // citado uno: el texto es indistinguible, y el importe está autorizado.
+    const result = assembleCanonicalConversationResponseV1({
+      plan: plan({
+        response_goal: 'confirm_selected_plan',
+        next_stage: 'plan_selected',
+        next_awaiting_reply: 'payment_confirmation',
+        selected_payment_plan: 'one_time',
+      }),
+      fact_refs: allPaymentRefs,
+      facts: allPaymentFacts,
+      composition: composed({
+        opening: 'Perfecto, queda el pago único de USD 360.',
+        explanation: null,
+        next_question: '¿Avanzamos?',
+      }, ['payment:redes-informaticas:one_time:label:v1']),
+    });
+
+    expect(result.content).toContain('Perfecto, queda el pago único de USD 360.');
+  });
+
   it('answers with the one plan the model cited instead of listing all three', () => {
     const result = assembleCanonicalConversationResponseV1({
       plan: plan({ response_goal: 'present_payment_options', next_awaiting_reply: 'payment_plan' }),
