@@ -215,7 +215,7 @@
       ],
       "ideal_result": {
         "no_technical_fallback": true,
-        "must_not_echo": "transferencia bancaria"
+        "must_not_echo": "Apple Pay"
       }
     },
     {

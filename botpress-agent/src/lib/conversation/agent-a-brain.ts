@@ -10,7 +10,11 @@ import {
   type TurnPlanV1,
 } from '../../schemas/conversation-pipeline';
 import { buildAgentABrainInstructionsV1 } from '../../prompts/agent-a-brain-v1';
-import { isValueFreeNarrativePortable } from '../../utils/authorized-egress';
+import {
+  extractProtectedFacts,
+  extractUrlCandidates,
+  isValueFreeNarrativePortable,
+} from '../../utils/authorized-egress';
 
 const GROQ_CHAT_COMPLETIONS_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
@@ -654,6 +658,7 @@ function authorizedFactIds(context: AgentAContextV1): Set<string> {
   for (const offering of context.catalog.candidate_offerings) {
     ids.add(offering.fact_id);
   }
+  for (const plan of context.catalog.payment_plans) ids.add(plan.fact_id);
   return ids;
 }
 
@@ -703,6 +708,7 @@ function commercialValuesByFactId(context: AgentAContextV1): ReadonlyMap<string,
   for (const fact of context.catalog.selected_offering?.facts ?? []) values.set(fact.id, fact.value);
   for (const area of context.catalog.areas) values.set(area.fact_id, area.display_name);
   for (const offering of context.catalog.candidate_offerings) values.set(offering.fact_id, offering.display_name);
+  for (const plan of context.catalog.payment_plans) values.set(plan.fact_id, plan.label);
   return values;
 }
 
@@ -784,6 +790,9 @@ export function buildSafeAgentABrainCompositionV1(input: {
     .filter(([id]) => !citedIds.has(id))
     .map(([, value]) => value.normalize('NFKC').trim().toLocaleLowerCase('es'))
     .filter((value) => value.length >= 3);
+  const citedValues = [...valuesById]
+    .filter(([id]) => citedIds.has(id))
+    .map(([, value]) => value);
   const canonicalPaymentGoal = [
     'present_payment_options',
     'confirm_selected_plan',
@@ -800,7 +809,7 @@ export function buildSafeAgentABrainCompositionV1(input: {
     // natural language (for example "tenemos opciones") to be replaced by a
     // canned fallback before the authority boundary could inspect it.
     return !unauthorizedValues.some((value) => normalized.includes(value))
-      && (!canonicalPaymentGoal || isValueFreeNarrativePortable(message))
+      && (!canonicalPaymentGoal || citesOnlyAuthorizedValues(message, citedValues))
       && (!asksAboutUnspecifiedPrerequisites || !unsupportedPrerequisiteClaim.test(message));
   });
   // A transactional goal constrains which FACTS may appear, never who writes
@@ -830,6 +839,36 @@ export function buildSafeAgentABrainCompositionV1(input: {
       : null,
     used_fact_ids: [...citedIds],
   });
+}
+
+/**
+ * Regla de composición para un turno de pago.
+ *
+ * Antes se descartaba el mensaje entero si contenía cualquier hecho protegido
+ * (`isValueFreeNarrativePortable`). Como toda respuesta de pago menciona un
+ * precio, el mensaje del modelo se caía siempre y disparaba la frase fija: por
+ * eso dos consultas de precio devolvían texto idéntico.
+ *
+ * Ahora el modelo aporta la narrativa y la referencia estructurada —cita el
+ * `fact_id` del plan— y sólo puede pronunciar los HECHOS que esa referencia
+ * autoriza. La comparación es hecho contra hecho, no cadena contra cadena:
+ * DeepSeek acorta "6 pagos mensuales de USD 60" a "6 pagos de USD 60", y el
+ * precio sigue siendo el mismo hecho canónico. Un precio inventado, un plan no
+ * citado o una URL propia siguen cayendo. El backend materializa igual los hechos canónicos y el
+ * egress guard revalida el texto final: acá no se afloja nada, se deja de
+ * destruir la redacción.
+ */
+function citesOnlyAuthorizedValues(
+  message: string,
+  citedValues: readonly string[],
+): boolean {
+  if (extractUrlCandidates(message).length > 0) return false;
+  const authorized = new Set(citedValues.flatMap(
+    (value) => extractProtectedFacts(value).map((fact) => `${fact.kind}\u0000${fact.value}`),
+  ));
+  return extractProtectedFacts(message).every(
+    (fact) => authorized.has(`${fact.kind}\u0000${fact.value}`),
+  );
 }
 
 function transactionalFallback(responseGoal: TurnPlanV1['response_goal']): string | null {

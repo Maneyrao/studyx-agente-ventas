@@ -84,6 +84,8 @@ export interface AgentAContextV1 {
     }>;
     readonly payment_plans: ReadonlyArray<{
       readonly code: AgentAPaymentPlanV1;
+      /** Referencia estructurada que el modelo cita para nombrar el plan. */
+      readonly fact_id: string;
       readonly label: string;
     }>;
   };

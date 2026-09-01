@@ -31,7 +31,16 @@ const paymentFacts: CanonicalFactV1[] = [
   { id: 'payment:redes-informaticas:monthly_6:label:v1', kind: 'payment_plan_label', source: 'business_snapshot', value: '6 pagos mensuales de USD 60', offering_code: 'redes-informaticas', payment_plan: 'monthly_6' },
   { id: 'payment:redes-informaticas:one_time:label:v1', kind: 'payment_plan_label', source: 'business_snapshot', value: 'un pago único de USD 360', offering_code: 'redes-informaticas', payment_plan: 'one_time' },
 ];
+const priceFacts: CanonicalFactV1[] = [
+  { id: 'payment:redes-informaticas:monthly_12:price:v1', kind: 'payment_plan_price', source: 'business_snapshot', value: 'USD 360.00', offering_code: 'redes-informaticas', payment_plan: 'monthly_12' },
+  { id: 'payment:redes-informaticas:monthly_6:price:v1', kind: 'payment_plan_price', source: 'business_snapshot', value: 'USD 360.00', offering_code: 'redes-informaticas', payment_plan: 'monthly_6' },
+  { id: 'payment:redes-informaticas:one_time:price:v1', kind: 'payment_plan_price', source: 'business_snapshot', value: 'USD 360.00', offering_code: 'redes-informaticas', payment_plan: 'one_time' },
+];
+const allPaymentFacts = [...paymentFacts, ...priceFacts];
 const paymentRefs: CanonicalFactRefV1[] = paymentFacts.map(({ id, kind, offering_code, payment_plan }) => ({
+  id, kind, offering_code, payment_plan,
+}));
+const allPaymentRefs: CanonicalFactRefV1[] = allPaymentFacts.map(({ id, kind, offering_code, payment_plan }) => ({
   id, kind, offering_code, payment_plan,
 }));
 
@@ -113,6 +122,86 @@ describe('canonical response assembler keeps the model as author of the copy', (
     });
 
     expect(first.content).not.toBe(second.content);
+  });
+
+  it('treats a cited plan as citing that plan price too', () => {
+    // El modelo cita el label del plan y escribe "USD 360" en su narrativa. Ese
+    // importe también es el hecho `payment_plan_price` del mismo plan: citar el
+    // plan autoriza sus hechos canónicos, no sólo la etiqueta.
+    const result = assembleCanonicalConversationResponseV1({
+      plan: plan({ response_goal: 'present_payment_options', next_awaiting_reply: 'payment_plan' }),
+      fact_refs: allPaymentRefs,
+      facts: allPaymentFacts,
+      composition: composed({
+        opening: 'El valor total del programa es USD 360.',
+        explanation: 'Podés elegir 12 pagos mensuales de USD 30, 6 pagos mensuales de USD 60 o un pago único de USD 360.',
+        next_question: '¿Cuál te resulta más conveniente?',
+      }, [
+        'payment:redes-informaticas:monthly_12:label:v1',
+        'payment:redes-informaticas:monthly_6:label:v1',
+        'payment:redes-informaticas:one_time:label:v1',
+      ]),
+    });
+
+    expect(result.content).toContain('El valor total del programa es USD 360.');
+    expect(result.content).not.toContain('Total: USD 360.00');
+  });
+
+  it('does not re-append a plan the model already named in its own words', () => {
+    // DeepSeek cita el plan y lo nombra parafraseado ("6 pagos de USD 60").
+    // El match literal no lo reconoce y lo volvía a pegar como bullet suelto
+    // debajo de la narrativa. Un plan citado es del modelo: no se duplica.
+    const result = assembleCanonicalConversationResponseV1({
+      plan: plan({ response_goal: 'present_payment_options', next_awaiting_reply: 'payment_plan' }),
+      fact_refs: allPaymentRefs,
+      facts: allPaymentFacts,
+      composition: composed({
+        opening: 'La de menor cuota es la de 12 pagos mensuales de USD 30. También tenés 6 pagos de USD 60.',
+        explanation: null,
+        next_question: '¿Cuál preferís?',
+      }, [
+        'payment:redes-informaticas:monthly_12:label:v1',
+        'payment:redes-informaticas:monthly_6:label:v1',
+      ]),
+    });
+
+    expect(result.content).not.toContain('• 6 pagos mensuales de USD 60');
+    expect(result.content).not.toContain('• 12 pagos mensuales de USD 30');
+    expect(result.content).toContain('6 pagos de USD 60');
+  });
+
+  it('answers with the one plan the model cited instead of listing all three', () => {
+    const result = assembleCanonicalConversationResponseV1({
+      plan: plan({ response_goal: 'present_payment_options', next_awaiting_reply: 'payment_plan' }),
+      fact_refs: paymentRefs,
+      facts: paymentFacts,
+      composition: composed({
+        opening: 'La más baja es 12 pagos mensuales de USD 30.',
+        explanation: null,
+        next_question: '¿Arrancamos con esa?',
+      }, ['payment:redes-informaticas:monthly_12:label:v1']),
+    });
+
+    expect(result.content).toContain('12 pagos mensuales de USD 30');
+    expect(result.content).not.toContain('6 pagos mensuales de USD 60');
+    expect(result.content).not.toContain('un pago único de USD 360');
+  });
+
+  it('still lists every plan when the model cited none of them', () => {
+    const result = assembleCanonicalConversationResponseV1({
+      plan: plan({ response_goal: 'present_payment_options', next_awaiting_reply: 'payment_plan' }),
+      fact_refs: paymentRefs,
+      facts: paymentFacts,
+      composition: composed({
+        opening: 'Te paso cómo podés abonarlo.',
+        explanation: null,
+        next_question: '¿Cuál te conviene?',
+      }, []),
+    });
+
+    for (const label of ['12 pagos mensuales de USD 30', '6 pagos mensuales de USD 60', 'un pago único de USD 360']) {
+      expect(result.content).toContain(label);
+    }
   });
 
   it('confirms only the selected plan instead of dumping the whole payment catalog', () => {

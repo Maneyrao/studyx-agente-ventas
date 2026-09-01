@@ -40,7 +40,7 @@ function context(memoryValue = 'busca salida laboral'): AgentAContextV1 {
       },
       areas: [{ code: 'tecnologia', fact_id: 'area:tecnologia:name:v1', display_name: 'Tecnología' }],
       candidate_offerings: [],
-      payment_plans: [{ code: 'monthly_12', label: '12 pagos mensuales de USD 30' }],
+      payment_plans: [{ code: 'monthly_12', fact_id: 'payment:redes-informaticas:monthly_12:label:v1', label: '12 pagos mensuales de USD 30' }],
     },
     capabilities: {
       may_reply: true,
@@ -64,6 +64,7 @@ describe('Agent A Brain V1 prompt', () => {
     expect(instructions).toContain('Resolve the current message against commercial_state.awaiting_reply');
     expect(instructions).toContain('response.call_offer (never in response.messages)');
     expect(instructions).toContain('Never echo an unresolved {{placeholder}}');
+    expect(instructions).toContain("cite that fact's id in used_fact_ids");
     expect(instructions).toContain('<authorized_context>');
     expect(instructions).toContain('"memory-1"');
   });

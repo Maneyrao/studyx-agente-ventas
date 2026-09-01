@@ -358,10 +358,16 @@ export function buildAgentAContextV1(
         display_name,
       })),
       candidate_offerings: selectedOffering ? [] : candidates,
-      payment_plans: (claimed.business_context?.workspace.payment_options ?? []).map((option) => ({
-        code: option.code,
-        label: option.label,
-      })),
+      // El id sigue el esquema del registro canónico del backend, igual que
+      // `area:<code>:name:v1` arriba. Sin offering seleccionado no hay plan que
+      // referenciar, así que la lista queda vacía.
+      payment_plans: selectedOffering === null
+        ? []
+        : (claimed.business_context?.workspace.payment_options ?? []).map((option) => ({
+          code: option.code,
+          fact_id: `payment:${selectedOffering.code}:${option.code}:label:v1`,
+          label: option.label,
+        })),
     },
     capabilities: {
       may_reply: claimed.policy.may_respond,

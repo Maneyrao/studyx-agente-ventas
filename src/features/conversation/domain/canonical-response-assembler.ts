@@ -80,17 +80,34 @@ function mentionedFactIds(narrative: readonly string[], facts: readonly Canonica
 function requiredFactIds(
   plan: TurnPlanV1,
   refs: readonly CanonicalFactRefV1[],
+  citedFactIds: ReadonlySet<string>,
 ): string[] {
+  // Presentar las opciones significa mostrarlas todas — salvo que el modelo ya
+  // haya nombrado una en concreto. Preguntar "¿cuál es la cuota más baja?" y
+  // recibir las tres otra vez no es presentar opciones, es no contestar.
+  const citedPaymentLabel = refs.some((ref) => (
+    ref.kind === 'payment_plan_label' && citedFactIds.has(ref.id)
+  ));
   const requiredKinds = plan.response_goal === 'guide_area_choice'
     ? new Set<CanonicalFactRefV1['kind']>(['area_name'])
     : plan.response_goal === 'guide_course_choice'
       ? new Set<CanonicalFactRefV1['kind']>(['offering_name'])
-      : plan.response_goal === 'present_payment_options'
+      : plan.response_goal === 'present_payment_options' && !citedPaymentLabel
         ? new Set<CanonicalFactRefV1['kind']>(['payment_plan_label'])
         : null;
   const required = requiredKinds
     ? refs.filter((ref) => requiredKinds.has(ref.kind)).map((ref) => ref.id)
     : [];
+  // Citar un plan cita sus hechos: la etiqueta y el importe describen lo mismo.
+  // El modelo referencia el plan por su label; escribir el total en su propia
+  // redacción no puede contar como un hecho sin citar.
+  const citedPlans = new Set(refs
+    .filter((ref) => ref.kind === 'payment_plan_label' && citedFactIds.has(ref.id))
+    .map((ref) => `${ref.offering_code ?? ''}\u0000${ref.payment_plan ?? ''}`));
+  required.push(...refs.filter((ref) => (
+    ref.kind === 'payment_plan_price'
+    && citedPlans.has(`${ref.offering_code ?? ''}\u0000${ref.payment_plan ?? ''}`)
+  )).map((ref) => ref.id));
   if (plan.response_goal === 'confirm_selected_plan' && plan.selected_payment_plan) {
     required.push(...refs.filter((ref) => (
       ref.kind === 'payment_plan_label'
@@ -106,6 +123,35 @@ function requiredFactIds(
     )).map((ref) => ref.id));
   }
   return required;
+}
+
+/**
+ * Un plan de pago que el modelo citó Y cuyo importe pronunció ya está dicho:
+ * re-adjuntarlo deja un bullet huérfano debajo de la frase que lo nombra.
+ *
+ * Hace falta la doble señal. Citar solo no alcanza —el modelo puede citar un
+ * plan sin nombrarlo, y ahí el bloque canónico es lo único que lo muestra— y
+ * el match literal tampoco, porque DeepSeek acorta "6 pagos mensuales de USD
+ * 60" a "6 pagos de USD 60". El importe es lo que sobrevive a la paráfrasis.
+ */
+function alreadyNamedByComposition(
+  fact: CanonicalFactV1,
+  citedFactIds: ReadonlySet<string>,
+  narrative: readonly string[],
+): boolean {
+  if (fact.kind !== 'payment_plan_label' || !citedFactIds.has(fact.id)) return false;
+  const amounts = fact.value.match(/usd\s*\d+(?:[.,]\d+)?/giu) ?? [];
+  if (amounts.length === 0) return false;
+  const normalizedNarrative = normalizeMentionText(narrative.join('\n'));
+  if (!amounts.every((amount) => normalizedNarrative.includes(normalizeMentionText(amount)))) {
+    return false;
+  }
+  // El importe solo no distingue: "el total es USD 360" comparte cifra con el
+  // pago único sin nombrarlo. Hace falta además una palabra propia del plan.
+  const words = normalizeMentionText(fact.value)
+    .split(/[^\p{L}]+/u)
+    .filter((word) => word.length >= 4 && word !== 'usd');
+  return words.length > 0 && words.some((word) => normalizedNarrative.includes(word));
 }
 
 function fallbackOpening(responseGoal: TurnPlanV1['response_goal']): string | null {
@@ -145,12 +191,13 @@ export function assembleCanonicalConversationResponseV1(input: {
   readonly facts: readonly CanonicalFactV1[];
   readonly composition: ComposedNarrativeV1;
 }): { readonly content: string; readonly used_fact_ids: readonly string[] } {
+  const citedByComposition = new Set(input.composition.used_fact_ids);
   const refsById = new Map(input.fact_refs.map((ref) => [ref.id, ref]));
   const factsById = new Map(input.facts.map((fact) => [fact.id, fact]));
   const selectedFacts: CanonicalFactV1[] = [];
   const selectedFactIds = [...new Set([
     ...input.composition.used_fact_ids,
-    ...requiredFactIds(input.plan, input.fact_refs),
+    ...requiredFactIds(input.plan, input.fact_refs, new Set(input.composition.used_fact_ids)),
   ])];
   for (const id of selectedFactIds) {
     const ref = refsById.get(id);
@@ -231,6 +278,7 @@ export function assembleCanonicalConversationResponseV1(input: {
     .filter((fact) => !mentionedIds.has(fact.id))
     .filter((fact) => !redundantFactIds.has(fact.id))
     .filter((fact) => !suppressedByPlanConfirmation(input.plan, fact))
+    .filter((fact) => !alreadyNamedByComposition(fact, citedByComposition, narrative))
     .filter((fact) => fact.kind !== 'payment_plan_price' || !selectedPaymentLabels.has(
       `${fact.offering_code ?? ''}\u0000${fact.payment_plan ?? ''}`,
     ))

@@ -79,6 +79,9 @@ export const AgentAContextV1Schema = z.object({
     }).strict()).max(3),
     payment_plans: z.array(z.object({
       code: PaymentPlanSchema,
+      // Referencia estructurada: el modelo cita este id para poder nombrar el
+      // plan en su propia redacción sin inventar el valor.
+      fact_id: IdentifierSchema,
       label: z.string().trim().min(1).max(240),
     }).strict()).max(3),
   }).strict(),

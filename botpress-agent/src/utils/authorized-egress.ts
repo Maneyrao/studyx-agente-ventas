@@ -88,7 +88,7 @@ function trimTrailingUrlPunctuation(candidate: string): string {
   return url
 }
 
-function extractUrlCandidates(content: string): string[] {
+export function extractUrlCandidates(content: string): string[] {
   return [...content.matchAll(URL_LIKE_PATTERN)]
     .map((match) => trimTrailingUrlPunctuation(match[0]))
 }
@@ -106,7 +106,7 @@ function extractFactMatches(
   }))
 }
 
-function extractProtectedFacts(content: string): PortableProtectedFact[] {
+export function extractProtectedFacts(content: string): PortableProtectedFact[] {
   const normalizedContent = normalizeFactValue(content)
   return [
     ...extractFactMatches(normalizedContent, PRICE_PATTERN, 'price'),

@@ -469,6 +469,49 @@ run('conversation pipeline V1 vertical', () => {
     expect(rows[0]).toEqual({ links: 1, projection_jobs: 1, payment_actions: 1 });
   });
 
+  // El cliente pregunta por el link que ya recibió. La respuesta debe contestar
+  // eso, sin emitir un segundo link ni una segunda acción, y el replay del
+  // mismo commit no puede duplicar nada.
+  it('answers about the existing link and survives a replay with one link, action and projection', async () => {
+    const asked = await commitTurn(
+      '¿Ese link que enviaste es el del pago?',
+      move('request_payment_link'),
+      {
+        schema_version: 1,
+        narrative: {
+          opening: 'Sí, ese mismo es el link para pagar la inscripción.',
+          explanation: 'No hace falta que te mande otro, sigue activo.',
+          next_question: '¿Querés que te acompañe mientras lo completás?',
+        },
+        used_fact_ids: [],
+      },
+    );
+
+    const content = asked.committed.outbound?.content ?? '';
+    expect(content).toContain('Sí, ese mismo es el link para pagar la inscripción.');
+    expect(content).not.toContain(paymentLinks.monthly_12);
+    expect(content).not.toContain('Revisá el mensaje anterior');
+
+    const replayed = await commitClaimedDecision(asked.commitInput, { store: orchestrationStore });
+    expect(replayed.status).toBe('duplicate');
+
+    const rows = await db!<Array<{ links: number; actions: number; projections: number }>>`
+      SELECT
+        (SELECT count(*)::integer FROM messages
+         WHERE conversation_id = ${asked.claimed.batch.conversation_id}::uuid
+           AND direction = 'outbound' AND content LIKE ${`%${paymentLinks.monthly_12}%`}) AS links,
+        (SELECT count(*)::integer FROM agent_decisions ad
+         JOIN messages m ON m.id = ad.turn_id
+         WHERE m.conversation_id = ${asked.claimed.batch.conversation_id}::uuid
+           AND ad.business_action ->> 'type' = 'send_payment_link') AS actions,
+        (SELECT count(*)::integer FROM payment_projection_jobs job
+         JOIN agent_decisions ad ON ad.id = job.decision_id
+         JOIN messages m ON m.id = ad.turn_id
+         WHERE m.conversation_id = ${asked.claimed.batch.conversation_id}::uuid) AS projections
+    `;
+    expect(rows[0]).toEqual({ links: 1, actions: 1, projections: 1 });
+  });
+
   // Continues the same conversation. A greeting inside a live session is not a
   // reopening: the customer is still here and the context is still theirs.
   it('keeps the live commercial session when a greeting arrives minutes later', async () => {

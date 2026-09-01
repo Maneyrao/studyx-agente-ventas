@@ -45,7 +45,7 @@ const validContext = {
     },
     areas: [{ code: 'tecnologia', fact_id: 'area:tecnologia:name:v1', display_name: 'Tecnología' }],
     candidate_offerings: [],
-    payment_plans: [{ code: 'monthly_12', label: '12 pagos mensuales de USD 30' }],
+    payment_plans: [{ code: 'monthly_12', fact_id: 'payment:redes-informaticas:monthly_12:label:v1', label: '12 pagos mensuales de USD 30' }],
   },
   capabilities: {
     may_reply: true,
