@@ -1697,7 +1697,7 @@ describe('processInboundTurn hot path', () => {
       },
       decision: { reason_code: 'CONVERSATION_PIPELINE_V1_PENDING_BACKEND' },
       model: {
-        prompt_version: 'studyx-conversation-interpreter-v1.6+studyx-conversation-composer-v2+studyx-sales-behavior-v1',
+        prompt_version: 'studyx-conversation-interpreter-v1.7+studyx-conversation-composer-v2+studyx-sales-behavior-v1',
       },
     });
   });

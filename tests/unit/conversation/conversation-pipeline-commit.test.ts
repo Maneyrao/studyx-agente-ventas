@@ -66,6 +66,12 @@ function store(current: ConversationStateV1): ConversationStateStoreV1 {
   };
 }
 
+/** Planning and commit must read identity identically or their hashes diverge. */
+const completeIntake = async () => ({
+  nombre: 'Ariana', apellido: 'Paz',
+  correo: 'ariana.paz@example.test', telefono: '+5491100000001',
+});
+
 describe('prepareConversationPipelineCommitV1', () => {
   it('authorizes the second bounded offer while the first offer is still unanswered', async () => {
     const planned = await authoritativelyPlanConversationTurnV1({
@@ -106,7 +112,7 @@ describe('prepareConversationPipelineCommitV1', () => {
     const planned = await authoritativelyPlanConversationTurnV1({
       turn: { workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
       workspace_slug: 'studyx', move, business_context: business, catalog_index: index,
-    }, { state_store: stateStore });
+    }, { state_store: stateStore, contact_intake: completeIntake });
     const prepared = await prepareConversationPipelineCommitV1({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
       workspace_slug: 'studyx', move, expected_plan_hash: planned.plan_hash,
@@ -202,7 +208,7 @@ describe('prepareConversationPipelineCommitV1', () => {
     const planned = await authoritativelyPlanConversationTurnV1({
       turn: { workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
       workspace_slug: 'studyx', move, business_context: business, catalog_index: index,
-    }, { state_store: stateStore });
+    }, { state_store: stateStore, contact_intake: completeIntake });
     const prepared = await prepareConversationPipelineCommitV1({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
       workspace_slug: 'studyx', move, expected_plan_hash: planned.plan_hash,
@@ -212,7 +218,7 @@ describe('prepareConversationPipelineCommitV1', () => {
         used_fact_ids: planned.fact_refs.map((fact) => fact.id),
       },
       business_context: business, catalog_index: index,
-    }, { state_store: stateStore });
+    }, { state_store: stateStore, contact_intake: completeIntake });
 
     expect(prepared.decision.business_action).toEqual({
       type: 'send_payment_link', plan_code: 'monthly_12', offering_sku: 'redes-informaticas',

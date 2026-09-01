@@ -46,8 +46,23 @@ function move(
   };
 }
 
+/**
+ * The six-field intake gate has its own suite (`contact-intake.test.ts`). These
+ * tests are about the commercial rules that sit behind it, so the identity is
+ * supplied complete and never becomes the reason an assertion here fails.
+ */
+const completeIntake = {
+  nombre: 'Ariana', apellido: 'Paz',
+  correo: 'ariana.paz@example.test', telefono: '+5491100000001',
+};
+
 function plan(currentMove: ConversationMoveV1, currentState: ConversationStateV1) {
-  return planConversationTurn({ move: currentMove, sales_context: currentState, business_context: business });
+  return planConversationTurn({
+    move: currentMove,
+    sales_context: currentState,
+    business_context: business,
+    contact_intake: completeIntake,
+  });
 }
 
 describe('planConversationTurn', () => {

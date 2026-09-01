@@ -10,6 +10,7 @@ import { isExplicitOptOut } from '@/lib/heuristics/opt-out';
 import { splitFullName } from '@/lib/heuristics/contact-identity';
 import { registerMessage, type Message } from './message.service';
 import { enqueueLeadProjection } from './projection.service';
+import { loadContactIntakeV1 } from '@/lib/repositories/contact-intake.repository';
 import { auditLog } from '@/lib/audit/logger';
 import {
   loadBusinessWorkspaceConfig,
@@ -461,6 +462,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         }, {
           state_store: new PostgresConversationStateStoreV1(db),
           call_facts: new PostgresOrchestrationStore(db),
+          contact_intake: (contactId) => loadContactIntakeV1(contactId, db),
         });
       } catch (error) {
         if (error instanceof ConversationPlanMismatchError

@@ -21,6 +21,30 @@ export interface PlanningBusinessContextV1 {
   readonly payment_plans: readonly ('monthly_12' | 'monthly_6' | 'one_time')[];
 }
 
+/**
+ * The commercial contract is frozen at six data points. Two of them —
+ * the canonical course and the canonical plan — already live in the
+ * conversation state, so only these four are gathered from the customer.
+ * The phone arrives with the channel identity rather than being asked for.
+ *
+ * Adding a field here is a change to the commercial contract, not a detail.
+ */
+export const CONTACT_INTAKE_FIELDS_V1 = ['nombre', 'apellido', 'correo', 'telefono'] as const;
+
+export type ContactIntakeFieldV1 = typeof CONTACT_INTAKE_FIELDS_V1[number];
+
+export type ContactIntakeV1 = {
+  readonly [Field in ContactIntakeFieldV1]: string | null;
+};
+
+/** Blank-but-present is absent: a whitespace name bills nobody. */
+export function missingContactIntakeFieldsV1(
+  intake: ContactIntakeV1 | undefined,
+): ContactIntakeFieldV1[] {
+  if (!intake) return [...CONTACT_INTAKE_FIELDS_V1];
+  return CONTACT_INTAKE_FIELDS_V1.filter((field) => (intake[field] ?? '').trim().length === 0);
+}
+
 export interface PlanConversationTurnInputV1 {
   readonly move: ConversationMoveV1;
   readonly sales_context: ConversationStateV1;
@@ -33,6 +57,11 @@ export interface PlanConversationTurnInputV1 {
    * `isConversationSessionDormantV1` and hands the verdict in.
    */
   readonly session_dormant?: boolean;
+  /**
+   * The identity already durable in `contacts`. Absent means unknown, and
+   * unknown is treated as missing: the gate never opens on ignorance.
+   */
+  readonly contact_intake?: ContactIntakeV1;
 }
 
 type StateIdentity = Pick<ConversationStateV1, 'workspace_id' | 'conversation_id' | 'contact_id'>;
@@ -268,6 +297,29 @@ function incompatible(moves: readonly ConversationMoveKindV1[], vetoes: Readonly
   return false;
 }
 
+function requestContactDetails(state: ConversationStateV1): TurnPlanV1 {
+  return {
+    ...unchangedPlan(state, 'request_contact_details', ['contact_details']),
+    next_awaiting_reply: 'contact_details',
+  };
+}
+
+function paymentLinkPlan(
+  state: ConversationStateV1,
+  offeringCode: string,
+  paymentPlan: NonNullable<ConversationStateV1['selected_payment_plan']>,
+): TurnPlanV1 {
+  return {
+    ...unchangedPlan(state, 'confirm_payment_link'),
+    next_stage: 'payment_link_sent',
+    canonical_fact_requests: [{ kind: 'payment_link', offering_code: offeringCode, payment_plan: paymentPlan }],
+    allowed_business_action: { type: 'send_payment_link', offering_code: offeringCode, payment_plan: paymentPlan },
+    next_awaiting_reply: 'none',
+    selected_offering_code: offeringCode,
+    selected_payment_plan: paymentPlan,
+  };
+}
+
 function planSingle(
   kind: ConversationMoveKindV1,
   input: PlanConversationTurnInputV1,
@@ -419,6 +471,21 @@ function planSingle(
       next_awaiting_reply: 'payment_confirmation',
     };
   }
+  if (kind === 'provide_contact_details') {
+    // Supplying data is only ever the answer to a question we asked. If it
+    // was, the link the customer already requested resumes on its own.
+    if (state.awaiting_reply !== 'contact_details') {
+      return unchangedPlan(state, 'clarify_current_step');
+    }
+    if (missingContactIntakeFieldsV1(input.contact_intake).length > 0) {
+      return requestContactDetails(state);
+    }
+    const offeringCode = state.selected_offering_code;
+    const paymentPlan = state.selected_payment_plan;
+    if (!offeringCode) return unchangedPlan(state, 'guide_course_choice', ['course_selection']);
+    if (!paymentPlan) return unchangedPlan(state, 'present_payment_options', ['payment_plan']);
+    return paymentLinkPlan(state, offeringCode, paymentPlan);
+  }
   if (kind === 'request_payment_link') {
     if (vetoes.has('payment_link') || vetoes.has('purchase')) {
       return unchangedPlan(state, 'acknowledge_payment_deferral');
@@ -427,15 +494,16 @@ function planSingle(
     const paymentPlan = move.payment_plan ?? state.selected_payment_plan;
     if (!offeringCode) return unchangedPlan(state, 'guide_course_choice', ['course_selection']);
     if (!paymentPlan) return unchangedPlan(state, 'present_payment_options', ['payment_plan']);
-    return {
-      ...unchangedPlan(state, 'confirm_payment_link'),
-      next_stage: 'payment_link_sent',
-      canonical_fact_requests: [{ kind: 'payment_link', offering_code: offeringCode, payment_plan: paymentPlan }],
-      allowed_business_action: { type: 'send_payment_link', offering_code: offeringCode, payment_plan: paymentPlan },
-      next_awaiting_reply: 'none',
-      selected_offering_code: offeringCode,
-      selected_payment_plan: paymentPlan,
-    };
+    // The six data points are what a human needs to process the sale. A link
+    // sent without them produces a payment nobody can attribute.
+    if (missingContactIntakeFieldsV1(input.contact_intake).length > 0) {
+      return {
+        ...requestContactDetails(state),
+        selected_offering_code: offeringCode,
+        selected_payment_plan: paymentPlan,
+      };
+    }
+    return paymentLinkPlan(state, offeringCode, paymentPlan);
   }
   if (kind === 'report_payment') {
     // The customer's word is the only input here, and it is not evidence.

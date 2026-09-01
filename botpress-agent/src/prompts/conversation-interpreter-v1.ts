@@ -1,6 +1,6 @@
 import type { ConversationInterpreterInputV1 } from '../lib/conversation/conversation-interpreter'
 
-export const CONVERSATION_INTERPRETER_PROMPT_VERSION = 'studyx-conversation-interpreter-v1.6'
+export const CONVERSATION_INTERPRETER_PROMPT_VERSION = 'studyx-conversation-interpreter-v1.7'
 
 const CONTRACT = `You are a semantic interpreter for one StudyX sales conversation turn.
 Return only ConversationMoveV1. Interpret meaning; never write customer-facing copy and never
@@ -26,6 +26,8 @@ Choose one primary move and at most two compatible secondary moves:
 - report_payment: states that a payment was already made, is being made, or was sent for review.
 - ask_current_state: asks what has already been decided, chosen or sent in this conversation.
 - provide_contact_details: supplies personal identity data such as a name or an email address.
+  Use it whenever identity data is the substance of the turn, including when it answers a request
+  for that data. It carries no commercial authorization of its own.
 - decline_purchase: explicitly ends the purchase intention.
 - unknown: meaning is too ambiguous for a safe move.
 

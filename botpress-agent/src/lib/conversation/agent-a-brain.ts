@@ -919,6 +919,8 @@ function safeContextualOpening(
       return 'De acuerdo, lo dejamos para más adelante.';
     case 'confirm_payment_link':
       return 'Listo, te comparto el paso autorizado para continuar.';
+    case 'request_contact_details':
+      return 'Para dejarlo listo necesito unos datos tuyos.';
     case 'acknowledge_payment_report':
       return 'Gracias por avisar. Queda registrado para que una persona lo revise.';
     case 'confirm_current_state':

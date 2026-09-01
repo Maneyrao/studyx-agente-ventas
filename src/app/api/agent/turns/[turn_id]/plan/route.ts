@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ConversationMoveV1Schema } from '@/features/conversation/adapters/conversation-pipeline-schema';
 import { PostgresConversationStateStoreV1 } from '@/features/conversation/adapters/postgres-conversation-state-store';
 import { authoritativelyPlanConversationTurnV1 } from '@/features/conversation/application/plan-conversation-turn';
+import { loadContactIntakeV1 } from '@/lib/repositories/contact-intake.repository';
 import { businessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
 import { orchestrationStore } from '@/features/orchestration/adapters/postgres-orchestration-store';
 import {
@@ -105,6 +106,7 @@ export async function POST(
       }, {
         state_store: new PostgresConversationStateStoreV1(),
         call_facts: orchestrationStore,
+        contact_intake: loadContactIntakeV1,
       }),
     );
     return NextResponse.json(result, { status: 200 });

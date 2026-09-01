@@ -13,6 +13,7 @@ import {
   effectiveConversationStateV1,
   isConversationSessionDormantV1,
   planConversationTurn,
+  type ContactIntakeV1,
   type PlanningBusinessContextV1,
 } from '../domain/conversation-planner';
 import {
@@ -43,6 +44,12 @@ export interface AuthoritativeConversationPlanInputV1 {
 export interface AuthoritativeConversationPlanDependenciesV1 {
   readonly state_store: Pick<ConversationStateStoreV1, 'load'>;
   readonly call_facts?: Pick<OrchestrationStore, 'loadClaimedCallFacts'>;
+  /**
+   * Reads the durable identity that gates the payment link. Both the planning
+   * route and the commit path must resolve it identically or their plan hashes
+   * diverge, so it is one shared reader rather than two call-site queries.
+   */
+  readonly contact_intake?: (contactId: string) => Promise<ContactIntakeV1>;
   readonly now?: () => number;
 }
 
@@ -89,7 +96,7 @@ export async function authoritativelyPlanConversationTurnV1(
   input: AuthoritativeConversationPlanInputV1,
   deps: AuthoritativeConversationPlanDependenciesV1,
 ): Promise<AuthoritativeConversationPlanV1> {
-  const [loaded, callFacts] = await Promise.all([
+  const [loaded, callFacts, contactIntake] = await Promise.all([
     deps.state_store.load(
       input.workspace_slug,
       input.turn.conversation_id,
@@ -99,6 +106,7 @@ export async function authoritativelyPlanConversationTurnV1(
       conversation_id: input.turn.conversation_id,
       contact_id: input.turn.contact_id,
     }) ?? Promise.resolve(null),
+    deps.contact_intake?.(input.turn.contact_id) ?? Promise.resolve(undefined),
   ]);
   const state = loaded
     ? effectiveConversationStateV1(
@@ -118,6 +126,7 @@ export async function authoritativelyPlanConversationTurnV1(
     sales_context: state,
     business_context: buildPlanningBusinessContextV1(input.business_context, input.catalog_index),
     proactive_call_offer_allowed: proactiveCallOfferAllowed,
+    contact_intake: contactIntake,
     // Measured against the state as persisted, not the effective one: the
     // effective copy already had its pending question expired by the same
     // window, so reading dormancy from it would always come back false.

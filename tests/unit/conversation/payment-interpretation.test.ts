@@ -29,6 +29,13 @@ function move(kind: ConversationMoveV1['move'], overrides: Partial<ConversationM
 }
 
 const courseChosen = state({ selected_offering_code: 'redes-informaticas', stage: 'course_selected' });
+
+/** The six-field gate is a separate rule with its own suite; supply it so
+ *  these tests observe interpretation alone. */
+const intake = {
+  nombre: 'Ariana', apellido: 'Paz',
+  correo: 'ariana.paz@example.test', telefono: '+5491100000001',
+};
 const linkSent = state({
   selected_offering_code: 'redes-informaticas',
   selected_payment_plan: 'one_time',
@@ -52,6 +59,7 @@ describe('payment interpretation', () => {
       }),
       sales_context: courseChosen,
       business_context: business,
+      contact_intake: intake,
     });
 
     expect(result.selected_payment_plan).toBe('one_time');

@@ -15,6 +15,7 @@ export const CONVERSATION_MOVE_KINDS_V1 = [
   'request_payment_link',
   'report_payment',
   'ask_current_state',
+  'provide_contact_details',
   'decline_purchase',
   'unknown',
 ] as const;
@@ -29,6 +30,7 @@ export const AWAITING_REPLIES_V1 = [
   'call_or_chat',
   'payment_plan',
   'payment_confirmation',
+  'contact_details',
 ] as const;
 
 export const RESPONSE_GOALS_V1 = [
@@ -44,6 +46,7 @@ export const RESPONSE_GOALS_V1 = [
   'present_payment_options',
   'confirm_selected_plan',
   'acknowledge_payment_deferral',
+  'request_contact_details',
   'confirm_payment_link',
   'acknowledge_payment_report',
   'confirm_current_state',
@@ -60,6 +63,7 @@ export const MISSING_INFORMATION_V1 = [
   'call_or_chat_choice',
   'payment_plan',
   'payment_confirmation',
+  'contact_details',
   'catalog_snapshot',
 ] as const;
 
