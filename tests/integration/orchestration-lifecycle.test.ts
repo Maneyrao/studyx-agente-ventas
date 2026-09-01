@@ -433,12 +433,15 @@ run('canonical orchestration lifecycle', () => {
       WHERE entity_id = ${committed.decision_id}::uuid AND action = 'agent.decision.memory_candidate_rejected'
     `;
     expect(audits).toHaveLength(4);
-    expect(audits.flatMap((row) => row.payload.rejected as unknown[])).toEqual([
+    // Audit rows are independent inserts and may share a timestamp; PostgreSQL
+    // does not promise their SELECT order without ORDER BY. The invariant is
+    // the exact set of four rejections, not insertion order.
+    expect(audits.flatMap((row) => row.payload.rejected as unknown[])).toEqual(expect.arrayContaining([
       { type: 'preference', key: 'payment_channel', reason: 'URL_OR_PRICE_LIKE' },
       { type: 'constraint', key: 'budget_hint', reason: 'URL_OR_PRICE_LIKE' },
       { type: 'constraint', key: 'price_offer_dollars', reason: 'URL_OR_PRICE_LIKE' },
       { type: 'constraint', key: 'price_offer_usd_shorthand', reason: 'URL_OR_PRICE_LIKE' },
-    ]);
+    ]));
   });
 
   it.each(['opt_out', 'human_request'] as const)(
