@@ -17,6 +17,9 @@ La defensa no es acordarse. Es `scripts/lib/eval-isolation.ts`, que corre
 - el puerto no es uno de los desechables (55432–55435);
 - hay cargada cualquier credencial de efecto externo — Telegram, Stripe,
   Retell, Google Sheets;
+- la API no usa un puerto dedicado 3200–3299 en loopback;
+- alguno de los tres links de pago no apunta a `example.invalid` o
+  `example.test` por HTTPS;
 - falta `DEEPSEEK_API_KEY`.
 
 Ese último punto no es burocracia. El runner trata DeepSeek como opcional y
@@ -33,6 +36,11 @@ por caso, y los links de pago apuntan a `example.invalid`.
 Telegram, Stripe, Sheets y Retell se apagan por **ausencia**: sus credenciales
 no están en `.eval/.env.local` y el guard aborta si alguien las agrega. No hay
 un flag que las desactive — no hay con qué llamarlas.
+
+La API usa por defecto `127.0.0.1:3217` y se niega a arrancar si el puerto ya
+está ocupado. Después del arranque, el ejecutor contrasta `/api/health` con el
+SHA exacto del worktree y exige `/api/ready` positivo. Así, un proceso viejo en
+otro checkout no puede producir un falso verde.
 
 ## Preparación
 

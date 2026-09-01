@@ -27,8 +27,10 @@ readonly MODO="${4:-}"
 
 readonly RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly PUERTO=55435
+readonly API_PORT="${STUDYX_EVAL_API_PORT:-3217}"
 readonly EVAL_ROOT="${RAIZ}/.eval"
 readonly DB_URL="postgresql://postgres@127.0.0.1:${PUERTO}/studyx_test"
+readonly API_BASE_URL="http://127.0.0.1:${API_PORT}"
 
 cd "${RAIZ}"
 
@@ -47,6 +49,7 @@ set +a
 export DATABASE_URL="${DB_URL}"
 export TEST_DATABASE_URL="${DB_URL}"
 export STUDYX_LOCAL_CREDENTIALS_ROOT="${EVAL_ROOT}"
+export STUDYX_EVAL_API_BASE_URL="${API_BASE_URL}"
 export GEMINI_API_KEY=""
 export GROQ_API_KEY=""
 export OPENAI_API_KEY=""
@@ -63,25 +66,73 @@ npx tsx -e '
   console.error("aislamiento verificado: cluster desechable, sin credenciales externas");
 '
 
+# Nunca se reutiliza un proceso que ya estaba escuchando. Aunque devolviera
+# /api/ready=200, podría ser otro checkout o una versión anterior del agente.
+node -e '
+  const server = require("node:net").createServer();
+  server.once("error", () => process.exit(1));
+  server.listen(Number(process.argv[1]), "127.0.0.1", () => server.close(() => process.exit(0)));
+' "${API_PORT}" || {
+  echo "EVAL_API_PORT_IN_USE: ${API_PORT}" >&2
+  exit 1
+}
+
 scripts/pg-native-down.sh "${PUERTO}" >/dev/null 2>&1 || true
 scripts/pg-native-up.sh "${PUERTO}" --seed >/dev/null
 echo "cluster limpio en 127.0.0.1:${PUERTO}" >&2
 
 npm run build >/dev/null 2>&1
-npm run start -- --port 3000 >"${EVAL_ROOT}/api-${ETIQUETA}.log" 2>&1 &
+readonly RELEASE_SHA="$(git rev-parse HEAD)"
+export STUDYX_RELEASE_SHA="${RELEASE_SHA}"
+npm run start -- --hostname 127.0.0.1 --port "${API_PORT}" >"${EVAL_ROOT}/api-${ETIQUETA}.log" 2>&1 &
 readonly API_PID=$!
 trap 'kill "${API_PID}" 2>/dev/null || true' EXIT
 
+API_READY=false
 for _ in $(seq 1 60); do
-  if curl -sf http://127.0.0.1:3000/api/ready >/dev/null 2>&1; then break; fi
+  if ! kill -0 "${API_PID}" 2>/dev/null; then
+    echo "EVAL_API_EXITED_BEFORE_READY" >&2
+    exit 1
+  fi
+  if curl -sf "${API_BASE_URL}/api/ready" >/dev/null 2>&1; then
+    API_READY=true
+    break
+  fi
   sleep 1
 done
+
+if [[ "${API_READY}" != "true" ]]; then
+  echo "EVAL_API_READY_TIMEOUT" >&2
+  exit 1
+fi
+
+# El 200 no alcanza: se prueba que responde el commit de este worktree y que
+# su readiness estructurada es positiva antes de enviar el primer caso.
+npx tsx -e '
+  import { assertEvaluationApiIdentityV1 } from "./scripts/lib/eval-isolation";
+  void (async () => {
+    const base = process.env.STUDYX_EVAL_API_BASE_URL;
+    const expectedCommit = process.env.STUDYX_RELEASE_SHA;
+    if (!base || !expectedCommit) throw new Error("EVAL_API_IDENTITY_ENV_MISSING");
+    const [healthResponse, readinessResponse] = await Promise.all([
+      fetch(`${base}/api/health`),
+      fetch(`${base}/api/ready`),
+    ]);
+    assertEvaluationApiIdentityV1({
+      expectedCommit,
+      health: await healthResponse.json(),
+      readiness: await readinessResponse.json(),
+    });
+    console.error("API aislada verificada: commit exacto y readiness positiva");
+  })();
+'
 
 for i in $(seq 1 "${REPETICIONES}"); do
   echo "=== ${ETIQUETA} corrida ${i}/${REPETICIONES} ===" >&2
   npx tsx scripts/run-agent-a-conversations.ts \
     --suite "${SUITE}" \
     --transport local \
+    --api-base-url "${API_BASE_URL}" \
     --strict-brain-provider deepseek \
     --verify-db \
     --database-url "${DB_URL}" \

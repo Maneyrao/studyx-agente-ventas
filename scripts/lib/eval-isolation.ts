@@ -30,6 +30,13 @@ const DISPOSABLE_PORTS_V1 = new Set([55432, 55433, 55434, 55435]);
 
 const LOOPBACK_HOSTS_V1 = new Set(['127.0.0.1', 'localhost', '::1']);
 
+const SYNTHETIC_PAYMENT_HOST_SUFFIXES_V1 = ['example.invalid', 'example.test'] as const;
+const PAYMENT_LINK_VARIABLES_V1 = [
+  'PAYMENT_LINK_12M',
+  'PAYMENT_LINK_6M',
+  'PAYMENT_LINK_CONTADO',
+] as const;
+
 /**
  * Credenciales cuya sola presencia habilita un efecto sobre un tercero.
  *
@@ -51,6 +58,45 @@ export const EXTERNAL_EFFECT_CREDENTIALS_V1 = [
 
 function present(environment: Readonly<Record<string, string | undefined>>, name: string): boolean {
   return (environment[name] ?? '').trim().length > 0;
+}
+
+function parseUrlWithoutValue(name: string, raw: string): URL {
+  try {
+    return new URL(raw);
+  } catch {
+    throw new EvaluationIsolationError(`EVAL_ISOLATION: ${name} no es una URL válida`);
+  }
+}
+
+function assertEvalApiBaseUrl(raw: string): void {
+  const parsed = parseUrlWithoutValue('STUDYX_EVAL_API_BASE_URL', raw);
+  const port = Number(parsed.port);
+  if (
+    parsed.protocol !== 'http:'
+    || !LOOPBACK_HOSTS_V1.has(parsed.hostname.replace(/^\[|\]$/gu, ''))
+    || parsed.pathname !== '/'
+    || parsed.search.length > 0
+    || parsed.hash.length > 0
+    || !Number.isInteger(port)
+    || port < 3200
+    || port > 3299
+  ) {
+    throw new EvaluationIsolationError(
+      'EVAL_ISOLATION: STUDYX_EVAL_API_BASE_URL debe ser HTTP loopback en un puerto 3200–3299 dedicado.',
+    );
+  }
+}
+
+function assertSyntheticPaymentLink(name: string, raw: string): void {
+  const parsed = parseUrlWithoutValue(name, raw);
+  const hostAllowed = SYNTHETIC_PAYMENT_HOST_SUFFIXES_V1.some(
+    (suffix) => parsed.hostname === suffix || parsed.hostname.endsWith(`.${suffix}`),
+  );
+  if (parsed.protocol !== 'https:' || !hostAllowed || parsed.username || parsed.password) {
+    throw new EvaluationIsolationError(
+      `EVAL_ISOLATION: ${name} debe ser HTTPS y apuntar a un dominio sintético example.invalid/example.test.`,
+    );
+  }
 }
 
 export function assertIsolatedEvaluationEnvironmentV1(
@@ -98,5 +144,44 @@ export function assertIsolatedEvaluationEnvironmentV1(
       'EVAL_ISOLATION: falta DEEPSEEK_API_KEY. Sin ella el runner cae a otro proveedor '
       + 'y los números describirían un modelo distinto del que se está evaluando.',
     );
+  }
+
+  const apiBaseUrl = (environment.STUDYX_EVAL_API_BASE_URL ?? '').trim();
+  if (!apiBaseUrl) {
+    throw new EvaluationIsolationError('EVAL_ISOLATION: falta STUDYX_EVAL_API_BASE_URL');
+  }
+  assertEvalApiBaseUrl(apiBaseUrl);
+
+  for (const name of PAYMENT_LINK_VARIABLES_V1) {
+    const rawPaymentLink = (environment[name] ?? '').trim();
+    if (!rawPaymentLink) {
+      throw new EvaluationIsolationError(`EVAL_ISOLATION: falta ${name}`);
+    }
+    assertSyntheticPaymentLink(name, rawPaymentLink);
+  }
+}
+
+function objectValue(value: unknown): Readonly<Record<string, unknown>> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Readonly<Record<string, unknown>>
+    : null;
+}
+
+/** Proves that the process answering the evaluator is this checkout and is ready. */
+export function assertEvaluationApiIdentityV1(input: {
+  expectedCommit: string;
+  health: unknown;
+  readiness: unknown;
+}): void {
+  if (!/^[a-f0-9]{40}$/u.test(input.expectedCommit)) {
+    throw new EvaluationIsolationError('EVAL_API_IDENTITY: commit esperado inválido');
+  }
+  const health = objectValue(input.health);
+  if (health?.status !== 'ok' || health.commit !== input.expectedCommit) {
+    throw new EvaluationIsolationError('EVAL_API_IDENTITY: /api/health no corresponde al commit esperado');
+  }
+  const readiness = objectValue(input.readiness);
+  if (readiness?.status !== 'ready' || readiness.ready !== true) {
+    throw new EvaluationIsolationError('EVAL_API_IDENTITY: /api/ready no está listo');
   }
 }

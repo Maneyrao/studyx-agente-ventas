@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   EXTERNAL_EFFECT_CREDENTIALS_V1,
+  assertEvaluationApiIdentityV1,
   assertIsolatedEvaluationEnvironmentV1,
   EvaluationIsolationError,
 } from '../../../scripts/lib/eval-isolation';
@@ -19,6 +20,10 @@ const AISLADO = {
   DATABASE_URL: 'postgresql://postgres@127.0.0.1:55435/studyx_test',
   DEEPSEEK_API_KEY: 'sk-sintetica-no-real',
   BUSINESS_WORKSPACE_SLUG: 'studyx',
+  STUDYX_EVAL_API_BASE_URL: 'http://127.0.0.1:3217',
+  PAYMENT_LINK_12M: 'https://payments.example.invalid/monthly-12',
+  PAYMENT_LINK_6M: 'https://payments.example.invalid/monthly-6',
+  PAYMENT_LINK_CONTADO: 'https://payments.example.invalid/one-time',
 };
 
 describe('aislamiento del entorno de evaluación', () => {
@@ -70,6 +75,33 @@ describe('aislamiento del entorno de evaluación', () => {
       .toThrow(/DEEPSEEK_API_KEY/);
   });
 
+  it('rechaza el puerto genérico 3000 y APIs que no sean loopback', () => {
+    for (const apiBaseUrl of [
+      'http://127.0.0.1:3000',
+      'https://studyx-agente-ventas.vercel.app',
+      'http://10.0.0.4:3217',
+    ]) {
+      expect(() => assertIsolatedEvaluationEnvironmentV1({
+        ...AISLADO,
+        STUDYX_EVAL_API_BASE_URL: apiBaseUrl,
+      })).toThrow(/STUDYX_EVAL_API_BASE_URL/);
+    }
+  });
+
+  it('rechaza links de pago reales o faltantes', () => {
+    for (const paymentLink of [
+      undefined,
+      'https://buy.stripe.com/real',
+      'http://payments.example.invalid/insecure',
+      'https://example.invalid.attacker.test/link',
+    ]) {
+      expect(() => assertIsolatedEvaluationEnvironmentV1({
+        ...AISLADO,
+        PAYMENT_LINK_12M: paymentLink,
+      })).toThrow(/PAYMENT_LINK_12M/);
+    }
+  });
+
   it('el error nunca contiene el valor de un secreto', () => {
     const secreto = 'sk-valor-que-no-debe-aparecer-jamas';
     try {
@@ -80,6 +112,29 @@ describe('aislamiento del entorno de evaluación', () => {
     } catch (error) {
       expect(String((error as Error).message)).not.toContain(secreto);
       expect((error as Error).message).toContain('STRIPE_SECRET_KEY');
+    }
+  });
+});
+
+describe('identidad del servidor local evaluado', () => {
+  const commit = 'a'.repeat(40);
+
+  it('acepta solamente health del commit esperado y readiness positiva', () => {
+    expect(() => assertEvaluationApiIdentityV1({
+      expectedCommit: commit,
+      health: { status: 'ok', commit },
+      readiness: { status: 'ready', ready: true },
+    })).not.toThrow();
+  });
+
+  it('falla cerrado ante otro commit, health incompleto o API no ready', () => {
+    for (const evidence of [
+      { health: { status: 'ok', commit: 'b'.repeat(40) }, readiness: { status: 'ready', ready: true } },
+      { health: { status: 'ok', commit: null }, readiness: { status: 'ready', ready: true } },
+      { health: { status: 'ok', commit }, readiness: { status: 'not_ready', ready: false } },
+    ]) {
+      expect(() => assertEvaluationApiIdentityV1({ expectedCommit: commit, ...evidence }))
+        .toThrow(EvaluationIsolationError);
     }
   });
 });
