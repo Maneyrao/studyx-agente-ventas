@@ -9,7 +9,7 @@ export const CONVERSATION_INTERPRETER_TIMEOUT_MS = 5_000
 const GROQ_CHAT_COMPLETIONS_URL = 'https://api.groq.com/openai/v1/chat/completions'
 
 type PaymentPlan = 'monthly_12' | 'monthly_6' | 'one_time'
-type AwaitingReply = 'none' | 'area_choice' | 'course_choice' | 'call_or_chat' | 'payment_plan' | 'payment_confirmation'
+type AwaitingReply = 'none' | 'area_choice' | 'course_choice' | 'call_or_chat' | 'payment_plan' | 'payment_confirmation' | 'contact_details'
 type CallPreference = 'unknown' | 'call' | 'chat' | 'declined'
 type CallOfferStatus = 'not_offered' | 'offered' | 'accepted' | 'declined'
 

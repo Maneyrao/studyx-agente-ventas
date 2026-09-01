@@ -571,8 +571,9 @@ export const ClaimedTurnSchema = z.object({
     call_offer_count: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(),
     awaiting_reply: z.enum([
       'none', 'area_choice', 'course_choice', 'call_or_chat',
-      'payment_plan', 'payment_confirmation',
+      'payment_plan', 'payment_confirmation', 'contact_details',
     ]),
+    payment_reported: z.boolean().optional(),
     version: z.number().int().nonnegative(),
   }).strict().nullable().optional(),
   catalog_resolution: CatalogResolutionSchema.default({

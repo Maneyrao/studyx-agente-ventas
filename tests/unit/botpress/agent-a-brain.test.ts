@@ -26,7 +26,7 @@ function context(): AgentAContextV1 {
     commercial_state: {
       selected_offering_code: 'redes-informaticas', selected_payment_plan: null,
       stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
-      call_offer_count: 0, awaiting_reply: 'none',
+      call_offer_count: 0, awaiting_reply: 'none', payment_reported: false,
     },
     catalog: {
       selected_offering: {

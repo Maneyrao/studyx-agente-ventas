@@ -349,6 +349,10 @@ export function buildAgentAContextV1(
       call_offer_status: state.call_offer_status,
       call_offer_count: callOfferCount,
       awaiting_reply: currentCourseChanged ? 'none' : state.awaiting_reply,
+      // The customer already said they paid. The model must be able to see
+      // that so it neither asks for the payment again nor claims it is
+      // verified — this field is the claim, never a verification.
+      payment_reported: state.payment_reported === true,
     },
     catalog: {
       selected_offering: selectedOffering,

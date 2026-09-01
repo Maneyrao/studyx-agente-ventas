@@ -14,7 +14,7 @@ function context(): AgentAContextV1 {
     commercial_state: {
       selected_offering_code: 'redes-informaticas', selected_payment_plan: 'monthly_12',
       stage: 'plan_selected', call_preference: 'chat', call_offer_status: 'declined',
-      call_offer_count: 1, awaiting_reply: 'payment_confirmation',
+      call_offer_count: 1, awaiting_reply: 'payment_confirmation', payment_reported: false,
     },
     catalog: {
       selected_offering: {

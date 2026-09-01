@@ -31,7 +31,7 @@ function context(memoryValue = 'busca salida laboral'): AgentAContextV1 {
       call_preference: 'unknown',
       call_offer_status: 'not_offered',
       call_offer_count: 0,
-      awaiting_reply: 'none',
+      awaiting_reply: 'none', payment_reported: false,
     },
     catalog: {
       selected_offering: {

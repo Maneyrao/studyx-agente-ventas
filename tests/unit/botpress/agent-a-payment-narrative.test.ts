@@ -19,7 +19,7 @@ function context(): AgentAContextV1 {
     commercial_state: {
       selected_offering_code: OFFERING, selected_payment_plan: null,
       stage: 'course_selected', call_preference: 'chat', call_offer_status: 'declined',
-      call_offer_count: 1, awaiting_reply: 'payment_plan',
+      call_offer_count: 1, awaiting_reply: 'payment_plan', payment_reported: false,
     },
     catalog: {
       selected_offering: {
