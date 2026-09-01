@@ -1,5 +1,6 @@
 import { z } from '@botpress/runtime';
 import { ConversationMoveV1Schema } from './conversation-pipeline';
+import { TurnRejectionV1Schema } from './turn-rejection';
 
 const PaymentPlanSchema = z.enum(['monthly_12', 'monthly_6', 'one_time']);
 const MemoryTypeSchema = z.enum([
@@ -98,6 +99,11 @@ export const AgentAContextV1Schema = z.object({
       label: z.string().trim().min(1).max(240),
     }).strict()).max(3),
   }).strict(),
+  /**
+   * Presente SÓLO en la llamada de reparación. Lleva códigos y
+   * alternativas, nunca prosa: el backend no redacta (A3/A4).
+   */
+  turn_rejection: TurnRejectionV1Schema.optional(),
   capabilities: z.object({
     may_reply: z.boolean(),
     may_offer_call: z.boolean(),

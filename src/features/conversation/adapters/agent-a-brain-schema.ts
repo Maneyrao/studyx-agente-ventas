@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { TurnRejectionV1Schema } from './turn-rejection-schema';
 import {
   AGENT_A_FACT_KINDS_V1,
   AGENT_A_MEMORY_TYPES_V1,
@@ -86,6 +87,11 @@ export const AgentAContextV1Schema = z.object({
       label: z.string().trim().min(1).max(240),
     }).strict()).max(3),
   }).strict(),
+  /**
+   * Presente SÓLO en la llamada de reparación. Lleva códigos y
+   * alternativas, nunca prosa: el backend no redacta (A3/A4).
+   */
+  turn_rejection: TurnRejectionV1Schema.optional(),
   capabilities: z.object({
     may_reply: z.boolean(),
     may_offer_call: z.boolean(),

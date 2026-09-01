@@ -1091,10 +1091,10 @@ export function validateAgentATurnProposalV1(input: {
     if (input.context.commercial_state.selected_payment_plan === null) {
       rejections.push({ code: 'PLAN_NOT_SELECTED', subject: 'payment_plan' })
     }
-    if (input.context.capabilities.intake_missing.length > 0) {
-      for (const field of input.context.capabilities.intake_missing) {
-        rejections.push({ code: 'MISSING_INTAKE', subject: field })
-      }
+    // `?? []`: un contexto construido a mano —tests, replay— no pasó por el
+    // default del schema. El validador no puede asumir que Zod ya corrió.
+    for (const field of input.context.capabilities.intake_missing ?? []) {
+      rejections.push({ code: 'MISSING_INTAKE', subject: field })
     }
   }
   if (action.type === 'request_call_now' && !input.context.capabilities.may_request_call_now) {
@@ -1127,7 +1127,7 @@ export function validateAgentATurnProposalV1(input: {
     authorized_alternatives: {
       fact_ids: [...planned],
       actions: authorizedActionsV1(input.context),
-      missing_information: [...input.context.capabilities.intake_missing],
+      missing_information: [...(input.context.capabilities.intake_missing ?? [])],
     },
   }
 }

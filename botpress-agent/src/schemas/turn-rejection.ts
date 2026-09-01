@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import { z } from '@botpress/runtime'
 
 /**
  * Espejo de `src/features/conversation/domain/turn-rejection.ts`.

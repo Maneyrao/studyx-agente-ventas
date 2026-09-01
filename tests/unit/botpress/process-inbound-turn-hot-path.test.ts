@@ -57,6 +57,11 @@ vi.mock('../../../botpress-agent/src/lib/conversation/conversation-interpreter',
   generateGroqConversationMoveV1: actionSpies.conversationInterpreter,
 }));
 vi.mock('../../../botpress-agent/src/lib/conversation/agent-a-brain', () => ({
+  // La validación real vive en su propio test. Acá se neutraliza para que
+  // estos casos midan el ruteo de proveedores, que es lo que afirman: un
+  // rechazo real convertiría cada caso en una prueba de la escalera.
+  validateAgentATurnProposalV1: () => null,
+  decideRepairLevelV1: () => ({ level: 'N1' as const, messages: [] as string[] }),
   generateAgentATurnProposalV1: actionSpies.agentABrain,
   generateDeepSeekAgentATurnProposalV1: actionSpies.agentABrainDeepSeek,
   generateOpenAIAgentATurnProposalV1: actionSpies.agentABrainOpenAI,

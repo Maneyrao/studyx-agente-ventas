@@ -563,6 +563,7 @@ export const ClaimedTurnSchema = z.object({
     agent_a_brain_v1_enabled: z.boolean().optional(),
     agent_a_brain_v1_shadow: z.boolean().optional(),
     agent_a_context_scoping: z.boolean().optional(),
+    agent_a_repair_enabled: z.boolean().optional(),
   }).strict().optional(),
   conversation_state_v1: z.object({
     selected_offering_code: z.string().min(1).nullable(),
