@@ -211,6 +211,9 @@ export type ConversationCase = {
     min_ready_memory_embeddings?: number;
     /** Expected durable lead rows in the local Sheets outbox. */
     sheet_rows?: number;
+    /** The operator row's `estado_pago`. A reported payment is a claim, so the
+     *  only value a conversational turn may produce is the reported one. */
+    expected_sheet_payment_state?: string;
     /** Sensitive values that must not survive in memories or operator rows. */
     forbidden_persistence_values?: string[];
     /** Objective copy constraints evaluated against each assistant turn, not
@@ -1235,6 +1238,7 @@ const KNOWN_IDEAL_RESULT_KEYS = new Set([
   'min_active_memories',
   'min_ready_memory_embeddings',
   'sheet_rows',
+  'expected_sheet_payment_state',
   'forbidden_persistence_values',
   'turn_assertions',
   'expected_response_count_by_turn',

@@ -20,6 +20,7 @@
         "Me interesa la formación de Redes Informáticas",
         "¿Cuánto sale?",
         "Elijo el pago único y mandame el link",
+        "Soy Ariana Paz, base-01-reopen-after-link-{{run_id}}@example.test",
         "Buenas tardes"
       ],
       "ideal_result": {
@@ -46,6 +47,7 @@
         "Quiero saber sobre Redes Informáticas",
         "¿Qué opciones de pago tienen?",
         "Mandame el link del pago único",
+        "Soy Bruno Salas, base-02-link-is-payment-{{run_id}}@example.test",
         "¿Ese link que enviaste es el del pago?"
       ],
       "ideal_result": {
@@ -282,11 +284,14 @@
         "Me interesa Coaching y Liderazgo",
         "¿Cuánto es?",
         "Pasame el link del pago único",
+        "Soy Lucas Ibarra, base-12-paid-{{run_id}}@example.test",
         "Ya pagué"
       ],
       "ideal_result": {
         "no_technical_fallback": true,
-        "payment_link_count": 1
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "expected_sheet_payment_state": "reportado_por_cliente"
       }
     },
     {
@@ -310,6 +315,193 @@
       ],
       "ideal_result": {
         "force_provider_failure_on_turn": 3
+      }
+    },
+    {
+      "id": "base_14_intake_gate",
+      "name": "El link espera a los seis datos",
+      "course": "Redes Informáticas",
+      "persona": {
+        "segment": "intake",
+        "goal": "completar_datos"
+      },
+      "customer": {
+        "first_name": "Nadia",
+        "last_name": "Ferrer",
+        "email": "base-14-intake-gate-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Me interesa Redes Informáticas",
+        "¿Cuánto sale?",
+        "Elijo las 12 cuotas y mandame el link",
+        "Soy Nadia Ferrer",
+        "Mi correo es base-14-intake-gate-{{run_id}}@example.test"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "no_payment_link_before_turn": 5,
+        "payment_link_count": 1,
+        "expected_interest": "Redes Informáticas"
+      }
+    },
+    {
+      "id": "base_15_minimal_flow",
+      "name": "Flujo mínimo completo hasta la fila operativa",
+      "course": "Coaching y Liderazgo",
+      "persona": {
+        "segment": "flujo_minimo",
+        "goal": "cerrar_y_reportar"
+      },
+      "customer": {
+        "first_name": "Tomás",
+        "last_name": "Quiroga",
+        "email": "base-15-minimal-flow-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Quiero Coaching y Liderazgo",
+        "¿Qué formas de pago hay?",
+        "Me quedo con las 6 cuotas",
+        "Soy Tomás Quiroga, base-15-minimal-flow-{{run_id}}@example.test",
+        "Dale, mandame el link",
+        "Listo, ya lo pagué"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "payment_link_count": 1,
+        "plan_code": "monthly_6",
+        "sheet_rows": 1,
+        "expected_sheet_payment_state": "reportado_por_cliente",
+        "expected_sheet_interest": "Coaching y Liderazgo"
+      }
+    },
+    {
+      "id": "base_16_repeated_report",
+      "name": "Repetir que pagó no repite la fila",
+      "course": "Redes Informáticas",
+      "persona": {
+        "segment": "insistente_pago",
+        "goal": "reconfirmar_pago"
+      },
+      "customer": {
+        "first_name": "Vera",
+        "last_name": "Andrade",
+        "email": "base-16-repeated-report-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Me interesa Redes Informáticas",
+        "Soy Vera Andrade, base-16-repeated-report-{{run_id}}@example.test",
+        "Quiero el pago único, pasame el link",
+        "Ya hice el pago",
+        "Te confirmo de nuevo que ya lo pagué",
+        "¿Quedó todo bien?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "payment_link_count": 1,
+        "sheet_rows": 1,
+        "expected_sheet_payment_state": "reportado_por_cliente"
+      }
+    },
+    {
+      "id": "base_17_report_without_link",
+      "name": "Dice que pagó sin haber recibido link",
+      "course": "Diplomado en Barista",
+      "persona": {
+        "segment": "pago_sin_link",
+        "goal": "reclamar_sin_evidencia"
+      },
+      "customer": {
+        "first_name": "Elsa",
+        "last_name": "Moreno",
+        "email": "base-17-report-without-link-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Quiero el Diplomado en Barista",
+        "Ya pagué el curso",
+        "¿Entonces ya estoy inscripta?",
+        "¿Qué necesitás de mí?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "payment_link_count": 0,
+        "sheet_rows": 0
+      }
+    },
+    {
+      "id": "base_18_which_plan_given",
+      "name": "Pregunta qué plan quedó elegido",
+      "course": "Reparación de Celulares",
+      "persona": {
+        "segment": "consulta_estado",
+        "goal": "confirmar_plan"
+      },
+      "customer": {
+        "first_name": "Iván",
+        "last_name": "Rearte",
+        "email": "base-18-which-plan-given-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Me interesa Reparación de Celulares",
+        "¿Cuáles son las formas de pago?",
+        "Elijo las 6 cuotas",
+        "¿Cuál fue el plan que quedó?",
+        "Perfecto, gracias"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "payment_link_count": 0,
+        "plan_code": "monthly_6"
+      }
+    },
+    {
+      "id": "base_19_call_budget",
+      "name": "El presupuesto de llamadas no se excede",
+      "course": "Publicidad en Redes Sociales",
+      "persona": {
+        "segment": "presupuesto_llamada",
+        "goal": "evitar_llamadas"
+      },
+      "customer": {
+        "first_name": "Rocío",
+        "last_name": "Bustos",
+        "email": "base-19-call-budget-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Quiero Publicidad en Redes Sociales",
+        "No quiero que me llamen",
+        "¿Qué incluye la formación?",
+        "¿Y cuánto dura?",
+        "¿Cuánto sale?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "no_call_after_turn": 2,
+        "expected_interest": "Publicidad en Redes Sociales"
+      }
+    },
+    {
+      "id": "base_20_withholds_data",
+      "name": "No quiere dar datos y no recibe promesas",
+      "course": "Redes Informáticas",
+      "persona": {
+        "segment": "reticente_datos",
+        "goal": "comprar_sin_datos"
+      },
+      "customer": {
+        "first_name": "Gonzalo",
+        "last_name": "Vera",
+        "email": "base-20-withholds-data-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Me interesa Redes Informáticas",
+        "Quiero el pago único, mandame el link ya",
+        "No te voy a dar mis datos",
+        "¿Igual me podés anotar?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "payment_link_count": 0,
+        "sheet_rows": 0
       }
     }
   ]

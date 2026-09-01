@@ -1136,6 +1136,9 @@ async function main() {
         nombre: string | null;
         apellido: string | null;
         email: string | null;
+        telefono: string | null;
+        estado_pago: string | null;
+        ultima_senal: string | null;
       }>>`
         SELECT
           payload->>'plan' AS plan,
@@ -1143,7 +1146,10 @@ async function main() {
           state,
           payload->>'nombre' AS nombre,
           payload->>'apellido' AS apellido,
-          payload->>'email' AS email
+          payload->>'email' AS email,
+          payload->>'telefono' AS telefono,
+          payload->>'estado_pago' AS estado_pago,
+          payload->>'ultima_senal' AS ultima_senal
         FROM sheet_projection_rows
         WHERE projection_key LIKE ${`%:${identity.contact_id}`}
         ORDER BY created_at ASC
@@ -1238,6 +1244,9 @@ async function main() {
         nombre: row.nombre ?? '',
         apellido: row.apellido ?? '',
         email: row.email ?? '',
+        telefono: row.telefono ?? '',
+        estadoPago: row.estado_pago ?? '',
+        ultimaSenal: row.ultima_senal ?? '',
       })),
       promptVersions: versions.map((item) => item.prompt_version),
       runScope: {

@@ -7,6 +7,9 @@ export type SheetEvidence = {
   nombre: string;
   apellido: string;
   email: string;
+  telefono: string;
+  estadoPago: string;
+  ultimaSenal: string;
 };
 
 export type PersistenceEvidence = {
@@ -230,6 +233,23 @@ export function evaluatePersistenceEvidence(
       normalized(row.courseInterest).includes(normalized(expectedSheetInterest)),
     );
     if (!courseProjected) failures.push('sheet_course_interest_missing');
+  }
+  // The operator row exists because a customer SAID they paid. Nothing in
+  // this path can verify that money arrived, so no row may claim it did.
+  for (const row of evidence.sheetRows) {
+    if (/verificad|acreditad|confirmad|pagado/iu.test(`${row.estadoPago} ${row.ultimaSenal}`)) {
+      failures.push(`sheet_row_claims_verified_payment:${row.estadoPago}`);
+    }
+    if (row.telefono.trim().length === 0) failures.push('sheet_row_missing_telefono');
+  }
+  const expectedPaymentState = typeof expected.expected_sheet_payment_state === 'string'
+    ? expected.expected_sheet_payment_state
+    : null;
+  if (expectedPaymentState !== null) {
+    const matches = evidence.sheetRows.every((row) => row.estadoPago === expectedPaymentState);
+    if (evidence.sheetRows.length === 0 || !matches) {
+      failures.push(`sheet_payment_state_mismatch:${expectedPaymentState}`);
+    }
   }
   if (evidence.technicalFallbacks > 0) failures.push('technical_fallback_persisted');
 

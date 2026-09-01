@@ -44,6 +44,9 @@ function completeEvidence() {
       nombre: 'Bruno',
       apellido: 'Aguilar',
       email: `bruno.real_01+${RUN_ID}@example.com`,
+      telefono: '+5491100000001',
+      estadoPago: 'reportado_por_cliente',
+      ultimaSenal: 'payment_reported',
     }],
     promptVersions: ['studyx-agent-a-sales-v11'],
     technicalFallbacks: 0,
@@ -235,6 +238,9 @@ describe('Agent A durable conversation evidence', () => {
         nombre: '',
         apellido: '',
         email: '',
+        telefono: '+5491100000001',
+        estadoPago: 'reportado_por_cliente',
+        ultimaSenal: 'payment_reported',
       }],
     };
     const result = evaluatePersistenceEvidence(buyerCase(), evidence, { runId: RUN_ID });
