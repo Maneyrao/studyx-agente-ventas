@@ -105,6 +105,11 @@ export const AgentAContextV1Schema = z.object({
     may_present_payment_options: z.boolean(),
     may_send_payment_link: z.boolean(),
     authorized_payment_plan: PaymentPlanSchema.nullable(),
+    // Nombres de campo, nunca valores. El modelo necesita saber qué
+    // falta para poder pedirlo; no necesita el nombre, el correo ni el
+    // teléfono del cliente, y no los recibe.
+    intake_missing: z.array(z.enum(['nombre', 'apellido', 'correo', 'telefono']))
+      .default([]),
   }).strict(),
 }).strict();
 

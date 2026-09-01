@@ -49,6 +49,7 @@ function context(memoryValue = 'busca salida laboral'): AgentAContextV1 {
       may_present_payment_options: true,
       may_send_payment_link: false,
       authorized_payment_plan: null,
+      intake_missing: [],
     },
   };
 }

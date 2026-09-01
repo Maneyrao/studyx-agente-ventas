@@ -25,6 +25,7 @@ function claimedTurn(): ClaimedTurn {
     },
     turn_id: UUID,
     policy: { may_respond: true, allowed_response_types: ['commercial_reply'], reason: null },
+    contact_intake_missing: [],
     contact: {
       id: UUID,
       status: 'prospecto',

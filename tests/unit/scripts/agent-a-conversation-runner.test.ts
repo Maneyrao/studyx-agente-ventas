@@ -50,6 +50,7 @@ function localIngestResponse() {
       message_count: 1,
     },
     policy: { may_respond: true, allowed_response_types: ['social_reply'], reason: null },
+    contact_intake_missing: [],
     contact: {
       id: LOCAL_TRANSPORT_UUID,
       status: 'prospecto',
@@ -77,6 +78,7 @@ function localClaimedTurn(): ClaimedTurn {
     },
     turn_id: LOCAL_TRANSPORT_UUID,
     policy: { may_respond: true, allowed_response_types: ['social_reply'], reason: null },
+    contact_intake_missing: [],
     contact: {
       id: LOCAL_TRANSPORT_UUID,
       status: 'prospecto',

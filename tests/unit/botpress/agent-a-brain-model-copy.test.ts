@@ -29,6 +29,7 @@ function context(): AgentAContextV1 {
       may_reply: true, may_offer_call: false, may_request_call_now: false,
       may_present_payment_options: true, may_send_payment_link: true,
       authorized_payment_plan: 'monthly_12',
+      intake_missing: [],
     },
   };
 }

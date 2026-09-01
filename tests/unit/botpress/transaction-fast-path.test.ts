@@ -20,6 +20,7 @@ function claimed(text: string, overrides: { name?: string | null; prices?: boole
       message_count: 1, stolen: false },
     turn_id: UUID,
     policy: { may_respond: true, allowed_response_types: ['commercial_reply', 'clarification', 'technical_fallback'], reason: null },
+    contact_intake_missing: [],
     contact: { id: UUID, status: 'prospecto', name: overrides.name ?? null, blocked: false,
       consent_status: 'allowed', opted_in_at: '2026-08-12T00:00:00.000Z' },
     context: { batch_messages: [{ id: UUID, conversation_seq: 1, content: text,

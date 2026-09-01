@@ -389,6 +389,12 @@ export function buildAgentAContextV1(
         && selectedCode !== null
         && selectedPlan !== null,
       authorized_payment_plan: selectedPlan,
+      // R1: conducta nueva, apagada por defecto. Con el flag apagado la
+      // lista queda vacía y el modelo deduce qué falta como hasta ahora,
+      // que es exactamente el comportamiento anterior.
+      intake_missing: claimed.features?.agent_a_context_scoping === true
+        ? claimed.contact_intake_missing ?? []
+        : [],
     },
   });
 }

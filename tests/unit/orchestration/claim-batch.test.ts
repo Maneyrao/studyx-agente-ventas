@@ -121,6 +121,7 @@ function buildDeps(options: {
   memory?: ClaimBatchDependencies['memory'];
   knowledge?: ClaimBatchDependencies['knowledge'];
   now?: () => string;
+  contactIntake?: ClaimBatchDependencies['contactIntake'];
 } = {}): ClaimBatchDependencies & { store: OrchestrationStore } {
   const messages = options.messagesResult ?? [
     { id: 'm1', conversation_seq: 1, content: 'hola', created_at: '2026-08-11T12:00:00.000Z', message_type: 'text' },
@@ -152,6 +153,11 @@ function buildDeps(options: {
     knowledge: options.knowledge ?? { search: vi.fn().mockResolvedValue([]) },
     limits: DEFAULT_CONTEXT_LIMITS,
     now: options.now,
+    // Inyectado para que un test unitario no necesite una conexión: el
+    // repositorio real construye el cliente de base al cargarse.
+    contactIntake: options.contactIntake ?? (async () => ({
+      nombre: null, apellido: null, correo: null, telefono: null,
+    })),
   } as ClaimBatchDependencies & { store: OrchestrationStore };
 }
 

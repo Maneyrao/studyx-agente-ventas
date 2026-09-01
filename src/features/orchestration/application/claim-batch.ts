@@ -2,7 +2,12 @@ import { evaluateTurnPolicy, type TurnPolicy } from '../domain/turn-policy';
 import type { BusinessContextView, CatalogIndexView } from '../domain/business-context';
 import type { SalesContextState } from '@/features/sales/domain/sales-context';
 import type { ConversationStateV1 } from '@/features/conversation/domain/conversation-pipeline';
-import { effectiveConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
+import {
+  effectiveConversationStateV1,
+  missingContactIntakeFieldsV1,
+  type ContactIntakeFieldV1,
+  type ContactIntakeV1,
+} from '@/features/conversation/domain/conversation-planner';
 import { loadConversationSessionConfig } from '@/lib/config';
 import {
   isCatalogRequestNeutral,
@@ -80,6 +85,9 @@ export interface ClaimBatchDependencies {
   readonly conversationPipelineEnabled?: boolean;
   /** Independent Agent A brain rollout controls. They are mutually exclusive at config load. */
   readonly agentABrainEnabled?: boolean;
+  readonly agentAContextScoping?: boolean;
+  /** Inyectable para test; por defecto lee `contacts` con el cliente compartido. */
+  readonly contactIntake?: (contactId: string) => Promise<ContactIntakeV1>;
   readonly agentABrainShadow?: boolean;
 }
 
@@ -159,6 +167,11 @@ export interface ClaimedTurn {
   };
   readonly turn_id: string;
   readonly policy: TurnPolicy;
+  /**
+   * Qué falta del intake de cuatro campos. Viajan NOMBRES, nunca valores:
+   * el modelo necesita saber qué pedir, no quién es el cliente.
+   */
+  readonly contact_intake_missing: readonly ContactIntakeFieldV1[];
   readonly contact: {
     readonly id: string;
     readonly status: 'prospecto' | 'cliente' | 'inactivo';
@@ -185,6 +198,7 @@ export interface ClaimedTurn {
   readonly features: {
     readonly conversation_pipeline_v1_enabled: boolean;
     readonly agent_a_brain_v1_enabled: boolean;
+    readonly agent_a_context_scoping: boolean;
     readonly agent_a_brain_v1_shadow: boolean;
   };
   readonly conversation_state_v1: Pick<
@@ -935,6 +949,17 @@ export async function claimBatch(
     catalog_resolution: catalog_resolution.kind,
   });
 
+  // Se computa en el backend y sólo cruza la lista de nombres. Calcularlo
+  // del lado del modelo exigiría mandarle el correo y el teléfono, que es
+  // exactamente la PII que no debe entrar al prompt.
+  // Import perezoso: el repositorio construye el cliente de base al cargarse,
+  // y este módulo tiene tests unitarios que no deben necesitar una conexión.
+  const readIntake = deps.contactIntake
+    ?? (await import('@/lib/repositories/contact-intake.repository')).loadContactIntakeV1;
+  const contactIntakeMissing = missingContactIntakeFieldsV1(
+    await readIntake(facts.contact.id),
+  );
+
   return {
     outcome: 'claimed',
     trace_id: input.trace_id,
@@ -950,6 +975,7 @@ export async function claimBatch(
     },
     turn_id: facts.representative_turn_id,
     policy,
+    contact_intake_missing: contactIntakeMissing,
     contact: {
       id: facts.contact.id,
       status: facts.contact.status,
@@ -974,6 +1000,7 @@ export async function claimBatch(
     features: {
       conversation_pipeline_v1_enabled: deps.conversationPipelineEnabled === true,
       agent_a_brain_v1_enabled: deps.agentABrainEnabled === true,
+      agent_a_context_scoping: deps.agentAContextScoping === true,
       agent_a_brain_v1_shadow: deps.agentABrainShadow === true,
     },
     conversation_state_v1: conversationStateV1,
