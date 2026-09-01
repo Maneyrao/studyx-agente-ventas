@@ -90,6 +90,10 @@ const namedSuites: Readonly<Record<string, string>> = {
     botpressDir,
     'evals/personas/studyx-agent-a-brain-v1-heldout.json',
   ),
+  'studyx-agent-a-conversational-baseline': path.join(
+    botpressDir,
+    'evals/personas/studyx-agent-a-conversational-baseline.json',
+  ),
 };
 
 function argument(name: string): string | null {
@@ -488,7 +492,10 @@ export function createLocalTurnSender(
     let brainTransportRetries = 0;
     let modelTokenUsage: NonNullable<AgentChatResult['runtime']>['token_usage'];
     let modelAttemptCount: number | undefined;
-    const brainContext = buildAgentAContextV1(claimed);
+    const brainContext = buildAgentAContextV1(
+      claimed,
+      process.env.AGENT_A_ADVISOR_NAME?.trim() || null,
+    );
     const brainAuthoritative = claimed.features?.agent_a_brain_v1_enabled === true;
     const brainEligible = brainAuthoritative
       && claimed.deterministic_route === null

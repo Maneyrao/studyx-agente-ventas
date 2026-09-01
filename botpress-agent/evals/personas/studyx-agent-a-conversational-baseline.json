@@ -1,0 +1,315 @@
+{
+  "schema_version": 1,
+  "prompt_version": "studyx-agent-a-brain-v3",
+  "suite": "studyx-agent-a-conversational-baseline",
+  "cases": [
+    {
+      "id": "base_01_reopen_after_link",
+      "name": "Saludo de reapertura tras link enviado",
+      "course": "Redes Informáticas",
+      "persona": {
+        "segment": "reapertura",
+        "goal": "retomar_tras_pausa"
+      },
+      "customer": {
+        "first_name": "Ariana",
+        "last_name": "Paz",
+        "email": "base-01-reopen-after-link-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Me interesa la formación de Redes Informáticas",
+        "¿Cuánto sale?",
+        "Dale, mandame el link para pagar",
+        "Buenas tardes"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "expected_interest": "Redes Informáticas",
+        "payment_link_count": 1
+      }
+    },
+    {
+      "id": "base_02_link_is_payment",
+      "name": "Pregunta si el link enviado es el de pago",
+      "course": "Redes Informáticas",
+      "persona": {
+        "segment": "verificador",
+        "goal": "confirmar_link"
+      },
+      "customer": {
+        "first_name": "Bruno",
+        "last_name": "Salas",
+        "email": "base-02-link-is-payment-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Quiero saber sobre Redes Informáticas",
+        "¿Qué opciones de pago tienen?",
+        "Mandame el link del pago único",
+        "¿Ese link que enviaste es el del pago?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "payment_link_count": 1
+      }
+    },
+    {
+      "id": "base_03_ack_sent",
+      "name": "Cliente afirma haber pasado algo",
+      "course": "Redes Informáticas",
+      "persona": {
+        "segment": "comprobante",
+        "goal": "confirmar_envio"
+      },
+      "customer": {
+        "first_name": "Carla",
+        "last_name": "Nieva",
+        "email": "base-03-ack-sent-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Me interesa Redes Informáticas",
+        "Contame las formas de pago",
+        "Elijo las 12 cuotas",
+        "Acá te lo pasé"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "must_not_echo": "Revisá el mensaje anterior"
+      }
+    },
+    {
+      "id": "base_04_which_payment",
+      "name": "Pregunta qué pago le están dando",
+      "course": "Coaching y Liderazgo",
+      "persona": {
+        "segment": "aclaracion_plan",
+        "goal": "entender_plan_elegido"
+      },
+      "customer": {
+        "first_name": "Diego",
+        "last_name": "Rold",
+        "email": "base-04-which-payment-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Me interesa Coaching y Liderazgo",
+        "¿Cuánto cuesta?",
+        "Me quedo con las 6 cuotas",
+        "¿Qué pago me estás dando?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "base_05_prefers_chat",
+      "name": "Elige chat y espera respuesta pendiente",
+      "course": "Barista",
+      "persona": {
+        "segment": "prefiere_chat",
+        "goal": "seguir_por_escrito"
+      },
+      "customer": {
+        "first_name": "Elena",
+        "last_name": "Vidal",
+        "email": "base-05-prefers-chat-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Quiero información del Diplomado en Barista",
+        "Prefiero seguir por chat",
+        "¿Cuánto dura la formación?",
+        "¿Y qué necesito para arrancar?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "no_call_after_turn": 2,
+        "expected_interest": "Diplomado en Barista"
+      }
+    },
+    {
+      "id": "base_06_repeat_price",
+      "name": "Dos consultas de precio con distinta redacción",
+      "course": "Reparación de Celulares",
+      "persona": {
+        "segment": "repregunta",
+        "goal": "confirmar_precio"
+      },
+      "customer": {
+        "first_name": "Fabio",
+        "last_name": "Ortiz",
+        "email": "base-06-repeat-price-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Me interesa Reparación de Celulares",
+        "¿Cuánto sale el curso?",
+        "Perdón, ¿me repetís el valor?",
+        "Gracias, lo pienso"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "base_07_price_before_info",
+      "name": "Precio pedido antes de la presentación",
+      "course": "Publicidad en Redes Sociales",
+      "persona": {
+        "segment": "impaciente",
+        "goal": "precio_primero"
+      },
+      "customer": {
+        "first_name": "Gabriela",
+        "last_name": "Sosa",
+        "email": "base-07-price-before-info-{{run_id}}@example.test"
+      },
+      "turns": [
+        "¿Cuánto sale?",
+        "El de Publicidad en Redes Sociales",
+        "Bueno, contame cómo es",
+        "¿Y el precio final cuál es?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "base_08_expensive",
+      "name": "Objeción de precio",
+      "course": "Redes Informáticas",
+      "persona": {
+        "segment": "objecion_precio",
+        "goal": "buscar_menor_cuota"
+      },
+      "customer": {
+        "first_name": "Hugo",
+        "last_name": "Ferrari",
+        "email": "base-08-expensive-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Quiero ver Redes Informáticas",
+        "¿Qué precio tiene?",
+        "Es caro para mí",
+        "¿La cuota más baja cuál sería?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "base_09_transfer",
+      "name": "Pide un medio de pago no autorizado",
+      "course": "Barista",
+      "persona": {
+        "segment": "medio_alternativo",
+        "goal": "pagar_por_transferencia"
+      },
+      "customer": {
+        "first_name": "Irene",
+        "last_name": "Lugo",
+        "email": "base-09-transfer-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Me interesa el curso de Barista",
+        "¿Cuáles son las opciones de pago?",
+        "¿Me lo podés cobrar por transferencia?",
+        "Entonces, ¿qué alternativas tengo?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "must_not_echo": "transferencia bancaria"
+      }
+    },
+    {
+      "id": "base_10_prerequisites",
+      "name": "Consulta por requisitos previos",
+      "course": "Redes Informáticas",
+      "persona": {
+        "segment": "desde_cero",
+        "goal": "saber_si_puede"
+      },
+      "customer": {
+        "first_name": "Julian",
+        "last_name": "Bravo",
+        "email": "base-10-prerequisites-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Estoy viendo Redes Informáticas",
+        "¿Tengo que saber algo antes de empezar?",
+        "Nunca estudié nada de esto",
+        "¿Y cuánto dura?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true
+      }
+    },
+    {
+      "id": "base_11_change_course",
+      "name": "Cambia de curso a mitad de conversación",
+      "course": "Redes Informáticas",
+      "persona": {
+        "segment": "indeciso",
+        "goal": "comparar_dos_cursos"
+      },
+      "customer": {
+        "first_name": "Karina",
+        "last_name": "Mota",
+        "email": "base-11-change-course-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Quiero el de Barista",
+        "Mejor el de Redes Informáticas",
+        "¿Qué se aprende ahí?",
+        "¿Cuánto sale ese?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "expected_interest": "Redes Informáticas"
+      }
+    },
+    {
+      "id": "base_12_paid",
+      "name": "Avisa que ya pagó",
+      "course": "Coaching y Liderazgo",
+      "persona": {
+        "segment": "post_pago",
+        "goal": "confirmar_pago"
+      },
+      "customer": {
+        "first_name": "Lucas",
+        "last_name": "Ibarra",
+        "email": "base-12-paid-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Me interesa Coaching y Liderazgo",
+        "¿Cuánto es?",
+        "Pasame el link del pago único",
+        "Ya pagué"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "payment_link_count": 1
+      }
+    },
+    {
+      "id": "fail_13_provider_down",
+      "name": "Caída del proveedor en pleno turno",
+      "course": "Redes Informáticas",
+      "persona": {
+        "segment": "incidente_proveedor",
+        "goal": "verificar_degradacion"
+      },
+      "customer": {
+        "first_name": "Mora",
+        "last_name": "Quintana",
+        "email": "fail-13-provider-down-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Quiero conocer Redes Informáticas",
+        "¿Qué incluye la formación?",
+        "¿Cuánto sale?",
+        "¿Seguís ahí?"
+      ],
+      "ideal_result": {
+        "force_provider_failure_on_turn": 3
+      }
+    }
+  ]
+}

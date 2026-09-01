@@ -545,6 +545,7 @@ export function assertSuitePromptVersion(suiteVersion: string, expectedVersion: 
 const AGENT_A_BRAIN_SUITE_NAMES = new Set([
   'studyx-agent-a-brain-v1-heldout',
   'studyx-agent-a-historical-20',
+  'studyx-agent-a-conversational-baseline',
 ]);
 
 export function expectedPromptVersionForSuite(suiteName: string): string {
