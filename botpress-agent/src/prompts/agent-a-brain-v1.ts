@@ -3,6 +3,7 @@ import {
   STUDYX_AGENT_A_CANONICAL_PROMPT,
   STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION,
 } from './studyx-agent-a-canonical.generated';
+import { loadAgentAIdentityV1, resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
 export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v3' as const;
 
@@ -35,11 +36,25 @@ function inertJson(value: unknown): string {
     .replaceAll('&', '\\u0026');
 }
 
-export function buildAgentABrainInstructionsV1(context: AgentAContextV1): string {
+/**
+ * The canonical behavior is never summarized or rewritten. Its identity slots
+ * are the one thing configuration owns, so they are resolved here; every other
+ * `{{ }}` stays a slot the model fills from authorized_context. With no
+ * identity configured the canonical text ships verbatim and the preamble's
+ * "never echo an unresolved placeholder" rule remains the only guard.
+ */
+export function buildAgentABrainInstructionsV1(
+  context: AgentAContextV1,
+  environment: Record<string, string | undefined> = process.env,
+): string {
+  const identity = loadAgentAIdentityV1(environment);
+  const canonicalPrompt = identity === null
+    ? STUDYX_AGENT_A_CANONICAL_PROMPT
+    : resolveCanonicalPromptIdentityV1(STUDYX_AGENT_A_CANONICAL_PROMPT, identity).prompt;
   return `${EXECUTION_PREAMBLE}
 
 <canonical_sales_behavior version="${STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION}">
-${STUDYX_AGENT_A_CANONICAL_PROMPT}</canonical_sales_behavior>
+${canonicalPrompt}</canonical_sales_behavior>
 
 <authorized_context>
 ${inertJson(context)}

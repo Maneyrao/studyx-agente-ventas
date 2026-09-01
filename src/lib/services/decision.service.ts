@@ -310,6 +310,30 @@ function decisionPayload(input: CommitDecisionInput) {
   };
 }
 
+/**
+ * Drops every paragraph carrying a URL and keeps the rest of the prose intact.
+ * Used where an answer is authorized but a link is not: the canonical link is
+ * its own paragraph, so removing it leaves the reply readable instead of
+ * leaving a dangling label or an unauthorized URL for the egress guard.
+ */
+function paragraphsWithoutUrls(text: string): {
+  readonly text: string;
+  readonly removed_urls: readonly string[];
+} {
+  const removed: string[] = [];
+  const kept = text
+    .split(/\n{2,}/u)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => {
+      if (paragraph.length === 0) return false;
+      const urls = paragraph.match(/https?:\/\/\S+/giu);
+      if (urls === null) return true;
+      removed.push(...urls);
+      return false;
+    });
+  return { text: kept.join('\n\n'), removed_urls: removed };
+}
+
 function egressPolicyError(reason: string): DecisionPolicyError {
   return new DecisionPolicyError(`EGRESS_${reason}`);
 }
@@ -623,9 +647,17 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       `;
 
       if (priorPaymentLinks.length > 0) {
-        // Cross-turn idempotency: acknowledge the existing proposal without
-        // emitting a second Stripe URL or a second payment_link_sent signal.
-        finalResponse = 'Entiendo. Revisá el mensaje anterior. Si necesitás ayuda, avisame y lo revisamos.';
+        // Cross-turn idempotency governs the ACTION, not the answer: no second
+        // Stripe URL, no second payment_link_sent signal, no second projection.
+        // The question the customer actually asked still deserves the reply
+        // written for it, so the authored copy survives with the link removed
+        // from it. Replacing it wholesale is what made every follow-up about an
+        // existing link receive the same sentence, answering none of them.
+        const withoutLink = paragraphsWithoutUrls(materialized.response_text);
+        finalResponse = withoutLink.text.length > 0
+          ? withoutLink.text
+          : 'Sí, ese es el link de pago que te compartí y sigue activo. No hace falta que te mande otro.';
+        paymentLinkStrippedUrls = [...materialized.stripped_urls, ...withoutLink.removed_urls];
         committedBusinessAction = null;
       } else if (preparedPipeline) {
         finalResponse = assembleMaterializedPaymentResponse(materialized);

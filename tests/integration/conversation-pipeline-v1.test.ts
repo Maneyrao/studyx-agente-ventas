@@ -428,4 +428,44 @@ run('conversation pipeline V1 vertical', () => {
       status: 'pending',
     }]);
   });
+
+  // Continues the conversation left by the journey above, whose monthly_12 link
+  // was already sent. Production answered every follow-up about that link with
+  // one fixed sentence that did not address the question.
+  it('answers a question about an already sent link in context without emitting a second one', async () => {
+    const followUp = await commitTurn(
+      '¿Ese link que enviaste es el del pago?',
+      move('request_payment_link'),
+      {
+        schema_version: 1,
+        narrative: {
+          opening: 'Sí, ese mismo es el link para pagar la inscripción.',
+          explanation: 'No hace falta que te mande otro, ese sigue activo.',
+          next_question: '¿Querés que te acompañe mientras lo completás?',
+        },
+        used_fact_ids: [],
+      },
+    );
+
+    const content = followUp.committed.outbound?.content ?? '';
+    expect(content).toContain('Sí, ese mismo es el link para pagar la inscripción.');
+    expect(content).not.toContain('Revisá el mensaje anterior');
+    expect(content).not.toContain(paymentLinks.monthly_12);
+
+    const rows = await db!<Array<{ links: number; projection_jobs: number; payment_actions: number }>>`
+      SELECT
+        (SELECT count(*)::integer FROM messages
+         WHERE conversation_id = ${followUp.claimed.batch.conversation_id}::uuid
+           AND direction = 'outbound' AND content LIKE ${`%${paymentLinks.monthly_12}%`}) AS links,
+        (SELECT count(*)::integer FROM payment_projection_jobs job
+         JOIN agent_decisions ad ON ad.id = job.decision_id
+         JOIN messages m ON m.id = ad.turn_id
+         WHERE m.conversation_id = ${followUp.claimed.batch.conversation_id}::uuid) AS projection_jobs,
+        (SELECT count(*)::integer FROM agent_decisions ad
+         JOIN messages m ON m.id = ad.turn_id
+         WHERE m.conversation_id = ${followUp.claimed.batch.conversation_id}::uuid
+           AND ad.business_action ->> 'type' = 'send_payment_link') AS payment_actions
+    `;
+    expect(rows[0]).toEqual({ links: 1, projection_jobs: 1, payment_actions: 1 });
+  });
 });

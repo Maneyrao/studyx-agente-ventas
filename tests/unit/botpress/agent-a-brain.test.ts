@@ -471,7 +471,7 @@ describe('Agent A Brain V1', () => {
     expect(JSON.stringify(composition)).not.toContain('cliente@example.test');
   });
 
-  it('uses bounded backend-owned copy for an authorized payment-link response', () => {
+  it('keeps the model wording of an authorized payment-link response free of values and links', () => {
     const composition = buildSafeAgentABrainCompositionV1({
       proposal: parseAgentATurnProposalV1(proposal({
         response: {
@@ -487,11 +487,12 @@ describe('Agent A Brain V1', () => {
       planned_fact_ids: [],
     });
 
-    expect(composition.narrative).toEqual({
-      opening: 'Para inscribirte necesito nombre completo, correo, ciudad, estado y ZIP.',
-      explanation: null,
-      next_question: null,
-    });
+    // The backend owns the link and the plan; the wording of the data request
+    // stays the model's, as long as it carries no URL and no commercial value.
+    expect(composition.narrative.opening).toContain('Nombre completo');
+    expect(composition.narrative.explanation).toContain('captura del comprobante');
+    expect(JSON.stringify(composition)).not.toMatch(/https?:\/\//u);
+    expect(JSON.stringify(composition)).not.toMatch(/USD/u);
   });
 
   it('makes one strict structured request with the required budget', async () => {

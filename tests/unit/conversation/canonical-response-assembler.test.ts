@@ -137,7 +137,7 @@ describe('canonical response assembler V1', () => {
     expect(result.used_fact_ids).toEqual(areaRefs.map((fact) => fact.id));
   });
 
-  it('keeps course-choice options deterministic when model prose already names every course', () => {
+  it('shows every canonical course exactly once when model prose already names them all', () => {
     const optionFacts: CanonicalFactV1[] = [
       { id: 'offering:coaching:name:v1', kind: 'offering_name', source: 'business_snapshot', value: 'Coaching y Liderazgo', offering_code: 'coaching' },
       { id: 'offering:comunicacion:name:v1', kind: 'offering_name', source: 'business_snapshot', value: 'Comunicación Interna en Empresas', offering_code: 'comunicacion' },
@@ -166,10 +166,15 @@ describe('canonical response assembler V1', () => {
       },
     });
 
-    expect(result.content.match(/^• /gmu)).toHaveLength(3);
-    expect(result.content).toContain('• Coaching y Liderazgo');
-    expect(result.content).toContain('• Comunicación Interna en Empresas');
-    expect(result.content).toContain('• Especialista en Ventas');
+    // The list is canonical, the wording is not: prose that already cites every
+    // option carries it, and the deterministic bullets fill the gap otherwise.
+    // Either way each course must appear exactly once and none may be lost.
+    expect(result.content).toContain(
+      'Tenemos Coaching y Liderazgo, Comunicación Interna en Empresas y Especialista en Ventas.',
+    );
+    for (const name of ['Coaching y Liderazgo', 'Comunicación Interna en Empresas', 'Especialista en Ventas']) {
+      expect(result.content.split(name)).toHaveLength(2);
+    }
     expect(result.content.match(/\?/gu)).toHaveLength(1);
   });
 
@@ -203,9 +208,10 @@ describe('canonical response assembler V1', () => {
     expect(result.content.match(/6 pagos mensuales de USD 60/gu)).toHaveLength(1);
     expect(result.content.match(/un pago único de USD 360/gu)).toHaveLength(1);
     expect(result.content).not.toContain('Importe:');
-    expect(result.content.match(/USD 360/gu)).toHaveLength(1);
+    expect(result.content).not.toContain('Total: USD 360.00');
     expect(result.content.match(/\?/gu)).toHaveLength(1);
-    expect(result.content).toContain('Estas son las opciones de pago disponibles.');
+    // The model frames the total; the backend only appends the canonical plans.
+    expect(result.content).toContain('El valor total del programa es USD 360.');
   });
 
   it('uses natural model call copy only when the authoritative plan allows the offer', () => {

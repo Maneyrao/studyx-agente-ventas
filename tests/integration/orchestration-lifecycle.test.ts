@@ -1522,8 +1522,13 @@ run('Fase 4 — pago y cierre de batch', () => {
     const secondCommit = await commitAgentDecision(paymentDecision(second.turn_id));
 
     expect(firstCommit.outbound?.content).toContain(PAYMENT_LINK_12M);
-    expect(secondCommit.outbound?.content).toMatch(/revisá el mensaje anterior/i);
-    expect(secondCommit.outbound?.content).toMatch(/si necesitás ayuda, avisame/i);
+    // Idempotency withholds the ACTION, not the answer: the written reply
+    // survives with the link removed, so the customer gets a response to what
+    // they actually said instead of one fixed sentence for every follow-up.
+    expect(secondCommit.outbound?.content).toContain('Perfecto, te paso el link del plan de 12 cuotas.');
+    expect(secondCommit.outbound?.content).not.toContain(PAYMENT_LINK_12M);
+    expect(secondCommit.outbound?.content).not.toMatch(/revisá el mensaje anterior/i);
+    expect(secondCommit.outbound?.content).not.toMatch(/si necesitás ayuda, avisame/i);
     expect(secondCommit.outbound?.content).not.toContain(PAYMENT_LINK_12M);
 
     const rows = await db!<Array<{ payment_actions: number; link_messages: number }>>`

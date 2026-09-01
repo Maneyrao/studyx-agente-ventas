@@ -803,18 +803,19 @@ export function buildSafeAgentABrainCompositionV1(input: {
       && (!canonicalPaymentGoal || isValueFreeNarrativePortable(message))
       && (!asksAboutUnspecifiedPrerequisites || !unsupportedPrerequisiteClaim.test(message));
   });
-  const messages = input.response_goal === 'confirm_selected_plan'
-    ? ['Queda registrada tu elección. Avisame cuando quieras avanzar.']
-    : input.response_goal === 'confirm_payment_link'
-      ? ['Para inscribirte necesito nombre completo, correo, ciudad, estado y ZIP.']
-      : input.response_goal === 'acknowledge_payment_deferral'
-        ? ['De acuerdo, lo dejamos para más adelante.']
-        : asksAboutUnspecifiedPrerequisites
-          ? [prerequisiteStatement?.message
-            ?? 'Los requisitos previos no están especificados en la información confirmada.']
-          : safeMessages.length > 0
-            ? safeMessages
-            : [safeContextualOpening(input.response_goal, input.context.commercial_state.call_offer_count)];
+  // A transactional goal constrains which FACTS may appear, never who writes
+  // the sentence. `safeMessages` has already dropped anything carrying an
+  // uncited commercial value, so what survives is the model's own wording of
+  // an authorized turn: keep it, and fall back to the fixed phrasing only when
+  // nothing survived. Substituting it unconditionally is what made the agent
+  // answer every payment question with the same sentence.
+  const messages = asksAboutUnspecifiedPrerequisites
+    ? [prerequisiteStatement?.message
+      ?? 'Los requisitos previos no están especificados en la información confirmada.']
+    : safeMessages.length > 0
+      ? safeMessages
+      : [transactionalFallback(input.response_goal)
+        ?? safeContextualOpening(input.response_goal, input.context.commercial_state.call_offer_count)];
 
   return ComposedNarrativeV1Schema.parse({
     schema_version: 1,
@@ -829,6 +830,19 @@ export function buildSafeAgentABrainCompositionV1(input: {
       : null,
     used_fact_ids: [...citedIds],
   });
+}
+
+function transactionalFallback(responseGoal: TurnPlanV1['response_goal']): string | null {
+  switch (responseGoal) {
+    case 'confirm_selected_plan':
+      return 'Queda registrada tu elección. Avisame cuando quieras avanzar.';
+    case 'confirm_payment_link':
+      return 'Para inscribirte necesito nombre completo, correo, ciudad, estado y ZIP.';
+    case 'acknowledge_payment_deferral':
+      return 'De acuerdo, lo dejamos para más adelante.';
+    default:
+      return null;
+  }
 }
 
 function safeContextualOpening(

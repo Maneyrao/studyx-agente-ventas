@@ -108,6 +108,27 @@ function requiredFactIds(
   return required;
 }
 
+function fallbackOpening(responseGoal: TurnPlanV1['response_goal']): string | null {
+  switch (responseGoal) {
+    case 'present_payment_options': return 'Estas son las opciones de pago disponibles.';
+    case 'guide_course_choice': return 'Estas son algunas opciones disponibles.';
+    case 'guide_area_choice': return 'Estas son algunas áreas disponibles.';
+    default: return null;
+  }
+}
+
+/**
+ * Confirming one plan is not the moment to restate the catalog. The other
+ * plans stay authorized — the customer may still name them — but they are
+ * never appended as deterministic blocks to a confirmation.
+ */
+function suppressedByPlanConfirmation(plan: TurnPlanV1, fact: CanonicalFactV1): boolean {
+  return plan.response_goal === 'confirm_selected_plan'
+    && plan.selected_payment_plan !== null
+    && (fact.kind === 'payment_plan_label' || fact.kind === 'payment_plan_price')
+    && fact.payment_plan !== plan.selected_payment_plan;
+}
+
 function choiceQuestion(plan: TurnPlanV1, narrative: readonly string[]): string | null {
   if (narrative.some((part) => part.includes('?'))) return null;
   switch (plan.response_goal) {
@@ -139,33 +160,19 @@ export function assembleCanonicalConversationResponseV1(input: {
     }
     selectedFacts.push(fact);
   }
-  const effectiveComposition: ComposedNarrativeV1 = input.plan.response_goal === 'present_payment_options'
+  // The choice and payment lists are a backend-owned block rendered as its own
+  // paragraph, so a model-authored opening can never suppress them: the egress
+  // guard drops offending paragraphs individually and the bullets survive on
+  // their own. The deterministic sentence is therefore only a fallback for a
+  // composition that carries no opening at all — it must not overwrite one.
+  const fallback = fallbackOpening(input.plan.response_goal);
+  const effectiveComposition: ComposedNarrativeV1 = fallback !== null
+    && (input.composition.narrative.opening ?? '').trim().length === 0
     ? {
-        schema_version: 1,
-        narrative: {
-          opening: 'Estas son las opciones de pago disponibles.',
-          explanation: null,
-          next_question: null,
-        },
-        used_fact_ids: input.composition.used_fact_ids,
+        ...input.composition,
+        narrative: { ...input.composition.narrative, opening: fallback },
       }
-    : input.plan.response_goal === 'guide_course_choice'
-      || input.plan.response_goal === 'guide_area_choice'
-      ? {
-          ...input.composition,
-          // Choice facts are a backend-owned list. Do not let a model-authored
-          // availability sentence suppress their deterministic bullet blocks:
-          // if that sentence later fails the egress guard, the choices would
-          // otherwise disappear with it.
-          narrative: {
-            opening: input.plan.response_goal === 'guide_course_choice'
-              ? 'Estas son algunas opciones disponibles.'
-              : 'Estas son algunas áreas disponibles.',
-            explanation: null,
-            next_question: input.composition.narrative.next_question,
-          },
-        }
-      : input.composition;
+    : input.composition;
   const narrative = narrativeText(effectiveComposition);
   const mentionedIds = mentionedFactIds(narrative, input.facts);
   const selectedIds = new Set(selectedFactIds);
@@ -223,6 +230,7 @@ export function assembleCanonicalConversationResponseV1(input: {
   const blocks = [...new Set(selectedFacts
     .filter((fact) => !mentionedIds.has(fact.id))
     .filter((fact) => !redundantFactIds.has(fact.id))
+    .filter((fact) => !suppressedByPlanConfirmation(input.plan, fact))
     .filter((fact) => fact.kind !== 'payment_plan_price' || !selectedPaymentLabels.has(
       `${fact.offering_code ?? ''}\u0000${fact.payment_plan ?? ''}`,
     ))

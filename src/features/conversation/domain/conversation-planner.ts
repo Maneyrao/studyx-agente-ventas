@@ -33,6 +33,16 @@ type StateIdentity = Pick<ConversationStateV1, 'workspace_id' | 'conversation_id
 
 export const CONVERSATION_STATE_MAX_IDLE_MS = 24 * 60 * 60 * 1_000;
 
+/**
+ * A pending question only stays pending while the customer is still in the
+ * same sitting. Past this window the question expired: the next inbound
+ * message must be read for what it says, never as an answer to something
+ * asked hours earlier. Commercial selection survives — it is useful context,
+ * not an open obligation — and is retired separately by the reopening-greeting
+ * rule below or by the 24h full expiry.
+ */
+export const CONVERSATION_SESSION_IDLE_MS = 4 * 60 * 60 * 1_000;
+
 export function createDefaultConversationStateV1(identity: StateIdentity): ConversationStateV1 {
   return {
     ...identity,
@@ -55,16 +65,37 @@ export function effectiveConversationStateV1(
   nowMs = Date.now(),
 ): ConversationStateV1 {
   const updatedAtMs = Date.parse(state.updated_at);
-  if (!Number.isFinite(updatedAtMs)
-    || nowMs < updatedAtMs
-    || nowMs - updatedAtMs <= CONVERSATION_STATE_MAX_IDLE_MS) {
-    return state;
+  if (!Number.isFinite(updatedAtMs) || nowMs < updatedAtMs) return state;
+  const idleMs = nowMs - updatedAtMs;
+  if (idleMs > CONVERSATION_STATE_MAX_IDLE_MS) {
+    return {
+      ...createDefaultConversationStateV1(state),
+      version: state.version,
+      created_at: state.created_at,
+      updated_at: state.updated_at,
+    };
   }
+  if (idleMs > CONVERSATION_SESSION_IDLE_MS && state.awaiting_reply !== 'none') {
+    return { ...state, awaiting_reply: 'none' };
+  }
+  return state;
+}
+
+/**
+ * Reopening boundary. A greeting that arrives on top of commercial progress is
+ * the customer starting over, not answering the last question: it closes the
+ * previous commercial session and opens a fresh one. The call ledger and the
+ * durable call preference survive — a customer who chose chat or declined a
+ * call must never be offered one again — and so do identity, consent and the
+ * concurrency version, so history and audit stay intact.
+ */
+function reopenedSessionState(state: ConversationStateV1): ConversationStateV1 {
   return {
-    ...createDefaultConversationStateV1(state),
-    version: state.version,
-    created_at: state.created_at,
-    updated_at: state.updated_at,
+    ...state,
+    selected_offering_code: null,
+    selected_payment_plan: null,
+    stage: 'exploring',
+    awaiting_reply: 'none',
   };
 }
 
@@ -194,7 +225,10 @@ function planSingle(
   }
 
   if (kind === 'greeting') {
-    return { ...unchangedPlan(state, 'greet_and_discover'), next_awaiting_reply: 'area_choice' };
+    return {
+      ...unchangedPlan(reopenedSessionState(state), 'greet_and_discover'),
+      next_awaiting_reply: 'area_choice',
+    };
   }
   if (kind === 'browse_catalog') {
     return {
