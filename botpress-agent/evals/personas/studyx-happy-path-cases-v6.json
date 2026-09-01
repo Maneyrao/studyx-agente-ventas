@@ -11,7 +11,7 @@
       "turns": [
         "Hola, quiero hacer Marketing Digital. ¿Cuántas clases tiene?",
         "Perfecto, quiero inscribirme con el plan de 12 pagos.",
-        "Soy Ana Prueba, ana.happy01+{{run_id}}@example.com, Miami, ZIP 33101."
+        "Soy Ana Prueba, ana.happy01+{{run_id}}@example.com, teléfono +1 305 555 0201."
       ],
       "ideal_result": {
         "course_fact": "16 clases",
@@ -29,7 +29,7 @@
         "Quiero trabajar manejando redes sociales, pero no sé qué curso elegir.",
         "Quiero aprender contenido, campañas y atención de clientes online.",
         "Community Manager me sirve. Quiero anotarme con las 6 cuotas de 60 dólares.",
-        "Soy Bruno Prueba, bruno.happy02+{{run_id}}@example.com, Orlando, ZIP 32801."
+        "Soy Bruno Prueba, bruno.happy02+{{run_id}}@example.com, teléfono +1 407 555 0202."
       ],
       "ideal_result": {
         "diagnostic_questions_max_per_turn": 1,
@@ -49,7 +49,7 @@
         "Me interesa organizar eventos sociales. ¿Tienen algún curso para eso?",
         "¿Qué aprendería y cuántas clases son?",
         "Me sirve. Quiero pagar los 360 dólares de contado.",
-        "Soy Carla Prueba, carla.happy03+{{run_id}}@example.com, Tampa, ZIP 33602."
+        "Soy Carla Prueba, carla.happy03+{{run_id}}@example.com, teléfono +1 813 555 0203."
       ],
       "ideal_result": {
         "recommended_course": "Organizador Profesional de Eventos Sociales",
@@ -69,7 +69,7 @@
         "Quiero estudiar Maquillaje Profesional. ¿Cuánto cuesta?",
         "Me parece mucho para pagarlo de una vez.",
         "La opción de 30 dólares por mes me sirve. Quiero esa.",
-        "Soy Daniela Prueba, daniela.happy04+{{run_id}}@example.com, Houston, ZIP 77002."
+        "Soy Daniela Prueba, daniela.happy04+{{run_id}}@example.com, teléfono +1 713 555 0204."
       ],
       "ideal_result": {
         "course_fact": "38 clases",
@@ -90,7 +90,7 @@
         "En realidad necesito inglés para entrevistas y situaciones reales. Me interesa Inglés 3.",
         "Confirmame cuál elegí y cuántas clases tiene.",
         "Correcto. Lo pago de contado.",
-        "Soy Esteban Prueba, esteban.happy05+{{run_id}}@example.com, Dallas, ZIP 75201."
+        "Soy Esteban Prueba, esteban.happy05+{{run_id}}@example.com, teléfono +1 214 555 0205."
       ],
       "ideal_result": {
         "call_requested": false,

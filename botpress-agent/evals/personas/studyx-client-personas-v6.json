@@ -13,7 +13,7 @@
         "Hola, quiero hacer Marketing Digital. ¿Cuántas clases tiene?",
         "Perfecto, quiero inscribirme.",
         "Prefiero 12 pagos mensuales.",
-        "Soy Martín Prueba, martin.eval+{{run_id}}@example.com, vivo en Miami y mi ZIP es 33101."
+        "Soy Martín Prueba, martin.eval+{{run_id}}@example.com, mi teléfono es +1 305 555 0101."
       ],
       "expected": [
         "Responde que Marketing Digital tiene 16 clases.",
@@ -54,7 +54,7 @@
         "Me parece caro, ¿no tienen descuento o alguna cuota más barata?",
         "¿Cuáles son las tres formas de pago?",
         "Bueno, elijo las 6 cuotas de 60 dólares.",
-        "Soy Laura Evaluación, laura.eval+{{run_id}}@example.com, Orlando, ZIP 32801."
+        "Soy Laura Evaluación, laura.eval+{{run_id}}@example.com, teléfono +1 407 555 0102."
       ],
       "expected": [
         "Maneja la objeción sin discutir ni inventar descuentos.",
@@ -95,7 +95,7 @@
         "En realidad cambié de idea: quiero Inglés 2, no Inglés 1.",
         "¿Cuál de los dos cursos elegí finalmente y cuántas clases tiene?",
         "Quiero pagarlo de contado, el pago único de 360.",
-        "Soy Diego Simulación, diego.eval+{{run_id}}@example.com, Tampa, ZIP 33602."
+        "Soy Diego Simulación, diego.eval+{{run_id}}@example.com, teléfono +1 813 555 0103."
       ],
       "expected": [
         "Continúa por chat y no insiste con la llamada.",

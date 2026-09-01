@@ -96,7 +96,7 @@
       "Enviar exactamente un link solo después de que el cliente elija una opción explícita",
       "Si pide el link sin elegir claramente un plan, preguntar cuál opción quiere y no elegir por él",
       "Si dice que ya pagó, informar que está pendiente de verificación y no reenviar el link salvo pedido explícito",
-      "Pedir nombre completo, email, ciudad y código postal si faltan",
+      "Pedir los datos que falten de: nombre, apellido, correo y teléfono",
       "Nunca confirmar pago, inscripción, acceso o credenciales sin webhook de Stripe verificado"
     ]
   },

@@ -875,8 +875,11 @@ function transactionalFallback(responseGoal: TurnPlanV1['response_goal']): strin
   switch (responseGoal) {
     case 'confirm_selected_plan':
       return 'Queda registrada tu elección. Avisame cuando quieras avanzar.';
-    case 'confirm_payment_link':
-      return 'Para inscribirte necesito nombre completo, correo, ciudad, estado y ZIP.';
+    // `confirm_payment_link` tenía acá una cadena que pedía tres campos
+    // fuera del contrato comercial y fusionaba nombre con apellido. Quién
+    // pide los datos es el modelo; cuáles faltan lo dice `intake_missing`,
+    // no una cadena fija del backend. Sin fallback cae en
+    // safeContextualOpening, que no nombra ningún campo.
     case 'acknowledge_payment_deferral':
       return 'De acuerdo, lo dejamos para más adelante.';
     default:

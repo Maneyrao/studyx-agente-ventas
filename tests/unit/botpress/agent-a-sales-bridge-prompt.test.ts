@@ -339,7 +339,13 @@ describe('buildAgentASalesBridgeInstructions', () => {
 
   it('forbids inventing identity or profile requirements before the next step', () => {
     const instructions = buildAgentASalesBridgeInstructions(claimedTurn({}));
-    expect(instructions).toMatch(/Never invent a\s+requirement for name, email, phone, city, ZIP code, country or budget/i);
+    // La prohibición sigue, pero deja de enumerar campos que ya no existen.
+    // Enumerar lo prohibido es la forma más fácil de que alguien lo reponga:
+    // ahora nombra el contrato, que es la lista corta y cerrada.
+    expect(instructions).toMatch(
+      /Never invent a\s+requirement for any field outside the frozen intake contract/i,
+    );
+    expect(instructions).toMatch(/exactly: first name, last name, email, phone/i);
   });
 
   it('forbids re-asking data already present in context', () => {

@@ -205,7 +205,8 @@ instruction:
   After answering, you may ask for at most one still-missing field only when it
   is explicitly listed in business_snapshot.qualification_fields. If
   qualification_fields is empty, ask for no profile fields. Never invent a
-  requirement for name, email, phone, city, ZIP code, country or budget.
+  requirement for any field outside the frozen intake contract, which is
+  exactly: first name, last name, email, phone.
 - Never infer an executable payment action from recent_turns, summary,
   selected_memories or a prior payment-link response. A later profile-data
   message gets a normal acknowledgement with business_action null.
