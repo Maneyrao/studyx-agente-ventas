@@ -78,3 +78,51 @@ export function stripUnsupportedOperationalClaims(text: string): string {
     .filter((paragraph) => paragraph.length > 0)
     .join('\n\n');
 }
+
+/**
+ * Whether a sentence solicits a voice call from the customer.
+ *
+ * The conversation-local ledger allows at most two proactive call offers, and
+ * that budget was only ever applied to the offer the assembler itself appends.
+ * An offer the model wrote inside its own narrative was invisible to it, so a
+ * customer could see three offers while the ledger had spent two.
+ *
+ * Solicitation, not mention. Confirming a call the customer already asked for,
+ * or acknowledging that they declined one, talks about calls without offering
+ * one, and neither consumes the budget nor is removed.
+ */
+const CALL_SUBJECT = /(?:llamada|llamemos|llamarte|llamarnos|telef[oó]nic|por\s+tel[eé]fono|contactemos|contactarte)/iu;
+
+const SOLICITATION = new RegExp(
+  '(?:'
+  + 'quer[eé]s|querr[ií]as|te\\s+gustar[ií]a|prefer[ií]s|preferir[ií]as'
+  + '|si\\s+quer[eé]s|pod[eé]s\\s+(?:pedir|solicitar)|podemos\\s+(?:coordinar|agendar|organizar)'
+  + '|te\\s+parece|avisame\\s+si|dec[ií]me\\s+si'
+  + ')',
+  'iu',
+);
+
+/** A negation or a completed request is not an offer. */
+const NOT_AN_OFFER = /(?:ya\s+(?:registr|qued|solicit|ped)|no\s+te\s+llam|sin\s+llamada|nada\s+de\s+llam)/iu;
+
+export function solicitsACall(text: string): boolean {
+  return CALL_SUBJECT.test(text)
+    && SOLICITATION.test(text)
+    && !NOT_AN_OFFER.test(text);
+}
+
+/**
+ * Removes every call solicitation the model wrote itself. The assembler owns
+ * the single ledgered offer and appends it separately, so the narrative never
+ * needs to carry one.
+ */
+export function stripModelAuthoredCallOffers(text: string): string {
+  return text
+    .split(/\n{2,}/u)
+    .map((paragraph) => sentences(paragraph)
+      .filter((sentence) => !solicitsACall(sentence))
+      .join(' ')
+      .trim())
+    .filter((paragraph) => paragraph.length > 0)
+    .join('\n\n');
+}

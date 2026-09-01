@@ -1,4 +1,7 @@
-import { stripUnsupportedOperationalClaims } from './operational-promise-guard';
+import {
+  stripModelAuthoredCallOffers,
+  stripUnsupportedOperationalClaims,
+} from './operational-promise-guard';
 import type {
   CanonicalFactRefV1,
   CanonicalFactV1,
@@ -216,16 +219,22 @@ export function assembleCanonicalConversationResponseV1(input: {
   // No turn can enrol, register or grant access to anybody, so a sentence
   // saying one of those already happened is removed before anything else runs.
   // Only the offending sentence goes; the rest of the model's answer stands.
+  // The call ledger only means something if every visible offer spends one.
+  // The assembler owns the single ledgered offer and appends it below, so an
+  // offer inside the model's own narrative is always an unbudgeted extra.
+  const clean = (value: string): string => stripModelAuthoredCallOffers(
+    stripUnsupportedOperationalClaims(value),
+  );
   const composed: ComposedNarrativeV1 = {
     ...input.composition,
     narrative: {
-      opening: stripUnsupportedOperationalClaims(input.composition.narrative.opening ?? ''),
+      opening: clean(input.composition.narrative.opening ?? ''),
       explanation: input.composition.narrative.explanation === null
         ? null
-        : stripUnsupportedOperationalClaims(input.composition.narrative.explanation) || null,
+        : clean(input.composition.narrative.explanation) || null,
       next_question: input.composition.narrative.next_question === null
         ? null
-        : stripUnsupportedOperationalClaims(input.composition.narrative.next_question) || null,
+        : clean(input.composition.narrative.next_question) || null,
     },
   };
   const fallback = fallbackOpening(input.plan.response_goal);
