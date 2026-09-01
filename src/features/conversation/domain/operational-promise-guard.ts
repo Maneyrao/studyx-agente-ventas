@@ -35,6 +35,7 @@ const OPERATIONAL_OUTCOME = new RegExp(
   + '|(?:el|tu|su|la|mi|un)\\s+alta\\b'
   + '|(?:el|tu|su|mi)\\s+acceso\\b'
   + '|(?:el|tu|su|mi)\\s+cupo\\b|vacante(?:s)?|(?:tu|su|la)\\s+plaza\\b'
+  + '|(?:tus|sus|las)\\s+credenciales\\b|alta\\s+acad[eé]mica'
   + ')(?:[^\\p{L}]|$)',
   'iu',
 );
@@ -51,10 +52,47 @@ const COMPLETED_ASSERTION = new RegExp(
 );
 
 /**
- * Whether one sentence claims an operational outcome already happened.
+ * The agent committing to perform the outcome itself. Same lie, future tense:
+ * "te doy el alta", "genero tus credenciales", "en unos minutos te llega".
+ * Nothing downstream will do any of it.
+ *
+ * The subject matters. A sentence about what the CUSTOMER must do
+ * ("para inscribirte necesitás pagar") or about what a HUMAN will do later
+ * ("cuando el equipo confirme el pago, te contactan") promises nothing on the
+ * agent's behalf and is left alone.
+ */
+const AGENT_COMMITMENT = new RegExp(
+  '(?:^|[^\\p{L}])(?:'
+  + '(?:te\\s+|le\\s+)?(?:doy|damos|genero|generamos|habilito|habilitamos'
+  + '|inscribo|inscribimos|matriculo|matriculamos|activo|activamos'
+  + '|cargo|cargamos|proceso|procesamos|anoto|anotamos|registro|registramos)'
+  + '|procedo\\s+a|proceder[eé]\\s+a|voy\\s+a\\s+(?:dar|generar|habilitar|cargar|inscribir)'
+  + '|te\\s+(?:llega|llegan|env[ií]o|enviamos|mando|mandamos)'
+  + ')(?:[^\\p{L}]|$)',
+  'iu',
+);
+
+/**
+ * Acts where the verb IS the outcome, so there is no separate noun to find:
+ * enrolling someone, admitting them, granting them access. Deliberately narrow
+ * — "te registro la preferencia" is a real thing the turn does, and stays out.
+ */
+const SELF_CONTAINED_ACT = new RegExp(
+  '(?:^|[^\\p{L}])(?:'
+  + '(?:te|lo|la|los|las)\\s+(?:inscribo|inscribimos|matriculo|matriculamos|anoto|anotamos)'
+  + '|d(?:oy|amos)\\s+de\\s+alta|te\\s+habilit(?:o|amos)'
+  + ')(?:[^\\p{L}]|$)',
+  'iu',
+);
+
+/**
+ * Whether one sentence claims an operational outcome already happened, or
+ * commits the agent to making it happen.
  */
 export function assertsCompletedOperationalOutcome(sentence: string): boolean {
-  return OPERATIONAL_OUTCOME.test(sentence) && COMPLETED_ASSERTION.test(sentence);
+  if (SELF_CONTAINED_ACT.test(sentence)) return true;
+  if (!OPERATIONAL_OUTCOME.test(sentence)) return false;
+  return COMPLETED_ASSERTION.test(sentence) || AGENT_COMMITMENT.test(sentence);
 }
 
 /** Splits on sentence terminators while keeping each terminator attached. */

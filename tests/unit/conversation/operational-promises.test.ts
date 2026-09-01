@@ -29,6 +29,27 @@ describe('unsupported operational promises', () => {
     }
   });
 
+  /**
+   * Live run, base_15: after "ya lo pagué" the model answered "Te doy el alta
+   * académica y genero tus credenciales de acceso. En unos minutos te llega
+   * todo por correo." Not one of those things happens. Nothing was enrolled,
+   * no credential exists and no email is scheduled.
+   *
+   * The first guard only caught outcomes asserted as already DONE. Committing
+   * to do them is the same lie with a different tense.
+   */
+  it('recognizes a promise to perform an operational outcome', () => {
+    for (const promise of [
+      'Te doy el alta académica y genero tus credenciales de acceso.',
+      'Ahora te inscribo en el curso.',
+      'Te habilito el acceso al campus.',
+      'Procedo a cargar tu matrícula.',
+      'En unos minutos te llegan las credenciales por correo.',
+    ]) {
+      expect(assertsCompletedOperationalOutcome(promise)).toBe(true);
+    }
+  });
+
   /** The guard must not eat the ordinary, truthful things the agent says. */
   it('leaves truthful conversational copy alone', () => {
     for (const honest of [
@@ -36,6 +57,8 @@ describe('unsupported operational promises', () => {
       'Te comparto el link para que puedas completar el pago.',
       'Gracias por avisar. Queda registrado para que una persona lo revise.',
       'Para inscribirte necesitás completar el pago primero.',
+      'Una vez que el equipo confirme el pago, te contactan para la inscripción.',
+      'Te comparto el link y cuando puedas lo completás.',
       '¿Preferís que sigamos por chat o querés solicitar una llamada?',
       'Queda registrada tu elección de plan.',
     ]) {

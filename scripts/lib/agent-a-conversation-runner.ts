@@ -466,10 +466,20 @@ function assertRegressionCompositionEvidence(suite: ConversationSuite): void {
   }
 }
 
+/**
+ * The links the stack under evaluation is actually configured with. An
+ * isolated local stack deliberately runs fake links, so hardcoding the
+ * production URLs here made `payment_link_count` compare against a URL that
+ * could never appear and report zero links on a turn that sent one. The
+ * production values remain the fallback for a run that configures nothing.
+ */
 const PAYMENT_URLS = {
-  monthly_12: 'https://buy.stripe.com/14A5kC31I3Nwfbq67Fdwc0f',
-  monthly_6: 'https://buy.stripe.com/4gMdR8cCi97Q7IYdA7dwc0a',
-  one_time: 'https://buy.stripe.com/9B64gy7hYesaaVa1Rpdwc0j',
+  monthly_12: process.env.PAYMENT_LINK_12M?.trim()
+    || 'https://buy.stripe.com/14A5kC31I3Nwfbq67Fdwc0f',
+  monthly_6: process.env.PAYMENT_LINK_6M?.trim()
+    || 'https://buy.stripe.com/4gMdR8cCi97Q7IYdA7dwc0a',
+  one_time: process.env.PAYMENT_LINK_CONTADO?.trim()
+    || 'https://buy.stripe.com/9B64gy7hYesaaVa1Rpdwc0j',
 } as const;
 
 /** URLs are extracted lexically and then compared byte-for-byte against the
