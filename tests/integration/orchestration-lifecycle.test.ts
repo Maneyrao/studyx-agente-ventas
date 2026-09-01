@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
+import { TECHNICAL_FALLBACK_TEXT_V1 } from '@/features/conversation/domain/technical-fallback';
 import {
   processInboundMessage,
   ChannelIdentityConflictError,
@@ -1218,6 +1219,16 @@ run('Fase 4 — pago y cierre de batch', () => {
     })).toEqual({ ok: true });
   });
 
+  /**
+   * Estos casos afirmaban que la supresión de egress no producía NINGÚN
+   * mensaje. Esa era la conducta, y era el defecto: 4 de 88 turnos de la línea
+   * base desaparecían y el cliente no recibía nada.
+   *
+   * Lo que estos tests protegen de verdad —y sigue vigente— es que el hecho no
+   * autorizado no se entregue y que no se mande copy comercial enlatado en su
+   * lugar. Eso ahora se afirma explícitamente, junto con la conducta nueva: un
+   * turno visible que es el piso técnico y no dice nada comercial.
+   */
   it('suppresses a fully unauthorized offering claim without sending canned copy', async () => {
     const accepted = await processInboundMessage(envelope());
     const committed = await commitAgentDecision(groundedReply(
@@ -1227,7 +1238,10 @@ run('Fase 4 — pago y cierre de batch', () => {
     ));
 
     expect(committed.status).toBe('committed');
-    expect(committed.outbound).toBeNull();
+    // El hecho inventado no llega al cliente.
+    expect(committed.outbound?.content ?? '').not.toContain('Programación en Python');
+    // Y lo que llega es el piso técnico, no una frase comercial de reemplazo.
+    expect(committed.outbound?.content).toBe(TECHNICAL_FALLBACK_TEXT_V1);
     const rows = await db!<Array<{
       decision_kind: string;
       response: string | null;
@@ -1245,10 +1259,10 @@ run('Fase 4 — pago y cierre de batch', () => {
       WHERE decision.id = ${committed.decision_id}::uuid
     `;
     expect(rows).toEqual([{
-      decision_kind: 'suppress',
-      response: null,
+      decision_kind: 'reply',
+      response: TECHNICAL_FALLBACK_TEXT_V1,
       reason_code: 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED',
-      deliveries: 0,
+      deliveries: 1,
     }]);
   });
 
@@ -1271,7 +1285,9 @@ run('Fase 4 — pago y cierre de batch', () => {
     ));
 
     expect(committed.status).toBe('committed');
-    expect(committed.outbound).toBeNull();
+    // El valor no autorizado no sale, y lo que sale es el piso técnico.
+    expect(committed.outbound?.content).toBe(TECHNICAL_FALLBACK_TEXT_V1);
+    expect(committed.outbound?.content ?? '').not.toMatch(/USD\s?36[01]/u);
   });
 
   it('materializes only the configured URL and strips any model-authored one', async () => {

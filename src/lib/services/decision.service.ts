@@ -25,6 +25,10 @@ import {
 import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
 import { PostgresSalesContextStore } from '@/features/sales/adapters/postgres-sales-context-store';
 import { PostgresConversationStateStoreV1 } from '@/features/conversation/adapters/postgres-conversation-state-store';
+import {
+  resolveTechnicalFallbackV1,
+  type TechnicalFallbackV1,
+} from '@/features/conversation/domain/technical-fallback';
 import { PostgresOrchestrationStore } from '@/features/orchestration/adapters/postgres-orchestration-store';
 import { enqueueAgentAMemoryProjectionJobs } from '@/features/memory/application/project-agent-a-memories';
 import {
@@ -436,7 +440,17 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     const turn = await loadTurnPolicy(validatedInput.turn_id, db);
     const workspaceSlug = loadBusinessWorkspaceConfig().workspaceSlug;
     let preparedPipeline: Awaited<ReturnType<typeof prepareConversationPipelineCommitV1>> | null = null;
+    // El contador de fallbacks tiene que sobrevivir a la supresión, y
+    // `preparedPipeline` no: la rama de egress lo anula y con él se iría la
+    // única lectura del estado de la conversación.
+    let pipelineStateBefore: Awaited<
+      ReturnType<PostgresConversationStateStoreV1['load']>
+    > = null;
+    let technicalFallback: TechnicalFallbackV1 | null = null;
     if (validatedInput.conversation_pipeline_v1) {
+      pipelineStateBefore = await new PostgresConversationStateStoreV1(db).load(
+        workspaceSlug, turn.conversation_id, turn.contact_id,
+      );
       const businessStore = new PostgresBusinessContextStore(db);
       const [rawBusiness, rawCatalogIndex, workspaceRows] = await Promise.all([
         businessStore.loadBusinessContext(workspaceSlug),
@@ -776,11 +790,24 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             turn_id: turn.id,
             reason: verification.reason,
           });
+          // A7: el silencio técnico deja de ser un resultado posible. El
+          // turno sigue siendo una supresión desde el punto de vista
+          // comercial —ninguna acción, ningún hecho, ninguna proyección— pero
+          // el cliente recibe el piso técnico en vez de nada.
+          //
+          // El silencio deliberado por opt-out o bloqueo no pasa por acá: esos
+          // turnos no llegan a componer una respuesta.
+          technicalFallback = resolveTechnicalFallbackV1({
+            consecutive_technical_fallbacks:
+              pipelineStateBefore?.consecutive_technical_fallbacks ?? 0,
+            human_review_already_requested:
+              pipelineStateBefore?.human_review_requested_at != null,
+          });
           decision = parseDecisionAnyVersion({
             ...decision,
-            kind: 'suppress',
-            response: null,
-            response_type: null,
+            kind: 'reply',
+            response: technicalFallback.text,
+            response_type: 'clarification',
             business_action: null,
             memory_candidates: [],
             missing_information: [],
@@ -788,10 +815,18 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             reason_code: 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED',
             confidence: 1,
           });
-          finalResponse = null;
+          finalResponse = technicalFallback.text;
           authorizedUrls = [];
           authorizedProtectedFacts = [];
-          authorizedEgress = null;
+          // N3 no cita ninguna URL ni ningún hecho protegido, así que su
+          // manifiesto es el vacío. Dejarlo en null era el error: con
+          // respuesta presente, aguas abajo hay que verificar el manifiesto y
+          // un null revienta con `content_hash` de undefined.
+          authorizedEgress = buildAuthorizedEgress({
+            content: technicalFallback.text,
+            authorized_urls: [],
+            protected_facts: [],
+          });
           committedBusinessAction = null;
           preparedPipeline = null;
           effectiveAuthorizedOfferingCode = null;
@@ -1122,6 +1157,20 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         selected_offering_code: selectedOfferingCode,
         selected_payment_plan: selectedPlan,
         stage,
+      });
+    }
+    if (technicalFallback) {
+      // Turno técnico: no hay nada comercial que escribir, sólo el contador
+      // y, en el segundo consecutivo, la derivación. O2: esto ocurre en la
+      // misma transacción que el INSERT del outbound, así que si falla, el
+      // mensaje se va con ella y nunca se afirma una derivación que no quedó.
+      await new PostgresConversationStateStoreV1(db).recordTechnicalFallbackV1({
+        workspace_slug: workspaceSlug,
+        conversation_id: turn.conversation_id,
+        contact_id: turn.contact_id,
+        source_turn_id: turn.id,
+        consecutive_technical_fallbacks: technicalFallback.next_consecutive_count,
+        request_human_review: technicalFallback.requests_human_review,
       });
     }
     if (preparedPipeline) {

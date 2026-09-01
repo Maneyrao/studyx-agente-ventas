@@ -237,6 +237,35 @@ export async function probeGeminiEmbedding(
 }
 
 /** Degradable: how much derived work is queued and how much gave up. */
+/**
+ * Cómo un operador ve las conversaciones que quedaron registradas para
+ * revisión (§ 07).
+ *
+ * Esto NO es una bandeja: nadie recibe un aviso. Es una consulta que alguien
+ * tiene que ir a correr, y la documentación en `docs/operaciones/` lo dice con
+ * todas las letras para que nadie asuma un SLA que no existe.
+ *
+ * Sin `contacts`: identifica la conversación, no a la persona. Quién es se lee
+ * abriendo la conversación, con el control de acceso de esa ruta, y no en un
+ * listado de operaciones.
+ */
+export const PENDING_HUMAN_REVIEWS_QUERY_V1 = `
+  SELECT
+    state.conversation_id,
+    state.contact_id,
+    state.human_review_requested_at,
+    state.consecutive_technical_fallbacks,
+    state.stage,
+    state.selected_offering_code,
+    state.selected_payment_plan,
+    state.payment_reported_at
+  FROM conversation_sales_context_states_v1 AS state
+  JOIN workspaces AS workspace ON workspace.id = state.workspace_id
+  WHERE workspace.slug = $1
+    AND state.human_review_requested_at IS NOT NULL
+  ORDER BY state.human_review_requested_at ASC
+`;
+
 export async function probeDerivedBacklog(db: DbClient = sql): Promise<DependencyProbe> {
   const startedAt = Date.now();
   try {
@@ -246,6 +275,7 @@ export async function probeDerivedBacklog(db: DbClient = sql): Promise<Dependenc
         selected_memory_queue: { dead_letter: number };
         knowledge_queue: { dead_letter: number };
         ambiguous_deliveries: number;
+        pending_human_reviews: number;
       };
     }>>`
       SELECT
@@ -346,7 +376,14 @@ export async function probeDerivedBacklog(db: DbClient = sql): Promise<Dependenc
               WHERE embedding_epoch IS DISTINCT FROM ${EMBEDDING_EPOCH})
           ),
           'ambiguous_deliveries', (SELECT count(*) FROM outbound_deliveries
-            WHERE reconciliation_state = 'ambiguous_paused')
+            WHERE reconciliation_state = 'ambiguous_paused'),
+          -- Conversaciones registradas para revisión tras dos fallos técnicos
+          -- consecutivos. Hoy sólo sube: no existe todavía la forma de marcar
+          -- una revisión como atendida, y eso está anotado como deuda en
+          -- docs/operaciones/revisiones-pendientes.md.
+          'pending_human_reviews', (SELECT count(*)
+            FROM conversation_sales_context_states_v1
+            WHERE human_review_requested_at IS NOT NULL)
         ) AS queues
     `);
     const detail = rows[0]?.queues ?? {
@@ -354,6 +391,7 @@ export async function probeDerivedBacklog(db: DbClient = sql): Promise<Dependenc
       selected_memory_queue: { dead_letter: 0 },
       knowledge_queue: { dead_letter: 0 },
       ambiguous_deliveries: 0,
+      pending_human_reviews: 0,
     };
     // A queue with claimable work is not "ok" — the memory contract (`§6`)
     // requires the KB and selected-memory layers to actually be caught up, not
