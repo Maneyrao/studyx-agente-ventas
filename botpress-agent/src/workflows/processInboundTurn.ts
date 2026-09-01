@@ -1068,7 +1068,13 @@ export const processInboundTurn = new Workflow({
           brain_source: 'fallback',
           brain_failure_reason: brainFailureReason,
         })
-        pipelineFailureDecision = modelUnavailableFallback(owned, brainFailureReason)
+        // Same rule as the authoritative brain route above: when the model
+        // owns the copy, a provider outage never licenses another component to
+        // write. This route used to call `modelUnavailableFallback`, a lexical
+        // engine that answered from regex over the customer's own text — which
+        // is inventing conversation under load. Commit a silent decision and
+        // keep every backend safety boundary instead.
+        pipelineFailureDecision = suppress('BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK')
       }
     }
 
