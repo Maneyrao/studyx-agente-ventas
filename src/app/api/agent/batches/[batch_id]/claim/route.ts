@@ -22,6 +22,7 @@ import {
   config,
   loadAgentACommercialConfig,
   loadAgentABrainConfig,
+  loadAgentARolloutConfig,
   loadConversationPipelineConfig,
 } from '@/lib/config';
 import { logger, timedStage } from '@/lib/observability/structured-log';
@@ -126,6 +127,7 @@ export async function POST(
 
   try {
     const brainConfig = loadAgentABrainConfig();
+    const rolloutConfig = loadAgentARolloutConfig();
     if (!brainConfig.ready) {
       return NextResponse.json({ error: 'AGENT_A_BRAIN_CONFIGURATION_INVALID' }, { status: 503 });
     }
@@ -159,6 +161,9 @@ export async function POST(
         },
         conversationPipelineEnabled: loadConversationPipelineConfig().enabled,
         agentABrainEnabled: brainConfig.enabled,
+        agentAContextScoping: rolloutConfig.contextScoping,
+        agentARepairEnabled: rolloutConfig.repairEnabled,
+        agentASingleRoute: rolloutConfig.singleRoute,
         agentABrainShadow: brainConfig.shadow,
       }
     )

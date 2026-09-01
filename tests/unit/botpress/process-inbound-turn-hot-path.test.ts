@@ -1707,6 +1707,51 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
+  it('does not execute the legacy conversation pipeline when single-route is enabled', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      conversation_pipeline_v1_enabled: true,
+      agent_a_brain_v1_enabled: false,
+      agent_a_brain_v1_shadow: false,
+      agent_a_context_scoping: false,
+      agent_a_repair_enabled: false,
+      agent_a_single_route: true,
+    };
+    claimed.context.batch_messages[0].content = 'Mantengamos este intercambio en formato escrito';
+    actionSpies.claim.mockResolvedValue(claimed);
+
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => ({
+      is: () => true,
+      output: {
+        schema_version: 4,
+        response: { content: 'Respuesta del camino de rollback.', citations: [] },
+        response_type: 'commercial_reply',
+        confidence: 0.9,
+        reason_code: 'MODEL_ADVISORY',
+        business_action: null,
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'waiting_user',
+        retrieval_used: null,
+      },
+    }));
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute, client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.conversationInterpreter).not.toHaveBeenCalled();
+    expect(actionSpies.plan).not.toHaveBeenCalled();
+  });
+
   it('keeps V1 behind the automation kill switch even when the feature flag is projected', async () => {
     configuration.automationEnabled = false;
     const claimed = claimedResponse() as unknown as ClaimedTurn;

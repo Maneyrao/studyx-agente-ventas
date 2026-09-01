@@ -48,6 +48,7 @@ import {
   bindCurrentConversationalIntentToMoveV1,
   buildAgentAContextV1,
 } from '../lib/conversation/agent-a-context'
+import { isLegacyConversationPipelineEligibleV1 } from '../lib/conversation/agent-a-routing'
 import {
   DEFAULT_AGENT_A_BRAIN_MODEL,
   DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
@@ -610,8 +611,11 @@ export const processInboundTurn = new Workflow({
       && owned.policy.may_respond
       && (owned.policy.allowed_response_types.includes('commercial_reply')
         || (brainAuthoritative && owned.policy.allowed_response_types.includes('social_reply')))
-    const legacyPipelineEligible = conversationalBaseEligible
-      && owned.features?.conversation_pipeline_v1_enabled === true
+    const legacyPipelineEligible = isLegacyConversationPipelineEligibleV1({
+      conversationalBaseEligible,
+      conversationPipelineEnabled: owned.features?.conversation_pipeline_v1_enabled === true,
+      singleRoute: owned.features?.agent_a_single_route === true,
+    })
     const brainEligible = conversationalBaseEligible
       && (brainAuthoritative || brainShadow)
       && (owned.deterministic_route === null || brainAuthoritative)

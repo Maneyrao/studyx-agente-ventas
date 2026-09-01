@@ -87,6 +87,7 @@ export interface ClaimBatchDependencies {
   readonly agentABrainEnabled?: boolean;
   readonly agentAContextScoping?: boolean;
   readonly agentARepairEnabled?: boolean;
+  readonly agentASingleRoute?: boolean;
   /** Inyectable para test; por defecto lee `contacts` con el cliente compartido. */
   readonly contactIntake?: (contactId: string) => Promise<ContactIntakeV1>;
   readonly agentABrainShadow?: boolean;
@@ -201,6 +202,7 @@ export interface ClaimedTurn {
     readonly agent_a_brain_v1_enabled: boolean;
     readonly agent_a_context_scoping: boolean;
     readonly agent_a_repair_enabled: boolean;
+    readonly agent_a_single_route: boolean;
     readonly agent_a_brain_v1_shadow: boolean;
   };
   readonly conversation_state_v1: Pick<
@@ -1004,6 +1006,7 @@ export async function claimBatch(
       agent_a_brain_v1_enabled: deps.agentABrainEnabled === true,
       agent_a_context_scoping: deps.agentAContextScoping === true,
       agent_a_repair_enabled: deps.agentARepairEnabled === true,
+      agent_a_single_route: deps.agentASingleRoute === true,
       agent_a_brain_v1_shadow: deps.agentABrainShadow === true,
     },
     conversation_state_v1: conversationStateV1,

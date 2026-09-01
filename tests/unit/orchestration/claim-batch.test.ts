@@ -304,6 +304,32 @@ describe('claimBatch', () => {
     expect(load).toHaveBeenCalledOnce();
   });
 
+  it('projects every behavioral Agent A rollout flag into the claimed wire contract', async () => {
+    const result = await claimBatch(input, {
+      ...buildDeps(),
+      agentABrainEnabled: true,
+      agentAContextScoping: true,
+      agentARepairEnabled: true,
+      agentASingleRoute: true,
+      agentABrainShadow: false,
+    });
+
+    expect(result).toMatchObject({
+      outcome: 'claimed',
+      features: {
+        agent_a_brain_v1_enabled: true,
+        agent_a_context_scoping: true,
+        agent_a_repair_enabled: true,
+        agent_a_single_route: true,
+        agent_a_brain_v1_shadow: false,
+      },
+    });
+    if (result.outcome !== 'claimed') return;
+    expect(ClaimedTurnSchema.parse(withWireUuids(result)).features).toMatchObject({
+      agent_a_single_route: true,
+    });
+  });
+
   it('loads facts, batch messages and call facts through one core snapshot port', async () => {
     const deps = buildDeps();
 

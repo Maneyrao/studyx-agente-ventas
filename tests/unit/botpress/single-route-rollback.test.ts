@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { isLegacyConversationPipelineEligibleV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-routing';
 
 const workflowSource = readFileSync(
   fileURLToPath(new URL('../../../botpress-agent/src/workflows/processInboundTurn.ts', import.meta.url)),
@@ -37,12 +38,17 @@ describe('la ruta duplicada sigue disponible como rollback', () => {
     }
   });
 
-  it('el flag de ruta única existe y está documentado como desactivación', () => {
-    const config = readFileSync(
-      fileURLToPath(new URL('../../../src/lib/config.ts', import.meta.url)),
-      'utf8',
-    );
-    expect(config).toContain('AGENT_A_SINGLE_ROUTE');
-    expect(config).toMatch(/DESACTIVA, no borra/u);
+  it('el flag de ruta única desactiva la ejecución legacy sin borrar el rollback', () => {
+    expect(isLegacyConversationPipelineEligibleV1({
+      conversationalBaseEligible: true,
+      conversationPipelineEnabled: true,
+      singleRoute: true,
+    })).toBe(false);
+    expect(isLegacyConversationPipelineEligibleV1({
+      conversationalBaseEligible: true,
+      conversationPipelineEnabled: true,
+      singleRoute: false,
+    })).toBe(true);
+    expect(workflowSource.match(/modelUnavailableFallback\(/gu)).toHaveLength(1);
   });
 });
