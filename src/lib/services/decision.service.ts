@@ -11,6 +11,11 @@ import { splitFullName } from '@/lib/heuristics/contact-identity';
 import { registerMessage, type Message } from './message.service';
 import { enqueueLeadProjection } from './projection.service';
 import { loadContactIntakeV1 } from '@/lib/repositories/contact-intake.repository';
+import {
+  paymentReportProjectionPayloadV1,
+  shouldProjectPaymentReportV1,
+  type PaymentReportProjectionSubjectV1,
+} from '@/features/payments/domain/payment-report-projection';
 import { auditLog } from '@/lib/audit/logger';
 import {
   loadBusinessWorkspaceConfig,
@@ -414,6 +419,10 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
   }
   const validatedInput = { ...input, decision };
   const payloadHash = sha256Hex(decisionPayload(validatedInput));
+
+  // Set inside the transaction, consumed after it commits: the operator row is
+  // a derived projection and must never run inside the canonical write.
+  let reportedPaymentContactId: string | null = null;
 
   const commit = async (): Promise<CommitDecisionResult> => {
   try {
@@ -1117,6 +1126,9 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     }
     if (preparedPipeline) {
       await new PostgresConversationStateStoreV1(db).transition(preparedPipeline.transition);
+      if (preparedPipeline.transition.payment_reported) {
+        reportedPaymentContactId = turn.contact_id;
+      }
     }
 
     await auditLog({
@@ -1172,7 +1184,45 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
 
   const result = await commit();
 
+  // A reported payment is durable the moment it commits; unlike a link, it
+  // needs no physical delivery of our own reply to become true. Best-effort:
+  // the scheduled reconciler converges the row if this attempt fails.
+  if (result.status === 'committed' && reportedPaymentContactId !== null) {
+    try {
+      await projectPendingPaymentsForContact(reportedPaymentContactId);
+    } catch (error) {
+      logger.error({
+        event: 'orchestration.payment_report.projection_enqueue_failed',
+        trace_id: validatedInput.trace_id,
+        contact_id: reportedPaymentContactId,
+        error: String(error),
+      });
+    }
+  }
+
   return result;
+}
+
+/**
+ * Reconciles every pending payment job of one contact. A reported payment
+ * arrives on a different turn from the link, so the link's job is addressed by
+ * contact rather than by this turn's outbound message.
+ */
+async function projectPendingPaymentsForContact(contactId: string): Promise<void> {
+  const resolved = await resolvePaymentProjectionRuntime(sql);
+  if (resolved.status !== 'ready') return;
+  const candidates = await sql<PaymentProjectionCandidate[]>`
+    SELECT decision_id, workspace_id, contact_id, outbound_message_id
+    FROM payment_projection_jobs
+    WHERE contact_id = ${contactId}::uuid
+      AND workspace_id = ${resolved.runtime.workspaceId}::uuid
+      AND state = 'pending'
+    ORDER BY delivered_at ASC, decision_id ASC
+    LIMIT 10
+  `;
+  for (const candidate of candidates) {
+    await projectPaymentProjectionCandidate(candidate, resolved.runtime);
+  }
 }
 
 export interface DeliveryReportInput {
@@ -1543,6 +1593,7 @@ interface PaymentLinkProjectionSignal {
   readonly contactName: string | null;
   readonly contactEmail: string | null;
   readonly traceId: string;
+  readonly paymentReported: boolean;
 }
 
 type PaymentProjectionReconciliationStatus = 'ready' | 'disabled' | 'error';
@@ -1612,6 +1663,7 @@ async function loadPaymentLinkProjectionSignal(
     name: string | null;
     email: string | null;
     trace_id: string;
+    payment_reported_at: Date | string | null;
   }>>`
     SELECT
       job.decision_id,
@@ -1622,7 +1674,13 @@ async function loadPaymentLinkProjectionSignal(
       c.phone,
       c.name,
       c.email,
-      job.trace_id::text AS trace_id
+      job.trace_id::text AS trace_id,
+      (
+        SELECT max(state.payment_reported_at)
+        FROM conversation_sales_context_states_v1 AS state
+        WHERE state.workspace_id = job.workspace_id
+          AND state.contact_id = job.contact_id
+      ) AS payment_reported_at
     FROM payment_projection_jobs AS job
     JOIN workspace_contacts AS wc
       ON wc.workspace_id = job.workspace_id
@@ -1649,20 +1707,30 @@ async function loadPaymentLinkProjectionSignal(
     contactName: row.name,
     contactEmail: row.email,
     traceId: row.trace_id,
+    paymentReported: row.payment_reported_at !== null,
   };
 }
 
 /**
- * Enqueues the `payment_link_sent` row (spec §5: `etapa_comercial=proposal`,
- * `estado_pago=pendiente`, `plan=<plan_code>`). Runtime configuration and
- * tenant equality have already been validated. A DB enqueue failure throws so
- * the pending job stays visible for the scheduled reconciler.
+ * Enqueues the operator row for a payment the customer says they made.
+ *
+ * Delivering a payment link used to be enough to write this row, and that was
+ * wrong: a delivered link says a customer was given a way to pay, not that a
+ * sale happened, so operators worked rows for people who never paid. The row
+ * now needs both halves of the evidence — the six data points that let a human
+ * find the person, and the customer's own claim that they paid.
+ *
+ * The claim is recorded as a claim. Nothing in this path can verify money
+ * arrived, so nothing it writes may say so.
+ *
+ * Runtime configuration and tenant equality have already been validated. A DB
+ * enqueue failure throws so the pending job stays visible for the reconciler.
  */
 async function enqueuePaymentLinkSentProjection(
   signal: PaymentLinkProjectionSignal,
   runtime: PaymentProjectionRuntime,
   db: DbClient,
-): Promise<'repaired' | 'unchanged'> {
+): Promise<'repaired' | 'unchanged' | 'skipped'> {
   if (signal.workspaceId !== runtime.workspaceId) throw new Error('PAYMENT_PROJECTION_TENANT_MISMATCH');
   // Interés canónico: el `offering_sku` de la decisión se proyecta como el
   // display_name canónico del catálogo (P1, informe 2026-08-23: el outbox
@@ -1674,22 +1742,27 @@ async function enqueuePaymentLinkSentProjection(
   `;
   const cursoInteres = offeringRows[0]?.display_name ?? signal.offeringSku;
   const identity = signal.contactName ? splitFullName(signal.contactName) : null;
+  const subject: PaymentReportProjectionSubjectV1 = {
+    nombre: identity?.nombre ?? null,
+    apellido: identity?.apellido ?? null,
+    correo: signal.contactEmail,
+    telefono: signal.phone,
+    cursoInteres,
+    plan: signal.planCode,
+    paymentReported: signal.paymentReported,
+  };
+  // The gate stays closed until both halves exist. The job stays pending
+  // rather than being consumed, so the row appears the moment they do.
+  if (!shouldProjectPaymentReportV1(subject)) return 'skipped';
+  const reported = paymentReportProjectionPayloadV1(subject);
   const projection = await enqueueLeadProjection({
     workspaceId: runtime.workspaceId,
     contactId: signal.contactId,
     spreadsheetId: runtime.sheets.spreadsheetId,
     tabName: runtime.sheets.tabName,
-    telefono: signal.phone,
-    nombre: identity?.nombre,
-    apellido: identity?.apellido,
-    email: signal.contactEmail ?? undefined,
-    etapaComercial: 'proposal',
-    cursoInteres,
-    plan: signal.planCode,
-    estadoPago: 'pendiente',
+    ...reported,
     fechaPago: '',
     callId: '',
-    ultimaSenal: 'payment_link_sent',
     traceId: signal.traceId,
   }, { sql: db });
   return projection.changed ? 'repaired' : 'unchanged';
@@ -1720,6 +1793,7 @@ async function projectPaymentProjectionCandidate(
     const signal = await loadPaymentLinkProjectionSignal(db, candidate);
     if (!signal) return 'skipped';
     const outcome = await enqueuePaymentLinkSentProjection(signal, runtime, db);
+    if (outcome === 'skipped') return 'skipped';
     await db`
       UPDATE payment_projection_jobs
       SET state = 'projected', projected_at = now()

@@ -8,6 +8,9 @@ import { createSandboxLookup } from '@/lib/repositories/sandbox-identity.reposit
 import { GoogleSheetsProvider } from '@/lib/providers/sheets/google-sheets-provider';
 import type { SheetRowValues, SheetsProvider } from '@/lib/providers/sheets/sheets-provider';
 import { runDeadlineQuery, WorkerDeadline, WorkerDeadlineExceeded } from './durable-worker-deadline';
+import { leadProjectionKey } from '@/features/payments/domain/payment-report-projection';
+
+export { leadProjectionKey };
 
 /**
  * Enqueue/flush primitives for the Google Sheets projection
@@ -36,9 +39,7 @@ const DEFAULT_LEASE_SECONDS = 45;
 const DEFAULT_DEADLINE_MS = 45_000;
 const MIN_OPERATION_BUDGET_MS = 25;
 
-export function leadProjectionKey(workspaceId: string, contactId: string): string {
-  return `lead:${workspaceId}:${contactId}`;
-}
+
 
 export interface LeadProjectionInput {
   workspaceId: string;

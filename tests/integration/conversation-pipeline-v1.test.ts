@@ -15,6 +15,8 @@ import { PostgresSalesContextStore } from '@/features/sales/adapters/postgres-sa
 import { EMBEDDING_DIMENSIONS } from '@/lib/embeddings/gemini';
 import { sql } from '@/lib/db/orchestrator';
 import { recordDeliveryReport } from '@/lib/services/decision.service';
+import { loadContactIntakeV1 } from '@/lib/repositories/contact-intake.repository';
+import { leadProjectionKey } from '@/features/payments/domain/payment-report-projection';
 import { processInboundMessage, type InboundEnvelope } from '@/lib/services/ingestion.service';
 import { openLocalTestDatabase } from '../helpers/db';
 
@@ -118,12 +120,16 @@ run('conversation pipeline V1 vertical', () => {
     for (const key of [
       'BUSINESS_WORKSPACE_SLUG', 'PAYMENT_LINK_12M', 'PAYMENT_LINK_6M',
       'PAYMENT_LINK_CONTADO', 'VOICE_PROVIDER',
+      'GOOGLE_SHEETS_SPREADSHEET_ID', 'GOOGLE_SHEETS_TAB_NAME',
     ]) previousEnv[key] = process.env[key];
     process.env.BUSINESS_WORKSPACE_SLUG = workspaceSlug;
     process.env.PAYMENT_LINK_12M = paymentLinks.monthly_12;
     process.env.PAYMENT_LINK_6M = paymentLinks.monthly_6;
     process.env.PAYMENT_LINK_CONTADO = paymentLinks.one_time;
     process.env.VOICE_PROVIDER = 'telegram_sandbox';
+    // The outbox is local PostgreSQL; no Google client is constructed here.
+    process.env.GOOGLE_SHEETS_SPREADSHEET_ID = `pipeline-sheet-${randomUUID()}`;
+    process.env.GOOGLE_SHEETS_TAB_NAME = 'Leads';
 
     const workspaces = await db!<Array<{ id: string }>>`
       INSERT INTO workspaces (slug, display_name, metadata)
@@ -223,7 +229,7 @@ run('conversation pipeline V1 vertical', () => {
       move: interpretedMove,
       business_context: claimed.business_context,
       catalog_index: claimed.catalog_index,
-    }, { state_store: stateStore });
+    }, { state_store: stateStore, contact_intake: loadContactIntakeV1 });
     const commitInput = {
       turn_id: claimed.turn_id,
       trace_id: input.trace_id,
@@ -327,9 +333,18 @@ run('conversation pipeline V1 vertical', () => {
     );
     expect(deferred.committed.outbound?.content).not.toContain(paymentLinks.monthly_12);
 
-    const payment = await prepareTurn(
+    const withheld = await commitTurn(
       'Retomemos el paso pendiente y compartime el acceso de cobro',
       move('request_payment_link'),
+    );
+    expect(withheld.committed.outbound?.content).not.toContain(paymentLinks.monthly_12);
+
+    // Supplying the missing identity resumes the link the customer already
+    // asked for; that is the turn that emits it, so it is the turn that must
+    // survive being committed twice at once.
+    const payment = await prepareTurn(
+      'Soy Ariana Paz, ariana.paz@example.test',
+      move('provide_contact_details'),
     );
     const concurrent = await Promise.all([
       commitClaimedDecision(payment.commitInput, { store: orchestrationStore }),
@@ -387,6 +402,34 @@ run('conversation pipeline V1 vertical', () => {
       payment_actions: 1,
       state_events_for_payment: 1,
     });
+
+    // A delivered link is not a sale. Nothing operator-facing exists yet.
+    const beforeReport = await db!<Array<{ payload: Record<string, string> }>>`
+      SELECT payload FROM sheet_projection_rows
+      WHERE projection_key = ${leadProjectionKey(workspaceId, payment.claimed.batch.contact_id)}
+    `;
+    expect(beforeReport).toHaveLength(0);
+
+    // The customer says they paid. Repeating it must not repeat the row.
+    for (const text of ['Ya hice el pago', 'Te confirmo que ya lo pagué']) {
+      await commitTurn(text, move('report_payment'));
+    }
+    const afterReport = await db!<Array<{ payload: Record<string, string> }>>`
+      SELECT payload FROM sheet_projection_rows
+      WHERE projection_key = ${leadProjectionKey(workspaceId, payment.claimed.batch.contact_id)}
+    `;
+    expect(afterReport).toHaveLength(1);
+    expect(afterReport[0].payload).toMatchObject({
+      nombre: 'Ariana',
+      apellido: 'Paz',
+      email: 'ariana.paz@example.test',
+      curso_interes: 'Redes Informáticas',
+      plan: 'monthly_12',
+      estado_pago: 'reportado_por_cliente',
+      estado_alta: 'pendiente_operador',
+      ultima_senal: 'payment_reported',
+    });
+    expect(afterReport[0].payload.telefono).toBe(phone);
 
     const finalState = await stateStore.load(
       workspaceSlug,

@@ -19,6 +19,7 @@ import {
   recordDeliveryReport,
   DeliveryReportConflictError,
 } from '@/lib/services/decision.service';
+import { PostgresConversationStateStoreV1 } from '@/features/conversation/adapters/postgres-conversation-state-store';
 import { leadProjectionKey } from '@/lib/services/projection.service';
 import { reconcileOrchestration } from '@/features/orchestration/application/reconcile-orchestration';
 import { PostgresReconciliationStore } from '@/features/orchestration/adapters/postgres-reconciliation-store';
@@ -442,6 +443,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       delivery_id: rows[0].id,
       attempt: rows[0].attempt_count,
       contact_id: context.contact.id,
+      conversation_id: context.conversation_id,
     };
   }
 
@@ -496,6 +498,41 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
     });
   }
 
+  /**
+   * The evidence a projected row now requires: the six data points that let a
+   * human find the customer, and the customer's own claim that they paid.
+   *
+   * Delivering a link used to be enough on its own, which is what put rows in
+   * front of operators for people who had never paid. These tests are about
+   * delivery fencing, so the evidence is recorded directly rather than acted
+   * out; the conversational route to it has its own vertical test.
+   */
+  async function recordReportedSale(
+    contactId: string,
+    conversationId: string,
+    offeringCode: 'course_fence' | 'decoracion_interiores' = 'course_fence',
+    planCode: 'monthly_12' | 'monthly_6' = 'monthly_12',
+  ) {
+    await sql`
+      UPDATE contacts
+      SET name = 'Ariana Paz', email = 'ariana.paz@example.test'
+      WHERE id = ${contactId}::uuid
+    `;
+    await new PostgresConversationStateStoreV1(sql).transition({
+      workspace_slug: PAYMENT_WORKSPACE_SLUG,
+      conversation_id: conversationId,
+      contact_id: contactId,
+      selected_offering_code: offeringCode,
+      selected_payment_plan: planCode,
+      stage: 'payment_link_sent',
+      call_preference: 'unknown',
+      call_offer_status: 'not_offered',
+      awaiting_reply: 'none',
+      payment_reported: true,
+      source_turn_id: null,
+    });
+  }
+
   async function projectionRows(contactId: string) {
     return sql<Array<{ payload: Record<string, unknown> }>>`
       SELECT payload FROM sheet_projection_rows
@@ -518,8 +555,24 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
     expect(await projectionRows(turn.contact_id)).toHaveLength(0);
   });
 
-  it('a confirmed delivery enqueues exactly one payment_link_sent row, even under replay', async () => {
+  it('a confirmed delivery alone enqueues nothing: a link is not a sale', async () => {
+    const turn = await seedPaymentTurn('Quiero pagar en 12 cuotas, sin reportar el pago');
+    await recordDeliveryReport({
+      outbound_id: turn.outbound!.id,
+      trace_id: randomUUID(),
+      status: 'submitted_to_botpress',
+      botpress_message_id: `bp-payment-${randomUUID()}`,
+      replayed: false,
+      error_code: null,
+      delivery_attempt: turn.attempt,
+    });
+
+    expect(await projectionRows(turn.contact_id)).toHaveLength(0);
+  });
+
+  it('enqueues exactly one reported-payment row once the evidence exists, even under replay', async () => {
     const turn = await seedPaymentTurn('Quiero pagar en 12 cuotas, opción confirmada');
+    await recordReportedSale(turn.contact_id, turn.conversation_id);
     const report = {
       outbound_id: turn.outbound!.id,
       trace_id: randomUUID(),
@@ -538,10 +591,11 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
     const rows = await projectionRows(turn.contact_id);
     expect(rows).toHaveLength(1);
     expect(rows[0].payload).toMatchObject({
-      etapa_comercial: 'proposal',
-      estado_pago: 'pendiente',
+      etapa_comercial: 'payment_reported',
+      estado_pago: 'reportado_por_cliente',
+      estado_alta: 'pendiente_operador',
       plan: 'monthly_12',
-      ultima_senal: 'payment_link_sent',
+      ultima_senal: 'payment_reported',
     });
   });
 
@@ -573,6 +627,9 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       model: { provider: 'botpress' as const, model: 'test-model', prompt_version: 'v-g35-02' },
     });
     const first = await commitAgentDecision(paymentInput(firstContext.turn_id));
+    await recordReportedSale(
+      firstContext.contact.id, firstContext.conversation_id, 'decoracion_interiores', 'monthly_6',
+    );
     const deliveryRows = await sql<Array<{ attempt_count: number }>>`
       SELECT attempt_count FROM outbound_deliveries WHERE message_id = ${first.outbound!.id}::uuid
     `;
@@ -666,6 +723,9 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
         reply_to_external_message_id: firstEnvelope.external_message_id,
       },
     });
+    await recordReportedSale(
+      firstContext.contact.id, firstContext.conversation_id, 'decoracion_interiores', 'monthly_6',
+    );
     const input = (turnId: string) => ({
       turn_id: turnId,
       trace_id: randomUUID(),
@@ -761,6 +821,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
 
   it('keeps physical delivery evidence when projection crashes, then the automatic reconciler converges without resend', async () => {
     const turn = await seedPaymentTurn('Quiero pagar en 12 cuotas, crash atómico');
+    await recordReportedSale(turn.contact_id, turn.conversation_id);
     const suffix = randomUUID().replaceAll('-', '').slice(0, 12);
     const functionName = `test_fail_sheet_projection_${suffix}`;
     const triggerName = `test_fail_sheet_projection_trigger_${suffix}`;
@@ -975,6 +1036,10 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       END
       WHERE id IN (${first.decision_id}::uuid, ${second.decision_id}::uuid)
     `;
+    // The customer's final selection is the one they say they paid for.
+    await recordReportedSale(
+      firstContext.contact.id, firstContext.conversation_id, 'decoracion_interiores', 'monthly_6',
+    );
 
     const sweep = async () => {
       await reconcileDeliveredPaymentProjections({ limit: 100 });

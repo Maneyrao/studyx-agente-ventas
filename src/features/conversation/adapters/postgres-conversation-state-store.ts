@@ -76,12 +76,14 @@ export class PostgresConversationStateStoreV1 implements ConversationStateStoreV
         INSERT INTO conversation_sales_context_states_v1 (
           workspace_id, conversation_id, contact_id,
           selected_offering_code, selected_payment_plan, stage,
-          call_preference, call_offer_status, call_offer_count, awaiting_reply, source_turn_id
+          call_preference, call_offer_status, call_offer_count, awaiting_reply,
+          payment_reported_at, source_turn_id
         )
         SELECT
           eligible.workspace_id, ${input.conversation_id}::uuid, ${input.contact_id}::uuid,
           ${input.selected_offering_code}, ${input.selected_payment_plan}, ${input.stage},
           ${input.call_preference}, ${input.call_offer_status}, ${input.call_offer_count ?? 0}, ${input.awaiting_reply},
+          CASE WHEN ${input.payment_reported} THEN now() END,
           ${input.source_turn_id}::uuid
         FROM eligible
         WHERE NOT EXISTS (SELECT 1 FROM prior_source)
@@ -98,6 +100,12 @@ export class PostgresConversationStateStoreV1 implements ConversationStateStoreV
               ELSE EXCLUDED.call_offer_count
             END,
             awaiting_reply = EXCLUDED.awaiting_reply,
+            -- Una afirmación de pago no se retracta ni se re-fecha: el primer
+            -- momento en que el cliente lo dijo es el que un humano necesita.
+            payment_reported_at = COALESCE(
+              conversation_sales_context_states_v1.payment_reported_at,
+              EXCLUDED.payment_reported_at
+            ),
             source_turn_id = EXCLUDED.source_turn_id,
             version = conversation_sales_context_states_v1.version + 1,
             updated_at = now()
@@ -108,12 +116,14 @@ export class PostgresConversationStateStoreV1 implements ConversationStateStoreV
         INSERT INTO conversation_sales_context_state_events_v1 (
           workspace_id, conversation_id, contact_id, state_version, source_turn_id,
           selected_offering_code, selected_payment_plan, stage,
-          call_preference, call_offer_status, call_offer_count, awaiting_reply
+          call_preference, call_offer_status, call_offer_count, awaiting_reply,
+          payment_reported_at
         )
         SELECT
           workspace_id, conversation_id, contact_id, version, source_turn_id,
           selected_offering_code, selected_payment_plan, stage,
-          call_preference, call_offer_status, call_offer_count, awaiting_reply
+          call_preference, call_offer_status, call_offer_count, awaiting_reply,
+          payment_reported_at
         FROM upserted
         ON CONFLICT DO NOTHING
       ), resolved AS (
