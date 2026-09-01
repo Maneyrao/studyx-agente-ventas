@@ -45,7 +45,9 @@ Ninguna requiere decisión tuya; las dejo escritas porque un ejecutor que no las
 
 **`intake_missing` llega en la Fase 1, y D3 lo nombra como el mecanismo de la pregunta.** Entre la Fase 0 y la Fase 1 el modelo no tiene el campo. No es un bloqueo: tu propia condición contempla el hueco («si queda un fallback transitorio, sólo puede mencionar esos campos»), y en ese intervalo el objetivo `request_contact_details` cae en `safeContextualOpening` → «Para dejarlo listo necesito unos datos tuyos», que no nombra ningún campo prohibido. El modelo ya ve la conversación completa y el `commercial_state`; `intake_missing` lo vuelve preciso, no posible.
 
-**Retell está fuera de alcance por §01 y contiene ciudad y ZIP. Queda intacto.** `botpress-agent/retell/retell-agent-a-chat-llm.json` es un prompt del Agente A para otro canal, excluido por la especificación. Resolución aprobada: **no se toca**. El guard de T0.4 lo excluye explícitamente y con motivo escrito, para que la exclusión sea una decisión visible y no un olvido. Cuando Retell entre en alcance, se saca esa línea del guard y el archivo aparece solo en la lista de fallos.
+**Retell está fuera de alcance por §01 y contiene ciudad y ZIP. Queda intacto.** `botpress-agent/retell/retell-agent-a-chat-llm.json` es un prompt del Agente A para otro canal, excluido por la especificación. Resolución aprobada: **no se toca**. No figura en la lista de artefactos activos del guard, y el motivo va escrito ahí para que sea una decisión visible y no un olvido. Cuando Retell entre en alcance, se agrega su ruta y el archivo aparece solo en la lista de fallos.
+
+**El guard inspecciona artefactos activos, no el repositorio entero.** Lo que llega al modelo, lo que el backend puede decir y los datos con que se lo evalúa. Documentación y tests quedan fuera **a propósito**: tienen que poder nombrar los campos para prohibirlos. Es una lista de inclusión y no de exclusión porque una lista de exclusión deja pasar cualquier archivo nuevo por omisión, y este defecto entró precisamente por archivos que nadie estaba mirando.
 
 ---
 
@@ -106,7 +108,7 @@ git diff --stat                    # revisión del alcance del diff
 | `docs/operaciones/revisiones-pendientes.md` | Cómo consulta un operador las derivaciones, y qué **no** hace el sistema |
 | `tests/unit/conversation/state-fact-registry.test.ts` | |
 | `tests/unit/conversation/technical-fallback.test.ts` | |
-| `tests/unit/contracts/intake-fields-repo-guard.test.ts` | Guard de repositorio: ciudad/ZIP no vuelven por ningún archivo (D3) |
+| `tests/unit/contracts/intake-fields-repo-guard.test.ts` | Guard sobre artefactos **activos** del Agente A: ciudad, estado y ZIP no vuelven por ningún prompt, fallback, fixture ni contrato. Documentación y tests quedan fuera para poder nombrarlos al prohibirlos (D3) |
 | `tests/unit/prompts/canonical-prompt-v2.test.ts` | El prompt no puede ordenar lo que V5 bloquea (P1–P11) |
 | `tests/integration/conversation/commit-before-outbound.test.ts` | O1–O3 con fallo inyectado |
 | `tests/integration/conversation/human-review-derivation.test.ts` | P·1 end-to-end |
@@ -712,49 +714,67 @@ import { describe, expect, it } from 'vitest';
  */
 const FORBIDDEN = [
   { name: 'ciudad', pattern: 'ciudad' },
-  { name: 'zip', pattern: 'zip[ _]?code|\\bZIP\\b' },
+  { name: 'estado (como campo de domicilio)', pattern: 'ciudad,? (y )?estado|estado y (zip|c[oó]digo)' },
+  { name: 'ZIP', pattern: 'zip[ _]?code|\\bZIP\\b' },
   { name: 'código postal', pattern: 'c[oó]digo postal' },
   { name: 'nombre completo', pattern: 'nombre completo|full name' },
 ];
 
-// Fuera del alcance: dependencias, artefactos y este mismo archivo.
-const EXCLUDED = [
-  ':(exclude)**/node_modules/**', ':(exclude)**/package-lock.json',
-  ':(exclude)**/*.generated.ts', ':(exclude)artifacts/**',
-  ':(exclude)docs/superpowers/plans/**', ':(exclude)docs/architecture/**',
-  ':(exclude)tests/unit/contracts/intake-fields-repo-guard.test.ts',
-  // Retell está fuera de alcance por §01 de la especificación. La exclusión
-  // es deliberada y va escrita para que sea visible: el archivo contiene
-  // ciudad y ZIP y NO se corrige en este trabajo. Cuando Retell entre en
-  // alcance, se borra esta línea y el archivo aparece solo en los fallos.
-  ':(exclude)botpress-agent/retell/**',
+/**
+ * El guard inspecciona ÚNICAMENTE artefactos activos del Agente A: lo que
+ * llega al modelo, lo que el backend puede decir, y los datos con que se lo
+ * evalúa.
+ *
+ * Es una lista de inclusión y no de exclusión, por una razón concreta: una
+ * lista de exclusión deja pasar cualquier archivo nuevo por omisión, y este
+ * defecto entró precisamente por archivos que nadie estaba mirando.
+ *
+ * La documentación y los tests quedan fuera a propósito. Tienen que poder
+ * NOMBRAR los campos para prohibirlos: una prohibición que no puede nombrar
+ * lo que prohíbe obliga a adivinar, y adivinar es cómo volvieron a entrar.
+ * Un test que afirma «el modelo no produce esta cadena» necesita la cadena.
+ */
+const ACTIVE_AGENT_A_ARTIFACTS = [
+  'docs/prompts/',                      // fuente del prompt canónico
+  'botpress-agent/src/prompts/',        // prompts y su módulo generado
+  'botpress-agent/src/lib/conversation/',
+  'botpress-agent/src/workflows/',
+  'botpress-agent/evals/personas/',     // fixtures: son entrada de evaluación
+  'src/features/conversation/',
+  'src/lib/services/',
 ];
+
+// Retell está fuera de alcance por §01 de la especificación. No aparece en la
+// lista de arriba a propósito, y va escrito para que sea una decisión visible
+// y no un olvido: el archivo contiene ciudad y ZIP y NO se corrige en este
+// trabajo. Cuando Retell entre en alcance, se agrega su ruta y el archivo
+// aparece solo en los fallos.
 
 function hits(pattern: string): string[] {
   try {
-    return execFileSync('git', ['grep', '-nIE', pattern, '--', '.', ...EXCLUDED], {
-      encoding: 'utf8',
-    }).trim().split('\n').filter(Boolean);
+    return execFileSync(
+      'git',
+      ['grep', '-nIE', pattern, '--', ...ACTIVE_AGENT_A_ARTIFACTS],
+      { encoding: 'utf8' },
+    ).trim().split('\n').filter(Boolean);
   } catch {
     return []; // git grep sale con 1 cuando no hay coincidencias
   }
 }
 
-describe('el intake es de seis campos en todo el repositorio', () => {
+describe('el intake es de seis campos en todo artefacto activo del Agente A', () => {
   for (const { name, pattern } of FORBIDDEN) {
-    it(`no existe «${name}» en ningún prompt, fallback, fixture, contrato ni test`, () => {
+    it(`no existe «${name}» en ningún prompt, fallback, fixture ni contrato activo`, () => {
       expect(hits(pattern)).toEqual([]);
     });
   }
 
-  it('el archivo generado del prompt tampoco lo contiene', () => {
-    // Excluido del git grep porque es derivado, pero si el generador corrió
-    // con una fuente sucia hay que enterarse acá y no en producción.
-    expect(hits('ciudad|zip[ _]?code').length + 0).toBe(0);
-    const generated = require('node:fs').readFileSync(
-      'botpress-agent/src/prompts/studyx-agent-a-canonical.generated.ts', 'utf8',
-    );
-    expect(generated).not.toMatch(/ciudad|zip\s*code|c[oó]digo postal/iu);
+  it('la lista de artefactos activos cubre el módulo generado del prompt', () => {
+    // El generado es derivado, pero si el generador corrió con una fuente
+    // sucia hay que enterarse acá y no en producción. Está cubierto por
+    // `botpress-agent/src/prompts/`; este test lo fija para que un cambio de
+    // ubicación no lo saque del barrido en silencio.
+    expect(hits('STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION').length).toBeGreaterThan(0);
   });
 });
 ```
@@ -817,9 +837,11 @@ Mismo patrón en los cinco de `studyx-happy-path-cases-v6.json` y los tres de `s
 
 - [ ] **Step 6: Los cinco tests**
 
+Los tests **sí pueden nombrar** los campos prohibidos: el guard no los inspecciona, y una aserción negativa necesita la cadena que niega.
+
 | Sitio | Qué afirma hoy | Acción |
 |---|---|---|
-| `agent-a-brain.test.ts:483` | que el modelo produce el bloque con ciudad/estado/zip | reescribir: afirma que **no** lo produce |
+| `agent-a-brain.test.ts:483` | que el modelo produce el bloque con ciudad/estado/zip | reescribir: afirma que **no** lo produce, citando la cadena |
 | `agent-a-brain-model-copy.test.ts:63` | idem, en variante de una línea | idem |
 | `agent-a-sales-bridge-prompt.test.ts:183` | `not.toContain('Ask for full name, email, city and ZIP code')` | ya es protectivo; actualizar la cadena a la redacción nueva |
 | `agent-a-sales-bridge-prompt.test.ts:342` | espera la lista vieja de campos prohibidos | actualizar a la redacción del Step 4 |

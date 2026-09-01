@@ -38,7 +38,11 @@ Seis datos · `payment_reported` ≠ `payment_verified` · revisión humana · S
 
 ### El contrato comercial congelado
 
-Los únicos datos son **nombre, apellido, correo, teléfono, curso canónico y plan canónico**. No se pide ni se agrega ningún otro campo, en ningún prompt, fallback, fixture, contrato ni test.
+Los únicos datos son **nombre, apellido, correo, teléfono, curso canónico y plan canónico**. No se pide ni se agrega ningún otro campo.
+
+**Campos explícitamente prohibidos: ciudad, estado y ZIP.** Se nombran acá porque una prohibición que no puede nombrar lo que prohíbe obliga a cada lector a adivinar qué son «los campos de domicilio», y adivinar es exactamente cómo volvieron a entrar. Estaban repartidos en el prompt canónico, en un fallback del backend, en dos prompts más, en dos fixtures de evaluación y en dos tests que los afirmaban como conducta esperada.
+
+Junto a ellos queda prohibido **«nombre completo»**, que no es un campo de más sino una fusión de dos: pedirlo así hace imposible separar nombre de apellido, que son dos de los seis datos.
 
 Y la distinción que sostiene todo lo demás: **payment_reported ≠ payment_verified**. «Ya pagué» es la afirmación del cliente, fechada y durable. La acreditación del dinero es externa, humana y posterior; ningún turno conversacional puede establecerla, y no existe ni existirá acá una columna que diga que el dinero llegó.
 
@@ -331,7 +335,7 @@ Se edita la fuente completa y se versiona. No se resume ni se parchea el generad
 |---|---|
 | **P1** | Solicitar únicamente nombre, apellido, correo y teléfono. |
 | **P2** | Curso y plan provienen del estado canónico; el prompt no los pide como dato de inscripción. |
-| **P3** | Eliminar los tres campos de domicilio de toda la fuente. |
+| **P3** | Eliminar **ciudad, estado y ZIP** de toda la fuente, y también «nombre completo». |
 | **P4** | Eliminar «Ya te dejo la preinscripción cargada en el sistema.» (§ 5 Fricción de pago). |
 | **P5** | Eliminar «te doy el alta académica y genero tus credenciales de acceso.» (§ 4 Fase 5). |
 | **P6** | Reemplazar por el copy autorizado: «Registré tus datos. Cuando informes el pago, el equipo lo revisará y, si está acreditado, gestionará tu acceso.» |
@@ -391,7 +395,7 @@ Implementar `intake_missing` y el bloque `capabilities` completo. Medir tasa de 
 
 `TurnRejectionV1`, `stage_hypothesis`, `repair_of` y paridad de espejos. Escalera N1–N3 completa. Reparación detrás de `AGENT_A_REPAIR_ENABLED`, apagada; se enciende al final.
 
-**Gate:** cero silencios en 20 casos × 3 corridas · ≥ 95 % de turnos en una llamada · p95 < 6 s · reparación exitosa ≥ 80 % · `technical_fallback_count` ≤ 2 % de los turnos.
+**Gate:** cero silencios en 20 casos × 3 corridas · ≥ 95 % de turnos elegibles con un único llamado al LLM (§ 12) · p95 < 6 s · reparación exitosa ≥ 80 % · `technical_fallback_count` ≤ 2 % de los turnos.
 
 *rollback: `AGENT_A_REPAIR_ENABLED=false`; el rechazo vuelve a N1/N3, sin silencio.*
 
@@ -434,6 +438,7 @@ Por turno, no por caso. Un caso que falla por un turno deja de borrar la informa
 | `human_review_count` | derivaciones a revisión | estado |
 | tasa de éxito conversacional | turnos que contestaron de verdad ÷ turnos. **N3 no entra en el numerador.** | runner |
 | llamadas por turno | 1 + reparaciones | runner |
+| `provider_failover_calls` | invocaciones extra por caída, timeout o cuota del proveedor primario | runner |
 | silencios | turnos entrantes con cero mensajes visibles **y sin opt-out ni bloqueo** | `messages` |
 | p50 / p95 | latencia extremo a extremo por turno visible | runner |
 | tokens | entrada y salida por llamada | proveedor |
@@ -443,6 +448,33 @@ Por turno, no por caso. Un caso que falla por un turno deja de borrar la informa
 
 **Línea base actual:** p50 2.854 ms · p95 3.456 ms · ~5.900 tokens de entrada por turno · 4 supresiones en 88 turnos (≈ 4,5 %) · variación 18/15/16 de 20 sobre el mismo código.
 
+### Un único llamado al LLM por turno elegible en ≥ 95 %
+
+El criterio de aceptación decía «≥ 95 % de turnos resueltos en una sola llamada». Así no es accionable: no dice qué turno entra en el denominador ni qué invocación cuenta como llamada. Queda definido así.
+
+**Turno elegible** — el denominador. Un turno entrante que llegó a la ruta autoritativa del modelo, es decir que cumple **todas** estas condiciones:
+
+- la automatización está encendida;
+- la política permite responder;
+- el contacto no está bloqueado y no pidió opt-out;
+- el turno no fue resuelto por una ruta determinística;
+- el proveedor fue efectivamente invocado al menos una vez.
+
+Quedan **fuera del denominador**: opt-out y bloqueados (su silencio es deliberado y correcto), las rutas determinísticas (no consultan al modelo, así que no hablan de si la arquitectura ahorra llamadas) y los turnos donde el proveedor nunca llegó a ser invocado.
+
+**Llamada** — el numerador cuenta los turnos elegibles resueltos con **exactamente una invocación de generación de propuesta**. Una invocación es un intento de producir una `AgentATurnProposalV1`. No cuentan como llamada: embeddings, recuperación de memoria, ni el intérprete o el compositor de la ruta legacy que la Fase 3 retira.
+
+**Failover y reparación se cuentan por separado, y esto no es un tecnicismo.** Son dos causas distintas con dos arreglos distintos:
+
+| Métrica | Qué cuenta | Qué significa que suba |
+|---|---|---|
+| `repair_rate` | turnos elegibles que invocaron N2 | la validación rechaza demasiado: el recorte de contexto o el prompt están mal |
+| `provider_failover_calls` | invocaciones extra por caída, timeout o cuota del proveedor primario | el proveedor está degradado; no dice nada sobre la arquitectura |
+
+El gate de **≥ 95 % se mide sobre `repair_rate`**: turnos elegibles resueltos sin invocar N2, dividido turnos elegibles. El failover se reporta al lado y **nunca** entra en ese cociente.
+
+El motivo es que mezclarlos rompe la métrica en las dos direcciones. Una caída de DeepSeek se leería como un fallo de arquitectura y dispararía un rediseño que no arregla nada; y a la inversa, un período de proveedor impecable podría enmascarar una tasa de reparación en ascenso. Un número que sube por dos causas que se arreglan distinto no sirve para decidir nada.
+
 ---
 
 ## § 13 Criterios de aceptación
@@ -450,7 +482,7 @@ Por turno, no por caso. Un caso que falla por un turno deja de borrar la informa
 - Cero silencios no deliberados en 20 casos × 3 corridas
 - Silencio por opt-out o bloqueo conservado: nunca recibe N3
 - p95 extremo a extremo < 6 s
-- ≥ 95 % de turnos resueltos en una sola llamada
+- **≥ 95 % de turnos elegibles resueltos con un único llamado al LLM**, medido sobre `repair_rate` según la definición de § 12; el failover de proveedor se reporta aparte y no entra en el cociente
 - Reparación exitosa ≥ 80 % de los turnos que llegan a N2
 - Cero promesas operativas falsas en todas las transcripciones
 - Un link por contacto y una fila de operador por contacto, bajo replay

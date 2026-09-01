@@ -55,10 +55,27 @@ describe('la especificación aprobada vive en el repositorio', () => {
     for (const field of ['nombre', 'apellido', 'correo', 'teléfono', 'curso', 'plan']) {
       expect(spec.toLowerCase()).toContain(field);
     }
-    // El documento normativo no puede nombrar los campos prohibidos ni
-    // siquiera para prohibirlos: el guard de T0.4 excluye `docs/architecture`
-    // del barrido, así que una mención acá no se detectaría en ningún lado.
-    expect(spec).not.toMatch(/\bzip\b|c[oó]digo postal/iu);
+  });
+
+  it('nombra explícitamente los tres campos prohibidos', () => {
+    // Una prohibición que no puede nombrar lo que prohíbe no es una
+    // prohibición: obliga a cada lector a adivinar qué son «los campos de
+    // domicilio». El guard de T0.4 inspecciona únicamente artefactos activos
+    // del Agente A, así que la documentación puede —y debe— nombrarlos.
+    for (const field of [/\bciudad\b/iu, /\bestado\b/iu, /\bZIP\b/u]) {
+      expect(spec).toMatch(field);
+    }
+  });
+
+  it('define sin ambigüedad el criterio de una sola llamada', () => {
+    // «≥ 95 % de turnos resueltos en una sola llamada» es inaccionable sin
+    // decir qué turno cuenta y qué llamada cuenta.
+    expect(spec).toMatch(/turno elegible/iu);
+    expect(spec).toMatch(/95\s?%/u);
+    // Failover de proveedor y reparación son causas distintas con arreglos
+    // distintos; medirlas juntas hace que una caída de proveedor se lea como
+    // un fallo de arquitectura.
+    expect(spec).toMatch(/failover/iu);
   });
 
   it('fija los textos aprobados palabra por palabra', () => {
