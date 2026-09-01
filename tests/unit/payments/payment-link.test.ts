@@ -363,6 +363,42 @@ describe('materializePaymentLinkAction', () => {
     })).toEqual({ ok: false, reason: 'PLAN_MISMATCH' });
   });
 
+  it('never lets a stale legacy selection override the plan the V1 planner authorized', () => {
+    // `sales_context_states` (legacy) and `conversation_sales_context_states_v1`
+    // coexist, and a session the V1 planner already closed can leave the legacy
+    // row holding a different plan. The planner's value must win outright:
+    // otherwise a retired selection could still decide what the customer pays.
+    const result = materializePaymentLinkAction({
+      action: action({ plan_code: 'monthly_6' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
+      backendAuthorizedPlanCode: 'monthly_6',
+      selectedPlanCode: 'monthly_12',
+      deferredPlanCode: 'monthly_12',
+      batchMessages: [msg('dale, mandame el link')],
+      businessSnapshot,
+      contact: allowedContact(),
+      modelResponseText: 'Perfecto.',
+      resolver,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.block.url).toBe(LINK_6M);
+
+    // And the legacy value cannot authorize an action the planner did not.
+    expect(materializePaymentLinkAction({
+      action: action({ plan_code: 'monthly_12' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
+      backendAuthorizedPlanCode: 'monthly_6',
+      selectedPlanCode: 'monthly_12',
+      deferredPlanCode: 'monthly_12',
+      batchMessages: [msg('dale, mandame el link')],
+      businessSnapshot,
+      contact: allowedContact(),
+      modelResponseText: null,
+      resolver,
+    })).toEqual({ ok: false, reason: 'PLAN_MISMATCH' });
+  });
+
   it('renders exactly the configured URL when canonical snapshot metadata is stale', () => {
     const staleUrl = 'https://buy.stripe.com/stale-snapshot-link';
     const result = materializePaymentLinkAction({

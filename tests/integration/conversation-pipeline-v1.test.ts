@@ -468,4 +468,43 @@ run('conversation pipeline V1 vertical', () => {
     `;
     expect(rows[0]).toEqual({ links: 1, projection_jobs: 1, payment_actions: 1 });
   });
+
+  // Continues the same conversation. `sales_context_states` (legacy) and
+  // `conversation_sales_context_states_v1` coexist, and the legacy row still
+  // holds monthly_12 from the journey above. A session that V1 closed must not
+  // be reopenable from it.
+  it('ignores a legacy plan that the V1 session already retired', async () => {
+    const greeting = await commitTurn('Buenas tardes', move('greeting'));
+
+    const legacy = await salesStore.load(workspaceSlug, greeting.claimed.batch.contact_id);
+    expect(legacy?.selected_payment_plan).toBe('monthly_12');
+
+    const state = await stateStore.load(
+      workspaceSlug,
+      greeting.claimed.batch.conversation_id,
+      greeting.claimed.batch.contact_id,
+    );
+    expect(state).toMatchObject({
+      selected_offering_code: null,
+      selected_payment_plan: null,
+      stage: 'exploring',
+    });
+
+    const resumed = await commitTurn('dale, mandame el link', move('request_payment_link'));
+    expect(resumed.committed.outbound?.content).not.toContain(paymentLinks.monthly_12);
+    expect(resumed.committed.outbound?.content).not.toContain(paymentLinks.monthly_6);
+    expect(resumed.committed.outbound?.content).not.toContain(paymentLinks.one_time);
+
+    const after = await db!<Array<{ links: number; payment_actions: number }>>`
+      SELECT
+        (SELECT count(*)::integer FROM messages
+         WHERE conversation_id = ${resumed.claimed.batch.conversation_id}::uuid
+           AND direction = 'outbound' AND content LIKE ${`%${paymentLinks.monthly_12}%`}) AS links,
+        (SELECT count(*)::integer FROM agent_decisions ad
+         JOIN messages m ON m.id = ad.turn_id
+         WHERE m.conversation_id = ${resumed.claimed.batch.conversation_id}::uuid
+           AND ad.business_action ->> 'type' = 'send_payment_link') AS payment_actions
+    `;
+    expect(after[0]).toEqual({ links: 1, payment_actions: 1 });
+  });
 });
