@@ -132,6 +132,20 @@ export const AgentATurnProposalV1Schema = z.object({
   proposed_action: ProposedActionSchema,
   used_fact_ids: z.array(IdentifierSchema).max(32),
   used_memory_ids: z.array(IdentifierSchema).max(5),
+  // Asesor. No persiste y no autoriza nada (§ 09): el backend conserva
+  // sus siete hitos duros y sólo con evidencia durable. Entra para que
+  // el modelo pueda declarar dónde cree que está la conversación, y para
+  // poder medir cuánto se desvía de la etapa que el backend infiere.
+  stage_hypothesis: z.enum([
+    'exploring', 'qualified', 'course_selected', 'plan_selected',
+    'payment_link_sent', 'handoff', 'closed',
+  ]).optional(),
+  // Presente sólo en la reescritura. `attempt` es literal 1: no hay
+  // segundo reintento (A5), y el tipo lo hace imposible de expresar.
+  repair_of: z.object({
+    rejection_id: z.string().uuid(),
+    attempt: z.literal(1),
+  }).strict().nullable().default(null),
   memory_candidates: z.array(MemoryCandidateSchema).max(10),
 }).strict().superRefine((value, context) => {
   if (new Set(value.used_fact_ids).size !== value.used_fact_ids.length) {
