@@ -164,3 +164,165 @@ export function stripModelAuthoredCallOffers(text: string): string {
     .filter((paragraph) => paragraph.length > 0)
     .join('\n\n');
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// V5 · § 05b — Autorización por estado durable, no por texto.
+//
+// Todo lo de arriba decide si una oración afirma un resultado operativo, y
+// hasta ahora decidía TAMBIÉN si esa afirmación era válida. Eso era un error
+// de diseño con dos caras:
+//
+//   - Demasiado estricto: bloqueaba «Registré tus datos. Cuando informes el
+//     pago, el equipo lo revisará y, si está acreditado, gestionará tu
+//     acceso.» —la frase que P6 manda escribir— porque veía un resultado
+//     operativo junto a un verbo en primera persona, sin mirar a quién se
+//     atribuye el resultado ni cuándo ocurre.
+//
+//   - Demasiado laxo: dejaba pasar «Registré tus datos» aunque no se hubiera
+//     registrado nada, porque esa oración no contiene ningún sustantivo
+//     operativo de los que reconoce.
+//
+// La salida fácil habría sido una lista blanca con la frase aprobada. Sería
+// un error: la misma oración es verdadera si los datos están registrados y
+// falsa si no, y una lista blanca no distingue esos dos casos.
+//
+// El detector léxico no desaparece — sigue haciendo falta para reconocer que
+// una oración hace una afirmación de estado. Lo que cambia es que ya no
+// decide si es válida: eso lo decide la cita contra el estado durable.
+// ─────────────────────────────────────────────────────────────────────────
+
+import type { StateFactIdV1 } from './state-fact-registry';
+
+export interface OperationalAssertionV1 {
+  readonly sentence: string;
+  /** El hecho que debe estar materializado para que la oración sea cierta. */
+  readonly requires: StateFactIdV1;
+}
+
+/**
+ * Los hitos externos —inscripción, alta, matrícula, credenciales, acceso
+ * entregado, pago verificado— no tienen `fact_id` porque ningún turno
+ * conversacional puede establecerlos. Se les asigna un requisito imposible:
+ * caen por ausencia de respaldo igual que cualquier otra afirmación sin
+ * hecho, sin una regla especial que los enumere.
+ */
+const UNREACHABLE_MILESTONE = 'state:__external_milestone__:v1' as StateFactIdV1;
+
+/**
+ * `\b` no sirve acá. Se apoya en `\w`, que en JavaScript es `[A-Za-z0-9_]`
+ * y no incluye vocales acentuadas: en «registré» no hay frontera de palabra
+ * después de la «é», así que `registr[ée]\b` no cierra nunca. Es el mismo
+ * motivo por el que los patrones de arriba usan `[^\p{L}]` en vez de `\b`.
+ * Acá se usan lookarounds, que no consumen el carácter vecino.
+ */
+const L = '(?<![\\p{L}])';
+const R = '(?![\\p{L}])';
+
+const ASSERTION_CLASSES: readonly {
+  readonly pattern: RegExp;
+  readonly requires: StateFactIdV1;
+}[] = [
+  {
+    // Afirmar que los datos del cliente quedaron guardados.
+    pattern: new RegExp(
+      `${L}(?:registr[éeo]|guard[éeo]|anot[éeo]|tom[éeo])${R}[^.;]{0,40}${L}datos${R}`,
+      'iu',
+    ),
+    requires: 'state:intake_recorded:v1',
+  },
+  {
+    // Afirmar que consta el aviso de pago del cliente.
+    pattern: new RegExp(
+      `${L}(?:tengo|qued[óo])\\s+registrad[oa]${R}[^.;]{0,40}`
+      + `${L}(?:pago|abonaste|pagaste|informaste)${R}`,
+      'iu',
+    ),
+    requires: 'state:payment_reported:v1',
+  },
+  {
+    pattern: new RegExp(
+      `${L}(?:inscripci[óo]n|matr[íi]cula|preinscripci[óo]n)${R}[^.;]{0,30}`
+      + `${L}(?:confirmad|carga|complet|realizad)`,
+      'iu',
+    ),
+    requires: UNREACHABLE_MILESTONE,
+  },
+  {
+    pattern: new RegExp(
+      `${L}(?:alta\\s+acad[ée]mica|credenciales|usuario\\s+y\\s+contrase|acceso)${R}`
+      + `[^.;]{0,40}${L}(?:gener|entreg|habilit|activ|doy|damos|dar)`,
+      'iu',
+    ),
+    requires: UNREACHABLE_MILESTONE,
+  },
+  {
+    pattern: new RegExp(
+      `${L}(?:doy|damos|genero|generamos)${R}[^.;]{0,30}`
+      + `${L}(?:alta|credenciales|acceso)${R}`,
+      'iu',
+    ),
+    requires: UNREACHABLE_MILESTONE,
+  },
+  {
+    pattern: new RegExp(`${L}pago${R}[^.;]{0,30}${L}(?:verificad|acreditad|confirmad)`, 'iu'),
+    requires: UNREACHABLE_MILESTONE,
+  },
+  {
+    pattern: new RegExp(
+      `${L}(?:acceso|campus)${R}[^.;]{0,30}${L}(?:habilitad|activ|listo|disponible)`,
+      'iu',
+    ),
+    requires: UNREACHABLE_MILESTONE,
+  },
+];
+
+/**
+ * Una oración que atribuye el resultado al equipo humano Y lo sitúa después
+ * de una verificación no afirma un estado alcanzado: describe el proceso.
+ *
+ * Son los dos hechos canónicos de § 05b, y es exactamente por esto que «el
+ * equipo lo revisará y, si está acreditado, gestionará tu acceso» no cae
+ * mientras «gestioné tu acceso» sí. La diferencia no es el sustantivo, es
+ * quién actúa y cuándo.
+ */
+const ATTRIBUTED_TO_TEAM = /\b(?:el\s+equipo|una\s+persona|el\s+[áa]rea|lo\s+revisar)/iu;
+const AFTER_VERIFICATION = /\b(?:cuando|si\s+est[áa]\s+acreditad|una\s+vez\s+(?:que\s+)?(?:lo\s+)?verifi|tras\s+(?:la\s+)?verifica|revisar[áa])/iu;
+
+function splitAssertionSentences(text: string): readonly string[] {
+  return text
+    .split(/(?<=[.;!?…])\s+/u)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
+}
+
+/**
+ * Detector léxico. Reconoce que una oración afirma un estado y con qué hecho
+ * se sostiene. NO juzga si es válida.
+ */
+export function detectOperationalStateAssertionsV1(
+  text: string,
+): readonly OperationalAssertionV1[] {
+  const found: OperationalAssertionV1[] = [];
+  for (const sentence of splitAssertionSentences(text)) {
+    if (ATTRIBUTED_TO_TEAM.test(sentence) && AFTER_VERIFICATION.test(sentence)) continue;
+    for (const { pattern, requires } of ASSERTION_CLASSES) {
+      if (pattern.test(sentence)) {
+        found.push({ sentence, requires });
+        break;
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * V5. Las afirmaciones cuyo hecho no está materializado para este turno.
+ * Un resultado no vacío es `UNSUPPORTED_OPERATIONAL_CLAIM`.
+ */
+export function unsupportedOperationalAssertionsV1(
+  text: string,
+  materialized: ReadonlySet<StateFactIdV1>,
+): readonly OperationalAssertionV1[] {
+  return detectOperationalStateAssertionsV1(text)
+    .filter((assertion) => !materialized.has(assertion.requires));
+}

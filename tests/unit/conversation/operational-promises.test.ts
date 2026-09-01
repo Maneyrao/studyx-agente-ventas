@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   assertsCompletedOperationalOutcome,
   stripUnsupportedOperationalClaims,
+  detectOperationalStateAssertionsV1,
+  unsupportedOperationalAssertionsV1,
 } from '@/features/conversation/domain/operational-promise-guard';
+import { materializeStateFactsV1 } from '@/features/conversation/domain/state-fact-registry';
 import { assembleCanonicalConversationResponseV1 } from '@/features/conversation/domain/canonical-response-assembler';
 import type { TurnPlanV1 } from '@/features/conversation/domain/conversation-pipeline';
 
@@ -125,5 +128,113 @@ describe('unsupported operational promises', () => {
     expect(assembled.content).not.toMatch(/preinscripci[oó]n/iu);
     expect(assembled.content).toContain('Entiendo que el precio te preocupa.');
     expect(assembled.content).toContain('¿Querés que veamos las opciones de pago?');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// V5 · § 05b — La autorización pasa a ser por estado durable, no por texto.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('V5 autoriza por estado, no por texto', () => {
+  const APPROVED = 'Registré tus datos. Cuando informes el pago, el equipo lo '
+    + 'revisará y, si está acreditado, gestionará tu acceso.';
+
+  const completeIntake = {
+    nombre: 'Ana',
+    apellido: 'Pérez',
+    correo: 'ana@example.com',
+    telefono: '+15551234567',
+  } as const;
+
+  it('reconoce las afirmaciones de estado de la frase aprobada', () => {
+    const found = detectOperationalStateAssertionsV1(APPROVED).map((a) => a.requires);
+    expect(found).toContain('state:intake_recorded:v1');
+  });
+
+  // El defecto documentado en § 05: hoy el guard bloquea esta frase entera,
+  // que es la que P6 manda escribir. El prompt ordenaba y el guard borraba.
+  it('autoriza la frase aprobada cuando el intake está completo', () => {
+    const materialized = materializeStateFactsV1({
+      intake: completeIntake,
+      planned_payment_reported: false,
+    });
+    expect(unsupportedOperationalAssertionsV1(APPROVED, materialized)).toEqual([]);
+  });
+
+  // La consecuencia deseada: la MISMA frase es falsa sin datos, y cae.
+  it('bloquea la misma frase cuando el intake está incompleto', () => {
+    const materialized = materializeStateFactsV1({
+      intake: { ...completeIntake, correo: '' },
+      planned_payment_reported: false,
+    });
+    const rejected = unsupportedOperationalAssertionsV1(APPROVED, materialized);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]!.requires).toBe('state:intake_recorded:v1');
+  });
+
+  // Más estricto que el detector léxico de hoy, que dejaba pasar esto por no
+  // contener ningún sustantivo operativo.
+  it('bloquea «Registré tus datos» a secas cuando no se registró nada', () => {
+    const materialized = materializeStateFactsV1({
+      intake: undefined,
+      planned_payment_reported: false,
+    });
+    expect(unsupportedOperationalAssertionsV1('Registré tus datos.', materialized))
+      .toHaveLength(1);
+  });
+
+  it('autoriza afirmar el pago informado sólo con la transición planificada', () => {
+    const text = 'Tengo registrado que informaste el pago.';
+    expect(unsupportedOperationalAssertionsV1(text, materializeStateFactsV1({
+      intake: completeIntake,
+      planned_payment_reported: true,
+    }))).toEqual([]);
+    expect(unsupportedOperationalAssertionsV1(text, materializeStateFactsV1({
+      intake: completeIntake,
+      planned_payment_reported: false,
+    }))).toHaveLength(1);
+  });
+
+  it('los hitos externos no tienen hecho que los respalde, con estado completo o no', () => {
+    // § 05b: ningún turno conversacional puede establecerlos, así que caen
+    // sin necesidad de una regla especial que los enumere.
+    const todo = materializeStateFactsV1({
+      intake: completeIntake,
+      planned_payment_reported: true,
+    });
+    for (const claim of [
+      'Tu inscripción quedó confirmada.',
+      'Te doy el alta académica y genero tus credenciales de acceso.',
+      'Ya te dejo la preinscripción cargada en el sistema.',
+      'Tu acceso al campus está habilitado.',
+      'Tu pago fue verificado.',
+    ]) {
+      expect(unsupportedOperationalAssertionsV1(claim, todo).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('no toca una oración que no afirma ningún estado', () => {
+    const todo = materializeStateFactsV1({
+      intake: undefined,
+      planned_payment_reported: false,
+    });
+    for (const neutral of [
+      'El curso dura seis meses y queda grabado.',
+      '¿Cuál de las tres opciones te resulta más cómoda?',
+      'Contame qué te gustaría aprender.',
+      'El valor total del programa es USD 360.',
+    ]) {
+      expect(unsupportedOperationalAssertionsV1(neutral, todo)).toEqual([]);
+    }
+  });
+
+  it('el detector léxico sigue existiendo y ya no decide validez', () => {
+    // Reconocer que una oración afirma un estado sigue siendo léxico. Lo que
+    // cambia es quién decide si esa afirmación es cierta.
+    const sentence = 'Registré tus datos.';
+    expect(detectOperationalStateAssertionsV1(sentence).length).toBe(1);
+    expect(unsupportedOperationalAssertionsV1(sentence, materializeStateFactsV1({
+      intake: completeIntake, planned_payment_reported: false,
+    }))).toEqual([]);
   });
 });
