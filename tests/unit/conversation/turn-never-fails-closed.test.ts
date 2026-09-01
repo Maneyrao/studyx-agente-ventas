@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { TurnPlanV1 } from '@/features/conversation/domain/conversation-pipeline';
+import { RESPONSE_GOALS_V1, type TurnPlanV1 } from '@/features/conversation/domain/conversation-pipeline';
 import { assembleCanonicalConversationResponseV1 } from '@/features/conversation/domain/canonical-response-assembler';
 import { conversationDecisionFromPlanV1 } from '@/features/conversation/application/prepare-conversation-pipeline-commit';
 import { parseDecisionAnyVersion } from '@/features/orchestration/domain/decision-v4';
@@ -32,11 +32,9 @@ function plan(overrides: Partial<TurnPlanV1> = {}): TurnPlanV1 {
  * ASSEMBLED_CONTENT_INVALID — the customer got silence instead of a correction.
  */
 describe('a stripped composition still answers', () => {
-  for (const responseGoal of [
-    'acknowledge_payment_report',
-    'confirm_current_state',
-    'request_contact_details',
-  ] as const) {
+  // Every goal, not a chosen few: the live run failed on `greet_and_discover`
+  // precisely because the fix had enumerated the goals it had already seen.
+  for (const responseGoal of RESPONSE_GOALS_V1) {
     it(`still produces an answer for ${responseGoal} when every sentence is removed`, () => {
       const assembled = assembleCanonicalConversationResponseV1({
         plan: plan({ response_goal: responseGoal }),

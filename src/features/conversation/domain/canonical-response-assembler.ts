@@ -158,6 +158,13 @@ function alreadyNamedByComposition(
   return words.length > 0 && words.some((word) => normalizedNarrative.includes(word));
 }
 
+/**
+ * Used only when the guards emptied the entire answer. Deliberately says
+ * nothing about courses, prices, enrolment or payment: it exists so the
+ * customer gets a turn, not so the backend gets to answer for the model.
+ */
+const LAST_RESORT_OPENING = 'Seguimos por acá. Contame cómo puedo ayudarte.';
+
 function fallbackOpening(responseGoal: TurnPlanV1['response_goal']): string | null {
   switch (responseGoal) {
     case 'present_payment_options': return 'Estas son las opciones de pago disponibles.';
@@ -347,8 +354,15 @@ export function assembleCanonicalConversationResponseV1(input: {
     ...callOffer,
     effectiveComposition.narrative.next_question ?? choiceQuestion(input.plan, narrative),
   ].filter((value): value is string => value !== null && value.trim().length > 0).join('\n\n');
-  if (content.length === 0 || content.length > 4096) {
+  if (content.length > 4096) {
     throw new CanonicalResponseAssemblyError('ASSEMBLED_CONTENT_INVALID');
+  }
+  if (content.length === 0) {
+    // Everything the model wrote was unsupported and every sentence was
+    // removed. This is the only case where a fixed sentence is right: the
+    // alternative is silence, and silence after "ya pagué" is worse than a
+    // short honest answer. It asserts nothing, so it can never be false.
+    return { content: LAST_RESORT_OPENING, used_fact_ids: [] };
   }
   return { content, used_fact_ids: selectedFactIds };
 }
