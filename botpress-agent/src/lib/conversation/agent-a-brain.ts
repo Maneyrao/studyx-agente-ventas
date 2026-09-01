@@ -71,6 +71,7 @@ const DEEPSEEK_PROPOSAL_ROOT_FIELDS = new Set([
   'used_fact_ids',
   'used_memory_ids',
   'memory_candidates',
+  'repair_of',
 ]);
 
 function stripDeepSeekRootMetadata(value: unknown): unknown {

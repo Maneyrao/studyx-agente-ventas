@@ -68,11 +68,14 @@ import {
   DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
   DEFAULT_AGENT_A_BRAIN_OPENAI_FALLBACK_MODEL,
   DEFAULT_AGENT_A_BRAIN_OPENAI_MODEL,
-  buildSafeAgentABrainCompositionV1,
   generateAgentATurnProposalV1,
   generateDeepSeekAgentATurnProposalV1,
   generateOpenAIAgentATurnProposalV1,
 } from '../botpress-agent/src/lib/conversation/agent-a-brain';
+import {
+  resolveAgentAProposalV1,
+  type AgentAProposalCycleEvidenceV1,
+} from '../botpress-agent/src/lib/conversation/resolve-agent-a-proposal';
 import { AGENT_A_BRAIN_PROMPT_VERSION } from '../botpress-agent/src/prompts/agent-a-brain-v1';
 import { deliverAuthorizedLocalOutbound } from './lib/local-authorized-delivery';
 import { createLocalEvalClaimCleanup } from './lib/local-eval-claim-cleanup';
@@ -492,6 +495,7 @@ export function createLocalTurnSender(
     let brainTransportRetries = 0;
     let modelTokenUsage: NonNullable<AgentChatResult['runtime']>['token_usage'];
     let modelAttemptCount: number | undefined;
+    let proposalCycleEvidence: AgentAProposalCycleEvidenceV1 | undefined;
     const brainContext = buildAgentAContextV1(
       claimed,
       process.env.AGENT_A_ADVISOR_NAME?.trim() || null,
@@ -602,15 +606,37 @@ export function createLocalTurnSender(
         plannedResponseGoal = planned.plan.response_goal;
         plannedFactIds = planned.fact_refs.map((fact) => fact.id);
         latenciesMs.planner_ms = Date.now() - plannerStartedAt;
+        const resolved = await resolveAgentAProposalV1({
+          initial: generated,
+          context: brainContext,
+          response_goal: planned.plan.response_goal,
+          planned_fact_ids: plannedFactIds,
+          repair_enabled: claimed.features?.agent_a_repair_enabled === true,
+          rejection_id: randomUUID(),
+          repair: async (rejection) => {
+            if (!credentials.deepseekApiKey) {
+              throw new AgentABrainError('BRAIN_DEEPSEEK_REQUIRED');
+            }
+            evaluationPacingMs += await paceModelProvider();
+            try {
+              return await generateDeepSeekAgentATurnProposalV1({
+                context: { ...brainContext, turn_rejection: rejection },
+                apiKey: credentials.deepseekApiKey,
+                model: credentials.deepseekModel ?? DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
+                signal: new AbortController().signal,
+              });
+            } catch (error) {
+              brainTransportRetries += 1;
+              throw error;
+            }
+          },
+        });
+        generated = resolved.effective;
+        proposalCycleEvidence = resolved.evidence;
         conversationPipelineV1 = {
           move: authoritativeMove,
           plan_hash: planned.plan_hash,
-          composition: buildSafeAgentABrainCompositionV1({
-            proposal: generated.proposal,
-            context: brainContext,
-            response_goal: planned.plan.response_goal,
-            planned_fact_ids: planned.fact_refs.map((fact) => fact.id),
-          }),
+          composition: resolved.composition,
         };
         decision = {
           schema_version: 4,
@@ -751,6 +777,12 @@ export function createLocalTurnSender(
       ...(brainAuthoritative ? { brainFailureReason } : {}),
       ...(brainAuthoritative ? { brainFailureCode } : {}),
       ...(brainAuthoritative ? { brainFailureDetail } : {}),
+      ...(proposalCycleEvidence ? {
+        rejectionCodes: proposalCycleEvidence.rejection_codes,
+        repairAttempted: proposalCycleEvidence.repair_attempted,
+        repaired: proposalCycleEvidence.repaired,
+        proposalGenerationCalls: proposalCycleEvidence.proposal_generation_calls,
+      } : {}),
     };
 
     let committed;

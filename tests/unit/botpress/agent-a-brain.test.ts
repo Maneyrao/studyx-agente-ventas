@@ -658,6 +658,26 @@ describe('Agent A Brain V1', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('preserves the structured repair identity emitted by DeepSeek', async () => {
+    const repairOf = {
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+      attempt: 1 as const,
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(
+      200,
+      responsesSuccessBody(proposal({ repair_of: repairOf })),
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await generateDeepSeekAgentATurnProposalV1({
+      context: context(),
+      apiKey: 'deepseek-test-key',
+      signal: new AbortController().signal,
+    });
+
+    expect(result.proposal.repair_of).toEqual(repairOf);
+  });
+
   it('allows DeepSeek ten seconds and classifies a timeout while reading the response body', async () => {
     expect(AGENT_A_BRAIN_DEEPSEEK_DEADLINE_MS).toBe(10_000);
     vi.useFakeTimers();

@@ -55,15 +55,13 @@ import {
   DEFAULT_AGENT_A_BRAIN_GEMINI_MODEL,
   DEFAULT_AGENT_A_BRAIN_OPENAI_FALLBACK_MODEL,
   DEFAULT_AGENT_A_BRAIN_OPENAI_MODEL,
-  buildSafeAgentABrainCompositionV1,
-  decideRepairLevelV1,
-  validateAgentATurnProposalV1,
   generateAgentATurnProposalV1,
   generateDeepSeekAgentATurnProposalV1,
   generateGeminiAgentATurnProposalV1,
   generateOpenAIAgentATurnProposalV1,
   parseAgentATurnProposalV1,
 } from '../lib/conversation/agent-a-brain'
+import { resolveAgentAProposalV1 } from '../lib/conversation/resolve-agent-a-proposal'
 import { AgentATurnProposalV1Schema, type AgentATurnProposalV1 } from '../schemas/agent-a-brain'
 import {
   ComposedNarrativeV1Schema,
@@ -896,52 +894,16 @@ export const processInboundTurn = new Workflow({
           if (planned !== null) {
             timings.planner_ms = Date.now() - plannerStartedAt
             const plannedFactIds = planned.fact_refs.map((fact: { id: string }) => fact.id)
-
-            // V1–V7. Un rechazo ya no se resuelve podando en silencio: se le
-            // devuelve al modelo con códigos y alternativas, y se le da UNA
-            // oportunidad de reescribir (A4, A5).
-            const rejection = validateAgentATurnProposalV1({
-              proposal: generated.proposal,
+            const resolved = await resolveAgentAProposalV1({
+              initial: generated,
               context: agentABrainContext,
+              response_goal: planned.plan.response_goal,
               planned_fact_ids: plannedFactIds,
+              repair_enabled: repairEnabled,
               rejection_id: randomUUID(),
-            })
-
-            if (rejection !== null) {
-              const provisional = buildSafeAgentABrainCompositionV1({
-                proposal: generated.proposal,
-                context: agentABrainContext,
-                response_goal: planned.plan.response_goal,
-                planned_fact_ids: plannedFactIds,
-              })
-              const prunedMessages = [
-                provisional.narrative.opening,
-                provisional.narrative.explanation,
-                provisional.narrative.next_question,
-              ].filter((message): message is string => typeof message === 'string')
-
-              const ladder = decideRepairLevelV1({
-                rejection,
-                pruned_messages: prunedMessages,
-                repair_enabled: repairEnabled,
-                already_repaired: generated.proposal.repair_of !== null,
-              })
-
-              safeLog('studyx.turn.agent_a_repair', {
-                trace_id: input.trace_id,
-                turn_id: owned.turn_id,
-                rejection_id: rejection.rejection_id,
-                level: ladder.level,
-                codes: rejection.rejections.map((reason) => reason.code),
-                // Sujetos, no prosa: son identificadores por contrato (A4).
-                subjects: rejection.rejections.map((reason) => reason.subject),
-              })
-
-              if (ladder.level === 'N2') {
-                // Una sola reparación. `repair_of` viaja en la propuesta, y el
-                // tipo hace imposible pedir una segunda.
+              repair: async (rejection) => {
                 try {
-                  const repaired = await step(
+                  return await step(
                     'repair-agent-a-turn-proposal-v1',
                     () => generateDeepSeekAgentATurnProposalV1({
                       context: { ...agentABrainContext, turn_rejection: rejection },
@@ -953,17 +915,6 @@ export const processInboundTurn = new Workflow({
                     }),
                     { maxAttempts: 1 },
                   )
-                  // A6: el egress revalida igual. Que el modelo haya
-                  // reescrito no lo exime.
-                  const revalidated = validateAgentATurnProposalV1({
-                    proposal: repaired.proposal,
-                    context: agentABrainContext,
-                    planned_fact_ids: plannedFactIds,
-                    rejection_id: rejection.rejection_id,
-                  })
-                  if (revalidated === null) generated = repaired
-                  // El tipo se ensancha al reasignar dentro del bloque; el
-                  // guard de arriba ya garantizó que no es undefined.
                 } catch (repairError) {
                   safeLog('studyx.turn.agent_a_repair_failed', {
                     trace_id: input.trace_id,
@@ -971,21 +922,25 @@ export const processInboundTurn = new Workflow({
                     rejection_id: rejection.rejection_id,
                     error_code: errorCode(repairError),
                   })
+                  throw repairError
                 }
-              }
-            }
-
-            const effective = generated!
-            const composition = buildSafeAgentABrainCompositionV1({
-              proposal: effective.proposal,
-              context: agentABrainContext,
-              response_goal: planned.plan.response_goal,
-              planned_fact_ids: plannedFactIds,
+              },
             })
+            if (resolved.rejection !== null) {
+              safeLog('studyx.turn.agent_a_repair', {
+                trace_id: input.trace_id,
+                turn_id: owned.turn_id,
+                rejection_id: resolved.rejection.rejection_id,
+                level: resolved.resolution_level,
+                codes: resolved.rejection.rejections.map((reason) => reason.code),
+                subjects: resolved.rejection.rejections.map((reason) => reason.subject),
+              })
+            }
+            const effective = resolved.effective
             pipelineCommit = {
               move: authoritativeMove,
               plan_hash: planned.plan_hash,
-              composition,
+              composition: resolved.composition,
             }
             pipelineMemoryCandidates = effective.proposal.memory_candidates
             safeLog('studyx.turn.agent_a_brain_v1', {

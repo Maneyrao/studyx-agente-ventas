@@ -85,6 +85,10 @@ export type AgentTurnDiagnostic = {
   brainFailureCode?: string | null;
   brainFailureDetail?: string | null;
   brainTransportRetries?: number;
+  rejectionCodes?: readonly string[];
+  repairAttempted?: boolean;
+  repaired?: boolean;
+  proposalGenerationCalls?: 1 | 2;
 };
 
 export type AgentChatResult = {
