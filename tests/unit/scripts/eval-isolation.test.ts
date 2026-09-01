@@ -18,7 +18,7 @@ import {
 
 const AISLADO = {
   DATABASE_URL: 'postgresql://postgres@127.0.0.1:55435/studyx_test',
-  DEEPSEEK_API_KEY: 'sk-sintetica-no-real',
+  DEEPSEEK_API_KEY: 'synthetic-eval-key',
   BUSINESS_WORKSPACE_SLUG: 'studyx',
   STUDYX_EVAL_API_BASE_URL: 'http://127.0.0.1:3217',
   PAYMENT_LINK_12M: 'https://payments.example.invalid/monthly-12',
@@ -103,7 +103,7 @@ describe('aislamiento del entorno de evaluación', () => {
   });
 
   it('el error nunca contiene el valor de un secreto', () => {
-    const secreto = 'sk-valor-que-no-debe-aparecer-jamas';
+    const secreto = 'synthetic-sensitive-value-never-print';
     try {
       assertIsolatedEvaluationEnvironmentV1({
         ...AISLADO, DEEPSEEK_API_KEY: secreto, STRIPE_SECRET_KEY: secreto,
