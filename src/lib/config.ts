@@ -90,6 +90,15 @@ export interface AgentARolloutConfig {
   readonly contextScoping: boolean;
   /** Gobierna N2. Apagado, un rechazo no podable cae a N3, nunca a silencio. */
   readonly repairEnabled: boolean;
+  /**
+   * Desactiva la ruta duplicada: compositor Gemini y `modelUnavailableFallback`.
+   *
+   * DESACTIVA, no borra. R6: el rollback se conserva hasta que el held-out y
+   * el canary estén verdes, y hoy ninguno de los dos pudo ejecutarse. Borrar
+   * el código ahora dejaría al sistema sin vuelta atrás antes de tener la
+   * evidencia que justificaría no necesitarla.
+   */
+  readonly singleRoute: boolean;
 }
 
 export function loadAgentARolloutConfig(
@@ -98,6 +107,7 @@ export function loadAgentARolloutConfig(
   return {
     contextScoping: environment.AGENT_A_CONTEXT_SCOPING?.trim().toLowerCase() === 'true',
     repairEnabled: environment.AGENT_A_REPAIR_ENABLED?.trim().toLowerCase() === 'true',
+    singleRoute: environment.AGENT_A_SINGLE_ROUTE?.trim().toLowerCase() === 'true',
   };
 }
 
