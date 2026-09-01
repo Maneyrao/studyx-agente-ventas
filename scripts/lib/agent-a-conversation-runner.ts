@@ -276,6 +276,10 @@ export type AgentABrainSuiteRubric = {
   readonly hard_gate_failed: number;
   readonly naturalness_passed: number;
   readonly naturalness_required: number;
+  readonly naturalness_failures: readonly {
+    readonly case_id: string;
+    readonly reasons: readonly string[];
+  }[];
   readonly brain_latency_samples: number;
   readonly brain_latency_p50_ms: number | null;
   readonly brain_latency_p95_ms: number | null;
@@ -290,16 +294,60 @@ function percentileNearestRank(values: readonly number[], percentile: number): n
   return sorted[Math.max(0, Math.ceil(sorted.length * percentile) - 1)] ?? null;
 }
 
-function caseIsNatural(result: ConversationCaseResult): boolean {
+const ROBOTIC_FALLBACK_PATTERNS_V1 = [
+  /no tengo ese dato confirmado en el cat[aá]logo/iu,
+  /qu[eé] dato quer[eé]s confirmar/iu,
+  /no pude procesar tu consulta en este momento/iu,
+] as const;
+
+function normalizedReplyTokens(value: string): Set<string> {
+  return new Set(value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLocaleLowerCase('es')
+    .replace(/[^\p{Letter}\p{Number}\s]/gu, ' ')
+    .split(/\s+/u)
+    .filter((token) => token.length >= 3));
+}
+
+function tokenSimilarity(left: string, right: string): number {
+  const leftTokens = normalizedReplyTokens(left);
+  const rightTokens = normalizedReplyTokens(right);
+  if (leftTokens.size < 8 || rightTokens.size < 8) return 0;
+  const intersection = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+  const union = new Set([...leftTokens, ...rightTokens]).size;
+  return union === 0 ? 0 : intersection / union;
+}
+
+/** Objective prose-surface checks. Commercial meaning remains governed by
+ * structured state/action oracles; this only prevents a technically correct
+ * run from certifying empty, repetitive or obviously robotic copy. */
+export function evaluateConversationNaturalnessV1(result: ConversationCaseResult): string[] {
   const replies = result.transcript
     .filter((entry) => entry.role === 'assistant')
     .map((entry) => entry.text.trim());
-  if (replies.length === 0) return false;
-  if (replies.some((reply) => reply.length === 0 || reply.length > 1_500)) return false;
-  if (replies.some((reply) => reply.includes('No pude procesar tu consulta en este momento.'))) {
-    return false;
+
+  const failures = new Set<string>();
+  if (replies.length === 0) failures.add('no_visible_reply');
+  for (const reply of replies) {
+    if (reply.length === 0) failures.add('empty_reply');
+    if (reply.length > 600) failures.add('reply_too_long');
+    if ((reply.match(/\?/gu) ?? []).length > 2) failures.add('too_many_questions');
+    if (reply.split(/\r?\n/u).length > 6) failures.add('too_many_lines');
+    if (ROBOTIC_FALLBACK_PATTERNS_V1.some((pattern) => pattern.test(reply))) {
+      failures.add('robotic_fallback_copy');
+    }
   }
-  return replies.every((reply, index) => index === 0 || reply !== replies[index - 1]);
+
+  for (let leftIndex = 0; leftIndex < replies.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < replies.length; rightIndex += 1) {
+      const left = replies[leftIndex]!;
+      const right = replies[rightIndex]!;
+      if (left === right) failures.add('repeated_reply');
+      else if (tokenSimilarity(left, right) >= 0.88) failures.add('near_duplicate_reply');
+    }
+  }
+  return [...failures];
 }
 
 /** Hard business/state gates and conversational naturalness are deliberately
@@ -313,7 +361,13 @@ export function evaluateAgentABrainSuiteRubric(
     && !result.failures.some((failure) => /turn_\d+_error:/u.test(failure))
   )).length;
   const hardGatePassed = results.filter((result) => result.status === 'passed').length;
-  const naturalnessPassed = results.filter(caseIsNatural).length;
+  const naturalnessFailures = results
+    .map((result) => ({
+      case_id: result.id,
+      reasons: evaluateConversationNaturalnessV1(result),
+    }))
+    .filter((failure) => failure.reasons.length > 0);
+  const naturalnessPassed = results.length - naturalnessFailures.length;
   const naturalnessRequired = Math.ceil(expectedCases * 0.9);
   const brainLatencies = results.flatMap((result) => {
     const samples = result.checks.brain_latencies_ms;
@@ -333,6 +387,7 @@ export function evaluateAgentABrainSuiteRubric(
     hard_gate_failed: results.length - hardGatePassed,
     naturalness_passed: naturalnessPassed,
     naturalness_required: naturalnessRequired,
+    naturalness_failures: naturalnessFailures,
     brain_latency_samples: brainLatencies.length,
     brain_latency_p50_ms: brainLatencyP50,
     brain_latency_p95_ms: brainLatencyP95,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  evaluateConversationNaturalnessV1,
   evaluateAgentABrainSuiteRubric,
   runConversationCase,
   validateSuiteCaseInvariants,
@@ -107,6 +108,48 @@ describe('Agent A brain held-out rubric', () => {
 
     expect(rubric.effectively_evaluated).toBe(19);
     expect(rubric.ready).toBe(false);
+  });
+
+  it('rechaza copy robótica aunque los estados y acciones sean correctos', () => {
+    const robotic = result(1);
+    robotic.transcript = [
+      { role: 'user', text: 'Quiero conocer los cursos.' },
+      {
+        role: 'assistant',
+        text: 'No tengo ese dato confirmado en el catálogo. Decime qué curso te interesa y qué querés confirmar.',
+      },
+      { role: 'user', text: 'Me interesa tecnología.' },
+      {
+        role: 'assistant',
+        text: 'No tengo ese dato confirmado en el catálogo. Decime qué curso te interesa y qué querés confirmar.',
+      },
+    ];
+
+    expect(evaluateConversationNaturalnessV1(robotic)).toEqual(expect.arrayContaining([
+      'robotic_fallback_copy',
+      'repeated_reply',
+    ]));
+  });
+
+  it('rechaza respuestas excesivas o interrogatorios y acepta una venta breve y contextual', () => {
+    const excessive = result(1);
+    excessive.transcript = [
+      { role: 'user', text: 'Busco una capacitación.' },
+      { role: 'assistant', text: `${'Te cuento una alternativa concreta. '.repeat(24)}¿Qué buscás? ¿Para cuándo? ¿Con qué experiencia?` },
+    ];
+    expect(evaluateConversationNaturalnessV1(excessive)).toEqual(expect.arrayContaining([
+      'reply_too_long',
+      'too_many_questions',
+    ]));
+
+    const natural = result(2);
+    natural.transcript = [
+      { role: 'user', text: 'Quiero algo de tecnología.' },
+      { role: 'assistant', text: 'Buenísimo. En tecnología tenemos opciones como Redes Informáticas. ¿Querés que te cuente de ese curso o preferís ver otras alternativas?' },
+      { role: 'user', text: 'Redes.' },
+      { role: 'assistant', text: 'Redes Informáticas tiene 16 clases. Si te sirve, puedo explicarte cómo se cursa y después vemos la forma de pago.' },
+    ];
+    expect(evaluateConversationNaturalnessV1(natural)).toEqual([]);
   });
 
   it('hard-fails per-turn state drift and unsafe actions from structured evidence', async () => {
