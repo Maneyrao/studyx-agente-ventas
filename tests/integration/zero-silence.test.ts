@@ -324,6 +324,10 @@ run('cero silencios accidentales', () => {
     suppressNextEgress = false;
 
     expect(committed.status).toBe('committed');
+    expect(committed.conversation_effects).toEqual({
+      technical_fallback_reason: 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED',
+      human_review_requested: false,
+    });
     // Lo que cambia: había cero mensajes, ahora hay uno.
     expect(await outboundCountFor(prepared.claimed.batch.conversation_id)).toBe(before + 1);
     expect(await lastOutbound(prepared.claimed.batch.conversation_id)).toBe(TECHNICAL_FALLBACK_TEXT_V1);
@@ -343,11 +347,15 @@ run('cero silencios accidentales', () => {
   it('el segundo fallo consecutivo deriva, y la marca se escribe antes de afirmarla', async () => {
     const prepared = await prepareTurn('Hola? seguís ahí', move('greeting'), 'Seguimos.');
     suppressNextEgress = true;
-    await commitClaimedDecision(prepared.commitInput, { store: orchestrationStore });
+    const committed = await commitClaimedDecision(prepared.commitInput, { store: orchestrationStore });
     suppressNextEgress = false;
 
     expect(await lastOutbound(prepared.claimed.batch.conversation_id))
       .toBe(HUMAN_REVIEW_NOTICE_TEXT_V1);
+    expect(committed.conversation_effects).toEqual({
+      technical_fallback_reason: 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED',
+      human_review_requested: true,
+    });
 
     const state = await new PostgresConversationStateStoreV1(db!).load(
       workspaceSlug, prepared.claimed.batch.conversation_id, prepared.claimed.batch.contact_id,

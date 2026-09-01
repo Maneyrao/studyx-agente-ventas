@@ -149,6 +149,11 @@ export interface CommitDecisionResult {
    * with it idempotently, and never learns the phone number.
    */
   call_request: ReservedCallRequest | null;
+  /** Structured evaluator/observability evidence; never inferred from copy. */
+  conversation_effects?: {
+    readonly technical_fallback_reason: 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED';
+    readonly human_review_requested: boolean;
+  };
 }
 
 export class DecisionConflictError extends Error {
@@ -1213,6 +1218,12 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         next_state: decision.next_state,
         outbound,
         call_request: callRequest,
+        ...(technicalFallback ? {
+          conversation_effects: {
+            technical_fallback_reason: 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED' as const,
+            human_review_requested: technicalFallback.requests_human_review,
+          },
+        } : {}),
       };
     });
   } catch (error) {

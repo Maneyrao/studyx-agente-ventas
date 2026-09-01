@@ -58,6 +58,22 @@ scripts/eval-agent-a.sh studyx-agent-a-brain-v1-heldout 3 heldout --repair
 Los reportes quedan en `botpress-agent/evals/results/happy-path-<etiqueta>-<n>.json`,
 que está en `.gitignore`.
 
+## Qué prueba el reporte
+
+El resultado final incluye `turn_metrics` por cada mensaje y un agregado
+`metrics`. No se deducen estado, acciones ni reparaciones de la prosa: salen
+del claim, del ciclo de propuesta validada y del commit. El texto entregado se
+usa únicamente para medir superficie conversacional y para comprobar que no
+llegó una promesa operativa sin el `fact_id` que la autoriza.
+
+`acceptance_gates.ready` sólo puede ser `true` si simultáneamente hay cero
+silencios accidentales, p95 menor a 6 segundos, tasa de reparación no mayor al
+5 %, éxito de reparación de al menos 80 % cuando hubo muestras, fallbacks
+técnicos no mayores al 2 %, cero promesas falsas y paridad exacta entre ofertas
+visibles de llamada y entradas del ledger. Un checkpoint interrumpido publica
+`partial_metrics`, pero deja `acceptance_gates: null`: no puede presentarse
+como aceptación completa.
+
 ## Held-out: qué significa "independiente"
 
 `studyx-agent-a-brain-v1-heldout` es el conjunto de validación. Quien

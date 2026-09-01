@@ -10,8 +10,10 @@ import {
   assertSuitePromptVersion,
   buildAdkChatArgs,
   composeAgentARegressionSuite,
+  evaluateRunAcceptanceGatesV1,
   expectedPromptVersionForSuite,
   runConversationSuite,
+  summarizeRunMetricsV1,
   validateSuiteCaseInvariants,
   type AgentChatResult,
   type AgentTurnDiagnostic,
@@ -496,6 +498,8 @@ export function createLocalTurnSender(
     let modelTokenUsage: NonNullable<AgentChatResult['runtime']>['token_usage'];
     let modelAttemptCount: number | undefined;
     let proposalCycleEvidence: AgentAProposalCycleEvidenceV1 | undefined;
+    let visibleCallOffers = 0;
+    let callOfferLedgerEntries = 0;
     const brainContext = buildAgentAContextV1(
       claimed,
       process.env.AGENT_A_ADVISOR_NAME?.trim() || null,
@@ -633,6 +637,11 @@ export function createLocalTurnSender(
         });
         generated = resolved.effective;
         proposalCycleEvidence = resolved.evidence;
+        visibleCallOffers = generated.proposal.response.call_offer ? 1 : 0;
+        callOfferLedgerEntries = Math.max(
+          0,
+          planned.plan.next_call_offer_count - brainContext.commercial_state.call_offer_count,
+        );
         conversationPipelineV1 = {
           move: authoritativeMove,
           plan_hash: planned.plan_hash,
@@ -783,6 +792,13 @@ export function createLocalTurnSender(
         repaired: proposalCycleEvidence.repaired,
         proposalGenerationCalls: proposalCycleEvidence.proposal_generation_calls,
       } : {}),
+      ...(!claimed.policy.may_respond ? {
+        deliberateSilenceReason: claimed.contact.blocked || claimed.contact.consent_status === 'revoked'
+          ? 'opted_out_or_blocked' as const
+          : 'policy_suppressed' as const,
+      } : {}),
+      ...(visibleCallOffers > 0 ? { visibleCallOffers } : {}),
+      ...(callOfferLedgerEntries > 0 ? { callOfferLedgerEntries } : {}),
     };
 
     let committed;
@@ -845,6 +861,9 @@ export function createLocalTurnSender(
       authorizedProtectedFacts:
         committed.outbound?.authorized_egress.protected_facts ?? [],
       authorizedUrls: committed.outbound?.authorized_egress.authorized_urls ?? [],
+      technicalFallbackReason: committed.conversation_effects?.technical_fallback_reason
+        ?? (fallbackReason ? 'BRAIN_UNAVAILABLE' : null),
+      humanReviewRequested: committed.conversation_effects?.human_review_requested ?? false,
       ...(evaluationControl?.replayCommit ? { replayVerified } : {}),
     };
     const runtimeBase = {
@@ -1309,6 +1328,7 @@ async function main() {
           (id) => executedCaseIds.includes(id),
         )
       : false;
+    const partialMetrics = summarizeRunMetricsV1(results.flatMap((result) => result.turn_metrics));
     await writeFile(outputPath, `${JSON.stringify({
       run_id: runId,
       suite: selectedSuite.suite,
@@ -1318,6 +1338,8 @@ async function main() {
       executed_case_ids: executedCaseIds,
       regression_gate_complete: regressionGateComplete,
       checkpoint: true,
+      partial_metrics: partialMetrics,
+      acceptance_gates: null,
       summary: { total: results.length, passed, failed: results.length - passed },
       results,
     }, null, 2)}\n`, 'utf8');
@@ -1345,7 +1367,11 @@ async function main() {
 
   await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
 
-  console.log(JSON.stringify({ ...report.summary, output: outputPath }, null, 2));
+  console.log(JSON.stringify({
+    ...report.summary,
+    acceptance_gates: evaluateRunAcceptanceGatesV1(report.metrics),
+    output: outputPath,
+  }, null, 2));
   if (report.summary.failed > 0) process.exitCode = 1;
 }
 

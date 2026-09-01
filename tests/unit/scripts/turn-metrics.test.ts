@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  evaluateRunAcceptanceGatesV1,
   summarizeRunMetricsV1,
   type TurnMetricsV1,
 } from '../../../scripts/lib/agent-a-conversation-runner';
@@ -11,11 +12,13 @@ function turn(overrides: Partial<TurnMetricsV1> = {}): TurnMetricsV1 {
     visible_message_count: 1,
     silent: false,
     opted_out: false,
+    deliberate_silence_reason: null,
     technical_fallback: false,
     technical_fallback_reason: null,
     human_review_requested: false,
     repair_attempted: false,
     repaired: false,
+    proposal_generation_calls: 0,
     latency_ms: 1_000,
     false_operational_promises: [],
     visible_call_offers: 0,
@@ -124,5 +127,29 @@ describe('métricas por turno', () => {
     expect(metrics.conversational_success_rate).toBe(0);
     expect(metrics.repair_success_rate).toBe(0);
     expect(metrics.p95_ms).toBeNull();
+  });
+
+  it('el gate falla por cada riesgo aunque el caso conversacional haya respondido', () => {
+    const metrics = summarizeRunMetricsV1([
+      turn({
+        repair_attempted: true,
+        repaired: false,
+        proposal_generation_calls: 2,
+        technical_fallback: true,
+        technical_fallback_reason: 'REPAIR_FAILED',
+        false_operational_promises: ['Tu alta quedó confirmada.'],
+        visible_call_offers: 1,
+        ledger_entries: 0,
+      }),
+    ]);
+
+    expect(evaluateRunAcceptanceGatesV1(metrics)).toMatchObject({
+      repair_rate_at_most_5_percent: false,
+      repair_success_at_least_80_percent: false,
+      technical_fallback_at_most_2_percent: false,
+      zero_false_promises: false,
+      call_offer_ledger_parity: false,
+      ready: false,
+    });
   });
 });

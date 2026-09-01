@@ -1,5 +1,9 @@
 import { AGENT_A_PROMPT_VERSION } from '../../botpress-agent/src/prompts/agent-a-sales-bridge';
 import { AGENT_A_BRAIN_PROMPT_VERSION } from '../../botpress-agent/src/prompts/agent-a-brain-v1';
+import {
+  unsupportedOperationalAssertionsV1,
+} from '../../src/features/conversation/domain/operational-promise-guard';
+import type { StateFactIdV1 } from '../../src/features/conversation/domain/state-fact-registry';
 
 export type AgentCatalogResolutionEvidence =
   | { readonly kind: 'no_catalog_intent' }
@@ -89,6 +93,11 @@ export type AgentTurnDiagnostic = {
   repairAttempted?: boolean;
   repaired?: boolean;
   proposalGenerationCalls?: 1 | 2;
+  deliberateSilenceReason?: 'opted_out_or_blocked' | 'policy_suppressed' | null;
+  technicalFallbackReason?: TechnicalFallbackReasonV1 | null;
+  humanReviewRequested?: boolean;
+  visibleCallOffers?: number;
+  callOfferLedgerEntries?: number;
 };
 
 export type AgentChatResult = {
@@ -253,6 +262,8 @@ export type ConversationCaseResult = {
   conversation_id: string | null;
   transcript: TranscriptEntry[];
   turn_diagnostics: Array<AgentTurnDiagnostic | null>;
+  turn_metrics: TurnMetricsV1[];
+  turn_runtimes: Array<AgentRuntimeEvidence | null>;
   checks: Record<string, unknown>;
   failures: string[];
   runtime?: AgentRuntimeEvidence;
@@ -763,6 +774,7 @@ export async function runConversationCase(
   const authorizedUrlsByTurn: Array<readonly string[] | null> = [];
   const commercialEvidenceByTurn: Array<AgentCommercialEvidence | undefined> = [];
   const turnDiagnostics: Array<AgentTurnDiagnostic | null> = [];
+  const turnRuntimes: Array<AgentRuntimeEvidence | null> = [];
   let runtime: AgentRuntimeEvidence | undefined;
   let conversationId: string | null = null;
 
@@ -779,10 +791,10 @@ export async function runConversationCase(
       const result: AgentChatResult = forceProviderFailure || replayCommit
         ? await options.sendTurn(message, conversationId, { forceProviderFailure, replayCommit })
         : await options.sendTurn(message, conversationId);
-      turnLatenciesMs.push(Math.max(
+      turnLatenciesMs[index] = Math.max(
         0,
         Date.now() - turnStartedAt - (result.evaluationPacingMs ?? 0),
-      ));
+      );
       conversationId = result.conversationId || conversationId;
       const textResponses = result.responses.filter(
         (response): response is { type: string; text: string } =>
@@ -802,6 +814,7 @@ export async function runConversationCase(
       authorizedUrlsByTurn[index] = result.authorizedUrls ? [...result.authorizedUrls] : null;
       commercialEvidenceByTurn[index] = result.commercialEvidence;
       turnDiagnostics[index] = result.turnDiagnostic ?? null;
+      turnRuntimes[index] = result.runtime ?? null;
       runtime ??= result.runtime;
       const brainLatency = result.runtime?.latencies_ms?.agent_a_brain_ms;
       if (typeof brainLatency === 'number' && Number.isFinite(brainLatency) && brainLatency >= 0) {
@@ -829,12 +842,24 @@ export async function runConversationCase(
       }
     } catch (error) {
       turnDiagnostics[index] = diagnosticFromError(error);
+      turnRuntimes[index] = null;
+      turnLatenciesMs[index] ??= 0;
       failures.push(
         `turn_${index + 1}_error:${error instanceof Error ? error.message : String(error)}`,
       );
       break;
     }
   }
+
+  const turnMetrics = testCase.turns.map((_, index) => buildTurnMetricsV1({
+    case_id: testCase.id,
+    turn_index: index,
+    visible_message_count: responseCountsByTurn[index] ?? 0,
+    latency_ms: turnLatenciesMs[index] ?? 0,
+    assistant_text: assistantRepliesByTurn[index] ?? '',
+    diagnostic: turnDiagnostics[index] ?? null,
+    runtime: turnRuntimes[index] ?? null,
+  }));
 
   const assistantText = transcript
     .filter((entry) => entry.role === 'assistant')
@@ -1227,6 +1252,8 @@ export async function runConversationCase(
     conversation_id: conversationId,
     transcript,
     turn_diagnostics: turnDiagnostics,
+    turn_metrics: turnMetrics,
+    turn_runtimes: turnRuntimes,
     checks,
     failures,
     ...(runtime ? { runtime } : {}),
@@ -1410,6 +1437,7 @@ export async function runConversationSuite(
         (caseId, index) => caseId === suite.composition!.effective_case_ids[index],
       )
     : null;
+  const metrics = summarizeRunMetricsV1(results.flatMap((result) => result.turn_metrics));
   return {
     run_id: options.runId,
     suite: suite.suite,
@@ -1424,6 +1452,8 @@ export async function runConversationSuite(
       passed,
       failed: results.length - passed,
     },
+    metrics,
+    acceptance_gates: evaluateRunAcceptanceGatesV1(metrics),
     rubric: evaluateAgentABrainSuiteRubric(
       results,
       suite.suite === 'studyx-agent-a-brain-v1-heldout' ? 20 : results.length,
@@ -1459,11 +1489,13 @@ export type TurnMetricsV1 = {
   readonly silent: boolean;
   /** El contacto pidió no ser contactado, o está bloqueado. */
   readonly opted_out: boolean;
+  readonly deliberate_silence_reason: 'opted_out_or_blocked' | 'policy_suppressed' | null;
   readonly technical_fallback: boolean;
   readonly technical_fallback_reason: TechnicalFallbackReasonV1 | null;
   readonly human_review_requested: boolean;
   readonly repair_attempted: boolean;
   readonly repaired: boolean;
+  readonly proposal_generation_calls: 0 | 1 | 2;
   readonly latency_ms: number;
   /** Oraciones que V5 habría bloqueado en el texto realmente entregado. */
   readonly false_operational_promises: readonly string[];
@@ -1489,6 +1521,17 @@ export type RunMetricsV1 = {
   readonly false_promise_count: number;
 };
 
+export type RunAcceptanceGatesV1 = {
+  readonly zero_accidental_silence: boolean;
+  readonly p95_under_6000_ms: boolean;
+  readonly repair_rate_at_most_5_percent: boolean;
+  readonly repair_success_at_least_80_percent: boolean;
+  readonly technical_fallback_at_most_2_percent: boolean;
+  readonly zero_false_promises: boolean;
+  readonly call_offer_ledger_parity: boolean;
+  readonly ready: boolean;
+};
+
 const TECHNICAL_FALLBACK_REASONS: readonly TechnicalFallbackReasonV1[] = [
   'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED',
   'BRAIN_UNAVAILABLE',
@@ -1496,6 +1539,62 @@ const TECHNICAL_FALLBACK_REASONS: readonly TechnicalFallbackReasonV1[] = [
   'SCHEMA_UNPARSEABLE',
   'REPAIR_FAILED',
 ];
+
+function normalizeFallbackReasonV1(
+  diagnostic: AgentTurnDiagnostic | null,
+  runtime: AgentRuntimeEvidence | null,
+): TechnicalFallbackReasonV1 | null {
+  if (diagnostic?.technicalFallbackReason) return diagnostic.technicalFallbackReason;
+  if (diagnostic?.commitError?.reason?.includes('UNAUTHORIZED_PROTECTED_FACT')) {
+    return 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED';
+  }
+  if (diagnostic?.repairAttempted && diagnostic.repaired === false && runtime?.fallback_reason) {
+    return 'REPAIR_FAILED';
+  }
+  if (runtime?.fallback_reason) return 'BRAIN_UNAVAILABLE';
+  return null;
+}
+
+export function buildTurnMetricsV1(input: {
+  readonly case_id: string;
+  readonly turn_index: number;
+  readonly visible_message_count: number;
+  readonly latency_ms: number;
+  readonly assistant_text: string;
+  readonly diagnostic: AgentTurnDiagnostic | null;
+  readonly runtime: AgentRuntimeEvidence | null;
+}): TurnMetricsV1 {
+  const deliberateSilenceReason = input.diagnostic?.deliberateSilenceReason ?? null;
+  const fallbackReason = normalizeFallbackReasonV1(input.diagnostic, input.runtime);
+  const materializedFacts = new Set(
+    (input.diagnostic?.plannedFactIds ?? []).filter((factId): factId is StateFactIdV1 => (
+      factId.startsWith('state:') || factId.startsWith('process:')
+    )),
+  );
+  const unsupportedAssertions = input.assistant_text.trim().length === 0
+    ? []
+    : unsupportedOperationalAssertionsV1(input.assistant_text, materializedFacts)
+      .map((assertion) => assertion.sentence);
+
+  return {
+    case_id: input.case_id,
+    turn_index: input.turn_index,
+    visible_message_count: input.visible_message_count,
+    silent: input.visible_message_count === 0,
+    opted_out: deliberateSilenceReason === 'opted_out_or_blocked',
+    deliberate_silence_reason: deliberateSilenceReason,
+    technical_fallback: fallbackReason !== null,
+    technical_fallback_reason: fallbackReason,
+    human_review_requested: input.diagnostic?.humanReviewRequested === true,
+    repair_attempted: input.diagnostic?.repairAttempted === true,
+    repaired: input.diagnostic?.repaired === true,
+    proposal_generation_calls: input.diagnostic?.proposalGenerationCalls ?? 0,
+    latency_ms: input.latency_ms,
+    false_operational_promises: unsupportedAssertions,
+    visible_call_offers: input.diagnostic?.visibleCallOffers ?? 0,
+    ledger_entries: input.diagnostic?.callOfferLedgerEntries ?? 0,
+  };
+}
 
 export function summarizeRunMetricsV1(
   turns: readonly TurnMetricsV1[],
@@ -1541,4 +1640,23 @@ export function summarizeRunMetricsV1(
       (turn) => turn.false_operational_promises.length > 0,
     ).length,
   };
+}
+
+export function evaluateRunAcceptanceGatesV1(
+  metrics: RunMetricsV1,
+): RunAcceptanceGatesV1 {
+  const eligible = Math.max(1, metrics.eligible_turns);
+  const repairSamples = metrics.turns.filter((turn) => turn.repair_attempted).length;
+  const gates = {
+    zero_accidental_silence: metrics.accidental_silence_count === 0,
+    p95_under_6000_ms: metrics.p95_ms !== null && metrics.p95_ms < 6_000,
+    repair_rate_at_most_5_percent: metrics.repair_rate <= 0.05,
+    repair_success_at_least_80_percent: repairSamples === 0 || metrics.repair_success_rate >= 0.8,
+    technical_fallback_at_most_2_percent: metrics.technical_fallback_count / eligible <= 0.02,
+    zero_false_promises: metrics.false_promise_count === 0,
+    call_offer_ledger_parity: metrics.turns.every(
+      (turn) => turn.visible_call_offers === turn.ledger_entries,
+    ),
+  };
+  return { ...gates, ready: Object.values(gates).every(Boolean) };
 }

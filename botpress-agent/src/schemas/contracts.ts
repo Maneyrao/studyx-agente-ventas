@@ -761,6 +761,10 @@ export const CommitDecisionResponseSchema = z.object({
     })
     .nullable()
     .default(null),
+  conversation_effects: z.object({
+    technical_fallback_reason: z.literal('EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED'),
+    human_review_requested: z.boolean(),
+  }).strict().optional(),
   // Passthrough only, from commit-claimed-decision.ts's best-effort batch
   // close (spec §8). Optional: an older backend, or a commit with no claimed
   // batch to close (batch_id/claim_token absent), simply omits it. Never

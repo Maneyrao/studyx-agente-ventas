@@ -20,6 +20,8 @@ function result(index: number, failures: string[] = []): ConversationCaseResult 
       { role: 'assistant', text: `Perfecto, avancemos con el paso ${index}. ¿Qué preferís?` },
     ],
     turn_diagnostics: [],
+    turn_metrics: [],
+    turn_runtimes: [],
     checks: { brain_latencies_ms: [1_000 + index] },
     failures,
   };

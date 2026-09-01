@@ -945,6 +945,83 @@ describe('Agent A conversation runner', () => {
     expect(report.results).toHaveLength(2);
   });
 
+  it('publishes aligned per-turn acceptance metrics instead of a case-only score', async () => {
+    const baseDiagnostic = {
+      catalogResolution: { kind: 'no_catalog_intent' as const },
+      selectedOfferingCode: null,
+      decisionBusinessAction: null,
+      authorizedProtectedFacts: [],
+      authorizedUrls: [],
+      commitError: null,
+      plannedFactIds: [],
+    };
+    const sendTurn = vi.fn()
+      .mockResolvedValueOnce({
+        conversationId: 'conv-metrics',
+        responses: [{ type: 'text', text: 'Tu inscripción quedó confirmada.' }],
+        turnDiagnostic: {
+          ...baseDiagnostic,
+          technicalFallbackReason: 'REPAIR_FAILED',
+          humanReviewRequested: true,
+          repairAttempted: true,
+          repaired: false,
+          proposalGenerationCalls: 2,
+          visibleCallOffers: 0,
+          callOfferLedgerEntries: 0,
+          deliberateSilenceReason: null,
+        },
+      })
+      .mockResolvedValueOnce({
+        conversationId: 'conv-metrics',
+        responses: [],
+        turnDiagnostic: {
+          ...baseDiagnostic,
+          visibleCallOffers: 0,
+          callOfferLedgerEntries: 0,
+          deliberateSilenceReason: 'opted_out_or_blocked',
+        },
+      });
+
+    const report = await runConversationSuite({
+      schema_version: '1.0',
+      prompt_version: AGENT_A_PROMPT_VERSION,
+      suite: 'unit-turn-metrics',
+      cases: [{
+        id: 'metrics_case', name: 'Métricas', course: 'N/A',
+        turns: ['Primero', 'Después de la baja'],
+        ideal_result: { expected_response_count_by_turn: [1, 0] },
+      }],
+    }, { runId: 'metrics-run', sendTurn });
+
+    expect(report.results[0]?.turn_metrics).toHaveLength(2);
+    expect(report.results[0]?.turn_metrics[0]).toMatchObject({
+      technical_fallback: true,
+      technical_fallback_reason: 'REPAIR_FAILED',
+      human_review_requested: true,
+      repair_attempted: true,
+      repaired: false,
+      proposal_generation_calls: 2,
+      false_operational_promises: ['Tu inscripción quedó confirmada.'],
+    });
+    expect(report.results[0]?.turn_metrics[1]).toMatchObject({
+      silent: true,
+      opted_out: true,
+      deliberate_silence_reason: 'opted_out_or_blocked',
+    });
+    expect(report.metrics).toMatchObject({
+      eligible_turns: 1,
+      technical_fallback_count: 1,
+      human_review_count: 1,
+      accidental_silence_count: 0,
+      false_promise_count: 1,
+    });
+    expect(report.acceptance_gates).toMatchObject({
+      zero_accidental_silence: true,
+      zero_false_promises: false,
+      call_offer_ledger_parity: true,
+    });
+  });
+
   it('enforces turn-scoped brevity, questions and required or forbidden phrases', async () => {
     const result = await runConversationCase(
       {
