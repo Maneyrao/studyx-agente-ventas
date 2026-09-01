@@ -55,3 +55,6 @@ next-env.d.ts
 artifacts/rejected-drafts/
 artifacts/frozen-contexts/
 artifacts/runs/
+
+# Credenciales del evaluador aislado: sintéticas salvo la del modelo.
+/.eval/

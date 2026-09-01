@@ -7,6 +7,7 @@ import {
   type ConversationCaseResult,
   type ConversationSuite,
 } from '@/../scripts/lib/agent-a-conversation-runner';
+import { AGENT_A_BRAIN_PROMPT_VERSION } from '@/../botpress-agent/src/prompts/agent-a-brain-v1';
 
 function result(index: number, failures: string[] = []): ConversationCaseResult {
   return {
@@ -32,7 +33,15 @@ describe('Agent A brain held-out rubric', () => {
     ), 'utf8')) as ConversationSuite;
     const clusters = ['discovery', 'call', 'memory', 'payment', 'safety'];
 
-    expect(suite.prompt_version).toBe('studyx-agent-a-brain-v2');
+    // La suite está congelada en sus 20 conversaciones y sus cinco clusters
+    // —eso es lo que el resto de este test verifica—, no en un número de
+    // versión. Fijarlo a 'v2' volvía la suite imposible de correr: el runner
+    // aborta con PROMPT_VERSION_MISMATCH si lo declarado no es el prompt
+    // activo, así que el held-out quedaba clavado contra un prompt retirado.
+    //
+    // Lo que sí importa es que no apunte a un prompt viejo por descuido, y
+    // eso se verifica contra el activo.
+    expect(suite.prompt_version).toBe(AGENT_A_BRAIN_PROMPT_VERSION);
     expect(suite.cases).toHaveLength(20);
     expect(validateSuiteCaseInvariants(suite)).toEqual([]);
     for (const cluster of clusters) {
