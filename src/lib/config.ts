@@ -76,6 +76,31 @@ export function loadAgentABrainConfig(
   return { enabled, shadow, mode: 'legacy', ready: true };
 }
 
+/**
+ * Recorte de contexto y reparación: conducta nueva, apagada por defecto (R1).
+ *
+ * Los dos flags gobiernan ÚNICAMENTE lo nuevo. El recorte que ya estaba
+ * desplegado —planes de pago y curso seleccionado, condicionados por estado—
+ * no tiene flag y no lo va a tener: dárselo significaría escribir un modo sin
+ * recorte que hoy no existe, o sea construir a propósito el camino peor para
+ * poder volver a él.
+ */
+export interface AgentARolloutConfig {
+  /** Gobierna `capabilities.intake_missing`, nada más. */
+  readonly contextScoping: boolean;
+  /** Gobierna N2. Apagado, un rechazo no podable cae a N3, nunca a silencio. */
+  readonly repairEnabled: boolean;
+}
+
+export function loadAgentARolloutConfig(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): AgentARolloutConfig {
+  return {
+    contextScoping: environment.AGENT_A_CONTEXT_SCOPING?.trim().toLowerCase() === 'true',
+    repairEnabled: environment.AGENT_A_REPAIR_ENABLED?.trim().toLowerCase() === 'true',
+  };
+}
+
 export type BusinessWorkspaceConfig = {
   /** Slug of the tenant whose data this deployment serves. Backend-derived:
    * model output never selects the workspace. */

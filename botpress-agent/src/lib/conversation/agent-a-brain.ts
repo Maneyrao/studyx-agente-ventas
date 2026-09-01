@@ -1,3 +1,4 @@
+import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import {
   AgentATurnProposalV1Schema,
   type AgentAContextV1,
@@ -1043,4 +1044,150 @@ export async function generateAgentATurnProposalV1(input: {
     clearTimeout(timeout);
     input.signal.removeEventListener('abort', parentAbort);
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// V1–V7 · Validación con motivo estructurado (§ 05).
+//
+// `buildSafeAgentABrainCompositionV1` sigue existiendo y sigue podando. Lo que
+// cambia es que la poda deja de ser la ÚNICA respuesta posible a un rechazo.
+//
+// Antes, una propuesta con una acción no autorizada se degradaba a una frase
+// fija: el modelo nunca se enteraba de por qué, y el cliente recibía la misma
+// oración enlatada cada vez. Ahora el rechazo puede volver al modelo con los
+// códigos y las alternativas, y darle una oportunidad de reescribir.
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Devuelve `null` si la propuesta es válida, o el motivo estructurado si no.
+ * Los motivos se ACUMULAN: devolver sólo el primero obligaría al modelo a
+ * reparar de a uno por vez, y sólo hay una reparación.
+ */
+export function validateAgentATurnProposalV1(input: {
+  readonly proposal: AgentATurnProposalV1;
+  readonly context: AgentAContextV1;
+  readonly planned_fact_ids: readonly string[];
+  readonly rejection_id: string;
+}): TurnRejectionV1 | null {
+  const rejections: Array<{ code: TurnRejectionV1['rejections'][number]['code']; subject: string }> = [];
+  const planned = new Set(input.planned_fact_ids);
+
+  // V2 — cada hecho citado existe en el registro materializado del turno.
+  for (const factId of input.proposal.used_fact_ids) {
+    if (!planned.has(factId)) {
+      rejections.push({ code: 'FACT_NOT_AUTHORIZED', subject: factId })
+    }
+  }
+
+  // V4 — la acción y sus precondiciones.
+  const action = input.proposal.proposed_action
+  if (action.type === 'send_payment_link') {
+    if (!input.context.capabilities.may_send_payment_link) {
+      rejections.push({ code: 'ACTION_NOT_AUTHORIZED', subject: 'send_payment_link' })
+    }
+    if (input.context.commercial_state.selected_offering_code === null) {
+      rejections.push({ code: 'COURSE_NOT_RESOLVED', subject: 'course_selection' })
+    }
+    if (input.context.commercial_state.selected_payment_plan === null) {
+      rejections.push({ code: 'PLAN_NOT_SELECTED', subject: 'payment_plan' })
+    }
+    if (input.context.capabilities.intake_missing.length > 0) {
+      for (const field of input.context.capabilities.intake_missing) {
+        rejections.push({ code: 'MISSING_INTAKE', subject: field })
+      }
+    }
+  }
+  if (action.type === 'request_call_now' && !input.context.capabilities.may_request_call_now) {
+    rejections.push({ code: 'ACTION_NOT_AUTHORIZED', subject: 'request_call_now' })
+  }
+
+  // V6 — ofertas visibles <= ledger, tope dos. Una oferta que el modelo
+  // escribe dentro de su propia narrativa cuenta igual que la del campo.
+  const offersACall = input.proposal.response.call_offer !== null
+    || input.proposal.response.messages.some((message) => solicitsACallV1(message))
+  if (offersACall && !input.context.capabilities.may_offer_call) {
+    rejections.push({ code: 'CALL_BUDGET_EXHAUSTED', subject: 'call_offer' })
+  }
+
+  // V7 — ninguna URL escrita por el modelo. El link lo inserta el backend.
+  for (const message of input.proposal.response.messages) {
+    if (extractUrlCandidates(message).length > 0) {
+      rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'model_authored_url' })
+      break
+    }
+  }
+
+  if (rejections.length === 0) return null
+
+  return {
+    schema_version: 1,
+    rejection_id: input.rejection_id,
+    attempt: 1,
+    rejections,
+    authorized_alternatives: {
+      fact_ids: [...planned],
+      actions: authorizedActionsV1(input.context),
+      missing_information: [...input.context.capabilities.intake_missing],
+    },
+  }
+}
+
+function authorizedActionsV1(context: AgentAContextV1): string[] {
+  const actions: string[] = ['none']
+  if (context.capabilities.may_send_payment_link) actions.push('send_payment_link')
+  if (context.capabilities.may_request_call_now) actions.push('request_call_now')
+  return actions
+}
+
+/**
+ * Solicitud de llamada dentro de la narrativa del modelo. Mencionar una
+ * llamada no es ofrecerla: confirmar una que el cliente pidió, o reconocer que
+ * la rechazó, habla de llamadas sin gastar presupuesto.
+ */
+const CALL_SOLICITATION_V1 = /\b(?:te\s+llamo|te\s+llamamos|una\s+llamada|coordinamos\s+una\s+llamada|prefer[íi]s\s+que\s+te\s+llame)\b/iu
+const NOT_AN_OFFER_V1 = /\b(?:ya\s+(?:qued|registr|solicit)|no\s+te\s+llam|sin\s+llamada)/iu
+
+function solicitsACallV1(message: string): boolean {
+  return CALL_SOLICITATION_V1.test(message) && !NOT_AN_OFFER_V1.test(message)
+}
+
+/**
+ * Escalera de reparación (§ 07). Se baja un escalón sólo cuando el anterior no
+ * alcanza, y el tercero es un piso, no una opción.
+ *
+ * N1 se acepta sólo si conserva contenido. Antes, podar hasta dejar la nada se
+ * resolvía con una frase fija: el cliente recibía una oración que no contestaba
+ * lo que había preguntado, y el modelo nunca se enteraba.
+ */
+export type RepairLevelV1 =
+  | { readonly level: 'N1'; readonly messages: readonly string[] }
+  | { readonly level: 'N2'; readonly messages: readonly [] }
+  | { readonly level: 'N3'; readonly messages: readonly [] }
+
+export function decideRepairLevelV1(input: {
+  readonly rejection: TurnRejectionV1
+  readonly pruned_messages: readonly string[]
+  readonly repair_enabled: boolean
+  readonly already_repaired?: boolean
+}): RepairLevelV1 {
+  const survives = input.pruned_messages.some((message) => message.trim().length > 0)
+
+  // Un rechazo de acción no es podable: no hay oración que quitar que vuelva
+  // válida una acción sin precondición.
+  const prunable = !input.rejection.rejections.some((reason) => (
+    reason.code === 'ACTION_NOT_AUTHORIZED'
+    || reason.code === 'CALL_BUDGET_EXHAUSTED'
+    || reason.code === 'MISSING_INTAKE'
+  ))
+
+  if (prunable && survives) {
+    return { level: 'N1', messages: input.pruned_messages }
+  }
+  // A5: tope duro. Una reparación ya intentada no abre otra, o un rechazo
+  // determinista produciría un lazo.
+  if (input.repair_enabled && input.already_repaired !== true) {
+    return { level: 'N2', messages: [] }
+  }
+  // R2: apagar el flag cae a N3, nunca a silencio.
+  return { level: 'N3', messages: [] }
 }

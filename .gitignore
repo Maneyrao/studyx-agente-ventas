@@ -50,3 +50,8 @@ next-env.d.ts
 /botpress-agent/.adk/dependencies/
 /botpress-agent/.adk/secrets.json
 /botpress-agent/agent.local.json
+
+# Borradores rechazados: diagnóstico local, nunca versionado (§ 07, Q3).
+artifacts/rejected-drafts/
+artifacts/frozen-contexts/
+artifacts/runs/
