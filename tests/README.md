@@ -9,7 +9,7 @@ The active suite separates deterministic unit/contract checks from disposable-da
 - `supabase/tests/001_*.sql` through `006_*.sql`: schema, permissions, memory isolation,
   durable jobs/outbox structure and a ten-delivery idempotency replay at the database boundary.
 
-Run:
+Run (`test:unit` es un alias de `test`: ambos corren `tests/unit` y `tests/contract`):
 
 ```bash
 npm run test:unit

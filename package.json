@@ -9,7 +9,7 @@
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.mts",
-    "test:unit": "vitest run --config vitest.config.mts tests/unit",
+    "test:unit": "vitest run --config vitest.config.mts",
     "test:coverage": "vitest run --config vitest.config.mts --coverage",
     "test:integration": "vitest run --config vitest.integration.config.mts",
     "test:agent-a": "tsx scripts/run-agent-a-conversations.ts",
