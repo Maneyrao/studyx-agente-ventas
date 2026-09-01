@@ -346,7 +346,7 @@ describe('processInboundTurn hot path', () => {
         next_call_preference: 'chat',
         next_call_offer_status: 'declined',
         next_call_offer_count: 1,
-        next_awaiting_reply: 'none',
+        next_awaiting_reply: 'none', payment_reported: false,
         selected_offering_code: 'redes-informaticas',
         selected_payment_plan: null,
       },
@@ -915,7 +915,7 @@ describe('processInboundTurn hot path', () => {
         canonical_fact_requests: [], allowed_business_action: { type: 'none' },
         missing_information: [], should_offer_call: true,
         next_call_preference: 'unknown', next_call_offer_status: 'offered', next_call_offer_count: 1,
-        next_awaiting_reply: 'call_or_chat', selected_offering_code: 'redes-informaticas',
+        next_awaiting_reply: 'call_or_chat', payment_reported: false, selected_offering_code: 'redes-informaticas',
         selected_payment_plan: null,
       },
       fact_refs: [], state_version: 2, plan_hash: 'd'.repeat(64),
@@ -988,7 +988,7 @@ describe('processInboundTurn hot path', () => {
         next_stage: 'exploring', response_goal: 'greet_and_discover', canonical_fact_requests: [],
         allowed_business_action: { type: 'none' }, missing_information: [], should_offer_call: false,
         next_call_preference: 'unknown', next_call_offer_status: 'not_offered', next_call_offer_count: 0,
-        next_awaiting_reply: 'none', selected_offering_code: null, selected_payment_plan: null,
+        next_awaiting_reply: 'none', payment_reported: false, selected_offering_code: null, selected_payment_plan: null,
       },
       fact_refs: [], state_version: 2, plan_hash: 'c'.repeat(64),
     });
@@ -1697,7 +1697,7 @@ describe('processInboundTurn hot path', () => {
       },
       decision: { reason_code: 'CONVERSATION_PIPELINE_V1_PENDING_BACKEND' },
       model: {
-        prompt_version: 'studyx-conversation-interpreter-v1.5+studyx-conversation-composer-v2+studyx-sales-behavior-v1',
+        prompt_version: 'studyx-conversation-interpreter-v1.6+studyx-conversation-composer-v2+studyx-sales-behavior-v1',
       },
     });
   });
@@ -1753,7 +1753,7 @@ describe('processInboundTurn hot path', () => {
         should_offer_call: false,
         next_call_preference: 'call',
         next_call_offer_status: 'accepted',
-        next_awaiting_reply: 'none',
+        next_awaiting_reply: 'none', payment_reported: false,
         selected_offering_code: 'redes-informaticas',
         selected_payment_plan: null,
       },
@@ -1812,7 +1812,7 @@ describe('processInboundTurn hot path', () => {
         allowed_business_action: { type: 'request_call_now', reason: 'accepted_offer' },
         missing_information: [], should_offer_call: false,
         next_call_preference: 'call', next_call_offer_status: 'accepted', next_call_offer_count: 1,
-        next_awaiting_reply: 'none', selected_offering_code: 'redes-informaticas',
+        next_awaiting_reply: 'none', payment_reported: false, selected_offering_code: 'redes-informaticas',
         selected_payment_plan: null,
       },
       fact_refs: [], state_version: 3, plan_hash: 'b'.repeat(64),

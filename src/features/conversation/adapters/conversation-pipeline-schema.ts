@@ -78,6 +78,7 @@ export const TurnPlanV1Schema = z.object({
   next_call_offer_status: z.enum(CALL_OFFER_STATUSES_V1),
   next_call_offer_count: z.union([z.literal(0), z.literal(1), z.literal(2)]),
   next_awaiting_reply: z.enum(AWAITING_REPLIES_V1),
+  payment_reported: z.boolean(),
   selected_offering_code: z.string().min(1).nullable(),
   selected_payment_plan: PaymentPlanSchema.nullable(),
 }).strict();

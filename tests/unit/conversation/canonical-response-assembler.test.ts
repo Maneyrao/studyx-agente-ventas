@@ -16,7 +16,7 @@ function plan(overrides: Partial<TurnPlanV1> = {}): TurnPlanV1 {
     canonical_fact_requests: [], allowed_business_action: { type: 'none' }, missing_information: [],
     should_offer_call: false, next_call_preference: 'unknown', next_call_offer_status: 'not_offered',
     next_call_offer_count: 0,
-    next_awaiting_reply: 'none', selected_offering_code: 'redes-informaticas',
+    next_awaiting_reply: 'none', payment_reported: false, selected_offering_code: 'redes-informaticas',
     selected_payment_plan: null, ...overrides,
   };
 }

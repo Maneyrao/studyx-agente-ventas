@@ -534,7 +534,7 @@ describe('Agent A conversation runner', () => {
           canonical_fact_requests: [], allowed_business_action: { type: 'none' },
           missing_information: [], should_offer_call: false,
           next_call_preference: 'chat', next_call_offer_status: 'declined',
-          next_call_offer_count: 1, next_awaiting_reply: 'none',
+          next_call_offer_count: 1, next_awaiting_reply: 'none', payment_reported: false,
           selected_offering_code: 'redes_informaticas', selected_payment_plan: null,
         },
         fact_refs: [], state_version: 1, plan_hash: 'a'.repeat(64),

@@ -65,6 +65,7 @@ run('conversation_sales_context_states_v1', () => {
       call_offer_status: 'declined',
       call_offer_count: 1,
       awaiting_reply: 'payment_confirmation',
+      payment_reported: false,
     });
     const conversationB = await store.transition({
       workspace_slug: 'studyx',
@@ -78,6 +79,7 @@ run('conversation_sales_context_states_v1', () => {
       call_offer_status: 'not_offered',
       call_offer_count: 0,
       awaiting_reply: 'none',
+      payment_reported: false,
     });
 
     expect(conversationA).toMatchObject({
@@ -108,13 +110,13 @@ run('conversation_sales_context_states_v1', () => {
       workspace_slug: 'studyx', conversation_id: data.conversationA, contact_id: data.contactId,
       source_turn_id: data.turnsA[0], selected_offering_code: data.offeringA,
       selected_payment_plan: 'monthly_6', stage: 'plan_selected', call_preference: 'unknown',
-      call_offer_status: 'not_offered', awaiting_reply: 'payment_confirmation',
+      call_offer_status: 'not_offered', awaiting_reply: 'payment_confirmation', payment_reported: false,
     });
     const changed = await store.transition({
       workspace_slug: 'studyx', conversation_id: data.conversationA, contact_id: data.contactId,
       source_turn_id: data.turnsA[1], selected_offering_code: data.offeringB,
       selected_payment_plan: null, stage: 'course_selected', call_preference: 'unknown',
-      call_offer_status: 'not_offered', awaiting_reply: 'none',
+      call_offer_status: 'not_offered', awaiting_reply: 'none', payment_reported: false,
     });
 
     expect(changed).toMatchObject({
@@ -133,7 +135,7 @@ run('conversation_sales_context_states_v1', () => {
       source_turn_id: data.turnsA[0], selected_offering_code: data.offeringA,
       selected_payment_plan: null, stage: 'course_selected' as const, call_preference: 'unknown' as const,
       call_offer_status: 'offered' as const, call_offer_count: 1 as const,
-      awaiting_reply: 'call_or_chat' as const,
+      awaiting_reply: 'call_or_chat' as const, payment_reported: false,
     };
 
     const first = await store.transition(input);
@@ -157,7 +159,7 @@ run('conversation_sales_context_states_v1', () => {
       workspace_slug: 'studyx', conversation_id: data.conversationA, contact_id: data.contactId,
       source_turn_id: data.turnsA[0], selected_offering_code: data.offeringA,
       selected_payment_plan: null, stage: 'course_selected', call_preference: 'unknown',
-      call_offer_status: 'offered', awaiting_reply: 'call_or_chat',
+      call_offer_status: 'offered', awaiting_reply: 'call_or_chat', payment_reported: false,
     });
     const connections = openIndependentLocalTestDatabases(2);
     try {
@@ -166,13 +168,13 @@ run('conversation_sales_context_states_v1', () => {
           workspace_slug: 'studyx', conversation_id: data.conversationA, contact_id: data.contactId,
           source_turn_id: data.turnsA[1], selected_offering_code: data.offeringA,
           selected_payment_plan: null, stage: 'course_selected', call_preference: 'chat',
-          call_offer_status: 'declined', awaiting_reply: 'none',
+          call_offer_status: 'declined', awaiting_reply: 'none', payment_reported: false,
         }),
         new PostgresConversationStateStoreV1(connections[1]).transition({
           workspace_slug: 'studyx', conversation_id: data.conversationA, contact_id: data.contactId,
           source_turn_id: data.turnsA[2], selected_offering_code: data.offeringA,
           selected_payment_plan: null, stage: 'course_selected', call_preference: 'call',
-          call_offer_status: 'accepted', awaiting_reply: 'none',
+          call_offer_status: 'accepted', awaiting_reply: 'none', payment_reported: false,
         }),
       ]);
       expect(results.map((result) => result.version).sort()).toEqual([2, 3]);

@@ -20,6 +20,7 @@ function plan(overrides: Partial<TurnPlanV1> = {}): TurnPlanV1 {
     next_call_offer_status: 'not_offered',
     next_call_offer_count: 0,
     next_awaiting_reply: 'none',
+    payment_reported: false,
     selected_offering_code: 'redes-informaticas',
     selected_payment_plan: null,
     ...overrides,

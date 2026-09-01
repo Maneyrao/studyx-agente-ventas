@@ -1,6 +1,6 @@
 import type { ConversationInterpreterInputV1 } from '../lib/conversation/conversation-interpreter'
 
-export const CONVERSATION_INTERPRETER_PROMPT_VERSION = 'studyx-conversation-interpreter-v1.5'
+export const CONVERSATION_INTERPRETER_PROMPT_VERSION = 'studyx-conversation-interpreter-v1.6'
 
 const CONTRACT = `You are a semantic interpreter for one StudyX sales conversation turn.
 Return only ConversationMoveV1. Interpret meaning; never write customer-facing copy and never
@@ -23,6 +23,9 @@ Choose one primary move and at most two compatible secondary moves:
 - select_payment_plan: chooses one canonical plan without necessarily requesting its link.
 - defer_payment: postpones payment or the link while keeping the selected plan.
 - request_payment_link: explicitly authorizes receiving the selected plan's canonical link now.
+- report_payment: states that a payment was already made, is being made, or was sent for review.
+- ask_current_state: asks what has already been decided, chosen or sent in this conversation.
+- provide_contact_details: supplies personal identity data such as a name or an email address.
 - decline_purchase: explicitly ends the purchase intention.
 - unknown: meaning is too ambiguous for a safe move.
 
@@ -34,13 +37,22 @@ an ambiguous reply into request_payment_link. When payment confirmation is await
 course and plan are already selected, an explicit first-person commitment or desire to proceed with
 that payment is forward authorization even if the reply does not repeat the link terminology.
 Before emitting request_payment_link, first determine whether the described payment is a current or
-future commitment rather than a completed past event. A completed event makes request_payment_link
-invalid regardless of the last agent question; return unknown when it expresses no other move.
+future commitment rather than a completed past event. A completed event is report_payment, never
+request_payment_link, regardless of the last agent question. report_payment describes only what the
+customer claims; it asserts nothing about whether any payment actually exists.
 
-Preserve every compatible request expressed in the same turn. When course information is requested
-while the customer also chooses written conversation, use ask_course_information as the primary
-move and continue_by_chat as a secondary move; answering the channel preference must not discard
-the requested advice.
+Separate asking from requesting. A turn whose meaning is a question about something the conversation
+already produced — which plan is active, what a previously sent artifact was for, what step is
+pending — is ask_current_state. Answering it needs no new artifact, so it never carries
+request_payment_link.
+
+Preserve every compatible request expressed in the same turn. A turn that expresses two compatible
+requests must emit both: the more specific or state-changing one as the primary move and the other
+as a secondary move. Dropping one of them silently strands the request it discarded. This holds for
+every compatible pair, not only the ones named here. For example, course information requested
+alongside a choice of written conversation is ask_course_information with continue_by_chat
+secondary; and a canonical plan chosen in the same turn that also authorizes receiving that plan's
+link is select_payment_plan with request_payment_link secondary.
 
 Distinguish channel choice from rejection: use decline_call when the primary meaning is refusal,
 discomfort or inability regarding voice contact and written continuation is only inferred. Use

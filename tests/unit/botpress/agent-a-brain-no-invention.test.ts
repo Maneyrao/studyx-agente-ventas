@@ -71,7 +71,7 @@ function plan(overrides: Partial<TurnPlanV1> = {}): TurnPlanV1 {
     schema_version: 1, next_stage: 'course_selected', response_goal: 'present_payment_options',
     canonical_fact_requests: [], allowed_business_action: { type: 'none' }, missing_information: [],
     should_offer_call: false, next_call_preference: 'chat', next_call_offer_status: 'declined',
-    next_call_offer_count: 1, next_awaiting_reply: 'payment_plan',
+    next_call_offer_count: 1, next_awaiting_reply: 'payment_plan', payment_reported: false,
     selected_offering_code: 'redes-informaticas', selected_payment_plan: null, ...overrides,
   };
 }

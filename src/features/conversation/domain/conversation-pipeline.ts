@@ -13,6 +13,8 @@ export const CONVERSATION_MOVE_KINDS_V1 = [
   'select_payment_plan',
   'defer_payment',
   'request_payment_link',
+  'report_payment',
+  'ask_current_state',
   'decline_purchase',
   'unknown',
 ] as const;
@@ -43,6 +45,8 @@ export const RESPONSE_GOALS_V1 = [
   'confirm_selected_plan',
   'acknowledge_payment_deferral',
   'confirm_payment_link',
+  'acknowledge_payment_report',
+  'confirm_current_state',
   'acknowledge_purchase_decline',
   'clarify_current_step',
   'catalog_temporarily_unavailable',
@@ -89,6 +93,12 @@ export interface ConversationStateV1 {
   readonly call_offer_status: CallOfferStatusV1;
   readonly call_offer_count: 0 | 1 | 2;
   readonly awaiting_reply: AwaitingReplyV1;
+  /**
+   * When the customer said they paid. A claim, never evidence: it authorizes
+   * the operator-facing projection and nothing else. Verification is a
+   * separate, external fact this field deliberately cannot express.
+   */
+  readonly payment_reported_at: string | null;
   readonly source_turn_id: string | null;
   readonly version: number;
   readonly created_at: string;
@@ -106,6 +116,7 @@ export interface ConversationStateTransitionV1 {
   readonly call_offer_status: CallOfferStatusV1;
   readonly call_offer_count?: 0 | 1 | 2;
   readonly awaiting_reply: AwaitingReplyV1;
+  readonly payment_reported: boolean;
   readonly source_turn_id: string | null;
 }
 
@@ -144,6 +155,8 @@ export interface TurnPlanV1 {
   readonly next_call_offer_status: CallOfferStatusV1;
   readonly next_call_offer_count: 0 | 1 | 2;
   readonly next_awaiting_reply: AwaitingReplyV1;
+  /** Whether the customer has claimed payment, this turn or in an earlier one. */
+  readonly payment_reported: boolean;
   readonly selected_offering_code: string | null;
   readonly selected_payment_plan: SalesPaymentPlan | null;
 }

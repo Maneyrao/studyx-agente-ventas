@@ -4,7 +4,8 @@ export const ConversationMoveKindV1Schema = z.enum([
   'greeting', 'browse_catalog', 'select_area', 'select_course',
   'ask_course_information', 'continue_by_chat', 'request_call', 'decline_call',
   'ask_payment_options', 'select_payment_plan', 'defer_payment',
-  'request_payment_link', 'decline_purchase', 'unknown',
+  'request_payment_link', 'report_payment', 'ask_current_state',
+  'decline_purchase', 'unknown',
 ]);
 const ConversationVetoV1Schema = z.enum(['call', 'payment_link', 'purchase']);
 const PaymentPlanSchema = z.enum(['monthly_12', 'monthly_6', 'one_time']);
@@ -68,6 +69,7 @@ export const TurnPlanV1Schema = z.object({
     'continue_course_advice', 'offer_call_or_chat', 'acknowledge_chat_preference',
     'acknowledge_call_decline', 'confirm_call_request', 'present_payment_options',
     'confirm_selected_plan', 'acknowledge_payment_deferral', 'confirm_payment_link',
+    'acknowledge_payment_report', 'confirm_current_state',
     'acknowledge_purchase_decline', 'clarify_current_step', 'catalog_temporarily_unavailable',
   ]),
   canonical_fact_requests: z.array(CanonicalFactRequestV1Schema),
@@ -81,6 +83,7 @@ export const TurnPlanV1Schema = z.object({
   next_call_offer_status: z.enum(['not_offered', 'offered', 'accepted', 'declined']),
   next_call_offer_count: z.union([z.literal(0), z.literal(1), z.literal(2)]),
   next_awaiting_reply: z.enum(['none', 'area_choice', 'course_choice', 'call_or_chat', 'payment_plan', 'payment_confirmation']),
+  payment_reported: z.boolean(),
   selected_offering_code: z.string().min(1).nullable(),
   selected_payment_plan: PaymentPlanSchema.nullable(),
 }).strict();

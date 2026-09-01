@@ -59,6 +59,7 @@ export function createDefaultConversationStateV1(identity: StateIdentity): Conve
     call_offer_status: 'not_offered',
     call_offer_count: 0,
     awaiting_reply: 'none',
+    payment_reported_at: null,
     source_turn_id: null,
     version: 0,
     created_at: '1970-01-01T00:00:00.000Z',
@@ -188,6 +189,8 @@ function unchangedPlan(
     next_call_offer_status: state.call_offer_status,
     next_call_offer_count: state.call_offer_count,
     next_awaiting_reply: state.awaiting_reply,
+    // A claim of payment, once made, is durable: no later move retracts it.
+    payment_reported: state.payment_reported_at !== null,
     selected_offering_code: state.selected_offering_code,
     selected_payment_plan: state.selected_payment_plan,
   };
@@ -203,8 +206,18 @@ function asState(plan: TurnPlanV1, previous: ConversationStateV1): ConversationS
     call_offer_status: plan.next_call_offer_status,
     call_offer_count: plan.next_call_offer_count,
     awaiting_reply: plan.next_awaiting_reply,
+    payment_reported_at: plan.payment_reported
+      ? previous.payment_reported_at ?? REPORTED_THIS_TURN
+      : previous.payment_reported_at,
   };
 }
+
+/**
+ * Placeholder timestamp for a claim made in the turn currently being planned.
+ * Planning is pure — it cannot read the clock — so the commit path stamps the
+ * real time; only the truth of the claim is decided here.
+ */
+const REPORTED_THIS_TURN = '__reported_this_turn__';
 
 function uniqueRequests(requests: readonly CanonicalFactRequestV1[]): CanonicalFactRequestV1[] {
   const seen = new Set<string>();
@@ -244,6 +257,10 @@ function incompatible(moves: readonly ConversationMoveKindV1[], vetoes: Readonly
   // request to resume a payment is what sent a link to a customer who had
   // only said hello; the two moves cannot describe the same message.
   if (active.has('greeting')
+    && (active.has('request_payment_link') || active.has('select_payment_plan'))) return true;
+  // Reporting a completed payment and asking for a link to pay are opposite
+  // tenses of the same event; one message cannot be both.
+  if (active.has('report_payment')
     && (active.has('request_payment_link') || active.has('select_payment_plan'))) return true;
   if (active.has('request_call') && active.has('decline_call')) return true;
   if (active.has('request_call') && active.has('request_payment_link')) return true;
@@ -419,6 +436,21 @@ function planSingle(
       selected_offering_code: offeringCode,
       selected_payment_plan: paymentPlan,
     };
+  }
+  if (kind === 'report_payment') {
+    // The customer's word is the only input here, and it is not evidence.
+    // The turn records the claim, hands it to a human, and authorizes nothing.
+    return {
+      ...unchangedPlan(state, 'acknowledge_payment_report'),
+      payment_reported: true,
+      next_awaiting_reply: 'none',
+    };
+  }
+  if (kind === 'ask_current_state') {
+    // A question about what was already decided or already sent. It is
+    // answered from state; re-issuing the link would answer a question the
+    // customer did not ask.
+    return unchangedPlan(state, 'confirm_current_state');
   }
   if (kind === 'decline_purchase') {
     return {

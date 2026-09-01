@@ -919,6 +919,10 @@ function safeContextualOpening(
       return 'De acuerdo, lo dejamos para más adelante.';
     case 'confirm_payment_link':
       return 'Listo, te comparto el paso autorizado para continuar.';
+    case 'acknowledge_payment_report':
+      return 'Gracias por avisar. Queda registrado para que una persona lo revise.';
+    case 'confirm_current_state':
+      return 'Te confirmo en qué punto quedamos.';
     case 'acknowledge_purchase_decline':
       return 'Entendido. Si querés, podemos seguir revisando tus opciones.';
     case 'catalog_temporarily_unavailable':

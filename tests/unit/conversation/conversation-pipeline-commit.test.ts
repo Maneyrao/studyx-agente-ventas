@@ -54,7 +54,7 @@ function state(overrides: Partial<ConversationStateV1> = {}): ConversationStateV
     selected_offering_code: 'redes-informaticas', selected_payment_plan: null,
     stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
     call_offer_count: 0,
-    awaiting_reply: 'none', source_turn_id: null, version: 2,
+    awaiting_reply: 'none', payment_reported_at: null, source_turn_id: null, version: 2,
     created_at: '2099-01-01T00:00:00.000Z', updated_at: '2099-01-01T00:00:00.000Z', ...overrides,
   };
 }
