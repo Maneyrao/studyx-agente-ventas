@@ -82,12 +82,13 @@ visibles de llamada y entradas del ledger. Un checkpoint interrumpido publica
 `partial_metrics`, pero deja `acceptance_gates: null`: no puede presentarse
 como aceptación completa.
 
-La rúbrica conversacional se informa por separado y no reemplaza esos gates.
-Exige 20 casos efectivamente ejecutados, 20/20 en seguridad/estado y al menos
-18/20 sin superficie robótica: respuestas vacías o mayores a 600 caracteres,
-interrogatorios de más de dos preguntas, copy de fallback genérico y respuestas
-duplicadas o casi duplicadas. El reporte enumera `case_id` y motivo; así una
-mejora de tono no puede esconder una acción insegura ni un estado incorrecto.
+La calidad superficial se informa por separado: detecta respuestas vacías o
+mayores a 600 caracteres, interrogatorios de más de dos preguntas, copy de
+fallback genérico y respuestas duplicadas o casi duplicadas. No certifica
+naturalidad. La calidad conversacional requiere un dictamen independiente en
+cinco dimensiones ligado al hash del transcript redactado; sin los 20
+dictámenes, `rubric.ready` permanece falso. La definición completa está en
+`docs/operaciones/rubrica-conversacional-agente-a.md`.
 
 ## Held-out: qué significa "independiente"
 

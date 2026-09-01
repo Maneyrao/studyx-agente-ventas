@@ -1,6 +1,12 @@
 import { AGENT_A_PROMPT_VERSION } from '../../botpress-agent/src/prompts/agent-a-sales-bridge';
 import { AGENT_A_BRAIN_PROMPT_VERSION } from '../../botpress-agent/src/prompts/agent-a-brain-v1';
 import {
+  buildConversationQualityReviewPacketV1,
+  evaluateIndependentConversationQualityV1,
+  hashConversationTranscriptV1,
+  type IndependentConversationGradeV1,
+} from './agent-a-conversation-quality';
+import {
   unsupportedOperationalAssertionsV1,
 } from '../../src/features/conversation/domain/operational-promise-guard';
 import type { StateFactIdV1 } from '../../src/features/conversation/domain/state-fact-registry';
@@ -274,9 +280,15 @@ export type AgentABrainSuiteRubric = {
   readonly effectively_evaluated: number;
   readonly hard_gate_passed: number;
   readonly hard_gate_failed: number;
-  readonly naturalness_passed: number;
-  readonly naturalness_required: number;
-  readonly naturalness_failures: readonly {
+  readonly surface_quality_passed: number;
+  readonly surface_quality_failures: readonly {
+    readonly case_id: string;
+    readonly reasons: readonly string[];
+  }[];
+  readonly conversation_quality_complete: boolean;
+  readonly conversation_quality_passed: number;
+  readonly conversation_quality_required: number;
+  readonly conversation_quality_failures: readonly {
     readonly case_id: string;
     readonly reasons: readonly string[];
   }[];
@@ -355,20 +367,62 @@ export function evaluateConversationNaturalnessV1(result: ConversationCaseResult
 export function evaluateAgentABrainSuiteRubric(
   results: readonly ConversationCaseResult[],
   expectedCases = 20,
+  independentGrades: readonly IndependentConversationGradeV1[] = [],
 ): AgentABrainSuiteRubric {
   const effectivelyEvaluated = results.filter((result) => (
     result.conversation_id !== null
     && !result.failures.some((failure) => /turn_\d+_error:/u.test(failure))
   )).length;
   const hardGatePassed = results.filter((result) => result.status === 'passed').length;
-  const naturalnessFailures = results
+  const surfaceQualityFailures = results
     .map((result) => ({
       case_id: result.id,
       reasons: evaluateConversationNaturalnessV1(result),
     }))
     .filter((failure) => failure.reasons.length > 0);
-  const naturalnessPassed = results.length - naturalnessFailures.length;
-  const naturalnessRequired = Math.ceil(expectedCases * 0.9);
+  const surfaceQualityPassed = results.length - surfaceQualityFailures.length;
+  const conversationQualityRequired = Math.ceil(expectedCases * 0.9);
+  const gradesByCase = new Map<string, IndependentConversationGradeV1[]>();
+  for (const grade of independentGrades) {
+    gradesByCase.set(grade.case_id, [...(gradesByCase.get(grade.case_id) ?? []), grade]);
+  }
+  let conversationQualityStructurallyComplete = results.length === expectedCases;
+  let conversationQualityPassed = 0;
+  const conversationQualityFailures: Array<{ case_id: string; reasons: string[] }> = [];
+  for (const result of results) {
+    const grades = gradesByCase.get(result.id) ?? [];
+    if (grades.length !== 1) {
+      conversationQualityStructurallyComplete = false;
+      conversationQualityFailures.push({
+        case_id: result.id,
+        reasons: [grades.length === 0 ? 'independent_grade_missing' : 'independent_grade_duplicated'],
+      });
+      continue;
+    }
+    try {
+      const verdict = evaluateIndependentConversationQualityV1({
+        grade: grades[0]!,
+        expectedCaseId: result.id,
+        expectedTranscriptSha256: hashConversationTranscriptV1(result.transcript),
+        hardGatePassed: result.status === 'passed',
+      });
+      if (verdict.passed) conversationQualityPassed += 1;
+      else conversationQualityFailures.push({ case_id: result.id, reasons: verdict.failures });
+    } catch {
+      conversationQualityStructurallyComplete = false;
+      conversationQualityFailures.push({ case_id: result.id, reasons: ['independent_grade_invalid'] });
+    }
+  }
+  const resultIds = new Set(results.map((result) => result.id));
+  for (const gradeCaseId of gradesByCase.keys()) {
+    if (!resultIds.has(gradeCaseId)) {
+      conversationQualityStructurallyComplete = false;
+      conversationQualityFailures.push({
+        case_id: gradeCaseId,
+        reasons: ['independent_grade_for_unknown_case'],
+      });
+    }
+  }
   const brainLatencies = results.flatMap((result) => {
     const samples = result.checks.brain_latencies_ms;
     return Array.isArray(samples)
@@ -385,9 +439,12 @@ export function evaluateAgentABrainSuiteRubric(
     effectively_evaluated: effectivelyEvaluated,
     hard_gate_passed: hardGatePassed,
     hard_gate_failed: results.length - hardGatePassed,
-    naturalness_passed: naturalnessPassed,
-    naturalness_required: naturalnessRequired,
-    naturalness_failures: naturalnessFailures,
+    surface_quality_passed: surfaceQualityPassed,
+    surface_quality_failures: surfaceQualityFailures,
+    conversation_quality_complete: conversationQualityStructurallyComplete,
+    conversation_quality_passed: conversationQualityPassed,
+    conversation_quality_required: conversationQualityRequired,
+    conversation_quality_failures: conversationQualityFailures,
     brain_latency_samples: brainLatencies.length,
     brain_latency_p50_ms: brainLatencyP50,
     brain_latency_p95_ms: brainLatencyP95,
@@ -396,7 +453,8 @@ export function evaluateAgentABrainSuiteRubric(
     ready: results.length === expectedCases
       && effectivelyEvaluated === expectedCases
       && hardGatePassed === expectedCases
-      && naturalnessPassed >= naturalnessRequired
+      && conversationQualityStructurallyComplete
+      && conversationQualityPassed >= conversationQualityRequired
       && brainLatencyWithinBudget,
   };
 }
@@ -440,6 +498,9 @@ type RunOptions = {
     result: ConversationCaseResult,
     completedResults: readonly ConversationCaseResult[],
   ) => Promise<void> | void;
+  /** Grades are produced after an independent reviewer sees the redacted
+   * packet. Missing grades keep rubric.ready false by design. */
+  independentConversationGrades?: readonly IndependentConversationGradeV1[];
 };
 
 export type ConversationSuite = {
@@ -1509,9 +1570,14 @@ export async function runConversationSuite(
     },
     metrics,
     acceptance_gates: evaluateRunAcceptanceGatesV1(metrics),
+    quality_review_packet: results.map((result) => buildConversationQualityReviewPacketV1({
+      caseId: result.id,
+      transcript: result.transcript,
+    })),
     rubric: evaluateAgentABrainSuiteRubric(
       results,
       suite.suite === 'studyx-agent-a-brain-v1-heldout' ? 20 : results.length,
+      options.independentConversationGrades,
     ),
     results,
   };

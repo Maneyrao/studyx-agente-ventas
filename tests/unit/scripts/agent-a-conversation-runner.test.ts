@@ -943,6 +943,14 @@ describe('Agent A conversation runner', () => {
     expect(report.summary).toEqual({ total: 2, passed: 2, failed: 0 });
     expect(report.run_id).toBe('suite123');
     expect(report.results).toHaveLength(2);
+    expect(report.quality_review_packet).toHaveLength(2);
+    expect(report.quality_review_packet[0]?.transcript_sha256).toMatch(/^[a-f0-9]{64}$/u);
+    expect(report.rubric).toMatchObject({
+      surface_quality_passed: 2,
+      conversation_quality_complete: false,
+      conversation_quality_passed: 0,
+      ready: false,
+    });
   });
 
   it('publishes aligned per-turn acceptance metrics instead of a case-only score', async () => {

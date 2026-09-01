@@ -9,6 +9,11 @@ import {
   type ConversationSuite,
 } from '@/../scripts/lib/agent-a-conversation-runner';
 import { AGENT_A_BRAIN_PROMPT_VERSION } from '@/../botpress-agent/src/prompts/agent-a-brain-v1';
+import {
+  CONVERSATION_QUALITY_DIMENSIONS_V1,
+  hashConversationTranscriptV1,
+  type IndependentConversationGradeV1,
+} from '@/../scripts/lib/agent-a-conversation-quality';
 
 function result(index: number, failures: string[] = []): ConversationCaseResult {
   return {
@@ -25,6 +30,20 @@ function result(index: number, failures: string[] = []): ConversationCaseResult 
     turn_runtimes: [],
     checks: { brain_latencies_ms: [1_000 + index] },
     failures,
+  };
+}
+
+function independentGrade(caseResult: ConversationCaseResult): IndependentConversationGradeV1 {
+  return {
+    schema_version: 'agent-a-conversation-quality-v1',
+    case_id: caseResult.id,
+    transcript_sha256: hashConversationTranscriptV1(caseResult.transcript),
+    grader: { kind: 'human', id: 'sales-reviewer' },
+    target_model: 'deepseek-chat',
+    dimensions: Object.fromEntries(CONVERSATION_QUALITY_DIMENSIONS_V1.map((dimension) => [
+      dimension,
+      { score: 4, evidence: `Evidencia independiente para ${dimension}.` },
+    ])) as IndependentConversationGradeV1['dimensions'],
   };
 }
 
@@ -58,17 +77,21 @@ describe('Agent A brain held-out rubric', () => {
     ))).toBe(true);
   });
 
-  it('requires 20 effectively evaluated cases and at least 18 natural conversations', () => {
+  it('requires 20 effectively evaluated cases and at least 18 independently approved conversations', () => {
+    const results = Array.from({ length: 20 }, (_unused, index) => result(index + 1));
     const rubric = evaluateAgentABrainSuiteRubric(
-      Array.from({ length: 20 }, (_unused, index) => result(index + 1)),
+      results,
       20,
+      results.map(independentGrade),
     );
 
     expect(rubric).toMatchObject({
       effectively_evaluated: 20,
       hard_gate_passed: 20,
       hard_gate_failed: 0,
-      naturalness_passed: 20,
+      surface_quality_passed: 20,
+      conversation_quality_complete: true,
+      conversation_quality_passed: 20,
       brain_latency_samples: 20,
       brain_latency_p95_ms: 1_019,
       brain_latency_budget_ms: 4_500,
@@ -77,12 +100,22 @@ describe('Agent A brain held-out rubric', () => {
     });
   });
 
+  it('never certifies conversational quality from surface heuristics alone', () => {
+    const results = Array.from({ length: 20 }, (_unused, index) => result(index + 1));
+    const rubric = evaluateAgentABrainSuiteRubric(results, 20);
+
+    expect(rubric.surface_quality_passed).toBe(20);
+    expect(rubric.conversation_quality_complete).toBe(false);
+    expect(rubric.conversation_quality_passed).toBe(0);
+    expect(rubric.ready).toBe(false);
+  });
+
   it('blocks readiness when the measured brain p95 exceeds 4.5 seconds', () => {
     const results = Array.from({ length: 20 }, (_unused, index) => result(index + 1));
     results[18]!.checks.brain_latencies_ms = [4_501];
     results[19]!.checks.brain_latencies_ms = [4_700];
 
-    const rubric = evaluateAgentABrainSuiteRubric(results, 20);
+    const rubric = evaluateAgentABrainSuiteRubric(results, 20, results.map(independentGrade));
 
     expect(rubric.brain_latency_p95_ms).toBe(4_501);
     expect(rubric.brain_latency_within_budget).toBe(false);
@@ -93,10 +126,11 @@ describe('Agent A brain held-out rubric', () => {
     const results = Array.from({ length: 20 }, (_unused, index) => result(index + 1));
     results[7] = result(8, ['turn_4_unsafe_action:invent_discount']);
 
-    const rubric = evaluateAgentABrainSuiteRubric(results, 20);
+    const rubric = evaluateAgentABrainSuiteRubric(results, 20, results.map(independentGrade));
 
-    expect(rubric.naturalness_passed).toBe(20);
+    expect(rubric.surface_quality_passed).toBe(20);
     expect(rubric.hard_gate_failed).toBe(1);
+    expect(rubric.conversation_quality_passed).toBe(19);
     expect(rubric.ready).toBe(false);
   });
 
