@@ -1427,3 +1427,114 @@ export async function runConversationSuite(
     results,
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Métricas por turno (§ 12).
+//
+// La unidad de medida deja de ser el caso. Un caso que falla por un turno
+// borraba la información de los otros cuatro, y la varianza 18/15/16 sobre el
+// MISMO commit venía en parte de eso.
+//
+// N3 cuenta como FALLO conversacional. Que el cliente reciba algo no es que el
+// agente haya contestado: si contara como éxito, romper el silencio se
+// «mediría» como una mejora de cuatro casos sin que nadie conteste mejor.
+// ─────────────────────────────────────────────────────────────────────────
+
+export type TechnicalFallbackReasonV1 =
+  | 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED'
+  | 'BRAIN_UNAVAILABLE'
+  | 'ASSEMBLED_CONTENT_INVALID'
+  | 'SCHEMA_UNPARSEABLE'
+  | 'REPAIR_FAILED';
+
+export type TurnMetricsV1 = {
+  readonly case_id: string;
+  readonly turn_index: number;
+  readonly visible_message_count: number;
+  /** Cero mensajes visibles. Deliberado o no: eso lo dice `opted_out`. */
+  readonly silent: boolean;
+  /** El contacto pidió no ser contactado, o está bloqueado. */
+  readonly opted_out: boolean;
+  readonly technical_fallback: boolean;
+  readonly technical_fallback_reason: TechnicalFallbackReasonV1 | null;
+  readonly human_review_requested: boolean;
+  readonly repair_attempted: boolean;
+  readonly repaired: boolean;
+  readonly latency_ms: number;
+  /** Oraciones que V5 habría bloqueado en el texto realmente entregado. */
+  readonly false_operational_promises: readonly string[];
+  readonly visible_call_offers: number;
+  readonly ledger_entries: number;
+};
+
+export type RunMetricsV1 = {
+  readonly turns: readonly TurnMetricsV1[];
+  /** Denominador de todas las tasas: excluye opt-out y bloqueados. */
+  readonly eligible_turns: number;
+  readonly p50_ms: number | null;
+  readonly p95_ms: number | null;
+  readonly technical_fallback_count: number;
+  readonly technical_fallback_by_reason: Readonly<Record<TechnicalFallbackReasonV1, number>>;
+  readonly human_review_count: number;
+  /** Silencios en turnos elegibles. Un opt-out no entra acá. */
+  readonly accidental_silence_count: number;
+  readonly repair_rate: number;
+  readonly repair_success_rate: number;
+  /** Turnos que contestaron de verdad. N3 NO entra en el numerador. */
+  readonly conversational_success_rate: number;
+  readonly false_promise_count: number;
+};
+
+const TECHNICAL_FALLBACK_REASONS: readonly TechnicalFallbackReasonV1[] = [
+  'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED',
+  'BRAIN_UNAVAILABLE',
+  'ASSEMBLED_CONTENT_INVALID',
+  'SCHEMA_UNPARSEABLE',
+  'REPAIR_FAILED',
+];
+
+export function summarizeRunMetricsV1(
+  turns: readonly TurnMetricsV1[],
+): RunMetricsV1 {
+  const eligible = turns.filter((turn) => !turn.opted_out);
+  const ratio = (numerator: number, denominator: number): number => (
+    denominator === 0 ? 0 : numerator / denominator
+  );
+
+  const byReason = Object.fromEntries(
+    TECHNICAL_FALLBACK_REASONS.map((reason) => [
+      reason,
+      turns.filter((turn) => turn.technical_fallback_reason === reason).length,
+    ]),
+  ) as Record<TechnicalFallbackReasonV1, number>;
+
+  const repairAttempted = eligible.filter((turn) => turn.repair_attempted);
+  const latencies = turns
+    .filter((turn) => turn.visible_message_count > 0)
+    .map((turn) => turn.latency_ms);
+
+  return {
+    turns,
+    eligible_turns: eligible.length,
+    p50_ms: percentileNearestRank(latencies, 0.5),
+    p95_ms: percentileNearestRank(latencies, 0.95),
+    technical_fallback_count: turns.filter((turn) => turn.technical_fallback).length,
+    technical_fallback_by_reason: byReason,
+    human_review_count: turns.filter((turn) => turn.human_review_requested).length,
+    accidental_silence_count: eligible.filter((turn) => turn.silent).length,
+    repair_rate: ratio(repairAttempted.length, eligible.length),
+    repair_success_rate: ratio(
+      repairAttempted.filter((turn) => turn.repaired).length,
+      repairAttempted.length,
+    ),
+    conversational_success_rate: ratio(
+      eligible.filter((turn) => (
+        turn.visible_message_count > 0 && !turn.technical_fallback
+      )).length,
+      eligible.length,
+    ),
+    false_promise_count: turns.filter(
+      (turn) => turn.false_operational_promises.length > 0,
+    ).length,
+  };
+}
