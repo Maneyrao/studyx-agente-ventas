@@ -258,7 +258,30 @@ function candidateCodes(claimed: ClaimedTurn, selectedCode: string | null): stri
     .map((offering) => offering.code);
 }
 
-export function buildAgentAContextV1(claimed: ClaimedTurn): AgentAContextV1 | null {
+/**
+ * Identidad estable que el prompt canónico delega en configuración.
+ *
+ * La academia sale del snapshot canónico del workspace, no de una variable de
+ * proceso: es un hecho de negocio y el backend es su dueño. El nombre del
+ * asesor sí es configuración de despliegue — no existe en el catálogo — y
+ * llega desde la configuración del bot. Sin nombre de asesor no hay identidad:
+ * se devuelve `null` y el prompt canónico viaja sin resolver, antes que
+ * inventar quién habla.
+ */
+function agentAIdentityFromClaim(
+  claimed: ClaimedTurn,
+  advisorName: string | null,
+): AgentAContextV1['identity'] {
+  const advisor = advisorName?.trim();
+  const academy = claimed.business_context?.workspace.display_name?.trim();
+  if (!advisor || !academy) return null;
+  return { advisor_name: advisor, academy_name: academy, website: null, instagram: null };
+}
+
+export function buildAgentAContextV1(
+  claimed: ClaimedTurn,
+  advisorName: string | null = null,
+): AgentAContextV1 | null {
   const state = claimed.conversation_state_v1;
   if (!state) return null;
   const index = claimed.catalog_index?.offerings ?? [];
@@ -317,6 +340,7 @@ export function buildAgentAContextV1(claimed: ClaimedTurn): AgentAContextV1 | nu
           confidence: Math.min(1, Math.max(0, memory.similarity)),
         })),
     },
+    identity: agentAIdentityFromClaim(claimed, advisorName),
     commercial_state: {
       selected_offering_code: selectedCode,
       selected_payment_plan: selectedPlan,

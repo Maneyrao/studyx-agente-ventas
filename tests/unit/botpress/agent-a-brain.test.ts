@@ -22,6 +22,7 @@ function context(): AgentAContextV1 {
         id: 'memory-1', type: 'study_goal', key: 'career_goal', value: 'busca trabajo', confidence: 0.9,
       }],
     },
+    identity: null,
     commercial_state: {
       selected_offering_code: 'redes-informaticas', selected_payment_plan: null,
       stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
@@ -242,7 +243,8 @@ describe('Agent A Brain V1', () => {
       proposal: unsafeProposal,
       context: {
         ...context(),
-        commercial_state: { ...context().commercial_state, call_offer_count: 1 },
+        identity: null,
+    commercial_state: { ...context().commercial_state, call_offer_count: 1 },
       },
       response_goal: 'explain_selected_course',
       planned_fact_ids: [],
@@ -251,7 +253,8 @@ describe('Agent A Brain V1', () => {
       proposal: unsafeProposal,
       context: {
         ...context(),
-        commercial_state: {
+        identity: null,
+    commercial_state: {
           ...context().commercial_state,
           call_preference: 'chat',
           call_offer_status: 'declined',
@@ -300,7 +303,8 @@ describe('Agent A Brain V1', () => {
   it('uses safe value-free copy when an authorized link turn contains only a model URL', () => {
     const linkContext = {
       ...context(),
-      commercial_state: {
+      identity: null,
+    commercial_state: {
         ...context().commercial_state,
         selected_payment_plan: 'monthly_12' as const,
       },

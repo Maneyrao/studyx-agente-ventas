@@ -558,7 +558,10 @@ export const processInboundTurn = new Workflow({
       long_term_memory_available: owned.context.long_term_memory_available,
       injection_suspected: owned.context.injection_suspected_count,
     })
-    const agentABrainContext = buildAgentAContextV1(owned)
+    const agentABrainContext = buildAgentAContextV1(
+      owned,
+      typeof configuration.agentAAdvisorName === 'string' ? configuration.agentAAdvisorName : null,
+    )
     if (agentABrainContext) {
       safeLog('studyx.turn.agent_a_context_built', {
         trace_id: input.trace_id,

@@ -49,6 +49,19 @@ export const AgentAContextV1Schema = z.object({
     display_name: z.string().trim().min(1).max(200).nullable(),
     memories: z.array(AgentAMemorySchema).max(5),
   }).strict(),
+  /**
+   * Identidad estable del asesor y de la academia, resuelta por el backend
+   * desde la configuración del workspace. Es lo único que la conducta
+   * canónica delega en configuración: el resto de sus `{{ }}` son slots que
+   * el modelo llena desde este mismo contexto autorizado. `null` cuando el
+   * workspace no la declara, y entonces el prompt viaja sin resolver.
+   */
+  identity: z.object({
+    advisor_name: z.string().trim().min(1).max(120),
+    academy_name: z.string().trim().min(1).max(240),
+    website: z.string().trim().min(1).max(240).nullable(),
+    instagram: z.string().trim().min(1).max(120).nullable(),
+  }).strict().nullable(),
   commercial_state: z.object({
     selected_offering_code: IdentifierSchema.nullable(),
     selected_payment_plan: PaymentPlanSchema.nullable(),

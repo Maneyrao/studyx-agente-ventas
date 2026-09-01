@@ -24,6 +24,7 @@ const validContext = {
       confidence: 0.91,
     }],
   },
+  identity: null,
   commercial_state: {
     selected_offering_code: 'redes-informaticas',
     selected_payment_plan: null,

@@ -19,6 +19,7 @@ function context(): AgentAContextV1 {
     schema_version: 1,
     turn: { batch_messages: [{ id: 'message-1', text: '¿Cómo puedo pagar?' }], recent_turns: [] },
     customer: { display_name: null, memories: [] },
+    identity: null,
     commercial_state: {
       selected_offering_code: 'redes-informaticas', selected_payment_plan: null,
       stage: 'course_selected', call_preference: 'chat', call_offer_status: 'declined',

@@ -10,6 +10,7 @@ function context(): AgentAContextV1 {
     schema_version: 1,
     turn: { batch_messages: [{ id: 'message-1', text: 'Dale, mandame el link' }], recent_turns: [] },
     customer: { display_name: null, memories: [] },
+    identity: null,
     commercial_state: {
       selected_offering_code: 'redes-informaticas', selected_payment_plan: 'monthly_12',
       stage: 'plan_selected', call_preference: 'chat', call_offer_status: 'declined',

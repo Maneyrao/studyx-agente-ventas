@@ -44,6 +44,13 @@ export interface AgentAContextV1 {
       readonly confidence: number;
     }>;
   };
+  /** Identidad estable resuelta por el backend; `null` deja el prompt sin resolver. */
+  readonly identity: {
+    readonly advisor_name: string;
+    readonly academy_name: string;
+    readonly website: string | null;
+    readonly instagram: string | null;
+  } | null;
   readonly commercial_state: {
     readonly selected_offering_code: string | null;
     readonly selected_payment_plan: AgentAPaymentPlanV1 | null;

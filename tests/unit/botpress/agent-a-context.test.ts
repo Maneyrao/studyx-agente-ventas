@@ -176,6 +176,29 @@ function claimedTurn(): ClaimedTurn {
 }
 
 describe('buildAgentAContextV1', () => {
+  it('takes the academy from the canonical snapshot and the advisor from configuration', () => {
+    const context = buildAgentAContextV1(claimedTurn(), 'Camila');
+
+    expect(context?.identity).toEqual({
+      advisor_name: 'Camila',
+      academy_name: 'StudyX',
+      website: null,
+      instagram: null,
+    });
+  });
+
+  it('declares no identity rather than invent who is speaking', () => {
+    // Sin nombre de asesor configurado el prompt canónico viaja sin resolver:
+    // la regla del preámbulo ("never echo an unresolved placeholder") es
+    // preferible a que el modelo se ponga un nombre.
+    expect(buildAgentAContextV1(claimedTurn(), null)?.identity).toBeNull();
+    expect(buildAgentAContextV1(claimedTurn(), '   ')?.identity).toBeNull();
+
+    const withoutSnapshot = claimedTurn();
+    withoutSnapshot.business_context = null;
+    expect(buildAgentAContextV1(withoutSnapshot, 'Camila')?.identity).toBeNull();
+  });
+
   it('does not revive a legacy sales selection after the conversation state was reset', () => {
     const claimed = claimedTurn();
     claimed.context.batch_messages[0] = {

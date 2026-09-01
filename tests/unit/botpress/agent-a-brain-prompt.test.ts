@@ -23,6 +23,7 @@ function context(memoryValue = 'busca salida laboral'): AgentAContextV1 {
         value: memoryValue, confidence: 0.93,
       }],
     },
+    identity: null,
     commercial_state: {
       selected_offering_code: 'redes-informaticas',
       selected_payment_plan: null,
@@ -67,13 +68,16 @@ describe('Agent A Brain V1 prompt', () => {
     expect(instructions).toContain('"memory-1"');
   });
 
-  it('ships the canonical prompt with its identity resolved from configuration', () => {
-    const instructions = buildAgentABrainInstructionsV1(context(), {
-      AGENT_A_ADVISOR_NAME: 'Camila',
-      AGENT_A_ACADEMY_NAME: 'StudyX',
-      AGENT_A_WEBSITE: 'studyx.com',
-      AGENT_A_INSTAGRAM: '@studyx',
-    });
+  it('resolves the canonical identity from the structured context, not the process env', () => {
+    const withIdentity = context();
+    withIdentity.identity = {
+      advisor_name: 'Camila',
+      academy_name: 'StudyX',
+      website: 'studyx.com',
+      instagram: '@studyx',
+    };
+
+    const instructions = buildAgentABrainInstructionsV1(withIdentity);
 
     expect(instructions).toContain('Sos **Camila**, asesor/a educativo/a de **StudyX**');
     expect(instructions).not.toContain('{{NOMBRE_ASESOR}}');
@@ -82,6 +86,13 @@ describe('Agent A Brain V1 prompt', () => {
     expect(instructions).toContain('## 5. BIBLIOTECA DE OBJECIONES');
     expect(instructions).toContain('## 8. ESCALAR A HUMANO');
     expect(instructions).toContain('{{nombre}}');
+  });
+
+  it('ships the canonical prompt verbatim when the workspace declares no identity', () => {
+    const instructions = buildAgentABrainInstructionsV1({ ...context(), identity: null });
+
+    expect(instructions).toContain('{{NOMBRE_ASESOR}}');
+    expect(instructions).toContain('Never echo an unresolved {{placeholder}}');
   });
 
   it('keeps catalog and memory strings inside a single inert context block', () => {
