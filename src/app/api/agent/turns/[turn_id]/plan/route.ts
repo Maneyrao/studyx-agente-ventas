@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { ConversationMoveV1Schema } from '@/features/conversation/adapters/conversation-pipeline-schema';
 import { PostgresConversationStateStoreV1 } from '@/features/conversation/adapters/postgres-conversation-state-store';
-import { authoritativelyPlanConversationTurnV1 } from '@/features/conversation/application/plan-conversation-turn';
+import {
+  authoritativelyPlanConversationTurnV1,
+  toConversationPlanResponseV1,
+} from '@/features/conversation/application/plan-conversation-turn';
 import { loadContactIntakeV1 } from '@/lib/repositories/contact-intake.repository';
 import { businessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
 import { orchestrationStore } from '@/features/orchestration/adapters/postgres-orchestration-store';
@@ -109,7 +112,7 @@ export async function POST(
         contact_intake: loadContactIntakeV1,
       }),
     );
-    return NextResponse.json(result, { status: 200 });
+    return NextResponse.json(toConversationPlanResponseV1(result), { status: 200 });
   } catch (error) {
     console.error('POST /api/agent/turns/:turn_id/plan error:', error);
     return NextResponse.json({ error: 'INTERNAL_ERROR' }, { status: 500 });

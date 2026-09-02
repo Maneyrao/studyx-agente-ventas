@@ -4,6 +4,7 @@ import type { ConversationStateStoreV1 } from '@/features/conversation/ports/con
 import {
   authoritativelyPlanConversationTurnV1,
   buildPlanningBusinessContextV1,
+  toConversationPlanResponseV1,
 } from '@/features/conversation/application/plan-conversation-turn';
 
 const workspaceId = '00000000-0000-4000-8000-000000000001';
@@ -72,6 +73,11 @@ describe('authoritative conversation planner V1', () => {
     expect(JSON.stringify(result)).not.toContain('Formación canónica en redes.');
     expect(JSON.stringify(result)).not.toContain('stripe.com');
     expect(result.plan_hash).toMatch(/^[a-f0-9]{64}$/);
+    const publicResponse = toConversationPlanResponseV1(result);
+    expect(publicResponse).not.toHaveProperty('state_facts');
+    expect(Object.keys(publicResponse).sort()).toEqual([
+      'fact_refs', 'plan', 'plan_hash', 'state_version',
+    ]);
   });
 
   it('does not trust an invented course or payment plan from the interpreter', async () => {

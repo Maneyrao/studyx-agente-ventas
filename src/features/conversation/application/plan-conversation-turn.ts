@@ -42,6 +42,24 @@ export interface AuthoritativeConversationPlanV1 {
   readonly state_facts: ReadonlySet<StateFactIdV1>;
 }
 
+export type ConversationPlanResponseV1 = Omit<AuthoritativeConversationPlanV1, 'state_facts'>;
+
+/**
+ * The state-fact capability is backend-only authority. Exposing the Set over
+ * JSON both serializes it incorrectly and makes Botpress depend on an internal
+ * validation detail it never needs: commit reloads and revalidates it.
+ */
+export function toConversationPlanResponseV1(
+  input: AuthoritativeConversationPlanV1,
+): ConversationPlanResponseV1 {
+  return {
+    plan: input.plan,
+    fact_refs: input.fact_refs,
+    state_version: input.state_version,
+    plan_hash: input.plan_hash,
+  };
+}
+
 export interface AuthoritativeConversationPlanInputV1 {
   readonly turn: {
     readonly workspace_id: string;
