@@ -622,6 +622,15 @@ describe('Agent A Brain V1', () => {
       'ask_current_state',
       'provide_contact_details',
     ]));
+    expect(moveProperties.move.description).toContain(
+      'report_payment requires an explicit current-message claim that payment already happened',
+    );
+    expect(body.instructions).toContain(
+      'proposed_action must be none unless the prior-state capability explicitly authorizes it',
+    );
+    expect(body.instructions).toContain(
+      'When turn_rejection is present',
+    );
     expect(moveProperties.secondary_moves.items.enum).not.toContain('greeting');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('unknown');
     expect(moveProperties.vetoes.description).toContain('current customer message explicitly refuses');

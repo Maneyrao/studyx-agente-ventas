@@ -199,6 +199,19 @@ describe('authorized egress manifest', () => {
     expect(verifyAuthorizedEgress({ content, manifest })).toEqual({ ok: true });
   });
 
+  it.each([
+    'Tenemos varias opciones de pago para que elijas.',
+    'Tenemos distintas formas de pago disponibles.',
+  ])('does not mistake payment guidance for a catalog availability claim: %s', (content) => {
+    const manifest = buildAuthorizedEgress({
+      content,
+      authorized_urls: [],
+      protected_facts: [],
+    });
+
+    expect(verifyAuthorizedEgress({ content, manifest })).toEqual({ ok: true });
+  });
+
   it('does not confuse the required "asesora virtual" identity with course modality', () => {
     const content = '¿Querés que nuestra asesora virtual te llame ahora?';
     const manifest = buildAuthorizedEgress({

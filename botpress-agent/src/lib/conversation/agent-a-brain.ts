@@ -363,6 +363,7 @@ const COURSE_REFERENCE_MOVES = new Set([
 ]);
 const AREA_REFERENCE_MOVES = new Set(['browse_catalog', 'select_area']);
 const PAYMENT_PLAN_MOVES = new Set(['select_payment_plan', 'defer_payment', 'request_payment_link']);
+const MOVE_SEMANTICS = `Classify only the current customer message, using prior state solely to resolve short contextual replies. greeting is a current greeting or social opening. report_payment requires an explicit current-message claim that payment already happened; never use it for a greeting, a status question, a future intention, or merely because a link was sent earlier. ask_current_state is a question about what is already selected, sent, or recorded. provide_contact_details means the current message actually supplies identity details. select_payment_plan records a chosen plan; request_payment_link requires an explicit request to receive or advance with the link. unknown is only for meaning that remains unresolved after applying awaiting_reply.`;
 
 function closedObject(properties: Record<string, unknown>) {
   return { type: 'object', properties, required: Object.keys(properties), additionalProperties: false };
@@ -372,7 +373,7 @@ function proposalJsonSchema(): unknown {
   const nullableString = { anyOf: [{ type: 'string' }, { type: 'null' }] };
   const move = closedObject({
     schema_version: { type: 'integer', enum: [1] },
-    move: { type: 'string', enum: [...MOVE_KINDS] },
+    move: { type: 'string', enum: [...MOVE_KINDS], description: MOVE_SEMANTICS },
     secondary_moves: {
       type: 'array',
       maxItems: 2,

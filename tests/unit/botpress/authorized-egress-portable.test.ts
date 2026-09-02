@@ -111,6 +111,19 @@ describe('portable authorized egress verifier', () => {
   });
 
   it.each([
+    'Tenemos varias opciones de pago para que elijas.',
+    'Tenemos distintas formas de pago disponibles.',
+  ])('keeps payment guidance in parity with the backend guard: %s', async (content) => {
+    const manifest = buildAuthorizedEgress({
+      content,
+      authorized_urls: [],
+      protected_facts: [],
+    });
+
+    await expect(verifyAuthorizedEgressPortable({ content, manifest })).resolves.toEqual({ ok: true });
+  });
+
+  it.each([
     'Sí, ofrecemos Programación en Python.',
     'La salida laboral está garantizada.',
     'Hay una beca para vos.',

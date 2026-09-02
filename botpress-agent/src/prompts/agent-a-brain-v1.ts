@@ -33,7 +33,13 @@ them; the backend appends the full list only when you cite none.
 Return only AgentATurnProposalV1. Examples in the canonical behavior are behavioral examples, never
 fixed phrases or authority. Resolve the current message against commercial_state.awaiting_reply
 before using unknown; a reply to a pending choice is contextual even when short or indirect.
-Current customer meaning outranks older state and memory.`;
+Current customer meaning outranks older state and memory.
+proposed_action must be none unless the prior-state capability explicitly authorizes it with the
+same course and plan. Never promote an action merely because the current move may make it eligible:
+the backend independently applies the planned transition and owns that side effect.
+When turn_rejection is present, rewrite once using only its authorized_alternatives: remove every
+rejected fact or action, keep answering the current customer meaning, and do not explain the
+rejection to the customer.`;
 
 function inertJson(value: unknown): string {
   return JSON.stringify(value)

@@ -113,7 +113,8 @@ export function extractProtectedFacts(content: string): PortableProtectedFact[] 
     ...extractFactMatches(normalizedContent, DURATION_PATTERN, 'duration'),
     ...extractFactMatches(normalizedContent, MODALITY_PATTERN, 'modality'),
     ...extractFactMatches(normalizedContent, CERTIFICATION_PATTERN, 'certification'),
-    ...extractFactMatches(normalizedContent, OFFERING_PATTERN, 'offering'),
+    ...extractFactMatches(normalizedContent, OFFERING_PATTERN, 'offering')
+      .filter(({ fact }) => !/\b(?:opciones|alternativas|formas)\s+(?:de\s+)?pago\b/iu.test(fact.value)),
     ...extractFactMatches(normalizedContent, PROMISE_PATTERN, 'promise'),
   ]
     .sort((left, right) => left.index - right.index)

@@ -214,7 +214,13 @@ function extractProtectedFacts(content: string): ProtectedFactRef[] {
     ...extractMatches(normalizedContent, DURATION_PATTERN, 'duration'),
     ...extractMatches(normalizedContent, MODALITY_PATTERN, 'modality'),
     ...extractMatches(normalizedContent, CERTIFICATION_PATTERN, 'certification'),
-    ...extractMatches(normalizedContent, OFFERING_PATTERN, 'offering'),
+    ...extractMatches(normalizedContent, OFFERING_PATTERN, 'offering')
+      // "Tenemos opciones de pago" describes navigation, not the existence
+      // of a course. The broad availability detector intentionally catches
+      // "tenemos Programación en Python", but applying it to payment wording
+      // turned an ordinary clarification into an unauthorized catalog claim.
+      // Numeric prices and plan facts remain protected by their own detector.
+      .filter(({ fact }) => !/\b(?:opciones|alternativas|formas)\s+(?:de\s+)?pago\b/iu.test(fact.value)),
     ...extractMatches(normalizedContent, PROMISE_PATTERN, 'promise'),
   ]
     .sort((left, right) => left.index - right.index)
