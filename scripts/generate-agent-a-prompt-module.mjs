@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '..');
 const sourcePath = resolve(root, 'docs/prompts/studyx-agent-a-canonical.md');
 const outputPath = resolve(root, 'botpress-agent/src/prompts/studyx-agent-a-canonical.generated.ts');
-const expectedSha256 = '56e222f4725c4cd1b076bc09a590fb65179fac85b708c6c9ce77416de023844c';
+const expectedSha256 = 'a649c5dca850a035c4c1b0b606cf2a3221964838be1a6afd5e9e892970b704d8';
 const prompt = readFileSync(sourcePath, 'utf8');
 const sha256 = createHash('sha256').update(prompt).digest('hex');
 const lineCount = prompt.match(/\n/g)?.length ?? 0;

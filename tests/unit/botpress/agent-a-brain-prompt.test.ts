@@ -87,7 +87,12 @@ describe('Agent A Brain V1 prompt', () => {
     // The behaviour itself is never summarized: every canonical section stays.
     expect(instructions).toContain('## 5. BIBLIOTECA DE OBJECIONES');
     expect(instructions).toContain('## 8. ESCALAR A HUMANO');
-    expect(instructions).toContain('{{nombre}}');
+    // Los slots de comportamiento siguen sin resolverse acá: sustituirlos
+    // convertiría un ejemplo en una afirmación. Se fija `{{CURSO}}`, que el
+    // modelo sí completa desde el contexto autorizado. El slot de nombre se
+    // quitó del prompt: no se puede completar antes de que la persona diga
+    // cómo se llama, y ahí es exactamente donde se filtró al cliente.
+    expect(instructions).toContain('{{CURSO}}');
   });
 
   it('ships the canonical prompt verbatim when the workspace declares no identity', () => {
