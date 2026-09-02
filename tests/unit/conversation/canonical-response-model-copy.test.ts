@@ -77,7 +77,7 @@ describe('canonical response assembler keeps the model as author of the copy', (
     expect(result.content).toContain(narrative.explanation);
     expect(result.content).toContain(narrative.next_question);
     expect(result.content).not.toContain('Estas son las opciones de pago disponibles.');
-    expect(result.content).toContain('• 12 pagos mensuales de USD 30');
+    expect(result.content).toContain('12 pagos mensuales de USD 30');
   });
 
   it('keeps the model opening when guiding a course choice without losing the canonical list', () => {
@@ -96,8 +96,8 @@ describe('canonical response assembler keeps the model as author of the copy', (
 
     expect(result.content).toContain(narrative.opening);
     expect(result.content).not.toContain('Estas son algunas opciones disponibles.');
-    expect(result.content).toContain('• Redes Informáticas');
-    expect(result.content).toContain('• Barista');
+    expect(result.content).toContain('Redes Informáticas');
+    expect(result.content).toContain('Barista');
   });
 
   it('produces different text for two different compositions with the same response goal', () => {
@@ -166,8 +166,11 @@ describe('canonical response assembler keeps the model as author of the copy', (
       ]),
     });
 
-    expect(result.content).not.toContain('• 6 pagos mensuales de USD 60');
-    expect(result.content).not.toContain('• 12 pagos mensuales de USD 30');
+    // La lista canónica ya no lleva glifo, así que mirar el bullet no probaría
+    // nada: lo que importa es que el plan aparezca una sola vez, el que escribió
+    // el modelo, y que la etiqueta canónica no se pegue además debajo.
+    expect(result.content).not.toContain('6 pagos mensuales de USD 60');
+    expect(result.content.match(/12 pagos mensuales de USD 30/gu)).toHaveLength(1);
     expect(result.content).toContain('6 pagos de USD 60');
   });
 

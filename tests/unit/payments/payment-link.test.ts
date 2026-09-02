@@ -436,6 +436,31 @@ describe('materializePaymentLinkAction', () => {
     expect(result.stripped_urls).toEqual([staleUrl]);
   });
 
+  /**
+   * El recorte de bordes no ve los saltos que quedan en el medio del texto del
+   * modelo, y el bloque del link agrega un párrafo más. Un mensaje que ya venía
+   * separado por cuatro saltos terminaba con siete líneas: el turno se lee como
+   * tres bloques sueltos en vez de una respuesta.
+   */
+  it('normalizes stray blank lines inside the model response before appending the link', () => {
+    const result = materializePaymentLinkAction({
+      action: action({ plan_code: 'monthly_6' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
+      backendAuthorizedPlanCode: 'monthly_6',
+      batchMessages: [msg('dale, mandame el link')],
+      businessSnapshot,
+      contact: allowedContact(),
+      modelResponseText: '¡Perfecto, Vera!\n\n\n\nCuando lo completes, avisame por acá.',
+      resolver,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const rendered = assembleMaterializedPaymentResponse(result);
+    expect(rendered).not.toMatch(/\n{3,}/u);
+    expect(rendered.split(/\r?\n/u).length).toBeLessThanOrEqual(6);
+  });
+
   it('allows a strict "ahora sí" resume only for the exact previously deferred canonical plan', () => {
     const input = {
       action: action({ plan_code: 'monthly_6' }),

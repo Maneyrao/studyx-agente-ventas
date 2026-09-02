@@ -196,6 +196,65 @@ function suppressedByPlanConfirmation(plan: TurnPlanV1, fact: CanonicalFactV1): 
     && fact.payment_plan !== plan.selected_payment_plan;
 }
 
+/**
+ * Un mensaje de chat se lee de una sola pasada. Tres párrafos —la respuesta,
+ * el dato canónico y el próximo paso— es lo que entra sin que el cliente tenga
+ * que desplazar la pantalla, y es también el techo que mide el oráculo de
+ * superficie. El presupuesto se reparte, no se amplía: cuando el turno ya va a
+ * llevar el bloque del link, al ensamblado le quedan dos.
+ */
+const MAX_ASSEMBLED_PARAGRAPHS_V1 = 3;
+
+/**
+ * Palabras con carga semántica. El corte por longitud deja afuera artículos,
+ * preposiciones y conectores del español sin necesidad de mantener una lista.
+ */
+function contentWords(value: string): Set<string> {
+  return new Set(value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLocaleLowerCase('es')
+    .replace(/[^\p{Letter}\p{Number}\s]/gu, ' ')
+    .split(/\s+/u)
+    .filter((word) => word.length >= 5));
+}
+
+/**
+ * Una descripción de catálogo que el modelo ya contó con sus propias palabras
+ * no se vuelve a pegar textual debajo. La comparación es por contenido y no por
+ * subcadena porque el modelo parafrasea: "vas a conocer el funcionamiento de
+ * las redes" y "este curso te permitirá conocer el funcionamiento de las redes"
+ * dicen lo mismo y no comparten ni un prefijo.
+ *
+ * Sólo decide si el bloque se imprime. El hecho sigue autorizado y sigue
+ * contando como citado: lo que se evita es leer dos veces la misma frase.
+ */
+function alreadyConveyedByNarrative(
+  fact: CanonicalFactV1,
+  narrative: readonly string[],
+): boolean {
+  if (fact.kind !== 'offering_description') return false;
+  const factWords = contentWords(fact.value);
+  if (factWords.size === 0) return false;
+  const narrativeWords = contentWords(narrative.join('\n'));
+  const shared = [...factWords].filter((word) => narrativeWords.has(word)).length;
+  return shared / factWords.size >= 0.5;
+}
+
+/**
+ * Las listas canónicas se enumeran en línea. Un bullet por párrafo convertía
+ * tres opciones en seis renglones y hacía que una respuesta corta pareciera un
+ * formulario; en un chat, "A, B o C" es como se ofrecen tres opciones.
+ */
+function enumerateInlineV1(items: readonly string[]): string | null {
+  if (items.length === 0) return null;
+  const last = items[items.length - 1]!;
+  const sentence = items.length === 1
+    ? last
+    : `${items.slice(0, -1).join(', ')} o ${last}`;
+  return /[.!?]$/u.test(sentence) ? sentence : `${sentence}.`;
+}
+
 function choiceQuestion(plan: TurnPlanV1, narrative: readonly string[]): string | null {
   if (narrative.some((part) => part.includes('?'))) return null;
   switch (plan.response_goal) {
@@ -351,26 +410,58 @@ export function assembleCanonicalConversationResponseV1(input: {
     .filter((fact) => !redundantFactIds.has(fact.id))
     .filter((fact) => !suppressedByPlanConfirmation(input.plan, fact))
     .filter((fact) => !alreadyNamedByComposition(fact, citedByComposition, narrative))
+    .filter((fact) => !alreadyConveyedByNarrative(fact, narrative))
     .filter((fact) => fact.kind !== 'payment_plan_price' || !selectedPaymentLabels.has(
       `${fact.offering_code ?? ''}\u0000${fact.payment_plan ?? ''}`,
     ))
     .map((fact) => renderFact(fact, offeringNames)))];
+  // Los hechos canónicos entran como un solo bloque: la lista enumerada primero
+  // y las afirmaciones sueltas a continuación. Antes cada hecho era un párrafo,
+  // así que un turno normal —nombre, duración, modalidad— ya empezaba pasado de
+  // largo antes de que el modelo escribiera una palabra.
+  const listItems = blocks
+    .filter((block) => block.startsWith('• '))
+    .map((block) => block.slice(2).trim());
+  const statements = blocks.filter((block) => !block.startsWith('• '));
+  const factBlock = [enumerateInlineV1(listItems), ...statements]
+    .filter((part): part is string => part !== null && part.trim().length > 0)
+    .join(' ');
+
   const defaultCallQuestion = '¿Preferís que sigamos por chat o querés solicitar una llamada?';
   const callStatement = 'Si querés, también podés solicitar una llamada o seguir por chat.';
   const proposedCallOffer = effectiveComposition.call_offer ?? defaultCallQuestion;
   const callOffer = input.plan.should_offer_call
-    ? [input.plan.response_goal === 'present_payment_options'
+    ? input.plan.response_goal === 'present_payment_options'
       || (narrative.some((part) => part.includes('?')) && proposedCallOffer.includes('?'))
       ? callStatement
-      : proposedCallOffer]
-    : [];
-  const content = [
-    effectiveComposition.narrative.opening,
-    ...blocks,
-    effectiveComposition.narrative.explanation,
-    ...callOffer,
+      : proposedCallOffer
+    : null;
+  // La oferta de llamada viaja pegada al próximo paso, no debajo de él. Sigue
+  // siendo una sola oferta visible —el ledger la cuenta igual— pero deja de
+  // partir el cierre del mensaje en dos pedidos separados.
+  const ask = [
     effectiveComposition.narrative.next_question ?? choiceQuestion(input.plan, narrative),
-  ].filter((value): value is string => value !== null && value.trim().length > 0).join('\n\n');
+    callOffer,
+  ].filter((part): part is string => part !== null && part.trim().length > 0).join(' ');
+
+  const prose = [
+    effectiveComposition.narrative.opening,
+    effectiveComposition.narrative.explanation,
+  ].filter((part): part is string => part !== null && part.trim().length > 0);
+  const tail = [factBlock, ask].filter((part) => part.trim().length > 0);
+  const paragraphBudget = MAX_ASSEMBLED_PARAGRAPHS_V1
+    - (input.plan.allowed_business_action.type === 'send_payment_link' ? 1 : 0);
+  // Se junta primero la prosa del modelo, que son dos tramos de una misma idea,
+  // y sólo si aún no entra se le suma el bloque canónico. El próximo paso queda
+  // como párrafo propio hasta el final: es lo que el cliente tiene que contestar.
+  let paragraphs = [...prose, ...tail];
+  if (paragraphs.length > paragraphBudget) paragraphs = [prose.join(' '), ...tail];
+  if (paragraphs.length > paragraphBudget) {
+    paragraphs = [[prose.join(' '), factBlock].filter((part) => part.length > 0).join(' '), ask];
+  }
+  const content = paragraphs
+    .filter((part) => part.trim().length > 0)
+    .join('\n\n');
   if (content.length > 4096) {
     throw new CanonicalResponseAssemblyError('ASSEMBLED_CONTENT_INVALID');
   }

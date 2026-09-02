@@ -38,7 +38,11 @@ type MaterializedPaymentLinkSuccess = Extract<MaterializePaymentLinkResult, { re
 export function assembleMaterializedPaymentResponse(
   materialized: MaterializedPaymentLinkSuccess,
 ): string {
-  const response = materialized.response_text.trim();
+  // El bloque del link suma un párrafo, así que los renglones en blanco de más
+  // que haya dejado el modelo dentro de su propio texto se pagan dos veces. Se
+  // colapsan a un único corte de párrafo, igual que hace el guard de egreso con
+  // la narrativa canónica. Sólo se tocan espacios: ninguna frase se pierde.
+  const response = materialized.response_text.replace(/\n{2,}/gu, '\n\n').trim();
   if (response.includes(materialized.block.url)) return response;
   return `${response}\n\n${materialized.block.label}: ${materialized.block.url}`.trim();
 }
