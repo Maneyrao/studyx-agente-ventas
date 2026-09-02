@@ -424,3 +424,29 @@ describe('confirmar el estado actual', () => {
     expect(result.canonical_fact_requests).toEqual([]);
   });
 });
+
+/**
+ * `base_15_minimal_flow` t5 falla la reparación en corridas distintas, siempre
+ * igual. El turno envía el link y el backend imprime al lado la etiqueta del
+ * plan —"6 pagos mensuales de USD 60: <url>"— pero el plan sólo materializa el
+ * hecho del link. El modelo nombra el plan que está enviando, ese valor no
+ * tiene hecho citable, y cae por FACT_VALUE_MISMATCH. La reescritura tampoco
+ * puede arreglarlo: el valor sigue sin estar autorizado aunque el backend lo
+ * imprima igual.
+ */
+describe('enviar el link autoriza nombrar el plan que se envía', () => {
+  it('materializa las opciones de pago junto al link', () => {
+    const result = plan(move('request_payment_link'), state({
+      stage: 'plan_selected',
+      selected_offering_code: 'redes-informaticas',
+      selected_payment_plan: 'monthly_6',
+      awaiting_reply: 'payment_confirmation',
+    }));
+
+    expect(result.allowed_business_action).toMatchObject({ type: 'send_payment_link' });
+    expect(result.canonical_fact_requests).toEqual(expect.arrayContaining([
+      { kind: 'payment_link', offering_code: 'redes-informaticas', payment_plan: 'monthly_6' },
+      { kind: 'payment_options', offering_code: 'redes-informaticas' },
+    ]));
+  });
+});

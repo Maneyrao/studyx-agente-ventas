@@ -331,7 +331,17 @@ function paymentLinkPlan(
   return {
     ...unchangedPlan(state, 'confirm_payment_link'),
     next_stage: 'payment_link_sent',
-    canonical_fact_requests: [{ kind: 'payment_link', offering_code: offeringCode, payment_plan: paymentPlan }],
+    // El backend imprime la etiqueta del plan al lado del link. Sin
+    // materializarla, el modelo nombra el plan que está enviando, ese valor no
+    // tiene hecho citable y el turno cae por FACT_VALUE_MISMATCH — y la
+    // reescritura tampoco puede arreglarlo, porque el valor sigue sin estar
+    // autorizado aunque el mensaje final lo lleve igual.
+    // El ensamblador ya descarta los planes que no son el elegido en un turno
+    // que confirma, así que esto no reabre la lista.
+    canonical_fact_requests: [
+      { kind: 'payment_link', offering_code: offeringCode, payment_plan: paymentPlan },
+      { kind: 'payment_options', offering_code: offeringCode },
+    ],
     allowed_business_action: { type: 'send_payment_link', offering_code: offeringCode, payment_plan: paymentPlan },
     next_awaiting_reply: 'none',
     selected_offering_code: offeringCode,

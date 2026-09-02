@@ -202,7 +202,8 @@ function suppressedByPlanConfirmation(plan: TurnPlanV1, fact: CanonicalFactV1): 
   // Confirmar el plan elegido y confirmar en qué punto quedó la conversación
   // son el mismo momento: el cliente pregunta por SU elección, no por el menú.
   return (plan.response_goal === 'confirm_selected_plan'
-    || plan.response_goal === 'confirm_current_state')
+    || plan.response_goal === 'confirm_current_state'
+    || plan.response_goal === 'confirm_payment_link')
     && plan.selected_payment_plan !== null
     && (fact.kind === 'payment_plan_label' || fact.kind === 'payment_plan_price')
     && fact.payment_plan !== plan.selected_payment_plan;
