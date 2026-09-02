@@ -1,10 +1,10 @@
 import { AGENT_A_PROMPT_VERSION } from '../../botpress-agent/src/prompts/agent-a-sales-bridge';
 import { AGENT_A_BRAIN_PROMPT_VERSION } from '../../botpress-agent/src/prompts/agent-a-brain-v1';
 import {
-  buildConversationQualityReviewPacketV1,
-  evaluateIndependentConversationQualityV1,
+  buildConversationQualityReviewPacketV2,
+  evaluateIndependentConversationQualityV2,
   hashConversationTranscriptV1,
-  type IndependentConversationGradeV1,
+  type IndependentConversationGradeV2,
 } from './agent-a-conversation-quality';
 import {
   unsupportedOperationalAssertionsV1,
@@ -371,7 +371,7 @@ export function evaluateConversationNaturalnessV1(result: ConversationCaseResult
 export function evaluateAgentABrainSuiteRubric(
   results: readonly ConversationCaseResult[],
   expectedCases = 20,
-  independentGrades: readonly IndependentConversationGradeV1[] = [],
+  independentGrades: readonly IndependentConversationGradeV2[] = [],
 ): AgentABrainSuiteRubric {
   const effectivelyEvaluated = results.filter((result) => (
     result.conversation_id !== null
@@ -386,7 +386,7 @@ export function evaluateAgentABrainSuiteRubric(
     .filter((failure) => failure.reasons.length > 0);
   const surfaceQualityPassed = results.length - surfaceQualityFailures.length;
   const conversationQualityRequired = Math.ceil(expectedCases * 0.9);
-  const gradesByCase = new Map<string, IndependentConversationGradeV1[]>();
+  const gradesByCase = new Map<string, IndependentConversationGradeV2[]>();
   for (const grade of independentGrades) {
     gradesByCase.set(grade.case_id, [...(gradesByCase.get(grade.case_id) ?? []), grade]);
   }
@@ -404,7 +404,7 @@ export function evaluateAgentABrainSuiteRubric(
       continue;
     }
     try {
-      const verdict = evaluateIndependentConversationQualityV1({
+      const verdict = evaluateIndependentConversationQualityV2({
         grade: grades[0]!,
         expectedCaseId: result.id,
         expectedTranscriptSha256: hashConversationTranscriptV1(result.transcript),
@@ -504,7 +504,7 @@ type RunOptions = {
   ) => Promise<void> | void;
   /** Grades are produced after an independent reviewer sees the redacted
    * packet. Missing grades keep rubric.ready false by design. */
-  independentConversationGrades?: readonly IndependentConversationGradeV1[];
+  independentConversationGrades?: readonly IndependentConversationGradeV2[];
 };
 
 export type ConversationSuite = {
@@ -1577,7 +1577,7 @@ export async function runConversationSuite(
     },
     metrics,
     acceptance_gates: evaluateRunAcceptanceGatesV1(metrics),
-    quality_review_packet: results.map((result) => buildConversationQualityReviewPacketV1({
+    quality_review_packet: results.map((result) => buildConversationQualityReviewPacketV2({
       caseId: result.id,
       transcript: result.transcript,
     })),

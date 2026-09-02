@@ -23,6 +23,7 @@ import {
   evaluatePersistenceEvidence,
   type PersistenceEvidence,
 } from './lib/agent-a-persistence-verifier';
+import { parseIndependentConversationGradesV2 } from './lib/agent-a-conversation-quality';
 import { AGENT_A_PROMPT_VERSION } from '../botpress-agent/src/prompts/agent-a-sales-bridge';
 import {
   buildAgentASalesBridgeCompactInstructions,
@@ -1340,6 +1341,17 @@ async function main() {
     }, null, 2)}\n`, 'utf8');
   };
 
+  // Las notas del evaluador independiente son opcionales: sin ellas la corrida
+  // se mide igual, pero `rubric.ready` queda en falso porque la calidad
+  // conversacional no se evaluó. Es deliberado — una corrida sin revisar no
+  // puede certificarse sola.
+  const qualityGradesPath = argument('--quality-grades');
+  const independentConversationGrades = qualityGradesPath
+    ? parseIndependentConversationGradesV2(
+        await readFile(path.resolve(qualityGradesPath), 'utf8'),
+      )
+    : undefined;
+
   let report;
   try {
     report = await runConversationSuite(selectedSuite, {
@@ -1355,6 +1367,7 @@ async function main() {
           }
         : undefined,
       verifyPersistence: verifyDatabase ? verifyPersistence : undefined,
+      independentConversationGrades,
     });
   } finally {
     await db?.end({ timeout: 5 });

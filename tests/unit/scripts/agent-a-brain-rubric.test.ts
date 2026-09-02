@@ -10,9 +10,9 @@ import {
 } from '@/../scripts/lib/agent-a-conversation-runner';
 import { AGENT_A_BRAIN_PROMPT_VERSION } from '@/../botpress-agent/src/prompts/agent-a-brain-v1';
 import {
-  CONVERSATION_QUALITY_DIMENSIONS_V1,
+  CONVERSATION_QUALITY_DIMENSIONS_V2,
   hashConversationTranscriptV1,
-  type IndependentConversationGradeV1,
+  type IndependentConversationGradeV2,
 } from '@/../scripts/lib/agent-a-conversation-quality';
 
 function result(index: number, failures: string[] = []): ConversationCaseResult {
@@ -33,17 +33,17 @@ function result(index: number, failures: string[] = []): ConversationCaseResult 
   };
 }
 
-function independentGrade(caseResult: ConversationCaseResult): IndependentConversationGradeV1 {
+function independentGrade(caseResult: ConversationCaseResult): IndependentConversationGradeV2 {
   return {
-    schema_version: 'agent-a-conversation-quality-v1',
+    schema_version: 'agent-a-conversation-quality-v2',
     case_id: caseResult.id,
     transcript_sha256: hashConversationTranscriptV1(caseResult.transcript),
     grader: { kind: 'human', id: 'sales-reviewer' },
     target_model: 'deepseek-chat',
-    dimensions: Object.fromEntries(CONVERSATION_QUALITY_DIMENSIONS_V1.map((dimension) => [
+    dimensions: Object.fromEntries(CONVERSATION_QUALITY_DIMENSIONS_V2.map((dimension) => [
       dimension,
       { score: 4, evidence: `Evidencia independiente para ${dimension}.` },
-    ])) as IndependentConversationGradeV1['dimensions'],
+    ])) as IndependentConversationGradeV2['dimensions'],
   };
 }
 
