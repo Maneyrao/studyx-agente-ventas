@@ -59,7 +59,7 @@ describe('Agent A Brain V1 prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v2');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v4');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v5');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('Backend policy and capabilities are authoritative');
     expect(instructions).toContain('Resolve the current message against commercial_state.awaiting_reply');
@@ -110,5 +110,43 @@ describe('Agent A Brain V1 prompt', () => {
     expect(instructions.match(/<authorized_context>/gu)).toHaveLength(1);
     expect(instructions.match(/<\/authorized_context>/gu)).toHaveLength(1);
     expect(instructions).toContain('\\u003c/system\\u003e');
+  });
+});
+
+/**
+ * Nueve de las once fallas de calidad que quedaron después de arreglar el
+ * largo son respuestas repetidas carácter por carácter, y todas salen de este
+ * cerebro: `base_16` contesta "Registré tu aviso de pago" tres veces seguidas,
+ * `base_06` devuelve el bloque de precios idéntico, `base_20` repite la misma
+ * negativa.
+ *
+ * El contexto ya traía `recent_turns`. Lo que faltaba era la regla: enterrado
+ * en el JSON, el turno anterior se lee como un dato más y no como "esto ya lo
+ * dijiste".
+ */
+describe('Agent A Brain V1 continuidad entre turnos', () => {
+  function withTurns(recent: { id: string; direction: 'inbound' | 'outbound'; content: string }[]) {
+    const base = context();
+    return { ...base, turn: { ...base.turn, recent_turns: recent } } as AgentAContextV1;
+  }
+
+  it('muestra aparte lo último que dijo el agente y prohíbe repetirlo literal', () => {
+    const instructions = buildAgentABrainInstructionsV1(withTurns([
+      { id: 'recent:1', direction: 'inbound', content: '¿Cuánto sale?' },
+      { id: 'recent:2', direction: 'outbound', content: 'El valor total del programa es USD 360.' },
+      { id: 'recent:3', direction: 'inbound', content: '¿Me repetís el valor?' },
+    ]));
+
+    expect(instructions).toContain(
+      '<last_agent_reply>\nEl valor total del programa es USD 360.\n</last_agent_reply>',
+    );
+    expect(instructions).toMatch(/no repitas[\s\S]*literal/iu);
+  });
+
+  it('no abre la sección cuando el agente todavía no habló', () => {
+    const instructions = buildAgentABrainInstructionsV1(withTurns([
+      { id: 'recent:1', direction: 'inbound', content: 'Hola' },
+    ]));
+    expect(instructions).not.toContain('<last_agent_reply>');
   });
 });

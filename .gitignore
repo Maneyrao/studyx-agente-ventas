@@ -10,6 +10,7 @@
 # testing
 /coverage
 /botpress-agent/evals/results/
+/botpress-agent/evals/grades/
 /.jez/reviews/
 
 # next.js

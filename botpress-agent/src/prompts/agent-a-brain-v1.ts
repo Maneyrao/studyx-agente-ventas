@@ -4,8 +4,9 @@ import {
   STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION,
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
+import { lastAgentReplyV1 } from '../lib/conversation/conversation-composer';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v4' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v5' as const;
 
 const EXECUTION_PREAMBLE = `You are the bounded conversational brain for StudyX Agent A.
 Backend policy and capabilities are authoritative. Propose the next conversational move and write
@@ -37,6 +38,11 @@ Current customer meaning outranks older state and memory.
 proposed_action must be none unless the prior-state capability explicitly authorizes it with the
 same course and plan. Never promote an action merely because the current move may make it eligible:
 the backend independently applies the planned transition and owns that side effect.
+Continuidad. last_agent_reply es lo último que ya le mandaste a esta persona. No repitas ese texto
+literal ni lo devuelvas reformulado entero: quien repregunta algo ya respondido necesita una
+respuesta más corta y directa, no la misma otra vez. Retomá en una frase y avanzá al paso siguiente.
+Si ya confirmaste algo —un aviso de pago, una elección de plan, una negativa— la segunda vez se
+acusa distinto y se dice qué falta o qué sigue, nunca con la misma oración.
 When turn_rejection is present, rewrite once using only its authorized_alternatives: remove every
 rejected fact or action, keep answering the current customer meaning, and do not explain the
 rejection to the customer.`;
@@ -76,10 +82,17 @@ export function buildAgentABrainInstructionsV1(context: AgentAContextV1): string
   const canonicalPrompt = context.identity === null
     ? STUDYX_AGENT_A_CANONICAL_PROMPT
     : resolveCanonicalPromptIdentityV1(STUDYX_AGENT_A_CANONICAL_PROMPT, context.identity).prompt;
+  // El turno anterior sale del JSON y va en su propia sección. Adentro del
+  // contexto queda al mismo nivel que cualquier otro campo, y el modelo lo lee
+  // como dato disponible en vez de como algo que ya dijo.
+  const lastAgentReply = lastAgentReplyV1(context.turn.recent_turns);
+  const continuity = lastAgentReply
+    ? `\n\n<last_agent_reply>\n${lastAgentReply}\n</last_agent_reply>`
+    : '';
   return `${EXECUTION_PREAMBLE}
 
 <canonical_sales_behavior version="${STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION}">
-${canonicalPrompt}</canonical_sales_behavior>
+${canonicalPrompt}</canonical_sales_behavior>${continuity}
 
 <authorized_context>
 ${inertJson(context)}

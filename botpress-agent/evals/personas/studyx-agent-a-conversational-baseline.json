@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "prompt_version": "studyx-agent-a-brain-v4",
+  "prompt_version": "studyx-agent-a-brain-v5",
   "suite": "studyx-agent-a-conversational-baseline",
   "cases": [
     {
