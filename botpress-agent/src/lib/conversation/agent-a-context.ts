@@ -4,6 +4,7 @@ import {
 } from '../../schemas/agent-a-brain';
 import type { ClaimedTurn } from '../../schemas/contracts';
 import type { ConversationMoveV1 } from '../../schemas/conversation-pipeline';
+import { derivePaymentPlanSelectionFromBatch } from '../../utils/payment-choice';
 
 const MEMORY_TYPES = new Set([
   'study_goal', 'study_context', 'preference', 'constraint',
@@ -66,8 +67,10 @@ export function bindCurrentConversationalIntentToMoveV1(
   move: ConversationMoveV1,
   claimed: ClaimedTurn,
 ): ConversationMoveV1 {
-  const currentBatch = claimed.context.batch_messages
+  const currentBatchMessages = claimed.context.batch_messages
     .filter((message) => message.message_type === 'text')
+    .map((message) => ({ content: message.content }));
+  const currentBatch = currentBatchMessages
     .map((message) => message.content)
     .join(' ')
     .normalize('NFD')
@@ -88,6 +91,36 @@ export function bindCurrentConversationalIntentToMoveV1(
   const resumesDeferredLink = /\bahora\s+si\b/u.test(currentBatch)
     && /\b(?:no\s+(?:me\s+)?(?:mandes|envies|compartas)\s+(?:el\s+)?(?:link|enlace)|todavia\s+no|quiero\s+pensarlo)\b/u
       .test(recentCustomerText);
+  const explicitPaymentPlan = derivePaymentPlanSelectionFromBatch(currentBatchMessages);
+  if (explicitPaymentPlan && move.move === 'request_payment_link') {
+    return {
+      ...move,
+      payment_plan: explicitPaymentPlan,
+      // The planner makes the dependency explicit: select first, then request.
+      // This is authority derived from the current batch, never from memory.
+      secondary_moves: [...new Set([
+        'select_payment_plan' as const,
+        ...move.secondary_moves,
+      ])].filter((kind) => kind !== move.move).slice(0, 2),
+    };
+  }
+  if (explicitPaymentPlan && move.move === 'select_payment_plan') {
+    const bound = { ...move, payment_plan: explicitPaymentPlan };
+    if (
+      (explicitLinkRequest || resumesDeferredLink)
+      && !move.vetoes.includes('payment_link')
+      && !move.vetoes.includes('purchase')
+    ) {
+      return {
+        ...bound,
+        secondary_moves: [...new Set([
+          ...bound.secondary_moves,
+          'request_payment_link' as const,
+        ])].slice(0, 2),
+      };
+    }
+    return bound;
+  }
   if (move.move === 'select_area') {
     const normalizeArea = (value: string) => value
       .normalize('NFD')

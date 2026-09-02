@@ -483,6 +483,47 @@ describe('buildAgentAContextV1', () => {
     }, claimed).secondary_moves).toEqual(['request_payment_link']);
   });
 
+  it('binds the canonical plan when a direct link request omitted it from the model JSON', () => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'Mandame el link del pago único',
+    };
+
+    expect(bindCurrentConversationalIntentToMoveV1({
+      schema_version: 1,
+      move: 'request_payment_link',
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 0.98,
+    }, claimed)).toMatchObject({
+      move: 'request_payment_link',
+      payment_plan: 'one_time',
+      secondary_moves: ['select_payment_plan'],
+    });
+  });
+
+  it('binds an explicitly selected canonical plan when the model omitted the field', () => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'Me quedo con las 6 cuotas',
+    };
+
+    expect(bindCurrentConversationalIntentToMoveV1({
+      schema_version: 1,
+      move: 'select_payment_plan',
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 0.98,
+    }, claimed)).toMatchObject({
+      move: 'select_payment_plan',
+      payment_plan: 'monthly_6',
+    });
+  });
+
   it('never resumes a link when the current plan selection carries a payment veto', () => {
     const claimed = claimedTurn();
     claimed.catalog_resolution = { kind: 'no_catalog_intent' };
