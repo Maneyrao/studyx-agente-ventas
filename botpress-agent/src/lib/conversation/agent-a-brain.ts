@@ -1223,18 +1223,30 @@ export function decideRepairLevelV1(input: {
   readonly pruned_messages: readonly string[]
   readonly repair_enabled: boolean
   readonly already_repaired?: boolean
+  /** Último mensaje del agente, para no resolver podando hacia él. */
+  readonly previous_agent_reply?: string | null
 }): RepairLevelV1 {
   const survives = input.pruned_messages.some((message) => message.trim().length > 0)
 
   // Un rechazo de acción no es podable: no hay oración que quitar que vuelva
-  // válida una acción sin precondición.
+  // válida una acción sin precondición. Una repetición tampoco: quitar
+  // oraciones sólo puede acercar el borrador al turno anterior, nunca alejarlo.
   const prunable = !input.rejection.rejections.some((reason) => (
     reason.code === 'ACTION_NOT_AUTHORIZED'
     || reason.code === 'CALL_BUDGET_EXHAUSTED'
     || reason.code === 'MISSING_INTAKE'
+    || reason.code === 'REPEATED_AGENT_REPLY'
   ))
 
-  if (prunable && survives) {
+  // La repetición puede aparecer recién al podar: el borrador traía además
+  // algo no autorizado, se le quitó, y lo que quedó es el mensaje anterior.
+  // Entregarlo sería contestar con el turno previo, así que la poda deja de
+  // ser una resolución válida.
+  const prunesIntoRepeat = input.previous_agent_reply !== null
+    && input.previous_agent_reply !== undefined
+    && sameVisibleText(input.pruned_messages, input.previous_agent_reply)
+
+  if (prunable && survives && !prunesIntoRepeat) {
     return { level: 'N1', messages: input.pruned_messages }
   }
   // A5: tope duro. Una reparación ya intentada no abre otra, o un rechazo

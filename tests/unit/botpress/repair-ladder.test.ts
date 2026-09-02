@@ -89,3 +89,43 @@ describe('escalera de reparación N1 → N2 → N3', () => {
     }).level).toBe('N2');
   });
 });
+
+/**
+ * La repetición no se poda.
+ *
+ * `base_20_withholds_data` seguía repitiendo incluso con V8 puesto, y el
+ * diagnóstico explica por qué: el turno se rechazaba por otros motivos, la
+ * poda dejaba algo en pie, la escalera resolvía en N1 — y lo que sobrevivía a
+ * la poda era, palabra por palabra, el mensaje anterior. Nunca se reparó.
+ *
+ * Quitar oraciones no puede arreglar que la respuesta ya se haya dicho: sólo
+ * puede acercarla más al turno previo. Cuando lo podado coincide con lo último
+ * que el agente mandó, la poda no es una resolución válida.
+ */
+describe('la poda no puede resolver una repetición', () => {
+  it('escala a N2 cuando lo podado es el mensaje anterior', () => {
+    expect(decideRepairLevelV1({
+      rejection: rejection('FACT_VALUE_MISMATCH'),
+      pruned_messages: ['Entendido. Si querés, podemos seguir revisando tus opciones.'],
+      repair_enabled: true,
+      previous_agent_reply: 'Entendido.   Si querés, podemos seguir revisando tus opciones.',
+    }).level).toBe('N2');
+  });
+
+  it('sigue en N1 cuando lo podado dice algo distinto del turno anterior', () => {
+    expect(decideRepairLevelV1({
+      rejection: rejection('FACT_VALUE_MISMATCH'),
+      pruned_messages: ['Sin tus datos no puedo dejarte anotado.'],
+      repair_enabled: true,
+      previous_agent_reply: 'Entendido. Si querés, podemos seguir revisando tus opciones.',
+    }).level).toBe('N1');
+  });
+
+  it('un rechazo por repetición no es podable ni aunque sobreviva texto', () => {
+    expect(decideRepairLevelV1({
+      rejection: rejection('REPEATED_AGENT_REPLY'),
+      pruned_messages: ['Entendido. Si querés, podemos seguir revisando tus opciones.'],
+      repair_enabled: true,
+    }).level).toBe('N2');
+  });
+});

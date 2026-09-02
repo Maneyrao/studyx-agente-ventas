@@ -6,6 +6,7 @@ import {
   decideRepairLevelV1,
   validateAgentATurnProposalV1,
 } from './agent-a-brain'
+import { lastAgentReplyV1 } from './conversation-composer'
 
 export interface AgentAProposalEnvelopeV1 {
   readonly proposal: AgentATurnProposalV1
@@ -80,6 +81,7 @@ export async function resolveAgentAProposalV1<T extends AgentAProposalEnvelopeV1
     pruned_messages: prunedMessages,
     repair_enabled: input.repair_enabled,
     already_repaired: input.initial.proposal.repair_of !== null,
+    previous_agent_reply: lastAgentReplyV1(input.context.turn.recent_turns),
   })
 
   let effective = input.initial
