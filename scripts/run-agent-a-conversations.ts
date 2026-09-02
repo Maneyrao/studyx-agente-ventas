@@ -86,6 +86,7 @@ import { deliverAuthorizedLocalOutbound } from './lib/local-authorized-delivery'
 import { createLocalEvalClaimCleanup } from './lib/local-eval-claim-cleanup';
 import { readOptionalJsonConfig } from './lib/optional-json-config';
 import type { StateFactIdV1 } from '../src/features/conversation/domain/state-fact-registry';
+import { solicitsACall } from '../src/features/conversation/domain/operational-promise-guard';
 
 const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -667,7 +668,10 @@ export function createLocalTurnSender(
             schema_version: 2,
             proposal: generated.proposal,
           };
-          visibleCallOffers = generated.proposal.response.call_offer ? 1 : 0;
+          visibleCallOffers = generated.proposal.response.call_offer
+            || generated.proposal.response.messages.some((message) => solicitsACall(message))
+            ? 1
+            : 0;
           // In the plannerless route the same successful backend commit that
           // authorizes the model-owned offer also increments the durable
           // ledger. There is no planner prediction to compare against.

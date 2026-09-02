@@ -4,7 +4,10 @@ import {
 } from '../../schemas/agent-a-brain';
 import type { ClaimedTurn } from '../../schemas/contracts';
 import type { ConversationMoveV1 } from '../../schemas/conversation-pipeline';
-import { derivePaymentPlanSelectionFromBatch } from '../../utils/payment-choice';
+import {
+  classifyCurrentPaymentIntent,
+  derivePaymentPlanSelectionFromBatch,
+} from '../../utils/payment-choice';
 
 const MEMORY_TYPES = new Set([
   'study_goal', 'study_context', 'preference', 'constraint',
@@ -92,6 +95,16 @@ export function bindCurrentConversationalIntentToMoveV1(
     && /\b(?:no\s+(?:me\s+)?(?:mandes|envies|compartas)\s+(?:el\s+)?(?:link|enlace)|todavia\s+no|quiero\s+pensarlo)\b/u
       .test(recentCustomerText);
   const explicitPaymentPlan = derivePaymentPlanSelectionFromBatch(currentBatchMessages);
+  const currentPaymentIntent = classifyCurrentPaymentIntent(currentBatchMessages);
+  if (move.move === 'select_payment_plan' && currentPaymentIntent.kind === 'none') {
+    const { payment_plan: _ignoredPaymentPlan, ...withoutPlan } = move;
+    return {
+      ...withoutPlan,
+      move: 'ask_payment_options',
+      secondary_moves: withoutPlan.secondary_moves.filter((kind) => !PAYMENT_INTENT_MOVES.has(kind)),
+      confidence: 1,
+    };
+  }
   if (explicitPaymentPlan && move.move === 'request_payment_link') {
     return {
       ...move,

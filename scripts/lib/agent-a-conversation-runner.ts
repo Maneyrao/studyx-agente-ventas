@@ -7,6 +7,7 @@ import {
   type IndependentConversationGradeV2,
 } from './agent-a-conversation-quality';
 import {
+  solicitsACall,
   unsupportedOperationalAssertionsV1,
 } from '../../src/features/conversation/domain/operational-promise-guard';
 import type { StateFactIdV1 } from '../../src/features/conversation/domain/state-fact-registry';
@@ -1724,7 +1725,7 @@ export function buildTurnMetricsV1(input: {
     proposal_generation_calls: input.diagnostic?.proposalGenerationCalls ?? 0,
     latency_ms: input.latency_ms,
     false_operational_promises: unsupportedAssertions,
-    visible_call_offers: (input.assistant_text.match(CALL_OFFER_PATTERN) ?? []).length > 0 ? 1 : 0,
+    visible_call_offers: solicitsACall(input.assistant_text) ? 1 : 0,
     ledger_entries: input.diagnostic?.callOfferLedgerEntries ?? 0,
   };
 }

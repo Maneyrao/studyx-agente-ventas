@@ -292,8 +292,8 @@ describe('processInboundTurn hot path', () => {
     configuration.automationEnabled = true;
     configuration.decisionProvider = 'botpress_managed';
     configuration.agentAPlannerlessV2Enabled = false;
-    secrets.GROQ_API_KEY = 'gsk-local-test-only';
-    delete secrets.DEEPSEEK_API_KEY;
+    secrets.DEEPSEEK_API_KEY = 'deepseek-local-test-only';
+    delete secrets.GROQ_API_KEY;
     delete secrets.OPENAI_API_KEY;
     delete secrets.GEMINI_API_KEY;
     actionSpies.ingest.mockResolvedValue(ingestResponse());
@@ -339,6 +339,18 @@ describe('processInboundTurn hot path', () => {
         used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
       },
       provider: 'groq-direct', model: 'openai/gpt-oss-120b', latency_ms: 180, attempt_count: 1,
+    });
+    actionSpies.agentABrainDeepSeek.mockResolvedValue({
+      proposal: {
+        schema_version: 1,
+        move: {
+          schema_version: 1, move: 'continue_by_chat', secondary_moves: [], vetoes: [], confidence: 0.97,
+        },
+        response: { messages: ['Perfecto, seguimos por chat.', '¿Qué aspecto querés revisar?'] },
+        proposed_action: { type: 'none' },
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+      },
+      provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 180, attempt_count: 1,
     });
     actionSpies.plan.mockResolvedValue({
       plan: {
@@ -484,7 +496,7 @@ describe('processInboundTurn hot path', () => {
         signal: new AbortController().signal, workflow: { id: 'workflow-test' },
       });
 
-      expect(actionSpies.agentABrain).toHaveBeenCalledTimes(expectedBrainCalls);
+      expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(expectedBrainCalls);
       expect(actionSpies.plan).toHaveBeenCalledTimes(expectedPlannerCalls);
       expect(execute).toHaveBeenCalledTimes(expectedLegacyCalls);
       const commitInput = actionSpies.commit.mock.calls[0]?.[0]?.input;
@@ -520,7 +532,7 @@ describe('processInboundTurn hot path', () => {
           .find((entry) => entry.event === 'studyx.turn.agent_a_brain_v1');
         expect(brainLog).toMatchObject({
           brain_prompt_version: 'studyx-agent-a-brain-v9',
-          brain_model: 'openai/gpt-oss-120b',
+          brain_model: 'deepseek-v4-flash',
           brain_source: 'model',
           context_recent_turn_count: 0,
           context_memory_count: 0,
@@ -553,7 +565,7 @@ describe('processInboundTurn hot path', () => {
     claimed.sales_context.course_of_interest = 'Redes Informáticas';
     claimed.sales_context.offering_code = 'redes-informaticas';
     actionSpies.claim.mockResolvedValue(claimed);
-    actionSpies.agentABrain.mockRejectedValue(
+    actionSpies.agentABrainDeepSeek.mockRejectedValue(
       Object.assign(new Error('provider failure'), { code: 'BRAIN_RATE_LIMITED' }),
     );
 
@@ -574,7 +586,7 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(actionSpies.plan).not.toHaveBeenCalled();
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).not.toHaveBeenCalled();
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       conversation_pipeline_v1: null,
       decision: {
@@ -595,7 +607,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('uses Botpress managed extraction when every direct provider and autonomous exit fail', async () => {
+  it('does not use Botpress managed extraction when DeepSeek fails', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       conversation_pipeline_v1_enabled: false,
@@ -645,17 +657,14 @@ describe('processInboundTurn hot path', () => {
       signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
+    expect(execute).not.toHaveBeenCalled();
+    expect(actionSpies.agentABrainOpenAI).not.toHaveBeenCalled();
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      conversation_pipeline_v1: {
-        move: { move: 'browse_catalog' },
-        composition: {
-          narrative: {
-            opening: '¡Hola! Tenemos distintas áreas para explorar.',
-            explanation: '¿Qué te gustaría aprender?',
-          },
-        },
+      conversation_pipeline_v1: null,
+      decision: {
+        kind: 'suppress',
+        reason_code: 'BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK',
       },
-      model: { provider: 'botpress', model: 'botpress-zai-extract' },
     });
   });
 
@@ -733,7 +742,7 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input.decision.response).not.toContain('te llamo');
   });
 
-  it('uses the managed model with the same brain contract when Groq is rate limited', async () => {
+  it('does not use a managed model when DeepSeek is rate limited', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       conversation_pipeline_v1_enabled: false,
@@ -754,7 +763,7 @@ describe('processInboundTurn hot path', () => {
     claimed.business_context = paymentBusinessContext();
     claimed.business_context_available = true;
     actionSpies.claim.mockResolvedValue(claimed);
-    actionSpies.agentABrain.mockRejectedValue(
+    actionSpies.agentABrainDeepSeek.mockRejectedValue(
       Object.assign(new Error('provider failure'), { code: 'BRAIN_RATE_LIMITED' }),
     );
 
@@ -785,26 +794,19 @@ describe('processInboundTurn hot path', () => {
       signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
-    expect(actionSpies.agentABrain).toHaveBeenCalledTimes(1);
-    expect(execute).toHaveBeenCalledTimes(1);
-    const failoverFailure = vi.mocked(console.info).mock.calls
-      .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
-      .find((entry) => entry.event === 'studyx.turn.agent_a_brain_provider_failover_failed');
-    expect(failoverFailure).toBeUndefined();
-    expect(actionSpies.plan).toHaveBeenCalledWith(expect.objectContaining({
-      input: expect.objectContaining({
-        move: expect.objectContaining({ move: 'select_area', area_reference: 'Salud y Bienestar' }),
-      }),
-    }));
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
+    expect(execute).not.toHaveBeenCalled();
+    expect(actionSpies.plan).not.toHaveBeenCalled();
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      conversation_pipeline_v1: {
-        move: expect.objectContaining({ move: 'select_area' }),
+      conversation_pipeline_v1: null,
+      decision: {
+        kind: 'suppress',
+        reason_code: 'BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK',
       },
-      model: { provider: 'botpress' },
     });
   });
 
-  it('uses OpenAI Terra as the primary authoritative brain when its production secret exists', async () => {
+  it('ignores an OpenAI secret and keeps DeepSeek as the authoritative brain', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       conversation_pipeline_v1_enabled: false,
@@ -856,18 +858,19 @@ describe('processInboundTurn hot path', () => {
       signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
-    expect(actionSpies.agentABrainOpenAI).toHaveBeenCalledWith(expect.objectContaining({
-      apiKey: 'openai-local-test-only',
-      model: 'gpt-5.6-terra',
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledWith(expect.objectContaining({
+      apiKey: 'deepseek-local-test-only',
+      model: 'deepseek-v4-flash',
     }));
+    expect(actionSpies.agentABrainOpenAI).not.toHaveBeenCalled();
     expect(actionSpies.agentABrain).not.toHaveBeenCalled();
     expect(actionSpies.agentABrainGemini).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       conversation_pipeline_v1: {
-        composition: { narrative: { opening: expect.stringContaining('Dentro de tecnología') } },
+        composition: { narrative: { opening: 'Perfecto, seguimos por chat.' } },
       },
-      model: { provider: 'openai-direct', model: 'gpt-5.6-terra' },
+      model: { provider: 'deepseek-direct', model: 'deepseek-v4-flash' },
     });
   });
 
@@ -937,6 +940,82 @@ describe('processInboundTurn hot path', () => {
         composition: { narrative: { opening: expect.stringContaining('tecnología') } },
       },
       model: { provider: 'deepseek-direct', model: 'deepseek-v4-flash' },
+    });
+  });
+
+  it('fails closed without invoking a second model when DeepSeek is unavailable', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null, selected_payment_plan: null,
+      stage: 'exploring', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 1,
+    };
+    claimed.context.batch_messages[0].content = 'Quiero información de los cursos';
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 1,
+      offerings: [{
+        code: 'redes-informaticas', display_name: 'Redes Informáticas',
+        academy: 'Tecnología', aliases: [],
+      }],
+      injection_suspected_count: 0,
+    };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+    secrets.DEEPSEEK_API_KEY = 'deepseek-local-test-only';
+    secrets.OPENAI_API_KEY = 'openai-must-not-run';
+    secrets.GROQ_API_KEY = 'groq-must-not-run';
+    secrets.GEMINI_API_KEY = 'gemini-must-not-run';
+    actionSpies.agentABrainDeepSeek.mockRejectedValueOnce(
+      Object.assign(new Error('provider failure'), { code: 'BRAIN_RATE_LIMITED' }),
+    );
+    actionSpies.agentABrainOpenAI.mockResolvedValueOnce({
+      proposal: {
+        schema_version: 1,
+        move: {
+          schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 1,
+        },
+        response: { messages: ['Este texto no debe llegar al cliente.'] },
+        proposed_action: { type: 'none' },
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
+      },
+      provider: 'openai-direct', model: 'fallback-must-not-run', latency_ms: 1, attempt_count: 1,
+    });
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => {
+      throw new Error('BOTPRESS_MODEL_MUST_NOT_RUN');
+    });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute, client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
+    expect(actionSpies.agentABrainOpenAI).not.toHaveBeenCalled();
+    expect(actionSpies.agentABrain).not.toHaveBeenCalled();
+    expect(actionSpies.agentABrainGemini).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: null,
+      agent_turn_v2: null,
+      decision: {
+        kind: 'suppress',
+        response: null,
+        reason_code: 'BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK',
+      },
     });
   });
 
@@ -1185,7 +1264,7 @@ describe('processInboundTurn hot path', () => {
     expect(JSON.stringify(committed)).not.toContain('asesora virtual');
   });
 
-  it('keeps the natural brain active through direct Gemini before any canned fallback', async () => {
+  it('ignores a Gemini secret and keeps DeepSeek as the authoritative brain', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       conversation_pipeline_v1_enabled: false,
@@ -1242,21 +1321,18 @@ describe('processInboundTurn hot path', () => {
       signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
-    const failoverFailure = vi.mocked(console.info).mock.calls
-      .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
-      .find((entry) => entry.event === 'studyx.turn.agent_a_brain_provider_failover_failed');
-    expect(failoverFailure).toBeUndefined();
-    expect(actionSpies.agentABrainGemini).toHaveBeenCalledTimes(1);
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
+    expect(actionSpies.agentABrainGemini).not.toHaveBeenCalled();
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       conversation_pipeline_v1: {
-        move: expect.objectContaining({ move: 'select_area' }),
+        move: expect.objectContaining({ move: 'continue_by_chat' }),
         composition: {
           narrative: expect.objectContaining({
-            opening: expect.stringContaining('encaje con lo que querés lograr'),
+            opening: 'Perfecto, seguimos por chat.',
           }),
         },
       },
-      model: { provider: 'google-ai-direct', model: 'gemini-2.5-flash' },
+      model: { provider: 'deepseek-direct', model: 'deepseek-v4-flash' },
     });
     expect(execute).not.toHaveBeenCalled();
   });
@@ -1698,9 +1774,14 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('runs interpreter → authoritative planner → value-free composition only when V1 is enabled', async () => {
+  it('fails closed instead of invoking the retired Groq/Gemini legacy pipeline', async () => {
+    configuration.agentAPlannerlessV2Enabled = false;
     const claimed = claimedResponse() as unknown as ClaimedTurn;
-    claimed.features = { conversation_pipeline_v1_enabled: true };
+    claimed.features = {
+      conversation_pipeline_v1_enabled: true,
+      agent_a_brain_v1_enabled: false,
+      agent_a_brain_v1_shadow: false,
+    };
     claimed.conversation_state_v1 = {
       selected_offering_code: 'redes-informaticas',
       selected_payment_plan: null,
@@ -1752,27 +1833,12 @@ describe('processInboundTurn hot path', () => {
       signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
-    expect(actionSpies.conversationInterpreter).toHaveBeenCalledTimes(1);
-    expect(actionSpies.plan).toHaveBeenCalledTimes(1);
-    expect(execute).toHaveBeenCalledTimes(1);
-    expect(execute.mock.calls[0]?.[0]?.instructions).toContain('studyx-sales-behavior-v1');
+    expect(actionSpies.conversationInterpreter).not.toHaveBeenCalled();
+    expect(actionSpies.plan).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      conversation_pipeline_v1: {
-        move: { move: 'continue_by_chat' },
-        plan_hash: 'a'.repeat(64),
-        composition: {
-          used_fact_ids: [],
-          narrative: {
-            opening: 'Perfecto, seguimos por chat.',
-            explanation: 'Te acompaño por este medio.',
-            next_question: '¿Qué aspecto querés revisar?',
-          },
-        },
-      },
-      decision: { reason_code: 'CONVERSATION_PIPELINE_V1_PENDING_BACKEND' },
-      model: {
-        prompt_version: 'studyx-conversation-interpreter-v1.7+studyx-conversation-composer-v2+studyx-sales-behavior-v1',
-      },
+      conversation_pipeline_v1: null,
+      decision: { reason_code: 'BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK' },
     });
   });
 

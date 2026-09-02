@@ -524,6 +524,30 @@ describe('buildAgentAContextV1', () => {
     });
   });
 
+  it('does not persist a plan merely because the customer asks which instalment is lowest', () => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: '¿La cuota más baja cuál sería?',
+    };
+
+    expect(bindCurrentConversationalIntentToMoveV1({
+      schema_version: 1,
+      move: 'select_payment_plan',
+      secondary_moves: [],
+      vetoes: [],
+      payment_plan: 'monthly_12',
+      confidence: 0.95,
+    }, claimed)).toEqual({
+      schema_version: 1,
+      move: 'ask_payment_options',
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 1,
+    });
+  });
+
   it('never resumes a link when the current plan selection carries a payment veto', () => {
     const claimed = claimedTurn();
     claimed.catalog_resolution = { kind: 'no_catalog_intent' };

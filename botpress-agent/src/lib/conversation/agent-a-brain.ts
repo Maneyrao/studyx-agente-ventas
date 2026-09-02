@@ -210,6 +210,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
       try {
         decoded = parseDeepSeekJsonContent(content);
       } catch {
+        if (attempt === 1 && !controller.signal.aborted) continue;
         throw new AgentABrainError('BRAIN_DEEPSEEK_INVALID_JSON', response.status);
       }
       let proposal: AgentATurnProposalV1;
@@ -410,8 +411,14 @@ function proposalJsonSchema(): unknown {
     schema_version: { type: 'integer', enum: [1] },
     move,
     response: closedObject({
-      messages: { type: 'array', minItems: 1, maxItems: 3, items: { type: 'string' } },
-      call_offer: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      messages: {
+        type: 'array', minItems: 1, maxItems: 2, items: { type: 'string' },
+        description: 'Use at most two short messages; when call_offer is non-null, return exactly one response message.',
+      },
+      call_offer: {
+        anyOf: [{ type: 'string' }, { type: 'null' }],
+        description: 'Optional brief declarative invitation; it must not contain a question.',
+      },
     }),
     proposed_action: proposedAction,
     used_fact_ids: { type: 'array', maxItems: 32, items: { type: 'string' } },
@@ -469,6 +476,7 @@ function extractResponsesContent(payload: unknown): string | null {
   const record = payload as Record<string, unknown>;
   if (typeof record.output_text === 'string') return record.output_text;
   if (!Array.isArray(record.output)) return null;
+  const fragments: string[] = [];
   for (const output of record.output) {
     if (!output || typeof output !== 'object') continue;
     const content = (output as Record<string, unknown>).content;
@@ -477,11 +485,11 @@ function extractResponsesContent(payload: unknown): string | null {
       if (!item || typeof item !== 'object') continue;
       const candidate = item as Record<string, unknown>;
       if (candidate.type === 'output_text' && typeof candidate.text === 'string') {
-        return candidate.text;
+        fragments.push(candidate.text);
       }
     }
   }
-  return null;
+  return fragments.length > 0 ? fragments.join('') : null;
 }
 
 export async function generateOpenAIAgentATurnProposalV1(input: {
@@ -1072,6 +1080,55 @@ function sameVisibleText(messages: readonly string[], previous: string): boolean
   return draft.length > 0 && draft === normalize(previous);
 }
 
+function normalizedQuestionKeys(value: string): Set<string> {
+  const questions = value.split('?').slice(0, -1).map((fragment) => {
+    const start = Math.max(
+      fragment.lastIndexOf('¿'),
+      fragment.lastIndexOf('\n'),
+      fragment.lastIndexOf('.'),
+      fragment.lastIndexOf('!'),
+    );
+    return fragment.slice(start + 1);
+  });
+  return new Set(questions.map((question) => question
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLocaleLowerCase('es')
+    .replace(/[^a-z0-9]+/gu, ' ')
+    .trim())
+    .filter(Boolean));
+}
+
+function repeatsPreviousQuestion(messages: readonly string[], previous: string): boolean {
+  const previousQuestions = normalizedQuestionKeys(previous);
+  if (previousQuestions.size === 0) return false;
+  return [...normalizedQuestionKeys(messages.join('\n'))]
+    .some((question) => previousQuestions.has(question));
+}
+
+const CUSTOMER_REQUESTS_REPEAT = /\b(?:repet|otra\s+vez|no\s+entend|de\s+nuevo)\w*/iu;
+const UNSUPPORTED_PREREQUISITE_ASSERTION = /(?:\bno\s+(?:necesit\w*|hace\s+falta|se\s+requiere)\b[^.!?\n]{0,80}\b(?:experiencia|conocimientos?|requisitos?)\b|\bsin\s+(?:experiencia|conocimientos?\s+previos?)\b|\b(?:pod[eé]s|puedes|empez[aá]s?|part[ií]s?)\b[^.!?\n]{0,32}\bdesde\s+cero\b|\bdesde\s+los\s+fundamentos\b)/iu;
+
+export function removeRepeatedAgentQuestionMessagesV1(
+  messages: readonly string[],
+  previous: string,
+  currentCustomerText: string,
+): string[] {
+  if (CUSTOMER_REQUESTS_REPEAT.test(currentCustomerText)) return [...messages];
+  return messages.filter((message) => !repeatsPreviousQuestion([message], previous));
+}
+
+function mentionsMissingIntakeField(messages: readonly string[], missing: readonly string[]): boolean {
+  const text = messages.join(' ').normalize('NFD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLocaleLowerCase('es');
+  return missing.some((field) => {
+    if (field === 'correo') return /\b(?:correo|email|e mail)\b/u.test(text);
+    if (field === 'telefono') return /\b(?:telefono|celular|numero)\b/u.test(text);
+    return new RegExp(`\\b${field}\\b`, 'u').test(text);
+  });
+}
+
 export function validateAgentATurnProposalV1(input: {
   readonly proposal: AgentATurnProposalV1;
   readonly context: AgentAContextV1;
@@ -1093,6 +1150,14 @@ export function validateAgentATurnProposalV1(input: {
   const previousReply = lastAgentReplyV1(input.context.turn.recent_turns);
   if (previousReply && sameVisibleText(input.proposal.response.messages, previousReply)) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_reply' });
+  }
+  const currentCustomerText = input.context.turn.batch_messages.map((message) => message.text).join(' ');
+  if (
+    previousReply
+    && !CUSTOMER_REQUESTS_REPEAT.test(currentCustomerText)
+    && repeatsPreviousQuestion(input.proposal.response.messages, previousReply)
+  ) {
+    rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_question' });
   }
 
   // V2 — cada hecho citado existe en el registro materializado del turno.
@@ -1118,6 +1183,15 @@ export function validateAgentATurnProposalV1(input: {
     ...input.proposal.response.messages,
     ...(input.proposal.response.call_offer ? [input.proposal.response.call_offer] : []),
   ];
+  const selectedFactsById = new Map(
+    input.context.catalog.selected_offering?.facts.map((fact) => [fact.id, fact]) ?? [],
+  );
+  if (
+    canonicalPrerequisiteStatement(selectedFactsById, planned) === null
+    && authoredNarrative.some((message) => UNSUPPORTED_PREREQUISITE_ASSERTION.test(message))
+  ) {
+    rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'prerequisites' });
+  }
   for (const message of authoredNarrative) {
     for (const fact of extractProtectedFacts(message)) {
       // La identidad de una oferta requiere contexto de catálogo, aliases y
@@ -1153,6 +1227,23 @@ export function validateAgentATurnProposalV1(input: {
   }
   if (action.type === 'request_call_now' && !input.context.capabilities.may_request_call_now) {
     rejections.push({ code: 'ACTION_NOT_AUTHORIZED', subject: 'request_call_now' })
+  }
+
+  const moves = new Set([
+    input.proposal.move.move,
+    ...input.proposal.move.secondary_moves,
+  ]);
+  const missingIntake = input.context.capabilities.intake_missing ?? [];
+  const mustGuideIntake = missingIntake.length > 0 && (
+    input.context.commercial_state.awaiting_reply === 'contact_details'
+    || moves.has('request_payment_link')
+  );
+  if (
+    mustGuideIntake
+    && !mentionsMissingIntakeField(input.proposal.response.messages, missingIntake)
+    && !rejections.some((reason) => reason.code === 'MISSING_INTAKE')
+  ) {
+    rejections.push({ code: 'MISSING_INTAKE', subject: missingIntake[0]! });
   }
 
   // V6 — ofertas visibles <= ledger, tope dos. Una oferta que el modelo

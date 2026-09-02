@@ -109,6 +109,7 @@ describe('Agent A Brain V1', () => {
     expect(instructions).toContain(repairDirective);
     expect(instructions.lastIndexOf(repairDirective))
       .toBeGreaterThan(instructions.lastIndexOf('</authorized_context>'));
+    expect(instructions).toContain('include that exact id in used_fact_ids');
   });
 
   it('reports only the safe schema path and issue code for a root contract failure', () => {
@@ -640,6 +641,12 @@ describe('Agent A Brain V1', () => {
     expect(body.instructions).toContain('<canonical_sales_behavior');
     expect(body.input).toContain('JSON');
     const moveProperties = body.text.format.schema.properties.move.properties;
+    const responseProperties = body.text.format.schema.properties.response.properties;
+    expect(responseProperties.messages.maxItems).toBe(2);
+    expect(responseProperties.messages.description).toContain(
+      'when call_offer is non-null, return exactly one response message',
+    );
+    expect(responseProperties.call_offer.description).toContain('must not contain a question');
     expect(moveProperties.move.enum).toEqual(expect.arrayContaining([
       'report_payment',
       'ask_current_state',
@@ -653,6 +660,18 @@ describe('Agent A Brain V1', () => {
     );
     expect(body.instructions).toContain(
       'When turn_rejection is present',
+    );
+    expect(body.instructions).toContain(
+      'A diagnostic question is asked at most once per course selection',
+    );
+    expect(body.instructions).toContain(
+      'answer the current question instead of repeating the diagnostic',
+    );
+    expect(body.instructions).toContain(
+      'ask one of the fields still present in capabilities.intake_missing',
+    );
+    expect(body.instructions).toContain(
+      'Use at most two response.messages and at most one question in the whole turn',
     );
     expect(moveProperties.secondary_moves.items.enum).not.toContain('greeting');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('unknown');
@@ -675,6 +694,48 @@ describe('Agent A Brain V1', () => {
       attempt_count: 2,
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries one malformed DeepSeek JSON response inside the same bounded deadline', async () => {
+    const malformed = {
+      output: [{ type: 'message', content: [{ type: 'output_text', text: '{"schema_version":1' }] }],
+    };
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(providerResponse(200, malformed))
+      .mockResolvedValueOnce(providerResponse(200, responsesSuccessBody(proposal())));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(generateDeepSeekAgentATurnProposalV1({
+      context: context(),
+      apiKey: 'deepseek-test-key',
+      signal: new AbortController().signal,
+    })).resolves.toMatchObject({
+      provider: 'deepseek-direct',
+      attempt_count: 2,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('reassembles a structured DeepSeek response split across output_text items', async () => {
+    const encoded = JSON.stringify(proposal());
+    const splitAt = Math.floor(encoded.length / 2);
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(200, {
+      output: [{
+        type: 'message',
+        content: [
+          { type: 'output_text', text: encoded.slice(0, splitAt) },
+          { type: 'output_text', text: encoded.slice(splitAt) },
+        ],
+      }],
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(generateDeepSeekAgentATurnProposalV1({
+      context: context(),
+      apiKey: 'deepseek-test-key',
+      signal: new AbortController().signal,
+    })).resolves.toMatchObject({ attempt_count: 1 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('drops non-authoritative DeepSeek root metadata before strict validation', async () => {

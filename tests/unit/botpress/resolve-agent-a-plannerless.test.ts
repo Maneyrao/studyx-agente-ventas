@@ -115,14 +115,52 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     }));
     const repair = vi.fn().mockResolvedValue(invalidRepair);
 
-    const result = await resolveAgentAPlannerlessProposalV2({
+    await expect(resolveAgentAPlannerlessProposalV2({
       initial, context: context(), repair_enabled: true, repair,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
+
+    expect(repair).toHaveBeenCalledTimes(1);
+  });
+
+  it('prunes only a repeated prior question and preserves the current useful answer', async () => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'Prefiero seguir por chat';
+    current.turn.recent_turns = [{
+      id: 'prior-agent',
+      direction: 'outbound',
+      content: '¿Ya tenías pensado estudiar maquillaje o recién estás empezando a averiguar?',
+    }];
+    const initial = generated(proposal({
+      move: {
+        schema_version: 1, move: 'continue_by_chat', secondary_moves: [], vetoes: [],
+        confidence: 1,
+      },
+      response: {
+        messages: [
+          'Perfecto, seguimos por chat.',
+          '¿Ya tenías pensado estudiar maquillaje o recién estás empezando a averiguar?',
+        ],
+        call_offer: null,
+      },
+      used_fact_ids: [],
+    }));
+    const repair = vi.fn();
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: true, repair,
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 
-    expect(repair).toHaveBeenCalledTimes(1);
-    expect(result.effective).toBe(initial);
-    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: false });
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.response.messages).toEqual([
+      'Perfecto, seguimos por chat.',
+    ]);
+    expect(result.evidence).toMatchObject({
+      rejection_codes: ['REPEATED_AGENT_REPLY'],
+      repair_attempted: false,
+      proposal_generation_calls: 1,
+    });
   });
 
   it('demotes a payment action that the current conversational move did not request', async () => {

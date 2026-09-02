@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { Autonomous, Workflow, adk, configuration, context, secrets, z } from '@botpress/runtime'
+import { Autonomous, Workflow, configuration, context, secrets, z } from '@botpress/runtime'
 import { claimBatch } from '../actions/claimBatch'
 import { commitDecision } from '../actions/commitDecision'
 import { dispatchCall } from '../actions/dispatchCall'
@@ -51,20 +51,12 @@ import {
 } from '../lib/conversation/agent-a-context'
 import { isLegacyConversationPipelineEligibleV1 } from '../lib/conversation/agent-a-routing'
 import {
-  DEFAULT_AGENT_A_BRAIN_MODEL,
   DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
-  DEFAULT_AGENT_A_BRAIN_GEMINI_MODEL,
-  DEFAULT_AGENT_A_BRAIN_OPENAI_FALLBACK_MODEL,
-  DEFAULT_AGENT_A_BRAIN_OPENAI_MODEL,
-  generateAgentATurnProposalV1,
   generateDeepSeekAgentATurnProposalV1,
-  generateGeminiAgentATurnProposalV1,
-  generateOpenAIAgentATurnProposalV1,
-  parseAgentATurnProposalV1,
 } from '../lib/conversation/agent-a-brain'
 import { resolveAgentAProposalV1 } from '../lib/conversation/resolve-agent-a-proposal'
 import { resolveAgentAPlannerlessProposalV2 } from '../lib/conversation/resolve-agent-a-plannerless'
-import { AgentATurnProposalV1Schema, type AgentATurnProposalV1 } from '../schemas/agent-a-brain'
+import type { AgentATurnProposalV1 } from '../schemas/agent-a-brain'
 import type { AgentATurnCommitV2 } from '../schemas/agent-turn-v2'
 import {
   ComposedNarrativeV1Schema,
@@ -78,7 +70,6 @@ import { CONVERSATION_COMPOSER_PROMPT_VERSION } from '../prompts/conversation-co
 import { STUDYX_SALES_BEHAVIOR_VERSION } from '../prompts/studyx-sales-behavior-v1'
 import {
   AGENT_A_BRAIN_PROMPT_VERSION,
-  buildAgentABrainInstructionsV1,
 } from '../prompts/agent-a-brain-v1'
 import { evaluateWhatsAppCanarySend } from '../channels/whatsapp.channel'
 
@@ -145,18 +136,6 @@ const ComposerExit = new Autonomous.Exit({
   description: 'Return natural narrative and cite every canonical fact it uses.',
   schema: ComposedNarrativeV1Schema,
 })
-
-const AgentABrainExit = new Autonomous.Exit({
-  name: 'agent_a_turn_proposal_v1',
-  description: 'Return exactly one AgentATurnProposalV1 using the supplied canonical sales behavior.',
-  schema: AgentATurnProposalV1Schema,
-})
-
-const AGENT_A_BRAIN_MANAGED_MODELS = [
-  'google-ai:gemini-3.6-flash',
-  'google-ai:gemini-3.5-flash',
-  'anthropic:claude-haiku-4-5-20251001',
-] as const
 
 function areaCode(value: string | null): string | null {
   if (!value) return null
@@ -626,212 +605,22 @@ export const processInboundTurn = new Workflow({
 
     if (brainEligible) {
       try {
-        let generated: {
-          proposal: AgentATurnProposalV1
-          provider: 'botpress' | 'google-ai-direct' | 'groq-direct' | 'openai-direct' | 'deepseek-direct'
-          model: string
-          latency_ms: number
-          attempt_count: number
-        } | undefined
         const deepSeekApiKey = secrets.DEEPSEEK_API_KEY
-        const openAIApiKey = secrets.OPENAI_API_KEY
-        let directError: unknown = new Error('DEEPSEEK_API_KEY_MISSING')
-        let openAIFallbackError: unknown = new Error('OPENAI_FALLBACK_NOT_ATTEMPTED')
-        if (typeof deepSeekApiKey === 'string' && deepSeekApiKey.length > 0) {
-          try {
-            generated = await step(
-              'generate-agent-a-turn-proposal-v1-deepseek-primary',
-              () => generateDeepSeekAgentATurnProposalV1({
-                context: agentABrainContext,
-                apiKey: deepSeekApiKey,
-                signal,
-                model: typeof configuration.agentABrainDeepSeekModel === 'string'
-                  ? configuration.agentABrainDeepSeekModel
-                  : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
-              }),
-              { maxAttempts: 1 },
-            )
-          } catch (error) {
-            directError = error
-          }
+        if (typeof deepSeekApiKey !== 'string' || deepSeekApiKey.length === 0) {
+          throw new StudyxHttpError('DEEPSEEK_API_KEY_MISSING', false)
         }
-        if (generated === undefined && typeof openAIApiKey === 'string' && openAIApiKey.length > 0) {
-          try {
-            generated = await step(
-              'generate-agent-a-turn-proposal-v1-openai-primary',
-              () => generateOpenAIAgentATurnProposalV1({
-                context: agentABrainContext,
-                apiKey: openAIApiKey,
-                signal,
-                model: typeof configuration.agentABrainOpenAIModel === 'string'
-                  ? configuration.agentABrainOpenAIModel
-                  : DEFAULT_AGENT_A_BRAIN_OPENAI_MODEL,
-              }),
-              { maxAttempts: 1 },
-            )
-          } catch (error) {
-            directError = error
-            try {
-              generated = await step(
-                'generate-agent-a-turn-proposal-v1-openai-fallback',
-                () => generateOpenAIAgentATurnProposalV1({
-                  context: agentABrainContext,
-                  apiKey: openAIApiKey,
-                  signal,
-                  model: typeof configuration.agentABrainOpenAIFallbackModel === 'string'
-                    ? configuration.agentABrainOpenAIFallbackModel
-                    : DEFAULT_AGENT_A_BRAIN_OPENAI_FALLBACK_MODEL,
-                  timeout_ms: 3_000,
-                }),
-                { maxAttempts: 1 },
-              )
-              safeLog('studyx.turn.agent_a_brain_provider_failover', {
-                trace_id: input.trace_id,
-                turn_id: owned.turn_id,
-                from_provider: 'openai-direct-primary',
-                to_provider: 'openai-direct-fallback',
-                direct_error_code: errorCode(directError),
-              })
-            } catch (fallbackError) {
-              openAIFallbackError = fallbackError
-            }
-          }
-        }
-
-        if (generated === undefined && !(typeof openAIApiKey === 'string' && openAIApiKey.length > 0)) {
-          const apiKey = secrets.GROQ_API_KEY
-          if (typeof apiKey !== 'string' || apiKey === '') {
-            throw new StudyxHttpError('AGENT_A_BRAIN_PROVIDER_KEY_MISSING', false)
-          }
-          try {
-            generated = await step(
-              'generate-agent-a-turn-proposal-v1-groq-compatibility',
-              () => generateAgentATurnProposalV1({
-                context: agentABrainContext,
-                apiKey,
-                signal,
-                model: typeof configuration.agentABrainModel === 'string'
-                  ? configuration.agentABrainModel
-                  : DEFAULT_AGENT_A_BRAIN_MODEL,
-              }),
-              { maxAttempts: 1 },
-            )
-          } catch (error) {
-            directError = error
-          }
-        }
-
-        if (generated === undefined) {
-          // A provider quota must not replace the full sales brain with a
-          // canned response. First use the separately provisioned direct
-          // Gemini boundary, which keeps the exact prompt and schema without
-          // consuming Botpress AI Spend. Managed models remain the last model
-          // failover before the contextual deterministic response.
-          let geminiError: unknown = typeof openAIApiKey === 'string' && openAIApiKey.length > 0
-            ? openAIFallbackError
-            : new Error('GEMINI_API_KEY_MISSING')
-          const geminiApiKey = secrets.GEMINI_API_KEY
-          if (!(typeof openAIApiKey === 'string' && openAIApiKey.length > 0)
-            && typeof geminiApiKey === 'string' && geminiApiKey.length > 0) {
-            try {
-              generated = await step(
-                'generate-agent-a-turn-proposal-v1-gemini',
-                () => generateGeminiAgentATurnProposalV1({
-                  context: agentABrainContext,
-                  apiKey: geminiApiKey,
-                  signal,
-                  model: DEFAULT_AGENT_A_BRAIN_GEMINI_MODEL,
-                }),
-                { maxAttempts: 1 },
-              )
-              safeLog('studyx.turn.agent_a_brain_provider_failover', {
-                trace_id: input.trace_id,
-                turn_id: owned.turn_id,
-                from_provider: 'groq-direct',
-                to_provider: 'google-ai-direct',
-                direct_error_code: errorCode(directError),
-              })
-            } catch (error) {
-              geminiError = error
-            }
-          }
-
-          if (generated === undefined) {
-            try {
-              const managedStartedAt = Date.now()
-              generated = await step(
-                'generate-agent-a-turn-proposal-v1-managed',
-                async () => {
-                  const managed = await execute({
-                    instructions: buildAgentABrainInstructionsV1(agentABrainContext),
-                    exits: [AgentABrainExit],
-                    temperature: 0.2,
-                    model: [...AGENT_A_BRAIN_MANAGED_MODELS],
-                    reasoningEffort: 'low',
-                    iterations: 2,
-                    signal,
-                  })
-                  if (!managed.is(AgentABrainExit)) throw new Error('AGENT_A_BRAIN_EXIT_NOT_REACHED')
-                  return {
-                    proposal: parseAgentATurnProposalV1(managed.output, agentABrainContext),
-                    provider: 'botpress' as const,
-                    model: AGENT_A_BRAIN_MANAGED_MODELS.join('>'),
-                    latency_ms: Date.now() - managedStartedAt,
-                    attempt_count: 1 as const,
-                  }
-                },
-                { maxAttempts: 1 },
-              )
-              safeLog('studyx.turn.agent_a_brain_provider_failover', {
-                trace_id: input.trace_id,
-                turn_id: owned.turn_id,
-                from_provider: 'groq-direct',
-                to_provider: 'botpress',
-                direct_error_code: errorCode(directError),
-                gemini_error_code: errorCode(geminiError),
-              })
-            } catch (managedError) {
-              try {
-                const extractStartedAt = Date.now()
-                const extracted = await step(
-                  'generate-agent-a-turn-proposal-v1-managed-extract',
-                  () => adk.zai.extract(
-                    `${buildAgentABrainInstructionsV1(agentABrainContext)}\n\nReturn only the single AgentATurnProposalV1 JSON object.`,
-                    AgentATurnProposalV1Schema,
-                  ),
-                  { maxAttempts: 1 },
-                )
-                generated = {
-                  proposal: parseAgentATurnProposalV1(extracted, agentABrainContext),
-                  provider: 'botpress',
-                  model: 'botpress-zai-extract',
-                  latency_ms: Date.now() - extractStartedAt,
-                  attempt_count: 1,
-                }
-                safeLog('studyx.turn.agent_a_brain_provider_failover', {
-                  trace_id: input.trace_id,
-                  turn_id: owned.turn_id,
-                  from_provider: 'botpress-autonomous',
-                  to_provider: 'botpress-zai-extract',
-                  direct_error_code: errorCode(directError),
-                  gemini_error_code: errorCode(geminiError),
-                  managed_error_code: errorCode(managedError),
-                })
-              } catch (extractError) {
-                safeLog('studyx.turn.agent_a_brain_provider_failover_failed', {
-                  trace_id: input.trace_id,
-                  turn_id: owned.turn_id,
-                  direct_error_code: errorCode(directError),
-                  gemini_error_code: errorCode(geminiError),
-                  managed_error_code: errorCode(managedError),
-                  extract_error_code: errorCode(extractError),
-                })
-                throw directError
-              }
-            }
-          }
-        }
-        if (generated === undefined) throw new Error('AGENT_A_BRAIN_PROVIDER_CHAIN_EMPTY')
+        let generated = await step(
+          'generate-agent-a-turn-proposal-v1-deepseek',
+          () => generateDeepSeekAgentATurnProposalV1({
+            context: agentABrainContext,
+            apiKey: deepSeekApiKey,
+            signal,
+            model: typeof configuration.agentABrainDeepSeekModel === 'string'
+              ? configuration.agentABrainDeepSeekModel
+              : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
+          }),
+          { maxAttempts: 1 },
+        )
         timings.agent_a_brain_ms = generated.latency_ms
 
         if (brainShadow) {
@@ -1032,9 +821,9 @@ export const processInboundTurn = new Workflow({
           turn_id: owned.turn_id,
           rollout_mode: brainShadow ? 'shadow' : 'authoritative',
           brain_prompt_version: AGENT_A_BRAIN_PROMPT_VERSION,
-          brain_model: typeof configuration.agentABrainModel === 'string'
-            ? configuration.agentABrainModel
-            : DEFAULT_AGENT_A_BRAIN_MODEL,
+          brain_model: typeof configuration.agentABrainDeepSeekModel === 'string'
+            ? configuration.agentABrainDeepSeekModel
+            : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
           brain_source: 'fallback',
           brain_failure_reason: brainFailureReason,
           context_recent_turn_count: agentABrainContext.turn.recent_turns.length,

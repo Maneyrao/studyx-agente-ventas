@@ -303,4 +303,161 @@ describe('V8 respuesta repetida', () => {
     const rejection = withPrevious(['Sin tus datos no puedo dejarte anotado.']);
     expect(rejection?.rejections.map((r) => r.code) ?? []).not.toContain('REPEATED_AGENT_REPLY');
   });
+
+  it('rechaza repetir la misma pregunta aunque el resto de la respuesta cambie', () => {
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        response: {
+          messages: [
+            'La formación se cursa online.',
+            '¿Ya tenías pensado estudiar maquillaje o recién estás empezando a averiguar?',
+          ],
+          call_offer: null,
+        },
+        used_fact_ids: [],
+      }),
+      context: context({
+        turn: {
+          batch_messages: [{ id: 'm2', text: '¿Cuánto dura la formación?' }],
+          recent_turns: [{
+            id: 'r1',
+            direction: 'outbound',
+            content: 'Perfecto. ¿Ya tenías pensado estudiar maquillaje o recién estás empezando a averiguar?',
+          }],
+        },
+      } as Partial<AgentAContextV1>),
+      planned_fact_ids: [],
+      rejection_id: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(rejection?.rejections).toContainEqual({
+      code: 'REPEATED_AGENT_REPLY',
+      subject: 'previous_agent_question',
+    });
+  });
+
+  it('no permite afirmar que no hay requisitos cuando el catálogo no lo dice', () => {
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        response: { messages: ['No necesitás experiencia previa para arrancar.'], call_offer: null },
+        used_fact_ids: [],
+      }),
+      context: context({
+        turn: {
+          batch_messages: [{ id: 'm2', text: '¿Qué necesito para arrancar?' }],
+          recent_turns: [],
+        },
+      } as Partial<AgentAContextV1>),
+      planned_fact_ids: [],
+      rejection_id: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(rejection?.rejections).toContainEqual({
+      code: 'FACT_VALUE_MISMATCH',
+      subject: 'prerequisites',
+    });
+  });
+
+  it('acepta reconocer que los requisitos no están confirmados', () => {
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        response: {
+          messages: ['Los requisitos previos no están especificados en la información confirmada.'],
+          call_offer: null,
+        },
+        used_fact_ids: [],
+      }),
+      context: context({
+        turn: {
+          batch_messages: [{ id: 'm2', text: '¿Qué necesito para arrancar?' }],
+          recent_turns: [],
+        },
+      } as Partial<AgentAContextV1>),
+      planned_fact_ids: [],
+      rejection_id: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(rejection).toBeNull();
+  });
+
+  it('exige guiar al siguiente dato cuando el intake sigue incompleto', () => {
+    const current = context({
+      commercial_state: {
+        ...context().commercial_state,
+        selected_payment_plan: 'monthly_12',
+        stage: 'plan_selected',
+        awaiting_reply: 'contact_details',
+      },
+      capabilities: {
+        ...context().capabilities,
+        may_send_payment_link: true,
+        authorized_payment_plan: 'monthly_12',
+        intake_missing: ['correo'],
+      },
+      turn: {
+        batch_messages: [{ id: 'm2', text: 'Soy Nadia Ferrer' }],
+        recent_turns: [],
+      },
+    } as Partial<AgentAContextV1>);
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'provide_contact_details',
+          secondary_moves: [],
+          vetoes: [],
+          confidence: 1,
+        },
+        response: { messages: ['Gracias, Nadia.'], call_offer: null },
+        used_fact_ids: [],
+      }),
+      context: current,
+      planned_fact_ids: [],
+      rejection_id: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(rejection?.rejections).toContainEqual({
+      code: 'MISSING_INTAKE',
+      subject: 'correo',
+    });
+  });
+
+  it('acepta guiar al siguiente dato faltante sin pedir los ya guardados', () => {
+    const current = context({
+      commercial_state: {
+        ...context().commercial_state,
+        selected_payment_plan: 'monthly_12',
+        stage: 'plan_selected',
+        awaiting_reply: 'contact_details',
+      },
+      capabilities: {
+        ...context().capabilities,
+        may_send_payment_link: true,
+        authorized_payment_plan: 'monthly_12',
+        intake_missing: ['correo'],
+      },
+      turn: {
+        batch_messages: [{ id: 'm2', text: 'Soy Nadia Ferrer' }],
+        recent_turns: [],
+      },
+    } as Partial<AgentAContextV1>);
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'provide_contact_details',
+          secondary_moves: [],
+          vetoes: [],
+          confidence: 1,
+        },
+        response: { messages: ['Gracias, Nadia. ¿Cuál es tu correo?'], call_offer: null },
+        used_fact_ids: [],
+      }),
+      context: current,
+      planned_fact_ids: [],
+      rejection_id: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(rejection).toBeNull();
+  });
 });

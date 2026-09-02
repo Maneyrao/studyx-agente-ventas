@@ -1,6 +1,9 @@
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import type { AgentAContextV1, AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
-import { validateAgentATurnProposalV1 } from './agent-a-brain'
+import {
+  removeRepeatedAgentQuestionMessagesV1,
+  validateAgentATurnProposalV1,
+} from './agent-a-brain'
 import type {
   AgentAProposalCycleEvidenceV1,
   AgentAProposalEnvelopeV1,
@@ -101,6 +104,46 @@ function claimsImmediatePaymentLinkDelivery(proposal: AgentATurnProposalV1): boo
   ))
 }
 
+function pruneRepeatedQuestion<T extends AgentAProposalEnvelopeV1>(input: {
+  readonly initial: T
+  readonly rejection: TurnRejectionV1
+  readonly context: AgentAContextV1
+  readonly authorized_fact_ids: readonly string[]
+}): T | null {
+  if (!input.rejection.rejections.every((reason) => reason.code === 'REPEATED_AGENT_REPLY')) {
+    return null
+  }
+  const previous = [...input.context.turn.recent_turns]
+    .reverse()
+    .find((turn) => turn.direction === 'outbound')?.content
+  if (!previous) return null
+  const currentCustomerText = input.context.turn.batch_messages.map((message) => message.text).join(' ')
+  const messages = removeRepeatedAgentQuestionMessagesV1(
+    input.initial.proposal.response.messages,
+    previous,
+    currentCustomerText,
+  )
+  if (messages.length === 0 || messages.length === input.initial.proposal.response.messages.length) {
+    return null
+  }
+  const candidate = {
+    ...input.initial,
+    proposal: {
+      ...input.initial.proposal,
+      response: {
+        ...input.initial.proposal.response,
+        messages: messages as AgentATurnProposalV1['response']['messages'],
+      },
+    },
+  } as T
+  return validatePlannerless({
+    proposal: candidate.proposal,
+    context: input.context,
+    rejection_id: input.rejection.rejection_id,
+    authorized_fact_ids: input.authorized_fact_ids,
+  }) === null ? candidate : null
+}
+
 /**
  * Denying a side effect does not require a second author to replace safe
  * customer-facing copy. When the only defect is an early payment action, the
@@ -174,6 +217,23 @@ export async function resolveAgentAPlannerlessProposalV2<
     }
   }
 
+  const prunedRepeat = pruneRepeatedQuestion({
+    initial: input.initial,
+    rejection,
+    context: input.context,
+    authorized_fact_ids: factIds,
+  })
+  if (prunedRepeat !== null) {
+    return {
+      effective: prunedRepeat,
+      evidence: {
+        rejection_codes: rejection.rejections.map((reason) => reason.code),
+        repair_attempted: false, repaired: false, proposal_generation_calls: 1,
+      },
+      rejection,
+    }
+  }
+
   const demoted = demoteUnauthorizedPaymentAction({
     initial: input.initial,
     rejection,
@@ -193,14 +253,7 @@ export async function resolveAgentAPlannerlessProposalV2<
 
   const mayRepair = input.repair_enabled && input.initial.proposal.repair_of === null
   if (!mayRepair) {
-    return {
-      effective: input.initial,
-      evidence: {
-        rejection_codes: rejection.rejections.map((reason) => reason.code),
-        repair_attempted: false, repaired: false, proposal_generation_calls: 1,
-      },
-      rejection,
-    }
+    throw new Error('PLANNERLESS_PROPOSAL_REJECTED')
   }
 
   try {
@@ -229,14 +282,7 @@ export async function resolveAgentAPlannerlessProposalV2<
     // never opens a second rewrite and never authorizes the original draft.
   }
 
-  return {
-    effective: input.initial,
-    evidence: {
-      rejection_codes: rejection.rejections.map((reason) => reason.code),
-      repair_attempted: true, repaired: false, proposal_generation_calls: 2,
-    },
-    rejection,
-  }
+  throw new Error('PLANNERLESS_PROPOSAL_REJECTED')
 }
 
 export type PlannerlessAgentATurnProposalV2 = AgentATurnProposalV1

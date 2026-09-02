@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   assertSuitePromptVersion,
   buildAdkChatArgs,
+  buildTurnMetricsV1,
   composeAgentARegressionSuite,
   expectedPromptVersionForSuite,
   runConversationCase,
@@ -626,8 +627,11 @@ describe('Agent A conversation runner', () => {
         schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [], confidence: 0.98,
       },
       response: {
-        messages: ['Te cuento lo más importante y vemos qué necesitás.'],
-        call_offer: 'Si querés, coordinamos una llamada para asesorarte mejor.',
+        messages: [
+          'Te cuento lo más importante y vemos qué necesitás.',
+          'Si querés, puedo ofrecerte una llamada para asesorarte mejor.',
+        ],
+        call_offer: null,
       },
       proposed_action: { type: 'none' },
       used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
@@ -1887,6 +1891,29 @@ describe('Agent A conversation runner', () => {
   });
 
   describe('CALL_OFFER_PATTERN widened to "la llamada" phrasing (task-5 fix round 1)', () => {
+    it('counts a natural offer exactly as the backend ledger does', () => {
+      const metrics = buildTurnMetricsV1({
+        case_id: 'natural-offer',
+        turn_index: 0,
+        visible_message_count: 1,
+        latency_ms: 10,
+        assistant_text: 'Si querés, puedo ofrecerte una llamada para asesorarte mejor.',
+        diagnostic: {
+          catalogResolution: { kind: 'no_catalog_intent' },
+          selectedOfferingCode: null,
+          decisionBusinessAction: null,
+          authorizedProtectedFacts: [],
+          authorizedUrls: [],
+          commitError: null,
+          callOfferLedgerEntries: 1,
+        },
+        runtime: null,
+      });
+
+      expect(metrics.visible_call_offers).toBe(1);
+      expect(metrics.ledger_entries).toBe(1);
+    });
+
     it('fails when the agent repeats "coordinamos la llamada" more than once after a decline', async () => {
       const result = await runConversationCase(
         {
