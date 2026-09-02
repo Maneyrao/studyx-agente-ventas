@@ -207,6 +207,34 @@ describe('forma del mensaje ensamblado', () => {
     expect(paragraphsOf(result.content).length).toBeLessThanOrEqual(2);
   });
 
+  it('al confirmar el estado nombra el plan elegido y no reabre la lista', () => {
+    // base_18: el cliente pregunta cuál fue el plan que quedó. El estado lo
+    // sabe, así que el turno tiene que poder nombrarlo — y sólo ése.
+    const plans = (['monthly_12', 'monthly_6', 'one_time'] as const).map((code, index) => ({
+      id: `payment:redes-informaticas:${code}:label:v1`,
+      kind: 'payment_plan_label' as const,
+      source: 'business_snapshot' as const,
+      value: ['12 pagos mensuales de USD 30', '6 pagos mensuales de USD 60', 'Pago único de USD 360'][index]!,
+      offering_code: 'redes-informaticas',
+      payment_plan: code,
+    }));
+
+    const result = assembleCanonicalConversationResponseV1({
+      plan: plan({ response_goal: 'confirm_current_state', selected_payment_plan: 'monthly_6' }),
+      fact_refs: plans.map(refOf),
+      facts: plans,
+      composition: {
+        schema_version: 1,
+        narrative: { opening: '', explanation: null, next_question: null },
+        used_fact_ids: [],
+      },
+    });
+
+    expect(result.content).toContain('6 pagos mensuales de USD 60');
+    expect(result.content).not.toContain('12 pagos mensuales de USD 30');
+    expect(result.content).not.toContain('Pago único de USD 360');
+  });
+
   it('no repite una descripción canónica que la narrativa ya contó con sus palabras', () => {
     // base_11: el modelo parafrasea la descripción y el backend la volvía a
     // pegar textual justo debajo.

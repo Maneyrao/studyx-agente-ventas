@@ -537,7 +537,35 @@ function planSingle(
     // A question about what was already decided or already sent. It is
     // answered from state; re-issuing the link would answer a question the
     // customer did not ask.
-    return unchangedPlan(state, 'confirm_current_state');
+    //
+    // Confirmar en qué punto se está es poder nombrar el curso y el plan que
+    // ya se eligieron. Sin pedirlos como hechos citables el modelo no tiene
+    // ningún valor autorizado con el que contestar "¿cuál fue el plan que
+    // quedó?", y lo único que le queda es una frase genérica: el estado sabe
+    // la respuesta y el turno no la deja decir.
+    //
+    // Sólo se piden los que el estado ya fijó. Un plan que nadie eligió no se
+    // pide, así que esto no puede inventar una elección que no ocurrió.
+    const stateFacts: CanonicalFactRequestV1[] = [];
+    if (state.selected_offering_code) {
+      stateFacts.push({
+        kind: 'offering_name',
+        offering_code: state.selected_offering_code,
+      });
+      if (state.selected_payment_plan) {
+        // `payment_options` materializa los tres planes; el ensamblador ya
+        // descarta los que no son el elegido cuando el turno confirma, así que
+        // esto autoriza nombrar el plan vigente sin reabrir la lista.
+        stateFacts.push({
+          kind: 'payment_options',
+          offering_code: state.selected_offering_code,
+        });
+      }
+    }
+    return {
+      ...unchangedPlan(state, 'confirm_current_state'),
+      canonical_fact_requests: stateFacts,
+    };
   }
   if (kind === 'decline_purchase') {
     return {

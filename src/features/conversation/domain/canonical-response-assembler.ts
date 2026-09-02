@@ -115,7 +115,16 @@ function requiredFactIds(
     ref.kind === 'payment_plan_price'
     && citedPlans.has(`${ref.offering_code ?? ''}\u0000${ref.payment_plan ?? ''}`)
   )).map((ref) => ref.id));
-  if (plan.response_goal === 'confirm_selected_plan' && plan.selected_payment_plan) {
+  // Confirmar el plan elegido, o confirmar en qué punto quedó la conversación,
+  // significan lo mismo para el cliente: que le nombren SU elección. Si la
+  // etiqueta no es obligatoria, un turno sin cita del modelo se queda en la
+  // frase de respaldo y la pregunta "¿cuál fue el plan que quedó?" no se
+  // responde aunque el estado tenga la respuesta.
+  if (
+    (plan.response_goal === 'confirm_selected_plan'
+      || plan.response_goal === 'confirm_current_state')
+    && plan.selected_payment_plan
+  ) {
     required.push(...refs.filter((ref) => (
       ref.kind === 'payment_plan_label'
       && ref.payment_plan === plan.selected_payment_plan
@@ -190,7 +199,10 @@ function fallbackOpening(responseGoal: TurnPlanV1['response_goal']): string | nu
  * never appended as deterministic blocks to a confirmation.
  */
 function suppressedByPlanConfirmation(plan: TurnPlanV1, fact: CanonicalFactV1): boolean {
-  return plan.response_goal === 'confirm_selected_plan'
+  // Confirmar el plan elegido y confirmar en qué punto quedó la conversación
+  // son el mismo momento: el cliente pregunta por SU elección, no por el menú.
+  return (plan.response_goal === 'confirm_selected_plan'
+    || plan.response_goal === 'confirm_current_state')
     && plan.selected_payment_plan !== null
     && (fact.kind === 'payment_plan_label' || fact.kind === 'payment_plan_price')
     && fact.payment_plan !== plan.selected_payment_plan;

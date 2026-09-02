@@ -374,3 +374,53 @@ describe('planConversationTurn', () => {
     });
   });
 });
+
+/**
+ * `base_18_which_plan_given` y `base_04_which_payment` fallan igual en todas
+ * las corridas: el cliente pregunta qué plan quedó elegido y el agente le
+ * devuelve otra vez el pedido de datos.
+ *
+ * El intérprete y el planner aciertan —el move es `ask_current_state` y el
+ * objetivo `confirm_current_state`— y el estado durable tiene el plan. Lo que
+ * falta es el hecho: `unchangedPlan` pide cero hechos canónicos, así que el
+ * modelo no tiene ningún valor autorizado con el que nombrar el plan y la
+ * única salida que le queda es una frase genérica.
+ *
+ * Confirmar en qué punto se está es, precisamente, poder nombrar el curso y el
+ * plan elegidos.
+ */
+describe('confirmar el estado actual', () => {
+  it('pide el curso y el plan elegidos como hechos citables', () => {
+    const result = plan(move('ask_current_state'), state({
+      stage: 'plan_selected',
+      selected_offering_code: 'redes-informaticas',
+      selected_payment_plan: 'monthly_6',
+      awaiting_reply: 'payment_confirmation',
+    }));
+
+    expect(result.response_goal).toBe('confirm_current_state');
+    expect(result.canonical_fact_requests).toEqual(expect.arrayContaining([
+      { kind: 'offering_name', offering_code: 'redes-informaticas' },
+      { kind: 'payment_options', offering_code: 'redes-informaticas' },
+    ]));
+  });
+
+  it('no inventa un plan cuando todavía no se eligió ninguno', () => {
+    const result = plan(move('ask_current_state'), state({
+      stage: 'course_selected',
+      selected_offering_code: 'redes-informaticas',
+      selected_payment_plan: null,
+    }));
+
+    expect(result.response_goal).toBe('confirm_current_state');
+    expect(result.canonical_fact_requests.some((r) => r.kind === 'payment_options')).toBe(false);
+    expect(result.canonical_fact_requests).toEqual(expect.arrayContaining([
+      { kind: 'offering_name', offering_code: 'redes-informaticas' },
+    ]));
+  });
+
+  it('no pide nada cuando no hay curso elegido', () => {
+    const result = plan(move('ask_current_state'), state({ stage: 'exploring' }));
+    expect(result.canonical_fact_requests).toEqual([]);
+  });
+});
