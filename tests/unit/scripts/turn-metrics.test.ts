@@ -30,12 +30,15 @@ function turn(overrides: Partial<TurnMetricsV1> = {}): TurnMetricsV1 {
 
 describe('métricas por turno', () => {
   it('mide la oferta de llamada en el outbound visible y no en un campo auxiliar del modelo', () => {
-    const metrics = buildTurnMetricsV1({
+    const metrics = [
+      'Si querés, podemos coordinar una llamada o seguir por chat.',
+      'Si querés, también podés solicitar una llamada o seguir por chat.',
+    ].map((assistant_text, turn_index) => buildTurnMetricsV1({
       case_id: 'call-visible',
-      turn_index: 0,
+      turn_index,
       visible_message_count: 1,
       latency_ms: 1_000,
-      assistant_text: 'Si querés, podemos coordinar una llamada o seguir por chat.',
+      assistant_text,
       diagnostic: {
         catalogResolution: { kind: 'no_catalog_intent' },
         selectedOfferingCode: null,
@@ -47,10 +50,10 @@ describe('métricas por turno', () => {
         callOfferLedgerEntries: 1,
       },
       runtime: null,
-    });
+    }));
 
-    expect(metrics.visible_call_offers).toBe(1);
-    expect(evaluateRunAcceptanceGatesV1(summarizeRunMetricsV1([metrics])))
+    expect(metrics.map((turn) => turn.visible_call_offers)).toEqual([1, 1]);
+    expect(evaluateRunAcceptanceGatesV1(summarizeRunMetricsV1(metrics)))
       .toMatchObject({ call_offer_ledger_parity: true });
   });
 

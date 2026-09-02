@@ -346,7 +346,8 @@ export async function generateGeminiAgentATurnProposalV1(input: {
 const MOVE_KINDS = [
   'greeting', 'browse_catalog', 'select_area', 'select_course', 'ask_course_information',
   'continue_by_chat', 'request_call', 'decline_call', 'ask_payment_options',
-  'select_payment_plan', 'defer_payment', 'request_payment_link', 'decline_purchase', 'unknown',
+  'select_payment_plan', 'defer_payment', 'request_payment_link', 'report_payment',
+  'ask_current_state', 'provide_contact_details', 'decline_purchase', 'unknown',
 ] as const;
 const SECONDARY_MOVE_KINDS = MOVE_KINDS.filter(
   (kind) => kind !== 'greeting' && kind !== 'unknown',

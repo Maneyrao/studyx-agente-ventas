@@ -617,6 +617,11 @@ describe('Agent A Brain V1', () => {
     expect(body.instructions).toContain('<canonical_sales_behavior');
     expect(body.input).toContain('JSON');
     const moveProperties = body.text.format.schema.properties.move.properties;
+    expect(moveProperties.move.enum).toEqual(expect.arrayContaining([
+      'report_payment',
+      'ask_current_state',
+      'provide_contact_details',
+    ]));
     expect(moveProperties.secondary_moves.items.enum).not.toContain('greeting');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('unknown');
     expect(moveProperties.vetoes.description).toContain('current customer message explicitly refuses');
