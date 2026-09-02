@@ -26,6 +26,18 @@ describe('loadAgentACommercialConfig', () => {
     expect(() => loadAgentACommercialConfig({ ...environment, BUSINESS_WORKSPACE_SLUG: 'wrong slug' }))
       .toThrow('INVALID_BUSINESS_CONFIG:BUSINESS_WORKSPACE_SLUG');
   });
+
+  it('does not block a commercial turn when degradable providers are absent', () => {
+    expect(loadAgentACommercialConfig({
+      ...environment,
+      GEMINI_API_KEY: '',
+      GEMINI_MODEL: '',
+      GOOGLE_SHEETS_CLIENT_EMAIL: '',
+      GOOGLE_SHEETS_PRIVATE_KEY: '',
+      GOOGLE_SHEETS_SPREADSHEET_ID: '',
+      GOOGLE_SHEETS_TAB_NAME: '',
+    })).toEqual({ workspaceSlug: 'studyx' });
+  });
 });
 
 describe('loadConversationPipelineConfig', () => {

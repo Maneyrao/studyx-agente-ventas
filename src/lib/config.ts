@@ -141,11 +141,20 @@ export const AGENT_A_REQUIRED_ENVIRONMENT = [
   'ORCHESTRATOR_KEY_ID',
   'STUDYX_SIGNING_SECRET',
   'CRON_SECRET',
-  'GEMINI_API_KEY',
-  'GEMINI_MODEL',
   'PAYMENT_LINK_12M',
   'PAYMENT_LINK_6M',
   'PAYMENT_LINK_CONTADO',
+] as const;
+
+/**
+ * Providers that enrich or project a committed commercial turn. Their
+ * absence must be observable, but cannot make ingest/claim/conversation
+ * unavailable: the durable outbox can be reconciled after recovery and the
+ * current conversation model does not run in this backend process.
+ */
+export const AGENT_A_DEGRADABLE_ENVIRONMENT = [
+  'GEMINI_API_KEY',
+  'GEMINI_MODEL',
   'GOOGLE_SHEETS_CLIENT_EMAIL',
   'GOOGLE_SHEETS_PRIVATE_KEY',
   'GOOGLE_SHEETS_SPREADSHEET_ID',

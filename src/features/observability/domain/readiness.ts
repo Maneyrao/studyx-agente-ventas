@@ -1,4 +1,5 @@
 import {
+  AGENT_A_DEGRADABLE_ENVIRONMENT,
   AGENT_A_REQUIRED_ENVIRONMENT,
   type AgentABrainConfig,
 } from '@/lib/config';
@@ -75,7 +76,7 @@ export function evaluateReadiness(probes: readonly DependencyProbe[]): Readiness
 export const REQUIRED_ENVIRONMENT = AGENT_A_REQUIRED_ENVIRONMENT;
 
 /** Present = the feature works; absent = it degrades, and says so. */
-export const DEGRADABLE_ENVIRONMENT = [] as const;
+export const DEGRADABLE_ENVIRONMENT = AGENT_A_DEGRADABLE_ENVIRONMENT;
 
 export function probeEnvironment(
   read: (name: string) => string | undefined

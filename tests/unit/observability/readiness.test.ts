@@ -85,10 +85,13 @@ describe('probeEnvironment', () => {
     expect(probes.find((entry) => entry.name === 'configuration')!.status).toBe('down');
   });
 
-  it('treats Gemini and commercial configuration as required for Agent A', () => {
-    const probes = probeEnvironment(present(REQUIRED_ENVIRONMENT.filter((name) => name !== 'GEMINI_API_KEY')));
-    const configuration = probes.find((entry) => entry.name === 'configuration')!;
-    expect(configuration).toMatchObject({ required: true, status: 'down' });
-    expect(configuration.detail).toContain('GEMINI_API_KEY');
+  it('keeps traffic ready but reports missing derived providers as degraded', () => {
+    const probes = probeEnvironment(present(REQUIRED_ENVIRONMENT));
+    expect(probes.find((entry) => entry.name === 'configuration'))
+      .toMatchObject({ required: true, status: 'ok' });
+    const optional = probes.find((entry) => entry.name === 'configuration_optional')!;
+    expect(optional).toMatchObject({ required: false, status: 'degraded' });
+    expect(optional.detail).toContain('GEMINI_API_KEY');
+    expect(optional.detail).toContain('GOOGLE_SHEETS_PRIVATE_KEY');
   });
 });
