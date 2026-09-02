@@ -13,6 +13,7 @@ const proposal = {
   },
   response: {
     messages: ['¡Hola! ¿Qué te gustaría aprender?'],
+    call_offer: 'Si te resulta más cómodo, podemos coordinar una llamada.',
   },
   proposed_action: { type: 'none' },
   used_fact_ids: [],

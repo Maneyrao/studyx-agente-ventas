@@ -134,6 +134,7 @@ export const AgentATurnProposalV1Schema = z.object({
       z.tuple([CustomerMessageSchema, CustomerMessageSchema]),
       z.tuple([CustomerMessageSchema, CustomerMessageSchema, CustomerMessageSchema]),
     ]),
+    call_offer: CustomerMessageSchema.nullable().optional(),
   }).strict(),
   proposed_action: ProposedActionSchema,
   used_fact_ids: z.array(IdentifierSchema).max(32),

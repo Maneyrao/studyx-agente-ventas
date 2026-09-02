@@ -113,10 +113,17 @@ export interface AgentATurnProposalV1 {
   readonly move: ConversationMoveV1;
   readonly response: {
     readonly messages: readonly [string] | readonly [string, string] | readonly [string, string, string];
+    readonly call_offer?: string | null;
   };
   readonly proposed_action: AgentAProposedActionV1;
   readonly used_fact_ids: readonly string[];
   readonly used_memory_ids: readonly string[];
+  readonly stage_hypothesis?: 'exploring' | 'qualified' | 'course_selected' | 'plan_selected'
+    | 'payment_link_sent' | 'handoff' | 'closed';
+  readonly repair_of?: {
+    readonly rejection_id: string;
+    readonly attempt: 1;
+  } | null;
   readonly memory_candidates: ReadonlyArray<{
     readonly type: AgentAMemoryTypeV1;
     readonly key: string;

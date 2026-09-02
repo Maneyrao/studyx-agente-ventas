@@ -225,7 +225,12 @@ const ASSERTION_CLASSES: readonly {
   {
     // Afirmar que los datos del cliente quedaron guardados.
     pattern: new RegExp(
-      `${L}(?:registr[éeo]|guard[éeo]|anot[éeo]|tom[éeo])${R}[^.;]{0,40}${L}datos${R}`,
+      `${L}(?:`
+      + `(?:ya\s+)?(?:tengo|tenemos|qued[óo]|quedaron|registr[éeo]|guard[éeo]|anot[éeo]|tom[éeo])${R}`
+      + `[^.;]{0,60}${L}(?:datos|nombre|apellido|correo|email|tel[ée]fono|todo)${R}`
+      + `|(?:datos|nombre|apellido|correo|email|tel[ée]fono)${R}[^.;]{0,60}`
+      + `${L}(?:registrad[oa]s?|guardad[oa]s?|anotad[oa]s?)${R}`
+      + `)`,
       'iu',
     ),
     requires: 'state:intake_recorded:v1',
