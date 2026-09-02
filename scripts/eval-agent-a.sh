@@ -17,6 +17,10 @@
 # Ejemplo:
 #   scripts/eval-agent-a.sh studyx-agent-a-conversational-baseline 3 base
 #   scripts/eval-agent-a.sh studyx-agent-a-conversational-baseline 3 rep --repair
+#
+# Para reejecutar sólo los casos que una corrección toca, sin pagar los veinte:
+#   EVAL_CASES=base_09_transfer,base_20_withholds_data \
+#     scripts/eval-agent-a.sh studyx-agent-a-conversational-baseline 1 focal --repair
 
 set -euo pipefail
 
@@ -152,6 +156,7 @@ for i in $(seq 1 "${REPETICIONES}"); do
   echo "=== ${ETIQUETA} corrida ${i}/${REPETICIONES} ===" >&2
   npx tsx scripts/run-agent-a-conversations.ts \
     --suite "${SUITE}" \
+    ${EVAL_CASES:+--cases "${EVAL_CASES}"} \
     --transport local \
     --api-base-url "${API_BASE_URL}" \
     --strict-brain-provider deepseek \
