@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CanonicalFactRefV1, TurnPlanV1 } from '../../../botpress-agent/src/schemas/conversation-pipeline';
 import {
   composeConversationNarrativeV1,
+  lastAgentReplyV1,
   composeConversationNarrativeWithFallbackV1,
   deterministicNarrativeFallbackV1,
   shouldComposeNarrativeV1,
@@ -52,6 +53,48 @@ describe('conversation composer V1', () => {
     expect(instructions).not.toContain('24 clases');
     expect(instructions).not.toContain('USD 360');
     expect(instructions).not.toContain('stripe.com');
+  });
+
+  /**
+   * El compositor recibía sólo el plan y las referencias, así que dos turnos
+   * con el mismo objetivo y los mismos hechos producían el mismo texto carácter
+   * por carácter. Las ocho respuestas repetidas de las tres corridas eran eso:
+   * el cliente repreguntaba y le llegaba de vuelta el mismo párrafo.
+   */
+  it('le muestra al compositor lo último que dijo para que no lo repita', () => {
+    const lastReply = 'El valor total del programa es el mismo en los tres planes.';
+    const instructions = buildConversationComposerInstructionsV2({
+      plan,
+      fact_refs: refs,
+      customer_goal: null,
+      last_reply: lastReply,
+    });
+
+    // Tiene que llegar en su propia sección: dentro del JSON de contexto queda
+    // al mismo nivel que un campo cualquiera y el modelo no lo lee como "esto
+    // ya lo dijiste".
+    expect(instructions).toContain(`<last_agent_reply>\n${lastReply}\n</last_agent_reply>`);
+    // Y con una regla propia: el prompt de ventas ya pedía no repetir datos
+    // confirmados, y aun así el turno volvía idéntico.
+    expect(instructions).toMatch(/no repitas[\s\S]*(literal|textual)/iu);
+  });
+
+  it('toma como turno anterior el último mensaje saliente, no el del cliente', () => {
+    expect(lastAgentReplyV1([
+      { direction: 'inbound', content: '¿Cuánto sale?' },
+      { direction: 'outbound', content: 'El total es el mismo en los tres planes.' },
+      { direction: 'inbound', content: 'Perdón, ¿me repetís el valor?' },
+    ])).toBe('El total es el mismo en los tres planes.');
+    expect(lastAgentReplyV1([{ direction: 'inbound', content: 'Hola' }])).toBeNull();
+    expect(lastAgentReplyV1([])).toBeNull();
+  });
+
+  it('no inventa un turno anterior cuando la conversación recién empieza', () => {
+    const instructions = buildConversationComposerInstructionsV2({
+      plan, fact_refs: refs, customer_goal: null, last_reply: null,
+    });
+
+    expect(instructions).not.toContain('<last_agent_reply>');
   });
 
   it('passes the commercial behavior contract to the model boundary', async () => {

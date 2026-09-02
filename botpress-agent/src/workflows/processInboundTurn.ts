@@ -42,6 +42,7 @@ import {
 } from '../lib/conversation/conversation-interpreter'
 import {
   composeConversationNarrativeWithFallbackV1,
+  lastAgentReplyV1,
 } from '../lib/conversation/conversation-composer'
 import {
   bindCurrentCatalogResolutionToMoveV1,
@@ -1069,6 +1070,7 @@ export const processInboundTurn = new Workflow({
             plan: planned.plan,
             fact_refs: planned.fact_refs,
             customer_goal: null,
+            last_reply: lastAgentReplyV1(owned.context.recent_turns),
           }, {
             signal,
             generate: async ({ instructions, signal: composerSignal }) => {

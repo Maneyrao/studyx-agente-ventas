@@ -14,6 +14,30 @@ export interface ConversationComposerInputV1 {
   readonly plan: TurnPlanV1
   readonly fact_refs: readonly CanonicalFactRefV1[]
   readonly customer_goal: string | null
+  /**
+   * Lo último que el agente dijo en esta conversación.
+   *
+   * Sin esto el compositor es ciego entre turnos: el mismo `response_goal` con
+   * los mismos hechos devuelve el mismo texto carácter por carácter, y quien
+   * repregunta recibe de vuelta el párrafo que ya leyó. `null` en el primer
+   * turno, que es la única vez que no hay nada dicho todavía.
+   */
+  readonly last_reply?: string | null
+}
+
+/**
+ * Último mensaje que el agente mandó en esta conversación, o `null` si todavía
+ * no habló. Se recorre de atrás para adelante porque lo que importa es el
+ * turno más reciente, no el primero.
+ */
+export function lastAgentReplyV1(
+  recentTurns: readonly { readonly direction: string; readonly content: string }[],
+): string | null {
+  for (let index = recentTurns.length - 1; index >= 0; index -= 1) {
+    const turn = recentTurns[index]
+    if (turn?.direction === 'outbound' && turn.content.trim().length > 0) return turn.content
+  }
+  return null
 }
 
 export class ConversationComposerError extends Error {
