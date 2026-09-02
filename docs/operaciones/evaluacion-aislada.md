@@ -50,6 +50,10 @@ otro checkout no puede producir un falso verde.
    sesión. **No** va en `.env.local` del repositorio ni en ningún archivo
    versionado, y su valor no se imprime en ningún log ni mensaje de error.
 
+Una key de la sesión tiene precedencia sobre una declaración vacía en
+`.eval/.env.local`; esto permite inyectarla desde un gestor de secretos sin
+persistirla en disco.
+
 ## Correr
 
 ```bash

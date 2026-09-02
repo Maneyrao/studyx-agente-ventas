@@ -24,6 +24,7 @@ readonly SUITE="${1:?falta la suite}"
 readonly REPETICIONES="${2:?faltan las repeticiones}"
 readonly ETIQUETA="${3:?falta la etiqueta}"
 readonly MODO="${4:-}"
+readonly PREFLIGHT_ONLY="$([[ "${MODO}" == "--preflight-only" ]] && echo true || echo false)"
 
 readonly RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly PUERTO=55435
@@ -39,6 +40,12 @@ if [[ ! -f "${EVAL_ROOT}/.env.local" ]]; then
   exit 1
 fi
 
+# Una key inyectada sólo para este proceso (por ejemplo desde un gestor de
+# secretos o el portapapeles) tiene precedencia sobre la plantilla local. No
+# se escribe en disco ni se imprime. El resto del entorno sigue siendo
+# reconstruido y validado por el guard de aislamiento.
+readonly SESSION_DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-}"
+
 # `env -i` no alcanza: bash reexporta lo suyo. Se construye el entorno a mano
 # y se deja fuera TODO lo que no está en el archivo de evaluación, que es
 # justamente cómo se apagan Telegram, Stripe, Sheets y Retell.
@@ -46,6 +53,9 @@ set -a
 # shellcheck disable=SC1091
 source "${EVAL_ROOT}/.env.local"
 set +a
+if [[ -n "${SESSION_DEEPSEEK_API_KEY}" ]]; then
+  export DEEPSEEK_API_KEY="${SESSION_DEEPSEEK_API_KEY}"
+fi
 export DATABASE_URL="${DB_URL}"
 export TEST_DATABASE_URL="${DB_URL}"
 export STUDYX_LOCAL_CREDENTIALS_ROOT="${EVAL_ROOT}"
@@ -76,6 +86,11 @@ node -e '
   echo "EVAL_API_PORT_IN_USE: ${API_PORT}" >&2
   exit 1
 }
+
+if [[ "${PREFLIGHT_ONLY}" == "true" ]]; then
+  echo "preflight aislado verificado; no se iniciaron servicios" >&2
+  exit 0
+fi
 
 scripts/pg-native-down.sh "${PUERTO}" >/dev/null 2>&1 || true
 scripts/pg-native-up.sh "${PUERTO}" --seed >/dev/null
