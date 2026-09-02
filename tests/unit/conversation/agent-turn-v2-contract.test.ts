@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AgentATurnCommitV2Schema } from '@/features/conversation/adapters/agent-turn-v2-schema';
 import { AgentATurnCommitV2Schema as BotpressAgentATurnCommitV2Schema } from '../../../botpress-agent/src/schemas/agent-turn-v2';
+import { CommitDecisionInputSchema } from '../../../botpress-agent/src/schemas/contracts';
 
 const proposal = {
   schema_version: 1,
@@ -40,4 +41,23 @@ describe('AgentATurnCommitV2 contract', () => {
       expect(BotpressAgentATurnCommitV2Schema.safeParse(payload).success).toBe(false);
     },
   );
+
+  it('is accepted by the Botpress commit boundary as an alternative to pipeline v1', () => {
+    const parsed = CommitDecisionInputSchema.parse({
+      turn_id: '10000000-0000-4000-8000-000000000004',
+      trace_id: '10000000-0000-4000-8000-000000000005',
+      agent_turn_v2: { schema_version: 2, proposal },
+      conversation_pipeline_v1: null,
+      decision: {
+        schema_version: 4,
+        intent: 'social', kind: 'reply', response: proposal.response.messages[0],
+        response_type: 'social_reply', confidence: 0.98, reason_code: 'AGENT_A_BRAIN_V1',
+        business_action: null, memory_candidates: [], missing_information: [],
+        next_state: 'waiting_user', retrieval_used: null,
+      },
+      model: { provider: 'deepseek-direct', model: 'deepseek-chat', prompt_version: 'test' },
+    });
+
+    expect(parsed.agent_turn_v2).toEqual({ schema_version: 2, proposal });
+  });
 });

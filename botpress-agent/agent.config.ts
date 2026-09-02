@@ -29,6 +29,9 @@ export default defineConfig({
       agentABrainDeepSeekModel: z.string().min(1).default('deepseek-v4-flash'),
       agentABrainOpenAIModel: z.string().min(1).default('gpt-5.6-terra'),
       agentABrainOpenAIFallbackModel: z.string().min(1).default('gpt-5.6-luna'),
+      // Reversible migration: when enabled the complete Brain proposal goes
+      // straight to backend authority and skips the conversational planner.
+      agentAPlannerlessV2Enabled: z.boolean().default(false),
       // Identidad estable del asesor. La academia NO se configura acá: sale del
       // snapshot canónico del workspace, que es su fuente de verdad.
       agentAAdvisorName: z.string().default(''),

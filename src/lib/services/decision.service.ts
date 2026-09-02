@@ -38,6 +38,11 @@ import {
 } from '@/features/conversation/application/prepare-conversation-pipeline-commit';
 import { CanonicalResponseAssemblyError } from '@/features/conversation/domain/canonical-response-assembler';
 import type { ParsedConversationPipelineCommitV1 } from '@/features/conversation/adapters/conversation-pipeline-schema';
+import type { AgentATurnProposalV1 } from '@/features/conversation/domain/agent-a-brain';
+import {
+  AgentTurnV2RejectedError,
+  prepareAgentTurnV2,
+} from '@/features/conversation/application/prepare-agent-turn-v2';
 import { isSalesPaymentPlan } from '@/features/sales/domain/sales-context';
 import {
   assembleMaterializedPaymentResponse,
@@ -114,6 +119,11 @@ export interface CommitDecisionInput {
   authorized_payment_plan?: 'monthly_12' | 'monthly_6' | 'one_time' | null;
   /** Meaning and natural composition; backend replans and validates cited facts before using either. */
   conversation_pipeline_v1?: ParsedConversationPipelineCommitV1 | null;
+  /** Model-owned conversation turn; backend authorizes facts/actions/state but never replans its copy. */
+  agent_turn_v2?: {
+    readonly schema_version: 2;
+    readonly proposal: AgentATurnProposalV1;
+  } | null;
   decision: AnyDecision;
   model: {
     provider: 'botpress' | 'google-ai-direct' | 'groq-direct' | 'openai-direct' | 'deepseek-direct';
@@ -323,6 +333,9 @@ function decisionPayload(input: CommitDecisionInput) {
     ...(input.conversation_pipeline_v1
       ? { conversation_pipeline_v1: input.conversation_pipeline_v1 }
       : {}),
+    ...(input.agent_turn_v2
+      ? { agent_turn_v2: input.agent_turn_v2 }
+      : {}),
   };
 }
 
@@ -415,6 +428,9 @@ function duplicateDecisionResult(
 }
 
 export async function commitAgentDecision(input: CommitDecisionInput): Promise<CommitDecisionResult> {
+  if (input.conversation_pipeline_v1 && input.agent_turn_v2) {
+    throw new DecisionPolicyError('MULTIPLE_CONVERSATION_AUTHORITIES');
+  }
   let decision: AnyDecision;
   try {
     decision = parseDecisionAnyVersion(input.decision);
@@ -446,6 +462,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     const turn = await loadTurnPolicy(validatedInput.turn_id, db);
     const workspaceSlug = loadBusinessWorkspaceConfig().workspaceSlug;
     let preparedPipeline: Awaited<ReturnType<typeof prepareConversationPipelineCommitV1>> | null = null;
+    let preparedAgentTurn: Awaited<ReturnType<typeof prepareAgentTurnV2>> | null = null;
     // El contador de fallbacks tiene que sobrevivir a la supresión, y
     // `preparedPipeline` no: la rama de egress lo anula y con él se iría la
     // única lectura del estado de la conversación.
@@ -510,6 +527,52 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         memory_candidates: validatedInput.decision.memory_candidates,
       });
       assertDecisionBusinessActionPermitted(decision);
+    } else if (validatedInput.agent_turn_v2) {
+      pipelineStateBefore = await new PostgresConversationStateStoreV1(db).load(
+        workspaceSlug, turn.conversation_id, turn.contact_id,
+      );
+      const businessStore = new PostgresBusinessContextStore(db);
+      const [rawBusiness, rawCatalogIndex, workspaceRows] = await Promise.all([
+        businessStore.loadBusinessContext(workspaceSlug),
+        businessStore.loadCompleteIndex(workspaceSlug),
+        db<Array<{ id: string }>>`
+          SELECT workspace.id
+          FROM workspaces AS workspace
+          JOIN workspace_contacts AS membership
+            ON membership.workspace_id = workspace.id
+           AND membership.contact_id = ${turn.contact_id}::uuid
+          WHERE workspace.slug = ${workspaceSlug}
+            AND workspace.status = 'active'
+          LIMIT 1
+        `,
+      ]);
+      const workspaceId = rawBusiness?.workspace.id ?? workspaceRows[0]?.id;
+      if (!workspaceId) throw new DecisionPolicyError('AGENT_TURN_V2_CONTEXT_NOT_FOUND');
+      try {
+        preparedAgentTurn = await prepareAgentTurnV2({
+          turn: {
+            id: turn.id,
+            workspace_id: workspaceId,
+            conversation_id: turn.conversation_id,
+            contact_id: turn.contact_id,
+          },
+          workspace_slug: workspaceSlug,
+          proposal: validatedInput.agent_turn_v2.proposal,
+          business_context: rawBusiness ? buildBusinessContextView(rawBusiness) : null,
+          catalog_index: rawCatalogIndex ? buildCatalogIndexView(rawCatalogIndex) : null,
+        }, {
+          state_store: new PostgresConversationStateStoreV1(db),
+          call_facts: new PostgresOrchestrationStore(db),
+          contact_intake: (contactId) => loadContactIntakeV1(contactId, db),
+        });
+      } catch (error) {
+        if (error instanceof AgentTurnV2RejectedError) {
+          throw new DecisionPolicyError(`${error.code}:${error.reasons.join(',')}`);
+        }
+        throw error;
+      }
+      decision = parseDecisionAnyVersion(preparedAgentTurn.decision);
+      assertDecisionBusinessActionPermitted(decision);
     }
     validatePolicy(decision, turn);
 
@@ -523,9 +586,12 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     let finalResponse = decision.response;
     let paymentLinkStrippedUrls: readonly string[] = [];
     let authorizedUrls: readonly string[] = [];
-    let authorizedProtectedFacts: readonly ProtectedFactRef[] = preparedPipeline?.authorized_protected_facts ?? [];
+    let authorizedProtectedFacts: readonly ProtectedFactRef[] = preparedAgentTurn?.authorized_protected_facts
+      ?? preparedPipeline?.authorized_protected_facts
+      ?? [];
     let committedBusinessAction = decision.business_action;
-    let effectiveAuthorizedOfferingCode = preparedPipeline?.authorized_offering_code
+    let effectiveAuthorizedOfferingCode = preparedAgentTurn?.authorized_offering_code
+      ?? preparedPipeline?.authorized_offering_code
       ?? validatedInput.authorized_offering_code;
     let canonicalOfferings: readonly RawOfferingRow[] | undefined;
     let canonicalWorkspaceId: string | null = null;
@@ -546,7 +612,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       return loadedBatchMessages;
     };
 
-    const authorizedPaymentPlan = preparedPipeline?.authorized_payment_plan
+    const authorizedPaymentPlan = preparedAgentTurn?.authorized_payment_plan
+      ?? preparedPipeline?.authorized_payment_plan
       ?? validatedInput.authorized_payment_plan
       ?? null;
     if (authorizedPaymentPlan !== null) {
@@ -635,7 +702,9 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         authorizedOfferingCode: effectiveAuthorizedOfferingCode ?? null,
         deferredPlanCode,
         selectedPlanCode: existingSalesContext?.selected_payment_plan ?? null,
-        backendAuthorizedPlanCode: preparedPipeline?.plan.allowed_business_action.type === 'send_payment_link'
+        backendAuthorizedPlanCode: preparedAgentTurn?.decision.business_action?.type === 'send_payment_link'
+          ? preparedAgentTurn.decision.business_action.plan_code
+          : preparedPipeline?.plan.allowed_business_action.type === 'send_payment_link'
           ? preparedPipeline.plan.allowed_business_action.payment_plan
           : null,
         batchMessages,
@@ -691,7 +760,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           : 'Sí, ese es el link de pago que te compartí y sigue activo. No hace falta que te mande otro.';
         paymentLinkStrippedUrls = [...materialized.stripped_urls, ...withoutLink.removed_urls];
         committedBusinessAction = null;
-      } else if (preparedPipeline) {
+      } else if (preparedPipeline || preparedAgentTurn) {
         finalResponse = assembleMaterializedPaymentResponse(materialized);
         paymentLinkStrippedUrls = materialized.stripped_urls;
         authorizedUrls = [materialized.block.url];
@@ -836,6 +905,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           });
           committedBusinessAction = null;
           preparedPipeline = null;
+          preparedAgentTurn = null;
           effectiveAuthorizedOfferingCode = null;
           egressSuppressed = true;
         }
@@ -937,7 +1007,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
               WHERE batch_id = ${turn.batch_id}::uuid AND direction = 'inbound'
               ORDER BY conversation_seq ASC, created_at ASC, id ASC
             `;
-        const authorizedSourceIndex = preparedPipeline
+        const authorizedSourceIndex = preparedPipeline || preparedAgentTurn
           ? selectAuthorizedVoiceConsentSourceIndex({
               mode: decision.business_action.reason,
               texts: consentMessages.map((message) => message.content),
@@ -952,7 +1022,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           contact_name: turn.contact_name,
           phone: turn.phone,
           consent_messages: consentMessages,
-          ...(preparedPipeline
+          ...(preparedPipeline || preparedAgentTurn
             ? {
                 authorized_conversation_move: {
                   mode: decision.business_action.reason,
@@ -1183,6 +1253,12 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     if (preparedPipeline) {
       await new PostgresConversationStateStoreV1(db).transition(preparedPipeline.transition);
       if (preparedPipeline.transition.payment_reported) {
+        reportedPaymentContactId = turn.contact_id;
+      }
+    }
+    if (preparedAgentTurn) {
+      await new PostgresConversationStateStoreV1(db).transition(preparedAgentTurn.transition);
+      if (preparedAgentTurn.transition.payment_reported) {
         reportedPaymentContactId = turn.contact_id;
       }
     }

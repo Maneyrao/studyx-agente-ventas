@@ -24,6 +24,7 @@ import {
 import { commitClaimedDecision } from '@/features/orchestration/application/commit-claimed-decision';
 import { orchestrationStore } from '@/features/orchestration/adapters/postgres-orchestration-store';
 import { ConversationPipelineCommitV1Schema } from '@/features/conversation/adapters/conversation-pipeline-schema';
+import { AgentATurnCommitV2Schema } from '@/features/conversation/adapters/agent-turn-v2-schema';
 
 /**
  * POST /api/agent/turns/:turn_id/decision
@@ -142,6 +143,7 @@ const schema = z.object({
   authorized_offering_code: z.string().trim().min(1).max(128).nullable().optional(),
   authorized_payment_plan: z.enum(['monthly_12', 'monthly_6', 'one_time']).nullable().optional(),
   conversation_pipeline_v1: ConversationPipelineCommitV1Schema.nullable().optional(),
+  agent_turn_v2: AgentATurnCommitV2Schema.nullable().optional(),
   decision: decisionSchema,
   model: z.object({
     provider: z.enum(['botpress', 'google-ai-direct', 'groq-direct', 'openai-direct', 'deepseek-direct']),
@@ -153,7 +155,15 @@ const schema = z.object({
   // commit-claimed-decision.ts. Present on every real Botpress commit.
   batch_id: z.string().uuid().nullable().optional(),
   claim_token: z.string().uuid().nullable().optional(),
-}).strict();
+}).strict().superRefine((value, context) => {
+  if (value.conversation_pipeline_v1 && value.agent_turn_v2) {
+    context.addIssue({
+      code: 'custom',
+      path: ['agent_turn_v2'],
+      message: 'MULTIPLE_CONVERSATION_AUTHORITIES',
+    });
+  }
+});
 
 export async function POST(
   request: NextRequest,

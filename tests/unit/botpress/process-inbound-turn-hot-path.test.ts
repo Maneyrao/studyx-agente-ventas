@@ -291,6 +291,7 @@ describe('processInboundTurn hot path', () => {
   beforeEach(() => {
     configuration.automationEnabled = true;
     configuration.decisionProvider = 'botpress_managed';
+    configuration.agentAPlannerlessV2Enabled = false;
     secrets.GROQ_API_KEY = 'gsk-local-test-only';
     delete secrets.DEEPSEEK_API_KEY;
     delete secrets.OPENAI_API_KEY;
@@ -360,6 +361,74 @@ describe('processInboundTurn hot path', () => {
       plan_hash: 'a'.repeat(64),
     });
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
+  });
+
+  it('sends the complete Brain proposal to backend authority without invoking the planner', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      conversation_pipeline_v1_enabled: true,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null, selected_payment_plan: null,
+      stage: 'exploring', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 1,
+    };
+    claimed.context.batch_messages[0].content = 'Quiero aprender sobre redes';
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 1,
+      offerings: [{
+        code: 'redes-informaticas', display_name: 'Redes Informáticas',
+        academy: 'Tecnología', aliases: ['redes'],
+      }],
+      injection_suspected_count: 0,
+    };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+    secrets.DEEPSEEK_API_KEY = 'deepseek-local-test-only';
+    actionSpies.agentABrainDeepSeek.mockResolvedValueOnce({
+      proposal: {
+        schema_version: 1,
+        move: {
+          schema_version: 1, move: 'select_course', secondary_moves: [], vetoes: [],
+          course_reference: 'redes', confidence: 0.98,
+        },
+        response: { messages: ['Buenísimo, Redes puede ser una opción muy práctica para vos.'] },
+        proposed_action: { type: 'none' },
+        used_fact_ids: ['offering:redes-informaticas:name:v1'],
+        used_memory_ids: [], memory_candidates: [], repair_of: null,
+      },
+      provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 180, attempt_count: 1,
+    });
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.plan).not.toHaveBeenCalled();
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: null,
+      agent_turn_v2: {
+        schema_version: 2,
+        proposal: {
+          move: { move: 'select_course', course_reference: 'redes' },
+          response: { messages: ['Buenísimo, Redes puede ser una opción muy práctica para vos.'] },
+        },
+      },
+      model: { provider: 'deepseek-direct', prompt_version: 'studyx-agent-a-brain-v5' },
+    });
   });
 
   it.each([

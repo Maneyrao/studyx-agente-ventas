@@ -64,6 +64,7 @@ import {
 } from '../lib/conversation/agent-a-brain'
 import { resolveAgentAProposalV1 } from '../lib/conversation/resolve-agent-a-proposal'
 import { AgentATurnProposalV1Schema, type AgentATurnProposalV1 } from '../schemas/agent-a-brain'
+import type { AgentATurnCommitV2 } from '../schemas/agent-turn-v2'
 import {
   ComposedNarrativeV1Schema,
   type ConversationPipelineCommitV1,
@@ -596,6 +597,7 @@ export const processInboundTurn = new Workflow({
     })
 
     let pipelineCommit: ConversationPipelineCommitV1 | null = null
+    let agentTurnV2Commit: AgentATurnCommitV2 | null = null
     let pipelineFailureDecision: Decision | null = null
     let pipelineDecisionProvider: 'botpress' | 'google-ai-direct' | 'groq-direct' | 'openai-direct' | 'deepseek-direct' = 'botpress'
     let pipelineDecisionModel = 'conversation-pipeline-v1'
@@ -606,6 +608,7 @@ export const processInboundTurn = new Workflow({
     const repairEnabled = owned.features?.agent_a_repair_enabled === true
     const brainAuthoritative = owned.features?.agent_a_brain_v1_enabled === true
     const brainShadow = owned.features?.agent_a_brain_v1_shadow === true
+    const plannerlessV2Enabled = configuration.agentAPlannerlessV2Enabled === true
     const conversationalBaseEligible = configuration.automationEnabled
       && owned.policy.may_respond
       && (owned.policy.allowed_response_types.includes('commercial_reply')
@@ -855,44 +858,61 @@ export const processInboundTurn = new Workflow({
             bindCurrentCatalogResolutionToMoveV1(generated.proposal.move, owned),
             owned,
           )
-          const plannerStartedAt = Date.now()
-          let planned: Awaited<ReturnType<typeof planConversation.execute>> | null = null
-          try {
-            planned = await step(
-              'plan-agent-a-turn-v1',
-              () => planConversation.execute({
-                client,
-                input: {
-                  turn_id: owned.turn_id,
-                  trace_id: input.trace_id,
-                  move: authoritativeMove,
-                },
-              }),
-              { maxAttempts: 1 },
-            )
-          } catch (plannerError) {
-            timings.planner_ms = Date.now() - plannerStartedAt
-            pipelineFailureDecision = brainAdvisoryOnlyDecision(generated.proposal, owned)
-            safeLog('studyx.turn.agent_a_brain_v1', {
+          if (plannerlessV2Enabled) {
+            timings.planner_ms = 0
+            agentTurnV2Commit = {
+              schema_version: 2,
+              proposal: { ...generated.proposal, move: authoritativeMove },
+            }
+            pipelineMemoryCandidates = generated.proposal.memory_candidates
+            safeLog('studyx.turn.agent_a_plannerless_v2', {
               trace_id: input.trace_id,
               turn_id: owned.turn_id,
               rollout_mode: 'authoritative',
               brain_prompt_version: AGENT_A_BRAIN_PROMPT_VERSION,
               brain_model: generated.model,
-              brain_source: 'model',
-              brain_failure_reason: classifyBrainFailureReason(
-                errorCode(plannerError),
-                owned.business_context_available && owned.catalog_index !== null,
-              ),
-              context_recent_turn_count: agentABrainContext.turn.recent_turns.length,
-              context_memory_count: agentABrainContext.customer.memories.length,
-              used_memory_count: 0,
-              call_offer_transition: `${agentABrainContext.commercial_state.call_offer_count}->${agentABrainContext.commercial_state.call_offer_count}`,
+              used_memory_count: generated.proposal.used_memory_ids.length,
               proposed_action_type: generated.proposal.proposed_action.type,
-              authorized_action_type: 'none',
             })
-          }
-          if (planned !== null) {
+          } else {
+            const plannerStartedAt = Date.now()
+            let planned: Awaited<ReturnType<typeof planConversation.execute>> | null = null
+            try {
+              planned = await step(
+                'plan-agent-a-turn-v1',
+                () => planConversation.execute({
+                  client,
+                  input: {
+                    turn_id: owned.turn_id,
+                    trace_id: input.trace_id,
+                    move: authoritativeMove,
+                  },
+                }),
+                { maxAttempts: 1 },
+              )
+            } catch (plannerError) {
+              timings.planner_ms = Date.now() - plannerStartedAt
+              pipelineFailureDecision = brainAdvisoryOnlyDecision(generated.proposal, owned)
+              safeLog('studyx.turn.agent_a_brain_v1', {
+                trace_id: input.trace_id,
+                turn_id: owned.turn_id,
+                rollout_mode: 'authoritative',
+                brain_prompt_version: AGENT_A_BRAIN_PROMPT_VERSION,
+                brain_model: generated.model,
+                brain_source: 'model',
+                brain_failure_reason: classifyBrainFailureReason(
+                  errorCode(plannerError),
+                  owned.business_context_available && owned.catalog_index !== null,
+                ),
+                context_recent_turn_count: agentABrainContext.turn.recent_turns.length,
+                context_memory_count: agentABrainContext.customer.memories.length,
+                used_memory_count: 0,
+                call_offer_transition: `${agentABrainContext.commercial_state.call_offer_count}->${agentABrainContext.commercial_state.call_offer_count}`,
+                proposed_action_type: generated.proposal.proposed_action.type,
+                authorized_action_type: 'none',
+              })
+            }
+            if (planned !== null) {
             timings.planner_ms = Date.now() - plannerStartedAt
             const plannedFactIds = planned.fact_refs.map((fact: { id: string }) => fact.id)
             const resolved = await resolveAgentAProposalV1({
@@ -959,6 +979,7 @@ export const processInboundTurn = new Workflow({
               proposed_action_type: effective.proposal.proposed_action.type,
               authorized_action_type: planned.plan.allowed_business_action.type,
             })
+            }
           }
         }
       } catch (error) {
@@ -1138,7 +1159,7 @@ export const processInboundTurn = new Workflow({
     let decisionModel: string = DECISION_MODELS[0]
     let decisionProvider: 'botpress' | 'google-ai-direct' | 'groq-direct' | 'openai-direct' | 'deepseek-direct' = 'botpress'
     timings.model_ms = 0
-    if (pipelineCommit) {
+    if (pipelineCommit || agentTurnV2Commit) {
       decision = pipelinePlaceholder(pipelineMemoryCandidates)
       decisionProvider = pipelineDecisionProvider
       decisionModel = pipelineDecisionModel
@@ -1312,11 +1333,12 @@ export const processInboundTurn = new Workflow({
               // re-derives it before persisting plan_selected.
               authorized_payment_plan: authorizedPaymentPlan,
               conversation_pipeline_v1: pipelineCommit,
+              agent_turn_v2: agentTurnV2Commit,
               decision,
               model: {
                 provider: decisionProvider,
                 model: decisionModel,
-                prompt_version: pipelineCommit || pipelineFailureDecision?.reason_code.startsWith('BRAIN_')
+                prompt_version: pipelineCommit || agentTurnV2Commit || pipelineFailureDecision?.reason_code.startsWith('BRAIN_')
                   ? pipelinePromptVersion
                   : AGENT_A_PROMPT_VERSION,
               },

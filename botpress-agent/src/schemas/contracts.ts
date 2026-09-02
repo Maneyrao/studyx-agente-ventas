@@ -1,5 +1,6 @@
 import { z } from '@botpress/runtime'
 import { ConversationPipelineCommitV1Schema } from './conversation-pipeline'
+import { AgentATurnCommitV2Schema } from './agent-turn-v2'
 
 export const SourceSchema = z.literal('botpress')
 export const ChannelSchema = z.enum(['emulator', 'whatsapp'])
@@ -723,6 +724,7 @@ export const CommitDecisionInputSchema = z.object({
   authorized_offering_code: z.string().min(1).max(128).nullable().default(null),
   authorized_payment_plan: z.enum(['monthly_12', 'monthly_6', 'one_time']).nullable().default(null),
   conversation_pipeline_v1: ConversationPipelineCommitV1Schema.nullable().default(null),
+  agent_turn_v2: AgentATurnCommitV2Schema.nullable().default(null),
   decision: DecisionSchema,
   model: z.object({
     provider: z.enum(['botpress', 'google-ai-direct', 'groq-direct', 'openai-direct', 'deepseek-direct']),
