@@ -26,12 +26,63 @@ function validatePlannerless(input: {
   // it. The complete context list is returned as the repair alternative; it
   // does not silently authorize uncited prose.
   const citedAuthorizedIds = input.proposal.used_fact_ids.filter((id) => authorized.has(id))
-  const rejection = validateAgentATurnProposalV1({
+  let rejection = validateAgentATurnProposalV1({
     proposal: input.proposal,
     context: input.context,
     planned_fact_ids: citedAuthorizedIds,
     rejection_id: input.rejection_id,
   })
+  const moves = new Set([
+    input.proposal.move.move,
+    ...input.proposal.move.secondary_moves,
+  ])
+  const paymentActionRequested = moves.has('request_payment_link')
+    || (moves.has('provide_contact_details')
+      && input.context.commercial_state.awaiting_reply === 'contact_details')
+  const action = input.proposal.proposed_action
+  const paymentTransitionAuthorized = action.type === 'send_payment_link'
+    && paymentActionRequested
+    && !input.proposal.move.vetoes.includes('payment_link')
+    && !input.proposal.move.vetoes.includes('purchase')
+    && (input.context.capabilities.intake_missing ?? []).length === 0
+    && action.offering_code === input.context.commercial_state.selected_offering_code
+    && action.payment_plan === (
+      input.proposal.move.payment_plan
+      ?? input.context.commercial_state.selected_payment_plan
+    )
+  if (rejection !== null && paymentTransitionAuthorized) {
+    const remaining = rejection.rejections.filter((reason) => !(
+      reason.subject === 'send_payment_link'
+      || (reason.code === 'PLAN_NOT_SELECTED' && reason.subject === 'payment_plan')
+    ))
+    rejection = remaining.length === 0 ? null : { ...rejection, rejections: remaining }
+  }
+  if (input.proposal.proposed_action.type === 'send_payment_link' && !paymentActionRequested) {
+    const actionReason = { code: 'ACTION_NOT_AUTHORIZED' as const, subject: 'send_payment_link' }
+    rejection = rejection === null
+      ? {
+          schema_version: 1,
+          rejection_id: input.rejection_id,
+          attempt: 1,
+          rejections: [actionReason],
+          authorized_alternatives: {
+            fact_ids: [], actions: ['none'],
+            missing_information: [...(input.context.capabilities.intake_missing ?? [])],
+          },
+        }
+      : {
+          ...rejection,
+          rejections: rejection.rejections.some((reason) => (
+            reason.code === actionReason.code && reason.subject === actionReason.subject
+          )) ? rejection.rejections : [...rejection.rejections, actionReason],
+          authorized_alternatives: {
+            ...rejection.authorized_alternatives,
+            actions: rejection.authorized_alternatives.actions.filter(
+              (action) => action !== 'send_payment_link',
+            ),
+          },
+        }
+  }
   return rejection === null ? null : {
     ...rejection,
     authorized_alternatives: {
@@ -39,6 +90,51 @@ function validatePlannerless(input: {
       fact_ids: [...input.authorized_fact_ids],
     },
   }
+}
+
+const SENDS_LINK_BEFORE_NOUN = /\b(?:ahora\s+)?te\s+(?:mando|env[ií]o|comparto|paso)\b.{0,48}\b(?:link|enlace)\b/iu
+const SENDS_LINK_AFTER_NOUN = /\b(?:link|enlace)\b.{0,48}(?:\bya\s+(?:est[aá]|qued[oó])\b|\bte\s+(?:lo\s+)?(?:mand[eé]|envi[eé]|compart[ií]|pas[eé])\b)/iu
+
+function claimsImmediatePaymentLinkDelivery(proposal: AgentATurnProposalV1): boolean {
+  return proposal.response.messages.some((message) => (
+    SENDS_LINK_BEFORE_NOUN.test(message) || SENDS_LINK_AFTER_NOUN.test(message)
+  ))
+}
+
+/**
+ * Denying a side effect does not require a second author to replace safe
+ * customer-facing copy. When the only defect is an early payment action, the
+ * boundary can remove that capability while preserving DeepSeek's wording.
+ * A sentence claiming the link was sent is not safe to preserve and must go
+ * through the single model repair instead.
+ */
+function demoteUnauthorizedPaymentAction<T extends AgentAProposalEnvelopeV1>(input: {
+  readonly initial: T
+  readonly rejection: TurnRejectionV1
+  readonly context: AgentAContextV1
+  readonly authorized_fact_ids: readonly string[]
+}): T | null {
+  if (input.initial.proposal.proposed_action.type !== 'send_payment_link') return null
+  if (claimsImmediatePaymentLinkDelivery(input.initial.proposal)) return null
+  if (!input.rejection.rejections.some((reason) => (
+    (reason.code === 'ACTION_NOT_AUTHORIZED' && reason.subject === 'send_payment_link')
+    || reason.code === 'MISSING_INTAKE'
+  ))) return null
+  if (!input.rejection.rejections.every((reason) => (
+    reason.code === 'ACTION_NOT_AUTHORIZED' || reason.code === 'MISSING_INTAKE'
+  ))) return null
+
+  const candidate = {
+    ...input.initial,
+    proposal: { ...input.initial.proposal, proposed_action: { type: 'none' as const } },
+  }
+  const candidateRejection = validatePlannerless({
+    proposal: candidate.proposal,
+    context: input.context,
+    rejection_id: input.rejection.rejection_id,
+    authorized_fact_ids: input.authorized_fact_ids,
+  })
+  return candidateRejection === null ? candidate : null
 }
 
 /**
@@ -75,6 +171,23 @@ export async function resolveAgentAPlannerlessProposalV2<
         proposal_generation_calls: 1,
       },
       rejection: null,
+    }
+  }
+
+  const demoted = demoteUnauthorizedPaymentAction({
+    initial: input.initial,
+    rejection,
+    context: input.context,
+    authorized_fact_ids: factIds,
+  })
+  if (demoted !== null) {
+    return {
+      effective: demoted,
+      evidence: {
+        rejection_codes: rejection.rejections.map((reason) => reason.code),
+        repair_attempted: false, repaired: false, proposal_generation_calls: 1,
+      },
+      rejection,
     }
   }
 

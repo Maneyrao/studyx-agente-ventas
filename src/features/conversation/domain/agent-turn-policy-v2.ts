@@ -151,19 +151,19 @@ export function authorizeAgentTurnV2(input: {
   }
 
   let action: AgentAProposedActionV1 = { type: 'none' };
+  const paymentLinkRequested = moves.has('request_payment_link')
+    || (moves.has('provide_contact_details') && state.awaiting_reply === 'contact_details');
   if (proposal.proposed_action.type === 'request_call_now') {
     const requested = moves.has('request_call') && !proposal.move.vetoes.includes('call');
     if (!requested || !input.call_policy.may_request_call_now) reasons.push('ACTION_NOT_AUTHORIZED');
     else action = proposal.proposed_action;
   }
   if (proposal.proposed_action.type === 'send_payment_link') {
-    const requested = moves.has('request_payment_link')
-      || (moves.has('provide_contact_details') && state.awaiting_reply === 'contact_details');
     const matchesState = selectedOffering !== null
       && proposal.proposed_action.offering_code === selectedOffering
       && selectedPlan !== null
       && proposal.proposed_action.payment_plan === selectedPlan;
-    if (!requested || !matchesState
+    if (!paymentLinkRequested || !matchesState
       || proposal.move.vetoes.includes('payment_link')
       || proposal.move.vetoes.includes('purchase')) {
       reasons.push('ACTION_NOT_AUTHORIZED');
@@ -172,6 +172,25 @@ export function authorizeAgentTurnV2(input: {
     } else {
       action = proposal.proposed_action;
     }
+  }
+  if (
+    proposal.proposed_action.type === 'none'
+    && paymentLinkRequested
+    && selectedOffering !== null
+    && selectedPlan !== null
+    && !proposal.move.vetoes.includes('payment_link')
+    && !proposal.move.vetoes.includes('purchase')
+    && stateFacts.has('state:intake_recorded:v1')
+  ) {
+    // The model owns the conversational move; the backend owns side effects.
+    // Materializing the action encoded by an authorized request is not a
+    // conversational plan: it is the same narrow policy mapping used when the
+    // model redundantly emits proposed_action, with canonical IDs only.
+    action = {
+      type: 'send_payment_link',
+      offering_code: selectedOffering,
+      payment_plan: selectedPlan,
+    };
   }
 
   if (reasons.length > 0) return { ok: false, reasons: unique(reasons) };
@@ -199,6 +218,17 @@ export function authorizeAgentTurnV2(input: {
     nextPlan = proposal.move.payment_plan;
     stage = 'plan_selected';
     awaitingReply = 'payment_confirmation';
+  }
+  if (
+    moves.has('request_payment_link')
+    && selectedOffering !== null
+    && selectedPlan !== null
+    && !stateFacts.has('state:intake_recorded:v1')
+  ) {
+    nextOffering = selectedOffering;
+    nextPlan = selectedPlan;
+    stage = 'plan_selected';
+    awaitingReply = 'contact_details';
   }
   if (moves.has('continue_by_chat') || moves.has('decline_call')) {
     callPreference = moves.has('decline_call') ? 'declined' : 'chat';

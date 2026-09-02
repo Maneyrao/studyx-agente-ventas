@@ -619,9 +619,13 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     if (authorizedPaymentPlan !== null) {
       const batchMessages = await loadBatchMessages();
       const currentPaymentIntent = classifyCurrentPaymentIntent(batchMessages);
+      const completesRequestedIntake = preparedAgentTurn !== null
+        && validatedInput.agent_turn_v2?.proposal.move.move === 'provide_contact_details'
+        && pipelineStateBefore?.awaiting_reply === 'contact_details';
       const backendDerivedPlan = preparedPipeline?.plan.selected_payment_plan
         ?? derivePaymentPlanSelectionFromBatch(batchMessages)
         ?? (currentPaymentIntent.kind === 'direct' || currentPaymentIntent.kind === 'resume'
+          || completesRequestedIntake
           ? existingSalesContext?.selected_payment_plan ?? null
           : null);
       if (backendDerivedPlan !== authorizedPaymentPlan) {

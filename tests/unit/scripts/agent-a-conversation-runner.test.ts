@@ -14,6 +14,7 @@ import {
 import {
   buildLocalProviderInstructions,
   createLocalTurnSender,
+  inferCommittedStateFactsV1,
 } from '../../../scripts/run-agent-a-conversations';
 import { AGENT_A_PROMPT_VERSION } from '../../../botpress-agent/src/prompts/agent-a-sales-bridge';
 import { AGENT_A_BRAIN_PROMPT_VERSION } from '../../../botpress-agent/src/prompts/agent-a-brain-v1';
@@ -259,6 +260,37 @@ function localBrainClaimedTurn(): ClaimedTurn {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
+});
+
+describe('plannerless committed state fact evidence', () => {
+  it('records durable intake and payment facts after a successful plannerless commit', () => {
+    const facts = inferCommittedStateFactsV1({
+      enabled: true,
+      previous: new Set(),
+      contactIntakeMissing: [],
+      plannerlessMoves: ['report_payment'],
+    });
+
+    expect([...facts]).toEqual([
+      'process:human_verification:v1',
+      'process:access_after_verification:v1',
+      'state:intake_recorded:v1',
+      'state:payment_reported:v1',
+    ]);
+  });
+
+  it('does not manufacture state facts while the rollout capability is disabled', () => {
+    const previous = new Set(['state:intake_recorded:v1'] as const);
+    const facts = inferCommittedStateFactsV1({
+      enabled: false,
+      previous,
+      contactIntakeMissing: [],
+      plannerlessMoves: ['report_payment'],
+    });
+
+    expect(facts).toEqual(previous);
+    expect(facts).not.toBe(previous);
+  });
 });
 
 describe('Agent A conversation runner', () => {
@@ -575,7 +607,7 @@ describe('Agent A conversation runner', () => {
       model: {
         provider: 'deepseek-direct',
         model: 'deepseek-v4-flash',
-        prompt_version: 'studyx-agent-a-brain-v5',
+        prompt_version: 'studyx-agent-a-brain-v9',
       },
     });
     expect(result.turnDiagnostic).toMatchObject({
@@ -591,9 +623,12 @@ describe('Agent A conversation runner', () => {
     const proposal = {
       schema_version: 1,
       move: {
-        schema_version: 1, move: 'continue_by_chat', secondary_moves: [], vetoes: [], confidence: 0.98,
+        schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [], confidence: 0.98,
       },
-      response: { messages: ['Dale, seguimos por chat y vemos qué necesitás.'], call_offer: null },
+      response: {
+        messages: ['Te cuento lo más importante y vemos qué necesitás.'],
+        call_offer: 'Si querés, coordinamos una llamada para asesorarte mejor.',
+      },
       proposed_action: { type: 'none' },
       used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
     };
@@ -618,7 +653,7 @@ describe('Agent A conversation runner', () => {
       deepseekApiKey: 'test-deepseek-key', deepseekModel: 'deepseek-v4-flash',
     }, 'plannerless-v2', 'groq', 0, true, 'deepseek', undefined, true);
 
-    const result = await sendTurn('Prefiero seguir por chat', null);
+    const result = await sendTurn('Contame un poco más sobre el curso', null);
 
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/plan'))).toBe(false);
@@ -629,6 +664,10 @@ describe('Agent A conversation runner', () => {
       decision: { reason_code: 'AGENT_A_PLANNERLESS_V2_PENDING_BACKEND' },
     });
     expect(result.runtime?.capabilities).toMatchObject({ agent_a_plannerless_v2: true });
+    expect(result.turnDiagnostic).toMatchObject({
+      visibleCallOffers: 1,
+      callOfferLedgerEntries: 1,
+    });
   });
 
   it('runs the same one-repair authority cycle as production when the flag is enabled', async () => {

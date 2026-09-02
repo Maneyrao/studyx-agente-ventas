@@ -639,7 +639,7 @@ const URL_PATTERN = /https?:\/\/[^\s)\]"'<>]+/giu;
  * The article before "llamada" is optional and may be "una" or "la"
  * ("coordinamos la llamada", "¿agendamos una llamada?"). */
 const CALL_OFFER_PATTERN =
-  /\b(?:te (?:puedo |podemos )?llam(?:o|amos|arte|ar)|quer(?:é|e)s?\s+que\s+te\s+llame|puedo\s+llamarte|podemos\s+llamarte|coordin\w*\s+(?:una\s+|la\s+)?llamada|agendar\w*\s+(?:una\s+|la\s+)?llamada|solicit\w*\s+(?:una\s+|la\s+)?llamada)\b/giu;
+  /\b(?:te (?:puedo |podemos )?llam(?:o|amos|arte|ar)|quer(?:é|e)s?\s+que\s+te\s+llame|puedo\s+llamarte|podemos\s+llamarte|coordin\w*\s+(?:una\s+|la\s+)?llamada|agendar\w*\s+(?:una\s+|la\s+)?llamada|solicit\w*\s+(?:una\s+|la\s+)?llamada|arm(?:o|amos|arte|ar)\s+(?:una\s+|la\s+)?llamada|puedo\s+(?:explicarte|contarte|asesorarte)\b.{0,64}\b(?:por|en)\s+(?:una\s+|la\s+)?llamada)\b/giu;
 
 /**
  * Curated, high-precision patterns for the promises HARD_COMMERCIAL_RULES

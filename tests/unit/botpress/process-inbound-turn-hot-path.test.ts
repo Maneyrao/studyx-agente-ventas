@@ -427,7 +427,7 @@ describe('processInboundTurn hot path', () => {
           response: { messages: ['Buenísimo, Redes puede ser una opción muy práctica para vos.'] },
         },
       },
-      model: { provider: 'deepseek-direct', prompt_version: 'studyx-agent-a-brain-v5' },
+      model: { provider: 'deepseek-direct', prompt_version: 'studyx-agent-a-brain-v9' },
     });
   });
 
@@ -500,7 +500,7 @@ describe('processInboundTurn hot path', () => {
               },
             },
           },
-          model: { prompt_version: 'studyx-agent-a-brain-v5' },
+          model: { prompt_version: 'studyx-agent-a-brain-v9' },
         });
       } else {
         expect(commitInput).toMatchObject({
@@ -519,7 +519,7 @@ describe('processInboundTurn hot path', () => {
         const brainLog = logs.map((line) => JSON.parse(line) as Record<string, unknown>)
           .find((entry) => entry.event === 'studyx.turn.agent_a_brain_v1');
         expect(brainLog).toMatchObject({
-          brain_prompt_version: 'studyx-agent-a-brain-v5',
+          brain_prompt_version: 'studyx-agent-a-brain-v9',
           brain_model: 'openai/gpt-oss-120b',
           brain_source: 'model',
           context_recent_turn_count: 0,

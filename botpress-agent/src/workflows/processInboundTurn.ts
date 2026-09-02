@@ -861,8 +861,12 @@ export const processInboundTurn = new Workflow({
           )
           if (plannerlessV2Enabled) {
             timings.planner_ms = 0
+            const authoritativeGenerated = {
+              ...generated,
+              proposal: { ...generated.proposal, move: authoritativeMove },
+            }
             const resolved = await resolveAgentAPlannerlessProposalV2({
-              initial: generated,
+              initial: authoritativeGenerated,
               context: agentABrainContext,
               repair_enabled: repairEnabled,
               rejection_id: randomUUID(),
@@ -871,7 +875,7 @@ export const processInboundTurn = new Workflow({
                   || secrets.DEEPSEEK_API_KEY.length === 0) {
                   throw new Error('DEEPSEEK_API_KEY_MISSING')
                 }
-                return step(
+                const repaired = await step(
                   'repair-agent-a-turn-proposal-v2',
                   () => generateDeepSeekAgentATurnProposalV1({
                     context: { ...agentABrainContext, turn_rejection: rejection },
@@ -883,13 +887,18 @@ export const processInboundTurn = new Workflow({
                   }),
                   { maxAttempts: 1 },
                 )
+                const repairedMove = bindCurrentConversationalIntentToMoveV1(
+                  bindCurrentCatalogResolutionToMoveV1(repaired.proposal.move, owned),
+                  owned,
+                )
+                return { ...repaired, proposal: { ...repaired.proposal, move: repairedMove } }
               },
             })
             const effectiveGenerated = resolved.effective
             generated = effectiveGenerated
             agentTurnV2Commit = {
               schema_version: 2,
-              proposal: { ...effectiveGenerated.proposal, move: authoritativeMove },
+              proposal: effectiveGenerated.proposal,
             }
             pipelineMemoryCandidates = effectiveGenerated.proposal.memory_candidates
             safeLog('studyx.turn.agent_a_plannerless_v2', {

@@ -110,6 +110,28 @@ function argument(name: string): string | null {
   return index >= 0 ? process.argv[index + 1] ?? null : null;
 }
 
+export function inferCommittedStateFactsV1(input: {
+  readonly enabled: boolean;
+  readonly previous: ReadonlySet<StateFactIdV1>;
+  readonly contactIntakeMissing: readonly string[];
+  readonly plannerlessMoves?: readonly string[];
+  readonly plannedResponseGoal?: string;
+}): Set<StateFactIdV1> {
+  const facts = new Set(input.previous);
+  if (!input.enabled) return facts;
+  facts.add('process:human_verification:v1');
+  facts.add('process:access_after_verification:v1');
+  if (
+    input.contactIntakeMissing.length === 0
+    || input.plannedResponseGoal === 'confirm_payment_link'
+  ) facts.add('state:intake_recorded:v1');
+  if (
+    input.plannedResponseGoal === 'acknowledge_payment_report'
+    || input.plannerlessMoves?.includes('report_payment')
+  ) facts.add('state:payment_reported:v1');
+  return facts;
+}
+
 function makeRunId(): string {
   return new Date().toISOString().replace(/\D/g, '').slice(0, 14);
 }
@@ -607,8 +629,12 @@ export function createLocalTurnSender(
         };
         if (plannerlessV2) {
           latenciesMs.planner_ms = 0;
+          const authoritativeGenerated = {
+            ...generated,
+            proposal: { ...generated.proposal, move: authoritativeMove },
+          };
           const resolved = await resolveAgentAPlannerlessProposalV2({
-            initial: generated,
+            initial: authoritativeGenerated,
             context: brainContext,
             repair_enabled: claimed.features?.agent_a_repair_enabled === true,
             rejection_id: randomUUID(),
@@ -618,12 +644,17 @@ export function createLocalTurnSender(
               }
               evaluationPacingMs += await paceModelProvider();
               try {
-                return await generateDeepSeekAgentATurnProposalV1({
+                const repaired = await generateDeepSeekAgentATurnProposalV1({
                   context: { ...brainContext, turn_rejection: rejection },
                   apiKey: credentials.deepseekApiKey,
                   model: credentials.deepseekModel ?? DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
                   signal: new AbortController().signal,
                 });
+                const repairedMove = bindCurrentConversationalIntentToMoveV1(
+                  bindCurrentCatalogResolutionToMoveV1(repaired.proposal.move, claimed),
+                  claimed,
+                );
+                return { ...repaired, proposal: { ...repaired.proposal, move: repairedMove } };
               } catch (error) {
                 brainTransportRetries += 1;
                 throw error;
@@ -634,9 +665,13 @@ export function createLocalTurnSender(
           proposalCycleEvidence = resolved.evidence;
           agentTurnV2 = {
             schema_version: 2,
-            proposal: { ...generated.proposal, move: authoritativeMove },
+            proposal: generated.proposal,
           };
           visibleCallOffers = generated.proposal.response.call_offer ? 1 : 0;
+          // In the plannerless route the same successful backend commit that
+          // authorizes the model-owned offer also increments the durable
+          // ledger. There is no planner prediction to compare against.
+          callOfferLedgerEntries = visibleCallOffers;
           plannedBusinessAction = generated.proposal.proposed_action.type === 'none'
             ? null
             : { ...generated.proposal.proposed_action };
@@ -883,17 +918,16 @@ export function createLocalTurnSender(
       replayVerified = replayed.status === 'duplicate' && replayed.decision_id === committed.decision_id;
       if (!replayVerified) throw new Error('LOCAL_REPLAY_NOT_IDEMPOTENT');
     }
-    const materializedStateFacts = committedStateFacts.get(conversationId)
-      ?? new Set<StateFactIdV1>();
+    const materializedStateFacts = inferCommittedStateFactsV1({
+      enabled: process.env.AGENT_A_STATE_ASSERTIONS === 'true',
+      previous: committedStateFacts.get(conversationId) ?? new Set<StateFactIdV1>(),
+      contactIntakeMissing: claimed.contact_intake_missing,
+      plannerlessMoves: agentTurnV2
+        ? [agentTurnV2.proposal.move.move, ...agentTurnV2.proposal.move.secondary_moves]
+        : undefined,
+      plannedResponseGoal,
+    });
     if (process.env.AGENT_A_STATE_ASSERTIONS === 'true') {
-      materializedStateFacts.add('process:human_verification:v1');
-      materializedStateFacts.add('process:access_after_verification:v1');
-      if (plannedResponseGoal === 'confirm_payment_link') {
-        materializedStateFacts.add('state:intake_recorded:v1');
-      }
-      if (plannedResponseGoal === 'acknowledge_payment_report') {
-        materializedStateFacts.add('state:payment_reported:v1');
-      }
       committedStateFacts.set(conversationId, materializedStateFacts);
     }
     const turnDiagnostic: AgentTurnDiagnostic = {

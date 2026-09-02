@@ -58,16 +58,65 @@ describe('Agent A Brain V1 prompt', () => {
   it('uses the exact complete canonical prompt behind one immutable execution preamble', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v2');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v5');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v3');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v9');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('Backend policy and capabilities are authoritative');
     expect(instructions).toContain('Resolve the current message against commercial_state.awaiting_reply');
-    expect(instructions).toContain('response.call_offer (never in response.messages)');
+    expect(instructions).toContain('response.call_offer, never in response.messages');
     expect(instructions).toContain('Never echo an unresolved {{placeholder}}');
     expect(instructions).toContain("cite that fact's id in used_fact_ids");
+    expect(instructions).toContain('intake_missing is authoritative');
+    expect(instructions).toContain('never ask again for a field that is absent from intake_missing');
+    expect(instructions).toContain('the current explicit move may select the canonical plan and request its link');
+    expect(instructions).toContain('call_offer is required for the first select_course');
+    expect(instructions).toContain('for the second ask_course_information');
+    expect(instructions).toContain('Pedí únicamente los campos enumerados en `capabilities.intake_missing`');
     expect(instructions).toContain('<authorized_context>');
     expect(instructions).toContain('"memory-1"');
+  });
+
+  it('repairs an early payment action by continuing the intake instead of claiming a link', () => {
+    const rejected = context();
+    rejected.capabilities.intake_missing = ['correo'];
+    rejected.turn_rejection = {
+      schema_version: 1,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+      attempt: 1,
+      rejections: [
+        { code: 'ACTION_NOT_AUTHORIZED', subject: 'send_payment_link' },
+        { code: 'MISSING_INTAKE', subject: 'correo' },
+      ],
+      authorized_alternatives: {
+        fact_ids: [], actions: ['none'], missing_information: ['correo'],
+      },
+    };
+
+    const instructions = buildAgentABrainInstructionsV1(rejected);
+
+    expect(instructions).toContain('set proposed_action to {"type":"none"}');
+    expect(instructions).toMatch(/ask only the fields in\s+authorized_alternatives\.missing_information/u);
+    expect(instructions).toContain('do not say or imply that a payment link was sent');
+  });
+
+  it('repairs an unsolicited link after intake without turning data capture into payment consent', () => {
+    const rejected = context();
+    rejected.commercial_state.awaiting_reply = 'payment_confirmation';
+    rejected.commercial_state.selected_payment_plan = 'monthly_12';
+    rejected.turn_rejection = {
+      schema_version: 1,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+      attempt: 1,
+      rejections: [{ code: 'ACTION_NOT_AUTHORIZED', subject: 'send_payment_link' }],
+      authorized_alternatives: {
+        fact_ids: [], actions: ['none'], missing_information: [],
+      },
+    };
+
+    const instructions = buildAgentABrainInstructionsV1(rejected);
+
+    expect(instructions).toContain('Providing contact data is not payment-link consent');
+    expect(instructions).toContain('wait for a current explicit request');
   });
 
   it('resolves the canonical identity from the structured context, not the process env', () => {

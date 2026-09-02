@@ -649,7 +649,7 @@ describe('Agent A Brain V1', () => {
       'report_payment requires an explicit current-message claim that payment already happened',
     );
     expect(body.instructions).toContain(
-      'proposed_action must be none unless the prior-state capability explicitly authorizes it',
+      'the current explicit move may select the canonical plan and request its link in',
     );
     expect(body.instructions).toContain(
       'When turn_rejection is present',

@@ -169,6 +169,56 @@ describe('plannerless Agent A authority', () => {
     });
   });
 
+  it('materializes a requested link from the authorized move when the model omits the side effect', () => {
+    const result = authorize({
+      state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected' }),
+      intake: completeIntake,
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'select_payment_plan',
+          secondary_moves: ['request_payment_link'], vetoes: [],
+          payment_plan: 'monthly_6', confidence: 0.99,
+        },
+        response: { messages: ['Perfecto, avanzamos con esa opción.'] },
+        proposed_action: { type: 'none' },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: {
+        type: 'send_payment_link',
+        offering_code: 'redes_informaticas',
+        payment_plan: 'monthly_6',
+      },
+      transition: { stage: 'payment_link_sent' },
+    });
+  });
+
+  it('materializes the pending link when the final contact detail completed durable intake', () => {
+    const result = authorize({
+      state: state({
+        selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected', awaiting_reply: 'contact_details',
+      }),
+      intake: completeIntake,
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'provide_contact_details', secondary_moves: [], vetoes: [],
+          confidence: 0.99,
+        },
+        response: { messages: ['Gracias, ya está completo.'] },
+        proposed_action: { type: 'none' },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: { type: 'send_payment_link', payment_plan: 'monthly_6' },
+      transition: { stage: 'payment_link_sent', awaiting_reply: 'none' },
+    });
+  });
+
   it('rejects a payment action when durable intake is incomplete', () => {
     const result = authorize({
       state: state({
@@ -186,6 +236,54 @@ describe('plannerless Agent A authority', () => {
     });
 
     expect(result).toEqual({ ok: false, reasons: ['MISSING_INTAKE'] });
+  });
+
+  it('waits for contact details after a link request whose intake is incomplete', () => {
+    const result = authorize({
+      state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected' }),
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'select_payment_plan', secondary_moves: ['request_payment_link'],
+          vetoes: [], payment_plan: 'monthly_6', confidence: 0.99,
+        },
+        response: { messages: ['Para avanzar, pasame los datos que faltan.'] },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: { type: 'none' },
+      transition: {
+        selected_payment_plan: 'monthly_6', stage: 'plan_selected',
+        awaiting_reply: 'contact_details',
+      },
+    });
+  });
+
+  it('accepts the link action when contact details complete a pending intake', () => {
+    const result = authorize({
+      state: state({
+        selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected', awaiting_reply: 'contact_details',
+      }),
+      intake: completeIntake,
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'provide_contact_details', secondary_moves: [], vetoes: [],
+          confidence: 0.99,
+        },
+        response: { messages: ['Gracias, ya está todo para compartirte el link seguro.'] },
+        proposed_action: {
+          type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+        },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: { type: 'send_payment_link' },
+      transition: { stage: 'payment_link_sent', awaiting_reply: 'none' },
+    });
   });
 
   it('counts a visible call offer without letting the backend write its wording', () => {

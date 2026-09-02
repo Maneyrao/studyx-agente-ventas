@@ -33,6 +33,8 @@ describe('métricas por turno', () => {
     const metrics = [
       'Si querés, podemos coordinar una llamada o seguir por chat.',
       'Si querés, también podés solicitar una llamada o seguir por chat.',
+      'Si querés, puedo armarte una llamada breve para resolver tus dudas.',
+      'Si querés, puedo explicarte todo por una llamada breve.',
     ].map((assistant_text, turn_index) => buildTurnMetricsV1({
       case_id: 'call-visible',
       turn_index,
@@ -52,7 +54,7 @@ describe('métricas por turno', () => {
       runtime: null,
     }));
 
-    expect(metrics.map((turn) => turn.visible_call_offers)).toEqual([1, 1]);
+    expect(metrics.map((turn) => turn.visible_call_offers)).toEqual([1, 1, 1, 1]);
     expect(evaluateRunAcceptanceGatesV1(summarizeRunMetricsV1(metrics)))
       .toMatchObject({ call_offer_ledger_parity: true });
   });

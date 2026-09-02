@@ -124,4 +124,175 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.effective).toBe(initial);
     expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: false });
   });
+
+  it('demotes a payment action that the current conversational move did not request', async () => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'Soy Matía Damonte, matia@example.test';
+    current.commercial_state.awaiting_reply = 'payment_confirmation';
+    current.commercial_state.selected_payment_plan = 'monthly_6';
+    current.capabilities.may_send_payment_link = true;
+    const initial = generated(proposal({
+      move: {
+        schema_version: 1, move: 'provide_contact_details', secondary_moves: [], vetoes: [],
+        confidence: 1,
+      },
+      response: { messages: ['Gracias por los datos.'], call_offer: null },
+      proposed_action: {
+        type: 'send_payment_link', offering_code: 'maquillaje-profesional',
+        payment_plan: 'monthly_6',
+      },
+      used_fact_ids: [],
+    }));
+    const repair = vi.fn();
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: true, repair,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal).toMatchObject({
+      response: initial.proposal.response,
+      proposed_action: { type: 'none' },
+    });
+  });
+
+  it('accepts a link action when the same explicit move selects its canonical plan', async () => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'Elijo 6 cuotas y pasame el link';
+    current.commercial_state.selected_payment_plan = null;
+    current.capabilities.may_send_payment_link = true;
+    current.capabilities.intake_missing = [];
+    const initial = generated(proposal({
+      move: {
+        schema_version: 1, move: 'select_payment_plan',
+        secondary_moves: ['request_payment_link'], vetoes: [],
+        payment_plan: 'monthly_6', confidence: 1,
+      },
+      response: { messages: ['Perfecto, te comparto el link seguro.'], call_offer: null },
+      proposed_action: {
+        type: 'send_payment_link', offering_code: 'maquillaje-profesional',
+        payment_plan: 'monthly_6',
+      },
+      used_fact_ids: [],
+    }));
+    const repair = vi.fn();
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: true, repair,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective).toBe(initial);
+    expect(result.rejection).toBeNull();
+  });
+
+  it('demotes an unsolicited payment action while preserving safe model-owned acknowledgement', async () => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'Soy Tomás Quiroga, tomas@example.test';
+    current.commercial_state.awaiting_reply = 'payment_confirmation';
+    current.commercial_state.selected_payment_plan = 'monthly_6';
+    current.capabilities.may_send_payment_link = false;
+    current.capabilities.intake_missing = [];
+    const initial = generated(proposal({
+      move: {
+        schema_version: 1, move: 'provide_contact_details', secondary_moves: [], vetoes: [],
+        confidence: 1,
+      },
+      response: {
+        messages: ['Gracias por pasarme tus datos. Cuando quieras avanzar, pedime el link.'],
+        call_offer: null,
+      },
+      proposed_action: {
+        type: 'send_payment_link', offering_code: 'maquillaje-profesional',
+        payment_plan: 'monthly_6',
+      },
+      used_fact_ids: [],
+    }));
+    const repair = vi.fn();
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: true, repair,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+    expect(result.effective.proposal.response.messages).toEqual(initial.proposal.response.messages);
+    expect(result.evidence).toMatchObject({
+      rejection_codes: ['ACTION_NOT_AUTHORIZED'], repair_attempted: false,
+      repaired: false, proposal_generation_calls: 1,
+    });
+  });
+
+  it('demotes a premature payment action while contact intake is still incomplete', async () => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'Soy Nadia Ferrer';
+    current.commercial_state.awaiting_reply = 'contact_details';
+    current.commercial_state.selected_payment_plan = 'monthly_12';
+    current.capabilities.may_send_payment_link = true;
+    current.capabilities.intake_missing = ['correo'];
+    const initial = generated(proposal({
+      move: {
+        schema_version: 1, move: 'provide_contact_details', secondary_moves: [], vetoes: [],
+        confidence: 1,
+      },
+      response: { messages: ['Gracias, Nadia. Todavía me falta tu correo.'], call_offer: null },
+      proposed_action: {
+        type: 'send_payment_link', offering_code: 'maquillaje-profesional',
+        payment_plan: 'monthly_12',
+      },
+      used_fact_ids: [],
+    }));
+    const repair = vi.fn();
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: true, repair,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+    expect(result.evidence).toMatchObject({
+      rejection_codes: ['MISSING_INTAKE'], repair_attempted: false,
+      proposal_generation_calls: 1,
+    });
+  });
+
+  it('does not demote an unsolicited action when the prose falsely claims the link was sent', async () => {
+    const current = context();
+    current.commercial_state.awaiting_reply = 'payment_confirmation';
+    current.commercial_state.selected_payment_plan = 'monthly_6';
+    current.capabilities.may_send_payment_link = false;
+    current.capabilities.intake_missing = [];
+    const initial = generated(proposal({
+      move: {
+        schema_version: 1, move: 'provide_contact_details', secondary_moves: [], vetoes: [],
+        confidence: 1,
+      },
+      response: { messages: ['Perfecto, ahora te comparto el link de pago.'], call_offer: null },
+      proposed_action: {
+        type: 'send_payment_link', offering_code: 'maquillaje-profesional',
+        payment_plan: 'monthly_6',
+      },
+      used_fact_ids: [],
+    }));
+    const repaired = generated(proposal({
+      move: initial.proposal.move,
+      response: { messages: ['Gracias por pasarme tus datos. Avisame cuando quieras avanzar.'], call_offer: null },
+      proposed_action: { type: 'none' }, used_fact_ids: [],
+      repair_of: { rejection_id: '00000000-0000-4000-8000-000000000001', attempt: 1 },
+    }));
+    const repair = vi.fn().mockResolvedValue(repaired);
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: true, repair,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.effective).toBe(repaired);
+    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
+  });
 });
