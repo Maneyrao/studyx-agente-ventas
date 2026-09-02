@@ -184,6 +184,46 @@ describe('prepareConversationPipelineCommitV1', () => {
     })).toEqual({ ok: true });
   });
 
+  /**
+   * `fin-1` entregó "Registré tus datos." con el teléfono todavía sin dar. El
+   * hecho `state:intake_recorded:v1` no estaba materializado —el diagnóstico
+   * lo confirma— y el guard V5, probado aislado, borra esa oración con ese
+   * mismo conjunto de hechos. Lo que no estaba probado era el cableado: que
+   * el commit efectivamente le pase los hechos de estado al ensamblador.
+   *
+   * Sin este test, un turno podía afirmar un registro que no ocurrió y las
+   * suites seguían verdes.
+   */
+  it('borra la afirmación de registro cuando el intake todavía está incompleto', async () => {
+    const partialIntake = async () => ({
+      nombre: 'Tomás', apellido: 'Quiroga',
+      correo: 'tomas.quiroga@example.test', telefono: null,
+    });
+    const stateStore = store(state());
+    const move = {
+      schema_version: 1 as const, move: 'provide_contact_details' as const,
+      secondary_moves: [], vetoes: [], confidence: 0.96,
+    };
+    const planned = await authoritativelyPlanConversationTurnV1({
+      turn: { workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', move, business_context: business, catalog_index: index,
+    }, { state_store: stateStore, contact_intake: partialIntake });
+
+    const prepared = await prepareConversationPipelineCommitV1({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', move, expected_plan_hash: planned.plan_hash,
+      composition: {
+        schema_version: 1,
+        narrative: { opening: 'Registré tus datos.', explanation: null, next_question: null },
+        used_fact_ids: [],
+      },
+      business_context: business, catalog_index: index,
+      state_assertions_enabled: true,
+    }, { state_store: stateStore, contact_intake: partialIntake });
+
+    expect(prepared.decision.response ?? '').not.toMatch(/registr[ée]\s+tus\s+datos/iu);
+  });
+
   it('rejects a stale or tampered plan hash before creating authority', async () => {
     await expect(prepareConversationPipelineCommitV1({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },

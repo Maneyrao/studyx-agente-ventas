@@ -311,6 +311,7 @@ describe('claimBatch', () => {
       agentAContextScoping: true,
       agentARepairEnabled: true,
       agentASingleRoute: true,
+      agentAStateAssertions: true,
       agentABrainShadow: false,
     });
 
@@ -321,6 +322,10 @@ describe('claimBatch', () => {
         agent_a_context_scoping: true,
         agent_a_repair_enabled: true,
         agent_a_single_route: true,
+        // V5 gobierna si una afirmación de estado necesita un hecho
+        // materializado. Sin proyectarla, una corrida podía medir con la
+        // capacidad apagada y nadie podía notarlo desde el reporte.
+        agent_a_state_assertions: true,
         agent_a_brain_v1_shadow: false,
       },
     });

@@ -134,6 +134,15 @@ export type AgentRuntimeEvidence = {
   prompt_version: string;
   route_origin: string;
   route_reason: string;
+  /**
+   * Capacidades que la API dijo tener en ESTE turno.
+   *
+   * Sin esto una corrida podía medir con V5 apagado y el reporte se veía
+   * idéntico a una con V5 encendido: la diferencia sólo aparecía como una
+   * afirmación de estado que sobrevivía, sin forma de saber si era un hueco
+   * del guard o la capacidad apagada.
+   */
+  capabilities?: Record<string, boolean>;
   raw_response_hash: string | null;
   committed_response_hash: string | null;
   fallback_reason: string | null;

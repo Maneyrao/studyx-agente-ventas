@@ -163,6 +163,7 @@ export async function POST(
         agentABrainEnabled: brainConfig.enabled,
         agentAContextScoping: rolloutConfig.contextScoping,
         agentARepairEnabled: rolloutConfig.repairEnabled,
+        agentAStateAssertions: rolloutConfig.stateAssertions,
         agentASingleRoute: rolloutConfig.singleRoute,
         agentABrainShadow: brainConfig.shadow,
       }

@@ -870,6 +870,12 @@ export function createLocalTurnSender(
       prompt_version: promptVersion,
       route_origin: commercialRoute.origin,
       route_reason: commercialRoute.reason,
+      capabilities: {
+        agent_a_brain_v1_enabled: claimed.features?.agent_a_brain_v1_enabled === true,
+        agent_a_context_scoping: claimed.features?.agent_a_context_scoping === true,
+        agent_a_repair_enabled: claimed.features?.agent_a_repair_enabled === true,
+        agent_a_state_assertions: claimed.features?.agent_a_state_assertions === true,
+      },
       raw_response_hash: decision.response === null
         ? null
         : createHash('sha256').update(decision.response).digest('hex'),
