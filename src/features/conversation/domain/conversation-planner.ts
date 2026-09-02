@@ -299,6 +299,23 @@ function incompatible(moves: readonly ConversationMoveKindV1[], vetoes: Readonly
   return false;
 }
 
+/**
+ * Some compatible moves have a domain dependency that is stronger than the
+ * order chosen by the model. A payment plan must exist before the planner can
+ * authorize its link. Both `select -> request` and `request -> select` mean
+ * the same customer intent, so make that dependency explicit instead of
+ * letting array order decide whether the sale advances.
+ */
+function orderCompoundMoves(moves: readonly ConversationMoveKindV1[]): ConversationMoveKindV1[] {
+  const ordered = [...moves];
+  const selectIndex = ordered.indexOf('select_payment_plan');
+  const requestIndex = ordered.indexOf('request_payment_link');
+  if (selectIndex < 0 || requestIndex < 0 || selectIndex < requestIndex) return ordered;
+  ordered.splice(selectIndex, 1);
+  ordered.splice(ordered.indexOf('request_payment_link'), 0, 'select_payment_plan');
+  return ordered;
+}
+
 function requestContactDetails(state: ConversationStateV1): TurnPlanV1 {
   return {
     ...unchangedPlan(state, 'request_contact_details', ['contact_details']),
@@ -538,7 +555,7 @@ export function planConversationTurn(input: PlanConversationTurnInputV1): TurnPl
   if (move.confidence < 0.75 || move.move === 'unknown') {
     return unchangedPlan(input.sales_context, 'clarify_current_step');
   }
-  const moves = [move.move, ...move.secondary_moves];
+  const moves = orderCompoundMoves([move.move, ...move.secondary_moves]);
   if (incompatible(moves, vetoes)) {
     return unchangedPlan(input.sales_context, 'clarify_current_step');
   }

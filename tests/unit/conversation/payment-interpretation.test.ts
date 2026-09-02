@@ -70,6 +70,25 @@ describe('payment interpretation', () => {
     });
   });
 
+  it('authorizes the same compound request when the model reports the link intent first', () => {
+    const result = planConversationTurn({
+      move: move('request_payment_link', {
+        secondary_moves: ['select_payment_plan'],
+        payment_plan: 'one_time',
+      }),
+      sales_context: courseChosen,
+      business_context: business,
+      contact_intake: intake,
+    });
+
+    expect(result.selected_payment_plan).toBe('one_time');
+    expect(result.allowed_business_action).toEqual({
+      type: 'send_payment_link',
+      offering_code: 'redes-informaticas',
+      payment_plan: 'one_time',
+    });
+  });
+
   /**
    * base_02. Asking what an already-sent link is for is a question about the
    * current state, not a request for another link. The turn must answer it and
