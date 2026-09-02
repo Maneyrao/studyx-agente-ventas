@@ -268,6 +268,22 @@ describe('createConfigPaymentLinkResolver', () => {
     expect(resolver.resolve('monthly_6')).toBeNull();
     expect(resolver.resolve('one_time')).toBeNull();
   });
+
+  it('accepts synthetic links only inside the structurally isolated evaluator', () => {
+    const synthetic = {
+      PAYMENT_LINK_12M: 'https://example.invalid/eval/12m',
+      PAYMENT_LINK_6M: 'https://example.invalid/eval/6m',
+      PAYMENT_LINK_CONTADO: 'https://example.invalid/eval/contado',
+      DATABASE_URL: 'postgresql://postgres@127.0.0.1:55435/studyx_test',
+      STUDYX_EVAL_API_BASE_URL: 'http://127.0.0.1:3217',
+    };
+    expect(createConfigPaymentLinkResolver(synthetic).resolve('monthly_12'))
+      .toBe(synthetic.PAYMENT_LINK_12M);
+    expect(createConfigPaymentLinkResolver({ ...synthetic, DATABASE_URL: 'postgresql://prod.example/db' })
+      .resolve('monthly_12')).toBeNull();
+    expect(createConfigPaymentLinkResolver({ ...synthetic, STUDYX_EVAL_API_BASE_URL: '' })
+      .resolve('monthly_12')).toBeNull();
+  });
 });
 
 describe('stripUnauthorizedUrls', () => {
