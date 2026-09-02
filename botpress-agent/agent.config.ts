@@ -46,20 +46,23 @@ export default defineConfig({
       description: "HMAC-SHA256 key used to sign StudyX API requests.",
     },
     GEMINI_API_KEY: {
+      optional: true,
       description:
-        "Google AI Studio key used by transcribeAudio (Phase 4). Model: gemini-2.5-flash.",
+        "Retired from production Agent A. Optional legacy audio compatibility only.",
     },
     GROQ_API_KEY: {
+      optional: true,
       description:
-        "Groq API key used by the bounded Agent A conversational brain.",
+        "Retired compatibility secret. Production Agent A never falls back to Groq.",
     },
     DEEPSEEK_API_KEY: {
       description:
         "DeepSeek API key used by the primary Agent A conversational brain. Provision directly in Botpress; never store it in Git.",
     },
     OPENAI_API_KEY: {
+      optional: true,
       description:
-        "OpenAI project key used by the production Agent A brain. Provision directly in Botpress; never store it in Git.",
+        "Retired compatibility secret. Production Agent A never falls back to OpenAI.",
     },
     TELEGRAM_BOT_A_TOKEN: {
       description:
