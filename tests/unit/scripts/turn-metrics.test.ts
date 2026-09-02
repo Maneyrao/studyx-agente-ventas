@@ -151,6 +151,28 @@ describe('métricas por turno', () => {
     expect(metrics.false_promise_count).toBe(1);
   });
 
+  it('no marca como falsa una afirmación respaldada por estado durable del commit', () => {
+    const metric = buildTurnMetricsV1({
+      case_id: 'intake-committed',
+      turn_index: 0,
+      visible_message_count: 1,
+      latency_ms: 1_000,
+      assistant_text: 'Registré tus datos.',
+      diagnostic: {
+        catalogResolution: { kind: 'no_catalog_intent' },
+        selectedOfferingCode: null,
+        decisionBusinessAction: null,
+        authorizedProtectedFacts: [],
+        authorizedUrls: [],
+        commitError: null,
+        materializedStateFactIds: ['state:intake_recorded:v1'],
+      },
+      runtime: null,
+    });
+
+    expect(metric.false_operational_promises).toEqual([]);
+  });
+
   it('una corrida sin turnos no divide por cero', () => {
     const metrics = summarizeRunMetricsV1([]);
     expect(metrics.conversational_success_rate).toBe(0);

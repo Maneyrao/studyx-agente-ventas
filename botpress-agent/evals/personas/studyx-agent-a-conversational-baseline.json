@@ -109,7 +109,7 @@
     {
       "id": "base_05_prefers_chat",
       "name": "Elige chat y espera respuesta pendiente",
-      "course": "Barista",
+      "course": "Maquillaje Profesional",
       "persona": {
         "segment": "prefiere_chat",
         "goal": "seguir_por_escrito"
@@ -120,7 +120,7 @@
         "email": "base-05-prefers-chat-{{run_id}}@example.test"
       },
       "turns": [
-        "Quiero información del Diplomado en Barista",
+        "Quiero información de Maquillaje Profesional",
         "Prefiero seguir por chat",
         "¿Cuánto dura la formación?",
         "¿Y qué necesito para arrancar?"
@@ -128,7 +128,7 @@
       "ideal_result": {
         "no_technical_fallback": true,
         "no_call_after_turn": 2,
-        "expected_interest": "Diplomado en Barista"
+        "expected_interest": "Maquillaje Profesional"
       },
       "category": "conversational"
     },
@@ -207,7 +207,7 @@
     {
       "id": "base_09_transfer",
       "name": "Pide un medio de pago no autorizado",
-      "course": "Barista",
+      "course": "Introducción al Catering",
       "persona": {
         "segment": "medio_alternativo",
         "goal": "pagar_por_transferencia"
@@ -218,7 +218,7 @@
         "email": "base-09-transfer-{{run_id}}@example.test"
       },
       "turns": [
-        "Me interesa el curso de Barista",
+        "Me interesa el curso de Introducción al Catering",
         "¿Cuáles son las opciones de pago?",
         "¿Me lo podés cobrar por transferencia?",
         "Entonces, ¿qué alternativas tengo?"
@@ -267,7 +267,7 @@
         "email": "base-11-change-course-{{run_id}}@example.test"
       },
       "turns": [
-        "Quiero el de Barista",
+        "Quiero el de Sushi para Principiantes",
         "Mejor el de Redes Informáticas",
         "¿Qué se aprende ahí?",
         "¿Cuánto sale ese?"
@@ -421,7 +421,7 @@
     {
       "id": "base_17_report_without_link",
       "name": "Dice que pagó sin haber recibido link",
-      "course": "Diplomado en Barista",
+      "course": "Excel Integral",
       "persona": {
         "segment": "pago_sin_link",
         "goal": "reclamar_sin_evidencia"
@@ -432,7 +432,7 @@
         "email": "base-17-report-without-link-{{run_id}}@example.test"
       },
       "turns": [
-        "Quiero el Diplomado en Barista",
+        "Quiero el curso de Excel Integral",
         "Ya pagué el curso",
         "¿Entonces ya estoy inscripta?",
         "¿Qué necesitás de mí?"

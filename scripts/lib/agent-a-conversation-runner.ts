@@ -90,6 +90,10 @@ export type AgentTurnDiagnostic = {
   };
   plannedResponseGoal?: string;
   plannedFactIds?: readonly string[];
+  /** Backend-only state/process capabilities proven by a successful local
+   * commit. Kept separate from canonical planner facts so the evaluator does
+   * not pretend they crossed the Botpress wire. */
+  materializedStateFactIds?: readonly StateFactIdV1[];
   replayVerified?: boolean;
   brainFailureReason?: string | null;
   brainFailureCode?: string | null;
@@ -1690,11 +1694,7 @@ export function buildTurnMetricsV1(input: {
 }): TurnMetricsV1 {
   const deliberateSilenceReason = input.diagnostic?.deliberateSilenceReason ?? null;
   const fallbackReason = normalizeFallbackReasonV1(input.diagnostic, input.runtime);
-  const materializedFacts = new Set(
-    (input.diagnostic?.plannedFactIds ?? []).filter((factId): factId is StateFactIdV1 => (
-      factId.startsWith('state:') || factId.startsWith('process:')
-    )),
-  );
+  const materializedFacts = new Set(input.diagnostic?.materializedStateFactIds ?? []);
   const unsupportedAssertions = input.assistant_text.trim().length === 0
     ? []
     : unsupportedOperationalAssertionsV1(input.assistant_text, materializedFacts)

@@ -82,6 +82,7 @@ import { AGENT_A_BRAIN_PROMPT_VERSION } from '../botpress-agent/src/prompts/agen
 import { deliverAuthorizedLocalOutbound } from './lib/local-authorized-delivery';
 import { createLocalEvalClaimCleanup } from './lib/local-eval-claim-cleanup';
 import { readOptionalJsonConfig } from './lib/optional-json-config';
+import type { StateFactIdV1 } from '../src/features/conversation/domain/state-fact-registry';
 
 const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -376,6 +377,7 @@ export function createLocalTurnSender(
     ?? process.env.VERCEL_GIT_COMMIT_SHA
     ?? execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   const turnCounters = new Map<string, number>();
+  const committedStateFacts = new Map<string, Set<StateFactIdV1>>();
   let previousModelStartedAt: number | null = minimumModelIntervalMs > 0 ? Date.now() : null;
 
   const paceModelProvider = async (): Promise<number> => {
@@ -835,8 +837,22 @@ export function createLocalTurnSender(
       replayVerified = replayed.status === 'duplicate' && replayed.decision_id === committed.decision_id;
       if (!replayVerified) throw new Error('LOCAL_REPLAY_NOT_IDEMPOTENT');
     }
+    const materializedStateFacts = committedStateFacts.get(conversationId)
+      ?? new Set<StateFactIdV1>();
+    if (process.env.AGENT_A_STATE_ASSERTIONS === 'true') {
+      materializedStateFacts.add('process:human_verification:v1');
+      materializedStateFacts.add('process:access_after_verification:v1');
+      if (plannedResponseGoal === 'confirm_payment_link') {
+        materializedStateFacts.add('state:intake_recorded:v1');
+      }
+      if (plannedResponseGoal === 'acknowledge_payment_report') {
+        materializedStateFacts.add('state:payment_reported:v1');
+      }
+      committedStateFacts.set(conversationId, materializedStateFacts);
+    }
     const turnDiagnostic: AgentTurnDiagnostic = {
       ...claimTimeDiagnostic,
+      materializedStateFactIds: [...materializedStateFacts],
       authorizedProtectedFacts:
         committed.outbound?.authorized_egress.protected_facts ?? [],
       authorizedUrls: committed.outbound?.authorized_egress.authorized_urls ?? [],
