@@ -226,7 +226,7 @@ describe('Agent A Brain V1', () => {
     expect(composition.narrative.opening).toBe(natural);
   });
 
-  it('preserves natural prose and delegates commercial validation to the backend', () => {
+  it('prunes an unauthorized commercial value while preserving the safe model prose', () => {
     const composition = buildSafeAgentABrainCompositionV1({
       proposal: parseAgentATurnProposalV1(proposal({
         response: {
@@ -245,8 +245,8 @@ describe('Agent A Brain V1', () => {
     });
 
     expect(composition.narrative).toEqual({
-      opening: 'Podemos estudiar de forma virtual.',
-      explanation: 'Podemos revisar juntos lo que más te importa.',
+      opening: 'Podemos revisar juntos lo que más te importa.',
+      explanation: null,
       next_question: null,
     });
     expect(composition.used_fact_ids).toEqual(['offering:redes-informaticas:name:v1']);

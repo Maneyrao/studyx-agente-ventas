@@ -90,7 +90,6 @@ export function buildTurnRejectionV1(input: {
 export function isPrunableRejectionV1(rejection: TurnRejectionV1): boolean {
   return !rejection.rejections.some((reason) => (
     reason.code === 'ACTION_NOT_AUTHORIZED'
-    || reason.code === 'FACT_VALUE_MISMATCH'
     || reason.code === 'CALL_BUDGET_EXHAUSTED'
     || reason.code === 'MISSING_INTAKE'
   ));

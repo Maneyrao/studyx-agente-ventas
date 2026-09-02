@@ -797,12 +797,6 @@ export function buildSafeAgentABrainCompositionV1(input: {
   const citedValues = [...valuesById]
     .filter(([id]) => citedIds.has(id))
     .map(([, value]) => value);
-  const canonicalPaymentGoal = [
-    'present_payment_options',
-    'confirm_selected_plan',
-    'acknowledge_payment_deferral',
-    'confirm_payment_link',
-  ].includes(input.response_goal);
   const unsupportedPrerequisiteClaim = /\b(?:no\s+(?:necesit[aá]s?|hace\s+falta|requiere)|(?:requisitos?|prerrequisitos?|conocimientos?\s+previos?|experiencia\s+previa)\s+(?:no\s+)?(?:son|es|est[aá]n|se\s+requieren?))\b/iu;
   const safeMessages = input.proposal.response.messages.map(compactMessage).filter((message) => {
     const normalized = message.normalize('NFKC').toLocaleLowerCase('es');
@@ -813,7 +807,7 @@ export function buildSafeAgentABrainCompositionV1(input: {
     // natural language (for example "tenemos opciones") to be replaced by a
     // canned fallback before the authority boundary could inspect it.
     return !unauthorizedValues.some((value) => normalized.includes(value))
-      && (!canonicalPaymentGoal || citesOnlyAuthorizedValues(message, citedValues))
+      && citesOnlyAuthorizedValues(message, citedValues)
       && (!asksAboutUnspecifiedPrerequisites || !unsupportedPrerequisiteClaim.test(message));
   });
   // A transactional goal constrains which FACTS may appear, never who writes
@@ -871,7 +865,8 @@ function citesOnlyAuthorizedValues(
     (value) => extractProtectedFacts(value).map((fact) => `${fact.kind}\u0000${fact.value}`),
   ));
   return extractProtectedFacts(message).every(
-    (fact) => authorized.has(`${fact.kind}\u0000${fact.value}`),
+    (fact) => fact.kind === 'offering'
+      || authorized.has(`${fact.kind}\u0000${fact.value}`),
   );
 }
 
@@ -1210,7 +1205,6 @@ export function decideRepairLevelV1(input: {
   // válida una acción sin precondición.
   const prunable = !input.rejection.rejections.some((reason) => (
     reason.code === 'ACTION_NOT_AUTHORIZED'
-    || reason.code === 'FACT_VALUE_MISMATCH'
     || reason.code === 'CALL_BUDGET_EXHAUSTED'
     || reason.code === 'MISSING_INTAKE'
   ))

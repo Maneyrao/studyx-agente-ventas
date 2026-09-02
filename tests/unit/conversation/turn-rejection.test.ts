@@ -62,11 +62,10 @@ describe('TurnRejectionV1', () => {
     expect(isStructuredRejectionSubjectV1('')).toBe(false);
   });
 
-  it('una acción o un valor comercial inválido nunca se resuelven con poda parcial', () => {
-    // No hay oración parcial que vuelva válida una acción o un valor no autorizado.
+  it('una acción inválida nunca se resuelve con poda parcial', () => {
+    // No hay oración parcial que vuelva válida una acción no autorizada.
     for (const code of [
       'ACTION_NOT_AUTHORIZED',
-      'FACT_VALUE_MISMATCH',
       'CALL_BUDGET_EXHAUSTED',
       'MISSING_INTAKE',
     ] as const) {
