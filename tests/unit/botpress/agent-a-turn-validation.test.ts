@@ -251,3 +251,56 @@ describe('validación de la propuesta del turno', () => {
     }
   });
 });
+
+/**
+ * V8 — un borrador idéntico al último mensaje del agente.
+ *
+ * `base_20_withholds_data` y `base_09_transfer` fallan igual en todas las
+ * corridas: dos turnos consecutivos reciben el mismo trío (move, objetivo,
+ * hechos), y con eso el modelo devuelve el turno anterior carácter por
+ * carácter. La regla de continuidad del prompt bajó la repetición a la mitad
+ * pero no la elimina, porque cuando el material autorizado es idéntico repetir
+ * es la salida más probable.
+ *
+ * El backend no puede reescribir la copia —eso lo prohíbe A3— pero sí puede
+ * rechazar: devolver el mismo mensaje no es contestar, y la reparación es
+ * exactamente el mecanismo que ya existe para un borrador inaceptable.
+ */
+describe('V8 respuesta repetida', () => {
+  const previous = 'Entiendo, no hay problema. Quedo a disposición.';
+
+  function withPrevious(messages: [string]) {
+    return validateAgentATurnProposalV1({
+      proposal: proposal({
+        response: { messages, call_offer: null },
+        used_fact_ids: [],
+      }),
+      context: context({
+        turn: {
+          batch_messages: [{ id: 'm2', text: '¿Igual me podés anotar?' }],
+          recent_turns: [
+            { id: 'r1', direction: 'inbound', content: 'No te voy a dar mis datos' },
+            { id: 'r2', direction: 'outbound', content: previous },
+          ],
+        },
+      } as Partial<AgentAContextV1>),
+      planned_fact_ids: [],
+      rejection_id: '11111111-1111-4111-8111-111111111111',
+    });
+  }
+
+  it('rechaza un borrador igual al último mensaje del agente', () => {
+    const rejection = withPrevious([previous]);
+    expect(rejection?.rejections.map((r) => r.code)).toContain('REPEATED_AGENT_REPLY');
+  });
+
+  it('ignora diferencias de espaciado, que no cambian lo que el cliente lee', () => {
+    const rejection = withPrevious(['Entiendo,  no hay problema.\n Quedo a disposición. ']);
+    expect(rejection?.rejections.map((r) => r.code)).toContain('REPEATED_AGENT_REPLY');
+  });
+
+  it('no rechaza una respuesta que dice algo distinto', () => {
+    const rejection = withPrevious(['Sin tus datos no puedo dejarte anotado.']);
+    expect(rejection?.rejections.map((r) => r.code) ?? []).not.toContain('REPEATED_AGENT_REPLY');
+  });
+});

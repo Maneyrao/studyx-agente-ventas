@@ -13,7 +13,7 @@ const alternatives = {
 };
 
 describe('TurnRejectionV1', () => {
-  it('expone los ocho códigos de la especificación', () => {
+  it('expone los nueve códigos de la especificación', () => {
     expect([...TURN_REJECTION_CODES_V1].sort()).toEqual([
       'ACTION_NOT_AUTHORIZED',
       'CALL_BUDGET_EXHAUSTED',
@@ -22,6 +22,8 @@ describe('TurnRejectionV1', () => {
       'FACT_VALUE_MISMATCH',
       'MISSING_INTAKE',
       'PLAN_NOT_SELECTED',
+      // V8: devolver el mismo mensaje que ya se mandó no es contestar.
+      'REPEATED_AGENT_REPLY',
       'UNSUPPORTED_OPERATIONAL_CLAIM',
     ]);
   });

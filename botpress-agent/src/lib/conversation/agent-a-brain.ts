@@ -11,6 +11,7 @@ import {
   type TurnPlanV1,
 } from '../../schemas/conversation-pipeline';
 import { buildAgentABrainInstructionsV1 } from '../../prompts/agent-a-brain-v1';
+import { lastAgentReplyV1 } from './conversation-composer';
 import {
   extractProtectedFacts,
   extractUrlCandidates,
@@ -1061,6 +1062,16 @@ export async function generateAgentATurnProposalV1(input: {
  * Los motivos se ACUMULAN: devolver sólo el primero obligaría al modelo a
  * reparar de a uno por vez, y sólo hay una reparación.
  */
+/**
+ * Compara lo que el cliente realmente lee. El espaciado no cambia el mensaje,
+ * así que dos borradores que sólo difieren en blancos son el mismo turno.
+ */
+function sameVisibleText(messages: readonly string[], previous: string): boolean {
+  const normalize = (value: string): string => value.replace(/\s+/gu, ' ').trim();
+  const draft = normalize(messages.join(' '));
+  return draft.length > 0 && draft === normalize(previous);
+}
+
 export function validateAgentATurnProposalV1(input: {
   readonly proposal: AgentATurnProposalV1;
   readonly context: AgentAContextV1;
@@ -1069,6 +1080,20 @@ export function validateAgentATurnProposalV1(input: {
 }): TurnRejectionV1 | null {
   const rejections: Array<{ code: TurnRejectionV1['rejections'][number]['code']; subject: string }> = [];
   const planned = new Set(input.planned_fact_ids);
+
+  // V8 — el borrador es, palabra por palabra, el mensaje anterior del agente.
+  //
+  // Dos turnos seguidos pueden recibir el mismo trío (move, objetivo, hechos):
+  // cuando el material autorizado no cambia, repetir es la salida más probable
+  // del modelo, y quien repregunta recibe de vuelta el párrafo que ya leyó.
+  //
+  // El backend no reescribe la copia —eso sería redactar por el modelo— pero
+  // sí puede rechazar y abrir la única reparación. No se piden hechos nuevos ni
+  // se autoriza nada: la alternativa autorizada es exactamente la misma.
+  const previousReply = lastAgentReplyV1(input.context.turn.recent_turns);
+  if (previousReply && sameVisibleText(input.proposal.response.messages, previousReply)) {
+    rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_reply' });
+  }
 
   // V2 — cada hecho citado existe en el registro materializado del turno.
   for (const factId of input.proposal.used_fact_ids) {

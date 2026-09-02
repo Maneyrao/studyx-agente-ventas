@@ -17,6 +17,7 @@ export const TurnRejectionCodeSchema = z.enum([
   'UNSUPPORTED_OPERATIONAL_CLAIM',
   'PLAN_NOT_SELECTED',
   'COURSE_NOT_RESOLVED',
+  'REPEATED_AGENT_REPLY',
 ])
 
 /** Identificador o código. Nunca una frase para el cliente (A4). */

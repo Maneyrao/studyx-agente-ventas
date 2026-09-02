@@ -150,3 +150,24 @@ describe('Agent A Brain V1 continuidad entre turnos', () => {
     expect(instructions).not.toContain('<last_agent_reply>');
   });
 });
+
+describe('directiva de reparación por repetición', () => {
+  it('le dice al modelo qué significa REPEATED_AGENT_REPLY sin quitarle los hechos', () => {
+    const base = context();
+    const instructions = buildAgentABrainInstructionsV1({
+      ...base,
+      turn_rejection: {
+        schema_version: 1,
+        rejection_id: '11111111-1111-4111-8111-111111111111',
+        attempt: 1,
+        rejections: [{ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_reply' }],
+        authorized_alternatives: { fact_ids: ['f1'], actions: ['none'], missing_information: [] },
+      },
+    } as AgentAContextV1);
+
+    expect(instructions).toMatch(/REPEATED_AGENT_REPLY/u);
+    // Los hechos siguen autorizados: el rechazo es sobre la redacción, no
+    // sobre lo que se puede afirmar.
+    expect(instructions).toMatch(/REPEATED_AGENT_REPLY[\s\S]*hechos autorizados no cambian/iu);
+  });
+});

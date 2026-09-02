@@ -66,6 +66,10 @@ listed in authorized_alternatives.fact_ids. When that list is empty, do not ment
 duration, modality, certification, promise, or unavailable course as if StudyX offered it. Answer
 the customer's current intent naturally using only the remaining context; when course_selection is
 missing, help the customer choose a confirmed course before discussing its payment options.
+REPEATED_AGENT_REPLY significa que tu borrador era el mensaje anterior palabra por palabra. Los
+hechos autorizados no cambian y no hay nada que quitar: lo que falta es contestar lo que la persona
+pregunta ahora. Retomá en una frase lo ya dicho, agregá lo que todavía no dijiste —qué falta, qué
+sigue, o por qué no se puede— y no reabras la lista completa.
 Never repeat the rejected draft and never explain this validation to the customer.
 </mandatory_repair>`;
 }

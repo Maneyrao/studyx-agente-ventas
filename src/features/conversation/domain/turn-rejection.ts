@@ -27,6 +27,8 @@ export const TURN_REJECTION_CODES_V1 = [
   'UNSUPPORTED_OPERATIONAL_CLAIM',
   'PLAN_NOT_SELECTED',
   'COURSE_NOT_RESOLVED',
+  /** Devolvió el mismo mensaje que ya había mandado. */
+  'REPEATED_AGENT_REPLY',
 ] as const;
 
 export type TurnRejectionCodeV1 = typeof TURN_REJECTION_CODES_V1[number];
