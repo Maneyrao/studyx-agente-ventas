@@ -587,6 +587,50 @@ describe('Agent A conversation runner', () => {
     });
   });
 
+  it('evaluates the plannerless production path without calling the plan endpoint', async () => {
+    const proposal = {
+      schema_version: 1,
+      move: {
+        schema_version: 1, move: 'continue_by_chat', secondary_moves: [], vetoes: [], confidence: 0.98,
+      },
+      response: { messages: ['Dale, seguimos por chat y vemos qué necesitás.'], call_offer: null },
+      proposed_action: { type: 'none' },
+      used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(200, localIngestResponse()))
+      .mockResolvedValueOnce(jsonResponse(200, localBrainClaimedTurn()))
+      .mockResolvedValueOnce(jsonResponse(200, {
+        output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(proposal) }] }],
+      }))
+      .mockResolvedValueOnce(jsonResponse(200, {
+        status: 'committed', replayed: false, trace_id: LOCAL_TRANSPORT_UUID,
+        turn_id: LOCAL_TRANSPORT_UUID, decision_id: LOCAL_TRANSPORT_UUID,
+        next_state: 'waiting_user', outbound: null, call_request: null,
+        batch_completion: 'completed',
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+    const sendTurn = createLocalTurnSender({
+      apiBaseUrl: 'http://127.0.0.1:3000',
+      orchestratorKey: 'test-orchestrator-key', orchestratorKeyId: 'test-key-id',
+      signingSecret: 'test-signing-secret', cronSecret: null,
+      geminiModel: 'unused-gemini', groqModel: 'unused-groq',
+      deepseekApiKey: 'test-deepseek-key', deepseekModel: 'deepseek-v4-flash',
+    }, 'plannerless-v2', 'groq', 0, true, 'deepseek', undefined, true);
+
+    const result = await sendTurn('Prefiero seguir por chat', null);
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/plan'))).toBe(false);
+    const commitBody = JSON.parse(String(fetchMock.mock.calls[3]?.[1]?.body));
+    expect(commitBody).toMatchObject({
+      conversation_pipeline_v1: null,
+      agent_turn_v2: { schema_version: 2, proposal },
+      decision: { reason_code: 'AGENT_A_PLANNERLESS_V2_PENDING_BACKEND' },
+    });
+    expect(result.runtime?.capabilities).toMatchObject({ agent_a_plannerless_v2: true });
+  });
+
   it('runs the same one-repair authority cycle as production when the flag is enabled', async () => {
     const claimed = localBrainClaimedTurn();
     claimed.features = {

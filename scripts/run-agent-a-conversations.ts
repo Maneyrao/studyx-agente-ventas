@@ -41,6 +41,7 @@ import {
   ConversationPlanResponseV1Schema,
   type ConversationPipelineCommitV1,
 } from '../botpress-agent/src/schemas/conversation-pipeline';
+import type { AgentATurnCommitV2 } from '../botpress-agent/src/schemas/agent-turn-v2';
 import {
   DEFAULT_DEVELOPMENT_EMULATOR_PHONE_E164,
   buildEmulatorEnvelope,
@@ -373,6 +374,7 @@ export function createLocalTurnSender(
     readonly claimToken: string;
     readonly errorCode: string;
   }) => Promise<void>,
+  plannerlessV2 = false,
 ) {
   const gitSha = process.env.GIT_COMMIT_SHA
     ?? process.env.VERCEL_GIT_COMMIT_SHA
@@ -480,6 +482,7 @@ export function createLocalTurnSender(
     let brainFailureCode: string | null = null;
     let brainFailureDetail: string | null = null;
     let conversationPipelineV1: ConversationPipelineCommitV1 | null = null;
+    let agentTurnV2: AgentATurnCommitV2 | null = null;
     let plannedBusinessAction: Record<string, unknown> | null = null;
     let plannedConversationState: AgentTurnDiagnostic['conversationState'] = claimed.conversation_state_v1
       ? {
@@ -601,55 +604,79 @@ export function createLocalTurnSender(
           vetoes: authoritativeMove.vetoes,
           confidence: authoritativeMove.confidence,
         };
-        const plannerStartedAt = Date.now();
-        const planned = await localSignedJson({
-          credentials,
-          path: `/api/agent/turns/${claimed.turn_id}/plan`,
-          body: { trace_id: traceId, move: authoritativeMove },
-          idempotencyKey: `plan:${claimed.turn_id}`,
-          traceId,
-          parse: (value) => ConversationPlanResponseV1Schema.parse(value),
-        });
-        plannedResponseGoal = planned.plan.response_goal;
-        plannedFactIds = planned.fact_refs.map((fact) => fact.id);
-        latenciesMs.planner_ms = Date.now() - plannerStartedAt;
-        const resolved = await resolveAgentAProposalV1({
-          initial: generated,
-          context: brainContext,
-          response_goal: planned.plan.response_goal,
-          planned_fact_ids: plannedFactIds,
-          repair_enabled: claimed.features?.agent_a_repair_enabled === true,
-          rejection_id: randomUUID(),
-          repair: async (rejection) => {
-            if (!credentials.deepseekApiKey) {
-              throw new AgentABrainError('BRAIN_DEEPSEEK_REQUIRED');
-            }
-            evaluationPacingMs += await paceModelProvider();
-            try {
-              return await generateDeepSeekAgentATurnProposalV1({
-                context: { ...brainContext, turn_rejection: rejection },
-                apiKey: credentials.deepseekApiKey,
-                model: credentials.deepseekModel ?? DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
-                signal: new AbortController().signal,
-              });
-            } catch (error) {
-              brainTransportRetries += 1;
-              throw error;
-            }
-          },
-        });
-        generated = resolved.effective;
-        proposalCycleEvidence = resolved.evidence;
-        visibleCallOffers = generated.proposal.response.call_offer ? 1 : 0;
-        callOfferLedgerEntries = Math.max(
-          0,
-          planned.plan.next_call_offer_count - brainContext.commercial_state.call_offer_count,
-        );
-        conversationPipelineV1 = {
-          move: authoritativeMove,
-          plan_hash: planned.plan_hash,
-          composition: resolved.composition,
-        };
+        if (plannerlessV2) {
+          latenciesMs.planner_ms = 0;
+          agentTurnV2 = {
+            schema_version: 2,
+            proposal: { ...generated.proposal, move: authoritativeMove },
+          };
+          visibleCallOffers = generated.proposal.response.call_offer ? 1 : 0;
+          plannedBusinessAction = generated.proposal.proposed_action.type === 'none'
+            ? null
+            : { ...generated.proposal.proposed_action };
+        } else {
+          const plannerStartedAt = Date.now();
+          const planned = await localSignedJson({
+            credentials,
+            path: `/api/agent/turns/${claimed.turn_id}/plan`,
+            body: { trace_id: traceId, move: authoritativeMove },
+            idempotencyKey: `plan:${claimed.turn_id}`,
+            traceId,
+            parse: (value) => ConversationPlanResponseV1Schema.parse(value),
+          });
+          plannedResponseGoal = planned.plan.response_goal;
+          plannedFactIds = planned.fact_refs.map((fact) => fact.id);
+          latenciesMs.planner_ms = Date.now() - plannerStartedAt;
+          const resolved = await resolveAgentAProposalV1({
+            initial: generated,
+            context: brainContext,
+            response_goal: planned.plan.response_goal,
+            planned_fact_ids: plannedFactIds,
+            repair_enabled: claimed.features?.agent_a_repair_enabled === true,
+            rejection_id: randomUUID(),
+            repair: async (rejection) => {
+              if (!credentials.deepseekApiKey) {
+                throw new AgentABrainError('BRAIN_DEEPSEEK_REQUIRED');
+              }
+              evaluationPacingMs += await paceModelProvider();
+              try {
+                return await generateDeepSeekAgentATurnProposalV1({
+                  context: { ...brainContext, turn_rejection: rejection },
+                  apiKey: credentials.deepseekApiKey,
+                  model: credentials.deepseekModel ?? DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
+                  signal: new AbortController().signal,
+                });
+              } catch (error) {
+                brainTransportRetries += 1;
+                throw error;
+              }
+            },
+          });
+          generated = resolved.effective;
+          proposalCycleEvidence = resolved.evidence;
+          visibleCallOffers = generated.proposal.response.call_offer ? 1 : 0;
+          callOfferLedgerEntries = Math.max(
+            0,
+            planned.plan.next_call_offer_count - brainContext.commercial_state.call_offer_count,
+          );
+          conversationPipelineV1 = {
+            move: authoritativeMove,
+            plan_hash: planned.plan_hash,
+            composition: resolved.composition,
+          };
+          plannedBusinessAction = planned.plan.allowed_business_action.type === 'none'
+            ? null
+            : { ...planned.plan.allowed_business_action };
+          plannedConversationState = {
+            stage: planned.plan.next_stage,
+            call_preference: planned.plan.next_call_preference,
+            call_offer_status: planned.plan.next_call_offer_status,
+            call_offer_count: planned.plan.next_call_offer_count,
+            offering_code: planned.plan.selected_offering_code,
+            payment_plan: planned.plan.selected_payment_plan,
+            awaiting_reply: planned.plan.next_awaiting_reply,
+          };
+        }
         decision = {
           schema_version: 4,
           intent: 'commercial',
@@ -657,7 +684,9 @@ export function createLocalTurnSender(
           response: 'El backend preparará la respuesta autorizada.',
           response_type: 'commercial_reply',
           confidence: 1,
-          reason_code: 'CONVERSATION_PIPELINE_V1_PENDING_BACKEND',
+          reason_code: plannerlessV2
+            ? 'AGENT_A_PLANNERLESS_V2_PENDING_BACKEND'
+            : 'CONVERSATION_PIPELINE_V1_PENDING_BACKEND',
           business_action: null,
           memory_candidates: generated.proposal.memory_candidates,
           missing_information: [],
@@ -667,18 +696,6 @@ export function createLocalTurnSender(
         provider = generated.provider;
         decisionModel = generated.model;
         promptVersion = AGENT_A_BRAIN_PROMPT_VERSION;
-        plannedBusinessAction = planned.plan.allowed_business_action.type === 'none'
-          ? null
-          : { ...planned.plan.allowed_business_action };
-        plannedConversationState = {
-          stage: planned.plan.next_stage,
-          call_preference: planned.plan.next_call_preference,
-          call_offer_status: planned.plan.next_call_offer_status,
-          call_offer_count: planned.plan.next_call_offer_count,
-          offering_code: planned.plan.selected_offering_code,
-          payment_plan: planned.plan.selected_payment_plan,
-          awaiting_reply: planned.plan.next_awaiting_reply,
-        };
         usedMemoryIds = generated.proposal.used_memory_ids;
         memoryCandidateCount = generated.proposal.memory_candidates.length;
       } catch (error) {
@@ -795,6 +812,7 @@ export function createLocalTurnSender(
           authorized_offering_code: authorizedOfferingCode,
           authorized_payment_plan: authorizedPaymentPlan,
           conversation_pipeline_v1: conversationPipelineV1,
+          agent_turn_v2: agentTurnV2,
           decision,
           model: {
             provider,
@@ -826,6 +844,7 @@ export function createLocalTurnSender(
           authorized_offering_code: authorizedOfferingCode,
           authorized_payment_plan: authorizedPaymentPlan,
           conversation_pipeline_v1: conversationPipelineV1,
+          agent_turn_v2: agentTurnV2,
           decision,
           model: { provider, model: decisionModel, prompt_version: promptVersion },
           batch_id: claimed.batch.id,
@@ -875,6 +894,7 @@ export function createLocalTurnSender(
         agent_a_context_scoping: claimed.features?.agent_a_context_scoping === true,
         agent_a_repair_enabled: claimed.features?.agent_a_repair_enabled === true,
         agent_a_state_assertions: claimed.features?.agent_a_state_assertions === true,
+        agent_a_plannerless_v2: plannerlessV2,
       },
       raw_response_hash: decision.response === null
         ? null
@@ -1065,7 +1085,9 @@ async function main() {
     throw new Error('INVALID_STRICT_BRAIN_PROVIDER');
   }
   const strictBrainProvider = strictBrainProviderArgument === 'deepseek' ? 'deepseek' : null;
+  const plannerlessV2 = process.argv.includes('--plannerless-v2');
   if (strictBrainProvider && transport !== 'local') throw new Error('STRICT_BRAIN_REQUIRES_LOCAL_TRANSPORT');
+  if (plannerlessV2 && transport !== 'local') throw new Error('PLANNERLESS_V2_REQUIRES_LOCAL_TRANSPORT');
   const verifyDatabase = process.argv.includes('--verify-db');
   const db = verifyDatabase || (transport === 'local' && strictBrainProvider !== null)
     ? postgres(localDatabaseUrl(), { max: 2 })
@@ -1079,6 +1101,7 @@ async function main() {
         process.argv.includes('--skip-post-turn-crons'),
         strictBrainProvider,
         strictBrainProvider && db ? createLocalEvalClaimCleanup(db) : undefined,
+        plannerlessV2,
       )
     : sendAdkTurn;
   let previousTurnStartedAt: number | null = null;

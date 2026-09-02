@@ -63,7 +63,7 @@ async function main(): Promise<void> {
     deepseekApiKey: required('DEEPSEEK_API_KEY'),
     deepseekModel: optional('DEEPSEEK_MODEL') ?? 'deepseek-v4-flash',
   }, required('STUDYX_WORKER_RUN_ID'), 'groq', 0, true, 'deepseek',
-  createLocalEvalClaimCleanup(sql));
+  createLocalEvalClaimCleanup(sql), process.env.AGENT_A_PLANNERLESS_V2 === 'true');
   const completedTurns = new Map<string, number>();
   const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
   process.stdout.write(`${JSON.stringify({ type: 'ready' })}\n`);
