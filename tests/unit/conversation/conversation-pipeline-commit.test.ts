@@ -224,6 +224,41 @@ describe('prepareConversationPipelineCommitV1', () => {
     expect(prepared.decision.response ?? '').not.toMatch(/registr[ée]\s+tus\s+datos/iu);
   });
 
+  /**
+   * La misma afirmación, pero en el turno tal como sale en la matriz: el plan
+   * resuelve `clarify_current_step` y no materializa ningún hecho canónico.
+   * Es la forma que se filtró dos veces con V5 confirmado encendido.
+   */
+  it('la borra también cuando el turno no materializa ningún hecho canónico', async () => {
+    const partialIntake = async () => ({
+      nombre: 'Tomás', apellido: 'Quiroga',
+      correo: 'tomas.quiroga@example.test', telefono: null,
+    });
+    const stateStore = store(state({ stage: 'plan_selected', selected_payment_plan: 'monthly_12' }));
+    const move = {
+      schema_version: 1 as const, move: 'provide_contact_details' as const,
+      secondary_moves: [], vetoes: [], confidence: 1,
+    };
+    const planned = await authoritativelyPlanConversationTurnV1({
+      turn: { workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', move, business_context: business, catalog_index: index,
+    }, { state_store: stateStore, contact_intake: partialIntake });
+
+    const prepared = await prepareConversationPipelineCommitV1({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', move, expected_plan_hash: planned.plan_hash,
+      composition: {
+        schema_version: 1,
+        narrative: { opening: 'Registré tus datos.', explanation: null, next_question: null },
+        used_fact_ids: [],
+      },
+      business_context: business, catalog_index: index,
+      state_assertions_enabled: true,
+    }, { state_store: stateStore, contact_intake: partialIntake });
+
+    expect(prepared.decision.response ?? '').not.toMatch(/registr[ée]\s+tus\s+datos/iu);
+  });
+
   it('rejects a stale or tampered plan hash before creating authority', async () => {
     await expect(prepareConversationPipelineCommitV1({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
