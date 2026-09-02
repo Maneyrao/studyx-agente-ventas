@@ -63,6 +63,7 @@ import {
   parseAgentATurnProposalV1,
 } from '../lib/conversation/agent-a-brain'
 import { resolveAgentAProposalV1 } from '../lib/conversation/resolve-agent-a-proposal'
+import { resolveAgentAPlannerlessProposalV2 } from '../lib/conversation/resolve-agent-a-plannerless'
 import { AgentATurnProposalV1Schema, type AgentATurnProposalV1 } from '../schemas/agent-a-brain'
 import type { AgentATurnCommitV2 } from '../schemas/agent-turn-v2'
 import {
@@ -860,19 +861,48 @@ export const processInboundTurn = new Workflow({
           )
           if (plannerlessV2Enabled) {
             timings.planner_ms = 0
+            const resolved = await resolveAgentAPlannerlessProposalV2({
+              initial: generated,
+              context: agentABrainContext,
+              repair_enabled: repairEnabled,
+              rejection_id: randomUUID(),
+              repair: async (rejection) => {
+                if (typeof secrets.DEEPSEEK_API_KEY !== 'string'
+                  || secrets.DEEPSEEK_API_KEY.length === 0) {
+                  throw new Error('DEEPSEEK_API_KEY_MISSING')
+                }
+                return step(
+                  'repair-agent-a-turn-proposal-v2',
+                  () => generateDeepSeekAgentATurnProposalV1({
+                    context: { ...agentABrainContext, turn_rejection: rejection },
+                    apiKey: secrets.DEEPSEEK_API_KEY as string,
+                    signal,
+                    model: typeof configuration.agentABrainDeepSeekModel === 'string'
+                      ? configuration.agentABrainDeepSeekModel
+                      : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
+                  }),
+                  { maxAttempts: 1 },
+                )
+              },
+            })
+            const effectiveGenerated = resolved.effective
+            generated = effectiveGenerated
             agentTurnV2Commit = {
               schema_version: 2,
-              proposal: { ...generated.proposal, move: authoritativeMove },
+              proposal: { ...effectiveGenerated.proposal, move: authoritativeMove },
             }
-            pipelineMemoryCandidates = generated.proposal.memory_candidates
+            pipelineMemoryCandidates = effectiveGenerated.proposal.memory_candidates
             safeLog('studyx.turn.agent_a_plannerless_v2', {
               trace_id: input.trace_id,
               turn_id: owned.turn_id,
               rollout_mode: 'authoritative',
               brain_prompt_version: AGENT_A_BRAIN_PROMPT_VERSION,
-              brain_model: generated.model,
-              used_memory_count: generated.proposal.used_memory_ids.length,
-              proposed_action_type: generated.proposal.proposed_action.type,
+              brain_model: effectiveGenerated.model,
+              used_memory_count: effectiveGenerated.proposal.used_memory_ids.length,
+              proposed_action_type: effectiveGenerated.proposal.proposed_action.type,
+              repair_attempted: resolved.evidence.repair_attempted,
+              repaired: resolved.evidence.repaired,
+              rejection_codes: resolved.evidence.rejection_codes,
             })
           } else {
             const plannerStartedAt = Date.now()

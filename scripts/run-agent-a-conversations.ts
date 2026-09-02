@@ -80,6 +80,7 @@ import {
   resolveAgentAProposalV1,
   type AgentAProposalCycleEvidenceV1,
 } from '../botpress-agent/src/lib/conversation/resolve-agent-a-proposal';
+import { resolveAgentAPlannerlessProposalV2 } from '../botpress-agent/src/lib/conversation/resolve-agent-a-plannerless';
 import { AGENT_A_BRAIN_PROMPT_VERSION } from '../botpress-agent/src/prompts/agent-a-brain-v1';
 import { deliverAuthorizedLocalOutbound } from './lib/local-authorized-delivery';
 import { createLocalEvalClaimCleanup } from './lib/local-eval-claim-cleanup';
@@ -606,6 +607,31 @@ export function createLocalTurnSender(
         };
         if (plannerlessV2) {
           latenciesMs.planner_ms = 0;
+          const resolved = await resolveAgentAPlannerlessProposalV2({
+            initial: generated,
+            context: brainContext,
+            repair_enabled: claimed.features?.agent_a_repair_enabled === true,
+            rejection_id: randomUUID(),
+            repair: async (rejection) => {
+              if (!credentials.deepseekApiKey) {
+                throw new AgentABrainError('BRAIN_DEEPSEEK_REQUIRED');
+              }
+              evaluationPacingMs += await paceModelProvider();
+              try {
+                return await generateDeepSeekAgentATurnProposalV1({
+                  context: { ...brainContext, turn_rejection: rejection },
+                  apiKey: credentials.deepseekApiKey,
+                  model: credentials.deepseekModel ?? DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
+                  signal: new AbortController().signal,
+                });
+              } catch (error) {
+                brainTransportRetries += 1;
+                throw error;
+              }
+            },
+          });
+          generated = resolved.effective;
+          proposalCycleEvidence = resolved.evidence;
           agentTurnV2 = {
             schema_version: 2,
             proposal: { ...generated.proposal, move: authoritativeMove },
