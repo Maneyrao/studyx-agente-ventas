@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildTurnMetricsV1,
   evaluateRunAcceptanceGatesV1,
   summarizeRunMetricsV1,
   type TurnMetricsV1,
@@ -28,6 +29,31 @@ function turn(overrides: Partial<TurnMetricsV1> = {}): TurnMetricsV1 {
 }
 
 describe('métricas por turno', () => {
+  it('mide la oferta de llamada en el outbound visible y no en un campo auxiliar del modelo', () => {
+    const metrics = buildTurnMetricsV1({
+      case_id: 'call-visible',
+      turn_index: 0,
+      visible_message_count: 1,
+      latency_ms: 1_000,
+      assistant_text: 'Si querés, podemos coordinar una llamada o seguir por chat.',
+      diagnostic: {
+        catalogResolution: { kind: 'no_catalog_intent' },
+        selectedOfferingCode: null,
+        decisionBusinessAction: null,
+        authorizedProtectedFacts: [],
+        authorizedUrls: [],
+        commitError: null,
+        visibleCallOffers: 0,
+        callOfferLedgerEntries: 1,
+      },
+      runtime: null,
+    });
+
+    expect(metrics.visible_call_offers).toBe(1);
+    expect(evaluateRunAcceptanceGatesV1(summarizeRunMetricsV1([metrics])))
+      .toMatchObject({ call_offer_ledger_parity: true });
+  });
+
   // Un caso que falla por un turno dejaba de contar los otros cuatro. La
   // varianza 18/15/16 sobre el MISMO commit venía en parte de eso.
   it('cuenta cada turno, no cada caso', () => {

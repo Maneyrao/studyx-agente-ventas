@@ -258,6 +258,7 @@ function localBrainClaimedTurn(): ClaimedTurn {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe('Agent A conversation runner', () => {
@@ -824,6 +825,32 @@ describe('Agent A conversation runner', () => {
             responses: [{ type: 'text', text: `Listo: ${paymentUrl}` }],
             authorizedUrls: [paymentUrl],
           }),
+      },
+    );
+
+    expect(result.status).toBe('passed');
+    expect(result.checks.payment_link_count).toBe(1);
+  });
+
+  it('counts a configured payment link when the case intentionally allows any plan', async () => {
+    const isolatedPaymentUrl = 'https://example.invalid/eval/contado';
+    vi.stubEnv('PAYMENT_LINK_CONTADO', isolatedPaymentUrl);
+
+    const result = await runConversationCase(
+      {
+        id: 'happy_any_payment_plan',
+        name: 'Link de cualquiera de los tres planes',
+        course: 'Curso Test',
+        turns: ['Elijo contado'],
+        ideal_result: { payment_link_count: 1 },
+      },
+      {
+        runId: 'run123',
+        sendTurn: vi.fn().mockResolvedValue({
+          conversationId: 'conv-any-plan',
+          responses: [{ type: 'text', text: `Listo: ${isolatedPaymentUrl}` }],
+          authorizedUrls: [isolatedPaymentUrl],
+        }),
       },
     );
 

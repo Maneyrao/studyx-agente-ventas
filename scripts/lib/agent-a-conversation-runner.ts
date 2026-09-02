@@ -604,14 +604,16 @@ function assertRegressionCompositionEvidence(suite: ConversationSuite): void {
  * could never appear and report zero links on a turn that sent one. The
  * production values remain the fallback for a run that configures nothing.
  */
-const PAYMENT_URLS = {
-  monthly_12: process.env.PAYMENT_LINK_12M?.trim()
-    || 'https://buy.stripe.com/14A5kC31I3Nwfbq67Fdwc0f',
-  monthly_6: process.env.PAYMENT_LINK_6M?.trim()
-    || 'https://buy.stripe.com/4gMdR8cCi97Q7IYdA7dwc0a',
-  one_time: process.env.PAYMENT_LINK_CONTADO?.trim()
-    || 'https://buy.stripe.com/9B64gy7hYesaaVa1Rpdwc0j',
-} as const;
+function configuredPaymentUrls() {
+  return {
+    monthly_12: process.env.PAYMENT_LINK_12M?.trim()
+      || 'https://buy.stripe.com/14A5kC31I3Nwfbq67Fdwc0f',
+    monthly_6: process.env.PAYMENT_LINK_6M?.trim()
+      || 'https://buy.stripe.com/4gMdR8cCi97Q7IYdA7dwc0a',
+    one_time: process.env.PAYMENT_LINK_CONTADO?.trim()
+      || 'https://buy.stripe.com/9B64gy7hYesaaVa1Rpdwc0j',
+  } as const;
+}
 
 /** URLs are extracted lexically and then compared byte-for-byte against the
  * allowlist captured for their own turn. Static payment fixtures are used
@@ -1218,7 +1220,8 @@ export async function runConversationCase(
     testCase.ideal_result.payment_link_count !== undefined &&
     !testCase.ideal_result.plan_code
   ) {
-    const paymentLinkCount = countOccurrences(assistantText, 'https://buy.stripe.com/');
+    const paymentLinkCount = [...new Set(Object.values(configuredPaymentUrls()))]
+      .reduce((total, paymentUrl) => total + countOccurrences(assistantText, paymentUrl), 0);
     checks.payment_link_count = paymentLinkCount;
     if (paymentLinkCount !== testCase.ideal_result.payment_link_count) {
       failures.push(
@@ -1228,7 +1231,7 @@ export async function runConversationCase(
   }
 
   if (testCase.ideal_result.plan_code) {
-    const expectedUrl = PAYMENT_URLS[testCase.ideal_result.plan_code];
+    const expectedUrl = configuredPaymentUrls()[testCase.ideal_result.plan_code];
     const paymentLinkCount = countOccurrences(assistantText, expectedUrl);
     checks.payment_link_count = paymentLinkCount;
     checks.expected_payment_url = expectedUrl;
@@ -1712,7 +1715,7 @@ export function buildTurnMetricsV1(input: {
     proposal_generation_calls: input.diagnostic?.proposalGenerationCalls ?? 0,
     latency_ms: input.latency_ms,
     false_operational_promises: unsupportedAssertions,
-    visible_call_offers: input.diagnostic?.visibleCallOffers ?? 0,
+    visible_call_offers: (input.assistant_text.match(CALL_OFFER_PATTERN) ?? []).length > 0 ? 1 : 0,
     ledger_entries: input.diagnostic?.callOfferLedgerEntries ?? 0,
   };
 }
