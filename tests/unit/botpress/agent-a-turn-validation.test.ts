@@ -94,6 +94,66 @@ describe('validación de la propuesta del turno', () => {
       .toBe('payment:redes-informaticas:monthly_6:price:v1');
   });
 
+  // V3
+  it('rechaza un precio escrito sin ningún hecho materializado aunque el modelo omita la cita', () => {
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        response: {
+          messages: ['El valor total del programa es USD 360.'],
+          call_offer: null,
+        },
+        used_fact_ids: [],
+      }),
+      context: context({
+        commercial_state: {
+          ...context().commercial_state,
+          selected_offering_code: null,
+          stage: 'exploring',
+        },
+        catalog: {
+          selected_offering: null,
+          areas: [],
+          candidate_offerings: [],
+          payment_plans: [],
+        },
+      }),
+      planned_fact_ids: [],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection!.rejections).toContainEqual({
+      code: 'FACT_VALUE_MISMATCH',
+      subject: 'price',
+    });
+  });
+
+  it('acepta el precio exacto cuando el planner materializó y el modelo citó ese hecho', () => {
+    const paymentFactId = 'payment:redes-informaticas:monthly_6:price:v1';
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        response: {
+          messages: ['Podés elegir 6 pagos mensuales de USD 60.'],
+          call_offer: null,
+        },
+        used_fact_ids: [paymentFactId],
+      }),
+      context: context({
+        catalog: {
+          ...context().catalog,
+          payment_plans: [{
+            fact_id: paymentFactId,
+            code: 'monthly_6',
+            label: '6 pagos mensuales de USD 60',
+          }],
+        },
+      }),
+      planned_fact_ids: [paymentFactId],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection).toBeNull();
+  });
+
   // V4
   it('pedir el link sin plan seleccionado es ACTION_NOT_AUTHORIZED', () => {
     const rejection = validateAgentATurnProposalV1({

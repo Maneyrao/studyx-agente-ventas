@@ -1082,6 +1082,37 @@ export function validateAgentATurnProposalV1(input: {
     }
   }
 
+  // V3 — omitir la cita no puede convertir una afirmación comercial en
+  // narrativa libre. El egress final ya hace esta comprobación, pero esperar
+  // hasta el commit transformaba un borrador reparable en el fallback técnico
+  // visible. Acá se comparan los hechos detectados con los valores que el
+  // planner materializó para este turno y se abre la única reescritura N2.
+  const authorizedProtectedFacts = new Set(
+    [...commercialValuesByFactId(input.context)]
+      .filter(([factId]) => planned.has(factId))
+      .flatMap(([, value]) => extractProtectedFacts(value))
+      .map((fact) => `${fact.kind}\u0000${fact.value}`),
+  );
+  const unauthorizedKinds = new Set<string>();
+  const authoredNarrative = [
+    ...input.proposal.response.messages,
+    ...(input.proposal.response.call_offer ? [input.proposal.response.call_offer] : []),
+  ];
+  for (const message of authoredNarrative) {
+    for (const fact of extractProtectedFacts(message)) {
+      // La identidad de una oferta requiere contexto de catálogo, aliases y
+      // curso seleccionado; el backend conserva esa validación completa. Los
+      // valores comerciales escalares sí tienen equivalencia exacta acá.
+      if (fact.kind === 'offering') continue;
+      if (!authorizedProtectedFacts.has(`${fact.kind}\u0000${fact.value}`)) {
+        unauthorizedKinds.add(fact.kind);
+      }
+    }
+  }
+  for (const kind of unauthorizedKinds) {
+    rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: kind });
+  }
+
   // V4 — la acción y sus precondiciones.
   const action = input.proposal.proposed_action
   if (action.type === 'send_payment_link') {
@@ -1179,6 +1210,7 @@ export function decideRepairLevelV1(input: {
   // válida una acción sin precondición.
   const prunable = !input.rejection.rejections.some((reason) => (
     reason.code === 'ACTION_NOT_AUTHORIZED'
+    || reason.code === 'FACT_VALUE_MISMATCH'
     || reason.code === 'CALL_BUDGET_EXHAUSTED'
     || reason.code === 'MISSING_INTAKE'
   ))

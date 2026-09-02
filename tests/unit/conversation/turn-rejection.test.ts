@@ -62,9 +62,14 @@ describe('TurnRejectionV1', () => {
     expect(isStructuredRejectionSubjectV1('')).toBe(false);
   });
 
-  it('un rechazo de acción nunca es podable', () => {
-    // No hay oración que quitar que vuelva válida una acción no autorizada.
-    for (const code of ['ACTION_NOT_AUTHORIZED', 'CALL_BUDGET_EXHAUSTED', 'MISSING_INTAKE'] as const) {
+  it('una acción o un valor comercial inválido nunca se resuelven con poda parcial', () => {
+    // No hay oración parcial que vuelva válida una acción o un valor no autorizado.
+    for (const code of [
+      'ACTION_NOT_AUTHORIZED',
+      'FACT_VALUE_MISMATCH',
+      'CALL_BUDGET_EXHAUSTED',
+      'MISSING_INTAKE',
+    ] as const) {
       expect(isPrunableRejectionV1(buildTurnRejectionV1({
         rejection_id: 'r1',
         rejections: [{ code, subject: 'send_payment_link' }],

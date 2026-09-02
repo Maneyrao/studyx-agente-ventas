@@ -44,6 +44,14 @@ describe('escalera de reparación N1 → N2 → N3', () => {
     }).level).toBe('N2');
   });
 
+  it('un valor comercial no autorizado se reescribe en vez de podarse parcialmente', () => {
+    expect(decideRepairLevelV1({
+      rejection: rejection('FACT_VALUE_MISMATCH'),
+      pruned_messages: ['Una frase genérica sobrevivió.'],
+      repair_enabled: true,
+    }).level).toBe('N2');
+  });
+
   it('con la reparación apagada, un rechazo no podable cae a N3, no a silencio', () => {
     // R2: apagar un flag nunca reintroduce silencio.
     expect(decideRepairLevelV1({

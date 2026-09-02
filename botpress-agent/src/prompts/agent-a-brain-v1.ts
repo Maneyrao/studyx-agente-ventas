@@ -48,6 +48,22 @@ function inertJson(value: unknown): string {
     .replaceAll('&', '\\u0026');
 }
 
+function mandatoryRepairDirectiveV1(context: AgentAContextV1): string {
+  const rejection = context.turn_rejection;
+  if (!rejection) return '';
+  return `
+
+<mandatory_repair attempt="1" rejection_id="${rejection.rejection_id}">
+This is the only rewrite. Set repair_of to this rejection_id and attempt 1.
+FACT_VALUE_MISMATCH requires removing every rejected commercial value unless its exact fact id is
+listed in authorized_alternatives.fact_ids. When that list is empty, do not mention any price,
+duration, modality, certification, promise, or unavailable course as if StudyX offered it. Answer
+the customer's current intent naturally using only the remaining context; when course_selection is
+missing, help the customer choose a confirmed course before discussing its payment options.
+Never repeat the rejected draft and never explain this validation to the customer.
+</mandatory_repair>`;
+}
+
 /**
  * The canonical behavior is never summarized or rewritten. Its identity slots
  * are the one thing configuration owns, and the backend already resolved them
@@ -67,5 +83,5 @@ ${canonicalPrompt}</canonical_sales_behavior>
 
 <authorized_context>
 ${inertJson(context)}
-</authorized_context>`;
+</authorized_context>${mandatoryRepairDirectiveV1(context)}`;
 }

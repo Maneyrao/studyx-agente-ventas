@@ -11,6 +11,7 @@ import {
   generateOpenAIAgentATurnProposalV1,
   parseAgentATurnProposalV1,
 } from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
+import { buildAgentABrainInstructionsV1 } from '../../../botpress-agent/src/prompts/agent-a-brain-v1';
 
 function context(): AgentAContextV1 {
   return {
@@ -86,6 +87,28 @@ afterEach(() => {
 describe('Agent A Brain V1', () => {
   it('parses a natural multi-message proposal against authorized facts and memories', () => {
     expect(parseAgentATurnProposalV1(proposal(), context()).response.messages).toHaveLength(2);
+  });
+
+  it('pone la orden de reparación después del contexto y prohíbe repetir valores rechazados', () => {
+    const instructions = buildAgentABrainInstructionsV1({
+      ...context(),
+      turn_rejection: {
+        schema_version: 1,
+        rejection_id: '00000000-0000-4000-8000-000000000001',
+        attempt: 1,
+        rejections: [{ code: 'FACT_VALUE_MISMATCH', subject: 'price' }],
+        authorized_alternatives: {
+          fact_ids: [],
+          actions: ['none'],
+          missing_information: ['course_selection'],
+        },
+      },
+    });
+    const repairDirective = 'FACT_VALUE_MISMATCH requires removing every rejected commercial value';
+
+    expect(instructions).toContain(repairDirective);
+    expect(instructions.lastIndexOf(repairDirective))
+      .toBeGreaterThan(instructions.lastIndexOf('</authorized_context>'));
   });
 
   it('reports only the safe schema path and issue code for a root contract failure', () => {
