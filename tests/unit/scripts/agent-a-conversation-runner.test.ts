@@ -660,11 +660,17 @@ describe('Agent A conversation runner', () => {
       .toBe('Seguimos por chat y vemos primero qué opción te conviene.');
   });
 
-  it('fails before planner and commit when the local lab requires DeepSeek and its call fails', async () => {
+  it('keeps strict DeepSeek semantics but commits the same technical fallback as production', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse(200, localIngestResponse()))
       .mockResolvedValueOnce(jsonResponse(200, localBrainClaimedTurn()))
-      .mockResolvedValueOnce(jsonResponse(503, { error: 'temporary_unavailable' }));
+      .mockResolvedValueOnce(jsonResponse(503, { error: 'temporary_unavailable' }))
+      .mockResolvedValueOnce(jsonResponse(200, {
+        status: 'committed', replayed: false, trace_id: LOCAL_TRANSPORT_UUID,
+        turn_id: LOCAL_TRANSPORT_UUID, decision_id: LOCAL_TRANSPORT_UUID,
+        next_state: 'waiting_user', outbound: null, call_request: null,
+        batch_completion: 'completed',
+      }));
     vi.stubGlobal('fetch', fetchMock);
     const completeFailedClaim = vi.fn().mockResolvedValue(undefined);
     const sendTurn = createLocalTurnSender({
@@ -678,22 +684,16 @@ describe('Agent A conversation runner', () => {
       openaiFallbackModel: 'gpt-5.6-luna',
     }, 'strict-deepseek', 'groq', 0, true, 'deepseek', completeFailedClaim);
 
-    await expect(sendTurn('Prefiero mantener el intercambio por escrito', null))
-      .rejects.toMatchObject({
-        message: 'BRAIN_DEEPSEEK_HTTP_503',
-        turnDiagnostic: {
-          brainFailureCode: 'BRAIN_DEEPSEEK_HTTP_503',
-          brainFailureDetail: null,
-          brainTransportRetries: 1,
-        },
-      });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(fetchMock.mock.calls[2]?.[0]).toBe('https://api.deepseek.com/responses');
-    expect(completeFailedClaim).toHaveBeenCalledWith({
-      batchId: LOCAL_TRANSPORT_UUID,
-      claimToken: LOCAL_TRANSPORT_UUID,
-      errorCode: 'BRAIN_DEEPSEEK_HTTP_503',
+    const result = await sendTurn('Prefiero mantener el intercambio por escrito', null);
+    expect(result.turnDiagnostic).toMatchObject({
+      brainFailureCode: 'BRAIN_DEEPSEEK_HTTP_503',
+      brainFailureDetail: null,
+      brainTransportRetries: 1,
+      technicalFallbackReason: 'BRAIN_UNAVAILABLE',
     });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock.mock.calls[2]?.[0]).toBe('https://api.deepseek.com/responses');
+    expect(completeFailedClaim).not.toHaveBeenCalled();
   });
 
   it('runs the caller pacing gate immediately before every external turn', async () => {

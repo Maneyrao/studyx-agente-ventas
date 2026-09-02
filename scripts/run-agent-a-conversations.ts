@@ -679,31 +679,10 @@ export function createLocalTurnSender(
         usedMemoryIds = generated.proposal.used_memory_ids;
         memoryCandidateCount = generated.proposal.memory_candidates.length;
       } catch (error) {
-        if (strictBrainProvider === 'deepseek') {
-          const strictCode = error instanceof AgentABrainError
-            ? error.code
-            : error instanceof Error
-              ? error.message.slice(0, 128)
-              : 'UNKNOWN';
-          throw withTurnDiagnostic(error, {
-            catalogResolution: claimed.catalog_resolution,
-            selectedOfferingCode: claimed.sales_context.offering_code,
-            decisionBusinessAction: null,
-            authorizedProtectedFacts: [],
-            authorizedUrls: [],
-            commitError: null,
-            selectedMemoryValues: claimed.context.selected_memories.map((memory) => memory.value),
-            usedMemoryIds: [],
-            memoryCandidateCount: 0,
-            brainTransportRetries,
-            brainFailureReason: classifyBrainFailureReason(
-              strictCode,
-              claimed.business_context_available && claimed.catalog_index !== null,
-            ),
-            brainFailureCode: strictCode,
-            brainFailureDetail: error instanceof AgentABrainError ? error.detail : null,
-          });
-        }
+        // Strict means that no second model/provider may author the turn. It
+        // does not mean silence: production commits the deterministic N3
+        // technical floor when DeepSeek is unavailable, so eval must do the
+        // same or the provider-down case measures a different workflow.
         const code = error instanceof Error ? error.message.slice(0, 128) : 'UNKNOWN';
         const reason = classifyBrainFailureReason(
           code,
