@@ -42,6 +42,10 @@ está ocupado. Después del arranque, el ejecutor contrasta `/api/health` con el
 SHA exacto del worktree y exige `/api/ready` positivo. Así, un proceso viejo en
 otro checkout no puede producir un falso verde.
 
+El harness fuerza `AGENT_A_BRAIN_V1_ENABLED=true` y shadow apagado en todas
+las matrices. El grupo base conserva apagadas sólo las capacidades nuevas; no
+cae a la ruta legacy ni cambia DeepSeek por otro proveedor silenciosamente.
+
 ## Preparación
 
 1. Crear `.eval/.env.local` (está en `.gitignore`; usar el que ya existe como

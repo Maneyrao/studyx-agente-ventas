@@ -63,6 +63,12 @@ export STUDYX_EVAL_API_BASE_URL="${API_BASE_URL}"
 export GEMINI_API_KEY=""
 export GROQ_API_KEY=""
 export OPENAI_API_KEY=""
+# La matriz siempre mide el cerebro autoritativo. Los grupos base/candidato
+# sólo difieren en las capacidades nuevas de recorte, V5 y reparación; dejar
+# este flag implícito haría caer algunos turnos a la ruta legacy/Groq y la
+# comparación dejaría de medir DeepSeek.
+export AGENT_A_BRAIN_V1_ENABLED=true
+export AGENT_A_BRAIN_V1_SHADOW=false
 
 if [[ "${MODO}" == "--repair" ]]; then
   export AGENT_A_CONTEXT_SCOPING=true

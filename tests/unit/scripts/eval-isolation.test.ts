@@ -24,6 +24,8 @@ const AISLADO = {
   PAYMENT_LINK_12M: 'https://payments.example.invalid/monthly-12',
   PAYMENT_LINK_6M: 'https://payments.example.invalid/monthly-6',
   PAYMENT_LINK_CONTADO: 'https://payments.example.invalid/one-time',
+  AGENT_A_BRAIN_V1_ENABLED: 'true',
+  AGENT_A_BRAIN_V1_SHADOW: 'false',
 };
 
 describe('aislamiento del entorno de evaluación', () => {
@@ -73,6 +75,17 @@ describe('aislamiento del entorno de evaluación', () => {
     delete sinClave.DEEPSEEK_API_KEY;
     expect(() => assertIsolatedEvaluationEnvironmentV1(sinClave))
       .toThrow(/DEEPSEEK_API_KEY/);
+  });
+
+  it('exige el cerebro autoritativo para no medir silenciosamente la ruta legacy', () => {
+    for (const flags of [
+      { AGENT_A_BRAIN_V1_ENABLED: undefined },
+      { AGENT_A_BRAIN_V1_ENABLED: 'false' },
+      { AGENT_A_BRAIN_V1_ENABLED: 'true', AGENT_A_BRAIN_V1_SHADOW: 'true' },
+    ]) {
+      expect(() => assertIsolatedEvaluationEnvironmentV1({ ...AISLADO, ...flags }))
+        .toThrow(/AGENT_A_BRAIN_V1/);
+    }
   });
 
   it('rechaza el puerto genérico 3000 y APIs que no sean loopback', () => {

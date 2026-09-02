@@ -146,6 +146,15 @@ export function assertIsolatedEvaluationEnvironmentV1(
     );
   }
 
+  const brainEnabled = environment.AGENT_A_BRAIN_V1_ENABLED?.trim().toLowerCase() === 'true';
+  const brainShadow = environment.AGENT_A_BRAIN_V1_SHADOW?.trim().toLowerCase() === 'true';
+  if (!brainEnabled || brainShadow) {
+    throw new EvaluationIsolationError(
+      'EVAL_ISOLATION: AGENT_A_BRAIN_V1_ENABLED debe estar activo y '
+      + 'AGENT_A_BRAIN_V1_SHADOW inactivo. La evaluación no puede medir la ruta legacy.',
+    );
+  }
+
   const apiBaseUrl = (environment.STUDYX_EVAL_API_BASE_URL ?? '').trim();
   if (!apiBaseUrl) {
     throw new EvaluationIsolationError('EVAL_ISOLATION: falta STUDYX_EVAL_API_BASE_URL');
