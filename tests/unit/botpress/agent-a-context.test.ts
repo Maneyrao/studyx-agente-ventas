@@ -591,6 +591,49 @@ describe('buildAgentAContextV1', () => {
     expect(JSON.stringify(context)).not.toContain('https://buy.stripe.com');
   });
 
+  it.each(['Infoo', '?', '¿Qué cursos ofrecen?'])(
+    'does not let contact-wide memory answer an underspecified current turn: %s',
+    (text) => {
+      const claimed = claimedTurn();
+      claimed.context.batch_messages[0] = {
+        ...claimed.context.batch_messages[0]!,
+        content: text,
+      };
+      claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+      claimed.conversation_state_v1 = {
+        ...claimed.conversation_state_v1!,
+        selected_offering_code: null,
+        selected_payment_plan: null,
+        stage: 'exploring',
+        call_offer_status: 'not_offered',
+        call_offer_count: 0,
+        awaiting_reply: 'none',
+      };
+      claimed.sales_context.offering_code = null;
+      claimed.sales_context.course_of_interest = null;
+
+      expect(buildAgentAContextV1(claimed)?.customer.memories).toEqual([]);
+    },
+  );
+
+  it('keeps contact memory when the current turn explicitly asks to resume it', () => {
+    const claimed = claimedTurn();
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0]!,
+      content: 'Retomemos mi objetivo de conseguir trabajo',
+    };
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      selected_offering_code: null,
+      selected_payment_plan: null,
+      stage: 'exploring',
+    };
+
+    expect(buildAgentAContextV1(claimed)?.customer.memories.map((memory) => memory.id))
+      .toContain('memory-relevant');
+  });
+
   it('limits navigation to three candidates and rejects an unavailable conversation state', () => {
     const claimed = claimedTurn();
     claimed.conversation_state_v1 = {

@@ -608,7 +608,7 @@ describe('Agent A conversation runner', () => {
       model: {
         provider: 'deepseek-direct',
         model: 'deepseek-v4-flash',
-        prompt_version: 'studyx-agent-a-brain-v9',
+        prompt_version: 'studyx-agent-a-brain-v10',
       },
     });
     expect(result.turnDiagnostic).toMatchObject({

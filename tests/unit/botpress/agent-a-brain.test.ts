@@ -10,6 +10,7 @@ import {
   generateAgentATurnProposalV1,
   generateOpenAIAgentATurnProposalV1,
   parseAgentATurnProposalV1,
+  validateAgentATurnProposalV1,
 } from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
 import { buildAgentABrainInstructionsV1 } from '../../../botpress-agent/src/prompts/agent-a-brain-v1';
 
@@ -209,8 +210,8 @@ describe('Agent A Brain V1', () => {
     expect(composition.call_offer).toContain('seguimos por acá');
   });
 
-  it('preserves ordinary sales language for backend egress validation instead of replacing it early', () => {
-    const natural = 'Sí, tenemos varias opciones y te ayudo a encontrar la que mejor encaje con tu objetivo.';
+  it('preserves ordinary sales help without making an unsupported availability claim', () => {
+    const natural = 'Puedo ayudarte a encontrar la opción que mejor encaje con tu objetivo.';
     const composition = buildSafeAgentABrainCompositionV1({
       proposal: parseAgentATurnProposalV1(proposal({
         move: {
@@ -225,6 +226,45 @@ describe('Agent A Brain V1', () => {
     });
 
     expect(composition.narrative.opening).toBe(natural);
+  });
+
+  it('rejects a generic availability claim before the backend would suppress the whole reply', () => {
+    const genericAvailability = parseAgentATurnProposalV1(proposal({
+      move: {
+        schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 0.95,
+      },
+      response: {
+        messages: ['Sí, tenemos varias opciones y te ayudo a encontrar la que mejor encaje con tu objetivo.'],
+        call_offer: null,
+      },
+      used_fact_ids: [],
+      used_memory_ids: [],
+    }), context());
+
+    expect(validateAgentATurnProposalV1({
+      proposal: genericAvailability,
+      context: context(),
+      planned_fact_ids: [],
+      rejection_id: '00000000-0000-4000-8000-000000000099',
+    })).toMatchObject({
+      rejections: expect.arrayContaining([
+        { code: 'FACT_VALUE_MISMATCH', subject: 'offering' },
+      ]),
+    });
+  });
+
+  it('allows an availability statement only when it names and cites the authorized course', () => {
+    const authorized = parseAgentATurnProposalV1(proposal({
+      response: { messages: ['Podés estudiar Redes Informáticas con nosotros.'], call_offer: null },
+      used_fact_ids: ['offering:redes-informaticas:name:v1'],
+    }), context());
+
+    expect(validateAgentATurnProposalV1({
+      proposal: authorized,
+      context: context(),
+      planned_fact_ids: ['offering:redes-informaticas:name:v1'],
+      rejection_id: '00000000-0000-4000-8000-000000000098',
+    })).toBeNull();
   });
 
   it('prunes an unauthorized commercial value while preserving the safe model prose', () => {

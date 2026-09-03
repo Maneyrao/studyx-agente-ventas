@@ -1137,6 +1137,11 @@ export function validateAgentATurnProposalV1(input: {
 }): TurnRejectionV1 | null {
   const rejections: Array<{ code: TurnRejectionV1['rejections'][number]['code']; subject: string }> = [];
   const planned = new Set(input.planned_fact_ids);
+  const cited = new Set(input.proposal.used_fact_ids);
+  const authorizedOfferingNames = [...commercialValuesByFactId(input.context)]
+    .filter(([factId]) => planned.has(factId) && cited.has(factId))
+    .filter(([factId]) => /^offering:[^:]+:name:v1$/u.test(factId))
+    .map(([, value]) => value.normalize('NFKC').toLocaleLowerCase('es'));
 
   // V8 — el borrador es, palabra por palabra, el mensaje anterior del agente.
   //
@@ -1194,10 +1199,13 @@ export function validateAgentATurnProposalV1(input: {
   }
   for (const message of authoredNarrative) {
     for (const fact of extractProtectedFacts(message)) {
-      // La identidad de una oferta requiere contexto de catálogo, aliases y
-      // curso seleccionado; el backend conserva esa validación completa. Los
-      // valores comerciales escalares sí tienen equivalencia exacta acá.
-      if (fact.kind === 'offering') continue;
+      if (fact.kind === 'offering') {
+        const normalizedMessage = message.normalize('NFKC').toLocaleLowerCase('es');
+        if (!authorizedOfferingNames.some((name) => normalizedMessage.includes(name))) {
+          unauthorizedKinds.add('offering');
+        }
+        continue;
+      }
       if (!authorizedProtectedFacts.has(`${fact.kind}\u0000${fact.value}`)) {
         unauthorizedKinds.add(fact.kind);
       }

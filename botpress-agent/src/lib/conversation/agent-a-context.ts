@@ -32,6 +32,31 @@ const PAYMENT_INTENT_MOVES = new Set<ConversationMoveV1['move']>([
   'decline_purchase',
 ]);
 
+const LOW_INFORMATION_TOKENS = new Set([
+  'buen', 'buenas', 'como', 'cual', 'cuales', 'curso', 'cursos', 'dame',
+  'detalle', 'detalles', 'dia', 'disponible', 'disponibles', 'favor', 'hay',
+  'hola', 'holi', 'info', 'informacion', 'necesito', 'noche', 'ofrece',
+  'ofrecen', 'opcion', 'opciones', 'pasame', 'por', 'que', 'quien', 'quiero',
+  'saber', 'sos', 'tarde', 'tenes', 'tienen', 'toda', 'todas', 'todos', 'vos',
+]);
+
+function currentTurnIsUnderspecifiedV1(claimed: ClaimedTurn): boolean {
+  const normalized = claimed.context.batch_messages
+    .filter((message) => message.message_type === 'text')
+    .map((message) => message.content)
+    .join(' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLocaleLowerCase('es')
+    // Chat typos commonly stretch the final letter: `holaa`, `infoo`.
+    .replace(/([a-z])\1+/gu, '$1')
+    .replace(/[^a-z0-9]+/gu, ' ')
+    .trim();
+  if (normalized === '') return true;
+  const tokens = normalized.split(/\s+/u);
+  return tokens.length <= 5 && tokens.every((token) => LOW_INFORMATION_TOKENS.has(token));
+}
+
 /**
  * `catalog_resolution` was produced by the backend from the current batch and
  * its complete canonical index. Bind that already-verified identity to a
@@ -358,6 +383,9 @@ export function buildAgentAContextV1(
     }));
   const callOfferCount = state.call_offer_count ?? (state.call_offer_status === 'not_offered' ? 0 : 1);
   const selectedPlan = currentCourseChanged ? null : state.selected_payment_plan;
+  const suppressContactMemories = selectedCode === null
+    && state.stage === 'exploring'
+    && currentTurnIsUnderspecifiedV1(claimed);
 
   return AgentAContextV1Schema.parse({
     schema_version: 1,
@@ -374,7 +402,7 @@ export function buildAgentAContextV1(
     },
     customer: {
       display_name: claimed.contact.name,
-      memories: [...claimed.context.selected_memories]
+      memories: (suppressContactMemories ? [] : [...claimed.context.selected_memories])
         .sort((left, right) => right.similarity - left.similarity)
         .filter((memory) => MEMORY_TYPES.has(memory.type))
         .slice(0, 5)

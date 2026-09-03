@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { lastAgentReplyV1 } from '../lib/conversation/conversation-composer';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v9' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v10' as const;
 
 const EXECUTION_PREAMBLE = `You are the bounded conversational brain for StudyX Agent A.
 Backend policy and capabilities are authoritative. Propose the next conversational move and write
@@ -37,6 +37,11 @@ Return only AgentATurnProposalV1. Examples in the canonical behavior are behavio
 fixed phrases or authority. Resolve the current message against commercial_state.awaiting_reply
 before using unknown; a reply to a pending choice is contextual even when short or indirect.
 Current customer meaning outranks older state and memory.
+Do not infer a course or area from old memory when the current message is vague, social, a typo,
+or only punctuation. In that case answer the current message and ask one natural question that helps
+the customer choose an area or explain what they want. Without an exact cited canonical course,
+do not claim that StudyX has, offers, or provides generic options; say that you can help the customer
+find an option instead. This keeps ordinary sales language natural without asserting catalog facts.
 A diagnostic question is asked at most once per course selection. If it is already present in
 last_agent_reply and the customer ignores it, chooses chat, or asks something else; answer the current question instead of repeating the diagnostic.
 Never repeat a prior question merely because the customer did not answer it.
@@ -78,6 +83,8 @@ function mandatoryRepairDirectiveV1(context: AgentAContextV1): string {
 This is the only rewrite. Set repair_of to this rejection_id and attempt 1.
 FACT_VALUE_MISMATCH requires removing every rejected commercial value unless its exact fact id is
 listed in authorized_alternatives.fact_ids; to keep that exact value, include that exact id in used_fact_ids.
+When the rejected subject is offering and no exact offering fact is cited, rewrite as help or guidance
+without saying that StudyX has, offers, provides, or makes any course or option available.
 When that list is empty, do not mention any price,
 duration, modality, certification, promise, or unavailable course as if StudyX offered it. Answer
 the customer's current intent naturally using only the remaining context; when course_selection is
