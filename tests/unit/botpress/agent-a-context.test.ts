@@ -312,7 +312,7 @@ describe('buildAgentAContextV1', () => {
     });
   });
 
-  it('binds an exact generic information request to catalog orientation', () => {
+  it('deja la intención elegida por el modelo ante un pedido genérico de info', () => {
     const claimed = claimedTurn();
     claimed.context.batch_messages[0] = {
       ...claimed.context.batch_messages[0],
@@ -328,14 +328,14 @@ describe('buildAgentAContextV1', () => {
       confidence: 0.9,
     }, claimed)).toEqual({
       schema_version: 1,
-      move: 'browse_catalog',
+      move: 'greeting',
       secondary_moves: [],
       vetoes: [],
-      confidence: 1,
+      confidence: 0.9,
     });
   });
 
-  it('binds a current exact course plus price question as one combined semantic move', () => {
+  it('no reescribe la intención del modelo ante una pregunta de precio', () => {
     const claimed = claimedTurn();
     claimed.context.batch_messages[0] = {
       ...claimed.context.batch_messages[0],
@@ -364,10 +364,10 @@ describe('buildAgentAContextV1', () => {
       course_reference: 'coaching_liderazgo',
     }, claimed)).toEqual({
       schema_version: 1,
-      move: 'ask_course_information',
-      secondary_moves: ['ask_payment_options'],
+      move: 'ask_payment_options',
+      secondary_moves: [],
       vetoes: [],
-      confidence: 1,
+      confidence: 0.95,
       course_reference: 'coaching_liderazgo',
     });
   });
@@ -652,5 +652,84 @@ describe('buildAgentAContextV1', () => {
 
     claimed.conversation_state_v1 = null;
     expect(buildAgentAContextV1(claimed)).toBeNull();
+  });
+});
+
+/**
+ * Alcance del turno actual (causa raíz B).
+ *
+ * Un mensaje vago no puede revivir el curso de una conversación vieja. Antes
+ * la supresión exigía `selectedCode === null`, que es justo el caso que NO
+ * falla, y sólo limpiaba memorias: la ficha del curso viejo seguía viajando.
+ */
+describe('alcance del turno actual', () => {
+  function vagueTurn(text: string): ClaimedTurn {
+    const turn = JSON.parse(JSON.stringify(claimedTurn())) as ClaimedTurn;
+    const mutable = turn as unknown as Record<string, unknown>;
+    (turn.context as unknown as Record<string, unknown>).batch_messages = [{
+      id: UUID, conversation_seq: 40, content: text, created_at: NOW, message_type: 'text',
+    }];
+    mutable.catalog_resolution = { kind: 'none' };
+    mutable.conversation_state_v1 = {
+      ...turn.conversation_state_v1,
+      selected_offering_code: 'redes-informaticas',
+      selected_payment_plan: null,
+      stage: 'course_selected',
+      awaiting_reply: 'none',
+    };
+    return turn;
+  }
+
+  it('deja de recitar el curso viejo cuando el mensaje actual es sólo puntuación', () => {
+    const context = buildAgentAContextV1(vagueTurn('?'), 'Camila');
+
+    expect(context?.catalog.selected_offering).toBeNull();
+    expect(context?.commercial_state.selected_offering_code).toBeNull();
+  });
+
+  it('ofrece alternativas en vez de dejar al modelo sin nada de qué hablar', () => {
+    const context = buildAgentAContextV1(vagueTurn('?'), 'Camila');
+
+    expect(context?.catalog.candidate_offerings.length).toBeGreaterThan(0);
+  });
+
+  it('no reinyecta la memoria vieja en un turno vago', () => {
+    const context = buildAgentAContextV1(vagueTurn('?'), 'Camila');
+
+    expect(context?.customer.memories).toEqual([]);
+  });
+
+  it('trata "Infoo" con el mismo alcance que "Info"', () => {
+    const typo = buildAgentAContextV1(vagueTurn('Infoo'), 'Camila');
+    const clean = buildAgentAContextV1(vagueTurn('Info'), 'Camila');
+
+    expect(typo?.catalog.selected_offering).toEqual(clean?.catalog.selected_offering);
+    expect(typo?.commercial_state.selected_offering_code)
+      .toBe(clean?.commercial_state.selected_offering_code);
+  });
+
+  it('conserva el curso cuando hay un paso pendiente, aunque el mensaje sea vago', () => {
+    const turn = vagueTurn('?');
+    (turn as unknown as Record<string, unknown>).conversation_state_v1 = {
+      ...turn.conversation_state_v1,
+      selected_offering_code: 'redes-informaticas',
+      awaiting_reply: 'contact_details',
+    };
+
+    const context = buildAgentAContextV1(turn, 'Camila');
+
+    expect(context?.commercial_state.selected_offering_code).toBe('redes-informaticas');
+  });
+
+  it('conserva el curso cuando el mensaje actual sí lo resuelve', () => {
+    const context = buildAgentAContextV1(claimedTurn(), 'Camila');
+
+    expect(context?.commercial_state.selected_offering_code).toBe('redes-informaticas');
+  });
+
+  it('no deja el estado en course_selected mientras oculta el curso', () => {
+    const context = buildAgentAContextV1(vagueTurn('?'), 'Camila');
+
+    expect(context?.commercial_state.stage).toBe('exploring');
   });
 });

@@ -37,6 +37,10 @@ import {
   prepareConversationPipelineCommitV1,
 } from '@/features/conversation/application/prepare-conversation-pipeline-commit';
 import { CanonicalResponseAssemblyError } from '@/features/conversation/domain/canonical-response-assembler';
+import {
+  canonicalTruthSetFromOfferingsV1,
+  enforceCommercialTruthV1,
+} from '@/features/orchestration/domain/commercial-truth-guard';
 import type { ParsedConversationPipelineCommitV1 } from '@/features/conversation/adapters/conversation-pipeline-schema';
 import type { AgentATurnProposalV1 } from '@/features/conversation/domain/agent-a-brain';
 import {
@@ -58,16 +62,11 @@ import {
 } from '@/features/payments/domain/payment-choice-policy';
 import {
   buildAuthorizedEgress,
-  retainAuthorizedEgressParagraphs,
+  protectedFactsInContentV1,
   verifyAuthorizedEgress,
   type AuthorizedEgressV1,
   type ProtectedFactRef,
 } from '@/features/orchestration/domain/egress-guard';
-import {
-  materializeCanonicalCatalogFacts,
-  materializeCanonicalOfferingFacts,
-  responseNeedsOfferingFactAuthorization,
-} from '@/features/orchestration/domain/canonical-offering-egress';
 import {
   buildBusinessContextView,
   buildCatalogIndexView,
@@ -780,140 +779,116 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       }
     }
 
-    if (
-      !preparedPipeline
-      && finalResponse !== null
-      && responseNeedsOfferingFactAuthorization(finalResponse)
-    ) {
-      const offerings = await loadCanonicalOfferings('protected_facts');
-      const catalogLabels = [
-        ...offerings.map((offering) => ({
-          code: offering.code,
-          display_name: offering.display_name,
-        })),
-        ...[...new Set(offerings.flatMap((offering) => {
-          const academy = offering.metadata?.academy;
-          return typeof academy === 'string' && academy.trim().length > 0 ? [academy.trim()] : [];
-        }))].map((academy) => ({
-          code: `academy:${academy}`,
-          // The catalog guard authorizes complete availability assertions. Keep
-          // the connective phrase in the synthetic label so both "curso de"
-          // and the natural plural "cursos de" are treated as one grounded
-          // academy assertion without widening the lexical detector.
-          display_name: `cursos de ${academy}`,
-        })),
-      ];
-      authorizedProtectedFacts = [
-        ...authorizedProtectedFacts,
-        ...materializeCanonicalCatalogFacts({ content: finalResponse, offerings: catalogLabels }),
-      ];
-      if (effectiveAuthorizedOfferingCode) {
-        const exactMatches = offerings.filter(
-          (offering) => offering.code === effectiveAuthorizedOfferingCode
-        );
-        if (exactMatches.length === 1) {
-          effectiveAuthorizedOfferingCode = exactMatches[0].code;
-          authorizedProtectedFacts = [
-            ...authorizedProtectedFacts,
-            ...materializeCanonicalOfferingFacts({
-              content: finalResponse,
-              offering: exactMatches[0],
-            }),
-          ];
-        } else {
-          effectiveAuthorizedOfferingCode = null;
-        }
-      }
-    }
-
-    // The manifest is created from backend-owned capabilities, then verified
-    // against the exact final text before the first canonical write. A model
-    // URL or protected commercial claim has no route to the outbox merely by
-    // appearing in prose.
+    // Frontera comercial única (A4): verifica VALORES contra el registro
+    // canónico y veta ORACIONES.
+    //
+    // Reemplaza a la materialización canónica, que autorizaba una afirmación
+    // sólo si el modelo reproducía textualmente una oración renderizada por el
+    // backend. Eso no verificaba verdad sino redacción: una sola palabra
+    // natural —«online», «certificado», «3 meses»— convertía el turno entero
+    // en el piso técnico. El manifiesto se sigue emitiendo porque el egress y
+    // el ADK verifican su hash aguas abajo, pero deja de ser una segunda
+    // frontera con criterio propio.
     let authorizedEgress: AuthorizedEgressV1 | null = null;
     let egressSuppressed = false;
     if (finalResponse !== null) {
+      const offerings = await loadCanonicalOfferings('protected_facts');
+      const canonicalTruth = canonicalTruthSetFromOfferingsV1({
+        offerings,
+        selected_offering_code: effectiveAuthorizedOfferingCode ?? null,
+      });
+      const verdict = enforceCommercialTruthV1({
+        content: finalResponse,
+        authorized_urls: authorizedUrls,
+        canonical: {
+          ...canonicalTruth,
+          // Un plan de pago ya autorizado por la ruta de cobro es verdad
+          // canónica para esta respuesta aunque no sea el precio de lista.
+          prices: [
+            ...canonicalTruth.prices,
+            ...authorizedProtectedFacts
+              .filter((fact) => fact.kind === 'price')
+              .map((fact) => fact.value),
+          ],
+          durations: [
+            ...canonicalTruth.durations,
+            ...authorizedProtectedFacts
+              .filter((fact) => fact.kind === 'duration')
+              .map((fact) => fact.value),
+          ],
+        },
+      });
+
+      // La URL sigue fallando cerrado sobre el turno completo: no es una frase
+      // que se pueda quitar, es un canal de cobro.
+      if (verdict.violations.some((violation) => violation.code === 'UNAUTHORIZED_URL')) {
+        throw egressPolicyError('UNAUTHORIZED_URL');
+      }
+      // Un efecto ya comprometido no puede quedar sin respuesta que lo
+      // acompañe: eso rompería la correspondencia entre acción y mensaje.
+      if (committedBusinessAction !== null && verdict.content === null) {
+        throw egressPolicyError('COMMERCIAL_TRUTH_VIOLATION');
+      }
+
+      if (verdict.removed.length > 0) {
+        counter.increment('egress_sentences_vetoed', verdict.removed.length);
+        logger.warn({
+          event: 'orchestration.egress.sentences_vetoed',
+          trace_id: validatedInput.trace_id,
+          turn_id: turn.id,
+          violations: verdict.violations.map((violation) => violation.code),
+        });
+      }
+
+      if (verdict.content !== null) {
+        finalResponse = verdict.content;
+      } else {
+        counter.increment('egress_response_suppressed', 1);
+        logger.warn({
+          event: 'orchestration.egress.response_suppressed',
+          trace_id: validatedInput.trace_id,
+          turn_id: turn.id,
+          reason: verdict.violations[0]?.code ?? 'COMMERCIAL_TRUTH_VIOLATION',
+        });
+        // A7: el silencio técnico deja de ser un resultado posible. El turno
+        // sigue siendo una supresión comercial —ninguna acción, ningún hecho,
+        // ninguna proyección— pero el cliente recibe el piso técnico.
+        //
+        // El silencio deliberado por opt-out o bloqueo no pasa por acá: esos
+        // turnos no llegan a componer una respuesta.
+        technicalFallback = resolveTechnicalFallbackV1({
+          consecutive_technical_fallbacks:
+            pipelineStateBefore?.consecutive_technical_fallbacks ?? 0,
+          human_review_already_requested:
+            pipelineStateBefore?.human_review_requested_at != null,
+        });
+        decision = parseDecisionAnyVersion({
+          ...decision,
+          kind: 'reply',
+          response: technicalFallback.text,
+          response_type: 'clarification',
+          business_action: null,
+          memory_candidates: [],
+          missing_information: [],
+          next_state: 'completed',
+          reason_code: 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED',
+          confidence: 1,
+        });
+        finalResponse = technicalFallback.text;
+        authorizedUrls = [];
+        authorizedProtectedFacts = [];
+        committedBusinessAction = null;
+        preparedPipeline = null;
+        preparedAgentTurn = null;
+        effectiveAuthorizedOfferingCode = null;
+        egressSuppressed = true;
+      }
+
       authorizedEgress = buildAuthorizedEgress({
         content: finalResponse,
         authorized_urls: authorizedUrls,
-        protected_facts: authorizedProtectedFacts,
+        protected_facts: protectedFactsInContentV1(finalResponse),
       });
-      const verification = verifyAuthorizedEgress({
-        content: finalResponse,
-        manifest: authorizedEgress,
-      });
-      if (!verification.ok) {
-        const mayRecoverModelProse = verification.reason === 'UNAUTHORIZED_PROTECTED_FACT'
-          && committedBusinessAction === null;
-        if (!mayRecoverModelProse) throw egressPolicyError(verification.reason);
-
-        const retained = retainAuthorizedEgressParagraphs({
-          content: finalResponse,
-          authorized_urls: authorizedUrls,
-          protected_facts: authorizedProtectedFacts,
-        });
-        if (retained) {
-          counter.increment('egress_paragraphs_redacted', 1);
-          logger.warn({
-            event: 'orchestration.egress.paragraphs_redacted',
-            trace_id: validatedInput.trace_id,
-            turn_id: turn.id,
-            reason: verification.reason,
-          });
-          finalResponse = retained.content;
-          authorizedEgress = retained.manifest;
-        } else {
-          counter.increment('egress_response_suppressed', 1);
-          logger.warn({
-            event: 'orchestration.egress.response_suppressed',
-            trace_id: validatedInput.trace_id,
-            turn_id: turn.id,
-            reason: verification.reason,
-          });
-          // A7: el silencio técnico deja de ser un resultado posible. El
-          // turno sigue siendo una supresión desde el punto de vista
-          // comercial —ninguna acción, ningún hecho, ninguna proyección— pero
-          // el cliente recibe el piso técnico en vez de nada.
-          //
-          // El silencio deliberado por opt-out o bloqueo no pasa por acá: esos
-          // turnos no llegan a componer una respuesta.
-          technicalFallback = resolveTechnicalFallbackV1({
-            consecutive_technical_fallbacks:
-              pipelineStateBefore?.consecutive_technical_fallbacks ?? 0,
-            human_review_already_requested:
-              pipelineStateBefore?.human_review_requested_at != null,
-          });
-          decision = parseDecisionAnyVersion({
-            ...decision,
-            kind: 'reply',
-            response: technicalFallback.text,
-            response_type: 'clarification',
-            business_action: null,
-            memory_candidates: [],
-            missing_information: [],
-            next_state: 'completed',
-            reason_code: 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED',
-            confidence: 1,
-          });
-          finalResponse = technicalFallback.text;
-          authorizedUrls = [];
-          authorizedProtectedFacts = [];
-          // N3 no cita ninguna URL ni ningún hecho protegido, así que su
-          // manifiesto es el vacío. Dejarlo en null era el error: con
-          // respuesta presente, aguas abajo hay que verificar el manifiesto y
-          // un null revienta con `content_hash` de undefined.
-          authorizedEgress = buildAuthorizedEgress({
-            content: technicalFallback.text,
-            authorized_urls: [],
-            protected_facts: [],
-          });
-          committedBusinessAction = null;
-          preparedPipeline = null;
-          preparedAgentTurn = null;
-          effectiveAuthorizedOfferingCode = null;
-          egressSuppressed = true;
-        }
-      }
     }
 
     const inserted = await db<Array<{ id: string }>>`

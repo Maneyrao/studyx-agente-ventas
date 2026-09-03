@@ -105,12 +105,12 @@ describe('Agent A Brain V1', () => {
         },
       },
     });
-    const repairDirective = 'FACT_VALUE_MISMATCH requires removing every rejected commercial value';
+    const repairDirective = 'FACT_VALUE_MISMATCH means the VALUE you stated does not match the canonical record';
 
     expect(instructions).toContain(repairDirective);
     expect(instructions.lastIndexOf(repairDirective))
       .toBeGreaterThan(instructions.lastIndexOf('</authorized_context>'));
-    expect(instructions).toContain('include that exact id in used_fact_ids');
+    expect(instructions).toContain('Correct it to a\nvalue present in authorized_alternatives.fact_ids');
   });
 
   it('reports only the safe schema path and issue code for a root contract failure', () => {
@@ -228,7 +228,12 @@ describe('Agent A Brain V1', () => {
     expect(composition.narrative.opening).toBe(natural);
   });
 
-  it('rejects a generic availability claim before the backend would suppress the whole reply', () => {
+  // Antes se exigía rechazar esta frase. El backend, en cambio, ya la
+  // autorizaba como guía genérica de catálogo: el ADK era MÁS estricto que la
+  // frontera autoritativa y mataba lenguaje de venta corriente. Con la verdad
+  // comercial verificada por valor en el backend, orientar sin afirmar un
+  // hecho del catálogo es exactamente lo que el modelo debe poder hacer.
+  it('allows generic guidance that orients without asserting a catalog fact', () => {
     const genericAvailability = parseAgentATurnProposalV1(proposal({
       move: {
         schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 0.95,
@@ -246,11 +251,7 @@ describe('Agent A Brain V1', () => {
       context: context(),
       planned_fact_ids: [],
       rejection_id: '00000000-0000-4000-8000-000000000099',
-    })).toMatchObject({
-      rejections: expect.arrayContaining([
-        { code: 'FACT_VALUE_MISMATCH', subject: 'offering' },
-      ]),
-    });
+    })).toBeNull();
   });
 
   it('allows an availability statement only when it names and cites the authorized course', () => {

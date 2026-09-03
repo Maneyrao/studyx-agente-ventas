@@ -1129,6 +1129,9 @@ function mentionsMissingIntakeField(messages: readonly string[], missing: readon
   });
 }
 
+/** Únicos géneros que el ADK sigue bloqueando por su cuenta. */
+const ADK_BLOCKING_FACT_KINDS = new Set(['price', 'promise']);
+
 export function validateAgentATurnProposalV1(input: {
   readonly proposal: AgentATurnProposalV1;
   readonly context: AgentAContextV1;
@@ -1138,10 +1141,6 @@ export function validateAgentATurnProposalV1(input: {
   const rejections: Array<{ code: TurnRejectionV1['rejections'][number]['code']; subject: string }> = [];
   const planned = new Set(input.planned_fact_ids);
   const cited = new Set(input.proposal.used_fact_ids);
-  const authorizedOfferingNames = [...commercialValuesByFactId(input.context)]
-    .filter(([factId]) => planned.has(factId) && cited.has(factId))
-    .filter(([factId]) => /^offering:[^:]+:name:v1$/u.test(factId))
-    .map(([, value]) => value.normalize('NFKC').toLocaleLowerCase('es'));
 
   // V8 — el borrador es, palabra por palabra, el mensaje anterior del agente.
   //
@@ -1197,15 +1196,16 @@ export function validateAgentATurnProposalV1(input: {
   ) {
     rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'prerequisites' });
   }
+  // Dinero y promesa siguen siendo frontera acá: el error es caro y conviene
+  // abrir la reparación antes del commit. El resto de los sustantivos
+  // comerciales —modalidad, certificación, duración, nombre de curso— los
+  // verifica el backend por VALOR contra el registro canónico
+  // (`commercial-truth-guard`). Exigir además una CITA por cada uno convertía
+  // cualquier frase natural en un rechazo y, con la reparación apagada, en el
+  // piso técnico: era la causa raíz de que el modelo no pudiera conversar.
   for (const message of authoredNarrative) {
     for (const fact of extractProtectedFacts(message)) {
-      if (fact.kind === 'offering') {
-        const normalizedMessage = message.normalize('NFKC').toLocaleLowerCase('es');
-        if (!authorizedOfferingNames.some((name) => normalizedMessage.includes(name))) {
-          unauthorizedKinds.add('offering');
-        }
-        continue;
-      }
+      if (!ADK_BLOCKING_FACT_KINDS.has(fact.kind)) continue;
       if (!authorizedProtectedFacts.has(`${fact.kind}\u0000${fact.value}`)) {
         unauthorizedKinds.add(fact.kind);
       }

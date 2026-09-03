@@ -82,8 +82,15 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
+  // El disparador pasó de `duration` a `price`. La verdad de duración,
+  // modalidad y certificación la verifica ahora el backend por VALOR contra el
+  // registro canónico; el ADK sólo sigue bloqueando dinero y promesas. La
+  // mecánica de reparación que este test cubre es la misma.
   it('returns an uncited canonical value to DeepSeek once and accepts its cited rewrite', async () => {
-    const initial = generated(proposal({ used_fact_ids: [NAME_FACT] }));
+    const initial = generated(proposal({
+      response: { messages: ['La formación sale USD 480.'], call_offer: null },
+      used_fact_ids: [NAME_FACT],
+    }));
     const repaired = generated(proposal({
       response: { messages: ['Dura 38 clases.'], call_offer: null },
       repair_of: { rejection_id: '00000000-0000-4000-8000-000000000001', attempt: 1 },
@@ -97,7 +104,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
 
     expect(repair).toHaveBeenCalledTimes(1);
     expect(repair.mock.calls[0]?.[0]).toMatchObject({
-      rejections: [{ code: 'FACT_VALUE_MISMATCH', subject: 'duration' }],
+      rejections: [{ code: 'FACT_VALUE_MISMATCH', subject: 'price' }],
       authorized_alternatives: { fact_ids: expect.arrayContaining([NAME_FACT, DURATION_FACT]) },
     });
     expect(result.effective).toBe(repaired);
@@ -107,16 +114,26 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
+  // El `throw` dejó de ser el resultado de un hecho no autorizado: eso ahora
+  // degrada al backend, que veta la oración. La invariante que este test
+  // protege —una sola reparación, nunca dos— se verifica sobre el caso que
+  // sigue siendo un rechazo duro: una propuesta que afirma un efecto que no
+  // ocurrió.
   it('never requests a second rewrite when the only rewrite remains invalid', async () => {
-    const initial = generated(proposal({ used_fact_ids: [NAME_FACT] }));
-    const invalidRepair = generated(proposal({
+    const lying = () => proposal({
+      response: { messages: ['Listo, ya te mando el link de pago.'], call_offer: null },
+      proposed_action: {
+        type: 'send_payment_link', offering_code: 'maquillaje-profesional', payment_plan: 'monthly_12',
+      },
       used_fact_ids: [NAME_FACT],
+    });
+    const repair = vi.fn().mockResolvedValue(generated({
+      ...lying(),
       repair_of: { rejection_id: '00000000-0000-4000-8000-000000000001', attempt: 1 },
-    }));
-    const repair = vi.fn().mockResolvedValue(invalidRepair);
+    } as never));
 
     await expect(resolveAgentAPlannerlessProposalV2({
-      initial, context: context(), repair_enabled: true, repair,
+      initial: generated(lying()), context: context(), repair_enabled: true, repair,
       rejection_id: '00000000-0000-4000-8000-000000000001',
     })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
 
@@ -332,5 +349,65 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(repair).toHaveBeenCalledTimes(1);
     expect(result.effective).toBe(repaired);
     expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
+  });
+});
+
+/**
+ * Un rechazo de hecho ya no puede matar el turno.
+ *
+ * Con la reparación apagada, cualquier rechazo tiraba
+ * `PLANNERLESS_PROPOSAL_REJECTED` y el cliente recibía el piso técnico. Hoy la
+ * frontera autoritativa es el backend, que veta la ORACIÓN culpable y entrega
+ * el resto: dejar pasar la propuesta es estrictamente más seguro que borrarla,
+ * porque el hecho falso no sobrevive igual y la conversación sí.
+ *
+ * Lo que sigue siendo intolerable es afirmar un efecto que no ocurrió.
+ */
+describe('degradado en vez de rechazo duro', () => {
+  const rejectedByPrice = () => generated(proposal({
+    response: { messages: ['La formación sale USD 480.'], call_offer: null },
+    used_fact_ids: [NAME_FACT],
+  }));
+
+  it('entrega la propuesta al backend cuando la reparación está apagada', async () => {
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: rejectedByPrice(), context: context(), repair_enabled: false,
+      repair: vi.fn(), rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(result.evidence.rejection_codes).toEqual(['FACT_VALUE_MISMATCH']);
+    expect(result.evidence.repaired).toBe(false);
+    expect(result.effective.proposal.response.messages).toEqual(['La formación sale USD 480.']);
+  });
+
+  it('entrega la propuesta cuando la única reparación sigue siendo inválida', async () => {
+    const repair = vi.fn().mockResolvedValue(generated(proposal({
+      response: { messages: ['La formación sale USD 480.'], call_offer: null },
+      used_fact_ids: [NAME_FACT],
+      repair_of: { rejection_id: '00000000-0000-4000-8000-000000000001', attempt: 1 },
+    })));
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: rejectedByPrice(), context: context(), repair_enabled: true,
+      repair, rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.effective.proposal.response.messages).toEqual(['La formación sale USD 480.']);
+  });
+
+  it('sigue rechazando una propuesta que afirma haber mandado el link de pago', async () => {
+    const lying = generated(proposal({
+      response: { messages: ['Listo, ya te mando el link de pago.'], call_offer: null },
+      proposed_action: {
+        type: 'send_payment_link', offering_code: 'maquillaje-profesional', payment_plan: 'monthly_12',
+      },
+      used_fact_ids: [NAME_FACT],
+    }));
+
+    await expect(resolveAgentAPlannerlessProposalV2({
+      initial: lying, context: context(), repair_enabled: false,
+      repair: vi.fn(), rejection_id: '00000000-0000-4000-8000-000000000001',
+    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
   });
 });

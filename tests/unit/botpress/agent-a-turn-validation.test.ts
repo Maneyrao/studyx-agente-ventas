@@ -461,3 +461,48 @@ describe('V8 respuesta repetida', () => {
     expect(rejection).toBeNull();
   });
 });
+
+/**
+ * La verdad comercial pasó a verificarse por VALOR contra el registro canónico
+ * en el backend (`commercial-truth-guard`). Este validador deja de duplicar esa
+ * frontera con criterio de CITA: exigir un `used_fact_ids` por cada sustantivo
+ * comercial convertía cualquier frase natural en un rechazo, y con la
+ * reparación apagada, en el piso técnico.
+ *
+ * Sigue bloqueando lo que es dinero o promesa, que es donde un error es caro.
+ */
+describe('frontera léxica del ADK acotada a dinero y promesas', () => {
+  function validate(messages: string[]) {
+    return validateAgentATurnProposalV1({
+      proposal: proposal({
+        response: { messages: messages as never, call_offer: null },
+        used_fact_ids: [],
+      }),
+      context: context(),
+      planned_fact_ids: [],
+      rejection_id: '22222222-2222-4222-8222-222222222222',
+    });
+  }
+
+  it('no rechaza mencionar la modalidad sin citar un id de hecho', () => {
+    expect(validate(['Es 100% online, así que lo hacés a tu ritmo.'])).toBeNull();
+  });
+
+  it('no rechaza mencionar la certificación sin citar un id de hecho', () => {
+    expect(validate(['Al terminar te llevás un certificado.'])).toBeNull();
+  });
+
+  it('no rechaza nombrar cursos con lenguaje de venta corriente', () => {
+    expect(validate(['Tenemos cursos de Tecnología y de Negocios.'])).toBeNull();
+  });
+
+  it('sigue rechazando un precio que nadie autorizó', () => {
+    expect(validate(['El valor total del programa es USD 360.'])?.rejections)
+      .toContainEqual({ code: 'FACT_VALUE_MISMATCH', subject: 'price' });
+  });
+
+  it('sigue rechazando una promesa de empleo garantizado', () => {
+    expect(validate(['Tenés salida laboral garantizada.'])?.rejections)
+      .toContainEqual({ code: 'FACT_VALUE_MISMATCH', subject: 'promise' });
+  });
+});

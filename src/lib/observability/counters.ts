@@ -39,6 +39,9 @@ type CounterName =
   | 'catalog_lookup_failures'
   | 'knowledge_injection_suspected'
   | 'egress_paragraphs_redacted'
+  // Oraciones vetadas por la frontera de verdad comercial. Reemplaza al
+  // recorte por párrafos: hoy cae la oración, no el turno.
+  | 'egress_sentences_vetoed'
   | 'egress_response_suppressed'
   // Reconciliación (fase 7). `reconcile_deliveries_ambiguous` es la métrica que
   // hay que mirar todos los días: cada unidad es un cliente que puede haber

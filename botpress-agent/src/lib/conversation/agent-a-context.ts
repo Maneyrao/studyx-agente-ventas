@@ -86,10 +86,12 @@ export function bindCurrentCatalogResolutionToMoveV1(
 }
 
 /**
- * A deliberately tiny current-batch classifier for the shortest commercial
- * request. The model still writes the response, while the backend prevents an
- * exact "info" request from being downgraded to a social greeting or from
- * reviving an older course.
+ * Vinculación de dinero y área desde el mensaje ACTUAL.
+ *
+ * Ya no clasifica intención: DeepSeek elige el `move`. Lo único que el backend
+ * sigue imponiendo acá es la selección de plan de pago derivada del mensaje
+ * actual —nunca de la memoria— y la desambiguación de un área nombrada, que
+ * son las dos cosas cuyo error cuesta dinero o manda al cliente a otro lado.
  */
 export function bindCurrentConversationalIntentToMoveV1(
   move: ConversationMoveV1,
@@ -194,51 +196,12 @@ export function bindCurrentConversationalIntentToMoveV1(
       ])].slice(0, 2),
     };
   }
-  if (claimed.catalog_resolution.kind === 'exact') {
-    const resolution = claimed.catalog_resolution;
-    const currentOffering = claimed.catalog_index?.offerings.find(
-      (offering) => offering.code === resolution.offeringCode,
-    );
-    const normalize = (value: string) => value
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/gu, '')
-      .toLocaleLowerCase('es')
-      .replace(/[^a-z0-9]+/gu, ' ')
-      .trim();
-    const identityTerms = [
-      resolution.displayName,
-      resolution.offeringCode,
-      ...(currentOffering?.aliases ?? []),
-    ].map(normalize).filter(Boolean);
-    const paddedCurrentBatch = ` ${currentBatch} `;
-    const mentionsCurrentOffering = identityTerms.some(
-      (term) => paddedCurrentBatch.includes(` ${term} `),
-    );
-    const asksEconomicDetails = /\b(?:precio|precios|cuanto sale|cuanto cuesta|pagos|formas? de pago)\b/u
-      .test(currentBatch);
-    const alreadyRepresentsPaymentIntent = [move.move, ...move.secondary_moves]
-      .some((kind) => PAYMENT_INTENT_MOVES.has(kind));
-    if (mentionsCurrentOffering && asksEconomicDetails && !alreadyRepresentsPaymentIntent) {
-      return {
-        schema_version: 1,
-        move: 'ask_course_information',
-        secondary_moves: ['ask_payment_options'],
-        vetoes: move.vetoes,
-        confidence: 1,
-        course_reference: resolution.offeringCode,
-      };
-    }
-  }
-  if (!/^(?:(?:quiero|necesito|busco|dame|pasame) )?(?:toda la )?(?:informacion|info|detalles?)$/u.test(currentBatch)) {
-    return move;
-  }
-  return {
-    schema_version: 1,
-    move: 'browse_catalog',
-    secondary_moves: [],
-    vetoes: [],
-    confidence: 1,
-  };
+  // Las dos reescrituras de intención que vivían acá —forzar
+  // `ask_course_information` ante una pregunta de precio, y forzar
+  // `browse_catalog` ante «info»— se eliminaron: DeepSeek elige la intención.
+  // El backend sólo sigue vinculando lo que es dinero (el plan de pago
+  // explícito del mensaje actual) y la desambiguación de área.
+  return move;
 }
 
 function areaCode(value: string | null): string | null {
@@ -363,7 +326,20 @@ export function buildAgentAContextV1(
   const currentCode = claimed.catalog_resolution.kind === 'exact'
     ? claimed.catalog_resolution.offeringCode
     : null;
-  const selectedCode = currentCode ?? state.selected_offering_code;
+  // Un turno vago no sostiene el curso de una conversación anterior. La
+  // supresión previa exigía `selectedCode === null`, que es exactamente el
+  // caso que NO falla, y sólo limpiaba memorias: la ficha del curso viejo
+  // seguía viajando y el modelo no tenía otra cosa de la que hablar.
+  //
+  // Un paso pendiente sí sostiene el curso: quien está entregando sus datos de
+  // contacto y escribe "?" no está abandonando la compra.
+  const hasPendingCommitment = state.awaiting_reply !== 'none'
+    || state.selected_payment_plan !== null
+    || state.payment_reported === true;
+  const scopeToCurrentTurn = currentCode === null
+    && !hasPendingCommitment
+    && currentTurnIsUnderspecifiedV1(claimed);
+  const selectedCode = currentCode ?? (scopeToCurrentTurn ? null : state.selected_offering_code);
   const currentCourseChanged = currentCode !== null
     && currentCode !== state.selected_offering_code;
   const selectedOffering = selectedCode ? selectedOfferingFacts(claimed, selectedCode) : null;
@@ -383,9 +359,7 @@ export function buildAgentAContextV1(
     }));
   const callOfferCount = state.call_offer_count ?? (state.call_offer_status === 'not_offered' ? 0 : 1);
   const selectedPlan = currentCourseChanged ? null : state.selected_payment_plan;
-  const suppressContactMemories = selectedCode === null
-    && state.stage === 'exploring'
-    && currentTurnIsUnderspecifiedV1(claimed);
+  const suppressContactMemories = scopeToCurrentTurn;
 
   return AgentAContextV1Schema.parse({
     schema_version: 1,
@@ -418,7 +392,11 @@ export function buildAgentAContextV1(
     commercial_state: {
       selected_offering_code: selectedCode,
       selected_payment_plan: selectedPlan,
-      stage: currentCourseChanged ? 'course_selected' : state.stage,
+      // Ocultar el curso y seguir diciendo `course_selected` describiría un
+      // estado que el modelo no puede ver: el turno vuelve a exploración.
+      stage: currentCourseChanged
+        ? 'course_selected'
+        : (scopeToCurrentTurn ? 'exploring' : state.stage),
       call_preference: state.call_preference,
       call_offer_status: state.call_offer_status,
       call_offer_count: callOfferCount,

@@ -181,6 +181,28 @@ function demoteUnauthorizedPaymentAction<T extends AgentAProposalEnvelopeV1>(inp
 }
 
 /**
+ * Códigos que el backend vuelve a verificar por su cuenta y puede vetar a
+ * nivel de oración. Dejar pasar la propuesta con uno de estos es más seguro
+ * que descartarla: el hecho falso muere igual en el egress, y la conversación
+ * —que era lo único que se perdía— sobrevive.
+ */
+const BACKEND_ENFORCEABLE_CODES = new Set([
+  'FACT_VALUE_MISMATCH',
+  'FACT_NOT_AUTHORIZED',
+  'REPEATED_AGENT_REPLY',
+])
+
+function mayDegradeToBackendBoundary(
+  proposal: AgentATurnProposalV1,
+  rejection: TurnRejectionV1,
+): boolean {
+  // Afirmar un efecto que no ocurrió no es un hecho que el egress pueda podar:
+  // la oración entera es la mentira. Eso sigue siendo un rechazo duro.
+  if (claimsImmediatePaymentLinkDelivery(proposal)) return false
+  return rejection.rejections.every((reason) => BACKEND_ENFORCEABLE_CODES.has(reason.code))
+}
+
+/**
  * Pre-commit validation for the plannerless route. DeepSeek still owns the
  * complete response and the next move. This boundary only tells it which
  * facts/actions were rejected and allows one rewrite before the backend
@@ -251,8 +273,20 @@ export async function resolveAgentAPlannerlessProposalV2<
     }
   }
 
+  const degraded = (repair_attempted: boolean) => ({
+    effective: input.initial,
+    evidence: {
+      rejection_codes: rejection.rejections.map((reason) => reason.code),
+      repair_attempted,
+      repaired: false,
+      proposal_generation_calls: repair_attempted ? (2 as const) : (1 as const),
+    },
+    rejection,
+  })
+
   const mayRepair = input.repair_enabled && input.initial.proposal.repair_of === null
   if (!mayRepair) {
+    if (mayDegradeToBackendBoundary(input.initial.proposal, rejection)) return degraded(false)
     throw new Error('PLANNERLESS_PROPOSAL_REJECTED')
   }
 
@@ -282,6 +316,7 @@ export async function resolveAgentAPlannerlessProposalV2<
     // never opens a second rewrite and never authorizes the original draft.
   }
 
+  if (mayDegradeToBackendBoundary(input.initial.proposal, rejection)) return degraded(true)
   throw new Error('PLANNERLESS_PROPOSAL_REJECTED')
 }
 

@@ -207,6 +207,18 @@ function extractMatches(
   }));
 }
 
+/**
+ * Los hechos protegidos presentes en un texto ya aprobado.
+ *
+ * La autoridad comercial pasó a `commercial-truth-guard`, que verifica valores
+ * contra el registro canónico. El manifiesto sigue existiendo porque el egress
+ * y el ADK verifican su hash aguas abajo, pero deja de ser una segunda
+ * frontera con criterio propio: registra lo que el guard ya autorizó.
+ */
+export function protectedFactsInContentV1(content: string): ProtectedFactRef[] {
+  return extractProtectedFacts(content);
+}
+
 function extractProtectedFacts(content: string): ProtectedFactRef[] {
   const normalizedContent = normalizeFactValue(content);
   return [
