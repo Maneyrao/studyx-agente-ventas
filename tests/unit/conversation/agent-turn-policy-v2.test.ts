@@ -305,7 +305,24 @@ describe('plannerless Agent A authority', () => {
     });
   });
 
-  it('rejects a third proactive call offer', () => {
+  it.each([
+    'Si querés, puedo contarte más en detalle cómo funciona el curso.',
+    '¿Preferís que te explique el contenido por acá?',
+    'Entendido, seguimos sin llamada.',
+  ])('does not spend a call offer or wait for one merely because prose was placed in call_offer: %s', (text) => {
+    const result = authorize({
+      state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected' }),
+      mayOfferCall: false,
+      proposal: proposal({ response: { messages: ['Puedo ayudarte con el curso.'], call_offer: text } }),
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      transition: { call_offer_count: 0, call_offer_status: 'not_offered', awaiting_reply: 'none' },
+    });
+    if (result.ok) expect(result.response).toContain(text);
+  });
+
+  it.each(['¿Querés que coordinemos una llamada?', '¿Hablamos por teléfono?', '¿Quieres que te llame para explicarte el curso?', 'Ya registré tus datos. ¿Hablamos por teléfono?', 'Ya registré tus datos, ¿Hablamos por teléfono?', 'Entendido, seguimos sin llamada. ¿Quieres que te llame para explicarte el curso?'])('rejects a third proactive call offer: %s', (offer) => {
     const result = authorize({
       state: state({
         selected_offering_code: 'redes_informaticas', stage: 'course_selected',
@@ -315,7 +332,7 @@ describe('plannerless Agent A authority', () => {
       proposal: proposal({
         response: {
           messages: ['Seguimos por chat.'],
-          call_offer: '¿Querés que coordinemos una llamada?',
+          call_offer: offer,
         },
       }),
     });

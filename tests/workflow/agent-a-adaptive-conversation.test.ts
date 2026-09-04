@@ -2,8 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { runWorkflowTurnV1, type WorkflowTurnEvidenceV1 } from '../helpers/agent-a-workflow-driver';
-import { readWorkflowDbEvidenceV1 } from '../helpers/agent-a-workflow-db-evidence';
-import { nextAdaptiveCustomerTurnV1 } from '../helpers/agent-a-adaptive-customer';
+import { readWorkflowDbEvidenceV1, type WorkflowDbEvidenceV1 } from '../helpers/agent-a-workflow-db-evidence';
+import {
+  adaptivePaymentAuthorizationFailuresV2,
+  nextAdaptiveCustomerTurnV2,
+} from '../helpers/agent-a-adaptive-customer';
 import { configuration } from '../helpers/botpress-workflow-runtime';
 import { writeWorkflowReportV1 } from '../helpers/agent-a-workflow-report';
 import { countWorkflowAvailabilityFailuresV1 } from '../helpers/agent-a-workflow-measurement';
@@ -59,22 +62,25 @@ describe('venta completa con cliente adaptativo', () => {
     const phoneE164 = `+999${String(Date.now()).slice(-10)}`;
 
     const transcript: { role: 'user' | 'assistant'; text: string; answering?: string }[] = [];
-    const turns: { customer: string; evidence: WorkflowTurnEvidenceV1 }[] = [];
+    const turns: { customer: string; answering: string; evidence: WorkflowTurnEvidenceV1 }[] = [];
     let lastAgentMessage: string | null = null;
     let alreadyGaveDetails = false;
+    let alreadySelectedPlan = false;
+    let db: WorkflowDbEvidenceV1 | null = null;
     let silencios = 0;
     let planRequests = 0;
 
     for (let turnIndex = 0; turnIndex < 7; turnIndex += 1) {
-      const siguiente = nextAdaptiveCustomerTurnV1({
-        profile: perfil, lastAgentMessage, turnIndex, alreadyGaveDetails,
+      const siguiente = nextAdaptiveCustomerTurnV2({
+        profile: perfil, lastAgentMessage, turnIndex, alreadyGaveDetails, alreadySelectedPlan,
       });
       if (siguiente.answering === 'datos_de_contacto') alreadyGaveDetails = true;
+      if (siguiente.answering === 'eleccion_de_plan') alreadySelectedPlan = true;
 
       const evidencia = await runWorkflowTurnV1({
         text: siguiente.text, conversationId, userId, phoneE164,
       });
-      turns.push({ customer: siguiente.text, evidence: evidencia });
+      turns.push({ customer: siguiente.text, answering: siguiente.answering, evidence: evidencia });
       transcript.push({ role: 'user', text: siguiente.text, answering: siguiente.answering });
       for (const message of evidencia.authorizedMessages) {
         transcript.push({ role: 'assistant', text: message });
@@ -82,21 +88,34 @@ describe('venta completa con cliente adaptativo', () => {
       if (evidencia.authorizedMessages.length === 0) silencios += 1;
       planRequests += evidencia.legacyPlanRequests;
       lastAgentMessage = evidencia.authorizedMessages.join(' ') || null;
+      db = await readWorkflowDbEvidenceV1({
+        databaseUrl, externalConversationId: conversationId,
+        adapterCaptures: turns.flatMap(turn => turn.evidence.adapterCaptures),
+      });
+      const permissionFailures = adaptivePaymentAuthorizationFailuresV2({ turns, db });
+      const availabilityFailures = countWorkflowAvailabilityFailuresV1({ turns, db });
+      writeWorkflowReportV1('workflow-adaptive-checkpoint', {
+        evaluated_route: 'plannerless-v2', customer: 'adaptive-rule-based-v2',
+        conversationId, scenario_role: 'adjustment', transcript, turns, db,
+        availability_failures: availabilityFailures, explicit_payment_authorization_failures: permissionFailures,
+      });
+      expect(permissionFailures, 'cada link o acción durable requiere autoriza_link/pide_link previo del cliente').toEqual([]);
+      expect(availabilityFailures, 'un link posterior no compensa una degradación técnica previa').toBe(0);
       if (siguiente.answering === 'link_recibido') break;
     }
 
-    const db = await readWorkflowDbEvidenceV1({
-      databaseUrl, externalConversationId: conversationId,
-      adapterCaptures: turns.flatMap((turn) => turn.evidence.adapterCaptures),
-    });
+    if (!db) throw new Error('ADAPTIVE_WORKFLOW_DB_EVIDENCE_MISSING');
 
     const availabilityFailures = countWorkflowAvailabilityFailuresV1({ turns, db });
+    const permissionFailures = adaptivePaymentAuthorizationFailuresV2({ turns, db });
     writeWorkflowReportV1('workflow-adaptive-sale', {
         evaluated_route: 'plannerless-v2',
-        customer: 'adaptive-rule-based-v1',
+        customer: 'adaptive-rule-based-v2', conversationId,
         scenario_role: 'adjustment', transcript, turns, db, availability_failures: availabilityFailures,
+        explicit_payment_authorization_failures: permissionFailures,
     });
 
+    expect(permissionFailures).toEqual([]);
     expect(silencios, 'ningún turno puede quedar sin respuesta').toBe(0);
     expect(availabilityFailures, 'un link posterior no compensa una degradación técnica previa').toBe(0);
     expect(planRequests).toBe(0);

@@ -127,7 +127,10 @@ function pruneRepeatedQuestion<T extends AgentAProposalEnvelopeV1>(input: {
     previous,
     currentCustomerText,
   )
-  if (messages.length === 0 || messages.length === input.initial.proposal.response.messages.length) {
+  const originalMessages = input.initial.proposal.response.messages
+  const unchanged = messages.length === originalMessages.length
+    && messages.every((message, index) => message === originalMessages[index])
+  if (messages.length === 0 || unchanged) {
     return null
   }
   const candidate = {

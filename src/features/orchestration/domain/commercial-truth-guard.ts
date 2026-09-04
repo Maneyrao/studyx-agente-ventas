@@ -91,6 +91,8 @@ const GENERIC_CATALOG = /^(?:(?:varias|distintas|muchas|algunas|las|estas|tres)\
 const OFFERING_DESCRIPTION = /^(?:que|para|con|sin|ideal|donde|porque|si|una\s+opcion|un\s+curso|es|tiene|incluye)\b/u;
 const NON_COURSE_OBJECT = /^(?:(?:el|la|un|una|nuestro|nuestra)\s+)?(?:\d+\s+)?(?:pagos?|cuotas?|planes?|chat|soporte|llamadas?|asesoria|acompanamiento|ayuda|informacion|acceso|profesores|clases|certificados?|descuentos?|becas?)\b/u;
 const EXPLICIT_COURSE = /^(?:(?:el|un|nuestro)\s+)?(?:curso|diplomado|diplomatura|carrera)\s+(?:de\s+|en\s+)?/u;
+const AREA_MEMBERSHIP = /^(?:que\s+)?(?:dentro\s+de|(?:como\s+)?parte\s+de|(?:forma|es)\s+parte\s+de|(?:pertenece|perteneciente)\s+a)\s+(?:(?:la|el|nuestra|nuestro)\s+)?/u;
+const OFFERING_LIST_SEPARATOR = /^(?:[,;:]\s*(?:(?:y|e|o)\s+)?|(?:y|e|o)\s+)/u;
 
 function offersUnauthorizedBenefit(sentence: string): boolean {
   // Una negación alcanza su cláusula, nunca una oferta afirmativa posterior.
@@ -104,6 +106,7 @@ function offersUnauthorizedBenefit(sentence: string): boolean {
 function containsUnknownOffering(sentence: string, names: readonly string[], areas: readonly string[]): boolean {
   const normalized = normalize(sentence);
   const canonicalNames = names.map(normalize).filter(Boolean).sort((a, b) => b.length - a.length);
+  const canonicalAreas = areas.map(normalize).filter(Boolean).sort((a, b) => b.length - a.length);
   for (const claim of sentence.matchAll(OFFERING_CLAIM)) {
     if (/\b(?:no|nunca|tampoco)\s*$/u.test(normalized.slice(0, claim.index))) continue;
     const namedObject = claim[1]!.trim();
@@ -127,8 +130,25 @@ function containsUnknownOffering(sentence: string, names: readonly string[], are
         && !/\p{L}/u.test(remainder.slice(candidate.length, candidate.length + 1)));
       if (!name) return true;
       remainder = remainder.slice(name.length).trim();
+      const descriptor = remainder.replace(OFFERING_LIST_SEPARATOR, '');
+      const membership = descriptor.match(AREA_MEMBERSHIP);
+      if (membership) {
+        // El área describe el curso anterior. Consumir sólo ese nombre permite
+        // seguir verificando otros cursos que aparezcan después del descriptor.
+        const areaObject = descriptor.slice(membership[0].length);
+        const area = canonicalAreas.find((candidate) => areaObject.startsWith(candidate)
+          && !/\p{L}/u.test(areaObject.slice(candidate.length, candidate.length + 1)));
+        if (!area) return true;
+        remainder = areaObject.slice(area.length).trim();
+        if (remainder.length === 0 || OFFERING_DESCRIPTION.test(remainder)) break;
+        const following = remainder.replace(OFFERING_LIST_SEPARATOR, '');
+        if (following === remainder) return true;
+        remainder = following;
+        if (OFFERING_DESCRIPTION.test(remainder)) break;
+        continue;
+      }
       if (remainder.length === 0 || OFFERING_DESCRIPTION.test(remainder)) break;
-      const next = remainder.replace(/^(?:[,;:]\s*(?:(?:y|e|o)\s+)?|(?:y|e|o)\s+)/u, '');
+      const next = remainder.replace(OFFERING_LIST_SEPARATOR, '');
       if (next === remainder) break;
       remainder = next;
       if (OFFERING_DESCRIPTION.test(remainder)) break;

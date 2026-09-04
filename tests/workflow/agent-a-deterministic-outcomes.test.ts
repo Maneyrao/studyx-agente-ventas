@@ -68,6 +68,47 @@ function identity() {
 }
 
 describe('contratos por workflow real con proveedor determinístico sin costo', () => {
+  it('el ledger cuenta solicitudes de llamada visibles y no cualquier texto del campo call_offer', async () => {
+    const id = identity();
+    const turns: { customer: string; evidence: WorkflowTurnEvidenceV1 }[] = [];
+    async function send(customer: string, next: AgentATurnProposalV1, count: number, status: string) {
+      fixture = next;
+      const evidence = await runWorkflowTurnV1({ ...id, text: customer });
+      turns.push({ customer, evidence });
+      const db = await readWorkflowDbEvidenceV1({ databaseUrl, externalConversationId: id.conversationId,
+        adapterCaptures: turns.flatMap(turn => turn.evidence.adapterCaptures) });
+      writeWorkflowReportV1('workflow-call-ledger-fixture', {
+        provider: 'fixture', api_cost_usd: 0, scenario_role: 'contract', ...id, turns, db,
+      });
+      expect(countWorkflowAvailabilityFailuresV1({ turns, db })).toBe(0);
+      expect(db.state?.callOfferCount).toBe(count);
+      expect(db.state?.callOfferStatus).toBe(status);
+      expect(evidence.authorizedMessages.join('\n')).toContain(next.response.call_offer);
+      expect(evidence.adapterCaptures).toHaveLength(1);
+      return db;
+    }
+    let next = proposal('select_course', 'Puedo ayudarte con esta formación.', { course_reference: 'Redes Informáticas' });
+    next = { ...next, response: { ...next.response,
+      call_offer: 'Si querés, puedo contarte más en detalle cómo funciona el curso.' } };
+    let db = await send('Me interesa Redes Informáticas', next, 0, 'not_offered');
+    expect(db.state?.awaitingReply).toBe('none');
+
+    next = proposal('ask_course_information', 'Podemos revisar tus dudas.');
+    next = { ...next, response: { ...next.response, call_offer: '¿Hablamos por teléfono?' } };
+    db = await send('Quiero saber más', next, 1, 'offered');
+    expect(db.state?.awaitingReply).toBe('call_or_chat');
+
+    next = proposal('continue_by_chat', 'Claro.', { vetoes: ['call'] });
+    next = { ...next, response: { ...next.response, call_offer: 'Seguimos por chat.' } };
+    db = await send('Prefiero seguir por chat', next, 1, 'declined');
+    expect(db.state?.awaitingReply).toBe('none');
+
+    next = proposal('ask_course_information', 'Puedo ayudarte con el contenido.');
+    next = { ...next, response: { ...next.response, call_offer: 'Te puedo contar más por acá.' } };
+    db = await send('Contame un poco más', next, 1, 'declined');
+    expect(db.state?.awaitingReply).toBe('none');
+  }, 120_000);
+
   it('persiste curso/plan/teléfono, requiere autorización, respeta postergación, entrega una vez, registra pago y bloquea opt-out', async () => {
     const id = identity();
     const turns: { customer: string; evidence: WorkflowTurnEvidenceV1 }[] = [];

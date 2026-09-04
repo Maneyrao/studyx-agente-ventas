@@ -14,8 +14,20 @@ const source = readFileSync(
 );
 
 describe('prompt canónico v2', () => {
+  it('las objeciones y reglas duras conservan el alcance de precio, elección y permiso', () => {
+    const costObjection = source.slice(source.indexOf('**"¿Cuál es el costo?"**'), source.indexOf('**"Es caro"'));
+    expect(costObjection).toMatch(/primera presentación/iu);
+    expect(costObjection).toMatch(/sin repetir/iu);
+    const always = source.slice(source.indexOf('**SIEMPRE:**'), source.indexOf('## 8.'));
+    expect(always.split('\n').find(line => line.includes('Cierre por opción'))).toMatch(/no haya elegido/iu);
+    expect(always.split('\n').find(line => line.includes('Link de pago'))).toMatch(/autorización explícita vigente/iu);
+    const firstPayment = source.slice(source.indexOf('**"¿Hay que pagar todo junto'), source.indexOf('### TIEMPO Y HORARIOS'));
+    expect(firstPayment).toMatch(/verificar la acreditación/iu);
+    expect(firstPayment).not.toMatch(/ya tenés acceso completo/iu);
+  });
+
   it('está versionado como v2 y el generado coincide con la fuente', () => {
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v4');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v8');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toBe(source);
   });
 
@@ -78,6 +90,8 @@ describe('prompt canónico v2', () => {
       /d[áa] un plazo concreto/iu,
       /te llamo \d+ minutos/iu,
       /seguimiento en 24\s*h/iu,
+      /lo verifico y te digo/iu,
+      /ofrecé llamada inmediata/iu,
     ]) {
       expect(source).not.toMatch(term);
     }

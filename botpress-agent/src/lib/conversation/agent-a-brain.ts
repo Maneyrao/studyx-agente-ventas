@@ -161,7 +161,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
           body: JSON.stringify({
             model,
             instructions: buildAgentABrainInstructionsV1(input.context),
-            input: 'Return only the single AgentATurnProposalV1 JSON object.',
+            input: `Current customer messages: ${JSON.stringify(input.context.turn.batch_messages.map((message) => message.text))}\nAnswer these messages and return only the single AgentATurnProposalV1 JSON object.`,
             reasoning: { effort: 'none' },
             temperature: 0.2,
             stream: false,
@@ -170,7 +170,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
               format: {
                 type: 'json_schema',
                 name: 'studyx_agent_a_turn_proposal_v1',
-                schema: proposalJsonSchema(),
+                schema: proposalJsonSchema(input.context),
               },
             },
           }),
@@ -371,7 +371,7 @@ function closedObject(properties: Record<string, unknown>) {
   return { type: 'object', properties, required: Object.keys(properties), additionalProperties: false };
 }
 
-function proposalJsonSchema(): unknown {
+function proposalJsonSchema(context: AgentAContextV1): unknown {
   const nullableString = { anyOf: [{ type: 'string' }, { type: 'null' }] };
   const move = closedObject({
     schema_version: { type: 'integer', enum: [1] },
@@ -421,6 +421,15 @@ function proposalJsonSchema(): unknown {
       },
     }),
     proposed_action: proposedAction,
+    // The single repair must echo its actual rejection. Omitting this field
+    // from a closed provider schema made every conforming repair fail the
+    // resolver's correlation check, even when its rewritten text was valid.
+    repair_of: context.turn_rejection
+      ? closedObject({
+        rejection_id: { type: 'string', enum: [context.turn_rejection.rejection_id] },
+        attempt: { type: 'integer', enum: [1] },
+      })
+      : { type: 'null' },
     used_fact_ids: { type: 'array', maxItems: 32, items: { type: 'string' } },
     used_memory_ids: { type: 'array', maxItems: 5, items: { type: 'string' } },
     memory_candidates: {
@@ -453,7 +462,7 @@ function requestBody(context: AgentAContextV1, model: string): unknown {
       json_schema: {
         name: 'studyx_agent_a_turn_proposal_v1',
         strict: true,
-        schema: proposalJsonSchema(),
+        schema: proposalJsonSchema(context),
       },
     },
   };
@@ -544,7 +553,7 @@ export async function generateOpenAIAgentATurnProposalV1(input: {
               type: 'json_schema',
               name: 'studyx_agent_a_turn_proposal_v1',
               strict: true,
-              schema: proposalJsonSchema(),
+              schema: proposalJsonSchema(input.context),
             },
           },
         }),
@@ -1179,6 +1188,18 @@ function mentionsMissingIntakeField(messages: readonly string[], missing: readon
 /** Únicos géneros que el ADK sigue bloqueando por su cuenta. */
 const ADK_BLOCKING_FACT_KINDS = new Set(['price', 'promise']);
 
+function comparableProtectedFact(fact: ReturnType<typeof extractProtectedFacts>[number]): string {
+  // Zero cents in the catalog's dot-decimal format do not change an amount.
+  // Do not normalize commas: the portable extractor can truncate 360,000 to
+  // 360,00. Keep currency, qualifiers and all
+  // non-zero digits intact; this is only the draft check, not the signed
+  // egress representation or the backend's final commercial authorization.
+  const value = fact.kind === 'price'
+    ? fact.value.replace(/(\d)\.0{1,2}(?!\d)/gu, '$1')
+    : fact.value;
+  return `${fact.kind}\u0000${value}`;
+}
+
 export function validateAgentATurnProposalV1(input: {
   readonly proposal: AgentATurnProposalV1;
   readonly context: AgentAContextV1;
@@ -1227,7 +1248,7 @@ export function validateAgentATurnProposalV1(input: {
     [...commercialValuesByFactId(input.context)]
       .filter(([factId]) => planned.has(factId))
       .flatMap(([, value]) => extractProtectedFacts(value))
-      .map((fact) => `${fact.kind}\u0000${fact.value}`),
+      .map(comparableProtectedFact),
   );
   const unauthorizedKinds = new Set<string>();
   const authoredNarrative = [
@@ -1253,7 +1274,7 @@ export function validateAgentATurnProposalV1(input: {
   for (const message of authoredNarrative) {
     for (const fact of extractProtectedFacts(message)) {
       if (!ADK_BLOCKING_FACT_KINDS.has(fact.kind)) continue;
-      if (!authorizedProtectedFacts.has(`${fact.kind}\u0000${fact.value}`)) {
+      if (!authorizedProtectedFacts.has(comparableProtectedFact(fact))) {
         unauthorizedKinds.add(fact.kind);
       }
     }
@@ -1308,7 +1329,7 @@ export function validateAgentATurnProposalV1(input: {
   // V6 — ofertas visibles <= ledger, tope dos. Una oferta que el modelo
   // escribe dentro de su propia narrativa cuenta igual que la del campo.
   const offersACall = typeof input.proposal.response.call_offer === 'string'
-    && input.proposal.response.call_offer.trim().length > 0
+    && solicitsACallV1(input.proposal.response.call_offer, true)
     || input.proposal.response.messages.some((message) => solicitsACallV1(message))
   if (offersACall && !input.context.capabilities.may_offer_call) {
     rejections.push({ code: 'CALL_BUDGET_EXHAUSTED', subject: 'call_offer' })
@@ -1351,9 +1372,15 @@ function authorizedActionsV1(context: AgentAContextV1): string[] {
  */
 const CALL_SOLICITATION_V1 = /\b(?:te\s+llamo|te\s+llamamos|una\s+llamada|coordinamos\s+una\s+llamada|prefer[íi]s\s+que\s+te\s+llame)\b/iu
 const NOT_AN_OFFER_V1 = /\b(?:ya\s+(?:qued|registr|solicit)|no\s+te\s+llam|sin\s+llamada)/iu
+const DECLARED_CALL_CHANNEL_V1 = /\b(?:llam|videollam)|tel[eé]fon|telef[oó]n|\bvoz\b|\bcontact(?:arte|emos)\b/iu
 
-function solicitsACallV1(message: string): boolean {
-  return CALL_SOLICITATION_V1.test(message) && !NOT_AN_OFFER_V1.test(message)
+function solicitsACallV1(message: string, declaredOffer = false): boolean {
+  if (declaredOffer) {
+    return message.split(/[.;!?…¿¡,]|\s+(?:y|pero|aunque|sin embargo)\s+/iu)
+      .some(clause => DECLARED_CALL_CHANNEL_V1.test(clause) && !NOT_AN_OFFER_V1.test(clause))
+  }
+  return CALL_SOLICITATION_V1.test(message)
+    && !NOT_AN_OFFER_V1.test(message)
 }
 
 /**

@@ -1,0 +1,25 @@
+{
+  "source_files_verified": 910,
+  "bundle": {
+    "bytes": 19247672,
+    "sha256": "77bd1d1ea5d3982be92c9e1bf1ae1745514cf83c569cf435b348164b9777bbd5"
+  },
+  "archive": {
+    "bytes": 5996040,
+    "sha256": "9897fbb908c26f3527d02b52597de075ab6c00d86564ef3ef143bb08f60cdac8"
+  },
+  "source_archive": {
+    "bytes": 10117120,
+    "sha256": "d2d68e737cd771cfe300d03b7a6e553ae9ccd43d098eeccce4be1708c915deea"
+  },
+  "manifest_sha256": "1c7a408e3e3a3a31b8c611c7d1fc1f2ea143efa80e81e3090e81ffe137c58000",
+  "tools": {
+    "@botpress/adk-cli": "2.0.5",
+    "@botpress/cli": "6.8.13",
+    "@botpress/runtime": "2.0.5",
+    "@botpress/sdk": "6.11.2",
+    "node": "v25.9.0",
+    "bun": "1.3.12"
+  },
+  "remote_snapshot_sha256": "ab810a3dc8e1cebf7a3e9de32d629beff7a55b35147477227a742418594682ae"
+}

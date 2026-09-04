@@ -1,0 +1,23 @@
+{
+  "command": "npm run deploy -- --dry-run --format json",
+  "applied": false,
+  "preflight_has_changes": false,
+  "secret_warnings": [
+    {
+      "name": "GEMINI_API_KEY",
+      "optional": true
+    },
+    {
+      "name": "GROQ_API_KEY",
+      "optional": true
+    },
+    {
+      "name": "OPENAI_API_KEY",
+      "optional": true
+    }
+  ],
+  "dependency_blocking_count": 0,
+  "integration_version_mismatch_count": 0,
+  "has_destructive_storage_changes": false,
+  "eval_count": 30
+}

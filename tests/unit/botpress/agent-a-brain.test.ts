@@ -88,6 +88,38 @@ afterEach(() => {
 });
 
 describe('Agent A Brain V1', () => {
+  it.each(['USD 360', 'USD 360.0', 'USD 360.00'])(
+    'accepts equivalent zero cents without rejecting an authorized total: %s', (total) => {
+      const ctx = context();
+      const priceId = 'payment:redes-informaticas:monthly_12:price:v1';
+      ctx.catalog.selected_offering!.facts.push({ id: priceId, kind: 'payment_plan_price', value: 'USD 360.00' });
+      const parsed = parseAgentATurnProposalV1(proposal({
+        response: { messages: [`Son 12 pagos mensuales de USD 30, total ${total}.`] },
+        used_fact_ids: [priceId, ctx.catalog.payment_plans[0].fact_id],
+      }), ctx);
+      expect(validateAgentATurnProposalV1({
+        proposal: parsed, context: ctx, planned_fact_ids: parsed.used_fact_ids,
+        rejection_id: '00000000-0000-4000-8000-000000000001',
+      })).toBeNull();
+    },
+  );
+
+  it.each(['USD 361', 'USD 360.01', 'EUR 360', 'USD 36000', 'USD 360.000',
+    'USD 360,00', 'USD 360,000', 'USD 360,001', 'no cuesta USD 360'])(
+    'still rejects a different amount, currency or negated price: %s', (total) => {
+      const ctx = context();
+      const priceId = 'payment:redes-informaticas:monthly_12:price:v1';
+      ctx.catalog.selected_offering!.facts.push({ id: priceId, kind: 'payment_plan_price', value: 'USD 360.00' });
+      const parsed = parseAgentATurnProposalV1(proposal({
+        response: { messages: [`Total: ${total}.`] }, used_fact_ids: [priceId],
+      }), ctx);
+      expect(validateAgentATurnProposalV1({
+        proposal: parsed, context: ctx, planned_fact_ids: parsed.used_fact_ids,
+        rejection_id: '00000000-0000-4000-8000-000000000001',
+      })?.rejections).toContainEqual({ code: 'FACT_VALUE_MISMATCH', subject: 'price' });
+    },
+  );
+
   it('parses a natural multi-message proposal against authorized facts and memories', () => {
     expect(parseAgentATurnProposalV1(proposal(), context()).response.messages).toHaveLength(2);
   });
@@ -682,8 +714,13 @@ describe('Agent A Brain V1', () => {
         format: { type: 'json_schema', name: 'studyx_agent_a_turn_proposal_v1' },
       },
     });
+    // The provider must be able to emit the same correlation contract that
+    // the resolver validates; original generations cannot claim a repair.
+    expect(body.text.format.schema.properties.repair_of).toEqual({ type: 'null' });
+    expect(body.text.format.schema.required).toContain('repair_of');
     expect(body.instructions).toContain('<canonical_sales_behavior');
     expect(body.input).toContain('JSON');
+    expect(body.input).toContain(JSON.stringify(context().turn.batch_messages.map((message) => message.text)));
     const moveProperties = body.text.format.schema.properties.move.properties;
     const responseProperties = body.text.format.schema.properties.response.properties;
     expect(responseProperties.messages.maxItems).toBe(2);
@@ -700,7 +737,7 @@ describe('Agent A Brain V1', () => {
       'report_payment requires an explicit current-message claim that payment already happened',
     );
     expect(body.instructions).toContain(
-      'the current explicit move may select the canonical plan and request its link in',
+      'The customer may select the canonical plan and explicitly request its link in',
     );
     expect(body.instructions).toContain(
       'When turn_rejection is present',
@@ -812,12 +849,30 @@ describe('Agent A Brain V1', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await generateDeepSeekAgentATurnProposalV1({
-      context: context(),
+      context: {
+        ...context(),
+        turn_rejection: {
+          schema_version: 1, ...repairOf,
+          rejections: [{ code: 'FACT_VALUE_MISMATCH', subject: 'price' }],
+          authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: [] },
+        },
+      },
       apiKey: 'deepseek-test-key',
       signal: new AbortController().signal,
     });
 
     expect(result.proposal.repair_of).toEqual(repairOf);
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1]?.body));
+    const wireRepair = body.text.format.schema.properties.repair_of;
+    expect(body.text.format.schema.required).toContain('repair_of');
+    expect(wireRepair).toMatchObject({
+      type: 'object', additionalProperties: false,
+      required: ['rejection_id', 'attempt'],
+      properties: {
+        rejection_id: { type: 'string', enum: [repairOf.rejection_id] },
+        attempt: { type: 'integer', enum: [1] },
+      },
+    });
   });
 
   it('allows DeepSeek ten seconds and classifies a timeout while reading the response body', async () => {

@@ -196,6 +196,58 @@ describe('registro canónico desde el catálogo', () => {
     currency: 'USD',
     delivery: { modules: 12, modality: 'presencial', certification: false },
   };
+  const PC = {
+    ...PYTHON,
+    code: 'armado-pc',
+    display_name: 'Armado y Reparación de PC',
+    metadata: { academy: 'Academia de Oficios' },
+  };
+
+  it.each([
+    'En tecnología contamos con el curso de Armado y Reparación de PC, dentro de nuestra Academia de Oficios.',
+    'Ofrecemos Armado y Reparación de PC, parte de la Academia de Oficios.',
+    'Podés estudiar Armado y Reparación de PC, perteneciente a nuestra Academia de Oficios.',
+    'Tenemos Armado y Reparación de PC, que forma parte de la Academia de Oficios.',
+    'Tenemos Armado y Reparación de PC, dentro de la Academia de Oficios, y Programación en Python.',
+  ])('conserva un área canónica como descriptor del curso: %s', (content) => {
+    const canonical = canonicalTruthSetFromOfferingsV1({
+      offerings: [PC, PYTHON], selected_offering_code: null,
+    });
+
+    const verdict = enforce(content, canonical);
+
+    expect(verdict.content).toBe(content);
+    expect(verdict.violations).toEqual([]);
+  });
+
+  it.each([
+    'Tenemos Armado y Reparación de PC y Mecánica Automotriz, dentro de la Academia de Oficios.',
+    'Tenemos Armado y Reparación de PC, dentro de la Academia de Oficios, y Mecánica Automotriz.',
+    'Tenemos Armado y Reparación de PC, perteneciente a la Academia de Oficios, Mecánica Automotriz.',
+    'Tenemos Armado y Reparación de PC, dentro de la Academia de Mecánica.',
+    'Tenemos Armado y Reparación de PC, dentro de la Academia de Oficios Avanzados.',
+  ])('no usa el descriptor de área para autorizar otro nombre inexistente: %s', (content) => {
+    const canonical = canonicalTruthSetFromOfferingsV1({
+      offerings: [PC, PYTHON], selected_offering_code: null,
+    });
+
+    expect(enforce(content, canonical).violations.map((violation) => violation.code))
+      .toContain('OFFERING_NOT_CANONICAL');
+    expect(enforce(content, canonical).content).toBeNull();
+  });
+
+  it('sigue vetando un monto inventado junto al área canónica', () => {
+    const canonical = canonicalTruthSetFromOfferingsV1({
+      offerings: [PC], selected_offering_code: null,
+    });
+    const verdict = enforce(
+      'Tenemos Armado y Reparación de PC, dentro de la Academia de Oficios, por USD 999.',
+      canonical,
+    );
+
+    expect(verdict.content).toBeNull();
+    expect(verdict.violations.map((violation) => violation.code)).toContain('PRICE_NOT_CANONICAL');
+  });
 
   it('no usa el catálogo como sustituto de una selección inexistente', () => {
     const set = canonicalTruthSetFromOfferingsV1({

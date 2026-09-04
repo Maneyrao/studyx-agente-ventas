@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "kind": "independent-local-recovery-candidate",
+  "source_commit": "360cd37201a35bf3c4cceb82a93e809885494529",
+  "source_tree": "c3be3c14d7b25bae12adaf28519ac347a0fea9c1",
+  "created_at": "2026-09-04T15:37:45.161863+00:00",
+  "source_regular_files_verified_unchanged": 910,
+  "source_regular_files_changed": [],
+  "tools": {
+    "@botpress/adk-cli": "2.0.5",
+    "@botpress/cli": "6.8.13",
+    "@botpress/runtime": "2.0.5",
+    "@botpress/sdk": "6.11.2",
+    "node": "v25.9.0",
+    "bun": "1.3.12"
+  },
+  "prompt_versions": {
+    "brain": "studyx-agent-a-brain-v14",
+    "canonical": "studyx-agent-a-canonical-v4"
+  },
+  "remote_deployment_equivalence_proven": false,
+  "remote_applied": false,
+  "offline_build": {
+    "started_at": "2026-09-04T15:36:13.696853+00:00",
+    "completed_at": "2026-09-04T15:36:21.171724+00:00",
+    "exit_code": 0,
+    "command": [
+      "adk",
+      "build",
+      "--format",
+      "json"
+    ],
+    "network_denied_by_sandbox": true,
+    "botpress_profile_read_denied": true,
+    "environment_keys": [
+      "PATH",
+      "LANG",
+      "DO_NOT_TRACK",
+      "CI",
+      "TMPDIR",
+      "XDG_CONFIG_HOME",
+      "XDG_CACHE_HOME",
+      "npm_config_cache",
+      "npm_config_offline",
+      "BUN_INSTALL_CACHE_DIR"
+    ]
+  },
+  "limitations": [
+    "Normal adk-build reads dev dependencies; no dev snapshot exists in git archive. This does not reproduce production integrations/plugins.",
+    "Remote assets fetch was denied by sandbox; CLI continued with local inputs.",
+    "Do not apply generated bot definition as production dependency rollback.",
+    "No new behavior, DB, channel or deployment validation was run."
+  ],
+  "files": {
+    "source-360cd37201a35bf3c4cceb82a93e809885494529.tar": {
+      "bytes": 10117120,
+      "sha256": "d2d68e737cd771cfe300d03b7a6e553ae9ccd43d098eeccce4be1708c915deea"
+    },
+    "artifacts/agent.config.ts": {
+      "bytes": 4758,
+      "sha256": "f8dd2344fbdc9325e8d29b2d7743b3f4addf4e6cbd677eecc918936ff5b18359"
+    },
+    "artifacts/agent.json": {
+      "bytes": 150,
+      "sha256": "09f8519fefac07bf1a8947ae3b5e3cab4b1f73d5792f24df43f19b3cebc1230c"
+    },
+    "artifacts/backend-package-lock.json": {
+      "bytes": 320957,
+      "sha256": "e072e44afc4d0e973856164c11e9f3de230485466b82a81c5ef74b311bf1ae58"
+    },
+    "artifacts/bot.definition.ts": {
+      "bytes": 49698,
+      "sha256": "c0fd6a919bfe17627444921a2b6fa99be88bf070777c06bdfbc907985bac13e5"
+    },
+    "artifacts/botpress-package-lock.json": {
+      "bytes": 364984,
+      "sha256": "deeb3d8bf6f7f6a6d8836c33191eea2609369749716ceea31e58baca750000d2"
+    },
+    "artifacts/build-result.json": {
+      "bytes": 495,
+      "sha256": "60dfde9a3b949d5c643fc97c65d8baa7e0a5d6c8aae4b5d4a6aeddfcbb6a6115"
+    },
+    "artifacts/extraction.json": {
+      "bytes": 353,
+      "sha256": "21bcaf1c12146e767b0010eba8439a27b65efc2465a0df910622c7803543c8e2"
+    },
+    "artifacts/index.cjs": {
+      "bytes": 19247672,
+      "sha256": "77bd1d1ea5d3982be92c9e1bf1ae1745514cf83c569cf435b348164b9777bbd5"
+    },
+    "artifacts/index.cjs.map": {
+      "bytes": 764803,
+      "sha256": "ffcba5c6056a4327050eb08a2a5918ee7b31fe7844065608bd694f8586cce8ed"
+    },
+    "artifacts/remote-production-before.sanitized.json": {
+      "bytes": 3255,
+      "sha256": "ab810a3dc8e1cebf7a3e9de32d629beff7a55b35147477227a742418594682ae"
+    }
+  }
+}

@@ -174,9 +174,19 @@ describe('validación de la propuesta del turno', () => {
   });
 
   // V6
-  it('una tercera oferta de llamada es CALL_BUDGET_EXHAUSTED', () => {
+  it('texto informativo en call_offer no consume ni exige permiso de llamada', () => {
     const rejection = validateAgentATurnProposalV1({
-      proposal: proposal({ response: { messages: ['Bien.'], call_offer: '¿Te llamo?' } }),
+      proposal: proposal({ response: { messages: ['Bien.'], call_offer: 'Si querés, puedo contarte más en detalle cómo funciona el curso.' } }),
+      context: context({ capabilities: { ...context().capabilities, may_offer_call: false } }),
+      planned_fact_ids: ['offering:redes-informaticas:name:v1'],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+    expect(rejection).toBeNull();
+  });
+
+  it.each(['¿Te llamo?', '¿Hablamos por teléfono?', '¿Quieres que te llame para explicarte el curso?', 'Ya registré tus datos. ¿Hablamos por teléfono?', 'Ya registré tus datos, ¿Hablamos por teléfono?', 'Entendido, seguimos sin llamada. ¿Quieres que te llame para explicarte el curso?'])('una tercera oferta de llamada es CALL_BUDGET_EXHAUSTED: %s', (offer) => {
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({ response: { messages: ['Bien.'], call_offer: offer } }),
       context: context({
         commercial_state: { ...context().commercial_state, call_offer_count: 2 },
         capabilities: { ...context().capabilities, may_offer_call: false },

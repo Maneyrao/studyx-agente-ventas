@@ -1,0 +1,8 @@
+{
+  "relocated_at": "2026-09-04T15:40:40.562339+00:00",
+  "original_build_scratch": "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/agent-a-plannerless-v2/.eval/codex-20260904/rollback-360cd37",
+  "current_full_scratch": "/private/tmp/studyx-recovery-360cd37-20260904",
+  "compact_evidence": "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/agent-a-plannerless-v2/.eval/codex-20260904/recovery-360cd37-artifacts",
+  "original_manifest_sha256": "1c7a408e3e3a3a31b8c611c7d1fc1f2ea143efa80e81e3090e81ffe137c58000",
+  "note": "Original build paths inside logs, manifest and compiled sourcemaps remain unchanged as provenance. No build or artifact mutation occurred. Only compressed source/bundle plus JSON/log/sandbox evidence remains in the worktree."
+}

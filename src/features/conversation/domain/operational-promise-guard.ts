@@ -142,10 +142,17 @@ const SOLICITATION = new RegExp(
 
 /** A negation or a completed request is not an offer. */
 const NOT_AN_OFFER = /(?:ya\s+(?:registr|qued|solicit|ped)|no\s+te\s+llam|sin\s+llamada|nada\s+de\s+llam)/iu;
+// El campo dedicado ya declara intención de ofrecer: basta una referencia
+// al canal de voz, sin exigir una fórmula de pregunta o conjugación concreta.
+const DECLARED_CALL_CHANNEL = /\b(?:llam|videollam)|tel[eé]fon|telef[oó]n|\bvoz\b|\bcontact(?:arte|emos)\b/iu;
 
-export function solicitsACall(text: string): boolean {
-  return CALL_SUBJECT.test(text)
-    && SOLICITATION.test(text)
+export function solicitsACall(text: string, declaredOffer = false): boolean {
+  if (declaredOffer) {
+    // Un reconocimiento o rechazo anterior no niega otra propuesta de voz.
+    return text.split(/[.;!?…¿¡,]|\s+(?:y|pero|aunque|sin embargo)\s+/iu)
+      .some(clause => DECLARED_CALL_CHANNEL.test(clause) && !NOT_AN_OFFER.test(clause));
+  }
+  return CALL_SUBJECT.test(text) && SOLICITATION.test(text)
     && !NOT_AN_OFFER.test(text);
 }
 
@@ -319,6 +326,17 @@ const AFTER_VERIFICATION = /\b(?:cuando|si\s+est[áa]\s+acreditad|una\s+vez\s+(?
 // No scheduler or human notification is materialized by this workflow. A
 // conditional attribution to the team cannot authorize a follow-up promise.
 const FUTURE_NOTIFICATION = /\b(?:te|le)\s+(?:(?:voy|vamos|van|va)\s+a\s+(?:avisar|contactar|escribir|notificar)|avis(?:o|amos|an|ar[ée]|ar[áa]n?)|contact(?:o|amos|an|ar[ée]|ar[áa]n?)|escrib(?:o|imos|en|ir[ée]|ir[áa]n?)|notific(?:o|amos|an|ar[ée]|ar[áa]n?))(?=$|[^\p{L}])/iu;
+const FUTURE_PAYMENT_CONDITION = /\b(?:cuando|si|una\s+vez\s+que)\s+(?:(?:el|tu|su)\s+)?pago\s+(?:(?:ya\s+)?(?:est[éeáa]|quede)\s+(?:acreditado|verificado|confirmado)|se\s+(?:acredite|verifique|confirme))\b/iu;
+const DEPENDENT_CONSEQUENCE = /^(?:en\s+ese\s+momento|entonces|reci[eé]n\s+ah[ií])\b/iu;
+
+const CONTACT_RECORD_TARGET = String.raw`(?:todo|(?:(?:tus?|sus?|mis?|los?|las?|el|la)\s+)?(?:datos|nombre|apellido|correo|email|tel[ée]fono)(?:\s+y\s+(?:(?:tu|su|mi|el|la)\s+)?(?:nombre|apellido|correo|email|tel[ée]fono))*)`;
+// «Para [poder] dejar los datos registrados» expresa el objetivo del pedido,
+// no un registro ya realizado. Se excluye sólo ese predicado acotado: una
+// afirmación anterior o posterior conserva su requisito de estado durable.
+const FUTURE_CONTACT_RECORD_PURPOSE = new RegExp(
+  String.raw`\bpara\s+(?:poder\s+)?(?:dejar\s+${CONTACT_RECORD_TARGET}\s+(?:registrad[oa]s?|guardad[oa]s?|anotad[oa]s?)|(?:guardar|registrar|anotar)\s+${CONTACT_RECORD_TARGET})(?![\p{L}])`,
+  'giu',
+);
 
 function promisesFutureNotification(sentence: string): boolean {
   for (const match of sentence.matchAll(new RegExp(FUTURE_NOTIFICATION.source, 'giu'))) {
@@ -334,10 +352,24 @@ function promisesFutureNotification(sentence: string): boolean {
 }
 
 function splitAssertionSentences(text: string): readonly string[] {
-  return text
+  const parts = text
     .split(/(?<=[.;!?…])\s+/u)
     .map((sentence) => sentence.trim())
     .filter((sentence) => sentence.length > 0);
+  const grouped: string[] = [];
+  for (const part of parts) {
+    const previous = grouped.at(-1);
+    // No entregar «en ese momento ...» si se elimina su condición. Ambas
+    // cláusulas conservan su alcance para detectar afirmaciones, pero se
+    // mantienen o eliminan juntas al aplicar el guard.
+    if (previous?.endsWith(';') && FUTURE_PAYMENT_CONDITION.test(previous)
+      && DEPENDENT_CONSEQUENCE.test(part)) {
+      grouped[grouped.length - 1] = `${previous} ${part}`;
+    } else {
+      grouped.push(part);
+    }
+  }
+  return grouped;
 }
 
 /**
@@ -353,16 +385,28 @@ export function detectOperationalStateAssertionsV1(
       found.push({ sentence, requires: UNREACHABLE_MILESTONE });
       continue;
     }
-    if (ATTRIBUTED_TO_TEAM.test(sentence) && AFTER_VERIFICATION.test(sentence)) continue;
-    for (const { pattern, requires } of ASSERTION_CLASSES) {
-      const match = pattern.exec(sentence);
-      if (match) {
-        // La negación cuenta sólo si precede al resultado dentro de la misma
-        // oración. "El pago está acreditado, no hace falta nada más" afirma;
-        // "no puedo confirmar que el pago esté acreditado" niega.
-        if (NEGATED_ASSERTION.test(sentence.slice(0, match.index + match[0].length))) break;
-        found.push({ sentence, requires });
-        break;
+    if (FUTURE_PAYMENT_CONDITION.test(sentence)) {
+      found.push({ sentence, requires: 'process:human_verification:v1' });
+      if (/\b(?:acceso|campus|credenciales)\b/iu.test(sentence)) {
+        found.push({ sentence, requires: 'process:access_after_verification:v1' });
+      }
+    }
+    for (const clause of sentence.split(/;\s*/u)) {
+      // Sólo el predicado de la condición describe un proceso futuro. Las
+      // afirmaciones restantes siguen requiriendo su propio estado durable.
+      const asserted = clause
+        .replace(new RegExp(FUTURE_PAYMENT_CONDITION.source, 'giu'), '')
+        .replace(FUTURE_CONTACT_RECORD_PURPOSE, '');
+      if (asserted === clause && ATTRIBUTED_TO_TEAM.test(clause) && AFTER_VERIFICATION.test(clause)) continue;
+      for (const { pattern, requires } of ASSERTION_CLASSES) {
+        const match = pattern.exec(asserted);
+        if (match) {
+          // La negación no se extiende a otra cláusula tras un punto y coma.
+          if (NEGATED_ASSERTION.test(asserted.slice(0, match.index + match[0].length))) continue;
+          found.push({ sentence, requires });
+          // Un registro de datos respaldado no autoriza otros hitos que
+          // puedan afirmarse en la misma cláusula.
+        }
       }
     }
   }

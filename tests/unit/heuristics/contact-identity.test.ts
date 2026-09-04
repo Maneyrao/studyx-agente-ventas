@@ -34,6 +34,43 @@ describe('extractContactIdentity', () => {
     });
   });
 
+  it.each([
+    ['Anotá mis datos: Emilia Ríos, emilia.rios@example.test, teléfono +1 305 555 0188.', 'Emilia Ríos', 'emilia.rios@example.test', '+13055550188'],
+    ['Te comparto mis datos de contacto: Valentina Suárez; valentina.suarez@example.test.', 'Valentina Suárez', 'valentina.suarez@example.test', null],
+    ['Mis datos personales: Franco Le Blanc, franco@example.test.', 'Franco Le Blanc', 'franco@example.test', null],
+    ['Nombre y apellido: Carla Ibáñez, correo: carla@example.test.', 'Carla Ibáñez', 'carla@example.test', null],
+    ['Nombre completo: Diego Farías; EMAIL: diego@example.test.', 'Diego Farías', 'diego@example.test', null],
+    ["Mi nombre: Juan O'Neill, juan@example.test.", "Juan O'Neill", 'juan@example.test', null],
+    ['Mis datos:\nLucía Pérez,\ncorreo electrónico: lucia@example.test.', 'Lucía Pérez', 'lucia@example.test', null],
+    ['Nombre y apellido: Valentina Costa\nEmail: valentina.costa@example.test\nCelular: +1 (786) 555-0164', 'Valentina Costa', 'valentina.costa@example.test', '+17865550164'],
+    ['Mis datos de contacto: Pedro Vargas\r\nCorreo electrónico: pedro@example.test', 'Pedro Vargas', 'pedro@example.test', null],
+    ['Nombre completo: Josefina Martínez\njosefina@example.test', 'Josefina Martínez', 'josefina@example.test', null],
+  ] as const)('captures a structured personal label with a name adjacent to its email: %s', (text, name, email, declaredPhone) => {
+    expect(extractContactIdentity(text)).toEqual({ name, email, declaredPhone });
+  });
+
+  it.each([
+    'Curso: Redes Informáticas, redes@example.test.',
+    'Quiero estudiar: Marketing Digital, marketing@example.test.',
+    'Mi hermana: Emilia Ríos, emilia@example.test.',
+    'Los datos de mi hermana: Emilia Ríos, emilia@example.test.',
+    'Nombre de mi hermano: Juan Pérez, juan@example.test.',
+    'Te paso el contacto de mi hermana. Nombre completo: Emilia Ríos, emilia@example.test.',
+    'Mis datos: emilia ríos, emilia@example.test.',
+    'Mis datos: Emilia interesada en curso, emilia@example.test.',
+    'Mis datos: Emilia Ríos o Ana Pérez, emilia@example.test.',
+    'Mis datos: Emilia Ríos, Ana Pérez, emilia@example.test.',
+    'Mis datos: Emilia, emilia@example.test.',
+    'Curso: Maquillaje Profesional\nEmail: maquillaje@example.test',
+    'Mi hermana: Valentina Costa\nEmail: valentina@example.test',
+    'Nombre completo: Josefina Martínez Email: josefina@example.test',
+    'No son mis datos: Emilia Ríos, emilia@example.test.',
+    'No es mi nombre: Emilia Ríos, emilia@example.test.',
+    'Estos tampoco son mis datos personales: Juan Pérez; juan@example.test.',
+  ])('does not reinterpret course labels, prose or ambiguous third-party contacts as the customer: %s', (text) => {
+    expect(extractContactIdentity(text).name).toBeNull();
+  });
+
   it('captures a lowercase introduction verb with a capitalized name', () => {
     expect(extractContactIdentity('soy Yamila Torrez, yamila@example.com')).toEqual({
       name: 'Yamila Torrez',

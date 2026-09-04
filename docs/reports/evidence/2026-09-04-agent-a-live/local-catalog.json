@@ -1,0 +1,1958 @@
+{
+  "identity": [
+    {
+      "database": "studyx_test",
+      "schema": "public",
+      "host": "127.0.0.1",
+      "port": 55435,
+      "version": "PostgreSQL 17.10 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit"
+    }
+  ],
+  "column": [
+    {
+      "data_type": "text",
+      "is_nullable": "YES"
+    }
+  ],
+  "catalog": [
+    {
+      "code": "aires_acondicionados",
+      "display_name": "Instalación de Aires Acondicionados",
+      "status": "active",
+      "description": "Academia de Oficios. 9 clases. El propósito del curso de instalador es el de instruir a todas las personas a que puedan emprender las tareas de instalación y puesta en marcha de equipos de Aire Acondicionado.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 9,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Oficios",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 12,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 9,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "armado_reparacion_pc",
+      "display_name": "Armado y Reparación de PC",
+      "status": "active",
+      "description": "Academia de Oficios. 22 clases. Este curso abarca el mantenimiento de computadoras de escritorio desde cero con casos reales otorgando las herramientas necesarias para que el futuro técnico sepa cuándo reparar y cuándo reemplazar los componentes dañados como también asesorar a sus clientes con las mejores soluciones a su equipamiento.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 22,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Oficios",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 12,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 22,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "autocad_interiores",
+      "display_name": "AutoCAD orientado al Diseño de Interiores",
+      "status": "active",
+      "description": "Academia de Diseño Informático. 11 clases. En este Curso de AutoCAD vamos a adquirir el conocimiento práctico y teórico para dominar las técnicas de dibujo en forma digital y realizar planos técnicos en dos dimensiones.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 11,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Diseño Informático",
+        "aliases": [
+          "AutoCAD",
+          "curso de AutoCAD"
+        ],
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 15,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 11,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "barista",
+      "display_name": "Diplomado en Barista",
+      "status": "inactive",
+      "description": "Diplomado online de 12 clases, con temario publicado.",
+      "value_proposition": "Formación online en español, a ritmo propio, con actividades prácticas, exámenes y certificado de la academia.",
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "min_age": 18,
+        "language": "Spanish"
+      },
+      "delivery": {
+        "classes": 12,
+        "includes": [
+          "actividades_practicas",
+          "examenes_parciales_y_final",
+          "profesores_que_acompanan",
+          "certificado_de_academia"
+        ],
+        "modality": "online",
+        "temario_publicado": true
+      },
+      "guardrails": {
+        "price_message": "El valor total es USD 360. Podés elegir 12 pagos de USD 30, 6 pagos de USD 60 o un pago único de USD 360.",
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "más de 50 diplomados",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "price_source": "owner-confirmed 2026-08-20",
+        "deactivated_at": "2026-09-04T10:49:26.883287-03:00",
+        "total_price_usd": 360,
+        "deactivated_by_catalog_sync": "studyx_manual_1",
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "camaras_seguridad",
+      "display_name": "Instalación y Configuración de Cámaras de Seguridad",
+      "status": "active",
+      "description": "Academia de Oficios. 12 clases. En este diplomado le brindaremos a los participantes los conocimientos necesarios y técnicos, para la instalación y configuración de Cámaras de Seguridad en comercios, casas, galpones o empresas, permitiendo visualizarlas en diferentes componentes (TV, PC y/o Celulares).",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 12,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Oficios",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 12,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 12,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "coaching_liderazgo",
+      "display_name": "Coaching y Liderazgo",
+      "status": "active",
+      "description": "Academia de Negocios. 16 clases. En este curso permitiremos desarrollar actitudes, capacidades y habilidades que posibiliten enfrentar adecuadamente los desafíos del mercado laboral, en especial a nivel gerencial.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 16,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Negocios",
+        "aliases": [
+          "Coaching",
+          "curso de Coaching"
+        ],
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 15,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 16,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "community_manager",
+      "display_name": "Community Manager",
+      "status": "active",
+      "description": "Academia de Marketing. 16 clases. Aprenderemos a manejar, optimizar y administrar de forma profesional tus redes sociales: crear estrategias de Social Media, hacer campañas digitales, actuar en una crisis y medir el éxito de tu negocio online.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 16,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Marketing",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 10,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 16,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "comunicacion_interna_empresas",
+      "display_name": "Comunicación Interna en Empresas",
+      "status": "active",
+      "description": "Academia de Negocios. 20 clases. En este curso, brindaremos las estrategias necesarias para gestionar e integrar adecuadamente un equipo humano de una empresa.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 20,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Negocios",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 15,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 20,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "cuidador_adultos_mayores",
+      "display_name": "Asistente y Cuidador de Adultos Mayores",
+      "status": "inactive",
+      "description": "Curso online de 14 clases, más 7 trabajos integradores y un trabajo práctico final, con temario publicado.",
+      "value_proposition": "Formación online en español, a ritmo propio, con actividades prácticas, exámenes y certificado de la academia.",
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "min_age": 18,
+        "language": "Spanish"
+      },
+      "delivery": {
+        "classes": 14,
+        "includes": [
+          "actividades_practicas",
+          "examenes_parciales_y_final",
+          "profesores_que_acompanan",
+          "certificado_de_academia"
+        ],
+        "modality": "online",
+        "temario_publicado": true,
+        "additional_activities": {
+          "trabajos_integradores": 7,
+          "trabajo_practico_final": true
+        }
+      },
+      "guardrails": {
+        "price_message": "El valor total es USD 360. Podés elegir 12 pagos de USD 30, 6 pagos de USD 60 o un pago único de USD 360.",
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "más de 50 diplomados",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "price_source": "owner-confirmed 2026-08-20",
+        "deactivated_at": "2026-09-04T10:49:26.883287-03:00",
+        "total_price_usd": 360,
+        "deactivated_by_catalog_sync": "studyx_manual_1",
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "decoracion_de_interiores",
+      "display_name": "Decoración de Interiores",
+      "status": "active",
+      "description": "Academia de Emprendedores. 33 clases. Este curso invita a los participantes a formarse en el oficio de Decorador de Interiores, aprendiendo sus primeros pasos en el mundo del diseño y la decoración.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 33,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Emprendedores",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 13,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 33,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "depilacion_definitiva",
+      "display_name": "Técnica/o en Depilación Definitiva",
+      "status": "inactive",
+      "description": "Curso online de 7 clases, con temario publicado.",
+      "value_proposition": "Formación online en español, a ritmo propio, con actividades prácticas, exámenes y certificado de la academia.",
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "min_age": 18,
+        "language": "Spanish"
+      },
+      "delivery": {
+        "classes": 7,
+        "includes": [
+          "actividades_practicas",
+          "examenes_parciales_y_final",
+          "profesores_que_acompanan",
+          "certificado_de_academia"
+        ],
+        "modality": "online",
+        "temario_publicado": true
+      },
+      "guardrails": {
+        "price_message": "El valor total es USD 360. Podés elegir 12 pagos de USD 30, 6 pagos de USD 60 o un pago único de USD 360.",
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "más de 50 diplomados",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "price_source": "owner-confirmed 2026-08-20",
+        "deactivated_at": "2026-09-04T10:49:26.883287-03:00",
+        "total_price_usd": 360,
+        "deactivated_by_catalog_sync": "studyx_manual_1",
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "diseno_corel_draw",
+      "display_name": "Diseño Gráfico con Corel Draw",
+      "status": "active",
+      "description": "Academia de Diseño Informático. 16 clases. Es sumamente necesario entender la tarea de un diseñador gráfico y con el profesionalismo que debemos encarar nuestro trabajo para poder hacerlo de la mejor manera.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 16,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Diseño Informático",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 14,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 16,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "diseno_illustrator",
+      "display_name": "Diseño Gráfico con Illustrator",
+      "status": "active",
+      "description": "Academia de Diseño Informático. 17 clases. Este diplomado cuenta con 17 clases, 17 ejercicios, 6 exámenes parciales y 1 examen final.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 17,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Diseño Informático",
+        "aliases": [
+          "Illustrator",
+          "curso de Illustrator"
+        ],
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 15,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 17,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "diseno_photoshop",
+      "display_name": "Diseño Gráfico con Photoshop",
+      "status": "active",
+      "description": "Academia de Diseño Informático. 16 clases. Este diplomado cuenta con 16 clases, 8 ejercicios y 1 examen final.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 16,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Diseño Informático",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 14,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 16,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "energia_solar_fotovoltaica",
+      "display_name": "Energía Solar Fotovoltaica",
+      "status": "active",
+      "description": "Academia de Oficios. 8 clases. Conocer el componente más importante en las instalaciones fotovoltaicas, los módulos fotovoltaicos, únicos dispositivos capaces de convertir directamente la energía luminosa procedente del sol en energía eléctrica continua e introducirnos en la energía solar fotovoltaica, que es la transformación de la luz solar en energía.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 8,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Oficios",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 12,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 8,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "entrenamiento_funcional",
+      "display_name": "Entrenamiento Funcional",
+      "status": "active",
+      "description": "Academia de Salud y Bienestar. 16 clases. El curso está diseñado para empezar desde cero, cualquier persona puede realizarlo sin límites de edad ni de ningún otro tipo de limitación.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 16,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Salud y Bienestar",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 9,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 16,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "especialista_marketing",
+      "display_name": "Especialista en Marketing",
+      "status": "active",
+      "description": "Academia de Marketing. 17 clases. Al aprender marketing podrás analizar los mercados, mejorar la distribución y logística de tu emprendimiento, crear una campaña de publicidad y comunicación, posicionar tu marca y entender cuáles son las necesidades de tus clientes.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 17,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Marketing",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 10,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 17,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "especialista_ventas",
+      "display_name": "Especialista en Ventas",
+      "status": "active",
+      "description": "Academia de Negocios. 16 clases. A través de este curso obtendrás todas las aptitudes necesarias para poder optimizar tus recursos y potenciar tus ventas.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 16,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Negocios",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 15,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 16,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "estetica_integral",
+      "display_name": "Técnica/o en Estética Integral",
+      "status": "inactive",
+      "description": "Curso online de 20 clases, con temario publicado.",
+      "value_proposition": "Formación online en español, a ritmo propio, con actividades prácticas, exámenes y certificado de la academia.",
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "min_age": 18,
+        "language": "Spanish"
+      },
+      "delivery": {
+        "classes": 20,
+        "includes": [
+          "actividades_practicas",
+          "examenes_parciales_y_final",
+          "profesores_que_acompanan",
+          "certificado_de_academia"
+        ],
+        "modality": "online",
+        "temario_publicado": true
+      },
+      "guardrails": {
+        "price_message": "El valor total es USD 360. Podés elegir 12 pagos de USD 30, 6 pagos de USD 60 o un pago único de USD 360.",
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "más de 50 diplomados",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "price_source": "owner-confirmed 2026-08-20",
+        "deactivated_at": "2026-09-04T10:49:26.883287-03:00",
+        "total_price_usd": 360,
+        "deactivated_by_catalog_sync": "studyx_manual_1",
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "estrategias_emprender",
+      "display_name": "Estrategias para Emprender",
+      "status": "active",
+      "description": "Academia de Emprendedores. 20 clases. En este curso proponemos claves fundamentales para emprender un negocio con éxito, a través de estrategias efectivas para no fallar en el intento.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 20,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Emprendedores",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 14,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 20,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "excel_integral",
+      "display_name": "Excel Integral",
+      "status": "active",
+      "description": "Academia de Negocios. 17 clases. Recomendamos este curso, con el que aprenderá las herramientas elementales, diferente tipos de fórmulas y funciones, gráficos, resúmenes de información, entre otras tantas actividades que puede realizar con este programa.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 17,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Negocios",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 15,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 17,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "fotografia_celulares_tiendas_online",
+      "display_name": "Fotografía con Celulares para Tiendas Online",
+      "status": "active",
+      "description": "Academia de Marketing. 20 clases. En este curso vamos a ver cómo aprovechar al máximo la cámara de nuestro celular, técnicas de iluminación, conceptos de fotografía y exposición, edición y retoque de los productos, creación de videos promocionales y cómo aplicar todo a nuestra red social preferida para el impulso de nuestro negocio.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 20,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Marketing",
+        "aliases": [
+          "fotos de productos con el celu",
+          "fotografía de productos con celular"
+        ],
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 11,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 20,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "fotografia_profesional",
+      "display_name": "Fotografía Profesional",
+      "status": "active",
+      "description": "Academia de Emprendedores. 41 clases. Este curso está apuntado a todo aquel que quiera conocer desde cero el proceso fotográfico actual, con esto nos referimos al digital.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 41,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Emprendedores",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 13,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 41,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "influencers_creadores_contenidos",
+      "display_name": "Influencers y Creadores de Contenidos",
+      "status": "active",
+      "description": "Academia de Marketing. 20 clases. En este diplomado veremos y te enseñaremos cómo lograr y crear tu propia comunidad, sobre temas que te gusten y apasionen, con contenidos originales y gran empatía en las diferentes redes sociales, logrando interactuar y estrechar lazos con los seguidores para poder convertirte en un verdadero influencer.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 20,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Marketing",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 11,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 20,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "ingles_1",
+      "display_name": "Inglés 1",
+      "status": "active",
+      "description": "Academia Cultural. 12 clases. El objetivo de este curso es que el alumno adquiera conocimientos de inglés que perduren en el tiempo a través del aprendizaje y la lectura de materiales teóricos que pueda aplicar y apropiar en la práctica.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 12,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia Cultural",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 16,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 12,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "ingles_2",
+      "display_name": "Inglés 2",
+      "status": "active",
+      "description": "Academia Cultural. 12 clases. En este diplomado el alumno se adentrará en los modos, en cómo entablar una conversación y podrá aplicar todo lo aprendido.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 12,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia Cultural",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 16,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 12,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "ingles_3",
+      "display_name": "Inglés 3",
+      "status": "active",
+      "description": "Academia Cultural. 21 clases. En este diplomado el alumno adquirirá conocimientos sobre gramática y vocabulario que le dará las herramientas necesarias para poder desenvolverse en los distintos contextos presentados en el curso, tales como en el aeropuerto, en una entrevista laboral, etc.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 21,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia Cultural",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 16,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 21,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "instagram_emprendedores",
+      "display_name": "Instagram para Emprendedores",
+      "status": "active",
+      "description": "Academia de Emprendedores. 10 clases. El curso está pensado para que los emprendedores puedan desarrollar sus negocios y consigan mayor visibilidad.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 10,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Emprendedores",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 14,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 10,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "introduccion_catering",
+      "display_name": "Introducción al Catering",
+      "status": "active",
+      "description": "Academia Gastronómica. 20 clases. En este curso analizamos las diferentes opciones, adecuadas a todo tipo de público, las necesidades de alimentos y bebidas según el evento y los menús adaptados para cada ocasión.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 20,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia Gastronómica",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 9,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 20,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "introduccion_criptomonedas",
+      "display_name": "Introducción a las Criptomonedas",
+      "status": "active",
+      "description": "Academia de Negocios. 21 clases. El objetivo de este curso es lograr que el alumno se familiarice con los conceptos básicos del mundo de las criptomonedas.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 21,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Negocios",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 15,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 21,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "introduccion_ecommerce",
+      "display_name": "Introducción al Ecommerce",
+      "status": "active",
+      "description": "Academia de Marketing. 8 clases. En este diplomado brindaremos todas las herramientas necesarias para vender productos en internet, comenzando desde los fundamentos básicos, pasando por el desarrollo de un plan de acción con objetivos.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 8,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Marketing",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 10,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 8,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "maquillaje_profesional",
+      "display_name": "Maquillaje Profesional",
+      "status": "active",
+      "description": "Academia de Moda y Belleza. 38 clases. El curso plantea como meta específica lograr conocimientos para trabajar como maquillador profesional, reconociendo los materiales de trabajo, tipo de pieles, forma de rostros, gustos del cliente y asesoramientos necesarios en cada trabajo.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 38,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Moda y Belleza",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 11,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 38,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "marketing_digital",
+      "display_name": "Marketing Digital",
+      "status": "active",
+      "description": "Academia de Marketing. 16 clases. En este diplomado lograremos desarrollar estrategias exitosas para comunicar de forma eficaz y potenciar tu negocio.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 16,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Marketing",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 10,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 16,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "masoterapia",
+      "display_name": "Diplomado en Masoterapia",
+      "status": "inactive",
+      "description": "Diplomado online de 24 clases, con temario publicado.",
+      "value_proposition": "Formación online en español, a ritmo propio, con actividades prácticas, exámenes y certificado de la academia.",
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "min_age": 18,
+        "language": "Spanish"
+      },
+      "delivery": {
+        "classes": 24,
+        "includes": [
+          "actividades_practicas",
+          "examenes_parciales_y_final",
+          "profesores_que_acompanan",
+          "certificado_de_academia"
+        ],
+        "modality": "online",
+        "temario_publicado": true
+      },
+      "guardrails": {
+        "price_message": "El valor total es USD 360. Podés elegir 12 pagos de USD 30, 6 pagos de USD 60 o un pago único de USD 360.",
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "más de 50 diplomados",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "price_source": "owner-confirmed 2026-08-20",
+        "deactivated_at": "2026-09-04T10:49:26.883287-03:00",
+        "total_price_usd": 360,
+        "deactivated_by_catalog_sync": "studyx_manual_1",
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "nutricion_alimentacion",
+      "display_name": "Nutrición y Alimentación Saludable",
+      "status": "active",
+      "description": "Academia de Salud y Bienestar. 16 clases. El objetivo de realizar este curso es que se lleven los alumnos una enseñanza y aprendizaje correcto de lo que es una buena alimentación, para eso vamos a ir viendo temas con respecto a la nutrición, qué nos van a ayudar a tener herramientas para saber lo que es realmente una alimentación saludable.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 16,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Salud y Bienestar",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 9,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 16,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "oratoria",
+      "display_name": "Oratoria",
+      "status": "active",
+      "description": "Academia Cultural. 20 clases. En este curso, analizaremos las claves de la oratoria, facilitando herramientas esenciales para lograr buenos resultados comunicaciones y alcanzar un feedback sin ruidos ni complicaciones con los interlocutores.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 20,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia Cultural",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 16,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 20,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "organizacion_baby_shower",
+      "display_name": "Organización de Baby Shower",
+      "status": "active",
+      "description": "Academia de Emprendedores. 21 clases. Celebrar la vida es parte de la magia de un Organizador de Eventos de Baby Shower, trabajar en un momento tan especial como la dulce espera de un bebé es un momento de emociones para la familia como para todo el personal que trabaja en el evento.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 21,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Emprendedores",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 14,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 21,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "organizador_eventos_sociales",
+      "display_name": "Organizador Profesional de Eventos Sociales",
+      "status": "active",
+      "description": "Academia de Emprendedores. 20 clases. Durante estas clases virtuales, aprenderás conceptos, términos del rubro de eventos, para aplicar en el armado y desarrollo de tu empresa de eventos.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 20,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Emprendedores",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 13,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 20,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "paisajismo_jardineria",
+      "display_name": "Paisajismo y Jardinería",
+      "status": "active",
+      "description": "Academia de Emprendedores. 23 clases. El curso tiene como objetivo brindar al alumno todas las variedades que se le pueden presentar en el momento de intervenir en un paisaje natural, capacitarlo en el estudio y el reconocimiento del espacio exterior tales como jardines delanteros, traseros, terrazas, balcones y en el ámbito público en parques y plazas, aprendiendo a analizar los compone",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 23,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Emprendedores",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 14,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 23,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "publicidad_redes_sociales",
+      "display_name": "Publicidad en Redes Sociales",
+      "status": "active",
+      "description": "Academia de Marketing. 10 clases. Con este curso aprenderemos a hacer publicidad en Facebook e instagram y generar anuncios de forma eficiente en plataformas para público específico como twitter y linkedln.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 10,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Marketing",
+        "aliases": [
+          "publicidad redes",
+          "publicidad en redes"
+        ],
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 11,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 10,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "redes_informaticas",
+      "display_name": "Redes Informáticas",
+      "status": "active",
+      "description": "Academia de Oficios. 16 clases. Este curso te permitirá conocer el funcionamiento de las redes informáticas, y cada uno de los elementos y dispositivos que la componen.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 16,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Oficios",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 13,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 16,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "reparacion_celulares",
+      "display_name": "Reparación de Celulares",
+      "status": "active",
+      "description": "Academia de Oficios. 20 clases. Los objetivos de este curso son: lograr que el alumno conozca la evolución de la telefonía celular, hasta el desarrollo total de los Smartphone que tenemos en la actualidad, saber manipular distintas herramientas de medición, adquirir el conocimiento para poder realizar distintas reparaciones (tales como cambios de módulos, reparación de pines y de integra",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 20,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Oficios",
+        "aliases": [
+          "reparar celu",
+          "reparar celulares",
+          "arreglo de celulares"
+        ],
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 13,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 20,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "sushi_principiantes",
+      "display_name": "Sushi para Principiantes",
+      "status": "active",
+      "description": "Academia Gastronómica. 10 clases. Este curso está diseñado para que los alumnos aprendan todo lo necesario sobre el mundo del sushi, el paso a paso de recetas únicas, con más de 120 piezas diferentes para ser un verdadero sushi man cuenta también con la enseñanza de otras comidas y postres japoneses.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 10,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia Gastronómica",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 8,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 10,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "unas_gelificadas",
+      "display_name": "Uñas Gelificadas",
+      "status": "active",
+      "description": "Academia de Moda y Belleza. 25 clases. Incorporar conocimientos y habilidades propias de la construcción de uñas en gel en las manos.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 25,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia de Moda y Belleza",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 12,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 25,
+        "payment_options_owner_confirmed": true
+      }
+    },
+    {
+      "code": "vino_cata_maridaje",
+      "display_name": "Introducción al Vino, la Cata y el Maridaje",
+      "status": "active",
+      "description": "Academia Gastronómica. 19 clases. En este curso orientamos el aprendizaje a conocer la elaboración de los vinos tintos, blancos, rosados y algunos especiales como espumosos y dulces.",
+      "value_proposition": null,
+      "price_type": "fixed",
+      "price_amount": "360.00",
+      "currency": "USD",
+      "billing_interval": "custom",
+      "audience": {
+        "language": "Spanish"
+      },
+      "delivery": {
+        "source": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "classes": 19,
+        "modality": "online"
+      },
+      "guardrails": {
+        "forbidden_promises": [
+          "certificación verificada",
+          "título oficial",
+          "homologación",
+          "matrícula profesional",
+          "salida laboral garantizada",
+          "horarios de clases en vivo",
+          "política de devoluciones"
+        ],
+        "never_invent_price": true
+      },
+      "metadata": {
+        "academy": "Academia Gastronómica",
+        "source_file": "MANUAL CAPACITACION STUDYX 1.docx.pdf",
+        "source_page": 9,
+        "price_source": "owner-confirmed 2026-08-20",
+        "source_sha256": "47a08b918cde15b8e2da6c3dc24fab6a584801611032665585738a052f1732a1",
+        "total_price_usd": 360,
+        "canonical_source": "studyx_manual_1",
+        "declared_classes": 19,
+        "payment_options_owner_confirmed": true
+      }
+    }
+  ]
+}

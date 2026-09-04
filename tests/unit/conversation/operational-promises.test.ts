@@ -4,6 +4,7 @@ import {
   stripUnsupportedOperationalClaims,
   detectOperationalStateAssertionsV1,
   unsupportedOperationalAssertionsV1,
+  dropUnsupportedStateAssertionsV1,
 } from '@/features/conversation/domain/operational-promise-guard';
 import { materializeStateFactsV1 } from '@/features/conversation/domain/state-fact-registry';
 import { assembleCanonicalConversationResponseV1 } from '@/features/conversation/domain/canonical-response-assembler';
@@ -145,6 +146,82 @@ describe('V5 autoriza por estado, no por texto', () => {
     correo: 'ana@example.com',
     telefono: '+15551234567',
   } as const;
+
+  const paymentReported = materializeStateFactsV1({
+    intake: completeIntake,
+    planned_payment_reported: true,
+  });
+
+  const missingIntake = materializeStateFactsV1({
+    intake: undefined,
+    planned_payment_reported: false,
+  });
+
+  it.each([
+    'Me falta tu apellido para dejar todo registrado. ¿Me lo confirmás?',
+    'Necesito tu correo para poder dejar tus datos guardados.',
+    'Para dejar tu nombre y apellido registrados, necesito que me confirmes tu correo.',
+    'Me falta tu teléfono para guardar tus datos.',
+    'Necesito tu apellido para poder registrar tus datos.',
+    'Para poder guardar tu nombre, necesito que me lo confirmes.',
+  ])('no presenta un objetivo futuro de registro como un hecho consumado: %s', (text) => {
+    expect(detectOperationalStateAssertionsV1(text)).toEqual([]);
+    expect(dropUnsupportedStateAssertionsV1(text, missingIntake)).toBe(text);
+  });
+
+  it.each([
+    'Tu correo quedó guardado y me falta tu apellido para dejar todo registrado.',
+    'Me falta tu apellido para dejar todo registrado y tu correo quedó guardado.',
+    'Me falta tu apellido para dejar todo registrado, pero ya registré tus datos.',
+    'Ya registré tus datos para poder guardar tu nombre.',
+  ])('sigue exigiendo el hecho de registro antes o después del objetivo futuro: %s', (claim) => {
+    expect(unsupportedOperationalAssertionsV1(claim, missingIntake).map((assertion) => assertion.requires))
+      .toContain('state:intake_recorded:v1');
+    expect(dropUnsupportedStateAssertionsV1(claim, missingIntake)).toBe('');
+    expect(dropUnsupportedStateAssertionsV1(claim, paymentReported)).toBe(claim);
+  });
+
+  it.each([
+    'Tu inscripción quedó confirmada y me falta tu apellido para dejar todo registrado.',
+    'Tu inscripción quedó confirmada y registré tus datos para poder guardar tu nombre.',
+    'Registré tus datos para guardar tu nombre y tu inscripción quedó confirmada.',
+    'Me falta tu apellido para dejar todo registrado y tu acceso está habilitado.',
+    'Me falta tu apellido para dejar todo registrado y te avisaré cuando esté listo.',
+  ])('no usa un objetivo futuro para autorizar un hito o una notificación: %s', (claim) => {
+    expect(dropUnsupportedStateAssertionsV1(claim, paymentReported)).toBe('');
+  });
+
+  it.each([
+    'Tu aviso de pago quedó registrado para revisión del equipo. La inscripción se confirma cuando el pago esté acreditado; en ese momento gestionarán tu acceso.',
+    'La inscripción se confirma una vez que el pago se verifique; entonces gestionarán tu acceso.',
+    'Cuando el pago quede acreditado, se confirma la inscripción; en ese momento gestionarán tu acceso.',
+  ])('conserva la condición futura y su consecuencia de acceso: %s', (text) => {
+    expect(dropUnsupportedStateAssertionsV1(text, paymentReported)).toBe(text);
+  });
+
+  it('vincula la condición y el acceso a los hechos de proceso existentes', () => {
+    const text = 'La inscripción se confirma cuando el pago esté acreditado; en ese momento gestionarán tu acceso.';
+    const requirements = detectOperationalStateAssertionsV1(text).map((assertion) => assertion.requires);
+
+    expect(requirements).toContain('process:human_verification:v1');
+    expect(requirements).toContain('process:access_after_verification:v1');
+    for (const missing of ['process:human_verification:v1', 'process:access_after_verification:v1'] as const) {
+      const facts = new Set(paymentReported);
+      facts.delete(missing);
+      expect(dropUnsupportedStateAssertionsV1(`Gracias por avisar. ${text}`, facts))
+        .toBe('Gracias por avisar.');
+    }
+  });
+
+  it.each([
+    'Tu inscripción quedó confirmada cuando el pago fue acreditado.',
+    'Tu inscripción ya quedó confirmada cuando el pago esté acreditado; en ese momento gestionarán tu acceso.',
+    'Cuando el pago esté acreditado, se confirma la inscripción; en ese momento tu acceso ya está habilitado.',
+    'La inscripción se confirma cuando el pago esté acreditado; en ese momento el equipo te avisará.',
+  ])('no usa una condición para autorizar un hito consumado ni un aviso futuro: %s', (claim) => {
+    expect(dropUnsupportedStateAssertionsV1(`Gracias por avisar. ${claim}`, paymentReported))
+      .toBe('Gracias por avisar.');
+  });
 
   it('reconoce las afirmaciones de estado de la frase aprobada', () => {
     const found = detectOperationalStateAssertionsV1(APPROVED).map((a) => a.requires);

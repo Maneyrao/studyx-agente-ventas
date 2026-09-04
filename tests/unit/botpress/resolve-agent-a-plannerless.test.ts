@@ -214,6 +214,46 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
+  it.each([
+    {
+      draft: '¡Perfecto, seguimos por acá sin problema! 😊 Para contarte bien cómo funciona el curso, ¿ya tenías pensado estudiar maquillaje o recién estás empezando a averiguar?',
+      retained: '¡Perfecto, seguimos por acá sin problema!',
+    },
+    {
+      draft: 'De acuerdo, seguimos por escrito. La formación tiene 38 clases. ¿Ya tenías pensado estudiar maquillaje o recién estás empezando a averiguar?',
+      retained: 'De acuerdo, seguimos por escrito. La formación tiene 38 clases.',
+    },
+  ])('prunes the repeated question inside one compound message: $retained', async ({ draft, retained }) => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'No quiero que me llamen, prefiero por chat';
+    current.turn.recent_turns = [{
+      id: 'prior-agent', direction: 'outbound',
+      content: 'Antes de contarte los detalles, ¿ya tenías pensado estudiar maquillaje o recién estás empezando a averiguar?',
+    }];
+    const initial = generated(proposal({
+      move: {
+        schema_version: 1, move: 'continue_by_chat', secondary_moves: [], vetoes: ['call'],
+        confidence: 1,
+      },
+      response: { messages: [draft], call_offer: null },
+    }));
+    const repair = vi.fn();
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: true, repair,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.response.messages).toEqual([retained]);
+    expect(result.effective.proposal.move).toEqual(initial.proposal.move);
+    expect(result.effective.proposal.proposed_action).toEqual(initial.proposal.proposed_action);
+    expect(result.evidence).toMatchObject({
+      rejection_codes: ['REPEATED_AGENT_REPLY'], repair_attempted: false,
+      repaired: false, proposal_generation_calls: 1,
+    });
+  });
+
   it('demotes a payment action that the current conversational move did not request', async () => {
     const current = context();
     current.turn.batch_messages[0].text = 'Soy Matía Damonte, matia@example.test';

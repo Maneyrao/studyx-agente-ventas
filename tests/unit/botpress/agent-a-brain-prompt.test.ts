@@ -60,11 +60,11 @@ describe('Agent A Brain V1 prompt', () => {
   it('uses the exact complete canonical prompt behind one immutable execution preamble', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v4');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v14');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v8');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v19');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('Backend policy and capabilities are authoritative');
-    expect(instructions).toContain('Resolve the current message against commercial_state.awaiting_reply');
+    expect(instructions).toContain('commercial_state.awaiting_reply only to resolve an otherwise ambiguous answer');
     expect(instructions).toContain('response.call_offer, never in response.messages');
     expect(instructions).toContain('Never echo an unresolved {{placeholder}}');
     expect(instructions).toContain('cite the fact id you used');
@@ -73,7 +73,7 @@ describe('Agent A Brain V1 prompt', () => {
     expect(instructions).not.toContain('exact wording of a');
     expect(instructions).toContain('intake_missing is authoritative');
     expect(instructions).toContain('never ask again for a field that is absent from intake_missing');
-    expect(instructions).toContain('the current explicit move may select the canonical plan and request its link');
+    expect(instructions).toContain('The customer may select the canonical plan and explicitly request its link');
     expect(instructions).toContain('call_offer is required for the first select_course');
     expect(instructions).toContain('for the second ask_course_information');
     expect(instructions).toContain('Do not infer a course or area from old memory when the current message is vague');

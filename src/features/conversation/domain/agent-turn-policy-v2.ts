@@ -139,7 +139,7 @@ export function authorizeAgentTurnV2(input: {
 
   const authoredMessages = [...proposal.response.messages];
   const authoredCallOffer = proposal.response.call_offer?.trim() || null;
-  const visibleCallOffer = authoredCallOffer !== null
+  const visibleCallOffer = (authoredCallOffer !== null && solicitsACall(authoredCallOffer, true))
     || authoredMessages.some((message) => solicitsACall(message));
   if (visibleCallOffer && (
     !input.call_policy.may_offer_call

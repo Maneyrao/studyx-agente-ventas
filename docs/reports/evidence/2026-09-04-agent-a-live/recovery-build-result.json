@@ -1,0 +1,25 @@
+{
+  "started_at": "2026-09-04T15:36:13.696853+00:00",
+  "completed_at": "2026-09-04T15:36:21.171724+00:00",
+  "exit_code": 0,
+  "command": [
+    "adk",
+    "build",
+    "--format",
+    "json"
+  ],
+  "network_denied_by_sandbox": true,
+  "botpress_profile_read_denied": true,
+  "environment_keys": [
+    "PATH",
+    "LANG",
+    "DO_NOT_TRACK",
+    "CI",
+    "TMPDIR",
+    "XDG_CONFIG_HOME",
+    "XDG_CACHE_HOME",
+    "npm_config_cache",
+    "npm_config_offline",
+    "BUN_INSTALL_CACHE_DIR"
+  ]
+}

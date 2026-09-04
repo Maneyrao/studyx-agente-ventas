@@ -5,7 +5,8 @@
  * Deliberately conservative: it only accepts a name after an explicit
  * introduction verb ("soy", "me llamo", "mi nombre es") or a leading
  * capitalized name immediately followed by an email address in the same
- * message. Every token of a captured name must start with an uppercase
+ * message. A structured personal header can also introduce that name/email
+ * pair. Every token of a captured name must start with an uppercase
  * letter, so sentence continuations such as "soy interesado en el curso"
  * never become a name. A miss is always safer than a wrong capture — this
  * feeds `contacts.name`/`contacts.email` and the operator-facing Sheets
@@ -34,6 +35,16 @@ const LEADING_NAME_BEFORE_EMAIL_PATTERN = new RegExp(
   `^[\\s¡¿]*(${NAME_TOKEN}(?:\\s+${NAME_TOKEN}){1,3})\\s*[,;:]?\\s*(?=${EMAIL_PATTERN.source})`,
   'u',
 );
+
+const STRUCTURED_NAME_BEFORE_EMAIL_PATTERN = new RegExp(
+  `:\\s*(${NAME_TOKEN}(?:\\s+${NAME_TOKEN}){1,3})(?:\\s*[,;]\\s*|[ \\t]*\\r?\\n\\s*)`
+  + `(?:(?:mi\\s+)?(?:correo(?:\\s+electr[oó]nico)?|e-?mail)\\s*(?::|es)?\\s*)?$`,
+  'iu',
+);
+
+const EXPLICIT_SELF_CONTACT_HEADER = /\b(?:mis\s+datos(?:\s+(?:personales|de\s+contacto))?|mi\s+nombre(?:\s+(?:completo|y\s+apellido))?)\s*$/iu;
+const NEGATED_CONTACT_HEADER = /\b(?:no|ni|sin|nunca|tampoco)\b/iu;
+const STANDALONE_CONTACT_FIELD_HEADER = /^(?:nombre(?:\s+(?:completo|y\s+apellido))?|datos\s+personales)\s*$/iu;
 
 const CORRECTED_SURNAME_PATTERN = new RegExp(
   `(?:mi\\s+apellido(?:\\s+correcto)?\\s+es|me\\s+equivoqu[eé].{0,48}?\\bes)\\s+(${NAME_TOKEN})(?=\\s*(?:con\\s+tilde|[,;.:!?]|$))`,
@@ -74,7 +85,8 @@ export function extractContactIdentity(
   text: string,
   existingName: string | null = null,
 ): CapturedContactIdentity {
-  const email = EMAIL_PATTERN.exec(text)?.[0] ?? null;
+  const emailMatch = EMAIL_PATTERN.exec(text);
+  const email = emailMatch?.[0] ?? null;
   const declaredPhone = extractDeclaredPhone(text);
 
   let name: string | null = null;
@@ -83,7 +95,23 @@ export function extractContactIdentity(
     name = introduced[1].trim();
   } else if (email) {
     const leading = LEADING_NAME_BEFORE_EMAIL_PATTERN.exec(text);
-    if (leading && isPlausibleName(leading[1])) name = leading[1].trim();
+    if (leading && isPlausibleName(leading[1])) {
+      name = leading[1].trim();
+    } else if (emailMatch) {
+      // En un bloque rotulado por la propia persona, el nombre ocupa el campo
+      // inmediatamente anterior al primer correo. El encabezado evita tomar
+      // como identidad un curso o un contacto de terceros escrito en prosa.
+      const beforeEmail = text.slice(0, emailMatch.index);
+      const structured = STRUCTURED_NAME_BEFORE_EMAIL_PATTERN.exec(beforeEmail);
+      if (structured) {
+        const headerSource = beforeEmail.slice(0, structured.index).trim();
+        const header = headerSource.split(/[.;!?…\n]/u).at(-1)?.trim() ?? '';
+        const ownsBlock = !NEGATED_CONTACT_HEADER.test(header)
+          && (EXPLICIT_SELF_CONTACT_HEADER.test(header)
+            || (headerSource === header && STANDALONE_CONTACT_FIELD_HEADER.test(header)));
+        if (ownsBlock && isPlausibleName(structured[1])) name = structured[1].trim();
+      }
+    }
   }
 
   if (name === null && existingName) {

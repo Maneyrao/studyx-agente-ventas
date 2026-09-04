@@ -84,3 +84,71 @@ export function nextAdaptiveCustomerTurnV1(input: {
   }
   return { text: '¿Y cuánto sale?', answering: 'pregunta_precio' };
 }
+
+/** V2 is versioned separately so historical V1 transcripts keep their provenance. */
+export function nextAdaptiveCustomerTurnV2(input: {
+  readonly profile: AdaptiveCustomerProfileV1;
+  readonly lastAgentMessage: string | null;
+  readonly turnIndex: number;
+  readonly alreadyGaveDetails: boolean;
+  readonly alreadySelectedPlan: boolean;
+}): AdaptiveTurnV1 {
+  const agent = input.lastAgentMessage ?? '';
+  if (input.turnIndex === 0 || SENT_LINK.test(agent) || ASKS_LINK_PERMISSION.test(agent)) {
+    return nextAdaptiveCustomerTurnV1(input);
+  }
+  const asksToProceed = /(?:quer[eé]s|dese[aá]s|te gustar[ií]a).{0,80}(?:avan[cz]|continu|inscri|anot|dejarlo\s+(?:listo|registrado))|¿(?:avanzamos|seguimos)\b/iu;
+  if (input.alreadySelectedPlan && asksToProceed.test(agent)) {
+    return { text: 'Sí, mandame el link de pago para avanzar', answering: 'autoriza_link' };
+  }
+  const presentedPlans = [
+    /\b(?:12|doce)\s+(?:pagos|cuotas)\b/iu,
+    /\b(?:6|seis)\s+(?:pagos|cuotas)\b/iu,
+    /\bpago\s+[uú]nico\b/iu,
+  ].filter(pattern => pattern.test(agent)).length;
+  if (presentedPlans >= 2 && /\bUSD\s*\d/iu.test(agent)) {
+    return { text: `Me quedo con ${input.profile.planPhrase}`, answering: 'eleccion_de_plan' };
+  }
+  return nextAdaptiveCustomerTurnV1(input);
+}
+
+export interface AdaptivePaymentAuthorizationFailureV2 {
+  readonly turnId: string | null;
+  readonly reason: 'PAYMENT_WITHOUT_EXPLICIT_CUSTOMER_PERMISSION' | 'PAYMENT_RECORD_WITHOUT_CORRELATED_TURN';
+}
+
+/** Customer answering labels are evidence independent of the agent's inferred move/state. */
+export function adaptivePaymentAuthorizationFailuresV2(input: {
+  readonly turns: readonly {
+    readonly answering?: string;
+    readonly evidence: { readonly turnId: string | null; readonly authorizedMessages: readonly string[] };
+  }[];
+  readonly db: {
+    readonly outbound: readonly { readonly turnId: string; readonly content: string }[];
+    readonly decisions: readonly { readonly turnId: string; readonly businessActionType: string | null }[];
+    readonly recordedLinks: readonly string[];
+  };
+}): AdaptivePaymentAuthorizationFailureV2[] {
+  const permissionByTurn = new Map<string | null, boolean>();
+  const paymentTurns = new Set<string | null>();
+  let permission = false;
+  for (const turn of input.turns) {
+    if (turn.answering === 'autoriza_link' || turn.answering === 'pide_link') permission = true;
+    permissionByTurn.set(turn.evidence.turnId, permission);
+    if (turn.evidence.authorizedMessages.some(message => SENT_LINK.test(message))) paymentTurns.add(turn.evidence.turnId);
+  }
+  for (const outbound of input.db.outbound) {
+    if (SENT_LINK.test(outbound.content)) paymentTurns.add(outbound.turnId);
+  }
+  for (const decision of input.db.decisions) {
+    if (decision.businessActionType === 'send_payment_link') paymentTurns.add(decision.turnId);
+  }
+  const failures: AdaptivePaymentAuthorizationFailureV2[] = [...paymentTurns]
+    .filter(turnId => turnId === null || permissionByTurn.get(turnId) !== true)
+    .map(turnId => ({ turnId, reason: turnId === null || !permissionByTurn.has(turnId)
+      ? 'PAYMENT_RECORD_WITHOUT_CORRELATED_TURN' : 'PAYMENT_WITHOUT_EXPLICIT_CUSTOMER_PERMISSION' }));
+  if (input.db.recordedLinks.some(link => !input.db.outbound.some(outbound => outbound.content.includes(link)))) {
+    failures.push({ turnId: null, reason: 'PAYMENT_RECORD_WITHOUT_CORRELATED_TURN' });
+  }
+  return failures;
+}
