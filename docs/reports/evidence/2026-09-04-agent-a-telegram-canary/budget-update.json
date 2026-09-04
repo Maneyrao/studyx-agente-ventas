@@ -1,0 +1,10 @@
+{
+  "previousAccountedUsd": 0.858633752,
+  "observedTelegramStepsAdded": 26,
+  "observedTelegramCostUsd": 0.041368376000000005,
+  "cumulativeAccountedUsd": 0.900002128,
+  "remainingUsd": 0.09999787199999999,
+  "limitUsd": 1,
+  "newPaidCallsByCoordinator": 0,
+  "rates": "Frozen campaign rates, USD/million: input0.44 cached0.014 output1.32. Token usage recovered from remote workflow steps. Excludes unpriced embeddings and any future user messages."
+}

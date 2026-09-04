@@ -1,5 +1,15 @@
 # Sesión StudyX
 
+## Actualización vigente: canario real fallido
+
+El usuario probó Telegram el 4/9 a las 17:18–17:23 UTC: 21 mensajes entrantes, 20 respuestas, cero ofertas de llamada y cero enlaces. Se analizaron sólo lecturas remotas, pasos persistidos de los workflows y reproducciones gratuitas. No hubo nuevo despliegue ni cambios de código.
+
+Informe prioritario: `docs/reports/2026-09-04-agent-a-telegram-canary-failed.md`. Evidencia redactada: `docs/reports/evidence/2026-09-04-agent-a-telegram-canary/`. Originales privados: `.eval/codex-20260904/telegram-review/` (no incluirlos en uploads/Git).
+
+Causas comprobadas: “fotografía” devuelve not_found y alternativas ajenas, dejando curso/plan nulos y llamada deshabilitada; “Quizás personal” fue clasificado como continue_by_chat y persistido como rechazo sin serlo; nombre completo con teléfono y respuestas de campos separados no se capturan, generando bucle. Una propuesta de enlace para Aires Acondicionados fue bloqueada y no enviada. Brain V20/canónico V9 sí se usan: 20 decisiones y reconstrucción desde claims lo corroboran. El flujo sigue técnicamente publicado pero comercialmente fallido; corrección y revalidación pendientes. No resetear la charla del usuario.
+
+Se incorporó al mismo ledger el usage remoto de 26 pasos (20 generaciones + seis reparaciones), sin nuevas inferencias del coordinador: DeepSeek acumulado USD 0,900002128; margen USD 0,099997872. No cuenta embeddings sin precio medido ni mensajes posteriores. El presupuesto anterior debajo es histórico.
+
 ## Estado vigente
 
 El usuario autorizó desplegar para prueba supervisada el 4/9 y pidió priorizar la llamada antes de continuar la venta por chat. **Desplegado y listo para su prueba en Telegram; entrega visible aún pendiente.** No equivale a producción certificada.

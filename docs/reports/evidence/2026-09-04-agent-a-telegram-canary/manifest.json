@@ -1,0 +1,47 @@
+{
+  "generatedAt": "2026-09-04T17:38:06.764534+00:00",
+  "status": "FAILED_TELEGRAM_CANARY",
+  "sourceCommit": "07328e23f97054aeb92a108562f70b6ef3a88bb4",
+  "sourceFilesVerifiedUnchanged": 316,
+  "scan": {
+    "files": 9,
+    "exactCredentialOrContactMatches": 0
+  },
+  "files": [
+    {
+      "path": "budget-snapshot.json",
+      "bytes": 139841,
+      "sha256": "a199bde98650411009761aad86cee52d79f30de852f225bf694ca7218cc14218"
+    },
+    {
+      "path": "budget-update.json",
+      "bytes": 453,
+      "sha256": "7a9cc569404588e79222dac1e003433c6870516ebab4c68f5e9667abadec4656"
+    },
+    {
+      "path": "model-usage.json",
+      "bytes": 7000,
+      "sha256": "f082455ea492cc0529d0c7d74eba25b225f6107cdd053fddafe0a4dbd3da52de"
+    },
+    {
+      "path": "persistence.json",
+      "bytes": 25785,
+      "sha256": "3f6bf76ddeafc705ed0df67ac5137a42ef751e101acd89f4ff55f3785303b8e0"
+    },
+    {
+      "path": "private-source-checksums.json",
+      "bytes": 1539,
+      "sha256": "892442563af7195e60d67cc74a88d0fcb10febd35675fe3c26fb86296e4b346c"
+    },
+    {
+      "path": "transcript.md",
+      "bytes": 5381,
+      "sha256": "20f27f3212cfbd857ab6c162aaead659203b811f5929bcf34e311d5d51e5064d"
+    },
+    {
+      "path": "workflow-diagnostics.json",
+      "bytes": 144127,
+      "sha256": "ff57ce75e31db5609a91d3101901d0806d6538363789f6dd0fd3718505bb30e5"
+    }
+  ]
+}

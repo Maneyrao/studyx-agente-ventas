@@ -1,5 +1,7 @@
 # Agente A — desplegado para prueba supervisada
 
+**Actualización posterior:** el canario real de Telegram falló (17:18–17:23 UTC). La fuente sigue desplegada, pero no cumple la aceptación comercial. Ver [diagnóstico y transcripción](2026-09-04-agent-a-telegram-canary-failed.md); ese informe reemplaza el estado de aceptación pendiente descrito abajo, sin invalidar los recibos técnicos del despliegue.
+
 El usuario autorizó desplegar para probar y reafirmó la prioridad de ofrecer llamada, continuar por chat ante rechazo, respetar las fases y enviar enlaces disponibles con información correcta. Esa instrucción autoriza el despliegue supervisado y la migración aditiva explicada previamente; no certifica producción ni autoriza cobros o llamadas reales.
 
 ## Candidato verificado

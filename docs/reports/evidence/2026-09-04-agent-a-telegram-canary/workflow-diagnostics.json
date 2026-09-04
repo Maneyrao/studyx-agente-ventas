@@ -1,0 +1,4005 @@
+{
+  "sourceCommit": "07328e23f97054aeb92a108562f70b6ef3a88bb4",
+  "status": "FAILED_TELEGRAM_CANARY",
+  "privacy": "Name, surname, email and telephone in prose redacted. Raw evidence retained privately outside Git. Context instructions reconstructed offline from cached claims, not captured HTTP request bodies.",
+  "turns": [
+    {
+      "at": "2026-09-04T17:18:09.451Z",
+      "workflowId": "wrkflow_01M1PPV1GKGJJ44Q2NH8NQ3PR5",
+      "traceId": "fdd66fe3-ab69-46fc-a264-6271288020f2",
+      "batch": [
+        "Info",
+        "Hola! Colo estas? Me pasas información del curso de fotografia?"
+      ],
+      "catalogResolution": {
+        "kind": "not_found",
+        "requestedText": "Info\nHola! Colo estas? Me pasas información del curso de fotografia?",
+        "requestedArea": null,
+        "alternativeCodes": [
+          "armado_reparacion_pc",
+          "autocad_interiores",
+          "coaching_liderazgo"
+        ]
+      },
+      "stateBefore": {
+        "selected_offering_code": null,
+        "selected_payment_plan": null,
+        "stage": "exploring",
+        "call_preference": "unknown",
+        "call_offer_status": "not_offered",
+        "call_offer_count": 0,
+        "awaiting_reply": "none",
+        "payment_reported": false,
+        "version": 15
+      },
+      "intakeMissing": [
+        "nombre",
+        "apellido",
+        "telefono"
+      ],
+      "features": {
+        "conversation_pipeline_v1_enabled": false,
+        "agent_a_brain_v1_enabled": true,
+        "agent_a_brain_v1_shadow": false,
+        "agent_a_context_scoping": false,
+        "agent_a_repair_enabled": true,
+        "agent_a_state_assertions": true,
+        "agent_a_single_route": true
+      },
+      "initial": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "ask_course_information",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "¡Hola! Bienvenido/a a StudyX 🇺🇸 Soy asesor/a educativo/a. Veo que te interesa el curso de fotografía. Para orientarte mejor, ¿ya tenías pensado estudiar fotografía o recién estás empezando a averiguar?"
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": null,
+          "memory_candidates": []
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 1831,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 9707,
+          "cached_input_tokens": 7168,
+          "output_tokens": 200,
+          "total_tokens": 9907
+        }
+      },
+      "repair": null,
+      "committedAction": null,
+      "outboundId": "f53b8bed-9713-4d9b-b05e-1579b440cc83",
+      "authorizedUrls": [],
+      "deliveryReport": {
+        "report_status": "submitted_to_botpress",
+        "botpress_message_id": "f7f992a5-dd7c-42de-89ad-d34ee36ab8af",
+        "reported_at": "2026-09-04T17:18:28.488Z"
+      },
+      "contextDiagnostics": {
+        "traceId": "fdd66fe3-ab69-46fc-a264-6271288020f2",
+        "workflowId": "wrkflow_01M1PPV1GKGJJ44Q2NH8NQ3PR5",
+        "at": "2026-09-04T17:18:09.451Z",
+        "catalog": {
+          "selected_offering": null,
+          "areas": [
+            {
+              "code": "academia-de-oficios",
+              "fact_id": "area:academia-de-oficios:name:v1",
+              "display_name": "Academia de Oficios"
+            },
+            {
+              "code": "academia-de-diseno-informatico",
+              "fact_id": "area:academia-de-diseno-informatico:name:v1",
+              "display_name": "Academia de Diseño Informático"
+            },
+            {
+              "code": "academia-de-negocios",
+              "fact_id": "area:academia-de-negocios:name:v1",
+              "display_name": "Academia de Negocios"
+            },
+            {
+              "code": "academia-de-marketing",
+              "fact_id": "area:academia-de-marketing:name:v1",
+              "display_name": "Academia de Marketing"
+            },
+            {
+              "code": "academia-de-emprendedores",
+              "fact_id": "area:academia-de-emprendedores:name:v1",
+              "display_name": "Academia de Emprendedores"
+            },
+            {
+              "code": "academia-de-salud-y-bienestar",
+              "fact_id": "area:academia-de-salud-y-bienestar:name:v1",
+              "display_name": "Academia de Salud y Bienestar"
+            },
+            {
+              "code": "academia-cultural",
+              "fact_id": "area:academia-cultural:name:v1",
+              "display_name": "Academia Cultural"
+            },
+            {
+              "code": "academia-gastronomica",
+              "fact_id": "area:academia-gastronomica:name:v1",
+              "display_name": "Academia Gastronómica"
+            },
+            {
+              "code": "academia-de-moda-y-belleza",
+              "fact_id": "area:academia-de-moda-y-belleza:name:v1",
+              "display_name": "Academia de Moda y Belleza"
+            }
+          ],
+          "candidate_offerings": [
+            {
+              "code": "armado_reparacion_pc",
+              "fact_id": "offering:armado_reparacion_pc:name:v1",
+              "display_name": "Armado y Reparación de PC",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "autocad_interiores",
+              "fact_id": "offering:autocad_interiores:name:v1",
+              "display_name": "AutoCAD orientado al Diseño de Interiores",
+              "area_code": "academia-de-diseno-informatico"
+            },
+            {
+              "code": "coaching_liderazgo",
+              "fact_id": "offering:coaching_liderazgo:name:v1",
+              "display_name": "Coaching y Liderazgo",
+              "area_code": "academia-de-negocios"
+            }
+          ],
+          "payment_plans": []
+        },
+        "commercialState": {
+          "selected_offering_code": null,
+          "selected_payment_plan": null,
+          "stage": "exploring",
+          "call_preference": "unknown",
+          "call_offer_status": "not_offered",
+          "call_offer_count": 0,
+          "awaiting_reply": "none",
+          "payment_reported": false
+        },
+        "capabilities": {
+          "may_reply": true,
+          "may_offer_call": false,
+          "may_request_call_now": false,
+          "may_present_payment_options": false,
+          "may_send_payment_link": false,
+          "authorized_payment_plan": null,
+          "intake_status": "known",
+          "intake_missing": [
+            "nombre",
+            "apellido",
+            "telefono"
+          ]
+        },
+        "fullCanonicalIncluded": true,
+        "instructionsChars": 30691,
+        "instructionsSha256": "c03723438002b709069873a3a6de0d491ef5dc4866d02a3c5bf5e03ef3b3be09",
+        "source": "Reconstructed offline from cached remote claim using unchanged deployed source; not a captured HTTP request body."
+      },
+      "committedText": "¡Hola! Bienvenido/a a StudyX 🇺🇸 Soy asesor/a educativo/a. Veo que te interesa el curso de fotografía. Para orientarte mejor, ¿ya tenías pensado estudiar fotografía o recién estás empezando a averiguar?"
+    },
+    {
+      "at": "2026-09-04T17:18:45.096Z",
+      "workflowId": "wrkflow_01M1PPW4ANPKDPARCWAHVJWPK0",
+      "traceId": "de15e132-54e4-49de-a747-c34263448845",
+      "batch": [
+        "ya tenia pensado estudiar fotografia"
+      ],
+      "catalogResolution": {
+        "kind": "not_found",
+        "requestedText": "ya tenia pensado estudiar fotografia",
+        "requestedArea": null,
+        "alternativeCodes": [
+          "armado_reparacion_pc",
+          "autocad_interiores",
+          "coaching_liderazgo"
+        ]
+      },
+      "stateBefore": {
+        "selected_offering_code": null,
+        "selected_payment_plan": null,
+        "stage": "exploring",
+        "call_preference": "unknown",
+        "call_offer_status": "not_offered",
+        "call_offer_count": 0,
+        "awaiting_reply": "none",
+        "payment_reported": false,
+        "version": 16
+      },
+      "intakeMissing": [
+        "nombre",
+        "apellido",
+        "telefono"
+      ],
+      "features": {
+        "conversation_pipeline_v1_enabled": false,
+        "agent_a_brain_v1_enabled": true,
+        "agent_a_brain_v1_shadow": false,
+        "agent_a_context_scoping": false,
+        "agent_a_repair_enabled": true,
+        "agent_a_state_assertions": true,
+        "agent_a_single_route": true
+      },
+      "initial": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "ask_course_information",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "¡Genial, [nombre]! Entonces ya venís con una idea clara. Contame, ¿lo buscás para trabajar en el área o más como formación personal?"
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": null,
+          "memory_candidates": [
+            {
+              "type": "study_goal",
+              "key": "study_goal",
+              "value": "ya tenía pensado estudiar fotografía",
+              "source_quote": "ya tenia pensado estudiar fotografia",
+              "confidence": 0.9
+            }
+          ]
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 1814,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 9768,
+          "cached_input_tokens": 7168,
+          "output_tokens": 176,
+          "total_tokens": 9944
+        }
+      },
+      "repair": null,
+      "committedAction": null,
+      "outboundId": "810d191b-ab4e-4eaa-ba04-574bd26b058f",
+      "authorizedUrls": [],
+      "deliveryReport": {
+        "report_status": "submitted_to_botpress",
+        "botpress_message_id": "0672d1e3-3532-4a5b-bd9c-2143e81ea168",
+        "reported_at": "2026-09-04T17:18:51.310Z"
+      },
+      "contextDiagnostics": {
+        "traceId": "de15e132-54e4-49de-a747-c34263448845",
+        "workflowId": "wrkflow_01M1PPW4ANPKDPARCWAHVJWPK0",
+        "at": "2026-09-04T17:18:45.096Z",
+        "catalog": {
+          "selected_offering": null,
+          "areas": [
+            {
+              "code": "academia-de-oficios",
+              "fact_id": "area:academia-de-oficios:name:v1",
+              "display_name": "Academia de Oficios"
+            },
+            {
+              "code": "academia-de-diseno-informatico",
+              "fact_id": "area:academia-de-diseno-informatico:name:v1",
+              "display_name": "Academia de Diseño Informático"
+            },
+            {
+              "code": "academia-de-negocios",
+              "fact_id": "area:academia-de-negocios:name:v1",
+              "display_name": "Academia de Negocios"
+            },
+            {
+              "code": "academia-de-marketing",
+              "fact_id": "area:academia-de-marketing:name:v1",
+              "display_name": "Academia de Marketing"
+            },
+            {
+              "code": "academia-de-emprendedores",
+              "fact_id": "area:academia-de-emprendedores:name:v1",
+              "display_name": "Academia de Emprendedores"
+            },
+            {
+              "code": "academia-de-salud-y-bienestar",
+              "fact_id": "area:academia-de-salud-y-bienestar:name:v1",
+              "display_name": "Academia de Salud y Bienestar"
+            },
+            {
+              "code": "academia-cultural",
+              "fact_id": "area:academia-cultural:name:v1",
+              "display_name": "Academia Cultural"
+            },
+            {
+              "code": "academia-gastronomica",
+              "fact_id": "area:academia-gastronomica:name:v1",
+              "display_name": "Academia Gastronómica"
+            },
+            {
+              "code": "academia-de-moda-y-belleza",
+              "fact_id": "area:academia-de-moda-y-belleza:name:v1",
+              "display_name": "Academia de Moda y Belleza"
+            }
+          ],
+          "candidate_offerings": [
+            {
+              "code": "armado_reparacion_pc",
+              "fact_id": "offering:armado_reparacion_pc:name:v1",
+              "display_name": "Armado y Reparación de PC",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "autocad_interiores",
+              "fact_id": "offering:autocad_interiores:name:v1",
+              "display_name": "AutoCAD orientado al Diseño de Interiores",
+              "area_code": "academia-de-diseno-informatico"
+            },
+            {
+              "code": "coaching_liderazgo",
+              "fact_id": "offering:coaching_liderazgo:name:v1",
+              "display_name": "Coaching y Liderazgo",
+              "area_code": "academia-de-negocios"
+            }
+          ],
+          "payment_plans": []
+        },
+        "commercialState": {
+          "selected_offering_code": null,
+          "selected_payment_plan": null,
+          "stage": "exploring",
+          "call_preference": "unknown",
+          "call_offer_status": "not_offered",
+          "call_offer_count": 0,
+          "awaiting_reply": "none",
+          "payment_reported": false
+        },
+        "capabilities": {
+          "may_reply": true,
+          "may_offer_call": false,
+          "may_request_call_now": false,
+          "may_present_payment_options": false,
+          "may_send_payment_link": false,
+          "authorized_payment_plan": null,
+          "intake_status": "known",
+          "intake_missing": [
+            "nombre",
+            "apellido",
+            "telefono"
+          ]
+        },
+        "fullCanonicalIncluded": true,
+        "instructionsChars": 30977,
+        "instructionsSha256": "25762821e23c1bc21f7b6163ead9bcf64a977aed443e3b18529e9fd79224f75d",
+        "source": "Reconstructed offline from cached remote claim using unchanged deployed source; not a captured HTTP request body."
+      },
+      "committedText": "¡Genial, [nombre]! Entonces ya venís con una idea clara. Contame, ¿lo buscás para trabajar en el área o más como formación personal?"
+    },
+    {
+      "at": "2026-09-04T17:19:02.296Z",
+      "workflowId": "wrkflow_01M1PPWN432RAA9C2E4F0BZ53K",
+      "traceId": "49849689-cadf-4970-aba1-9ea27ae76578",
+      "batch": [
+        "no sabría decirte aun"
+      ],
+      "catalogResolution": {
+        "kind": "no_catalog_intent"
+      },
+      "stateBefore": {
+        "selected_offering_code": null,
+        "selected_payment_plan": null,
+        "stage": "exploring",
+        "call_preference": "unknown",
+        "call_offer_status": "not_offered",
+        "call_offer_count": 0,
+        "awaiting_reply": "none",
+        "payment_reported": false,
+        "version": 17
+      },
+      "intakeMissing": [
+        "nombre",
+        "apellido",
+        "telefono"
+      ],
+      "features": {
+        "conversation_pipeline_v1_enabled": false,
+        "agent_a_brain_v1_enabled": true,
+        "agent_a_brain_v1_shadow": false,
+        "agent_a_context_scoping": false,
+        "agent_a_repair_enabled": true,
+        "agent_a_state_assertions": true,
+        "agent_a_single_route": true
+      },
+      "initial": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "ask_course_information",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "No hay problema, [nombre]. Mucha gente arranca sin tenerlo del todo claro y con el tiempo lo va definiendo. ¿Querés que te cuente cómo es el curso de fotografía para que veas si te sirve?"
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": null,
+          "memory_candidates": []
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 1814,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 9775,
+          "cached_input_tokens": 7168,
+          "output_tokens": 149,
+          "total_tokens": 9924
+        }
+      },
+      "repair": null,
+      "committedAction": null,
+      "outboundId": "d1d82a14-fa59-49fa-8c09-7e196a2a4efe",
+      "authorizedUrls": [],
+      "deliveryReport": {
+        "report_status": "submitted_to_botpress",
+        "botpress_message_id": "bd51e0ea-f25e-4898-9396-6068362a7a90",
+        "reported_at": "2026-09-04T17:19:08.035Z"
+      },
+      "contextDiagnostics": {
+        "traceId": "49849689-cadf-4970-aba1-9ea27ae76578",
+        "workflowId": "wrkflow_01M1PPWN432RAA9C2E4F0BZ53K",
+        "at": "2026-09-04T17:19:02.296Z",
+        "catalog": {
+          "selected_offering": null,
+          "areas": [
+            {
+              "code": "academia-de-oficios",
+              "fact_id": "area:academia-de-oficios:name:v1",
+              "display_name": "Academia de Oficios"
+            },
+            {
+              "code": "academia-de-diseno-informatico",
+              "fact_id": "area:academia-de-diseno-informatico:name:v1",
+              "display_name": "Academia de Diseño Informático"
+            },
+            {
+              "code": "academia-de-negocios",
+              "fact_id": "area:academia-de-negocios:name:v1",
+              "display_name": "Academia de Negocios"
+            },
+            {
+              "code": "academia-de-marketing",
+              "fact_id": "area:academia-de-marketing:name:v1",
+              "display_name": "Academia de Marketing"
+            },
+            {
+              "code": "academia-de-emprendedores",
+              "fact_id": "area:academia-de-emprendedores:name:v1",
+              "display_name": "Academia de Emprendedores"
+            },
+            {
+              "code": "academia-de-salud-y-bienestar",
+              "fact_id": "area:academia-de-salud-y-bienestar:name:v1",
+              "display_name": "Academia de Salud y Bienestar"
+            },
+            {
+              "code": "academia-cultural",
+              "fact_id": "area:academia-cultural:name:v1",
+              "display_name": "Academia Cultural"
+            },
+            {
+              "code": "academia-gastronomica",
+              "fact_id": "area:academia-gastronomica:name:v1",
+              "display_name": "Academia Gastronómica"
+            },
+            {
+              "code": "academia-de-moda-y-belleza",
+              "fact_id": "area:academia-de-moda-y-belleza:name:v1",
+              "display_name": "Academia de Moda y Belleza"
+            }
+          ],
+          "candidate_offerings": [
+            {
+              "code": "aires_acondicionados",
+              "fact_id": "offering:aires_acondicionados:name:v1",
+              "display_name": "Instalación de Aires Acondicionados",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "fact_id": "offering:armado_reparacion_pc:name:v1",
+              "display_name": "Armado y Reparación de PC",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "autocad_interiores",
+              "fact_id": "offering:autocad_interiores:name:v1",
+              "display_name": "AutoCAD orientado al Diseño de Interiores",
+              "area_code": "academia-de-diseno-informatico"
+            }
+          ],
+          "payment_plans": []
+        },
+        "commercialState": {
+          "selected_offering_code": null,
+          "selected_payment_plan": null,
+          "stage": "exploring",
+          "call_preference": "unknown",
+          "call_offer_status": "not_offered",
+          "call_offer_count": 0,
+          "awaiting_reply": "none",
+          "payment_reported": false
+        },
+        "capabilities": {
+          "may_reply": true,
+          "may_offer_call": false,
+          "may_request_call_now": false,
+          "may_present_payment_options": false,
+          "may_send_payment_link": false,
+          "authorized_payment_plan": null,
+          "intake_status": "known",
+          "intake_missing": [
+            "nombre",
+            "apellido",
+            "telefono"
+          ]
+        },
+        "fullCanonicalIncluded": true,
+        "instructionsChars": 31045,
+        "instructionsSha256": "3262afa1d6570b4acd0b79dace0b83159fe9605dc63a9ef9de83565388c9eb29",
+        "source": "Reconstructed offline from cached remote claim using unchanged deployed source; not a captured HTTP request body."
+      },
+      "committedText": "No hay problema, [nombre]. Mucha gente arranca sin tenerlo del todo claro y con el tiempo lo va definiendo. ¿Querés que te cuente cómo es el curso de fotografía para que veas si te sirve?"
+    },
+    {
+      "at": "2026-09-04T17:19:04.239Z",
+      "workflowId": "wrkflow_01M1PPWQ0NZMYCW9WY5GDQB9YZ",
+      "traceId": "ffc031d1-5b16-4eac-93a5-c6af26cb2561",
+      "batch": [
+        "Quizas personal"
+      ],
+      "catalogResolution": {
+        "kind": "no_catalog_intent"
+      },
+      "stateBefore": {
+        "selected_offering_code": null,
+        "selected_payment_plan": null,
+        "stage": "exploring",
+        "call_preference": "unknown",
+        "call_offer_status": "not_offered",
+        "call_offer_count": 0,
+        "awaiting_reply": "none",
+        "payment_reported": false,
+        "version": 17
+      },
+      "intakeMissing": [
+        "nombre",
+        "apellido",
+        "telefono"
+      ],
+      "features": {
+        "conversation_pipeline_v1_enabled": false,
+        "agent_a_brain_v1_enabled": true,
+        "agent_a_brain_v1_shadow": false,
+        "agent_a_context_scoping": false,
+        "agent_a_repair_enabled": true,
+        "agent_a_state_assertions": true,
+        "agent_a_single_route": true
+      },
+      "initial": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "continue_by_chat",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "Perfecto, [nombre]. Para formación personal también es una gran opción: vas a aprender a manejar tu cámara, componer mejor tus fotos y editarlas con criterio, a tu ritmo y sin presión. ¿Querés que te cuente cómo está organizado el curso?"
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": null,
+          "memory_candidates": [
+            {
+              "type": "study_goal",
+              "key": "goal",
+              "value": "formación personal",
+              "source_quote": "Quizas personal",
+              "confidence": 0.8
+            }
+          ]
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 2370,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 9755,
+          "cached_input_tokens": 7168,
+          "output_tokens": 190,
+          "total_tokens": 9945
+        }
+      },
+      "repair": null,
+      "committedAction": null,
+      "outboundId": "64ca6bdb-5b24-442c-bc01-190f2b7ecb01",
+      "authorizedUrls": [],
+      "deliveryReport": {
+        "report_status": "submitted_to_botpress",
+        "botpress_message_id": "c84998dc-526b-4b9f-9a24-b2eb8164f897",
+        "reported_at": "2026-09-04T17:19:12.421Z"
+      },
+      "contextDiagnostics": {
+        "traceId": "ffc031d1-5b16-4eac-93a5-c6af26cb2561",
+        "workflowId": "wrkflow_01M1PPWQ0NZMYCW9WY5GDQB9YZ",
+        "at": "2026-09-04T17:19:04.239Z",
+        "catalog": {
+          "selected_offering": null,
+          "areas": [
+            {
+              "code": "academia-de-oficios",
+              "fact_id": "area:academia-de-oficios:name:v1",
+              "display_name": "Academia de Oficios"
+            },
+            {
+              "code": "academia-de-diseno-informatico",
+              "fact_id": "area:academia-de-diseno-informatico:name:v1",
+              "display_name": "Academia de Diseño Informático"
+            },
+            {
+              "code": "academia-de-negocios",
+              "fact_id": "area:academia-de-negocios:name:v1",
+              "display_name": "Academia de Negocios"
+            },
+            {
+              "code": "academia-de-marketing",
+              "fact_id": "area:academia-de-marketing:name:v1",
+              "display_name": "Academia de Marketing"
+            },
+            {
+              "code": "academia-de-emprendedores",
+              "fact_id": "area:academia-de-emprendedores:name:v1",
+              "display_name": "Academia de Emprendedores"
+            },
+            {
+              "code": "academia-de-salud-y-bienestar",
+              "fact_id": "area:academia-de-salud-y-bienestar:name:v1",
+              "display_name": "Academia de Salud y Bienestar"
+            },
+            {
+              "code": "academia-cultural",
+              "fact_id": "area:academia-cultural:name:v1",
+              "display_name": "Academia Cultural"
+            },
+            {
+              "code": "academia-gastronomica",
+              "fact_id": "area:academia-gastronomica:name:v1",
+              "display_name": "Academia Gastronómica"
+            },
+            {
+              "code": "academia-de-moda-y-belleza",
+              "fact_id": "area:academia-de-moda-y-belleza:name:v1",
+              "display_name": "Academia de Moda y Belleza"
+            }
+          ],
+          "candidate_offerings": [
+            {
+              "code": "aires_acondicionados",
+              "fact_id": "offering:aires_acondicionados:name:v1",
+              "display_name": "Instalación de Aires Acondicionados",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "fact_id": "offering:armado_reparacion_pc:name:v1",
+              "display_name": "Armado y Reparación de PC",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "autocad_interiores",
+              "fact_id": "offering:autocad_interiores:name:v1",
+              "display_name": "AutoCAD orientado al Diseño de Interiores",
+              "area_code": "academia-de-diseno-informatico"
+            }
+          ],
+          "payment_plans": []
+        },
+        "commercialState": {
+          "selected_offering_code": null,
+          "selected_payment_plan": null,
+          "stage": "exploring",
+          "call_preference": "unknown",
+          "call_offer_status": "not_offered",
+          "call_offer_count": 0,
+          "awaiting_reply": "none",
+          "payment_reported": false
+        },
+        "capabilities": {
+          "may_reply": true,
+          "may_offer_call": false,
+          "may_request_call_now": false,
+          "may_present_payment_options": false,
+          "may_send_payment_link": false,
+          "authorized_payment_plan": null,
+          "intake_status": "known",
+          "intake_missing": [
+            "nombre",
+            "apellido",
+            "telefono"
+          ]
+        },
+        "fullCanonicalIncluded": true,
+        "instructionsChars": 30979,
+        "instructionsSha256": "9251d953aa76d26964908ab1d24e74725e0372893d562420f3e34251840261f6",
+        "source": "Reconstructed offline from cached remote claim using unchanged deployed source; not a captured HTTP request body."
+      },
+      "committedText": "Perfecto, [nombre]. Para formación personal también es una gran opción: vas a aprender a manejar tu cámara, componer mejor tus fotos y editarlas con criterio, a tu ritmo y sin presión. ¿Querés que te cuente cómo está organizado el curso?"
+    },
+    {
+      "at": "2026-09-04T17:19:22.754Z",
+      "workflowId": "wrkflow_01M1PPX93D150XG8GCY2QRC4DH",
+      "traceId": "12446e47-d501-4534-92e0-1960fd3b2e00",
+      "batch": [
+        "Dale, que opciones tenes?"
+      ],
+      "catalogResolution": {
+        "kind": "no_catalog_intent"
+      },
+      "stateBefore": {
+        "selected_offering_code": null,
+        "selected_payment_plan": null,
+        "stage": "exploring",
+        "call_preference": "chat",
+        "call_offer_status": "declined",
+        "call_offer_count": 0,
+        "awaiting_reply": "none",
+        "payment_reported": false,
+        "version": 19
+      },
+      "intakeMissing": [
+        "nombre",
+        "apellido",
+        "telefono"
+      ],
+      "features": {
+        "conversation_pipeline_v1_enabled": false,
+        "agent_a_brain_v1_enabled": true,
+        "agent_a_brain_v1_shadow": false,
+        "agent_a_context_scoping": false,
+        "agent_a_repair_enabled": true,
+        "agent_a_state_assertions": true,
+        "agent_a_single_route": true
+      },
+      "initial": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "ask_course_information",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "El curso de fotografía es 100% online y en español. Tenés una clase en vivo cada semana que queda grabada, y acceso a la plataforma 24/7 para avanzar a tu ritmo. Incluye material de lectura, videos explicativos, ejercicios, exámenes con corrección, chat directo con profesores y certificado final.",
+              "¿Te gustaría que te cuente más sobre algún aspecto en particular?"
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": null,
+          "memory_candidates": []
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 1907,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 9884,
+          "cached_input_tokens": 7168,
+          "output_tokens": 191,
+          "total_tokens": 10075
+        }
+      },
+      "repair": null,
+      "committedAction": null,
+      "outboundId": "7cdf81d8-f7d5-4da9-af5f-900452968802",
+      "authorizedUrls": [],
+      "deliveryReport": {
+        "report_status": "submitted_to_botpress",
+        "botpress_message_id": "dc374145-eb7f-4a95-90b7-f61fe0f08052",
+        "reported_at": "2026-09-04T17:19:28.904Z"
+      },
+      "contextDiagnostics": {
+        "traceId": "12446e47-d501-4534-92e0-1960fd3b2e00",
+        "workflowId": "wrkflow_01M1PPX93D150XG8GCY2QRC4DH",
+        "at": "2026-09-04T17:19:22.754Z",
+        "catalog": {
+          "selected_offering": null,
+          "areas": [
+            {
+              "code": "academia-de-oficios",
+              "fact_id": "area:academia-de-oficios:name:v1",
+              "display_name": "Academia de Oficios"
+            },
+            {
+              "code": "academia-de-diseno-informatico",
+              "fact_id": "area:academia-de-diseno-informatico:name:v1",
+              "display_name": "Academia de Diseño Informático"
+            },
+            {
+              "code": "academia-de-negocios",
+              "fact_id": "area:academia-de-negocios:name:v1",
+              "display_name": "Academia de Negocios"
+            },
+            {
+              "code": "academia-de-marketing",
+              "fact_id": "area:academia-de-marketing:name:v1",
+              "display_name": "Academia de Marketing"
+            },
+            {
+              "code": "academia-de-emprendedores",
+              "fact_id": "area:academia-de-emprendedores:name:v1",
+              "display_name": "Academia de Emprendedores"
+            },
+            {
+              "code": "academia-de-salud-y-bienestar",
+              "fact_id": "area:academia-de-salud-y-bienestar:name:v1",
+              "display_name": "Academia de Salud y Bienestar"
+            },
+            {
+              "code": "academia-cultural",
+              "fact_id": "area:academia-cultural:name:v1",
+              "display_name": "Academia Cultural"
+            },
+            {
+              "code": "academia-gastronomica",
+              "fact_id": "area:academia-gastronomica:name:v1",
+              "display_name": "Academia Gastronómica"
+            },
+            {
+              "code": "academia-de-moda-y-belleza",
+              "fact_id": "area:academia-de-moda-y-belleza:name:v1",
+              "display_name": "Academia de Moda y Belleza"
+            }
+          ],
+          "candidate_offerings": [
+            {
+              "code": "aires_acondicionados",
+              "fact_id": "offering:aires_acondicionados:name:v1",
+              "display_name": "Instalación de Aires Acondicionados",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "fact_id": "offering:armado_reparacion_pc:name:v1",
+              "display_name": "Armado y Reparación de PC",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "autocad_interiores",
+              "fact_id": "offering:autocad_interiores:name:v1",
+              "display_name": "AutoCAD orientado al Diseño de Interiores",
+              "area_code": "academia-de-diseno-informatico"
+            }
+          ],
+          "payment_plans": []
+        },
+        "commercialState": {
+          "selected_offering_code": null,
+          "selected_payment_plan": null,
+          "stage": "exploring",
+          "call_preference": "chat",
+          "call_offer_status": "declined",
+          "call_offer_count": 0,
+          "awaiting_reply": "none",
+          "payment_reported": false
+        },
+        "capabilities": {
+          "may_reply": true,
+          "may_offer_call": false,
+          "may_request_call_now": false,
+          "may_present_payment_options": false,
+          "may_send_payment_link": false,
+          "authorized_payment_plan": null,
+          "intake_status": "known",
+          "intake_missing": [
+            "nombre",
+            "apellido",
+            "telefono"
+          ]
+        },
+        "fullCanonicalIncluded": true,
+        "instructionsChars": 31457,
+        "instructionsSha256": "d126314b7bbdc0787811b527b6d03a867f16fd4711957e3f9279ee9f86afb67c",
+        "source": "Reconstructed offline from cached remote claim using unchanged deployed source; not a captured HTTP request body."
+      },
+      "committedText": "El curso de fotografía es 100% online y en español. Tenés una clase en vivo cada semana que queda grabada, y acceso a la plataforma 24/7 para avanzar a tu ritmo. Incluye material de lectura, videos explicativos, ejercicios, exámenes con corrección, chat directo con profesores y certificado final.\n\n¿Te gustaría que te cuente más sobre algún aspecto en particular?"
+    },
+    {
+      "at": "2026-09-04T17:19:44.906Z",
+      "workflowId": "wrkflow_01M1PPXYQKW2397BZSDWAVRA71",
+      "traceId": "f6d77dc2-8347-4b46-a5ce-b14f4742b5e1",
+      "batch": [
+        "Que horarios tiene?"
+      ],
+      "catalogResolution": {
+        "kind": "no_catalog_intent"
+      },
+      "stateBefore": {
+        "selected_offering_code": null,
+        "selected_payment_plan": null,
+        "stage": "exploring",
+        "call_preference": "chat",
+        "call_offer_status": "declined",
+        "call_offer_count": 0,
+        "awaiting_reply": "none",
+        "payment_reported": false,
+        "version": 20
+      },
+      "intakeMissing": [
+        "nombre",
+        "apellido",
+        "telefono"
+      ],
+      "features": {
+        "conversation_pipeline_v1_enabled": false,
+        "agent_a_brain_v1_enabled": true,
+        "agent_a_brain_v1_shadow": false,
+        "agent_a_context_scoping": false,
+        "agent_a_repair_enabled": true,
+        "agent_a_state_assertions": true,
+        "agent_a_single_route": true
+      },
+      "initial": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "ask_course_information",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "La clase en vivo es una vez por semana y queda grabada, así que si no podés conectarte en ese momento la ves después. El resto del material lo hacés cuando quieras, la plataforma está disponible 24/7."
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": null,
+          "memory_candidates": []
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 1822,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 9932,
+          "cached_input_tokens": 7168,
+          "output_tokens": 189,
+          "total_tokens": 10121
+        }
+      },
+      "repair": null,
+      "committedAction": null,
+      "outboundId": "ad2871dc-9d2d-49a1-b2e8-615e62aa3dd0",
+      "authorizedUrls": [],
+      "deliveryReport": {
+        "report_status": "submitted_to_botpress",
+        "botpress_message_id": "1dfabde8-a616-482d-b063-92ec12c9a9c6",
+        "reported_at": "2026-09-04T17:19:50.604Z"
+      },
+      "contextDiagnostics": {
+        "traceId": "f6d77dc2-8347-4b46-a5ce-b14f4742b5e1",
+        "workflowId": "wrkflow_01M1PPXYQKW2397BZSDWAVRA71",
+        "at": "2026-09-04T17:19:44.906Z",
+        "catalog": {
+          "selected_offering": null,
+          "areas": [
+            {
+              "code": "academia-de-oficios",
+              "fact_id": "area:academia-de-oficios:name:v1",
+              "display_name": "Academia de Oficios"
+            },
+            {
+              "code": "academia-de-diseno-informatico",
+              "fact_id": "area:academia-de-diseno-informatico:name:v1",
+              "display_name": "Academia de Diseño Informático"
+            },
+            {
+              "code": "academia-de-negocios",
+              "fact_id": "area:academia-de-negocios:name:v1",
+              "display_name": "Academia de Negocios"
+            },
+            {
+              "code": "academia-de-marketing",
+              "fact_id": "area:academia-de-marketing:name:v1",
+              "display_name": "Academia de Marketing"
+            },
+            {
+              "code": "academia-de-emprendedores",
+              "fact_id": "area:academia-de-emprendedores:name:v1",
+              "display_name": "Academia de Emprendedores"
+            },
+            {
+              "code": "academia-de-salud-y-bienestar",
+              "fact_id": "area:academia-de-salud-y-bienestar:name:v1",
+              "display_name": "Academia de Salud y Bienestar"
+            },
+            {
+              "code": "academia-cultural",
+              "fact_id": "area:academia-cultural:name:v1",
+              "display_name": "Academia Cultural"
+            },
+            {
+              "code": "academia-gastronomica",
+              "fact_id": "area:academia-gastronomica:name:v1",
+              "display_name": "Academia Gastronómica"
+            },
+            {
+              "code": "academia-de-moda-y-belleza",
+              "fact_id": "area:academia-de-moda-y-belleza:name:v1",
+              "display_name": "Academia de Moda y Belleza"
+            }
+          ],
+          "candidate_offerings": [
+            {
+              "code": "aires_acondicionados",
+              "fact_id": "offering:aires_acondicionados:name:v1",
+              "display_name": "Instalación de Aires Acondicionados",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "fact_id": "offering:armado_reparacion_pc:name:v1",
+              "display_name": "Armado y Reparación de PC",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "autocad_interiores",
+              "fact_id": "offering:autocad_interiores:name:v1",
+              "display_name": "AutoCAD orientado al Diseño de Interiores",
+              "area_code": "academia-de-diseno-informatico"
+            }
+          ],
+          "payment_plans": []
+        },
+        "commercialState": {
+          "selected_offering_code": null,
+          "selected_payment_plan": null,
+          "stage": "exploring",
+          "call_preference": "chat",
+          "call_offer_status": "declined",
+          "call_offer_count": 0,
+          "awaiting_reply": "none",
+          "payment_reported": false
+        },
+        "capabilities": {
+          "may_reply": true,
+          "may_offer_call": false,
+          "may_request_call_now": false,
+          "may_present_payment_options": false,
+          "may_send_payment_link": false,
+          "authorized_payment_plan": null,
+          "intake_status": "known",
+          "intake_missing": [
+            "nombre",
+            "apellido",
+            "telefono"
+          ]
+        },
+        "fullCanonicalIncluded": true,
+        "instructionsChars": 31705,
+        "instructionsSha256": "a43e914a75bbda5b551918d56f04ff0a87431e7ca17582a5f57ee228dc458d93",
+        "source": "Reconstructed offline from cached remote claim using unchanged deployed source; not a captured HTTP request body."
+      },
+      "committedText": "La clase en vivo es una vez por semana y queda grabada, así que si no podés conectarte en ese momento la ves después. El resto del material lo hacés cuando quieras, la plataforma está disponible 24/7."
+    },
+    {
+      "at": "2026-09-04T17:20:07.810Z",
+      "workflowId": "wrkflow_01M1PPYMTH6YP1QBKQY4MQ5MP3",
+      "traceId": "70071ed1-b8cd-44aa-941a-7a3a8b75b0fb",
+      "batch": [
+        "Pero no tenes horarios?"
+      ],
+      "catalogResolution": {
+        "kind": "no_catalog_intent"
+      },
+      "stateBefore": {
+        "selected_offering_code": null,
+        "selected_payment_plan": null,
+        "stage": "exploring",
+        "call_preference": "chat",
+        "call_offer_status": "declined",
+        "call_offer_count": 0,
+        "awaiting_reply": "none",
+        "payment_reported": false,
+        "version": 21
+      },
+      "intakeMissing": [
+        "nombre",
+        "apellido",
+        "telefono"
+      ],
+      "features": {
+        "conversation_pipeline_v1_enabled": false,
+        "agent_a_brain_v1_enabled": true,
+        "agent_a_brain_v1_shadow": false,
+        "agent_a_context_scoping": false,
+        "agent_a_repair_enabled": true,
+        "agent_a_state_assertions": true,
+        "agent_a_single_route": true
+      },
+      "initial": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "ask_course_information",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "La clase en vivo se dicta un día fijo a la semana y dura unos minutos; si no podés en ese momento, queda grabada para verla cuando quieras. El resto del material lo hacés a tu ritmo, la plataforma está disponible 24/7."
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": null,
+          "memory_candidates": []
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 1748,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 9904,
+          "cached_input_tokens": 7168,
+          "output_tokens": 198,
+          "total_tokens": 10102
+        }
+      },
+      "repair": null,
+      "committedAction": null,
+      "outboundId": "0ab39892-a1d9-47dc-a98d-669b0e261bfb",
+      "authorizedUrls": [],
+      "deliveryReport": {
+        "report_status": "submitted_to_botpress",
+        "botpress_message_id": "3140b750-8d25-4e87-8c3b-ec629670326f",
+        "reported_at": "2026-09-04T17:20:13.115Z"
+      },
+      "contextDiagnostics": {
+        "traceId": "70071ed1-b8cd-44aa-941a-7a3a8b75b0fb",
+        "workflowId": "wrkflow_01M1PPYMTH6YP1QBKQY4MQ5MP3",
+        "at": "2026-09-04T17:20:07.810Z",
+        "catalog": {
+          "selected_offering": null,
+          "areas": [
+            {
+              "code": "academia-de-oficios",
+              "fact_id": "area:academia-de-oficios:name:v1",
+              "display_name": "Academia de Oficios"
+            },
+            {
+              "code": "academia-de-diseno-informatico",
+              "fact_id": "area:academia-de-diseno-informatico:name:v1",
+              "display_name": "Academia de Diseño Informático"
+            },
+            {
+              "code": "academia-de-negocios",
+              "fact_id": "area:academia-de-negocios:name:v1",
+              "display_name": "Academia de Negocios"
+            },
+            {
+              "code": "academia-de-marketing",
+              "fact_id": "area:academia-de-marketing:name:v1",
+              "display_name": "Academia de Marketing"
+            },
+            {
+              "code": "academia-de-emprendedores",
+              "fact_id": "area:academia-de-emprendedores:name:v1",
+              "display_name": "Academia de Emprendedores"
+            },
+            {
+              "code": "academia-de-salud-y-bienestar",
+              "fact_id": "area:academia-de-salud-y-bienestar:name:v1",
+              "display_name": "Academia de Salud y Bienestar"
+            },
+            {
+              "code": "academia-cultural",
+              "fact_id": "area:academia-cultural:name:v1",
+              "display_name": "Academia Cultural"
+            },
+            {
+              "code": "academia-gastronomica",
+              "fact_id": "area:academia-gastronomica:name:v1",
+              "display_name": "Academia Gastronómica"
+            },
+            {
+              "code": "academia-de-moda-y-belleza",
+              "fact_id": "area:academia-de-moda-y-belleza:name:v1",
+              "display_name": "Academia de Moda y Belleza"
+            }
+          ],
+          "candidate_offerings": [
+            {
+              "code": "aires_acondicionados",
+              "fact_id": "offering:aires_acondicionados:name:v1",
+              "display_name": "Instalación de Aires Acondicionados",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "fact_id": "offering:armado_reparacion_pc:name:v1",
+              "display_name": "Armado y Reparación de PC",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "autocad_interiores",
+              "fact_id": "offering:autocad_interiores:name:v1",
+              "display_name": "AutoCAD orientado al Diseño de Interiores",
+              "area_code": "academia-de-diseno-informatico"
+            }
+          ],
+          "payment_plans": []
+        },
+        "commercialState": {
+          "selected_offering_code": null,
+          "selected_payment_plan": null,
+          "stage": "exploring",
+          "call_preference": "chat",
+          "call_offer_status": "declined",
+          "call_offer_count": 0,
+          "awaiting_reply": "none",
+          "payment_reported": false
+        },
+        "capabilities": {
+          "may_reply": true,
+          "may_offer_call": false,
+          "may_request_call_now": false,
+          "may_present_payment_options": false,
+          "may_send_payment_link": false,
+          "authorized_payment_plan": null,
+          "intake_status": "known",
+          "intake_missing": [
+            "nombre",
+            "apellido",
+            "telefono"
+          ]
+        },
+        "fullCanonicalIncluded": true,
+        "instructionsChars": 31598,
+        "instructionsSha256": "2698ff44fc1629dad9879b74808bf8b192e2f7418c70dbe9092126d5c0ac1559",
+        "source": "Reconstructed offline from cached remote claim using unchanged deployed source; not a captured HTTP request body."
+      },
+      "committedText": "La clase en vivo se dicta un día fijo a la semana y dura unos minutos; si no podés en ese momento, queda grabada para verla cuando quieras. El resto del material lo hacés a tu ritmo, la plataforma está disponible 24/7."
+    },
+    {
+      "at": "2026-09-04T17:20:22.346Z",
+      "workflowId": "wrkflow_01M1PPZ39NTKS0A14D32MX70T2",
+      "traceId": "55a4c3e4-9b08-411c-b70b-18ca31a7a0b4",
+      "batch": [
+        "Por otro lado, como me puedo anotar?"
+      ],
+      "catalogResolution": {
+        "kind": "no_catalog_intent"
+      },
+      "stateBefore": {
+        "selected_offering_code": null,
+        "selected_payment_plan": null,
+        "stage": "exploring",
+        "call_preference": "chat",
+        "call_offer_status": "declined",
+        "call_offer_count": 0,
+        "awaiting_reply": "none",
+        "payment_reported": false,
+        "version": 22
+      },
+      "intakeMissing": [
+        "nombre",
+        "apellido",
+        "telefono"
+      ],
+      "features": {
+        "conversation_pipeline_v1_enabled": false,
+        "agent_a_brain_v1_enabled": true,
+        "agent_a_brain_v1_shadow": false,
+        "agent_a_context_scoping": false,
+        "agent_a_repair_enabled": true,
+        "agent_a_state_assertions": true,
+        "agent_a_single_route": true
+      },
+      "initial": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "ask_course_information",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "Para anotarte es muy simple: me pasás tu nombre, apellido y teléfono, y con eso te dejo registrado para avanzar con la inscripción. ¿Te parece que arranquemos con eso?"
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": null,
+          "memory_candidates": []
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 1525,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 9975,
+          "cached_input_tokens": 7168,
+          "output_tokens": 146,
+          "total_tokens": 10121
+        }
+      },
+      "repair": null,
+      "committedAction": null,
+      "outboundId": "d7e4df76-5df0-41bb-8f0f-8bc91a3b12d5",
+      "authorizedUrls": [],
+      "deliveryReport": {
+        "report_status": "submitted_to_botpress",
+        "botpress_message_id": "9cca0885-59db-49b3-94c2-b3851efe9ca7",
+        "reported_at": "2026-09-04T17:20:27.567Z"
+      },
+      "contextDiagnostics": {
+        "traceId": "55a4c3e4-9b08-411c-b70b-18ca31a7a0b4",
+        "workflowId": "wrkflow_01M1PPZ39NTKS0A14D32MX70T2",
+        "at": "2026-09-04T17:20:22.346Z",
+        "catalog": {
+          "selected_offering": null,
+          "areas": [
+            {
+              "code": "academia-de-oficios",
+              "fact_id": "area:academia-de-oficios:name:v1",
+              "display_name": "Academia de Oficios"
+            },
+            {
+              "code": "academia-de-diseno-informatico",
+              "fact_id": "area:academia-de-diseno-informatico:name:v1",
+              "display_name": "Academia de Diseño Informático"
+            },
+            {
+              "code": "academia-de-negocios",
+              "fact_id": "area:academia-de-negocios:name:v1",
+              "display_name": "Academia de Negocios"
+            },
+            {
+              "code": "academia-de-marketing",
+              "fact_id": "area:academia-de-marketing:name:v1",
+              "display_name": "Academia de Marketing"
+            },
+            {
+              "code": "academia-de-emprendedores",
+              "fact_id": "area:academia-de-emprendedores:name:v1",
+              "display_name": "Academia de Emprendedores"
+            },
+            {
+              "code": "academia-de-salud-y-bienestar",
+              "fact_id": "area:academia-de-salud-y-bienestar:name:v1",
+              "display_name": "Academia de Salud y Bienestar"
+            },
+            {
+              "code": "academia-cultural",
+              "fact_id": "area:academia-cultural:name:v1",
+              "display_name": "Academia Cultural"
+            },
+            {
+              "code": "academia-gastronomica",
+              "fact_id": "area:academia-gastronomica:name:v1",
+              "display_name": "Academia Gastronómica"
+            },
+            {
+              "code": "academia-de-moda-y-belleza",
+              "fact_id": "area:academia-de-moda-y-belleza:name:v1",
+              "display_name": "Academia de Moda y Belleza"
+            }
+          ],
+          "candidate_offerings": [
+            {
+              "code": "aires_acondicionados",
+              "fact_id": "offering:aires_acondicionados:name:v1",
+              "display_name": "Instalación de Aires Acondicionados",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "fact_id": "offering:armado_reparacion_pc:name:v1",
+              "display_name": "Armado y Reparación de PC",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "autocad_interiores",
+              "fact_id": "offering:autocad_interiores:name:v1",
+              "display_name": "AutoCAD orientado al Diseño de Interiores",
+              "area_code": "academia-de-diseno-informatico"
+            }
+          ],
+          "payment_plans": []
+        },
+        "commercialState": {
+          "selected_offering_code": null,
+          "selected_payment_plan": null,
+          "stage": "exploring",
+          "call_preference": "chat",
+          "call_offer_status": "declined",
+          "call_offer_count": 0,
+          "awaiting_reply": "none",
+          "payment_reported": false
+        },
+        "capabilities": {
+          "may_reply": true,
+          "may_offer_call": false,
+          "may_request_call_now": false,
+          "may_present_payment_options": false,
+          "may_send_payment_link": false,
+          "authorized_payment_plan": null,
+          "intake_status": "known",
+          "intake_missing": [
+            "nombre",
+            "apellido",
+            "telefono"
+          ]
+        },
+        "fullCanonicalIncluded": true,
+        "instructionsChars": 31835,
+        "instructionsSha256": "5785f57523866a0148a10b5341a63a3abce47e3b6224e27d5d6f9d6e3fc5c802",
+        "source": "Reconstructed offline from cached remote claim using unchanged deployed source; not a captured HTTP request body."
+      },
+      "committedText": "¿Te parece que arranquemos con eso?"
+    },
+    {
+      "at": "2026-09-04T17:20:31.889Z",
+      "workflowId": "wrkflow_01M1PPZCKW7Z5H5H4VXNHT9751",
+      "traceId": "17ecf06a-71b5-47b5-9b25-28d0d8e4e2c5",
+      "batch": [
+        "Si dale"
+      ],
+      "catalogResolution": {
+        "kind": "no_catalog_intent"
+      },
+      "stateBefore": {
+        "selected_offering_code": null,
+        "selected_payment_plan": null,
+        "stage": "exploring",
+        "call_preference": "chat",
+        "call_offer_status": "declined",
+        "call_offer_count": 0,
+        "awaiting_reply": "none",
+        "payment_reported": false,
+        "version": 23
+      },
+      "intakeMissing": [
+        "nombre",
+        "apellido",
+        "telefono"
+      ],
+      "features": {
+        "conversation_pipeline_v1_enabled": false,
+        "agent_a_brain_v1_enabled": true,
+        "agent_a_brain_v1_shadow": false,
+        "agent_a_context_scoping": false,
+        "agent_a_repair_enabled": true,
+        "agent_a_state_assertions": true,
+        "agent_a_single_route": true
+      },
+      "initial": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "continue_by_chat",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "¡Perfecto! Para dejarlo registrado necesito tu nombre, apellido y teléfono. ¿Me los pasás?"
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": null,
+          "memory_candidates": []
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 1380,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 9822,
+          "cached_input_tokens": 7168,
+          "output_tokens": 124,
+          "total_tokens": 9946
+        }
+      },
+      "repair": null,
+      "committedAction": null,
+      "outboundId": "adbd090d-5bcd-4e38-b0de-bc9def2abbf2",
+      "authorizedUrls": [],
+      "deliveryReport": {
+        "report_status": "submitted_to_botpress",
+        "botpress_message_id": "2a13ac6e-e31f-40d3-b06a-4fdd3e69a749",
+        "reported_at": "2026-09-04T17:20:37.196Z"
+      },
+      "contextDiagnostics": {
+        "traceId": "17ecf06a-71b5-47b5-9b25-28d0d8e4e2c5",
+        "workflowId": "wrkflow_01M1PPZCKW7Z5H5H4VXNHT9751",
+        "at": "2026-09-04T17:20:31.889Z",
+        "catalog": {
+          "selected_offering": null,
+          "areas": [
+            {
+              "code": "academia-de-oficios",
+              "fact_id": "area:academia-de-oficios:name:v1",
+              "display_name": "Academia de Oficios"
+            },
+            {
+              "code": "academia-de-diseno-informatico",
+              "fact_id": "area:academia-de-diseno-informatico:name:v1",
+              "display_name": "Academia de Diseño Informático"
+            },
+            {
+              "code": "academia-de-negocios",
+              "fact_id": "area:academia-de-negocios:name:v1",
+              "display_name": "Academia de Negocios"
+            },
+            {
+              "code": "academia-de-marketing",
+              "fact_id": "area:academia-de-marketing:name:v1",
+              "display_name": "Academia de Marketing"
+            },
+            {
+              "code": "academia-de-emprendedores",
+              "fact_id": "area:academia-de-emprendedores:name:v1",
+              "display_name": "Academia de Emprendedores"
+            },
+            {
+              "code": "academia-de-salud-y-bienestar",
+              "fact_id": "area:academia-de-salud-y-bienestar:name:v1",
+              "display_name": "Academia de Salud y Bienestar"
+            },
+            {
+              "code": "academia-cultural",
+              "fact_id": "area:academia-cultural:name:v1",
+              "display_name": "Academia Cultural"
+            },
+            {
+              "code": "academia-gastronomica",
+              "fact_id": "area:academia-gastronomica:name:v1",
+              "display_name": "Academia Gastronómica"
+            },
+            {
+              "code": "academia-de-moda-y-belleza",
+              "fact_id": "area:academia-de-moda-y-belleza:name:v1",
+              "display_name": "Academia de Moda y Belleza"
+            }
+          ],
+          "candidate_offerings": [
+            {
+              "code": "aires_acondicionados",
+              "fact_id": "offering:aires_acondicionados:name:v1",
+              "display_name": "Instalación de Aires Acondicionados",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "fact_id": "offering:armado_reparacion_pc:name:v1",
+              "display_name": "Armado y Reparación de PC",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "autocad_interiores",
+              "fact_id": "offering:autocad_interiores:name:v1",
+              "display_name": "AutoCAD orientado al Diseño de Interiores",
+              "area_code": "academia-de-diseno-informatico"
+            }
+          ],
+          "payment_plans": []
+        },
+        "commercialState": {
+          "selected_offering_code": null,
+          "selected_payment_plan": null,
+          "stage": "exploring",
+          "call_preference": "chat",
+          "call_offer_status": "declined",
+          "call_offer_count": 0,
+          "awaiting_reply": "none",
+          "payment_reported": false
+        },
+        "capabilities": {
+          "may_reply": true,
+          "may_offer_call": false,
+          "may_request_call_now": false,
+          "may_present_payment_options": false,
+          "may_send_payment_link": false,
+          "authorized_payment_plan": null,
+          "intake_status": "known",
+          "intake_missing": [
+            "nombre",
+            "apellido",
+            "telefono"
+          ]
+        },
+        "fullCanonicalIncluded": true,
+        "instructionsChars": 31273,
+        "instructionsSha256": "9c8652ad1ddc82649034ec864a882f51817561021956db1784dc8c2ba16c4ac0",
+        "source": "Reconstructed offline from cached remote claim using unchanged deployed source; not a captured HTTP request body."
+      },
+      "committedText": "¡Perfecto! Para dejarlo registrado necesito tu nombre, apellido y teléfono. ¿Me los pasás?"
+    },
+    {
+      "at": "2026-09-04T17:20:52.164Z",
+      "workflowId": "wrkflow_01M1PQ00DH684N3J1J6QY3PJFR",
+      "traceId": "79f0f4a4-abbd-4ff6-a9d3-acf85b69fd18",
+      "batch": [
+        "[nombre] [apellido] [[teléfono]](tel:[teléfono]) \n\nCuanto sale?"
+      ],
+      "catalogResolution": {
+        "kind": "no_catalog_intent"
+      },
+      "stateBefore": {
+        "selected_offering_code": null,
+        "selected_payment_plan": null,
+        "stage": "exploring",
+        "call_preference": "chat",
+        "call_offer_status": "declined",
+        "call_offer_count": 0,
+        "awaiting_reply": "none",
+        "payment_reported": false,
+        "version": 24
+      },
+      "intakeMissing": [
+        "nombre",
+        "apellido"
+      ],
+      "features": {
+        "conversation_pipeline_v1_enabled": false,
+        "agent_a_brain_v1_enabled": true,
+        "agent_a_brain_v1_shadow": false,
+        "agent_a_context_scoping": false,
+        "agent_a_repair_enabled": true,
+        "agent_a_state_assertions": true,
+        "agent_a_single_route": true
+      },
+      "initial": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "provide_contact_details",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "¡Gracias, [nombre]! Ya tengo tu nombre y teléfono. Me falta tu apellido para dejarlo registrado.",
+              "Sobre el precio: el valor total del programa es USD 360, y podés elegir 12 pagos mensuales de USD 30, 6 pagos de USD 60 o un pago único de USD 360."
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": null,
+          "memory_candidates": []
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 1740,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 9809,
+          "cached_input_tokens": 7168,
+          "output_tokens": 181,
+          "total_tokens": 9990
+        }
+      },
+      "repair": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "provide_contact_details",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "¡Gracias, [nombre]! Quedó registrado tu nombre y teléfono. Solo me falta tu apellido para completar el registro. ¿Me lo pasás?"
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": {
+            "rejection_id": "bf48896c-b912-4820-bdf1-1fcc15dec017",
+            "attempt": 1
+          },
+          "memory_candidates": [
+            {
+              "type": "contact_preference",
+              "key": "provided_name",
+              "value": "[nombre]",
+              "source_quote": "[nombre] [apellido] [[teléfono]](tel:[teléfono])",
+              "confidence": 1
+            },
+            {
+              "type": "contact_preference",
+              "key": "provided_phone",
+              "value": "[teléfono]",
+              "source_quote": "[nombre] [apellido] [[teléfono]](tel:[teléfono])",
+              "confidence": 1
+            }
+          ]
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 2384,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 10549,
+          "cached_input_tokens": 7168,
+          "output_tokens": 349,
+          "total_tokens": 10898
+        }
+      },
+      "committedAction": null,
+      "outboundId": "a6c7dc39-ae4e-44fb-9e2a-55f533e1a168",
+      "authorizedUrls": [],
+      "deliveryReport": {
+        "report_status": "submitted_to_botpress",
+        "botpress_message_id": "95eb5ceb-d75a-4db0-b15b-106d8ef67a18",
+        "reported_at": "2026-09-04T17:21:00.741Z"
+      },
+      "contextDiagnostics": {
+        "traceId": "79f0f4a4-abbd-4ff6-a9d3-acf85b69fd18",
+        "workflowId": "wrkflow_01M1PQ00DH684N3J1J6QY3PJFR",
+        "at": "2026-09-04T17:20:52.164Z",
+        "catalog": {
+          "selected_offering": null,
+          "areas": [
+            {
+              "code": "academia-de-oficios",
+              "fact_id": "area:academia-de-oficios:name:v1",
+              "display_name": "Academia de Oficios"
+            },
+            {
+              "code": "academia-de-diseno-informatico",
+              "fact_id": "area:academia-de-diseno-informatico:name:v1",
+              "display_name": "Academia de Diseño Informático"
+            },
+            {
+              "code": "academia-de-negocios",
+              "fact_id": "area:academia-de-negocios:name:v1",
+              "display_name": "Academia de Negocios"
+            },
+            {
+              "code": "academia-de-marketing",
+              "fact_id": "area:academia-de-marketing:name:v1",
+              "display_name": "Academia de Marketing"
+            },
+            {
+              "code": "academia-de-emprendedores",
+              "fact_id": "area:academia-de-emprendedores:name:v1",
+              "display_name": "Academia de Emprendedores"
+            },
+            {
+              "code": "academia-de-salud-y-bienestar",
+              "fact_id": "area:academia-de-salud-y-bienestar:name:v1",
+              "display_name": "Academia de Salud y Bienestar"
+            },
+            {
+              "code": "academia-cultural",
+              "fact_id": "area:academia-cultural:name:v1",
+              "display_name": "Academia Cultural"
+            },
+            {
+              "code": "academia-gastronomica",
+              "fact_id": "area:academia-gastronomica:name:v1",
+              "display_name": "Academia Gastronómica"
+            },
+            {
+              "code": "academia-de-moda-y-belleza",
+              "fact_id": "area:academia-de-moda-y-belleza:name:v1",
+              "display_name": "Academia de Moda y Belleza"
+            }
+          ],
+          "candidate_offerings": [
+            {
+              "code": "aires_acondicionados",
+              "fact_id": "offering:aires_acondicionados:name:v1",
+              "display_name": "Instalación de Aires Acondicionados",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "fact_id": "offering:armado_reparacion_pc:name:v1",
+              "display_name": "Armado y Reparación de PC",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "autocad_interiores",
+              "fact_id": "offering:autocad_interiores:name:v1",
+              "display_name": "AutoCAD orientado al Diseño de Interiores",
+              "area_code": "academia-de-diseno-informatico"
+            }
+          ],
+          "payment_plans": []
+        },
+        "commercialState": {
+          "selected_offering_code": null,
+          "selected_payment_plan": null,
+          "stage": "exploring",
+          "call_preference": "chat",
+          "call_offer_status": "declined",
+          "call_offer_count": 0,
+          "awaiting_reply": "none",
+          "payment_reported": false
+        },
+        "capabilities": {
+          "may_reply": true,
+          "may_offer_call": false,
+          "may_request_call_now": false,
+          "may_present_payment_options": false,
+          "may_send_payment_link": false,
+          "authorized_payment_plan": null,
+          "intake_status": "known",
+          "intake_missing": [
+            "nombre",
+            "apellido"
+          ]
+        },
+        "fullCanonicalIncluded": true,
+        "instructionsChars": 31076,
+        "instructionsSha256": "29a939d54d8e036c38a83699e1fdbd270c7d51fdf598002af47dd31883a2beeb",
+        "source": "Reconstructed offline from cached remote claim using unchanged deployed source; not a captured HTTP request body."
+      },
+      "committedText": "¡Gracias, [nombre]! Solo me falta tu apellido para completar el registro. ¿Me lo pasás?"
+    },
+    {
+      "at": "2026-09-04T17:21:05.882Z",
+      "workflowId": "wrkflow_01M1PQ0DT548KEA47YM30VXCW8",
+      "traceId": "2e9900a1-abab-45d5-ae88-99788dcc0b2d",
+      "batch": [
+        "[apellido]"
+      ],
+      "catalogResolution": {
+        "kind": "no_catalog_intent"
+      },
+      "stateBefore": {
+        "selected_offering_code": null,
+        "selected_payment_plan": null,
+        "stage": "exploring",
+        "call_preference": "chat",
+        "call_offer_status": "declined",
+        "call_offer_count": 0,
+        "awaiting_reply": "none",
+        "payment_reported": false,
+        "version": 25
+      },
+      "intakeMissing": [
+        "nombre",
+        "apellido"
+      ],
+      "features": {
+        "conversation_pipeline_v1_enabled": false,
+        "agent_a_brain_v1_enabled": true,
+        "agent_a_brain_v1_shadow": false,
+        "agent_a_context_scoping": false,
+        "agent_a_repair_enabled": true,
+        "agent_a_state_assertions": true,
+        "agent_a_single_route": true
+      },
+      "initial": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "provide_contact_details",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "¡Gracias, [nombre]! Quedó registrado tu nombre, apellido y teléfono. Para avanzar con el pago, ¿me confirmás tu correo electrónico?"
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": null,
+          "memory_candidates": [
+            {
+              "type": "contact_preference",
+              "key": "contact_details",
+              "value": "[nombre] [apellido], teléfono [teléfono]",
+              "source_quote": "[nombre] [apellido] [[teléfono]]",
+              "confidence": 0.95
+            }
+          ]
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 1851,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 9757,
+          "cached_input_tokens": 7168,
+          "output_tokens": 189,
+          "total_tokens": 9946
+        }
+      },
+      "repair": null,
+      "committedAction": null,
+      "outboundId": "efa0c7b8-573d-49d6-8467-47059f35ba7b",
+      "authorizedUrls": [],
+      "deliveryReport": {
+        "report_status": "submitted_to_botpress",
+        "botpress_message_id": "86f76123-6872-4d1b-aee7-63af24baf40d",
+        "reported_at": "2026-09-04T17:21:11.861Z"
+      },
+      "contextDiagnostics": {
+        "traceId": "2e9900a1-abab-45d5-ae88-99788dcc0b2d",
+        "workflowId": "wrkflow_01M1PQ0DT548KEA47YM30VXCW8",
+        "at": "2026-09-04T17:21:05.882Z",
+        "catalog": {
+          "selected_offering": null,
+          "areas": [
+            {
+              "code": "academia-de-oficios",
+              "fact_id": "area:academia-de-oficios:name:v1",
+              "display_name": "Academia de Oficios"
+            },
+            {
+              "code": "academia-de-diseno-informatico",
+              "fact_id": "area:academia-de-diseno-informatico:name:v1",
+              "display_name": "Academia de Diseño Informático"
+            },
+            {
+              "code": "academia-de-negocios",
+              "fact_id": "area:academia-de-negocios:name:v1",
+              "display_name": "Academia de Negocios"
+            },
+            {
+              "code": "academia-de-marketing",
+              "fact_id": "area:academia-de-marketing:name:v1",
+              "display_name": "Academia de Marketing"
+            },
+            {
+              "code": "academia-de-emprendedores",
+              "fact_id": "area:academia-de-emprendedores:name:v1",
+              "display_name": "Academia de Emprendedores"
+            },
+            {
+              "code": "academia-de-salud-y-bienestar",
+              "fact_id": "area:academia-de-salud-y-bienestar:name:v1",
+              "display_name": "Academia de Salud y Bienestar"
+            },
+            {
+              "code": "academia-cultural",
+              "fact_id": "area:academia-cultural:name:v1",
+              "display_name": "Academia Cultural"
+            },
+            {
+              "code": "academia-gastronomica",
+              "fact_id": "area:academia-gastronomica:name:v1",
+              "display_name": "Academia Gastronómica"
+            },
+            {
+              "code": "academia-de-moda-y-belleza",
+              "fact_id": "area:academia-de-moda-y-belleza:name:v1",
+              "display_name": "Academia de Moda y Belleza"
+            }
+          ],
+          "candidate_offerings": [
+            {
+              "code": "aires_acondicionados",
+              "fact_id": "offering:aires_acondicionados:name:v1",
+              "display_name": "Instalación de Aires Acondicionados",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "fact_id": "offering:armado_reparacion_pc:name:v1",
+              "display_name": "Armado y Reparación de PC",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "autocad_interiores",
+              "fact_id": "offering:autocad_interiores:name:v1",
+              "display_name": "AutoCAD orientado al Diseño de Interiores",
+              "area_code": "academia-de-diseno-informatico"
+            }
+          ],
+          "payment_plans": []
+        },
+        "commercialState": {
+          "selected_offering_code": null,
+          "selected_payment_plan": null,
+          "stage": "exploring",
+          "call_preference": "chat",
+          "call_offer_status": "declined",
+          "call_offer_count": 0,
+          "awaiting_reply": "none",
+          "payment_reported": false
+        },
+        "capabilities": {
+          "may_reply": true,
+          "may_offer_call": false,
+          "may_request_call_now": false,
+          "may_present_payment_options": false,
+          "may_send_payment_link": false,
+          "authorized_payment_plan": null,
+          "intake_status": "known",
+          "intake_missing": [
+            "nombre",
+            "apellido"
+          ]
+        },
+        "fullCanonicalIncluded": true,
+        "instructionsChars": 30944,
+        "instructionsSha256": "b14b45ba7c5729e45160b3bf1db5f84b0ba9b55771a122395d6237d8f72572e4",
+        "source": "Reconstructed offline from cached remote claim using unchanged deployed source; not a captured HTTP request body."
+      },
+      "committedText": "¡Gracias, [nombre]! Para avanzar con el pago, ¿me confirmás tu correo electrónico?"
+    },
+    {
+      "at": "2026-09-04T17:21:14.711Z",
+      "workflowId": "wrkflow_01M1PQ0PDZTXDJJWXTE2KQ7Y7N",
+      "traceId": "ba91ba10-0169-4758-95b2-b229109e81f5",
+      "batch": [
+        "y cuanto sale? Como hago para pagar?"
+      ],
+      "catalogResolution": {
+        "kind": "no_catalog_intent"
+      },
+      "stateBefore": {
+        "selected_offering_code": null,
+        "selected_payment_plan": null,
+        "stage": "exploring",
+        "call_preference": "chat",
+        "call_offer_status": "declined",
+        "call_offer_count": 0,
+        "awaiting_reply": "none",
+        "payment_reported": false,
+        "version": 26
+      },
+      "intakeMissing": [
+        "nombre",
+        "apellido"
+      ],
+      "features": {
+        "conversation_pipeline_v1_enabled": false,
+        "agent_a_brain_v1_enabled": true,
+        "agent_a_brain_v1_shadow": false,
+        "agent_a_context_scoping": false,
+        "agent_a_repair_enabled": true,
+        "agent_a_state_assertions": true,
+        "agent_a_single_route": true
+      },
+      "initial": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "ask_payment_options",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "El valor total del programa es USD 360. Podés elegir 12 pagos mensuales de USD 30, 6 pagos mensuales de USD 60 o un pago único de USD 360; el total es el mismo en las tres opciones."
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": null,
+          "memory_candidates": []
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 1502,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 9731,
+          "cached_input_tokens": 7168,
+          "output_tokens": 195,
+          "total_tokens": 9926
+        }
+      },
+      "repair": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "ask_payment_options",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "El valor total del programa es USD 360, y podés pagarlo en 12 cuotas de USD 30, 6 cuotas de USD 60 o un pago único de USD 360. Para dejarlo registrado y enviarte el link, me faltan tu nombre y apellido. ¿Me los confirmás?"
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [
+            "area:academia-de-oficios:name:v1",
+            "area:academia-de-diseno-informatico:name:v1",
+            "area:academia-de-negocios:name:v1",
+            "area:academia-de-marketing:name:v1",
+            "area:academia-de-emprendedores:name:v1",
+            "area:academia-de-salud-y-bienestar:name:v1",
+            "area:academia-cultural:name:v1",
+            "area:academia-gastronomica:name:v1",
+            "area:academia-de-moda-y-belleza:name:v1",
+            "offering:aires_acondicionados:name:v1",
+            "offering:armado_reparacion_pc:name:v1",
+            "offering:autocad_interiores:name:v1"
+          ],
+          "used_memory_ids": [],
+          "repair_of": {
+            "rejection_id": "4deaf72c-a32c-444d-98bd-7e9f110fec58",
+            "attempt": 1
+          },
+          "memory_candidates": []
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 2797,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 10483,
+          "cached_input_tokens": 7168,
+          "output_tokens": 437,
+          "total_tokens": 10920
+        }
+      },
+      "committedAction": null,
+      "outboundId": "0f4276e8-62a5-47ed-85c4-05e877034249",
+      "authorizedUrls": [],
+      "deliveryReport": {
+        "report_status": "submitted_to_botpress",
+        "botpress_message_id": "1c05f1fd-f487-43a9-a0ba-00280e2fd335",
+        "reported_at": "2026-09-04T17:21:22.376Z"
+      },
+      "contextDiagnostics": {
+        "traceId": "ba91ba10-0169-4758-95b2-b229109e81f5",
+        "workflowId": "wrkflow_01M1PQ0PDZTXDJJWXTE2KQ7Y7N",
+        "at": "2026-09-04T17:21:14.711Z",
+        "catalog": {
+          "selected_offering": null,
+          "areas": [
+            {
+              "code": "academia-de-oficios",
+              "fact_id": "area:academia-de-oficios:name:v1",
+              "display_name": "Academia de Oficios"
+            },
+            {
+              "code": "academia-de-diseno-informatico",
+              "fact_id": "area:academia-de-diseno-informatico:name:v1",
+              "display_name": "Academia de Diseño Informático"
+            },
+            {
+              "code": "academia-de-negocios",
+              "fact_id": "area:academia-de-negocios:name:v1",
+              "display_name": "Academia de Negocios"
+            },
+            {
+              "code": "academia-de-marketing",
+              "fact_id": "area:academia-de-marketing:name:v1",
+              "display_name": "Academia de Marketing"
+            },
+            {
+              "code": "academia-de-emprendedores",
+              "fact_id": "area:academia-de-emprendedores:name:v1",
+              "display_name": "Academia de Emprendedores"
+            },
+            {
+              "code": "academia-de-salud-y-bienestar",
+              "fact_id": "area:academia-de-salud-y-bienestar:name:v1",
+              "display_name": "Academia de Salud y Bienestar"
+            },
+            {
+              "code": "academia-cultural",
+              "fact_id": "area:academia-cultural:name:v1",
+              "display_name": "Academia Cultural"
+            },
+            {
+              "code": "academia-gastronomica",
+              "fact_id": "area:academia-gastronomica:name:v1",
+              "display_name": "Academia Gastronómica"
+            },
+            {
+              "code": "academia-de-moda-y-belleza",
+              "fact_id": "area:academia-de-moda-y-belleza:name:v1",
+              "display_name": "Academia de Moda y Belleza"
+            }
+          ],
+          "candidate_offerings": [
+            {
+              "code": "aires_acondicionados",
+              "fact_id": "offering:aires_acondicionados:name:v1",
+              "display_name": "Instalación de Aires Acondicionados",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "fact_id": "offering:armado_reparacion_pc:name:v1",
+              "display_name": "Armado y Reparación de PC",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "autocad_interiores",
+              "fact_id": "offering:autocad_interiores:name:v1",
+              "display_name": "AutoCAD orientado al Diseño de Interiores",
+              "area_code": "academia-de-diseno-informatico"
+            }
+          ],
+          "payment_plans": []
+        },
+        "commercialState": {
+          "selected_offering_code": null,
+          "selected_payment_plan": null,
+          "stage": "exploring",
+          "call_preference": "chat",
+          "call_offer_status": "declined",
+          "call_offer_count": 0,
+          "awaiting_reply": "none",
+          "payment_reported": false
+        },
+        "capabilities": {
+          "may_reply": true,
+          "may_offer_call": false,
+          "may_request_call_now": false,
+          "may_present_payment_options": false,
+          "may_send_payment_link": false,
+          "authorized_payment_plan": null,
+          "intake_status": "known",
+          "intake_missing": [
+            "nombre",
+            "apellido"
+          ]
+        },
+        "fullCanonicalIncluded": true,
+        "instructionsChars": 30814,
+        "instructionsSha256": "ae7c6ff33767426dc0600cf32a3d613ec4e6fc73595a768eb6b48a6530fda7bd",
+        "source": "Reconstructed offline from cached remote claim using unchanged deployed source; not a captured HTTP request body."
+      },
+      "committedText": "El valor total del programa es USD 360. Podés elegir 12 pagos mensuales de USD 30, 6 pagos mensuales de USD 60 o un pago único de USD 360; el total es el mismo en las tres opciones."
+    },
+    {
+      "at": "2026-09-04T17:21:39.134Z",
+      "workflowId": "wrkflow_01M1PQ1E90NG4NAQWF13Q3YH9F",
+      "traceId": "fdee8b95-839b-480d-82a5-b2db1ef4614c",
+      "batch": [
+        "quiero pagarlo en una vez, como son los metodos de pago?"
+      ],
+      "catalogResolution": {
+        "kind": "no_catalog_intent"
+      },
+      "stateBefore": {
+        "selected_offering_code": null,
+        "selected_payment_plan": null,
+        "stage": "exploring",
+        "call_preference": "chat",
+        "call_offer_status": "declined",
+        "call_offer_count": 0,
+        "awaiting_reply": "none",
+        "payment_reported": false,
+        "version": 27
+      },
+      "intakeMissing": [
+        "nombre",
+        "apellido"
+      ],
+      "features": {
+        "conversation_pipeline_v1_enabled": false,
+        "agent_a_brain_v1_enabled": true,
+        "agent_a_brain_v1_shadow": false,
+        "agent_a_context_scoping": false,
+        "agent_a_repair_enabled": true,
+        "agent_a_state_assertions": true,
+        "agent_a_single_route": true
+      },
+      "initial": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "select_payment_plan",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "¡Perfecto, [nombre]! El pago único es de USD 360. Para dejarlo registrado solo me falta tu apellido, ¿me lo confirmás?"
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": null,
+          "memory_candidates": [
+            {
+              "type": "preference",
+              "key": "payment_preference",
+              "value": "one_time",
+              "source_quote": "quiero pagarlo en una vez",
+              "confidence": 0.95
+            }
+          ]
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 2102,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 9822,
+          "cached_input_tokens": 7296,
+          "output_tokens": 236,
+          "total_tokens": 10058
+        }
+      },
+      "repair": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "ask_payment_options",
+            "secondary_moves": [
+              "select_payment_plan"
+            ],
+            "vetoes": [],
+            "payment_plan": "one_time",
+            "confidence": 0.9
+          },
+          "response": {
+            "messages": [
+              "El pago único es de USD 360, que es el valor total del programa. Para avanzar con esa opción, solo me falta tu nombre y apellido para dejarlo registrado. ¿Me los confirmás?"
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": {
+            "rejection_id": "7925d92c-59d4-44d7-975a-d5c2441efbc9",
+            "attempt": 1
+          },
+          "memory_candidates": [
+            {
+              "type": "preference",
+              "key": "payment_preference",
+              "value": "one_time",
+              "source_quote": "quiero pagarlo en una vez",
+              "confidence": 0.9
+            }
+          ]
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 2191,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 10577,
+          "cached_input_tokens": 7296,
+          "output_tokens": 302,
+          "total_tokens": 10879
+        }
+      },
+      "committedAction": null,
+      "outboundId": "6accd676-83d0-4c81-b30a-4d553c8a0c79",
+      "authorizedUrls": [],
+      "deliveryReport": {
+        "report_status": "submitted_to_botpress",
+        "botpress_message_id": "e233958d-ec1f-485d-ad32-b428c9ed19bb",
+        "reported_at": "2026-09-04T17:21:47.351Z"
+      },
+      "contextDiagnostics": {
+        "traceId": "fdee8b95-839b-480d-82a5-b2db1ef4614c",
+        "workflowId": "wrkflow_01M1PQ1E90NG4NAQWF13Q3YH9F",
+        "at": "2026-09-04T17:21:39.134Z",
+        "catalog": {
+          "selected_offering": null,
+          "areas": [
+            {
+              "code": "academia-de-oficios",
+              "fact_id": "area:academia-de-oficios:name:v1",
+              "display_name": "Academia de Oficios"
+            },
+            {
+              "code": "academia-de-diseno-informatico",
+              "fact_id": "area:academia-de-diseno-informatico:name:v1",
+              "display_name": "Academia de Diseño Informático"
+            },
+            {
+              "code": "academia-de-negocios",
+              "fact_id": "area:academia-de-negocios:name:v1",
+              "display_name": "Academia de Negocios"
+            },
+            {
+              "code": "academia-de-marketing",
+              "fact_id": "area:academia-de-marketing:name:v1",
+              "display_name": "Academia de Marketing"
+            },
+            {
+              "code": "academia-de-emprendedores",
+              "fact_id": "area:academia-de-emprendedores:name:v1",
+              "display_name": "Academia de Emprendedores"
+            },
+            {
+              "code": "academia-de-salud-y-bienestar",
+              "fact_id": "area:academia-de-salud-y-bienestar:name:v1",
+              "display_name": "Academia de Salud y Bienestar"
+            },
+            {
+              "code": "academia-cultural",
+              "fact_id": "area:academia-cultural:name:v1",
+              "display_name": "Academia Cultural"
+            },
+            {
+              "code": "academia-gastronomica",
+              "fact_id": "area:academia-gastronomica:name:v1",
+              "display_name": "Academia Gastronómica"
+            },
+            {
+              "code": "academia-de-moda-y-belleza",
+              "fact_id": "area:academia-de-moda-y-belleza:name:v1",
+              "display_name": "Academia de Moda y Belleza"
+            }
+          ],
+          "candidate_offerings": [
+            {
+              "code": "aires_acondicionados",
+              "fact_id": "offering:aires_acondicionados:name:v1",
+              "display_name": "Instalación de Aires Acondicionados",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "fact_id": "offering:armado_reparacion_pc:name:v1",
+              "display_name": "Armado y Reparación de PC",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "autocad_interiores",
+              "fact_id": "offering:autocad_interiores:name:v1",
+              "display_name": "AutoCAD orientado al Diseño de Interiores",
+              "area_code": "academia-de-diseno-informatico"
+            }
+          ],
+          "payment_plans": []
+        },
+        "commercialState": {
+          "selected_offering_code": null,
+          "selected_payment_plan": null,
+          "stage": "exploring",
+          "call_preference": "chat",
+          "call_offer_status": "declined",
+          "call_offer_count": 0,
+          "awaiting_reply": "none",
+          "payment_reported": false
+        },
+        "capabilities": {
+          "may_reply": true,
+          "may_offer_call": false,
+          "may_request_call_now": false,
+          "may_present_payment_options": false,
+          "may_send_payment_link": false,
+          "authorized_payment_plan": null,
+          "intake_status": "known",
+          "intake_missing": [
+            "nombre",
+            "apellido"
+          ]
+        },
+        "fullCanonicalIncluded": true,
+        "instructionsChars": 31081,
+        "instructionsSha256": "95676f59e1c9c8b26e41f473b30afb04bf4209ed74b92b17285e2c0874d3d94a",
+        "source": "Reconstructed offline from cached remote claim using unchanged deployed source; not a captured HTTP request body."
+      },
+      "committedText": "¡Perfecto, [nombre]! El pago único es de USD 360. Para dejarlo registrado solo me falta tu apellido, ¿me lo confirmás?"
+    },
+    {
+      "at": "2026-09-04T17:22:01.838Z",
+      "workflowId": "wrkflow_01M1PQ24EGK38SM055MDHHTH43",
+      "traceId": "d2f3ff94-fe5f-416b-8412-9860b729f099",
+      "batch": [
+        "Si, mi apellido ya te lo dije"
+      ],
+      "catalogResolution": {
+        "kind": "no_catalog_intent"
+      },
+      "stateBefore": {
+        "selected_offering_code": null,
+        "selected_payment_plan": null,
+        "stage": "exploring",
+        "call_preference": "chat",
+        "call_offer_status": "declined",
+        "call_offer_count": 0,
+        "awaiting_reply": "none",
+        "payment_reported": false,
+        "version": 28
+      },
+      "intakeMissing": [
+        "nombre",
+        "apellido"
+      ],
+      "features": {
+        "conversation_pipeline_v1_enabled": false,
+        "agent_a_brain_v1_enabled": true,
+        "agent_a_brain_v1_shadow": false,
+        "agent_a_context_scoping": false,
+        "agent_a_repair_enabled": true,
+        "agent_a_state_assertions": true,
+        "agent_a_single_route": true
+      },
+      "initial": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "provide_contact_details",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "¡Gracias, [nombre]! Quedó registrado tu apellido. Solo me falta tu nombre para completar el registro, ¿me lo confirmás?"
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": null,
+          "memory_candidates": []
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 1482,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 9810,
+          "cached_input_tokens": 7168,
+          "output_tokens": 130,
+          "total_tokens": 9940
+        }
+      },
+      "repair": null,
+      "committedAction": null,
+      "outboundId": "e419c891-e078-4931-8387-d201fb879fb0",
+      "authorizedUrls": [],
+      "deliveryReport": {
+        "report_status": "submitted_to_botpress",
+        "botpress_message_id": "1978ad0b-5f8a-4ab2-bcb0-022e78f25255",
+        "reported_at": "2026-09-04T17:22:07.084Z"
+      },
+      "contextDiagnostics": {
+        "traceId": "d2f3ff94-fe5f-416b-8412-9860b729f099",
+        "workflowId": "wrkflow_01M1PQ24EGK38SM055MDHHTH43",
+        "at": "2026-09-04T17:22:01.838Z",
+        "catalog": {
+          "selected_offering": null,
+          "areas": [
+            {
+              "code": "academia-de-oficios",
+              "fact_id": "area:academia-de-oficios:name:v1",
+              "display_name": "Academia de Oficios"
+            },
+            {
+              "code": "academia-de-diseno-informatico",
+              "fact_id": "area:academia-de-diseno-informatico:name:v1",
+              "display_name": "Academia de Diseño Informático"
+            },
+            {
+              "code": "academia-de-negocios",
+              "fact_id": "area:academia-de-negocios:name:v1",
+              "display_name": "Academia de Negocios"
+            },
+            {
+              "code": "academia-de-marketing",
+              "fact_id": "area:academia-de-marketing:name:v1",
+              "display_name": "Academia de Marketing"
+            },
+            {
+              "code": "academia-de-emprendedores",
+              "fact_id": "area:academia-de-emprendedores:name:v1",
+              "display_name": "Academia de Emprendedores"
+            },
+            {
+              "code": "academia-de-salud-y-bienestar",
+              "fact_id": "area:academia-de-salud-y-bienestar:name:v1",
+              "display_name": "Academia de Salud y Bienestar"
+            },
+            {
+              "code": "academia-cultural",
+              "fact_id": "area:academia-cultural:name:v1",
+              "display_name": "Academia Cultural"
+            },
+            {
+              "code": "academia-gastronomica",
+              "fact_id": "area:academia-gastronomica:name:v1",
+              "display_name": "Academia Gastronómica"
+            },
+            {
+              "code": "academia-de-moda-y-belleza",
+              "fact_id": "area:academia-de-moda-y-belleza:name:v1",
+              "display_name": "Academia de Moda y Belleza"
+            }
+          ],
+          "candidate_offerings": [
+            {
+              "code": "aires_acondicionados",
+              "fact_id": "offering:aires_acondicionados:name:v1",
+              "display_name": "Instalación de Aires Acondicionados",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "fact_id": "offering:armado_reparacion_pc:name:v1",
+              "display_name": "Armado y Reparación de PC",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "autocad_interiores",
+              "fact_id": "offering:autocad_interiores:name:v1",
+              "display_name": "AutoCAD orientado al Diseño de Interiores",
+              "area_code": "academia-de-diseno-informatico"
+            }
+          ],
+          "payment_plans": []
+        },
+        "commercialState": {
+          "selected_offering_code": null,
+          "selected_payment_plan": null,
+          "stage": "exploring",
+          "call_preference": "chat",
+          "call_offer_status": "declined",
+          "call_offer_count": 0,
+          "awaiting_reply": "none",
+          "payment_reported": false
+        },
+        "capabilities": {
+          "may_reply": true,
+          "may_offer_call": false,
+          "may_request_call_now": false,
+          "may_present_payment_options": false,
+          "may_send_payment_link": false,
+          "authorized_payment_plan": null,
+          "intake_status": "known",
+          "intake_missing": [
+            "nombre",
+            "apellido"
+          ]
+        },
+        "fullCanonicalIncluded": true,
+        "instructionsChars": 31064,
+        "instructionsSha256": "6195c735bfdefeb86aa2ff64ccebf894f0f6702b01a7041ec0faefaab464911c",
+        "source": "Reconstructed offline from cached remote claim using unchanged deployed source; not a captured HTTP request body."
+      },
+      "committedText": "¡Gracias, [nombre]!"
+    },
+    {
+      "at": "2026-09-04T17:22:27.897Z",
+      "workflowId": "wrkflow_01M1PQ2XWRRMJE6AJHYTH5N8R4",
+      "traceId": "6d7dd633-4072-4698-94eb-37ca644c3f26",
+      "batch": [
+        "Pasame el link de pago"
+      ],
+      "catalogResolution": {
+        "kind": "no_catalog_intent"
+      },
+      "stateBefore": {
+        "selected_offering_code": null,
+        "selected_payment_plan": null,
+        "stage": "exploring",
+        "call_preference": "chat",
+        "call_offer_status": "declined",
+        "call_offer_count": 0,
+        "awaiting_reply": "none",
+        "payment_reported": false,
+        "version": 29
+      },
+      "intakeMissing": [
+        "nombre",
+        "apellido"
+      ],
+      "features": {
+        "conversation_pipeline_v1_enabled": false,
+        "agent_a_brain_v1_enabled": true,
+        "agent_a_brain_v1_shadow": false,
+        "agent_a_context_scoping": false,
+        "agent_a_repair_enabled": true,
+        "agent_a_state_assertions": true,
+        "agent_a_single_route": true
+      },
+      "initial": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "request_payment_link",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "¡Perfecto, [nombre]! Para enviarte el link del pago único de USD 360 me falta confirmar tu nombre y tu apellido. ¿Me los confirmás?"
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": null,
+          "memory_candidates": []
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 1564,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 9743,
+          "cached_input_tokens": 7168,
+          "output_tokens": 177,
+          "total_tokens": 9920
+        }
+      },
+      "repair": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "request_payment_link",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "¡Perfecto, [nombre]! Para dejarlo registrado solo me falta tu apellido, ¿me lo confirmás?"
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": {
+            "rejection_id": "c3b0a1cc-98cd-41ec-9409-48494e7797d7",
+            "attempt": 1
+          },
+          "memory_candidates": []
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 2219,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 10498,
+          "cached_input_tokens": 7168,
+          "output_tokens": 205,
+          "total_tokens": 10703
+        }
+      },
+      "committedAction": null,
+      "outboundId": "216f9415-92c8-48f9-800f-0c6e924ca6e3",
+      "authorizedUrls": [],
+      "deliveryReport": {
+        "report_status": "submitted_to_botpress",
+        "botpress_message_id": "1dce90ec-ef09-446a-9053-f4977ceafca7",
+        "reported_at": "2026-09-04T17:22:35.562Z"
+      },
+      "contextDiagnostics": {
+        "traceId": "6d7dd633-4072-4698-94eb-37ca644c3f26",
+        "workflowId": "wrkflow_01M1PQ2XWRRMJE6AJHYTH5N8R4",
+        "at": "2026-09-04T17:22:27.897Z",
+        "catalog": {
+          "selected_offering": null,
+          "areas": [
+            {
+              "code": "academia-de-oficios",
+              "fact_id": "area:academia-de-oficios:name:v1",
+              "display_name": "Academia de Oficios"
+            },
+            {
+              "code": "academia-de-diseno-informatico",
+              "fact_id": "area:academia-de-diseno-informatico:name:v1",
+              "display_name": "Academia de Diseño Informático"
+            },
+            {
+              "code": "academia-de-negocios",
+              "fact_id": "area:academia-de-negocios:name:v1",
+              "display_name": "Academia de Negocios"
+            },
+            {
+              "code": "academia-de-marketing",
+              "fact_id": "area:academia-de-marketing:name:v1",
+              "display_name": "Academia de Marketing"
+            },
+            {
+              "code": "academia-de-emprendedores",
+              "fact_id": "area:academia-de-emprendedores:name:v1",
+              "display_name": "Academia de Emprendedores"
+            },
+            {
+              "code": "academia-de-salud-y-bienestar",
+              "fact_id": "area:academia-de-salud-y-bienestar:name:v1",
+              "display_name": "Academia de Salud y Bienestar"
+            },
+            {
+              "code": "academia-cultural",
+              "fact_id": "area:academia-cultural:name:v1",
+              "display_name": "Academia Cultural"
+            },
+            {
+              "code": "academia-gastronomica",
+              "fact_id": "area:academia-gastronomica:name:v1",
+              "display_name": "Academia Gastronómica"
+            },
+            {
+              "code": "academia-de-moda-y-belleza",
+              "fact_id": "area:academia-de-moda-y-belleza:name:v1",
+              "display_name": "Academia de Moda y Belleza"
+            }
+          ],
+          "candidate_offerings": [
+            {
+              "code": "aires_acondicionados",
+              "fact_id": "offering:aires_acondicionados:name:v1",
+              "display_name": "Instalación de Aires Acondicionados",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "fact_id": "offering:armado_reparacion_pc:name:v1",
+              "display_name": "Armado y Reparación de PC",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "autocad_interiores",
+              "fact_id": "offering:autocad_interiores:name:v1",
+              "display_name": "AutoCAD orientado al Diseño de Interiores",
+              "area_code": "academia-de-diseno-informatico"
+            }
+          ],
+          "payment_plans": []
+        },
+        "commercialState": {
+          "selected_offering_code": null,
+          "selected_payment_plan": null,
+          "stage": "exploring",
+          "call_preference": "chat",
+          "call_offer_status": "declined",
+          "call_offer_count": 0,
+          "awaiting_reply": "none",
+          "payment_reported": false
+        },
+        "capabilities": {
+          "may_reply": true,
+          "may_offer_call": false,
+          "may_request_call_now": false,
+          "may_present_payment_options": false,
+          "may_send_payment_link": false,
+          "authorized_payment_plan": null,
+          "intake_status": "known",
+          "intake_missing": [
+            "nombre",
+            "apellido"
+          ]
+        },
+        "fullCanonicalIncluded": true,
+        "instructionsChars": 30859,
+        "instructionsSha256": "f607edaaa39e9bdf3d5b62b9de8f240ee11ea4043bc6aafff1899fa06b996971",
+        "source": "Reconstructed offline from cached remote claim using unchanged deployed source; not a captured HTTP request body."
+      },
+      "committedText": "¡Perfecto, [nombre]! Para dejarlo registrado solo me falta tu apellido, ¿me lo confirmás?"
+    },
+    {
+      "at": "2026-09-04T17:22:39.511Z",
+      "workflowId": "wrkflow_01M1PQ39831ZAYFRNTWV7JE07Q",
+      "traceId": "134e09cc-ca05-4cac-a08d-024ce9d823aa",
+      "batch": [
+        "[apellido]"
+      ],
+      "catalogResolution": {
+        "kind": "no_catalog_intent"
+      },
+      "stateBefore": {
+        "selected_offering_code": null,
+        "selected_payment_plan": null,
+        "stage": "exploring",
+        "call_preference": "chat",
+        "call_offer_status": "declined",
+        "call_offer_count": 0,
+        "awaiting_reply": "none",
+        "payment_reported": false,
+        "version": 30
+      },
+      "intakeMissing": [
+        "nombre",
+        "apellido"
+      ],
+      "features": {
+        "conversation_pipeline_v1_enabled": false,
+        "agent_a_brain_v1_enabled": true,
+        "agent_a_brain_v1_shadow": false,
+        "agent_a_context_scoping": false,
+        "agent_a_repair_enabled": true,
+        "agent_a_state_assertions": true,
+        "agent_a_single_route": true
+      },
+      "initial": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "provide_contact_details",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "¡Gracias, [nombre]! Quedó registrado tu apellido. Te envío el link de pago del plan único de USD 360."
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "send_payment_link",
+            "offering_code": "aires_acondicionados",
+            "payment_plan": "one_time"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": null,
+          "memory_candidates": []
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 1657,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 9755,
+          "cached_input_tokens": 7168,
+          "output_tokens": 197,
+          "total_tokens": 9952
+        }
+      },
+      "repair": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "provide_contact_details",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "¡Gracias, [nombre] [apellido]! Quedó registrado tu apellido. Para poder enviarte el link de pago necesito que me confirmes tu nombre, ¿me lo decís?"
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": {
+            "rejection_id": "6c10eefc-a64d-477c-bb97-5053f8f423ae",
+            "attempt": 1
+          },
+          "memory_candidates": []
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 2158,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 10586,
+          "cached_input_tokens": 7168,
+          "output_tokens": 171,
+          "total_tokens": 10757
+        }
+      },
+      "committedAction": null,
+      "outboundId": "c7193689-2e37-49dc-a3c6-3ffc679e438c",
+      "authorizedUrls": [],
+      "deliveryReport": {
+        "report_status": "submitted_to_botpress",
+        "botpress_message_id": "c8734754-529a-4a70-8978-145f7d373847",
+        "reported_at": "2026-09-04T17:22:47.003Z"
+      },
+      "contextDiagnostics": {
+        "traceId": "134e09cc-ca05-4cac-a08d-024ce9d823aa",
+        "workflowId": "wrkflow_01M1PQ39831ZAYFRNTWV7JE07Q",
+        "at": "2026-09-04T17:22:39.511Z",
+        "catalog": {
+          "selected_offering": null,
+          "areas": [
+            {
+              "code": "academia-de-oficios",
+              "fact_id": "area:academia-de-oficios:name:v1",
+              "display_name": "Academia de Oficios"
+            },
+            {
+              "code": "academia-de-diseno-informatico",
+              "fact_id": "area:academia-de-diseno-informatico:name:v1",
+              "display_name": "Academia de Diseño Informático"
+            },
+            {
+              "code": "academia-de-negocios",
+              "fact_id": "area:academia-de-negocios:name:v1",
+              "display_name": "Academia de Negocios"
+            },
+            {
+              "code": "academia-de-marketing",
+              "fact_id": "area:academia-de-marketing:name:v1",
+              "display_name": "Academia de Marketing"
+            },
+            {
+              "code": "academia-de-emprendedores",
+              "fact_id": "area:academia-de-emprendedores:name:v1",
+              "display_name": "Academia de Emprendedores"
+            },
+            {
+              "code": "academia-de-salud-y-bienestar",
+              "fact_id": "area:academia-de-salud-y-bienestar:name:v1",
+              "display_name": "Academia de Salud y Bienestar"
+            },
+            {
+              "code": "academia-cultural",
+              "fact_id": "area:academia-cultural:name:v1",
+              "display_name": "Academia Cultural"
+            },
+            {
+              "code": "academia-gastronomica",
+              "fact_id": "area:academia-gastronomica:name:v1",
+              "display_name": "Academia Gastronómica"
+            },
+            {
+              "code": "academia-de-moda-y-belleza",
+              "fact_id": "area:academia-de-moda-y-belleza:name:v1",
+              "display_name": "Academia de Moda y Belleza"
+            }
+          ],
+          "candidate_offerings": [
+            {
+              "code": "aires_acondicionados",
+              "fact_id": "offering:aires_acondicionados:name:v1",
+              "display_name": "Instalación de Aires Acondicionados",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "fact_id": "offering:armado_reparacion_pc:name:v1",
+              "display_name": "Armado y Reparación de PC",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "autocad_interiores",
+              "fact_id": "offering:autocad_interiores:name:v1",
+              "display_name": "AutoCAD orientado al Diseño de Interiores",
+              "area_code": "academia-de-diseno-informatico"
+            }
+          ],
+          "payment_plans": []
+        },
+        "commercialState": {
+          "selected_offering_code": null,
+          "selected_payment_plan": null,
+          "stage": "exploring",
+          "call_preference": "chat",
+          "call_offer_status": "declined",
+          "call_offer_count": 0,
+          "awaiting_reply": "none",
+          "payment_reported": false
+        },
+        "capabilities": {
+          "may_reply": true,
+          "may_offer_call": false,
+          "may_request_call_now": false,
+          "may_present_payment_options": false,
+          "may_send_payment_link": false,
+          "authorized_payment_plan": null,
+          "intake_status": "known",
+          "intake_missing": [
+            "nombre",
+            "apellido"
+          ]
+        },
+        "fullCanonicalIncluded": true,
+        "instructionsChars": 30936,
+        "instructionsSha256": "b6afe653009135654696fb8c2d6631b8216f217d9cabf299dc435836f2efa91e",
+        "source": "Reconstructed offline from cached remote claim using unchanged deployed source; not a captured HTTP request body."
+      },
+      "committedText": "¡Gracias, [nombre] [apellido]! Para poder enviarte el link de pago necesito que me confirmes tu nombre, ¿me lo decís?"
+    },
+    {
+      "at": "2026-09-04T17:22:53.795Z",
+      "workflowId": "wrkflow_01M1PQ3Q4DMC86X5M73XVEHFQM",
+      "traceId": "b57d643e-f818-4e5d-8b55-311efd3dbb3a",
+      "batch": [
+        "[nombre]"
+      ],
+      "catalogResolution": {
+        "kind": "no_catalog_intent"
+      },
+      "stateBefore": {
+        "selected_offering_code": null,
+        "selected_payment_plan": null,
+        "stage": "exploring",
+        "call_preference": "chat",
+        "call_offer_status": "declined",
+        "call_offer_count": 0,
+        "awaiting_reply": "none",
+        "payment_reported": false,
+        "version": 31
+      },
+      "intakeMissing": [
+        "nombre",
+        "apellido"
+      ],
+      "features": {
+        "conversation_pipeline_v1_enabled": false,
+        "agent_a_brain_v1_enabled": true,
+        "agent_a_brain_v1_shadow": false,
+        "agent_a_context_scoping": false,
+        "agent_a_repair_enabled": true,
+        "agent_a_state_assertions": true,
+        "agent_a_single_route": true
+      },
+      "initial": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "provide_contact_details",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "¡Gracias, [nombre]! Quedó registrado tu nombre y apellido. Para enviarte el link de pago del pago único de USD 360, solo me falta tu correo electrónico, ¿me lo confirmás?"
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": null,
+          "memory_candidates": [
+            {
+              "type": "preference",
+              "key": "payment_plan_preference",
+              "value": "one_time",
+              "source_quote": "quiero pagarlo en una vez",
+              "confidence": 0.95
+            }
+          ]
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 1827,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 9733,
+          "cached_input_tokens": 7168,
+          "output_tokens": 245,
+          "total_tokens": 9978
+        }
+      },
+      "repair": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "provide_contact_details",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "¡Gracias, [nombre]! Quedó registrado tu nombre. Solo me falta tu apellido para dejarlo todo listo, ¿me lo confirmás?"
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": {
+            "rejection_id": "19edeee2-a188-4e64-ac78-4a96025ae632",
+            "attempt": 1
+          },
+          "memory_candidates": []
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 1769,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 10473,
+          "cached_input_tokens": 7168,
+          "output_tokens": 211,
+          "total_tokens": 10684
+        }
+      },
+      "committedAction": null,
+      "outboundId": "459498d8-cffe-4482-8030-638c7a709891",
+      "authorizedUrls": [],
+      "deliveryReport": {
+        "report_status": "submitted_to_botpress",
+        "botpress_message_id": "19336418-67ee-4457-b5e5-850a1bb23d0a",
+        "reported_at": "2026-09-04T17:23:00.954Z"
+      },
+      "contextDiagnostics": {
+        "traceId": "b57d643e-f818-4e5d-8b55-311efd3dbb3a",
+        "workflowId": "wrkflow_01M1PQ3Q4DMC86X5M73XVEHFQM",
+        "at": "2026-09-04T17:22:53.795Z",
+        "catalog": {
+          "selected_offering": null,
+          "areas": [
+            {
+              "code": "academia-de-oficios",
+              "fact_id": "area:academia-de-oficios:name:v1",
+              "display_name": "Academia de Oficios"
+            },
+            {
+              "code": "academia-de-diseno-informatico",
+              "fact_id": "area:academia-de-diseno-informatico:name:v1",
+              "display_name": "Academia de Diseño Informático"
+            },
+            {
+              "code": "academia-de-negocios",
+              "fact_id": "area:academia-de-negocios:name:v1",
+              "display_name": "Academia de Negocios"
+            },
+            {
+              "code": "academia-de-marketing",
+              "fact_id": "area:academia-de-marketing:name:v1",
+              "display_name": "Academia de Marketing"
+            },
+            {
+              "code": "academia-de-emprendedores",
+              "fact_id": "area:academia-de-emprendedores:name:v1",
+              "display_name": "Academia de Emprendedores"
+            },
+            {
+              "code": "academia-de-salud-y-bienestar",
+              "fact_id": "area:academia-de-salud-y-bienestar:name:v1",
+              "display_name": "Academia de Salud y Bienestar"
+            },
+            {
+              "code": "academia-cultural",
+              "fact_id": "area:academia-cultural:name:v1",
+              "display_name": "Academia Cultural"
+            },
+            {
+              "code": "academia-gastronomica",
+              "fact_id": "area:academia-gastronomica:name:v1",
+              "display_name": "Academia Gastronómica"
+            },
+            {
+              "code": "academia-de-moda-y-belleza",
+              "fact_id": "area:academia-de-moda-y-belleza:name:v1",
+              "display_name": "Academia de Moda y Belleza"
+            }
+          ],
+          "candidate_offerings": [
+            {
+              "code": "aires_acondicionados",
+              "fact_id": "offering:aires_acondicionados:name:v1",
+              "display_name": "Instalación de Aires Acondicionados",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "fact_id": "offering:armado_reparacion_pc:name:v1",
+              "display_name": "Armado y Reparación de PC",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "autocad_interiores",
+              "fact_id": "offering:autocad_interiores:name:v1",
+              "display_name": "AutoCAD orientado al Diseño de Interiores",
+              "area_code": "academia-de-diseno-informatico"
+            }
+          ],
+          "payment_plans": []
+        },
+        "commercialState": {
+          "selected_offering_code": null,
+          "selected_payment_plan": null,
+          "stage": "exploring",
+          "call_preference": "chat",
+          "call_offer_status": "declined",
+          "call_offer_count": 0,
+          "awaiting_reply": "none",
+          "payment_reported": false
+        },
+        "capabilities": {
+          "may_reply": true,
+          "may_offer_call": false,
+          "may_request_call_now": false,
+          "may_present_payment_options": false,
+          "may_send_payment_link": false,
+          "authorized_payment_plan": null,
+          "intake_status": "known",
+          "intake_missing": [
+            "nombre",
+            "apellido"
+          ]
+        },
+        "fullCanonicalIncluded": true,
+        "instructionsChars": 30862,
+        "instructionsSha256": "f80425f7881037d0ef9614e5f1a5a7c450eb0bd64e4c05502ce3a98cab0e8d2d",
+        "source": "Reconstructed offline from cached remote claim using unchanged deployed source; not a captured HTTP request body."
+      },
+      "committedText": "¡Gracias, [nombre]! Solo me falta tu apellido para dejarlo todo listo, ¿me lo confirmás?"
+    },
+    {
+      "at": "2026-09-04T17:23:04.664Z",
+      "workflowId": "wrkflow_01M1PQ41T1CXX54WEAPA0FZQQP",
+      "traceId": "86a2a88c-a1ad-4d56-9dd5-88c62af69703",
+      "batch": [
+        "[apellido]"
+      ],
+      "catalogResolution": {
+        "kind": "no_catalog_intent"
+      },
+      "stateBefore": {
+        "selected_offering_code": null,
+        "selected_payment_plan": null,
+        "stage": "exploring",
+        "call_preference": "chat",
+        "call_offer_status": "declined",
+        "call_offer_count": 0,
+        "awaiting_reply": "none",
+        "payment_reported": false,
+        "version": 32
+      },
+      "intakeMissing": [
+        "nombre",
+        "apellido"
+      ],
+      "features": {
+        "conversation_pipeline_v1_enabled": false,
+        "agent_a_brain_v1_enabled": true,
+        "agent_a_brain_v1_shadow": false,
+        "agent_a_context_scoping": false,
+        "agent_a_repair_enabled": true,
+        "agent_a_state_assertions": true,
+        "agent_a_single_route": true
+      },
+      "initial": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "provide_contact_details",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "¡Gracias, [nombre] [apellido]! Quedó registrado tu apellido. Para enviarte el link de pago, solo me falta tu nombre, ¿me lo confirmás?"
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": null,
+          "memory_candidates": []
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 1626,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 9702,
+          "cached_input_tokens": 7168,
+          "output_tokens": 137,
+          "total_tokens": 9839
+        }
+      },
+      "repair": null,
+      "committedAction": null,
+      "outboundId": "f814be65-c33d-4849-ac24-eaed5025c56b",
+      "authorizedUrls": [],
+      "deliveryReport": {
+        "report_status": "submitted_to_botpress",
+        "botpress_message_id": "08ce4586-cd8a-488c-854d-a13e99aae48c",
+        "reported_at": "2026-09-04T17:23:10.480Z"
+      },
+      "contextDiagnostics": {
+        "traceId": "86a2a88c-a1ad-4d56-9dd5-88c62af69703",
+        "workflowId": "wrkflow_01M1PQ41T1CXX54WEAPA0FZQQP",
+        "at": "2026-09-04T17:23:04.664Z",
+        "catalog": {
+          "selected_offering": null,
+          "areas": [
+            {
+              "code": "academia-de-oficios",
+              "fact_id": "area:academia-de-oficios:name:v1",
+              "display_name": "Academia de Oficios"
+            },
+            {
+              "code": "academia-de-diseno-informatico",
+              "fact_id": "area:academia-de-diseno-informatico:name:v1",
+              "display_name": "Academia de Diseño Informático"
+            },
+            {
+              "code": "academia-de-negocios",
+              "fact_id": "area:academia-de-negocios:name:v1",
+              "display_name": "Academia de Negocios"
+            },
+            {
+              "code": "academia-de-marketing",
+              "fact_id": "area:academia-de-marketing:name:v1",
+              "display_name": "Academia de Marketing"
+            },
+            {
+              "code": "academia-de-emprendedores",
+              "fact_id": "area:academia-de-emprendedores:name:v1",
+              "display_name": "Academia de Emprendedores"
+            },
+            {
+              "code": "academia-de-salud-y-bienestar",
+              "fact_id": "area:academia-de-salud-y-bienestar:name:v1",
+              "display_name": "Academia de Salud y Bienestar"
+            },
+            {
+              "code": "academia-cultural",
+              "fact_id": "area:academia-cultural:name:v1",
+              "display_name": "Academia Cultural"
+            },
+            {
+              "code": "academia-gastronomica",
+              "fact_id": "area:academia-gastronomica:name:v1",
+              "display_name": "Academia Gastronómica"
+            },
+            {
+              "code": "academia-de-moda-y-belleza",
+              "fact_id": "area:academia-de-moda-y-belleza:name:v1",
+              "display_name": "Academia de Moda y Belleza"
+            }
+          ],
+          "candidate_offerings": [
+            {
+              "code": "aires_acondicionados",
+              "fact_id": "offering:aires_acondicionados:name:v1",
+              "display_name": "Instalación de Aires Acondicionados",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "fact_id": "offering:armado_reparacion_pc:name:v1",
+              "display_name": "Armado y Reparación de PC",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "autocad_interiores",
+              "fact_id": "offering:autocad_interiores:name:v1",
+              "display_name": "AutoCAD orientado al Diseño de Interiores",
+              "area_code": "academia-de-diseno-informatico"
+            }
+          ],
+          "payment_plans": []
+        },
+        "commercialState": {
+          "selected_offering_code": null,
+          "selected_payment_plan": null,
+          "stage": "exploring",
+          "call_preference": "chat",
+          "call_offer_status": "declined",
+          "call_offer_count": 0,
+          "awaiting_reply": "none",
+          "payment_reported": false
+        },
+        "capabilities": {
+          "may_reply": true,
+          "may_offer_call": false,
+          "may_request_call_now": false,
+          "may_present_payment_options": false,
+          "may_send_payment_link": false,
+          "authorized_payment_plan": null,
+          "intake_status": "known",
+          "intake_missing": [
+            "nombre",
+            "apellido"
+          ]
+        },
+        "fullCanonicalIncluded": true,
+        "instructionsChars": 30757,
+        "instructionsSha256": "93368457a331744fc13a36c03ed2c89fd22cf8df7b8540c93db989da3413410e",
+        "source": "Reconstructed offline from cached remote claim using unchanged deployed source; not a captured HTTP request body."
+      },
+      "committedText": "¡Gracias, [nombre] [apellido]!"
+    },
+    {
+      "at": "2026-09-04T17:23:07.841Z",
+      "workflowId": "wrkflow_01M1PQ44X84SK5675EHRQR62CG",
+      "traceId": "7ed9d30b-f179-4601-9d49-4e1a4312865d",
+      "batch": [
+        "Sos estupido?"
+      ],
+      "catalogResolution": {
+        "kind": "no_catalog_intent"
+      },
+      "stateBefore": {
+        "selected_offering_code": null,
+        "selected_payment_plan": null,
+        "stage": "exploring",
+        "call_preference": "chat",
+        "call_offer_status": "declined",
+        "call_offer_count": 0,
+        "awaiting_reply": "none",
+        "payment_reported": false,
+        "version": 33
+      },
+      "intakeMissing": [
+        "nombre",
+        "apellido"
+      ],
+      "features": {
+        "conversation_pipeline_v1_enabled": false,
+        "agent_a_brain_v1_enabled": true,
+        "agent_a_brain_v1_shadow": false,
+        "agent_a_context_scoping": false,
+        "agent_a_repair_enabled": true,
+        "agent_a_state_assertions": true,
+        "agent_a_single_route": true
+      },
+      "initial": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "unknown",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "Entiendo que esto te haya frustrado, [nombre]. Quiero ayudarte a resolverlo: para enviarte el link de pago solo me falta confirmar tu nombre y apellido completos. ¿Me los confirmás?"
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": null,
+          "memory_candidates": []
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 1634,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 9689,
+          "cached_input_tokens": 7168,
+          "output_tokens": 141,
+          "total_tokens": 9830
+        }
+      },
+      "repair": null,
+      "committedAction": null,
+      "outboundId": "0466f907-e845-44a1-9c6e-3b1c94a7e20d",
+      "authorizedUrls": [],
+      "deliveryReport": {
+        "report_status": "submitted_to_botpress",
+        "botpress_message_id": "c9f9c8d8-f8b3-4b6f-9502-dc0c68bdfd7b",
+        "reported_at": "2026-09-04T17:23:14.281Z"
+      },
+      "contextDiagnostics": {
+        "traceId": "7ed9d30b-f179-4601-9d49-4e1a4312865d",
+        "workflowId": "wrkflow_01M1PQ44X84SK5675EHRQR62CG",
+        "at": "2026-09-04T17:23:07.841Z",
+        "catalog": {
+          "selected_offering": null,
+          "areas": [
+            {
+              "code": "academia-de-oficios",
+              "fact_id": "area:academia-de-oficios:name:v1",
+              "display_name": "Academia de Oficios"
+            },
+            {
+              "code": "academia-de-diseno-informatico",
+              "fact_id": "area:academia-de-diseno-informatico:name:v1",
+              "display_name": "Academia de Diseño Informático"
+            },
+            {
+              "code": "academia-de-negocios",
+              "fact_id": "area:academia-de-negocios:name:v1",
+              "display_name": "Academia de Negocios"
+            },
+            {
+              "code": "academia-de-marketing",
+              "fact_id": "area:academia-de-marketing:name:v1",
+              "display_name": "Academia de Marketing"
+            },
+            {
+              "code": "academia-de-emprendedores",
+              "fact_id": "area:academia-de-emprendedores:name:v1",
+              "display_name": "Academia de Emprendedores"
+            },
+            {
+              "code": "academia-de-salud-y-bienestar",
+              "fact_id": "area:academia-de-salud-y-bienestar:name:v1",
+              "display_name": "Academia de Salud y Bienestar"
+            },
+            {
+              "code": "academia-cultural",
+              "fact_id": "area:academia-cultural:name:v1",
+              "display_name": "Academia Cultural"
+            },
+            {
+              "code": "academia-gastronomica",
+              "fact_id": "area:academia-gastronomica:name:v1",
+              "display_name": "Academia Gastronómica"
+            },
+            {
+              "code": "academia-de-moda-y-belleza",
+              "fact_id": "area:academia-de-moda-y-belleza:name:v1",
+              "display_name": "Academia de Moda y Belleza"
+            }
+          ],
+          "candidate_offerings": [
+            {
+              "code": "aires_acondicionados",
+              "fact_id": "offering:aires_acondicionados:name:v1",
+              "display_name": "Instalación de Aires Acondicionados",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "fact_id": "offering:armado_reparacion_pc:name:v1",
+              "display_name": "Armado y Reparación de PC",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "autocad_interiores",
+              "fact_id": "offering:autocad_interiores:name:v1",
+              "display_name": "AutoCAD orientado al Diseño de Interiores",
+              "area_code": "academia-de-diseno-informatico"
+            }
+          ],
+          "payment_plans": []
+        },
+        "commercialState": {
+          "selected_offering_code": null,
+          "selected_payment_plan": null,
+          "stage": "exploring",
+          "call_preference": "chat",
+          "call_offer_status": "declined",
+          "call_offer_count": 0,
+          "awaiting_reply": "none",
+          "payment_reported": false
+        },
+        "capabilities": {
+          "may_reply": true,
+          "may_offer_call": false,
+          "may_request_call_now": false,
+          "may_present_payment_options": false,
+          "may_send_payment_link": false,
+          "authorized_payment_plan": null,
+          "intake_status": "known",
+          "intake_missing": [
+            "nombre",
+            "apellido"
+          ]
+        },
+        "fullCanonicalIncluded": true,
+        "instructionsChars": 30688,
+        "instructionsSha256": "55c159fcc39173c5811e42b0be9afae4bc9b3ce28ac2443879722bceec202d28",
+        "source": "Reconstructed offline from cached remote claim using unchanged deployed source; not a captured HTTP request body."
+      },
+      "committedText": "Entiendo que esto te haya frustrado, [nombre]. Quiero ayudarte a resolverlo: para enviarte el link de pago solo me falta confirmar tu nombre y apellido completos. ¿Me los confirmás?"
+    },
+    {
+      "at": "2026-09-04T17:23:25.976Z",
+      "workflowId": "wrkflow_01M1PQ4PM5QNS7XTJM10ZJAJJG",
+      "traceId": "c7dd4866-c79c-4b94-9625-178848d12ace",
+      "batch": [
+        "ya te los acabo de confirmar"
+      ],
+      "catalogResolution": {
+        "kind": "no_catalog_intent"
+      },
+      "stateBefore": {
+        "selected_offering_code": null,
+        "selected_payment_plan": null,
+        "stage": "exploring",
+        "call_preference": "chat",
+        "call_offer_status": "declined",
+        "call_offer_count": 0,
+        "awaiting_reply": "none",
+        "payment_reported": false,
+        "version": 34
+      },
+      "intakeMissing": [
+        "nombre",
+        "apellido"
+      ],
+      "features": {
+        "conversation_pipeline_v1_enabled": false,
+        "agent_a_brain_v1_enabled": true,
+        "agent_a_brain_v1_shadow": false,
+        "agent_a_context_scoping": false,
+        "agent_a_repair_enabled": true,
+        "agent_a_state_assertions": true,
+        "agent_a_single_route": true
+      },
+      "initial": {
+        "proposal": {
+          "schema_version": 1,
+          "move": {
+            "schema_version": 1,
+            "move": "provide_contact_details",
+            "secondary_moves": [],
+            "vetoes": [],
+            "confidence": 1
+          },
+          "response": {
+            "messages": [
+              "Tenés razón, [nombre], ya me los habías confirmado. Disculpá la repetición. Quedó registrado tu nombre y apellido."
+            ],
+            "call_offer": null
+          },
+          "proposed_action": {
+            "type": "none"
+          },
+          "used_fact_ids": [],
+          "used_memory_ids": [],
+          "repair_of": null,
+          "memory_candidates": []
+        },
+        "provider": "deepseek-direct",
+        "model": "deepseek-v4-flash",
+        "latency_ms": 1547,
+        "attempt_count": 1,
+        "token_usage": {
+          "input_tokens": 9749,
+          "cached_input_tokens": 7168,
+          "output_tokens": 173,
+          "total_tokens": 9922
+        }
+      },
+      "repair": null,
+      "committedAction": null,
+      "outboundId": "bc7c4648-47ec-4157-8bbf-6eb5b5f6032b",
+      "authorizedUrls": [],
+      "deliveryReport": {
+        "report_status": "submitted_to_botpress",
+        "botpress_message_id": "2a9ef66d-0881-411c-a36a-898b8c166687",
+        "reported_at": "2026-09-04T17:23:31.456Z"
+      },
+      "contextDiagnostics": {
+        "traceId": "c7dd4866-c79c-4b94-9625-178848d12ace",
+        "workflowId": "wrkflow_01M1PQ4PM5QNS7XTJM10ZJAJJG",
+        "at": "2026-09-04T17:23:25.976Z",
+        "catalog": {
+          "selected_offering": null,
+          "areas": [
+            {
+              "code": "academia-de-oficios",
+              "fact_id": "area:academia-de-oficios:name:v1",
+              "display_name": "Academia de Oficios"
+            },
+            {
+              "code": "academia-de-diseno-informatico",
+              "fact_id": "area:academia-de-diseno-informatico:name:v1",
+              "display_name": "Academia de Diseño Informático"
+            },
+            {
+              "code": "academia-de-negocios",
+              "fact_id": "area:academia-de-negocios:name:v1",
+              "display_name": "Academia de Negocios"
+            },
+            {
+              "code": "academia-de-marketing",
+              "fact_id": "area:academia-de-marketing:name:v1",
+              "display_name": "Academia de Marketing"
+            },
+            {
+              "code": "academia-de-emprendedores",
+              "fact_id": "area:academia-de-emprendedores:name:v1",
+              "display_name": "Academia de Emprendedores"
+            },
+            {
+              "code": "academia-de-salud-y-bienestar",
+              "fact_id": "area:academia-de-salud-y-bienestar:name:v1",
+              "display_name": "Academia de Salud y Bienestar"
+            },
+            {
+              "code": "academia-cultural",
+              "fact_id": "area:academia-cultural:name:v1",
+              "display_name": "Academia Cultural"
+            },
+            {
+              "code": "academia-gastronomica",
+              "fact_id": "area:academia-gastronomica:name:v1",
+              "display_name": "Academia Gastronómica"
+            },
+            {
+              "code": "academia-de-moda-y-belleza",
+              "fact_id": "area:academia-de-moda-y-belleza:name:v1",
+              "display_name": "Academia de Moda y Belleza"
+            }
+          ],
+          "candidate_offerings": [
+            {
+              "code": "aires_acondicionados",
+              "fact_id": "offering:aires_acondicionados:name:v1",
+              "display_name": "Instalación de Aires Acondicionados",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "fact_id": "offering:armado_reparacion_pc:name:v1",
+              "display_name": "Armado y Reparación de PC",
+              "area_code": "academia-de-oficios"
+            },
+            {
+              "code": "autocad_interiores",
+              "fact_id": "offering:autocad_interiores:name:v1",
+              "display_name": "AutoCAD orientado al Diseño de Interiores",
+              "area_code": "academia-de-diseno-informatico"
+            }
+          ],
+          "payment_plans": []
+        },
+        "commercialState": {
+          "selected_offering_code": null,
+          "selected_payment_plan": null,
+          "stage": "exploring",
+          "call_preference": "chat",
+          "call_offer_status": "declined",
+          "call_offer_count": 0,
+          "awaiting_reply": "none",
+          "payment_reported": false
+        },
+        "capabilities": {
+          "may_reply": true,
+          "may_offer_call": false,
+          "may_request_call_now": false,
+          "may_present_payment_options": false,
+          "may_send_payment_link": false,
+          "authorized_payment_plan": null,
+          "intake_status": "known",
+          "intake_missing": [
+            "nombre",
+            "apellido"
+          ]
+        },
+        "fullCanonicalIncluded": true,
+        "instructionsChars": 30940,
+        "instructionsSha256": "631c911f5595854b5dc95ab1579a7ee73a5d73276ef93914f7c5f1886d9926f0",
+        "source": "Reconstructed offline from cached remote claim using unchanged deployed source; not a captured HTTP request body."
+      },
+      "committedText": "Tenés razón, [nombre], ya me los habías confirmado. Disculpá la repetición."
+    }
+  ]
+}

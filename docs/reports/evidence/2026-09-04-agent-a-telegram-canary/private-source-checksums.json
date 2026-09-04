@@ -1,0 +1,44 @@
+[
+  {
+    "path": ".eval/codex-20260904/telegram-review/bot-logs-complete.private.json",
+    "sha256": "051d9c587b19e6cf01b11c4675b75665f08be9f87bd750b89862e7d7df300dcf",
+    "bytes": 35697,
+    "containsPrivateData": true
+  },
+  {
+    "path": ".eval/codex-20260904/telegram-review/bot-logs.private.json",
+    "sha256": "096684da42827d61bcb26f7000a7e71e3e4e9d7719652e87576d179b7faf6318",
+    "bytes": 7761,
+    "containsPrivateData": true
+  },
+  {
+    "path": ".eval/codex-20260904/telegram-review/detail.private.json",
+    "sha256": "d77a8a78a85dcd5cf22420cc774beaa80cc1f58ee3c76b1a46a5b86671ee88e4",
+    "bytes": 141639,
+    "containsPrivateData": true
+  },
+  {
+    "path": ".eval/codex-20260904/telegram-review/recent.private.json",
+    "sha256": "ab43316c30ff8f9cbcf883f6285bbfe6cd4d964419b9830863146b70e366e190",
+    "bytes": 91706,
+    "containsPrivateData": true
+  },
+  {
+    "path": ".eval/codex-20260904/telegram-review/vercel-logs.private.json",
+    "sha256": "1cbb5c16e0c56a09b7beba6feb61537580643bd25038561bd45f32587c86ebf9",
+    "bytes": 52760,
+    "containsPrivateData": true
+  },
+  {
+    "path": ".eval/codex-20260904/telegram-review/workflow-steps.private.json",
+    "sha256": "fc1dd75d759b4e4f802a9bde1385587e7e03d573dd227189a83fecfd484b62d5",
+    "bytes": 2143948,
+    "containsPrivateData": true
+  },
+  {
+    "path": ".eval/codex-20260904/telegram-review/workflows.private.json",
+    "sha256": "3817cca48bd4d16f3f9ffbe9a50a0bb663c39e145c63102ae0b2ecaa90ae6774",
+    "bytes": 37594,
+    "containsPrivateData": true
+  }
+]
