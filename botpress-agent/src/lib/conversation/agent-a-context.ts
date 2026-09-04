@@ -7,6 +7,8 @@ import type { ConversationMoveV1 } from '../../schemas/conversation-pipeline';
 import {
   classifyCurrentPaymentIntent,
   derivePaymentPlanSelectionFromBatch,
+  hasExplicitPurchaseDecline,
+  hasTemporalPaymentDeferral,
 } from '../../utils/payment-choice';
 
 const MEMORY_TYPES = new Set([
@@ -123,6 +125,60 @@ export function bindCurrentConversationalIntentToMoveV1(
       .test(recentCustomerText);
   const explicitPaymentPlan = derivePaymentPlanSelectionFromBatch(currentBatchMessages);
   const currentPaymentIntent = classifyCurrentPaymentIntent(currentBatchMessages);
+  const awaitingPaymentReply = claimed.conversation_state_v1?.awaiting_reply === 'payment_confirmation'
+    || claimed.conversation_state_v1?.awaiting_reply === 'contact_details';
+  const currentPaymentDeferral = hasTemporalPaymentDeferral(
+    currentBatchMessages,
+    awaitingPaymentReply,
+  );
+  const currentPurchaseDecline = hasExplicitPurchaseDecline(currentBatchMessages);
+  const unsupportedDeferral = !currentPaymentDeferral;
+  const unsupportedDecline = !currentPurchaseDecline;
+  const sanitizedSecondaryMoves = [...new Set(move.secondary_moves
+    .map((kind): ConversationMoveV1['move'] => (
+      kind === 'decline_purchase' && unsupportedDecline && currentPaymentDeferral
+        ? 'defer_payment'
+        : kind
+    ))
+    .filter((kind) => !(
+      (kind === 'defer_payment' && unsupportedDeferral)
+      || (kind === 'decline_purchase' && unsupportedDecline)
+    )))].filter((kind) => kind !== move.move).slice(0, 2);
+  const secondaryMovesChanged = sanitizedSecondaryMoves.length !== move.secondary_moves.length
+    || sanitizedSecondaryMoves.some((kind, index) => kind !== move.secondary_moves[index]);
+  if (move.move === 'decline_purchase' && unsupportedDecline && currentPaymentDeferral) {
+    const { payment_plan: _ignoredPaymentPlan, ...withoutPlan } = move;
+    return {
+      ...withoutPlan,
+      move: 'defer_payment',
+      secondary_moves: sanitizedSecondaryMoves,
+      vetoes: withoutPlan.vetoes.filter((veto) => veto !== 'purchase'),
+      confidence: 1,
+    };
+  }
+  const unsupportedPrimaryExit = (move.move === 'defer_payment' && unsupportedDeferral)
+    || (move.move === 'decline_purchase' && unsupportedDecline);
+  if (unsupportedPrimaryExit) {
+    const continuePendingIntake = claimed.conversation_state_v1?.awaiting_reply === 'contact_details';
+    const { payment_plan: _ignoredPaymentPlan, ...withoutPlan } = move;
+    return {
+      ...withoutPlan,
+      move: continuePendingIntake ? 'provide_contact_details' : 'unknown',
+      secondary_moves: sanitizedSecondaryMoves.filter((kind) => !PAYMENT_INTENT_MOVES.has(kind)),
+      vetoes: withoutPlan.vetoes.filter((veto) => veto !== 'payment_link' && veto !== 'purchase'),
+      confidence: 1,
+    };
+  }
+  if (secondaryMovesChanged) {
+    return {
+      ...move,
+      secondary_moves: sanitizedSecondaryMoves,
+      vetoes: move.vetoes.filter((veto) => (
+        !(unsupportedDeferral && veto === 'payment_link')
+        && !(unsupportedDecline && veto === 'purchase')
+      )),
+    };
+  }
   if (move.move === 'select_payment_plan' && currentPaymentIntent.kind === 'none') {
     const { payment_plan: _ignoredPaymentPlan, ...withoutPlan } = move;
     return {

@@ -40,8 +40,95 @@ const CELLPHONES = offering(
   'Reparación de Celulares',
   'Academia de Oficios',
 );
+const PHOTOGRAPHY = offering('fotografia_profesional', 'Fotografía Profesional', 'Emprendedores');
+const MOBILE_PHOTOGRAPHY = offering(
+  'fotografia_celulares_tiendas_online',
+  'Fotografía con Celulares para Tiendas Online',
+  'Marketing',
+);
+const SOLAR = offering('energia_solar_fotovoltaica', 'Energía Solar Fotovoltaica', 'Oficios');
 
 describe('resolveCatalogRequest', () => {
+  it.each([
+    'Fotografía',
+    'Hola! Colo estas? Me pasas información del curso de fotografia?',
+    'Ya tenía pensado estudiar fotografia.',
+    'Quiero aprender fotografía.',
+    '¿Qué cursos de fotografía tienen?',
+    'Me interesa fotografía, ¿qué opciones hay?',
+  ])('asks which photography course a partial subject means: %s', (text) => {
+    expect(resolveCatalogRequest(text, snapshot([
+      SOLAR, PHOTOGRAPHY, MARKETING, MOBILE_PHOTOGRAPHY,
+    ]))).toEqual({
+      kind: 'ambiguous',
+      requestedText: text,
+      candidateCodes: ['fotografia_celulares_tiendas_online', 'fotografia_profesional'],
+      clarification: 'choose_offering',
+    });
+  });
+
+  it('uses whole topic words for other partial course families', () => {
+    expect(resolveCatalogRequest('Busco un curso de reparación', snapshot([
+      CELLPHONES,
+      offering('reparacion_pc', 'Reparación de Computadoras', 'Oficios'),
+      SOLAR,
+    ]))).toMatchObject({
+      kind: 'ambiguous',
+      candidateCodes: ['reparacion_celulares', 'reparacion_pc'],
+      clarification: 'choose_offering',
+    });
+  });
+
+  it('asks to confirm a partial title even when only one course matches', () => {
+    expect(resolveCatalogRequest('Curso de fotografía con celulares', snapshot([
+      MOBILE_PHOTOGRAPHY, PHOTOGRAPHY,
+    ]))).toMatchObject({
+      kind: 'ambiguous',
+      candidateCodes: ['fotografia_celulares_tiendas_online'],
+      clarification: 'choose_offering',
+    });
+  });
+
+  it.each([
+    'Fotografía Profesional',
+    'Me interesa Fotografía Profesional.',
+  ])('preserves exact title priority over its partial family: %s', (text) => {
+    expect(resolveCatalogRequest(text, snapshot([
+      MOBILE_PHOTOGRAPHY, PHOTOGRAPHY, SOLAR,
+    ]))).toMatchObject({ kind: 'exact', offeringCode: 'fotografia_profesional' });
+  });
+
+  it('lets a later exact selection resolve an earlier partial subject', () => {
+    expect(resolveCatalogRequest([
+      'Curso de fotografía', 'Elijo Fotografía Profesional',
+    ], snapshot([MOBILE_PHOTOGRAPHY, PHOTOGRAPHY]))).toMatchObject({
+      kind: 'exact', offeringCode: 'fotografia_profesional',
+    });
+  });
+
+  it.each(['Curso de fot', 'Curso de fotografía forense', 'Curso de fotomontaje'])(
+    'does not turn prefixes or unknown subject qualifiers into an available course: %s',
+    (text) => {
+      expect(resolveCatalogRequest(text, snapshot([
+        MOBILE_PHOTOGRAPHY, PHOTOGRAPHY, SOLAR,
+      ]))).toMatchObject({ kind: 'not_found' });
+    },
+  );
+
+  it.each(['No quiero fotografía', 'Necesito guardar una fotografía'])(
+    'does not turn a refusal or unrelated photo mention into a course request: %s',
+    (text) => {
+      expect(resolveCatalogRequest(text, snapshot([
+        MOBILE_PHOTOGRAPHY, PHOTOGRAPHY,
+      ]))).toEqual({ kind: 'no_catalog_intent' });
+    },
+  );
+
+  it('does not resolve partial course identity from a truncated catalog', () => {
+    expect(resolveCatalogRequest('Curso de fotografía', snapshot([PHOTOGRAPHY], 1)))
+      .toEqual({ kind: 'unavailable', reason: 'snapshot_truncated' });
+  });
+
   it('resolves the reviewed short catalog alias used with a price question', () => {
     const manual = JSON.parse(readFileSync(
       path.join(process.cwd(), 'supabase/seed/data/studyx-manual.json'),

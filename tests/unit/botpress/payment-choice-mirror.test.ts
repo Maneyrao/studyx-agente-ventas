@@ -3,11 +3,15 @@ import {
   classifyCurrentPaymentIntent as backendClassify,
   derivePaymentChoiceFromBatch as backendDerive,
   derivePaymentPlanSelectionFromBatch as backendSelection,
+  hasExplicitPurchaseDecline as backendDecline,
+  hasTemporalPaymentDeferral as backendDeferral,
 } from '../../../src/features/payments/domain/payment-choice-policy';
 import {
   classifyCurrentPaymentIntent as mirrorClassify,
   derivePaymentChoiceFromBatch as mirrorDerive,
   derivePaymentPlanSelectionFromBatch as mirrorSelection,
+  hasExplicitPurchaseDecline as mirrorDecline,
+  hasTemporalPaymentDeferral as mirrorDeferral,
 } from '../../../botpress-agent/src/utils/payment-choice';
 
 /**
@@ -45,6 +49,15 @@ const CORPUS = [
   'No, esperá, mejor pago todo de una vez, así termino antes.',
   'Antes de seguir, ¿qué te había contado sobre mi disponibilidad?',
   'Ya te había contado mi situación',
+  'Por ahora no tengo correo; mi teléfono es +54 9 11 1234 5678',
+  'Después te paso mi apellido',
+  'Prefiero esperar para pagar',
+  'No puedo pagar en este momento',
+  'No quiero comprar el curso',
+  'No me interesa inscribirme',
+  'Por ahora no me voy a anotar, lo voy a pensar',
+  'No quiero comprar ahora',
+  'No me voy a inscribir todavía',
 ];
 
 describe('payment-choice mirror parity (botpress-agent vs backend)', () => {
@@ -53,5 +66,8 @@ describe('payment-choice mirror parity (botpress-agent vs backend)', () => {
     expect(mirrorDerive(messages)).toBe(backendDerive(messages));
     expect(mirrorSelection(messages)).toBe(backendSelection(messages));
     expect(mirrorClassify(messages)).toEqual(backendClassify(messages));
+    expect(mirrorDeferral(messages)).toBe(backendDeferral(messages));
+    expect(mirrorDeferral(messages, true)).toBe(backendDeferral(messages, true));
+    expect(mirrorDecline(messages)).toBe(backendDecline(messages));
   });
 });

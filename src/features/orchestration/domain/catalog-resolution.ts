@@ -394,6 +394,39 @@ function typoMatches(
   });
 }
 
+function partialSubjectMatches(
+  text: string | readonly string[],
+  offerings: readonly IndexedOffering[],
+): IndexedOffering[] {
+  const values = typeof text === 'string' ? [text] : text;
+  const subjects = values.flatMap((value) => value.split(/[.!?;,\n]/u)).flatMap((clause) => {
+    const normalized = normalizeSpanishCatalogText(clause);
+    if (
+      NON_CATALOG_PROGRAM_CONTEXT_PATTERN.test(normalized)
+      && !EXPLICIT_PROGRAM_INFORMATION_REQUEST_PATTERN.test(normalized)
+    ) return [];
+
+    // Keep the whole requested subject, including its qualifiers. Searching
+    // arbitrary words would turn "fotografía forense" into an available
+    // course, or confuse "fot" with "fotovoltaica". A bare title fragment is
+    // also a subject; surrounding unrelated prose is not stripped from it.
+    const cues = [...normalized.matchAll(
+      /\b(?:cursos?|diplomados?|capacitaciones|capacitacion|formaciones|formacion|programas?|estudiar|aprender|busco|quiero|me interesa|me interesan|informacion sobre)\s+(?:(?:el|la|un|una|de)\s+)*/gu,
+    )];
+    const cue = cues.at(-1);
+    const subject = (cue?.index === undefined
+      ? normalized
+      : normalized.slice(cue.index + cue[0].length))
+      .replace(/\s+(?:tienen|ofrecen|hay|esta disponible|estan disponibles)$/u, '')
+      .trim();
+    return subject ? [subject] : [];
+  });
+
+  return offerings.filter((offering) => subjects.some((subject) => (
+    offering.normalizedName.startsWith(`${subject} `)
+  )));
+}
+
 function hasCatalogIntent(messages: readonly string[]): boolean {
   return messages.some((message) => (
     (
@@ -558,6 +591,16 @@ export function resolveCatalogRequest(
     const selected = explicitSelection(messages, positiveHits);
     if (selected !== null) return exact(selected.offering, 'canonical');
     return ambiguous(request, literalMatches.map((match) => match.offering));
+  }
+
+  const partialMatches = partialSubjectMatches(text, offerings);
+  if (partialMatches.length > 0) {
+    if (snapshot.offerings_truncated > 0) {
+      return { kind: 'unavailable', reason: 'snapshot_truncated' };
+    }
+    // A partial title narrows the clarification, never establishes identity,
+    // even when the current complete snapshot has just one matching course.
+    return ambiguous(request, partialMatches);
   }
 
   // A nearby word is not enough to create commercial intent. Fuzzy matching

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractContactIdentity, splitFullName } from '@/lib/heuristics/contact-identity';
+import { extractContactIdentity, extractContactNameAnswer, splitFullName } from '@/lib/heuristics/contact-identity';
 
 describe('extractContactIdentity', () => {
   it('captures name and email from the canonical "Soy Nombre Apellido, email" turn', () => {
@@ -144,5 +144,63 @@ describe('splitFullName', () => {
 
   it('keeps a single token as nombre with an empty apellido', () => {
     expect(splitFullName('Bruno')).toEqual({ nombre: 'Bruno', apellido: '' });
+  });
+});
+
+
+describe('extractContactNameAnswer', () => {
+  it('retains separate first and surname answers when one delivered request asks for both', () => {
+    const first = extractContactNameAnswer('Inés', 'Necesito tu nombre y apellido.');
+    expect(first).toEqual({ firstName: 'Inés', surname: null, name: 'Inés' });
+    expect(extractContactNameAnswer('Valdés', 'Necesito tu nombre y apellido.', first!))
+      .toEqual({ firstName: 'Inés', surname: 'Valdés', name: 'Inés Valdés' });
+  });
+
+  const fullRequest = 'Para dejarlo registrado necesito tu nombre, apellido y teléfono. ¿Me los pasás?';
+
+  it('captures a full name before a Markdown telephone in a requested answer, without needing an email', () => {
+    expect(extractContactNameAnswer(
+      'Lucía Ríos [+1 305 555 0168](tel:+13055550168) \n\nCuanto sale?', fullRequest,
+    )).toEqual({ firstName: 'Lucía', surname: 'Ríos', name: 'Lucía Ríos' });
+  });
+
+  it('combines separate requested fields in either order without treating a surname as a first name', () => {
+    const surname = extractContactNameAnswer('Ríos', 'Me falta tu apellido. ¿Me lo pasás?');
+    expect(surname).toEqual({ firstName: null, surname: 'Ríos', name: null });
+    expect(extractContactNameAnswer('Lucía', 'Para completar el registro necesito tu nombre.', surname!))
+      .toEqual({ firstName: 'Lucía', surname: 'Ríos', name: 'Lucía Ríos' });
+    expect(extractContactNameAnswer('Le Blanc', '¿Me pasás tu apellido?', { firstName: 'Franco', surname: null }))
+      .toEqual({ firstName: 'Franco', surname: 'Le Blanc', name: 'Franco Le Blanc' });
+    expect(extractContactNameAnswer('Ríos', '¿Me pasás tu apellido?', { firstName: 'Ana María', surname: null }))
+      .toEqual({ firstName: 'Ana María', surname: 'Ríos', name: 'Ana María Ríos' });
+  });
+
+  it.each([
+    'Ya tengo tu nombre y apellido. ¿Qué curso te interesa?',
+    'No necesito tu nombre ni tu apellido.',
+    'Tu nombre quedó registrado. ¿Me pasás el correo?',
+    'El nombre del curso es Excel Integral. ¿Te interesa?',
+    '¿Me pasás el nombre de tu hermana?',
+  ])('does not reinterpret a non-identity request as permission to capture: %s', request => {
+    expect(extractContactNameAnswer('Lucía Ríos', request)).toBeNull();
+  });
+
+  it.each([
+    'No soy Lucía Ríos', 'Lucía Ríos, pero son los datos de mi hermana',
+    'Lucía Ríos o Ana Pérez', 'Lucía O María', 'No Gracias', 'Sí Dale',
+    'Excel Integral', 'Marketing Digital', 'Quiero Excel', 'lucía ríos',
+    'Lucía Ríos, Ana Pérez', 'Lucía Ríos\nAna Pérez',
+  ])('rejects negation, third-party identity, ambiguity and non-name answers: %s', text => {
+    expect(extractContactNameAnswer(text, fullRequest)).toBeNull();
+  });
+
+  it('assigns a single answer to the first missing field in the delivered request order', () => {
+    expect(extractContactNameAnswer('Ríos', fullRequest))
+      .toEqual({ firstName: 'Ríos', surname: null, name: 'Ríos' });
+  });
+
+  it('does not enable bare-name capture globally', () => {
+    expect(extractContactIdentity('Lucía Ríos +1 305 555 0168').name).toBeNull();
+    expect(extractContactIdentity('Ríos').name).toBeNull();
   });
 });

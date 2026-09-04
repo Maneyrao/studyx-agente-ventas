@@ -47,7 +47,7 @@ function context(overrides: Partial<AgentAContextV1> = {}): AgentAContextV1 {
     },
     capabilities: {
       may_reply: true,
-      may_offer_call: true,
+      may_offer_call: false,
       may_request_call_now: false,
       may_present_payment_options: true,
       may_send_payment_link: false,
@@ -278,6 +278,40 @@ describe('validación de la propuesta del turno', () => {
  * rechazar: devolver el mismo mensaje no es contestar, y la reparación es
  * exactamente el mecanismo que ya existe para un borrador inaceptable.
  */
+describe('intake parcial observable', () => {
+  it('rechaza afirmar que un dato quedó registrado mientras faltan campos', () => {
+    const current = context({
+      commercial_state: { ...context().commercial_state, awaiting_reply: 'contact_details' },
+      capabilities: { ...context().capabilities, may_offer_call: false, intake_missing: ['apellido', 'correo'] },
+    });
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: { schema_version: 1, move: 'provide_contact_details', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Quedó registrado tu nombre. ¿Me pasás tu apellido y correo?'], call_offer: null },
+        used_fact_ids: [],
+      }), context: current, planned_fact_ids: [],
+      rejection_id: '11111111-1111-4111-8111-111111111111',
+    });
+    expect(rejection?.rejections).toContainEqual({ code: 'UNSUPPORTED_OPERATIONAL_CLAIM', subject: 'contact_details' });
+  });
+
+  it('permite aclarar que un dato todavía no quedó registrado', () => {
+    const current = context({
+      commercial_state: { ...context().commercial_state, awaiting_reply: 'contact_details' },
+      capabilities: { ...context().capabilities, may_offer_call: false, intake_missing: ['apellido', 'correo'] },
+    });
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: { schema_version: 1, move: 'provide_contact_details', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Todavía no tengo registrado tu apellido. ¿Me lo pasás junto con tu correo?'], call_offer: null },
+        used_fact_ids: [],
+      }), context: current, planned_fact_ids: [],
+      rejection_id: '11111111-1111-4111-8111-111111111111',
+    });
+    expect(rejection?.rejections ?? []).not.toContainEqual({ code: 'UNSUPPORTED_OPERATIONAL_CLAIM', subject: 'contact_details' });
+  });
+});
+
 describe('V8 respuesta repetida', () => {
   const previous = 'Entiendo, no hay problema. Quedo a disposición.';
 
@@ -432,6 +466,82 @@ describe('V8 respuesta repetida', () => {
     expect(rejection?.rejections).toContainEqual({
       code: 'MISSING_INTAKE',
       subject: 'correo',
+    });
+  });
+
+  it('no deja que una postergación inventada anule el intake persistido', () => {
+    const current = context({
+      commercial_state: {
+        ...context().commercial_state,
+        selected_payment_plan: 'one_time',
+        stage: 'plan_selected',
+        awaiting_reply: 'contact_details',
+      },
+      capabilities: {
+        ...context().capabilities,
+        authorized_payment_plan: 'one_time',
+        intake_missing: ['apellido', 'correo', 'telefono'],
+      },
+      turn: {
+        batch_messages: [{ id: 'm2', text: 'Inés' }],
+        recent_turns: [],
+      },
+    } as Partial<AgentAContextV1>);
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'defer_payment', secondary_moves: [],
+          vetoes: ['payment_link'], confidence: 0.91,
+        },
+        response: { messages: ['¡Gracias, Inés!'], call_offer: null },
+        used_fact_ids: [],
+      }),
+      context: current,
+      planned_fact_ids: [],
+      rejection_id: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(rejection?.rejections).toContainEqual({
+      code: 'MISSING_INTAKE',
+      subject: 'apellido',
+    });
+  });
+
+  it('no deja que un decline_purchase inventado anule el intake persistido', () => {
+    const current = context({
+      commercial_state: {
+        ...context().commercial_state,
+        selected_payment_plan: 'one_time',
+        stage: 'plan_selected',
+        awaiting_reply: 'contact_details',
+      },
+      capabilities: {
+        ...context().capabilities,
+        authorized_payment_plan: 'one_time',
+        intake_missing: ['apellido', 'correo', 'telefono'],
+      },
+      turn: {
+        batch_messages: [{ id: 'm2', text: 'Inés' }],
+        recent_turns: [],
+      },
+    } as Partial<AgentAContextV1>);
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'decline_purchase', secondary_moves: [],
+          vetoes: ['purchase'], confidence: 0.91,
+        },
+        response: { messages: ['¡Gracias, Inés!'], call_offer: null },
+        used_fact_ids: [],
+      }),
+      context: current,
+      planned_fact_ids: [],
+      rejection_id: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(rejection?.rejections).toContainEqual({
+      code: 'MISSING_INTAKE',
+      subject: 'apellido',
     });
   });
 

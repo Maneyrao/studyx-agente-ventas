@@ -5,6 +5,7 @@ import {
   buildAgentAContextV1,
 } from '../../../botpress-agent/src/lib/conversation/agent-a-context';
 import type { ClaimedTurn } from '../../../botpress-agent/src/schemas/contracts';
+import type { ConversationMoveV1 } from '../../../botpress-agent/src/schemas/conversation-pipeline';
 
 const UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
 const NOW = '2026-08-28T12:00:00.000Z';
@@ -369,6 +370,144 @@ describe('buildAgentAContextV1', () => {
       vetoes: [],
       confidence: 0.95,
       course_reference: 'coaching_liderazgo',
+    });
+  });
+
+  it('no convierte un nombre pedido durante el intake en una postergación de pago', () => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'Inés',
+    };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      selected_payment_plan: 'one_time',
+      awaiting_reply: 'contact_details',
+    };
+
+    expect(bindCurrentConversationalIntentToMoveV1({
+      schema_version: 1,
+      move: 'defer_payment',
+      secondary_moves: [],
+      vetoes: ['payment_link'],
+      confidence: 0.91,
+    }, claimed)).toEqual({
+      schema_version: 1,
+      move: 'provide_contact_details',
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 1,
+    });
+  });
+
+  it('conserva una postergación de pago que el mensaje actual sí expresa', () => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'Todavía no, prefiero pagar más adelante.',
+    };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      selected_payment_plan: 'one_time',
+      awaiting_reply: 'contact_details',
+    };
+    const move: ConversationMoveV1 = {
+      schema_version: 1,
+      move: 'defer_payment',
+      secondary_moves: [],
+      vetoes: ['payment_link'],
+      confidence: 0.99,
+    };
+
+    expect(bindCurrentConversationalIntentToMoveV1(move, claimed)).toEqual(move);
+  });
+
+  it.each([
+    'Por ahora no tengo correo; mi teléfono es +54 9 11 1234 5678',
+    'Después te paso mi apellido',
+  ])('no convierte timing del intake en postergación de pago: %s', (content) => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content,
+    };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      selected_payment_plan: 'one_time',
+      awaiting_reply: 'contact_details',
+    };
+
+    expect(bindCurrentConversationalIntentToMoveV1({
+      schema_version: 1,
+      move: 'defer_payment',
+      secondary_moves: [],
+      vetoes: ['payment_link'],
+      confidence: 0.91,
+    }, claimed)).toMatchObject({
+      move: 'provide_contact_details',
+      vetoes: [],
+    });
+  });
+
+  it('reencuadra un decline_purchase inventado como continuación del intake', () => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'Inés',
+    };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      selected_payment_plan: 'one_time',
+      awaiting_reply: 'contact_details',
+    };
+
+    expect(bindCurrentConversationalIntentToMoveV1({
+      schema_version: 1,
+      move: 'decline_purchase',
+      secondary_moves: [],
+      vetoes: ['purchase'],
+      confidence: 0.91,
+    }, claimed)).toEqual({
+      schema_version: 1,
+      move: 'provide_contact_details',
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 1,
+    });
+  });
+
+  it.each([
+    'No quiero comprar ahora.',
+    'No me voy a inscribir todavía.',
+  ])('reencuadra un rechazo temporal como defer_payment: %s', (content) => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content,
+    };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      selected_payment_plan: 'one_time',
+      awaiting_reply: 'contact_details',
+    };
+
+    expect(bindCurrentConversationalIntentToMoveV1({
+      schema_version: 1,
+      move: 'decline_purchase',
+      secondary_moves: [],
+      vetoes: ['purchase'],
+      confidence: 0.91,
+    }, claimed)).toEqual({
+      schema_version: 1,
+      move: 'defer_payment',
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 1,
     });
   });
 

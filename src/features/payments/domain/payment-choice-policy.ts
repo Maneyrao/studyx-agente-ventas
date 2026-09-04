@@ -67,9 +67,37 @@ const EXPLICIT_ONE_TIME_WITHOUT_CONTADO_PATTERN =
   /\b(?:pago\s+unico|todo\s+junto|un\s+solo\s+pago|pago\s+total|(?:un\s+)?unico\s+pago)\b/;
 
 const TEMPORAL_PAYMENT_DEFERRAL_PATTERNS: readonly RegExp[] = [
-  /\bno\s+me\s+(?:mandes|envies|pases|compartas)\s+(?:el\s+)?link\b/,
-  /\b(?:todavia\s+no|despues|mas\s+adelante|por\s+ahora\s+no)\b/,
+  /\bno\s+me\s+(?:mandes|envies|pases|compartas)\s+(?:el\s+)?(?:link|enlace)\b/,
+  /\b(?:todavia\s+no|despues|mas\s+adelante|por\s+ahora\s+no)\b[^.!?\n]{0,64}\b(?:pagar|pago|pagos|cuotas?|meses?|abonar|comprar|compra|inscribir(?:me)?|anotar(?:me)?|matricular(?:me)?|link|enlace)\b/,
+  /\b(?:pagar|pago|pagos|cuotas?|meses?|abonar|comprar|compra|inscribir(?:me)?|anotar(?:me)?|matricular(?:me)?|link|enlace)\b[^.!?\n]{0,64}\b(?:todavia\s+no|despues|mas\s+adelante|por\s+ahora\s+no)\b/,
+  /\b(?:mandamelo|enviamelo|pasamelo|compartimelo)\b[^.!?\n]{0,32}\b(?:todavia\s+no|despues|mas\s+adelante|por\s+ahora\s+no)\b/,
+  /\b(?:prefiero|quiero)\s+(?:esperar|postergar|dejarlo)\b[^.!?\n]{0,32}\b(?:para|antes\s+de)\s+(?:pagar|abonar|comprar|inscribirme|anotarme|matricularme)\b/,
+  /\bno\s+(?:puedo|quiero)\s+(?:pagar|abonar|comprar|inscribirme|anotarme|matricularme)\b[^.!?\n]{0,32}\b(?:ahora|en\s+este\s+momento|todavia|por\s+ahora)\b/,
+  /\bno\s+me\s+(?:voy\s+a\s+(?:inscribir|anotar|matricular)|interesa\s+(?:pagar|abonar|comprar|inscribirme|anotarme|matricularme))\b[^.!?\n]{0,32}\b(?:ahora|en\s+este\s+momento|todavia|por\s+ahora)\b/,
 ];
+
+const SHORT_CONTEXTUAL_PAYMENT_DEFERRAL_PATTERN =
+  /^\s*(?:todavia\s+no|por\s+ahora\s+no|mas\s+adelante|despues)[.!…]?\s*$/u;
+
+const EXPLICIT_PURCHASE_DECLINE_PATTERNS: readonly RegExp[] = [
+  /\bno\s+(?:quiero|voy\s+a)\s+(?:pagar|comprar|inscribirme|anotarme|matricularme)\b/,
+  /\bno\s+me\s+(?:interesa\s+(?:pagar|comprar|inscribirme|anotarme|matricularme)|voy\s+a\s+(?:inscribir|anotar|matricular))\b/,
+];
+
+function hasTemporalPaymentDeferralIn(
+  normalized: string,
+  allowShortContextual: boolean,
+): boolean {
+  return TEMPORAL_PAYMENT_DEFERRAL_PATTERNS.some((pattern) => pattern.test(normalized))
+    || (allowShortContextual && SHORT_CONTEXTUAL_PAYMENT_DEFERRAL_PATTERN.test(normalized));
+}
+
+function hasExplicitPurchaseDeclineIn(normalized: string): boolean {
+  // A phrase such as "por ahora no me voy a anotar" postpones the decision;
+  // it does not permanently close the sale.
+  if (hasTemporalPaymentDeferralIn(normalized, false)) return false;
+  return EXPLICIT_PURCHASE_DECLINE_PATTERNS.some((pattern) => pattern.test(normalized));
+}
 
 const NON_COMMITTAL_PAYMENT_PATTERNS: readonly RegExp[] = [
   /\b(?:solo|solamente)\s+(?:consultaba|preguntaba|averiguaba)\b/,
@@ -121,7 +149,8 @@ export function classifyCurrentPaymentIntent(
 ): CurrentPaymentIntent {
   const normalizedMessages = messages.map((message) => normalize(message.content ?? ''));
   if (normalizedMessages.some((message) => (
-    TEMPORAL_PAYMENT_DEFERRAL_PATTERNS.some((pattern) => pattern.test(message))
+    hasTemporalPaymentDeferralIn(message, false)
+    || hasExplicitPurchaseDeclineIn(message)
   ))) {
     return { kind: 'veto' };
   }
@@ -167,12 +196,20 @@ export function derivePaymentPlanSelectionFromBatch(
 }
 
 export function hasTemporalPaymentDeferral(
-  messages: readonly PolicyBatchMessage[]
+  messages: readonly PolicyBatchMessage[],
+  allowShortContextual = false,
 ): boolean {
   return messages.some((message) => {
     const normalized = normalize(message.content ?? '');
-    return TEMPORAL_PAYMENT_DEFERRAL_PATTERNS.some((pattern) => pattern.test(normalized));
+    return hasTemporalPaymentDeferralIn(normalized, allowShortContextual);
   });
+}
+
+/** Current-batch proof required before `decline_purchase` may close a sale. */
+export function hasExplicitPurchaseDecline(
+  messages: readonly PolicyBatchMessage[],
+): boolean {
+  return messages.some((message) => hasExplicitPurchaseDeclineIn(normalize(message.content ?? '')));
 }
 
 /**
@@ -188,7 +225,7 @@ export function deriveDeferredPaymentChoiceFromBatch(
   for (const message of messages) {
     const normalized = normalize(message.content ?? '');
     if (NON_COMMITTAL_PAYMENT_PATTERNS.some((pattern) => pattern.test(normalized))) return null;
-    if (TEMPORAL_PAYMENT_DEFERRAL_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    if (hasTemporalPaymentDeferralIn(normalized, false)) {
       temporallyDeferred = true;
     }
     for (const plan of plansMentionedIn(normalized)) matched.add(plan);

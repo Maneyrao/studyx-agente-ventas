@@ -52,6 +52,7 @@ const LABELED_NAME_BEFORE_EMAIL_PATTERN = new RegExp(
 const EXPLICIT_SELF_CONTACT_HEADER = /\b(?:mis\s+datos(?:\s+(?:personales|de\s+contacto))?|mi\s+nombre(?:\s+(?:completo|y\s+apellido))?)\s*$/iu;
 const NEGATED_CONTACT_HEADER = /\b(?:no|ni|sin|nunca|tampoco)\b/iu;
 const STANDALONE_CONTACT_FIELD_HEADER = /^(?:nombre(?:\s+(?:completo|y\s+apellido))?|datos\s+personales)\s*$/iu;
+const UNSAFE_NAME_OWNER = /\b(?:no|ni|sin|nunca|tampoco|herman[oa]|amig[oa]|madre|padre|hij[oa]|tercero|otra\s+persona)\b/iu;
 
 const CORRECTED_SURNAME_PATTERN = new RegExp(
   `(?:mi\\s+apellido(?:\\s+correcto)?\\s+es|me\\s+equivoqu[eé].{0,48}?\\bes)\\s+(${NAME_TOKEN})(?=\\s*(?:con\\s+tilde|[,;.:!?]|$))`,
@@ -105,7 +106,8 @@ export function extractContactIdentity(
 
   let name: string | null = null;
   const introduced = INTRODUCED_NAME_PATTERN.exec(text);
-  if (introduced && isPlausibleName(introduced[1])) {
+  const introductionPrefix = introduced ? text.slice(0, introduced.index).split(/[.;!?\n]/u).at(-1) ?? '' : '';
+  if (introduced && !UNSAFE_NAME_OWNER.test(introductionPrefix) && isPlausibleName(introduced[1])) {
     name = introduced[1].trim();
   } else if (email) {
     const leading = LEADING_NAME_BEFORE_EMAIL_PATTERN.exec(text);
@@ -144,6 +146,71 @@ export function extractContactIdentity(
   }
 
   return { name, email, declaredPhone };
+}
+
+export interface ContactNameParts {
+  readonly firstName: string | null;
+  readonly surname: string | null;
+}
+
+/** Only ingestion may supply a request after proving its delivery to this
+ * conversation. A model's awaiting state or an unsent draft is not a request. */
+export function extractContactNameAnswer(
+  text: string,
+  deliveredRequest: string,
+  previous: ContactNameParts = { firstName: null, surname: null },
+): (ContactNameParts & { readonly name: string | null }) | null {
+  const clauses = deliveredRequest.split(/[.!?\n]/u).filter(clause =>
+    !UNSAFE_NAME_OWNER.test(clause)
+    && /\b(?:necesito|necesitamos|falta[ns]?|pas[aá](?:s|me|rme)|compart[ií](?:s|me|rme)|dec[ií](?:s|me|rme)|indic[aá](?:s|me|rme)|confirm[aá](?:s|me|rme)|cu[aá]l\s+es)\b/iu.test(clause));
+  const request = clauses.join(' ');
+  const asksFirstName = /\bnombre\b/iu.test(request);
+  const asksSurname = /\bapellido\b|\bnombre\s+completo\b/iu.test(request);
+  if ((!asksFirstName && !asksSurname) || UNSAFE_NAME_OWNER.test(text)) return null;
+
+  // A phone link is transport formatting, not part of the written name. Only
+  // the leading identity segment is eligible; no scanning arbitrary prose.
+  const plain = text.replace(/\[([^\]]+)\]\(tel:[^)]+\)/gu, '$1').trim();
+  const boundary = plain.search(new RegExp(`${EMAIL_PATTERN.source}|${DECLARED_PHONE_PATTERN.source}|[\\n,;.!?¿]`, 'u'));
+  const candidate = (boundary < 0 ? plain : plain.slice(0, boundary)).trim();
+  const remainder = boundary < 0 ? '' : plain.slice(boundary).replace(/^[\s,;.!]+/u, '');
+  // A second possible identity is ambiguous. The only permitted continuation
+  // is the accompanying contact field or an explicit question, as in Telegram.
+  if (remainder && !new RegExp(`^(?:${EMAIL_PATTERN.source}|${DECLARED_PHONE_PATTERN.source}|¿|(?:[Yy]\\s+)?(?:[Cc]u[aá]nto|[Cc][oó]mo|[Qq]u[eé]|[Dd][oó]nde)\\b)`, 'u').test(remainder)) return null;
+  const strictName = new RegExp(`^${NAME_SEQUENCE}$`, 'u');
+  if (!strictName.test(candidate) || !isPlausibleName(candidate)
+    || /\b(?:o|y|si|sí|hola|gracias|dale|bueno|perfecto|quiero|curso|plan|pago|excel|marketing|digital|nombre|apellido)\b/iu.test(candidate)) return null;
+
+  let firstName = previous.firstName;
+  let surname = previous.surname;
+  if (asksFirstName && asksSurname) {
+    const parts = splitFullName(candidate);
+    if (parts.apellido) {
+      firstName = parts.nombre;
+      surname = parts.apellido;
+    } else if (!firstName) {
+      firstName = candidate;
+    } else if (!surname) {
+      surname = candidate;
+    } else {
+      return null;
+    }
+  } else if (asksFirstName) firstName = candidate;
+  else surname = candidate;
+
+  // contacts.name is split at its first token by the commercial contract.
+  // A compound first name alone must remain partial, or its second token would
+  // falsely satisfy the surname requirement before the customer provides one.
+  const name = firstName && (surname || !/\s/u.test(firstName))
+    ? [firstName, surname].filter(Boolean).join(' ') : null;
+  return { firstName, surname, name };
+}
+
+/** Cheap syntax gate before ingestion pays for the delivery-evidence query. */
+export function couldBeContactNameAnswer(text: string): boolean {
+  return extractContactNameAnswer(text, 'Necesito tu nombre.') !== null
+    || extractContactNameAnswer(text, 'Necesito tu apellido.') !== null
+    || extractContactNameAnswer(text, 'Necesito tu nombre completo.') !== null;
 }
 
 /**

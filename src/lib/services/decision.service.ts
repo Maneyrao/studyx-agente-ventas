@@ -550,6 +550,13 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       const workspaceId = rawBusiness?.workspace.id ?? workspaceRows[0]?.id;
       if (!workspaceId) throw new DecisionPolicyError('AGENT_TURN_V2_CONTEXT_NOT_FOUND');
       try {
+        const currentMessages = turn.batch_id === null
+          ? [{ content: turn.content }]
+          : await db<Array<{ content: string }>>`
+              SELECT content FROM messages
+              WHERE batch_id = ${turn.batch_id}::uuid AND direction = 'inbound'
+              ORDER BY conversation_seq ASC, created_at ASC, id ASC
+            `;
         preparedAgentTurn = await prepareAgentTurnV2({
           turn: {
             id: turn.id,
@@ -559,6 +566,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           },
           workspace_slug: workspaceSlug,
           proposal: validatedInput.agent_turn_v2.proposal,
+          current_customer_messages: currentMessages.map((message) => message.content),
           business_context: rawBusiness ? buildBusinessContextView(rawBusiness) : null,
           catalog_index: rawCatalogIndex ? buildCatalogIndexView(rawCatalogIndex) : null,
         }, {

@@ -13,10 +13,12 @@ const alternatives = {
 };
 
 describe('TurnRejectionV1', () => {
-  it('expone los nueve códigos de la especificación', () => {
+  it('expone todos los códigos de la especificación', () => {
     expect([...TURN_REJECTION_CODES_V1].sort()).toEqual([
       'ACTION_NOT_AUTHORIZED',
       'CALL_BUDGET_EXHAUSTED',
+      'CALL_OFFER_REQUIRED',
+      'CHANNEL_PREFERENCE_NOT_SUPPORTED',
       'COURSE_NOT_RESOLVED',
       'FACT_NOT_AUTHORIZED',
       'FACT_VALUE_MISMATCH',
@@ -69,7 +71,11 @@ describe('TurnRejectionV1', () => {
     for (const code of [
       'ACTION_NOT_AUTHORIZED',
       'CALL_BUDGET_EXHAUSTED',
+      'CALL_OFFER_REQUIRED',
+      'CHANNEL_PREFERENCE_NOT_SUPPORTED',
       'MISSING_INTAKE',
+      'CALL_OFFER_REQUIRED',
+      'CHANNEL_PREFERENCE_NOT_SUPPORTED',
     ] as const) {
       expect(isPrunableRejectionV1(buildTurnRejectionV1({
         rejection_id: 'r1',

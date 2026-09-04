@@ -1,3 +1,7 @@
+import {
+  supportsCallRequestV1,
+  supportsChatPreferenceV1,
+} from './channel-preference-evidence';
 import type { AgentAProposedActionV1, AgentATurnProposalV1 } from './agent-a-brain';
 import type {
   AwaitingReplyV1,
@@ -15,7 +19,11 @@ import {
   materializeStateFactsV1,
   type StateFactIdV1,
 } from './state-fact-registry';
-import type { ContactIntakeV1 } from './conversation-planner';
+import { missingContactIntakeFieldsV1, type ContactIntakeV1 } from './conversation-planner';
+import {
+  hasExplicitPurchaseDecline,
+  hasTemporalPaymentDeferral,
+} from '@/features/payments/domain/payment-choice-policy';
 
 export interface PlannerlessOfferingV2 {
   readonly code: string;
@@ -39,7 +47,9 @@ export type AgentTurnRejectionReasonV2 =
   | 'UNSUPPORTED_STATE_ASSERTION'
   | 'ACTION_NOT_AUTHORIZED'
   | 'MISSING_INTAKE'
-  | 'CALL_OFFER_NOT_AUTHORIZED';
+  | 'CALL_OFFER_NOT_AUTHORIZED'
+  | 'CALL_OFFER_REQUIRED'
+  | 'CHANNEL_PREFERENCE_NOT_SUPPORTED';
 
 export type AgentTurnAuthorityResultV2 = {
   readonly ok: true;
@@ -73,6 +83,17 @@ function resolveOffering(
   return matches.length === 1 ? matches[0].code : null;
 }
 
+function mentionsMissingIntakeField(messages: readonly string[], missing: readonly string[]): boolean {
+  const text = messages.join(' ').normalize('NFD').replace(/[\u0300-\u036f]/gu, '').toLowerCase();
+  const patterns: Record<string, RegExp> = {
+    nombre: /\bnombre\b/u, apellido: /\bapellido\b/u,
+    correo: /\b(?:correo|email|e mail)\b/u,
+    telefono: /\b(?:telefono|celular|numero)\b/u,
+  };
+  const hasRequestCue = /\b(?:falta|necesito|pasame|decime|indicame|confirmame|comparti|enviame|dame)\w*\b|[?¿]/u.test(text);
+  return hasRequestCue && missing.some((field) => patterns[field]?.test(text));
+}
+
 function unique<T>(values: readonly T[]): T[] {
   return [...new Set(values)];
 }
@@ -100,6 +121,7 @@ export function authorizeAgentTurnV2(input: {
   readonly offerings: readonly PlannerlessOfferingV2[];
   readonly facts: readonly CanonicalFactV1[];
   readonly contact_intake?: ContactIntakeV1;
+  readonly current_customer_messages?: readonly string[];
   readonly call_policy: {
     readonly may_offer_call: boolean;
     readonly may_request_call_now: boolean;
@@ -139,9 +161,17 @@ export function authorizeAgentTurnV2(input: {
 
   const authoredMessages = [...proposal.response.messages];
   const authoredCallOffer = proposal.response.call_offer?.trim() || null;
-  const visibleCallOffer = (authoredCallOffer !== null && solicitsACall(authoredCallOffer, true))
+  const authorizedCallOffer = authoredCallOffer === null
+    ? null
+    : dropUnsupportedStateAssertionsV1(authoredCallOffer, stateFacts).trim() || null;
+  const authorizedMessages = authoredMessages
+    .map((message) => dropUnsupportedStateAssertionsV1(message, stateFacts).trim())
+    .filter((message) => message.length > 0);
+  const draftedCallOffer = (authoredCallOffer !== null && solicitsACall(authoredCallOffer, true))
     || authoredMessages.some((message) => solicitsACall(message));
-  if (visibleCallOffer && (
+  const visibleCallOffer = (authorizedCallOffer !== null && solicitsACall(authorizedCallOffer, true))
+    || authorizedMessages.some((message) => solicitsACall(message));
+  if (draftedCallOffer && (
     !input.call_policy.may_offer_call
     || selectedOffering === null
     || state.call_offer_count >= 2
@@ -152,16 +182,52 @@ export function authorizeAgentTurnV2(input: {
     reasons.push('CALL_OFFER_NOT_AUTHORIZED');
   }
 
+  const channelChoice = moves.has('continue_by_chat') || moves.has('decline_call');
+  const currentText = (input.current_customer_messages ?? []).join('\n');
+  if ((channelChoice || proposal.move.vetoes.includes('call')) && !supportsChatPreferenceV1(currentText, state.awaiting_reply === 'call_or_chat')) {
+    reasons.push('CHANNEL_PREFERENCE_NOT_SUPPORTED');
+  }
+  if (proposal.move.vetoes.includes('call') && !channelChoice) reasons.push('CHANNEL_PREFERENCE_NOT_SUPPORTED');
+  if (channelChoice && draftedCallOffer) reasons.push('CHANNEL_PREFERENCE_NOT_SUPPORTED');
+  const callRequestSupported = supportsCallRequestV1(
+    currentText,
+    state.awaiting_reply === 'call_or_chat',
+  );
+  const requestedCallNow = moves.has('request_call') && proposal.proposed_action.type === 'request_call_now'
+    && input.call_policy.may_request_call_now && callRequestSupported;
+  if ((moves.has('request_call') || proposal.proposed_action.type === 'request_call_now')
+      && !requestedCallNow) reasons.push('ACTION_NOT_AUTHORIZED');
+  const needsInitialCall = changesCourse && selectedOffering !== null
+    && input.call_policy.may_offer_call && state.call_offer_count === 0
+    && state.call_preference === 'unknown' && state.call_offer_status === 'not_offered'
+    && !channelChoice && !requestedCallNow;
+  if (needsInitialCall && !visibleCallOffer) reasons.push('CALL_OFFER_REQUIRED');
+
   let action: AgentAProposedActionV1 = { type: 'none' };
-  const paymentDeferred = moves.has('defer_payment') || moves.has('decline_purchase')
-    || proposal.move.vetoes.includes('payment_link')
-    || proposal.move.vetoes.includes('purchase');
+  const currentPaymentDeferral = hasTemporalPaymentDeferral(
+    (input.current_customer_messages ?? []).map((content) => ({ content })),
+    state.awaiting_reply === 'payment_confirmation' || state.awaiting_reply === 'contact_details',
+  );
+  const currentPurchaseDecline = hasExplicitPurchaseDecline(
+    (input.current_customer_messages ?? []).map((content) => ({ content })),
+  );
+  const paymentDeferred = (moves.has('decline_purchase') && currentPurchaseDecline) || (
+    currentPaymentDeferral && (
+      moves.has('defer_payment')
+      || proposal.move.vetoes.includes('payment_link')
+      || proposal.move.vetoes.includes('purchase')
+    )
+  );
+  const missingIntake = missingContactIntakeFieldsV1(input.contact_intake);
+  if (state.awaiting_reply === 'contact_details' && missingIntake.length > 0 && !paymentDeferred
+      && !mentionsMissingIntakeField(authorizedMessages, missingIntake)) {
+    reasons.push('MISSING_INTAKE');
+  }
   const paymentLinkRequested = !paymentDeferred && (moves.has('request_payment_link')
     || (moves.has('provide_contact_details') && !selectionChanged
       && state.awaiting_reply === 'contact_details'));
   if (proposal.proposed_action.type === 'request_call_now') {
-    const requested = moves.has('request_call') && !proposal.move.vetoes.includes('call');
-    if (!requested || !input.call_policy.may_request_call_now) reasons.push('ACTION_NOT_AUTHORIZED');
+    if (!requestedCallNow || proposal.move.vetoes.includes('call')) reasons.push('ACTION_NOT_AUTHORIZED');
     else action = proposal.proposed_action;
   }
   if (proposal.proposed_action.type === 'send_payment_link') {
@@ -201,9 +267,8 @@ export function authorizeAgentTurnV2(input: {
 
   if (reasons.length > 0) return { ok: false, reasons: unique(reasons) };
 
-  const rawResponse = [...authoredMessages, ...(authoredCallOffer ? [authoredCallOffer] : [])]
-    .join('\n\n');
-  const response = dropUnsupportedStateAssertionsV1(rawResponse, stateFacts).trim();
+  const response = [...authorizedMessages, ...(authorizedCallOffer ? [authorizedCallOffer] : [])]
+    .join('\n\n').trim();
   if (!response) return { ok: false, reasons: ['UNSUPPORTED_STATE_ASSERTION'] };
 
   let nextOffering = state.selected_offering_code;
@@ -264,7 +329,7 @@ export function authorizeAgentTurnV2(input: {
     stage = 'payment_link_sent';
   }
   if (paymentDeferred) awaitingReply = 'none';
-  if (moves.has('decline_purchase')) {
+  if (moves.has('decline_purchase') && currentPurchaseDecline) {
     stage = 'closed';
     awaitingReply = 'none';
   }

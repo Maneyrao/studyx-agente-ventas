@@ -120,6 +120,7 @@ export async function prepareAgentTurnV2(input: {
     readonly contact_id: string;
   };
   readonly workspace_slug: string;
+  readonly current_customer_messages?: readonly string[];
   readonly proposal: AgentATurnProposalV1;
   readonly business_context: BusinessContextView | null;
   readonly catalog_index: CatalogIndexView | null;
@@ -169,6 +170,7 @@ export async function prepareAgentTurnV2(input: {
     offerings,
     facts,
     contact_intake: contactIntake,
+    current_customer_messages: input.current_customer_messages,
     call_policy: {
       may_offer_call: noActiveCall && callFacts?.last_decline_at == null,
       // A direct customer request remains valid after an earlier decline.

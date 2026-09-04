@@ -14,7 +14,7 @@ import { withSerializableTransaction } from '@/lib/db/transaction';
 import { jsonbParam } from '@/lib/db/json';
 import { sha256Hex } from '@/lib/idempotency/canonical-json';
 import { isExplicitOptOut } from '@/lib/heuristics/opt-out';
-import { extractContactIdentity, splitFullName } from '@/lib/heuristics/contact-identity';
+import { couldBeContactNameAnswer, extractContactIdentity, extractContactNameAnswer, splitFullName, type ContactNameParts } from '@/lib/heuristics/contact-identity';
 import { registerSandboxIdentity } from '@/lib/repositories/sandbox-identity.repository';
 import { refreshLeadIdentityProjection } from './projection.service';
 import type { DbClient } from '@/lib/db/types';
@@ -246,6 +246,56 @@ function resolveLogicalChannel(envelope: InboundEnvelope): 'whatsapp' | 'telegra
   return envelope.channel === 'telegram' ? 'telegram' : 'whatsapp';
 }
 
+async function captureDeliveredContactNameAnswer(db: DbClient, input: {
+  conversationId: string;
+  contact: Contact;
+  provider: string;
+  integrationId: string;
+  text: string;
+  occurredAt: string;
+}): Promise<(ContactNameParts & { name: string | null; requestMessageId: string }) | null> {
+  if (!couldBeContactNameAnswer(input.text)) return null;
+  const rows = await db<Array<{ id: string; content: string; previous: unknown }>>`
+    SELECT m.id, m.content, (
+      SELECT earlier.metadata->'contact_name_answer_v1'
+      FROM messages earlier
+      WHERE earlier.conversation_id = m.conversation_id AND earlier.contact_id = m.contact_id
+        AND earlier.direction = 'inbound'
+        AND jsonb_typeof(earlier.metadata->'contact_name_answer_v1') = 'object'
+      ORDER BY earlier.created_at DESC, earlier.id DESC LIMIT 1
+    ) AS previous
+    FROM messages m
+    JOIN outbound_deliveries od ON od.message_id = m.id
+      AND od.conversation_id = m.conversation_id AND od.contact_id = m.contact_id
+    WHERE m.conversation_id = ${input.conversationId}::uuid AND m.contact_id = ${input.contact.id}::uuid
+      AND m.direction = 'outbound' AND od.provider = ${input.provider}
+      AND od.integration_id = ${input.integrationId} AND od.destination = ${input.contact.phone}
+      AND od.state IN ('submitted', 'delivered') AND NULLIF(btrim(od.provider_message_id), '') IS NOT NULL
+      AND COALESCE(od.submitted_at, od.delivered_at) <= ${input.occurredAt}::timestamptz
+      AND NOT EXISTS (
+        SELECT 1 FROM messages intervening
+        WHERE intervening.conversation_id = m.conversation_id AND intervening.direction = 'inbound'
+          AND intervening.created_at > m.created_at
+      )
+    ORDER BY COALESCE(od.submitted_at, od.delivered_at) DESC, m.created_at DESC, m.id DESC
+    LIMIT 1
+  `;
+  const request = rows[0];
+  if (!request) return null;
+  const stored = request.previous && typeof request.previous === 'object' && !Array.isArray(request.previous)
+    ? request.previous as Record<string, unknown> : null;
+  const canonical = input.contact.name ? splitFullName(input.contact.name) : null;
+  const storedParts = {
+    firstName: typeof stored?.first_name === 'string' ? stored.first_name : null,
+    surname: typeof stored?.surname === 'string' ? stored.surname : null,
+  };
+  const storedName = [storedParts.firstName, storedParts.surname].filter(Boolean).join(' ');
+  const previous = !canonical || storedName === input.contact.name ? storedParts
+    : { firstName: canonical.nombre || null, surname: canonical.apellido || null };
+  const captured = extractContactNameAnswer(input.text, request.content, previous);
+  return captured ? { ...captured, requestMessageId: request.id } : null;
+}
+
 async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
   const channel = resolveLogicalChannel(envelope);
   // sandbox_provider (e.g. 'telegram_sandbox') wins over the default derivation so
@@ -342,35 +392,6 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
       }
     }
 
-    // Captura determinista y consentida de identidad: el cliente la escribió
-    // él mismo en este mensaje ("Soy Bruno Aguilar, bruno@…"). Última
-    // declaración gana; un mensaje sin identidad nunca borra la existente.
-    // P0 (informe 2026-08-23): el bot afirmaba registrar datos que ninguna
-    // pieza persistía — esta es la pieza que los persiste.
-    const capturedIdentity =
-      envelope.message.type === 'unsupported'
-        ? { name: null, email: null, declaredPhone: null }
-        : extractContactIdentity(envelope.message.text, contact.name);
-    if (
-      capturedIdentity.name !== null
-      || capturedIdentity.email !== null
-      || capturedIdentity.declaredPhone !== null
-    ) {
-      // `phone` NO se toca: es la clave de identidad del canal, NOT NULL
-      // UNIQUE, y pisarla dejaría al contacto sin poder ser encontrado por su
-      // propio canal. El teléfono declarado vive en su propia columna.
-      await db`
-        UPDATE contacts
-        SET
-          name = COALESCE(${capturedIdentity.name}, name),
-          email = COALESCE(${capturedIdentity.email}, email),
-          declared_phone = COALESCE(${capturedIdentity.declaredPhone}, declared_phone),
-          updated_at = now()
-        WHERE id = ${contact.id}::uuid
-      `;
-      contact.name = capturedIdentity.name ?? contact.name;
-      contact.email = capturedIdentity.email ?? contact.email;
-    }
     mark('contact');
 
     const threads = await db<Array<{ id: string; contact_id: string }>>`
@@ -438,6 +459,46 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
     }
     mark('conversation');
 
+    // Contextual name capture needs the conversation AND proof that the last
+    // request reached this same destination. A pending draft, stale request,
+    // model state or request from another channel thread cannot authorize it.
+    // Captura determinista y consentida de identidad: el cliente la escribió
+    // él mismo en este mensaje ("Soy Bruno Aguilar, bruno@…"). Última
+    // declaración gana; un mensaje sin identidad nunca borra la existente.
+    // P0 (informe 2026-08-23): el bot afirmaba registrar datos que ninguna
+    // pieza persistía — esta es la pieza que los persiste.
+    const volunteeredIdentity =
+      envelope.message.type === 'unsupported'
+        ? { name: null, email: null, declaredPhone: null }
+        : extractContactIdentity(envelope.message.text, contact.name);
+    const contextual = envelope.message.type === 'unsupported' || volunteeredIdentity.name !== null ? null
+      : await captureDeliveredContactNameAnswer(db, {
+        conversationId, contact, provider, integrationId: envelope.integration_id,
+        text: envelope.message.text, occurredAt: envelope.message.occurred_at,
+      });
+    const capturedIdentity = { ...volunteeredIdentity, name: volunteeredIdentity.name ?? contextual?.name ?? null };
+    if (
+      capturedIdentity.name !== null
+      || capturedIdentity.email !== null
+      || capturedIdentity.declaredPhone !== null
+    ) {
+      // `phone` NO se toca: es la clave de identidad del canal, NOT NULL
+      // UNIQUE, y pisarla dejaría al contacto sin poder ser encontrado por su
+      // propio canal. El teléfono declarado vive en su propia columna.
+      await db`
+        UPDATE contacts
+        SET
+          name = COALESCE(${capturedIdentity.name}, name),
+          email = COALESCE(${capturedIdentity.email}, email),
+          declared_phone = COALESCE(${capturedIdentity.declaredPhone}, declared_phone),
+          updated_at = now()
+        WHERE id = ${contact.id}::uuid
+      `;
+      contact.name = capturedIdentity.name ?? contact.name;
+      contact.email = capturedIdentity.email ?? contact.email;
+    }
+    mark('identity');
+
     // Both branches surface the resulting consent themselves (RETURNING /
     // the function's current_status), so no separate final SELECT is needed.
     const explicitOptOut = isExplicitOptOut(envelope.message.text);
@@ -501,6 +562,12 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
         occurred_at: envelope.message.occurred_at,
         reply_to_external_message_id: envelope.message.reply_to_external_message_id,
         opt_out_ack_eligible: optOutAckEligible,
+        // Backend-owned provenance, never copied from envelope metadata. A
+        // surname alone is kept here until a requested first name completes it.
+        ...(contextual ? { contact_name_answer_v1: {
+          request_message_id: contextual.requestMessageId,
+          first_name: contextual.firstName, surname: contextual.surname,
+        } } : {}),
       },
     }, {
       db,

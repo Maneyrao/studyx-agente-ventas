@@ -92,7 +92,7 @@ describe('prepareAgentTurnV2', () => {
         response: { messages: ['Buenísimo. Redes es una opción práctica; veamos si encaja con lo que buscás.'] },
         used_fact_ids: ['offering:redes_informaticas:name:v1'],
       }),
-    }, { state_store: store(null) });
+    }, { state_store: store(state({ call_preference: 'chat', call_offer_status: 'declined' })), now: () => Date.parse(index.as_of) });
 
     expect(prepared).not.toHaveProperty('plan');
     expect(prepared.decision).toMatchObject({
@@ -122,7 +122,7 @@ describe('prepareAgentTurnV2', () => {
           'offering:redes_informaticas:modality:v1',
         ],
       }),
-    }, { state_store: store(null) });
+    }, { state_store: store(state({ call_preference: 'chat', call_offer_status: 'declined' })), now: () => Date.parse(index.as_of) });
 
     expect(prepared.decision.response).toBe('Redes Informáticas tiene 16 clases y se cursa online.');
     expect(prepared.authorized_protected_facts).toEqual(expect.arrayContaining([
@@ -171,7 +171,7 @@ describe('prepareAgentTurnV2', () => {
         },
         used_fact_ids: ['offering:curso_inexistente:duration:v1'],
       }),
-    }, { state_store: store(null) })).rejects.toMatchObject({
+    }, { state_store: store(state({ call_preference: 'chat', call_offer_status: 'declined' })), now: () => Date.parse(index.as_of) })).rejects.toMatchObject({
       code: 'AGENT_TURN_V2_REJECTED', reasons: ['FACT_NOT_AUTHORIZED'],
     });
   });

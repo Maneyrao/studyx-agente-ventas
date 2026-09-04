@@ -69,6 +69,7 @@ function authorize(input: {
   intake?: typeof completeIntake;
   mayOfferCall?: boolean;
   mayRequestCall?: boolean;
+  customerText?: string;
 }) {
   return authorizeAgentTurnV2({
     proposal: input.proposal,
@@ -76,6 +77,7 @@ function authorize(input: {
     offerings,
     facts,
     contact_intake: input.intake,
+    current_customer_messages: input.customerText ? [input.customerText] : [],
     call_policy: {
       may_offer_call: input.mayOfferCall ?? true,
       may_request_call_now: input.mayRequestCall ?? true,
@@ -86,6 +88,7 @@ function authorize(input: {
 describe('plannerless Agent A authority', () => {
   it('preserves model-owned copy while reducing a canonical course selection', () => {
     const result = authorize({
+      mayOfferCall: false, // This fixture isolates course/fact authority when a call is unavailable.
       proposal: proposal({
         move: {
           schema_version: 1, move: 'select_course', secondary_moves: [], vetoes: [],
@@ -106,6 +109,7 @@ describe('plannerless Agent A authority', () => {
 
   it('rejects a detailed fact from a course other than the resolved course', () => {
     const result = authorize({
+      mayOfferCall: false, // This fixture isolates course/fact authority when a call is unavailable.
       proposal: proposal({
         move: {
           schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
@@ -346,6 +350,7 @@ describe('payment link consent across intake', () => {
   it.each(['continue_by_chat', 'decline_call'] as const)(
     'preserves explicit link consent while the customer chooses %s', (chatMove) => {
       const result = authorize({
+        customerText: 'No quiero una llamada, sigamos por chat y mandame el link.',
         state: state({ selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6' }),
         proposal: proposal({
           move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [chatMove], vetoes: [], confidence: 1 },
@@ -358,6 +363,7 @@ describe('payment link consent across intake', () => {
 
   it('changing course clears the former plan and pending link consent', () => {
     const result = authorize({
+      mayOfferCall: false, // This fixture isolates course/fact authority when a call is unavailable.
       state: state({ selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6', awaiting_reply: 'contact_details' }),
       intake: completeIntake,
       proposal: proposal({
@@ -400,6 +406,7 @@ describe('payment link consent across intake', () => {
       stage: 'plan_selected', awaiting_reply: 'contact_details',
     });
     const deferred = authorize({
+      customerText: 'Todavía no, prefiero pagar más adelante.',
       state: initialState,
       proposal: proposal({
         move: { schema_version: 1, move: 'defer_payment', secondary_moves: [], vetoes: [], confidence: 1 },
@@ -418,8 +425,130 @@ describe('payment link consent across intake', () => {
     expect(details).toMatchObject({ ok: true, action: { type: 'none' } });
   });
 
+  it('rejects a fabricated payment deferral while durable intake is pending', () => {
+    const result = authorize({
+      customerText: 'Inés',
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected',
+        awaiting_reply: 'contact_details',
+      }),
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'defer_payment', secondary_moves: [],
+          vetoes: ['payment_link'], confidence: 0.91,
+        },
+        response: { messages: ['¡Gracias, Inés!'] },
+      }),
+    });
+
+    expect(result).toEqual({ ok: false, reasons: ['MISSING_INTAKE'] });
+  });
+
+  it('rejects a fabricated purchase decline and keeps durable intake pending', () => {
+    const result = authorize({
+      customerText: 'Inés',
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected',
+        awaiting_reply: 'contact_details',
+      }),
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'decline_purchase', secondary_moves: [],
+          vetoes: ['purchase'], confidence: 0.91,
+        },
+        response: { messages: ['¡Gracias, Inés!'] },
+      }),
+    });
+
+    expect(result).toEqual({ ok: false, reasons: ['MISSING_INTAKE'] });
+  });
+
+  it('closes the sale only when the current message explicitly declines the purchase', () => {
+    const result = authorize({
+      customerText: 'No quiero comprar el curso.',
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected',
+        awaiting_reply: 'contact_details',
+      }),
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'decline_purchase', secondary_moves: [],
+          vetoes: ['purchase'], confidence: 0.99,
+        },
+        response: { messages: ['Entiendo. Si más adelante querés retomarlo, escribime.'] },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: { type: 'none' },
+      transition: { stage: 'closed', awaiting_reply: 'none' },
+    });
+  });
+
+  it.each([
+    'No quiero comprar ahora.',
+    'No me voy a inscribir todavía.',
+  ])('treats a time-bounded refusal as deferral without closing the sale: %s', (customerText) => {
+    const result = authorize({
+      customerText,
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected',
+        awaiting_reply: 'contact_details',
+      }),
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'decline_purchase', secondary_moves: [],
+          vetoes: ['purchase'], confidence: 0.99,
+        },
+        response: { messages: ['Entiendo, podemos retomarlo cuando te quede cómodo.'] },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: { type: 'none' },
+      transition: { stage: 'plan_selected', awaiting_reply: 'none' },
+    });
+  });
+
+  it('checks intake continuation after removing an unsupported state claim', () => {
+    const result = authorize({
+      customerText: 'Inés',
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected',
+        awaiting_reply: 'contact_details',
+      }),
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'provide_contact_details', secondary_moves: [],
+          vetoes: [], confidence: 0.99,
+        },
+        response: {
+          messages: [
+            'Gracias, Inés.',
+            'Ya tengo tus datos registrados, ¿me pasás tu correo?',
+          ],
+        },
+      }),
+    });
+
+    expect(result).toEqual({ ok: false, reasons: ['MISSING_INTAKE'] });
+  });
+
   it('a postponement takes precedence over a conflicting link request', () => {
     const result = authorize({
+      customerText: 'Todavía no me mandes el link; prefiero seguir más adelante.',
       state: state({ selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6' }),
       intake: completeIntake,
       proposal: proposal({

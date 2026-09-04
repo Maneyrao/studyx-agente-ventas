@@ -1,3 +1,7 @@
+import {
+  supportsCallRequestV1,
+  supportsChatPreferenceV1,
+} from './channel-preference-evidence';
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import {
   AgentATurnProposalV1Schema,
@@ -17,6 +21,10 @@ import {
   extractUrlCandidates,
   isValueFreeNarrativePortable,
 } from '../../utils/authorized-egress';
+import {
+  hasExplicitPurchaseDecline,
+  hasTemporalPaymentDeferral,
+} from '../../utils/payment-choice';
 
 const GROQ_CHAT_COMPLETIONS_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
@@ -149,6 +157,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
 
   try {
     let accumulatedTokenUsage: GeneratedAgentATurnProposalV1['token_usage'];
+    let retryDiagnostic: string | null = null;
     for (const attempt of [1, 2] as const) {
       let response: Response;
       try {
@@ -161,7 +170,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
           body: JSON.stringify({
             model,
             instructions: buildAgentABrainInstructionsV1(input.context),
-            input: `Current customer messages: ${JSON.stringify(input.context.turn.batch_messages.map((message) => message.text))}\nAnswer these messages and return only the single AgentATurnProposalV1 JSON object.`,
+            input: `Current customer messages: ${JSON.stringify(input.context.turn.batch_messages.map((message) => message.text))}\nAnswer these messages and return only the single AgentATurnProposalV1 JSON object.${retryDiagnostic ? `\nThe previous output failed validation at ${retryDiagnostic}. Return a corrected full object. When call_offer is non-null, response.messages must contain exactly one item and call_offer must be declarative without a question mark.` : ''}`,
             reasoning: { effort: 'none' },
             temperature: 0.2,
             stream: false,
@@ -210,7 +219,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
       try {
         decoded = parseDeepSeekJsonContent(content);
       } catch {
-        if (attempt === 1 && !controller.signal.aborted) continue;
+        if (attempt === 1 && !controller.signal.aborted) { retryDiagnostic = 'root:invalid_json'; continue; }
         throw new AgentABrainError('BRAIN_DEEPSEEK_INVALID_JSON', response.status);
       }
       let proposal: AgentATurnProposalV1;
@@ -225,7 +234,10 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
           && error instanceof AgentABrainError
           && error.code === 'BRAIN_INVALID_SCHEMA'
           && !controller.signal.aborted
-        ) continue;
+        ) {
+          retryDiagnostic = error.detail ?? 'root:invalid_schema';
+          continue;
+        }
         throw error;
       }
       return {
@@ -365,7 +377,7 @@ const COURSE_REFERENCE_MOVES = new Set([
 ]);
 const AREA_REFERENCE_MOVES = new Set(['browse_catalog', 'select_area']);
 const PAYMENT_PLAN_MOVES = new Set(['select_payment_plan', 'defer_payment', 'request_payment_link']);
-const MOVE_SEMANTICS = `Classify only the current customer message, using prior state solely to resolve short contextual replies. greeting is a current greeting or social opening. report_payment requires an explicit current-message claim that payment already happened; never use it for a greeting, a status question, a future intention, or merely because a link was sent earlier. ask_current_state is a question about what is already selected, sent, or recorded. provide_contact_details means the current message actually supplies identity details. select_payment_plan records a chosen plan; request_payment_link requires an explicit request to receive or advance with the link. unknown is only for meaning that remains unresolved after applying awaiting_reply.`;
+const MOVE_SEMANTICS = `Classify only the current customer message, using prior state solely to resolve short contextual replies. continue_by_chat and decline_call require an explicit channel preference or a refusal of a pending call offer; study goals and ordinary diagnostic replies are not channel choices. greeting is a current greeting or social opening. report_payment requires an explicit current-message claim that payment already happened; never use it for a greeting, a status question, a future intention, or merely because a link was sent earlier. ask_current_state is a question about what is already selected, sent, or recorded. provide_contact_details means the current message actually supplies identity details. select_payment_plan records a chosen plan; request_payment_link requires an explicit request to receive or advance with the link. unknown is only for meaning that remains unresolved after applying awaiting_reply.`;
 
 function closedObject(properties: Record<string, unknown>) {
   return { type: 'object', properties, required: Object.keys(properties), additionalProperties: false };
@@ -684,6 +696,31 @@ function authorizedFactIds(context: AgentAContextV1): Set<string> {
   return ids;
 }
 
+function schemaIssueDiagnostic(issue: {
+  readonly code: string;
+  readonly path: readonly PropertyKey[];
+  readonly errors?: readonly (readonly {
+    readonly code: string;
+    readonly path: readonly PropertyKey[];
+    readonly errors?: readonly unknown[];
+  }[])[];
+}, parentPath: readonly PropertyKey[] = []): string {
+  const path = [...parentPath, ...issue.path];
+  const nested = issue.errors?.[0]?.[0];
+  if (nested) {
+    return schemaIssueDiagnostic(
+      nested as Parameters<typeof schemaIssueDiagnostic>[0],
+      path,
+    );
+  }
+  const suffix = path
+    .map((segment) => typeof segment === 'string' && /^[a-z][a-z0-9_]*$/u.test(segment)
+      ? segment
+      : 'item')
+    .join('.');
+  return `${suffix || 'root'}:${issue.code}`;
+}
+
 export function parseAgentATurnProposalV1(raw: unknown, context: AgentAContextV1): AgentATurnProposalV1 {
   const normalized = normalizeStrictProposal(raw, context);
   const normalizedMove = normalized && typeof normalized === 'object' && !Array.isArray(normalized)
@@ -709,9 +746,7 @@ export function parseAgentATurnProposalV1(raw: unknown, context: AgentAContextV1
     throw new AgentABrainError(
       'BRAIN_INVALID_SCHEMA',
       null,
-      first
-        ? `${(first.path.join('.') || 'root').slice(0, 160)}:${first.code}`
-        : null,
+      first ? schemaIssueDiagnostic(first).slice(0, 160) : null,
     );
   }
   const facts = authorizedFactIds(context);
@@ -1234,7 +1269,7 @@ export function validateAgentATurnProposalV1(input: {
   if (previousReply && sameVisibleText(input.proposal.response.messages, previousReply)) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_reply' });
   }
-  const currentCustomerText = input.context.turn.batch_messages.map((message) => message.text).join(' ');
+  const currentCustomerText = input.context.turn.batch_messages.map((message) => message.text).join('\n');
   if (
     previousReply
     && !CUSTOMER_REQUESTS_REPEAT.test(currentCustomerText)
@@ -1295,6 +1330,21 @@ export function validateAgentATurnProposalV1(input: {
   }
 
   // V4 — la acción y sus precondiciones.
+  const claimsIncompleteIntakeAsRecorded = (input.context.capabilities.intake_missing ?? []).length > 0
+    && input.proposal.response.messages.some((message) => {
+      const normalized = message.normalize('NFD')
+        .replace(/[\u0300-\u036f]/gu, '')
+        .toLocaleLowerCase('es');
+      return normalized.split(/[.!?\n]+/u).some((clause) => {
+        const claim = /\b(?:quedo|registre|registro|registrado|registrada|guarde|guardo|guardado|guardada|tengo|tenemos)\w*\b[^.!?]{0,60}\b(?:datos|nombre|apellido|correo|email|telefono)\b/u;
+        const negatedClaim = /\b(?:no|aun\s+no|todavia\s+no)\b[^.!?]{0,24}\b(?:quedo|registre|registro|registrado|registrada|guarde|guardo|guardado|guardada|tengo|tenemos)\w*\b/u;
+        return claim.test(clause) && !negatedClaim.test(clause);
+      });
+    });
+  if (claimsIncompleteIntakeAsRecorded) {
+    rejections.push({ code: 'UNSUPPORTED_OPERATIONAL_CLAIM', subject: 'contact_details' });
+  }
+
   const action = input.proposal.proposed_action
   if (action.type === 'send_payment_link') {
     if (!input.context.capabilities.may_send_payment_link) {
@@ -1321,12 +1371,23 @@ export function validateAgentATurnProposalV1(input: {
     ...input.proposal.move.secondary_moves,
   ]);
   const missingIntake = input.context.capabilities.intake_missing ?? [];
-  const paymentDeferred = moves.has('defer_payment') || moves.has('decline_purchase')
-    || input.proposal.move.vetoes.includes('payment_link')
-    || input.proposal.move.vetoes.includes('purchase');
+  const currentPaymentDeferral = hasTemporalPaymentDeferral(
+    input.context.turn.batch_messages.map((message) => ({ content: message.text })),
+    input.context.commercial_state.awaiting_reply === 'payment_confirmation'
+      || input.context.commercial_state.awaiting_reply === 'contact_details',
+  );
+  const currentPurchaseDecline = hasExplicitPurchaseDecline(
+    input.context.turn.batch_messages.map((message) => ({ content: message.text })),
+  );
+  const paymentDeferred = (moves.has('decline_purchase') && currentPurchaseDecline) || (
+    currentPaymentDeferral && (
+      moves.has('defer_payment')
+      || input.proposal.move.vetoes.includes('payment_link')
+      || input.proposal.move.vetoes.includes('purchase')
+    )
+  );
   const mustGuideIntake = missingIntake.length > 0 && !paymentDeferred && (
-    (moves.has('provide_contact_details')
-      && input.context.commercial_state.awaiting_reply === 'contact_details')
+    input.context.commercial_state.awaiting_reply === 'contact_details'
     || moves.has('request_payment_link')
   );
   if (
@@ -1339,11 +1400,47 @@ export function validateAgentATurnProposalV1(input: {
 
   // V6 — ofertas visibles <= ledger, tope dos. Una oferta que el modelo
   // escribe dentro de su propia narrativa cuenta igual que la del campo.
-  const offersACall = typeof input.proposal.response.call_offer === 'string'
-    && solicitsACallV1(input.proposal.response.call_offer, true)
+  const declaredCallOffer = input.proposal.response.call_offer;
+  // A declaration that also claims an enrolment already exists is removed by
+  // the backend's state guard, so it cannot count as the required visible offer.
+  const unsupportedDeclaredOffer = typeof declaredCallOffer === 'string'
+    && /\b(?:inscripci[oó]n|matr[ií]cula|preinscripci[oó]n)\b[^.!?]{0,48}\b(?:confirmad|cargad|completad|realizad|registrad)\w*/iu.test(declaredCallOffer);
+  if (unsupportedDeclaredOffer) {
+    rejections.push({ code: 'UNSUPPORTED_OPERATIONAL_CLAIM', subject: 'call_offer' });
+  }
+  const offersACall = !unsupportedDeclaredOffer && typeof declaredCallOffer === 'string'
+    && solicitsACallV1(declaredCallOffer, true)
     || input.proposal.response.messages.some((message) => solicitsACallV1(message))
   if (offersACall && !input.context.capabilities.may_offer_call) {
     rejections.push({ code: 'CALL_BUDGET_EXHAUSTED', subject: 'call_offer' })
+  }
+
+  const channelChoice = moves.has('continue_by_chat') || moves.has('decline_call');
+  if ((channelChoice || input.proposal.move.vetoes.includes('call')) && !supportsChatPreferenceV1(
+    currentCustomerText, input.context.commercial_state.awaiting_reply === 'call_or_chat',
+  )) {
+    rejections.push({ code: 'CHANNEL_PREFERENCE_NOT_SUPPORTED', subject: 'call_preference' });
+  }
+  if (input.proposal.move.vetoes.includes('call') && !channelChoice) rejections.push({ code: 'CHANNEL_PREFERENCE_NOT_SUPPORTED', subject: 'call_preference' });
+  if (channelChoice && offersACall) rejections.push({ code: 'CHANNEL_PREFERENCE_NOT_SUPPORTED', subject: 'call_offer' });
+  const callRequestSupported = supportsCallRequestV1(
+    currentCustomerText,
+    input.context.commercial_state.awaiting_reply === 'call_or_chat',
+  );
+  const requestedCallNow = moves.has('request_call') && input.proposal.proposed_action.type === 'request_call_now'
+    && input.context.capabilities.may_request_call_now && callRequestSupported;
+  if ((moves.has('request_call') || input.proposal.proposed_action.type === 'request_call_now')
+      && !requestedCallNow
+      && !rejections.some((reason) => reason.code === 'ACTION_NOT_AUTHORIZED' && reason.subject === 'request_call_now')) {
+    rejections.push({ code: 'ACTION_NOT_AUTHORIZED', subject: 'request_call_now' });
+  }
+  const state = input.context.commercial_state;
+  if ((moves.has('select_course') || moves.has('ask_course_information'))
+    && state.selected_offering_code !== null && input.context.capabilities.may_offer_call
+    && state.call_offer_count === 0 && state.call_preference === 'unknown'
+    && state.call_offer_status === 'not_offered' && !channelChoice
+    && !requestedCallNow && !offersACall) {
+    rejections.push({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
   }
 
   // V7 — ninguna URL escrita por el modelo. El link lo inserta el backend.
@@ -1425,6 +1522,8 @@ export function decideRepairLevelV1(input: {
     || reason.code === 'CALL_BUDGET_EXHAUSTED'
     || reason.code === 'MISSING_INTAKE'
     || reason.code === 'REPEATED_AGENT_REPLY'
+    || reason.code === 'CALL_OFFER_REQUIRED'
+    || reason.code === 'CHANNEL_PREFERENCE_NOT_SUPPORTED'
   ))
 
   // La repetición puede aparecer recién al podar: el borrador traía además

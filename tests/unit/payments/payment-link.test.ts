@@ -21,6 +21,8 @@ import {
   classifyCurrentPaymentIntent,
   derivePaymentChoiceFromBatch,
   derivePaymentPlanSelectionFromBatch,
+  hasExplicitPurchaseDecline,
+  hasTemporalPaymentDeferral,
 } from '../../../src/features/payments/domain/payment-choice-policy';
 import { createConfigPaymentLinkResolver } from '../../../src/features/payments/adapters/config-payment-link.resolver';
 import {
@@ -236,6 +238,49 @@ describe('deterministic payment-link authorization', () => {
 
   it('classifies a planless "ahora sí" as a resumable authorization', () => {
     expect(classifyCurrentPaymentIntent([msg('Ahora sí.')])).toEqual({ kind: 'resume' });
+  });
+
+  it.each([
+    'Por ahora no tengo correo; mi teléfono es +54 9 11 1234 5678',
+    'Después te paso mi apellido',
+  ])('does not confuse contact-detail timing with payment deferral: %s', (content) => {
+    expect(hasTemporalPaymentDeferral([msg(content)])).toBe(false);
+    expect(classifyCurrentPaymentIntent([msg(content)])).toEqual({ kind: 'none' });
+  });
+
+  it.each([
+    'Prefiero esperar para pagar',
+    'No puedo pagar en este momento',
+    'No quiero comprar ahora',
+    'No me voy a inscribir todavía',
+  ])('recognizes an explicit payment postponement: %s', (content) => {
+    expect(hasTemporalPaymentDeferral([msg(content)])).toBe(true);
+    expect(classifyCurrentPaymentIntent([msg(content)])).toEqual({ kind: 'veto' });
+  });
+
+  it('accepts a short contextual postponement only when the caller supplies payment context', () => {
+    expect(hasTemporalPaymentDeferral([msg('Todavía no')])).toBe(false);
+    expect(hasTemporalPaymentDeferral([msg('Todavía no')], true)).toBe(true);
+    expect(hasTemporalPaymentDeferral([msg('Por ahora no tengo correo')], true)).toBe(false);
+  });
+
+  it.each([
+    'No quiero comprar el curso',
+    'No me interesa inscribirme',
+  ])('requires current evidence before accepting a purchase decline: %s', (content) => {
+    expect(hasExplicitPurchaseDecline([msg(content)])).toBe(true);
+    expect(classifyCurrentPaymentIntent([msg(content)])).toEqual({ kind: 'veto' });
+  });
+
+  it.each([
+    'Inés',
+    'Después te paso mi apellido',
+    'Por ahora no tengo correo',
+    'Por ahora no me voy a anotar, lo voy a pensar',
+    'No quiero comprar ahora',
+    'No me voy a inscribir todavía',
+  ])('does not manufacture a permanent purchase decline from: %s', (content) => {
+    expect(hasExplicitPurchaseDecline([msg(content)])).toBe(false);
   });
 });
 

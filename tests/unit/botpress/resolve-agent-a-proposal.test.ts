@@ -27,7 +27,7 @@ function context(): AgentAContextV1 {
       areas: [], candidate_offerings: [], payment_plans: [],
     },
     capabilities: {
-      may_reply: true, may_offer_call: true, may_request_call_now: false,
+      may_reply: true, may_offer_call: false, may_request_call_now: false,
       may_present_payment_options: true, may_send_payment_link: false,
       authorized_payment_plan: null, intake_status: 'known' as const, intake_missing: [],
     },

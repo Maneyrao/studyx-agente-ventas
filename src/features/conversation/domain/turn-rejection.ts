@@ -23,6 +23,8 @@ export const TURN_REJECTION_CODES_V1 = [
   'MISSING_INTAKE',
   /** Tercera oferta de llamada. */
   'CALL_BUDGET_EXHAUSTED',
+  'CALL_OFFER_REQUIRED',
+  'CHANNEL_PREFERENCE_NOT_SUPPORTED',
   /** Afirmó alta, acceso, inscripción o pago verificado sin respaldo. */
   'UNSUPPORTED_OPERATIONAL_CLAIM',
   'PLAN_NOT_SELECTED',
@@ -94,5 +96,7 @@ export function isPrunableRejectionV1(rejection: TurnRejectionV1): boolean {
     reason.code === 'ACTION_NOT_AUTHORIZED'
     || reason.code === 'CALL_BUDGET_EXHAUSTED'
     || reason.code === 'MISSING_INTAKE'
+    || reason.code === 'CALL_OFFER_REQUIRED'
+    || reason.code === 'CHANNEL_PREFERENCE_NOT_SUPPORTED'
   ));
 }

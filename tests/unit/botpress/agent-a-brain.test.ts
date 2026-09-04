@@ -91,6 +91,7 @@ describe('Agent A Brain V1', () => {
   it.each(['USD 360', 'USD 360.0', 'USD 360.00'])(
     'accepts equivalent zero cents without rejecting an authorized total: %s', (total) => {
       const ctx = context();
+      ctx.capabilities.may_offer_call = false; // Monetary normalization, no call capability.
       const priceId = 'payment:redes-informaticas:monthly_12:price:v1';
       ctx.catalog.selected_offering!.facts.push({ id: priceId, kind: 'payment_plan_price', value: 'USD 360.00' });
       const parsed = parseAgentATurnProposalV1(proposal({
@@ -296,7 +297,7 @@ describe('Agent A Brain V1', () => {
 
     expect(validateAgentATurnProposalV1({
       proposal: authorized,
-      context: context(),
+      context: { ...context(), capabilities: { ...context().capabilities, may_offer_call: false } },
       planned_fact_ids: ['offering:redes-informaticas:name:v1'],
       rejection_id: '00000000-0000-4000-8000-000000000098',
     })).toBeNull();
@@ -775,6 +776,9 @@ describe('Agent A Brain V1', () => {
       attempt_count: 2,
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    const retryBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+    expect(retryBody.input).toContain('response.messages:too_small');
+    expect(retryBody.input).toContain('previous output failed validation');
   });
 
   it('retries one malformed DeepSeek JSON response inside the same bounded deadline', async () => {
@@ -795,6 +799,8 @@ describe('Agent A Brain V1', () => {
       attempt_count: 2,
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    const retryBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+    expect(retryBody.input).toContain('root:invalid_json');
   });
 
   it('reassembles a structured DeepSeek response split across output_text items', async () => {
