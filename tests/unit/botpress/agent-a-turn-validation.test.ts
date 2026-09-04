@@ -310,6 +310,40 @@ describe('intake parcial observable', () => {
     });
     expect(rejection?.rejections ?? []).not.toContainEqual({ code: 'UNSUPPORTED_OPERATIONAL_CLAIM', subject: 'contact_details' });
   });
+
+  it('no confunde el propósito de pedir datos con afirmar que ya fueron registrados', () => {
+    const current = context({
+      commercial_state: {
+        ...context().commercial_state,
+        selected_payment_plan: 'one_time',
+        stage: 'plan_selected',
+        awaiting_reply: 'contact_details',
+      },
+      capabilities: {
+        ...context().capabilities,
+        authorized_payment_plan: 'one_time',
+        intake_missing: ['nombre', 'apellido', 'correo', 'telefono'],
+      },
+    } as Partial<AgentAContextV1>);
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_payment_link', secondary_moves: [],
+          vetoes: [], payment_plan: 'one_time', confidence: 1,
+        },
+        response: {
+          messages: ['Para dejarlo registrado necesito tu nombre, apellido, correo electrónico y teléfono.'],
+          call_offer: null,
+        },
+        used_fact_ids: [],
+      }),
+      context: current,
+      planned_fact_ids: [],
+      rejection_id: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(rejection).toBeNull();
+  });
 });
 
 describe('V8 respuesta repetida', () => {

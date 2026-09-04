@@ -1,10 +1,10 @@
 # Agente A V21 — candidato local y gate pendiente
 
-Actualización: 2026-09-04 20:47 UTC.
+Actualización: 2026-09-04 21:50 UTC.
 
 ## Estado
 
-**READY_FOR_SINGLE_PAID_RERUN. No está aprobado para desplegar ni para canario de Telegram.**
+**READY_FOR_FRESH_PAID_RERUN. No está aprobado para desplegar ni para canario de Telegram.**
 
 Producción continúa en `07328e23f97054aeb92a108562f70b6ef3a88bb4`, Brain V20. Vercel continúa en `dpl_4oQWvw17x2Pr6dVrXbW1qZ7adP4i`; Botpress STUDYX continúa con la publicación observada el 2026-09-04 a las 17:00:07 UTC. Este trabajo no ejecutó ninguna mutación remota.
 
@@ -30,6 +30,7 @@ El fallo no fue ausencia del prompt. El modelo recibió un contexto que ya decí
 - Si llegan varios mensajes juntos, la última elección explícita de canal manda. Una preferencia final por chat bloquea `request_call_now`; un pedido final de llamada lo habilita. Preguntas naturales como “¿Hablamos por teléfono?” se reconocen y un rechazo como “No quiero una llamada” nunca puede convertirse en handoff.
 - La identidad se extrae según el pedido efectivamente entregado en la misma conversación, contacto, integración, proveedor y destino. Admite nombre y apellido en mensajes separados y no confía en metadata como si fuera respuesta.
 - El intake incompleto no puede producir “quedó registrado” ni una respuesta que omita el siguiente campo pendiente.
+- “Para dejarlo registrado necesito…” y “me falta… para dejarlo registrado” se reconocen como pedidos futuros tanto en el ADK como en el backend. Ya no se confunden con una afirmación de persistencia.
 - El curso y plan persisten durante el intake. El backend materializa solamente el link canónico configurado después de pedido explícito y datos completos.
 - `defer_payment` y `decline_purchase` requieren evidencia actual. “Después te paso mi apellido” no posterga el pago y “Inés” no cierra la venta.
 - El segundo intento por JSON/schema inválido recibe el campo y código concretos sin sumar retries.
@@ -38,34 +39,29 @@ Estas medidas corresponden a las prácticas de feedback correlacionado y context
 
 ## Workflow V21 observado
 
-Se ejecutó una sola regresión paga de 11 turnos. Falló al preparar el turno 9, después de ocho intercambios visibles:
+Las repeticiones pagas posteriores encontraron dos falsos positivos adicionales antes de terminar la conversación. DeepSeek sí generó “Para dejarlo registrado necesito…” y, después de recibir `Inés`, “Me falta tu apellido… para dejarlo registrado”. El validador del ADK interpretó primero la finalidad futura como si fuera una afirmación de datos ya guardados. El backend tenía el mismo error con la forma pronominal “dejarlo registrado”. La poda por repetición terminó entregando solamente “¡Gracias, Inés!”.
 
-1. **Cliente:** Hola, quisiera información del curso de fotografía.
-   **Agente:** desambiguó Fotografía Profesional frente a Fotografía con Celulares para Tiendas Online.
-2. **Cliente:** Me interesa Fotografía Profesional.
-   **Agente:** informó 41 clases y ofreció una llamada breve.
-3. **Cliente:** Quizás personal.
-   **Agente:** explicó la utilidad personal y repitió la invitación de llamada.
-4. **Cliente:** No quiero una llamada; prefiero que sigamos por chat.
-   **Agente:** respetó el rechazo, explicó modalidad, 41 clases y certificado, y avanzó a pago.
-5. **Cliente:** ¿Cuál es el precio total y qué opciones de pago tienen?
-   **Agente:** respondió USD 360, 12×USD 30, 6×USD 60 y pago único de USD 360.
-6. **Cliente:** Elijo hacer un pago único al contado.
-   **Agente:** confirmó el plan y pidió permiso para registrar y enviar el link.
-7. **Cliente:** Sí, quiero avanzar ahora: mandame el enlace para pagar al contado.
-   **Agente:** pidió nombre, apellido, correo y teléfono.
-8. **Cliente:** Inés.
-   **Agente:** “¡Gracias, Inés!” y omitió pedir el siguiente campo.
+Eso explica también la falta del link: la persistencia sólo acepta un apellido aislado si el último mensaje efectivamente entregado lo pidió. En la conversación contaminada el pedido había sido podado; por lo tanto `Valdés` no se infirió, `intake_missing=["apellido"]` permaneció activo y `may_send_payment_link=false` bloqueó correctamente la acción. La última reparación no pudo ejecutarse porque se agotó el margen reservable del presupuesto.
 
-Persistencia al fallar: curso `fotografia_profesional`, plan `one_time`, nombre `Inés`, preferencia de llamada `chat/declined`, dos ofertas registradas, `awaiting_reply=contact_details`, cero links y cero acciones de pago. Las ocho salidas quedaron `submitted` por el adaptador local; eso prueba correlación del workflow de laboratorio, no recepción en Telegram.
+El candidato actual corrige ambos validadores y se probó con una conversación nueva de nueve turnos por el handler real, backend real y PostgreSQL real. Sólo la frontera DeepSeek fue sustituida por propuestas fixture, con costo USD 0:
 
-La causa exacta fue una propuesta `defer_payment` sin evidencia. El detector trató esa etiqueta como autorización para suspender el intake; luego la poda por repetición dejó sólo el agradecimiento. El candidato actual reencuadra esa etiqueta como `provide_contact_details`, exige el próximo campo y aplica el mismo gate en ADK y backend. También cierra el bypass equivalente de `decline_purchase` y distingue postergaciones de pago de frases como “después te paso mi apellido”. Estas correcciones se realizaron después del run pago y todavía no tienen una inferencia V21 nueva.
+1. Seleccionó Fotografía Profesional y ofreció una llamada.
+2. Registró el rechazo y continuó por chat sin volver a ofrecerla.
+3. Presentó USD 360, 12×USD 30, 6×USD 60 y pago único de USD 360.
+4. Persistió el plan `one_time`.
+5. Ante el pedido de link solicitó nombre, apellido, correo y teléfono.
+6. Persistió `Inés` y entregó el pedido de apellido, correo y teléfono.
+7. Persistió `Inés Valdés` y pidió correo y teléfono.
+8. Persistió `ines.valdes@example.test` y pidió teléfono.
+9. Persistió `+13055550176`, materializó exactamente `https://example.invalid/eval/contado` y correlacionó decisión, outbound y captura del adaptador.
 
-Artefactos privados: `.eval/codex-20260904/canary-fixes/telegram-regression-paid-final6.log` y `botpress-agent/evals/results/workflow-telegram-regression-checkpoint-2026-09-04T20-21-16-525Z-9698806a-d66f-4ea5-98f1-00e9ee64e2ea.json`.
+Estado final verificado: `fotografia_profesional`, `one_time`, `payment_link_sent`, `callPreference=chat`, `callOfferStatus=declined`, una oferta de llamada, intake completo, una decisión de pago y un único link registrado y entregado. El escenario exige una sola propuesta aceptada por turno; una reparación inesperada lo hace fallar. El archivo completo pasa 4/4 e incluye además postergación, opt-out, idempotencia y caída del proveedor.
+
+Esto certifica contratos, persistencia y entrega del workflow local. La comprensión y naturalidad del modelo requieren todavía una ejecución paga nueva desde una conversación limpia. Artefactos privados: `.eval/codex-20260904/candidate-v21-final/deterministic-sequential-intake-full.log` y `botpress-agent/evals/results/workflow-deterministic-sequential-intake-*.json`.
 
 ## Naturalidad observada
 
-La revisión independiente de esa transcripción dio 3,0/5. La respuesta fue clara y comercial hasta el intake, pero la invitación de llamada del turno 3 repitió casi literalmente la del turno 2 y la respuesta final quedó sin próximo paso. La corrección determinista elimina el cierre truncado; la variación real de la segunda invitación necesita observarse en el próximo workflow.
+La revisión independiente de la primera transcripción fallida dio 3,0/5. En los últimos turnos pagados el modelo desambiguó bien, ofreció llamada, respetó el rechazo, contestó el precio canónico y pidió los cuatro datos. No se recalifica la conversación determinística como naturalidad real porque sus respuestas están fijadas. La variación de la segunda invitación y el cierre completo necesitan observarse en el próximo workflow pago.
 
 | Dimensión | Puntaje / 5 |
 | --- | ---: |
@@ -82,6 +78,9 @@ La revisión independiente de esa transcripción dio 3,0/5. La respuesta fue cla
 
 | Gate | Resultado |
 | --- | --- |
+| Workflow determinístico real | 4/4 pasan; escenario secuencial 9/9 turnos, sin reparaciones |
+| Focales posteriores al último arreglo | 6 archivos, 289/289 pasan |
+| Integraciones posteriores al último arreglo | 2 archivos, 16/16 pasan con PostgreSQL aislado |
 | Focales de pago, contexto, ADK y backend | 237/237 pasan |
 | Suite completa con cobertura | 173 archivos pasan, 2 omitidos; 2666 tests pasan, 7 omitidos, 7 todo |
 | Cobertura | 97,72% statements; 98,29% lines |
@@ -106,6 +105,6 @@ Identidad del artefacto local:
 
 ## Presupuesto y gate restante
 
-El ledger acumulado registra 325 llamadas, una reserva histórica sin usage, USD 0,978618504 consumidos y USD 0,021381496 disponibles del tope USD 1. No se realizó ninguna llamada paga después del fallo descrito.
+El ledger acumulado conserva el gasto histórico de USD 0,38 y registra 354 llamadas. El gasto total es USD 1,03011768 sobre el tope autorizado de USD 1,05; quedan USD 0,01988232. El wrapper exige exactamente ese tope y no permite una nueva llamada cuya reserva máxima lo exceda.
 
-El margen actual no alcanza con seguridad para reservar y completar otra conversación de 11 turnos. Hace falta autorizar al menos USD 0,05 adicionales. Con esa autorización se ejecuta una sola regresión completa; sólo si termina con llamada, fases, identidad, link correcto, persistencia y entrega local correlacionada se puede desplegar V21. Después corresponde un canario supervisado de Telegram que compruebe recepción visible sin pagar el enlace.
+El margen actual es menor que la reserva necesaria para el próximo request y no alcanza para una conversación limpia completa. Para una única regresión de 11 turnos hace falta autorizar elevar el tope acumulado a USD 1,08. Sólo si termina con llamada, fases, identidad, link correcto, persistencia y entrega local correlacionada se puede desplegar V21. Después corresponde un canario supervisado de Telegram que compruebe recepción visible sin pagar el enlace.

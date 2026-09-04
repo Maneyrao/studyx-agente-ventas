@@ -68,6 +68,167 @@ function identity() {
 }
 
 describe('contratos por workflow real con proveedor determinístico sin costo', () => {
+  it('ofrece llamada, captura nombre por partes y entrega el link sólo con intake completo', async () => {
+    const id = identity();
+    const expectedLink = 'https://example.invalid/eval/contado';
+    const turns: { customer: string; evidence: WorkflowTurnEvidenceV1 }[] = [];
+
+    async function send(customer: string, next: AgentATurnProposalV1, linkMayBeDelivered = false) {
+      fixture = next;
+      const evidence = await runWorkflowTurnV1({ ...id, text: customer });
+      turns.push({ customer, evidence });
+      const db = await readWorkflowDbEvidenceV1({
+        databaseUrl,
+        externalConversationId: id.conversationId,
+        adapterCaptures: turns.flatMap((turn) => turn.evidence.adapterCaptures),
+      });
+      const transcript = turns.flatMap((turn) => [
+        { role: 'user', text: turn.customer },
+        ...turn.evidence.authorizedMessages.map((text) => ({ role: 'assistant', text })),
+      ]);
+      writeWorkflowReportV1('workflow-deterministic-sequential-intake-checkpoint', {
+        provider: 'fixture', api_cost_usd: 0, scenario_role: 'contract', ...id, turns, db, transcript,
+      });
+      expect(evidence.errorCode, JSON.stringify(evidence)).toBeNull();
+      expect(evidence.commitSucceeded).toBe(true);
+      expect(evidence.authorizedMessages, 'el turno comercial debe entregar respuesta').not.toHaveLength(0);
+      expect(evidence.adapterCaptures, 'la entrega debe quedar correlacionada').toHaveLength(1);
+      expect(evidence.httpExchanges.filter((item) => item.boundary === 'deepseek'),
+        'la propuesta fixture debe aceptarse en el primer intento').toHaveLength(1);
+      expect(countWorkflowAvailabilityFailuresV1({ turns, db }), 'disponibilidad por turno').toBe(0);
+      if (!linkMayBeDelivered) {
+        expect(db.recordedLinks, 'el link requiere plan, consentimiento e intake completo').toEqual([]);
+        expect(db.deliveredLinks).toEqual([]);
+      }
+      return { db, evidence, text: evidence.authorizedMessages.join('\n') };
+    }
+
+    let next = proposal(
+      'select_course',
+      'Fotografía Profesional tiene 41 clases y se cursa 100% online. ¿Querés que te cuente cómo funciona?',
+      { course_reference: 'Fotografía Profesional' },
+    );
+    next = {
+      ...next,
+      used_fact_ids: [
+        'offering:fotografia_profesional:name:v1',
+        'offering:fotografia_profesional:duration:v1',
+        'offering:fotografia_profesional:modality:v1',
+      ],
+      response: {
+        ...next.response,
+        call_offer: 'Si preferís, podemos coordinar una llamada breve para contarte todos los detalles.',
+      },
+    };
+    let result = await send('Me interesa Fotografía Profesional.', next);
+    expect(result.db.state?.selectedOfferingCode).toBe('fotografia_profesional');
+    expect(result.db.state?.callOfferStatus).toBe('offered');
+    expect(result.db.state?.callOfferCount).toBe(1);
+    expect(result.text).toMatch(/llamada/iu);
+
+    result = await send(
+      'No quiero una llamada; prefiero seguir por chat.',
+      proposal('continue_by_chat', 'Perfecto, seguimos por chat. ¿Querés conocer el precio y las opciones de pago?', {
+        course_reference: 'fotografia_profesional', vetoes: ['call'],
+      }),
+    );
+    expect(result.db.state?.callOfferStatus).toBe('declined');
+    expect(result.db.state?.callPreference).toBe('chat');
+    expect(result.db.state?.callOfferCount).toBe(1);
+
+    next = proposal('ask_payment_options',
+      'El valor total es USD 360. Podés elegir 12 pagos de USD 30, 6 pagos de USD 60 o un pago único de USD 360.',
+      { course_reference: 'fotografia_profesional' });
+    next = { ...next, used_fact_ids: [
+      'payment:fotografia_profesional:monthly_12:label:v1',
+      'payment:fotografia_profesional:monthly_12:price:v1',
+      'payment:fotografia_profesional:monthly_6:label:v1',
+      'payment:fotografia_profesional:monthly_6:price:v1',
+      'payment:fotografia_profesional:one_time:label:v1',
+      'payment:fotografia_profesional:one_time:price:v1',
+    ] };
+    result = await send('Sí, decime el precio y las opciones.', next);
+    expect(result.text).toContain('USD 360');
+    expect(result.text).toContain('12 pagos de USD 30');
+    expect(result.text).toContain('6 pagos de USD 60');
+
+    next = proposal('select_payment_plan', 'Perfecto, quedó elegido el pago único de USD 360. ¿Querés avanzar?', {
+      course_reference: 'fotografia_profesional', payment_plan: 'one_time',
+    });
+    next = { ...next, used_fact_ids: [
+      'payment:fotografia_profesional:one_time:label:v1',
+      'payment:fotografia_profesional:one_time:price:v1',
+    ] };
+    result = await send('Elijo el pago único al contado.', next);
+    expect(result.db.state?.selectedPaymentPlan).toBe('one_time');
+
+    result = await send(
+      'Sí, mandame el enlace para pagar.',
+      proposal('request_payment_link',
+        'Para dejarlo registrado necesito tu nombre, apellido, correo electrónico y teléfono. ¿Me los pasás?', {
+          course_reference: 'fotografia_profesional', payment_plan: 'one_time',
+        }),
+    );
+    expect(result.text).toMatch(/nombre[\s\S]*apellido[\s\S]*correo[\s\S]*tel[eé]fono/iu);
+
+    result = await send(
+      'Inés',
+      proposal('provide_contact_details',
+        '¡Gracias, Inés! Me falta tu apellido, tu correo electrónico y tu teléfono para dejarlo registrado. ¿Me los pasás?', {
+          course_reference: 'fotografia_profesional', payment_plan: 'one_time',
+        }),
+    );
+    expect(result.db.contact?.name).toBe('Inés');
+    expect(result.text).toMatch(/apellido[\s\S]*correo[\s\S]*tel[eé]fono/iu);
+
+    result = await send(
+      'Valdés',
+      proposal('provide_contact_details',
+        '¡Gracias, Inés Valdés! Me falta tu correo electrónico y tu teléfono para dejarlo registrado. ¿Me los pasás?', {
+          course_reference: 'fotografia_profesional', payment_plan: 'one_time',
+        }),
+    );
+    expect(result.db.contact?.name).toBe('Inés Valdés');
+    expect(result.text).toMatch(/correo[\s\S]*tel[eé]fono/iu);
+
+    result = await send(
+      'ines.valdes@example.test',
+      proposal('provide_contact_details',
+        '¡Gracias, Inés! Me falta tu teléfono para dejarlo registrado. ¿Me lo pasás?', {
+          course_reference: 'fotografia_profesional', payment_plan: 'one_time',
+        }),
+    );
+    expect(result.db.contact?.email).toBe('ines.valdes@example.test');
+    expect(result.text).toMatch(/tel[eé]fono/iu);
+
+    next = proposal(
+      'provide_contact_details',
+      '¡Gracias, Inés Valdés! Ya tengo todos tus datos. Te comparto el enlace para pagar al contado.',
+      { course_reference: 'fotografia_profesional', payment_plan: 'one_time' },
+      { type: 'send_payment_link', offering_code: 'fotografia_profesional', payment_plan: 'one_time' },
+    );
+    next = { ...next, used_fact_ids: ['payment:fotografia_profesional:one_time:label:v1'] };
+    result = await send('+1 305 555 0176', next, true);
+    expect(result.db.contact?.name).toBe('Inés Valdés');
+    expect(result.db.contact?.email).toBe('ines.valdes@example.test');
+    expect(result.db.contact?.declaredPhone).toBe('+13055550176');
+    expect(result.db.state?.stage).toBe('payment_link_sent');
+    expect(result.db.recordedLinks).toEqual([expectedLink]);
+    expect(result.db.deliveredLinks).toEqual([expectedLink]);
+    expect(result.text).toContain(expectedLink);
+    expect(result.db.decisions.filter((item) => item.businessActionType === 'send_payment_link'))
+      .toHaveLength(1);
+
+    writeWorkflowReportV1('workflow-deterministic-sequential-intake', {
+      provider: 'fixture', api_cost_usd: 0, scenario_role: 'contract', status: 'passed',
+      ...id, turns, db: result.db,
+      transcript: turns.flatMap((turn) => [
+        { role: 'user', text: turn.customer },
+        ...turn.evidence.authorizedMessages.map((text) => ({ role: 'assistant', text })),
+      ]),
+    });
+  }, 240_000);
+
   it('el ledger cuenta solicitudes de llamada visibles y no cualquier texto del campo call_offer', async () => {
     const id = identity();
     const turns: { customer: string; evidence: WorkflowTurnEvidenceV1 }[] = [];
@@ -89,18 +250,13 @@ describe('contratos por workflow real con proveedor determinístico sin costo', 
     }
     let next = proposal('select_course', 'Puedo ayudarte con esta formación.', { course_reference: 'Redes Informáticas' });
     next = { ...next, response: { ...next.response,
-      call_offer: 'Si querés, puedo contarte más en detalle cómo funciona el curso.' } };
-    let db = await send('Me interesa Redes Informáticas', next, 0, 'not_offered');
-    expect(db.state?.awaitingReply).toBe('none');
-
-    next = proposal('ask_course_information', 'Podemos revisar tus dudas.');
-    next = { ...next, response: { ...next.response, call_offer: '¿Hablamos por teléfono?' } };
-    db = await send('Quiero saber más', next, 1, 'offered');
+      call_offer: 'Si querés, podemos coordinar una llamada breve para ver todos los detalles.' } };
+    let db = await send('Me interesa Redes Informáticas', next, 1, 'offered');
     expect(db.state?.awaitingReply).toBe('call_or_chat');
 
-    next = proposal('continue_by_chat', 'Claro.', { vetoes: ['call'] });
+    next = proposal('continue_by_chat', 'Claro, seguimos por chat.', { vetoes: ['call'] });
     next = { ...next, response: { ...next.response, call_offer: 'Seguimos por chat.' } };
-    db = await send('Prefiero seguir por chat', next, 1, 'declined');
+    db = await send('No quiero una llamada; prefiero seguir por chat', next, 1, 'declined');
     expect(db.state?.awaitingReply).toBe('none');
 
     next = proposal('ask_course_information', 'Puedo ayudarte con el contenido.');
@@ -127,8 +283,11 @@ describe('contratos por workflow real con proveedor determinístico sin costo', 
       return db;
     }
 
-    let db = await send('Me interesa Redes Informáticas', proposal('select_course',
-      'Hola, ¿qué te gustaría aprender en esta formación?', { course_reference: 'Redes Informáticas' }));
+    let next = proposal('select_course',
+      'Hola, ¿qué te gustaría aprender en esta formación?', { course_reference: 'Redes Informáticas' });
+    next = { ...next, response: { ...next.response,
+      call_offer: 'Si querés, podemos coordinar una llamada breve para contarte todos los detalles.' } };
+    let db = await send('Me interesa Redes Informáticas', next);
     expect(db.state?.selectedOfferingCode).toBe('redes_informaticas');
     db = await send('Mejor prefiero Excel Integral', proposal('select_course',
       '¿Qué uso te gustaría darle a lo que aprendas?', { course_reference: 'Excel Integral' }));

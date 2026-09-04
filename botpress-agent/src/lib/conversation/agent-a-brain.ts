@@ -1336,9 +1336,17 @@ export function validateAgentATurnProposalV1(input: {
         .replace(/[\u0300-\u036f]/gu, '')
         .toLocaleLowerCase('es');
       return normalized.split(/[.!?\n]+/u).some((clause) => {
+        // «Para dejarlo registrado necesito…» describes the purpose of the
+        // request. It is not evidence that any field was already persisted.
+        // Remove only that prospective phrase so a later, real assertion in
+        // the same sentence (for example «ya tengo tu correo») is still seen.
+        const assertiveClause = clause.replace(
+          /\bpara\s+(?:poder\s+)?(?:dejar(?:lo|la|te|los|las)?|que\s+quede(?:n)?|quedar)(?:\s+(?:tus?\s+)?datos?)?\s+registrad[oa]s?\b/gu,
+          '',
+        );
         const claim = /\b(?:quedo|registre|registro|registrado|registrada|guarde|guardo|guardado|guardada|tengo|tenemos)\w*\b[^.!?]{0,60}\b(?:datos|nombre|apellido|correo|email|telefono)\b/u;
         const negatedClaim = /\b(?:no|aun\s+no|todavia\s+no)\b[^.!?]{0,24}\b(?:quedo|registre|registro|registrado|registrada|guarde|guardo|guardado|guardada|tengo|tenemos)\w*\b/u;
-        return claim.test(clause) && !negatedClaim.test(clause);
+        return claim.test(assertiveClause) && !negatedClaim.test(assertiveClause);
       });
     });
   if (claimsIncompleteIntakeAsRecorded) {

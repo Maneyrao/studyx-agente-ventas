@@ -25,6 +25,7 @@ PHASE 3 — ruta única, conversación natural y canario. Estado: en curso
 
 ## Tests agregados
 - `tests/workflow/agent-a-telegram-regression.test.ts`: reproduce fotografía, llamada, rechazo, fases, intake separado, link y entrega correlacionada por el workflow real.
+- `tests/workflow/agent-a-deterministic-outcomes.test.ts`: ejecuta el mismo intake `Inés` → `Valdés` → correo → teléfono por workflow, backend y PostgreSQL reales; exige una sola propuesta por turno y verifica el link contra la captura correlacionada del adaptador.
 - `tests/integration/contact-contextual-intake.test.ts`: demuestra persistencia de nombre y apellido desde pedidos realmente entregados y aislamiento por conversación/proveedor/destino.
 - `tests/unit/conversation/agent-a-call-preference-boundary.test.ts`: demuestra evidencia actual, orden de lote, rechazo y solicitud natural de llamada en ADK/backend.
 - `tests/unit/orchestration/catalog-resolution.test.ts`: demuestra candidatos pertinentes ante coincidencia parcial.
@@ -32,5 +33,6 @@ PHASE 3 — ruta única, conversación natural y canario. Estado: en curso
 - Suites de contexto, Brain, rechazo y policy: demuestran reparación precisa, próximo campo pendiente, call-first y ausencia de bypass por etiquetas inventadas.
 
 ## Bloqueos
-- El workflow pago V21 previo falló después de “Inés”; las correcciones posteriores sólo tienen verificación gratuita → autorizar USD 0,05 adicionales para una única corrida completa.
+- Dos validadores podaban “para dejarlo registrado” y “me falta… para dejarlo registrado”; ambos están corregidos y la simulación limpia pasa 9/9 turnos, pero falta una inferencia limpia del modelo real.
+- El ledger registra USD 1,03011768 sobre USD 1,05 y el remanente no alcanza para reservar otro request → elevar el tope acumulado a USD 1,08 para una única corrida completa.
 - Producción continúa en `07328e23f97054aeb92a108562f70b6ef3a88bb4` / Brain V20 → desplegar V21 únicamente si la corrida paga termina con llamada, fases, persistencia, link y entrega local correlacionada; luego verificar recepción visible en Telegram.

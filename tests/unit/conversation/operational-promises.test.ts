@@ -159,6 +159,7 @@ describe('V5 autoriza por estado, no por texto', () => {
 
   it.each([
     'Me falta tu apellido para dejar todo registrado. ¿Me lo confirmás?',
+    'Me falta tu apellido, tu correo electrónico y tu teléfono para dejarlo registrado.',
     'Necesito tu correo para poder dejar tus datos guardados.',
     'Para dejar tu nombre y apellido registrados, necesito que me confirmes tu correo.',
     'Me falta tu teléfono para guardar tus datos.',

@@ -334,7 +334,7 @@ const CONTACT_RECORD_TARGET = String.raw`(?:todo|(?:(?:tus?|sus?|mis?|los?|las?|
 // no un registro ya realizado. Se excluye sólo ese predicado acotado: una
 // afirmación anterior o posterior conserva su requisito de estado durable.
 const FUTURE_CONTACT_RECORD_PURPOSE = new RegExp(
-  String.raw`\bpara\s+(?:poder\s+)?(?:dejar\s+${CONTACT_RECORD_TARGET}\s+(?:registrad[oa]s?|guardad[oa]s?|anotad[oa]s?)|(?:guardar|registrar|anotar)\s+${CONTACT_RECORD_TARGET})(?![\p{L}])`,
+  String.raw`\bpara\s+(?:poder\s+)?(?:dejar(?:lo|la|los|las)\s+(?:registrad[oa]s?|guardad[oa]s?|anotad[oa]s?)|dejar\s+${CONTACT_RECORD_TARGET}\s+(?:registrad[oa]s?|guardad[oa]s?|anotad[oa]s?)|(?:guardar|registrar|anotar)\s+${CONTACT_RECORD_TARGET})(?![\p{L}])`,
   'giu',
 );
 
