@@ -50,6 +50,7 @@ function context(overrides: Partial<AgentAContextV1> = {}): AgentAContextV1 {
       may_request_call_now: false,
       may_present_payment_options: true,
       may_send_payment_link: false,
+      intake_status: 'known',
       authorized_payment_plan: null,
       intake_missing: ['apellido', 'correo'],
     },
@@ -391,6 +392,7 @@ describe('V8 respuesta repetida', () => {
       capabilities: {
         ...context().capabilities,
         may_send_payment_link: true,
+        intake_status: 'known',
         authorized_payment_plan: 'monthly_12',
         intake_missing: ['correo'],
       },
@@ -433,6 +435,7 @@ describe('V8 respuesta repetida', () => {
       capabilities: {
         ...context().capabilities,
         may_send_payment_link: true,
+        intake_status: 'known',
         authorized_payment_plan: 'monthly_12',
         intake_missing: ['correo'],
       },
@@ -504,5 +507,52 @@ describe('frontera léxica del ADK acotada a dinero y promesas', () => {
   it('sigue rechazando una promesa de empleo garantizado', () => {
     expect(validate(['Tenés salida laboral garantizada.'])?.rejections)
       .toContainEqual({ code: 'FACT_VALUE_MISMATCH', subject: 'promise' });
+  });
+});
+
+/**
+ * Preguntar no es afirmar.
+ *
+ * El guard de prerequisitos existe para que el modelo no deduzca «no hace
+ * falta experiencia» de un ejemplo del comportamiento canónico cuando el
+ * catálogo no lo confirma. Eso está bien y se conserva.
+ *
+ * Pero su patrón matchea `partís desde cero`, que es literalmente la pregunta
+ * de diagnóstico que el prompt canónico PRESCRIBE en la Fase 2:
+ *
+ *   "¿Tenés conocimientos previos o partís desde cero?"
+ *
+ * Con eso, el agente quedaba rechazado por obedecer. Medido en la corrida
+ * `v13iter2`: 4 reparaciones en 26 turnos —15,4% contra un gate de 5%— y tres
+ * de las cuatro en el mismo caso, todas por esta regla.
+ *
+ * Una pregunta no afirma nada sobre los requisitos del curso: pide un dato.
+ */
+describe('el guard de prerequisitos distingue pregunta de afirmación', () => {
+  function rechazoDePrerequisitos(mensaje: string) {
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({ response: { messages: [mensaje] } }),
+      context: context(),
+      planned_fact_ids: [],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+    return (rejection?.rejections ?? []).some((r) => r.subject === 'prerequisites');
+  }
+
+  it('la pregunta de diagnóstico canónica no se rechaza', () => {
+    expect(rechazoDePrerequisitos('¿Tenés conocimientos previos o partís desde cero?')).toBe(false);
+    expect(rechazoDePrerequisitos('¿Ya tenés experiencia o empezás desde cero?')).toBe(false);
+  });
+
+  it('la afirmación sin respaldo canónico se sigue rechazando', () => {
+    expect(rechazoDePrerequisitos('No necesitás experiencia previa para este curso.')).toBe(true);
+    expect(rechazoDePrerequisitos('Podés empezar desde cero sin problema.')).toBe(true);
+    expect(rechazoDePrerequisitos('Está pensado para arrancar desde los fundamentos.')).toBe(true);
+  });
+
+  it('una afirmación no se salva por venir acompañada de una pregunta', () => {
+    expect(rechazoDePrerequisitos(
+      '¿Ya tenés conocimientos previos? No necesitás experiencia para arrancar.',
+    )).toBe(true);
   });
 });

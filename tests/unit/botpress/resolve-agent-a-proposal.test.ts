@@ -18,6 +18,7 @@ function context(): AgentAContextV1 {
       stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
       call_offer_count: 0, awaiting_reply: 'none', payment_reported: false,
     },
+    obligations: { stage: 'course_selected', owes: [], not_yet: [] },
     catalog: {
       selected_offering: {
         code: 'redes-informaticas', display_name: 'Redes Informáticas', area_code: 'tecnologia',
@@ -28,7 +29,7 @@ function context(): AgentAContextV1 {
     capabilities: {
       may_reply: true, may_offer_call: true, may_request_call_now: false,
       may_present_payment_options: true, may_send_payment_link: false,
-      authorized_payment_plan: null, intake_missing: [],
+      authorized_payment_plan: null, intake_status: 'known' as const, intake_missing: [],
     },
   };
 }

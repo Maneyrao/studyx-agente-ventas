@@ -658,9 +658,18 @@ describe('buildAgentAContextV1', () => {
 /**
  * Alcance del turno actual (causa raíz B).
  *
- * Un mensaje vago no puede revivir el curso de una conversación vieja. Antes
- * la supresión exigía `selectedCode === null`, que es justo el caso que NO
- * falla, y sólo limpiaba memorias: la ficha del curso viejo seguía viajando.
+ * Spec revisada. La primera versión acotaba el turno vago suprimiendo también
+ * el curso elegido, y eso resultó estar mal por dos motivos verificados en el
+ * código: `claim-batch` ya entrega el estado con la sesión caducada
+ * (`effectiveConversationStateV1`), así que un curso viejo de verdad llega en
+ * `null` sin ayuda del ADK; y `may_offer_call`,
+ * `may_present_payment_options` y `may_send_payment_link` cuelgan todas del
+ * mismo código, con lo cual suprimirlo apagaba en silencio la llamada y los
+ * planes a mitad de una compra viva.
+ *
+ * Lo que sí cruza sesiones son las memorias, que se recuperan por similitud:
+ * de ahí salía el curso que el mensaje actual nunca nombró. Ese es el alcance
+ * que se conserva.
  */
 describe('alcance del turno actual', () => {
   function vagueTurn(text: string): ClaimedTurn {
@@ -680,12 +689,21 @@ describe('alcance del turno actual', () => {
     return turn;
   }
 
-  it('deja de recitar el curso viejo cuando el mensaje actual es sólo puntuación', () => {
+  it('conserva la venta en curso cuando el mensaje actual es sólo puntuación', () => {
     const context = buildAgentAContextV1(vagueTurn('?'), 'Camila');
 
-    expect(context?.catalog.selected_offering).toBeNull();
-    expect(context?.commercial_state.selected_offering_code).toBeNull();
+    expect(context?.commercial_state.selected_offering_code).toBe('redes-informaticas');
   });
+
+  it.each(['?', 'Infoo', 'hola'])(
+    'no le revoca los permisos comerciales a una venta viva ante "%s"',
+    (text) => {
+      const context = buildAgentAContextV1(vagueTurn(text), 'Camila');
+
+      expect(context?.capabilities.may_offer_call).toBe(true);
+      expect(context?.capabilities.may_present_payment_options).toBe(true);
+    },
+  );
 
   it('ofrece alternativas en vez de dejar al modelo sin nada de qué hablar', () => {
     const context = buildAgentAContextV1(vagueTurn('?'), 'Camila');
@@ -727,9 +745,228 @@ describe('alcance del turno actual', () => {
     expect(context?.commercial_state.selected_offering_code).toBe('redes-informaticas');
   });
 
-  it('no deja el estado en course_selected mientras oculta el curso', () => {
+  it('mantiene la fase durable: el turno vago no retrocede la venta', () => {
     const context = buildAgentAContextV1(vagueTurn('?'), 'Camila');
 
-    expect(context?.commercial_state.stage).toBe('exploring');
+    expect(context?.commercial_state.stage).toBe('course_selected');
+  });
+});
+
+/**
+ * Fases de venta marcadas.
+ *
+ * `capabilities` sólo dice qué PUEDE hacer el modelo. El comportamiento
+ * canónico describe seis fases, y `commercial_state.stage` sabe en cuál está
+ * la conversación, pero nada las unía: el modelo tenía el mapa y su posición
+ * sin que nadie le dijera que eran lo mismo. `obligations` es el eje que
+ * faltaba — qué DEBE este turno y qué todavía no puede hacer.
+ *
+ * El backend fija la fase y su deuda; la redacción sigue siendo del modelo.
+ */
+describe('obligaciones de fase (variante rígida, conservada para comparación)', () => {
+  function turnWith(mutate: (claimed: ClaimedTurn) => void): ClaimedTurn {
+    const claimed = JSON.parse(JSON.stringify(claimedTurn())) as ClaimedTurn;
+    mutate(claimed);
+    return claimed;
+  }
+
+  it('debe saludar cuando todavía no le habló nunca a esta persona', () => {
+    const claimed = turnWith((turn) => {
+      (turn.context as unknown as Record<string, unknown>).recent_turns = [
+        { direction: 'inbound', content: 'Hola', created_at: NOW },
+      ];
+    });
+
+    expect(buildAgentAContextV1(claimed, 'Camila', { rigidObligations: true })?.obligations!.owes).toContain('greeting');
+  });
+
+  it('no vuelve a saludar cuando ya hay una respuesta suya en el historial', () => {
+    expect(buildAgentAContextV1(claimedTurn(), 'Camila', { rigidObligations: true })?.obligations!.owes)
+      .not.toContain('greeting');
+  });
+
+  it('debe la pregunta de diagnóstico en el turno en que se elige el curso', () => {
+    const claimed = turnWith((turn) => {
+      (turn as unknown as Record<string, unknown>).conversation_state_v1 = {
+        ...turn.conversation_state_v1, selected_offering_code: null, stage: 'exploring',
+      };
+    });
+
+    expect(buildAgentAContextV1(claimed, 'Camila', { rigidObligations: true })?.obligations!.owes)
+      .toContain('diagnostic_question');
+  });
+
+  it('no puede dar precio mientras no haya un curso elegido', () => {
+    const claimed = turnWith((turn) => {
+      (turn as unknown as Record<string, unknown>).catalog_resolution = { kind: 'none' };
+      (turn as unknown as Record<string, unknown>).conversation_state_v1 = {
+        ...turn.conversation_state_v1, selected_offering_code: null, stage: 'exploring',
+      };
+    });
+
+    expect(buildAgentAContextV1(claimed, 'Camila', { rigidObligations: true })?.obligations!.not_yet).toContain('price');
+  });
+
+  it('libera el precio una vez que hay curso elegido', () => {
+    expect(buildAgentAContextV1(claimedTurn(), 'Camila', { rigidObligations: true })?.obligations!.not_yet)
+      .not.toContain('price');
+  });
+
+  it('debe los datos de contacto que todavía faltan, no el link', () => {
+    const claimed = turnWith((turn) => {
+      const mutable = turn as unknown as Record<string, unknown>;
+      mutable.features = { ...turn.features, agent_a_context_scoping: true };
+      mutable.contact_intake_missing = ['correo', 'telefono'];
+      mutable.conversation_state_v1 = {
+        ...turn.conversation_state_v1,
+        selected_payment_plan: 'monthly_12',
+        stage: 'plan_selected',
+        awaiting_reply: 'contact_details',
+      };
+    });
+
+    const owes = buildAgentAContextV1(claimed, 'Camila', { rigidObligations: true })?.obligations!.owes;
+
+    expect(owes).toContain('contact_details');
+    expect(owes).not.toContain('payment_link');
+  });
+
+  it('debe el link en el turno en que se completa el último dato', () => {
+    const claimed = turnWith((turn) => {
+      const mutable = turn as unknown as Record<string, unknown>;
+      mutable.features = { ...turn.features, agent_a_context_scoping: true };
+      mutable.contact_intake_missing = [];
+      mutable.conversation_state_v1 = {
+        ...turn.conversation_state_v1,
+        selected_payment_plan: 'monthly_12',
+        stage: 'plan_selected',
+        awaiting_reply: 'contact_details',
+      };
+    });
+
+    expect(buildAgentAContextV1(claimed, 'Camila', { rigidObligations: true })?.obligations!.owes)
+      .toContain('payment_link');
+  });
+
+  it('expone la fase de venta junto a la deuda, no sólo el estado', () => {
+    expect(buildAgentAContextV1(claimedTurn(), 'Camila', { rigidObligations: true })?.obligations!.stage)
+      .toBe('course_selected');
+  });
+});
+
+/**
+ * Contradicciones del contexto, reproducidas sin modelo.
+ *
+ * Estas pruebas invocan `buildAgentAContextV1` real: portar la lógica a un
+ * script aparte demuestra una hipótesis sobre el código, no lo que el contexto
+ * efectivamente le entrega al modelo.
+ *
+ * Dos ideas que el contexto venía mezclando y que acá se separan:
+ *
+ * - `commercial_state` describe hechos persistidos, no fases de venta
+ *   completadas. `course_selected` significa que hay un curso elegido; no
+ *   significa que ya hubo diagnóstico, presentación ni precio.
+ * - Un dato que nadie consultó no es un dato completo. `intake_missing` vacío
+ *   sólo puede significar «la autoridad dice que no falta nada».
+ */
+describe('el contexto no confunde persistencia con fase de venta', () => {
+  function turnoCon(mutar: (claimed: ClaimedTurn) => void): ClaimedTurn {
+    const claimed = JSON.parse(JSON.stringify(claimedTurn())) as ClaimedTurn;
+    mutar(claimed);
+    return claimed;
+  }
+
+  it('quien avisa que pagó no recibe una orden de presentar el curso', () => {
+    const claimed = turnoCon((turn) => {
+      turn.context.batch_messages[0]!.content = 'Ya pagué el curso';
+      (turn as unknown as Record<string, unknown>).catalog_resolution = { kind: 'no_catalog_intent' };
+      (turn as unknown as Record<string, unknown>).conversation_state_v1 = {
+        ...turn.conversation_state_v1,
+        awaiting_reply: 'none',
+        payment_reported: true,
+      };
+    });
+
+    const context = buildAgentAContextV1(claimed, 'Camila');
+
+    expect(context).not.toBeNull();
+    expect(context!.obligations?.owes ?? []).not.toContain('presentation');
+  });
+
+  it('preguntar la duración sin plan elegido no obliga a re-presentar', () => {
+    const claimed = turnoCon((turn) => {
+      turn.context.batch_messages[0]!.content = '¿Cuánto dura la formación?';
+      (turn as unknown as Record<string, unknown>).catalog_resolution = { kind: 'no_catalog_intent' };
+      (turn as unknown as Record<string, unknown>).conversation_state_v1 = {
+        ...turn.conversation_state_v1,
+        awaiting_reply: 'none',
+      };
+    });
+
+    const context = buildAgentAContextV1(claimed, 'Camila');
+
+    expect(context!.obligations?.owes ?? []).not.toContain('presentation');
+    // El curso sí se conserva: una pregunta sobre el curso no abandona la venta.
+    expect(context!.commercial_state.selected_offering_code)
+      .toBe(claimed.conversation_state_v1!.selected_offering_code);
+  });
+
+  it('quien se niega a dar sus datos no genera una deuda de link de pago', () => {
+    const claimed = turnoCon((turn) => {
+      turn.context.batch_messages[0]!.content = 'No te voy a dar mis datos';
+      (turn as unknown as Record<string, unknown>).catalog_resolution = { kind: 'no_catalog_intent' };
+      (turn as unknown as Record<string, unknown>).conversation_state_v1 = {
+        ...turn.conversation_state_v1,
+        selected_payment_plan: 'one_time',
+        stage: 'plan_selected',
+        awaiting_reply: 'contact_details',
+      };
+    });
+
+    const context = buildAgentAContextV1(claimed, 'Camila');
+
+    expect(context!.obligations?.owes ?? []).not.toContain('payment_link');
+  });
+
+  it('el scoping de memorias no decide qué datos faltan: eso lo dice la autoridad', () => {
+    const claimed = turnoCon((turn) => {
+      const mutable = turn as unknown as Record<string, unknown>;
+      // El flag gobierna qué memorias se muestran. El intake lo responde el
+      // claim, siempre, y esconderlo convertía «no consulté» en «no falta».
+      mutable.features = { ...turn.features, agent_a_context_scoping: false };
+      mutable.contact_intake_missing = ['apellido', 'correo'];
+      mutable.conversation_state_v1 = {
+        ...turn.conversation_state_v1,
+        selected_payment_plan: 'monthly_12',
+        stage: 'plan_selected',
+        awaiting_reply: 'contact_details',
+      };
+    });
+
+    const context = buildAgentAContextV1(claimed, 'Camila');
+
+    expect(context!.capabilities.intake_status).toBe('known');
+    expect(context!.capabilities.intake_missing).toContain('apellido');
+    expect(context!.capabilities.intake_missing).toContain('correo');
+    expect(context!.capabilities.may_send_payment_link).toBe(false);
+  });
+
+  it('un claim que no trae la respuesta de intake se declara desconocido y cierra el link', () => {
+    const claimed = turnoCon((turn) => {
+      const mutable = turn as unknown as Record<string, unknown>;
+      delete mutable.contact_intake_missing;
+      mutable.conversation_state_v1 = {
+        ...turn.conversation_state_v1,
+        selected_payment_plan: 'monthly_12',
+        stage: 'plan_selected',
+        awaiting_reply: 'contact_details',
+      };
+    });
+
+    const context = buildAgentAContextV1(claimed, 'Camila');
+
+    // Desconocido no es completo: el gate no se abre por ignorancia.
+    expect(context!.capabilities.intake_status).toBe('unknown');
+    expect(context!.capabilities.may_send_payment_link).toBe(false);
   });
 });

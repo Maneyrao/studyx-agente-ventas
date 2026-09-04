@@ -1109,6 +1109,31 @@ function repeatsPreviousQuestion(messages: readonly string[], previous: string):
 const CUSTOMER_REQUESTS_REPEAT = /\b(?:repet|otra\s+vez|no\s+entend|de\s+nuevo)\w*/iu;
 const UNSUPPORTED_PREREQUISITE_ASSERTION = /(?:\bno\s+(?:necesit\w*|hace\s+falta|se\s+requiere)\b[^.!?\n]{0,80}\b(?:experiencia|conocimientos?|requisitos?)\b|\bsin\s+(?:experiencia|conocimientos?\s+previos?)\b|\b(?:pod[eé]s|puedes|empez[aá]s?|part[ií]s?)\b[^.!?\n]{0,32}\bdesde\s+cero\b|\bdesde\s+los\s+fundamentos\b)/iu;
 
+/**
+ * Preguntar por los conocimientos previos no es afirmar que no hacen falta.
+ *
+ * El guard existe para que el modelo no deduzca «no necesitás experiencia» de
+ * un ejemplo del comportamiento canónico cuando el catálogo no lo confirma. Esa
+ * parte se conserva entera.
+ *
+ * Lo que no puede seguir haciendo es rechazar la pregunta que el propio prompt
+ * canónico PRESCRIBE en la Fase 2 —«¿Tenés conocimientos previos o partís desde
+ * cero?»—, que el patrón matchea por la rama `partís desde cero`. El agente
+ * quedaba rechazado por obedecer: en la corrida `v13iter2` eso produjo 4
+ * reparaciones sobre 26 turnos, 15,4% contra un gate de 5%, tres de ellas en el
+ * mismo caso y todas por esta regla.
+ *
+ * Se evalúa oración por oración y se saltean las interrogativas. Una afirmación
+ * no se salva por venir en el mismo mensaje que una pregunta: la oración que
+ * afirma sigue disparando el rechazo.
+ */
+export function assertsUnsupportedPrerequisitesV1(message: string): boolean {
+  return message
+    .split(/(?<=[.!?\n])/u)
+    .filter((sentence) => !sentence.includes('?'))
+    .some((sentence) => UNSUPPORTED_PREREQUISITE_ASSERTION.test(sentence));
+}
+
 export function removeRepeatedAgentQuestionMessagesV1(
   messages: readonly string[],
   previous: string,
@@ -1192,7 +1217,7 @@ export function validateAgentATurnProposalV1(input: {
   );
   if (
     canonicalPrerequisiteStatement(selectedFactsById, planned) === null
-    && authoredNarrative.some((message) => UNSUPPORTED_PREREQUISITE_ASSERTION.test(message))
+    && authoredNarrative.some(assertsUnsupportedPrerequisitesV1)
   ) {
     rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'prerequisites' });
   }

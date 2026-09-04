@@ -552,6 +552,13 @@ export const processInboundTurn = new Workflow({
         turn_id: owned.turn_id,
         context_recent_turn_count: agentABrainContext.turn.recent_turns.length,
         context_memory_count: agentABrainContext.customer.memories.length,
+        // Sin identidad resuelta el prompt canónico viaja con
+        // `{{NOMBRE_ASESOR}}` sin sustituir, y la regla de no imprimir un
+        // placeholder hace que el modelo se saltee la apertura entera. El
+        // agujero es de configuración (`agentAAdvisorName`), así que tiene que
+        // verse en el log en vez de manifestarse como un saludo ausente.
+        identity_resolved: agentABrainContext.identity !== null,
+        obligations_owed: agentABrainContext.obligations?.owes ?? [],
       })
     }
 

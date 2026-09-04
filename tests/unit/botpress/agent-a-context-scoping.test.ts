@@ -82,14 +82,19 @@ describe('recorte de contexto por alcanzabilidad', () => {
     expect(context!.capabilities.intake_missing).toEqual(['apellido', 'correo', 'telefono']);
   });
 
-  it('con el flag apagado la lista queda vacía y nada más cambia', () => {
-    // R1: la conducta nueva entra apagada. Sin el flag, el modelo deduce qué
-    // falta como hasta ahora — el comportamiento anterior, exactamente.
+  it('el flag de scoping no decide qué datos faltan: eso lo responde el claim', () => {
+    // Corrección explícita de la conducta anterior, no una relajación.
+    // El flag entró para recortar memorias por alcanzabilidad y de paso ocultó
+    // la respuesta de la autoridad sobre el intake. Con el flag apagado —el
+    // default— la lista quedaba vacía y el contexto declaraba intake completo
+    // sobre un contacto del que no se había consultado nada: «nadie preguntó»
+    // se leía como «no falta nada», y ese es justamente el gate del link.
     const context = buildAgentAContextV1(claim({
       features: {},
       contact_intake_missing: ['apellido', 'correo'],
     }), null);
-    expect(context!.capabilities.intake_missing).toEqual([]);
+    expect(context!.capabilities.intake_missing).toEqual(['apellido', 'correo']);
+    expect(context!.capabilities.intake_status).toBe('known');
     expect(context!.capabilities.may_reply).toBe(true);
   });
 

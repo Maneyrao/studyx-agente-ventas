@@ -329,14 +329,22 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
     // pieza persistía — esta es la pieza que los persiste.
     const capturedIdentity =
       envelope.message.type === 'unsupported'
-        ? { name: null, email: null }
+        ? { name: null, email: null, declaredPhone: null }
         : extractContactIdentity(envelope.message.text, contact.name);
-    if (capturedIdentity.name !== null || capturedIdentity.email !== null) {
+    if (
+      capturedIdentity.name !== null
+      || capturedIdentity.email !== null
+      || capturedIdentity.declaredPhone !== null
+    ) {
+      // `phone` NO se toca: es la clave de identidad del canal, NOT NULL
+      // UNIQUE, y pisarla dejaría al contacto sin poder ser encontrado por su
+      // propio canal. El teléfono declarado vive en su propia columna.
       await db`
         UPDATE contacts
         SET
           name = COALESCE(${capturedIdentity.name}, name),
           email = COALESCE(${capturedIdentity.email}, email),
+          declared_phone = COALESCE(${capturedIdentity.declaredPhone}, declared_phone),
           updated_at = now()
         WHERE id = ${contact.id}::uuid
       `;

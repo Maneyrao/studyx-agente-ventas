@@ -317,7 +317,74 @@ export async function resolveAgentAPlannerlessProposalV2<
   }
 
   if (mayDegradeToBackendBoundary(input.initial.proposal, rejection)) return degraded(true)
+
+  const pruned = pruneFalseLinkDeliveryClaimV1({
+    initial: input.initial,
+    rejection,
+    context: input.context,
+    authorized_fact_ids: factIds,
+  })
+  if (pruned !== null) {
+    return {
+      effective: pruned,
+      evidence: {
+        rejection_codes: rejection.rejections.map((reason) => reason.code),
+        repair_attempted: true, repaired: false, proposal_generation_calls: 2,
+      },
+      rejection,
+    }
+  }
+
   throw new Error('PLANNERLESS_PROPOSAL_REJECTED')
+}
+
+/**
+ * Último recurso antes del silencio.
+ *
+ * Afirmar que el link sale cuando la acción no está autorizada es una mentira
+ * de oración entera, así que exige la reparación del modelo y no se puede
+ * podar por hecho. Pero cuando esa única reparación también falla, lanzar
+ * dejaba el turno mudo: el workflow lo clasificaba como cerebro caído y
+ * committeaba `BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK`.
+ *
+ * Lo observó el arnés de workflow en `wf_03_plan_postergacion_link`: la
+ * persona entregó sus cuatro datos, pidió el link y no recibió absolutamente
+ * nada, con 2046 ms de cerebro gastados. Un turno mudo es el peor resultado
+ * posible de la conversación y es peor que uno recortado.
+ *
+ * El criterio es el mismo que ya se aplica a la pregunta repetida: se quita la
+ * oración ofensiva y se entrega lo que queda, siempre que lo que queda valide
+ * limpio por sí solo. La afirmación falsa nunca viaja, y si no sobrevive nada
+ * verdadero el rechazo sigue siendo duro.
+ */
+function pruneFalseLinkDeliveryClaimV1<T extends AgentAProposalEnvelopeV1>(input: {
+  readonly initial: T
+  readonly rejection: TurnRejectionV1
+  readonly context: AgentAContextV1
+  readonly authorized_fact_ids: readonly string[]
+}): T | null {
+  if (!claimsImmediatePaymentLinkDelivery(input.initial.proposal)) return null
+
+  const safeMessages = input.initial.proposal.response.messages.filter((message) => !(
+    SENDS_LINK_BEFORE_NOUN.test(message) || SENDS_LINK_AFTER_NOUN.test(message)
+  ))
+  if (safeMessages.length === 0) return null
+
+  const candidate = {
+    ...input.initial,
+    proposal: {
+      ...input.initial.proposal,
+      response: { ...input.initial.proposal.response, messages: safeMessages },
+      proposed_action: { type: 'none' as const },
+    },
+  } as T
+  const candidateRejection = validatePlannerless({
+    proposal: candidate.proposal,
+    context: input.context,
+    rejection_id: input.rejection.rejection_id,
+    authorized_fact_ids: input.authorized_fact_ids,
+  })
+  return candidateRejection === null ? candidate : null
 }
 
 export type PlannerlessAgentATurnProposalV2 = AgentATurnProposalV1

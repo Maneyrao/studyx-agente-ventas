@@ -31,16 +31,28 @@ function normalize(text: string): string {
     .toLowerCase();
 }
 
+/**
+ * Los planes también se nombran en letras.
+ *
+ * El backend deriva el plan del mensaje del cliente y exige que coincida con
+ * el que autorizó el modelo; si difieren, el commit muere con
+ * `PAYMENT_PLAN_MISMATCH`, el workflow queda en `paused_error` y el turno sale
+ * MUDO. Aceptar sólo numerales significaba que quien escribe "me quedo con las
+ * seis cuotas" no podía comprar, aunque el modelo lo entendiera perfecto.
+ *
+ * Ninguna suite lo detectaba: todos sus guiones dicen "las 6 cuotas". Lo
+ * encontró el arnés de workflow con una paráfrasis nueva.
+ */
 const PLAN_PATTERNS: ReadonlyArray<{ readonly code: PaymentPlanCode; readonly pattern: RegExp }> = [
   {
     code: 'monthly_12',
     pattern:
-      /(?:\b12\s*(?:meses|cuotas|pagos)\b|\b(?:usd\s*)?30\s*(?:usd|dolares?)?\s*(?:por\s+mes|mensuales?)\b|\bcuotas?\s+de\s*(?:usd\s*)?30(?:\s*(?:usd|dolares?))?\b)/,
+      /(?:\b(?:12|doce)\s*(?:meses|cuotas|pagos)\b|\b(?:usd\s*)?30\s*(?:usd|dolares?)?\s*(?:por\s+mes|mensuales?)\b|\bcuotas?\s+de\s*(?:usd\s*)?30(?:\s*(?:usd|dolares?))?\b)/,
   },
   {
     code: 'monthly_6',
     pattern:
-      /(?:\b6\s*(?:meses|cuotas|pagos)\b|\b(?:usd\s*)?60\s*(?:usd|dolares?)?\s*(?:por\s+mes|mensuales?)\b|\bcuotas?\s+de\s*(?:usd\s*)?60(?:\s*(?:usd|dolares?))?\b)/,
+      /(?:\b(?:6|seis)\s*(?:meses|cuotas|pagos)\b|\b(?:usd\s*)?60\s*(?:usd|dolares?)?\s*(?:por\s+mes|mensuales?)\b|\bcuotas?\s+de\s*(?:usd\s*)?60(?:\s*(?:usd|dolares?))?\b)/,
   },
   {
     code: 'one_time',

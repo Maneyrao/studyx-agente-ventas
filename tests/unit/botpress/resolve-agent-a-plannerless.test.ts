@@ -22,6 +22,7 @@ function context(): AgentAContextV1 {
       stage: 'course_selected', call_preference: 'chat', call_offer_status: 'declined',
       call_offer_count: 0, awaiting_reply: 'none', payment_reported: false,
     },
+    obligations: { stage: 'course_selected', owes: [], not_yet: [] },
     catalog: {
       selected_offering: {
         code: 'maquillaje-profesional', display_name: 'Maquillaje Profesional',
@@ -36,7 +37,7 @@ function context(): AgentAContextV1 {
     capabilities: {
       may_reply: true, may_offer_call: false, may_request_call_now: true,
       may_present_payment_options: true, may_send_payment_link: false,
-      authorized_payment_plan: null, intake_missing: [],
+      authorized_payment_plan: null, intake_status: 'known' as const, intake_missing: [],
     },
   };
 }
@@ -408,6 +409,83 @@ describe('degradado en vez de rechazo duro', () => {
     await expect(resolveAgentAPlannerlessProposalV2({
       initial: lying, context: context(), repair_enabled: false,
       repair: vi.fn(), rejection_id: '00000000-0000-4000-8000-000000000001',
+    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
+  });
+});
+
+/**
+ * Un turno mudo es peor que un turno recortado.
+ *
+ * Cuando el modelo afirma que manda el link y la acción no está autorizada, la
+ * frontera exige la reparación del modelo — bien, porque la oración entera es
+ * la mentira y el egress no puede podarla. Pero si esa única reparación
+ * también falla, la ruta lanzaba `PLANNERLESS_PROPOSAL_REJECTED`, el workflow
+ * lo clasificaba como cerebro caído y el turno salía en silencio.
+ *
+ * Observado por el arnés de workflow (`wf_03_plan_postergacion_link`): la
+ * persona escribió "Ya está, mandame el link. Soy Lucía Ferrer, ...", entregó
+ * los cuatro datos y no recibió NADA, con
+ * `reason_code = BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK` y 2046 ms de cerebro.
+ * El gate `zero_accidental_silence` del runner viejo daba verde igual.
+ *
+ * La salida correcta es la misma que ya se usa para la pregunta repetida:
+ * quitar la oración ofensiva y entregar lo que queda, si lo que queda es
+ * verdadero y suficiente. La afirmación falsa nunca se manda.
+ */
+describe('afirmar un link no autorizado no puede terminar en silencio', () => {
+  const contextoSinLink = (): AgentAContextV1 => ({
+    ...context(),
+    capabilities: { ...context().capabilities, may_send_payment_link: false },
+  });
+
+  it('entrega el resto del turno en vez de callarse', async () => {
+    const initial = generated(proposal({
+      response: {
+        messages: [
+          // Sin importes ni afirmaciones de estado: lo que se prueba es que
+          // sobreviva la parte verdadera, no el guard de hechos.
+          'Gracias, Lucía.',
+          'Te mando el link de pago ahora mismo.',
+        ],
+        call_offer: null,
+      },
+      proposed_action: {
+        type: 'send_payment_link',
+        offering_code: 'maquillaje-profesional',
+        payment_plan: 'monthly_6',
+      },
+    }));
+
+    const resolved = await resolveAgentAPlannerlessProposalV2({
+      initial,
+      context: contextoSinLink(),
+      repair_enabled: true,
+      rejection_id: '00000000-0000-4000-8000-0000000000aa',
+      repair: async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); },
+    });
+
+    const mensajes = resolved.effective.proposal.response.messages;
+    expect(mensajes.length).toBeGreaterThan(0);
+    expect(mensajes.join(' ')).not.toMatch(/link/iu);
+    expect(resolved.effective.proposal.proposed_action.type).toBe('none');
+  });
+
+  it('si no queda nada verdadero que decir, sigue siendo un rechazo duro', async () => {
+    const initial = generated(proposal({
+      response: { messages: ['Te mando el link de pago ahora mismo.'], call_offer: null },
+      proposed_action: {
+        type: 'send_payment_link',
+        offering_code: 'maquillaje-profesional',
+        payment_plan: 'monthly_6',
+      },
+    }));
+
+    await expect(resolveAgentAPlannerlessProposalV2({
+      initial,
+      context: contextoSinLink(),
+      repair_enabled: true,
+      rejection_id: '00000000-0000-4000-8000-0000000000ab',
+      repair: async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); },
     })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
   });
 });

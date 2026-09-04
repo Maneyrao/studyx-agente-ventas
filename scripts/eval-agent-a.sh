@@ -80,6 +80,20 @@ if [[ "${MODO}" == "--repair" ]]; then
   export AGENT_A_STATE_ASSERTIONS=true
 fi
 
+# La ruta conversacional es parte de lo que se mide, no un detalle del runner.
+# Esta rama existe para llevar `agentAPlannerlessV2Enabled` a producción, así
+# que la evaluación recorre esa ruta por defecto. Sin este flag el runner pide
+# un plan a `/api/agent/turns/:id/plan` y el planner determinista redacta el
+# objetivo del turno: se estaría midiendo el pipeline que se quiere retirar.
+# Para medir a propósito el camino viejo hay que pedirlo explícitamente.
+if [[ "${STUDYX_EVAL_LEGACY_PLANNER:-}" == "1" ]]; then
+  readonly RUTA_FLAG=""
+  echo "ruta evaluada: planner_v1 (legacy, pedido explícitamente)" >&2
+else
+  readonly RUTA_FLAG="--plannerless-v2"
+  echo "ruta evaluada: plannerless_v2" >&2
+fi
+
 npx tsx -e '
   import { assertIsolatedEvaluationEnvironmentV1 } from "./scripts/lib/eval-isolation";
   assertIsolatedEvaluationEnvironmentV1(process.env);
@@ -152,6 +166,11 @@ npx tsx -e '
   })();
 '
 
+# Las corridas fallidas no abortan el bucle —el reporte de cada una es
+# evidencia y se conserva— pero tampoco se perdonan. Antes, un `|| echo`
+# dejaba el script en 0 y una matriz entera en rojo se leía como verde desde
+# CI o desde cualquier `&&` encadenado.
+CORRIDAS_FALLIDAS=0
 for i in $(seq 1 "${REPETICIONES}"); do
   echo "=== ${ETIQUETA} corrida ${i}/${REPETICIONES} ===" >&2
   npx tsx scripts/run-agent-a-conversations.ts \
@@ -159,9 +178,18 @@ for i in $(seq 1 "${REPETICIONES}"); do
     ${EVAL_CASES:+--cases "${EVAL_CASES}"} \
     --transport local \
     --api-base-url "${API_BASE_URL}" \
+    ${RUTA_FLAG:+"${RUTA_FLAG}"} \
     --strict-brain-provider deepseek \
     --verify-db \
     --database-url "${DB_URL}" \
     --run-id "${ETIQUETA}-${i}" \
-    || echo "corrida ${i} con casos fallidos (se conserva el reporte)" >&2
+    || {
+      echo "corrida ${i} con casos fallidos (se conserva el reporte)" >&2
+      CORRIDAS_FALLIDAS=$((CORRIDAS_FALLIDAS + 1))
+    }
 done
+
+if [[ "${CORRIDAS_FALLIDAS}" -gt 0 ]]; then
+  echo "EVAL_RUNS_FAILED: ${CORRIDAS_FALLIDAS}/${REPETICIONES}" >&2
+  exit 1
+fi

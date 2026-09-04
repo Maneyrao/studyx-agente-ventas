@@ -1,6 +1,8 @@
 import { execFile, execFileSync } from 'node:child_process';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -109,6 +111,192 @@ const namedSuites: Readonly<Record<string, string>> = {
 function argument(name: string): string | null {
   const index = process.argv.indexOf(name);
   return index >= 0 ? process.argv[index + 1] ?? null : null;
+}
+
+export interface ReleaseProvenanceV1 {
+  readonly git_sha: string;
+  /** `null` es desconocido, no limpio: no había checkout que inspeccionar. */
+  readonly worktree_dirty: boolean | null;
+  readonly worktree_diff_sha256: string | null;
+  /** Fuentes nuevas que nadie agregó todavía y que igual entran al build. */
+  readonly untracked_relevant_paths: readonly string[];
+  /** Árbol Git real, recuperable con `git ls-tree`/`git archive`. */
+  readonly source_snapshot_id: string | null;
+}
+
+/**
+ * Rutas que pueden cambiar lo que hace el agente.
+ *
+ * El orden importa: primero se descarta, después se admite. Un
+ * `node_modules/x/config.json` cumple la extensión y no debe entrar igual.
+ */
+const PROVENANCE_EXCLUDED_V1: readonly RegExp[] = [
+  /(^|\/)\.env($|\.)/u,
+  /(^|\/)node_modules(\/|$)/u,
+  /(^|\/)\.next(\/|$)/u,
+  /(^|\/)\.eval(\/|$)/u,
+  /(^|\/)\.jez(\/|$)/u,
+  /(^|\/)\.worktrees(\/|$)/u,
+  /(^|\/)coverage(\/|$)/u,
+  /(^|\/)evals\/results(\/|$)/u,
+  /\.(pem|key|p12|pfx|crt)$/u,
+  /(^|\/)(credentials|secrets)[^/]*$/iu,
+];
+
+const PROVENANCE_SOURCE_EXTENSION_V1 =
+  /\.(ts|tsx|mts|cts|js|mjs|cjs|json|sql|sh|ya?ml|toml)$/u;
+
+function isRelevantSourcePathV1(candidate: string): boolean {
+  if (PROVENANCE_EXCLUDED_V1.some((pattern) => pattern.test(candidate))) return false;
+  return PROVENANCE_SOURCE_EXTENSION_V1.test(candidate);
+}
+
+/**
+ * `git status --porcelain` cita las rutas raras al estilo C. Para lo que acá
+ * importa —ASCII, barras, guiones— coincide con JSON, y una ruta que no se
+ * pueda decodificar se deja tal cual antes que descartarla en silencio.
+ */
+function decodePorcelainPathV1(raw: string): string {
+  if (!raw.startsWith('"')) return raw;
+  try {
+    return JSON.parse(raw) as string;
+  } catch {
+    return raw;
+  }
+}
+
+function runGitV1(cwd: string, args: readonly string[]): string {
+  return execFileSync('git', [...args], {
+    cwd,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+/**
+ * Procedencia de las fuentes que se midieron.
+ *
+ * `git rev-parse HEAD` sólo miente justo cuando más importa: con el árbol
+ * sucio, lo que se construyó y se evaluó NO es el contenido de ese commit y un
+ * reporte verde queda atribuido a un commit que nunca tuvo ese código.
+ *
+ * Tres cosas que la versión anterior hacía mal:
+ *
+ * 1. Miraba únicamente `git diff HEAD`, que ignora los archivos sin trackear.
+ *    Se justificaba diciendo que TypeScript los rechazaría, y es falso: Git no
+ *    decide la resolución de módulos. Un archivo nuevo se importa y compila
+ *    igual, así que puede cambiar lo evaluado sin dejar rastro.
+ * 2. Un hash de diff no conserva el contenido. Sirve para comparar dos
+ *    corridas, no para reconstruir qué se midió. Por eso además se escribe un
+ *    árbol Git con las fuentes relevantes: queda en la base de objetos y se
+ *    recupera con `git ls-tree` o `git archive`. No se tocan HEAD, el índice
+ *    ni el árbol de trabajo — el índice temporal vive fuera del repo.
+ * 3. Un SHA inyectado por el entorno no eximía de mirar el checkout. El
+ *    entorno dice qué commit se pidió; el checkout dice qué se midió.
+ *
+ * Sin checkout no se certifica nada: `worktree_dirty` y `source_snapshot_id`
+ * quedan en `null`, que es desconocido y no limpio.
+ */
+export function releaseProvenanceV1(options: {
+  readonly cwd?: string;
+  readonly env?: Readonly<Record<string, string | undefined>>;
+} = {}): ReleaseProvenanceV1 {
+  const cwd = options.cwd ?? process.cwd();
+  const env = options.env ?? process.env;
+  const injected = env.GIT_COMMIT_SHA ?? env.VERCEL_GIT_COMMIT_SHA ?? null;
+
+  let insideCheckout = false;
+  try {
+    runGitV1(cwd, ['rev-parse', '--is-inside-work-tree']);
+    insideCheckout = true;
+  } catch {
+    insideCheckout = false;
+  }
+
+  if (!insideCheckout) {
+    if (!injected) throw new Error('RELEASE_PROVENANCE_UNAVAILABLE');
+    return {
+      git_sha: injected,
+      worktree_dirty: null,
+      worktree_diff_sha256: null,
+      untracked_relevant_paths: [],
+      source_snapshot_id: null,
+    };
+  }
+
+  const gitSha = injected ?? runGitV1(cwd, ['rev-parse', 'HEAD']).trim();
+
+  const status = runGitV1(cwd, ['status', '--porcelain', '--untracked-files=all']);
+  const statusLines = status.split('\n').filter((line) => line.trim().length > 0);
+  const untrackedRelevantPaths = statusLines
+    .filter((line) => line.startsWith('??'))
+    .map((line) => decodePorcelainPathV1(line.slice(3).trim()))
+    .filter(isRelevantSourcePathV1)
+    .sort();
+  const hasTrackedChanges = statusLines.some((line) => !line.startsWith('??'));
+
+  const diff = runGitV1(cwd, ['diff', 'HEAD']);
+  const worktreeDiffSha256 = diff.length > 0
+    ? createHash('sha256').update(diff).digest('hex')
+    : null;
+
+  return {
+    git_sha: gitSha,
+    worktree_dirty: hasTrackedChanges || untrackedRelevantPaths.length > 0,
+    worktree_diff_sha256: worktreeDiffSha256,
+    untracked_relevant_paths: untrackedRelevantPaths,
+    source_snapshot_id: writeSourceSnapshotV1(cwd),
+  };
+}
+
+/**
+ * Escribe un árbol Git con las fuentes relevantes tal como están ahora.
+ *
+ * Se parte de un índice vacío y se agregan sólo las rutas admitidas, así el
+ * árbol es exactamente el material que puede cambiar la conducta del agente y
+ * nunca arrastra `.env`, credenciales ni resultados. El índice temporal está
+ * fuera del repositorio: el índice real del usuario no se toca.
+ */
+function writeSourceSnapshotV1(cwd: string): string | null {
+  const indexFile = path.join(
+    mkdtempSync(path.join(tmpdir(), 'studyx-provenance-index-')),
+    'index',
+  );
+  try {
+    const listed = runGitV1(cwd, ['ls-files', '--cached', '--others', '--exclude-standard'])
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .filter(isRelevantSourcePathV1)
+      // Un archivo trackeado que se borró del árbol sigue listado y `git add`
+      // fallaría sobre él. El snapshot describe lo que hay, no lo que hubo.
+      .filter((relative) => existsSync(path.join(cwd, relative)));
+    if (listed.length === 0) return null;
+
+    const environment = { ...process.env, GIT_INDEX_FILE: indexFile };
+    // Por lotes: la lista completa de fuentes desborda el límite de argumentos.
+    for (let offset = 0; offset < listed.length; offset += 400) {
+      execFileSync('git', ['add', '--', ...listed.slice(offset, offset + 400)], {
+        cwd,
+        env: environment,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    }
+    return execFileSync('git', ['write-tree'], {
+      cwd,
+      env: environment,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  } catch {
+    // La procedencia nunca puede voltear una corrida. Sin snapshot se reporta
+    // ausente, que es justamente lo que un lector necesita saber.
+    return null;
+  } finally {
+    rmSync(path.dirname(indexFile), { recursive: true, force: true });
+  }
 }
 
 export function inferCommittedStateFactsV1(input: {
@@ -1408,6 +1596,7 @@ async function main() {
   const outputDir = path.join(botpressDir, 'evals/results');
   await mkdir(outputDir, { recursive: true });
   const outputPath = path.join(outputDir, `happy-path-${runId}.json`);
+  const releaseProvenance = releaseProvenanceV1();
   const writeCheckpoint = async (results: readonly import('./lib/agent-a-conversation-runner').ConversationCaseResult[]) => {
     const passed = results.filter((result) => result.status === 'passed').length;
     const executedCaseIds = results.map((result) => result.id);
@@ -1422,6 +1611,13 @@ async function main() {
       run_id: runId,
       suite: selectedSuite.suite,
       prompt_version: selectedSuite.prompt_version,
+      release_provenance: releaseProvenance,
+      evaluated_route: plannerlessV2 ? 'plannerless_v2' : 'planner_v1',
+      // La ruta conversacional y el arnés que la ejecuta son cosas distintas:
+      // plannerless describe qué camino se tomó, no que lo haya recorrido el
+      // workflow de producción. Este runner reimplementa la orquestación, así
+      // que lo declara y no se lo puede confundir con `processInboundTurn`.
+      execution_harness: 'runner_reimplementation',
       ...(selectedSuite.composition ?? {}),
       executed_cases: executedCaseIds.length,
       executed_case_ids: executedCaseIds,
@@ -1466,10 +1662,18 @@ async function main() {
     await db?.end({ timeout: 5 });
   }
 
-  await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+  await writeFile(outputPath, `${JSON.stringify({
+    ...report,
+    release_provenance: releaseProvenance,
+    evaluated_route: plannerlessV2 ? 'plannerless_v2' : 'planner_v1',
+    execution_harness: 'runner_reimplementation',
+  }, null, 2)}\n`, 'utf8');
 
   console.log(JSON.stringify({
     ...report.summary,
+    release_provenance: releaseProvenance,
+    evaluated_route: plannerlessV2 ? 'plannerless_v2' : 'planner_v1',
+    execution_harness: 'runner_reimplementation',
     acceptance_gates: evaluateRunAcceptanceGatesV1(report.metrics),
     output: outputPath,
   }, null, 2));

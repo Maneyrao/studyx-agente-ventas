@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "prompt_version": "studyx-agent-a-brain-v11",
+  "prompt_version": "studyx-agent-a-brain-v13",
   "suite": "studyx-agent-a-conversational-baseline",
   "cases": [
     {
@@ -20,7 +20,7 @@
         "Me interesa la formación de Redes Informáticas",
         "¿Cuánto sale?",
         "Elijo el pago único y mandame el link",
-        "Soy Ariana Paz, base-01-reopen-after-link-{{run_id}}@example.test",
+        "Soy Ariana Paz, base-01-reopen-after-link-{{run_id}}@example.test, mi teléfono es +1 305 555 0101",
         "Buenas tardes"
       ],
       "ideal_result": {
@@ -348,7 +348,7 @@
         "¿Cuánto sale?",
         "Elijo las 12 cuotas y mandame el link",
         "Soy Nadia Ferrer",
-        "Mi correo es base-14-intake-gate-{{run_id}}@example.test"
+        "Mi correo es base-14-intake-gate-{{run_id}}@example.test. Mi teléfono es +1 305 555 0102"
       ],
       "ideal_result": {
         "no_technical_fallback": true,

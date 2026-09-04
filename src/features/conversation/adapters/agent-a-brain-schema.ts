@@ -61,6 +61,15 @@ export const AgentAContextV1Schema = z.object({
     awaiting_reply: z.enum(['none', 'area_choice', 'course_choice', 'call_or_chat', 'payment_plan', 'payment_confirmation', 'contact_details']),
     payment_reported: z.boolean(),
   }).strict(),
+  /** Espejo de `obligations` del ADK: qué debe este turno y qué no habilita. */
+  obligations: z.object({
+    stage: z.enum(['exploring', 'qualified', 'course_selected', 'plan_selected', 'payment_link_sent', 'handoff', 'closed']),
+    owes: z.array(z.enum([
+      'greeting', 'diagnostic_question', 'presentation', 'option_close',
+      'contact_details', 'payment_link', 'payment_acknowledgement',
+    ])).default([]),
+    not_yet: z.array(z.enum(['price', 'payment_link'])).default([]),
+  }).strict().optional(),
   catalog: z.object({
     selected_offering: z.object({
       code: IdentifierSchema,
@@ -102,6 +111,12 @@ export const AgentAContextV1Schema = z.object({
     // Nombres de campo, nunca valores. El modelo necesita saber qué
     // falta para poder pedirlo; no necesita el nombre, el correo ni el
     // teléfono del cliente, y no los recibe.
+    /**
+     * Si la autoridad respondió qué falta, o si nadie preguntó.
+     * `unknown` nunca puede leerse como completitud: el gate del link no se
+     * abre por ignorancia.
+     */
+    intake_status: z.enum(['known', 'unknown']),
     intake_missing: z.array(z.enum(['nombre', 'apellido', 'correo', 'telefono']))
       .default([]),
   }).strict(),

@@ -40,6 +40,7 @@ const validContext = {
     // no corre tests/contract; sólo `npm test` lo alcanza.
     payment_reported: false,
   },
+  obligations: { stage: 'course_selected', owes: ['presentation'], not_yet: [] },
   catalog: {
     selected_offering: {
       code: 'redes-informaticas',
@@ -59,6 +60,7 @@ const validContext = {
     may_request_call_now: true,
     may_present_payment_options: true,
     may_send_payment_link: false,
+    intake_status: 'known',
     authorized_payment_plan: null,
   },
 } as const;

@@ -312,9 +312,65 @@ function agentAIdentityFromClaim(
   return { advisor_name: advisor, academy_name: academy, website: null, instagram: null };
 }
 
+/**
+ * Fase de venta y su deuda.
+ *
+ * El comportamiento canónico describe seis fases y `commercial_state.stage`
+ * sabe en cuál está la conversación, pero nada las unía: el modelo tenía el
+ * mapa y su posición sin que nadie le dijera que eran lo mismo, y sin una
+ * obligación explícita respondía bien sin hacer avanzar la venta.
+ *
+ * Sólo se declara lo que el estado durable sostiene de verdad. Una deuda que
+ * hay que adivinar del texto no es una deuda: sería otro filtro léxico.
+ */
+function salesObligationsV1(input: {
+  readonly spokeBefore: boolean;
+  readonly courseChosenThisTurn: boolean;
+  readonly selectedCode: string | null;
+  readonly selectedPlan: string | null;
+  readonly stage: string;
+  readonly awaitingReply: string;
+  readonly paymentReported: boolean;
+  readonly intakeMissing: readonly string[];
+  readonly maySendPaymentLink: boolean;
+}): { owes: string[]; not_yet: string[] } {
+  const owes: string[] = [];
+  if (!input.spokeBefore) owes.push('greeting');
+  if (input.paymentReported) owes.push('payment_acknowledgement');
+  if (input.awaitingReply === 'contact_details') {
+    owes.push(input.intakeMissing.length > 0 ? 'contact_details' : 'payment_link');
+  }
+  if (input.courseChosenThisTurn) owes.push('diagnostic_question');
+  else if (input.selectedCode !== null && input.selectedPlan === null) {
+    owes.push(input.awaitingReply === 'payment_plan' ? 'option_close' : 'presentation');
+  }
+
+  const not_yet: string[] = [];
+  // Fase 4 del comportamiento canónico: el precio no se da antes de que haya
+  // un curso concreto sobre la mesa.
+  if (input.selectedCode === null) not_yet.push('price');
+  if (!input.maySendPaymentLink) not_yet.push('payment_link');
+  return { owes: [...new Set(owes)], not_yet };
+}
+
+/**
+ * Opciones de construcción del contexto.
+ *
+ * `rigidObligations` conserva la variante anterior —la que declaraba una deuda
+ * de fase en cada turno— para poder caracterizarla y compararla. Está apagada
+ * por defecto: el ensayo sobre turnos reales mostró que exigía `presentation`
+ * en 13 de 34 turnos, incluido el de quien acababa de avisar que pagó, porque
+ * la derivaba de `stage`, y `stage` no distingue diagnóstico de presentación
+ * ni de precio: los tres son `course_selected`.
+ */
+export interface BuildAgentAContextOptionsV1 {
+  readonly rigidObligations?: boolean;
+}
+
 export function buildAgentAContextV1(
   claimed: ClaimedTurn,
   advisorName: string | null = null,
+  options: BuildAgentAContextOptionsV1 = {},
 ): AgentAContextV1 | null {
   const state = claimed.conversation_state_v1;
   if (!state) return null;
@@ -326,20 +382,26 @@ export function buildAgentAContextV1(
   const currentCode = claimed.catalog_resolution.kind === 'exact'
     ? claimed.catalog_resolution.offeringCode
     : null;
-  // Un turno vago no sostiene el curso de una conversación anterior. La
-  // supresión previa exigía `selectedCode === null`, que es exactamente el
-  // caso que NO falla, y sólo limpiaba memorias: la ficha del curso viejo
-  // seguía viajando y el modelo no tenía otra cosa de la que hablar.
+  // Un turno vago no deja que una memoria vieja conteste por el cliente: de
+  // ahí salía un curso que el mensaje actual nunca nombró. Las memorias se
+  // recuperan por similitud y cruzan sesiones, así que son las únicas que
+  // hace falta acotar al turno.
   //
-  // Un paso pendiente sí sostiene el curso: quien está entregando sus datos de
-  // contacto y escribe "?" no está abandonando la compra.
-  const hasPendingCommitment = state.awaiting_reply !== 'none'
-    || state.selected_payment_plan !== null
-    || state.payment_reported === true;
-  const scopeToCurrentTurn = currentCode === null
-    && !hasPendingCommitment
+  // Lo que un turno vago NO hace es cancelar la venta en curso. El curso y
+  // los permisos comerciales salen del estado durable, que el backend ya
+  // entrega con la sesión caducada (`claim-batch` aplica
+  // `effectiveConversationStateV1`) y vuelve a verificar al autorizar el
+  // turno. Acotarlos acá dejaba al ADK más estricto que su propia autoridad
+  // y apagaba en silencio el ofrecimiento de llamada y la presentación de
+  // planes a mitad de una compra: `may_offer_call`,
+  // `may_present_payment_options` y `may_send_payment_link` cuelgan todos de
+  // este código.
+  const wanderingTurn = currentCode === null
+    && state.awaiting_reply === 'none'
+    && state.selected_payment_plan === null
+    && state.payment_reported !== true
     && currentTurnIsUnderspecifiedV1(claimed);
-  const selectedCode = currentCode ?? (scopeToCurrentTurn ? null : state.selected_offering_code);
+  const selectedCode = currentCode ?? state.selected_offering_code;
   const currentCourseChanged = currentCode !== null
     && currentCode !== state.selected_offering_code;
   const selectedOffering = selectedCode ? selectedOfferingFacts(claimed, selectedCode) : null;
@@ -359,7 +421,32 @@ export function buildAgentAContextV1(
     }));
   const callOfferCount = state.call_offer_count ?? (state.call_offer_status === 'not_offered' ? 0 : 1);
   const selectedPlan = currentCourseChanged ? null : state.selected_payment_plan;
-  const suppressContactMemories = scopeToCurrentTurn;
+  const suppressContactMemories = wanderingTurn;
+  // El scoping gobierna qué memorias se muestran, nunca qué datos faltan.
+  // Atarle el intake convertía «nadie consultó» en «no falta nada», y con el
+  // flag apagado —que es el default— el contexto declaraba intake completo
+  // sobre un contacto del que no sabía nada.
+  const intakeAnswered = Array.isArray(claimed.contact_intake_missing);
+  const intakeMissing = intakeAnswered ? claimed.contact_intake_missing! : [];
+  const intakeStatus: 'known' | 'unknown' = intakeAnswered ? 'known' : 'unknown';
+  // Desconocido no abre el gate. La única lectura segura de una respuesta que
+  // nadie dio es que todavía falta algo.
+  const maySendPaymentLink = claimed.policy.may_respond
+    && selectedCode !== null
+    && selectedPlan !== null
+    && intakeStatus === 'known'
+    && intakeMissing.length === 0;
+  const obligations = options.rigidObligations !== true ? null : salesObligationsV1({
+    spokeBefore: claimed.context.recent_turns.some((turn) => turn.direction === 'outbound'),
+    courseChosenThisTurn: currentCourseChanged,
+    selectedCode,
+    selectedPlan,
+    stage: state.stage,
+    awaitingReply: state.awaiting_reply,
+    paymentReported: state.payment_reported === true,
+    intakeMissing,
+    maySendPaymentLink,
+  });
 
   return AgentAContextV1Schema.parse({
     schema_version: 1,
@@ -394,9 +481,7 @@ export function buildAgentAContextV1(
       selected_payment_plan: selectedPlan,
       // Ocultar el curso y seguir diciendo `course_selected` describiría un
       // estado que el modelo no puede ver: el turno vuelve a exploración.
-      stage: currentCourseChanged
-        ? 'course_selected'
-        : (scopeToCurrentTurn ? 'exploring' : state.stage),
+      stage: currentCourseChanged ? 'course_selected' : state.stage,
       call_preference: state.call_preference,
       call_offer_status: state.call_offer_status,
       call_offer_count: callOfferCount,
@@ -406,6 +491,16 @@ export function buildAgentAContextV1(
       // verified — this field is the claim, never a verification.
       payment_reported: state.payment_reported === true,
     },
+    // Ausente salvo en la variante rígida: `commercial_state` ya describe los
+    // hechos persistidos y el preámbulo explica que eso no son fases de venta
+    // cumplidas. Una deuda calculada encima volvía a imponer un recorrido.
+    ...(obligations === null ? {} : {
+      obligations: {
+        stage: currentCourseChanged ? 'course_selected' : state.stage,
+        owes: obligations.owes,
+        not_yet: obligations.not_yet,
+      },
+    }),
     catalog: {
       selected_offering: selectedOffering,
       areas: [...areas].map(([code, display_name]) => ({
@@ -413,7 +508,11 @@ export function buildAgentAContextV1(
         fact_id: `area:${code}:name:v1`,
         display_name,
       })),
-      candidate_offerings: selectedOffering ? [] : candidates,
+      // Con una venta enfocada las alternativas distraen, así que no viajan.
+      // Pero si la persona dejó de apuntar a algo concreto y no hay paso
+      // pendiente, una lista vacía es justamente lo que dejaba al modelo sin
+      // nada que ofrecer: ahí las alternativas son la respuesta.
+      candidate_offerings: selectedOffering && !wanderingTurn ? [] : candidates,
       // El id sigue el esquema del registro canónico del backend, igual que
       // `area:<code>:name:v1` arriba. Sin offering seleccionado no hay plan que
       // referenciar, así que la lista queda vacía.
@@ -437,16 +536,10 @@ export function buildAgentAContextV1(
       may_present_payment_options: claimed.policy.may_respond
         && selectedCode !== null
         && (claimed.business_context?.workspace.payment_options.length ?? 0) > 0,
-      may_send_payment_link: claimed.policy.may_respond
-        && selectedCode !== null
-        && selectedPlan !== null,
+      may_send_payment_link: maySendPaymentLink,
+      intake_status: intakeStatus,
       authorized_payment_plan: selectedPlan,
-      // R1: conducta nueva, apagada por defecto. Con el flag apagado la
-      // lista queda vacía y el modelo deduce qué falta como hasta ahora,
-      // que es exactamente el comportamiento anterior.
-      intake_missing: claimed.features?.agent_a_context_scoping === true
-        ? claimed.contact_intake_missing ?? []
-        : [],
+      intake_missing: intakeMissing,
     },
   });
 }

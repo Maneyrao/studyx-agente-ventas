@@ -1,6 +1,6 @@
 import { sql as orchestratorSql } from '@/lib/db/orchestrator';
 import type { DbClient } from '@/lib/db/types';
-import { splitFullName } from '@/lib/heuristics/contact-identity';
+import { commercialIntakeFromContactRowV1 } from '@/lib/heuristics/contact-identity';
 import type { ContactIntakeV1 } from '@/features/conversation/domain/conversation-planner';
 
 /**
@@ -17,19 +17,16 @@ export async function loadContactIntakeV1(
   contactId: string,
   db: DbClient = orchestratorSql,
 ): Promise<ContactIntakeV1> {
-  const rows = await db<Array<{ phone: string; name: string | null; email: string | null }>>`
-    SELECT phone, name, email
+  const rows = await db<Array<{
+    phone: string;
+    declared_phone: string | null;
+    name: string | null;
+    email: string | null;
+  }>>`
+    SELECT phone, declared_phone, name, email
     FROM contacts
     WHERE id = ${contactId}::uuid AND deleted_at IS NULL
     LIMIT 1
   `;
-  const row = rows[0];
-  if (!row) return { nombre: null, apellido: null, correo: null, telefono: null };
-  const identity = row.name ? splitFullName(row.name) : null;
-  return {
-    nombre: identity?.nombre || null,
-    apellido: identity?.apellido || null,
-    correo: row.email,
-    telefono: row.phone,
-  };
+  return commercialIntakeFromContactRowV1(rows[0] ?? null);
 }

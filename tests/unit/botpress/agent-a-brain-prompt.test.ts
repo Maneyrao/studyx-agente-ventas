@@ -33,6 +33,7 @@ function context(memoryValue = 'busca salida laboral'): AgentAContextV1 {
       call_offer_count: 0,
       awaiting_reply: 'none', payment_reported: false,
     },
+    obligations: { stage: 'course_selected', owes: [], not_yet: [] },
     catalog: {
       selected_offering: {
         code: 'redes-informaticas', display_name: 'Redes Informáticas', area_code: 'tecnologia',
@@ -48,6 +49,7 @@ function context(memoryValue = 'busca salida laboral'): AgentAContextV1 {
       may_request_call_now: false,
       may_present_payment_options: true,
       may_send_payment_link: false,
+      intake_status: 'known',
       authorized_payment_plan: null,
       intake_missing: [],
     },
@@ -59,7 +61,7 @@ describe('Agent A Brain V1 prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v3');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v11');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v13');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('Backend policy and capabilities are authoritative');
     expect(instructions).toContain('Resolve the current message against commercial_state.awaiting_reply');
@@ -224,5 +226,52 @@ describe('directiva de reparación por repetición', () => {
     // Los hechos siguen autorizados: el rechazo es sobre la redacción, no
     // sobre lo que se puede afirmar.
     expect(instructions).toMatch(/REPEATED_AGENT_REPLY[\s\S]*hechos autorizados no cambian/iu);
+  });
+});
+
+/**
+ * Un campo que el prompt no nombra es un campo decorativo: el modelo lo ve en
+ * el JSON y no sabe que lo obliga. Estos tests son el cable entre el contexto
+ * y la instrucción, y fallan si alguien agrega la deuda sin explicarla.
+ */
+describe('orientación de fase en el prompt', () => {
+  const instructions = buildAgentABrainInstructionsV1(context());
+
+  /**
+   * El prompt describía una deuda por turno —`obligations.owes`— que el
+   * backend calculaba desde `stage`. Sobre 34 turnos históricos eso exigía
+   * `presentation` en 13, incluido el de quien acababa de avisar que pagó,
+   * porque `stage` no distingue diagnóstico de presentación ni de precio: los
+   * tres son `course_selected`. La deuda se retiró; queda la orientación.
+   */
+  it('separa hechos persistidos de fases de venta cumplidas', () => {
+    expect(instructions)
+      .toMatch(/commercial_state describes persisted facts, not completed sales phases/u);
+    expect(instructions)
+      .toMatch(/course_selected does not mean diagnosis, presentation or pricing already happened/u);
+  });
+
+  it('pide contestar lo que se preguntó antes que avanzar un guion', () => {
+    expect(instructions).toMatch(/Answer the current request first/u);
+    expect(instructions).toMatch(
+      /Do not repeat a presentation or a question only because a\s+payment plan has not been selected/u,
+    );
+  });
+
+  it('ya no impone una deuda de turno calculada por el backend', () => {
+    expect(instructions).not.toMatch(/obligations\.owes/u);
+    expect(instructions).toMatch(/nothing in the context tells you what you owe this turn/u);
+  });
+
+  it('un intake desconocido no habilita afirmar datos ni link', () => {
+    expect(instructions).toMatch(/Unknown intake is not complete intake/u);
+    expect(instructions).toMatch(
+      /capabilities\.intake_status is unknown[\s\S]*do not claim any detail is registered/u,
+    );
+  });
+
+  it('sin nombre configurado se presenta como equipo, sin placeholder ni bot', () => {
+    expect(instructions).toMatch(/introduce\s+yourself as part of the StudyX team/u);
+    expect(instructions).toMatch(/never describe yourself as a bot/u);
   });
 });

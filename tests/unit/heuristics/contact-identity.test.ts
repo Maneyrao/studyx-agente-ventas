@@ -9,6 +9,7 @@ describe('extractContactIdentity', () => {
     expect(captured).toEqual({
       name: 'Bruno Aguilar',
       email: 'bruno.real11_01+run@example.com',
+      declaredPhone: null,
     });
   });
 
@@ -16,6 +17,7 @@ describe('extractContactIdentity', () => {
     expect(extractContactIdentity('Soy Franco Le Blanc, franco@example.com.')).toEqual({
       name: 'Franco Le Blanc',
       email: 'franco@example.com',
+      declaredPhone: null,
     });
   });
 
@@ -28,6 +30,7 @@ describe('extractContactIdentity', () => {
     expect(extractContactIdentity('Ivan Roldan, ivan.real11_10+run@example.com')).toEqual({
       name: 'Ivan Roldan',
       email: 'ivan.real11_10+run@example.com',
+      declaredPhone: null,
     });
   });
 
@@ -35,6 +38,7 @@ describe('extractContactIdentity', () => {
     expect(extractContactIdentity('soy Yamila Torrez, yamila@example.com')).toEqual({
       name: 'Yamila Torrez',
       email: 'yamila@example.com',
+      declaredPhone: null,
     });
   });
 
@@ -61,6 +65,7 @@ describe('extractContactIdentity', () => {
     )).toEqual({
       name: 'Milena Suárez',
       email: 'milena@example.com',
+      declaredPhone: null,
     });
   });
 
@@ -68,6 +73,7 @@ describe('extractContactIdentity', () => {
     expect(extractContactIdentity('Me equivoqué: es Suárez con tilde.', null)).toEqual({
       name: null,
       email: null,
+      declaredPhone: null,
     });
   });
 });
