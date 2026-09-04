@@ -19,6 +19,10 @@
  * desplegado. No es un e2e de Telegram y llamarlo así sería mentir.
  */
 import { randomUUID } from 'node:crypto';
+import type { WorkflowAdapterCaptureV1 } from './agent-a-workflow-measurement';
+import { observeWorkflowFetchV1, workflowCommitSucceededV1, type WorkflowHttpExchangeV1 } from './agent-a-workflow-http-evidence';
+import { writeWorkflowReportV1 } from './agent-a-workflow-report';
+import { observeWorkflowConsoleInfoV1, type WorkflowEventV1 } from './agent-a-workflow-events';
 
 import { processInboundTurn } from '../../botpress-agent/src/workflows/processInboundTurn';
 import {
@@ -32,6 +36,10 @@ export interface WorkflowTurnInputV1 {
   readonly conversationId: string;
   readonly userId: string;
   readonly phoneE164: string;
+  /** Permite replay del mismo evento sin crear un turno nuevo. */
+  readonly externalMessageId?: string;
+  readonly occurredAt?: string;
+  readonly providerMode?: 'live' | 'fixture';
 }
 
 export interface WorkflowTurnEvidenceV1 {
@@ -40,6 +48,23 @@ export interface WorkflowTurnEvidenceV1 {
   /** Cuántas veces se pidió un plan. En plannerless tiene que ser 0. */
   readonly legacyPlanRequests: number;
   readonly commitSucceeded: boolean;
+  readonly turnId: string | null;
+  readonly outboundId: string | null;
+  readonly traceId: string;
+  readonly externalMessageId: string;
+  readonly occurredAt: string;
+  readonly deliveryStatus: string | null;
+  readonly adapterCaptures: readonly WorkflowAdapterCaptureV1[];
+  /** Contexto, propuestas, usage, rechazos y respuesta efectiva; nunca headers. */
+  readonly httpExchanges: readonly WorkflowHttpExchangeV1[];
+  readonly workflowEvents: readonly WorkflowEventV1[];
+  readonly providerMode: 'live' | 'fixture';
+  readonly runtimeConfiguration: {
+    readonly requestTimeoutMs: number;
+    readonly retryBaseDelayMs: number;
+    readonly retryMaxDelayMs: number;
+    readonly advisorName: unknown;
+  };
   /** Texto que quedó autorizado y salió por el cliente de entrega. */
   readonly authorizedMessages: readonly string[];
   readonly steps: readonly string[];
@@ -80,8 +105,26 @@ export async function runWorkflowTurnV1(
   resetRecordedActionInvocationsV1();
   const steps: string[] = [];
   const authorizedMessages: string[] = [];
+  const adapterCaptures: WorkflowAdapterCaptureV1[] = [];
+  const httpExchanges: WorkflowHttpExchangeV1[] = [];
+  const workflowEvents: WorkflowEventV1[] = [];
   const state = freshWorkflowState();
   const startedAt = Date.now();
+  const traceId = randomUUID();
+  const externalMessageId = turn.externalMessageId ?? randomUUID();
+  const occurredAt = turn.occurredAt ?? new Date().toISOString();
+
+  const apiUrl = new URL(configuration.apiBaseUrl);
+  if (apiUrl.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(apiUrl.hostname)
+      || !/^32\d\d$/u.test(apiUrl.port)) {
+    throw new Error('REFUSING_NON_LOCAL_WORKFLOW_BACKEND');
+  }
+  if (!turn.phoneE164.startsWith('+999')) throw new Error('REFUSING_NON_SYNTHETIC_WORKFLOW_CONTACT');
+  // Suites secuenciales: sólo se observan las fronteras del turno actual.
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = observeWorkflowFetchV1(originalFetch, httpExchanges, apiUrl.origin);
+  const originalConsoleInfo = console.info;
+  console.info = observeWorkflowConsoleInfoV1(originalConsoleInfo, traceId, workflowEvents);
 
   const handler = (processInboundTurn as unknown as {
     definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
@@ -95,15 +138,15 @@ export async function runWorkflowTurnV1(
         source: 'botpress',
         channel: 'emulator',
         integration_id: 'workflow-harness',
-        external_message_id: randomUUID(),
+        external_message_id: externalMessageId,
         external_conversation_id: turn.conversationId,
         external_user_id: turn.userId,
         phone_e164: turn.phoneE164,
-        trace_id: randomUUID(),
+        trace_id: traceId,
         message: {
           type: 'text',
           text: turn.text,
-          occurred_at: new Date().toISOString(),
+          occurred_at: occurredAt,
           reply_to_external_message_id: null,
           audio_reference: null,
           metadata: {},
@@ -140,11 +183,26 @@ export async function runWorkflowTurnV1(
         throw new Error('MANAGED_MODEL_MUST_NOT_RUN_IN_WORKFLOW_HARNESS');
       },
       client: {
-        async createMessage(message: { payload?: { text?: string } }) {
+        async createMessage(message: {
+          conversationId?: string;
+          payload?: { text?: string };
+          tags?: { studyxOutboundId?: string; studyxTraceId?: string };
+        }) {
           // Se captura DESPUÉS de autorización y commit: es el texto que el
           // cliente habría recibido, no la propuesta del modelo.
-          if (message.payload?.text) authorizedMessages.push(message.payload.text);
-          return { message: { id: randomUUID() } };
+          const providerMessageId = randomUUID();
+          if (message.payload?.text) {
+            authorizedMessages.push(message.payload.text);
+            adapterCaptures.push({
+              turnId: (state.turnId as string | null) ?? null,
+              outboundId: message.tags?.studyxOutboundId ?? null,
+              traceId: message.tags?.studyxTraceId ?? null,
+              conversationId: message.conversationId ?? null,
+              providerMessageId,
+              content: message.payload.text,
+            });
+          }
+          return { message: { id: providerMessageId } };
         },
       },
       signal: new AbortController().signal,
@@ -154,14 +212,33 @@ export async function runWorkflowTurnV1(
   } catch (error) {
     status = 'threw';
     state.errorCode = error instanceof Error ? error.message.slice(0, 128) : 'UNKNOWN';
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.info = originalConsoleInfo;
   }
 
   const actions = recordedActionInvocationsV1();
-  return {
+  const evidence: WorkflowTurnEvidenceV1 = {
     execution_harness: 'processInboundTurn',
     evaluated_route: configuration.agentAPlannerlessV2Enabled ? 'plannerless-v2' : 'planner-v1',
     legacyPlanRequests: actions.filter((a) => a.name === 'planConversation').length,
-    commitSucceeded: actions.some((a) => a.name === 'commitDecision' && a.ok),
+    commitSucceeded: workflowCommitSucceededV1(
+      actions.some((a) => a.name === 'commitDecision' && a.ok),
+      (state.turnId as string | null) ?? null,
+      httpExchanges,
+    ),
+    turnId: (state.turnId as string | null) ?? null,
+    outboundId: (state.outboundId as string | null) ?? null,
+    traceId, externalMessageId, occurredAt,
+    deliveryStatus: (state.deliveryStatus as string | null) ?? null,
+    adapterCaptures, httpExchanges, workflowEvents,
+    providerMode: turn.providerMode ?? 'live',
+    runtimeConfiguration: {
+      requestTimeoutMs: configuration.requestTimeoutMs,
+      retryBaseDelayMs: configuration.retryBaseDelayMs,
+      retryMaxDelayMs: configuration.retryMaxDelayMs,
+      advisorName: configuration.agentAAdvisorName,
+    },
     authorizedMessages,
     steps,
     actions,
@@ -169,6 +246,8 @@ export async function runWorkflowTurnV1(
     errorCode: (state.errorCode as string | null) ?? null,
     elapsedMs: Date.now() - startedAt,
   };
+  writeWorkflowReportV1('workflow-turn', { conversation_id: turn.conversationId, customer: turn.text, evidence });
+  return evidence;
 }
 
 export interface WorkflowConversationEvidenceV1 {

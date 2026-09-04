@@ -40,9 +40,12 @@ function validatePlannerless(input: {
     input.proposal.move.move,
     ...input.proposal.move.secondary_moves,
   ])
-  const paymentActionRequested = moves.has('request_payment_link')
+  const paymentDeferred = moves.has('defer_payment') || moves.has('decline_purchase')
+    || input.proposal.move.vetoes.includes('payment_link')
+    || input.proposal.move.vetoes.includes('purchase')
+  const paymentActionRequested = !paymentDeferred && (moves.has('request_payment_link')
     || (moves.has('provide_contact_details')
-      && input.context.commercial_state.awaiting_reply === 'contact_details')
+      && input.context.commercial_state.awaiting_reply === 'contact_details'))
   const action = input.proposal.proposed_action
   const paymentTransitionAuthorized = action.type === 'send_payment_link'
     && paymentActionRequested

@@ -34,7 +34,8 @@ export interface AdaptiveTurnV1 {
 const ASKS_PRIOR_KNOWLEDGE = /conocimientos previos|desde cero|ya ten[ií]as pensado|empezando a averiguar/iu;
 const ASKS_CALL_OR_CHAT = /llamada|llamarte|te llamo|prefer[ií]s.{0,24}chat/iu;
 const ASKS_PLAN = /cu[aá]l de las tres|opciones de pago|qu[eé] opci[oó]n|te resulta m[aá]s c[oó]moda|cu[aá]l preferís/iu;
-const ASKS_CONTACT_DETAILS = /nombre.{0,40}(?:apellido|correo)|correo electr[oó]nico|tel[eé]fono|dejarlo registrado/iu;
+const ASKS_CONTACT_DETAILS = /nombre.{0,40}(?:apellido|correo)|correo electr[oó]nico|tel[eé]fono/iu;
+const ASKS_LINK_PERMISSION = /(?:quer[eé]s|dese[aá]s|te gustar[ií]a|te (?:mando|env[ií]o|paso|comparto|preparo)).{0,80}(?:link|enlace)/iu;
 const ASKS_WHICH_COURSE = /qu[eé] (?:curso|formaci[oó]n|te interesa)|cu[aá]l te interesa|[aá]rea/iu;
 const SENT_LINK = /https?:\/\//u;
 
@@ -52,6 +53,9 @@ export function nextAdaptiveCustomerTurnV1(input: {
   }
   if (SENT_LINK.test(agent)) {
     return { text: 'Listo, ya hice el pago', answering: 'link_recibido' };
+  }
+  if (ASKS_LINK_PERMISSION.test(agent)) {
+    return { text: 'Sí, mandame el link de pago', answering: 'autoriza_link' };
   }
   if (ASKS_CONTACT_DETAILS.test(agent) && !input.alreadyGaveDetails) {
     return {

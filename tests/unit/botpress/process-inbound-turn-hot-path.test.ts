@@ -88,6 +88,7 @@ vi.mock('../../../botpress-agent/src/lib/conversation/agent-a-brain', () => ({
 
 import { adk, configuration, secrets } from '../../helpers/botpress-runtime-stub';
 import { processInboundTurn } from '../../../botpress-agent/src/workflows/processInboundTurn';
+import { AGENT_A_BRAIN_PROMPT_VERSION } from '../../../botpress-agent/src/prompts/agent-a-brain-v1';
 import type { ClaimedTurn } from '../../../botpress-agent/src/schemas/contracts';
 import {
   DEFAULT_REQUEST_TIMEOUT_MS,
@@ -439,7 +440,7 @@ describe('processInboundTurn hot path', () => {
           response: { messages: ['Buenísimo, Redes puede ser una opción muy práctica para vos.'] },
         },
       },
-      model: { provider: 'deepseek-direct', prompt_version: 'studyx-agent-a-brain-v13' },
+      model: { provider: 'deepseek-direct', prompt_version: AGENT_A_BRAIN_PROMPT_VERSION },
     });
   });
 
@@ -512,7 +513,7 @@ describe('processInboundTurn hot path', () => {
               },
             },
           },
-          model: { prompt_version: 'studyx-agent-a-brain-v13' },
+          model: { prompt_version: AGENT_A_BRAIN_PROMPT_VERSION },
         });
       } else {
         expect(commitInput).toMatchObject({
@@ -531,7 +532,7 @@ describe('processInboundTurn hot path', () => {
         const brainLog = logs.map((line) => JSON.parse(line) as Record<string, unknown>)
           .find((entry) => entry.event === 'studyx.turn.agent_a_brain_v1');
         expect(brainLog).toMatchObject({
-          brain_prompt_version: 'studyx-agent-a-brain-v13',
+          brain_prompt_version: AGENT_A_BRAIN_PROMPT_VERSION,
           brain_model: 'deepseek-v4-flash',
           brain_source: 'model',
           context_recent_turn_count: 0,

@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { runWorkflowConversationV1 } from '../helpers/agent-a-workflow-driver';
 import { readWorkflowDbEvidenceV1 } from '../helpers/agent-a-workflow-db-evidence';
 import { configuration } from '../helpers/botpress-workflow-runtime';
+import { countWorkflowAvailabilityFailuresV1 } from '../helpers/agent-a-workflow-measurement';
+import { writeWorkflowReportV1 } from '../helpers/agent-a-workflow-report';
 
 /**
  * Conversaciones completas por el workflow de producción.
@@ -24,27 +24,8 @@ import { configuration } from '../helpers/botpress-workflow-runtime';
  * que un turno feo pero correcto pase, o que uno correcto pero feo falle.
  */
 const apiBaseUrl = process.env.STUDYX_EVAL_API_BASE_URL ?? 'http://127.0.0.1:3217';
-const outputDir = path.resolve(process.cwd(), 'botpress-agent/evals/results');
 const databaseUrl = process.env.TEST_DATABASE_URL
-  ?? process.env.DATABASE_URL
   ?? 'postgresql://postgres@127.0.0.1:55435/studyx_test';
-
-/**
- * Códigos con los que la ruta plannerless calla A PROPÓSITO.
- *
- * El workflow prefiere no responder antes que sustituir al modelo con copy
- * enlatado cuando la generación no sobrevive las validaciones; está escrito así
- * en `processInboundTurn`. Ese silencio es una decisión comprometida en la
- * base, con su motivo, y no puede contarse igual que un turno que se perdió.
- *
- * Un silencio accidental —sin decisión, o con el workflow en error— sí es un
- * fallo, y es lo que estas pruebas exigen que sea cero.
- */
-const SILENCIOS_DELIBERADOS_V1 = new Set([
-  'BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK',
-  'OPT_OUT_ACK',
-  'CONTACT_BLOCKED',
-]);
 let backendUp = false;
 
 beforeAll(async () => {
@@ -122,50 +103,33 @@ describe('conversaciones completas por processInboundTurn', () => {
         ...identity(),
         customerTurns: caso.customerTurns,
       });
-      resultados.push({ case_id: caso.id, ...evidencia });
-
-      // Un turno mudo sólo se acepta cuando el backend registró POR QUÉ calló.
-      // Sin decisión comprometida, el turno se perdió y eso es un fallo.
-      if (evidencia.silentTurns > 0) {
-        const db = await readWorkflowDbEvidenceV1({
-          databaseUrl, externalConversationId: evidencia.conversationId,
-        });
-        const deliberados = db.decisions.filter((d) => (
-          !d.hasResponse && SILENCIOS_DELIBERADOS_V1.has(d.reasonCode ?? '')
-        )).length;
-        expect(
-          evidencia.silentTurns - deliberados,
-          `${caso.id}: silencios accidentales (motivos: ${db.decisions.filter((d) => !d.hasResponse).map((d) => d.reasonCode).join(', ')})`,
-        ).toBe(0);
-      }
+      const db = await readWorkflowDbEvidenceV1({
+        databaseUrl, externalConversationId: evidencia.conversationId,
+        adapterCaptures: evidencia.turns.flatMap((turn) => turn.evidence.adapterCaptures),
+      });
+      const availabilityFailures = countWorkflowAvailabilityFailuresV1({ turns: evidencia.turns, db });
+      resultados.push({ case_id: caso.id, ...evidencia, db, availabilityFailures });
+      // Guardar antes de cualquier aserción: también se conservan corridas fallidas.
+      writeWorkflowReportV1('workflow-conversation', {
+        evaluated_route: 'plannerless-v2', case_id: caso.id, scenario_role: 'adjustment',
+        ...evidencia, db, availability_failures: availabilityFailures,
+      });
+      expect.soft(availabilityFailures, `${caso.id}: fallos de disponibilidad por turno`).toBe(0);
       // La ruta plannerless no pide planes. Se cuenta la invocación real.
-      expect(evidencia.totalPlanRequests, `${caso.id}: planes pedidos`).toBe(0);
+      expect.soft(evidencia.totalPlanRequests, `${caso.id}: planes pedidos`).toBe(0);
       // Cada turno llegó al commit; nada quedó a mitad de camino.
       for (const turno of evidencia.turns) {
-        expect(turno.evidence.commitSucceeded, `${caso.id}: commit de "${turno.customer}"`)
+        expect.soft(turno.evidence.commitSucceeded, `${caso.id}: commit de "${turno.customer}"`)
           .toBe(true);
-        expect(turno.evidence.errorCode, `${caso.id}: error en "${turno.customer}"`).toBeNull();
+        expect.soft(turno.evidence.errorCode, `${caso.id}: error en "${turno.customer}"`).toBeNull();
       }
     }
 
     // El transcript queda en disco para calificar naturalidad por separado.
-    mkdirSync(outputDir, { recursive: true });
-    writeFileSync(
-      path.join(outputDir, 'workflow-conversations-latest.json'),
-      `${JSON.stringify({
-        execution_harness: 'processInboundTurn',
+    writeWorkflowReportV1('workflow-conversations', {
         evaluated_route: 'plannerless-v2',
-        generated_at: new Date().toISOString(),
-        conversations: resultados.map((r) => ({
-          case_id: r.case_id,
-          transcript: r.transcript,
-          delivered_turns: r.deliveredTurns,
-          silent_turns: r.silentTurns,
-          plan_requests: r.totalPlanRequests,
-        })),
-      }, null, 2)}\n`,
-      'utf8',
-    );
+        scenario_role: 'adjustment', conversations: resultados,
+    });
   }, 600_000);
 
   it('un rechazo explícito de llamada no vuelve a ofrecerla', async () => {
@@ -181,13 +145,20 @@ describe('conversaciones completas por processInboundTurn', () => {
       ],
     });
 
-    const ofrecimientos = evidencia.transcript
-      .filter((t) => t.role === 'assistant')
-      .slice(2)
-      .filter((t) => /llamada|llamarte|te llamo|telefónica/iu.test(t.text));
+    const db = await readWorkflowDbEvidenceV1({
+      databaseUrl, externalConversationId: evidencia.conversationId,
+      adapterCaptures: evidencia.turns.flatMap((turn) => turn.evidence.adapterCaptures),
+    });
+    writeWorkflowReportV1('workflow-call-declined', { ...evidencia, db, scenario_role: 'adjustment' });
+    const ofrecimientos = evidencia.turns.slice(2)
+      .flatMap((turn) => turn.evidence.authorizedMessages)
+      .filter((text) => /llamada|llamarte|te llamo|telefónica/iu.test(text));
 
     expect(ofrecimientos, `ofreció llamada tras el rechazo: ${JSON.stringify(ofrecimientos)}`)
       .toHaveLength(0);
     expect(evidencia.silentTurns).toBe(0);
+    expect(countWorkflowAvailabilityFailuresV1({ turns: evidencia.turns, db })).toBe(0);
+    expect(db.state?.callPreference).toBe('chat');
+    expect(db.decisions.some((decision) => decision.businessActionType === 'request_call_now')).toBe(false);
   }, 600_000);
 });

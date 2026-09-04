@@ -29,6 +29,17 @@ function enforce(content: string, canonical: CanonicalTruthSetV1 = CANONICAL, ur
 }
 
 describe('lenguaje natural liberado', () => {
+  it.each([
+    'Tenemos 12 pagos mensuales de USD 30, 6 pagos de USD 60 o un pago de USD 360.',
+    'Contamos con chat directo con profesores.',
+    'Te recomiendo seguir por chat.',
+    'Ofrecemos una llamada breve para resolver tus consultas.',
+    'Tenemos acceso a las clases online.',
+  ])('no confunde servicios, planes ni recomendaciones con nombres de cursos: %s', (content) => {
+    const canonical = { ...CANONICAL, prices: ['USD 30', 'USD 60', 'USD 360'] };
+    expect(enforce(content, canonical).content).toBe(content);
+  });
+
   it('entrega intacta una respuesta natural que menciona modalidad y certificación reales', () => {
     const content = '¡Hola! Es 100% online, así que lo hacés a tu ritmo. '
       + 'Además te llevás un certificado al terminar. ¿Querés que te cuente el temario?';
@@ -81,6 +92,29 @@ describe('lenguaje natural liberado', () => {
 });
 
 describe('restricciones que siguen firmes', () => {
+  it.each([
+    'StudyX ofrece una beca garantizada.',
+    'Te damos un descuento especial para anotarte.',
+    'Tenés una beca disponible para este curso.',
+  ])('veta beneficios comerciales no autorizados: %s', (claim) => {
+    const verdict = enforce(`${claim} ¿Qué te gustaría aprender?`);
+
+    expect(verdict.content).toBe('¿Qué te gustaría aprender?');
+    expect(verdict.violations.map((violation) => violation.code)).toContain('FORBIDDEN_PROMISE');
+  });
+
+  it('conserva la negación explícita de becas y descuentos', () => {
+    const content = 'No ofrecemos becas ni descuentos. El total es USD 360.';
+    expect(enforce(content).content).toBe(content);
+  });
+
+  it.each([
+    'No tenemos descuentos, pero te damos una beca.',
+    'No ofrecemos becas y te damos un descuento.',
+  ])('no extiende una negación a otra oferta afirmativa: %s', (content) => {
+    expect(enforce(content).content).toBeNull();
+  });
+
   it('veta sólo la oración con un precio inventado y entrega el resto', () => {
     const verdict = enforce('Es 100% online. Te sale USD 999. ¿Arrancamos?');
 
@@ -162,6 +196,42 @@ describe('registro canónico desde el catálogo', () => {
     currency: 'USD',
     delivery: { modules: 12, modality: 'presencial', certification: false },
   };
+
+  it('no usa el catálogo como sustituto de una selección inexistente', () => {
+    const set = canonicalTruthSetFromOfferingsV1({
+      offerings: [PYTHON, MARKETING],
+      selected_offering_code: 'missing-course',
+    });
+
+    expect(set.prices).toEqual([]);
+    expect(set.durations).toEqual([]);
+    expect(enforce('El precio es USD 360.', set).content).toBeNull();
+  });
+
+  it.each([
+    'Sí, ofrecemos Mecánica Automotriz.',
+    'Podés estudiar Mecánica Automotriz.',
+    'Tenemos Programación en Python y Mecánica Automotriz.',
+  ])('rechaza cursos ajenos al catálogo aunque suenen plausibles: %s', (content) => {
+    const canonical = canonicalTruthSetFromOfferingsV1({
+      offerings: [PYTHON, MARKETING], selected_offering_code: null,
+    });
+
+    expect(enforce(content, canonical).content).toBeNull();
+  });
+
+  it.each([
+    'Tenemos Programación en Python y Marketing Digital.',
+    'Podés estudiar Programación en Python, que tiene 38 clases.',
+    'Ofrecemos Programación en Python para empezar a programar.',
+    'Tenemos varias opciones y te acompaño a elegir.',
+  ])('preserva nombres canónicos dentro de lenguaje natural: %s', (content) => {
+    const canonical = canonicalTruthSetFromOfferingsV1({
+      offerings: [PYTHON, MARKETING], selected_offering_code: null,
+    });
+
+    expect(enforce(content, canonical).content).toBe(content);
+  });
 
   it('se limita a la oferta seleccionada cuando hay una', () => {
     const set = canonicalTruthSetFromOfferingsV1({

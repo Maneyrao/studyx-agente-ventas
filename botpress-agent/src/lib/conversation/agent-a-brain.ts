@@ -1289,8 +1289,12 @@ export function validateAgentATurnProposalV1(input: {
     ...input.proposal.move.secondary_moves,
   ]);
   const missingIntake = input.context.capabilities.intake_missing ?? [];
-  const mustGuideIntake = missingIntake.length > 0 && (
-    input.context.commercial_state.awaiting_reply === 'contact_details'
+  const paymentDeferred = moves.has('defer_payment') || moves.has('decline_purchase')
+    || input.proposal.move.vetoes.includes('payment_link')
+    || input.proposal.move.vetoes.includes('purchase');
+  const mustGuideIntake = missingIntake.length > 0 && !paymentDeferred && (
+    (moves.has('provide_contact_details')
+      && input.context.commercial_state.awaiting_reply === 'contact_details')
     || moves.has('request_payment_link')
   );
   if (
@@ -1303,7 +1307,8 @@ export function validateAgentATurnProposalV1(input: {
 
   // V6 — ofertas visibles <= ledger, tope dos. Una oferta que el modelo
   // escribe dentro de su propia narrativa cuenta igual que la del campo.
-  const offersACall = input.proposal.response.call_offer !== null
+  const offersACall = typeof input.proposal.response.call_offer === 'string'
+    && input.proposal.response.call_offer.trim().length > 0
     || input.proposal.response.messages.some((message) => solicitsACallV1(message))
   if (offersACall && !input.context.capabilities.may_offer_call) {
     rejections.push({ code: 'CALL_BUDGET_EXHAUSTED', subject: 'call_offer' })

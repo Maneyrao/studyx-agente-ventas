@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { runWorkflowConversationV1 } from '../helpers/agent-a-workflow-driver';
 import { readWorkflowDbEvidenceV1 } from '../helpers/agent-a-workflow-db-evidence';
 import { configuration } from '../helpers/botpress-workflow-runtime';
+import { countWorkflowAvailabilityFailuresV1 } from '../helpers/agent-a-workflow-measurement';
+import { writeWorkflowReportV1 } from '../helpers/agent-a-workflow-report';
 
 /**
  * Resultados, no respuestas.
@@ -21,9 +21,7 @@ import { configuration } from '../helpers/botpress-workflow-runtime';
  */
 const apiBaseUrl = process.env.STUDYX_EVAL_API_BASE_URL ?? 'http://127.0.0.1:3217';
 const databaseUrl = process.env.TEST_DATABASE_URL
-  ?? process.env.DATABASE_URL
   ?? 'postgresql://postgres@127.0.0.1:55435/studyx_test';
-const outputDir = path.resolve(process.cwd(), 'botpress-agent/evals/results');
 
 let readiness: { ok: boolean; detail: string } = { ok: false, detail: 'sin verificar' };
 
@@ -65,8 +63,15 @@ async function correr(caseId: string, customerTurns: readonly string[]) {
   const db = await readWorkflowDbEvidenceV1({
     databaseUrl,
     externalConversationId: id.conversationId,
+    adapterCaptures: conversacion.turns.flatMap((turn) => turn.evidence.adapterCaptures),
   });
-  evidencias[caseId] = { transcript: conversacion.transcript, db };
+  const availabilityFailures = countWorkflowAvailabilityFailuresV1({ turns: conversacion.turns, db });
+  evidencias[caseId] = { ...conversacion, db, availabilityFailures };
+  writeWorkflowReportV1(`workflow-persisted-${caseId}`, {
+    evaluated_route: 'plannerless-v2', scenario_role: 'adjustment',
+    ...conversacion, db, availability_failures: availabilityFailures,
+  });
+  expect(availabilityFailures, `${caseId}: disponibilidad por turno`).toBe(0);
   return { conversacion, db };
 }
 
@@ -98,10 +103,9 @@ describe('resultados persistidos del Agente A', () => {
     expect(db.state?.callPreference).toBe('chat');
     expect(db.state?.callOfferCount).toBeLessThanOrEqual(2);
     // Ninguna oferta de llamada después del turno del rechazo.
-    const posteriores = conversacion.transcript
-      .filter((t) => t.role === 'assistant')
-      .slice(2)
-      .filter((t) => /te llamo|llamarte|una llamada|llamada telef/iu.test(t.text));
+    const posteriores = conversacion.turns.slice(2)
+      .flatMap((turn) => turn.evidence.authorizedMessages)
+      .filter((text) => /te llamo|llamarte|una llamada|llamada telef/iu.test(text));
     expect(posteriores, `reofreció: ${JSON.stringify(posteriores)}`).toHaveLength(0);
     expect(conversacion.silentTurns).toBe(0);
   }, 600_000);
@@ -120,6 +124,8 @@ describe('resultados persistidos del Agente A', () => {
     expect(db.contact?.phone).not.toBe('+13055550199');
     expect(db.contact?.email).toBe('lucia.ferrer@example.test');
     expect(db.state?.selectedPaymentPlan).toBe('one_time');
+    expect(db.recordedLinks, 'elegir plan y dar datos no autoriza el link').toHaveLength(0);
+    expect(db.decisions.some((decision) => decision.businessActionType === 'send_payment_link')).toBe(false);
   }, 600_000);
 
   it('link canónico sólo con plan e intake completos, y del plan elegido', async () => {
@@ -146,6 +152,7 @@ describe('resultados persistidos del Agente A', () => {
     ]);
 
     expect(db.deliveredLinks).toHaveLength(0);
+    expect(db.recordedLinks).toHaveLength(0);
     expect(db.decisions.some((d) => d.businessActionType === 'send_payment_link')).toBe(false);
     // El plan elegido se conserva para retomar.
     expect(db.state?.selectedPaymentPlan).toBe('monthly_12');
@@ -173,29 +180,34 @@ describe('resultados persistidos del Agente A', () => {
     const { conversacion, db } = await correr('opt_out', [
       'Hola, quiero info de Redes Informáticas',
       'No me escribas más, quiero que me den de baja',
+      '¿Y cuánto sale ese curso?',
     ]);
 
-    const ultimo = conversacion.turns[conversacion.turns.length - 1]!;
+    const optout = conversacion.turns[1]!;
+    const ultimo = conversacion.turns[2]!;
     // O bien confirma la baja, o bien calla deliberadamente. Lo que no puede
     // hacer es seguir vendiendo.
     const texto = ultimo.evidence.authorizedMessages.join(' ');
     expect(texto).not.toMatch(/USD 360|link de pago|cu[oó]tas de USD/iu);
     expect(db.decisions.length).toBeGreaterThan(0);
+    expect(db.permission?.consentStatus).toBe('revoked');
+    expect(db.permission?.evidenceEventId).not.toBeNull();
+    expect(db.permission?.revokedTurnId).toBe(optout.evidence.turnId);
+    const restrictedTurnIds = new Set([optout.evidence.turnId, ultimo.evidence.turnId]);
+    expect(db.decisions.filter((decision) => restrictedTurnIds.has(decision.turnId))
+      .every((decision) => decision.businessActionType === null)).toBe(true);
+    expect(ultimo.evidence.authorizedMessages, 'después de la baja no hay nuevos mensajes').toHaveLength(0);
+    expect(conversacion.turns.slice(1).flatMap((turn) => turn.evidence.actions)
+      .some((action) => action.name === 'dispatchCall')).toBe(false);
+    expect(db.recordedLinks).toHaveLength(0);
   }, 600_000);
 
   it('deja la evidencia en disco para calificar naturalidad aparte', () => {
     requireBackend();
-    mkdirSync(outputDir, { recursive: true });
-    writeFileSync(
-      path.join(outputDir, 'workflow-persisted-outcomes.json'),
-      `${JSON.stringify({
-        execution_harness: 'processInboundTurn',
+    writeWorkflowReportV1('workflow-persisted-outcomes', {
         evaluated_route: 'plannerless-v2',
-        generated_at: new Date().toISOString(),
         cases: evidencias,
-      }, null, 2)}\n`,
-      'utf8',
-    );
+    });
     expect(Object.keys(evidencias).length).toBeGreaterThan(0);
   });
 });

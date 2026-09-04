@@ -610,7 +610,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
         schema_version: 4 as const,
         intent: 'commercial' as const,
         kind: 'reply' as const,
-        response: 'Perfecto, te paso el link del plan de 6 cuotas.',
+        response: 'Perfecto, te paso el link del plan de 6 cuotas. Podés hacerme tus consultas por este chat.',
         response_type: 'commercial_reply' as const,
         business_action: {
           type: 'send_payment_link' as const,
@@ -665,7 +665,8 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
     const repeated = await commitAgentDecision(paymentInput(repeatedContext.turn_id));
 
     expect(first.outbound?.content).toContain('https://buy.stripe.com/test_6m_fence');
-    expect(repeated.outbound?.content).toContain('Perfecto, te paso el link del plan de 6 cuotas.');
+    expect(repeated.outbound?.content).toBe('Podés hacerme tus consultas por este chat.');
+    expect(repeated.outbound?.content).not.toContain('te paso el link');
     expect(repeated.outbound?.content).not.toContain('https://buy.stripe.com/test_6m_fence');
     expect(repeated.outbound?.content).not.toMatch(/revisá el mensaje anterior/i);
     expect(repeated.outbound?.content).not.toContain('https://buy.stripe.com/test_6m_fence');
@@ -734,7 +735,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
         schema_version: 4 as const,
         intent: 'commercial' as const,
         kind: 'reply' as const,
-        response: 'Perfecto, te paso el link del plan de 6 cuotas.',
+        response: 'Perfecto, te paso el link del plan de 6 cuotas. Podés hacerme tus consultas por este chat.',
         response_type: 'commercial_reply' as const,
         business_action: {
           type: 'send_payment_link' as const,
@@ -783,7 +784,8 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
     const linkResult = committed.find((result) => result.outbound?.content.includes('test_6m_fence'))!;
     const ackResult = committed.find((result) => !result.outbound?.content.includes('test_6m_fence'))!;
     expect(linkResult).toBeDefined();
-    expect(ackResult.outbound?.content).toContain('Perfecto, te paso el link del plan de 6 cuotas.');
+    expect(ackResult.outbound?.content).toBe('Podés hacerme tus consultas por este chat.');
+    expect(ackResult.outbound?.content).not.toContain('te paso el link');
     expect(ackResult.outbound?.content).not.toMatch(/revisá el mensaje anterior/i);
 
     const deliveryRows = await sql<Array<{ attempt_count: number }>>`

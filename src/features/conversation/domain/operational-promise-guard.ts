@@ -316,6 +316,23 @@ const NEGATED_ASSERTION = new RegExp(
 const ATTRIBUTED_TO_TEAM = /\b(?:el\s+equipo|una\s+persona|el\s+[áa]rea|lo\s+revisar)/iu;
 const AFTER_VERIFICATION = /\b(?:cuando|si\s+est[áa]\s+acreditad|una\s+vez\s+(?:que\s+)?(?:lo\s+)?verifi|tras\s+(?:la\s+)?verifica|revisar[áa])/iu;
 
+// No scheduler or human notification is materialized by this workflow. A
+// conditional attribution to the team cannot authorize a follow-up promise.
+const FUTURE_NOTIFICATION = /\b(?:te|le)\s+(?:(?:voy|vamos|van|va)\s+a\s+(?:avisar|contactar|escribir|notificar)|avis(?:o|amos|an|ar[ée]|ar[áa]n?)|contact(?:o|amos|an|ar[ée]|ar[áa]n?)|escrib(?:o|imos|en|ir[ée]|ir[áa]n?)|notific(?:o|amos|an|ar[ée]|ar[áa]n?))(?=$|[^\p{L}])/iu;
+
+function promisesFutureNotification(sentence: string): boolean {
+  for (const match of sentence.matchAll(new RegExp(FUTURE_NOTIFICATION.source, 'giu'))) {
+    // "Te aviso que ..." communicates a fact in the current message. Keep
+    // checking: the content it introduces may still promise a later action.
+    if (/^(?:te|le)\s+(?:aviso|avisamos|notifico|notificamos)$/iu.test(match[0])
+      && /^\s+que\b/iu.test(sentence.slice(match.index + match[0].length))) continue;
+    const clausePrefix = sentence.slice(0, match.index).split(/[,;.!?]/u).at(-1) ?? '';
+    if (/(?:\bno|\bnunca|\bjamás)\s*(?:(?:puedo|podemos)\s+(?:prometer|asegurar)\s+que\s+(?:el\s+equipo\s+)?)?$/iu.test(clausePrefix)) continue;
+    return true;
+  }
+  return false;
+}
+
 function splitAssertionSentences(text: string): readonly string[] {
   return text
     .split(/(?<=[.;!?…])\s+/u)
@@ -332,6 +349,10 @@ export function detectOperationalStateAssertionsV1(
 ): readonly OperationalAssertionV1[] {
   const found: OperationalAssertionV1[] = [];
   for (const sentence of splitAssertionSentences(text)) {
+    if (promisesFutureNotification(sentence)) {
+      found.push({ sentence, requires: UNREACHABLE_MILESTONE });
+      continue;
+    }
     if (ATTRIBUTED_TO_TEAM.test(sentence) && AFTER_VERIFICATION.test(sentence)) continue;
     for (const { pattern, requires } of ASSERTION_CLASSES) {
       const match = pattern.exec(sentence);

@@ -1,0 +1,68 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { withAgentAApiBudget } from '../../../scripts/agent-a-api-budget.mjs';
+
+const dirs: string[] = [];
+function ledger(priorSpendUsd = 0.38) {
+  const dir = mkdtempSync(path.join(tmpdir(), 'studyx-budget-'));
+  dirs.push(dir);
+  const file = path.join(dir, 'budget.json');
+  writeFileSync(file, JSON.stringify({ priorSpendUsd, limitUsd: 1, calls: [] }));
+  return file;
+}
+afterEach(() => dirs.splice(0).forEach((dir) => rmSync(dir, { recursive: true })));
+const request = {
+  method: 'POST',
+  body: JSON.stringify({ model: 'deepseek-v4-flash', reasoning: { effort: 'none' }, max_output_tokens: 800, instructions: 'Synthetic lab input' }),
+};
+
+describe('cumulative Agent A paid-call budget', () => {
+  it.each([0, 0.37])('rejects a ledger resetting prior spend to %s', async (prior) => {
+    let sent = 0;
+    const budgeted = withAgentAApiBudget(async () => { sent++; return new Response('{}'); }, ledger(prior));
+    await expect(budgeted('https://api.deepseek.com/responses', request)).rejects.toThrow('AGENT_A_BUDGET_INVALID');
+    expect(sent).toBe(0);
+  });
+  it.each([null, -1])('rejects an invalid accounted cost %s before another request', async (cost) => {
+    const file = ledger();
+    writeFileSync(file, JSON.stringify({ priorSpendUsd: 0.38, limitUsd: 1, calls: [{ accountedUsd: cost, reservedUsd: 0.01 }] }));
+    let sent = 0;
+    const budgeted = withAgentAApiBudget(async () => { sent++; return new Response('{}'); }, file);
+    await expect(budgeted('https://api.deepseek.com/responses', request)).rejects.toThrow('AGENT_A_BUDGET_INVALID');
+    expect(sent).toBe(0);
+  });
+  it('keeps its reservation when the provider reports malformed cached usage', async () => {
+    const file = ledger();
+    const budgeted = withAgentAApiBudget(async () => Response.json({ usage: {
+      input_tokens: 1000, output_tokens: 100, input_tokens_details: { cached_tokens: 'malformed' },
+    } }), file);
+    await budgeted('https://api.deepseek.com/responses', request);
+    const result = JSON.parse(readFileSync(file, 'utf8'));
+    expect(result.calls[0].accountedUsd).toBeGreaterThan(0);
+    expect(result.calls[0].accountedUsd).toBe(result.calls[0].reservedUsd);
+  });
+  it('refuses a request before sending when its reservation exceeds the remaining campaign cap', async () => {
+    let sent = 0;
+    const budgeted = withAgentAApiBudget(async () => { sent++; return new Response('{}'); }, ledger(0.999));
+    await expect(budgeted('https://api.deepseek.com/responses', request)).rejects.toThrow('AGENT_A_BUDGET_EXHAUSTED');
+    expect(sent).toBe(0);
+  });
+  it('keeps the reservation for a failed call and records the retry separately without resetting prior spend', async () => {
+    const file = ledger();
+    let sent = 0;
+    const budgeted = withAgentAApiBudget(async () => {
+      if (++sent === 1) throw new Error('timeout');
+      return Response.json({ usage: { input_tokens: 1000, input_tokens_details: { cached_tokens: 500 }, output_tokens: 100 } });
+    }, file);
+    await expect(budgeted('https://api.deepseek.com/responses', request)).rejects.toThrow('timeout');
+    await budgeted('https://api.deepseek.com/responses', request);
+    const result = JSON.parse(readFileSync(file, 'utf8'));
+    expect(result.priorSpendUsd).toBe(0.38);
+    expect(result.calls).toHaveLength(2);
+    expect(result.calls[0].usage).toBeNull();
+    expect(result.calls[0].reservedUsd).toBeGreaterThan(0);
+    expect(result.calls[1].accountedUsd).toBeCloseTo(0.000359, 8);
+  });
+});

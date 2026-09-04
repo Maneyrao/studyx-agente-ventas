@@ -13,7 +13,7 @@ import { configuration } from '../helpers/botpress-workflow-runtime';
  * la que cierra esa brecha: invoca `processInboundTurn`, con sus acciones
  * reales contra el backend local y su PostgreSQL aislado.
  *
- * Requisitos, y por eso se saltea sola si faltan: un backend en
+ * Requisitos, y por eso falla explícitamente si faltan: un backend en
  * `STUDYX_EVAL_API_BASE_URL` (loopback, puerto 3200-3299) contra el cluster
  * desechable. Nunca `.env.local`, que apunta a la Supabase de producción.
  *

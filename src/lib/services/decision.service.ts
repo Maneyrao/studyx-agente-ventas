@@ -339,26 +339,28 @@ function decisionPayload(input: CommitDecisionInput) {
 }
 
 /**
- * Drops every paragraph carrying a URL and keeps the rest of the prose intact.
- * Used where an answer is authorized but a link is not: the canonical link is
- * its own paragraph, so removing it leaves the reply readable instead of
+ * Drops URL-bearing sentences and keeps the rest of the prose intact.
+ * Used where an answer is authorized but a link is not: the canonical link
+ * may share a paragraph with model prose after composition, so sentence removal
+ * keeps an answer about the existing link instead of deleting that answer.
+ * Removing the complete URL sentence avoids
  * leaving a dangling label or an unauthorized URL for the egress guard.
  */
-function paragraphsWithoutUrls(text: string): {
+function proseWithoutUrls(text: string): {
   readonly text: string;
   readonly removed_urls: readonly string[];
 } {
   const removed: string[] = [];
+  const announcesNewLink = /(?:\bte\s+(?:paso|mando|env[ií]o|comparto|dejo|adjunto)|\b(?:voy|vamos)\s+a\s+(?:enviarte|mandarte|compartirte|pasarte|dejarte)|\b(?:ac[aá]|aqu[ií])\s+(?:ten[eé]s|tienes|est[aá]))[^.!?\n]{0,70}\b(?:link|enlace)\b/iu;
   const kept = text
     .split(/\n{2,}/u)
-    .map((paragraph) => paragraph.trim())
-    .filter((paragraph) => {
-      if (paragraph.length === 0) return false;
-      const urls = paragraph.match(/https?:\/\/\S+/giu);
-      if (urls === null) return true;
-      removed.push(...urls);
-      return false;
-    });
+    .map((paragraph) => paragraph.split(/(?<=[.!?])\s+|\n/u)
+      .filter((sentence) => {
+        const urls = sentence.match(/https?:\/\/\S+/giu);
+        if (urls !== null) removed.push(...urls);
+        return urls === null && !announcesNewLink.test(sentence);
+      }).join(' ').trim())
+    .filter(Boolean);
   return { text: kept.join('\n\n'), removed_urls: removed };
 }
 
@@ -757,10 +759,15 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         // written for it, so the authored copy survives with the link removed
         // from it. Replacing it wholesale is what made every follow-up about an
         // existing link receive the same sentence, answering none of them.
-        const withoutLink = paragraphsWithoutUrls(materialized.response_text);
-        finalResponse = withoutLink.text.length > 0
-          ? withoutLink.text
-          : 'Sí, ese es el link de pago que te compartí y sigue activo. No hace falta que te mande otro.';
+        const withoutLink = proseWithoutUrls(materialized.response_text);
+        if (preparedAgentTurn && withoutLink.text.length === 0) {
+          // The authoritative model route must repair/reject an empty answer;
+          // the backend cannot invent commercial wording for its duplicate.
+          throw egressPolicyError('COMMERCIAL_TRUTH_VIOLATION');
+        }
+        // Empty legacy prose reaches the existing technical-degradation
+        // boundary below, including its durable counter and telemetry.
+        finalResponse = withoutLink.text;
         paymentLinkStrippedUrls = [...materialized.stripped_urls, ...withoutLink.removed_urls];
         committedBusinessAction = null;
       } else if (preparedPipeline || preparedAgentTurn) {

@@ -66,6 +66,39 @@ function generated(value: AgentATurnProposalV1) {
 }
 
 describe('resolveAgentAPlannerlessProposalV2', () => {
+  it('does not count an omitted optional call_offer as another call solicitation', async () => {
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({ response: { messages: ['¿Querés que te prepare el enlace para avanzar?'] } })),
+      context: context(), repair_enabled: false,
+      repair: async () => { throw new Error('Unexpected repair'); },
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+    expect(result.evidence.rejection_codes).toEqual([]);
+    expect(result.effective.proposal.response.messages).toEqual(['¿Querés que te prepare el enlace para avanzar?']);
+  });
+
+  it.each(['defer_payment', 'ask_course_information'] as const)(
+    'answers %s without forcing pending intake or consuming a repair', async (move) => {
+      const current = context();
+      current.commercial_state.awaiting_reply = 'contact_details';
+      current.commercial_state.selected_payment_plan = 'monthly_6';
+      current.capabilities.intake_missing = ['nombre', 'apellido', 'correo', 'telefono'];
+      const initial = generated(proposal({
+        move: { schema_version: 1, move, secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: [move === 'defer_payment'
+          ? 'Está bien, podés retomar cuando te quede cómodo.'
+          : 'La formación tiene 38 clases.'], call_offer: null },
+      }));
+      const result = await resolveAgentAPlannerlessProposalV2({
+        initial, context: current, repair_enabled: false,
+        repair: async () => { throw new Error('Unexpected repair'); },
+        rejection_id: '00000000-0000-4000-8000-000000000001',
+      });
+      expect(result.effective.proposal.response).toEqual(initial.proposal.response);
+      expect(result.evidence).toMatchObject({ rejection_codes: [], repair_attempted: false });
+    },
+  );
+
   it('accepts valid model-owned copy without invoking a planner or repair', async () => {
     const repair = vi.fn();
     const initial = generated(proposal());

@@ -160,9 +160,9 @@ export const configuration: Record<string, unknown> & {
   apiBaseUrl: process.env.STUDYX_EVAL_API_BASE_URL ?? 'http://127.0.0.1:3217',
   // Debe coincidir con la clave que el backend aislado tiene registrada.
   orchestratorKeyId: process.env.ORCHESTRATOR_KEY_ID ?? 'botpress-eval',
-  requestTimeoutMs: 30_000,
-  retryBaseDelayMs: 10,
-  retryMaxDelayMs: 50,
+  requestTimeoutMs: 8_000,
+  retryBaseDelayMs: 250,
+  retryMaxDelayMs: 2_000,
   automationEnabled: true,
   decisionProvider: 'botpress_managed',
   geminiDecisionModel: 'unused',

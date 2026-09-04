@@ -1272,7 +1272,6 @@ run('Fase 4 — pago y cierre de batch', () => {
   it.each([
     ['a different existing course code', 'El precio es USD 360.', 'course_other'],
     ['an offering absent from the snapshot', 'El precio es USD 360.', 'missing_course'],
-    ['no authorized course code', 'El precio es USD 360.', undefined],
     ['a different value', 'El precio es USD 361.', 'course_test'],
   ])('suppresses a protected fact backed by %s without sending canned copy', async (
     _case,
@@ -1291,6 +1290,21 @@ run('Fase 4 — pago y cierre de batch', () => {
     // El valor no autorizado no sale, y lo que sale es el piso técnico.
     expect(committed.outbound?.content).toBe(TECHNICAL_FALLBACK_TEXT_V1);
     expect(committed.outbound?.content ?? '').not.toMatch(/USD\s?36[01]/u);
+  });
+
+  it('allows a canonical catalog price during exploration without selecting a course', async () => {
+    // Commercial truth is scoped to the active catalog until a course is
+    // selected; quoting its real price is not an authorization to send a link.
+    const accepted = await processInboundMessage(envelope());
+    const committed = await commitAgentDecision(groundedReply(
+      accepted.turn_id, 'El precio es USD 360.', undefined,
+    ));
+
+    expect(committed.outbound?.content).toBe('El precio es USD 360.');
+    const rows = await db!<Array<{ business_action: unknown }>>`
+      SELECT business_action FROM agent_decisions WHERE id = ${committed.decision_id}::uuid
+    `;
+    expect(rows[0].business_action).toBeNull();
   });
 
   it('materializes only the configured URL and strips any model-authored one', async () => {
@@ -1538,13 +1552,21 @@ run('Fase 4 — pago y cierre de batch', () => {
         reply_to_external_message_id: firstEnvelope.external_message_id,
       },
     });
-    const secondCommit = await commitAgentDecision(paymentDecision(second.turn_id));
+    const repeatedDecision = paymentDecision(second.turn_id);
+    const secondCommit = await commitAgentDecision({
+      ...repeatedDecision,
+      decision: {
+        ...repeatedDecision.decision,
+        response: 'Te envío el link ahora. Podés consultar cualquier duda por este chat.',
+      },
+    });
 
     expect(firstCommit.outbound?.content).toContain(PAYMENT_LINK_12M);
     // Idempotency withholds the ACTION, not the answer: the written reply
     // survives with the link removed, so the customer gets a response to what
     // they actually said instead of one fixed sentence for every follow-up.
-    expect(secondCommit.outbound?.content).toContain('Perfecto, te paso el link del plan de 12 cuotas.');
+    expect(secondCommit.outbound?.content).toBe('Podés consultar cualquier duda por este chat.');
+    expect(secondCommit.outbound?.content).not.toContain('Te envío el link ahora.');
     expect(secondCommit.outbound?.content).not.toContain(PAYMENT_LINK_12M);
     expect(secondCommit.outbound?.content).not.toMatch(/revisá el mensaje anterior/i);
     expect(secondCommit.outbound?.content).not.toMatch(/si necesitás ayuda, avisame/i);
@@ -1564,6 +1586,36 @@ run('Fase 4 — pago y cierre de batch', () => {
       WHERE turn.conversation_id = ${first.conversation_id}::uuid
     `;
     expect(rows[0]).toEqual({ payment_actions: 1, link_messages: 1 });
+  });
+
+  it('records a technical degradation when a duplicate link has no useful model prose', async () => {
+    const firstEnvelope = paymentInbound();
+    const first = await processInboundMessage(firstEnvelope);
+    await commitAgentDecision(paymentDecision(first.turn_id));
+    await db!`
+      UPDATE inbound_batches SET state = 'completed', completed_at = now(), updated_at = now()
+      WHERE id = ${first.batch.id}::uuid
+    `;
+    const second = await processInboundMessage({
+      ...firstEnvelope,
+      external_message_id: `message-${randomUUID()}`,
+      trace_id: randomUUID(),
+      message: {
+        type: 'text', text: 'Confirmo nuevamente las 12 cuotas',
+        occurred_at: new Date(Date.now() + 1_000).toISOString(),
+        reply_to_external_message_id: firstEnvelope.external_message_id,
+      },
+    });
+    const committed = await commitAgentDecision(paymentDecision(second.turn_id));
+
+    expect(committed.outbound?.content).toBe(TECHNICAL_FALLBACK_TEXT_V1);
+    expect(committed.conversation_effects?.technical_fallback_reason)
+      .toBe('EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED');
+    expect(committed.outbound?.content).not.toContain('sigue activo');
+    const rows = await db!<Array<{ business_action: unknown }>>`
+      SELECT business_action FROM agent_decisions WHERE id = ${committed.decision_id}::uuid
+    `;
+    expect(rows[0].business_action).toBeNull();
   });
 
   it('produces one decision and one outbound under replay of the same inbound', async () => {

@@ -19,29 +19,24 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
  */
 let suppressNextEgress = false;
 
-vi.mock('@/features/orchestration/domain/egress-guard', async (importOriginal) => {
+vi.mock('@/features/orchestration/domain/commercial-truth-guard', async (importOriginal) => {
   const actual = await importOriginal<
-    typeof import('@/features/orchestration/domain/egress-guard')
+    typeof import('@/features/orchestration/domain/commercial-truth-guard')
   >();
   return {
     ...actual,
-    verifyAuthorizedEgress: (input: Parameters<typeof actual.verifyAuthorizedEgress>[0]) => {
-      // El rechazo tiene que estar bien formado: `unauthorized_facts` lo
-      // consume `canonical-offering-egress` aguas arriba, y un rechazo sin ese
-      // campo rompe el turno por una causa distinta de la que se prueba.
+    enforceCommercialTruthV1: (input: Parameters<typeof actual.enforceCommercialTruthV1>[0]) => {
+      // Inyectar la frontera activa; el verificador del manifiesto sólo
+      // confirma integridad del texto aprobado y ya no decide su veracidad.
       if (suppressNextEgress) {
         return {
-          ok: false as const,
-          reason: 'UNAUTHORIZED_PROTECTED_FACT' as const,
-          unauthorized_facts: [],
+          content: null,
+          removed: [input.content],
+          violations: [{ code: 'PRICE_NOT_CANONICAL' as const, value: 'injected' }],
         };
       }
-      return actual.verifyAuthorizedEgress(input);
+      return actual.enforceCommercialTruthV1(input);
     },
-    // Nada podable: es el caso en que hoy el turno desaparecía entero.
-    retainAuthorizedEgressParagraphs: (
-      input: Parameters<typeof actual.retainAuthorizedEgressParagraphs>[0],
-    ) => (suppressNextEgress ? null : actual.retainAuthorizedEgressParagraphs(input)),
   };
 });
 

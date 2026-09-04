@@ -110,7 +110,9 @@ export function authorizeAgentTurnV2(input: {
   const requestedOffering = resolveOffering(proposal.move.course_reference, input.offerings);
   const changesCourse = moves.has('select_course') || moves.has('ask_course_information');
   const selectedOffering = requestedOffering ?? state.selected_offering_code;
-  const selectedPlan = proposal.move.payment_plan ?? state.selected_payment_plan;
+  const courseChanged = selectedOffering !== state.selected_offering_code;
+  const selectedPlan = proposal.move.payment_plan ?? (courseChanged ? null : state.selected_payment_plan);
+  const selectionChanged = courseChanged || selectedPlan !== state.selected_payment_plan;
   const plannedPaymentReported = moves.has('report_payment') || state.payment_reported_at !== null;
   const stateFacts = materializeStateFactsV1({
     intake: input.contact_intake,
@@ -151,8 +153,12 @@ export function authorizeAgentTurnV2(input: {
   }
 
   let action: AgentAProposedActionV1 = { type: 'none' };
-  const paymentLinkRequested = moves.has('request_payment_link')
-    || (moves.has('provide_contact_details') && state.awaiting_reply === 'contact_details');
+  const paymentDeferred = moves.has('defer_payment') || moves.has('decline_purchase')
+    || proposal.move.vetoes.includes('payment_link')
+    || proposal.move.vetoes.includes('purchase');
+  const paymentLinkRequested = !paymentDeferred && (moves.has('request_payment_link')
+    || (moves.has('provide_contact_details') && !selectionChanged
+      && state.awaiting_reply === 'contact_details'));
   if (proposal.proposed_action.type === 'request_call_now') {
     const requested = moves.has('request_call') && !proposal.move.vetoes.includes('call');
     if (!requested || !input.call_policy.may_request_call_now) reasons.push('ACTION_NOT_AUTHORIZED');
@@ -209,7 +215,10 @@ export function authorizeAgentTurnV2(input: {
   let awaitingReply = state.awaiting_reply;
 
   if (changesCourse && requestedOffering) {
-    if (requestedOffering !== state.selected_offering_code) nextPlan = null;
+    if (courseChanged) {
+      nextPlan = null;
+      awaitingReply = 'none';
+    }
     nextOffering = requestedOffering;
     stage = 'course_selected';
   }
@@ -217,18 +226,12 @@ export function authorizeAgentTurnV2(input: {
     nextOffering = selectedOffering;
     nextPlan = proposal.move.payment_plan;
     stage = 'plan_selected';
-    // El estado tiene que describir lo que el turno realmente preguntó. Con el
-    // intake sin registrar, elegir plan va seguido de pedir los cuatro datos,
-    // y marcar `payment_confirmation` dejaba a la conversación pidiendo datos
-    // mientras el estado esperaba otra cosa. Como la regla del link exige
-    // `contact_details`, el turno siguiente entregaba todo y no salía ningún
-    // link: la persona quedaba con "avisame cuando pagues" y sin dónde pagar.
-    awaitingReply = stateFacts.has('state:intake_recorded:v1')
-      ? 'payment_confirmation'
-      : 'contact_details';
+    // A saved plan is not permission to deliver its link. Only the explicit
+    // request below can carry that permission through a pending intake.
+    awaitingReply = 'payment_confirmation';
   }
   if (
-    moves.has('request_payment_link')
+    moves.has('request_payment_link') && !paymentDeferred
     && selectedOffering !== null
     && selectedPlan !== null
     && !stateFacts.has('state:intake_recorded:v1')
@@ -241,12 +244,12 @@ export function authorizeAgentTurnV2(input: {
   if (moves.has('continue_by_chat') || moves.has('decline_call')) {
     callPreference = moves.has('decline_call') ? 'declined' : 'chat';
     callOfferStatus = 'declined';
-    awaitingReply = 'none';
+    if (awaitingReply === 'call_or_chat') awaitingReply = 'none';
   }
   if (visibleCallOffer) {
     callOfferCount = Math.min(2, state.call_offer_count + 1) as 1 | 2;
     callOfferStatus = 'offered';
-    awaitingReply = 'call_or_chat';
+    if (awaitingReply !== 'contact_details') awaitingReply = 'call_or_chat';
   }
   if (action.type === 'request_call_now') {
     callPreference = 'call';
@@ -260,6 +263,7 @@ export function authorizeAgentTurnV2(input: {
     awaitingReply = 'none';
     stage = 'payment_link_sent';
   }
+  if (paymentDeferred) awaitingReply = 'none';
   if (moves.has('decline_purchase')) {
     stage = 'closed';
     awaitingReply = 'none';

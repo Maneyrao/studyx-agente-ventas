@@ -324,24 +324,37 @@ describe('plannerless Agent A authority', () => {
   });
 });
 
-/**
- * El estado tiene que describir lo que el agente realmente preguntó.
- *
- * Elegir plan fijaba `awaiting_reply = 'payment_confirmation'` aunque el mismo
- * turno pidiera nombre, apellido, correo y teléfono. La conversación seguía
- * pidiendo datos mientras el estado decía que esperaba una confirmación de
- * pago, y como la regla del link exige `awaiting_reply === 'contact_details'`,
- * el turno siguiente entregaba los cuatro datos y NO se mandaba ningún link.
- *
- * Lo encontró el cliente adaptativo, que contesta lo que el agente pregunta en
- * vez de seguir un guion: la persona dio todo y recibió "cuando hagas el pago,
- * avisame" sin un lugar donde pagar. Con guion fijo no se veía, porque el
- * guion decía "mandame el link" explícitamente y eso tomaba otro camino.
- *
- * `payment_confirmation` sólo tiene sentido cuando ya no falta nada por pedir.
- */
-describe('esperar los datos cuando todavía faltan', () => {
-  it('elegir plan sin intake registrado espera datos de contacto', () => {
+// A pending intake carries link consent only after an explicit request.
+describe('payment link consent across intake', () => {
+  it.each(['continue_by_chat', 'decline_call'] as const)(
+    'preserves explicit link consent while the customer chooses %s', (chatMove) => {
+      const result = authorize({
+        state: state({ selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6' }),
+        proposal: proposal({
+          move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [chatMove], vetoes: [], confidence: 1 },
+          response: { messages: ['Seguimos por acá. ¿Cuál es tu correo?'] },
+        }),
+      });
+      expect(result).toMatchObject({ ok: true, transition: { awaiting_reply: 'contact_details' } });
+    },
+  );
+
+  it('changing course clears the former plan and pending link consent', () => {
+    const result = authorize({
+      state: state({ selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6', awaiting_reply: 'contact_details' }),
+      intake: completeIntake,
+      proposal: proposal({
+        move: { schema_version: 1, move: 'select_course', course_reference: 'excel', secondary_moves: ['provide_contact_details'], vetoes: [], confidence: 1 },
+        response: { messages: ['Elegiste Excel Integral.'] },
+      }),
+    });
+    expect(result).toMatchObject({
+      ok: true, action: { type: 'none' },
+      transition: { selected_offering_code: 'excel_integral', selected_payment_plan: null, awaiting_reply: 'none' },
+    });
+  });
+
+  it('choosing a plan alone persists it without authorizing a link through intake', () => {
     const result = authorize({
       state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected' }),
       proposal: proposal({
@@ -359,9 +372,45 @@ describe('esperar los datos cuando todavía faltan', () => {
       ok: true,
       transition: {
         selected_payment_plan: 'monthly_6', stage: 'plan_selected',
-        awaiting_reply: 'contact_details',
+        awaiting_reply: 'payment_confirmation',
       },
     });
+  });
+
+  it('postponement cancels pending link consent before later contact details arrive', () => {
+    const initialState = state({
+      selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6',
+      stage: 'plan_selected', awaiting_reply: 'contact_details',
+    });
+    const deferred = authorize({
+      state: initialState,
+      proposal: proposal({
+        move: { schema_version: 1, move: 'defer_payment', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Está bien, podés retomar cuando te quede cómodo.'] },
+      }),
+    });
+    expect(deferred).toMatchObject({ ok: true, transition: { awaiting_reply: 'none' } });
+    if (!deferred.ok) throw new Error('Expected safe postponement');
+    const details = authorize({
+      state: { ...initialState, ...deferred.transition }, intake: completeIntake,
+      proposal: proposal({
+        move: { schema_version: 1, move: 'provide_contact_details', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Gracias por los datos.'] },
+      }),
+    });
+    expect(details).toMatchObject({ ok: true, action: { type: 'none' } });
+  });
+
+  it('a postponement takes precedence over a conflicting link request', () => {
+    const result = authorize({
+      state: state({ selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6' }),
+      intake: completeIntake,
+      proposal: proposal({
+        move: { schema_version: 1, move: 'defer_payment', secondary_moves: ['request_payment_link'], vetoes: [], confidence: 1 },
+        response: { messages: ['Podés retomar cuando quieras.'] },
+      }),
+    });
+    expect(result).toMatchObject({ ok: true, action: { type: 'none' } });
   });
 
   it('con el intake ya registrado sí espera la confirmación del pago', () => {

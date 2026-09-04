@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { runWorkflowTurnV1 } from '../helpers/agent-a-workflow-driver';
+import { runWorkflowTurnV1, type WorkflowTurnEvidenceV1 } from '../helpers/agent-a-workflow-driver';
 import { readWorkflowDbEvidenceV1 } from '../helpers/agent-a-workflow-db-evidence';
 import { nextAdaptiveCustomerTurnV1 } from '../helpers/agent-a-adaptive-customer';
 import { configuration } from '../helpers/botpress-workflow-runtime';
+import { writeWorkflowReportV1 } from '../helpers/agent-a-workflow-report';
+import { countWorkflowAvailabilityFailuresV1 } from '../helpers/agent-a-workflow-measurement';
 
 /**
  * Una venta completa donde el cliente contesta lo que el agente pregunta.
@@ -22,7 +22,6 @@ import { configuration } from '../helpers/botpress-workflow-runtime';
  */
 const apiBaseUrl = process.env.STUDYX_EVAL_API_BASE_URL ?? 'http://127.0.0.1:3217';
 const databaseUrl = process.env.TEST_DATABASE_URL
-  ?? process.env.DATABASE_URL
   ?? 'postgresql://postgres@127.0.0.1:55435/studyx_test';
 let readiness = { ok: false, detail: 'sin verificar' };
 
@@ -60,6 +59,7 @@ describe('venta completa con cliente adaptativo', () => {
     const phoneE164 = `+999${String(Date.now()).slice(-10)}`;
 
     const transcript: { role: 'user' | 'assistant'; text: string; answering?: string }[] = [];
+    const turns: { customer: string; evidence: WorkflowTurnEvidenceV1 }[] = [];
     let lastAgentMessage: string | null = null;
     let alreadyGaveDetails = false;
     let silencios = 0;
@@ -74,6 +74,7 @@ describe('venta completa con cliente adaptativo', () => {
       const evidencia = await runWorkflowTurnV1({
         text: siguiente.text, conversationId, userId, phoneE164,
       });
+      turns.push({ customer: siguiente.text, evidence: evidencia });
       transcript.push({ role: 'user', text: siguiente.text, answering: siguiente.answering });
       for (const message of evidencia.authorizedMessages) {
         transcript.push({ role: 'assistant', text: message });
@@ -86,23 +87,20 @@ describe('venta completa con cliente adaptativo', () => {
 
     const db = await readWorkflowDbEvidenceV1({
       databaseUrl, externalConversationId: conversationId,
+      adapterCaptures: turns.flatMap((turn) => turn.evidence.adapterCaptures),
     });
 
-    mkdirSync(path.resolve(process.cwd(), 'botpress-agent/evals/results'), { recursive: true });
-    writeFileSync(
-      path.resolve(process.cwd(), 'botpress-agent/evals/results/workflow-adaptive-sale.json'),
-      `${JSON.stringify({
-        execution_harness: 'processInboundTurn',
+    const availabilityFailures = countWorkflowAvailabilityFailuresV1({ turns, db });
+    writeWorkflowReportV1('workflow-adaptive-sale', {
         evaluated_route: 'plannerless-v2',
         customer: 'adaptive-rule-based-v1',
-        generated_at: new Date().toISOString(),
-        transcript, db,
-      }, null, 2)}\n`,
-      'utf8',
-    );
+        scenario_role: 'adjustment', transcript, turns, db, availability_failures: availabilityFailures,
+    });
 
     expect(silencios, 'ningún turno puede quedar sin respuesta').toBe(0);
+    expect(availabilityFailures, 'un link posterior no compensa una degradación técnica previa').toBe(0);
     expect(planRequests).toBe(0);
+    expect(turns.every((turn) => turn.evidence.commitSucceeded && turn.evidence.errorCode === null)).toBe(true);
     // La venta llegó a donde tenía que llegar, con el plan que la persona dijo.
     expect(db.state?.selectedOfferingCode).toBe('redes_informaticas');
     expect(db.state?.selectedPaymentPlan).toBe('monthly_6');

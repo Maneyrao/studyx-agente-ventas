@@ -23,6 +23,9 @@ export interface CanonicalTruthSetV1 {
   readonly modality: string | null;
   /** `null` cuando el registro no informa certificación: no se puede contradecir. */
   readonly certification: boolean | null;
+  /** Nombres del catálogo activo, independientes del curso elegido. */
+  readonly offering_names?: readonly string[];
+  readonly area_names?: readonly string[];
 }
 
 export type CommercialTruthViolationCodeV1 =
@@ -31,6 +34,7 @@ export type CommercialTruthViolationCodeV1 =
   | 'DURATION_NOT_CANONICAL'
   | 'MODALITY_CONTRADICTS_CANONICAL'
   | 'CERTIFICATION_CONTRADICTS_CANONICAL'
+  | 'OFFERING_NOT_CANONICAL'
   | 'FORBIDDEN_PROMISE';
 
 export interface CommercialTruthViolationV1 {
@@ -53,6 +57,7 @@ export interface CanonicalOfferingSourceV1 {
   readonly price_amount: string | null;
   readonly currency: string | null;
   readonly delivery: Readonly<Record<string, unknown>>;
+  readonly metadata?: Readonly<Record<string, unknown>>;
 }
 
 export interface CanonicalPaymentOptionSourceV1 {
@@ -78,6 +83,59 @@ const NEGATION = /\b(?:no|sin|tampoco)\b/u;
 
 const FORBIDDEN_PROMISE =
   /(?:\bte\s+aseguramos\s+(?:empleo|trabajo)\b|\b(?:empleo|trabajo|salida\s+laboral|resultados?|exito)\s+(?:esta\s+)?(?:garantizad[oa]s?|asegurad[oa]s?)\b|\bsalida\s+laboral\s+garantizada\b|\b100\s*%\s+de\s+empleabilidad\b|\bte\s+devolvemos\s+(?:la\s+)?(?:plata|dinero)\b|\bvas\s+a\s+conseguir\s+trabajo\s+seguro\b)/u;
+
+const COMMERCIAL_BENEFIT = /\b(?:becas?|descuentos?)\b/u;
+const DENIED_BENEFIT = /\b(?:no|nunca|tampoco)\s+(?:ofrecemos|ofrece|tenemos|damos|aplicamos|hay|incluye|tenes|tienes|podemos\s+ofrecer)\b[^.;]{0,40}\b(?:becas?|descuentos?)\b|\bsin\s+(?:becas?|descuentos?)\b/u;
+const OFFERING_CLAIM = /\b(?:(?:studyx\s+)?(?:ofrece(?:mos)?|tenemos|brinda(?:mos)?|dicta(?:mos)?|contamos\s+con|disponemos\s+de)|studyx\s+tiene|pod[eé]s\s+estudiar|te\s+recomiendo)\s+([^.!?\n]+)/giu;
+const GENERIC_CATALOG = /^(?:(?:varias|distintas|muchas|algunas|las|estas|tres)\s+)?(?:opciones|alternativas|areas|formas|planes)\b|^(?:cursos|diplomados)\s*(?:$|disponibles\b)/u;
+const OFFERING_DESCRIPTION = /^(?:que|para|con|sin|ideal|donde|porque|si|una\s+opcion|un\s+curso|es|tiene|incluye)\b/u;
+const NON_COURSE_OBJECT = /^(?:(?:el|la|un|una|nuestro|nuestra)\s+)?(?:\d+\s+)?(?:pagos?|cuotas?|planes?|chat|soporte|llamadas?|asesoria|acompanamiento|ayuda|informacion|acceso|profesores|clases|certificados?|descuentos?|becas?)\b/u;
+const EXPLICIT_COURSE = /^(?:(?:el|un|nuestro)\s+)?(?:curso|diplomado|diplomatura|carrera)\s+(?:de\s+|en\s+)?/u;
+
+function offersUnauthorizedBenefit(sentence: string): boolean {
+  // Una negación alcanza su cláusula, nunca una oferta afirmativa posterior.
+  return sentence.split(/[,;]|\b(?:pero|aunque|sin embargo)\b|\by\s+(?=(?:te\s+)?(?:damos|ofrecemos|tenemos|aplicamos|hay)\b)/u)
+    .some((clause) => COMMERCIAL_BENEFIT.test(clause)
+      && !DENIED_BENEFIT.test(clause)
+      && !/^\s*ni\b/u.test(clause));
+}
+
+/** Compara el nombre ofrecido, dejando libre la descripción que lo acompaña. */
+function containsUnknownOffering(sentence: string, names: readonly string[], areas: readonly string[]): boolean {
+  const normalized = normalize(sentence);
+  const canonicalNames = names.map(normalize).filter(Boolean).sort((a, b) => b.length - a.length);
+  for (const claim of sentence.matchAll(OFFERING_CLAIM)) {
+    if (/\b(?:no|nunca|tampoco)\s*$/u.test(normalized.slice(0, claim.index))) continue;
+    const namedObject = claim[1]!.trim();
+    let remainder = normalize(namedObject);
+    if (GENERIC_CATALOG.test(remainder)) continue;
+    if (NON_COURSE_OBJECT.test(remainder)) continue;
+    const areaClaim = remainder.replace(/^(?:cursos|diplomados)\s+(?:de|en)\s+/u, '');
+    if (areaClaim !== remainder && areas.some((area) => normalize(area) === areaClaim)) continue;
+    // "Te recomiendo seguir por chat" no identifica un curso. Sin un tipo
+    // explícito, el alcance léxico son nombres propios y nombres canónicos.
+    // Las acciones y course_reference se validan aparte contra sus códigos.
+    if (!EXPLICIT_COURSE.test(remainder)
+      && !/^\p{Lu}/u.test(namedObject)
+      && !canonicalNames.some((name) => remainder.startsWith(name))
+      && areaClaim === remainder) continue;
+    if (!canonicalNames.some((name) => remainder.startsWith(name))) {
+      remainder = remainder.replace(EXPLICIT_COURSE, '');
+    }
+    while (remainder.length > 0) {
+      const name = canonicalNames.find((candidate) => remainder.startsWith(candidate)
+        && !/\p{L}/u.test(remainder.slice(candidate.length, candidate.length + 1)));
+      if (!name) return true;
+      remainder = remainder.slice(name.length).trim();
+      if (remainder.length === 0 || OFFERING_DESCRIPTION.test(remainder)) break;
+      const next = remainder.replace(/^(?:[,;:]\s*(?:(?:y|e|o)\s+)?|(?:y|e|o)\s+)/u, '');
+      if (next === remainder) break;
+      remainder = next;
+      if (OFFERING_DESCRIPTION.test(remainder)) break;
+    }
+  }
+  return false;
+}
 
 function normalize(value: string): string {
   return value
@@ -201,8 +259,12 @@ function sentenceViolations(
     violations.push({ code: 'CERTIFICATION_CONTRADICTS_CANONICAL', value: 'certification' });
   }
 
-  if (FORBIDDEN_PROMISE.test(normalized)) {
+  if (FORBIDDEN_PROMISE.test(normalized) || offersUnauthorizedBenefit(normalized)) {
     violations.push({ code: 'FORBIDDEN_PROMISE', value: 'promise' });
+  }
+
+  if (containsUnknownOffering(sentence, canonical.offering_names ?? [], canonical.area_names ?? [])) {
+    violations.push({ code: 'OFFERING_NOT_CANONICAL', value: 'offering' });
   }
 
   return violations;
@@ -233,7 +295,7 @@ export function canonicalTruthSetFromOfferingsV1(input: {
   const selected = input.selected_offering_code === null
     ? null
     : input.offerings.filter((offering) => offering.code === input.selected_offering_code);
-  const scope = selected !== null && selected.length === 1 ? selected : input.offerings;
+  const scope = selected ?? input.offerings;
 
   const prices: string[] = [];
   const durations: string[] = [];
@@ -268,6 +330,10 @@ export function canonicalTruthSetFromOfferingsV1(input: {
     .filter((certification): certification is boolean => typeof certification === 'boolean');
 
   return {
+    offering_names: input.offerings.flatMap((offering) => offering.display_name ? [offering.display_name] : []),
+    area_names: [...new Set(input.offerings.flatMap((offering) => (
+      typeof offering.metadata?.academy === 'string' ? [offering.metadata.academy] : []
+    )))],
     prices: [...new Set(prices)],
     durations: [...new Set(durations)],
     // Con modalidades distintas en el alcance no hay una sola verdad que
