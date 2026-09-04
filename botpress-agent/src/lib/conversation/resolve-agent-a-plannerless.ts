@@ -1,6 +1,7 @@
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import type { AgentAContextV1, AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
 import {
+  assertsUnsupportedPrerequisitesV1,
   removeRepeatedAgentQuestionMessagesV1,
   validateAgentATurnProposalV1,
 } from './agent-a-brain'
@@ -316,6 +317,23 @@ export async function resolveAgentAPlannerlessProposalV2<
     // never opens a second rewrite and never authorizes the original draft.
   }
 
+  const prunedPrerequisites = pruneUnsupportedPrerequisiteClaimV1({
+    initial: input.initial,
+    rejection,
+    context: input.context,
+    authorized_fact_ids: factIds,
+  })
+  if (prunedPrerequisites !== null) {
+    return {
+      effective: prunedPrerequisites,
+      evidence: {
+        rejection_codes: rejection.rejections.map((reason) => reason.code),
+        repair_attempted: true, repaired: false, proposal_generation_calls: 2,
+      },
+      rejection,
+    }
+  }
+
   if (mayDegradeToBackendBoundary(input.initial.proposal, rejection)) return degraded(true)
 
   const pruned = pruneFalseLinkDeliveryClaimV1({
@@ -388,3 +406,49 @@ function pruneFalseLinkDeliveryClaimV1<T extends AgentAProposalEnvelopeV1>(input
 }
 
 export type PlannerlessAgentATurnProposalV2 = AgentATurnProposalV1
+
+/**
+ * Poda de la afirmación de prerequisitos que el catálogo no respalda.
+ *
+ * `FACT_VALUE_MISMATCH` degrada a la frontera del backend, y para los hechos
+ * que el egress puede vetar por valor eso está bien. Pero esta afirmación no
+ * es un valor: es una oración entera que asegura algo del producto que nadie
+ * confirmó, y degradar la dejaba llegar al cliente intacta. El guard quedaba
+ * decorativo.
+ *
+ * Se quitó también del prompt canónico (v4), donde la biblioteca de objeciones
+ * la ordenaba, pero el modelo la sigue produciendo por su cuenta.
+ *
+ * Sólo se podan afirmaciones: `assertsUnsupportedPrerequisitesV1` ya saltea las
+ * interrogativas, así que la pregunta de diagnóstico que el canónico prescribe
+ * pasa intacta.
+ */
+function pruneUnsupportedPrerequisiteClaimV1<T extends AgentAProposalEnvelopeV1>(input: {
+  readonly initial: T
+  readonly rejection: TurnRejectionV1
+  readonly context: AgentAContextV1
+  readonly authorized_fact_ids: readonly string[]
+}): T | null {
+  if (!input.rejection.rejections.some((reason) => (
+    reason.code === 'FACT_VALUE_MISMATCH' && reason.subject === 'prerequisites'
+  ))) return null
+
+  const safeMessages = input.initial.proposal.response.messages
+    .filter((message) => !assertsUnsupportedPrerequisitesV1(message))
+  if (safeMessages.length === 0) return null
+
+  const candidate = {
+    ...input.initial,
+    proposal: {
+      ...input.initial.proposal,
+      response: { ...input.initial.proposal.response, messages: safeMessages },
+    },
+  } as T
+  const candidateRejection = validatePlannerless({
+    proposal: candidate.proposal,
+    context: input.context,
+    rejection_id: input.rejection.rejection_id,
+    authorized_fact_ids: input.authorized_fact_ids,
+  })
+  return candidateRejection === null ? candidate : null
+}

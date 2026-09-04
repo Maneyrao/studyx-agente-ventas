@@ -489,3 +489,63 @@ describe('afirmar un link no autorizado no puede terminar en silencio', () => {
     })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
   });
 });
+
+/**
+ * La afirmación de prerequisitos sin respaldo no puede llegar al cliente.
+ *
+ * El catálogo no tiene el hecho —lo verifiqué en el manual del dueño y en el
+ * seed— así que el guard la rechaza. Se quitó también del prompt canónico (v4),
+ * donde la biblioteca de objeciones la ordenaba. Pero el modelo la sigue
+ * produciendo por su cuenta, y como `FACT_VALUE_MISMATCH` degrada a la frontera
+ * del backend, la oración se entregaba igual.
+ *
+ * Marcarla y dejarla pasar hace que el guard sea decorativo. Se poda la oración
+ * y se entrega el resto, que es el mismo criterio de la pregunta repetida y del
+ * link no autorizado.
+ */
+describe('prerequisitos sin respaldo se podan, no se entregan', () => {
+  it('quita la oración y conserva el resto del turno', async () => {
+    const initial = generated(proposal({
+      response: {
+        messages: [
+          'Para arrancar no necesitás experiencia previa ni conocimientos de maquillaje.',
+          'La formación tiene 38 clases.',
+        ],
+        call_offer: null,
+      },
+    }));
+
+    const resolved = await resolveAgentAPlannerlessProposalV2({
+      initial,
+      context: context(),
+      repair_enabled: true,
+      rejection_id: '00000000-0000-4000-8000-0000000000ac',
+      repair: async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); },
+    });
+
+    const mensajes = resolved.effective.proposal.response.messages;
+    expect(mensajes.length).toBeGreaterThan(0);
+    expect(mensajes.join(' ')).not.toMatch(/no necesit[aá]s experiencia/iu);
+    expect(mensajes.join(' ')).toMatch(/38 clases/u);
+  });
+
+  it('una pregunta de diagnóstico no se poda: no afirma nada', async () => {
+    const initial = generated(proposal({
+      response: {
+        messages: ['¿Tenés conocimientos previos o partís desde cero?'],
+        call_offer: null,
+      },
+    }));
+
+    const resolved = await resolveAgentAPlannerlessProposalV2({
+      initial,
+      context: context(),
+      repair_enabled: true,
+      rejection_id: '00000000-0000-4000-8000-0000000000ad',
+      repair: async () => { throw new Error('NO_DEBERIA_REPARARSE'); },
+    });
+
+    expect(resolved.effective.proposal.response.messages)
+      .toEqual(['¿Tenés conocimientos previos o partís desde cero?']);
+  });
+});
