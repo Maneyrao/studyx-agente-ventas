@@ -1,12 +1,23 @@
-# Agente A V21 — candidato local y gate pendiente
+# Agente A V21 — despliegue supervisado y gate de Telegram
 
-Actualización: 2026-09-04 22:05 UTC.
+Actualización: 2026-09-04 23:20 UTC.
 
 ## Estado
 
-**READY_FOR_DEPLOYMENT. El workflow local está aprobado; la recepción por Telegram todavía requiere canario supervisado.**
+**READY_FOR_SUPERVISED_TELEGRAM. El workflow local y el despliegue V21 están aprobados; la recepción visible por Telegram todavía requiere canario supervisado.**
 
-Producción continúa en `07328e23f97054aeb92a108562f70b6ef3a88bb4`, Brain V20. Vercel continúa en `dpl_4oQWvw17x2Pr6dVrXbW1qZ7adP4i`; Botpress STUDYX continúa con la publicación observada el 2026-09-04 a las 17:00:07 UTC. Este trabajo no ejecutó ninguna mutación remota.
+Producción ejecuta el commit `767cad87d2105a6cb1e2fa3554439e5f565fb3c9`, Brain V21. Vercel quedó en `dpl_EgnjgaYTSMnjGGWzEnhCvikw7n3G`, estado `READY`, con el alias `https://studyx-agente-ventas.vercel.app`. Botpress STUDYX publicó el bundle V21 el 2026-09-04 a las 23:19:31 UTC.
+
+## Despliegue V21 verificado
+
+- La migración `declared_phone` ya estaba aplicada. El historial local y remoto conserva 56 migraciones y no hay migraciones pendientes.
+- El backend se desplegó desde una exportación limpia del commit aprobado. `/api/health` devolvió ese mismo SHA en `iad1`.
+- `/api/ready` devolvió `ready=true`: configuración, Brain V21, PostgreSQL y snapshot comercial quedaron en `ok`.
+- El bundle ADK se publicó por la ruta de código solamente. El SHA-256 publicado es `7381b476d4beb56375d0cd538b7db4e30113b45a0ca1af66957b011ed074b182`.
+- La lectura posterior confirmó `automationEnabled=true`, `agentAPlannerlessV2Enabled=true`, backend de producción y `deepseek-v4-flash`.
+- La integración Telegram `1.0.11` permanece habilitada y `registered`. La huella de preservación de configuración, secretos e integraciones no cambió.
+
+La evidencia privada está en `.eval/codex-20260904/deploy-backend/`, `.eval/codex-20260904/candidate-v21-final/v21-vercel-deploy.log` y `.eval/codex-20260904/deploy-supervised/`. No contiene una conversación Telegram posterior al despliegue; ése es el gate que falta.
 
 ## Qué pasó en la conversación real
 
@@ -65,6 +76,8 @@ Después de aplicar ambos arreglos se inició una conversación nueva y se ejecu
 
 Estado final leído de PostgreSQL: nombre `Inés Valdés`, correo y teléfono declarado completos, `fotografia_profesional`, `one_time`, `payment_link_sent`, llamada `declined`, dos ofertas, una decisión `send_payment_link` y un único link registrado/entregado. El `outboundId` final coincide con la captura del adaptador. El laboratorio usa deliberadamente `https://example.invalid/eval/contado`; producción conserva el enlace canónico configurado en Vercel.
 
+La conversación completa y sanitizada está en [la transcripción de la regresión paga](evidence/2026-09-04-agent-a-v21-final/transcript.md).
+
 Métricas: p50 3.292 ms, p95 3.900 ms, fallback 0, fallos de disponibilidad 0. El gate de éxito de reparación queda `null` porque no hubo una reparación que medir; no se convierte artificialmente en 100 %. Log privado: `.eval/codex-20260904/candidate-v21-final/telegram-regression-paid-clean-final.log`. Reporte: `botpress-agent/evals/results/workflow-telegram-regression-2026-09-04T22-00-48-879Z-74bf7eb4-78c5-4ed2-b89f-47b65a41bb3d.json`.
 
 ## Naturalidad observada
@@ -109,11 +122,11 @@ Identidad del artefacto local:
 - Canónico: SHA-256 `6d724acf6e366571bc6ce94d5013d007654442a67562daf67e672542c1eba17b`.
 - Módulo canónico generado: SHA-256 `69f24163bf02409efa354bfb9a58d0f0a4248a2430ff153afc72b5a36a33eb6d`.
 - Prompt Brain: SHA-256 `624e7cc1abea76f7dbb9d2f9a08393c518ffeefd25dd173ced0891ee1f995605`.
-- Bundle ADK: SHA-256 `2aa3bd7cb030ad850b2bffed25619ff0b28a508a286768cece5a911443d29213`.
+- Bundle ADK desplegado: SHA-256 `7381b476d4beb56375d0cd538b7db4e30113b45a0ca1af66957b011ed074b182`.
 - Next build ID: `R3bwTLm25pjxcb3yH460q`.
 
 ## Presupuesto y gate restante
 
 El usuario autorizó elevar el tope acumulado a USD 1,08 para una única regresión limpia. El ledger conserva USD 0,38 históricos y registra 365 llamadas. El gasto final es **USD 1,048747608**; quedan USD 0,031252392. No se harán más llamadas pagas para este candidato.
 
-La corrida satisfizo llamada, fases, identidad, link correcto, persistencia y entrega local correlacionada. Corresponde desplegar V21 en el orden backend → Botpress y ejecutar un canario supervisado de Telegram que compruebe recepción visible sin pagar el enlace.
+La corrida satisfizo llamada, fases, identidad, link correcto, persistencia y entrega local correlacionada. V21 ya está desplegado en backend y Botpress. Resta ejecutar un canario supervisado de Telegram que compruebe recepción visible y persistencia remota sin pagar el enlace.

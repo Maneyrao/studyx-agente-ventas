@@ -1,7 +1,7 @@
 # Sesión StudyX
 
 ## Fase actual
-PHASE 3 — ruta única, conversación natural y canario. Estado: en curso
+PHASE 3 — ruta única, conversación natural y canario. Estado: V21 desplegado; canario Telegram pendiente
 
 ## Fases completas
 - PHASE 0: fallos y silencios son observables; N3 cuenta como fallo conversacional.
@@ -34,5 +34,5 @@ PHASE 3 — ruta única, conversación natural y canario. Estado: en curso
 
 ## Bloqueos
 - La corrida limpia con DeepSeek V21 pasó 11/11 turnos, sin reparación, fallback ni silencio; persistió identidad completa y correlacionó un único link. Gasto final USD 1,048747608 de USD 1,08.
-- Producción continúa en `07328e23f97054aeb92a108562f70b6ef3a88bb4` / Brain V20 → publicar backend V21 y bundle Botpress, verificar configuración y luego recepción visible en Telegram.
-- La recepción remota y la naturalidad de más de una conversación siguen sin certificarse; el canario es supervisado y no se paga el enlace.
+- Producción ejecuta `767cad87d2105a6cb1e2fa3554439e5f565fb3c9` / Brain V21. Vercel `dpl_EgnjgaYTSMnjGGWzEnhCvikw7n3G` está `READY`; Botpress publicó el bundle `7381b476d4beb56375d0cd538b7db4e30113b45a0ca1af66957b011ed074b182` y preservó Telegram registrado.
+- La recepción remota y la naturalidad de más de una conversación siguen sin certificarse; resta el canario supervisado en `@amsterdam_reservas_bot` y no se paga el enlace.
