@@ -1,10 +1,10 @@
 # Agente A V21 — candidato local y gate pendiente
 
-Actualización: 2026-09-04 21:50 UTC.
+Actualización: 2026-09-04 22:05 UTC.
 
 ## Estado
 
-**READY_FOR_FRESH_PAID_RERUN. No está aprobado para desplegar ni para canario de Telegram.**
+**READY_FOR_DEPLOYMENT. El workflow local está aprobado; la recepción por Telegram todavía requiere canario supervisado.**
 
 Producción continúa en `07328e23f97054aeb92a108562f70b6ef3a88bb4`, Brain V20. Vercel continúa en `dpl_4oQWvw17x2Pr6dVrXbW1qZ7adP4i`; Botpress STUDYX continúa con la publicación observada el 2026-09-04 a las 17:00:07 UTC. Este trabajo no ejecutó ninguna mutación remota.
 
@@ -57,27 +57,36 @@ El candidato actual corrige ambos validadores y se probó con una conversación 
 
 Estado final verificado: `fotografia_profesional`, `one_time`, `payment_link_sent`, `callPreference=chat`, `callOfferStatus=declined`, una oferta de llamada, intake completo, una decisión de pago y un único link registrado y entregado. El escenario exige una sola propuesta aceptada por turno; una reparación inesperada lo hace fallar. El archivo completo pasa 4/4 e incluye además postergación, opt-out, idempotencia y caída del proveedor.
 
-Esto certifica contratos, persistencia y entrega del workflow local. La comprensión y naturalidad del modelo requieren todavía una ejecución paga nueva desde una conversación limpia. Artefactos privados: `.eval/codex-20260904/candidate-v21-final/deterministic-sequential-intake-full.log` y `botpress-agent/evals/results/workflow-deterministic-sequential-intake-*.json`.
+Esto certifica contratos, persistencia y entrega del workflow local. Artefactos privados: `.eval/codex-20260904/candidate-v21-final/deterministic-sequential-intake-full.log` y `botpress-agent/evals/results/workflow-deterministic-sequential-intake-*.json`.
+
+### Regresión final con DeepSeek real
+
+Después de aplicar ambos arreglos se inició una conversación nueva y se ejecutó una única regresión paga completa. Pasó **11/11 turnos**, cada uno con un solo request al modelo, cero reparaciones, cero fallback, cero silencios, un outbound y una captura de adaptador por turno. Desambiguó fotografía, ofreció llamada dos veces como máximo, interpretó “Quizás personal” como motivación, respetó el rechazo, presentó el precio canónico, persistió `one_time`, pidió y guardó `Inés` → `Valdés` → correo → teléfono y sólo entonces materializó el enlace.
+
+Estado final leído de PostgreSQL: nombre `Inés Valdés`, correo y teléfono declarado completos, `fotografia_profesional`, `one_time`, `payment_link_sent`, llamada `declined`, dos ofertas, una decisión `send_payment_link` y un único link registrado/entregado. El `outboundId` final coincide con la captura del adaptador. El laboratorio usa deliberadamente `https://example.invalid/eval/contado`; producción conserva el enlace canónico configurado en Vercel.
+
+Métricas: p50 3.292 ms, p95 3.900 ms, fallback 0, fallos de disponibilidad 0. El gate de éxito de reparación queda `null` porque no hubo una reparación que medir; no se convierte artificialmente en 100 %. Log privado: `.eval/codex-20260904/candidate-v21-final/telegram-regression-paid-clean-final.log`. Reporte: `botpress-agent/evals/results/workflow-telegram-regression-2026-09-04T22-00-48-879Z-74bf7eb4-78c5-4ed2-b89f-47b65a41bb3d.json`.
 
 ## Naturalidad observada
 
-La revisión independiente de la primera transcripción fallida dio 3,0/5. En los últimos turnos pagados el modelo desambiguó bien, ofreció llamada, respetó el rechazo, contestó el precio canónico y pidió los cuatro datos. No se recalifica la conversación determinística como naturalidad real porque sus respuestas están fijadas. La variación de la segunda invitación y el cierre completo necesitan observarse en el próximo workflow pago.
+La revisión independiente de la conversación paga final dio **4,25/5**. Comprendió incluso “Quizás personal”, condujo el cierre y pidió progresivamente los datos. No hay bloqueo de naturalidad para un canario supervisado. Queda pulir la repetición de “41 clases, 100% online”, “¡Perfecto!” y “para dejarlo registrado”; después de usar el nombre completo volvió a llamarla sólo “Inés”.
 
 | Dimensión | Puntaje / 5 |
 | --- | ---: |
-| Comprensión | 3 |
-| Relevancia | 4 |
-| Continuidad | 3 |
-| Cordialidad | 3 |
-| Iniciativa | 3 |
-| Calidad comercial | 3 |
+| Comprensión | 5 |
+| Relevancia | 5 |
+| Continuidad | 4 |
+| Cordialidad | 4 |
+| Iniciativa | 5 |
+| Calidad comercial | 4 |
 | Concisión | 4 |
-| No repetición | 2 |
+| No repetición | 3 |
 
 ## Verificación gratuita del candidato actual
 
 | Gate | Resultado |
 | --- | --- |
+| Workflow pago con DeepSeek V21 | 11/11 turnos; 0 reparaciones, 0 fallback, 0 silencios; p95 3.900 ms |
 | Workflow determinístico real | 4/4 pasan; escenario secuencial 9/9 turnos, sin reparaciones |
 | Focales posteriores al último arreglo | 6 archivos, 289/289 pasan |
 | Integraciones posteriores al último arreglo | 2 archivos, 16/16 pasan con PostgreSQL aislado |
@@ -105,6 +114,6 @@ Identidad del artefacto local:
 
 ## Presupuesto y gate restante
 
-El ledger acumulado conserva el gasto histórico de USD 0,38 y registra 354 llamadas. El gasto total es USD 1,03011768 sobre el tope autorizado de USD 1,05; quedan USD 0,01988232. El wrapper exige exactamente ese tope y no permite una nueva llamada cuya reserva máxima lo exceda.
+El usuario autorizó elevar el tope acumulado a USD 1,08 para una única regresión limpia. El ledger conserva USD 0,38 históricos y registra 365 llamadas. El gasto final es **USD 1,048747608**; quedan USD 0,031252392. No se harán más llamadas pagas para este candidato.
 
-El margen actual es menor que la reserva necesaria para el próximo request y no alcanza para una conversación limpia completa. Para una única regresión de 11 turnos hace falta autorizar elevar el tope acumulado a USD 1,08. Sólo si termina con llamada, fases, identidad, link correcto, persistencia y entrega local correlacionada se puede desplegar V21. Después corresponde un canario supervisado de Telegram que compruebe recepción visible sin pagar el enlace.
+La corrida satisfizo llamada, fases, identidad, link correcto, persistencia y entrega local correlacionada. Corresponde desplegar V21 en el orden backend → Botpress y ejecutar un canario supervisado de Telegram que compruebe recepción visible sin pagar el enlace.

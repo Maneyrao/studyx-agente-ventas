@@ -6,7 +6,7 @@ import { closeSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSyn
 const INPUT_RATE = 0.44 / 1_000_000;
 const CACHED_RATE = 0.014 / 1_000_000;
 const OUTPUT_RATE = 1.32 / 1_000_000;
-const AUTHORIZED_LIMIT_USD = 1.05;
+const AUTHORIZED_LIMIT_USD = 1.08;
 
 function mutateLedger(filename, change) {
   const lock = `${filename}.lock`;

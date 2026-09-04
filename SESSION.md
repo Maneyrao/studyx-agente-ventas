@@ -33,6 +33,6 @@ PHASE 3 — ruta única, conversación natural y canario. Estado: en curso
 - Suites de contexto, Brain, rechazo y policy: demuestran reparación precisa, próximo campo pendiente, call-first y ausencia de bypass por etiquetas inventadas.
 
 ## Bloqueos
-- Dos validadores podaban “para dejarlo registrado” y “me falta… para dejarlo registrado”; ambos están corregidos y la simulación limpia pasa 9/9 turnos, pero falta una inferencia limpia del modelo real.
-- El ledger registra USD 1,03011768 sobre USD 1,05 y el remanente no alcanza para reservar otro request → elevar el tope acumulado a USD 1,08 para una única corrida completa.
-- Producción continúa en `07328e23f97054aeb92a108562f70b6ef3a88bb4` / Brain V20 → desplegar V21 únicamente si la corrida paga termina con llamada, fases, persistencia, link y entrega local correlacionada; luego verificar recepción visible en Telegram.
+- La corrida limpia con DeepSeek V21 pasó 11/11 turnos, sin reparación, fallback ni silencio; persistió identidad completa y correlacionó un único link. Gasto final USD 1,048747608 de USD 1,08.
+- Producción continúa en `07328e23f97054aeb92a108562f70b6ef3a88bb4` / Brain V20 → publicar backend V21 y bundle Botpress, verificar configuración y luego recepción visible en Telegram.
+- La recepción remota y la naturalidad de más de una conversación siguen sin certificarse; el canario es supervisado y no se paga el enlace.
