@@ -1,10 +1,10 @@
 # Agente A V21 — despliegue supervisado y gate de Telegram
 
-Actualización: 2026-09-04 23:20 UTC.
+Actualización: 2026-09-04 23:39 UTC.
 
 ## Estado
 
-**READY_FOR_SUPERVISED_TELEGRAM. El workflow local y el despliegue V21 están aprobados; la recepción visible por Telegram todavía requiere canario supervisado.**
+**DEPLOYED_CANARY_FAILED. El workflow local está aprobado y V21 está desplegado, pero el primer canario de conversación en Botpress Cloud quedó en silencio antes de alcanzar el backend. Telegram no está certificado.**
 
 Producción ejecuta el commit `767cad87d2105a6cb1e2fa3554439e5f565fb3c9`, Brain V21. Vercel quedó en `dpl_EgnjgaYTSMnjGGWzEnhCvikw7n3G`, estado `READY`, con el alias `https://studyx-agente-ventas.vercel.app`. Botpress STUDYX publicó el bundle V21 el 2026-09-04 a las 23:19:31 UTC.
 
@@ -17,7 +17,13 @@ Producción ejecuta el commit `767cad87d2105a6cb1e2fa3554439e5f565fb3c9`, Brain 
 - La lectura posterior confirmó `automationEnabled=true`, `agentAPlannerlessV2Enabled=true`, backend de producción y `deepseek-v4-flash`.
 - La integración Telegram `1.0.11` permanece habilitada y `registered`. La huella de preservación de configuración, secretos e integraciones no cambió.
 
-La evidencia privada está en `.eval/codex-20260904/deploy-backend/`, `.eval/codex-20260904/candidate-v21-final/v21-vercel-deploy.log` y `.eval/codex-20260904/deploy-supervised/`. No contiene una conversación Telegram posterior al despliegue; ése es el gate que falta.
+La evidencia privada del despliegue está en `.eval/codex-20260904/deploy-backend/`, `.eval/codex-20260904/candidate-v21-final/v21-vercel-deploy.log` y `.eval/codex-20260904/deploy-supervised/`.
+
+## Canario Botpress Cloud posterior al despliegue
+
+Se ejecutó una única conversación efectiva por Botpress Cloud Webchat. El cliente confirmó inicialización y almacenó el primer mensaje, pero no apareció respuesta después de 55 segundos. Botpress no produjo logs ni issues correlacionados y PostgreSQL quedó en cero channel threads, mensajes, batches, decisiones y deliveries para ese `conversationId`. `/api/ready` continuó completamente verde.
+
+El resultado es negativo y no permite evaluar naturalidad. La frontera está antes del backend, entre Webchat y el `Conversation` handler ADK; no consumió DeepSeek. El ensayo se detuvo en el primer turno y no se abrió una segunda conversación efectiva. Transcripción y correlación sanitizadas: [canario Botpress Cloud](evidence/2026-09-04-agent-a-v21-cloud-canary/transcript.md).
 
 ## Qué pasó en la conversación real
 
@@ -129,4 +135,4 @@ Identidad del artefacto local:
 
 El usuario autorizó elevar el tope acumulado a USD 1,08 para una única regresión limpia. El ledger conserva USD 0,38 históricos y registra 365 llamadas. El gasto final es **USD 1,048747608**; quedan USD 0,031252392. No se harán más llamadas pagas para este candidato.
 
-La corrida satisfizo llamada, fases, identidad, link correcto, persistencia y entrega local correlacionada. V21 ya está desplegado en backend y Botpress. Resta ejecutar un canario supervisado de Telegram que compruebe recepción visible y persistencia remota sin pagar el enlace.
+La corrida de laboratorio satisfizo llamada, fases, identidad, link correcto, persistencia y entrega local correlacionada. V21 está desplegado en backend y Botpress, pero el canario Webchat posterior falló antes del handler. Antes de otro canario hay que restaurar la activación del `Conversation` handler en Botpress Cloud. Telegram continúa pendiente y no se paga ningún enlace.

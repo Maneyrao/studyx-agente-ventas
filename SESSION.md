@@ -1,7 +1,7 @@
 # Sesión StudyX
 
 ## Fase actual
-PHASE 3 — ruta única, conversación natural y canario. Estado: V21 desplegado; canario Telegram pendiente
+PHASE 3 — ruta única, conversación natural y canario. Estado: V21 desplegado; canario Botpress Cloud fallido antes del handler
 
 ## Fases completas
 - PHASE 0: fallos y silencios son observables; N3 cuenta como fallo conversacional.
@@ -35,4 +35,5 @@ PHASE 3 — ruta única, conversación natural y canario. Estado: V21 desplegado
 ## Bloqueos
 - La corrida limpia con DeepSeek V21 pasó 11/11 turnos, sin reparación, fallback ni silencio; persistió identidad completa y correlacionó un único link. Gasto final USD 1,048747608 de USD 1,08.
 - Producción ejecuta `767cad87d2105a6cb1e2fa3554439e5f565fb3c9` / Brain V21. Vercel `dpl_EgnjgaYTSMnjGGWzEnhCvikw7n3G` está `READY`; Botpress publicó el bundle `7381b476d4beb56375d0cd538b7db4e30113b45a0ca1af66957b011ed074b182` y preservó Telegram registrado.
-- La recepción remota y la naturalidad de más de una conversación siguen sin certificarse; resta el canario supervisado en `@amsterdam_reservas_bot` y no se paga el enlace.
+- El canario Botpress Cloud Webchat quedó sin respuesta en el primer turno. Webchat almacenó el mensaje, Botpress no emitió logs y PostgreSQL no recibió el evento; la frontera falló antes del backend y no consumió DeepSeek.
+- La recepción remota sigue sin certificarse. Antes del canario supervisado en `@amsterdam_reservas_bot` hay que restaurar la activación del `Conversation` handler; no se paga ningún enlace.
