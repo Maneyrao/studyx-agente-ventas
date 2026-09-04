@@ -21,6 +21,7 @@ No corresponde puntuar naturalidad porque no hubo texto del agente. El silencio 
 - PostgreSQL no recibió channel thread, mensaje, batch, decisión ni delivery para ese `conversationId`.
 - `/api/ready` permaneció `ready=true`; configuración, Brain V21, PostgreSQL y catálogo continuaron en `ok`.
 - DeepSeek no fue invocado y el ledger de evaluación permanece en USD 1,048747608 de USD 1,08.
+- ADK reconoce localmente un `conversation @ *` y el bundle contiene el router y `processInboundTurn`; el dry-run remoto posterior informa `hasChanges=false`.
 
 La frontera del fallo está entre el ingreso Webchat y la ejecución del `Conversation` handler ADK. La prueba no demuestra un defecto de catálogo, persistencia, modelo o materialización de links porque no alcanzó esas etapas.
 

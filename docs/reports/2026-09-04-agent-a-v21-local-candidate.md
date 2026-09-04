@@ -25,6 +25,8 @@ Se ejecutó una única conversación efectiva por Botpress Cloud Webchat. El cli
 
 El resultado es negativo y no permite evaluar naturalidad. La frontera está antes del backend, entre Webchat y el `Conversation` handler ADK; no consumió DeepSeek. El ensayo se detuvo en el primer turno y no se abrió una segunda conversación efectiva. Transcripción y correlación sanitizadas: [canario Botpress Cloud](evidence/2026-09-04-agent-a-v21-cloud-canary/transcript.md).
 
+La inspección posterior de ADK reconoce un `conversation @ *` en `src/conversations/router.ts`, tres workflows y ocho acciones. El bundle contiene el router y `processInboundTurn`. Un nuevo dry-run remoto devuelve `hasChanges=false`, sin dependencias bloqueantes ni cambios destructivos. La fuente local no omitió el handler; falta resolver por qué la suscripción desplegada no recibe el evento Webchat.
+
 ## Qué pasó en la conversación real
 
 La única conversación real conservada después del despliegue tuvo 21 mensajes entrantes y 20 respuestas entre 17:18:20 y 17:23:31 UTC. Hubo cero ofertas de llamada, cero acciones de pago y cero URLs. Las 20 salidas tienen reporte durable `submitted_to_botpress` y el usuario confirmó haberlas recibido.
