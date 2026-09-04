@@ -1,4 +1,4 @@
-# Agente A — candidato para prueba supervisada
+# Agente A — desplegado para prueba supervisada
 
 El usuario autorizó desplegar para probar y reafirmó la prioridad de ofrecer llamada, continuar por chat ante rechazo, respetar las fases y enviar enlaces disponibles con información correcta. Esa instrucción autoriza el despliegue supervisado y la migración aditiva explicada previamente; no certifica producción ni autoriza cobros o llamadas reales.
 
@@ -33,3 +33,25 @@ La llamada real con Agente B/Retell continúa fuera de esta entrega. Se verifica
 ## Presupuesto y límites
 
 Tope acumulado USD 1. Gasto conservador tras ambas corridas: **USD 0,858633752**, restante **USD 0,141366248**, 256 reservas, incluidos los USD 0,38 iniciales y la reserva histórica sin usage. El ledger no se reinició. El despliegue y el canario visible se registrarán debajo; la captura local no demuestra entrega en Telegram.
+
+## Publicación observada el 4 de septiembre
+
+Estado final: **READY_FOR_SUPERVISED_TELEGRAM**. Fuente desplegada: commit `07328e23f97054aeb92a108562f70b6ef3a88bb4`, rama `codex/agent-a-plannerless-v2`. No hubo push ni merge; se conservaron los cambios posteriores al checkpoint original.
+
+Vercel publicó `dpl_4oQWvw17x2Pr6dVrXbW1qZ7adP4i`, estado READY, con alias productivo `https://studyx-agente-ventas.vercel.app`. Los metadatos remotos identifican el commit, Brain V20 y canónico V9. `/api/health` devolvió 200 y ese SHA; `/api/ready` devolvió 200 con configuración, brain, PostgreSQL y catálogo disponibles. Se suministraron explícitamente los flags indicados arriba. Las variables de enlaces existentes se conservaron; sus valores sensibles no se extrajeron de Vercel.
+
+La publicación definitiva salió de un export efímero de 298 archivos regulares, 2.150.358 bytes, con hashes verificados, sin `--archive`. La consulta remota del árbol del deployment devolvió 496 nodos bajo `src` y `out`, sin `.eval`, `.env` ni `botpress-agent`. El deployment anterior sigue disponible. Recibos: [Vercel](evidence/2026-09-04-agent-a-supervised/vercel-publication.json) y [backend](evidence/2026-09-04-agent-a-supervised/backend-live.json).
+
+Botpress recibió una única solicitud de actualización sólo de código con el bundle SHA `4b4de7e17f9602ab814dbdd17fe16537361482ba135d10013b3bc0a5350f011c`. La solicitud agotó su espera sin confirmación HTTP y **no se repitió**. La lectura posterior observó `deployedAt=2026-09-04T17:00:07.298Z`, bot activo y Telegram registrado. La auditoría independiente registró `DEPLOY_BOT` a las 17:00:56.304 UTC y `UPDATE_BOT` a las 17:01:04.663 UTC. Configuración, esquemas, 15 integraciones y dos plugins conservaron su digest `6f5b99f65fb1ce5624acec8946c9e0a46bb474b417531324900ab85c83aa4ac2`. La API no ofrece hash remoto del código: se acredita publicación observada, no comparación remota byte por byte. Recibos: [Botpress](evidence/2026-09-04-agent-a-supervised/botpress-publication.json) y [auditoría](evidence/2026-09-04-agent-a-supervised/botpress-publish-observed-audit.sanitized.json).
+
+El usuario puede probar en [Telegram](https://t.me/amsterdam_reservas_bot). Sigue pendiente comprobar entrega visible en ese canal y correlacionarla con persistencia remota. El flujo de laboratorio sí recorrió el workflow real, pero sus adaptadores externos estaban aislados. La evaluación independiente final fue 3,83/5: muestra de ajuste, sin calibración humana ni certificación general. En T4 enumera planes sin cerrar con una pregunta de elección; el cliente del ensayo avanza por iniciativa propia en T5. La ejecución de llamadas reales con Agente B/Retell permanece fuera de esta entrega.
+
+### Prueba supervisada pendiente
+
+Consultar por un curso disponible, observar la invitación a llamada, rechazarla para continuar por chat, pedir información y elegir un plan, autorizar el enlace y completar los cuatro datos. Comprobar contenido y recepción del enlace sin realizar el pago. Si el contacto ya rechazó llamadas, se respeta esa preferencia: borrar el chat o enviar `/start` no reinicia el estado. No se borró historial para forzar la prueba.
+
+### Incidente abierto durante el primer intento de carga
+
+Antes de la publicación definitiva se interrumpió un intento con `--archive=tgz`: el CLI volvió a recorrer directorios excluidos y anunció un paquete de 346,4 MB. El último avance impreso fue 86,6 MB, que no es un recibo remoto ni permite conocer el total realmente recibido. El alcance potencial incluye archivos privados de `.eval`. No se observó un deployment de ese intento, pero **no se puede confirmar si el proveedor retuvo partes cargadas**. La publicación definitiva limpia no resuelve esa incertidumbre. El [informe del incidente](2026-09-04-vercel-archive-upload-incident.md) conserva causa y límites; el [borrador para soporte](2026-09-04-vercel-support-draft.md) está preparado y no enviado. No se rotaron credenciales ni se alteraron integraciones a ciegas.
+
+No se hicieron nuevas llamadas pagas después de la regresión final. El presupuesto anterior permanece vigente.

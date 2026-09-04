@@ -1,0 +1,146 @@
+{
+  "at": "2026-09-04T17:05:14.955282+00:00",
+  "sentBundleSha256": "4b4de7e17f9602ab814dbdd17fe16537361482ba135d10013b3bc0a5350f011c",
+  "putAcknowledged": false,
+  "putOutcomeAtReturn": "unknown",
+  "repeatPut": false,
+  "publicationObserved": true,
+  "previousDeployedAt": "2026-09-03T10:50:31.859Z",
+  "deployedAt": "2026-09-04T17:00:07.298Z",
+  "updatedAt": "2026-09-04T17:01:04.553Z",
+  "botId": "2f7fe6e1-1fc9-40d9-9045-d0c96b456f4b",
+  "status": "active",
+  "preservationVerified": true,
+  "preservationSha256": "6f5b99f65fb1ce5624acec8946c9e0a46bb474b417531324900ab85c83aa4ac2",
+  "automationEnabled": true,
+  "plannerless": true,
+  "model": "deepseek-v4-flash",
+  "apiBaseUrl": "https://studyx-agente-ventas.vercel.app",
+  "integrations": [
+    {
+      "id": "intver_01KNS02E7FF0WQAYXWJDM3ZZNQ",
+      "name": "openai",
+      "version": "20.0.0",
+      "enabled": true,
+      "status": "registered"
+    },
+    {
+      "id": "intver_01K34MHES80EGJRA2MPCKN5KXW",
+      "name": "notion-kb",
+      "version": "1.0.0",
+      "enabled": false,
+      "status": "registered"
+    },
+    {
+      "id": "intver_01KZV3HNBCCHZJNWC391PQG9EW",
+      "name": "telegram",
+      "version": "1.0.11",
+      "enabled": true,
+      "status": "registered"
+    },
+    {
+      "id": "intver_01KK043XBGRNTRARGATB0D6MDY",
+      "name": "agi/improvement",
+      "version": "3.0.0",
+      "enabled": true,
+      "status": "registered"
+    },
+    {
+      "id": "intver_01KQYW62BM57D669VPPSAKXGHG",
+      "name": "anthropic",
+      "version": "18.0.1",
+      "enabled": true,
+      "status": "registered"
+    },
+    {
+      "id": "intver_01KNRZZPBTBA0FAHVDVGAJNBJ1",
+      "name": "cerebras",
+      "version": "9.0.0",
+      "enabled": true,
+      "status": "registered"
+    },
+    {
+      "id": "intver_01KNS015P14BRMA1C0CJG239M4",
+      "name": "groq",
+      "version": "16.0.0",
+      "enabled": true,
+      "status": "registered"
+    },
+    {
+      "id": "intver_01KNS00R1R8P4N2J4SVN6HHX4P",
+      "name": "google-ai",
+      "version": "8.0.0",
+      "enabled": true,
+      "status": "registered"
+    },
+    {
+      "id": "intver_01KMZAQP6WG231KVJSEY88KG2J",
+      "name": "pdf-generator",
+      "version": "0.0.7",
+      "enabled": true,
+      "status": "registered"
+    },
+    {
+      "id": "intver_01KXNM4M96B06TPXYRSTMQ5Q4V",
+      "name": "fireworks-ai",
+      "version": "12.0.0",
+      "enabled": true,
+      "status": "registered"
+    },
+    {
+      "id": "intver_01JBVV0VQW8XN3Z5V9K8DB1M3B",
+      "name": "webchat",
+      "version": "0.3.0",
+      "enabled": true,
+      "status": "registered"
+    },
+    {
+      "id": "intver_01KZV3JDSXJDX3AVKT00J3J5RW",
+      "name": "whatsapp",
+      "version": "4.18.5",
+      "enabled": true,
+      "status": "registration_failed"
+    },
+    {
+      "id": "intver_01KPBEHKBJD4MZ0ZDWEBMHX74D",
+      "name": "browser",
+      "version": "0.8.8",
+      "enabled": true,
+      "status": "registered"
+    },
+    {
+      "id": "intver_01KMZAEJVYBMNRMP01816TVEBH",
+      "name": "charts",
+      "version": "0.2.8",
+      "enabled": true,
+      "status": "registered"
+    },
+    {
+      "id": "intver_01KNSDHSSEHCX633DGB62V2ZB8",
+      "name": "chat",
+      "version": "1.0.0",
+      "enabled": true,
+      "status": "registered"
+    }
+  ],
+  "pluginCount": 2,
+  "remoteCodeHashAvailable": false,
+  "channelVisibleDeliveryVerified": false,
+  "auditEvidence": "botpress-publish-observed-audit.sanitized.json",
+  "auditEvents": [
+    {
+      "id": "audit_01M1PNVRRFYGE49JAGMNNY1SA7",
+      "recordedAt": "2026-09-04T17:01:04.663Z",
+      "resourceId": "2f7fe6e1-1fc9-40d9-9045-d0c96b456f4b",
+      "action": "UPDATE_BOT",
+      "hasValue": false
+    },
+    {
+      "id": "audit_01M1PNVGHME0THHSR0758AK0FD",
+      "recordedAt": "2026-09-04T17:00:56.304Z",
+      "resourceId": "2f7fe6e1-1fc9-40d9-9045-d0c96b456f4b",
+      "action": "DEPLOY_BOT",
+      "hasValue": false
+    }
+  ]
+}

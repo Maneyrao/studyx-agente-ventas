@@ -1,0 +1,50 @@
+{
+  "observedAt": "2026-09-04T17:03:37.663Z",
+  "botId": "2f7fe6e1-1fc9-40d9-9045-d0c96b456f4b",
+  "operations": [
+    "getBot",
+    "getAuditRecords"
+  ],
+  "modelRequests": 0,
+  "mutations": 0,
+  "bot": {
+    "id": "2f7fe6e1-1fc9-40d9-9045-d0c96b456f4b",
+    "status": "active",
+    "type": "adk",
+    "deployedAt": "2026-09-04T17:00:07.298Z",
+    "updatedAt": "2026-09-04T17:01:04.553Z",
+    "automationEnabled": true,
+    "agentAPlannerlessV2Enabled": true,
+    "integrationCount": 15,
+    "pluginCount": 2,
+    "telegram": [
+      {
+        "version": "1.0.11",
+        "enabled": true,
+        "status": "registered"
+      }
+    ],
+    "preservationSha256": "6f5b99f65fb1ce5624acec8946c9e0a46bb474b417531324900ab85c83aa4ac2"
+  },
+  "audit": {
+    "pageRecordCount": 20,
+    "hasNextPage": true,
+    "earliestRecordedAt": "2026-08-31T14:18:53.725Z",
+    "records": [
+      {
+        "id": "audit_01M1PNVRRFYGE49JAGMNNY1SA7",
+        "recordedAt": "2026-09-04T17:01:04.663Z",
+        "resourceId": "2f7fe6e1-1fc9-40d9-9045-d0c96b456f4b",
+        "action": "UPDATE_BOT",
+        "hasValue": false
+      },
+      {
+        "id": "audit_01M1PNVGHME0THHSR0758AK0FD",
+        "recordedAt": "2026-09-04T17:00:56.304Z",
+        "resourceId": "2f7fe6e1-1fc9-40d9-9045-d0c96b456f4b",
+        "action": "DEPLOY_BOT",
+        "hasValue": false
+      }
+    ]
+  }
+}

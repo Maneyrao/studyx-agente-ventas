@@ -1,10 +1,33 @@
 {
-  "generatedAt": "2026-09-04T16:53:52.636Z",
+  "generatedAt": "2026-09-04T17:14:11.362912+00:00",
+  "sourceCommit": "07328e23f97054aeb92a108562f70b6ef3a88bb4",
   "secretScan": {
-    "files": 34,
-    "hits": 0
+    "files": 39,
+    "additionalReports": 4,
+    "hits": 0,
+    "scope": "Exact values from local evaluation/project environment credential fields and Botpress profile; gzip contents decoded; private-key markers."
+  },
+  "sourceVerification": {
+    "files": 316,
+    "mismatches": 0,
+    "bundleSha256": "4b4de7e17f9602ab814dbdd17fe16537361482ba135d10013b3bc0a5350f011c"
   },
   "files": [
+    {
+      "path": "backend-live.json",
+      "bytes": 1066,
+      "sha256": "1400b3853750c748bcc816ab2ad3e7ddf24f585c6c49eb39d8b52509df09b695"
+    },
+    {
+      "path": "botpress-publication.json",
+      "bytes": 3904,
+      "sha256": "899d6c41f4b8961069eb4162c9f60eda6ee1ec935ab0550e88df51689fe33b79"
+    },
+    {
+      "path": "botpress-publish-observed-audit.sanitized.json",
+      "bytes": 1357,
+      "sha256": "3c96ddb134b8dba4c5d43ac3f4c1b18f5477d7e43ce1c4fd91ab75f5fccb933c"
+    },
     {
       "path": "budget-snapshot.json",
       "bytes": 121324,
@@ -91,9 +114,19 @@
       "sha256": "8d33421059f69c3146a9d48a4c9547cad765b0c5041cbb8ed934d3ce8dbd9ae3"
     },
     {
+      "path": "vercel-aborted-upload.log",
+      "bytes": 164,
+      "sha256": "4a19bd67a3704369dbcf22c8d8bfccdeba9f9b252578f1811ec0e46f72c28a98"
+    },
+    {
       "path": "vercel-before.json",
       "bytes": 283,
       "sha256": "83256a04518512a691ca0976c250a0cb261df3f3e0b1357479b1bf51ca94f035"
+    },
+    {
+      "path": "vercel-publication.json",
+      "bytes": 58540,
+      "sha256": "cf0823bfb5c9360a5c55380c0c83274d0cbea2fa35b1a3b49fa513b3c3d4a236"
     },
     {
       "path": "workflow-call-first-sale-2026-09-04T16-40-34-248Z-11915db7-a5ef-41ff-9153-cbfa6964e932.json.gz",

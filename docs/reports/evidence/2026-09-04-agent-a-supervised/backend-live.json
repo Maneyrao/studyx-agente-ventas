@@ -1,0 +1,47 @@
+{
+  "at": "2026-09-04T16:59:51.163Z",
+  "health": {
+    "status": "ok",
+    "service": "studyx-agente-ventas",
+    "timestamp": "2026-09-04T16:59:50.582Z",
+    "commit": "07328e23f97054aeb92a108562f70b6ef3a88bb4",
+    "region": "iad1"
+  },
+  "ready": {
+    "status": "ready",
+    "ready": true,
+    "trace_id": "b248e38d-3c1c-4600-b458-b23619782d0e",
+    "timestamp": "2026-09-04T16:59:51.051Z",
+    "probes": [
+      {
+        "name": "configuration",
+        "required": true,
+        "status": "ok",
+        "detail": null,
+        "latency_ms": null
+      },
+      {
+        "name": "agent_a_brain_configuration",
+        "required": true,
+        "status": "ok",
+        "detail": null,
+        "latency_ms": null
+      },
+      {
+        "name": "postgres",
+        "required": true,
+        "status": "ok",
+        "detail": null,
+        "latency_ms": 100
+      },
+      {
+        "name": "commercial_snapshot",
+        "required": true,
+        "status": "ok",
+        "detail": null,
+        "latency_ms": 50
+      }
+    ],
+    "failed_required": []
+  }
+}
