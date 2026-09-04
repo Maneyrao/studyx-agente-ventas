@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  removeRepeatedAgentQuestionMessagesV1,
   validateAgentATurnProposalV1,
 } from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
 import type { AgentAContextV1, AgentATurnProposalV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
@@ -554,5 +555,52 @@ describe('el guard de prerequisitos distingue pregunta de afirmación', () => {
     expect(rechazoDePrerequisitos(
       '¿Ya tenés conocimientos previos? No necesitás experiencia para arrancar.',
     )).toBe(true);
+  });
+});
+
+/**
+ * La pregunta repetida se quita sola, no arrastra el mensaje entero.
+ *
+ * `removeRepeatedAgentQuestionMessagesV1` descartaba el mensaje completo. Si la
+ * pregunta ya hecha venía pegada a algo útil —"Perfecto, seguimos por chat.
+ * ¿Ya tenías pensado estudiar maquillaje...?"— quitarla dejaba el turno sin
+ * mensajes, la poda se abortaba y la repetición se entregaba igual.
+ *
+ * Observado por el arnés de workflow en `llamada_rechazada` t2: la persona pide
+ * seguir por chat y recibe de vuelta la misma pregunta de diagnóstico del turno
+ * anterior, que el propio prompt prohíbe repetir.
+ */
+describe('poda de la pregunta ya hecha', () => {
+  const anterior = '¿Ya tenías pensado estudiar maquillaje o recién estás empezando a averiguar?';
+
+  it('conserva la parte útil y quita sólo la pregunta repetida', () => {
+    const resultado = removeRepeatedAgentQuestionMessagesV1(
+      ['Perfecto, seguimos por chat entonces. ¿Ya tenías pensado estudiar maquillaje o recién estás empezando a averiguar?'],
+      anterior,
+      'No quiero que me llamen, prefiero por chat',
+    );
+
+    expect(resultado.join(' ')).toContain('seguimos por chat');
+    expect(resultado.join(' ')).not.toMatch(/ya ten[ií]as pensado estudiar maquillaje/iu);
+  });
+
+  it('si el cliente pide que se lo repitan, no se poda nada', () => {
+    const resultado = removeRepeatedAgentQuestionMessagesV1(
+      [`Claro. ${anterior}`],
+      anterior,
+      '¿Me lo repetís? No entendí',
+    );
+
+    expect(resultado.join(' ')).toMatch(/ya ten[ií]as pensado/iu);
+  });
+
+  it('una pregunta nueva no se toca', () => {
+    const resultado = removeRepeatedAgentQuestionMessagesV1(
+      ['¿Cuál de las tres opciones de pago te resulta más cómoda?'],
+      anterior,
+      'me interesa',
+    );
+
+    expect(resultado).toEqual(['¿Cuál de las tres opciones de pago te resulta más cómoda?']);
   });
 });

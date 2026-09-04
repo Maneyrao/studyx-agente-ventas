@@ -4,6 +4,7 @@ import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { runWorkflowConversationV1 } from '../helpers/agent-a-workflow-driver';
+import { readWorkflowDbEvidenceV1 } from '../helpers/agent-a-workflow-db-evidence';
 import { configuration } from '../helpers/botpress-workflow-runtime';
 
 /**
@@ -24,6 +25,26 @@ import { configuration } from '../helpers/botpress-workflow-runtime';
  */
 const apiBaseUrl = process.env.STUDYX_EVAL_API_BASE_URL ?? 'http://127.0.0.1:3217';
 const outputDir = path.resolve(process.cwd(), 'botpress-agent/evals/results');
+const databaseUrl = process.env.TEST_DATABASE_URL
+  ?? process.env.DATABASE_URL
+  ?? 'postgresql://postgres@127.0.0.1:55435/studyx_test';
+
+/**
+ * Códigos con los que la ruta plannerless calla A PROPÓSITO.
+ *
+ * El workflow prefiere no responder antes que sustituir al modelo con copy
+ * enlatado cuando la generación no sobrevive las validaciones; está escrito así
+ * en `processInboundTurn`. Ese silencio es una decisión comprometida en la
+ * base, con su motivo, y no puede contarse igual que un turno que se perdió.
+ *
+ * Un silencio accidental —sin decisión, o con el workflow en error— sí es un
+ * fallo, y es lo que estas pruebas exigen que sea cero.
+ */
+const SILENCIOS_DELIBERADOS_V1 = new Set([
+  'BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK',
+  'OPT_OUT_ACK',
+  'CONTACT_BLOCKED',
+]);
 let backendUp = false;
 
 beforeAll(async () => {
@@ -91,10 +112,9 @@ const CONVERSACIONES = [
 
 describe('conversaciones completas por processInboundTurn', () => {
   it('los cuatro recorridos comerciales avanzan sin planner ni silencios', async () => {
-    if (!backendUp) {
-      console.warn(`WORKFLOW_CONVERSATIONS_SKIPPED: sin backend en ${apiBaseUrl}`);
-      return;
-    }
+    // Sin laboratorio el gate queda BLOQUEADO, no aprobado. Un `return` acá
+    // convertía la ausencia de entorno en un verde.
+    expect(backendUp, `LABORATORIO_NO_DISPONIBLE: sin backend en ${apiBaseUrl}`).toBe(true);
 
     const resultados = [];
     for (const caso of CONVERSACIONES) {
@@ -104,8 +124,20 @@ describe('conversaciones completas por processInboundTurn', () => {
       });
       resultados.push({ case_id: caso.id, ...evidencia });
 
-      // Ningún turno puede quedar mudo: el cliente escribió y espera respuesta.
-      expect(evidencia.silentTurns, `${caso.id}: turnos sin respuesta`).toBe(0);
+      // Un turno mudo sólo se acepta cuando el backend registró POR QUÉ calló.
+      // Sin decisión comprometida, el turno se perdió y eso es un fallo.
+      if (evidencia.silentTurns > 0) {
+        const db = await readWorkflowDbEvidenceV1({
+          databaseUrl, externalConversationId: evidencia.conversationId,
+        });
+        const deliberados = db.decisions.filter((d) => (
+          !d.hasResponse && SILENCIOS_DELIBERADOS_V1.has(d.reasonCode ?? '')
+        )).length;
+        expect(
+          evidencia.silentTurns - deliberados,
+          `${caso.id}: silencios accidentales (motivos: ${db.decisions.filter((d) => !d.hasResponse).map((d) => d.reasonCode).join(', ')})`,
+        ).toBe(0);
+      }
       // La ruta plannerless no pide planes. Se cuenta la invocación real.
       expect(evidencia.totalPlanRequests, `${caso.id}: planes pedidos`).toBe(0);
       // Cada turno llegó al commit; nada quedó a mitad de camino.
@@ -137,7 +169,7 @@ describe('conversaciones completas por processInboundTurn', () => {
   }, 600_000);
 
   it('un rechazo explícito de llamada no vuelve a ofrecerla', async () => {
-    if (!backendUp) return;
+    expect(backendUp, 'LABORATORIO_NO_DISPONIBLE').toBe(true);
 
     const evidencia = await runWorkflowConversationV1({
       ...identity(),

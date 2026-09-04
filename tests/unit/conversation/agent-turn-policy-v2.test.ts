@@ -323,3 +323,65 @@ describe('plannerless Agent A authority', () => {
     expect(result).toEqual({ ok: false, reasons: ['CALL_OFFER_NOT_AUTHORIZED'] });
   });
 });
+
+/**
+ * El estado tiene que describir lo que el agente realmente preguntó.
+ *
+ * Elegir plan fijaba `awaiting_reply = 'payment_confirmation'` aunque el mismo
+ * turno pidiera nombre, apellido, correo y teléfono. La conversación seguía
+ * pidiendo datos mientras el estado decía que esperaba una confirmación de
+ * pago, y como la regla del link exige `awaiting_reply === 'contact_details'`,
+ * el turno siguiente entregaba los cuatro datos y NO se mandaba ningún link.
+ *
+ * Lo encontró el cliente adaptativo, que contesta lo que el agente pregunta en
+ * vez de seguir un guion: la persona dio todo y recibió "cuando hagas el pago,
+ * avisame" sin un lugar donde pagar. Con guion fijo no se veía, porque el
+ * guion decía "mandame el link" explícitamente y eso tomaba otro camino.
+ *
+ * `payment_confirmation` sólo tiene sentido cuando ya no falta nada por pedir.
+ */
+describe('esperar los datos cuando todavía faltan', () => {
+  it('elegir plan sin intake registrado espera datos de contacto', () => {
+    const result = authorize({
+      state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected' }),
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'select_payment_plan', secondary_moves: [], vetoes: [],
+          payment_plan: 'monthly_6', confidence: 0.99,
+        },
+        response: {
+          messages: ['¡Excelente! Para dejarlo registrado necesito tu nombre, apellido, correo electrónico y teléfono.'],
+        },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      transition: {
+        selected_payment_plan: 'monthly_6', stage: 'plan_selected',
+        awaiting_reply: 'contact_details',
+      },
+    });
+  });
+
+  it('con el intake ya registrado sí espera la confirmación del pago', () => {
+    const result = authorize({
+      state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected' }),
+      // El hecho `state:intake_recorded:v1` lo materializa la propia política
+      // desde el intake completo; no se inyecta desde el test.
+      intake: completeIntake,
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'select_payment_plan', secondary_moves: [], vetoes: [],
+          payment_plan: 'monthly_6', confidence: 0.99,
+        },
+        response: { messages: ['Listo, quedó el plan de 6 pagos.'] },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      transition: { awaiting_reply: 'payment_confirmation' },
+    });
+  });
+});

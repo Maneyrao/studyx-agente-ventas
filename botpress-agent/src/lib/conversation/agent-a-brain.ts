@@ -1134,13 +1134,35 @@ export function assertsUnsupportedPrerequisitesV1(message: string): boolean {
     .some((sentence) => UNSUPPORTED_PREREQUISITE_ASSERTION.test(sentence));
 }
 
+/**
+ * Quita la pregunta ya hecha, no el mensaje que la contiene.
+ *
+ * Descartar el mensaje entero funcionaba sólo cuando la repetición venía sola.
+ * Pegada a algo útil —"Perfecto, seguimos por chat. ¿Ya tenías pensado
+ * estudiar maquillaje...?"— el filtro dejaba el turno sin mensajes, la poda se
+ * abortaba por lista vacía y la repetición llegaba igual al cliente.
+ *
+ * Se corta por oración y se descarta sólo la interrogativa que ya se hizo. Si
+ * de un mensaje no queda nada, ese mensaje desaparece; si no queda ninguno, el
+ * llamador decide qué hacer, como antes.
+ *
+ * Cuando la persona pide que se lo repitan, no se poda nada: ahí repetir es la
+ * respuesta correcta.
+ */
 export function removeRepeatedAgentQuestionMessagesV1(
   messages: readonly string[],
   previous: string,
   currentCustomerText: string,
 ): string[] {
   if (CUSTOMER_REQUESTS_REPEAT.test(currentCustomerText)) return [...messages];
-  return messages.filter((message) => !repeatsPreviousQuestion([message], previous));
+  return messages
+    .map((message) => message
+      .split(/(?<=[.!?\n])/u)
+      .filter((sentence) => !repeatsPreviousQuestion([sentence], previous))
+      .join('')
+      .replace(/\s+/gu, ' ')
+      .trim())
+    .filter((message) => message.length > 0);
 }
 
 function mentionsMissingIntakeField(messages: readonly string[], missing: readonly string[]): boolean {

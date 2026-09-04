@@ -217,7 +217,15 @@ export function authorizeAgentTurnV2(input: {
     nextOffering = selectedOffering;
     nextPlan = proposal.move.payment_plan;
     stage = 'plan_selected';
-    awaitingReply = 'payment_confirmation';
+    // El estado tiene que describir lo que el turno realmente preguntó. Con el
+    // intake sin registrar, elegir plan va seguido de pedir los cuatro datos,
+    // y marcar `payment_confirmation` dejaba a la conversación pidiendo datos
+    // mientras el estado esperaba otra cosa. Como la regla del link exige
+    // `contact_details`, el turno siguiente entregaba todo y no salía ningún
+    // link: la persona quedaba con "avisame cuando pagues" y sin dónde pagar.
+    awaitingReply = stateFacts.has('state:intake_recorded:v1')
+      ? 'payment_confirmation'
+      : 'contact_details';
   }
   if (
     moves.has('request_payment_link')

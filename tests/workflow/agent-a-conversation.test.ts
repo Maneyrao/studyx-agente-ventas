@@ -38,10 +38,7 @@ beforeAll(async () => {
 
 describe('processInboundTurn como arnés de evaluación', () => {
   it('declara el arnés y la ruta sin que nadie se lo tenga que creer', async () => {
-    if (!backendUp) {
-      console.warn(`WORKFLOW_HARNESS_SKIPPED: sin backend en ${apiBaseUrl}`);
-      return;
-    }
+    expect(backendUp, `LABORATORIO_NO_DISPONIBLE: sin backend en ${apiBaseUrl}`).toBe(true);
 
     const conversationId = `wf-${randomUUID()}`;
     const evidence = await runWorkflowTurnV1({
@@ -69,7 +66,7 @@ describe('processInboundTurn como arnés de evaluación', () => {
   });
 
   it('el modelo gestionado de Botpress nunca corre en esta ruta', async () => {
-    if (!backendUp) return;
+    expect(backendUp, 'LABORATORIO_NO_DISPONIBLE').toBe(true);
 
     const evidence = await runWorkflowTurnV1({
       text: 'Hola',
