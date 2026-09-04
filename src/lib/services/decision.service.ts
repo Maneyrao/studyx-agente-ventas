@@ -803,6 +803,12 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       const canonicalTruth = canonicalTruthSetFromOfferingsV1({
         offerings,
         selected_offering_code: effectiveAuthorizedOfferingCode ?? null,
+        payment_options: Object.values(PAYMENT_PLAN_PRESENTATIONS).map((plan) => ({
+          label: plan.label,
+          installments: plan.installments,
+          installment_amount: plan.installment_amount,
+          total: { currency: plan.currency, amount: plan.total_amount },
+        })),
       });
       const verdict = enforceCommercialTruthV1({
         content: finalResponse,

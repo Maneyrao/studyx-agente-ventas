@@ -1,0 +1,273 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90m/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/agent-a-plannerless-v2[39m
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"09c5abb5-e5b2-44e4-a9aa-32710e25de5a","path":"/api/agent/ingest","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":213}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"09c5abb5-e5b2-44e4-a9aa-32710e25de5a","path":"/api/agent/batches/78c8e726-24ca-4476-939a-c3a78bf1e682/claim","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":54}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.claimed","trace_id":"09c5abb5-e5b2-44e4-a9aa-32710e25de5a","batch_id":"78c8e726-24ca-4476-939a-c3a78bf1e682","turn_id":"23479ea5-9013-4f7b-8497-9ab591ead213","message_count":1,"stolen":false,"knowledge_base_available":false,"long_term_memory_available":false,"injection_suspected":0}
+{"event":"studyx.turn.agent_a_context_built","trace_id":"09c5abb5-e5b2-44e4-a9aa-32710e25de5a","turn_id":"23479ea5-9013-4f7b-8497-9ab591ead213","context_recent_turn_count":0,"context_memory_count":0,"identity_resolved":false,"obligations_owed":[]}
+{"event":"studyx.turn.commercial_route","trace_id":"09c5abb5-e5b2-44e4-a9aa-32710e25de5a","turn_id":"23479ea5-9013-4f7b-8497-9ab591ead213","route_kind":"deterministic","route_origin":"course_discovery","route_reason":"DETERMINISTIC_COURSE_DISCOVERY"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.agent_a_plannerless_v2","trace_id":"09c5abb5-e5b2-44e4-a9aa-32710e25de5a","turn_id":"23479ea5-9013-4f7b-8497-9ab591ead213","rollout_mode":"authoritative","brain_prompt_version":"studyx-agent-a-brain-v20","brain_model":"deepseek-v4-flash","used_memory_count":0,"proposed_action_type":"none","repair_attempted":false,"repaired":false,"rejection_codes":[]}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"09c5abb5-e5b2-44e4-a9aa-32710e25de5a","path":"/api/agent/turns/23479ea5-9013-4f7b-8497-9ab591ead213/decision","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":80}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.batch_completion","trace_id":"09c5abb5-e5b2-44e4-a9aa-32710e25de5a","turn_id":"23479ea5-9013-4f7b-8497-9ab591ead213","batch_id":"78c8e726-24ca-4476-939a-c3a78bf1e682","batch_completion":"completed"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"09c5abb5-e5b2-44e4-a9aa-32710e25de5a","path":"/api/agent/outbounds/97f0c2db-e4b2-4ff5-b93f-017112275ee0/delivery","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":10}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.projection_flush.unavailable","trace_id":"09c5abb5-e5b2-44e4-a9aa-32710e25de5a","reason":"MISSING_CRON_SECRET"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.completed","trace_id":"09c5abb5-e5b2-44e4-a9aa-32710e25de5a","turn_id":"23479ea5-9013-4f7b-8497-9ab591ead213","batch_id":"78c8e726-24ca-4476-939a-c3a78bf1e682","outbound_id":"97f0c2db-e4b2-4ff5-b93f-017112275ee0","botpress_message_id":"9346a9f6-b619-4c5e-bbd6-34fa42217151","botpress_message_replayed":false}
+{"event":"studyx.turn.timings","trace_id":"09c5abb5-e5b2-44e4-a9aa-32710e25de5a","turn_id":"23479ea5-9013-4f7b-8497-9ab591ead213","phase":"waiting_user","telegram_to_router_ms":3,"ingest_ms":214,"batch_wait_ms":955,"batch_wait_actual_ms":955,"batch_wait_scheduled_ms":954,"claim_ms":56,"claim_total_ms":25,"core_db_ms":7,"shared_embedding_ms":0,"memory_search_ms":0,"knowledge_search_ms":0,"business_snapshot_ms":6,"embedding_calls":1,"memory_search_calls":0,"knowledge_search_calls":0,"business_snapshot_calls":1,"catalog_calls":2,"agent_a_brain_ms":3174,"planner_ms":0,"model_ms":0,"event_to_decision_ms":4459,"commit_ms":81,"egress_verify_ms":3,"send_ms":0,"event_to_visible_outbound_ms":4543,"event_to_visible_outbound_over_budget":0,"delivery_report_ms":11,"total_workflow_ms":4551,"model":"deepseek-v4-flash","fast_path":true}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"3fb0d654-a4af-4f45-a656-c05f338e55ee","path":"/api/agent/ingest","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":14}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"3fb0d654-a4af-4f45-a656-c05f338e55ee","path":"/api/agent/batches/943a3086-382e-4fea-9b14-cec8959f4dab/claim","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":21}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.claimed","trace_id":"3fb0d654-a4af-4f45-a656-c05f338e55ee","batch_id":"943a3086-382e-4fea-9b14-cec8959f4dab","turn_id":"d7013e76-105b-4970-b332-6799c0886a3d","message_count":1,"stolen":false,"knowledge_base_available":false,"long_term_memory_available":false,"injection_suspected":0}
+{"event":"studyx.turn.agent_a_context_built","trace_id":"3fb0d654-a4af-4f45-a656-c05f338e55ee","turn_id":"d7013e76-105b-4970-b332-6799c0886a3d","context_recent_turn_count":2,"context_memory_count":0,"identity_resolved":false,"obligations_owed":[]}
+{"event":"studyx.turn.commercial_route","trace_id":"3fb0d654-a4af-4f45-a656-c05f338e55ee","turn_id":"d7013e76-105b-4970-b332-6799c0886a3d","route_kind":"deterministic","route_origin":"conversation_close","route_reason":"DETERMINISTIC_CALL_DECLINE_CONTINUE"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.agent_a_plannerless_v2","trace_id":"3fb0d654-a4af-4f45-a656-c05f338e55ee","turn_id":"d7013e76-105b-4970-b332-6799c0886a3d","rollout_mode":"authoritative","brain_prompt_version":"studyx-agent-a-brain-v20","brain_model":"deepseek-v4-flash","used_memory_count":0,"proposed_action_type":"none","repair_attempted":false,"repaired":false,"rejection_codes":[]}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"3fb0d654-a4af-4f45-a656-c05f338e55ee","path":"/api/agent/turns/d7013e76-105b-4970-b332-6799c0886a3d/decision","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":38}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.batch_completion","trace_id":"3fb0d654-a4af-4f45-a656-c05f338e55ee","turn_id":"d7013e76-105b-4970-b332-6799c0886a3d","batch_id":"943a3086-382e-4fea-9b14-cec8959f4dab","batch_completion":"completed"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"3fb0d654-a4af-4f45-a656-c05f338e55ee","path":"/api/agent/outbounds/0f007dd5-d1b3-43d3-b2e6-660c9c55067a/delivery","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":9}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.projection_flush.unavailable","trace_id":"3fb0d654-a4af-4f45-a656-c05f338e55ee","reason":"MISSING_CRON_SECRET"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.completed","trace_id":"3fb0d654-a4af-4f45-a656-c05f338e55ee","turn_id":"d7013e76-105b-4970-b332-6799c0886a3d","batch_id":"943a3086-382e-4fea-9b14-cec8959f4dab","outbound_id":"0f007dd5-d1b3-43d3-b2e6-660c9c55067a","botpress_message_id":"ca3f23d9-ad62-4bad-93fe-eb4691df1847","botpress_message_replayed":false}
+{"event":"studyx.turn.timings","trace_id":"3fb0d654-a4af-4f45-a656-c05f338e55ee","turn_id":"d7013e76-105b-4970-b332-6799c0886a3d","phase":"waiting_user","telegram_to_router_ms":0,"ingest_ms":14,"batch_wait_ms":990,"batch_wait_actual_ms":990,"batch_wait_scheduled_ms":989,"claim_ms":22,"claim_total_ms":13,"core_db_ms":3,"shared_embedding_ms":0,"memory_search_ms":0,"knowledge_search_ms":0,"business_snapshot_ms":4,"embedding_calls":1,"memory_search_calls":0,"knowledge_search_calls":0,"business_snapshot_calls":1,"catalog_calls":1,"agent_a_brain_ms":1896,"planner_ms":0,"model_ms":0,"event_to_decision_ms":2930,"commit_ms":38,"egress_verify_ms":1,"send_ms":0,"event_to_visible_outbound_ms":2969,"event_to_visible_outbound_over_budget":0,"delivery_report_ms":9,"total_workflow_ms":2978,"model":"deepseek-v4-flash","fast_path":true}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"a9bd9d66-92c0-4d54-b7cd-5f974832b380","path":"/api/agent/ingest","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":13}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"a9bd9d66-92c0-4d54-b7cd-5f974832b380","path":"/api/agent/batches/cb89682f-8ba7-4f43-80bd-194a56a7dba8/claim","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":20}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.claimed","trace_id":"a9bd9d66-92c0-4d54-b7cd-5f974832b380","batch_id":"cb89682f-8ba7-4f43-80bd-194a56a7dba8","turn_id":"0ea46d8f-fa0c-48d8-b2e9-713cf31237e9","message_count":1,"stolen":false,"knowledge_base_available":false,"long_term_memory_available":false,"injection_suspected":0}
+{"event":"studyx.turn.agent_a_context_built","trace_id":"a9bd9d66-92c0-4d54-b7cd-5f974832b380","turn_id":"0ea46d8f-fa0c-48d8-b2e9-713cf31237e9","context_recent_turn_count":4,"context_memory_count":0,"identity_resolved":false,"obligations_owed":[]}
+{"event":"studyx.turn.commercial_route","trace_id":"a9bd9d66-92c0-4d54-b7cd-5f974832b380","turn_id":"0ea46d8f-fa0c-48d8-b2e9-713cf31237e9","route_kind":"model_required","route_origin":"advisory_model","route_reason":"OPEN_CATALOG_REQUIRES_SALES_MODEL"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.agent_a_plannerless_v2","trace_id":"a9bd9d66-92c0-4d54-b7cd-5f974832b380","turn_id":"0ea46d8f-fa0c-48d8-b2e9-713cf31237e9","rollout_mode":"authoritative","brain_prompt_version":"studyx-agent-a-brain-v20","brain_model":"deepseek-v4-flash","used_memory_count":0,"proposed_action_type":"none","repair_attempted":false,"repaired":false,"rejection_codes":[]}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"a9bd9d66-92c0-4d54-b7cd-5f974832b380","path":"/api/agent/turns/0ea46d8f-fa0c-48d8-b2e9-713cf31237e9/decision","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":38}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.batch_completion","trace_id":"a9bd9d66-92c0-4d54-b7cd-5f974832b380","turn_id":"0ea46d8f-fa0c-48d8-b2e9-713cf31237e9","batch_id":"cb89682f-8ba7-4f43-80bd-194a56a7dba8","batch_completion":"completed"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"a9bd9d66-92c0-4d54-b7cd-5f974832b380","path":"/api/agent/outbounds/1648cc81-f966-4ae2-8736-7aaa77a6c1e8/delivery","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":5}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.projection_flush.unavailable","trace_id":"a9bd9d66-92c0-4d54-b7cd-5f974832b380","reason":"MISSING_CRON_SECRET"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.completed","trace_id":"a9bd9d66-92c0-4d54-b7cd-5f974832b380","turn_id":"0ea46d8f-fa0c-48d8-b2e9-713cf31237e9","batch_id":"cb89682f-8ba7-4f43-80bd-194a56a7dba8","outbound_id":"1648cc81-f966-4ae2-8736-7aaa77a6c1e8","botpress_message_id":"bd79d775-5aff-4de0-ae18-e80e2ba1fe4a","botpress_message_replayed":false}
+{"event":"studyx.turn.timings","trace_id":"a9bd9d66-92c0-4d54-b7cd-5f974832b380","turn_id":"0ea46d8f-fa0c-48d8-b2e9-713cf31237e9","phase":"waiting_user","telegram_to_router_ms":0,"ingest_ms":13,"batch_wait_ms":992,"batch_wait_actual_ms":992,"batch_wait_scheduled_ms":991,"claim_ms":20,"claim_total_ms":15,"core_db_ms":1,"shared_embedding_ms":1,"memory_search_ms":0,"knowledge_search_ms":0,"business_snapshot_ms":2,"embedding_calls":1,"memory_search_calls":0,"knowledge_search_calls":0,"business_snapshot_calls":1,"catalog_calls":1,"agent_a_brain_ms":3193,"planner_ms":0,"model_ms":0,"event_to_decision_ms":4259,"commit_ms":38,"egress_verify_ms":0,"send_ms":0,"event_to_visible_outbound_ms":4297,"event_to_visible_outbound_over_budget":0,"delivery_report_ms":5,"total_workflow_ms":4302,"model":"deepseek-v4-flash","fast_path":false}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"7ef61739-1a43-47e3-b2f5-ebcbfb29edea","path":"/api/agent/ingest","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":11}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"7ef61739-1a43-47e3-b2f5-ebcbfb29edea","path":"/api/agent/batches/94fb4384-e672-4ec2-917f-8e96a0fbf67a/claim","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":16}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.claimed","trace_id":"7ef61739-1a43-47e3-b2f5-ebcbfb29edea","batch_id":"94fb4384-e672-4ec2-917f-8e96a0fbf67a","turn_id":"8532b807-08b4-4dbc-b8f7-6bb83112880a","message_count":1,"stolen":false,"knowledge_base_available":false,"long_term_memory_available":false,"injection_suspected":0}
+{"event":"studyx.turn.agent_a_context_built","trace_id":"7ef61739-1a43-47e3-b2f5-ebcbfb29edea","turn_id":"8532b807-08b4-4dbc-b8f7-6bb83112880a","context_recent_turn_count":6,"context_memory_count":0,"identity_resolved":false,"obligations_owed":[]}
+{"event":"studyx.turn.commercial_route","trace_id":"7ef61739-1a43-47e3-b2f5-ebcbfb29edea","turn_id":"8532b807-08b4-4dbc-b8f7-6bb83112880a","route_kind":"deterministic","route_origin":"course_facts","route_reason":"DETERMINISTIC_COURSE_FACTS"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.agent_a_plannerless_v2","trace_id":"7ef61739-1a43-47e3-b2f5-ebcbfb29edea","turn_id":"8532b807-08b4-4dbc-b8f7-6bb83112880a","rollout_mode":"authoritative","brain_prompt_version":"studyx-agent-a-brain-v20","brain_model":"deepseek-v4-flash","used_memory_count":0,"proposed_action_type":"none","repair_attempted":false,"repaired":false,"rejection_codes":[]}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"7ef61739-1a43-47e3-b2f5-ebcbfb29edea","path":"/api/agent/turns/8532b807-08b4-4dbc-b8f7-6bb83112880a/decision","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":33}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.batch_completion","trace_id":"7ef61739-1a43-47e3-b2f5-ebcbfb29edea","turn_id":"8532b807-08b4-4dbc-b8f7-6bb83112880a","batch_id":"94fb4384-e672-4ec2-917f-8e96a0fbf67a","batch_completion":"completed"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"7ef61739-1a43-47e3-b2f5-ebcbfb29edea","path":"/api/agent/outbounds/929fb543-9aa9-4a2a-a8e3-99878171aaa4/delivery","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":7}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.projection_flush.unavailable","trace_id":"7ef61739-1a43-47e3-b2f5-ebcbfb29edea","reason":"MISSING_CRON_SECRET"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.completed","trace_id":"7ef61739-1a43-47e3-b2f5-ebcbfb29edea","turn_id":"8532b807-08b4-4dbc-b8f7-6bb83112880a","batch_id":"94fb4384-e672-4ec2-917f-8e96a0fbf67a","outbound_id":"929fb543-9aa9-4a2a-a8e3-99878171aaa4","botpress_message_id":"701cf6b7-dc81-4664-a97e-ab3d29aa5c22","botpress_message_replayed":false}
+{"event":"studyx.turn.timings","trace_id":"7ef61739-1a43-47e3-b2f5-ebcbfb29edea","turn_id":"8532b807-08b4-4dbc-b8f7-6bb83112880a","phase":"waiting_user","telegram_to_router_ms":0,"ingest_ms":11,"batch_wait_ms":992,"batch_wait_actual_ms":992,"batch_wait_scheduled_ms":991,"claim_ms":17,"claim_total_ms":12,"core_db_ms":1,"shared_embedding_ms":0,"memory_search_ms":0,"knowledge_search_ms":0,"business_snapshot_ms":2,"embedding_calls":1,"memory_search_calls":0,"knowledge_search_calls":0,"business_snapshot_calls":1,"catalog_calls":1,"agent_a_brain_ms":2089,"planner_ms":0,"model_ms":0,"event_to_decision_ms":3112,"commit_ms":33,"egress_verify_ms":0,"send_ms":1,"event_to_visible_outbound_ms":3146,"event_to_visible_outbound_over_budget":0,"delivery_report_ms":7,"total_workflow_ms":3153,"model":"deepseek-v4-flash","fast_path":true}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"41a2d592-1a77-401c-ad30-298a47da4285","path":"/api/agent/ingest","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":14}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"41a2d592-1a77-401c-ad30-298a47da4285","path":"/api/agent/batches/39580f7f-75cf-4579-b83a-60ad392e9155/claim","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":23}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.claimed","trace_id":"41a2d592-1a77-401c-ad30-298a47da4285","batch_id":"39580f7f-75cf-4579-b83a-60ad392e9155","turn_id":"4ecb363c-c705-4aaf-a401-cd6a54c44581","message_count":1,"stolen":false,"knowledge_base_available":false,"long_term_memory_available":false,"injection_suspected":0}
+{"event":"studyx.turn.agent_a_context_built","trace_id":"41a2d592-1a77-401c-ad30-298a47da4285","turn_id":"4ecb363c-c705-4aaf-a401-cd6a54c44581","context_recent_turn_count":8,"context_memory_count":0,"identity_resolved":false,"obligations_owed":[]}
+{"event":"studyx.turn.commercial_route","trace_id":"41a2d592-1a77-401c-ad30-298a47da4285","turn_id":"4ecb363c-c705-4aaf-a401-cd6a54c44581","route_kind":"deterministic","route_origin":"payment_selection","route_reason":"DETERMINISTIC_PAYMENT_SELECTION"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.agent_a_plannerless_v2","trace_id":"41a2d592-1a77-401c-ad30-298a47da4285","turn_id":"4ecb363c-c705-4aaf-a401-cd6a54c44581","rollout_mode":"authoritative","brain_prompt_version":"studyx-agent-a-brain-v20","brain_model":"deepseek-v4-flash","used_memory_count":0,"proposed_action_type":"none","repair_attempted":false,"repaired":false,"rejection_codes":[]}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"41a2d592-1a77-401c-ad30-298a47da4285","path":"/api/agent/turns/4ecb363c-c705-4aaf-a401-cd6a54c44581/decision","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":36}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.batch_completion","trace_id":"41a2d592-1a77-401c-ad30-298a47da4285","turn_id":"4ecb363c-c705-4aaf-a401-cd6a54c44581","batch_id":"39580f7f-75cf-4579-b83a-60ad392e9155","batch_completion":"completed"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"41a2d592-1a77-401c-ad30-298a47da4285","path":"/api/agent/outbounds/fccdf0f5-b12c-4559-92d4-d7fbb9495c2f/delivery","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":6}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.projection_flush.unavailable","trace_id":"41a2d592-1a77-401c-ad30-298a47da4285","reason":"MISSING_CRON_SECRET"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.completed","trace_id":"41a2d592-1a77-401c-ad30-298a47da4285","turn_id":"4ecb363c-c705-4aaf-a401-cd6a54c44581","batch_id":"39580f7f-75cf-4579-b83a-60ad392e9155","outbound_id":"fccdf0f5-b12c-4559-92d4-d7fbb9495c2f","botpress_message_id":"aa32d4cd-ca1b-4756-9867-11788ab84bc6","botpress_message_replayed":false}
+{"event":"studyx.turn.timings","trace_id":"41a2d592-1a77-401c-ad30-298a47da4285","turn_id":"4ecb363c-c705-4aaf-a401-cd6a54c44581","phase":"waiting_user","telegram_to_router_ms":0,"ingest_ms":14,"batch_wait_ms":991,"batch_wait_actual_ms":991,"batch_wait_scheduled_ms":989,"claim_ms":23,"claim_total_ms":17,"core_db_ms":2,"shared_embedding_ms":0,"memory_search_ms":0,"knowledge_search_ms":0,"business_snapshot_ms":3,"embedding_calls":1,"memory_search_calls":0,"knowledge_search_calls":0,"business_snapshot_calls":1,"catalog_calls":1,"agent_a_brain_ms":2090,"planner_ms":0,"model_ms":0,"event_to_decision_ms":3120,"commit_ms":38,"egress_verify_ms":0,"send_ms":0,"event_to_visible_outbound_ms":3158,"event_to_visible_outbound_over_budget":0,"delivery_report_ms":7,"total_workflow_ms":3165,"model":"deepseek-v4-flash","fast_path":true}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"fdcc2ea6-ede3-4e19-ae58-4988af31363c","path":"/api/agent/ingest","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":12}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"fdcc2ea6-ede3-4e19-ae58-4988af31363c","path":"/api/agent/batches/88c5a196-0995-40aa-adfe-fc544a7a17e2/claim","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":17}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.claimed","trace_id":"fdcc2ea6-ede3-4e19-ae58-4988af31363c","batch_id":"88c5a196-0995-40aa-adfe-fc544a7a17e2","turn_id":"2a7525f3-52ef-4d65-bd3a-90ecb276ea2e","message_count":1,"stolen":false,"knowledge_base_available":false,"long_term_memory_available":false,"injection_suspected":0}
+{"event":"studyx.turn.agent_a_context_built","trace_id":"fdcc2ea6-ede3-4e19-ae58-4988af31363c","turn_id":"2a7525f3-52ef-4d65-bd3a-90ecb276ea2e","context_recent_turn_count":8,"context_memory_count":0,"identity_resolved":false,"obligations_owed":[]}
+{"event":"studyx.turn.commercial_route","trace_id":"fdcc2ea6-ede3-4e19-ae58-4988af31363c","turn_id":"2a7525f3-52ef-4d65-bd3a-90ecb276ea2e","route_kind":"model_required","route_origin":"advisory_model","route_reason":"ADVISORY_REQUIRES_SALES_MODEL"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.agent_a_plannerless_v2","trace_id":"fdcc2ea6-ede3-4e19-ae58-4988af31363c","turn_id":"2a7525f3-52ef-4d65-bd3a-90ecb276ea2e","rollout_mode":"authoritative","brain_prompt_version":"studyx-agent-a-brain-v20","brain_model":"deepseek-v4-flash","used_memory_count":0,"proposed_action_type":"none","repair_attempted":false,"repaired":false,"rejection_codes":["REPEATED_AGENT_REPLY"]}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"fdcc2ea6-ede3-4e19-ae58-4988af31363c","path":"/api/agent/turns/2a7525f3-52ef-4d65-bd3a-90ecb276ea2e/decision","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":18}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.batch_completion","trace_id":"fdcc2ea6-ede3-4e19-ae58-4988af31363c","turn_id":"2a7525f3-52ef-4d65-bd3a-90ecb276ea2e","batch_id":"88c5a196-0995-40aa-adfe-fc544a7a17e2","batch_completion":"completed"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"fdcc2ea6-ede3-4e19-ae58-4988af31363c","path":"/api/agent/outbounds/fd00c10e-6c6b-4fb9-9523-417a7ec523b1/delivery","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":5}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.projection_flush.unavailable","trace_id":"fdcc2ea6-ede3-4e19-ae58-4988af31363c","reason":"MISSING_CRON_SECRET"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.completed","trace_id":"fdcc2ea6-ede3-4e19-ae58-4988af31363c","turn_id":"2a7525f3-52ef-4d65-bd3a-90ecb276ea2e","batch_id":"88c5a196-0995-40aa-adfe-fc544a7a17e2","outbound_id":"fd00c10e-6c6b-4fb9-9523-417a7ec523b1","botpress_message_id":"b6a0e88a-927c-4755-ab1d-9cbc6318d9dc","botpress_message_replayed":false}
+{"event":"studyx.turn.timings","trace_id":"fdcc2ea6-ede3-4e19-ae58-4988af31363c","turn_id":"2a7525f3-52ef-4d65-bd3a-90ecb276ea2e","phase":"waiting_user","telegram_to_router_ms":0,"ingest_ms":12,"batch_wait_ms":990,"batch_wait_actual_ms":990,"batch_wait_scheduled_ms":990,"claim_ms":18,"claim_total_ms":13,"core_db_ms":2,"shared_embedding_ms":0,"memory_search_ms":0,"knowledge_search_ms":0,"business_snapshot_ms":2,"embedding_calls":1,"memory_search_calls":0,"knowledge_search_calls":0,"business_snapshot_calls":1,"catalog_calls":1,"agent_a_brain_ms":2046,"planner_ms":0,"model_ms":0,"event_to_decision_ms":3068,"commit_ms":18,"egress_verify_ms":0,"send_ms":0,"event_to_visible_outbound_ms":3086,"event_to_visible_outbound_over_budget":0,"delivery_report_ms":5,"total_workflow_ms":3091,"model":"deepseek-v4-flash","fast_path":false}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"88cc8c3f-7425-43a4-8469-3a53fed1eaaa","path":"/api/agent/ingest","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":10}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"88cc8c3f-7425-43a4-8469-3a53fed1eaaa","path":"/api/agent/batches/51902cd8-3dff-444d-9662-c2aa7bf0ec3d/claim","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":29}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.claimed","trace_id":"88cc8c3f-7425-43a4-8469-3a53fed1eaaa","batch_id":"51902cd8-3dff-444d-9662-c2aa7bf0ec3d","turn_id":"3ea353e7-4b99-41f3-b5b0-33a60048b755","message_count":1,"stolen":false,"knowledge_base_available":false,"long_term_memory_available":false,"injection_suspected":0}
+{"event":"studyx.turn.agent_a_context_built","trace_id":"88cc8c3f-7425-43a4-8469-3a53fed1eaaa","turn_id":"3ea353e7-4b99-41f3-b5b0-33a60048b755","context_recent_turn_count":8,"context_memory_count":0,"identity_resolved":false,"obligations_owed":[]}
+{"event":"studyx.turn.commercial_route","trace_id":"88cc8c3f-7425-43a4-8469-3a53fed1eaaa","turn_id":"3ea353e7-4b99-41f3-b5b0-33a60048b755","route_kind":"deterministic","route_origin":"payment_selection","route_reason":"DETERMINISTIC_PAYMENT_SELECTION"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.agent_a_plannerless_v2","trace_id":"88cc8c3f-7425-43a4-8469-3a53fed1eaaa","turn_id":"3ea353e7-4b99-41f3-b5b0-33a60048b755","rollout_mode":"authoritative","brain_prompt_version":"studyx-agent-a-brain-v20","brain_model":"deepseek-v4-flash","used_memory_count":0,"proposed_action_type":"none","repair_attempted":false,"repaired":false,"rejection_codes":[]}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"88cc8c3f-7425-43a4-8469-3a53fed1eaaa","path":"/api/agent/turns/3ea353e7-4b99-41f3-b5b0-33a60048b755/decision","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":33}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.batch_completion","trace_id":"88cc8c3f-7425-43a4-8469-3a53fed1eaaa","turn_id":"3ea353e7-4b99-41f3-b5b0-33a60048b755","batch_id":"51902cd8-3dff-444d-9662-c2aa7bf0ec3d","batch_completion":"completed"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"88cc8c3f-7425-43a4-8469-3a53fed1eaaa","path":"/api/agent/outbounds/d54b6632-cf47-4b53-9021-3f46d411b41d/delivery","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":7}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.projection_flush.unavailable","trace_id":"88cc8c3f-7425-43a4-8469-3a53fed1eaaa","reason":"MISSING_CRON_SECRET"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.completed","trace_id":"88cc8c3f-7425-43a4-8469-3a53fed1eaaa","turn_id":"3ea353e7-4b99-41f3-b5b0-33a60048b755","batch_id":"51902cd8-3dff-444d-9662-c2aa7bf0ec3d","outbound_id":"d54b6632-cf47-4b53-9021-3f46d411b41d","botpress_message_id":"f09444af-99a1-4bcc-b37e-260b6c4685ec","botpress_message_replayed":false}
+{"event":"studyx.turn.timings","trace_id":"88cc8c3f-7425-43a4-8469-3a53fed1eaaa","turn_id":"3ea353e7-4b99-41f3-b5b0-33a60048b755","phase":"waiting_user","telegram_to_router_ms":0,"ingest_ms":10,"batch_wait_ms":994,"batch_wait_actual_ms":994,"batch_wait_scheduled_ms":992,"claim_ms":29,"claim_total_ms":21,"core_db_ms":3,"shared_embedding_ms":0,"memory_search_ms":0,"knowledge_search_ms":0,"business_snapshot_ms":4,"embedding_calls":1,"memory_search_calls":0,"knowledge_search_calls":0,"business_snapshot_calls":1,"catalog_calls":1,"agent_a_brain_ms":1859,"planner_ms":0,"model_ms":0,"event_to_decision_ms":2894,"commit_ms":33,"egress_verify_ms":0,"send_ms":0,"event_to_visible_outbound_ms":2927,"event_to_visible_outbound_over_budget":0,"delivery_report_ms":8,"total_workflow_ms":2935,"model":"deepseek-v4-flash","fast_path":true}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"389fbe7d-a2f3-4865-a461-c9dad28a6fd5","path":"/api/agent/ingest","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":12}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"389fbe7d-a2f3-4865-a461-c9dad28a6fd5","path":"/api/agent/batches/56c287ab-89c4-4e8e-8ab5-9f32e1c9ad62/claim","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":20}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.claimed","trace_id":"389fbe7d-a2f3-4865-a461-c9dad28a6fd5","batch_id":"56c287ab-89c4-4e8e-8ab5-9f32e1c9ad62","turn_id":"63b75be5-6cf0-454a-a7f1-6184e150665f","message_count":1,"stolen":false,"knowledge_base_available":false,"long_term_memory_available":false,"injection_suspected":0}
+{"event":"studyx.turn.agent_a_context_built","trace_id":"389fbe7d-a2f3-4865-a461-c9dad28a6fd5","turn_id":"63b75be5-6cf0-454a-a7f1-6184e150665f","context_recent_turn_count":8,"context_memory_count":0,"identity_resolved":false,"obligations_owed":[]}
+{"event":"studyx.turn.commercial_route","trace_id":"389fbe7d-a2f3-4865-a461-c9dad28a6fd5","turn_id":"63b75be5-6cf0-454a-a7f1-6184e150665f","route_kind":"model_required","route_origin":"advisory_model","route_reason":"NO_DETERMINISTIC_MATCH"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.agent_a_plannerless_v2","trace_id":"389fbe7d-a2f3-4865-a461-c9dad28a6fd5","turn_id":"63b75be5-6cf0-454a-a7f1-6184e150665f","rollout_mode":"authoritative","brain_prompt_version":"studyx-agent-a-brain-v20","brain_model":"deepseek-v4-flash","used_memory_count":0,"proposed_action_type":"none","repair_attempted":true,"repaired":true,"rejection_codes":["ACTION_NOT_AUTHORIZED","MISSING_INTAKE","MISSING_INTAKE"]}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"389fbe7d-a2f3-4865-a461-c9dad28a6fd5","path":"/api/agent/turns/63b75be5-6cf0-454a-a7f1-6184e150665f/decision","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":32}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.batch_completion","trace_id":"389fbe7d-a2f3-4865-a461-c9dad28a6fd5","turn_id":"63b75be5-6cf0-454a-a7f1-6184e150665f","batch_id":"56c287ab-89c4-4e8e-8ab5-9f32e1c9ad62","batch_completion":"completed"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.http.attempt","trace_id":"389fbe7d-a2f3-4865-a461-c9dad28a6fd5","path":"/api/agent/outbounds/cc185f50-d366-4a1c-88db-b594e262102e/delivery","method":"POST","attempt":1,"status":200,"error_code":null,"duration_ms":6}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.projection_flush.unavailable","trace_id":"389fbe7d-a2f3-4865-a461-c9dad28a6fd5","reason":"MISSING_CRON_SECRET"}
+
+[90mstdout[2m | tests/workflow/agent-a-call-first-sale.test.ts[2m > [22m[2moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[22m[39m{"event":"studyx.turn.completed","trace_id":"389fbe7d-a2f3-4865-a461-c9dad28a6fd5","turn_id":"63b75be5-6cf0-454a-a7f1-6184e150665f","batch_id":"56c287ab-89c4-4e8e-8ab5-9f32e1c9ad62","outbound_id":"cc185f50-d366-4a1c-88db-b594e262102e","botpress_message_id":"74b1fd4d-47b4-4896-b91c-0bd5e3b2493a","botpress_message_replayed":false}
+{"event":"studyx.turn.timings","trace_id":"389fbe7d-a2f3-4865-a461-c9dad28a6fd5","turn_id":"63b75be5-6cf0-454a-a7f1-6184e150665f","phase":"waiting_user","telegram_to_router_ms":0,"ingest_ms":12,"batch_wait_ms":990,"batch_wait_actual_ms":990,"batch_wait_scheduled_ms":991,"claim_ms":20,"claim_total_ms":15,"core_db_ms":3,"shared_embedding_ms":0,"memory_search_ms":0,"knowledge_search_ms":0,"business_snapshot_ms":3,"embedding_calls":1,"memory_search_calls":0,"knowledge_search_calls":0,"business_snapshot_calls":1,"catalog_calls":1,"agent_a_brain_ms":2025,"planner_ms":0,"model_ms":0,"event_to_decision_ms":5358,"commit_ms":33,"egress_verify_ms":0,"send_ms":0,"event_to_visible_outbound_ms":5391,"event_to_visible_outbound_over_budget":0,"delivery_report_ms":7,"total_workflow_ms":5398,"model":"deepseek-v4-flash","fast_path":false}
+
+ [31m❯[39m tests/workflow/agent-a-call-first-sale.test.ts [2m([22m[2m1 test[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 29726[2mms[22m[39m
+[31m   [31m×[31m offers a call first, continues by chat, retains the plan and delivers the authorized link[39m[33m 29725[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m tests/workflow/agent-a-call-first-sale.test.ts[2m > [22moffers a call first, continues by chat, retains the plan and delivers the authorized link
+[31m[1mAssertionError[22m: expected null to be 'Camila Duarte' // Object.is equality[39m
+
+[32m- Expected:[39m
+"Camila Duarte"
+
+[31m+ Received:[39m
+null
+
+[36m [2m❯[22m tests/workflow/agent-a-call-first-sale.test.ts:[2m80:35[22m[39m
+    [90m 78|[39m   expect(result.db.deliveredLinks, 'missing personal details still blo…
+    [90m 79|[39m   result = await send('Mis datos: nombre Camila; apellido Duarte; corr…
+    [90m 80|[39m   [34mexpect[39m(result[33m.[39mdb[33m.[39mcontact[33m?.[39mname)[33m.[39m[34mtoBe[39m([32m'Camila Duarte'[39m)[33m;[39m
+    [90m   |[39m                                   [31m^[39m
+    [90m 81|[39m   [34mexpect[39m(result[33m.[39mdb[33m.[39mcontact[33m?.[39memail)[33m.[39m[34mtoBe[39m([32m'camila.duarte@example.test'[39m)[33m;[39m
+    [90m 82|[39m   [34mexpect[39m(result[33m.[39mdb[33m.[39mcontact[33m?.[39mdeclaredPhone)[33m.[39m[34mtoBe[39m([32m'+13055550168'[39m)[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m   Start at [22m 13:40:29
+[2m   Duration [22m 30.05s[2m (transform 140ms, setup 0ms, import 199ms, tests 29.73s, environment 0ms)[22m
+

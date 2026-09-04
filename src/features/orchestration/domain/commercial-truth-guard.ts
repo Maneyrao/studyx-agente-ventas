@@ -19,6 +19,8 @@ export interface CanonicalTruthSetV1 {
   readonly prices: readonly string[];
   /** Duraciones asertables, p. ej. `['38 clases']`. */
   readonly durations: readonly string[];
+  /** Plazos de cuotas mensuales; nunca duraciones académicas. */
+  readonly payment_terms?: readonly { readonly months: number; readonly price: string }[];
   /** Modalidad canónica, p. ej. `'100% online'`. `null` si no está informada. */
   readonly modality: string | null;
   /** `null` cuando el registro no informa certificación: no se puede contradecir. */
@@ -63,6 +65,8 @@ export interface CanonicalOfferingSourceV1 {
 export interface CanonicalPaymentOptionSourceV1 {
   readonly total: { readonly currency: string; readonly amount: string };
   readonly installment_amount?: string | null;
+  readonly installments?: number;
+  readonly label?: string;
 }
 
 const URL_PATTERN = /https?:\/\/[^\s<>"')]+/giu;
@@ -198,6 +202,23 @@ function extractDurations(text: string): string[] {
     .map((match) => `${canonicalAmount(match[1]!)} ${match[2]!}`);
 }
 
+function isCanonicalPaymentDuration(
+  sentence: string,
+  match: RegExpMatchArray,
+  terms: CanonicalTruthSetV1['payment_terms'],
+): boolean {
+  if (!/^mes(?:es)?$/u.test(match[2]!)) return false;
+  const prefix = sentence.slice(0, match.index).split(/;|\b(?:y|pero)\b/u).at(-1) ?? '';
+  const subject = [...prefix.matchAll(/\b(?:cuotas?|plan|pagas|paga|pagar|pagos?)\b/gu)].at(-1);
+  if (!subject) return false;
+  const paymentClause = prefix.slice(subject.index);
+  // Un monto cercano no convierte «el curso dura ...» en plazo de cuotas.
+  if (/\b(?:curso|programa|formacion|clases|dura|duracion|estudio)\b/u.test(paymentClause)) return false;
+  const amounts = extractMoney(paymentClause);
+  return (terms ?? []).some((term) => String(term.months) === canonicalAmount(match[1]!)
+    && amounts.includes(normalize(term.price)));
+}
+
 interface Segment {
   readonly text: string;
   /** Espacio en blanco que seguía a la oración en el original. */
@@ -257,8 +278,10 @@ function sentenceViolations(
     }
   }
 
-  for (const duration of extractDurations(sentence)) {
-    if (!authorizedDurations.has(duration)) {
+  for (const match of normalized.matchAll(DURATION_PATTERN)) {
+    const duration = `${canonicalAmount(match[1]!)} ${match[2]!}`;
+    if (!authorizedDurations.has(duration)
+      && !isCanonicalPaymentDuration(normalized, match, canonical.payment_terms)) {
       violations.push({ code: 'DURATION_NOT_CANONICAL', value: duration });
     }
   }
@@ -319,6 +342,7 @@ export function canonicalTruthSetFromOfferingsV1(input: {
 
   const prices: string[] = [];
   const durations: string[] = [];
+  const paymentTerms: { months: number; price: string }[] = [];
   for (const offering of scope) {
     const currency = offering.currency?.trim() ?? '';
     if (offering.price_type === 'fixed' && offering.price_amount && currency.length > 0) {
@@ -338,6 +362,10 @@ export function canonicalTruthSetFromOfferingsV1(input: {
     prices.push(`${currency} ${canonicalAmount(option.total.amount)}`);
     if (option.installment_amount) {
       prices.push(`${currency} ${canonicalAmount(option.installment_amount)}`);
+      const months = positiveInteger(option.installments);
+      if (months !== null && months > 1 && /\bmensuales?\b/iu.test(option.label ?? '')) {
+        paymentTerms.push({ months, price: `${currency} ${canonicalAmount(option.installment_amount)}` });
+      }
     }
   }
 
@@ -356,6 +384,7 @@ export function canonicalTruthSetFromOfferingsV1(input: {
     )))],
     prices: [...new Set(prices)],
     durations: [...new Set(durations)],
+    payment_terms: paymentTerms,
     // Con modalidades distintas en el alcance no hay una sola verdad que
     // contradecir: el guard no puede vetar sin saber de qué curso se habla.
     modality: modalities.length === scope.length ? unanimous(modalities) : null,

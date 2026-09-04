@@ -1,0 +1,4604 @@
+{
+  "priorSpendUsd": 0.38,
+  "limitUsd": 1,
+  "calls": [
+    {
+      "id": "dd73c4c4-3fc9-4e92-bf5b-91987db7070e",
+      "at": "2026-09-04T14:15:27.587Z",
+      "reservedUsd": 0.017509800000000002,
+      "accountedUsd": 0.0041519040000000005,
+      "usage": {
+        "input_tokens": 8844,
+        "input_tokens_details": {
+          "cached_tokens": 256
+        },
+        "output_tokens": 280,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9124
+      },
+      "status": 200
+    },
+    {
+      "id": "afc312de-857d-47fb-a818-c948b306362f",
+      "at": "2026-09-04T14:16:09.454Z",
+      "reservedUsd": 0.01751244,
+      "accountedUsd": 0.003939512,
+      "usage": {
+        "input_tokens": 8848,
+        "input_tokens_details": {
+          "cached_tokens": 768
+        },
+        "output_tokens": 283,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9131
+      },
+      "status": 200
+    },
+    {
+      "id": "1d845435-6244-4c9f-bf43-0805b7b18073",
+      "at": "2026-09-04T14:16:13.492Z",
+      "reservedUsd": 0.018029000000000003,
+      "accountedUsd": 0.00176336,
+      "usage": {
+        "input_tokens": 9157,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 349,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9506
+      },
+      "status": 200
+    },
+    {
+      "id": "fec5180c-7d05-45fd-84c5-c9e6f9d2ecc0",
+      "at": "2026-09-04T14:16:17.416Z",
+      "reservedUsd": 0.01827584,
+      "accountedUsd": 0.0016692,
+      "usage": {
+        "input_tokens": 9294,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 232,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9526
+      },
+      "status": 200
+    },
+    {
+      "id": "db90659a-677b-48fc-8a37-e0053589cad7",
+      "at": "2026-09-04T14:16:20.788Z",
+      "reservedUsd": 0.017591640000000002,
+      "accountedUsd": 0.00154644,
+      "usage": {
+        "input_tokens": 8910,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 267,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9177
+      },
+      "status": 200
+    },
+    {
+      "id": "5b7fd71f-11a4-471b-9f6e-98d24610a6b0",
+      "at": "2026-09-04T14:16:24.636Z",
+      "reservedUsd": 0.018018000000000003,
+      "accountedUsd": 0.00170176,
+      "usage": {
+        "input_tokens": 9200,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 288,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9488
+      },
+      "status": 200
+    },
+    {
+      "id": "9d847111-798c-4167-96fa-388b4fd2597d",
+      "at": "2026-09-04T14:16:26.864Z",
+      "reservedUsd": 0.019425120000000004,
+      "accountedUsd": 0.00219368,
+      "usage": {
+        "input_tokens": 10087,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 365,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10452
+      },
+      "status": 200
+    },
+    {
+      "id": "a09cdfaa-b5b8-4ec2-b2a6-25e2b103bde5",
+      "at": "2026-09-04T14:16:31.044Z",
+      "reservedUsd": 0.01810424,
+      "accountedUsd": 0.00189228,
+      "usage": {
+        "input_tokens": 9267,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 410,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9677
+      },
+      "status": 200
+    },
+    {
+      "id": "7320c45a-0876-435b-adc1-672d807de1e4",
+      "at": "2026-09-04T14:16:35.530Z",
+      "reservedUsd": 0.018556120000000002,
+      "accountedUsd": 0.00192748,
+      "usage": {
+        "input_tokens": 9539,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 346,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9885
+      },
+      "status": 200
+    },
+    {
+      "id": "61bb9307-8375-45aa-ba6f-bd4d7a28f77b",
+      "at": "2026-09-04T14:16:38.985Z",
+      "reservedUsd": 0.0175076,
+      "accountedUsd": 0.0015407200000000002,
+      "usage": {
+        "input_tokens": 8840,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 286,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9126
+      },
+      "status": 200
+    },
+    {
+      "id": "32890b74-8bdb-4b22-99df-bea691c06fdb",
+      "at": "2026-09-04T14:16:42.814Z",
+      "reservedUsd": 0.01794232,
+      "accountedUsd": 0.0016736,
+      "usage": {
+        "input_tokens": 9127,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 291,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9418
+      },
+      "status": 200
+    },
+    {
+      "id": "dfb4576a-3195-467d-b716-d155a55b9a41",
+      "at": "2026-09-04T14:16:46.229Z",
+      "reservedUsd": 0.018043080000000003,
+      "accountedUsd": 0.001579,
+      "usage": {
+        "input_tokens": 9215,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 190,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9405
+      },
+      "status": 200
+    },
+    {
+      "id": "d20c718e-7e73-44b6-940f-669b3fbaef35",
+      "at": "2026-09-04T14:16:49.106Z",
+      "reservedUsd": 0.01751288,
+      "accountedUsd": 0.00156492,
+      "usage": {
+        "input_tokens": 8850,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 301,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9151
+      },
+      "status": 200
+    },
+    {
+      "id": "c610bed5-8c53-4d49-99a7-c1d7e067b619",
+      "at": "2026-09-04T14:16:52.835Z",
+      "reservedUsd": 0.01789964,
+      "accountedUsd": 0.0017044,
+      "usage": {
+        "input_tokens": 9107,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 321,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9428
+      },
+      "status": 200
+    },
+    {
+      "id": "43c4633c-4aa3-49b4-bf88-910f920d264e",
+      "at": "2026-09-04T14:16:55.600Z",
+      "reservedUsd": 0.01927552,
+      "accountedUsd": 0.0019688400000000003,
+      "usage": {
+        "input_tokens": 9960,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 237,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10197
+      },
+      "status": 200
+    },
+    {
+      "id": "2a360d66-0d32-4903-8b39-6f604dc60ee2",
+      "at": "2026-09-04T14:16:58.886Z",
+      "reservedUsd": 0.018048800000000004,
+      "accountedUsd": 0.00168724,
+      "usage": {
+        "input_tokens": 9221,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 270,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9491
+      },
+      "status": 200
+    },
+    {
+      "id": "9b31494b-f813-4952-b7f2-40683e8dbe2c",
+      "at": "2026-09-04T14:17:02.211Z",
+      "reservedUsd": 0.0175164,
+      "accountedUsd": 0.0016366400000000002,
+      "usage": {
+        "input_tokens": 8836,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 360,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9196
+      },
+      "status": 200
+    },
+    {
+      "id": "5479be90-189f-46be-9b64-8252a6d7d8fa",
+      "at": "2026-09-04T14:17:06.214Z",
+      "reservedUsd": 0.017960800000000002,
+      "accountedUsd": 0.0016828400000000001,
+      "usage": {
+        "input_tokens": 9100,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 307,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9407
+      },
+      "status": 200
+    },
+    {
+      "id": "b02b3de0-3fdd-45f7-9095-45e7a40cc062",
+      "at": "2026-09-04T14:17:08.533Z",
+      "reservedUsd": 0.019313800000000002,
+      "accountedUsd": 0.0019230800000000002,
+      "usage": {
+        "input_tokens": 9940,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 209,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10149
+      },
+      "status": 200
+    },
+    {
+      "id": "42ea7148-098c-49b1-8f2b-224fefde1a46",
+      "at": "2026-09-04T14:17:11.993Z",
+      "reservedUsd": 0.018062,
+      "accountedUsd": 0.00169032,
+      "usage": {
+        "input_tokens": 9204,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 278,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9482
+      },
+      "status": 200
+    },
+    {
+      "id": "c1b38c20-993f-41b7-b4c3-d1f851d2187c",
+      "at": "2026-09-04T14:17:15.494Z",
+      "reservedUsd": 0.0175164,
+      "accountedUsd": 0.00159704,
+      "usage": {
+        "input_tokens": 8845,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 327,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9172
+      },
+      "status": 200
+    },
+    {
+      "id": "0048d538-f011-4d21-aca3-0442252bae92",
+      "at": "2026-09-04T14:17:19.247Z",
+      "reservedUsd": 0.0179762,
+      "accountedUsd": 0.00160584,
+      "usage": {
+        "input_tokens": 9120,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 242,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9362
+      },
+      "status": 200
+    },
+    {
+      "id": "78a47df0-8739-4fbd-a702-9bdeb5acaa85",
+      "at": "2026-09-04T14:17:22.831Z",
+      "reservedUsd": 0.018000400000000003,
+      "accountedUsd": 0.00154644,
+      "usage": {
+        "input_tokens": 9159,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 184,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9343
+      },
+      "status": 200
+    },
+    {
+      "id": "9e7012eb-4737-4649-8b70-eaaa7365851d",
+      "at": "2026-09-04T14:17:26.502Z",
+      "reservedUsd": 0.017513760000000003,
+      "accountedUsd": 0.00156844,
+      "usage": {
+        "input_tokens": 8849,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 304,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9153
+      },
+      "status": 200
+    },
+    {
+      "id": "c3f56f34-7d49-487e-bfe9-d63c19cb2660",
+      "at": "2026-09-04T14:17:34.531Z",
+      "reservedUsd": 0.016941760000000004,
+      "accountedUsd": 0.00134096,
+      "usage": {
+        "input_tokens": 8467,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 259,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 8726
+      },
+      "status": 200
+    },
+    {
+      "id": "0d5cbddb-0192-475c-9b3e-26e999138126",
+      "at": "2026-09-04T14:17:38.692Z",
+      "reservedUsd": 0.017962560000000002,
+      "accountedUsd": 0.0017695200000000001,
+      "usage": {
+        "input_tokens": 9120,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 366,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9486
+      },
+      "status": 200
+    },
+    {
+      "id": "371b7214-b720-4c65-aa4b-0656a5d005ce",
+      "at": "2026-09-04T14:17:43.017Z",
+      "reservedUsd": 0.01821688,
+      "accountedUsd": 0.00181528,
+      "usage": {
+        "input_tokens": 9278,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 348,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9626
+      },
+      "status": 200
+    },
+    {
+      "id": "58b9ee7b-b554-4956-82b9-025418bf9f3a",
+      "at": "2026-09-04T14:17:46.901Z",
+      "reservedUsd": 0.018505960000000002,
+      "accountedUsd": 0.00167668,
+      "usage": {
+        "input_tokens": 9449,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 186,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9635
+      },
+      "status": 200
+    },
+    {
+      "id": "39debc1b-ecb4-49c8-9562-53f359c833ed",
+      "at": "2026-09-04T14:17:48.874Z",
+      "reservedUsd": 0.01986732,
+      "accountedUsd": 0.0021426400000000003,
+      "usage": {
+        "input_tokens": 10295,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 257,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10552
+      },
+      "status": 200
+    },
+    {
+      "id": "faba0ccd-4279-467e-ad02-99095b6373f5",
+      "at": "2026-09-04T14:17:52.626Z",
+      "reservedUsd": 0.017595160000000002,
+      "accountedUsd": 0.00154688,
+      "usage": {
+        "input_tokens": 8914,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 266,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9180
+      },
+      "status": 200
+    },
+    {
+      "id": "5f3c6c0c-92d9-4ab8-9ebf-880bc69a3207",
+      "at": "2026-09-04T14:17:56.142Z",
+      "reservedUsd": 0.018005680000000003,
+      "accountedUsd": 0.00169252,
+      "usage": {
+        "input_tokens": 9191,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 284,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9475
+      },
+      "status": 200
+    },
+    {
+      "id": "3e0f8eae-673d-4222-8993-4701df46d9cb",
+      "at": "2026-09-04T14:17:59.950Z",
+      "reservedUsd": 0.01820588,
+      "accountedUsd": 0.00185796,
+      "usage": {
+        "input_tokens": 9345,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 358,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9703
+      },
+      "status": 200
+    },
+    {
+      "id": "e6dda0ab-4e8a-44a2-959c-bef2f3198c6a",
+      "at": "2026-09-04T14:18:03.548Z",
+      "reservedUsd": 0.018346240000000003,
+      "accountedUsd": 0.0017528,
+      "usage": {
+        "input_tokens": 9460,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 240,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9700
+      },
+      "status": 200
+    },
+    {
+      "id": "8022e235-3928-40d3-bc39-1104131424b1",
+      "at": "2026-09-04T14:18:06.666Z",
+      "reservedUsd": 0.01751288,
+      "accountedUsd": 0.00155524,
+      "usage": {
+        "input_tokens": 8846,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 295,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9141
+      },
+      "status": 200
+    },
+    {
+      "id": "9393a237-b6c0-40a4-8e65-02aadade8c24",
+      "at": "2026-09-04T14:18:10.290Z",
+      "reservedUsd": 0.01789084,
+      "accountedUsd": 0.0017004400000000001,
+      "usage": {
+        "input_tokens": 9104,
+        "input_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "output_tokens": 319,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9423
+      },
+      "status": 200
+    },
+    {
+      "id": "85724a1c-6082-4712-98c7-a2fb0b69d242",
+      "at": "2026-09-04T14:18:13.060Z",
+      "reservedUsd": 0.01926672,
+      "accountedUsd": 0.01926672,
+      "usage": null,
+      "status": "reserved"
+    },
+    {
+      "id": "1d507061-b2b9-41a1-b018-81bca585321a",
+      "at": "2026-09-04T14:31:46.476Z",
+      "reservedUsd": 0.017729800000000004,
+      "accountedUsd": 0.004181072,
+      "usage": {
+        "input_tokens": 9001,
+        "input_tokens_details": {
+          "cached_tokens": 768
+        },
+        "output_tokens": 415,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9416
+      },
+      "status": 200
+    },
+    {
+      "id": "4db27227-3f54-43fb-b4f3-659993e34517",
+      "at": "2026-09-04T14:31:51.020Z",
+      "reservedUsd": 0.018274960000000003,
+      "accountedUsd": 0.00398672,
+      "usage": {
+        "input_tokens": 9340,
+        "input_tokens_details": {
+          "cached_tokens": 1280
+        },
+        "output_tokens": 320,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9660
+      },
+      "status": 200
+    },
+    {
+      "id": "5708204d-674c-491f-82da-dac5bec5f99e",
+      "at": "2026-09-04T14:31:54.063Z",
+      "reservedUsd": 0.018274960000000003,
+      "accountedUsd": 0.000689144,
+      "usage": {
+        "input_tokens": 9340,
+        "input_tokens_details": {
+          "cached_tokens": 9216
+        },
+        "output_tokens": 383,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9723
+      },
+      "status": 200
+    },
+    {
+      "id": "4e7ff98f-bc83-4d92-9c21-677f3cc646ea",
+      "at": "2026-09-04T14:31:58.102Z",
+      "reservedUsd": 0.01835944,
+      "accountedUsd": 0.001766032,
+      "usage": {
+        "input_tokens": 9425,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 303,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9728
+      },
+      "status": 200
+    },
+    {
+      "id": "ede3faff-203b-4391-990d-6bba11814fba",
+      "at": "2026-09-04T14:32:01.538Z",
+      "reservedUsd": 0.018613320000000003,
+      "accountedUsd": 0.001825872,
+      "usage": {
+        "input_tokens": 9576,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 298,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9874
+      },
+      "status": 200
+    },
+    {
+      "id": "5f300fb7-3566-46ed-bb3b-87e7868d6b74",
+      "at": "2026-09-04T14:32:04.056Z",
+      "reservedUsd": 0.018613320000000003,
+      "accountedUsd": 0.0006746880000000001,
+      "usage": {
+        "input_tokens": 9576,
+        "input_tokens_details": {
+          "cached_tokens": 9472
+        },
+        "output_tokens": 376,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9952
+      },
+      "status": 200
+    },
+    {
+      "id": "aebc3246-5b4b-45fb-bf09-8e422bb8c092",
+      "at": "2026-09-04T14:32:07.658Z",
+      "reservedUsd": 0.017645760000000003,
+      "accountedUsd": 0.001523152,
+      "usage": {
+        "input_tokens": 8933,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 283,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9216
+      },
+      "status": 200
+    },
+    {
+      "id": "635e0a10-5a01-41cd-bb4a-e616b43c0749",
+      "at": "2026-09-04T14:32:11.634Z",
+      "reservedUsd": 0.018177280000000004,
+      "accountedUsd": 0.0015183120000000002,
+      "usage": {
+        "input_tokens": 9267,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 168,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9435
+      },
+      "status": 200
+    },
+    {
+      "id": "560d2827-39e8-464c-8d93-30e8efacf88d",
+      "at": "2026-09-04T14:32:14.403Z",
+      "reservedUsd": 0.018177280000000004,
+      "accountedUsd": 0.001567152,
+      "usage": {
+        "input_tokens": 9294,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 196,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9490
+      },
+      "status": 200
+    },
+    {
+      "id": "7b07797e-a2bd-4f88-a502-c3a5257d2f7e",
+      "at": "2026-09-04T14:32:17.491Z",
+      "reservedUsd": 0.017654560000000003,
+      "accountedUsd": 0.0014663920000000002,
+      "usage": {
+        "input_tokens": 8930,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 241,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9171
+      },
+      "status": 200
+    },
+    {
+      "id": "6b2c9623-f3e2-4bb1-94d7-d006f4e68cb2",
+      "at": "2026-09-04T14:32:21.068Z",
+      "reservedUsd": 0.018146480000000003,
+      "accountedUsd": 0.0015543920000000001,
+      "usage": {
+        "input_tokens": 9229,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 208,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9437
+      },
+      "status": 200
+    },
+    {
+      "id": "c1c335d7-6058-49b5-9ea3-25d564b3e23d",
+      "at": "2026-09-04T14:32:24.197Z",
+      "reservedUsd": 0.01825428,
+      "accountedUsd": 0.0017013520000000002,
+      "usage": {
+        "input_tokens": 9332,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 285,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9617
+      },
+      "status": 200
+    },
+    {
+      "id": "4b3367aa-1902-4617-a2ca-2bc1089af19d",
+      "at": "2026-09-04T14:34:43.650Z",
+      "reservedUsd": 0.017079920000000002,
+      "accountedUsd": 0.001306232,
+      "usage": {
+        "input_tokens": 8560,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 243,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 8803
+      },
+      "status": 200
+    },
+    {
+      "id": "05a47a4a-8a6f-4e9c-ba00-21ed09138091",
+      "at": "2026-09-04T14:34:47.193Z",
+      "reservedUsd": 0.017915920000000002,
+      "accountedUsd": 0.0015209520000000001,
+      "usage": {
+        "input_tokens": 9114,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 221,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9335
+      },
+      "status": 200
+    },
+    {
+      "id": "cfb9573e-9c7d-43c7-9999-870bc14fe629",
+      "at": "2026-09-04T14:34:50.707Z",
+      "reservedUsd": 0.01824196,
+      "accountedUsd": 0.001778352,
+      "usage": {
+        "input_tokens": 9306,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 352,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9658
+      },
+      "status": 200
+    },
+    {
+      "id": "bdfe600c-30dc-452b-a1b6-28fe7d454b22",
+      "at": "2026-09-04T14:34:54.269Z",
+      "reservedUsd": 0.01848396,
+      "accountedUsd": 0.0016573520000000002,
+      "usage": {
+        "input_tokens": 9460,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 209,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9669
+      },
+      "status": 200
+    },
+    {
+      "id": "f4e2c74e-39ef-42a9-b427-544e71bf3a32",
+      "at": "2026-09-04T14:34:56.236Z",
+      "reservedUsd": 0.01848396,
+      "accountedUsd": 0.000481496,
+      "usage": {
+        "input_tokens": 9460,
+        "input_tokens_details": {
+          "cached_tokens": 9344
+        },
+        "output_tokens": 227,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9687
+      },
+      "status": 200
+    },
+    {
+      "id": "aaab7217-9156-49bb-9d00-121f9146e303",
+      "at": "2026-09-04T14:34:59.485Z",
+      "reservedUsd": 0.017733320000000004,
+      "accountedUsd": 0.001637552,
+      "usage": {
+        "input_tokens": 9007,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 345,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9352
+      },
+      "status": 200
+    },
+    {
+      "id": "ae43a654-4189-4f58-a68e-f8aa04965a85",
+      "at": "2026-09-04T14:35:03.054Z",
+      "reservedUsd": 0.018128880000000003,
+      "accountedUsd": 0.0017537120000000002,
+      "usage": {
+        "input_tokens": 9268,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 346,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9614
+      },
+      "status": 200
+    },
+    {
+      "id": "e371efc9-ea37-4298-80dc-a5011fb6df6e",
+      "at": "2026-09-04T14:35:06.809Z",
+      "reservedUsd": 0.01828992,
+      "accountedUsd": 0.0018566720000000002,
+      "usage": {
+        "input_tokens": 9394,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 382,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9776
+      },
+      "status": 200
+    },
+    {
+      "id": "92655356-27e9-4e2d-870f-bdafad926835",
+      "at": "2026-09-04T14:35:10.935Z",
+      "reservedUsd": 0.018595280000000002,
+      "accountedUsd": 0.0017985920000000001,
+      "usage": {
+        "input_tokens": 9574,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 278,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9852
+      },
+      "status": 200
+    },
+    {
+      "id": "b5911762-58dd-4649-96c2-b3e62f6b3eb3",
+      "at": "2026-09-04T14:35:14.248Z",
+      "reservedUsd": 0.017651040000000003,
+      "accountedUsd": 0.001419312,
+      "usage": {
+        "input_tokens": 8937,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 203,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9140
+      },
+      "status": 200
+    },
+    {
+      "id": "9b03eba6-1bcf-4903-8ca2-4270fbcf2531",
+      "at": "2026-09-04T14:35:17.395Z",
+      "reservedUsd": 0.018073000000000002,
+      "accountedUsd": 0.0017154320000000002,
+      "usage": {
+        "input_tokens": 9205,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 338,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9543
+      },
+      "status": 200
+    },
+    {
+      "id": "f4dd90ed-64bb-41cc-bd8d-0b1aa6d54009",
+      "at": "2026-09-04T14:35:20.857Z",
+      "reservedUsd": 0.018216440000000004,
+      "accountedUsd": 0.001740072,
+      "usage": {
+        "input_tokens": 9321,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 318,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9639
+      },
+      "status": 200
+    },
+    {
+      "id": "fbcbb9ce-6a9d-4a70-9cb8-bfd4bae98099",
+      "at": "2026-09-04T14:35:24.504Z",
+      "reservedUsd": 0.01839332,
+      "accountedUsd": 0.001742712,
+      "usage": {
+        "input_tokens": 9462,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 273,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9735
+      },
+      "status": 200
+    },
+    {
+      "id": "e13eae4a-7e38-4681-aa57-9f012d0d32cb",
+      "at": "2026-09-04T14:35:28.042Z",
+      "reservedUsd": 0.017654560000000003,
+      "accountedUsd": 0.001586952,
+      "usage": {
+        "input_tokens": 8931,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 332,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9263
+      },
+      "status": 200
+    },
+    {
+      "id": "9856f0bf-0515-4876-b559-21ff843d4b67",
+      "at": "2026-09-04T14:35:31.647Z",
+      "reservedUsd": 0.01804572,
+      "accountedUsd": 0.0015812320000000001,
+      "usage": {
+        "input_tokens": 9161,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 251,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9412
+      },
+      "status": 200
+    },
+    {
+      "id": "930fe653-2cee-426a-88f9-1c4dc293d5b2",
+      "at": "2026-09-04T14:35:35.109Z",
+      "reservedUsd": 0.01814032,
+      "accountedUsd": 0.001564952,
+      "usage": {
+        "input_tokens": 9256,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 207,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9463
+      },
+      "status": 200
+    },
+    {
+      "id": "3bcc8270-e416-4a26-b814-ff27169228d0",
+      "at": "2026-09-04T14:35:38.287Z",
+      "reservedUsd": 0.017650600000000002,
+      "accountedUsd": 0.001431192,
+      "usage": {
+        "input_tokens": 8934,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 213,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9147
+      },
+      "status": 200
+    },
+    {
+      "id": "01e4aac7-35d3-4e80-ab08-572dc45e8d60",
+      "at": "2026-09-04T14:35:41.676Z",
+      "reservedUsd": 0.018053640000000003,
+      "accountedUsd": 0.0016630720000000002,
+      "usage": {
+        "input_tokens": 9200,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 300,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9500
+      },
+      "status": 200
+    },
+    {
+      "id": "6ec0345e-05d5-4e49-8d97-c2289c1d5db8",
+      "at": "2026-09-04T14:35:45.291Z",
+      "reservedUsd": 0.018033840000000002,
+      "accountedUsd": 0.0016384320000000002,
+      "usage": {
+        "input_tokens": 9201,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 281,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9482
+      },
+      "status": 200
+    },
+    {
+      "id": "a9ca10a5-9dcd-4e54-98a3-447bad5b48b8",
+      "at": "2026-09-04T14:35:48.724Z",
+      "reservedUsd": 0.018333480000000003,
+      "accountedUsd": 0.001782312,
+      "usage": {
+        "input_tokens": 9390,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 327,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9717
+      },
+      "status": 200
+    },
+    {
+      "id": "d54366b8-726c-484d-8ce0-6f2cde039d0f",
+      "at": "2026-09-04T14:35:52.486Z",
+      "reservedUsd": 0.017650600000000002,
+      "accountedUsd": 0.001509512,
+      "usage": {
+        "input_tokens": 8938,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 271,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9209
+      },
+      "status": 200
+    },
+    {
+      "id": "c969c14b-cd81-4562-8a5d-fa7855aab1fe",
+      "at": "2026-09-04T14:35:55.998Z",
+      "reservedUsd": 0.01806728,
+      "accountedUsd": 0.0016459120000000002,
+      "usage": {
+        "input_tokens": 9206,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 285,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9491
+      },
+      "status": 200
+    },
+    {
+      "id": "232b9ce4-372a-4a99-93d6-ede0939af584",
+      "at": "2026-09-04T14:35:59.458Z",
+      "reservedUsd": 0.018047920000000002,
+      "accountedUsd": 0.001723792,
+      "usage": {
+        "input_tokens": 9212,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 342,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9554
+      },
+      "status": 200
+    },
+    {
+      "id": "f3944145-789d-420e-9cab-479d88e3b1a1",
+      "at": "2026-09-04T14:36:03.312Z",
+      "reservedUsd": 0.018287280000000003,
+      "accountedUsd": 0.0018175120000000003,
+      "usage": {
+        "input_tokens": 9395,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 352,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9747
+      },
+      "status": 200
+    },
+    {
+      "id": "be5d596f-de08-498c-9fc3-9ab4c3c6fc53",
+      "at": "2026-09-04T14:36:07.078Z",
+      "reservedUsd": 0.018542480000000004,
+      "accountedUsd": 0.0018456720000000002,
+      "usage": {
+        "input_tokens": 9573,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 314,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9887
+      },
+      "status": 200
+    },
+    {
+      "id": "0038bc79-3ae4-40cb-bd61-120ba76dcfd6",
+      "at": "2026-09-04T14:36:10.606Z",
+      "reservedUsd": 0.018386720000000002,
+      "accountedUsd": 0.0016217120000000002,
+      "usage": {
+        "input_tokens": 9478,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 176,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9654
+      },
+      "status": 200
+    },
+    {
+      "id": "b9c9e26c-4ff8-4a40-aa8d-6c3ea0c2d9d7",
+      "at": "2026-09-04T14:36:13.355Z",
+      "reservedUsd": 0.018391120000000004,
+      "accountedUsd": 0.001610712,
+      "usage": {
+        "input_tokens": 9489,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 164,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9653
+      },
+      "status": 200
+    },
+    {
+      "id": "acfea07c-777a-4822-a809-629a047adae9",
+      "at": "2026-09-04T14:42:43.552Z",
+      "reservedUsd": 0.017868400000000003,
+      "accountedUsd": 0.004143544000000001,
+      "usage": {
+        "input_tokens": 9029,
+        "input_tokens_details": {
+          "cached_tokens": 256
+        },
+        "output_tokens": 212,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9241
+      },
+      "status": 200
+    },
+    {
+      "id": "331e5e50-0a15-48c2-911c-1a40d7fdc7eb",
+      "at": "2026-09-04T14:42:47.774Z",
+      "reservedUsd": 0.018280240000000003,
+      "accountedUsd": 0.004051712000000001,
+      "usage": {
+        "input_tokens": 9295,
+        "input_tokens_details": {
+          "cached_tokens": 768
+        },
+        "output_tokens": 219,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9514
+      },
+      "status": 200
+    },
+    {
+      "id": "27cb21a1-956e-4073-92d4-800a9a596d5a",
+      "at": "2026-09-04T14:42:51.277Z",
+      "reservedUsd": 0.018251640000000003,
+      "accountedUsd": 0.0016208320000000002,
+      "usage": {
+        "input_tokens": 9302,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 234,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9536
+      },
+      "status": 200
+    },
+    {
+      "id": "c317c7e8-d42b-42fd-8654-5d5514a60bfa",
+      "at": "2026-09-04T14:42:54.471Z",
+      "reservedUsd": 0.018494520000000004,
+      "accountedUsd": 0.001766032,
+      "usage": {
+        "input_tokens": 9482,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 284,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9766
+      },
+      "status": 200
+    },
+    {
+      "id": "c0ab2d14-838d-47c5-9388-98b384a569c8",
+      "at": "2026-09-04T14:42:57.839Z",
+      "reservedUsd": 0.01873916,
+      "accountedUsd": 0.0016925520000000002,
+      "usage": {
+        "input_tokens": 9654,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 171,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9825
+      },
+      "status": 200
+    },
+    {
+      "id": "5c18c192-1eba-466a-a5ea-ce372d9bd49a",
+      "at": "2026-09-04T14:43:00.747Z",
+      "reservedUsd": 0.01858912,
+      "accountedUsd": 0.0017378720000000001,
+      "usage": {
+        "input_tokens": 9568,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 234,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9802
+      },
+      "status": 200
+    },
+    {
+      "id": "28324f83-03fd-4bd0-b7a6-00386172dea4",
+      "at": "2026-09-04T14:43:03.922Z",
+      "reservedUsd": 0.01877128,
+      "accountedUsd": 0.001730832,
+      "usage": {
+        "input_tokens": 9699,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 185,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9884
+      },
+      "status": 200
+    },
+    {
+      "id": "cbcf1999-8318-47f4-be5a-9b6cdc8f66ee",
+      "at": "2026-09-04T14:43:05.808Z",
+      "reservedUsd": 0.020222840000000002,
+      "accountedUsd": 0.002330144,
+      "usage": {
+        "input_tokens": 10612,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 376,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10988
+      },
+      "status": 200
+    },
+    {
+      "id": "ac31dfc4-5257-4fe4-84e6-c1a6f1371b32",
+      "at": "2026-09-04T14:43:10.071Z",
+      "reservedUsd": 0.01868944,
+      "accountedUsd": 0.001803432,
+      "usage": {
+        "input_tokens": 9645,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 258,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9903
+      },
+      "status": 200
+    },
+    {
+      "id": "a8bb89b7-5516-4117-930d-959e254f9963",
+      "at": "2026-09-04T14:50:43.451Z",
+      "reservedUsd": 0.017306960000000003,
+      "accountedUsd": 0.0012846720000000002,
+      "usage": {
+        "input_tokens": 8652,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 196,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 8848
+      },
+      "status": 200
+    },
+    {
+      "id": "aa646505-da59-4b48-bd04-389b121b5134",
+      "at": "2026-09-04T14:50:46.950Z",
+      "reservedUsd": 0.018234040000000003,
+      "accountedUsd": 0.0016481120000000002,
+      "usage": {
+        "input_tokens": 9265,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 267,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9532
+      },
+      "status": 200
+    },
+    {
+      "id": "33519450-0e5b-4455-8fed-554d6ece1032",
+      "at": "2026-09-04T14:50:50.656Z",
+      "reservedUsd": 0.018538080000000002,
+      "accountedUsd": 0.001711032,
+      "usage": {
+        "input_tokens": 9429,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 260,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9689
+      },
+      "status": 200
+    },
+    {
+      "id": "a926bb91-def6-4e76-8b20-844e46fd1b50",
+      "at": "2026-09-04T14:50:54.033Z",
+      "reservedUsd": 0.018772160000000003,
+      "accountedUsd": 0.001634032,
+      "usage": {
+        "input_tokens": 9566,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 156,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9722
+      },
+      "status": 200
+    },
+    {
+      "id": "5b3b06f8-510c-4011-a27d-5d4360ecfe1b",
+      "at": "2026-09-04T14:50:57.062Z",
+      "reservedUsd": 0.017953320000000002,
+      "accountedUsd": 0.0015548320000000001,
+      "usage": {
+        "input_tokens": 9101,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 251,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9352
+      },
+      "status": 200
+    },
+    {
+      "id": "8e3ed83d-a166-41c7-93fa-a0c158007f0b",
+      "at": "2026-09-04T14:51:00.579Z",
+      "reservedUsd": 0.018296080000000003,
+      "accountedUsd": 0.0017897920000000001,
+      "usage": {
+        "input_tokens": 9323,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 355,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9678
+      },
+      "status": 200
+    },
+    {
+      "id": "92c92430-bacb-4bdc-9731-2dc1aa8eaf85",
+      "at": "2026-09-04T14:51:04.148Z",
+      "reservedUsd": 0.01848748,
+      "accountedUsd": 0.0017444720000000002,
+      "usage": {
+        "input_tokens": 9475,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 270,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9745
+      },
+      "status": 200
+    },
+    {
+      "id": "5b0d068f-5a48-4bb3-a61a-453d72587d52",
+      "at": "2026-09-04T14:51:07.550Z",
+      "reservedUsd": 0.01864456,
+      "accountedUsd": 0.0018025520000000002,
+      "usage": {
+        "input_tokens": 9598,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 273,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9871
+      },
+      "status": 200
+    },
+    {
+      "id": "64ba0369-48dc-47f7-97d0-d1982dc0072e",
+      "at": "2026-09-04T14:51:10.712Z",
+      "reservedUsd": 0.01786928,
+      "accountedUsd": 0.0014738720000000002,
+      "usage": {
+        "input_tokens": 9031,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 213,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9244
+      },
+      "status": 200
+    },
+    {
+      "id": "2886b7a1-2470-45db-8a26-12a10e302502",
+      "at": "2026-09-04T14:51:14.087Z",
+      "reservedUsd": 0.018274520000000002,
+      "accountedUsd": 0.001746232,
+      "usage": {
+        "input_tokens": 9293,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 332,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9625
+      },
+      "status": 200
+    },
+    {
+      "id": "f18e3d8b-3dc4-45aa-ba3e-5906149f75ed",
+      "at": "2026-09-04T14:51:17.526Z",
+      "reservedUsd": 0.018431600000000003,
+      "accountedUsd": 0.0017695520000000002,
+      "usage": {
+        "input_tokens": 9421,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 307,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9728
+      },
+      "status": 200
+    },
+    {
+      "id": "1fcb1b4c-fafd-4260-8536-ed0197ccc209",
+      "at": "2026-09-04T14:51:21.095Z",
+      "reservedUsd": 0.018615080000000003,
+      "accountedUsd": 0.0017119120000000001,
+      "usage": {
+        "input_tokens": 9578,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 211,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9789
+      },
+      "status": 200
+    },
+    {
+      "id": "457437b1-1e83-4db3-942e-7b53e82013b0",
+      "at": "2026-09-04T14:51:24.051Z",
+      "reservedUsd": 0.01786752,
+      "accountedUsd": 0.001495872,
+      "usage": {
+        "input_tokens": 9024,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 232,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9256
+      },
+      "status": 200
+    },
+    {
+      "id": "b88c5f2a-3d73-4a1c-8428-f6bbe125d0d5",
+      "at": "2026-09-04T14:51:27.663Z",
+      "reservedUsd": 0.018355480000000004,
+      "accountedUsd": 0.001567592,
+      "usage": {
+        "input_tokens": 9307,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 192,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9499
+      },
+      "status": 200
+    },
+    {
+      "id": "a71e464c-d537-4d96-9a90-705761e517fd",
+      "at": "2026-09-04T14:51:30.677Z",
+      "reservedUsd": 0.018376600000000003,
+      "accountedUsd": 0.0015737520000000003,
+      "usage": {
+        "input_tokens": 9354,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 181,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9535
+      },
+      "status": 200
+    },
+    {
+      "id": "85f85f23-a935-48b3-a8ae-9d39a6055e4f",
+      "at": "2026-09-04T14:51:33.585Z",
+      "reservedUsd": 0.017868400000000003,
+      "accountedUsd": 0.0014738720000000002,
+      "usage": {
+        "input_tokens": 9028,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 214,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9242
+      },
+      "status": 200
+    },
+    {
+      "id": "c1eece69-3e87-42c1-a2ce-edb93161be3b",
+      "at": "2026-09-04T14:51:36.799Z",
+      "reservedUsd": 0.018296080000000003,
+      "accountedUsd": 0.0016841920000000002,
+      "usage": {
+        "input_tokens": 9302,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 282,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9584
+      },
+      "status": 200
+    },
+    {
+      "id": "1059d789-377d-460f-8aae-9814405e7c7f",
+      "at": "2026-09-04T14:51:40.152Z",
+      "reservedUsd": 0.01825604,
+      "accountedUsd": 0.0016899120000000002,
+      "usage": {
+        "input_tokens": 9297,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 288,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9585
+      },
+      "status": 200
+    },
+    {
+      "id": "91f34ce0-a537-4d20-a84e-c8c8f18715b1",
+      "at": "2026-09-04T14:51:43.684Z",
+      "reservedUsd": 0.018570200000000002,
+      "accountedUsd": 0.001835552,
+      "usage": {
+        "input_tokens": 9502,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 330,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9832
+      },
+      "status": 200
+    },
+    {
+      "id": "6dc43552-5523-4d5a-b627-41191c0bcaf0",
+      "at": "2026-09-04T14:51:47.545Z",
+      "reservedUsd": 0.017868400000000003,
+      "accountedUsd": 0.001530192,
+      "usage": {
+        "input_tokens": 9030,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 256,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9286
+      },
+      "status": 200
+    },
+    {
+      "id": "e33c7ab4-04c0-4800-b08b-fd35e1540f38",
+      "at": "2026-09-04T14:51:51.165Z",
+      "reservedUsd": 0.018261760000000002,
+      "accountedUsd": 0.001734792,
+      "usage": {
+        "input_tokens": 9273,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 330,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9603
+      },
+      "status": 200
+    },
+    {
+      "id": "08346bcb-d316-497d-9b1b-2dcc3b1b866b",
+      "at": "2026-09-04T14:51:54.622Z",
+      "reservedUsd": 0.018450960000000002,
+      "accountedUsd": 0.001636672,
+      "usage": {
+        "input_tokens": 9386,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 218,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9604
+      },
+      "status": 200
+    },
+    {
+      "id": "fd288e8b-fc54-4cda-8a59-3c984762d7ca",
+      "at": "2026-09-04T14:51:58.079Z",
+      "reservedUsd": 0.017946280000000002,
+      "accountedUsd": 0.001582112,
+      "usage": {
+        "input_tokens": 9091,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 275,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9366
+      },
+      "status": 200
+    },
+    {
+      "id": "ce6a4249-c787-467c-87a6-c724c09ebf18",
+      "at": "2026-09-04T14:52:01.954Z",
+      "reservedUsd": 0.01833832,
+      "accountedUsd": 0.0016115920000000002,
+      "usage": {
+        "input_tokens": 9359,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 208,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9567
+      },
+      "status": 200
+    },
+    {
+      "id": "86affe7f-b21d-4c76-b47d-a79c0a2ac443",
+      "at": "2026-09-04T14:52:05.559Z",
+      "reservedUsd": 0.018319840000000004,
+      "accountedUsd": 0.001829392,
+      "usage": {
+        "input_tokens": 9353,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 375,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9728
+      },
+      "status": 200
+    },
+    {
+      "id": "deb8b1d9-4bfa-4251-a4e9-7d4767ae87a8",
+      "at": "2026-09-04T14:52:09.414Z",
+      "reservedUsd": 0.018706160000000003,
+      "accountedUsd": 0.001930152,
+      "usage": {
+        "input_tokens": 9606,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 367,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9973
+      },
+      "status": 200
+    },
+    {
+      "id": "712752e1-a765-47ec-8248-38c979b43bce",
+      "at": "2026-09-04T14:52:12.977Z",
+      "reservedUsd": 0.01785872,
+      "accountedUsd": 0.001531512,
+      "usage": {
+        "input_tokens": 9021,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 260,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9281
+      },
+      "status": 200
+    },
+    {
+      "id": "4a708c05-d3ad-4604-9a75-025fb46d2497",
+      "at": "2026-09-04T14:52:16.784Z",
+      "reservedUsd": 0.018371320000000003,
+      "accountedUsd": 0.0015513120000000002,
+      "usage": {
+        "input_tokens": 9342,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 168,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9510
+      },
+      "status": 200
+    },
+    {
+      "id": "2d9c0947-ee25-41cf-aedc-181b6f7c25e4",
+      "at": "2026-09-04T14:52:19.620Z",
+      "reservedUsd": 0.018410040000000003,
+      "accountedUsd": 0.0016159920000000001,
+      "usage": {
+        "input_tokens": 9405,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 196,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9601
+      },
+      "status": 200
+    },
+    {
+      "id": "115cc5be-9d8e-4198-b7d6-f61277e461e3",
+      "at": "2026-09-04T14:52:21.799Z",
+      "reservedUsd": 0.019861600000000004,
+      "accountedUsd": 0.0022711520000000002,
+      "usage": {
+        "input_tokens": 10327,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 385,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10712
+      },
+      "status": 200
+    },
+    {
+      "id": "55026d30-dfca-49b9-b70f-b6401d74b703",
+      "at": "2026-09-04T14:52:25.642Z",
+      "reservedUsd": 0.01786928,
+      "accountedUsd": 0.001634912,
+      "usage": {
+        "input_tokens": 9028,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 336,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9364
+      },
+      "status": 200
+    },
+    {
+      "id": "874b31f4-abf6-47c2-933d-e92fe5e41698",
+      "at": "2026-09-04T14:52:29.382Z",
+      "reservedUsd": 0.01825956,
+      "accountedUsd": 0.0016859520000000001,
+      "usage": {
+        "input_tokens": 9288,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 288,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9576
+      },
+      "status": 200
+    },
+    {
+      "id": "b4377641-c21e-4a72-b22b-6d3ff15e0281",
+      "at": "2026-09-04T14:52:32.811Z",
+      "reservedUsd": 0.018363400000000002,
+      "accountedUsd": 0.0016943120000000001,
+      "usage": {
+        "input_tokens": 9385,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 262,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9647
+      },
+      "status": 200
+    },
+    {
+      "id": "c96dcd5a-c35a-4d16-bf1c-3df247ea04ab",
+      "at": "2026-09-04T14:52:36.081Z",
+      "reservedUsd": 0.01786752,
+      "accountedUsd": 0.001596632,
+      "usage": {
+        "input_tokens": 9019,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 310,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9329
+      },
+      "status": 200
+    },
+    {
+      "id": "25c3dc46-3d81-4b40-8b9c-9c977d9b0310",
+      "at": "2026-09-04T14:52:39.545Z",
+      "reservedUsd": 0.018221720000000004,
+      "accountedUsd": 0.001522272,
+      "usage": {
+        "input_tokens": 9240,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 180,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9420
+      },
+      "status": 200
+    },
+    {
+      "id": "11bf8c46-cd8d-40e8-a018-b45c4c0b1e14",
+      "at": "2026-09-04T14:52:42.395Z",
+      "reservedUsd": 0.01834668,
+      "accountedUsd": 0.001688152,
+      "usage": {
+        "input_tokens": 9347,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 270,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9617
+      },
+      "status": 200
+    },
+    {
+      "id": "2b217c1d-6eac-4612-b8fe-7b84afcbc2c8",
+      "at": "2026-09-04T14:52:45.612Z",
+      "reservedUsd": 0.01786752,
+      "accountedUsd": 0.0015007120000000002,
+      "usage": {
+        "input_tokens": 9020,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 237,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9257
+      },
+      "status": 200
+    },
+    {
+      "id": "cc00bdf2-ccc6-4fb3-b0c6-c6216774df97",
+      "at": "2026-09-04T14:52:48.968Z",
+      "reservedUsd": 0.018314120000000003,
+      "accountedUsd": 0.0016208320000000002,
+      "usage": {
+        "input_tokens": 9281,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 241,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9522
+      },
+      "status": 200
+    },
+    {
+      "id": "a2646622-0a99-4c34-a72f-25b3ae00c7ea",
+      "at": "2026-09-04T14:52:52.018Z",
+      "reservedUsd": 0.01835064,
+      "accountedUsd": 0.0015121520000000001,
+      "usage": {
+        "input_tokens": 9337,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 140,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9477
+      },
+      "status": 200
+    },
+    {
+      "id": "a81e4c37-0d21-46ee-8f3f-783390daa38e",
+      "at": "2026-09-04T14:52:55.213Z",
+      "reservedUsd": 0.01787104,
+      "accountedUsd": 0.0015183120000000002,
+      "usage": {
+        "input_tokens": 9030,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 247,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9277
+      },
+      "status": 200
+    },
+    {
+      "id": "b43083f5-52b6-467b-a45a-801b3a7aa9c3",
+      "at": "2026-09-04T14:53:01.039Z",
+      "reservedUsd": 0.017868400000000003,
+      "accountedUsd": 0.0014751920000000002,
+      "usage": {
+        "input_tokens": 9028,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 215,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9243
+      },
+      "status": 200
+    },
+    {
+      "id": "116a07d5-f557-467d-9123-82cb85716c10",
+      "at": "2026-09-04T14:53:04.770Z",
+      "reservedUsd": 0.018290800000000003,
+      "accountedUsd": 0.001599272,
+      "usage": {
+        "input_tokens": 9301,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 218,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9519
+      },
+      "status": 200
+    },
+    {
+      "id": "bad26474-a262-403a-a337-c171d90cebad",
+      "at": "2026-09-04T14:53:08.395Z",
+      "reservedUsd": 0.018290360000000002,
+      "accountedUsd": 0.0016313920000000002,
+      "usage": {
+        "input_tokens": 9326,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 234,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9560
+      },
+      "status": 200
+    },
+    {
+      "id": "ac1dfd90-2554-4125-acaf-7eb50c4ce757",
+      "at": "2026-09-04T14:53:11.436Z",
+      "reservedUsd": 0.018526640000000004,
+      "accountedUsd": 0.001686832,
+      "usage": {
+        "input_tokens": 9497,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 219,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9716
+      },
+      "status": 200
+    },
+    {
+      "id": "2b2552aa-af41-4834-8624-20c5d0ebc375",
+      "at": "2026-09-04T14:53:14.650Z",
+      "reservedUsd": 0.01866788,
+      "accountedUsd": 0.001656472,
+      "usage": {
+        "input_tokens": 9608,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 159,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9767
+      },
+      "status": 200
+    },
+    {
+      "id": "cfd672c1-ff2d-42bc-9453-0d5cac7f6e8f",
+      "at": "2026-09-04T14:53:17.673Z",
+      "reservedUsd": 0.01858252,
+      "accountedUsd": 0.0016837520000000002,
+      "usage": {
+        "input_tokens": 9568,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 193,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9761
+      },
+      "status": 200
+    },
+    {
+      "id": "76ffec58-2161-4fd4-852c-388409f7b079",
+      "at": "2026-09-04T14:53:20.637Z",
+      "reservedUsd": 0.018637080000000004,
+      "accountedUsd": 0.001645032,
+      "usage": {
+        "input_tokens": 9624,
+        "input_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "output_tokens": 145,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9769
+      },
+      "status": 200
+    },
+    {
+      "id": "af022594-d00f-49ef-83b4-51226b32e429",
+      "at": "2026-09-04T14:56:11.766Z",
+      "reservedUsd": 0.018012280000000002,
+      "accountedUsd": 0.004087288,
+      "usage": {
+        "input_tokens": 9113,
+        "input_tokens_details": {
+          "cached_tokens": 512
+        },
+        "output_tokens": 224,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9337
+      },
+      "status": 200
+    },
+    {
+      "id": "c8d0f9e5-da73-40ce-9d53-511d73017d95",
+      "at": "2026-09-04T14:56:15.875Z",
+      "reservedUsd": 0.018424120000000002,
+      "accountedUsd": 0.003892592,
+      "usage": {
+        "input_tokens": 9379,
+        "input_tokens_details": {
+          "cached_tokens": 1408
+        },
+        "output_tokens": 277,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9656
+      },
+      "status": 200
+    },
+    {
+      "id": "a73d095f-418d-4fb3-8146-f81c15f590a5",
+      "at": "2026-09-04T14:56:19.545Z",
+      "reservedUsd": 0.018389360000000004,
+      "accountedUsd": 0.0017220640000000001,
+      "usage": {
+        "input_tokens": 9380,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 326,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9706
+      },
+      "status": 200
+    },
+    {
+      "id": "f2f07ce0-af57-4c66-90b2-c574b914c50f",
+      "at": "2026-09-04T14:56:23.008Z",
+      "reservedUsd": 0.018634440000000002,
+      "accountedUsd": 0.0016780640000000002,
+      "usage": {
+        "input_tokens": 9568,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 230,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9798
+      },
+      "status": 200
+    },
+    {
+      "id": "b44dcb66-6343-4343-a7fe-47293cf7f0a1",
+      "at": "2026-09-04T14:56:26.400Z",
+      "reservedUsd": 0.018864560000000002,
+      "accountedUsd": 0.0016472640000000003,
+      "usage": {
+        "input_tokens": 9726,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 154,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9880
+      },
+      "status": 200
+    },
+    {
+      "id": "5cc08f83-1d2b-4937-a3cd-bd3bae94d18b",
+      "at": "2026-09-04T14:56:29.180Z",
+      "reservedUsd": 0.018696920000000002,
+      "accountedUsd": 0.0017704640000000002,
+      "usage": {
+        "input_tokens": 9628,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 280,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9908
+      },
+      "status": 200
+    },
+    {
+      "id": "aa53b934-8556-4608-b8ed-7ebc57c84cbd",
+      "at": "2026-09-04T14:56:32.315Z",
+      "reservedUsd": 0.018872480000000004,
+      "accountedUsd": 0.0017299840000000002,
+      "usage": {
+        "input_tokens": 9764,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 204,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9968
+      },
+      "status": 200
+    },
+    {
+      "id": "33b66d70-a32c-42eb-aaa0-768dd61919c9",
+      "at": "2026-09-04T14:56:34.311Z",
+      "reservedUsd": 0.02032404,
+      "accountedUsd": 0.002243904,
+      "usage": {
+        "input_tokens": 10686,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 286,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10972
+      },
+      "status": 200
+    },
+    {
+      "id": "861b0295-d87c-496c-9ef1-2347c051af9e",
+      "at": "2026-09-04T14:56:37.672Z",
+      "reservedUsd": 0.018814840000000003,
+      "accountedUsd": 0.0017541840000000002,
+      "usage": {
+        "input_tokens": 9714,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 239,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9953
+      },
+      "status": 200
+    },
+    {
+      "id": "03db8ae0-9d88-4e4c-aa70-56358b897977",
+      "at": "2026-09-04T15:04:29.437Z",
+      "reservedUsd": 0.017450840000000002,
+      "accountedUsd": 0.001262704,
+      "usage": {
+        "input_tokens": 8738,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 192,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 8930
+      },
+      "status": 200
+    },
+    {
+      "id": "60cf8503-0bce-4915-861f-e76d0205cda0",
+      "at": "2026-09-04T15:04:32.850Z",
+      "reservedUsd": 0.018362080000000003,
+      "accountedUsd": 0.0016103040000000001,
+      "usage": {
+        "input_tokens": 9339,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 255,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9594
+      },
+      "status": 200
+    },
+    {
+      "id": "ad461fbe-939b-425e-ab2e-feb9208a4612",
+      "at": "2026-09-04T15:04:36.377Z",
+      "reservedUsd": 0.01867844,
+      "accountedUsd": 0.0017211840000000002,
+      "usage": {
+        "input_tokens": 9513,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 281,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9794
+      },
+      "status": 200
+    },
+    {
+      "id": "98002c88-7ca1-4103-ba5f-c097b9f3566b",
+      "at": "2026-09-04T15:04:39.891Z",
+      "reservedUsd": 0.018949920000000002,
+      "accountedUsd": 0.0016503440000000002,
+      "usage": {
+        "input_tokens": 9670,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 175,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9845
+      },
+      "status": 200
+    },
+    {
+      "id": "800c6eee-b580-4214-9aea-1b6d629b71ff",
+      "at": "2026-09-04T15:04:42.801Z",
+      "reservedUsd": 0.0180972,
+      "accountedUsd": 0.0015082240000000003,
+      "usage": {
+        "input_tokens": 9188,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 228,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9416
+      },
+      "status": 200
+    },
+    {
+      "id": "6a7222d9-d7ac-403a-bf52-9c051b5e4c00",
+      "at": "2026-09-04T15:04:46.022Z",
+      "reservedUsd": 0.0185218,
+      "accountedUsd": 0.001673664,
+      "usage": {
+        "input_tokens": 9459,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 263,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9722
+      },
+      "status": 200
+    },
+    {
+      "id": "0673a09c-523b-4bee-b41a-6a37ab1f9744",
+      "at": "2026-09-04T15:04:49.558Z",
+      "reservedUsd": 0.018659520000000002,
+      "accountedUsd": 0.001742304,
+      "usage": {
+        "input_tokens": 9579,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 275,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9854
+      },
+      "status": 200
+    },
+    {
+      "id": "df6cdd1f-4c10-4a3e-97d1-a1f841204e4f",
+      "at": "2026-09-04T15:04:52.926Z",
+      "reservedUsd": 0.018827600000000003,
+      "accountedUsd": 0.001759904,
+      "usage": {
+        "input_tokens": 9715,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 243,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9958
+      },
+      "status": 200
+    },
+    {
+      "id": "ce2fc8fb-6ecb-4791-b333-42525d435821",
+      "at": "2026-09-04T15:04:55.904Z",
+      "reservedUsd": 0.018013160000000004,
+      "accountedUsd": 0.0015214240000000002,
+      "usage": {
+        "input_tokens": 9113,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 263,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9376
+      },
+      "status": 200
+    },
+    {
+      "id": "fc42329c-cfec-49dc-a9cc-c209e3177dc6",
+      "at": "2026-09-04T15:04:59.566Z",
+      "reservedUsd": 0.01843248,
+      "accountedUsd": 0.0017225040000000001,
+      "usage": {
+        "input_tokens": 9381,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 326,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9707
+      },
+      "status": 200
+    },
+    {
+      "id": "d0a8f28e-55fe-4f4a-850f-1171045798ad",
+      "at": "2026-09-04T15:05:03.266Z",
+      "reservedUsd": 0.018567560000000004,
+      "accountedUsd": 0.001645504,
+      "usage": {
+        "input_tokens": 9497,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 229,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9726
+      },
+      "status": 200
+    },
+    {
+      "id": "1cddfbcb-5411-41a8-9e0a-a7d6b91a91f0",
+      "at": "2026-09-04T15:05:06.693Z",
+      "reservedUsd": 0.018780520000000002,
+      "accountedUsd": 0.001692584,
+      "usage": {
+        "input_tokens": 9670,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 207,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9877
+      },
+      "status": 200
+    },
+    {
+      "id": "eb0602ea-e6c7-40ef-a525-c37fff784466",
+      "at": "2026-09-04T15:05:09.692Z",
+      "reservedUsd": 0.018011400000000004,
+      "accountedUsd": 0.0014717040000000003,
+      "usage": {
+        "input_tokens": 9108,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 227,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9335
+      },
+      "status": 200
+    },
+    {
+      "id": "4fbe1f39-16b2-493e-a79c-40c976674e6c",
+      "at": "2026-09-04T15:05:13.000Z",
+      "reservedUsd": 0.018472960000000004,
+      "accountedUsd": 0.001484024,
+      "usage": {
+        "input_tokens": 9382,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 145,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9527
+      },
+      "status": 200
+    },
+    {
+      "id": "0c61c4af-7b0b-4ad8-b130-19526bd90f26",
+      "at": "2026-09-04T15:05:15.739Z",
+      "reservedUsd": 0.018501120000000003,
+      "accountedUsd": 0.0015557440000000002,
+      "usage": {
+        "input_tokens": 9431,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 183,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9614
+      },
+      "status": 200
+    },
+    {
+      "id": "e1626a0b-cd5d-4141-8bdd-782a56c3792c",
+      "at": "2026-09-04T15:05:18.917Z",
+      "reservedUsd": 0.018012280000000002,
+      "accountedUsd": 0.0015293440000000002,
+      "usage": {
+        "input_tokens": 9113,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 269,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9382
+      },
+      "status": 200
+    },
+    {
+      "id": "9d317284-7d33-413b-b2cd-581735d4f3de",
+      "at": "2026-09-04T15:05:22.425Z",
+      "reservedUsd": 0.018526200000000003,
+      "accountedUsd": 0.0016617840000000001,
+      "usage": {
+        "input_tokens": 9438,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 261,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9699
+      },
+      "status": 200
+    },
+    {
+      "id": "6c0d40b6-0c12-487e-b3d7-a62274031835",
+      "at": "2026-09-04T15:05:25.675Z",
+      "reservedUsd": 0.018438640000000003,
+      "accountedUsd": 0.001645504,
+      "usage": {
+        "input_tokens": 9398,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 262,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9660
+      },
+      "status": 200
+    },
+    {
+      "id": "a20db2b5-6a5c-4363-bb18-593ed839f37f",
+      "at": "2026-09-04T15:05:28.985Z",
+      "reservedUsd": 0.018667000000000003,
+      "accountedUsd": 0.0018017040000000001,
+      "usage": {
+        "input_tokens": 9552,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 329,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9881
+      },
+      "status": 200
+    },
+    {
+      "id": "63c35c70-e691-4798-8ca4-2a8610aa5671",
+      "at": "2026-09-04T15:05:32.469Z",
+      "reservedUsd": 0.018012280000000002,
+      "accountedUsd": 0.0014963440000000001,
+      "usage": {
+        "input_tokens": 9113,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 244,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9357
+      },
+      "status": 200
+    },
+    {
+      "id": "2b1f1d5a-8713-4f99-ac03-4e6b6d6b1325",
+      "at": "2026-09-04T15:05:36.299Z",
+      "reservedUsd": 0.018558760000000004,
+      "accountedUsd": 0.0016155840000000002,
+      "usage": {
+        "input_tokens": 9444,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 224,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9668
+      },
+      "status": 200
+    },
+    {
+      "id": "fa6e1d6a-bded-460e-b0b8-f157a30021a1",
+      "at": "2026-09-04T15:05:39.591Z",
+      "reservedUsd": 0.01846108,
+      "accountedUsd": 0.001762104,
+      "usage": {
+        "input_tokens": 9417,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 344,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9761
+      },
+      "status": 200
+    },
+    {
+      "id": "65c442ef-02f5-4138-bb41-8d7d75d174c4",
+      "at": "2026-09-04T15:05:43.029Z",
+      "reservedUsd": 0.018714520000000002,
+      "accountedUsd": 0.0017528640000000002,
+      "usage": {
+        "input_tokens": 9600,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 276,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9876
+      },
+      "status": 200
+    },
+    {
+      "id": "78f1fa0e-ef56-42ee-a69f-3322830b3439",
+      "at": "2026-09-04T15:05:46.362Z",
+      "reservedUsd": 0.018855760000000003,
+      "accountedUsd": 0.0016494640000000002,
+      "usage": {
+        "input_tokens": 9707,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 162,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9869
+      },
+      "status": 200
+    },
+    {
+      "id": "6884b5f0-eba0-42e2-9353-bec4a5595404",
+      "at": "2026-09-04T15:05:49.352Z",
+      "reservedUsd": 0.018733000000000003,
+      "accountedUsd": 0.0018347040000000002,
+      "usage": {
+        "input_tokens": 9651,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 321,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9972
+      },
+      "status": 200
+    },
+    {
+      "id": "05eb21cc-18d5-48a5-9104-f85982983101",
+      "at": "2026-09-04T15:05:53.009Z",
+      "reservedUsd": 0.018786240000000003,
+      "accountedUsd": 0.001674544,
+      "usage": {
+        "input_tokens": 9695,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 185,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9880
+      },
+      "status": 200
+    },
+    {
+      "id": "ff422943-f05a-4cf3-99ea-b5949885a8a5",
+      "at": "2026-09-04T15:05:56.108Z",
+      "reservedUsd": 0.01806332,
+      "accountedUsd": 0.0015658640000000001,
+      "usage": {
+        "input_tokens": 9133,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 290,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9423
+      },
+      "status": 200
+    },
+    {
+      "id": "57ff72ab-2a6f-42e6-a336-b2d1a47f1794",
+      "at": "2026-09-04T15:06:00.060Z",
+      "reservedUsd": 0.01860716,
+      "accountedUsd": 0.0017383440000000002,
+      "usage": {
+        "input_tokens": 9450,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 315,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9765
+      },
+      "status": 200
+    },
+    {
+      "id": "fbcaddd5-bb1d-47ce-90c0-72b21019aabc",
+      "at": "2026-09-04T15:06:04.154Z",
+      "reservedUsd": 0.018769080000000004,
+      "accountedUsd": 0.0017035840000000002,
+      "usage": {
+        "input_tokens": 9593,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 241,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9834
+      },
+      "status": 200
+    },
+    {
+      "id": "697508b7-5090-4d53-98b5-327876b1b755",
+      "at": "2026-09-04T15:06:07.459Z",
+      "reservedUsd": 0.01883508,
+      "accountedUsd": 0.0016142640000000002,
+      "usage": {
+        "input_tokens": 9663,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 150,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9813
+      },
+      "status": 200
+    },
+    {
+      "id": "31c84316-bd32-409c-8873-1e7e1328b867",
+      "at": "2026-09-04T15:06:10.327Z",
+      "reservedUsd": 0.018986000000000003,
+      "accountedUsd": 0.001744944,
+      "usage": {
+        "input_tokens": 9768,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 214,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9982
+      },
+      "status": 200
+    },
+    {
+      "id": "eb1c8781-007b-4949-93de-5a3033a7a86f",
+      "at": "2026-09-04T15:06:13.426Z",
+      "reservedUsd": 0.0188496,
+      "accountedUsd": 0.0017709040000000002,
+      "usage": {
+        "input_tokens": 9713,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 252,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9965
+      },
+      "status": 200
+    },
+    {
+      "id": "6792ee05-ee0f-41e5-86ff-0f7265bc6466",
+      "at": "2026-09-04T15:06:16.554Z",
+      "reservedUsd": 0.018036040000000003,
+      "accountedUsd": 0.0015227440000000001,
+      "usage": {
+        "input_tokens": 9119,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 262,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9381
+      },
+      "status": 200
+    },
+    {
+      "id": "9be053ed-cf01-447b-b560-d167d6705af4",
+      "at": "2026-09-04T15:06:20.174Z",
+      "reservedUsd": 0.018483520000000003,
+      "accountedUsd": 0.001641104,
+      "usage": {
+        "input_tokens": 9397,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 259,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9656
+      },
+      "status": 200
+    },
+    {
+      "id": "991a290b-b2dd-4042-97b4-c3ccc50e18b9",
+      "at": "2026-09-04T15:06:23.826Z",
+      "reservedUsd": 0.018472520000000003,
+      "accountedUsd": 0.001645064,
+      "usage": {
+        "input_tokens": 9403,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 260,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9663
+      },
+      "status": 200
+    },
+    {
+      "id": "76a68af6-9f20-45f9-a68c-17d4b30bbd6b",
+      "at": "2026-09-04T15:15:05.949Z",
+      "reservedUsd": 0.01806332,
+      "accountedUsd": 0.0015588240000000003,
+      "usage": {
+        "input_tokens": 9132,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 285,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9417
+      },
+      "status": 200
+    },
+    {
+      "id": "494331d5-4784-4801-a1ad-1e153cc29199",
+      "at": "2026-09-04T15:15:10.376Z",
+      "reservedUsd": 0.018561400000000002,
+      "accountedUsd": 0.0016873040000000001,
+      "usage": {
+        "input_tokens": 9430,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 283,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9713
+      },
+      "status": 200
+    },
+    {
+      "id": "55919ffc-495a-4d4f-a122-c136fad83de7",
+      "at": "2026-09-04T15:15:14.171Z",
+      "reservedUsd": 0.018658200000000003,
+      "accountedUsd": 0.001727344,
+      "usage": {
+        "input_tokens": 9521,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 283,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9804
+      },
+      "status": 200
+    },
+    {
+      "id": "b0251d66-29a7-4ef2-9b43-9f79fcb4c3f2",
+      "at": "2026-09-04T15:15:17.853Z",
+      "reservedUsd": 0.018820560000000004,
+      "accountedUsd": 0.0016534240000000001,
+      "usage": {
+        "input_tokens": 9659,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 181,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9840
+      },
+      "status": 200
+    },
+    {
+      "id": "db97898a-8ab4-449a-82b8-a4fb57b00d28",
+      "at": "2026-09-04T15:15:20.856Z",
+      "reservedUsd": 0.0190366,
+      "accountedUsd": 0.001815344,
+      "usage": {
+        "input_tokens": 9811,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 253,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10064
+      },
+      "status": 200
+    },
+    {
+      "id": "109b1b05-2c61-462f-880f-88d76a81619e",
+      "at": "2026-09-04T15:15:24.030Z",
+      "reservedUsd": 0.0189046,
+      "accountedUsd": 0.001647264,
+      "usage": {
+        "input_tokens": 9774,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 138,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9912
+      },
+      "status": 200
+    },
+    {
+      "id": "99bc0167-b9c2-4524-b512-d41814a6caed",
+      "at": "2026-09-04T15:15:35.416Z",
+      "reservedUsd": 0.018130640000000003,
+      "accountedUsd": 0.0015839040000000001,
+      "usage": {
+        "input_tokens": 9204,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 280,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9484
+      },
+      "status": 200
+    },
+    {
+      "id": "153cd7cc-5f67-4955-8fb1-9509189fa1c9",
+      "at": "2026-09-04T15:15:39.327Z",
+      "reservedUsd": 0.018564040000000004,
+      "accountedUsd": 0.0015663040000000001,
+      "usage": {
+        "input_tokens": 9482,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 174,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9656
+      },
+      "status": 200
+    },
+    {
+      "id": "ac4daf17-c9fe-4e57-a095-6574e7635f4a",
+      "at": "2026-09-04T15:15:43.034Z",
+      "reservedUsd": 0.018649400000000003,
+      "accountedUsd": 0.0015421040000000003,
+      "usage": {
+        "input_tokens": 9562,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 129,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9691
+      },
+      "status": 200
+    },
+    {
+      "id": "dfe6512e-061f-4f28-9353-0bc01dbb9931",
+      "at": "2026-09-04T15:20:26.162Z",
+      "reservedUsd": 0.018060680000000003,
+      "accountedUsd": 0.0015610240000000003,
+      "usage": {
+        "input_tokens": 9128,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 288,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9416
+      },
+      "status": 200
+    },
+    {
+      "id": "a74c30b6-83b5-4ba7-9374-a90cd46145a2",
+      "at": "2026-09-04T15:20:30.099Z",
+      "reservedUsd": 0.01856624,
+      "accountedUsd": 0.001568064,
+      "usage": {
+        "input_tokens": 9438,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 190,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9628
+      },
+      "status": 200
+    },
+    {
+      "id": "d2fc38bf-258f-43c6-bcb6-718c2ff6e73d",
+      "at": "2026-09-04T15:20:33.299Z",
+      "reservedUsd": 0.018689,
+      "accountedUsd": 0.001710184,
+      "usage": {
+        "input_tokens": 9560,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 257,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9817
+      },
+      "status": 200
+    },
+    {
+      "id": "3af67b65-5792-46cd-affe-5c11d259868c",
+      "at": "2026-09-04T15:20:35.547Z",
+      "reservedUsd": 0.020117680000000002,
+      "accountedUsd": 0.002147104,
+      "usage": {
+        "input_tokens": 10466,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 286,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10752
+      },
+      "status": 200
+    },
+    {
+      "id": "a917c831-1320-413c-b348-ec00639dce39",
+      "at": "2026-09-04T15:20:39.262Z",
+      "reservedUsd": 0.01884784,
+      "accountedUsd": 0.0017704640000000002,
+      "usage": {
+        "input_tokens": 9679,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 263,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9942
+      },
+      "status": 200
+    },
+    {
+      "id": "5c3eae3b-3402-4c59-8bb5-93c1f089ba16",
+      "at": "2026-09-04T15:20:42.642Z",
+      "reservedUsd": 0.018130640000000003,
+      "accountedUsd": 0.001663544,
+      "usage": {
+        "input_tokens": 9202,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 341,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9543
+      },
+      "status": 200
+    },
+    {
+      "id": "e32ce264-ab9a-4d91-a77c-e42493dfb41b",
+      "at": "2026-09-04T15:20:47.513Z",
+      "reservedUsd": 0.018661720000000003,
+      "accountedUsd": 0.001751544,
+      "usage": {
+        "input_tokens": 9540,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 295,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9835
+      },
+      "status": 200
+    },
+    {
+      "id": "4ba6fd33-02a3-41d1-8d84-9f93bd54fdb0",
+      "at": "2026-09-04T15:20:51.186Z",
+      "reservedUsd": 0.018623,
+      "accountedUsd": 0.0016384640000000003,
+      "usage": {
+        "input_tokens": 9541,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 209,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9750
+      },
+      "status": 200
+    },
+    {
+      "id": "25e6e270-8ab9-4598-9b73-e7ce14b1026f",
+      "at": "2026-09-04T15:20:54.268Z",
+      "reservedUsd": 0.018748840000000003,
+      "accountedUsd": 0.0017788240000000002,
+      "usage": {
+        "input_tokens": 9641,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 282,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9923
+      },
+      "status": 200
+    },
+    {
+      "id": "637342a9-d0f2-44dc-8f4e-1b0c3097c22a",
+      "at": "2026-09-04T15:27:37.472Z",
+      "reservedUsd": 0.018131960000000003,
+      "accountedUsd": 0.003757512,
+      "usage": {
+        "input_tokens": 9174,
+        "input_tokens_details": {
+          "cached_tokens": 1408
+        },
+        "output_tokens": 243,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9417
+      },
+      "status": 200
+    },
+    {
+      "id": "fa899d79-9bb4-474f-a1ae-cd28147c376a",
+      "at": "2026-09-04T15:27:41.168Z",
+      "reservedUsd": 0.01854292,
+      "accountedUsd": 0.003900952,
+      "usage": {
+        "input_tokens": 9443,
+        "input_tokens_details": {
+          "cached_tokens": 1408
+        },
+        "output_tokens": 262,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9705
+      },
+      "status": 200
+    },
+    {
+      "id": "b7210234-d15b-426f-b9b5-f96c72893424",
+      "at": "2026-09-04T15:27:44.447Z",
+      "reservedUsd": 0.01851432,
+      "accountedUsd": 0.0016710240000000001,
+      "usage": {
+        "input_tokens": 9444,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 266,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9710
+      },
+      "status": 200
+    },
+    {
+      "id": "5810526a-6bfa-482b-a146-f03741591c35",
+      "at": "2026-09-04T15:27:47.584Z",
+      "reservedUsd": 0.018752800000000003,
+      "accountedUsd": 0.0017801440000000002,
+      "usage": {
+        "input_tokens": 9626,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 288,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9914
+      },
+      "status": 200
+    },
+    {
+      "id": "ecad91fe-3bd2-4015-9906-0cbd133ea66d",
+      "at": "2026-09-04T15:27:50.927Z",
+      "reservedUsd": 0.019005360000000002,
+      "accountedUsd": 0.0018624240000000001,
+      "usage": {
+        "input_tokens": 9804,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 291,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10095
+      },
+      "status": 200
+    },
+    {
+      "id": "a67d77de-be51-4e6e-afd5-e3a259a56639",
+      "at": "2026-09-04T15:27:54.296Z",
+      "reservedUsd": 0.018852240000000003,
+      "accountedUsd": 0.0017981840000000002,
+      "usage": {
+        "input_tokens": 9727,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 268,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9995
+      },
+      "status": 200
+    },
+    {
+      "id": "7b2060af-8429-4889-ad76-32d16211cf85",
+      "at": "2026-09-04T15:27:57.566Z",
+      "reservedUsd": 0.018915160000000004,
+      "accountedUsd": 0.0017401040000000001,
+      "usage": {
+        "input_tokens": 9784,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 205,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9989
+      },
+      "status": 200
+    },
+    {
+      "id": "bfb29094-8947-47db-8311-ca77557ae987",
+      "at": "2026-09-04T15:27:59.634Z",
+      "reservedUsd": 0.02036672,
+      "accountedUsd": 0.002263264,
+      "usage": {
+        "input_tokens": 10712,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 292,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 11004
+      },
+      "status": 200
+    },
+    {
+      "id": "3eaf6836-744d-467f-9bf1-2863a358cb76",
+      "at": "2026-09-04T15:28:03.472Z",
+      "reservedUsd": 0.018928800000000003,
+      "accountedUsd": 0.0017189840000000002,
+      "usage": {
+        "input_tokens": 9787,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 188,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9975
+      },
+      "status": 200
+    },
+    {
+      "id": "7ccd189e-aac7-4011-b31e-089a6619c8a7",
+      "at": "2026-09-04T15:28:06.468Z",
+      "reservedUsd": 0.018180360000000003,
+      "accountedUsd": 0.0015940240000000003,
+      "usage": {
+        "input_tokens": 9188,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 293,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9481
+      },
+      "status": 200
+    },
+    {
+      "id": "b9cfe11d-1c8e-4f19-b8a6-8f33b6a51458",
+      "at": "2026-09-04T15:28:10.710Z",
+      "reservedUsd": 0.01868944,
+      "accountedUsd": 0.0017467040000000002,
+      "usage": {
+        "input_tokens": 9502,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 304,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9806
+      },
+      "status": 200
+    },
+    {
+      "id": "c254f056-9edc-4399-a6e6-a40cfbd033b7",
+      "at": "2026-09-04T15:28:14.079Z",
+      "reservedUsd": 0.018772600000000004,
+      "accountedUsd": 0.0016569440000000003,
+      "usage": {
+        "input_tokens": 9601,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 203,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9804
+      },
+      "status": 200
+    },
+    {
+      "id": "4024c39e-01d8-4c2c-b580-d1ebb6bb78bb",
+      "at": "2026-09-04T15:28:16.006Z",
+      "reservedUsd": 0.020201280000000002,
+      "accountedUsd": 0.002079344,
+      "usage": {
+        "input_tokens": 10504,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 222,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10726
+      },
+      "status": 200
+    },
+    {
+      "id": "e92cabc1-63d1-4313-95c8-b76f7c8c98a6",
+      "at": "2026-09-04T15:28:19.650Z",
+      "reservedUsd": 0.018934080000000002,
+      "accountedUsd": 0.001683344,
+      "usage": {
+        "input_tokens": 9715,
+        "input_tokens_details": {
+          "cached_tokens": 6656
+        },
+        "output_tokens": 185,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9900
+      },
+      "status": 200
+    },
+    {
+      "id": "4a0851d5-9e57-424f-89a2-54f02557d5d4",
+      "at": "2026-09-04T15:30:47.775Z",
+      "reservedUsd": 0.017656320000000003,
+      "accountedUsd": 0.0035973520000000003,
+      "usage": {
+        "input_tokens": 8840,
+        "input_tokens_details": {
+          "cached_tokens": 1408
+        },
+        "output_tokens": 233,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9073
+      },
+      "status": 200
+    },
+    {
+      "id": "5ac4fa6a-19f8-43b9-8095-606cae8fe72d",
+      "at": "2026-09-04T15:30:51.891Z",
+      "reservedUsd": 0.018560520000000004,
+      "accountedUsd": 0.004036032,
+      "usage": {
+        "input_tokens": 9432,
+        "input_tokens_details": {
+          "cached_tokens": 1408
+        },
+        "output_tokens": 368,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9800
+      },
+      "status": 200
+    },
+    {
+      "id": "070fde86-0218-426a-a76b-1f978fab4d2b",
+      "at": "2026-09-04T15:30:55.893Z",
+      "reservedUsd": 0.018839920000000003,
+      "accountedUsd": 0.0016877760000000002,
+      "usage": {
+        "input_tokens": 9591,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 271,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9862
+      },
+      "status": 200
+    },
+    {
+      "id": "b539c816-9ee8-42ba-a91b-7937220bd3d8",
+      "at": "2026-09-04T15:30:59.371Z",
+      "reservedUsd": 0.01927904,
+      "accountedUsd": 0.001640256,
+      "usage": {
+        "input_tokens": 9879,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 139,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10018
+      },
+      "status": 200
+    },
+    {
+      "id": "1d70bb71-7d29-4b85-956f-dc27462bb354",
+      "at": "2026-09-04T15:31:02.144Z",
+      "reservedUsd": 0.01830268,
+      "accountedUsd": 0.0014822960000000001,
+      "usage": {
+        "input_tokens": 9292,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 215,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9507
+      },
+      "status": 200
+    },
+    {
+      "id": "e41e5987-acb7-4abd-8563-39cf32fe4df6",
+      "at": "2026-09-04T15:31:05.338Z",
+      "reservedUsd": 0.01872992,
+      "accountedUsd": 0.001771816,
+      "usage": {
+        "input_tokens": 9569,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 342,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9911
+      },
+      "status": 200
+    },
+    {
+      "id": "89509cbb-8023-4bd3-8bd0-d95e5a79e8a4",
+      "at": "2026-09-04T15:31:09.178Z",
+      "reservedUsd": 0.01885136,
+      "accountedUsd": 0.0017902960000000002,
+      "usage": {
+        "input_tokens": 9680,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 319,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9999
+      },
+      "status": 200
+    },
+    {
+      "id": "75be49ad-9962-4e1a-9bbc-2d8234f172bf",
+      "at": "2026-09-04T15:31:12.851Z",
+      "reservedUsd": 0.01896708,
+      "accountedUsd": 0.0016728160000000001,
+      "usage": {
+        "input_tokens": 9764,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 202,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9966
+      },
+      "status": 200
+    },
+    {
+      "id": "dd8051eb-3625-47ec-94d9-0edc25c90889",
+      "at": "2026-09-04T15:31:15.788Z",
+      "reservedUsd": 0.01821864,
+      "accountedUsd": 0.0015104560000000003,
+      "usage": {
+        "input_tokens": 9218,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 261,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9479
+      },
+      "status": 200
+    },
+    {
+      "id": "d659c1be-ed0a-4bc4-96b6-b3767ae028c7",
+      "at": "2026-09-04T15:31:19.276Z",
+      "reservedUsd": 0.018623880000000002,
+      "accountedUsd": 0.0015966960000000003,
+      "usage": {
+        "input_tokens": 9480,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 239,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9719
+      },
+      "status": 200
+    },
+    {
+      "id": "7040bac6-d68d-41eb-a996-b4cb3657640f",
+      "at": "2026-09-04T15:31:22.363Z",
+      "reservedUsd": 0.018714960000000003,
+      "accountedUsd": 0.001700976,
+      "usage": {
+        "input_tokens": 9570,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 288,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9858
+      },
+      "status": 200
+    },
+    {
+      "id": "5a6636fc-e3a7-484c-b8d7-c396224e649e",
+      "at": "2026-09-04T15:31:25.726Z",
+      "reservedUsd": 0.018914280000000002,
+      "accountedUsd": 0.0017484960000000002,
+      "usage": {
+        "input_tokens": 9738,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 268,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10006
+      },
+      "status": 200
+    },
+    {
+      "id": "42f889fa-396b-4274-89c9-ac981cc9f0e1",
+      "at": "2026-09-04T15:31:29.041Z",
+      "reservedUsd": 0.01821688,
+      "accountedUsd": 0.001528496,
+      "usage": {
+        "input_tokens": 9208,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 278,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9486
+      },
+      "status": 200
+    },
+    {
+      "id": "e180366c-2102-4891-b03f-f8ef5de1320e",
+      "at": "2026-09-04T15:31:32.657Z",
+      "reservedUsd": 0.018689,
+      "accountedUsd": 0.0014572160000000001,
+      "usage": {
+        "input_tokens": 9487,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 131,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9618
+      },
+      "status": 200
+    },
+    {
+      "id": "19a90b1e-5a14-4894-9a1e-f9e175c3b2cc",
+      "at": "2026-09-04T15:31:35.333Z",
+      "reservedUsd": 0.018707480000000002,
+      "accountedUsd": 0.0015460960000000003,
+      "usage": {
+        "input_tokens": 9539,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 181,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9720
+      },
+      "status": 200
+    },
+    {
+      "id": "d67524b1-a516-4405-980f-c7ffa14dee82",
+      "at": "2026-09-04T15:31:38.159Z",
+      "reservedUsd": 0.018217760000000003,
+      "accountedUsd": 0.0014426960000000003,
+      "usage": {
+        "input_tokens": 9217,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 210,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9427
+      },
+      "status": 200
+    },
+    {
+      "id": "6bb2ba1f-5615-480a-86c5-96d0ab66e27c",
+      "at": "2026-09-04T15:31:41.515Z",
+      "reservedUsd": 0.01863048,
+      "accountedUsd": 0.001553576,
+      "usage": {
+        "input_tokens": 9484,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 205,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9689
+      },
+      "status": 200
+    },
+    {
+      "id": "964a4b92-48b9-41d7-8e75-433258579443",
+      "at": "2026-09-04T15:31:44.703Z",
+      "reservedUsd": 0.018603200000000004,
+      "accountedUsd": 0.0016943760000000003,
+      "usage": {
+        "input_tokens": 9474,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 315,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9789
+      },
+      "status": 200
+    },
+    {
+      "id": "39214310-65b6-476c-89ac-578348b645fb",
+      "at": "2026-09-04T15:31:48.688Z",
+      "reservedUsd": 0.018991280000000003,
+      "accountedUsd": 0.0017586160000000002,
+      "usage": {
+        "input_tokens": 9725,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 280,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10005
+      },
+      "status": 200
+    },
+    {
+      "id": "fb8afb2b-9b8e-47a2-a2b0-5b164ef26173",
+      "at": "2026-09-04T15:31:52.395Z",
+      "reservedUsd": 0.018217760000000003,
+      "accountedUsd": 0.0015650160000000002,
+      "usage": {
+        "input_tokens": 9219,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 302,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9521
+      },
+      "status": 200
+    },
+    {
+      "id": "04f08e6f-33f2-4396-8fc6-959841f757d9",
+      "at": "2026-09-04T15:31:56.104Z",
+      "reservedUsd": 0.018604080000000002,
+      "accountedUsd": 0.0015496160000000002,
+      "usage": {
+        "input_tokens": 9469,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 207,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9676
+      },
+      "status": 200
+    },
+    {
+      "id": "4f1d3863-20ee-444a-ae0c-d7c0b4521374",
+      "at": "2026-09-04T15:31:59.402Z",
+      "reservedUsd": 0.018675800000000003,
+      "accountedUsd": 0.0015896560000000003,
+      "usage": {
+        "input_tokens": 9536,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 215,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9751
+      },
+      "status": 200
+    },
+    {
+      "id": "43c3fea7-222f-4fb0-a7bb-d1dd7757f337",
+      "at": "2026-09-04T15:32:02.444Z",
+      "reservedUsd": 0.018871600000000002,
+      "accountedUsd": 0.0018364960000000004,
+      "usage": {
+        "input_tokens": 9689,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 351,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10040
+      },
+      "status": 200
+    },
+    {
+      "id": "31d4583f-ed7b-4300-b1c2-eefa554fb40e",
+      "at": "2026-09-04T15:32:06.021Z",
+      "reservedUsd": 0.01909556,
+      "accountedUsd": 0.001843096,
+      "usage": {
+        "input_tokens": 9845,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 304,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10149
+      },
+      "status": 200
+    },
+    {
+      "id": "19cc39dd-9f20-4dd0-8a18-6028d621b4e4",
+      "at": "2026-09-04T15:32:09.719Z",
+      "reservedUsd": 0.018982480000000003,
+      "accountedUsd": 0.0017137360000000002,
+      "usage": {
+        "input_tokens": 9779,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 228,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10007
+      },
+      "status": 200
+    },
+    {
+      "id": "db8dc501-99d1-49ee-bc2a-a582300c798d",
+      "at": "2026-09-04T15:32:12.773Z",
+      "reservedUsd": 0.019091600000000004,
+      "accountedUsd": 0.0016939360000000003,
+      "usage": {
+        "input_tokens": 9875,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 181,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10056
+      },
+      "status": 200
+    },
+    {
+      "id": "8c1c2b0a-5341-4dd2-8ad4-147875914214",
+      "at": "2026-09-04T15:32:16.033Z",
+      "reservedUsd": 0.019052440000000004,
+      "accountedUsd": 0.001735736,
+      "usage": {
+        "input_tokens": 9841,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 224,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10065
+      },
+      "status": 200
+    },
+    {
+      "id": "58dc926f-da1c-4513-9d6e-6aa10d7ecca1",
+      "at": "2026-09-04T15:32:19.150Z",
+      "reservedUsd": 0.01833612,
+      "accountedUsd": 0.001657416,
+      "usage": {
+        "input_tokens": 9306,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 343,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9649
+      },
+      "status": 200
+    },
+    {
+      "id": "d5631ac2-bc27-4fd6-ac0f-5822b5558419",
+      "at": "2026-09-04T15:32:23.154Z",
+      "reservedUsd": 0.01871408,
+      "accountedUsd": 0.0017018560000000003,
+      "usage": {
+        "input_tokens": 9551,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 295,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9846
+      },
+      "status": 200
+    },
+    {
+      "id": "8b42f87e-a0f5-4be7-9bb7-0513219c54d0",
+      "at": "2026-09-04T15:32:26.486Z",
+      "reservedUsd": 0.01883332,
+      "accountedUsd": 0.0016072560000000003,
+      "usage": {
+        "input_tokens": 9651,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 190,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9841
+      },
+      "status": 200
+    },
+    {
+      "id": "66f9fbe6-96f3-4f4c-884a-82d9e10ec82b",
+      "at": "2026-09-04T15:32:28.556Z",
+      "reservedUsd": 0.02030776,
+      "accountedUsd": 0.002284416,
+      "usage": {
+        "input_tokens": 10590,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 390,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10980
+      },
+      "status": 200
+    },
+    {
+      "id": "ef641068-67a8-49fa-b572-2f8ab59dd537",
+      "at": "2026-09-04T15:32:32.370Z",
+      "reservedUsd": 0.018987760000000003,
+      "accountedUsd": 0.0017423360000000001,
+      "usage": {
+        "input_tokens": 9757,
+        "input_tokens_details": {
+          "cached_tokens": 6784
+        },
+        "output_tokens": 257,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10014
+      },
+      "status": 200
+    },
+    {
+      "id": "c7483015-9ae3-4bfd-ae46-47695f288c0e",
+      "at": "2026-09-04T16:40:30.910Z",
+      "reservedUsd": 0.019215680000000002,
+      "accountedUsd": 0.004542184,
+      "usage": {
+        "input_tokens": 9701,
+        "input_tokens_details": {
+          "cached_tokens": 256
+        },
+        "output_tokens": 290,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9991
+      },
+      "status": 200
+    },
+    {
+      "id": "cb35951a-387b-431f-b6ba-275765dfce99",
+      "at": "2026-09-04T16:40:35.277Z",
+      "reservedUsd": 0.019679000000000002,
+      "accountedUsd": 0.004009192,
+      "usage": {
+        "input_tokens": 9986,
+        "input_tokens_details": {
+          "cached_tokens": 1408
+        },
+        "output_tokens": 163,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10149
+      },
+      "status": 200
+    },
+    {
+      "id": "48d31b9e-f302-4cbf-8621-9e29c5cdf68f",
+      "at": "2026-09-04T16:40:38.275Z",
+      "reservedUsd": 0.019782400000000002,
+      "accountedUsd": 0.001804032,
+      "usage": {
+        "input_tokens": 10071,
+        "input_tokens_details": {
+          "cached_tokens": 7168
+        },
+        "output_tokens": 323,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10394
+      },
+      "status": 200
+    },
+    {
+      "id": "e1541748-38f5-4b31-901a-df6d9c65470c",
+      "at": "2026-09-04T16:40:42.585Z",
+      "reservedUsd": 0.020214040000000003,
+      "accountedUsd": 0.001877512,
+      "usage": {
+        "input_tokens": 10349,
+        "input_tokens_details": {
+          "cached_tokens": 7168
+        },
+        "output_tokens": 286,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10635
+      },
+      "status": 200
+    },
+    {
+      "id": "282ae8dc-a91e-4db0-ad31-e23471d26c73",
+      "at": "2026-09-04T16:40:45.762Z",
+      "reservedUsd": 0.02032404,
+      "accountedUsd": 0.0017600320000000001,
+      "usage": {
+        "input_tokens": 10451,
+        "input_tokens_details": {
+          "cached_tokens": 7168
+        },
+        "output_tokens": 163,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10614
+      },
+      "status": 200
+    },
+    {
+      "id": "772d34a9-9995-4b03-889c-2844ad5711dc",
+      "at": "2026-09-04T16:40:48.938Z",
+      "reservedUsd": 0.02018104,
+      "accountedUsd": 0.001822072,
+      "usage": {
+        "input_tokens": 10379,
+        "input_tokens_details": {
+          "cached_tokens": 7168
+        },
+        "output_tokens": 234,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10613
+      },
+      "status": 200
+    },
+    {
+      "id": "6cb16853-c62c-48ef-86f0-27ec51c415d8",
+      "at": "2026-09-04T16:40:52.058Z",
+      "reservedUsd": 0.020086000000000003,
+      "accountedUsd": 0.001693152,
+      "usage": {
+        "input_tokens": 10320,
+        "input_tokens_details": {
+          "cached_tokens": 7168
+        },
+        "output_tokens": 156,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10476
+      },
+      "status": 200
+    },
+    {
+      "id": "630a5af1-eefa-48fa-a224-09fdc5aa0011",
+      "at": "2026-09-04T16:40:55.002Z",
+      "reservedUsd": 0.019987,
+      "accountedUsd": 0.001813272,
+      "usage": {
+        "input_tokens": 10275,
+        "input_tokens_details": {
+          "cached_tokens": 7168
+        },
+        "output_tokens": 262,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10537
+      },
+      "status": 200
+    },
+    {
+      "id": "cfdbc9f0-0691-4b7a-8a5d-16f1fbd374d3",
+      "at": "2026-09-04T16:40:57.030Z",
+      "reservedUsd": 0.021496200000000003,
+      "accountedUsd": 0.002115992,
+      "usage": {
+        "input_tokens": 11236,
+        "input_tokens_details": {
+          "cached_tokens": 7168
+        },
+        "output_tokens": 171,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 11407
+      },
+      "status": 200
+    },
+    {
+      "id": "105c877d-7278-486e-b0df-c2a3aea16dad",
+      "at": "2026-09-04T16:51:03.438Z",
+      "reservedUsd": 0.019215680000000002,
+      "accountedUsd": 0.001520232,
+      "usage": {
+        "input_tokens": 9705,
+        "input_tokens_details": {
+          "cached_tokens": 7168
+        },
+        "output_tokens": 230,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 9935
+      },
+      "status": 200
+    },
+    {
+      "id": "036e91b8-8b5c-48e6-a4d9-24ca11c5ab42",
+      "at": "2026-09-04T16:51:07.202Z",
+      "reservedUsd": 0.019657,
+      "accountedUsd": 0.0016808320000000002,
+      "usage": {
+        "input_tokens": 9977,
+        "input_tokens_details": {
+          "cached_tokens": 7168
+        },
+        "output_tokens": 261,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10238
+      },
+      "status": 200
+    },
+    {
+      "id": "3a1f6dbd-7502-4693-bd65-0069854f3295",
+      "at": "2026-09-04T16:51:10.487Z",
+      "reservedUsd": 0.01978548,
+      "accountedUsd": 0.0019386720000000002,
+      "usage": {
+        "input_tokens": 10080,
+        "input_tokens_details": {
+          "cached_tokens": 7168
+        },
+        "output_tokens": 422,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10502
+      },
+      "status": 200
+    },
+    {
+      "id": "98a1fad3-f18a-429a-9b79-54c13918671a",
+      "at": "2026-09-04T16:51:14.901Z",
+      "reservedUsd": 0.02005124,
+      "accountedUsd": 0.001807992,
+      "usage": {
+        "input_tokens": 10254,
+        "input_tokens_details": {
+          "cached_tokens": 7168
+        },
+        "output_tokens": 265,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10519
+      },
+      "status": 200
+    },
+    {
+      "id": "0be4d594-6e7f-461a-8e9c-1e54243241cb",
+      "at": "2026-09-04T16:51:18.059Z",
+      "reservedUsd": 0.020178840000000003,
+      "accountedUsd": 0.0017345120000000001,
+      "usage": {
+        "input_tokens": 10369,
+        "input_tokens_details": {
+          "cached_tokens": 7168
+        },
+        "output_tokens": 171,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10540
+      },
+      "status": 200
+    },
+    {
+      "id": "3153d1dd-899b-486a-bc95-a12e8a0ee408",
+      "at": "2026-09-04T16:51:21.176Z",
+      "reservedUsd": 0.02007632,
+      "accountedUsd": 0.001796112,
+      "usage": {
+        "input_tokens": 10311,
+        "input_tokens_details": {
+          "cached_tokens": 7168
+        },
+        "output_tokens": 237,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10548
+      },
+      "status": 200
+    },
+    {
+      "id": "3f8a8f52-3b16-40a7-a1f6-bec417df9832",
+      "at": "2026-09-04T16:51:24.717Z",
+      "reservedUsd": 0.020042880000000002,
+      "accountedUsd": 0.0017591520000000002,
+      "usage": {
+        "input_tokens": 10290,
+        "input_tokens_details": {
+          "cached_tokens": 7168
+        },
+        "output_tokens": 216,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10506
+      },
+      "status": 200
+    },
+    {
+      "id": "fddc86a3-438e-478f-8454-13c15d128b05",
+      "at": "2026-09-04T16:51:27.782Z",
+      "reservedUsd": 0.019959280000000003,
+      "accountedUsd": 0.001675112,
+      "usage": {
+        "input_tokens": 10255,
+        "input_tokens_details": {
+          "cached_tokens": 7168
+        },
+        "output_tokens": 164,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 10419
+      },
+      "status": 200
+    }
+  ]
+}

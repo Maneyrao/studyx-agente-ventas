@@ -42,6 +42,13 @@ const STRUCTURED_NAME_BEFORE_EMAIL_PATTERN = new RegExp(
   'iu',
 );
 
+const LABELED_NAME_BEFORE_EMAIL_PATTERN = new RegExp(
+  `(?:^\\s*|:\\s*)nombres?(?:\\s*:\\s*|\\s+(?:es\\s+)?)(${NAME_SEQUENCE})\\s*[;\\r\\n]+\\s*`
+  + `apellidos?(?:\\s*:\\s*|\\s+(?:es\\s+)?)(${NAME_SEQUENCE})\\s*[;\\r\\n]+\\s*`
+  + `(?:correo(?:\\s+electr[oó]nico)?|e-?mail)\\s*(?::|es)?\\s*$`,
+  'iu',
+);
+
 const EXPLICIT_SELF_CONTACT_HEADER = /\b(?:mis\s+datos(?:\s+(?:personales|de\s+contacto))?|mi\s+nombre(?:\s+(?:completo|y\s+apellido))?)\s*$/iu;
 const NEGATED_CONTACT_HEADER = /\b(?:no|ni|sin|nunca|tampoco)\b/iu;
 const STANDALONE_CONTACT_FIELD_HEADER = /^(?:nombre(?:\s+(?:completo|y\s+apellido))?|datos\s+personales)\s*$/iu;
@@ -55,6 +62,13 @@ function isPlausibleName(candidate: string): boolean {
   const tokens = candidate.trim().split(/\s+/u);
   if (tokens.length === 0 || tokens.length > 4) return false;
   return tokens.every((token) => /^[A-ZÁÉÍÓÚÜÑ]/u.test(token));
+}
+
+function ownsPersonalContactBlock(headerSource: string): boolean {
+  const header = headerSource.split(/[.;!?…\n]/u).at(-1)?.trim() ?? '';
+  return !NEGATED_CONTACT_HEADER.test(header)
+    && (EXPLICIT_SELF_CONTACT_HEADER.test(header)
+      || (headerSource === header && STANDALONE_CONTACT_FIELD_HEADER.test(header)));
 }
 
 /**
@@ -102,14 +116,19 @@ export function extractContactIdentity(
       // inmediatamente anterior al primer correo. El encabezado evita tomar
       // como identidad un curso o un contacto de terceros escrito en prosa.
       const beforeEmail = text.slice(0, emailMatch.index);
+      const labeled = LABELED_NAME_BEFORE_EMAIL_PATTERN.exec(beforeEmail);
+      if (labeled) {
+        const headerSource = beforeEmail.slice(0, labeled.index).trim();
+        const standaloneForm = labeled.index === 0 && !labeled[0].trimStart().startsWith(':');
+        const fullName = `${labeled[1].trim()} ${labeled[2].trim()}`;
+        if ((standaloneForm || ownsPersonalContactBlock(headerSource)) && isPlausibleName(fullName)) {
+          name = fullName;
+        }
+      }
       const structured = STRUCTURED_NAME_BEFORE_EMAIL_PATTERN.exec(beforeEmail);
-      if (structured) {
+      if (name === null && structured) {
         const headerSource = beforeEmail.slice(0, structured.index).trim();
-        const header = headerSource.split(/[.;!?…\n]/u).at(-1)?.trim() ?? '';
-        const ownsBlock = !NEGATED_CONTACT_HEADER.test(header)
-          && (EXPLICIT_SELF_CONTACT_HEADER.test(header)
-            || (headerSource === header && STANDALONE_CONTACT_FIELD_HEADER.test(header)));
-        if (ownsBlock && isPlausibleName(structured[1])) name = structured[1].trim();
+        if (ownsPersonalContactBlock(headerSource) && isPlausibleName(structured[1])) name = structured[1].trim();
       }
     }
   }

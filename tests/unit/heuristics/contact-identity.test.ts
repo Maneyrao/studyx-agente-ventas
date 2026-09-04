@@ -50,6 +50,27 @@ describe('extractContactIdentity', () => {
   });
 
   it.each([
+    ['Mis datos: nombre Camila; apellido Duarte; correo camila.duarte@example.test; teléfono +1 305 555 0168.', 'Camila Duarte', 'camila.duarte@example.test', '+13055550168'],
+    ['Mis datos personales:\nNombres Ana María\nApellidos López Díaz\nCorreo electrónico ana.lopez@example.test', 'Ana María López Díaz', 'ana.lopez@example.test', null],
+    ["Nombre: Tomás; Apellido: O'Neill; Email: tomas@example.test", "Tomás O'Neill", 'tomas@example.test', null],
+  ] as const)('captures separate labeled personal name fields without requiring colons: %s', (text, name, email, declaredPhone) => {
+    expect(extractContactIdentity(text)).toEqual({ name, email, declaredPhone });
+  });
+
+  it.each([
+    'No son mis datos: nombre Camila; apellido Duarte; correo camila@example.test',
+    'Estos tampoco son mis datos personales: nombre Juan; apellido Pérez; correo juan@example.test',
+    'Los datos de mi hermana: nombre Carla; apellido Ibáñez; correo carla@example.test',
+    'Te paso el contacto de mi hermana. Nombre Carla; apellido Ibáñez; correo carla@example.test',
+    'Curso: nombre Redes; apellido Informáticas; correo redes@example.test',
+    'Mis datos: nombre camila; apellido Duarte; correo camila@example.test',
+    'Mis datos: nombre Camila o Julia; apellido Duarte; correo camila@example.test',
+    'Mis datos: nombre Camila; correo camila@example.test',
+  ])('does not capture separate labels without an unambiguous self-owned full name: %s', text => {
+    expect(extractContactIdentity(text).name).toBeNull();
+  });
+
+  it.each([
     'Curso: Redes Informáticas, redes@example.test.',
     'Quiero estudiar: Marketing Digital, marketing@example.test.',
     'Mi hermana: Emilia Ríos, emilia@example.test.',

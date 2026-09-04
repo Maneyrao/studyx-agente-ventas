@@ -891,6 +891,7 @@ describe('Agent A conversation runner', () => {
 
   it('checks the expected payment link exactly once', async () => {
     const paymentUrl = 'https://buy.stripe.com/14A5kC31I3Nwfbq67Fdwc0f';
+    vi.stubEnv('PAYMENT_LINK_12M', paymentUrl);
     const result = await runConversationCase(
       {
         id: 'happy_payment',
@@ -1008,6 +1009,7 @@ describe('Agent A conversation runner', () => {
 
   it('allows the payment link immediately after an explicit plan choice', async () => {
     const paymentUrl = 'https://buy.stripe.com/14A5kC31I3Nwfbq67Fdwc0f';
+    vi.stubEnv('PAYMENT_LINK_12M', paymentUrl);
     const result = await runConversationCase(
       {
         id: 'happy_selected_payment',

@@ -1,0 +1,324 @@
+
+> studyx-agente-ventas@0.1.0 test
+> vitest run --config vitest.config.mts
+
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90m/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/agent-a-plannerless-v2[39m
+
+[90mstderr[2m | tests/unit/botpress/groq-direct-decision.test.ts[2m > [22m[2mgenerateGroqDecision[2m > [22m[2mfails closed when Groq returns JSON that violates DecisionSchema
+[22m[39mGROQ_SCHEMA_INVALID {"issues":[{"code":"invalid_union","path":["schema_version"],"message":"Invalid input"},{"code":"invalid_value","path":["intent"],"message":"Invalid option: expected one of \"social\"|\"commercial\"|\"commercial_decline\"|\"complaint\"|\"human_request\"|\"opt_out\"|\"out_of_scope\"|\"unknown\""},{"code":"invalid_value","path":["kind"],"message":"Invalid option: expected one of \"reply\"|\"clarify\"|\"suppress\""},{"code":"invalid_value","path":["response_type"],"message":"Invalid option: expected one of \"social_reply\"|\"commercial_reply\"|\"clarification\"|\"complaint_ack\"|\"automation_only\"|\"opt_out_ack\"|\"out_of_scope\"|\"technical_fallback\"|\"call_offer\"|\"call_confirmation\""},{"code":"invalid_type","path":["confidence"],"message":"Invalid input: expected number, received undefined"},{"code":"invalid_type","path":["reason_code"],"message":"Invalid input: expected string, received undefined"},{"code":"invalid_type","path":["business_action"],"message":"Invalid input: expected object, received undefined"},{"code":"invalid_type","path":["memory_candidates"],"message":"Invalid input: expected array, received undefined"},{"code":"invalid_type","path":["missing_information"],"message":"Invalid input: expected array, received undefined"},{"code":"invalid_value","path":["next_state"],"message":"Invalid option: expected one of \"completed\"|\"waiting_user\""},{"code":"invalid_type","path":["retrieval_used"],"message":"Invalid input: expected object, received undefined"}],"parsed_keys":["response"]}
+
+[90mstdout[2m | tests/unit/observability/ready-route.test.ts[2m > [22m[2mGET /api/ready[2m > [22m[2mrefuses traffic when the same commercial snapshot used by claim is unavailable
+[22m[39m{"level":"error","timestamp":"2026-09-04T16:48:48.591Z","trace_id":"f4d34f66-aad8-4ec4-b230-1daac6a8bdb0","event":"readiness.not_ready","failed_required":["commercial_snapshot"]}
+
+ [32m✓[39m tests/unit/observability/ready-route.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 297[2mms[22m[39m
+[90mstderr[2m | tests/unit/botpress/groq-direct-decision.test.ts[2m > [22m[2mgenerateGroqDecision[2m > [22m[2mfails closed when Groq returns JSON that violates DecisionSchema
+[22m[39mGROQ_SCHEMA_INVALID {"issues":[{"code":"invalid_union","path":["schema_version"],"message":"Invalid input"},{"code":"invalid_value","path":["intent"],"message":"Invalid option: expected one of \"social\"|\"commercial\"|\"commercial_decline\"|\"complaint\"|\"human_request\"|\"opt_out\"|\"out_of_scope\"|\"unknown\""},{"code":"invalid_value","path":["kind"],"message":"Invalid option: expected one of \"reply\"|\"clarify\"|\"suppress\""},{"code":"invalid_value","path":["response_type"],"message":"Invalid option: expected one of \"social_reply\"|\"commercial_reply\"|\"clarification\"|\"complaint_ack\"|\"automation_only\"|\"opt_out_ack\"|\"out_of_scope\"|\"technical_fallback\"|\"call_offer\"|\"call_confirmation\""},{"code":"invalid_type","path":["confidence"],"message":"Invalid input: expected number, received undefined"},{"code":"invalid_type","path":["reason_code"],"message":"Invalid input: expected string, received undefined"},{"code":"invalid_type","path":["business_action"],"message":"Invalid input: expected object, received undefined"},{"code":"invalid_type","path":["memory_candidates"],"message":"Invalid input: expected array, received undefined"},{"code":"invalid_type","path":["missing_information"],"message":"Invalid input: expected array, received undefined"},{"code":"invalid_value","path":["next_state"],"message":"Invalid option: expected one of \"completed\"|\"waiting_user\""},{"code":"invalid_type","path":["retrieval_used"],"message":"Invalid input: expected object, received undefined"}],"parsed_keys":["response"]}
+
+ [32m✓[39m tests/unit/botpress/groq-direct-decision.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 390[2mms[22m[39m
+ [32m✓[39m tests/unit/services/embedding-worker-deadline.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 633[2mms[22m[39m
+     [33m[2m✓[22m[39m cannot commit a stalled multi-statement completion after reporting the deadline [33m 329[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/process-inbound-turn-hot-path.test.ts [2m([22m[2m48 tests[22m[2m)[22m[32m 283[2mms[22m[39m
+ [32m✓[39m tests/unit/scripts/agent-a-bridge-worker.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1076[2mms[22m[39m
+     [33m[2m✓[22m[39m boots as a standalone tsx entrypoint without loading the ADK runtime as CommonJS [33m 1074[2mms[22m[39m
+ [32m✓[39m tests/unit/contracts/intake-fields-repo-guard.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 230[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/agent-a-brain.test.ts [2m([22m[2m48 tests[22m[2m)[22m[32m 293[2mms[22m[39m
+ [32m✓[39m tests/unit/scripts/agent-a-conversation-runner.test.ts [2m([22m[2m83 tests[22m[2m)[22m[33m 555[2mms[22m[39m
+ [32m✓[39m tests/unit/calls/telegram-bot-api-client.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 221[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/conversation-pipeline-commit.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 110[2mms[22m[39m
+[90mstdout[2m | tests/unit/botpress/http-retry.test.ts[2m > [22m[2mrequestStudyxJson attempt counts[2m > [22m[2muses the default 1+3 attempts for critical operations on persistent 503
+[22m[39m{"event":"studyx.http.attempt","trace_id":"18a823e8-27c2-4279-9956-058f45f33cd5","path":"/api/agent/tools/catalog","method":"GET","attempt":1,"status":503,"error_code":"CATALOG_UNAVAILABLE","duration_ms":133}
+
+[90mstdout[2m | tests/unit/botpress/http-retry.test.ts[2m > [22m[2mrequestStudyxJson attempt counts[2m > [22m[2muses the default 1+3 attempts for critical operations on persistent 503
+[22m[39m{"event":"studyx.http.attempt","trace_id":"18a823e8-27c2-4279-9956-058f45f33cd5","path":"/api/agent/tools/catalog","method":"GET","attempt":2,"status":503,"error_code":"CATALOG_UNAVAILABLE","duration_ms":0}
+
+[90mstdout[2m | tests/unit/botpress/http-retry.test.ts[2m > [22m[2mrequestStudyxJson attempt counts[2m > [22m[2muses the default 1+3 attempts for critical operations on persistent 503
+[22m[39m{"event":"studyx.http.attempt","trace_id":"18a823e8-27c2-4279-9956-058f45f33cd5","path":"/api/agent/tools/catalog","method":"GET","attempt":3,"status":503,"error_code":"CATALOG_UNAVAILABLE","duration_ms":1}
+
+[90mstdout[2m | tests/unit/botpress/http-retry.test.ts[2m > [22m[2mrequestStudyxJson attempt counts[2m > [22m[2muses the default 1+3 attempts for critical operations on persistent 503
+[22m[39m{"event":"studyx.http.attempt","trace_id":"18a823e8-27c2-4279-9956-058f45f33cd5","path":"/api/agent/tools/catalog","method":"GET","attempt":4,"status":503,"error_code":"CATALOG_UNAVAILABLE","duration_ms":2}
+
+[90mstdout[2m | tests/unit/botpress/http-retry.test.ts[2m > [22m[2mrequestStudyxJson attempt counts[2m > [22m[2mmakes exactly 2 attempts (1 + 1 retry) when additionalRetries is 1 and the failure is transient
+[22m[39m{"event":"studyx.http.attempt","trace_id":"18a823e8-27c2-4279-9956-058f45f33cd5","path":"/api/agent/tools/catalog","method":"GET","attempt":1,"status":503,"error_code":"CATALOG_UNAVAILABLE","duration_ms":0}
+
+[90mstdout[2m | tests/unit/botpress/http-retry.test.ts[2m > [22m[2mrequestStudyxJson attempt counts[2m > [22m[2mmakes exactly 2 attempts (1 + 1 retry) when additionalRetries is 1 and the failure is transient
+[22m[39m{"event":"studyx.http.attempt","trace_id":"18a823e8-27c2-4279-9956-058f45f33cd5","path":"/api/agent/tools/catalog","method":"GET","attempt":2,"status":503,"error_code":"CATALOG_UNAVAILABLE","duration_ms":0}
+
+[90mstdout[2m | tests/unit/botpress/http-retry.test.ts[2m > [22m[2mrequestStudyxJson attempt counts[2m > [22m[2mrecovers on the single retry when the transient failure clears
+[22m[39m{"event":"studyx.http.attempt","trace_id":"18a823e8-27c2-4279-9956-058f45f33cd5","path":"/api/agent/tools/catalog","method":"GET","attempt":1,"status":503,"error_code":"CATALOG_UNAVAILABLE","duration_ms":0}
+
+[90mstdout[2m | tests/unit/botpress/http-retry.test.ts[2m > [22m[2mrequestStudyxJson attempt counts[2m > [22m[2mrecovers on the single retry when the transient failure clears
+[22m[39m{"event":"studyx.http.attempt","trace_id":"18a823e8-27c2-4279-9956-058f45f33cd5","path":"/api/agent/tools/catalog","method":"GET","attempt":2,"status":200,"error_code":null,"duration_ms":0}
+
+[90mstdout[2m | tests/unit/botpress/http-retry.test.ts[2m > [22m[2mrequestStudyxJson attempt counts[2m > [22m[2mmakes exactly 1 attempt — zero retries — on 422 CATALOG_INVALID_DATA
+[22m[39m{"event":"studyx.http.attempt","trace_id":"18a823e8-27c2-4279-9956-058f45f33cd5","path":"/api/agent/tools/catalog","method":"GET","attempt":1,"status":422,"error_code":"CATALOG_INVALID_DATA","duration_ms":0}
+
+[90mstdout[2m | tests/unit/botpress/http-retry.test.ts[2m > [22m[2mrequestStudyxJson attempt counts[2m > [22m[2mmakes exactly 1 attempt when additionalRetries is 0, even on a transient failure
+[22m[39m{"event":"studyx.http.attempt","trace_id":"18a823e8-27c2-4279-9956-058f45f33cd5","path":"/api/agent/tools/catalog","method":"GET","attempt":1,"status":503,"error_code":"CATALOG_UNAVAILABLE","duration_ms":0}
+
+[90mstdout[2m | tests/unit/botpress/http-retry.test.ts[2m > [22m[2mrequestStudyxJson attempt counts[2m > [22m[2mretries on 429 within the single-retry budget
+[22m[39m{"event":"studyx.http.attempt","trace_id":"18a823e8-27c2-4279-9956-058f45f33cd5","path":"/api/agent/tools/catalog","method":"GET","attempt":1,"status":429,"error_code":"RATE_LIMITED","duration_ms":1}
+
+[90mstdout[2m | tests/unit/botpress/http-retry.test.ts[2m > [22m[2mrequestStudyxJson attempt counts[2m > [22m[2mretries on 429 within the single-retry budget
+[22m[39m{"event":"studyx.http.attempt","trace_id":"18a823e8-27c2-4279-9956-058f45f33cd5","path":"/api/agent/tools/catalog","method":"GET","attempt":2,"status":200,"error_code":null,"duration_ms":1}
+
+[90mstdout[2m | tests/unit/botpress/http-retry.test.ts[2m > [22m[2mrequestStudyxJson attempt counts[2m > [22m[2mretries network errors within the single-retry budget
+[22m[39m{"event":"studyx.http.attempt","trace_id":"18a823e8-27c2-4279-9956-058f45f33cd5","path":"/api/agent/tools/catalog","method":"GET","attempt":1,"status":"error","error_code":"STUDYX_NETWORK_ERROR","duration_ms":0}
+
+[90mstdout[2m | tests/unit/botpress/http-retry.test.ts[2m > [22m[2mrequestStudyxJson attempt counts[2m > [22m[2mretries network errors within the single-retry budget
+[22m[39m{"event":"studyx.http.attempt","trace_id":"18a823e8-27c2-4279-9956-058f45f33cd5","path":"/api/agent/tools/catalog","method":"GET","attempt":2,"status":200,"error_code":null,"duration_ms":0}
+
+[90mstdout[2m | tests/unit/botpress/http-retry.test.ts[2m > [22m[2mrequestStudyxJson attempt counts[2m > [22m[2mnever retries a schema-invalid 200 response
+[22m[39m{"event":"studyx.http.attempt","trace_id":"18a823e8-27c2-4279-9956-058f45f33cd5","path":"/api/agent/tools/catalog","method":"GET","attempt":1,"status":200,"error_code":"INVALID_STUDYX_RESPONSE","duration_ms":1}
+
+[90mstdout[2m | tests/unit/botpress/http-retry.test.ts[2m > [22m[2mrequestStudyxJson attempt counts[2m > [22m[2mexposes StudyxHttpError with a stable non-retryable code for invalid data
+[22m[39m{"event":"studyx.http.attempt","trace_id":"18a823e8-27c2-4279-9956-058f45f33cd5","path":"/api/agent/tools/catalog","method":"GET","attempt":1,"status":422,"error_code":"CATALOG_INVALID_DATA","duration_ms":0}
+
+ [32m✓[39m tests/unit/botpress/http-retry.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 159[2mms[22m[39m
+ [32m✓[39m tests/unit/scripts/whatsapp-release-readiness.test.ts [2m([22m[2m70 tests[22m[2m)[22m[32m 166[2mms[22m[39m
+ [32m✓[39m tests/unit/orchestration/claim-batch.test.ts [2m([22m[2m76 tests[22m[2m)[22m[33m 359[2mms[22m[39m
+ [32m✓[39m tests/unit/observability/commercial-snapshot-probe.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 80[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/agent-a-brain-model-copy.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 68[2mms[22m[39m
+[90mstderr[2m | tests/unit/botpress/gemini-direct-decision.test.ts[2m > [22m[2mgenerateGeminiDecision — invalid model output[2m > [22m[2mfails immediately when the JSON parses but violates DecisionSchema
+[22m[39mGEMINI_SCHEMA_INVALID {"issues":[{"code":"invalid_value","path":["intent"],"message":"Invalid option: expected one of \"social\"|\"commercial\"|\"commercial_decline\"|\"complaint\"|\"human_request\"|\"opt_out\"|\"out_of_scope\"|\"unknown\""},{"code":"invalid_value","path":["kind"],"message":"Invalid option: expected one of \"reply\"|\"clarify\"|\"suppress\""},{"code":"invalid_type","path":["response"],"message":"Invalid input: expected string, received undefined"},{"code":"invalid_value","path":["response_type"],"message":"Invalid option: expected one of \"social_reply\"|\"commercial_reply\"|\"clarification\"|\"complaint_ack\"|\"automation_only\"|\"opt_out_ack\"|\"out_of_scope\"|\"technical_fallback\"|\"call_offer\"|\"call_confirmation\""},{"code":"invalid_type","path":["confidence"],"message":"Invalid input: expected number, received undefined"},{"code":"invalid_type","path":["reason_code"],"message":"Invalid input: expected string, received undefined"},{"code":"invalid_type","path":["business_action"],"message":"Invalid input: expected object, received undefined"},{"code":"invalid_type","path":["memory_candidates"],"message":"Invalid input: expected array, received undefined"},{"code":"invalid_type","path":["missing_information"],"message":"Invalid input: expected array, received undefined"},{"code":"invalid_value","path":["next_state"],"message":"Invalid option: expected one of \"completed\"|\"waiting_user\""},{"code":"invalid_type","path":["retrieval_used"],"message":"Invalid input: expected object, received undefined"},{"code":"unrecognized_keys","path":[],"message":"Unrecognized key: \"not\""}],"parsed_keys":["not"],"action_keys":[]}
+
+ [32m✓[39m tests/unit/conversation/technical-fallback.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 75[2mms[22m[39m
+[90mstderr[2m | tests/unit/botpress/gemini-direct-decision.test.ts[2m > [22m[2mgenerateGeminiDecision — API key never leaks[2m > [22m[2mnever includes the API key in a schema-invalid error
+[22m[39mGEMINI_SCHEMA_INVALID {"issues":[{"code":"invalid_value","path":["intent"],"message":"Invalid option: expected one of \"social\"|\"commercial\"|\"commercial_decline\"|\"complaint\"|\"human_request\"|\"opt_out\"|\"out_of_scope\"|\"unknown\""},{"code":"invalid_value","path":["kind"],"message":"Invalid option: expected one of \"reply\"|\"clarify\"|\"suppress\""},{"code":"invalid_type","path":["response"],"message":"Invalid input: expected string, received undefined"},{"code":"invalid_value","path":["response_type"],"message":"Invalid option: expected one of \"social_reply\"|\"commercial_reply\"|\"clarification\"|\"complaint_ack\"|\"automation_only\"|\"opt_out_ack\"|\"out_of_scope\"|\"technical_fallback\"|\"call_offer\"|\"call_confirmation\""},{"code":"invalid_type","path":["confidence"],"message":"Invalid input: expected number, received undefined"},{"code":"invalid_type","path":["reason_code"],"message":"Invalid input: expected string, received undefined"},{"code":"invalid_type","path":["business_action"],"message":"Invalid input: expected object, received undefined"},{"code":"invalid_type","path":["memory_candidates"],"message":"Invalid input: expected array, received undefined"},{"code":"invalid_type","path":["missing_information"],"message":"Invalid input: expected array, received undefined"},{"code":"invalid_value","path":["next_state"],"message":"Invalid option: expected one of \"completed\"|\"waiting_user\""},{"code":"invalid_type","path":["retrieval_used"],"message":"Invalid input: expected object, received undefined"},{"code":"unrecognized_keys","path":[],"message":"Unrecognized key: \"apiKeyLeak\""}],"parsed_keys":["apiKeyLeak"],"action_keys":[]}
+
+ [32m✓[39m tests/unit/botpress/gemini-direct-decision.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 221[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/prepare-agent-turn-v2.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 92[2mms[22m[39m
+[90mstdout[2m | tests/unit/projection/projection-idempotency.test.ts[2m > [22m[2msheet projection idempotency[2m > [22m[2mreplaying enqueue 10x for the same lead keeps a single outbox row and a single sheet row
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:48:50.934Z","event":"sheet_projection.worker_completed","worker_id":"drain-205b3a34-8f29-4d87-9bf8-5b37307ad45a","claimed":2,"completed":2,"failed":0,"skipped":0}
+
+[90mstdout[2m | tests/unit/projection/projection-idempotency.test.ts[2m > [22m[2msheet projection idempotency[2m > [22m[2mreplaying enqueue 10x for the same lead keeps a single outbox row and a single sheet row
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:48:50.936Z","event":"sheet_projection.worker_completed","worker_id":"drain-0915050d-3067-497a-a913-31dbe9ee09cb","claimed":0,"completed":0,"failed":0,"skipped":0}
+
+ [32m✓[39m tests/unit/scripts/release-provenance.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 2054[2mms[22m[39m
+     [33m[2m✓[22m[39m un archivo sin trackear ensucia la procedencia y queda nombrado [33m 399[2mms[22m[39m
+     [33m[2m✓[22m[39m el snapshot es recuperable, no sólo un hash [33m 377[2mms[22m[39m
+     [33m[2m✓[22m[39m los secretos y las dependencias nunca entran en la procedencia [33m 330[2mms[22m[39m
+     [33m[2m✓[22m[39m un SHA inyectado no exime de mirar el checkout que sí existe [33m 317[2mms[22m[39m
+[90mstdout[2m | tests/unit/projection/projection-idempotency.test.ts[2m > [22m[2msheet projection idempotency[2m > [22m[2mreplaying enqueue 10x for the same lead keeps a single outbox row and a single sheet row
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:48:50.970Z","event":"sheet_projection.worker_completed","worker_id":"w1","claimed":1,"completed":1,"failed":0,"skipped":0}
+
+ [32m✓[39m tests/unit/orchestration/egress-guard.test.ts [2m([22m[2m89 tests[22m[2m)[22m[32m 204[2mms[22m[39m
+[90mstdout[2m | tests/unit/projection/projection-idempotency.test.ts[2m > [22m[2msheet projection idempotency[2m > [22m[2mreplaying enqueue 10x for the same lead keeps a single outbox row and a single sheet row
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:48:50.981Z","event":"sheet_projection.worker_completed","worker_id":"w2","claimed":0,"completed":0,"failed":0,"skipped":0}
+
+ [32m✓[39m tests/contract/agent-request-validation.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 2765[2mms[22m[39m
+     [33m[2m✓[22m[39m rejects an incomplete inbound envelope before touching the database [33m 2408[2mms[22m[39m
+[90mstdout[2m | tests/unit/projection/projection-idempotency.test.ts[2m > [22m[2msheet projection idempotency[2m > [22m[2ma provider timeout during flush leaves the outbox row retryable with an incremented attempt count
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:48:51.022Z","event":"sheet_projection.worker_completed","worker_id":"drain-174ecde5-4f9f-4ce5-af27-b332188011ef","claimed":3,"completed":3,"failed":0,"skipped":0}
+
+[90mstdout[2m | tests/unit/projection/projection-idempotency.test.ts[2m > [22m[2msheet projection idempotency[2m > [22m[2ma provider timeout during flush leaves the outbox row retryable with an incremented attempt count
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:48:51.023Z","event":"sheet_projection.worker_completed","worker_id":"drain-0c9bb4f5-5c7f-463a-a886-fe0662290a48","claimed":0,"completed":0,"failed":0,"skipped":0}
+
+[90mstdout[2m | tests/unit/projection/projection-idempotency.test.ts[2m > [22m[2msheet projection idempotency[2m > [22m[2ma provider timeout during flush leaves the outbox row retryable with an incremented attempt count
+[22m[39m{"level":"error","timestamp":"2026-09-04T16:48:51.026Z","event":"sheet_projection.row_failed","row_id":"39d0adaa-2275-435a-9803-796a7530a518","workspace_id":"fa29d3d2-dfb9-4698-8d68-5b77b80e6f94","attempt_count":1,"terminal":false,"error":"SimulatedSheetsTimeout: SIMULATED_SHEETS_TIMEOUT"}
+
+[90mstdout[2m | tests/unit/projection/projection-idempotency.test.ts[2m > [22m[2msheet projection idempotency[2m > [22m[2ma provider timeout during flush leaves the outbox row retryable with an incremented attempt count
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:48:51.027Z","event":"sheet_projection.worker_completed","worker_id":"timeout-worker","claimed":1,"completed":0,"failed":1,"skipped":0}
+
+[90mstdout[2m | tests/unit/projection/projection-idempotency.test.ts[2m > [22m[2msheet projection idempotency[2m > [22m[2ma provider timeout during flush leaves the outbox row retryable with an incremented attempt count
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:48:51.032Z","event":"sheet_projection.worker_completed","worker_id":"retry-worker","claimed":1,"completed":1,"failed":0,"skipped":0}
+
+[90mstdout[2m | tests/unit/projection/projection-idempotency.test.ts[2m > [22m[2msheet projection idempotency[2m > [22m[2mprojects nombre/apellido/email into their own columns in the 15-column order
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:48:51.034Z","event":"sheet_projection.worker_completed","worker_id":"drain-ef68d36f-8d3c-4b66-978c-e56123c7ac20","claimed":0,"completed":0,"failed":0,"skipped":0}
+
+[90mstdout[2m | tests/unit/projection/projection-idempotency.test.ts[2m > [22m[2msheet projection idempotency[2m > [22m[2mprojects nombre/apellido/email into their own columns in the 15-column order
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:48:51.041Z","event":"sheet_projection.worker_completed","worker_id":"w-columns","claimed":1,"completed":1,"failed":0,"skipped":0}
+
+[90mstdout[2m | tests/unit/projection/projection-idempotency.test.ts[2m > [22m[2msheet projection idempotency[2m > [22m[2mmixed events (replays plus a later identity-less payment update) stay on one row and never erase a previously projected identity
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:48:51.043Z","event":"sheet_projection.worker_completed","worker_id":"drain-a8d69ada-67e7-4557-9bae-2b636984f218","claimed":0,"completed":0,"failed":0,"skipped":0}
+
+[90mstdout[2m | tests/unit/projection/projection-idempotency.test.ts[2m > [22m[2msheet projection idempotency[2m > [22m[2mmixed events (replays plus a later identity-less payment update) stay on one row and never erase a previously projected identity
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:48:51.051Z","event":"sheet_projection.worker_completed","worker_id":"w-mixed","claimed":1,"completed":1,"failed":0,"skipped":0}
+
+ [32m✓[39m tests/unit/projection/projection-idempotency.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 303[2mms[22m[39m
+ [32m✓[39m tests/unit/scripts/optional-json-config.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 38[2mms[22m[39m
+ [32m✓[39m tests/unit/messaging/whatsapp-cloud-channel.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 137[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/operational-promises.test.ts [2m([22m[2m41 tests[22m[2m)[22m[32m 28[2mms[22m[39m
+ [32m✓[39m tests/unit/embeddings/gemini.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 136[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/commercial-router.test.ts [2m([22m[2m90 tests[22m[2m)[22m[32m 140[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/agent-a-context.test.ts [2m([22m[2m45 tests[22m[2m)[22m[32m 206[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/conversation-interpreter-v1.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 181[2mms[22m[39m
+ [32m✓[39m tests/unit/calls/telegram-webhook-route.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 123[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/gemini-transcription.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 143[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/state-assertion-egress.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m tests/unit/scripts/local-authorized-delivery.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 65[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/agent-a-sales-bridge-prompt.test.ts [2m([22m[2m53 tests[22m[2m)[22m[32m 61[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/resolve-agent-a-proposal.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 131[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/authorized-egress-portable.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 106[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/flush-post-turn-work.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 175[2mms[22m[39m
+ [32m✓[39m tests/unit/scripts/agent-a-api-budget.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 117[2mms[22m[39m
+ [32m✓[39m tests/unit/agent-a-workflow-http-evidence.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 125[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/agent-a-brain-no-invention.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 98[2mms[22m[39m
+ [32m✓[39m tests/unit/prompts/canonical-prompt-v2.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 99[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/telegram-downloader.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 170[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/agent-a-payment-narrative.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 171[2mms[22m[39m
+ [32m✓[39m tests/unit/heuristics/opt-out.test.ts [2m([22m[2m33 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/security/proxy-signature.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/resolve-agent-a-plannerless.test.ts [2m([22m[2m21 tests[22m[2m)[22m[33m 332[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/decision-provider-parity.test.ts [2m([22m[2m45 tests[22m[2m)[22m[32m 75[2mms[22m[39m
+ [32m✓[39m tests/unit/orchestration/select-memories.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m tests/unit/orchestration/sales-signal.test.ts [2m([22m[2m38 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/agent-a-turn-validation.test.ts [2m([22m[2m39 tests[22m[2m)[22m[32m 151[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/canonical-response-assembler.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m tests/unit/db/jsonb-parameters.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 31[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/transaction-fast-path.test.ts [2m([22m[2m41 tests[22m[2m)[22m[32m 138[2mms[22m[39m
+ [32m✓[39m tests/unit/scripts/agent-a-brain-rubric.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m tests/unit/messaging/channel-selection.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 44[2mms[22m[39m
+ [32m✓[39m tests/unit/orchestration/catalog-resolution.test.ts [2m([22m[2m47 tests[22m[2m)[22m[32m 41[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/prohibited-conversational-copy.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/agent-turn-policy-v2.test.ts [2m([22m[2m27 tests[22m[2m)[22m[32m 104[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/call-handoff-fast-path.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 24[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/payment-link.test.ts [2m([22m[2m67 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/orchestration/memory-selection.test.ts [2m([22m[2m66 tests[22m[2m)[22m[32m 89[2mms[22m[39m
+ [32m✓[39m tests/unit/observability/diagnostics-probe-order.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/whatsapp-envelope.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m tests/unit/memory/agent-a-memory-candidate.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m tests/unit/security/proxy-public-paths.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/scripts/turn-metrics.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 77[2mms[22m[39m
+ [32m✓[39m tests/contract/agent-a-brain-parity.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 101[2mms[22m[39m
+ [32m✓[39m tests/unit/orchestration/business-context.test.ts [2m([22m[2m28 tests[22m[2m)[22m[32m 91[2mms[22m[39m
+ [32m✓[39m tests/unit/orchestration/commercial-truth-guard.test.ts [2m([22m[2m59 tests[22m[2m)[22m[32m 55[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/commercial-router-wiring.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/payment-choice-mirror.test.ts [2m([22m[2m26 tests[22m[2m)[22m[32m 61[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/future-notification-claims.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/agent-a-brain-schema.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m tests/contract/canonical-envelope.test.ts [2m([22m[2m26 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/canonical-response-model-copy.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 36[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/turn-never-fails-closed.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 76[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/agent-turn-v2-contract.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 30[2mms[22m[39m
+ [32m✓[39m tests/unit/agent-a-workflow-metrics.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/agent-a-context-scoping.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m tests/contract/call-event-schema.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/whatsapp-router-logging.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 40[2mms[22m[39m
+ [32m✓[39m tests/unit/services/knowledge-base-service.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m tests/unit/calls/telegram-sim-voice-provider.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m tests/unit/idempotency/canonical-json.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 61[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/whatsapp-channel.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/conversation-composer-v1.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/greeting-fast-path.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m tests/unit/calls/call-context.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 29[2mms[22m[39m
+[90mstdout[2m | tests/unit/botpress/router-dispatch.test.ts[2m > [22m[2mrouter dispatch for production Telegram events[2m > [22m[2mclears the managed Botpress transcript before starting StudyX
+[22m[39m{"event":"studyx.router.workflow_started","adapter":"telegram","trace_id":"2d3225a5-e53c-4aed-b56d-c5e90c35a7bb","external_message_id":"389430fc-1b87-4389-b657-e7903ec9bf44","workflow_id":"wrkflow_test_1"}
+
+[90mstdout[2m | tests/unit/botpress/router-dispatch.test.ts[2m > [22m[2mrouter dispatch for production Telegram events[2m > [22m[2mstarts exactly one workflow for one inbound Telegram message
+[22m[39m{"event":"studyx.router.workflow_started","adapter":"telegram","trace_id":"853de70c-f09f-4f50-926d-a786538f03d6","external_message_id":"389430fc-1b87-4389-b657-e7903ec9bf44","workflow_id":"wrkflow_test_1"}
+
+[90mstdout[2m | tests/unit/botpress/router-dispatch.test.ts[2m > [22m[2mrouter dispatch for production Telegram events[2m > [22m[2mderives the same idempotent workflow key when the same message is delivered twice
+[22m[39m{"event":"studyx.router.workflow_started","adapter":"telegram","trace_id":"defc5aff-e8dc-4449-af1e-03431ef74386","external_message_id":"389430fc-1b87-4389-b657-e7903ec9bf44","workflow_id":"wrkflow_test_1"}
+
+[90mstdout[2m | tests/unit/botpress/router-dispatch.test.ts[2m > [22m[2mrouter dispatch for production Telegram events[2m > [22m[2mderives the same idempotent workflow key when the same message is delivered twice
+[22m[39m{"event":"studyx.router.workflow_started","adapter":"telegram","trace_id":"cf29850c-6903-4d63-8ee3-34fbe291fc1d","external_message_id":"389430fc-1b87-4389-b657-e7903ec9bf44","workflow_id":"wrkflow_test_1"}
+
+[90mstdout[2m | tests/unit/botpress/router-dispatch.test.ts[2m > [22m[2mrouter dispatch for production Telegram events[2m > [22m[2mnever starts a workflow for an outbound Telegram message
+[22m[39m{"event":"studyx.router.message_skipped","adapter":"telegram","channel":"telegram.channel","conversation_id":"conv_01KZTYMERFCW15NPR3WP8SJT2B","reason":"UNSUPPORTED_MESSAGE"}
+
+[90mstdout[2m | tests/unit/botpress/router-dispatch.test.ts[2m > [22m[2mrouter dispatch for production Telegram events[2m > [22m[2mskips unknown channels without starting a workflow
+[22m[39m{"event":"studyx.router.message_skipped","adapter":null,"channel":"slack.channel","conversation_id":"conv_x","reason":"CHANNEL_UNSUPPORTED"}
+
+[90mstdout[2m | tests/unit/botpress/router-dispatch.test.ts[2m > [22m[2mrouter dispatch for production Telegram events[2m > [22m[2msurvives a workflow start failure without throwing (degradación segura)
+[22m[39m{"event":"studyx.router.workflow_start_failed","adapter":"telegram","trace_id":"76bd8acb-8883-4e1b-860f-605ac7a9c134","external_message_id":"389430fc-1b87-4389-b657-e7903ec9bf44","error_code":"Error"}
+
+[90mstdout[2m | tests/unit/botpress/router-dispatch.test.ts[2m > [22m[2mrouter dispatch for the emulator (webchat) channel[2m > [22m[2mstill routes webchat messages through the emulator adapter
+[22m[39m{"event":"studyx.router.workflow_started","adapter":"emulator","trace_id":"32ccf075-262f-4bf2-be30-e37602aea763","external_message_id":"msg-emulator-1","workflow_id":"wrkflow_test_1"}
+
+ [32m✓[39m tests/unit/botpress/router-dispatch.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/emulator-envelope.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m tests/unit/scripts/agent-a-conversation-quality.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m tests/unit/calls/call-consent.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 45[2mms[22m[39m
+ [32m✓[39m tests/contract/botpress-response-parity.test.ts [2m([22m[2m28 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/call-offer-ledger.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m tests/unit/scripts/agent-a-persistence-verifier.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/docs/whatsapp-go-live-runbook.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 56[2mms[22m[39m
+ [32m✓[39m tests/unit/scripts/release-manifest.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/agent-a-brain-prompt.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/conversation-contracts.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 44[2mms[22m[39m
+ [32m✓[39m tests/unit/calls/record-call-event.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m tests/unit/heuristics/contact-identity.test.ts [2m([22m[2m50 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m tests/unit/scripts/stripe-provisioning.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/conversation-session-boundary.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/orchestration/decision-v3-policy.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/authoritative-turn-planner.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/plan-conversation-action-contract.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/payment-state.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m tests/unit/calls/context-verdict-outcome.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 29[2mms[22m[39m
+ [32m✓[39m tests/contract/agent-a-call-boundary.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 24[2mms[22m[39m
+ [32m✓[39m tests/unit/delivery/retry-policy.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/canonical-response-shape.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/stripe-checkout-provider.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m tests/unit/scripts/eval-isolation.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/conversation-planner.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/calls/verify-telegram-context.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/calls/context-receipt.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/messaging/config.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/contact-intake.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m tests/unit/agent-a-adaptive-customer.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/authorized-egress-contract.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m tests/unit/orchestration/call-offer-policy.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m tests/unit/config.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m tests/unit/orchestration/decision-v4-policy.test.ts [2m([22m[2m28 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m tests/unit/orchestration/retrieved-context.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/state-fact-registry.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 57[2mms[22m[39m
+ [32m✓[39m tests/contract/zod-parity.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m tests/unit/config/agent-a-rollout-config.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m tests/unit/orchestration/postgres-knowledge-retriever.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m tests/unit/calls/dispatch-call.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m tests/unit/agent-a-workflow-measurement.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m tests/unit/contracts/architecture-spec-present.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m tests/unit/observability/health-release.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m tests/unit/orchestration/batch-window.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m tests/unit/observability/readiness.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m tests/unit/messaging/eligibility.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32m✓[39m tests/unit/messaging/delivery-outcome.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/turn-rejection.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m tests/unit/lib/repositories/contact-intake.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/canonical-fact-registry.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/single-route-rollback.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 2[2mms[22m[39m
+ [32m✓[39m tests/unit/orchestration/turn-policy.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m tests/unit/services/sandbox-service.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m tests/unit/heuristics/triviality.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m tests/unit/agent-a-workflow-events.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/payment-config.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/telegram-adapter.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m tests/unit/scripts/rejected-draft-sink.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m tests/unit/scripts/eval-agent-a-shell.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 9843[2mms[22m[39m
+     [33m[2m✓[22m[39m sale distinto de cero cuando una corrida de evaluación falla [33m 2698[2mms[22m[39m
+     [33m[2m✓[22m[39m sale cero cuando todas las corridas pasan [33m 2261[2mms[22m[39m
+     [33m[2m✓[22m[39m declara la ruta evaluada y usa plannerless por defecto [33m 2230[2mms[22m[39m
+     [33m[2m✓[22m[39m la ruta legacy es una excepción explícita y queda reportada [33m 2651[2mms[22m[39m
+ [32m✓[39m tests/unit/payments/payment-plan-words.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m tests/unit/scripts/local-eval-claim-cleanup.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m tests/unit/heuristics/reference-detection.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m tests/unit/scripts/durable-queue-cli.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/telegram-envelope.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 36[2mms[22m[39m
+ [32m✓[39m tests/unit/orchestration/decision-policy.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/payment-report-projection.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m tests/unit/calls/post-call-followup.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 82[2mms[22m[39m
+ [32m✓[39m tests/unit/orchestration/decision-v3.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m tests/unit/scripts/agent-a-bridge-worker-error.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/payment-interpretation.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/agent-a-canonical-prompt.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 42[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/agent-a-canonical-prompt-identity.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 2[2mms[22m[39m
+ [32m✓[39m tests/unit/orchestration/delivery-reconciliation.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/channel-router.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/brain-unavailable.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/whatsapp-dependency-contract.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/repair-ladder.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m tests/unit/contracts/test-gate-covers-contract.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m tests/unit/calls/call-state.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m tests/unit/conversation/canonical-prompt-placeholders.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32m✓[39m tests/unit/scripts/canonical-seed.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 2[2mms[22m[39m
+ [32m✓[39m tests/unit/sales/sales-context.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m tests/unit/docs/agent-a-brain-canary.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m tests/unit/orchestration/reconcile-orchestration-payment.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [2m[90m↓[39m[22m tests/unit/conversation/agent-a-multi-message-contract.test.ts [2m([22m[2m7 tests[22m[2m | [22m[90m7 todo[39m[2m)[22m
+
+[2m Test Files [22m [1m[32m173 passed[39m[22m[2m | [22m[33m1 skipped[39m[90m (174)[39m
+[2m      Tests [22m [1m[32m2565 passed[39m[22m[2m | [22m[90m7 todo[39m[90m (2572)[39m
+[2m   Start at [22m 13:48:47
+[2m   Duration [22m 11.64s[2m (transform 6.16s, setup 3.42s, import 18.57s, tests 25.92s, environment 45ms)[22m
+

@@ -15,6 +15,7 @@ import { jsonbParam } from '@/lib/db/json';
 import { sha256Hex } from '@/lib/idempotency/canonical-json';
 import { isExplicitOptOut } from '@/lib/heuristics/opt-out';
 import { extractContactIdentity, splitFullName } from '@/lib/heuristics/contact-identity';
+import { registerSandboxIdentity } from '@/lib/repositories/sandbox-identity.repository';
 import { refreshLeadIdentityProjection } from './projection.service';
 import type { DbClient } from '@/lib/db/types';
 import type { DecisionResponseType } from '@/features/orchestration/domain/decision';
@@ -321,6 +322,25 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
       },
     });
     await db`SELECT id FROM contacts WHERE id = ${contact.id}::uuid FOR UPDATE`;
+
+    if (envelope.sandbox_provider === 'telegram_sandbox') {
+      await registerSandboxIdentity(db, {
+        provider: 'telegram_sandbox',
+        externalUserId: envelope.external_user_id,
+        contactId: contact.id,
+        syntheticPhone: contact.phone,
+      });
+      // ON CONFLICT makes registration idempotent, but must not silently
+      // accept an external user already bound to a different contact.
+      const identities = await db<Array<{ contact_id: string }>>`
+        SELECT contact_id FROM sandbox_identities
+        WHERE provider = 'telegram_sandbox'
+          AND external_user_id = ${envelope.external_user_id}
+      `;
+      if (identities[0]?.contact_id !== contact.id) {
+        throw new Error('SANDBOX_IDENTITY_CONFLICT');
+      }
+    }
 
     // Captura determinista y consentida de identidad: el cliente la escribió
     // él mismo en este mensaje ("Soy Bruno Aguilar, bruno@…"). Última

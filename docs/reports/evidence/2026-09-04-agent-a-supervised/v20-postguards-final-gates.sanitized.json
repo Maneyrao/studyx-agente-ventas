@@ -1,0 +1,56 @@
+{
+  "results": [
+    {
+      "gate": "typecheck",
+      "started_at": "2026-09-04T16:51:20.547701+00:00",
+      "finished_at": "2026-09-04T16:51:22.047965+00:00",
+      "exit_code": 0,
+      "log_sha256": "4654f0fd167a1368306caa6c82480dcc07c319ae08b27bc7cec2cface373b62c"
+    },
+    {
+      "gate": "check",
+      "started_at": "2026-09-04T16:51:22.048575+00:00",
+      "finished_at": "2026-09-04T16:51:24.035684+00:00",
+      "exit_code": 0,
+      "log_sha256": "b09313df12b6e0cb2d254a517dae69feecd447193de26397e6c0514cc1129eea"
+    },
+    {
+      "gate": "build",
+      "started_at": "2026-09-04T16:51:24.036281+00:00",
+      "finished_at": "2026-09-04T16:51:31.690738+00:00",
+      "exit_code": 0,
+      "log_sha256": "9c910c560d86f13a3ba95f5ab8e52ae7ef2605ad27bed0b6543e5e01665b6737"
+    },
+    {
+      "gate": "dry-run",
+      "started_at": "2026-09-04T16:51:31.692395+00:00",
+      "finished_at": "2026-09-04T16:51:44.946212+00:00",
+      "exit_code": 0,
+      "log_sha256": "5a36be2ed805adeb7e0ccf41c192b19b906e9ae16fcfd735b4501a14b921419d"
+    }
+  ],
+  "applied": false,
+  "source_unchanged": true,
+  "production_bundle_sha256": "4b4de7e17f9602ab814dbdd17fe16537361482ba135d10013b3bc0a5350f011c",
+  "production_bundle_bytes": 23128231,
+  "compressed_sha256": "5cb24012fa637624522fad569e5aba6cfb13ad631f8b05f8e60c3a92a74e7fb2",
+  "config_changes": false,
+  "config_change_count": 0,
+  "secret_warnings": [
+    {
+      "name": "GEMINI_API_KEY",
+      "optional": true
+    },
+    {
+      "name": "GROQ_API_KEY",
+      "optional": true
+    },
+    {
+      "name": "OPENAI_API_KEY",
+      "optional": true
+    }
+  ],
+  "destructive_storage": false,
+  "blocking_dependencies_count": 0,
+  "version_mismatch_count": 0
+}

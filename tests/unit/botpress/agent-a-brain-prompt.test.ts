@@ -60,8 +60,8 @@ describe('Agent A Brain V1 prompt', () => {
   it('uses the exact complete canonical prompt behind one immutable execution preamble', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v8');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v19');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v9');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v20');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('Backend policy and capabilities are authoritative');
     expect(instructions).toContain('commercial_state.awaiting_reply only to resolve an otherwise ambiguous answer');
@@ -74,14 +74,28 @@ describe('Agent A Brain V1 prompt', () => {
     expect(instructions).toContain('intake_missing is authoritative');
     expect(instructions).toContain('never ask again for a field that is absent from intake_missing');
     expect(instructions).toContain('The customer may select the canonical plan and explicitly request its link');
-    expect(instructions).toContain('call_offer is required for the first select_course');
-    expect(instructions).toContain('for the second ask_course_information');
+    expect(instructions).toContain('select_course or ask_course_information (including secondary_moves)');
+    expect(instructions).toContain('a second invitation is required for ask_course_information');
     expect(instructions).toContain('Do not infer a course or area from old memory when the current message is vague');
     expect(instructions).toContain('offer to help them find a fit');
     expect(instructions).toContain('never do is name, offer or promise a course that is not there');
     expect(instructions).toContain('Pedí únicamente los campos enumerados en `capabilities.intake_missing`');
     expect(instructions).toContain('<authorized_context>');
     expect(instructions).toContain('"memory-1"');
+  });
+
+  it('transmits call-first priority without a concurrent diagnostic or payment question', () => {
+    const instructions = buildAgentABrainInstructionsV1(context());
+    const execution = instructions.split('<canonical_sales_behavior')[0];
+
+    expect(execution).toMatch(/canonical course is known and capabilities\.may_offer_call is true/u);
+    expect(execution).toMatch(/call_offer is required[\s\S]*select_course or ask_course_information \(including secondary_moves\)[\s\S]*call_offer_count is 0/u);
+    expect(execution).toContain('before diagnosis, contact intake or a chat sales close');
+    expect(execution).toContain('answer it briefly');
+    expect(execution).toContain('do not ask a diagnostic, intake or payment question in that same turn');
+    expect(execution).toContain('After a rejection or chat preference, continue the diagnostic once if it is still needed');
+    expect(execution).toContain('A missing capability, call veto, rejection or chat preference always takes priority');
+    expect(execution).toContain('An unknown course or area alone does not authorize a call invitation');
   });
 
   it('repairs an early payment action by continuing the intake instead of claiming a link', () => {
@@ -260,7 +274,7 @@ describe('orientación de fase en el prompt', () => {
 
   it('ya no impone una deuda de turno calculada por el backend', () => {
     expect(instructions).not.toMatch(/obligations\.owes/u);
-    expect(instructions).toMatch(/nothing in the context tells you what you owe this turn/u);
+    expect(instructions).toMatch(/initial call invitation is an explicit policy above, not a sales phase inferred from stage/u);
   });
 
   it('un intake desconocido no habilita afirmar datos ni link', () => {

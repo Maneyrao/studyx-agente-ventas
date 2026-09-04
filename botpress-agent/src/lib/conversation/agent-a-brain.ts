@@ -417,7 +417,7 @@ function proposalJsonSchema(context: AgentAContextV1): unknown {
       },
       call_offer: {
         anyOf: [{ type: 'string' }, { type: 'null' }],
-        description: 'Optional brief declarative invitation; it must not contain a question.',
+        description: 'Brief declarative invitation to a phone call, required when the call policy in the instructions applies and the capability allows it; otherwise null. It must not contain a question.',
       },
     }),
     proposed_action: proposedAction,
@@ -1178,11 +1178,22 @@ function mentionsMissingIntakeField(messages: readonly string[], missing: readon
   const text = messages.join(' ').normalize('NFD')
     .replace(/[\u0300-\u036f]/gu, '')
     .toLocaleLowerCase('es');
-  return missing.some((field) => {
-    if (field === 'correo') return /\b(?:correo|email|e mail)\b/u.test(text);
-    if (field === 'telefono') return /\b(?:telefono|celular|numero)\b/u.test(text);
-    return new RegExp(`\\b${field}\\b`, 'u').test(text);
-  });
+  const requested = new Set<string>();
+  for (const clause of text.split(/[.;!?]+/u)) {
+    const cue = clause.match(/\b(?:faltan?|necesito|necesitamos|pasame|decime|dime|indicame|confirmame|comparti(?:me)?|comparte|enviame|dame|me\s+(?:das|pasas|compartis|confirmas))\b|¿/u);
+    if (!cue) continue;
+    // «Ya tengo tu nombre» no es una petición. Sólo los campos posteriores
+    // al pedido deben coincidir con el intake pendiente de este turno.
+    const request = clause.slice(cue.index);
+    for (const [field, pattern] of [
+      ['nombre', /\bnombre\b/u], ['apellido', /\bapellido\b/u],
+      ['correo', /\b(?:correo|email|e mail)\b/u],
+      ['telefono', /\b(?:telefono|celular|numero)\b/u],
+    ] as const) {
+      if (pattern.test(request)) requested.add(field);
+    }
+  }
+  return requested.size > 0 && [...requested].every((field) => missing.includes(field));
 }
 
 /** Únicos géneros que el ADK sigue bloqueando por su cuenta. */

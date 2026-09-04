@@ -27,3 +27,7 @@ tsconfig.tsbuildinfo
 
 # El binario del CLI de ADK: 322 MB vendorizados que no participan del runtime.
 .tools/
+
+# Laboratorio: incluye credenciales y snapshots privados; nunca se despliega.
+.eval/
+.worktrees/

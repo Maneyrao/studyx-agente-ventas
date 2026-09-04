@@ -1,0 +1,179 @@
+{
+  "generatedAt": "2026-09-04T16:53:52.636Z",
+  "secretScan": {
+    "files": 34,
+    "hits": 0
+  },
+  "files": [
+    {
+      "path": "budget-snapshot.json",
+      "bytes": 121324,
+      "sha256": "0bbce3179bf941f0602e695d24efa53800b69178774aa3524a33de2f32b50bab"
+    },
+    {
+      "path": "bundle-final.json",
+      "bytes": 175,
+      "sha256": "01c279552acdb691f23ca809b0be5ced97fc17abec0d0c58efbd7dc3a2de4b33"
+    },
+    {
+      "path": "call-first-live-final.log",
+      "bytes": 42333,
+      "sha256": "5afd8514d0f60ac02c88b70148ac6ced1320bb16ad95df2754a14375d3a60627"
+    },
+    {
+      "path": "call-first-live.log",
+      "bytes": 43763,
+      "sha256": "caaa73237701e0094b1918f20dbbae66c4b22f01520da2db1b71c2b6993901e0"
+    },
+    {
+      "path": "contact-labeled-green.log.gz",
+      "bytes": 221,
+      "sha256": "a10a46a025841590369b40ae02c484627de577ba60a3f89eef202ae3cff0b0ed"
+    },
+    {
+      "path": "db-preflight-2026-09-04T16-33-04-973Z.json.gz",
+      "bytes": 17741,
+      "sha256": "b13dfda51a14128794d0d4cf36bec824a76764be1988e9e25335266be78bfe4b"
+    },
+    {
+      "path": "integration-final.log",
+      "bytes": 97533,
+      "sha256": "843d91ced457d61852fbe844d7281a769d3db07750b17e55ad3b638afff2a41d"
+    },
+    {
+      "path": "lint-postguards.log",
+      "bytes": 64,
+      "sha256": "58be5986f675e359bb75562f0fdc333a2164d337b11c4863ab9c053f09d33b10"
+    },
+    {
+      "path": "migration-apply-1788539556769.json.gz",
+      "bytes": 586,
+      "sha256": "237d00ff63303715b294c74ba604585c068937080575ec5842a9a5ed8a1762eb"
+    },
+    {
+      "path": "next-build-postguards.log",
+      "bytes": 1603,
+      "sha256": "a0109c14d46e4fd4263d6617ee0547b33e308e1b38ab1657b105753b22589e51"
+    },
+    {
+      "path": "sandbox-intake-green.log.gz",
+      "bytes": 227,
+      "sha256": "b220643d57eccd66908e2db8b094fb211b0d241458bacb4b525217f30acea6dd"
+    },
+    {
+      "path": "source-freeze-attempt-1.json",
+      "bytes": 40040,
+      "sha256": "f2eb8348794968f20dbc495b24b9139e6009f517509004a40b4bea49379f1912"
+    },
+    {
+      "path": "transcript-v20-attempt-1.md",
+      "bytes": 2483,
+      "sha256": "2cb8958336f15914750bb5dd5c426db89569d248ecf2f5d5722383e9044f49cd"
+    },
+    {
+      "path": "transcript-v20-final.md",
+      "bytes": 2407,
+      "sha256": "78e300501403bb0604e77c16a0a18dd85d6d3cdac1a3c9e2829118eef4fdc6db"
+    },
+    {
+      "path": "unit-postguards.log",
+      "bytes": 46718,
+      "sha256": "59891bc07e3856b627ad07576574a2be650a8930beb6393dea56fe0108934e94"
+    },
+    {
+      "path": "v20-postguards-final-gates.sanitized.json",
+      "bytes": 1719,
+      "sha256": "9e14b06c7cb6070fe729c81ab135cec0ea9b36bbd0bf6cde7bfd475cdf92f1f3"
+    },
+    {
+      "path": "v20-source-freeze-final.json",
+      "bytes": 40057,
+      "sha256": "8d33421059f69c3146a9d48a4c9547cad765b0c5041cbb8ed934d3ce8dbd9ae3"
+    },
+    {
+      "path": "vercel-before.json",
+      "bytes": 283,
+      "sha256": "83256a04518512a691ca0976c250a0cb261df3f3e0b1357479b1bf51ca94f035"
+    },
+    {
+      "path": "workflow-call-first-sale-2026-09-04T16-40-34-248Z-11915db7-a5ef-41ff-9153-cbfa6964e932.json.gz",
+      "bytes": 40408,
+      "sha256": "08aa7dfe31530b9320926ecfe5d14eb4a39a8f002f779d41f7d6e6eb0f8f6410"
+    },
+    {
+      "path": "workflow-call-first-sale-2026-09-04T16-40-37-245Z-b97470d4-4393-43de-acd4-e3aa615cb55f.json.gz",
+      "bytes": 79417,
+      "sha256": "970223a8c8c04c39235430fa8c7cd12fff287ac66cbb6269f9b85ec73dc0521d"
+    },
+    {
+      "path": "workflow-call-first-sale-2026-09-04T16-40-41-560Z-24afaf1c-18cf-4212-aa9f-5e2a6a76cd1d.json.gz",
+      "bytes": 119638,
+      "sha256": "29907cc86f8047612d9e6b84668acde1956f58142d12aede4c776a365e838bef"
+    },
+    {
+      "path": "workflow-call-first-sale-2026-09-04T16-40-44-728Z-4a0f5fe7-8b17-430e-b2bd-5cc46189f6f6.json.gz",
+      "bytes": 160091,
+      "sha256": "4c53f6f9e3d774c04f55f4c8ff7e3752b909a709d21b28436495f019da8aaf48"
+    },
+    {
+      "path": "workflow-call-first-sale-2026-09-04T16-40-47-911Z-169d536b-de7c-477a-acdc-db780d09473f.json.gz",
+      "bytes": 200533,
+      "sha256": "c08dc41b4d64b8687487c787e84007aaa1f94d5b2ed0fa1dea1cb5497d34ad25"
+    },
+    {
+      "path": "workflow-call-first-sale-2026-09-04T16-40-51-018Z-f602b850-e620-4795-be2e-e30d557ea80e.json.gz",
+      "bytes": 241025,
+      "sha256": "62f67a7d1e7ef5f77bc5394801a2709e82cfcbeffc85c8a6cda59fc6ae8d7ec3"
+    },
+    {
+      "path": "workflow-call-first-sale-2026-09-04T16-40-53-973Z-139178ea-3940-41cd-8066-b331698a2190.json.gz",
+      "bytes": 281293,
+      "sha256": "81e14ef35cd080b39576b23cad8a8e27b596ea2047d28a305c141c8448495b6f"
+    },
+    {
+      "path": "workflow-call-first-sale-2026-09-04T16-40-59-391Z-8ebe8071-1ce8-49e0-840a-ff5944c35ad8.json.gz",
+      "bytes": 351296,
+      "sha256": "41dc134da6ad3c05960527dc4fde01eeeb22ac091eb5dbb3c02baa832ec40764"
+    },
+    {
+      "path": "workflow-call-first-sale-2026-09-04T16-51-06-174Z-ed53cc4e-5948-436a-a091-7c8db1404448.json.gz",
+      "bytes": 40312,
+      "sha256": "183360c9e88ead5b82b60294edcdb2c5890897586323767e1bacb0f459c10d76"
+    },
+    {
+      "path": "workflow-call-first-sale-2026-09-04T16-51-09-454Z-71ff8c29-bfbe-4dff-ae39-6b4373d3462b.json.gz",
+      "bytes": 79686,
+      "sha256": "de57149e0ca1ad9ed49fbb0e93c36082984af0a5fa44925150c04a8bee29d45c"
+    },
+    {
+      "path": "workflow-call-first-sale-2026-09-04T16-51-13-868Z-7dd3db87-23ae-42a5-bfff-593ec8bb86ba.json.gz",
+      "bytes": 119785,
+      "sha256": "b05bc41bd73c37579ec4d3174a8f31a24750d98b7da0dbcfd0c9b9390be2992c"
+    },
+    {
+      "path": "workflow-call-first-sale-2026-09-04T16-51-17-023Z-4a6fda6c-1179-4920-ba4a-14a44935d456.json.gz",
+      "bytes": 160008,
+      "sha256": "94b969f15b8f4b64f3f34022bc25a44f45aa5488d0b1360afcc140f0d93bd495"
+    },
+    {
+      "path": "workflow-call-first-sale-2026-09-04T16-51-20-148Z-7a633097-decb-4847-a5f2-d69c9e7a2ebe.json.gz",
+      "bytes": 200186,
+      "sha256": "db2c67d5e1909fc12ce71344deb86df20509c37453170a357fd2988b24c440df"
+    },
+    {
+      "path": "workflow-call-first-sale-2026-09-04T16-51-23-690Z-d3fd15fa-0a84-4244-a060-73b55cc0a20d.json.gz",
+      "bytes": 240434,
+      "sha256": "29a46af52ed4a1fc8bcaa0374aa8d9b4a38c7b3b336e661b1829ef3e86a8c445"
+    },
+    {
+      "path": "workflow-call-first-sale-2026-09-04T16-51-26-723Z-bfdfe396-ab8e-40e0-b3be-1e4e81162b52.json.gz",
+      "bytes": 280648,
+      "sha256": "9f7b6bcf378109b5e0e2c0e2167e904b229dc6d3995cca2a4b109d31a6b09690"
+    },
+    {
+      "path": "workflow-call-first-sale-2026-09-04T16-51-29-866Z-7380aeae-cbab-41b2-97c7-dc4efa9bb8d2.json.gz",
+      "bytes": 320567,
+      "sha256": "ec827026d218ca15b364b0803681371cff2a58e40b13f577635810f882e4aba0"
+    }
+  ]
+}

@@ -28,6 +28,41 @@ function enforce(content: string, canonical: CanonicalTruthSetV1 = CANONICAL, ur
   return enforceCommercialTruthV1({ content, authorized_urls: urls, canonical });
 }
 
+describe('plazo del pago separado de la duración del curso', () => {
+  const canonical = canonicalTruthSetFromOfferingsV1({
+    offerings: [{ code: 'redes', price_type: 'fixed', price_amount: '360', currency: 'USD', delivery: { classes: 16 } }],
+    selected_offering_code: 'redes',
+    payment_options: [{
+      total: { currency: 'USD', amount: '360' }, installment_amount: '60',
+      installments: 6, label: '6 pagos mensuales de USD 60',
+    }],
+  });
+
+  it.each([
+    'Cada cuota del plan que elegiste es de USD 60, durante 6 meses. El total es USD 360.',
+    'Pagás USD 60 por mes durante 6 meses.',
+    'El plan de pagos es de USD 60 durante 6 meses.',
+  ])('conserva el plazo mensual autorizado y su importe: %s', (content) => {
+    expect(enforce(content, canonical)).toMatchObject({ content, violations: [], removed: [] });
+  });
+
+  it.each([
+    'Cada cuota es de USD 60 durante 9 meses.',
+    'Pagás USD 60 por mes durante 6 semanas.',
+    'El curso dura 6 meses y cada cuota es de USD 60.',
+    'Cada cuota es de USD 60 y el curso dura 6 meses.',
+    'Pagás USD 60 durante 6 meses y el curso dura 6 meses.',
+  ])('no autoriza otro plazo ni convierte el plan en duración académica: %s', (content) => {
+    expect(enforce(content, canonical).violations.map((violation) => violation.code))
+      .toContain('DURATION_NOT_CANONICAL');
+  });
+
+  it('no autoriza un monto inventado por tener un plazo correcto', () => {
+    expect(enforce('Cada cuota es de USD 99 durante 6 meses.', canonical).violations)
+      .toContainEqual({ code: 'PRICE_NOT_CANONICAL', value: 'usd 99' });
+  });
+});
+
 describe('lenguaje natural liberado', () => {
   it.each([
     'Tenemos 12 pagos mensuales de USD 30, 6 pagos de USD 60 o un pago de USD 360.',

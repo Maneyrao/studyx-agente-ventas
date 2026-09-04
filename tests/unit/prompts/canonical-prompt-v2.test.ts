@@ -27,7 +27,7 @@ describe('prompt canónico v2', () => {
   });
 
   it('está versionado como v2 y el generado coincide con la fuente', () => {
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v8');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v9');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toBe(source);
   });
 
@@ -67,6 +67,28 @@ describe('prompt canónico v2', () => {
       expect(source).toContain(plan);
     }
     expect(source).toMatch(/m[áa]ximo 2 ofrecimientos|nunca m[áa]s de dos/iu);
+  });
+
+  it('prioriza la invitación inicial y distingue el link de pago autorizado de otras URL', () => {
+    const diagnosis = source.slice(source.indexOf('### FASE 2'), source.indexOf('### POLÍTICA DE LLAMADA'));
+    const callPolicy = source.slice(source.indexOf('### POLÍTICA DE LLAMADA'), source.indexOf('### FASE 3'));
+    const never = source.slice(source.indexOf('**NUNCA:**'), source.indexOf('**SIEMPRE:**'));
+
+    expect(diagnosis).toMatch(/después de ofrecer la llamada/iu);
+    expect(diagnosis).toMatch(/no la mezcles con la invitación/iu);
+    expect(callPolicy).toMatch(/antes del diagnóstico, los datos y el cierre por chat/iu);
+    expect(callPolicy).toMatch(/sin preguntas de diagnóstico, datos o pago en ese mismo turno/iu);
+    expect(never).not.toContain('links de cualquier tipo');
+    expect(never).toMatch(/link de pago autorizado.*backend/iu);
+  });
+
+  it('conserva las fases de presentación y precio dentro del límite de mensajes del cerebro', () => {
+    const presentation = source.slice(source.indexOf('### FASE 3'), source.indexOf('### FASE 4'));
+    const pricing = source.slice(source.indexOf('### FASE 4'), source.indexOf('### FASE 5'));
+    expect(presentation).not.toContain('Tres mensajes cortos');
+    expect(presentation).toMatch(/tres aspectos[\s\S]*máximo de dos mensajes/iu);
+    expect(pricing).not.toContain('(4 mensajes cortos)');
+    expect(pricing).toMatch(/secuencia[\s\S]*máximo de dos mensajes/iu);
   });
 
   // P10

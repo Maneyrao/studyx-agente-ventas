@@ -1,0 +1,699 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90m/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/agent-a-plannerless-v2[39m
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request reserves exactly one session with derived consent
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.158Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.158Z","event":"contact.resolved","contact_id":"8e6a7599-b909-4d9e-8294-8b440cbf7449","phone":"+5491142410029","created":true}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request reserves exactly one session with derived consent
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.166Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request reserves exactly one session with derived consent
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.167Z","event":"message.registered","message_id":"9f50a8bf-b87e-413c-a29d-234239cfdbf5","conversation_id":"4b625ff9-da71-4530-906b-3700d6ac1763","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request reserves exactly one session with derived consent
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.169Z","event":"ingestion.phases","trace_id":"67b555f0-a38a-4b61-bbf3-b3f5fa255881","reserve":10,"contact":3,"thread_event":3,"conversation":1,"permissions":1,"message":2,"batch":2,"txn_ms":22}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request reserves exactly one session with derived consent
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.169Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.169Z","event":"ingestion.processed","contact_id":"8e6a7599-b909-4d9e-8294-8b440cbf7449","conversation_id":"4b625ff9-da71-4530-906b-3700d6ac1763","turn_id":"9f50a8bf-b87e-413c-a29d-234239cfdbf5","batch_id":"a10e2843-d6b0-486c-b8c6-e50e70502a45","batch_message_count":1,"trace_id":"67b555f0-a38a-4b61-bbf3-b3f5fa255881"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request reserves exactly one session with derived consent
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.197Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request reserves exactly one session with derived consent
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.197Z","event":"message.registered","message_id":"7f255f7a-3703-4988-9644-8cc8bc4116fa","conversation_id":"4b625ff9-da71-4530-906b-3700d6ac1763","direction":"outbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mten identical replays return the same call_id and keep one session
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.215Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.215Z","event":"contact.resolved","contact_id":"02469669-416a-41df-b3e3-3150601d5ff6","phone":"+5491144547626","created":true}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mten identical replays return the same call_id and keep one session
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.218Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mten identical replays return the same call_id and keep one session
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.218Z","event":"message.registered","message_id":"13d05cd8-2166-4555-91f8-dc607f0ef3e8","conversation_id":"6f4ee4c7-a7af-4dd8-8369-c830103d061b","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mten identical replays return the same call_id and keep one session
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.219Z","event":"ingestion.phases","trace_id":"049c63b3-0be1-4bf2-a374-c0dfa578749f","reserve":1,"contact":2,"thread_event":0,"conversation":1,"permissions":0,"message":1,"batch":1,"txn_ms":6}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mten identical replays return the same call_id and keep one session
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.220Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.220Z","event":"ingestion.processed","contact_id":"02469669-416a-41df-b3e3-3150601d5ff6","conversation_id":"6f4ee4c7-a7af-4dd8-8369-c830103d061b","turn_id":"13d05cd8-2166-4555-91f8-dc607f0ef3e8","batch_id":"347eb6f2-ccfe-40f7-9557-753afacfdd4e","batch_message_count":1,"trace_id":"049c63b3-0be1-4bf2-a374-c0dfa578749f"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mten identical replays return the same call_id and keep one session
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.233Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mten identical replays return the same call_id and keep one session
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.233Z","event":"message.registered","message_id":"97c7dbfe-7a6a-438d-b250-08c72234a4d0","conversation_id":"6f4ee4c7-a7af-4dd8-8369-c830103d061b","direction":"outbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request buried inside a batch still reserves the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.248Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.248Z","event":"contact.resolved","contact_id":"68e52493-3e1f-4e3d-a3e4-1b15e51bd3a0","phone":"+5491175633471","created":true}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request buried inside a batch still reserves the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.251Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request buried inside a batch still reserves the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.251Z","event":"message.registered","message_id":"a278a9c5-d473-4181-9f58-f8c06092acf3","conversation_id":"c78344fc-879c-4586-936b-675d8d655cff","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request buried inside a batch still reserves the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.252Z","event":"ingestion.phases","trace_id":"5067ba27-8507-4ecf-adbd-e55fad656a19","reserve":1,"contact":1,"thread_event":0,"conversation":1,"permissions":0,"message":1,"batch":1,"txn_ms":5}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request buried inside a batch still reserves the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.252Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.252Z","event":"ingestion.processed","contact_id":"68e52493-3e1f-4e3d-a3e4-1b15e51bd3a0","conversation_id":"c78344fc-879c-4586-936b-675d8d655cff","turn_id":"a278a9c5-d473-4181-9f58-f8c06092acf3","batch_id":"4227dcb6-7cb5-43f6-a165-f98718d2e29e","batch_message_count":1,"trace_id":"5067ba27-8507-4ecf-adbd-e55fad656a19"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request buried inside a batch still reserves the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.254Z","event":"contact.resolved","contact_id":"68e52493-3e1f-4e3d-a3e4-1b15e51bd3a0","phone":"+5491175633471","created":false}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request buried inside a batch still reserves the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.256Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request buried inside a batch still reserves the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.257Z","event":"message.registered","message_id":"a648511d-dd72-42dd-a56c-638479fadd71","conversation_id":"c78344fc-879c-4586-936b-675d8d655cff","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request buried inside a batch still reserves the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.258Z","event":"ingestion.phases","trace_id":"1bf7c4ed-283d-4f69-9054-ca5c5380a11c","reserve":1,"contact":0,"thread_event":1,"conversation":1,"permissions":0,"message":1,"batch":1,"txn_ms":5}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request buried inside a batch still reserves the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.258Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.258Z","event":"ingestion.processed","contact_id":"68e52493-3e1f-4e3d-a3e4-1b15e51bd3a0","conversation_id":"c78344fc-879c-4586-936b-675d8d655cff","turn_id":"a648511d-dd72-42dd-a56c-638479fadd71","batch_id":"4227dcb6-7cb5-43f6-a165-f98718d2e29e","batch_message_count":2,"trace_id":"1bf7c4ed-283d-4f69-9054-ca5c5380a11c"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request buried inside a batch still reserves the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.259Z","event":"contact.resolved","contact_id":"68e52493-3e1f-4e3d-a3e4-1b15e51bd3a0","phone":"+5491175633471","created":false}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request buried inside a batch still reserves the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.262Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request buried inside a batch still reserves the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.262Z","event":"message.registered","message_id":"328a65b2-d6f3-49b3-bf78-7cc2d1a47d4c","conversation_id":"c78344fc-879c-4586-936b-675d8d655cff","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request buried inside a batch still reserves the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.263Z","event":"ingestion.phases","trace_id":"74fc9e82-e16a-4d13-bd03-fb45e8b5db22","reserve":1,"contact":1,"thread_event":0,"conversation":1,"permissions":0,"message":1,"batch":1,"txn_ms":5}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request buried inside a batch still reserves the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.263Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.263Z","event":"ingestion.processed","contact_id":"68e52493-3e1f-4e3d-a3e4-1b15e51bd3a0","conversation_id":"c78344fc-879c-4586-936b-675d8d655cff","turn_id":"328a65b2-d6f3-49b3-bf78-7cc2d1a47d4c","batch_id":"4227dcb6-7cb5-43f6-a165-f98718d2e29e","batch_message_count":3,"trace_id":"74fc9e82-e16a-4d13-bd03-fb45e8b5db22"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request buried inside a batch still reserves the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.268Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request buried inside a batch still reserves the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.268Z","event":"message.registered","message_id":"c5c936ac-7746-4173-92fe-d3d38051f7dc","conversation_id":"c78344fc-879c-4586-936b-675d8d655cff","direction":"outbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma decline after a buried request in the same batch blocks the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.272Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.273Z","event":"contact.resolved","contact_id":"fd0a7237-9a28-47a8-8ce3-7f815cbc2858","phone":"+5491110633577","created":true}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma decline after a buried request in the same batch blocks the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.274Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma decline after a buried request in the same batch blocks the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.275Z","event":"message.registered","message_id":"9f6ef4bd-64b9-4120-9742-3ff42826acd5","conversation_id":"9fdaf44b-2874-4bcf-aff0-a35463ea1a54","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma decline after a buried request in the same batch blocks the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.276Z","event":"ingestion.phases","trace_id":"9f2423ab-04a1-4983-a2e6-d6ea4d6f519c","reserve":0,"contact":1,"thread_event":0,"conversation":1,"permissions":0,"message":1,"batch":1,"txn_ms":4}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma decline after a buried request in the same batch blocks the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.276Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.276Z","event":"ingestion.processed","contact_id":"fd0a7237-9a28-47a8-8ce3-7f815cbc2858","conversation_id":"9fdaf44b-2874-4bcf-aff0-a35463ea1a54","turn_id":"9f6ef4bd-64b9-4120-9742-3ff42826acd5","batch_id":"b9c0a1fe-dcaf-4d31-9527-543bb6589851","batch_message_count":1,"trace_id":"9f2423ab-04a1-4983-a2e6-d6ea4d6f519c"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma decline after a buried request in the same batch blocks the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.277Z","event":"contact.resolved","contact_id":"fd0a7237-9a28-47a8-8ce3-7f815cbc2858","phone":"+5491110633577","created":false}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma decline after a buried request in the same batch blocks the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.280Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma decline after a buried request in the same batch blocks the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.280Z","event":"message.registered","message_id":"d57b0585-3f0b-4d3a-a792-02dc2a7104d3","conversation_id":"9fdaf44b-2874-4bcf-aff0-a35463ea1a54","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma decline after a buried request in the same batch blocks the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.281Z","event":"ingestion.phases","trace_id":"071965cf-7a82-49be-8843-903bf74fcfae","reserve":1,"contact":1,"thread_event":0,"conversation":1,"permissions":0,"message":1,"batch":1,"txn_ms":5}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma decline after a buried request in the same batch blocks the call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.281Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.281Z","event":"ingestion.processed","contact_id":"fd0a7237-9a28-47a8-8ce3-7f815cbc2858","conversation_id":"9fdaf44b-2874-4bcf-aff0-a35463ea1a54","turn_id":"d57b0585-3f0b-4d3a-a792-02dc2a7104d3","batch_id":"b9c0a1fe-dcaf-4d31-9527-543bb6589851","batch_message_count":2,"trace_id":"071965cf-7a82-49be-8843-903bf74fcfae"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mtwo concurrent commits agree on one call_id
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.287Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.287Z","event":"contact.resolved","contact_id":"eaaa8a60-c67e-467e-9c8c-8eb7f9f8d21d","phone":"+5491140885045","created":true}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mtwo concurrent commits agree on one call_id
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.289Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mtwo concurrent commits agree on one call_id
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.289Z","event":"message.registered","message_id":"abac54c2-6247-4696-aaec-6319a426ba0e","conversation_id":"d01f8760-b2de-4b1c-b4b9-885cdcd3201c","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mtwo concurrent commits agree on one call_id
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.290Z","event":"ingestion.phases","trace_id":"957d5b59-d663-47e4-980c-b20f059521b6","reserve":0,"contact":1,"thread_event":0,"conversation":1,"permissions":0,"message":1,"batch":1,"txn_ms":4}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mtwo concurrent commits agree on one call_id
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.290Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.290Z","event":"ingestion.processed","contact_id":"eaaa8a60-c67e-467e-9c8c-8eb7f9f8d21d","conversation_id":"d01f8760-b2de-4b1c-b4b9-885cdcd3201c","turn_id":"abac54c2-6247-4696-aaec-6319a426ba0e","batch_id":"ef0efc42-f905-4be6-a67b-883bd9e92c44","batch_message_count":1,"trace_id":"957d5b59-d663-47e4-980c-b20f059521b6"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mtwo concurrent commits agree on one call_id
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.295Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mtwo concurrent commits agree on one call_id
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.296Z","event":"message.registered","message_id":"eef36e87-f4ad-456d-9391-c38efa3302d1","conversation_id":"d01f8760-b2de-4b1c-b4b9-885cdcd3201c","direction":"outbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2man accepted open offer reserves once and links the offer decision
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.301Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.301Z","event":"contact.resolved","contact_id":"e8f51b5a-499d-47f7-bbcb-3e9abad7f776","phone":"+5491172839502","created":true}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2man accepted open offer reserves once and links the offer decision
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.303Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2man accepted open offer reserves once and links the offer decision
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.303Z","event":"message.registered","message_id":"1334161f-d9fd-4743-aadb-a4bdcac5cb29","conversation_id":"ccfdb865-2737-4e6c-8ca5-9684dd673bbc","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2man accepted open offer reserves once and links the offer decision
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.304Z","event":"ingestion.phases","trace_id":"0dbad673-e9da-45e5-850c-40baef616ce7","reserve":0,"contact":1,"thread_event":1,"conversation":0,"permissions":0,"message":2,"batch":0,"txn_ms":4}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2man accepted open offer reserves once and links the offer decision
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.305Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.305Z","event":"ingestion.processed","contact_id":"e8f51b5a-499d-47f7-bbcb-3e9abad7f776","conversation_id":"ccfdb865-2737-4e6c-8ca5-9684dd673bbc","turn_id":"1334161f-d9fd-4743-aadb-a4bdcac5cb29","batch_id":"e063b290-4017-466f-8565-d847b79b51e3","batch_message_count":1,"trace_id":"0dbad673-e9da-45e5-850c-40baef616ce7"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2man accepted open offer reserves once and links the offer decision
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.308Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2man accepted open offer reserves once and links the offer decision
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.309Z","event":"message.registered","message_id":"29b5e0a1-6b25-4daa-ae3b-e87445f01536","conversation_id":"ccfdb865-2737-4e6c-8ca5-9684dd673bbc","direction":"outbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2man accepted open offer reserves once and links the offer decision
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.313Z","event":"contact.resolved","contact_id":"e8f51b5a-499d-47f7-bbcb-3e9abad7f776","phone":"+5491172839502","created":false}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2man accepted open offer reserves once and links the offer decision
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.315Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2man accepted open offer reserves once and links the offer decision
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.315Z","event":"message.registered","message_id":"1a90805e-2f9c-4178-95e0-5476b5a2795c","conversation_id":"ccfdb865-2737-4e6c-8ca5-9684dd673bbc","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2man accepted open offer reserves once and links the offer decision
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.316Z","event":"ingestion.phases","trace_id":"50db4f7f-8117-4609-8e55-63958edb054b","reserve":1,"contact":1,"thread_event":1,"conversation":0,"permissions":0,"message":1,"batch":1,"txn_ms":5}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2man accepted open offer reserves once and links the offer decision
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.316Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.316Z","event":"ingestion.processed","contact_id":"e8f51b5a-499d-47f7-bbcb-3e9abad7f776","conversation_id":"ccfdb865-2737-4e6c-8ca5-9684dd673bbc","turn_id":"1a90805e-2f9c-4178-95e0-5476b5a2795c","batch_id":"e063b290-4017-466f-8565-d847b79b51e3","batch_message_count":2,"trace_id":"50db4f7f-8117-4609-8e55-63958edb054b"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2man accepted open offer reserves once and links the offer decision
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.321Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2man accepted open offer reserves once and links the offer decision
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.321Z","event":"message.registered","message_id":"a3b6c9b2-9ca9-4ac7-808b-54e681930c51","conversation_id":"ccfdb865-2737-4e6c-8ca5-9684dd673bbc","direction":"outbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma bare "sí" without an open offer is rejected
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.325Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.325Z","event":"contact.resolved","contact_id":"8285c152-8b7f-42c0-9607-454509d2b093","phone":"+5491166161995","created":true}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma bare "sí" without an open offer is rejected
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.327Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma bare "sí" without an open offer is rejected
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.327Z","event":"message.registered","message_id":"8d55469c-d047-40c8-8eaa-ae294276fb7f","conversation_id":"927a5ba8-534c-47d1-8d71-d4d7a016910b","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma bare "sí" without an open offer is rejected
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.328Z","event":"ingestion.phases","trace_id":"3748e9ff-b755-4e16-948c-e92f40345d3d","reserve":1,"contact":0,"thread_event":1,"conversation":0,"permissions":0,"message":2,"batch":0,"txn_ms":4}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma bare "sí" without an open offer is rejected
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.328Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.328Z","event":"ingestion.processed","contact_id":"8285c152-8b7f-42c0-9607-454509d2b093","conversation_id":"927a5ba8-534c-47d1-8d71-d4d7a016910b","turn_id":"8d55469c-d047-40c8-8eaa-ae294276fb7f","batch_id":"7355128a-ea73-463b-a709-416d04376a52","batch_message_count":1,"trace_id":"3748e9ff-b755-4e16-948c-e92f40345d3d"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma negation beats any affirmative word
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.334Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.334Z","event":"contact.resolved","contact_id":"37db57d9-5e63-4518-bd57-ed17208b0833","phone":"+5491141504135","created":true}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma negation beats any affirmative word
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.336Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma negation beats any affirmative word
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.336Z","event":"message.registered","message_id":"4e05f0d6-44d0-441e-b4a2-fe3803b05de3","conversation_id":"e9752bd0-4fda-4e27-b014-7a7a805f21ca","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma negation beats any affirmative word
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.337Z","event":"ingestion.phases","trace_id":"71754255-a28e-43b2-ad65-dc666a00d130","reserve":1,"contact":1,"thread_event":0,"conversation":0,"permissions":1,"message":1,"batch":0,"txn_ms":4}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma negation beats any affirmative word
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.337Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.337Z","event":"ingestion.processed","contact_id":"37db57d9-5e63-4518-bd57-ed17208b0833","conversation_id":"e9752bd0-4fda-4e27-b014-7a7a805f21ca","turn_id":"4e05f0d6-44d0-441e-b4a2-fe3803b05de3","batch_id":"d5767988-6d51-451f-9b51-67616bc749cd","batch_message_count":1,"trace_id":"71754255-a28e-43b2-ad65-dc666a00d130"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man expired offer no longer authorizes the acceptance
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.342Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.342Z","event":"contact.resolved","contact_id":"2357e350-417d-42ee-a1ae-eb30f87a8e31","phone":"+5491156990817","created":true}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man expired offer no longer authorizes the acceptance
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.344Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man expired offer no longer authorizes the acceptance
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.344Z","event":"message.registered","message_id":"47e83fa8-9e23-4522-8fb5-9b68cd931d1a","conversation_id":"5c010c3a-14d1-4568-9fa5-593e883cc09e","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man expired offer no longer authorizes the acceptance
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.345Z","event":"ingestion.phases","trace_id":"8db32fb2-97c3-4514-a07d-c99990a4bc2c","reserve":1,"contact":1,"thread_event":0,"conversation":0,"permissions":1,"message":0,"batch":1,"txn_ms":4}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man expired offer no longer authorizes the acceptance
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.345Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.345Z","event":"ingestion.processed","contact_id":"2357e350-417d-42ee-a1ae-eb30f87a8e31","conversation_id":"5c010c3a-14d1-4568-9fa5-593e883cc09e","turn_id":"47e83fa8-9e23-4522-8fb5-9b68cd931d1a","batch_id":"442e8205-732e-43aa-8e77-64a1cb064d69","batch_message_count":1,"trace_id":"8db32fb2-97c3-4514-a07d-c99990a4bc2c"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man expired offer no longer authorizes the acceptance
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.349Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man expired offer no longer authorizes the acceptance
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.349Z","event":"message.registered","message_id":"e375b53e-f612-4451-a880-8b0c983cbe6e","conversation_id":"5c010c3a-14d1-4568-9fa5-593e883cc09e","direction":"outbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man expired offer no longer authorizes the acceptance
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.355Z","event":"contact.resolved","contact_id":"2357e350-417d-42ee-a1ae-eb30f87a8e31","phone":"+5491156990817","created":false}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man expired offer no longer authorizes the acceptance
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.356Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man expired offer no longer authorizes the acceptance
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.357Z","event":"message.registered","message_id":"2d46198d-f315-48a3-b656-db0eb45d2f5f","conversation_id":"5c010c3a-14d1-4568-9fa5-593e883cc09e","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man expired offer no longer authorizes the acceptance
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.357Z","event":"ingestion.phases","trace_id":"0ff73506-d2a9-429a-9b6e-84f65279abe4","reserve":1,"contact":1,"thread_event":0,"conversation":1,"permissions":0,"message":1,"batch":0,"txn_ms":4}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man expired offer no longer authorizes the acceptance
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.358Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.358Z","event":"ingestion.processed","contact_id":"2357e350-417d-42ee-a1ae-eb30f87a8e31","conversation_id":"5c010c3a-14d1-4568-9fa5-593e883cc09e","turn_id":"2d46198d-f315-48a3-b656-db0eb45d2f5f","batch_id":"442e8205-732e-43aa-8e77-64a1cb064d69","batch_message_count":2,"trace_id":"0ff73506-d2a9-429a-9b6e-84f65279abe4"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man absent or unparseable phone is refused fail-closed
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.362Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.362Z","event":"contact.resolved","contact_id":"f08d372e-c685-4763-9ee2-e443880d97fa","phone":"+5491182238268","created":true}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man absent or unparseable phone is refused fail-closed
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.364Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man absent or unparseable phone is refused fail-closed
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.364Z","event":"message.registered","message_id":"39616ba1-7bfb-4a50-87c3-24476de254a8","conversation_id":"cae0e2eb-21c2-4201-a5da-2d6580e0c52c","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man absent or unparseable phone is refused fail-closed
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.365Z","event":"ingestion.phases","trace_id":"9e2bec2e-3d90-489a-902f-dfffe328c79e","reserve":1,"contact":1,"thread_event":0,"conversation":1,"permissions":0,"message":0,"batch":1,"txn_ms":4}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man absent or unparseable phone is refused fail-closed
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.365Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.365Z","event":"ingestion.processed","contact_id":"f08d372e-c685-4763-9ee2-e443880d97fa","conversation_id":"cae0e2eb-21c2-4201-a5da-2d6580e0c52c","turn_id":"39616ba1-7bfb-4a50-87c3-24476de254a8","batch_id":"2da9503c-e8e7-4fd4-8702-f0c2509f6b3b","batch_message_count":1,"trace_id":"9e2bec2e-3d90-489a-902f-dfffe328c79e"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma blocked contact cannot request a call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.367Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.367Z","event":"contact.resolved","contact_id":"5e7f39ea-229e-4a22-b168-d8766adbaddd","phone":"+5491197818126","created":true}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma blocked contact cannot request a call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.368Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma blocked contact cannot request a call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.369Z","event":"message.registered","message_id":"89a32c3c-8a8e-4d0f-aee3-66b2ae93eebf","conversation_id":"706b92ca-a657-46e1-95b3-112424ef2483","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma blocked contact cannot request a call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.369Z","event":"ingestion.phases","trace_id":"ac8b6a0e-74b9-438d-81dc-bbcf7275f344","reserve":1,"contact":0,"thread_event":1,"conversation":0,"permissions":0,"message":1,"batch":0,"txn_ms":3}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma blocked contact cannot request a call
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.369Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.369Z","event":"ingestion.processed","contact_id":"5e7f39ea-229e-4a22-b168-d8766adbaddd","conversation_id":"706b92ca-a657-46e1-95b3-112424ef2483","turn_id":"89a32c3c-8a8e-4d0f-aee3-66b2ae93eebf","batch_id":"f36335d3-d802-4ec7-982c-27bfe8ba1af9","batch_message_count":1,"trace_id":"ac8b6a0e-74b9-438d-81dc-bbcf7275f344"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man active call blocks a second reservation for the same contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.375Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.375Z","event":"contact.resolved","contact_id":"be92fae6-ce32-437e-a7f3-ad23eb9e411d","phone":"+5491131781363","created":true}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man active call blocks a second reservation for the same contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.377Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man active call blocks a second reservation for the same contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.377Z","event":"message.registered","message_id":"993a4cf3-bb5a-4ce0-935e-ea892b463463","conversation_id":"3e6a9cc6-1b55-4e12-9c5c-063bf36156d2","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man active call blocks a second reservation for the same contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.378Z","event":"ingestion.phases","trace_id":"7602cf36-b01b-452c-8753-4204225f86d3","reserve":1,"contact":0,"thread_event":1,"conversation":0,"permissions":0,"message":1,"batch":0,"txn_ms":3}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man active call blocks a second reservation for the same contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.378Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.378Z","event":"ingestion.processed","contact_id":"be92fae6-ce32-437e-a7f3-ad23eb9e411d","conversation_id":"3e6a9cc6-1b55-4e12-9c5c-063bf36156d2","turn_id":"993a4cf3-bb5a-4ce0-935e-ea892b463463","batch_id":"4c097431-e187-4865-992b-08ead1e1414d","batch_message_count":1,"trace_id":"7602cf36-b01b-452c-8753-4204225f86d3"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man active call blocks a second reservation for the same contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.382Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man active call blocks a second reservation for the same contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.382Z","event":"message.registered","message_id":"67b9b510-376d-4b63-905d-8a864be448d9","conversation_id":"3e6a9cc6-1b55-4e12-9c5c-063bf36156d2","direction":"outbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man active call blocks a second reservation for the same contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.385Z","event":"contact.resolved","contact_id":"be92fae6-ce32-437e-a7f3-ad23eb9e411d","phone":"+5491131781363","created":false}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man active call blocks a second reservation for the same contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.387Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man active call blocks a second reservation for the same contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.387Z","event":"message.registered","message_id":"0f629ac8-66b9-47b8-a533-440acda87a6b","conversation_id":"3e6a9cc6-1b55-4e12-9c5c-063bf36156d2","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man active call blocks a second reservation for the same contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.388Z","event":"ingestion.phases","trace_id":"6a9f42c4-43a7-4f3f-9fbd-2b91441b0d44","reserve":1,"contact":0,"thread_event":1,"conversation":0,"permissions":0,"message":1,"batch":1,"txn_ms":4}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man active call blocks a second reservation for the same contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.388Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.388Z","event":"ingestion.processed","contact_id":"be92fae6-ce32-437e-a7f3-ad23eb9e411d","conversation_id":"3e6a9cc6-1b55-4e12-9c5c-063bf36156d2","turn_id":"0f629ac8-66b9-47b8-a533-440acda87a6b","batch_id":"4c097431-e187-4865-992b-08ead1e1414d","batch_message_count":2,"trace_id":"6a9f42c4-43a7-4f3f-9fbd-2b91441b0d44"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2mtwo concurrent dispatches send exactly one Telegram message
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.393Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.393Z","event":"contact.resolved","contact_id":"a6480a6c-8d61-4187-ae6b-f9f0cd41ac21","phone":"+9990020813886","created":true}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2mtwo concurrent dispatches send exactly one Telegram message
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.394Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2mtwo concurrent dispatches send exactly one Telegram message
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.395Z","event":"message.registered","message_id":"d6a25c28-2915-4d0c-a19c-78f1aeb53f24","conversation_id":"ac921e32-1aef-4fe3-9bde-c5071f29c487","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2mtwo concurrent dispatches send exactly one Telegram message
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.395Z","event":"ingestion.phases","trace_id":"64d41135-be36-488e-92fe-672d79a0d9a4","reserve":1,"contact":0,"thread_event":0,"conversation":1,"permissions":0,"message":1,"batch":0,"txn_ms":3}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2mtwo concurrent dispatches send exactly one Telegram message
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.396Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.396Z","event":"ingestion.processed","contact_id":"a6480a6c-8d61-4187-ae6b-f9f0cd41ac21","conversation_id":"ac921e32-1aef-4fe3-9bde-c5071f29c487","turn_id":"d6a25c28-2915-4d0c-a19c-78f1aeb53f24","batch_id":"60f9b508-9f4f-4fbc-8c40-52459ba649ee","batch_message_count":1,"trace_id":"64d41135-be36-488e-92fe-672d79a0d9a4"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2mtwo concurrent dispatches send exactly one Telegram message
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.400Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2mtwo concurrent dispatches send exactly one Telegram message
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.400Z","event":"message.registered","message_id":"6c1f7811-b1e0-4051-851c-893e1376a14f","conversation_id":"ac921e32-1aef-4fe3-9bde-c5071f29c487","direction":"outbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2man ambiguous dispatch outcome never redials automatically
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.423Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.423Z","event":"contact.resolved","contact_id":"44eee1ba-7cb4-41bb-9f4d-6e33c52795ee","phone":"+9990055627699","created":true}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2man ambiguous dispatch outcome never redials automatically
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.425Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2man ambiguous dispatch outcome never redials automatically
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.425Z","event":"message.registered","message_id":"63726462-86ce-47e4-b774-ec79ad1ca2e7","conversation_id":"3567e86f-1548-477f-8f7e-beba36108cd2","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2man ambiguous dispatch outcome never redials automatically
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.426Z","event":"ingestion.phases","trace_id":"85f97f69-4ed7-4a2a-83e2-0ff06df075e8","reserve":1,"contact":1,"thread_event":0,"conversation":1,"permissions":0,"message":0,"batch":1,"txn_ms":4}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2man ambiguous dispatch outcome never redials automatically
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.426Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.426Z","event":"ingestion.processed","contact_id":"44eee1ba-7cb4-41bb-9f4d-6e33c52795ee","conversation_id":"3567e86f-1548-477f-8f7e-beba36108cd2","turn_id":"63726462-86ce-47e4-b774-ec79ad1ca2e7","batch_id":"7413d461-6be9-4655-8e10-60142b73f06a","batch_message_count":1,"trace_id":"85f97f69-4ed7-4a2a-83e2-0ff06df075e8"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2man ambiguous dispatch outcome never redials automatically
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.431Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2man ambiguous dispatch outcome never redials automatically
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.431Z","event":"message.registered","message_id":"11c9c8aa-42f5-4d0e-8972-ccbdb5a891cb","conversation_id":"3567e86f-1548-477f-8f7e-beba36108cd2","direction":"outbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2mdispatches the reserved call to Telegram B with a verifiable context hash
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.437Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.437Z","event":"contact.resolved","contact_id":"72e0d1e1-3494-433b-811f-17fd77593b2b","phone":"+9990035881192","created":true}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2mdispatches the reserved call to Telegram B with a verifiable context hash
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.440Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2mdispatches the reserved call to Telegram B with a verifiable context hash
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.441Z","event":"message.registered","message_id":"f4cc2080-91e4-477e-acd9-07b1832f4868","conversation_id":"36ebb6f9-234c-4fb8-a7c6-d9775d0cb539","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2mdispatches the reserved call to Telegram B with a verifiable context hash
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.442Z","event":"ingestion.phases","trace_id":"0d87f9bd-fabe-4e2e-a545-b481f7fda87e","reserve":1,"contact":2,"thread_event":0,"conversation":1,"permissions":0,"message":1,"batch":1,"txn_ms":6}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2mdispatches the reserved call to Telegram B with a verifiable context hash
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.442Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.442Z","event":"ingestion.processed","contact_id":"72e0d1e1-3494-433b-811f-17fd77593b2b","conversation_id":"36ebb6f9-234c-4fb8-a7c6-d9775d0cb539","turn_id":"f4cc2080-91e4-477e-acd9-07b1832f4868","batch_id":"d669f20a-c120-45a2-9f69-21c55614da81","batch_message_count":1,"trace_id":"0d87f9bd-fabe-4e2e-a545-b481f7fda87e"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2mdispatches the reserved call to Telegram B with a verifiable context hash
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.447Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2mdispatches the reserved call to Telegram B with a verifiable context hash
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.448Z","event":"message.registered","message_id":"dd0dc1ee-1112-4c4a-ae8a-d0786709441c","conversation_id":"36ebb6f9-234c-4fb8-a7c6-d9775d0cb539","direction":"outbound","embedding_status":"pending"}
+
+ [32m✓[39m tests/integration/agent-a-call-handoff.test.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 332[2mms[22m[39m
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mcommits a v3 decision with retrieval_used
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.915Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.915Z","event":"contact.resolved","contact_id":"5164653c-af41-4cb3-8480-0052ecc3bdb1","phone":"+5491138713480","created":true}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mcommits a v3 decision with retrieval_used
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.922Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mcommits a v3 decision with retrieval_used
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.922Z","event":"message.registered","message_id":"bb4511bd-5a9e-4505-8a05-48c43828e49e","conversation_id":"20bb5ce0-b3ad-42c3-a1db-b64435b93a2a","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mcommits a v3 decision with retrieval_used
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.924Z","event":"ingestion.phases","trace_id":"23c7787f-6b5f-4b02-8504-9178daa6effe","reserve":4,"contact":3,"thread_event":1,"conversation":1,"permissions":2,"message":1,"batch":2,"txn_ms":14}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mcommits a v3 decision with retrieval_used
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.924Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.924Z","event":"ingestion.processed","contact_id":"5164653c-af41-4cb3-8480-0052ecc3bdb1","conversation_id":"20bb5ce0-b3ad-42c3-a1db-b64435b93a2a","turn_id":"bb4511bd-5a9e-4505-8a05-48c43828e49e","batch_id":"3ef10c3c-ee57-477b-8573-13f004308032","batch_message_count":1,"trace_id":"23c7787f-6b5f-4b02-8504-9178daa6effe"}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mcommits a v3 decision with retrieval_used
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.940Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mcommits a v3 decision with retrieval_used
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.940Z","event":"message.registered","message_id":"16b9519d-9420-4763-9ca5-3903877a8b99","conversation_id":"20bb5ce0-b3ad-42c3-a1db-b64435b93a2a","direction":"outbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mstores a permitted, observational business action
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.947Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.947Z","event":"contact.resolved","contact_id":"54bef8d6-20a6-429b-8166-9e27809e65bc","phone":"+5491128550104","created":true}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mstores a permitted, observational business action
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.950Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mstores a permitted, observational business action
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.951Z","event":"message.registered","message_id":"89c15da9-7603-43a1-b75c-88146411c321","conversation_id":"218343b6-ec69-4292-9783-be50193fdcac","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mstores a permitted, observational business action
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.952Z","event":"ingestion.phases","trace_id":"942703c8-93d3-49b0-a44c-d5af7472aace","reserve":1,"contact":1,"thread_event":1,"conversation":0,"permissions":1,"message":1,"batch":1,"txn_ms":6}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mstores a permitted, observational business action
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.952Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.952Z","event":"ingestion.processed","contact_id":"54bef8d6-20a6-429b-8166-9e27809e65bc","conversation_id":"218343b6-ec69-4292-9783-be50193fdcac","turn_id":"89c15da9-7603-43a1-b75c-88146411c321","batch_id":"6fef0035-06ca-4508-8ed2-46fa24a564af","batch_message_count":1,"trace_id":"942703c8-93d3-49b0-a44c-d5af7472aace"}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mstores a permitted, observational business action
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.964Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mstores a permitted, observational business action
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.964Z","event":"message.registered","message_id":"881ed2bb-be7f-4530-9799-535ab27738bd","conversation_id":"218343b6-ec69-4292-9783-be50193fdcac","direction":"outbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mrefuses to commit a human handoff
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.969Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.969Z","event":"contact.resolved","contact_id":"b371b82f-9f12-4428-bb96-12daed8fa29d","phone":"+5491135808933","created":true}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mrefuses to commit a human handoff
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.972Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mrefuses to commit a human handoff
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.972Z","event":"message.registered","message_id":"6c44a9f9-34c4-4162-8553-c8dd9be5278f","conversation_id":"aa364735-88ea-4ed7-a27a-75bc27b02841","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mrefuses to commit a human handoff
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.973Z","event":"ingestion.phases","trace_id":"0a2eec4a-c32e-4958-ae8c-ed728e14b7c1","reserve":1,"contact":1,"thread_event":0,"conversation":1,"permissions":0,"message":1,"batch":1,"txn_ms":5}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mrefuses to commit a human handoff
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.973Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.973Z","event":"ingestion.processed","contact_id":"b371b82f-9f12-4428-bb96-12daed8fa29d","conversation_id":"aa364735-88ea-4ed7-a27a-75bc27b02841","turn_id":"6c44a9f9-34c4-4162-8553-c8dd9be5278f","batch_id":"f9d82cff-c676-4422-a7ad-4c253ea04a7b","batch_message_count":1,"trace_id":"0a2eec4a-c32e-4958-ae8c-ed728e14b7c1"}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mrefuses the outward-facing action send_pricing_info
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.975Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.975Z","event":"contact.resolved","contact_id":"c65784a3-6f8f-434d-8e83-244b6badbe0d","phone":"+5491155401293","created":true}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mrefuses the outward-facing action send_pricing_info
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.978Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mrefuses the outward-facing action send_pricing_info
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.978Z","event":"message.registered","message_id":"0ded593f-ac83-4245-9083-4231bb0d9dd9","conversation_id":"7fa36135-213b-4608-b844-9bcf007a9e65","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mrefuses the outward-facing action send_pricing_info
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.979Z","event":"ingestion.phases","trace_id":"b965f518-989d-44b4-8f63-d8f1465f968b","reserve":1,"contact":1,"thread_event":1,"conversation":0,"permissions":0,"message":1,"batch":1,"txn_ms":5}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mrefuses the outward-facing action send_pricing_info
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.979Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.979Z","event":"ingestion.processed","contact_id":"c65784a3-6f8f-434d-8e83-244b6badbe0d","conversation_id":"7fa36135-213b-4608-b844-9bcf007a9e65","turn_id":"0ded593f-ac83-4245-9083-4231bb0d9dd9","batch_id":"d43873dc-0087-442a-9fbb-465b7f79eab3","batch_message_count":1,"trace_id":"b965f518-989d-44b4-8f63-d8f1465f968b"}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mrefuses the outward-facing action schedule_followup
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.981Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.981Z","event":"contact.resolved","contact_id":"70cc8aaa-1c39-40d5-b3d8-8d62deb08b92","phone":"+5491110024688","created":true}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mrefuses the outward-facing action schedule_followup
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.983Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mrefuses the outward-facing action schedule_followup
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.984Z","event":"message.registered","message_id":"196ee79f-0657-498f-8f1b-22cd189d1d2d","conversation_id":"ba8a801a-cfe0-4baa-90ae-2e15e48eaf06","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mrefuses the outward-facing action schedule_followup
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.985Z","event":"ingestion.phases","trace_id":"7f6e2774-5168-4741-9a32-2feacc9a6f52","reserve":1,"contact":1,"thread_event":0,"conversation":1,"permissions":0,"message":2,"batch":0,"txn_ms":5}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mrefuses the outward-facing action schedule_followup
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.986Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.986Z","event":"ingestion.processed","contact_id":"70cc8aaa-1c39-40d5-b3d8-8d62deb08b92","conversation_id":"ba8a801a-cfe0-4baa-90ae-2e15e48eaf06","turn_id":"196ee79f-0657-498f-8f1b-22cd189d1d2d","batch_id":"4c5aef9f-fae9-4924-ad0f-2dbb3f608b03","batch_message_count":1,"trace_id":"7f6e2774-5168-4741-9a32-2feacc9a6f52"}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mkeeps the database as the last line of defence against a forbidden action
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.988Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.988Z","event":"contact.resolved","contact_id":"4bba36f8-7f7d-4d6b-97d5-bb4dbc97c7ea","phone":"+5491127435621","created":true}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mkeeps the database as the last line of defence against a forbidden action
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.991Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mkeeps the database as the last line of defence against a forbidden action
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.991Z","event":"message.registered","message_id":"8398250f-f88c-415d-ac02-30852e34f208","conversation_id":"61659e71-57c1-4fea-b769-f1d4f3cb99a0","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mkeeps the database as the last line of defence against a forbidden action
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.992Z","event":"ingestion.phases","trace_id":"5e44cda3-4ddb-4009-b133-3a0b5c5b6aba","reserve":1,"contact":0,"thread_event":1,"conversation":1,"permissions":0,"message":1,"batch":1,"txn_ms":5}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mkeeps the database as the last line of defence against a forbidden action
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.992Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:54.992Z","event":"ingestion.processed","contact_id":"4bba36f8-7f7d-4d6b-97d5-bb4dbc97c7ea","conversation_id":"61659e71-57c1-4fea-b769-f1d4f3cb99a0","turn_id":"8398250f-f88c-415d-ac02-30852e34f208","batch_id":"db88e08a-3c2c-4266-9d40-8d4f6f48ae6d","batch_message_count":1,"trace_id":"5e44cda3-4ddb-4009-b133-3a0b5c5b6aba"}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mkeeps the database as the last line of defence against a forbidden action
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.995Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mkeeps the database as the last line of defence against a forbidden action
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:54.996Z","event":"message.registered","message_id":"1c7a6529-9679-4d48-a0fe-3a9c67b3511e","conversation_id":"61659e71-57c1-4fea-b769-f1d4f3cb99a0","direction":"outbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mstill accepts a v2 decision unchanged
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.002Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:55.002Z","event":"contact.resolved","contact_id":"aaa54f1d-46b3-4c49-b583-b9648050c2e3","phone":"+5491113246899","created":true}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mstill accepts a v2 decision unchanged
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.004Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mstill accepts a v2 decision unchanged
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.004Z","event":"message.registered","message_id":"e1014440-9572-4b91-87bb-c7bbbf5dbd23","conversation_id":"f1bcc197-1f84-48eb-97a3-b20dfca77c38","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mstill accepts a v2 decision unchanged
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.005Z","event":"ingestion.phases","trace_id":"8c77857d-d453-4f9c-b75d-4365c5ae1f04","reserve":1,"contact":0,"thread_event":1,"conversation":0,"permissions":0,"message":1,"batch":1,"txn_ms":4}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mstill accepts a v2 decision unchanged
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.005Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:55.005Z","event":"ingestion.processed","contact_id":"aaa54f1d-46b3-4c49-b583-b9648050c2e3","conversation_id":"f1bcc197-1f84-48eb-97a3-b20dfca77c38","turn_id":"e1014440-9572-4b91-87bb-c7bbbf5dbd23","batch_id":"c2ee9c20-46ee-4b81-a7e9-7ff79423eae3","batch_message_count":1,"trace_id":"8c77857d-d453-4f9c-b75d-4365c5ae1f04"}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mstill accepts a v2 decision unchanged
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.008Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/decision-v3.test.ts[2m > [22m[2mdecision v3 persistence[2m > [22m[2mstill accepts a v2 decision unchanged
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.009Z","event":"message.registered","message_id":"abaad050-056c-41fb-aeef-4b99178f1f46","conversation_id":"f1bcc197-1f84-48eb-97a3-b20dfca77c38","direction":"outbound","embedding_status":"pending"}
+
+ [32m✓[39m tests/integration/decision-v3.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 115[2mms[22m[39m
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mcommits the sandbox lock with the first inbound and keeps it idempotent on replay and follow-up
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.196Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:55.196Z","event":"contact.resolved","contact_id":"8745694c-b7bc-4c3b-b461-11baaac2b2a7","phone":"+9998404335549","created":true}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mcommits the sandbox lock with the first inbound and keeps it idempotent on replay and follow-up
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.204Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mcommits the sandbox lock with the first inbound and keeps it idempotent on replay and follow-up
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.205Z","event":"message.registered","message_id":"363911e3-8dca-4d81-8690-9ba848f8d6f7","conversation_id":"e305d17c-874e-4d45-a38f-c42add4d031e","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mcommits the sandbox lock with the first inbound and keeps it idempotent on replay and follow-up
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.206Z","event":"ingestion.phases","trace_id":"6e22d3d3-9dac-40d2-95dc-b161723c5aa9","reserve":4,"contact":4,"thread_event":2,"conversation":1,"permissions":1,"message":2,"batch":1,"txn_ms":15}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mcommits the sandbox lock with the first inbound and keeps it idempotent on replay and follow-up
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.207Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:55.207Z","event":"ingestion.processed","contact_id":"8745694c-b7bc-4c3b-b461-11baaac2b2a7","conversation_id":"e305d17c-874e-4d45-a38f-c42add4d031e","turn_id":"363911e3-8dca-4d81-8690-9ba848f8d6f7","batch_id":"cad1d1ee-d00b-44c2-a189-63b66fc6cd91","batch_message_count":1,"trace_id":"6e22d3d3-9dac-40d2-95dc-b161723c5aa9"}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mcommits the sandbox lock with the first inbound and keeps it idempotent on replay and follow-up
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.216Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:55.216Z","event":"ingestion.processed","contact_id":"8745694c-b7bc-4c3b-b461-11baaac2b2a7","conversation_id":"e305d17c-874e-4d45-a38f-c42add4d031e","turn_id":"363911e3-8dca-4d81-8690-9ba848f8d6f7","batch_id":"cad1d1ee-d00b-44c2-a189-63b66fc6cd91","batch_message_count":1,"trace_id":"29fe3c64-9c1c-4f0d-8177-92245ba0322c"}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mcommits the sandbox lock with the first inbound and keeps it idempotent on replay and follow-up
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.218Z","event":"contact.resolved","contact_id":"8745694c-b7bc-4c3b-b461-11baaac2b2a7","phone":"+9998404335549","created":false}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mcommits the sandbox lock with the first inbound and keeps it idempotent on replay and follow-up
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.223Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mcommits the sandbox lock with the first inbound and keeps it idempotent on replay and follow-up
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.223Z","event":"message.registered","message_id":"93c4659d-b06f-4a80-8a7f-6f0aae5ce849","conversation_id":"e305d17c-874e-4d45-a38f-c42add4d031e","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mcommits the sandbox lock with the first inbound and keeps it idempotent on replay and follow-up
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.224Z","event":"ingestion.phases","trace_id":"37c6a018-ca07-4a78-b6a0-3d1b81a5bcd8","reserve":1,"contact":3,"thread_event":1,"conversation":1,"permissions":0,"message":1,"batch":1,"txn_ms":8}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mcommits the sandbox lock with the first inbound and keeps it idempotent on replay and follow-up
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.224Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:55.224Z","event":"ingestion.processed","contact_id":"8745694c-b7bc-4c3b-b461-11baaac2b2a7","conversation_id":"e305d17c-874e-4d45-a38f-c42add4d031e","turn_id":"93c4659d-b06f-4a80-8a7f-6f0aae5ce849","batch_id":"cad1d1ee-d00b-44c2-a189-63b66fc6cd91","batch_message_count":2,"trace_id":"37c6a018-ca07-4a78-b6a0-3d1b81a5bcd8"}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mblocks a real Sheets adapter before client construction or network after sandbox intake
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.227Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:55.227Z","event":"contact.resolved","contact_id":"9fd1257f-7084-4990-aa6b-c0158a4e7737","phone":"+9997646683449","created":true}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mblocks a real Sheets adapter before client construction or network after sandbox intake
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.230Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mblocks a real Sheets adapter before client construction or network after sandbox intake
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.230Z","event":"message.registered","message_id":"4d82797a-434d-426e-9b3d-30088aa58d07","conversation_id":"b91ffb68-c7b1-47ac-8dcb-8997231e7ce2","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mblocks a real Sheets adapter before client construction or network after sandbox intake
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.231Z","event":"ingestion.phases","trace_id":"d167efeb-a275-48b4-bbb0-d15d74872cca","reserve":1,"contact":1,"thread_event":0,"conversation":1,"permissions":0,"message":1,"batch":1,"txn_ms":5}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mblocks a real Sheets adapter before client construction or network after sandbox intake
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.232Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:55.232Z","event":"ingestion.processed","contact_id":"9fd1257f-7084-4990-aa6b-c0158a4e7737","conversation_id":"b91ffb68-c7b1-47ac-8dcb-8997231e7ce2","turn_id":"4d82797a-434d-426e-9b3d-30088aa58d07","batch_id":"fe0661e4-d18e-4082-bfe9-853245fa3ab7","batch_message_count":1,"trace_id":"d167efeb-a275-48b4-bbb0-d15d74872cca"}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mdoes not infer sandbox status from a synthetic-looking phone without the explicit provider
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.234Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:55.234Z","event":"contact.resolved","contact_id":"4383d848-2875-4a65-ad71-89d84b343899","phone":"+9998432512104","created":true}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mdoes not infer sandbox status from a synthetic-looking phone without the explicit provider
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.236Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mdoes not infer sandbox status from a synthetic-looking phone without the explicit provider
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.237Z","event":"message.registered","message_id":"70244414-a448-4f4d-a738-547d0ea32aa2","conversation_id":"c7d4b850-6bf7-4a72-bfdb-2645d97d6d4f","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mdoes not infer sandbox status from a synthetic-looking phone without the explicit provider
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.238Z","event":"ingestion.phases","trace_id":"784fe9bd-62ae-4842-86fa-9ba08b5ab793","reserve":1,"contact":0,"thread_event":1,"conversation":1,"permissions":0,"message":1,"batch":1,"txn_ms":5}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mdoes not infer sandbox status from a synthetic-looking phone without the explicit provider
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.238Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:55.238Z","event":"ingestion.processed","contact_id":"4383d848-2875-4a65-ad71-89d84b343899","conversation_id":"c7d4b850-6bf7-4a72-bfdb-2645d97d6d4f","turn_id":"70244414-a448-4f4d-a738-547d0ea32aa2","batch_id":"f52eddfd-8335-49f1-9e66-6c6e0bc8bb9a","batch_message_count":1,"trace_id":"784fe9bd-62ae-4842-86fa-9ba08b5ab793"}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mlocks an existing contact when a new explicit sandbox inbound resolves that contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.240Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:55.240Z","event":"contact.resolved","contact_id":"55005e98-ef3f-4c1a-b498-31ce3c55f2e8","phone":"+9994265644892","created":true}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mlocks an existing contact when a new explicit sandbox inbound resolves that contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.242Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mlocks an existing contact when a new explicit sandbox inbound resolves that contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.243Z","event":"message.registered","message_id":"7cb0e8d0-3119-4efc-a97e-b69883d92478","conversation_id":"5892fdc4-7dd3-4b45-b340-5b93d7522277","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mlocks an existing contact when a new explicit sandbox inbound resolves that contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.244Z","event":"ingestion.phases","trace_id":"e0bdc6e0-43e6-4cfc-bc29-21dbceebdd9d","reserve":1,"contact":1,"thread_event":0,"conversation":1,"permissions":0,"message":1,"batch":1,"txn_ms":5}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mlocks an existing contact when a new explicit sandbox inbound resolves that contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.244Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:55.244Z","event":"ingestion.processed","contact_id":"55005e98-ef3f-4c1a-b498-31ce3c55f2e8","conversation_id":"5892fdc4-7dd3-4b45-b340-5b93d7522277","turn_id":"7cb0e8d0-3119-4efc-a97e-b69883d92478","batch_id":"85855519-e04c-4adf-a462-7115d759ceaa","batch_message_count":1,"trace_id":"e0bdc6e0-43e6-4cfc-bc29-21dbceebdd9d"}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mlocks an existing contact when a new explicit sandbox inbound resolves that contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.246Z","event":"contact.resolved","contact_id":"55005e98-ef3f-4c1a-b498-31ce3c55f2e8","phone":"+9994265644892","created":false}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mlocks an existing contact when a new explicit sandbox inbound resolves that contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.249Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mlocks an existing contact when a new explicit sandbox inbound resolves that contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.249Z","event":"message.registered","message_id":"8b0a0c81-5620-4944-9e9a-087992925bc7","conversation_id":"067e5d3a-8e31-42fd-813f-ef78723a5a45","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mlocks an existing contact when a new explicit sandbox inbound resolves that contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.250Z","event":"ingestion.phases","trace_id":"86cd08ff-6e17-4335-b88c-62fe033beaf6","reserve":1,"contact":1,"thread_event":1,"conversation":1,"permissions":0,"message":1,"batch":1,"txn_ms":6}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mlocks an existing contact when a new explicit sandbox inbound resolves that contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.250Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:55.250Z","event":"ingestion.processed","contact_id":"55005e98-ef3f-4c1a-b498-31ce3c55f2e8","conversation_id":"067e5d3a-8e31-42fd-813f-ef78723a5a45","turn_id":"8b0a0c81-5620-4944-9e9a-087992925bc7","batch_id":"a16876fe-8237-4b67-a26f-2eb24f26c54f","batch_message_count":1,"trace_id":"86cd08ff-6e17-4335-b88c-62fe033beaf6"}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mfails closed and rolls back an inbound whose sandbox user is already bound to another contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.252Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:55.252Z","event":"contact.resolved","contact_id":"4469dc40-5ec0-40af-913a-68ca660d2629","phone":"+9994802787342","created":true}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mfails closed and rolls back an inbound whose sandbox user is already bound to another contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.255Z","event":"counter.increment","counter":"messages_registered","value":1}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mfails closed and rolls back an inbound whose sandbox user is already bound to another contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.255Z","event":"message.registered","message_id":"272bfd96-c6ea-4ad5-92cc-71a9c4b93e55","conversation_id":"acb0c00f-39e0-43b8-b204-14616cb7a389","direction":"inbound","embedding_status":"pending"}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mfails closed and rolls back an inbound whose sandbox user is already bound to another contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.256Z","event":"ingestion.phases","trace_id":"614c954f-a38d-44f7-b620-30ac90311b00","reserve":1,"contact":1,"thread_event":0,"conversation":1,"permissions":0,"message":1,"batch":1,"txn_ms":5}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mfails closed and rolls back an inbound whose sandbox user is already bound to another contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.256Z","event":"counter.increment","counter":"ingest_processed","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:55.256Z","event":"ingestion.processed","contact_id":"4469dc40-5ec0-40af-913a-68ca660d2629","conversation_id":"acb0c00f-39e0-43b8-b204-14616cb7a389","turn_id":"272bfd96-c6ea-4ad5-92cc-71a9c4b93e55","batch_id":"d4bc2c72-21dc-49ca-b08c-ca2a6c5580b1","batch_message_count":1,"trace_id":"614c954f-a38d-44f7-b620-30ac90311b00"}
+
+[90mstdout[2m | tests/integration/telegram-sandbox-intake.test.ts[2m > [22m[2mTelegram sandbox intake boundary[2m > [22m[2mfails closed and rolls back an inbound whose sandbox user is already bound to another contact
+[22m[39m{"level":"info","timestamp":"2026-09-04T16:49:55.257Z","event":"counter.increment","counter":"contacts_created","value":1}
+{"level":"info","timestamp":"2026-09-04T16:49:55.257Z","event":"contact.resolved","contact_id":"4bb825d7-6ec2-476a-9eb5-9e7a263603c3","phone":"+9998095700643","created":true}
+
+ [32m✓[39m tests/integration/telegram-sandbox-intake.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 83[2mms[22m[39m
+ [32m✓[39m tests/integration/payments-canonical.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 66[2mms[22m[39m
+ [32m✓[39m tests/integration/call-ledger-invariants.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 37[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m5 passed[39m[22m[90m (5)[39m
+[2m      Tests [22m [1m[32m44 passed[39m[22m[90m (44)[39m
+[2m   Start at [22m 13:49:53
+[2m   Duration [22m 2.45s[2m (transform 263ms, setup 68ms, import 1.25s, tests 634ms, environment 0ms)[22m
+

@@ -1,37 +1,20 @@
 # Sesión StudyX
 
-## Estado
-Agente A plannerless V2: **READY_FOR_LOCAL_REVIEW**. Hay un candidato verificable; no se aprobó ni ejecutó el rollout o Telegram. Rama `codex/agent-a-plannerless-v2`, worktree `agent-a-plannerless-v2`. Entrada limpia en `ad15baafb63e8c55cb877f943a74e57c2899deda`; candidato intermedio `360cd37201a35bf3c4cceb82a93e809885494529` y evidencia histórica preservados. El commit que contiene este archivo registra el cierre actual.
+## Estado vigente
+El usuario autorizó el despliegue para prueba supervisada el 4/9, tras explicar declared_phone, y pidió priorizar la llamada antes de continuar la venta por chat. El candidato V20/canónico V9 está verificado localmente y listo para publicar. No equivale a producción certificada. Rama codex/agent-a-plannerless-v2; base anterior d5b786af65162c54721f9dc8ab0cbf7820b701e1 conservada.
 
-## Cambios comprobados
-- Se eliminaron falsos verdes de disponibilidad, entrega y opt-out. Un HTTP200 o una fila outbound no demuestra entrega; un fallo del modelo no equivale a atención exitosa.
-- Elegir plan o aportar datos no autoriza link. Postergar o cambiar curso retira permiso. El teléfono declarado se guarda separado de la identidad sintética. Aviso de pago no significa acreditación.
-- Se corrigieron esquema/correlación de reparaciones, poda por contenido, precios equivalentes con céntimos cero, descriptores de áreas del catálogo y condiciones de acreditación.
-- Intake reconoce formularios personales con etiquetas, comas, punto y coma o saltos de línea; rechaza encabezados negados, cursos y terceros ambiguos.
-- El prompt completo mantiene 322 líneas. Se reconciliaron contradicciones de precio, cierre, consentimiento, acceso, seguimiento y llamadas. No se añadió planner ni plantilla comercial.
-- Después de las pagas se corrigió call_offer: un texto informativo no consume cupo ni abre espera. Las ofertas reales siguen bloqueadas al agotar cupo/rechazar llamada; la negación se acota a su segmento. Los intentos intermedios fallidos y su revisión quedan conservados.
+Informe actual: docs/reports/2026-09-04-agent-a-supervised-deployment.md. Evidencias originales, transcripciones, freeze y ledger: docs/reports/evidence/2026-09-04-agent-a-supervised/. Historia anterior: informe live-candidate y evidencia agent-a-live; no borrar ni reinterpretar sus fallos.
 
-## Fuente final
-Brain V19 / canónico V8. Modelo deepseek-v4-flash, Responses, max800, temperature0.2, reasoning none, sin streaming.
-Freeze `2026-09-04T15:47:41.402662+00:00`, digest `a98f6e57ce2604c3cde29c5595c11ffee5598e26679516c3acfb83e80625430e`.
-Next `IrwZGDZAUGAKWeW7Jjxmn`; ADK local `b9376e34f04dc8d2cc47c587e9576b58140f057cf78658e60fd7f3c881c3fdf1`.
-Canónico SHA `67adca0e95055f32943717af84cb22d211a624c631eb79848cf296c688ffa575`.
-La última paga usa el freeze anterior V19 (`5deffc…`); no atribuirla al arreglo del contador posterior.
+## Comprobado
+Migración remota declared_phone aplicada, columna text nullable y ledger56 verificados. Backend previo Vercel dpl_AqoLiooRKL3qeCX4kMYQ7h2DT1Ji conservado. Botpress destino STUDYX 2f7fe6e1-1fc9-40d9-9045-d0c96b456f4b, workspace Maneyro, Telegram amsterdam_reservas_bot.
 
-## Evidencia y resultados
-Informe principal: `docs/reports/2026-09-04-agent-a-live-candidate.md`. Paquete: `docs/reports/evidence/2026-09-04-agent-a-live/`, con manifiesto, hashes, transcripciones, borradores, DB y captura. Medición y rúbrica independiente: `live-measurement` y `final-v19-review` de la misma fecha.
-V19 pagado: 7 conversaciones, 31 entradas, 32 HTTP, disponibilidad/fallback0, p95 4157ms, reparación1/31 (3,23%), éxito1/1. Gates numéricos agregados aprobados; submuestra V2 falla con repair25%. **Calidad no aprobada:** menú repetido y anticipación verbal de pago. No se certifica estabilidad.
-Primer H1 falló por nombre no persistido; H2 pasó. Primera V2 falló con formulario multilínea; primera V3 pasó funcionalmente con repair25%. Las repeticiones posteriores son regresiones y no sustituyen esos resultados.
-Fuente final gratis: 2531 unitarias/contratos aprobados, 7 skip, 7 TODO. Integración completa anterior: 353 aprobadas/1 skip; después del último cambio pasaron 20 integraciones relevantes. Workflow3/3, incluido ledger de cuatro turnos0/1/1/1 y caída503/replay. Lint, typechecks, Next build, ADK check/build y dry-run aprobados. Nada de esto demuestra Telegram.
+V20 inicial falló intake y cuota podada; evidencia preservada. Se corrigió nombre/apellido etiquetado, plazo mensual del pago separado de duración académica, validación de pedidos de datos y registro transaccional del candado sandbox Telegram.
+V20 final:8turnos/8HTTP,0silencios/0repair,p954400ms; llamada inicial, rechazo, cuota60 y enlace6m con identidad completa y salida correlacionada. 2565unitarias/contratos,44integraciones,121focales finales; Next/ADK builds ylint aprobados. Naturalidad no certificada: muestra de ajuste, no heldout ni calibración humana. Persisten oportunidades de iniciativa comercial.
 
-## Presupuesto y laboratorio
-**Tope acumulado USD1. Gasto conservador final USD0,823283696; restante USD0,176716304.** Incluye USD0,38 previos informados. Ledger original `botpress-agent/evals/results/campaign-budget-20260904.json`: 239 reservas, 237 HTTP conciliados y dos intentos históricos; reserva de aborto sin usage conservada. SHA `d118ddc49db2aa7ba3aa480809f3b4dcbebb5d5cfc6b0da8b56d2a19f8c41332`. No hubo API después del cierre V19; no reiniciar presupuesto.
-La clave local ya funciona; no volver a pedirla ni mostrarla. El runner lee sólo DEEPSEEK_API_KEY de `.eval/.env.local`. API3217 y PostgreSQL55435/studyx_test están aislados, con pago fake y captura local. No cargar entorno productivo.
-Se preservó el laboratorio original y se creó `studyx_integration_20260904` para integración sin conversaciones previas. Queda documentado el riesgo de starvation del reconciliador con 141 claims vencidos y límite100. No se probaron embeddings, Sheets, llamadas ni cobros reales.
+Freeze316archivos digest72a2d1cdae9eb12b2a5bb548a2993f1d9c6f43934d39c077e141869dcccfd334. Nextlocaln4AG7eWnxPRzL0QlH6b7R. ADKprod SHA4b4de7e17f9602ab814dbdd17fe16537361482ba135d10013b3bc0a5350f011c; no rebuild antes de publicar. Prompt íntegro322líneas SHA6d724acf6e366571bc6ce94d5013d007654442a67562daf67e672542c1eba17b.
 
-## Condiciones para continuar externamente
-No hubo migración, push, merge, deploy Vercel/Botpress ni Telegram. El preflight de Supabase `eqspozrpzgzvtpowwprg` encontró ausente declared_phone. El paso5 del traspaso exige autorización explícita para `20260904010001_contacts_declared_phone.sql`; «listo» confirmó sólo la clave.
-Vercel anterior identificado: `dpl_AqoLiooRKL3qeCX4kMYQ7h2DT1Ji`. El bundle ADK productivo del3/9 no se recuperó. Hay alternativa offline desde360cd37, compilada y archivada con configuración sanitizada, pero no es copia del anterior ni está autorizada como recuperación; conserva defectos V14 conocidos. Scratch: `/private/tmp/studyx-recovery-360cd37-20260904`.
-Seguir `2026-09-04-agent-a-rollout-canary.md`: resolver autorización de migración, recuperación aceptada y gates de calidad antes de publicar. No pedir canario contra el bundle anterior. Remotos personal/Maneyrao y Lucas identificados; no adivinar destino Git.
+## Operación
+Publicar Vercel con flags explícitos de laboratorio y STUDYX_RELEASE_SHA del commit; después Botpress sólo code vía helper .eval/codex-20260904/deploy-supervised/botpress-code-only.mjs, preservando configuración/integraciones. Plan ygates sanitizados en esa carpeta. Recuperación operativa:pausaautomation ybackendanterior; d5b786a localarchivado noesbundleanteriorremoto. AgenteB/Retell fuera de alcance. Probar recepción de enlaces sin pago real. Historial Telegram se conserva ynohay/reset.
 
-Historial previo conservado en `docs/reports/evidence/2026-09-04-agent-a/SESSION-before.md`; otros proyectos no revalidados.
+## Presupuesto
+Tope acumuladoUSD1; usadoUSD0,858633752; restanteUSD0,141366248;256reservas incluidasUSD0,38previos yreservaaborto sinusage. No reiniciar. Clave funcionaen.eval/.env.local; nunca imprimir. LaboratorioAPI3217/PostgreSQL55435 aislados. No cargar .env productivo en pruebas. Sin push/merge; despliegue porCLI no requiere adivinar remotoGit. Registrar debajo recibos de despliegue yestado real del canario.

@@ -1,0 +1,55 @@
+
+> studyx-agente-ventas@0.1.0 build
+> next build
+
+▲ Next.js 16.3.4 (Turbopack)
+✓ Running next.config.mjs took 9ms
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 1280ms
+  Running TypeScript ...
+  Finished TypeScript in 13.3s ...
+  Collecting page data using 9 workers ...
+  Generating static pages using 9 workers (0/20) ...
+  Generating static pages using 9 workers (5/20) 
+  Generating static pages using 9 workers (10/20) 
+  Generating static pages using 9 workers (15/20) 
+✓ Generating static pages using 9 workers (20/20) in 121ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /api/agent/batches/[batch_id]/claim
+├ ƒ /api/agent/calls/[call_id]/dispatch
+├ ƒ /api/agent/ingest
+├ ƒ /api/agent/outbounds/[outbound_id]/delivery
+├ ƒ /api/agent/reply
+├ ƒ /api/agent/tools/catalog
+├ ƒ /api/agent/tools/catalog/[sku]
+├ ƒ /api/agent/turns/[turn_id]/decision
+├ ƒ /api/agent/turns/[turn_id]/plan
+├ ƒ /api/contacts
+├ ƒ /api/conversations
+├ ƒ /api/conversations/[id]
+├ ƒ /api/cron/flush-projections
+├ ƒ /api/cron/memory-maintenance
+├ ƒ /api/cron/post-call-followup
+├ ƒ /api/cron/project-knowledge
+├ ƒ /api/cron/reconcile-orchestration
+├ ƒ /api/cron/retry-embeddings
+├ ƒ /api/diagnostics
+├ ƒ /api/health
+├ ƒ /api/memory/recent
+├ ƒ /api/memory/search
+├ ƒ /api/messages
+├ ƒ /api/ready
+├ ƒ /api/webhooks/payments/stripe
+└ ƒ /api/webhooks/voice/telegram
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

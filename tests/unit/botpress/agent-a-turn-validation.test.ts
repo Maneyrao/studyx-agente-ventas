@@ -435,6 +435,32 @@ describe('V8 respuesta repetida', () => {
     });
   });
 
+  it.each([
+    ['Ya tengo tu nombre y apellido registrados. Solo me falta tu correo electrónico para dejarlo todo listo.', false],
+    ['Necesito tu nombre y correo electrónico para continuar.', false],
+    ['¿Cuál es tu nombre completo?', true],
+    ['¿Podés compartir tu apellido?', true],
+    ['Compartí tu apellido, por favor.', true],
+    ['Tu correo ya está registrado. Solo me falta tu apellido.', true],
+  ] as const)('valida campos pedidos, no menciones de campos en reconocimientos: %s', (text, valid) => {
+    const current = context({
+      commercial_state: { ...context().commercial_state, awaiting_reply: 'contact_details' },
+      capabilities: { ...context().capabilities, intake_missing: ['nombre', 'apellido'] },
+    } as Partial<AgentAContextV1>);
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: { schema_version: 1, move: 'provide_contact_details', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: [text], call_offer: null },
+        used_fact_ids: [],
+      }),
+      context: current,
+      planned_fact_ids: [],
+      rejection_id: '11111111-1111-4111-8111-111111111111',
+    });
+    if (valid) expect(rejection).toBeNull();
+    else expect(rejection?.rejections).toContainEqual({ code: 'MISSING_INTAKE', subject: 'nombre' });
+  });
+
   it('acepta guiar al siguiente dato faltante sin pedir los ya guardados', () => {
     const current = context({
       commercial_state: {
