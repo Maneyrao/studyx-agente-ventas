@@ -9,7 +9,10 @@ import { auditLog } from '@/lib/audit/logger';
 import { counter } from '@/lib/observability/counters';
 import { logger } from '@/lib/observability/structured-log';
 import { reconcileDeliveredPaymentProjections } from '@/lib/services/decision.service';
-import { projectAgentAMemories } from '@/features/memory/application/project-agent-a-memories';
+import {
+  projectAgentAMemories,
+  reclaimStrandedMemorySupersessions,
+} from '@/features/memory/application/project-agent-a-memories';
 import { expireStalePreparationsV1 } from '@/features/conversation/application/agent-tools-prepare';
 import { sql } from '@/lib/db/orchestrator';
 
@@ -55,6 +58,12 @@ export async function GET(request: NextRequest) {
           log: (event, fields) => logger.info({ event, ...fields }),
           audit: auditLog,
         }),
+        reclaimStrandedMemorySupersessions: (input) => (
+          reclaimStrandedMemorySupersessions(input, {
+            log: (event, fields) => logger.info({ event, ...fields }),
+            audit: auditLog,
+          })
+        ),
       }
     );
 
@@ -87,7 +96,8 @@ export async function GET(request: NextRequest) {
     }
     const totalFailures = result.deliveries.failed
       + result.payment_projections.failed
-      + result.memory_projections.failed;
+      + result.memory_projections.failed
+      + result.memory_supersessions.failed;
     if (totalFailures > 0) {
       counter.increment('reconcile_failures', totalFailures);
     }

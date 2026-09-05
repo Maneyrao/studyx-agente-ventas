@@ -63,6 +63,11 @@ export interface ReconcileOrchestrationResult {
     readonly rejected: number;
     readonly failed: number;
   };
+  readonly memory_supersessions: {
+    readonly examined: number;
+    readonly reclaimed: number;
+    readonly failed: number;
+  };
   readonly orphaned_decisions: number;
   readonly findings: Array<{
     readonly kind: 'claim' | 'delivery' | 'decision';
@@ -98,6 +103,10 @@ export interface ReconcileOrchestrationDependencies {
     completed: number;
     rejected: number;
     failed: number;
+  }>;
+  readonly reclaimStrandedMemorySupersessions?: (input: { limit?: number }) => Promise<{
+    examined: number;
+    reclaimed: number;
   }>;
 }
 
@@ -265,6 +274,25 @@ export async function reconcileOrchestration(
     }
   }
 
+  // Projection runs first so a job that consumes its last retry in this very
+  // sweep can release its predecessor immediately, without waiting for the
+  // next scheduled invocation.
+  let memorySupersessions = { examined: 0, reclaimed: 0, failed: 0 };
+  if (deps.reclaimStrandedMemorySupersessions) {
+    try {
+      const recovered = await deps.reclaimStrandedMemorySupersessions({
+        limit: input.delivery_limit,
+      });
+      memorySupersessions = { ...recovered, failed: 0 };
+    } catch (error) {
+      memorySupersessions.failed = 1;
+      log('orchestration.reconcile.memory_supersessions_failed', {
+        trace_id: input.trace_id,
+        error_code: error instanceof Error ? error.name : 'MEMORY_SUPERSESSION_RECOVERY_FAILED',
+      });
+    }
+  }
+
   // ── Decisiones sin outbound ──────────────────────────────────────────────
   // No se reparan desde acá: una decisión es inmutable después del commit, así
   // que lo único honesto es dejarlas visibles.
@@ -293,6 +321,7 @@ export async function reconcileOrchestration(
     deliveries: { examined: stale.length, by_action: byAction, failed },
     payment_projections: paymentProjections,
     memory_projections: memoryProjections,
+    memory_supersessions: memorySupersessions,
     orphaned_decisions: orphaned.length,
     findings,
   };
@@ -316,6 +345,9 @@ export async function reconcileOrchestration(
     memory_projections_completed: memoryProjections.completed,
     memory_projections_rejected: memoryProjections.rejected,
     memory_projections_failed: memoryProjections.failed,
+    memory_supersessions_examined: memorySupersessions.examined,
+    memory_supersessions_reclaimed: memorySupersessions.reclaimed,
+    memory_supersessions_failed: memorySupersessions.failed,
   });
 
   return result;

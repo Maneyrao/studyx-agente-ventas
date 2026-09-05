@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
+import { NextRequest } from 'next/server';
+import { GET as reconcileOrchestrationCron } from '@/app/api/cron/reconcile-orchestration/route';
 import {
   prepareCallRequestToolV1,
   prepareContactDetailsToolV1,
@@ -11,7 +13,10 @@ import {
   AgentTurnV3RejectedError,
   commitAgentTurnV3,
 } from '@/features/conversation/application/commit-agent-turn-v3';
-import { projectAgentAMemories } from '@/features/memory/application/project-agent-a-memories';
+import {
+  projectAgentAMemories,
+  reclaimStrandedMemorySupersessions,
+} from '@/features/memory/application/project-agent-a-memories';
 import { reserveCallForDecision } from '@/features/calls/application/request-call';
 import { recordDeliveryReport } from '@/lib/services/decision.service';
 import { flushSheetProjections } from '@/lib/services/projection.service';
@@ -22,6 +27,7 @@ import { seedConversationForAgentTurn, type SeededAgentTurn } from '../helpers/a
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const originalSheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
 const originalSheetTab = process.env.GOOGLE_SHEETS_TAB_NAME;
+const originalCronSecret = process.env.CRON_SECRET;
 
 function commit(
   seeded: SeededAgentTurn,
@@ -67,6 +73,8 @@ afterEach(() => {
   else process.env.GOOGLE_SHEETS_SPREADSHEET_ID = originalSheetId;
   if (originalSheetTab === undefined) delete process.env.GOOGLE_SHEETS_TAB_NAME;
   else process.env.GOOGLE_SHEETS_TAB_NAME = originalSheetTab;
+  if (originalCronSecret === undefined) delete process.env.CRON_SECRET;
+  else process.env.CRON_SECRET = originalCronSecret;
 });
 
 afterAll(async () => sql.end());
@@ -388,6 +396,173 @@ run('Agent Loop preparation materialization', () => {
     ]));
   });
 
+  it('reclaims a predecessor stranded in pending_supersession when its successor job terminally fails', async () => {
+    // Blocker P1 (2026-09-05 independent review): `pending_supersession`
+    // (20260905000007) has no terminal recovery path once the successor's
+    // job that would complete the link exhausts its retries — the
+    // predecessor is neither `active` nor `superseded`, invisible to
+    // `search_selected_memories`, and unrecoverable. This drives a real
+    // successor job to the actual terminal `failed` state (three exhausted
+    // attempts, same code path production uses) and asserts a reconciliation
+    // sweep restores the predecessor to `active` rather than losing it.
+    const seeded = await seedConversationForAgentTurn();
+    await sql`
+      UPDATE messages SET content = 'Quiero estudiar marketing'
+      WHERE id = ${seeded.turn_id}::uuid
+    `;
+    const firstPrepared = await prepareMemoryToolV1({
+      db: sql,
+      turn_id: seeded.turn_id,
+      conversation_id: seeded.conversation_id,
+    }, {
+      candidates: [{ text: 'Quiero estudiar marketing', type: 'study_goal', supersedes: [] }],
+    });
+    expect(firstPrepared.success).toBe(true);
+    const firstAccepted = firstPrepared.canonical_data!.accepted[0]!;
+    const first = await commit(seeded, { preparation_ids: [firstPrepared.preparation_id!] });
+    await projectMemoryJob(first.decision_id);
+    await expect(sql<Array<{ status: string }>>`
+      SELECT status FROM selected_memories WHERE id = ${firstAccepted.id}::uuid
+    `).resolves.toEqual([{ status: 'active' }]);
+
+    await sql`
+      UPDATE messages SET content = 'En realidad quiero estudiar finanzas'
+      WHERE id = ${seeded.second_turn_id}::uuid
+    `;
+    const successor = await prepareMemoryToolV1({
+      db: sql,
+      turn_id: seeded.second_turn_id,
+      conversation_id: seeded.conversation_id,
+    }, {
+      candidates: [{
+        text: 'En realidad quiero estudiar finanzas',
+        type: 'study_goal',
+        supersedes: [firstAccepted.id],
+      }],
+    });
+    expect(successor.success).toBe(true);
+    const second = await commit(seeded, {
+      turn_id: seeded.second_turn_id,
+      preparation_ids: [successor.preparation_id!],
+    });
+    // Spec §3.10 in-transaction limbo, already covered by the test above —
+    // asserted again here only as the precondition this test builds on.
+    await expect(sql<Array<{ status: string }>>`
+      SELECT status FROM selected_memories WHERE id = ${firstAccepted.id}::uuid
+    `).resolves.toEqual([{ status: 'pending_supersession' }]);
+
+    // Force the successor's async projection to fail deterministically while
+    // preserving its authoritative workspace/contact provenance. Recovery
+    // must never trust candidate JSON to choose a tenant, so deleting that
+    // provenance would correctly make recovery fail closed too.
+    await sql`
+      UPDATE agent_a_memory_projection_jobs
+      SET candidate = jsonb_set(candidate, '{type}', '"unsupported"'::jsonb),
+          created_at = '-infinity'::timestamptz
+      WHERE decision_id = ${second.decision_id}::uuid
+    `;
+
+    // Drive the job to the real terminal state through the same worker
+    // entrypoint production uses. Only the 1-minute `available_at` backoff
+    // between attempts is short-circuited here (by SQL, between calls) so
+    // the test does not sleep three real minutes — the failure detection and
+    // `attempt_count` bookkeeping under test run for real, unmodified.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await sql`
+        UPDATE agent_a_memory_projection_jobs
+        SET available_at = now()
+        WHERE decision_id = ${second.decision_id}::uuid
+      `;
+      await projectAgentAMemories({ limit: 10 }, { db: sql });
+    }
+    const [terminalJob] = await sql<Array<{
+      status: string;
+      attempt_count: number;
+      last_error_code: string | null;
+    }>>`
+      SELECT status, attempt_count, last_error_code
+      FROM agent_a_memory_projection_jobs
+      WHERE decision_id = ${second.decision_id}::uuid
+    `;
+    expect(terminalJob).toMatchObject({
+      status: 'failed',
+      attempt_count: 3,
+      last_error_code: 'MEMORY_CANDIDATE_INVALID',
+    });
+
+    // The predecessor must not remain stranded: `attempt_count < 3` gates
+    // every future claim, so nothing will ever reclaim this job again.
+    await expect(sql<Array<{ status: string }>>`
+      SELECT status FROM selected_memories WHERE id = ${firstAccepted.id}::uuid
+    `).resolves.toEqual([{ status: 'pending_supersession' }]);
+
+    // Recovery and its durable audit must commit together. If the audit sink
+    // fails, leaving the memory active would make a retry a no-op and lose
+    // the evidence forever.
+    await expect(reclaimStrandedMemorySupersessions({}, {
+      db: sql,
+      audit: async () => {
+        throw new Error('TEST_AUDIT_FAILURE');
+      },
+    })).rejects.toThrow('TEST_AUDIT_FAILURE');
+    await expect(sql<Array<{ status: string }>>`
+      SELECT status FROM selected_memories WHERE id = ${firstAccepted.id}::uuid
+    `).resolves.toEqual([{ status: 'pending_supersession' }]);
+
+    // Exercise the scheduled production entrypoint, not the recovery helper
+    // directly. This is what proves a deployed cron sweep can actually reach
+    // the repair after the worker exhausts the successor job.
+    process.env.CRON_SECRET = `test-reconcile-${randomUUID()}`;
+    const request = () => new NextRequest('http://localhost/api/cron/reconcile-orchestration', {
+      headers: {
+        authorization: `Bearer ${process.env.CRON_SECRET}`,
+        'x-trace-id': randomUUID(),
+      },
+    });
+    const response = await reconcileOrchestrationCron(request());
+    const sweep = await response.json() as {
+      memory_supersessions?: { examined: number; reclaimed: number; failed: number };
+    };
+    expect(sweep.memory_supersessions?.failed).toBe(0);
+    expect(sweep.memory_supersessions?.reclaimed).toBeGreaterThanOrEqual(1);
+
+    await expect(sql<Array<{ status: string; embedding_state: string }>>`
+      SELECT status, embedding_state FROM selected_memories WHERE id = ${firstAccepted.id}::uuid
+    `).resolves.toEqual([{ status: 'active', embedding_state: 'pending' }]);
+
+    const auditEventKey = `memory:${firstAccepted.id}:supersession_reclaimed`;
+    await expect(sql<Array<{
+      action: string;
+      payload: {
+        workspace_id?: string;
+        successor_decision_id?: string;
+        attempt_count?: number;
+        last_error_code?: string;
+      };
+    }>>`
+      SELECT action, payload FROM audit_log WHERE event_key = ${auditEventKey}
+    `).resolves.toEqual([{
+      action: 'agent.decision.memory_supersession_reclaimed',
+      payload: expect.objectContaining({
+        workspace_id: seeded.workspace_id,
+        successor_decision_id: second.decision_id,
+        attempt_count: 3,
+        last_error_code: 'MEMORY_CANDIDATE_INVALID',
+      }),
+    }]);
+
+    // Idempotent through the same production entrypoint: no second mutation
+    // and no duplicate audit event for the deterministic event key.
+    const secondResponse = await reconcileOrchestrationCron(request());
+    const secondSweep = await secondResponse.json() as {
+      memory_supersessions?: { examined: number; reclaimed: number; failed: number };
+    };
+    expect(secondSweep.memory_supersessions).toMatchObject({ reclaimed: 0, failed: 0 });
+    await expect(sql<Array<{ count: string }>>`
+      SELECT count(*)::text AS count FROM audit_log WHERE event_key = ${auditEventKey}
+    `).resolves.toEqual([{ count: '1' }]);
+  });
+
   it('fails closed when a successor supersedes a preparation that was never committed', async () => {
     const seeded = await seedConversationForAgentTurn();
     await sql`
@@ -487,6 +662,16 @@ run('Agent Loop preparation materialization', () => {
       preparation_ids: [predecessor.preparation_id!, successor.preparation_id!],
     });
     expect(committed.decision_id).toBeTruthy();
+
+    // The disposable local database is intentionally reused across focal
+    // integration commands and can contain older pending projection jobs.
+    // Make this decision the oldest claimable work so the two LIMIT-1 calls
+    // below still prove candidate_index ordering for this exact commit.
+    await sql`
+      UPDATE agent_a_memory_projection_jobs
+      SET created_at = now() - interval '200 years', available_at = now()
+      WHERE decision_id = ${committed.decision_id}::uuid
+    `;
 
     // Claim one job at a time: candidate_index 0 (predecessor) is guaranteed
     // to be the sole row returned by the first LIMIT-1 claim, so it always

@@ -110,6 +110,15 @@ function parsePreparedMemoryIdentity(value: unknown): PreparedMemoryIdentityV1 |
   return { id: candidate.id, supersedes: candidate.supersedes as string[] };
 }
 
+/**
+ * The projection worker never reclaims a job past its third attempt
+ * (`attempt_count < 3` below): a job stuck at `status = 'failed'` with
+ * `attempt_count = 3` is TERMINAL, not merely delayed. Kept as one named
+ * constant so the claim query and the reconciliation sweep below can never
+ * drift apart on what "terminal" means.
+ */
+const MAX_MEMORY_PROJECTION_ATTEMPTS = 3;
+
 async function completeJob(
   db: DbClient,
   job: ClaimedMemoryJob,
@@ -139,11 +148,11 @@ export async function projectAgentAMemories(
     WITH claimable AS (
       SELECT decision_id, candidate_index
       FROM agent_a_memory_projection_jobs
-      WHERE (
-        status IN ('pending', 'failed') AND available_at <= now()
-      ) OR (
-        status = 'processing' AND lease_until <= now()
-      )
+      WHERE attempt_count < ${MAX_MEMORY_PROJECTION_ATTEMPTS}
+        AND (
+          (status IN ('pending', 'failed') AND available_at <= now())
+          OR (status = 'processing' AND lease_until <= now())
+        )
       ORDER BY created_at, decision_id, candidate_index
       FOR UPDATE SKIP LOCKED
       LIMIT ${limit}
@@ -154,7 +163,7 @@ export async function projectAgentAMemories(
     FROM claimable
     WHERE job.decision_id = claimable.decision_id
       AND job.candidate_index = claimable.candidate_index
-      AND job.attempt_count < 3
+      AND job.attempt_count < ${MAX_MEMORY_PROJECTION_ATTEMPTS}
     RETURNING job.decision_id, job.candidate_index, job.turn_id,
               job.candidate, job.attempt_count
   `;
@@ -285,4 +294,187 @@ export async function projectAgentAMemories(
     }
   }
   return { examined: jobs.length, completed, rejected, failed };
+}
+
+interface StrandedSupersessionRow {
+  memory_id: string;
+  contact_id: string;
+  workspace_id: string;
+  memory_type: string;
+  memory_key: string;
+  successor_decision_id: string;
+  successor_trace_id: string;
+  successor_candidate_index: number;
+  attempt_count: number;
+  last_error_code: string | null;
+}
+
+/**
+ * P1 (independent review, 2026-09-05): `commitAgentTurnV3` parks a
+ * predecessor at `status = 'pending_supersession'` (20260905000007) INSIDE
+ * the decision transaction, ahead of the successor's own row even existing —
+ * see the header of that migration and `commit-agent-turn-v3.ts:957-971`.
+ * The async worker above normally completes that link to `superseded` once
+ * the successor becomes durable. But if the successor's OWN job hits a
+ * DETERMINISTIC failure (an invalid prepared candidate or a durable context/
+ * store invariant that fails the same way on every retry),
+ * the claim query's `attempt_count < MAX_MEMORY_PROJECTION_ATTEMPTS` gate
+ * (above) means that job can never be picked up again once it reaches
+ * `status = 'failed'` at the attempt cap. Nothing else ever revisits it: the
+ * predecessor would sit at `pending_supersession` forever — invisible to
+ * `search_selected_memories` (`status = 'active'` only) and to both sweepers
+ * that only touch `'active'` rows (`expire_selected_memories`, the embedding
+ * worker) — a silent, permanent loss of whatever the customer told us.
+ *
+ * `agent_a_memory_projection_jobs` rows are never deleted (DELETE is
+ * REVOKEd from `orchestrator_role`, 20260828020001), so this can key
+ * directly off the job's own terminal state rather than a separate
+ * time-based heuristic. A predecessor is eligible only when the terminal
+ * job's source turn and the predecessor's origin state prove the SAME
+ * workspace and contact; candidate JSON is never tenant authority. An
+ * eligible predecessor still parked at `pending_supersession` is reverted to
+ * `active` — the SAME `status = 'active', embedding_state =
+ * 'pending'` shape `record_prepared_agent_memory_v1` itself uses for a
+ * freshly recorded memory, so the embedding worker re-embeds it normally.
+ * This restores the pre-P1-B behaviour (a stale recall) rather than losing
+ * the memory outright: strictly safer, per the review's own ruling, and
+ * genuinely observable — the terminally-failed job itself is left exactly as
+ * it was (`status = 'failed'`, `last_error_code` intact), while the recovery
+ * audit points back to that immutable decision/job evidence. Reverting the
+ * memory does not erase the cause an operator needs to investigate.
+ *
+ * Idempotent by construction: once reverted to `active`, the `WHERE
+ * memory.status = 'pending_supersession'` guard no longer matches it, so a
+ * repeat sweep reclaims nothing for that row.
+ *
+ * Wired into the existing reconciliation sweep
+ * (`reconcile-orchestration.ts` / `/api/cron/reconcile-orchestration`)
+ * rather than a new parallel scheduler — the one place in this codebase
+ * allowed to repair work another process abandoned.
+ */
+export async function reclaimStrandedMemorySupersessions(
+  input: { readonly limit?: number } = {},
+  deps: {
+    readonly db?: DbClient;
+    readonly log?: (event: string, fields: Record<string, unknown>) => void;
+    readonly audit?: typeof auditLog;
+  } = {},
+): Promise<{ examined: number; reclaimed: number }> {
+  const db = deps.db ?? sql;
+  const limit = Math.max(1, Math.min(input.limit ?? 200, 500));
+  const recover = async (transaction: DbClient): Promise<{
+    readonly stats: { examined: number; reclaimed: number };
+    readonly rows: StrandedSupersessionRow[];
+  }> => {
+    const stranded = await transaction<StrandedSupersessionRow[]>`
+      SELECT DISTINCT ON (memory.id)
+        memory.id AS memory_id,
+        memory.contact_id,
+        successor_state.workspace_id,
+        memory.memory_type,
+        memory.memory_key,
+        decision.id AS successor_decision_id,
+        decision.trace_id AS successor_trace_id,
+        job.candidate_index AS successor_candidate_index,
+        job.attempt_count,
+        job.last_error_code
+      FROM agent_a_memory_projection_jobs AS job
+      JOIN agent_decisions AS decision
+        ON decision.id = job.decision_id
+       AND decision.turn_id = job.turn_id
+      JOIN messages AS turn
+        ON turn.id = job.turn_id
+       AND turn.direction = 'inbound'
+      JOIN conversation_sales_context_states_v1 AS successor_state
+        ON successor_state.conversation_id = turn.conversation_id
+       AND successor_state.contact_id = turn.contact_id
+      CROSS JOIN LATERAL jsonb_array_elements_text(
+        CASE
+          WHEN jsonb_typeof(job.candidate -> 'supersedes') = 'array'
+            THEN job.candidate -> 'supersedes'
+          ELSE '[]'::jsonb
+        END
+      ) AS supersedes(value)
+      JOIN selected_memories AS memory
+        ON lower(memory.id::text) = lower(supersedes.value)
+       AND memory.contact_id = turn.contact_id
+       AND memory.status = 'pending_supersession'
+      JOIN conversation_sales_context_states_v1 AS origin_state
+        ON origin_state.conversation_id = memory.conversation_id
+       AND origin_state.contact_id = memory.contact_id
+       AND origin_state.workspace_id = successor_state.workspace_id
+      WHERE job.status = 'failed'
+        AND job.attempt_count >= ${MAX_MEMORY_PROJECTION_ATTEMPTS}
+      ORDER BY memory.id, job.created_at, job.decision_id, job.candidate_index
+      LIMIT ${limit}
+    `;
+    if (stranded.length === 0) {
+      return { stats: { examined: 0, reclaimed: 0 }, rows: [] };
+    }
+
+    const strandedIds = stranded.map((row) => row.memory_id);
+    const updated = await transaction<Array<{ memory_id: string }>>`
+      UPDATE selected_memories AS memory
+      SET status = 'active', embedding_state = 'pending', embedding_updated_at = now()
+      WHERE memory.id = ANY(${strandedIds}::uuid[])
+        AND memory.status = 'pending_supersession'
+      RETURNING memory.id AS memory_id
+    `;
+    const updatedIds = new Set(updated.map((row) => row.memory_id));
+    const reclaimed = stranded.filter((row) => updatedIds.has(row.memory_id));
+
+    // Audit inside the same transaction as the status restoration. If the
+    // audit sink fails, the UPDATE rolls back and a later sweep can retry;
+    // there is never an active memory whose recovery evidence was lost.
+    for (const row of reclaimed) {
+      await deps.audit?.({
+        action: 'agent.decision.memory_supersession_reclaimed',
+        entity_type: 'selected_memory',
+        entity_id: row.memory_id,
+        payload: {
+          contact_id: row.contact_id,
+          workspace_id: row.workspace_id,
+          memory_type: row.memory_type,
+          memory_key: row.memory_key,
+          successor_decision_id: row.successor_decision_id,
+          successor_candidate_index: row.successor_candidate_index,
+          attempt_count: row.attempt_count,
+          last_error_code: row.last_error_code,
+          reason: 'SUCCESSOR_PROJECTION_TERMINALLY_FAILED',
+          new_status: 'active',
+        },
+        event_key: `memory:${row.memory_id}:supersession_reclaimed`,
+        correlation_id: row.successor_trace_id,
+        causation_id: row.successor_decision_id,
+      }, transaction);
+    }
+
+    return {
+      stats: { examined: stranded.length, reclaimed: reclaimed.length },
+      rows: reclaimed,
+    };
+  };
+
+  const outcome = 'begin' in db
+    ? await db.begin(async (transaction) => recover(transaction))
+    : await recover(db);
+
+  // Emit operational logs only after the enclosing transaction commits, so
+  // a rolled-back repair can never look successful in telemetry.
+  for (const row of outcome.rows) {
+    deps.log?.('orchestration.agent_a_memory_supersession.reclaimed', {
+      memory_id: row.memory_id,
+      contact_id: row.contact_id,
+      workspace_id: row.workspace_id,
+      memory_type: row.memory_type,
+      memory_key: row.memory_key,
+      successor_decision_id: row.successor_decision_id,
+      successor_candidate_index: row.successor_candidate_index,
+      attempt_count: row.attempt_count,
+      last_error_code: row.last_error_code,
+      reason: 'SUCCESSOR_PROJECTION_TERMINALLY_FAILED',
+    });
+  }
+
+  return outcome.stats;
 }

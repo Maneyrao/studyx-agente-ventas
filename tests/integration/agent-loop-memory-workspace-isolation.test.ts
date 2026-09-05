@@ -5,10 +5,14 @@ import {
   AgentTurnV3RejectedError,
   commitAgentTurnV3,
 } from '@/features/conversation/application/commit-agent-turn-v3';
-import { projectAgentAMemories } from '@/features/memory/application/project-agent-a-memories';
+import {
+  projectAgentAMemories,
+  reclaimStrandedMemorySupersessions,
+} from '@/features/memory/application/project-agent-a-memories';
 import { PostgresMemoryStore } from '@/features/orchestration/adapters/postgres-memory-store';
 import { jsonbParam } from '@/lib/db/json';
 import { sql } from '@/lib/db/orchestrator';
+import { auditLog } from '@/lib/audit/logger';
 import { processInboundMessage } from '@/lib/services/ingestion.service';
 import { seedConversationForAgentTurn, type SeededAgentTurn } from '../helpers/agent-turn-fixtures';
 
@@ -232,6 +236,99 @@ run('Agent Loop memory workspace isolation', () => {
     `).resolves.toHaveLength(0);
   });
 
+  it('never reclaims a workspace-A predecessor from a terminal workspace-B job for the same contact', async () => {
+    const seeded = await seedConversationForAgentTurn();
+    await sql`
+      UPDATE messages SET content = 'Quiero estudiar marketing'
+      WHERE id = ${seeded.turn_id}::uuid
+    `;
+    const original = await prepareMemoryToolV1({
+      db: sql,
+      turn_id: seeded.turn_id,
+      conversation_id: seeded.conversation_id,
+    }, {
+      candidates: [{ text: 'Quiero estudiar marketing', type: 'study_goal', supersedes: [] }],
+    });
+    expect(original.success).toBe(true);
+    const originalId = original.canonical_data!.accepted[0]!.id;
+    const firstCommit = await commitAgentTurnV3(sql, {
+      turn_id: seeded.turn_id,
+      trace_id: randomUUID(),
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
+      release_manifest: seeded.release_manifest,
+      decision: {
+        schema_version: 3,
+        blocks: [{ type: 'narrative', text: 'Perfecto, ya quedó registrado.' }],
+        commit_preparations: [original.preparation_id!],
+        used_memory_ids: [],
+        state_patch: { expected_state_version: seeded.state_version, set: {} },
+        response_type: 'commercial_reply',
+      },
+    });
+    await projectMemoryJob(firstCommit.decision_id);
+
+    // Reproduce the predecessor's limbo state without manufacturing a false
+    // cross-workspace successor through the guarded commit path. The hostile
+    // terminal job below is durable evidence from workspace B and merely
+    // names this workspace-A UUID in candidate JSON.
+    await sql`
+      UPDATE selected_memories
+      SET status = 'pending_supersession', embedding = NULL,
+          embedding_state = 'skip', embedding_updated_at = now()
+      WHERE id = ${originalId}::uuid
+    `;
+
+    const workspaceB = await seedSecondWorkspaceConversation(seeded);
+    await sql`
+      UPDATE messages SET content = 'Prefiero estudiar por la noche'
+      WHERE id = ${workspaceB.turn_id}::uuid
+    `;
+    const workspaceBMemory = await prepareMemoryToolV1({
+      db: sql,
+      turn_id: workspaceB.turn_id,
+      conversation_id: workspaceB.conversation_id,
+    }, {
+      candidates: [{ text: 'Prefiero estudiar por la noche', type: 'preference', supersedes: [] }],
+    });
+    expect(workspaceBMemory.success).toBe(true);
+    const workspaceBCommit = await commitAgentTurnV3(sql, {
+      turn_id: workspaceB.turn_id,
+      trace_id: randomUUID(),
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
+      release_manifest: seeded.release_manifest,
+      decision: {
+        schema_version: 3,
+        blocks: [{ type: 'narrative', text: 'Anotado.' }],
+        commit_preparations: [workspaceBMemory.preparation_id!],
+        used_memory_ids: [],
+        state_patch: { expected_state_version: workspaceB.state_version, set: {} },
+        response_type: 'commercial_reply',
+      },
+    });
+    await sql`
+      UPDATE agent_a_memory_projection_jobs
+      SET candidate = jsonb_set(
+            candidate,
+            '{supersedes}',
+            to_jsonb(ARRAY[${originalId}::text])
+          ),
+          status = 'failed', attempt_count = 3, available_at = now(),
+          lease_until = NULL, last_error_code = 'MEMORY_CANDIDATE_INVALID'
+      WHERE decision_id = ${workspaceBCommit.decision_id}::uuid
+    `;
+
+    await reclaimStrandedMemorySupersessions({}, { db: sql, audit: auditLog });
+
+    await expect(sql<Array<{ status: string }>>`
+      SELECT status FROM selected_memories WHERE id = ${originalId}::uuid
+    `).resolves.toEqual([{ status: 'pending_supersession' }]);
+    await expect(sql<Array<{ count: string }>>`
+      SELECT count(*)::text AS count
+      FROM audit_log
+      WHERE event_key = ${`memory:${originalId}:supersession_reclaimed`}
+    `).resolves.toEqual([{ count: '0' }]);
+  });
+
   it('rejects a cross-workspace supersede at the SQL function itself, independent of the app-layer gate', async () => {
     // Defense in depth for the exact contract gap the report names:
     // `record_prepared_agent_memory_v1` used to receive and validate only
@@ -328,7 +425,13 @@ run('Agent Loop memory workspace isolation', () => {
       dedupe_hash: 'a'.repeat(64),
       ttl_days: null,
       trace_id: randomUUID(),
-    })).rejects.toThrow();
+    // Pinned to the exact SQLSTATE `record_prepared_agent_memory_v1` raises
+    // for an unauthorized `supersedes` target (20260905000008) — a bare
+    // `.rejects.toThrow()` would also pass if an unrelated regression made
+    // the function fail for the wrong reason (e.g. a bad FK or a NOT NULL
+    // violation), silently losing this test's coverage of the cross-workspace
+    // guard itself.
+    })).rejects.toMatchObject({ code: '42501' });
 
     await expect(sql<Array<{ status: string }>>`
       SELECT status FROM selected_memories WHERE id = ${originalId}::uuid
