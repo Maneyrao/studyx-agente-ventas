@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { withAgentAApiBudget, resolveAuthorizedLimitUsd } from '../../../scripts/agent-a-api-budget.mjs';
+import { withAgentAApiBudget, resolveAuthorizedLimitUsd, resolveMaxOutputTokensCeilingV1 } from '../../../scripts/agent-a-api-budget.mjs';
 
 const dirs: string[] = [];
 function ledger(priorSpendUsd = 0.38) {
@@ -17,6 +17,12 @@ const request = {
   method: 'POST',
   body: JSON.stringify({ model: 'deepseek-v4-flash', reasoning: { effort: 'none' }, max_output_tokens: 800, instructions: 'Synthetic lab input' }),
 };
+function requestWithMaxOutputTokens(maxOutputTokens: number) {
+  return {
+    method: 'POST',
+    body: JSON.stringify({ model: 'deepseek-v4-flash', reasoning: { effort: 'none' }, max_output_tokens: maxOutputTokens, instructions: 'Synthetic lab input' }),
+  };
+}
 
 describe('cumulative Agent A paid-call budget', () => {
   it.each([0, 0.37])('rejects a ledger resetting prior spend to %s', async (prior) => {
@@ -64,6 +70,67 @@ describe('cumulative Agent A paid-call budget', () => {
     expect(result.calls[0].usage).toBeNull();
     expect(result.calls[0].reservedUsd).toBeGreaterThan(0);
     expect(result.calls[1].accountedUsd).toBeCloseTo(0.000359, 8);
+  });
+});
+
+describe('max output tokens ceiling', () => {
+  it('accepts a request at the 1600-token default ceiling', async () => {
+    let sent = 0;
+    const budgeted = withAgentAApiBudget(async () => { sent++; return new Response('{}'); }, ledger());
+    await budgeted('https://api.deepseek.com/responses', requestWithMaxOutputTokens(1600));
+    expect(sent).toBe(1);
+  });
+
+  it('rejects a request above the ceiling before sending', async () => {
+    let sent = 0;
+    const budgeted = withAgentAApiBudget(async () => { sent++; return new Response('{}'); }, ledger());
+    await expect(budgeted('https://api.deepseek.com/responses', requestWithMaxOutputTokens(1601)))
+      .rejects.toThrow('AGENT_A_BUDGET_UNSUPPORTED_MODEL_PARAMETERS');
+    expect(sent).toBe(0);
+  });
+
+  it('scales the reservation with the requested token count instead of pinning it to 800', async () => {
+    const file800 = ledger();
+    const budgeted800 = withAgentAApiBudget(async () => new Response('{}'), file800);
+    await budgeted800('https://api.deepseek.com/responses', requestWithMaxOutputTokens(800));
+    const reserved800 = JSON.parse(readFileSync(file800, 'utf8')).calls[0].reservedUsd;
+
+    const file1600 = ledger();
+    const budgeted1600 = withAgentAApiBudget(async () => new Response('{}'), file1600);
+    await budgeted1600('https://api.deepseek.com/responses', requestWithMaxOutputTokens(1600));
+    const reserved1600 = JSON.parse(readFileSync(file1600, 'utf8')).calls[0].reservedUsd;
+
+    expect(reserved1600).toBeGreaterThan(reserved800);
+  });
+
+  it('rejects every request when the configured ceiling itself is invalid', async () => {
+    const previous = process.env.STUDYX_AGENT_A_BUDGET_MAX_OUTPUT_TOKENS;
+    process.env.STUDYX_AGENT_A_BUDGET_MAX_OUTPUT_TOKENS = 'abc';
+    try {
+      let sent = 0;
+      const budgeted = withAgentAApiBudget(async () => { sent++; return new Response('{}'); }, ledger());
+      await expect(budgeted('https://api.deepseek.com/responses', requestWithMaxOutputTokens(800)))
+        .rejects.toThrow('AGENT_A_BUDGET_MAX_OUTPUT_TOKENS_INVALID');
+      expect(sent).toBe(0);
+    } finally {
+      if (previous === undefined) delete process.env.STUDYX_AGENT_A_BUDGET_MAX_OUTPUT_TOKENS;
+      else process.env.STUDYX_AGENT_A_BUDGET_MAX_OUTPUT_TOKENS = previous;
+    }
+  });
+});
+
+describe('max output tokens ceiling resolution', () => {
+  it('defaults to 1600 when the environment does not set a ceiling', () => {
+    expect(resolveMaxOutputTokensCeilingV1({})).toBe(1600);
+  });
+
+  it('takes the ceiling from configuration when present', () => {
+    expect(resolveMaxOutputTokensCeilingV1({ STUDYX_AGENT_A_BUDGET_MAX_OUTPUT_TOKENS: '2000' })).toBe(2000);
+  });
+
+  it.each(['0', '-1', 'abc', '', '1.5'])('rejects the invalid configured ceiling %s', (value) => {
+    expect(() => resolveMaxOutputTokensCeilingV1({ STUDYX_AGENT_A_BUDGET_MAX_OUTPUT_TOKENS: value }))
+      .toThrow('AGENT_A_BUDGET_MAX_OUTPUT_TOKENS_INVALID');
   });
 });
 

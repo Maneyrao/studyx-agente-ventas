@@ -7,12 +7,21 @@ const INPUT_RATE = 0.44 / 1_000_000;
 const CACHED_RATE = 0.014 / 1_000_000;
 const OUTPUT_RATE = 1.32 / 1_000_000;
 const DEFAULT_AUTHORIZED_LIMIT_USD = 1.08;
+const DEFAULT_MAX_OUTPUT_TOKENS_CEILING = 1600;
 
 export function resolveAuthorizedLimitUsd(environment = process.env) {
   const raw = environment.STUDYX_AGENT_A_BUDGET_LIMIT_USD;
   if (raw === undefined) return DEFAULT_AUTHORIZED_LIMIT_USD;
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed <= 0) throw new Error('AGENT_A_BUDGET_LIMIT_INVALID');
+  return parsed;
+}
+
+export function resolveMaxOutputTokensCeilingV1(environment = process.env) {
+  const raw = environment.STUDYX_AGENT_A_BUDGET_MAX_OUTPUT_TOKENS;
+  if (raw === undefined) return DEFAULT_MAX_OUTPUT_TOKENS_CEILING;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) throw new Error('AGENT_A_BUDGET_MAX_OUTPUT_TOKENS_INVALID');
   return parsed;
 }
 
@@ -42,9 +51,12 @@ export function withAgentAApiBudget(fetchImplementation, ledgerPath) {
     if (url.origin !== 'https://api.deepseek.com') return fetchImplementation(request, init);
     if (url.pathname !== '/responses' || typeof init?.body !== 'string') throw new Error('AGENT_A_BUDGET_UNSUPPORTED_REQUEST');
     const body = JSON.parse(init.body);
+    const maxOutputTokensCeiling = resolveMaxOutputTokensCeilingV1();
     if (body.model !== 'deepseek-v4-flash' || body.reasoning?.effort !== 'none'
-      || body.max_output_tokens !== 800 || body.stream === true) throw new Error('AGENT_A_BUDGET_UNSUPPORTED_MODEL_PARAMETERS');
-    const reservedUsd = (Buffer.byteLength(init.body, 'utf8') + 4096) * INPUT_RATE + 800 * OUTPUT_RATE;
+      || !Number.isInteger(body.max_output_tokens) || body.max_output_tokens <= 0
+      || body.max_output_tokens > maxOutputTokensCeiling
+      || body.stream === true) throw new Error('AGENT_A_BUDGET_UNSUPPORTED_MODEL_PARAMETERS');
+    const reservedUsd = (Buffer.byteLength(init.body, 'utf8') + 4096) * INPUT_RATE + body.max_output_tokens * OUTPUT_RATE;
     const call = { id: randomUUID(), at: new Date().toISOString(), reservedUsd, accountedUsd: reservedUsd, usage: null, status: 'reserved' };
     mutateLedger(ledgerPath, (ledger) => {
       const used = ledger.priorSpendUsd + ledger.calls.reduce((sum, previous) => sum + previous.accountedUsd, 0);
