@@ -4,7 +4,8 @@ export type AgentLoopModeV3 = typeof AGENT_LOOP_MODES_V3[number];
 
 export interface RolloutRowV3 {
   readonly contact_id: string | null;
-  readonly mode: AgentLoopModeV3;
+  /** Untrusted at this boundary so invalid database values can fail closed. */
+  readonly mode: unknown;
 }
 
 export interface AgentLoopRolloutReaderV3 {
@@ -21,9 +22,11 @@ export function resolveAgentLoopModeV3(
   rows: readonly RolloutRowV3[],
   contactId: string,
 ): AgentLoopModeV3 {
-  const contactMode = rows.find((row) => row.contact_id === contactId)?.mode;
-  if (isAgentLoopModeV3(contactMode)) return contactMode;
+  const contactRow = rows.find((row) => row.contact_id === contactId);
+  if (contactRow) {
+    return isAgentLoopModeV3(contactRow.mode) ? contactRow.mode : 'off';
+  }
 
-  const workspaceMode = rows.find((row) => row.contact_id === null)?.mode;
-  return isAgentLoopModeV3(workspaceMode) ? workspaceMode : 'off';
+  const workspaceRow = rows.find((row) => row.contact_id === null);
+  return workspaceRow && isAgentLoopModeV3(workspaceRow.mode) ? workspaceRow.mode : 'off';
 }

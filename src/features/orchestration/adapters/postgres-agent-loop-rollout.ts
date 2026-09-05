@@ -1,8 +1,6 @@
-import { AGENT_LOOP_MODES_V3, type RolloutRowV3 } from '../domain/agent-loop-rollout';
+import type { RolloutRowV3 } from '../domain/agent-loop-rollout';
 import { sql } from '@/lib/db/orchestrator';
 import type { DbClient } from '@/lib/db/types';
-
-type RolloutDatabaseRow = { readonly contact_id: string | null; readonly mode: unknown };
 
 /** Reads only the configured workspace default and this contact's override. */
 export class PostgresAgentLoopRolloutReaderV3 {
@@ -12,7 +10,7 @@ export class PostgresAgentLoopRolloutReaderV3 {
   ) {}
 
   async load(contactId: string): Promise<readonly RolloutRowV3[]> {
-    const rows = await this.db<RolloutDatabaseRow[]>`
+    return this.db<RolloutRowV3[]>`
       SELECT rollout.contact_id, rollout.mode
       FROM agent_loop_rollout_v3 AS rollout
       JOIN workspaces AS workspace
@@ -30,12 +28,5 @@ export class PostgresAgentLoopRolloutReaderV3 {
             AND membership.contact_id = ${contactId}::uuid
         )
     `;
-
-    return rows.flatMap((row) => (
-      typeof row.mode === 'string'
-      && (AGENT_LOOP_MODES_V3 as readonly string[]).includes(row.mode)
-        ? [{ contact_id: row.contact_id, mode: row.mode as RolloutRowV3['mode'] }]
-        : []
-    ));
   }
 }

@@ -390,11 +390,15 @@ describe('claimBatch', () => {
     async (outcome) => {
       const memory = { search: vi.fn().mockResolvedValue([]) };
       const knowledge = { search: vi.fn().mockResolvedValue([]) };
-      const deps = buildDeps({
-        claimResult: claim({ outcome, claim_token: null, retry_after_ms: 1500 }),
-        memory,
-        knowledge,
-      });
+      const rolloutLoad = vi.fn().mockResolvedValue([]);
+      const deps = {
+        ...buildDeps({
+          claimResult: claim({ outcome, claim_token: null, retry_after_ms: 1500 }),
+          memory,
+          knowledge,
+        }),
+        agentLoopRollout: { load: rolloutLoad },
+      };
 
       const result = await claimBatch(input, deps);
 
@@ -406,6 +410,7 @@ describe('claimBatch', () => {
       expect(deps.store.loadClaimedTurnFacts).not.toHaveBeenCalled();
       expect(deps.store.listBatchMessages).not.toHaveBeenCalled();
       expect(deps.store.loadClaimedCallFacts).not.toHaveBeenCalled();
+      expect(rolloutLoad).not.toHaveBeenCalled();
     }
   );
 

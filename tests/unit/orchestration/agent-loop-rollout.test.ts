@@ -1,8 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { PostgresAgentLoopRolloutReaderV3 } from '@/features/orchestration/adapters/postgres-agent-loop-rollout';
 import {
   resolveAgentLoopModeV3,
   type RolloutRowV3,
 } from '@/features/orchestration/domain/agent-loop-rollout';
+import type { DbClient } from '@/lib/db/types';
+
+vi.mock('@/lib/db/orchestrator', () => ({ sql: vi.fn() }));
 
 const CONTACT = '11111111-1111-1111-1111-111111111111';
 const OTHER = '22222222-2222-2222-2222-222222222222';
@@ -31,9 +35,35 @@ describe('resolveAgentLoopModeV3', () => {
       .toBe('off');
   });
 
-  it('fails closed when an unvalidated row carries an unknown mode', () => {
-    expect(resolveAgentLoopModeV3([
+  it('fails closed when the matching override is invalid despite an authoritative default', () => {
+    const rows = [
+      { contact_id: null, mode: 'authoritative' },
       { contact_id: CONTACT, mode: 'invalid' },
-    ] as unknown as RolloutRowV3[], CONTACT)).toBe('off');
+    ] as unknown as RolloutRowV3[];
+
+    expect(resolveAgentLoopModeV3(rows, CONTACT)).toBe('off');
+    expect(resolveAgentLoopModeV3([...rows].reverse(), CONTACT)).toBe('off');
+  });
+
+  it('ignores an invalid row belonging to another contact', () => {
+    expect(resolveAgentLoopModeV3([
+      { contact_id: OTHER, mode: 'invalid' },
+      { contact_id: null, mode: 'shadow' },
+    ] as unknown as RolloutRowV3[], CONTACT)).toBe('shadow');
+  });
+});
+
+describe('PostgresAgentLoopRolloutReaderV3', () => {
+  it('preserves an invalid applicable row so the resolver can fail closed', async () => {
+    const databaseRows = [
+      { contact_id: null, mode: 'authoritative' },
+      { contact_id: CONTACT, mode: 'invalid' },
+    ];
+    const db = vi.fn().mockResolvedValue(databaseRows) as unknown as DbClient;
+
+    const rows = await new PostgresAgentLoopRolloutReaderV3('studyx', db).load(CONTACT);
+
+    expect(rows).toEqual(databaseRows);
+    expect(resolveAgentLoopModeV3(rows, CONTACT)).toBe('off');
   });
 });
