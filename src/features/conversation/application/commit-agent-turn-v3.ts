@@ -25,7 +25,7 @@ import {
   splitFullName,
 } from '@/lib/heuristics/contact-identity';
 import { reserveCallForDecision } from '@/features/calls/application/request-call';
-import { enqueueLeadProjection } from '@/lib/services/projection.service';
+import { enqueueLeadProjection, type LeadProjectionInput } from '@/lib/services/projection.service';
 import { loadSheetsProjectionConfig } from '@/lib/config';
 import {
   PAYMENT_PLAN_CODES,
@@ -1157,11 +1157,31 @@ export async function commitAgentTurnV3(
       }
     }
 
+    // P1-C (re-review 2026-09-05): `enqueueLeadProjection` used to run right
+    // here, INSIDE the canonical transaction, leaving `sheet_projection_rows`
+    // in `pending` — immediately claimable by `flushSheetProjections` — while
+    // the outbound below could still be `leased` or never delivered at all.
+    // That violated this module's own contract (`projection.service.ts`:
+    // "always after channel delivery is confirmed, never inside the canonical
+    // transaction") and the operating contract
+    // (docs/contracts/agent-a-operational-mvp.md §61/§85/§111).
+    //
+    // Fix: only the INPUT is captured here (pure, no DB write). It is stored
+    // on `outbound_deliveries.deferred_lead_projection` alongside
+    // `deferred_state_patch` below (same deferred-until-accepted-delivery
+    // column pattern, 20260905000002) and only turned into a claimable
+    // `sheet_projection_rows` row by
+    // `applyLeadProjectionOnAcceptedOutboundV3`, invoked from the same
+    // `recordDeliveryReport` `submitted_to_botpress` branch that already
+    // applies the deferred state patch and marks the payment projection job
+    // delivered (decision.service.ts) — the existing "gate on delivery"
+    // mechanism, not a new parallel scheduler.
+    let pendingLeadProjection: LeadProjectionInput | null = null;
     if (committedLeads.length > 0) {
       const sheets = loadSheetsProjectionConfig();
       if (!sheets) throw new Error('AGENT_TURN_V3_LEAD_PROJECTION_CONFIG_MISSING');
       const names = projectedContact.name ? splitFullName(projectedContact.name) : null;
-      await enqueueLeadProjection({
+      pendingLeadProjection = {
         workspaceId: context.workspace_id,
         contactId: context.contact_id,
         spreadsheetId: sheets.spreadsheetId,
@@ -1178,7 +1198,7 @@ export async function commitAgentTurnV3(
         callId: committedCallId ?? undefined,
         ultimaSenal: 'agent_loop_lead_committed',
         traceId: input.trace_id,
-      }, { sql: transaction });
+      };
     }
 
     const authorizedUrls = committedPayment.map((artifact) => artifact.url);
@@ -1282,7 +1302,8 @@ export async function commitAgentTurnV3(
         leased_by = ${`botpress:${input.trace_id}`},
         lease_until = now() + interval '5 minutes',
         attempt_count = attempt_count + 1,
-        deferred_state_patch = ${jsonbParam(transaction, storedDeferred)}
+        deferred_state_patch = ${jsonbParam(transaction, storedDeferred)},
+        deferred_lead_projection = ${jsonbParam(transaction, pendingLeadProjection)}
       WHERE id = ${queue.delivery_id}::uuid
         AND state = 'pending'
       RETURNING attempt_count
@@ -1352,6 +1373,54 @@ export async function applyAcceptedOutboundStatePatchV3(
     SET deferred_patch_applied_on = 'accepted'
     WHERE message_id = ${outboundId}::uuid
       AND deferred_patch_applied_on IS NULL
+  `;
+  return true;
+}
+
+/**
+ * Materializes the deferred lead projection captured at commit time
+ * (`outbound_deliveries.deferred_lead_projection`) into a claimable
+ * `sheet_projection_rows` row, once — and only once — the channel has
+ * ACCEPTED the outbound message (`submitted_to_botpress`). This is the P1-C
+ * fix (re-review 2026-09-05): a lead used to become claimable by
+ * `flushSheetProjections` inside the canonical commit transaction, before the
+ * customer's message even left this database.
+ *
+ * Called from the same `recordDeliveryReport` `submitted_to_botpress` branch
+ * that already applies `applyAcceptedOutboundStatePatchV3` and marks the
+ * payment projection job delivered — the existing "defer until accepted
+ * delivery" mechanism, reused here rather than duplicated.
+ *
+ * `submitted_to_botpress` proves the channel ACCEPTED the message, not that
+ * the customer has seen it: it is the strongest proof available for the
+ * Telegram sandbox, which emits no delivery receipt. `enqueueLeadProjection`
+ * itself is an idempotent upsert keyed by `lead:<workspace>:<contact>`, so a
+ * duplicate/replayed report calling this twice is safe — the second call is a
+ * no-op because `deferred_lead_projection_applied_on` is already set.
+ */
+export async function applyLeadProjectionOnAcceptedOutboundV3(
+  db: DbClient,
+  outboundId: string,
+): Promise<boolean> {
+  const rows = await db<Array<{
+    deferred_lead_projection: LeadProjectionInput | null;
+  }>>`
+    SELECT deferred_lead_projection
+    FROM outbound_deliveries
+    WHERE message_id = ${outboundId}::uuid
+      AND deferred_lead_projection_applied_on IS NULL
+    FOR UPDATE
+  `;
+  const payload = rows[0]?.deferred_lead_projection;
+  if (!payload) return false;
+
+  await enqueueLeadProjection(payload, { sql: db });
+
+  await db`
+    UPDATE outbound_deliveries
+    SET deferred_lead_projection_applied_on = 'accepted'
+    WHERE message_id = ${outboundId}::uuid
+      AND deferred_lead_projection_applied_on IS NULL
   `;
   return true;
 }

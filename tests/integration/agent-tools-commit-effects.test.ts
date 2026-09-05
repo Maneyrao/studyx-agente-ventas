@@ -13,6 +13,9 @@ import {
 } from '@/features/conversation/application/commit-agent-turn-v3';
 import { projectAgentAMemories } from '@/features/memory/application/project-agent-a-memories';
 import { reserveCallForDecision } from '@/features/calls/application/request-call';
+import { recordDeliveryReport } from '@/lib/services/decision.service';
+import { flushSheetProjections } from '@/lib/services/projection.service';
+import { FakeSheetsProvider } from '@/lib/providers/sheets/fake-sheets-provider';
 import { sql } from '@/lib/db/orchestrator';
 import { seedConversationForAgentTurn, type SeededAgentTurn } from '../helpers/agent-turn-fixtures';
 
@@ -520,9 +523,28 @@ run('Agent Loop preparation materialization', () => {
     ]));
   });
 
-  it('queues one durable lead projection at commit and never contacts Sheets inline', async () => {
+  // P1-C (re-review 2026-09-05): `enqueueLeadProjection` used to be called
+  // INSIDE the commit transaction, which left `sheet_projection_rows` in
+  // `pending` — immediately claimable by `flushSheetProjections` — while the
+  // outbound message could still be `leased` (or never delivered at all).
+  // This is the exact defect from the re-review report
+  // (task-2.13-2.14-independent-rereview.md, "El lead queda reclamable por
+  // Sheets antes de que el canal confirme la entrega"): a lead in the
+  // spreadsheet with no confirmed delivery to the customer.
+  //
+  // This original assertion CODIFIED that wrong order (it asserted a claimable
+  // `pending` row right after commit, with no delivery report in between). It
+  // is replaced by three tests: this one (defect/negative-by-omission — no row
+  // at all until delivery), one for the positive path (delivery accepted ->
+  // exactly one claimable row, flushed exactly once), and one for the
+  // negative path (delivery reported failed -> never claimable).
+  it('defers the lead projection until delivery is confirmed: no claimable row and no Sheets contact before a delivery report', async () => {
     const seeded = await seedConversationForAgentTurn({ intake_complete: true });
-    process.env.GOOGLE_SHEETS_SPREADSHEET_ID = `agent-loop-${randomUUID()}`;
+    // Unique per test run: lets a flush assertion below distinguish "nothing
+    // was ever written for THIS lead" from "the shared disposable database
+    // happens to have unrelated pending rows from other tests/prior runs".
+    const spreadsheetId = `agent-loop-${randomUUID()}`;
+    process.env.GOOGLE_SHEETS_SPREADSHEET_ID = spreadsheetId;
     process.env.GOOGLE_SHEETS_TAB_NAME = 'Leads';
     const prepared = await prepareLeadProjectionToolV1({
       db: sql,
@@ -535,13 +557,74 @@ run('Agent Loop preparation materialization', () => {
     const replay = await commit(seeded, { preparation_ids: [prepared.preparation_id!] });
     expect(replay).toEqual(first);
 
+    // The outbound is still sitting `leased` (no delivery report was ever
+    // issued) — the exact reproduction from the re-review report.
+    const [outbound] = await sql<Array<{ state: string }>>`
+      SELECT state FROM outbound_deliveries WHERE message_id = ${first.outbound_id}::uuid
+    `;
+    expect(outbound?.state).toBe('leased');
+
+    const rows = await sql<Array<{ id: string }>>`
+      SELECT id FROM sheet_projection_rows
+      WHERE workspace_id = ${seeded.workspace_id}::uuid
+        AND projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
+    `;
+    expect(rows).toHaveLength(0);
+
+    // Even a manual/cron flush of the whole outbox must never contact Sheets
+    // for THIS lead: there is no row to protect it, by construction. The
+    // outbox is a shared table (other tests/workers may have unrelated
+    // pending rows), so the assertion is scoped to this test's own
+    // spreadsheetId rather than the global claim count.
+    const fake = new FakeSheetsProvider();
+    await flushSheetProjections(
+      { worker_id: `test-flush-${randomUUID()}` },
+      { sql, provider: fake },
+    );
+    expect(fake.calls.some((call) => call.spreadsheetId === spreadsheetId)).toBe(false);
+  });
+
+  it('promotes the deferred lead to a claimable Sheets row once delivery is accepted, and flushes it exactly once', async () => {
+    const seeded = await seedConversationForAgentTurn({ intake_complete: true });
+    const spreadsheetId = `agent-loop-${randomUUID()}`;
+    process.env.GOOGLE_SHEETS_SPREADSHEET_ID = spreadsheetId;
+    process.env.GOOGLE_SHEETS_TAB_NAME = 'Leads';
+    const prepared = await prepareLeadProjectionToolV1({
+      db: sql,
+      turn_id: seeded.turn_id,
+      conversation_id: seeded.conversation_id,
+    });
+    expect(prepared.success).toBe(true);
+    const committed = await commit(seeded, { preparation_ids: [prepared.preparation_id!] });
+
+    // Before delivery: nothing claimable yet (same guarantee as the previous test).
+    await expect(sql<Array<{ id: string }>>`
+      SELECT id FROM sheet_projection_rows
+      WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
+    `).resolves.toHaveLength(0);
+
+    // `submitted_to_botpress` means the channel ACCEPTED the message, not that
+    // the customer has seen it — the strongest proof available for the
+    // Telegram sandbox, which emits no delivery receipt. That is the bar this
+    // gate uses, and the row is honest about it (`ultima_senal` below).
+    await recordDeliveryReport({
+      outbound_id: committed.outbound_id!,
+      trace_id: randomUUID(),
+      status: 'submitted_to_botpress',
+      botpress_message_id: `bp-${seeded.turn_id}`,
+      replayed: false,
+      error_code: null,
+      delivery_attempt: 1,
+    });
+
     const rows = await sql<Array<{
       projection_key: string;
       state: string;
       attempt_count: number;
+      row_number: number;
       payload: Record<string, unknown>;
     }>>`
-      SELECT projection_key, state, attempt_count, payload
+      SELECT projection_key, state, attempt_count, row_number, payload
       FROM sheet_projection_rows
       WHERE workspace_id = ${seeded.workspace_id}::uuid
         AND projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
@@ -553,5 +636,86 @@ run('Agent Loop preparation materialization', () => {
       attempt_count: 0,
       payload: { contact_id: seeded.contact_id, ultima_senal: 'agent_loop_lead_committed' },
     });
+    const ourRowNumber = rows[0]!.row_number;
+
+    // The outbox is a shared table (other tests/workers may have unrelated
+    // pending rows), so "exactly once" is asserted against THIS row's calls,
+    // not the flush's global counters.
+    const fake = new FakeSheetsProvider();
+    const ourCalls = () => fake.calls.filter(
+      (call) => call.spreadsheetId === spreadsheetId && call.rowNumber === ourRowNumber,
+    );
+    const workerId = `test-flush-${randomUUID()}`;
+    await flushSheetProjections({ worker_id: workerId }, { sql, provider: fake });
+    expect(ourCalls()).toHaveLength(1);
+    await expect(sql<Array<{ state: string }>>`
+      SELECT state FROM sheet_projection_rows
+      WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
+    `).resolves.toEqual([{ state: 'projected' }]);
+
+    // Flushing again must not touch Sheets a second time: the row is already
+    // `projected` and there is nothing left to claim.
+    await flushSheetProjections({ worker_id: workerId }, { sql, provider: fake });
+    expect(ourCalls()).toHaveLength(1);
+
+    // A duplicate/replayed delivery report must not re-open or duplicate the row.
+    await recordDeliveryReport({
+      outbound_id: committed.outbound_id!,
+      trace_id: randomUUID(),
+      status: 'submitted_to_botpress',
+      botpress_message_id: `bp-${seeded.turn_id}`,
+      replayed: true,
+      error_code: null,
+      delivery_attempt: 1,
+    });
+    await expect(sql<Array<{ state: string }>>`
+      SELECT state FROM sheet_projection_rows
+      WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
+    `).resolves.toEqual([{ state: 'projected' }]);
+  });
+
+  it('never makes the lead claimable when the channel reports delivery failed', async () => {
+    const seeded = await seedConversationForAgentTurn({ intake_complete: true });
+    const spreadsheetId = `agent-loop-${randomUUID()}`;
+    process.env.GOOGLE_SHEETS_SPREADSHEET_ID = spreadsheetId;
+    process.env.GOOGLE_SHEETS_TAB_NAME = 'Leads';
+    const prepared = await prepareLeadProjectionToolV1({
+      db: sql,
+      turn_id: seeded.turn_id,
+      conversation_id: seeded.conversation_id,
+    });
+    expect(prepared.success).toBe(true);
+    const committed = await commit(seeded, { preparation_ids: [prepared.preparation_id!] });
+
+    await recordDeliveryReport({
+      outbound_id: committed.outbound_id!,
+      trace_id: randomUUID(),
+      status: 'failed',
+      botpress_message_id: null,
+      replayed: false,
+      error_code: 'CHANNEL_REJECTED',
+      delivery_attempt: 1,
+    });
+
+    await expect(sql<Array<{ id: string }>>`
+      SELECT id FROM sheet_projection_rows
+      WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
+    `).resolves.toHaveLength(0);
+
+    const fake = new FakeSheetsProvider();
+    await flushSheetProjections(
+      { worker_id: `test-flush-${randomUUID()}` },
+      { sql, provider: fake },
+    );
+    expect(fake.calls.some((call) => call.spreadsheetId === spreadsheetId)).toBe(false);
+
+    // The outbound is left retryable, not stuck: a defined terminal outcome
+    // (retry->accepted promotes the lead; retries exhausted means the
+    // customer never received the message and, correctly, the lead is never
+    // chased for a turn that was never delivered).
+    const [outbound] = await sql<Array<{ state: string }>>`
+      SELECT state FROM outbound_deliveries WHERE message_id = ${committed.outbound_id}::uuid
+    `;
+    expect(outbound?.state).toBe('failed_retryable');
   });
 });
