@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   createReleaseManifest,
   generateReleaseManifest,
@@ -62,6 +62,29 @@ describe('release manifest for the agent loop', () => {
     expect(first.prompt_template_sha256).toMatch(/^[a-f0-9]{64}$/u);
     expect(secondTurn.prompt_sha256).toBe('2'.repeat(64));
     expect(secondTurn.prompt_template_sha256).toBe(first.prompt_template_sha256);
+  });
+
+  it('rejects a divergent release model before provider fetch or commit', async () => {
+    const providerFetch = vi.fn(async (_url: string) => new Response(null, { status: 200 }));
+    const commit = vi.fn();
+    const environment = {
+      ...Object.fromEntries(REQUIRED_RELEASE_CONFIG.map((key) => [key, 'configured-for-test'])),
+      NODE_ENV: 'test' as const,
+      RELEASE_BUILT_AT: '2026-09-05T00:00:00.000Z',
+      DEEPSEEK_MODEL: 'deepseek-reasoner',
+    };
+
+    const run = async () => {
+      const manifest = await generateReleaseManifest(environment, {
+        promptSha256: '1'.repeat(64),
+      });
+      await providerFetch('https://api.deepseek.com/responses');
+      await commit(manifest);
+    };
+
+    await expect(run()).rejects.toThrow('RELEASE_MANIFEST_MODEL_MISMATCH');
+    expect(providerFetch).not.toHaveBeenCalled();
+    expect(commit).not.toHaveBeenCalled();
   });
 
   it('refuses to invent a turn prompt digest during release generation', async () => {

@@ -3,6 +3,7 @@ import {
   DEFAULT_DEVELOPMENT_EMULATOR_PHONE_E164,
   E164_PATTERN,
 } from "./src/channels/shared/emulator-envelope";
+import { AGENT_A_DEEPSEEK_MODEL } from "./src/config/agent-a-model";
 
 export default defineConfig({
   name: "STUDYX",
@@ -26,7 +27,7 @@ export default defineConfig({
       geminiDecisionModel: z.string().min(1).default('gemini-3.6-flash'),
       groqDecisionModel: z.string().min(1).default('openai/gpt-oss-120b'),
       agentABrainModel: z.string().min(1).default('openai/gpt-oss-120b'),
-      agentABrainDeepSeekModel: z.string().min(1).default('deepseek-v4-flash'),
+      agentABrainDeepSeekModel: z.literal(AGENT_A_DEEPSEEK_MODEL).default(AGENT_A_DEEPSEEK_MODEL),
       agentABrainOpenAIModel: z.string().min(1).default('gpt-5.6-terra'),
       agentABrainOpenAIFallbackModel: z.string().min(1).default('gpt-5.6-luna'),
       // Reversible migration: when enabled the complete Brain proposal goes

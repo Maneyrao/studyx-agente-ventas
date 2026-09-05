@@ -25,6 +25,10 @@ import {
   hasExplicitPurchaseDecline,
   hasTemporalPaymentDeferral,
 } from '../../utils/payment-choice';
+import {
+  AGENT_A_DEEPSEEK_MODEL,
+  resolveAgentADeepSeekModelV1,
+} from '../../config/agent-a-model';
 
 const GROQ_CHAT_COMPLETIONS_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
@@ -33,7 +37,7 @@ const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models
 export const DEFAULT_AGENT_A_BRAIN_MODEL = 'openai/gpt-oss-120b';
 export const DEFAULT_AGENT_A_BRAIN_OPENAI_MODEL = 'gpt-5.6-terra';
 export const DEFAULT_AGENT_A_BRAIN_OPENAI_FALLBACK_MODEL = 'gpt-5.6-luna';
-export const DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL = 'deepseek-v4-flash';
+export const DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL = AGENT_A_DEEPSEEK_MODEL;
 export const DEFAULT_AGENT_A_BRAIN_GEMINI_MODEL = 'gemini-2.5-flash';
 export const AGENT_A_BRAIN_DEADLINE_MS = 4_500;
 export const AGENT_A_BRAIN_DEEPSEEK_DEADLINE_MS = 10_000;
@@ -139,7 +143,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
   readonly model?: string;
   readonly timeout_ms?: number;
 }): Promise<GeneratedAgentATurnProposalV1> {
-  const model = input.model?.trim() || DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL;
+  const model = resolveAgentADeepSeekModelV1(input.model);
   const timeoutMs = Math.min(
     AGENT_A_BRAIN_DEEPSEEK_DEADLINE_MS,
     Math.max(1, input.timeout_ms ?? AGENT_A_BRAIN_DEEPSEEK_DEADLINE_MS),

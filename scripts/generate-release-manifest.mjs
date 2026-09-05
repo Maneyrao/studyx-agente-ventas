@@ -146,6 +146,16 @@ async function activePromptVersion() {
   return match[1];
 }
 
+async function activeDeepSeekModel() {
+  const source = await readFile(
+    join(ROOT, 'botpress-agent/src/config/agent-a-model.ts'),
+    'utf8',
+  );
+  const match = source.match(/AGENT_A_DEEPSEEK_MODEL\s*=\s*'([^']+)'/u);
+  if (!match?.[1]?.trim()) throw new Error('RELEASE_MANIFEST_MODEL_SOURCE_INVALID');
+  return match[1];
+}
+
 function presentConfig(environment) {
   return Object.fromEntries(
     REQUIRED_RELEASE_CONFIG.map((key) => [key, typeof environment[key] === 'string' && environment[key].trim() !== '']),
@@ -153,7 +163,14 @@ function presentConfig(environment) {
 }
 
 async function collectRuntimeManifest(environment, promptSha256) {
-  const [gitSha, trackedBotpress, migration, promptVersion, promptTemplateSha256] = await Promise.all([
+  const [
+    gitSha,
+    trackedBotpress,
+    migration,
+    promptVersion,
+    promptTemplateSha256,
+    deepSeekModel,
+  ] = await Promise.all([
     gitStdout(['rev-parse', 'HEAD']).then((value) => value.trim()),
     gitStdout(['ls-files', '-z', '--', 'botpress-agent']).then((value) => value.split('\0').filter(Boolean)),
     latestMigration(),
@@ -163,8 +180,13 @@ async function collectRuntimeManifest(environment, promptSha256) {
       'botpress-agent/src/prompts/agent-a-identity.ts',
       'botpress-agent/src/prompts/studyx-agent-a-canonical.generated.ts',
     ]),
+    activeDeepSeekModel(),
   ]);
   if (trackedBotpress.length === 0) throw new Error('RELEASE_MANIFEST_BOTPRESS_SOURCE_MISSING');
+  const configuredModel = environment.DEEPSEEK_MODEL?.trim();
+  if (configuredModel && configuredModel !== deepSeekModel) {
+    throw new Error('RELEASE_MANIFEST_MODEL_MISMATCH');
+  }
 
   return createReleaseManifest({
     environment: environment.VERCEL_ENV ?? environment.NODE_ENV ?? 'development',
@@ -172,7 +194,7 @@ async function collectRuntimeManifest(environment, promptSha256) {
     botpressArtifactSha: await sha256Files(trackedBotpress),
     promptVersion,
     provider: 'deepseek-direct',
-    model: environment.DEEPSEEK_MODEL ?? 'deepseek-v4-flash',
+    model: deepSeekModel,
     latestMigration: migration,
     catalogSourceSha256: await sha256Files(['supabase/seed/studyx-manual.sql']),
     promptSha256,

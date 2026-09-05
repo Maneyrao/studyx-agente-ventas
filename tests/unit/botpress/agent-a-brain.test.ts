@@ -760,6 +760,29 @@ describe('Agent A Brain V1', () => {
     expect(moveProperties.vetoes.description).toContain('current customer message explicitly refuses');
   });
 
+  it('rejects a divergent DeepSeek model before fetch or commit', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(
+      200,
+      responsesSuccessBody(proposal()),
+    ));
+    const commit = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const run = async () => {
+      const generated = await generateDeepSeekAgentATurnProposalV1({
+        context: context(),
+        apiKey: 'deepseek-test-key',
+        signal: new AbortController().signal,
+        model: 'deepseek-reasoner',
+      });
+      await commit(generated);
+    };
+
+    await expect(run()).rejects.toThrow('AGENT_A_DEEPSEEK_MODEL_MISMATCH');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(commit).not.toHaveBeenCalled();
+  });
+
   it('retries one DeepSeek schema violation inside the same bounded deadline', async () => {
     const invalidProposal = proposal({ response: { messages: [] } });
     const fetchMock = vi.fn<typeof fetch>()
