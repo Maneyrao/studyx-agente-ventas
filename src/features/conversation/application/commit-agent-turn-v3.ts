@@ -897,6 +897,72 @@ export async function commitAgentTurnV3(
         throw new Error('PREPARATION_CANONICAL_DATA_INVALID');
       }
     }
+    // Fail closed on every `supersedes` target before any write happens: a
+    // successor may only reference (a) a memory that is ALREADY durable and
+    // authorized, or (b) a predecessor preparation that is part of THIS SAME
+    // commit (a closed dependency materialized atomically by the worker).
+    // Anything else — most importantly a reservation from a turn that never
+    // committed it — must reject the whole commit, never silently defer the
+    // failure to the async worker (`MEMORY_PROJECTION_STORE_FAILED`).
+    const committedMemoryArtifacts = committedMemories.map(
+      (preparation) => memoryArtifact(preparation.canonical_data)!,
+    );
+    const intraCommitMemoryIds = new Set(
+      committedMemoryArtifacts.flatMap(
+        (artifact) => artifact.accepted.map((candidate) => candidate.id),
+      ),
+    );
+    const durableSupersedes = [...new Set(
+      committedMemoryArtifacts.flatMap(
+        (artifact) => artifact.accepted.flatMap((candidate) => candidate.supersedes),
+      ),
+    )].filter((id) => !intraCommitMemoryIds.has(id));
+    if (durableSupersedes.length > 0) {
+      const authorizedDurable = await transaction<Array<{ id: string }>>`
+        SELECT memory.id::text AS id
+        FROM selected_memories AS memory
+        WHERE memory.contact_id = ${context.contact_id}::uuid
+          AND memory.id = ANY(${durableSupersedes}::uuid[])
+          AND memory.status IN ('accepted', 'active')
+        FOR UPDATE OF memory
+      `;
+      if (authorizedDurable.length !== durableSupersedes.length) {
+        throw rejected(
+          input.trace_id,
+          'MEMORY_SUPERSEDES_NOT_COMMITTABLE',
+          'commit_preparations',
+          { factIds: [...facts.keys()], preparationIds, missing },
+        );
+      }
+      // Spec §3.10: deactivate the predecessor INSIDE this decision
+      // transaction so a read immediately after commit can never recall it —
+      // `search_selected_memories` only reads `status = 'active'`. This
+      // cannot use `status = 'superseded'` yet: that status requires
+      // `superseded_by_memory_id` to already be set (checked by
+      // `selected_memories_superseded_shape_check`), and the successor's row
+      // does not exist yet — its FK cannot be satisfied from here. It also
+      // must not reuse an early `valid_until` or roll `embedding_state` back
+      // to `pending`: both would race the TTL sweep
+      // (`expire_selected_memories`) or the embedding worker, which act on
+      // any `status = 'active'` row and would silently undo this
+      // deactivation. `pending_supersession` (20260905000007) is invisible to
+      // all three and to `search_selected_memories`; the worker flips it to
+      // the real `superseded` terminal state once the successor is durable.
+      // `resolved_at` stays NULL here: `selected_memories_resolved_shape_check`
+      // requires it set only for the true terminal statuses
+      // ('rejected'/'superseded'/'expired'), which `pending_supersession`
+      // deliberately is not yet. The worker's final flip to `superseded`
+      // sets it.
+      await transaction`
+        UPDATE selected_memories
+        SET status = 'pending_supersession',
+            embedding = NULL,
+            embedding_state = 'skip',
+            embedding_updated_at = now()
+        WHERE id = ANY(${durableSupersedes}::uuid[])
+          AND status IN ('accepted', 'active')
+      `;
+    }
     for (const preparation of committedLeads) {
       const canonical = objectValue(preparation.canonical_data);
       if (canonical?.queued !== false) throw new Error('PREPARATION_CANONICAL_DATA_INVALID');

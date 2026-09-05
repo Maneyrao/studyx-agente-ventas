@@ -7,7 +7,10 @@ import {
   prepareMemoryToolV1,
   preparePaymentLinkToolV1,
 } from '@/features/conversation/application/agent-tools-prepare';
-import { commitAgentTurnV3 } from '@/features/conversation/application/commit-agent-turn-v3';
+import {
+  AgentTurnV3RejectedError,
+  commitAgentTurnV3,
+} from '@/features/conversation/application/commit-agent-turn-v3';
 import { projectAgentAMemories } from '@/features/memory/application/project-agent-a-memories';
 import { reserveCallForDecision } from '@/features/calls/application/request-call';
 import { sql } from '@/lib/db/orchestrator';
@@ -344,10 +347,19 @@ run('Agent Loop preparation materialization', () => {
       turn_id: seeded.second_turn_id,
       preparation_ids: [successor.preparation_id!],
     });
+    // Spec §3.10: a correction deactivates its predecessor INSIDE the decision
+    // transaction, not deferred to the async worker. Immediately after commit
+    // (before any worker run) the predecessor must already be unrecallable —
+    // `search_selected_memories` only reads `status = 'active'`.
+    // `pending_supersession` is that in-transaction limbo state: `superseded`
+    // cannot be used yet because it requires `superseded_by_memory_id` to
+    // already point at the successor, whose row does not exist until the
+    // worker runs. The final link to the successor's id is completed by the
+    // worker once the successor itself becomes durable (checked below).
     await expect(sql<Array<{ status: string; superseded_by_memory_id: string | null }>>`
       SELECT status, superseded_by_memory_id
       FROM selected_memories WHERE id = ${firstAccepted.id}::uuid
-    `).resolves.toEqual([{ status: 'active', superseded_by_memory_id: null }]);
+    `).resolves.toEqual([{ status: 'pending_supersession', superseded_by_memory_id: null }]);
 
     await projectMemoryJob(second.decision_id);
     await expect(sql<Array<{
@@ -367,6 +379,141 @@ run('Agent Loop preparation materialization', () => {
       },
       {
         id: successorAccepted.id,
+        status: 'active',
+        superseded_by_memory_id: null,
+      },
+    ]));
+  });
+
+  it('fails closed when a successor supersedes a preparation that was never committed', async () => {
+    const seeded = await seedConversationForAgentTurn();
+    await sql`
+      UPDATE messages SET content = 'Quiero estudiar diseño'
+      WHERE id = ${seeded.turn_id}::uuid
+    `;
+    const abandoned = await prepareMemoryToolV1({
+      db: sql,
+      turn_id: seeded.turn_id,
+      conversation_id: seeded.conversation_id,
+    }, {
+      candidates: [{ text: 'Quiero estudiar diseño', type: 'study_goal', supersedes: [] }],
+    });
+    expect(abandoned.success).toBe(true);
+    const abandonedId = abandoned.canonical_data!.accepted[0]!.id;
+
+    // Turn 1 commits WITHOUT the memory preparation: it stays a reservation
+    // that never becomes durable and never joins any commit.
+    await commit(seeded, { preparation_ids: [] });
+
+    await sql`
+      UPDATE messages SET content = 'Mejor arquitectura'
+      WHERE id = ${seeded.second_turn_id}::uuid
+    `;
+    const successor = await prepareMemoryToolV1({
+      db: sql,
+      turn_id: seeded.second_turn_id,
+      conversation_id: seeded.conversation_id,
+    }, {
+      candidates: [{
+        text: 'Mejor arquitectura',
+        type: 'study_goal',
+        supersedes: [abandonedId],
+      }],
+    });
+    expect(successor.success).toBe(true);
+
+    let commitError: unknown;
+    try {
+      await commit(seeded, {
+        turn_id: seeded.second_turn_id,
+        preparation_ids: [successor.preparation_id!],
+      });
+    } catch (error) {
+      commitError = error;
+    }
+    expect(commitError).toBeInstanceOf(AgentTurnV3RejectedError);
+    expect((commitError as AgentTurnV3RejectedError).rejection.violations).toEqual([
+      expect.objectContaining({ code: 'MEMORY_SUPERSEDES_NOT_COMMITTABLE' }),
+    ]);
+
+    await expect(sql<Array<{ decision_id: string }>>`
+      SELECT decision_id FROM agent_a_memory_projection_jobs
+      WHERE turn_id = ${seeded.second_turn_id}::uuid
+    `).resolves.toHaveLength(0);
+    await expect(sql<Array<{ id: string }>>`
+      SELECT id FROM agent_decisions WHERE turn_id = ${seeded.second_turn_id}::uuid
+    `).resolves.toHaveLength(0);
+  });
+
+  it('activates a successor whose predecessor preparation is selected in the same commit', async () => {
+    const seeded = await seedConversationForAgentTurn();
+    // Both memory candidates cite the SAME turn, so their literal quotes
+    // (the projection worker's grounding check requires the quote to be a
+    // substring of a batch message) must both be present in its content.
+    await sql`
+      UPDATE messages SET content = 'Quiero contabilidad. Mejor administración, la verdad'
+      WHERE id = ${seeded.turn_id}::uuid
+    `;
+    const predecessor = await prepareMemoryToolV1({
+      db: sql,
+      turn_id: seeded.turn_id,
+      conversation_id: seeded.conversation_id,
+    }, {
+      candidates: [{ text: 'Quiero contabilidad', type: 'study_goal', supersedes: [] }],
+    });
+    expect(predecessor.success).toBe(true);
+    const predecessorId = predecessor.canonical_data!.accepted[0]!.id;
+
+    const successor = await prepareMemoryToolV1({
+      db: sql,
+      turn_id: seeded.turn_id,
+      conversation_id: seeded.conversation_id,
+    }, {
+      candidates: [{
+        text: 'Mejor administración',
+        type: 'study_goal',
+        supersedes: [predecessorId],
+      }],
+    });
+    expect(successor.success).toBe(true);
+    const successorId = successor.canonical_data!.accepted[0]!.id;
+
+    // Same turn, same commit: predecessor and successor are a closed
+    // dependency. This must NOT be rejected by the fail-closed gate.
+    const committed = await commit(seeded, {
+      preparation_ids: [predecessor.preparation_id!, successor.preparation_id!],
+    });
+    expect(committed.decision_id).toBeTruthy();
+
+    // Claim one job at a time: candidate_index 0 (predecessor) is guaranteed
+    // to be the sole row returned by the first LIMIT-1 claim, so it always
+    // activates before the successor's job validates its `supersedes`.
+    await sql.begin(async (transaction) => {
+      await transaction`SET LOCAL ROLE orchestrator_role`;
+      await projectAgentAMemories({ limit: 1 }, { db: transaction });
+    });
+    await sql.begin(async (transaction) => {
+      await transaction`SET LOCAL ROLE orchestrator_role`;
+      await projectAgentAMemories({ limit: 1 }, { db: transaction });
+    });
+
+    await expect(sql<Array<{
+      id: string;
+      status: string;
+      superseded_by_memory_id: string | null;
+    }>>`
+      SELECT id, status, superseded_by_memory_id
+      FROM selected_memories
+      WHERE id = ANY(${[predecessorId, successorId]}::uuid[])
+      ORDER BY id
+    `).resolves.toEqual(expect.arrayContaining([
+      {
+        id: predecessorId,
+        status: 'superseded',
+        superseded_by_memory_id: successorId,
+      },
+      {
+        id: successorId,
         status: 'active',
         superseded_by_memory_id: null,
       },
