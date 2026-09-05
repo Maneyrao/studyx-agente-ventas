@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  modelPromptSha256V3,
   runAgentTurnWithIntegrityV3,
   type AgentTurnWithIntegrityResultV3,
 } from '../../../agent-core/src/loop';
@@ -53,11 +54,14 @@ function deps(decisions: AgentTurnDecisionV3[], checks: boolean[]) {
 
 describe('runAgentTurnWithIntegrityV3', () => {
   it('returns the decision untouched when integrity accepts it', async () => {
+    const dependencies = deps([good], [true]);
     const result = await runAgentTurnWithIntegrityV3(
-      deps([good], [true]),
+      dependencies,
       { instructions: 'x', conversation: [], toolDefinitions: [] },
     );
-    expect(result).toEqual({ outcome: 'decided', decision: good, repaired: false });
+    expect(result).toMatchObject({ outcome: 'decided', decision: good, repaired: false });
+    const request = dependencies.model.generate.mock.calls[0]![0];
+    expect(result.prompt_sha256).toBe(modelPromptSha256V3(request));
   });
 
   it('gives the rejection back as an orchestrator item, never a tool result', async () => {
@@ -65,13 +69,27 @@ describe('runAgentTurnWithIntegrityV3', () => {
     const result = await runAgentTurnWithIntegrityV3(dependencies, {
       instructions: 'x', conversation: [], toolDefinitions: [],
     });
-    expect(result).toEqual({ outcome: 'decided', decision: good, repaired: true });
+    expect(result).toMatchObject({ outcome: 'decided', decision: good, repaired: true });
 
     const second = dependencies.model.generate.mock.calls[1]![0];
     const injected = second.conversation.at(-1)!;
     expect(injected.role).toBe('developer');
     expect(injected).not.toHaveProperty('call_id');
     expect(String(injected.content)).toContain('NARRATIVE_CONTAINS_AMOUNT');
+    expect(result.prompt_sha256).toBe(modelPromptSha256V3(second));
+  });
+
+  it('changes the exact prompt hash when the effective conversation changes', () => {
+    const base = {
+      instructions: 'x',
+      toolDefinitions: [] as const,
+      force_final: false,
+    };
+    expect(modelPromptSha256V3({ ...base, conversation: [] }))
+      .not.toBe(modelPromptSha256V3({
+        ...base,
+        conversation: [{ role: 'user', content: 'Hola' }],
+      }));
   });
 
   it('never offers integrity_check as a callable tool', async () => {
@@ -220,7 +238,7 @@ describe('runAgentTurnWithIntegrityV3', () => {
       }],
     });
 
-    expect(result).toEqual({ outcome: 'decided', decision: good, repaired: true });
+    expect(result).toMatchObject({ outcome: 'decided', decision: good, repaired: true });
     const repairConversation = model.generate.mock.calls[2]![0]!.conversation;
     expect(repairConversation).toContainEqual(expect.objectContaining({
       role: 'tool',
@@ -285,5 +303,47 @@ describe('runAgentTurnWithIntegrityV3', () => {
       reason: 'AGENT_LOOP_BUDGET_EXHAUSTED',
       rejection: null,
     });
+  });
+
+  it('emits a technical fallback when the provider fails on the first generation', async () => {
+    const providerMessage = 'provider secret failure';
+    const result = await runAgentTurnWithIntegrityV3({
+      model: { generate: vi.fn(async () => { throw new Error(providerMessage); }) },
+      tools: { execute: vi.fn() },
+      now: () => 0,
+      check: vi.fn(),
+    }, { instructions: 'x', conversation: [], toolDefinitions: [] });
+
+    expect(result).toMatchObject({
+      outcome: 'fallback',
+      reason: 'AGENT_LOOP_BUDGET_EXHAUSTED',
+      rejection: null,
+    });
+    expect(JSON.stringify(result)).not.toContain(providerMessage);
+  });
+
+  it('emits the integrity fallback when the provider fails during repair', async () => {
+    const providerMessage = 'provider secret repair failure';
+    let calls = 0;
+    const result = await runAgentTurnWithIntegrityV3({
+      model: {
+        generate: vi.fn(async () => {
+          calls += 1;
+          if (calls === 1) return { decision: bad };
+          throw new Error(providerMessage);
+        }),
+      },
+      tools: { execute: vi.fn() },
+      now: () => 0,
+      check: vi.fn(() => ({ ok: false as const, rejection })),
+    }, { instructions: 'x', conversation: [], toolDefinitions: [] });
+
+    expect(result).toMatchObject({
+      outcome: 'fallback',
+      reason: 'AGENT_LOOP_INTEGRITY_FAILED',
+      rejection,
+      trace: { rejections: [rejection] },
+    });
+    expect(JSON.stringify(result)).not.toContain(providerMessage);
   });
 });

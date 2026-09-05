@@ -1,4 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import {
+  REQUIRED_RELEASE_CONFIG_V1,
+  type ReleaseManifestV1,
+} from '../../agent-core/src/domain/release-manifest';
 import { sql } from '@/lib/db/orchestrator';
 import { processInboundMessage } from '@/lib/services/ingestion.service';
 
@@ -13,7 +17,7 @@ export interface SeededAgentTurn {
   readonly claim_token: string;
   readonly trace_id: string;
   readonly state_version: number;
-  readonly release_manifest: Record<string, unknown>;
+  readonly release_manifest: ReleaseManifestV1;
   readonly model: { provider: string; model: string; prompt_version: string };
   readonly placeholderDecision: Record<string, unknown>;
   readonly proposalWithCallOfferAndFalsePrice: Record<string, unknown>;
@@ -194,12 +198,22 @@ export async function seedConversationForAgentTurn(options: {
     trace_id: traceId,
     state_version: Number(state.version),
     release_manifest: {
+      environment: 'test',
       git_sha: 'a'.repeat(40),
       botpress_artifact_sha: 'b'.repeat(64),
       prompt_version: 'studyx-agent-a-brain-v21',
+      provider: 'deepseek-direct',
       model: 'deepseek-v4-flash',
+      latest_migration: '20260905000005_agent_loop_commit_trace.sql',
+      catalog_source_sha256: 'c'.repeat(64),
       prompt_sha256: 'd'.repeat(64),
+      prompt_template_sha256: 'e'.repeat(64),
       tool_contract_version: 'agent-tools-v3.0.0',
+      required_config: Object.fromEntries(
+        REQUIRED_RELEASE_CONFIG_V1.map((key) => [key, true]),
+      ),
+      complete: true,
+      built_at: '2026-09-05T00:00:00.000Z',
     },
     model: { provider: 'deepseek-direct', model: 'deepseek-v4-flash', prompt_version: 'studyx-agent-a-brain-v21' },
     placeholderDecision: {

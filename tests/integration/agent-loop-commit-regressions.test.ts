@@ -12,6 +12,35 @@ const resolver = { resolve: () => 'https://buy.stripe.com/test_agent_loop' };
 afterAll(async () => alternate?.end());
 
 describe('agent loop atomic commit regressions', () => {
+  it('rejects an invalid release manifest before creating any durable effect', async () => {
+    const seeded = await seedConversationForAgentTurn();
+    await expect(commitAgentTurnV3(sql, {
+      turn_id: seeded.turn_id,
+      trace_id: seeded.trace_id,
+      decision: {
+        schema_version: 3,
+        blocks: [{ type: 'narrative', text: 'Seguimos.' }],
+        commit_preparations: [],
+        used_memory_ids: [],
+        state_patch: { expected_state_version: seeded.state_version, set: {} },
+        response_type: 'commercial_reply',
+      },
+      release_manifest: {
+        ...seeded.release_manifest,
+        prompt_sha256: 'synthetic',
+      } as never,
+    })).rejects.toThrow('INVALID_AGENT_LOOP_RELEASE_MANIFEST');
+
+    const [proof] = await sql<Array<{ decisions: number; outbounds: number }>>`
+      SELECT
+        (SELECT count(*)::int FROM agent_decisions
+          WHERE turn_id = ${seeded.turn_id}::uuid) AS decisions,
+        (SELECT count(*)::int FROM messages
+          WHERE in_reply_to = ${seeded.turn_id}::uuid AND direction = 'outbound') AS outbounds
+    `;
+    expect(proof).toEqual({ decisions: 0, outbounds: 0 });
+  });
+
   it('rolls back a late failure when called with another real Sql client', async () => {
     const seeded = await seedConversationForAgentTurn({ intake_complete: true });
     const prepared = await preparePaymentLinkToolV1(

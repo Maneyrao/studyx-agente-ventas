@@ -1,23 +1,12 @@
 import { narrativeViolationsV3 } from '../../../../agent-core/src/domain/response-blocks';
 import type { AgentTurnDecisionV3 } from '../../../../agent-core/src/ports/model-provider';
+import type {
+  IntegrityRejectionV1,
+  IntegrityViolationV3,
+} from '../../../../agent-core/src/domain/integrity-rejection';
 import { confirmsACall, solicitsACall } from './operational-promise-guard';
 
-export interface IntegrityViolationV3 {
-  readonly code: string;
-  readonly subject: string;
-  readonly detail?: string;
-}
-
-export interface IntegrityRejectionV1 {
-  readonly rejection_id: string;
-  readonly attempt: 1;
-  readonly violations: readonly IntegrityViolationV3[];
-  readonly authorized_alternatives: {
-    readonly fact_ids: readonly string[];
-    readonly preparations: readonly string[];
-    readonly missing_information: readonly string[];
-  };
-}
+export type { IntegrityRejectionV1, IntegrityViolationV3 };
 
 export type IntegrityResultV3 =
   | { readonly ok: true }

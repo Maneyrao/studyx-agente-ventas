@@ -5,13 +5,14 @@ import { PostgresConversationStateStoreV1 } from '@/features/conversation/adapte
 import { sql } from '@/lib/db/orchestrator';
 import { seedConversationForAgentTurn } from '../helpers/agent-turn-fixtures';
 import { openLocalTestDatabase } from '../helpers/db';
+import type { IntegrityRejectionV1 } from '../../agent-core/src/domain/integrity-rejection';
 
 const resolver = { resolve: () => 'https://buy.stripe.com/test_agent_loop' };
 const alternate = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
 
 afterAll(async () => alternate?.end());
 
-function integrityTrace(rejection: object) {
+function integrityTrace(rejection: IntegrityRejectionV1) {
   return {
     attempt_hashes: { first: '1'.repeat(64), second: '2'.repeat(64) },
     rejections: [rejection],

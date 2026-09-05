@@ -1,5 +1,9 @@
 import type { AgentTurnDecisionV3 } from '../../../../agent-core/src/ports/model-provider';
 import type { AgentTurnIntegrityTraceV3 } from '../../../../agent-core/src/loop';
+import {
+  parseReleaseManifestV1,
+  type ReleaseManifestV1,
+} from '../../../../agent-core/src/domain/release-manifest';
 import { renderBlocksV3 } from '../../../../agent-core/src/domain/response-blocks';
 import {
   splitStatePatchV3,
@@ -125,7 +129,7 @@ type FallbackInputV3 =
 type CommitAgentTurnV3Input = {
   readonly turn_id: string;
   readonly trace_id: string;
-  readonly release_manifest: Readonly<Record<string, unknown>>;
+  readonly release_manifest: ReleaseManifestV1;
 } & (
   | { readonly decision: AgentTurnDecisionV3; readonly fallback?: never }
   | { readonly decision?: never; readonly fallback: FallbackInputV3 }
@@ -429,7 +433,7 @@ async function applyStatePatch(
   return Number(updated.version);
 }
 
-function modelIdentity(manifest: Readonly<Record<string, unknown>>): {
+function modelIdentity(manifest: Pick<ReleaseManifestV1, 'model' | 'prompt_version'>): {
   readonly model: string;
   readonly promptVersion: string;
 } {
@@ -474,12 +478,13 @@ export async function commitAgentTurnV3(
   db: DbClient,
   input: CommitAgentTurnV3Input,
 ): Promise<{ readonly decision_id: string; readonly outbound_id: string | null }> {
+  const releaseManifest = parseReleaseManifestV1(input.release_manifest);
   const payloadHash = sha256Hex({
     turn_id: input.turn_id,
     outcome: input.decision
       ? { decision: input.decision }
       : { fallback: input.fallback },
-    release_manifest: input.release_manifest,
+    release_manifest: releaseManifest,
   });
 
   return runInTransaction(db, async (transaction) => {
@@ -525,7 +530,7 @@ export async function commitAgentTurnV3(
         ON CONFLICT DO NOTHING
       `;
 
-      const model = modelIdentity(input.release_manifest);
+      const model = modelIdentity(releaseManifest);
       const inserted = await transaction<Array<{ id: string }>>`
         INSERT INTO agent_decisions (
           turn_id, trace_id, schema_version, intent, decision_kind, response,
@@ -537,7 +542,7 @@ export async function commitAgentTurnV3(
           ${fallback.text}, 'clarification', NULL, NULL, ${jsonbParam(transaction, [])},
           ARRAY[]::text[], ARRAY[]::text[], 'waiting_user', ${input.fallback.reason}, 1,
           'deepseek-direct', ${model.model}, ${model.promptVersion},
-          decode(${payloadHash}, 'hex'), ${jsonbParam(transaction, input.release_manifest)}
+          decode(${payloadHash}, 'hex'), ${jsonbParam(transaction, releaseManifest)}
         )
         RETURNING id
       `;
@@ -563,7 +568,7 @@ export async function commitAgentTurnV3(
           decision_id: decisionId,
           response_type: 'clarification',
           authorized_egress: authorizedEgress,
-          release_manifest: input.release_manifest,
+          release_manifest: releaseManifest,
           agent_loop_fallback: fallbackTrace,
         },
       }, {
@@ -740,7 +745,7 @@ export async function commitAgentTurnV3(
           offering_sku: committedPayment[0].offering_code,
         }
       : null;
-    const model = modelIdentity(input.release_manifest);
+    const model = modelIdentity(releaseManifest);
     const inserted = await transaction<Array<{ id: string }>>`
       INSERT INTO agent_decisions (
         turn_id, trace_id, schema_version, intent, decision_kind, response,
@@ -754,7 +759,7 @@ export async function commitAgentTurnV3(
         ${input.decision.used_memory_ids}, ARRAY[]::text[],
         'waiting_user', 'AGENT_LOOP_V3_ACCEPTED', 1,
         'deepseek-direct', ${model.model}, ${model.promptVersion},
-        decode(${payloadHash}, 'hex'), ${jsonbParam(transaction, input.release_manifest)}
+        decode(${payloadHash}, 'hex'), ${jsonbParam(transaction, releaseManifest)}
       )
       RETURNING id
     `;
@@ -777,7 +782,7 @@ export async function commitAgentTurnV3(
         decision_id: decisionId,
         response_type: input.decision.response_type,
         authorized_egress: authorizedEgress,
-        release_manifest: input.release_manifest,
+        release_manifest: releaseManifest,
         agent_loop_provenance: provenance,
       },
     }, {

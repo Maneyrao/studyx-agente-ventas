@@ -18,6 +18,7 @@ const base = {
   catalogSourceSha256: 'c'.repeat(64),
   builtAt: '2026-09-05T00:00:00.000Z',
   promptSha256: 'd'.repeat(64),
+  promptTemplateSha256: 'e'.repeat(64),
   toolContractVersion: 'agent-tools-v3.0.0',
 };
 
@@ -38,21 +39,38 @@ describe('release manifest for the agent loop', () => {
       .toThrow('INVALID_RELEASE_MANIFEST_TOOL_CONTRACT_VERSION');
   });
 
-  it('hashes the effective identity-substituted prompt', async () => {
+  it('binds an exact turn prompt and identifies the Agent Loop runtime', async () => {
     const environment = {
       ...Object.fromEntries(REQUIRED_RELEASE_CONFIG.map((key) => [key, 'configured-for-test'])),
       NODE_ENV: 'test' as const,
-      AGENT_A_ADVISOR_NAME: 'Ana',
-      AGENT_A_ACADEMY_NAME: 'StudyX',
       RELEASE_BUILT_AT: '2026-09-05T00:00:00.000Z',
+      DEEPSEEK_MODEL: 'deepseek-v4-flash',
     };
-    const first = await generateReleaseManifest(environment);
-    const changedIdentity = await generateReleaseManifest({
-      ...environment,
-      AGENT_A_ADVISOR_NAME: 'Lucía',
+    const first = await generateReleaseManifest(environment, {
+      promptSha256: '1'.repeat(64),
+    });
+    const secondTurn = await generateReleaseManifest(environment, {
+      promptSha256: '2'.repeat(64),
     });
 
-    expect(first.prompt_sha256).toMatch(/^[a-f0-9]{64}$/u);
-    expect(changedIdentity.prompt_sha256).not.toBe(first.prompt_sha256);
+    expect(first).toMatchObject({
+      prompt_sha256: '1'.repeat(64),
+      prompt_version: 'studyx-agent-a-brain-v21',
+      provider: 'deepseek-direct',
+      model: 'deepseek-v4-flash',
+    });
+    expect(first.prompt_template_sha256).toMatch(/^[a-f0-9]{64}$/u);
+    expect(secondTurn.prompt_sha256).toBe('2'.repeat(64));
+    expect(secondTurn.prompt_template_sha256).toBe(first.prompt_template_sha256);
+  });
+
+  it('refuses to invent a turn prompt digest during release generation', async () => {
+    const environment = {
+      ...Object.fromEntries(REQUIRED_RELEASE_CONFIG.map((key) => [key, 'configured-for-test'])),
+      NODE_ENV: 'test' as const,
+      RELEASE_BUILT_AT: '2026-09-05T00:00:00.000Z',
+    };
+    await expect(generateReleaseManifest(environment)).rejects
+      .toThrow('RELEASE_MANIFEST_TURN_PROMPT_REQUIRED');
   });
 });

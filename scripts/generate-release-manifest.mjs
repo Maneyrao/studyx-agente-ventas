@@ -20,6 +20,8 @@ export const REQUIRED_RELEASE_CONFIG = Object.freeze([
   'ORCHESTRATOR_KEY_ID',
   'STUDYX_SIGNING_SECRET',
   'CRON_SECRET',
+  'DEEPSEEK_API_KEY',
+  'DEEPSEEK_MODEL',
   'GEMINI_API_KEY',
   'GEMINI_MODEL',
   'PAYMENT_LINK_12M',
@@ -95,6 +97,10 @@ export function createReleaseManifest(input) {
       input.promptSha256,
       'INVALID_RELEASE_MANIFEST_PROMPT_SHA256',
     ),
+    prompt_template_sha256: requireDigest(
+      input.promptTemplateSha256,
+      'INVALID_RELEASE_MANIFEST_PROMPT_TEMPLATE_SHA256',
+    ),
     tool_contract_version: requireNonEmptyString(
       input.toolContractVersion,
       'INVALID_RELEASE_MANIFEST_TOOL_CONTRACT_VERSION',
@@ -132,33 +138,12 @@ async function latestMigration() {
 
 async function activePromptVersion() {
   const source = await readFile(
-    join(ROOT, 'botpress-agent/src/prompts/agent-a-sales-bridge.ts'),
+    join(ROOT, 'botpress-agent/src/prompts/agent-a-brain-v1.ts'),
     'utf8',
   );
-  const match = source.match(/AGENT_A_PROMPT_VERSION\s*=\s*'([^']+)'/u);
+  const match = source.match(/AGENT_A_BRAIN_PROMPT_VERSION\s*=\s*'([^']+)'/u);
   if (!match) throw new Error('RELEASE_MANIFEST_PROMPT_VERSION_NOT_FOUND');
   return match[1];
-}
-
-async function effectivePromptSha256(environment) {
-  const source = `
-    import { createHash } from 'node:crypto';
-    import { buildAgentABrainInstructionsV1 } from './botpress-agent/src/prompts/agent-a-brain-v1.ts';
-    import { loadAgentAIdentityV1 } from './botpress-agent/src/prompts/agent-a-identity.ts';
-    const context = {
-      identity: loadAgentAIdentityV1(process.env),
-      turn: { recent_turns: [] },
-      turn_rejection: null,
-    };
-    const prompt = buildAgentABrainInstructionsV1(context);
-    process.stdout.write(createHash('sha256').update(prompt).digest('hex'));
-  `;
-  const { stdout } = await execFileAsync(
-    process.execPath,
-    ['--import', 'tsx', '--input-type=module', '--eval', source],
-    { cwd: ROOT, env: environment, maxBuffer: 16 * 1024 * 1024 },
-  );
-  return requireDigest(stdout.trim(), 'INVALID_RELEASE_MANIFEST_PROMPT_SHA256');
 }
 
 function presentConfig(environment) {
@@ -167,13 +152,17 @@ function presentConfig(environment) {
   );
 }
 
-async function collectRuntimeManifest(environment = process.env) {
-  const [gitSha, trackedBotpress, migration, promptVersion, promptSha256] = await Promise.all([
+async function collectRuntimeManifest(environment, promptSha256) {
+  const [gitSha, trackedBotpress, migration, promptVersion, promptTemplateSha256] = await Promise.all([
     gitStdout(['rev-parse', 'HEAD']).then((value) => value.trim()),
     gitStdout(['ls-files', '-z', '--', 'botpress-agent']).then((value) => value.split('\0').filter(Boolean)),
     latestMigration(),
     activePromptVersion(),
-    effectivePromptSha256(environment),
+    sha256Files([
+      'botpress-agent/src/prompts/agent-a-brain-v1.ts',
+      'botpress-agent/src/prompts/agent-a-identity.ts',
+      'botpress-agent/src/prompts/studyx-agent-a-canonical.generated.ts',
+    ]),
   ]);
   if (trackedBotpress.length === 0) throw new Error('RELEASE_MANIFEST_BOTPRESS_SOURCE_MISSING');
 
@@ -182,19 +171,24 @@ async function collectRuntimeManifest(environment = process.env) {
     gitSha,
     botpressArtifactSha: await sha256Files(trackedBotpress),
     promptVersion,
-    provider: environment.AGENT_A_DECISION_PROVIDER ?? 'google-ai-direct',
-    model: environment.GEMINI_MODEL ?? 'gemini-3.6-flash',
+    provider: 'deepseek-direct',
+    model: environment.DEEPSEEK_MODEL ?? 'deepseek-v4-flash',
     latestMigration: migration,
     catalogSourceSha256: await sha256Files(['supabase/seed/studyx-manual.sql']),
     promptSha256,
+    promptTemplateSha256,
     toolContractVersion: AGENT_LOOP_TOOL_CONTRACT_VERSION,
     requiredConfig: presentConfig(environment),
     builtAt: environment.RELEASE_BUILT_AT ?? new Date().toISOString(),
   });
 }
 
-export async function generateReleaseManifest(environment = process.env) {
-  return collectRuntimeManifest(environment);
+export async function generateReleaseManifest(environment = process.env, options = {}) {
+  const promptSha256 = options.promptSha256 ?? environment.AGENT_A_PROMPT_SHA256;
+  return collectRuntimeManifest(
+    environment,
+    requireDigest(promptSha256, 'RELEASE_MANIFEST_TURN_PROMPT_REQUIRED'),
+  );
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
