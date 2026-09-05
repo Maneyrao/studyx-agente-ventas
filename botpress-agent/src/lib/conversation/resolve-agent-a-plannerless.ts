@@ -189,6 +189,39 @@ function demoteUnauthorizedPaymentAction<T extends AgentAProposalEnvelopeV1>(inp
 }
 
 /**
+ * A call offer is an optional action owned by the model, but it is only
+ * executable after one canonical course is resolved. If that separate field
+ * is the proposal's only defect, the boundary can deny it without discarding
+ * the model-authored catalog answer or spending a second generation.
+ */
+function demoteUnresolvedCallOffer<T extends AgentAProposalEnvelopeV1>(input: {
+  readonly initial: T
+  readonly rejection: TurnRejectionV1
+  readonly context: AgentAContextV1
+  readonly authorized_fact_ids: readonly string[]
+}): T | null {
+  if (input.initial.proposal.response.call_offer === null) return null
+  if (!input.rejection.rejections.every((reason) => (
+    reason.code === 'COURSE_NOT_RESOLVED' && reason.subject === 'call_offer'
+  ))) return null
+
+  const candidate = {
+    ...input.initial,
+    proposal: {
+      ...input.initial.proposal,
+      response: { ...input.initial.proposal.response, call_offer: null },
+    },
+  }
+  const candidateRejection = validatePlannerless({
+    proposal: candidate.proposal,
+    context: input.context,
+    rejection_id: input.rejection.rejection_id,
+    authorized_fact_ids: input.authorized_fact_ids,
+  })
+  return candidateRejection === null ? candidate : null
+}
+
+/**
  * Códigos que el backend vuelve a verificar por su cuenta y puede vetar a
  * nivel de oración. Dejar pasar la propuesta con uno de estos es más seguro
  * que descartarla: el hecho falso muere igual en el egress, y la conversación
@@ -256,6 +289,23 @@ export async function resolveAgentAPlannerlessProposalV2<
   if (prunedRepeat !== null) {
     return {
       effective: prunedRepeat,
+      evidence: {
+        rejection_codes: rejection.rejections.map((reason) => reason.code),
+        repair_attempted: false, repaired: false, proposal_generation_calls: 1,
+      },
+      rejection,
+    }
+  }
+
+  const demotedCallOffer = demoteUnresolvedCallOffer({
+    initial: input.initial,
+    rejection,
+    context: input.context,
+    authorized_fact_ids: factIds,
+  })
+  if (demotedCallOffer !== null) {
+    return {
+      effective: demotedCallOffer,
       evidence: {
         rejection_codes: rejection.rejections.map((reason) => reason.code),
         repair_attempted: false, repaired: false, proposal_generation_calls: 1,
