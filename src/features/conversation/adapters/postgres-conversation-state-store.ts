@@ -5,6 +5,7 @@ import type {
   ConversationStateV1,
   TechnicalFallbackRecordV1,
 } from '../domain/conversation-pipeline';
+import { parseConversationStateVersionV1 } from '../domain/state-version';
 import type { ConversationStateStoreV1 } from '../ports/conversation-state-store';
 
 interface ConversationStateRowV1 extends Omit<
@@ -35,7 +36,7 @@ function isoOrNull(value: Date | string | null): string | null {
 function mapRow(row: ConversationStateRowV1): ConversationStateV1 {
   return {
     ...row,
-    version: Number(row.version ?? 0),
+    version: parseConversationStateVersionV1(row.version),
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
     payment_reported_at: isoOrNull(row.payment_reported_at),
