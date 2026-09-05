@@ -134,6 +134,7 @@ const CALL_SUBJECT = /(?:llamada|llamemos|llamarte|llamarnos|telef[oó]nic|por\s
 const SOLICITATION = new RegExp(
   '(?:'
   + 'quer[eé]s|querr[ií]as|te\\s+gustar[ií]a|prefer[ií]s|preferir[ií]as'
+  + '|te\\s+sirve'
   + '|si\\s+quer[eé]s|pod[eé]s\\s+(?:pedir|solicitar)|podemos\\s+(?:coordinar|agendar|organizar)'
   + '|te\\s+parece|avisame\\s+si|dec[ií]me\\s+si'
   + ')',
