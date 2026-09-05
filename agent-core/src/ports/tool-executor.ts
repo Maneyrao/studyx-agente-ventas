@@ -16,5 +16,8 @@ export interface ToolResultV1<T = unknown> {
 }
 
 export interface ToolExecutor {
-  execute(call: ToolCallV3): Promise<ToolResultV1>;
+  execute(
+    call: ToolCallV3,
+    context: { readonly deadline_ms: number; readonly signal: AbortSignal },
+  ): Promise<ToolResultV1>;
 }

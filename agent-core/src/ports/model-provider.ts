@@ -25,10 +25,15 @@ export type ModelTurnItemV3 =
   | { readonly role: 'user' | 'assistant' | 'developer'; readonly content: string }
   | { readonly role: 'tool'; readonly call_id: string; readonly content: string };
 
-export interface ModelOutputV3 {
-  readonly tool_calls?: readonly ToolCallV3[];
-  readonly decision?: AgentTurnDecisionV3;
-}
+export type ModelOutputV3 =
+  | {
+      readonly tool_calls: readonly ToolCallV3[];
+      readonly decision?: never;
+    }
+  | {
+      readonly decision: AgentTurnDecisionV3;
+      readonly tool_calls?: never;
+    };
 
 export interface ModelProvider {
   generate(input: {
@@ -36,5 +41,8 @@ export interface ModelProvider {
     readonly conversation: readonly ModelTurnItemV3[];
     readonly toolDefinitions: readonly ToolDefinitionV3[];
     readonly force_final: boolean;
+    /** Instante absoluto, según el reloj del turno, en que vence el cerebro. */
+    readonly deadline_ms: number;
+    readonly signal: AbortSignal;
   }): Promise<ModelOutputV3>;
 }
