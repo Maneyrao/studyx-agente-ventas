@@ -364,8 +364,12 @@ run('stuck batch claims', () => {
       SET state = 'claimed',
           claim_token = gen_random_uuid(),
           claimed_by = 'botpress:dead-worker',
-          claimed_at = now() - interval '10 minutes',
-          lease_until = now() - interval '5 minutes',
+          -- El reconciliador pagina globalmente por el lease más antiguo.
+          -- Una DB local reutilizada puede contener cientos de fixtures
+          -- vencidos; este sujeto debe quedar inequívocamente dentro del
+          -- primer lote sin ampliar el límite productivo del barrido.
+          claimed_at = now() - interval '101 years',
+          lease_until = now() - interval '100 years',
           claim_attempt_count = 5
       WHERE id = ${batchId}::uuid
     `;
