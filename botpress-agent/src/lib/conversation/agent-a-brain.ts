@@ -79,6 +79,12 @@ function parseDeepSeekJsonContent(content: string): unknown {
 const DEEPSEEK_PROPOSAL_ROOT_FIELDS = new Set([
   'schema_version',
   'move',
+  'secondary_moves',
+  'vetoes',
+  'course_reference',
+  'area_reference',
+  'payment_plan',
+  'confidence',
   'response',
   'proposed_action',
   'used_fact_ids',
@@ -89,9 +95,32 @@ const DEEPSEEK_PROPOSAL_ROOT_FIELDS = new Set([
 
 function stripDeepSeekRootMetadata(value: unknown): unknown {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
-  return Object.fromEntries(Object.entries(value).filter(([key]) => (
+  const root = Object.fromEntries(Object.entries(value).filter(([key]) => (
     DEEPSEEK_PROPOSAL_ROOT_FIELDS.has(key)
   )));
+  if (typeof root.move !== 'string') return root;
+  const {
+    secondary_moves,
+    vetoes,
+    course_reference,
+    area_reference,
+    payment_plan,
+    confidence,
+    ...proposal
+  } = root;
+  return {
+    ...proposal,
+    move: {
+      schema_version: root.schema_version,
+      move: root.move,
+      secondary_moves: Array.isArray(secondary_moves) ? secondary_moves : [],
+      vetoes: Array.isArray(vetoes) ? vetoes : [],
+      course_reference,
+      area_reference,
+      payment_plan,
+      confidence: typeof confidence === 'number' ? confidence : 1,
+    },
+  };
 }
 
 function extractResponsesTokenUsage(payload: unknown): GeneratedAgentATurnProposalV1['token_usage'] {

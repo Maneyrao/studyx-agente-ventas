@@ -830,6 +830,57 @@ describe('Agent A Brain V1', () => {
     expect(moveProperties.vetoes.description).toContain('current customer message explicitly refuses');
   });
 
+  it('preserves canonical course selection when DeepSeek flattens the move object at the root', async () => {
+    const ctx = context();
+    ctx.commercial_state.selected_offering_code = null;
+    ctx.commercial_state.stage = 'exploring';
+    ctx.catalog.selected_offering = null;
+    ctx.catalog.available_offerings = [{
+      code: 'redes-informaticas',
+      fact_id: 'offering:redes-informaticas:name:v1',
+      display_name: 'Redes Informáticas',
+      area_code: 'tecnologia',
+    }];
+    ctx.catalog.payment_plans = [];
+    const flattened = {
+      schema_version: 1,
+      move: 'select_course',
+      secondary_moves: [],
+      vetoes: [],
+      course_reference: 'Redes Informáticas',
+      area_reference: null,
+      payment_plan: null,
+      confidence: 0.99,
+      response: {
+        messages: ['Redes Informáticas es la opción que mejor encaja con lo que buscás.'],
+        call_offer: 'Si te sirve, podemos coordinar una llamada breve.',
+      },
+      proposed_action: { type: 'none' },
+      repair_of: null,
+      used_fact_ids: ['offering:redes-informaticas:name:v1'],
+      used_memory_ids: [],
+      memory_candidates: [],
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(
+      200,
+      responsesSuccessBody(flattened),
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await generateDeepSeekAgentATurnProposalV1({
+      context: ctx,
+      apiKey: 'deepseek-test-key',
+      signal: new AbortController().signal,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.proposal.move).toMatchObject({
+      move: 'select_course',
+      course_reference: 'redes-informaticas',
+      confidence: 0.99,
+    });
+  });
+
   it('rejects a divergent DeepSeek model before fetch or commit', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(
       200,
