@@ -158,6 +158,7 @@ describe('checkAgentTurnIntegrityV3', () => {
       ...base,
       decision: {
         ...base.decision,
+        blocks: [{ type: 'narrative', text: 'Perfecto, coordinamos la llamada.' }],
         response_type: 'call_confirmation',
         commit_preparations: ['call-prep'],
       },
@@ -312,7 +313,7 @@ describe('checkAgentTurnIntegrityV3', () => {
       ...base,
       decision: {
         ...base.decision,
-        blocks: [{ type: 'narrative', text: 'Si querés, podemos coordinar una llamada.' }],
+        blocks: [{ type: 'narrative', text: '¿Podemos hablar por teléfono?' }],
       },
       context: {
         ...base.context,
@@ -413,6 +414,43 @@ describe('checkAgentTurnIntegrityV3', () => {
       code: 'STATE_ACTION_INCOHERENT',
       subject: 'call_confirmation',
     });
+  });
+
+  it('rejects a committed call request without a visible confirmation', () => {
+    const result = checkAgentTurnIntegrityV3({
+      ...base,
+      decision: {
+        ...base.decision,
+        blocks: [{ type: 'narrative', text: 'Dale, te cuento.' }],
+        response_type: 'call_confirmation',
+        commit_preparations: ['call-prep'],
+      },
+      context: {
+        ...base.context,
+        open_preparations: ['call-prep'],
+        preparation_tools: { 'call-prep': 'prepare_call_request' },
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.rejection.violations).toContainEqual({
+      code: 'STATE_ACTION_INCOHERENT',
+      subject: 'call_confirmation',
+    });
+  });
+
+  it('does not combine a call mention and a separate commercial question into an offer', () => {
+    const result = checkAgentTurnIntegrityV3({
+      ...base,
+      decision: {
+        ...base.decision,
+        blocks: [{
+          type: 'narrative',
+          text: 'La llamada es opcional. ¿Querés conocer el programa?',
+        }],
+      },
+    });
+    expect(result).toEqual({ ok: true });
   });
 
   it('returns only authorized alternatives for one repair attempt', () => {

@@ -5,7 +5,10 @@ import type {
   TurnPlanV1,
 } from '@/features/conversation/domain/conversation-pipeline';
 import { assembleCanonicalConversationResponseV1 } from '@/features/conversation/domain/canonical-response-assembler';
-import { solicitsACall } from '@/features/conversation/domain/operational-promise-guard';
+import {
+  confirmsACall,
+  solicitsACall,
+} from '@/features/conversation/domain/operational-promise-guard';
 
 function plan(overrides: Partial<TurnPlanV1> = {}): TurnPlanV1 {
   return {
@@ -65,6 +68,7 @@ describe('call offers never outnumber the ledger', () => {
       'Si querés, podemos coordinar una llamada.',
       '¿Te gustaría que te llamemos?',
       '¿Te sirve que te llamemos?',
+      '¿Podemos hablar por teléfono?',
       'Podés pedir que te contactemos por teléfono.',
     ]) {
       expect(solicitsACall(offer)).toBe(true);
@@ -75,10 +79,18 @@ describe('call offers never outnumber the ledger', () => {
     for (const honest of [
       'Ya registré tu solicitud de llamada.',
       'Entendido, no te llamamos y seguimos por acá.',
+      'La llamada es opcional. ¿Querés conocer el programa?',
       'El valor total del programa es USD 360.',
     ]) {
       expect(solicitsACall(honest)).toBe(false);
     }
+  });
+
+  it('recognizes a visible call confirmation without mistaking an offer for one', () => {
+    expect(confirmsACall('Perfecto, coordinamos la llamada.')).toBe(true);
+    expect(confirmsACall('Ya registré tu solicitud de llamada.')).toBe(true);
+    expect(confirmsACall('Si querés, podemos coordinar una llamada.')).toBe(false);
+    expect(confirmsACall('Dale, te cuento.')).toBe(false);
   });
 
   it('removes an unledgered call offer the model slipped into the narrative', () => {

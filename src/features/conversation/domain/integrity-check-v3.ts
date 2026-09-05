@@ -1,6 +1,6 @@
 import { narrativeViolationsV3 } from '../../../../agent-core/src/domain/response-blocks';
 import type { AgentTurnDecisionV3 } from '../../../../agent-core/src/ports/model-provider';
-import { solicitsACall } from './operational-promise-guard';
+import { confirmsACall, solicitsACall } from './operational-promise-guard';
 
 export interface IntegrityViolationV3 {
   readonly code: string;
@@ -61,10 +61,12 @@ export function checkAgentTurnIntegrityV3(input: {
   const committedPreparations = new Set(input.decision.commit_preparations);
   const artifactPreparations = new Set<string>();
   let narrativeOffersCall = false;
+  let narrativeConfirmsCall = false;
 
   for (const block of input.decision.blocks) {
     if (block.type === 'narrative') {
       narrativeOffersCall ||= solicitsACall(block.text);
+      narrativeConfirmsCall ||= confirmsACall(block.text);
       for (const code of narrativeViolationsV3(block.text)) {
         violations.push({ code, subject: 'narrative' });
       }
@@ -151,10 +153,12 @@ export function checkAgentTurnIntegrityV3(input: {
     input.context.preparation_tools[preparationId] === 'prepare_call_request'
   ));
   const confirmsCall = input.decision.response_type === 'call_confirmation';
-  if (confirmsCall !== (callRequestCommits.length > 0)) {
+  const commitsCallRequest = callRequestCommits.length > 0;
+  if ((confirmsCall || commitsCallRequest || narrativeConfirmsCall)
+    && !(confirmsCall && commitsCallRequest && narrativeConfirmsCall)) {
     violations.push({ code: 'STATE_ACTION_INCOHERENT', subject: 'call_confirmation' });
   }
-  if ((confirmsCall || callRequestCommits.length > 0)
+  if ((confirmsCall || commitsCallRequest || narrativeConfirmsCall)
     && !input.context.call_policy.request_allowed) {
     for (const preparationId of callRequestCommits) {
       violations.push({ code: 'CALL_REQUEST_NOT_AUTHORIZED', subject: preparationId });

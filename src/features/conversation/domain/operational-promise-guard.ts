@@ -135,7 +135,7 @@ const SOLICITATION = new RegExp(
   '(?:'
   + 'quer[eé]s|querr[ií]as|te\\s+gustar[ií]a|prefer[ií]s|preferir[ií]as'
   + '|te\\s+sirve'
-  + '|si\\s+quer[eé]s|pod[eé]s\\s+(?:pedir|solicitar)|podemos\\s+(?:coordinar|agendar|organizar)'
+  + '|si\\s+quer[eé]s|pod[eé]s\\s+(?:pedir|solicitar)|podemos\\s+(?:coordinar|agendar|organizar|hablar)'
   + '|te\\s+parece|avisame\\s+si|dec[ií]me\\s+si'
   + ')',
   'iu',
@@ -147,14 +147,34 @@ const NOT_AN_OFFER = /(?:ya\s+(?:registr|qued|solicit|ped)|no\s+te\s+llam|sin\s+
 // al canal de voz, sin exigir una fórmula de pregunta o conjugación concreta.
 const DECLARED_CALL_CHANNEL = /\b(?:llam|videollam)|tel[eé]fon|telef[oó]n|\bvoz\b|\bcontact(?:arte|emos)\b/iu;
 
+function callSentences(text: string): string[] {
+  return text.split(/\n+/u).flatMap((paragraph) => sentences(paragraph));
+}
+
 export function solicitsACall(text: string, declaredOffer = false): boolean {
   if (declaredOffer) {
     // Un reconocimiento o rechazo anterior no niega otra propuesta de voz.
     return text.split(/[.;!?…¿¡,]|\s+(?:y|pero|aunque|sin embargo)\s+/iu)
       .some(clause => DECLARED_CALL_CHANNEL.test(clause) && !NOT_AN_OFFER.test(clause));
   }
-  return CALL_SUBJECT.test(text) && SOLICITATION.test(text)
-    && !NOT_AN_OFFER.test(text);
+  return callSentences(text).some((sentence) => (
+    CALL_SUBJECT.test(sentence)
+    && SOLICITATION.test(sentence)
+    && !NOT_AN_OFFER.test(sentence)
+  ));
+}
+
+const CALL_CONFIRMATION = /(?:registr|solicit|pedid|coordin|agend|reserv|confirm|te\s+(?:van\s+a\s+)?llam|te\s+contact)/iu;
+const NOT_A_CALL_CONFIRMATION = /(?:no|todav[ií]a\s+no|a[uú]n\s+no).{0,40}(?:llam|coordin|agend|contact)/iu;
+
+/** A call preparation must be represented in text the customer can actually see. */
+export function confirmsACall(text: string): boolean {
+  return callSentences(text).some((sentence) => (
+    DECLARED_CALL_CHANNEL.test(sentence)
+    && CALL_CONFIRMATION.test(sentence)
+    && !NOT_A_CALL_CONFIRMATION.test(sentence)
+    && !solicitsACall(sentence)
+  ));
 }
 
 /**
