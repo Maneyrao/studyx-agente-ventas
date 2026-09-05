@@ -806,6 +806,12 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     // frontera con criterio propio.
     let authorizedEgress: AuthorizedEgressV1 | null = null;
     let egressSuppressed = false;
+    // Un veto PARCIAL (algunas oraciones caen, otras sobreviven) deja
+    // `preparedAgentTurn` vivo pero su `transition` describe el texto
+    // PRE-veto. Sobrevive al bloque del guard para que el chequeo antes de
+    // escribir la transición (más abajo) pueda distinguirlo de una respuesta
+    // que se entregó intacta.
+    let egressRemovedSentences = false;
     if (finalResponse !== null) {
       const offerings = await loadCanonicalOfferings('protected_facts');
       const canonicalTruth = canonicalTruthSetFromOfferingsV1({
@@ -852,6 +858,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       }
 
       if (verdict.removed.length > 0) {
+        egressRemovedSentences = true;
         counter.increment('egress_sentences_vetoed', verdict.removed.length);
         logger.warn({
           event: 'orchestration.egress.sentences_vetoed',
@@ -1255,6 +1262,14 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       if (preparedPipeline.transition.payment_reported) {
         reportedPaymentContactId = turn.contact_id;
       }
+    }
+    // La transición se calculó sobre el texto PRE-veto. Si el guard quitó
+    // aunque sea una oración, ese cálculo describe un mensaje que el cliente
+    // nunca recibió. No se recomputa sobre el texto podado: eso sería el
+    // backend eligiendo el estado por su cuenta otra vez. Se rechaza el turno
+    // y lo repara el agente.
+    if (preparedAgentTurn !== null && egressRemovedSentences) {
+      throw new DecisionPolicyError('PARTIAL_VETO_TRANSITION_REFUSED');
     }
     if (preparedAgentTurn) {
       await new PostgresConversationStateStoreV1(db).transition(preparedAgentTurn.transition);
