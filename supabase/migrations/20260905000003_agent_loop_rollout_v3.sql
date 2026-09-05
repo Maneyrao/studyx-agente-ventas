@@ -25,6 +25,22 @@ ALTER TABLE agent_loop_rollout_v3
 CREATE UNIQUE INDEX IF NOT EXISTS agent_loop_rollout_v3_workspace_contact_key
   ON agent_loop_rollout_v3 (workspace_id, COALESCE(contact_id, '00000000-0000-0000-0000-000000000000'::uuid));
 
+CREATE OR REPLACE FUNCTION public.agent_loop_rollout_v3_touch_updated_at()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
+BEGIN
+  NEW.updated_at := clock_timestamp();
+  RETURN NEW;
+END
+$$;
+
+DROP TRIGGER IF EXISTS agent_loop_rollout_v3_set_updated_at ON agent_loop_rollout_v3;
+CREATE TRIGGER agent_loop_rollout_v3_set_updated_at
+BEFORE UPDATE ON agent_loop_rollout_v3
+FOR EACH ROW EXECUTE FUNCTION public.agent_loop_rollout_v3_touch_updated_at();
+
 ALTER TABLE agent_loop_rollout_v3 ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON agent_loop_rollout_v3 FROM orchestrator_role;

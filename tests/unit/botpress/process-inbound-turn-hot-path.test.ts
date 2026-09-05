@@ -293,6 +293,7 @@ describe('processInboundTurn hot path', () => {
     configuration.automationEnabled = true;
     configuration.decisionProvider = 'botpress_managed';
     configuration.agentAPlannerlessV2Enabled = false;
+    configuration.agentAAgentLoopV3KillSwitch = false;
     secrets.DEEPSEEK_API_KEY = 'deepseek-local-test-only';
     delete secrets.GROQ_API_KEY;
     delete secrets.OPENAI_API_KEY;
@@ -375,6 +376,51 @@ describe('processInboundTurn hot path', () => {
     });
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
   });
+
+  it.each([
+    [true, 'off'],
+    [false, 'authoritative'],
+  ] as const)(
+    'applies the bundle kill switch=%s before exposing the agent-loop rollout mode',
+    async (killSwitch, expectedMode) => {
+      const claimed = claimedResponse() as unknown as ClaimedTurn;
+      claimed.features = {
+        agent_loop_v3_mode: 'authoritative',
+        conversation_pipeline_v1_enabled: false,
+      };
+      claimed.deterministic_route = 'greeting';
+      claimed.context.batch_messages[0].content = 'Hola';
+      actionSpies.claim.mockResolvedValue(claimed);
+      configuration.agentAAgentLoopV3KillSwitch = killSwitch;
+
+      const step = Object.assign(
+        async (_name: string, run: () => Promise<unknown>) => run(),
+        { sleep: vi.fn(async () => undefined) },
+      );
+      const handler = (processInboundTurn as unknown as {
+        definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+      }).definition.handler;
+
+      await handler({
+        input: workflowInput(),
+        state: processingState(),
+        step,
+        execute: vi.fn(async () => { throw new Error('MODEL_MUST_NOT_RUN'); }),
+        client: {},
+        signal: new AbortController().signal,
+        workflow: { id: 'workflow-test' },
+      });
+
+      const rolloutEvent = vi.mocked(console.info).mock.calls
+        .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
+        .find((entry) => entry.event === 'studyx.turn.agent_loop_v3_rollout');
+      expect(rolloutEvent).toMatchObject({
+        claimed_mode: 'authoritative',
+        effective_mode: expectedMode,
+        kill_switch: killSwitch,
+      });
+    },
+  );
 
   it('sends the complete Brain proposal to backend authority without invoking the planner', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;

@@ -520,7 +520,21 @@ export const processInboundTurn = new Workflow({
       return resultFromState(state, input.trace_id)
     }
 
-    const owned = claimed
+    const claimedAgentLoopV3Mode = claimed.features?.agent_loop_v3_mode ?? 'off'
+    const agentLoopV3KillSwitch = configuration.agentAAgentLoopV3KillSwitch === true
+    // Normalize the claimed context once, before any current or future loop
+    // branch can observe it. The bundle brake dominates every DB rollout mode.
+    const owned: ClaimedTurn = agentLoopV3KillSwitch
+      ? {
+          ...claimed,
+          features: {
+            conversation_pipeline_v1_enabled:
+              claimed.features?.conversation_pipeline_v1_enabled ?? false,
+            ...claimed.features,
+            agent_loop_v3_mode: 'off',
+          },
+        }
+      : claimed
     state.turnId = owned.turn_id
     const batchEventTimes = owned.context.batch_messages
       .map((message) => Date.parse(message.occurred_at ?? message.created_at))
@@ -541,6 +555,13 @@ export const processInboundTurn = new Workflow({
       knowledge_base_available: owned.context.knowledge_base_available,
       long_term_memory_available: owned.context.long_term_memory_available,
       injection_suspected: owned.context.injection_suspected_count,
+    })
+    safeLog('studyx.turn.agent_loop_v3_rollout', {
+      trace_id: input.trace_id,
+      turn_id: owned.turn_id,
+      claimed_mode: claimedAgentLoopV3Mode,
+      effective_mode: owned.features?.agent_loop_v3_mode ?? 'off',
+      kill_switch: agentLoopV3KillSwitch,
     })
     const agentABrainContext = buildAgentAContextV1(
       owned,

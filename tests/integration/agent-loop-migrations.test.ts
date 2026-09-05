@@ -175,6 +175,32 @@ run('agent loop migrations', () => {
     }
   });
 
+  it('updates the rollout audit timestamp whenever its mode changes', async () => {
+    const fixture = await rolloutFixture();
+    try {
+      const [created, updated] = await db!.begin(async (tx) => {
+        await tx.unsafe('SET LOCAL ROLE orchestrator_role');
+        const [before] = await tx<Array<{ updated_at: Date }>>`
+          INSERT INTO agent_loop_rollout_v3 (workspace_id, contact_id, mode)
+          VALUES (${fixture.workspaceId}::uuid, NULL, 'off')
+          RETURNING updated_at
+        `;
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+        const [after] = await tx<Array<{ updated_at: Date }>>`
+          UPDATE agent_loop_rollout_v3
+          SET mode = 'shadow'
+          WHERE workspace_id = ${fixture.workspaceId}::uuid AND contact_id IS NULL
+          RETURNING updated_at
+        `;
+        return [before!, after!] as const;
+      });
+
+      expect(updated!.updated_at.getTime()).toBeGreaterThan(created!.updated_at.getTime());
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('enforces one workspace default and one row per workspace/contact', async () => {
     const fixture = await rolloutFixture();
     try {
@@ -319,6 +345,7 @@ run('agent loop migrations', () => {
           can_insert: boolean;
           can_update: boolean;
           membership_fk: boolean;
+          updated_at_trigger: boolean;
         }>>`
           SELECT
             class.relrowsecurity AS rls,
@@ -331,7 +358,13 @@ run('agent loop migrations', () => {
                 AND conname = 'agent_loop_rollout_v3_workspace_contact_membership_fk'
                 AND contype = 'f'
                 AND confdeltype = 'c'
-            ) AS membership_fk
+            ) AS membership_fk,
+            EXISTS (
+              SELECT 1 FROM pg_trigger
+              WHERE tgrelid = class.oid
+                AND tgname = 'agent_loop_rollout_v3_set_updated_at'
+                AND NOT tgisinternal
+            ) AS updated_at_trigger
           FROM pg_class AS class
           WHERE class.oid = 'agent_loop_rollout_v3'::regclass
         `;
@@ -341,6 +374,7 @@ run('agent loop migrations', () => {
           can_insert: true,
           can_update: true,
           membership_fk: true,
+          updated_at_trigger: true,
         });
         assertionsCompleted = true;
         throw rollback;

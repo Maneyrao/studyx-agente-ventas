@@ -2,21 +2,31 @@
 
 ## Veredicto
 
-- **Task 2.6 — spec compliance: FAIL.** La resolución runtime por contacto, el fail-closed, el aislamiento SQL y el cableado claim/route cumplen. Falta el freno de mano independiente `configuration.agentAAgentLoopV3KillSwitch` que la spec vinculante exige publicar en Fase 2.
-- **Task 2.6 — code quality: PASS con un P2.** Los tests discriminan los findings anteriores y los gates pasan. `updated_at` no cambia cuando cambia el modo, por lo que la columna no registra el momento del rollback/promoción.
-- **Task 2.7 — spec compliance: FAIL.** Las tres funciones de aplicación cumplen su contrato nominal, pero sólo dos herramientas nuevas tienen ruta con `ToolResultV1`. `search_catalog` sigue expuesto por el endpoint/action legacy con otro envelope, pese a que §3.3 exige un sobre común sin excepciones.
-- **Task 2.7 — code quality: FAIL.** La implementación interna de lectura es sólida, pero la suite evita la frontera ejecutable faltante: prueba `searchCatalogToolV1` directamente y sólo atraviesa las rutas de curso y pagos.
-- **Veredicto global: FAIL.** No hay P0. Hay dos P1 de cierre de spec y un P2 operativo.
+- **Task 2.6 — spec compliance: PASS.** La resolución runtime por contacto conserva su precedencia y `configuration.agentAAgentLoopV3KillSwitch` domina cualquier modo de DB antes de que las ramas presentes o futuras observen el claim.
+- **Task 2.6 — code quality: PASS.** El cambio tiene pruebas discriminantes de `true` y `false`; `updated_at` avanza incluso en dos operaciones de la misma transacción y bajo `orchestrator_role`.
+- **Task 2.7 — spec compliance: PASS.** Las tres herramientas tienen `ToolResultV1`; `search_catalog` cruza ahora una ruta versionada real sin alterar `/tools/catalog` ni su consumidor legacy.
+- **Task 2.7 — code quality: PASS.** La integración atraviesa función, ruta y proxy, y prueba los envelopes completos de éxito y catálogo ausente.
+- **Veredicto global tras el fix: PASS.** No quedan P0, P1 ni P2 abiertos en este alcance.
 
 La spec `docs/superpowers/specs/2026-09-04-agent-a-agent-loop-design.md` se tomó como autoridad, según `progress.md`. El handoff vigente y las secciones 2.6/2.7 del plan se usaron para los límites de seguridad, compatibilidad y ejecución. Los gates corrieron en worktrees detached limpias de cada commit; no se editó source compartido, no se usó `.env.local`, APIs ni DB remota.
 
-## Findings
+## Fix posterior a la revisión
+
+El fix se desarrolló con RED/GREEN sobre los tres findings:
+
+- el workflow normaliza el claim a `agent_loop_v3_mode: 'off'` cuando el kill switch es `true`, antes de construir contexto, rutear o ejecutar modelos; con `false` conserva `authoritative`. Un evento sin contenido de cliente registra modo reclamado, modo efectivo y estado del freno;
+- `GET /api/agent/tools/v1/search-catalog` carga exclusivamente el workspace configurado y devuelve el resultado de `searchCatalogToolV1`. El endpoint `/api/agent/tools/catalog` y `lookupCatalog` permanecen compatibles;
+- la migración crea de forma idempotente una función y trigger dedicados. Usa `clock_timestamp()` para que `updated_at` cambie también si el `INSERT` y el `UPDATE` ocurren dentro de la misma transacción.
+
+No se agregó una acción Botpress sin consumidor: la frontera ejecutable requerida en este alcance es la ruta backend autenticada; el futuro adapter de `ToolExecutor` podrá invocarla. La acción legacy continúa usando el endpoint legacy y no cambia su contrato.
+
+## Hallazgos originales, cerrados por el fix
 
 ### P0
 
 Ninguno.
 
-### P1 — Task 2.6 omite el kill switch independiente exigido por la spec
+### P1 resuelto — Task 2.6 omitía el kill switch independiente exigido por la spec
 
 La spec §5.0, después de definir la tabla runtime, exige además:
 
@@ -28,9 +38,9 @@ Lo define como “freno de mano independiente de la base” y dice que se public
 
 La tabla sí proporciona el rollback operativo recomendado, pero no sustituye el freno independiente que la spec pide expresamente. Un error de lectura/configuración de DB cae a `off`, mientras una activación incorrecta ya resuelta como `authoritative` sólo puede frenarse escribiendo la misma base de control. El kill switch debía dominar cualquier modo de tabla antes de ejecutar el loop.
 
-Corrección mínima: agregar el booleano de configuración con default seguro, proyectarlo en el workflow y exigir que `true` fuerce la ruta legacy/off aun cuando el claim traiga `authoritative`. Debe haber tests de precedencia y compatibilidad con bundles/configuración previos.
+La corrección agregó el booleano con default `false`, lo aplicó antes de cualquier rama del workflow y cubrió que `true` fuerce `off` mientras `false` preserve `authoritative`.
 
-### P1 — Task 2.7 no ofrece `search_catalog` con el sobre común en la frontera ejecutable
+### P1 resuelto — Task 2.7 no ofrecía `search_catalog` con el sobre común en la frontera ejecutable
 
 La spec §3.3 enumera tres herramientas de lectura y declara “Sobre común, sin excepciones” para `ToolResultV1`. `c85ee00` implementa correctamente `searchCatalogToolV1`, pero no crea ni adapta una ruta que la acción/ToolExecutor pueda invocar con ese resultado.
 
@@ -43,9 +53,9 @@ No devuelve `tool`, `success`, `canonical_data`, `error_code`, `recoverable`, `i
 
 Los tests reflejan el hueco: la integración de Task 2.7 llama `searchCatalogToolV1` directamente contra `PostgresBusinessContextStore`, pero la matriz de rutas y autenticación sólo incluye `/tools/course/...` y `/tools/payment-options`. Por eso 21/21 puede quedar verde aunque un `ToolExecutor` remoto no tenga una respuesta común para `search_catalog`.
 
-Corrección mínima: exponer una ruta/action de `search_catalog` con `ToolResultV1` o adaptar explícitamente la ruta existente y migrar su consumidor. Si se conserva compatibilidad legacy, usar una ruta versionada separada. El test debe atravesar proxy + ruta real y afirmar el envelope completo tanto en éxito como en `CATALOG_UNAVAILABLE`.
+La corrección expuso una ruta versionada separada y agregó pruebas de éxito, `CATALOG_UNAVAILABLE` y autenticación de proxy, sin migrar el consumidor legacy.
 
-### P2 — `agent_loop_rollout_v3.updated_at` no registra cambios de modo
+### P2 resuelto — `agent_loop_rollout_v3.updated_at` no registraba cambios de modo
 
 La tabla define `updated_at timestamptz NOT NULL DEFAULT now()`, pero no tiene trigger y el `UPDATE` operativo de rollback/promoción sólo cambia `mode`. Probe local dentro de una transacción revertida:
 
@@ -55,7 +65,7 @@ UPDATE mode='shadow' después de 20 ms -> updated_at=T
 updated_at_changed=false
 ```
 
-No afecta la resolución del turno, pero impide auditar cuándo se promovió o apagó un contacto/default usando la columna creada para ese fin. La suite de migraciones ejecuta los tres modos sin afirmar el timestamp. Un trigger común de `updated_at` o un `SET updated_at=now()` en la operación administrativa cerraría el punto.
+El trigger dedicado actualiza con reloj de pared, y la integración lo prueba bajo el rol de runtime y en la misma transacción. También comprueba su presencia después de reaplicar dos veces la migración.
 
 ## Task 2.6 — comportamiento confirmado
 
@@ -144,6 +154,37 @@ git diff 979d9d1..c85ee00 --check
 
 No se hicieron llamadas a modelos, servicios externos ni bases remotas.
 
+### Fix final
+
+```bash
+npm exec -- vitest run --config vitest.config.mts \
+  tests/unit/botpress/agent-loop-v3-kill-switch-config.test.ts \
+  tests/unit/botpress/process-inbound-turn-hot-path.test.ts \
+  tests/unit/orchestration/agent-loop-rollout.test.ts \
+  tests/unit/orchestration/claim-batch.test.ts \
+  tests/unit/orchestration/claim-route-agent-loop-rollout.test.ts \
+  tests/unit/conversation/agent-tools-read.test.ts \
+  tests/contract/botpress-response-parity.test.ts
+# PASS: 7 archivos, 179 tests
+
+TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55433/studyx_test \
+  npm exec -- vitest run --config vitest.integration.config.mts \
+  tests/integration/agent-loop-migrations.test.ts \
+  tests/integration/agent-loop-rollout-claim.test.ts \
+  tests/integration/agent-tools-read-routes.test.ts \
+  tests/integration/business-context-store.test.ts \
+  tests/integration/catalog-detail.test.ts
+# PASS: 5 archivos, 32 tests
+
+# La migración 00003 se aplicó dos veces con ON_ERROR_STOP=1: PASS / PASS.
+npm run typecheck
+npm run build --prefix botpress-agent
+npm run typecheck --prefix botpress-agent
+npm exec -- eslint <archivos del fix> --max-warnings=0
+git diff --check
+# PASS en todos los gates
+```
+
 ## Ruling final
 
-Los findings originales de ambas tareas están corregidos y los componentes implementados son verificables. Aun así, no corresponde cerrar 2.6/2.7 contra la spec completa: falta el kill switch independiente asignado a Fase 2 y falta una frontera `search_catalog` consumible con el envelope común. Ambos son cambios acotados y pueden agregarse sin reabrir la lógica ya aprobada.
+Los findings originales y los tres findings de esta revisión quedaron cerrados con evidencia RED/GREEN. Corresponde cerrar Tasks 2.6 y 2.7 dentro del alcance de la spec revisada.

@@ -32,6 +32,9 @@ export default defineConfig({
       // Reversible migration: when enabled the complete Brain proposal goes
       // straight to backend authority and skips the conversational planner.
       agentAPlannerlessV2Enabled: z.boolean().default(false),
+      // Independent emergency brake for the V3 agent loop. The database is
+      // the normal rollout control; this bundle flag always wins when true.
+      agentAAgentLoopV3KillSwitch: z.boolean().default(false),
       // Identidad estable del asesor. La academia NO se configura acá: sale del
       // snapshot canónico del workspace, que es su fuente de verdad.
       agentAAdvisorName: z.string().default(''),

@@ -93,6 +93,12 @@ async function paymentRoute() {
   return { status: response.status, body: await response.json() };
 }
 
+async function searchCatalogRoute() {
+  const { GET } = await import('@/app/api/agent/tools/v1/search-catalog/route');
+  const response = await GET();
+  return { status: response.status, body: await response.json() };
+}
+
 function signedGet(pathname: string) {
   const timestamp = Date.now().toString();
   const traceId = randomUUID();
@@ -126,6 +132,40 @@ run('Task 2.7 read tools through Postgres and real routes', () => {
       .toMatchObject({ display_name: 'curso-review', academy: 'Negocios' });
     expect(result.canonical_data?.prices_assertable).toBe(true);
     expect(JSON.stringify(result)).not.toMatch(/UNTRUSTED_CONTEXT|system:|beca_price_usd|\b699\b/iu);
+  });
+
+  it('serves search_catalog through a versioned real route with the common ToolResult envelope', async () => {
+    const workspace = await workspaceFixture({ unsafeName: true, offerings: 41 });
+    process.env.BUSINESS_WORKSPACE_SLUG = workspace.slug;
+
+    const found = await searchCatalogRoute();
+    expect(found.status).toBe(200);
+    expect(found.body).toMatchObject({
+      tool: 'search_catalog',
+      success: true,
+      error_code: null,
+      recoverable: false,
+      idempotency_result: 'not_applicable',
+      preparation_id: null,
+      canonical_data: { prices_assertable: true },
+    });
+    expect(found.body.canonical_data.offerings).toHaveLength(41);
+    expect(JSON.stringify(found.body))
+      .not.toMatch(/UNTRUSTED_CONTEXT|system:|beca_price_usd|\b699\b|https?:\/\//iu);
+
+    process.env.BUSINESS_WORKSPACE_SLUG = `${workspace.slug}-missing`;
+    expect(await searchCatalogRoute()).toEqual({
+      status: 200,
+      body: {
+        tool: 'search_catalog',
+        success: false,
+        canonical_data: null,
+        error_code: 'CATALOG_UNAVAILABLE',
+        recoverable: true,
+        idempotency_result: 'not_applicable',
+        preparation_id: null,
+      },
+    });
   });
 
   it('serves renderable course facts and payment fact ids without metadata or links', async () => {
@@ -189,6 +229,7 @@ run('Task 2.7 read tools through Postgres and real routes', () => {
   });
 
   it.each([
+    '/api/agent/tools/v1/search-catalog',
     '/api/agent/tools/course/curso-review',
     '/api/agent/tools/payment-options',
   ])('inherits orchestrator and HMAC auth for %s', async (pathname) => {
