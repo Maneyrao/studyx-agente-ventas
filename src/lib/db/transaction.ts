@@ -1,6 +1,7 @@
 import { sql } from './orchestrator';
 import type { DbClient } from './types';
 import { getPostgresError } from './types';
+import type postgres from 'postgres';
 
 const RETRYABLE_TRANSACTION_CODES = new Set([
   '40001', // serialization_failure
@@ -33,7 +34,8 @@ export function transactionRetryDelay(
   return Math.floor(random() * ceiling);
 }
 
-export async function withSerializableTransaction<T>(
+export async function withSerializableTransactionOn<T>(
+  connection: postgres.Sql,
   operation: (transaction: DbClient) => Promise<T>,
   options: TransactionRetryOptions = {}
 ): Promise<T> {
@@ -42,7 +44,7 @@ export async function withSerializableTransaction<T>(
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      return (await sql.begin('isolation level serializable', operation)) as T;
+      return (await connection.begin('isolation level serializable', operation)) as T;
     } catch (error) {
       if (!isRetryableTransactionError(error) || attempt === maxAttempts) throw error;
       // Structured so contention is countable per deploy: a rising retry rate
@@ -55,4 +57,11 @@ export async function withSerializableTransaction<T>(
   }
 
   throw new Error('Transaction retry loop exhausted unexpectedly');
+}
+
+export async function withSerializableTransaction<T>(
+  operation: (transaction: DbClient) => Promise<T>,
+  options: TransactionRetryOptions = {},
+): Promise<T> {
+  return withSerializableTransactionOn(sql, operation, options);
 }

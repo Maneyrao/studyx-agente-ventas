@@ -29,7 +29,7 @@ import {
 } from '@/features/orchestration/domain/egress-guard';
 import { jsonbParam } from '@/lib/db/json';
 import { sql } from '@/lib/db/orchestrator';
-import { withSerializableTransaction } from '@/lib/db/transaction';
+import { withSerializableTransactionOn } from '@/lib/db/transaction';
 import type { DbClient } from '@/lib/db/types';
 import { sha256Hex } from '@/lib/idempotency/canonical-json';
 import { registerMessage } from '@/lib/services/message.service';
@@ -414,12 +414,33 @@ function modelIdentity(manifest: Readonly<Record<string, unknown>>): {
   };
 }
 
+function decisionProvenance(decision: AgentTurnDecisionV3): {
+  readonly used_memory_ids: readonly string[];
+  readonly fact_ids: readonly string[];
+  readonly preparation_ids: readonly string[];
+} {
+  return {
+    used_memory_ids: [...decision.used_memory_ids],
+    fact_ids: decision.blocks.flatMap((block) => (
+      block.type === 'fact' ? [block.fact_id] : []
+    )),
+    preparation_ids: [...decision.commit_preparations],
+  };
+}
+
 async function runInTransaction<T>(
   db: DbClient,
   operation: (transaction: DbClient) => Promise<T>,
 ): Promise<T> {
-  if (db === sql) return withSerializableTransaction(operation);
-  return operation(db);
+  const candidate = db as DbClient & {
+    readonly begin?: unknown;
+    readonly savepoint?: unknown;
+  };
+  if (typeof candidate.begin === 'function') {
+    return withSerializableTransactionOn(db as typeof sql, operation);
+  }
+  if (typeof candidate.savepoint === 'function') return operation(db);
+  throw new Error('AGENT_TURN_V3_TRANSACTION_CAPABILITY_REQUIRED');
 }
 
 export async function commitAgentTurnV3(
@@ -480,13 +501,13 @@ export async function commitAgentTurnV3(
       const inserted = await transaction<Array<{ id: string }>>`
         INSERT INTO agent_decisions (
           turn_id, trace_id, schema_version, intent, decision_kind, response,
-          response_type, business_action, retrieval_used, memory_candidates,
+          response_type, business_action, retrieval_used, memory_candidates, used_memory_ids,
           missing_information, next_state, reason_code, confidence,
           model_provider, model_name, prompt_version, payload_hash, release_manifest
         ) VALUES (
           ${input.turn_id}::uuid, ${input.trace_id}::uuid, 4, 'commercial', 'reply',
           ${fallback.text}, 'clarification', NULL, NULL, ${jsonbParam(transaction, [])},
-          ARRAY[]::text[], 'waiting_user', ${input.fallback.reason}, 1,
+          ARRAY[]::text[], ARRAY[]::text[], 'waiting_user', ${input.fallback.reason}, 1,
           'deepseek-direct', ${model.model}, ${model.promptVersion},
           decode(${payloadHash}, 'hex'), ${jsonbParam(transaction, input.release_manifest)}
         )
@@ -622,6 +643,18 @@ export async function commitAgentTurnV3(
     });
     if (!integrity.ok) throw new AgentTurnV3RejectedError(integrity.rejection);
 
+    const committedPayment = input.decision.commit_preparations
+      .map((id) => renderedArtifacts.paymentById.get(id) ?? null)
+      .filter((artifact): artifact is PaymentArtifactV3 => artifact !== null);
+    if (committedPayment.length > 1) {
+      throw rejected(
+        input.trace_id,
+        'MULTIPLE_PAYMENT_PREPARATIONS',
+        'commit_preparations',
+        { factIds: [...facts.keys()], preparationIds, missing },
+      );
+    }
+
     if (!STORED_RESPONSE_TYPES.has(input.decision.response_type)) {
       throw rejected(input.trace_id, 'RESPONSE_TYPE_NOT_AUTHORIZED', 'response_type', {
         factIds: [...facts.keys()], preparationIds, missing,
@@ -670,9 +703,6 @@ export async function commitAgentTurnV3(
       set: deferred.set,
     };
 
-    const committedPayment = committedIds
-      .map((id) => renderedArtifacts.paymentById.get(id) ?? null)
-      .filter((artifact): artifact is PaymentArtifactV3 => artifact !== null);
     const businessAction: SendPaymentLinkAction | null = committedPayment[0]
       ? {
           type: 'send_payment_link',
@@ -684,14 +714,15 @@ export async function commitAgentTurnV3(
     const inserted = await transaction<Array<{ id: string }>>`
       INSERT INTO agent_decisions (
         turn_id, trace_id, schema_version, intent, decision_kind, response,
-        response_type, business_action, retrieval_used, memory_candidates,
+        response_type, business_action, retrieval_used, memory_candidates, used_memory_ids,
         missing_information, next_state, reason_code, confidence,
         model_provider, model_name, prompt_version, payload_hash, release_manifest
       ) VALUES (
         ${input.turn_id}::uuid, ${input.trace_id}::uuid, 4, 'commercial', 'reply',
         ${rendered.text}, ${input.decision.response_type},
         ${jsonbParam(transaction, businessAction)}, NULL, ${jsonbParam(transaction, [])},
-        ARRAY[]::text[], 'waiting_user', 'AGENT_LOOP_V3_ACCEPTED', 1,
+        ${input.decision.used_memory_ids}, ARRAY[]::text[],
+        'waiting_user', 'AGENT_LOOP_V3_ACCEPTED', 1,
         'deepseek-direct', ${model.model}, ${model.promptVersion},
         decode(${payloadHash}, 'hex'), ${jsonbParam(transaction, input.release_manifest)}
       )
@@ -706,6 +737,7 @@ export async function commitAgentTurnV3(
       authorized_urls: authorizedUrls,
       protected_facts: protectedFactsInContentV1(rendered.text),
     });
+    const provenance = decisionProvenance(input.decision);
     const { message } = await registerMessage({
       conversation_id: context.conversation_id,
       direction: 'outbound',
@@ -716,6 +748,7 @@ export async function commitAgentTurnV3(
         response_type: input.decision.response_type,
         authorized_egress: authorizedEgress,
         release_manifest: input.release_manifest,
+        agent_loop_provenance: provenance,
       },
     }, {
       db: transaction,
@@ -731,6 +764,37 @@ export async function commitAgentTurnV3(
       SET outbound_message_id = ${message.id}::uuid
       WHERE id = ${decisionId}::uuid
     `;
+    if (businessAction?.type === 'send_payment_link') {
+      await transaction`
+        INSERT INTO workspace_contacts (
+          workspace_id, contact_id, lifecycle_status, source_channel
+        ) VALUES (
+          ${context.workspace_id}::uuid,
+          ${context.contact_id}::uuid,
+          'active',
+          ${context.channel}
+        )
+        ON CONFLICT (workspace_id, contact_id) DO NOTHING
+      `;
+      await transaction`
+        INSERT INTO payment_projection_jobs (
+          decision_id, workspace_id, contact_id, outbound_message_id,
+          trace_id, offering_sku, plan_code, decision_created_at
+        )
+        SELECT
+          decision.id,
+          ${context.workspace_id}::uuid,
+          ${context.contact_id}::uuid,
+          ${message.id}::uuid,
+          decision.trace_id,
+          ${businessAction.offering_sku},
+          ${businessAction.plan_code},
+          decision.created_at
+        FROM agent_decisions AS decision
+        WHERE decision.id = ${decisionId}::uuid
+        ON CONFLICT (decision_id) DO NOTHING
+      `;
+    }
 
     const outboxPayload = {
       decision_id: decisionId,
@@ -740,6 +804,7 @@ export async function commitAgentTurnV3(
       content: rendered.text,
       response_type: input.decision.response_type,
       authorized_egress: authorizedEgress,
+      agent_loop_provenance: provenance,
     };
     const queued = await transaction<Array<{ delivery_id: string; outbox_id: string }>>`
       SELECT delivery_id, outbox_id
