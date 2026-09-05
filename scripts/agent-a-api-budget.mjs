@@ -9,6 +9,7 @@ const OUTPUT_RATE = 1.32 / 1_000_000;
 const DEFAULT_AUTHORIZED_LIMIT_USD = 1.08;
 const DEFAULT_MAX_OUTPUT_TOKENS_CEILING = 1600;
 
+/** @param {Readonly<Record<string, string | undefined>>} [environment] */
 export function resolveAuthorizedLimitUsd(environment = process.env) {
   const raw = environment.STUDYX_AGENT_A_BUDGET_LIMIT_USD;
   if (raw === undefined) return DEFAULT_AUTHORIZED_LIMIT_USD;
@@ -17,6 +18,7 @@ export function resolveAuthorizedLimitUsd(environment = process.env) {
   return parsed;
 }
 
+/** @param {Readonly<Record<string, string | undefined>>} [environment] */
 export function resolveMaxOutputTokensCeilingV1(environment = process.env) {
   const raw = environment.STUDYX_AGENT_A_BUDGET_MAX_OUTPUT_TOKENS;
   if (raw === undefined) return DEFAULT_MAX_OUTPUT_TOKENS_CEILING;
