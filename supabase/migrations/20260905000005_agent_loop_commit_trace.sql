@@ -1,4 +1,7 @@
-BEGIN;
+-- Concurrent replacement keeps the hot state-event table readable/writable
+-- while the supporting index is built. This migration must remain outside an
+-- explicit transaction block. The timeout fails closed on catalog contention.
+SET lock_timeout = '5s';
 
 -- Agent Loop V3 declares which durable memories informed the answer. Keep the
 -- identifiers on the immutable decision instead of losing them at render time.
@@ -9,8 +12,23 @@ ALTER TABLE agent_decisions
 -- half and the visibility-gated half after channel acceptance. Version is the
 -- event identity; source_turn_id remains causal provenance and is intentionally
 -- allowed to repeat for those two phases.
-DROP INDEX IF EXISTS conversation_sales_context_events_v1_source_unique;
-CREATE INDEX IF NOT EXISTS conversation_sales_context_events_v1_source_idx
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_class AS class
+    JOIN pg_index AS index ON index.indexrelid = class.oid
+    JOIN pg_namespace AS namespace ON namespace.oid = class.relnamespace
+    WHERE namespace.nspname = 'public'
+      AND class.relname = 'conversation_sales_context_events_v1_source_idx'
+      AND NOT index.indisvalid
+  ) THEN
+    EXECUTE 'DROP INDEX public.conversation_sales_context_events_v1_source_idx';
+  END IF;
+END
+$$;
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS conversation_sales_context_events_v1_source_idx
   ON conversation_sales_context_state_events_v1 (
     workspace_id,
     conversation_id,
@@ -18,6 +36,8 @@ CREATE INDEX IF NOT EXISTS conversation_sales_context_events_v1_source_idx
     state_version
   )
   WHERE source_turn_id IS NOT NULL;
+
+DROP INDEX CONCURRENTLY IF EXISTS conversation_sales_context_events_v1_source_unique;
 
 COMMENT ON COLUMN agent_decisions.used_memory_ids IS
   'Immutable memory identifiers explicitly used by an Agent Loop V3 decision.';
@@ -69,4 +89,4 @@ BEGIN
 END
 $$;
 
-COMMIT;
+RESET lock_timeout;
