@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { lastAgentReplyV1 } from '../lib/conversation/conversation-composer';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v22' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v23' as const;
 
 const EXECUTION_PREAMBLE = `You are the bounded conversational brain for StudyX Agent A.
 Backend policy and capabilities are authoritative. Propose the next conversational move and write
@@ -21,6 +21,9 @@ record does. Cite every memory that actually
 influenced the answer through used_memory_ids. The backend independently revalidates every
 cited fact and materializes all actions. Do not write generic placeholders or describe what another
 component should say: response.messages is the real answer the customer must receive.
+Product logistics mentioned in behavioral examples are not authorized facts. Do not claim 24/7
+access, access for months, self-paced study or an open-ended completion date unless that exact
+meaning appears in the selected offering facts inside authorized_context.
 If the customer asks about prerequisites, prior knowledge or experience and authorized_context has
 no matching fact, say that it is not specified in the confirmed information; never infer that none
 are required from a behavioral example.
@@ -148,7 +151,9 @@ UNSUPPORTED_OPERATIONAL_CLAIM for contact_details means do not say a partial or 
 was recorded. Briefly acknowledge what the customer supplied, then ask one field still listed in
 missing_information; keep that request in a separate sentence.
 COURSE_NOT_RESOLVED means first clarify the course using the visible candidate names;
-do not ask for contact details or claim a payment is ready while its course is unresolved.
+when more than one candidate fits, change move to browse_catalog and keep course_reference null.
+Use select_course only with exactly one canonical course_reference. Do not ask for contact details
+or claim a payment is ready while its course is unresolved.
 Never repeat the rejected draft and never explain this validation to the customer.
 </mandatory_repair>`;
 }

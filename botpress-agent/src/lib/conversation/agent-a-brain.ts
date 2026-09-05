@@ -410,7 +410,7 @@ const COURSE_REFERENCE_MOVES = new Set([
 ]);
 const AREA_REFERENCE_MOVES = new Set(['browse_catalog', 'select_area']);
 const PAYMENT_PLAN_MOVES = new Set(['select_payment_plan', 'defer_payment', 'request_payment_link']);
-const MOVE_SEMANTICS = `Classify only the current customer message, using prior state solely to resolve short contextual replies. continue_by_chat and decline_call require an explicit channel preference or a refusal of a pending call offer; study goals and ordinary diagnostic replies are not channel choices. greeting is a current greeting or social opening. report_payment requires an explicit current-message claim that payment already happened; never use it for a greeting, a status question, a future intention, or merely because a link was sent earlier. ask_current_state is a question about what is already selected, sent, or recorded. provide_contact_details means the current message actually supplies identity details. select_payment_plan records a chosen plan; request_payment_link requires an explicit request to receive or advance with the link. unknown is only for meaning that remains unresolved after applying awaiting_reply.`;
+const MOVE_SEMANTICS = `Classify only the current customer message, using prior state solely to resolve short contextual replies. continue_by_chat and decline_call require an explicit channel preference or a refusal of a pending call offer; study goals and ordinary diagnostic replies are not channel choices. greeting is a current greeting or social opening. report_payment requires an explicit current-message claim that payment already happened; never use it for a greeting, a status question, a future intention, or merely because a link was sent earlier. ask_current_state is a question about what is already selected, sent, or recorded. provide_contact_details means the current message actually supplies identity details. select_course requires exactly one resolved canonical course_reference; use browse_catalog when you present several courses and ask the customer to choose. select_payment_plan records a chosen plan; request_payment_link requires an explicit request to receive or advance with the link. unknown is only for meaning that remains unresolved after applying awaiting_reply.`;
 
 function closedObject(properties: Record<string, unknown>) {
   return { type: 'object', properties, required: Object.keys(properties), additionalProperties: false };
@@ -846,6 +846,23 @@ function canonicalPrerequisiteStatement(
     }
   }
   return null;
+}
+
+type CourseLogisticsFactV1 = 'access_24_7' | 'open_ended' | 'access_duration';
+
+const COURSE_LOGISTICS_PATTERNS: Readonly<Record<CourseLogisticsFactV1, RegExp>> = {
+  access_24_7: /\b24\s*\/\s*7\b/u,
+  open_ended: /\b(?:sin\s+(?:una\s+)?fecha\s+fija|no\s+hay\s+presion\s+de\s+terminar)\b/u,
+  access_duration: /\b(?:plataforma|acceso)\b[^.!?\n]{0,48}\b(?:varios?|algunos?|\d+)\s+mes(?:es)?\b/u,
+};
+
+function courseLogisticsInV1(text: string): CourseLogisticsFactV1[] {
+  const normalized = text.normalize('NFD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLocaleLowerCase('es');
+  return (Object.entries(COURSE_LOGISTICS_PATTERNS) as Array<[CourseLogisticsFactV1, RegExp]>)
+    .filter(([, pattern]) => pattern.test(normalized))
+    .map(([kind]) => kind);
 }
 
 /**
@@ -1372,6 +1389,15 @@ export function validateAgentATurnProposalV1(input: {
     && authoredNarrative.some(assertsUnsupportedPrerequisitesV1)
   ) {
     rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'prerequisites' });
+  }
+  const authorizedCourseLogistics = new Set(
+    [...selectedFactsById]
+      .filter(([factId]) => planned.has(factId))
+      .flatMap(([, fact]) => courseLogisticsInV1(fact.value)),
+  );
+  if (authoredNarrative.flatMap(courseLogisticsInV1)
+    .some((fact) => !authorizedCourseLogistics.has(fact))) {
+    rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'course_logistics' });
   }
   // Dinero y promesa siguen siendo frontera acá: el error es caro y conviene
   // abrir la reparación antes del commit. El resto de los sustantivos

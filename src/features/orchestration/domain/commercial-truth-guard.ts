@@ -28,7 +28,11 @@ export interface CanonicalTruthSetV1 {
   /** Nombres del catálogo activo, independientes del curso elegido. */
   readonly offering_names?: readonly string[];
   readonly area_names?: readonly string[];
+  /** Logística explícita de la oferta; nunca se infiere de que sea online. */
+  readonly course_logistics?: readonly CourseLogisticsFactV1[];
 }
+
+type CourseLogisticsFactV1 = 'access_24_7' | 'open_ended' | 'access_duration';
 
 export type CommercialTruthViolationCodeV1 =
   | 'UNAUTHORIZED_URL'
@@ -37,6 +41,7 @@ export type CommercialTruthViolationCodeV1 =
   | 'MODALITY_CONTRADICTS_CANONICAL'
   | 'CERTIFICATION_CONTRADICTS_CANONICAL'
   | 'OFFERING_NOT_CANONICAL'
+  | 'LOGISTICS_NOT_CANONICAL'
   | 'FORBIDDEN_PROMISE';
 
 export interface CommercialTruthViolationV1 {
@@ -55,6 +60,7 @@ export interface CommercialTruthVerdictV1 {
 export interface CanonicalOfferingSourceV1 {
   readonly code: string;
   readonly display_name?: string;
+  readonly description?: string;
   readonly price_type: 'fixed' | 'quote' | 'free';
   readonly price_amount: string | null;
   readonly currency: string | null;
@@ -107,7 +113,14 @@ const OFFERING_DESCRIPTION = /^(?:que|para|con|sin|ideal|donde|porque|si|una\s+o
 const NON_COURSE_OBJECT = /^(?:(?:el|la|un|una|nuestro|nuestra)\s+)?(?:\d+\s+)?(?:pagos?|cuotas?|planes?|chat|soporte|llamadas?|asesoria|acompanamiento|ayuda|informacion|acceso|profesores|clases|certificados?|descuentos?|becas?)\b/u;
 const EXPLICIT_COURSE = /^(?:(?:el|un|nuestro)\s+)?(?:curso|diplomado|diplomatura|carrera)\s+(?:de\s+|en\s+)?/u;
 const AREA_MEMBERSHIP = /^(?:que\s+)?(?:dentro\s+de|(?:como\s+)?parte\s+de|(?:forma|es)\s+parte\s+de|(?:pertenece|perteneciente)\s+a)\s+(?:(?:la|el|nuestra|nuestro)\s+)?/u;
+const COLLECTIVE_AREA_MEMBERSHIP = /^(?:todos?|todas?)\s+(?:dentro\s+de|(?:como\s+)?parte\s+de|pertenecientes?\s+a)\s+(?:(?:la|el|nuestra|nuestro)\s+)?/u;
 const OFFERING_LIST_SEPARATOR = /^(?:[,;:]\s*(?:(?:y|e|o)\s+)?|(?:y|e|o)\s+)/u;
+
+const COURSE_LOGISTICS_PATTERNS: Readonly<Record<CourseLogisticsFactV1, RegExp>> = {
+  access_24_7: /\b24\s*\/\s*7\b/u,
+  open_ended: /\b(?:sin\s+(?:una\s+)?fecha\s+fija|no\s+hay\s+presion\s+de\s+terminar)\b/u,
+  access_duration: /\b(?:plataforma|acceso)\b[^.!?\n]{0,48}\b(?:varios?|algunos?|\d+)\s+mes(?:es)?\b/u,
+};
 
 function offersUnauthorizedBenefit(sentence: string): boolean {
   // Una negación alcanza su cláusula, nunca una oferta afirmativa posterior.
@@ -146,7 +159,8 @@ function containsUnknownOffering(sentence: string, names: readonly string[], are
       if (!name) return true;
       remainder = remainder.slice(name.length).trim();
       const descriptor = remainder.replace(OFFERING_LIST_SEPARATOR, '');
-      const membership = descriptor.match(AREA_MEMBERSHIP);
+      const membership = descriptor.match(AREA_MEMBERSHIP)
+        ?? descriptor.match(COLLECTIVE_AREA_MEMBERSHIP);
       if (membership) {
         // El área describe el curso anterior. Consumir sólo ese nombre permite
         // seguir verificando otros cursos que aparezcan después del descriptor.
@@ -179,6 +193,13 @@ function normalize(value: string): string {
     .toLocaleLowerCase('es')
     .replace(/\s+/gu, ' ')
     .trim();
+}
+
+function courseLogisticsIn(text: string): CourseLogisticsFactV1[] {
+  const normalized = normalize(text);
+  return (Object.entries(COURSE_LOGISTICS_PATTERNS) as Array<[CourseLogisticsFactV1, RegExp]>)
+    .filter(([, pattern]) => pattern.test(normalized))
+    .map(([kind]) => kind);
 }
 
 /**
@@ -321,6 +342,11 @@ function sentenceViolations(
     violations.push({ code: 'OFFERING_NOT_CANONICAL', value: 'offering' });
   }
 
+  const authorizedLogistics = new Set(canonical.course_logistics ?? []);
+  if (courseLogisticsIn(sentence).some((fact) => !authorizedLogistics.has(fact))) {
+    violations.push({ code: 'LOGISTICS_NOT_CANONICAL', value: 'course_logistics' });
+  }
+
   return violations;
 }
 
@@ -354,6 +380,7 @@ export function canonicalTruthSetFromOfferingsV1(input: {
   const prices: string[] = [];
   const durations: string[] = [];
   const paymentTerms: { months: number; price: string }[] = [];
+  const courseLogistics = new Set<CourseLogisticsFactV1>();
   for (const offering of scope) {
     const currency = offering.currency?.trim() ?? '';
     if (offering.price_type === 'fixed' && offering.price_amount && currency.length > 0) {
@@ -365,6 +392,16 @@ export function canonicalTruthSetFromOfferingsV1(input: {
     if (modules !== null) durations.push(`${modules} ${modules === 1 ? 'módulo' : 'módulos'}`);
     const hours = positiveInteger(offering.delivery.hours_per_month);
     if (hours !== null) durations.push(`${hours} horas por mes`);
+    const logisticsSource = [
+      offering.description ?? '',
+      ...Object.values(offering.delivery).filter((value): value is string => typeof value === 'string'),
+    ].join(' ');
+    for (const fact of courseLogisticsIn(logisticsSource)) courseLogistics.add(fact);
+    if (offering.delivery.access_24_7 === true) courseLogistics.add('access_24_7');
+    if (offering.delivery.open_ended === true) courseLogistics.add('open_ended');
+    if (positiveInteger(offering.delivery.access_months) !== null) {
+      courseLogistics.add('access_duration');
+    }
   }
 
   // Los planes son configuración del workspace, pero un precio sólo puede
@@ -402,6 +439,7 @@ export function canonicalTruthSetFromOfferingsV1(input: {
     area_names: [...new Set(input.offerings.flatMap((offering) => (
       typeof offering.metadata?.academy === 'string' ? [offering.metadata.academy] : []
     )))],
+    course_logistics: [...courseLogistics],
     prices: [...new Set(prices)],
     durations: [...new Set(durations)],
     payment_terms: paymentTerms,

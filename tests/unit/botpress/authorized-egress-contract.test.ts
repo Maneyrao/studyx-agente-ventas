@@ -62,4 +62,24 @@ describe('Botpress authorized egress contract', () => {
       },
     })).success).toBe(false);
   });
+
+  it('accepts every technical fallback effect returned by the backend', () => {
+    const response = responseWithOutbound({
+      authorized_egress: {
+        schema_version: 1,
+        content_hash: 'a'.repeat(64),
+        authorized_urls: [],
+        protected_facts: [],
+      },
+    });
+
+    expect(CommitDecisionResponseSchema.safeParse({
+      ...response,
+      conversation_effects: {
+        technical_fallback_reason: 'EGRESS_PARTIAL_VETO_TRANSITION_REFUSED',
+        human_review_requested: false,
+        partial_veto_refused_authority: 'agent_turn_v2',
+      },
+    }).success).toBe(true);
+  });
 });

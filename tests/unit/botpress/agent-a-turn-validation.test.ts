@@ -272,6 +272,55 @@ describe('validación de la propuesta del turno', () => {
     });
   });
 
+  it('rechaza logística de cursada que no aparece en los hechos autorizados', () => {
+    const selected = context({
+      commercial_state: {
+        ...context().commercial_state,
+        selected_offering_code: 'excel_integral',
+        stage: 'course_selected',
+        call_offer_count: 1,
+        call_offer_status: 'offered',
+      },
+      catalog: {
+        available_offerings: [],
+        selected_offering: {
+          code: 'excel_integral',
+          display_name: 'Excel Integral',
+          area_code: 'negocios',
+          facts: [
+            { id: 'offering:excel_integral:duration:v1', kind: 'offering_duration', value: '17 clases' },
+            { id: 'offering:excel_integral:modality:v1', kind: 'offering_modality', value: 'online' },
+          ],
+        },
+        areas: [],
+        candidate_offerings: [],
+        payment_plans: [],
+      },
+    });
+    const factIds = selected.catalog.selected_offering!.facts.map((fact) => fact.id);
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
+          course_reference: 'excel_integral', confidence: 1,
+        },
+        response: {
+          messages: ['Son 17 clases online y avanzás a tu ritmo: la plataforma queda disponible 24/7 por varios meses, sin una fecha fija para terminar.'],
+          call_offer: null,
+        },
+        used_fact_ids: factIds,
+      }),
+      context: selected,
+      planned_fact_ids: factIds,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection?.rejections).toContainEqual({
+      code: 'FACT_VALUE_MISMATCH',
+      subject: 'course_logistics',
+    });
+  });
+
   it.each(['¿Te llamo?', '¿Hablamos por teléfono?', '¿Quieres que te llame para explicarte el curso?', 'Ya registré tus datos. ¿Hablamos por teléfono?', 'Ya registré tus datos, ¿Hablamos por teléfono?', 'Entendido, seguimos sin llamada. ¿Quieres que te llame para explicarte el curso?'])('una tercera oferta de llamada es CALL_BUDGET_EXHAUSTED: %s', (offer) => {
     const rejection = validateAgentATurnProposalV1({
       proposal: proposal({ response: { messages: ['Bien.'], call_offer: offer } }),

@@ -807,6 +807,12 @@ describe('Agent A Brain V1', () => {
     expect(moveProperties.move.description).toContain(
       'report_payment requires an explicit current-message claim that payment already happened',
     );
+    expect(moveProperties.move.description).toContain(
+      'select_course requires exactly one resolved canonical course_reference',
+    );
+    expect(moveProperties.move.description).toContain(
+      'use browse_catalog when you present several courses and ask the customer to choose',
+    );
     expect(body.instructions).toContain(
       'The customer may select the canonical plan and explicitly request its link in',
     );
@@ -824,6 +830,9 @@ describe('Agent A Brain V1', () => {
     );
     expect(body.instructions).toContain(
       'Use at most two response.messages and at most one question in the whole turn',
+    );
+    expect(body.instructions).toContain(
+      'Product logistics mentioned in behavioral examples are not authorized facts',
     );
     expect(moveProperties.secondary_moves.items.enum).not.toContain('greeting');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('unknown');

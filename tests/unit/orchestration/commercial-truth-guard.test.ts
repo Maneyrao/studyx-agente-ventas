@@ -104,6 +104,52 @@ describe('lenguaje natural liberado', () => {
     expect(enforce(content).content).toBe(content);
   });
 
+  it('conserva una lista canónica con un descriptor colectivo de área', () => {
+    const canonical = canonicalTruthSetFromOfferingsV1({
+      offerings: [
+        {
+          code: 'armado-pc', display_name: 'Armado y Reparación de PC',
+          price_type: 'fixed', price_amount: '360', currency: 'USD',
+          delivery: {}, metadata: { academy: 'Academia de Oficios' },
+        },
+        {
+          code: 'celulares', display_name: 'Reparación de Celulares',
+          price_type: 'fixed', price_amount: '360', currency: 'USD',
+          delivery: {}, metadata: { academy: 'Academia de Oficios' },
+        },
+        {
+          code: 'redes', display_name: 'Redes Informáticas',
+          price_type: 'fixed', price_amount: '360', currency: 'USD',
+          delivery: {}, metadata: { academy: 'Academia de Oficios' },
+        },
+      ],
+      selected_offering_code: null,
+    });
+    const content = 'Contamos con Armado y Reparación de PC, Reparación de Celulares y Redes Informáticas, todas dentro de la Academia de Oficios.';
+
+    expect(enforce(content, canonical)).toMatchObject({
+      content,
+      removed: [],
+      violations: [],
+    });
+  });
+
+  it('veta logística académica que no figura en la oferta seleccionada', () => {
+    const canonical = canonicalTruthSetFromOfferingsV1({
+      offerings: [{
+        code: 'excel', display_name: 'Excel Integral',
+        price_type: 'fixed', price_amount: '360', currency: 'USD',
+        description: '17 clases de fórmulas, funciones y gráficos.',
+        delivery: { classes: 17, modality: 'online' },
+      }],
+      selected_offering_code: 'excel',
+    });
+    const content = 'Excel Integral son 17 clases 100% online, y avanzás a tu ritmo: la plataforma queda disponible 24/7 por varios meses, así que no hay presión de terminar en una fecha fija.';
+
+    expect(enforce(content, canonical).violations.map((violation) => violation.code))
+      .toContain('LOGISTICS_NOT_CANONICAL');
+  });
+
 
   it('conserva el salto de párrafo que separa los mensajes del modelo', () => {
     // `processInboundTurn` une `response.messages` con `\n\n`. Colapsarlo a un
