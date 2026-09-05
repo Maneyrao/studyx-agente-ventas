@@ -156,7 +156,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
   it('authorizes a cited offering name from the complete visible catalog', async () => {
     const current = context();
     current.commercial_state.selected_offering_code = null;
-    current.commercial_state.stage = 'discovery';
+    current.commercial_state.stage = 'exploring';
     current.catalog.selected_offering = null;
     current.catalog.available_offerings = [{
       code: 'fotografia-profesional',
