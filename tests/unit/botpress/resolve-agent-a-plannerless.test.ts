@@ -24,6 +24,7 @@ function context(): AgentAContextV1 {
     },
     obligations: { stage: 'course_selected', owes: [], not_yet: [] },
     catalog: {
+      available_offerings: [],
       selected_offering: {
         code: 'maquillaje-profesional', display_name: 'Maquillaje Profesional',
         area_code: 'moda-belleza',

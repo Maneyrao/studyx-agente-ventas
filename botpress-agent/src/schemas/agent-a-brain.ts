@@ -94,6 +94,12 @@ export const AgentAContextV1Schema = z.object({
       area_code: IdentifierSchema.nullable(),
       facts: z.array(AgentAFactSchema).max(32),
     }).strict().nullable(),
+    available_offerings: z.array(z.object({
+      code: IdentifierSchema,
+      fact_id: IdentifierSchema,
+      display_name: z.string().trim().min(1).max(240),
+      area_code: IdentifierSchema.nullable(),
+    }).strict()).max(60),
     areas: z.array(z.object({
       code: IdentifierSchema,
       fact_id: IdentifierSchema,

@@ -36,6 +36,7 @@ function context(): AgentAContextV1 {
         code: 'redes-informaticas', display_name: 'Redes Informáticas', area_code: 'tecnologia',
         facts: [{ id: 'offering:redes-informaticas:name:v1', kind: 'offering_name', value: 'Redes Informáticas' }],
       },
+      available_offerings: [],
       areas: [{ code: 'tecnologia', fact_id: 'area:tecnologia:name:v1', display_name: 'Tecnología' }],
       candidate_offerings: [],
       payment_plans: [{ code: 'monthly_12', fact_id: 'payment:redes-informaticas:monthly_12:label:v1', label: '12 pagos mensuales de USD 30' }],
@@ -172,10 +173,79 @@ describe('Agent A Brain V1', () => {
 
     expect(parsed.move).toMatchObject({
       move: 'select_course',
-      course_reference: 'Redes Informáticas',
+      course_reference: 'redes-informaticas',
     });
     expect(parsed.move).not.toHaveProperty('area_reference');
     expect(parsed.move).not.toHaveProperty('payment_plan');
+  });
+
+  it('normalizes an exact visible display name to its canonical code and authorizes its name fact', () => {
+    const ctx = context() as AgentAContextV1 & {
+      catalog: AgentAContextV1['catalog'] & {
+        available_offerings: Array<{
+          code: string;
+          fact_id: string;
+          display_name: string;
+          area_code: string | null;
+        }>;
+      };
+    };
+    ctx.catalog.selected_offering = null;
+    ctx.catalog.candidate_offerings = [];
+    ctx.catalog.available_offerings = [{
+      code: 'fotografia_profesional',
+      fact_id: 'offering:fotografia_profesional:name:v1',
+      display_name: 'Fotografía Profesional',
+      area_code: 'emprendedores',
+    }];
+
+    const parsed = parseAgentATurnProposalV1(proposal({
+      move: {
+        schema_version: 1,
+        move: 'select_course',
+        secondary_moves: [],
+        vetoes: [],
+        course_reference: 'Fotografía Profesional',
+        confidence: 0.99,
+      },
+      used_fact_ids: ['offering:fotografia_profesional:name:v1'],
+    }), ctx);
+
+    expect(parsed.move.course_reference).toBe('fotografia_profesional');
+    expect(parsed.used_fact_ids).toEqual(['offering:fotografia_profesional:name:v1']);
+  });
+
+  it('rejects a course reference that is absent from the complete visible catalog', () => {
+    const ctx = context() as AgentAContextV1 & {
+      catalog: AgentAContextV1['catalog'] & {
+        available_offerings: Array<{
+          code: string;
+          fact_id: string;
+          display_name: string;
+          area_code: string | null;
+        }>;
+      };
+    };
+    ctx.catalog.selected_offering = null;
+    ctx.catalog.candidate_offerings = [];
+    ctx.catalog.available_offerings = [{
+      code: 'ingles_1',
+      fact_id: 'offering:ingles_1:name:v1',
+      display_name: 'Inglés 1',
+      area_code: 'idiomas',
+    }];
+
+    expect(() => parseAgentATurnProposalV1(proposal({
+      move: {
+        schema_version: 1,
+        move: 'select_course',
+        secondary_moves: [],
+        vetoes: [],
+        course_reference: 'Medicina',
+        confidence: 0.99,
+      },
+      used_fact_ids: [],
+    }), ctx)).toThrowError(expect.objectContaining({ code: 'BRAIN_UNKNOWN_COURSE_REFERENCE' }));
   });
 
   it('removes duplicate secondary moves and vetoes without adding authority', () => {

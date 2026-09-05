@@ -23,6 +23,7 @@ function context(): AgentAContextV1 {
     },
     obligations: { stage: 'course_selected', owes: [], not_yet: [] },
     catalog: {
+      available_offerings: [],
       selected_offering: {
         code: OFFERING, display_name: 'Redes Informáticas', area_code: 'tecnologia',
         facts: [{ id: `offering:${OFFERING}:name:v1`, kind: 'offering_name', value: 'Redes Informáticas' }],

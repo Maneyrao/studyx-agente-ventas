@@ -18,6 +18,7 @@ function context(): AgentAContextV1 {
     },
     obligations: { stage: 'plan_selected', owes: [], not_yet: [] },
     catalog: {
+      available_offerings: [],
       selected_offering: {
         code: 'redes-informaticas', display_name: 'Redes Informáticas', area_code: 'tecnologia',
         facts: [{ id: 'offering:redes-informaticas:name:v1', kind: 'offering_name', value: 'Redes Informáticas' }],

@@ -681,6 +681,32 @@ function normalizeStrictProposal(value: unknown, context: AgentAContextV1): unkn
   if (![...moveKinds].some((kind) => COURSE_REFERENCE_MOVES.has(kind))) {
     delete normalizedMove.course_reference;
   }
+  if (typeof normalizedMove.course_reference === 'string') {
+    const referenceKey = (reference: string) => reference
+      .trim()
+      .toLocaleLowerCase('es')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/gu, '')
+      .replace(/\s+/gu, ' ');
+    const visibleOfferings = [
+      ...(context.catalog.selected_offering ? [{
+        code: context.catalog.selected_offering.code,
+        display_name: context.catalog.selected_offering.display_name,
+      }] : []),
+      ...context.catalog.candidate_offerings,
+      ...context.catalog.available_offerings,
+    ];
+    const key = referenceKey(normalizedMove.course_reference);
+    const matches = [...new Map(visibleOfferings.map((offering) => [offering.code, offering])).values()]
+      .filter((offering) => (
+        referenceKey(offering.code) === key
+        || referenceKey(offering.display_name) === key
+      ));
+    if (matches.length !== 1) {
+      throw new AgentABrainError('BRAIN_UNKNOWN_COURSE_REFERENCE');
+    }
+    normalizedMove.course_reference = matches[0].code;
+  }
   if (![...moveKinds].some((kind) => AREA_REFERENCE_MOVES.has(kind))) {
     delete normalizedMove.area_reference;
   }
@@ -693,6 +719,7 @@ function normalizeStrictProposal(value: unknown, context: AgentAContextV1): unkn
 function authorizedFactIds(context: AgentAContextV1): Set<string> {
   const ids = new Set(context.catalog.selected_offering?.facts.map((fact) => fact.id) ?? []);
   for (const area of context.catalog.areas) ids.add(area.fact_id);
+  for (const offering of context.catalog.available_offerings) ids.add(offering.fact_id);
   for (const offering of context.catalog.candidate_offerings) {
     ids.add(offering.fact_id);
   }
@@ -768,6 +795,9 @@ function commercialValuesByFactId(context: AgentAContextV1): ReadonlyMap<string,
   const values = new Map<string, string>();
   for (const fact of context.catalog.selected_offering?.facts ?? []) values.set(fact.id, fact.value);
   for (const area of context.catalog.areas) values.set(area.fact_id, area.display_name);
+  for (const offering of context.catalog.available_offerings) {
+    values.set(offering.fact_id, offering.display_name);
+  }
   for (const offering of context.catalog.candidate_offerings) values.set(offering.fact_id, offering.display_name);
   for (const plan of context.catalog.payment_plans) values.set(plan.fact_id, plan.label);
   return values;

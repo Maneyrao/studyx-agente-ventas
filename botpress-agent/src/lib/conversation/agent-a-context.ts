@@ -559,6 +559,16 @@ export function buildAgentAContextV1(
     }),
     catalog: {
       selected_offering: selectedOffering,
+      available_offerings: selectedOffering === null
+        ? [...index]
+          .sort((left, right) => left.code < right.code ? -1 : left.code > right.code ? 1 : 0)
+          .map((offering) => ({
+            code: offering.code,
+            fact_id: `offering:${offering.code}:name:v1`,
+            display_name: offering.display_name,
+            area_code: areaCode(offering.academy),
+          }))
+        : [],
       areas: [...areas].map(([code, display_name]) => ({
         code,
         fact_id: `area:${code}:name:v1`,

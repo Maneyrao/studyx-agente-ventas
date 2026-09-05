@@ -31,6 +31,7 @@ function context(overrides: Partial<AgentAContextV1> = {}): AgentAContextV1 {
       payment_reported: false,
     },
     catalog: {
+      available_offerings: [],
       selected_offering: {
         code: 'redes-informaticas',
         display_name: 'Redes Informáticas',
@@ -113,6 +114,7 @@ describe('validación de la propuesta del turno', () => {
           stage: 'exploring',
         },
         catalog: {
+          available_offerings: [],
           selected_offering: null,
           areas: [],
           candidate_offerings: [],
