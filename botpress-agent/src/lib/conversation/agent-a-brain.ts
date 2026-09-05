@@ -1506,6 +1506,21 @@ export function validateAgentATurnProposalV1(input: {
     rejections.push({ code: 'ACTION_NOT_AUTHORIZED', subject: 'request_call_now' });
   }
   const state = input.context.commercial_state;
+  const hasCanonicalCourse = state.selected_offering_code !== null
+    || typeof input.proposal.move.course_reference === 'string';
+  const missingCourseSubject = moves.has('select_course')
+    && typeof input.proposal.move.course_reference !== 'string'
+    ? 'course_reference'
+    : offersACall && !hasCanonicalCourse
+      ? 'call_offer'
+      : (moves.has('browse_catalog') || moves.has('select_area'))
+        && !hasCanonicalCourse
+        && !input.proposal.response.messages.some((message) => /[?¿]/u.test(message))
+        ? 'next_step'
+        : null;
+  if (missingCourseSubject !== null) {
+    rejections.push({ code: 'COURSE_NOT_RESOLVED', subject: missingCourseSubject });
+  }
   if ((moves.has('select_course') || moves.has('ask_course_information'))
     && state.selected_offering_code !== null && input.context.capabilities.may_offer_call
     && state.call_offer_count === 0 && state.call_preference === 'unknown'

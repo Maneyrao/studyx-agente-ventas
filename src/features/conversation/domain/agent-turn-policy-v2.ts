@@ -49,6 +49,7 @@ export type AgentTurnRejectionReasonV2 =
   | 'MISSING_INTAKE'
   | 'CALL_OFFER_NOT_AUTHORIZED'
   | 'CALL_OFFER_REQUIRED'
+  | 'COURSE_NOT_RESOLVED'
   | 'CHANNEL_PREFERENCE_NOT_SUPPORTED';
 
 export type AgentTurnAuthorityResultV2 = {
@@ -143,6 +144,10 @@ export function authorizeAgentTurnV2(input: {
   const factsById = new Map(input.facts.map((fact) => [fact.id, fact]));
   const authorizedFactIds: string[] = [];
   const reasons: AgentTurnRejectionReasonV2[] = [];
+
+  if (moves.has('select_course') && requestedOffering === null) {
+    reasons.push('COURSE_NOT_RESOLVED');
+  }
 
   for (const factId of proposal.used_fact_ids) {
     if (stateFactId(factId)) {

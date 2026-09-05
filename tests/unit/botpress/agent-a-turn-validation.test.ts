@@ -186,6 +186,92 @@ describe('validación de la propuesta del turno', () => {
     expect(rejection).toBeNull();
   });
 
+  it('rechaza select_course sin una referencia canónica aunque nombre opciones reales', () => {
+    const discovery = context({
+      commercial_state: {
+        ...context().commercial_state,
+        selected_offering_code: null,
+        stage: 'exploring',
+      },
+      catalog: {
+        available_offerings: [
+          { code: 'ingles_1', fact_id: 'offering:ingles_1:name:v1', display_name: 'Inglés 1', area_code: 'idiomas' },
+          { code: 'ingles_2', fact_id: 'offering:ingles_2:name:v1', display_name: 'Inglés 2', area_code: 'idiomas' },
+          { code: 'ingles_3', fact_id: 'offering:ingles_3:name:v1', display_name: 'Inglés 3', area_code: 'idiomas' },
+        ],
+        selected_offering: null,
+        areas: [],
+        candidate_offerings: [],
+        payment_plans: [],
+      },
+      capabilities: { ...context().capabilities, may_offer_call: true },
+    });
+    const facts = discovery.catalog.available_offerings.map((offering) => offering.fact_id);
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'select_course', secondary_moves: [], vetoes: [], confidence: 1,
+        },
+        response: {
+          messages: ['Tenemos Inglés 1, Inglés 2 e Inglés 3.'],
+          call_offer: '¿Te gustaría que te llame para identificar tu nivel?',
+        },
+        used_fact_ids: facts,
+      }),
+      context: discovery,
+      planned_fact_ids: facts,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection?.rejections).toContainEqual({
+      code: 'COURSE_NOT_RESOLVED',
+      subject: 'course_reference',
+    });
+  });
+
+  it('rechaza una recomendación de catálogo que termina sin siguiente paso útil', () => {
+    const discovery = context({
+      commercial_state: {
+        ...context().commercial_state,
+        selected_offering_code: null,
+        stage: 'exploring',
+      },
+      catalog: {
+        available_offerings: [{
+          code: 'marketing_digital',
+          fact_id: 'offering:marketing_digital:name:v1',
+          display_name: 'Marketing Digital',
+          area_code: 'marketing',
+        }],
+        selected_offering: null,
+        areas: [],
+        candidate_offerings: [],
+        payment_plans: [],
+      },
+    });
+    const fact = discovery.catalog.available_offerings[0]!.fact_id;
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 1,
+        },
+        response: {
+          messages: ['No tenemos Derecho. Te recomiendo Marketing Digital para mejorar tu salida laboral.'],
+          call_offer: null,
+        },
+        used_fact_ids: [fact],
+      }),
+      context: discovery,
+      planned_fact_ids: [fact],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection?.rejections).toContainEqual({
+      code: 'COURSE_NOT_RESOLVED',
+      subject: 'next_step',
+    });
+  });
+
   it.each(['¿Te llamo?', '¿Hablamos por teléfono?', '¿Quieres que te llame para explicarte el curso?', 'Ya registré tus datos. ¿Hablamos por teléfono?', 'Ya registré tus datos, ¿Hablamos por teléfono?', 'Entendido, seguimos sin llamada. ¿Quieres que te llame para explicarte el curso?'])('una tercera oferta de llamada es CALL_BUDGET_EXHAUSTED: %s', (offer) => {
     const rejection = validateAgentATurnProposalV1({
       proposal: proposal({ response: { messages: ['Bien.'], call_offer: offer } }),

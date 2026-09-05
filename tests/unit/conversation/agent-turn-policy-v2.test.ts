@@ -107,6 +107,21 @@ describe('plannerless Agent A authority', () => {
     });
   });
 
+  it('rejects select_course when the model omitted its canonical reference', () => {
+    const result = authorize({
+      mayOfferCall: false,
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'select_course', secondary_moves: [], vetoes: [], confidence: 1,
+        },
+        response: { messages: ['Tenemos Redes Informáticas y Excel Integral.'] },
+        used_fact_ids: ['offering:redes_informaticas:name:v1'],
+      }),
+    });
+
+    expect(result).toEqual({ ok: false, reasons: ['COURSE_NOT_RESOLVED'] });
+  });
+
   it('rejects a detailed fact from a course other than the resolved course', () => {
     const result = authorize({
       mayOfferCall: false, // This fixture isolates course/fact authority when a call is unavailable.
