@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { beforeAll, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { AgentATurnProposalV1 } from '../../botpress-agent/src/schemas/agent-a-brain';
 import { runWorkflowTurnV1, type WorkflowTurnEvidenceV1 } from '../helpers/agent-a-workflow-driver';
 import {
   readWorkflowDbEvidenceV1,
@@ -7,25 +8,25 @@ import {
 } from '../helpers/agent-a-workflow-db-evidence';
 import { countWorkflowAvailabilityFailuresV1 } from '../helpers/agent-a-workflow-measurement';
 import { writeWorkflowReportV1 } from '../helpers/agent-a-workflow-report';
-import { secrets } from '../helpers/botpress-workflow-runtime';
-
-// Regression of the failed Telegram canary through the real workflow handler.
-// The local adapter is evidence of authorized submission, not a Telegram ACK.
-// This suite calls DeepSeek and must only be run under the centralized budget.
-beforeAll(() => {
-  expect(secrets.DEEPSEEK_API_KEY?.trim(), 'DEEPSEEK_API_KEY_MISSING').toBeTruthy();
-  expect(process.env.STUDYX_AGENT_A_BUDGET_FILE, 'CUMULATIVE_BUDGET_REQUIRED').toBeTruthy();
-  expect(process.env.TEST_DATABASE_URL, 'ISOLATED_TEST_DATABASE_REQUIRED').toBeTruthy();
-});
+import { configuration, secrets } from '../helpers/botpress-workflow-runtime';
 
 type IntakeField = 'nombre' | 'apellido' | 'correo' | 'telefono';
 
 interface ContextObservation {
+  readonly turn?: {
+    readonly batch_messages?: readonly { readonly id?: unknown; readonly text?: unknown }[];
+  };
   readonly capabilities?: {
     readonly may_send_payment_link?: unknown;
     readonly intake_status?: unknown;
     readonly intake_missing?: unknown;
   };
+}
+
+interface TelegramFixtureStep {
+  readonly customer: string;
+  readonly proposal: AgentATurnProposalV1;
+  readonly selectedOfferingCode: string | null;
 }
 
 interface ClaimObservation {
@@ -67,6 +68,268 @@ function normalize(value: string): string {
   return value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
 }
 
+function telegramFixtureProposal(input: {
+  readonly move: AgentATurnProposalV1['move']['move'];
+  readonly message: string;
+  readonly courseReference?: string;
+  readonly factIds?: readonly string[];
+  readonly callOffer?: string | null;
+}): AgentATurnProposalV1 {
+  return {
+    schema_version: 1,
+    move: {
+      schema_version: 1,
+      move: input.move,
+      secondary_moves: [],
+      vetoes: [],
+      ...(input.courseReference ? { course_reference: input.courseReference } : {}),
+      confidence: 0.99,
+    },
+    response: {
+      messages: [input.message],
+      call_offer: input.callOffer ?? null,
+    },
+    proposed_action: { type: 'none' },
+    used_fact_ids: [...(input.factIds ?? [])],
+    used_memory_ids: [],
+    memory_candidates: [],
+    repair_of: null,
+  };
+}
+
+const telegramBoundarySequences: readonly {
+  readonly label: 'L E' | 'gfalejandro' | 'Lucas';
+  readonly steps: readonly TelegramFixtureStep[];
+}[] = [
+  {
+    label: 'L E',
+    steps: [
+      {
+        customer: 'Hola, quiero un curso de foto para mi emprendimiento.',
+        proposal: telegramFixtureProposal({
+          move: 'browse_catalog',
+          message: 'Tenemos Fotografía Profesional y Fotografía con Celulares para Tiendas Online. ¿Cuál se acerca más a lo que buscás?',
+          factIds: [
+            'offering:fotografia_profesional:name:v1',
+            'offering:fotografia_celulares_tiendas_online:name:v1',
+          ],
+        }),
+        selectedOfferingCode: null,
+      },
+      {
+        customer: 'El de celulares.',
+        proposal: telegramFixtureProposal({
+          move: 'select_course',
+          courseReference: 'fotografia_celulares_tiendas_online',
+          message: 'Perfecto, Fotografía con Celulares para Tiendas Online puede servirte para crear contenido de tu negocio.',
+          factIds: ['offering:fotografia_celulares_tiendas_online:name:v1'],
+          callOffer: 'Si querés, coordinamos una llamada breve y te cuento cómo seguir.',
+        }),
+        selectedOfferingCode: 'fotografia_celulares_tiendas_online',
+      },
+    ],
+  },
+  {
+    label: 'gfalejandro',
+    steps: [
+      {
+        customer: '¿Y cursos de inglés tienen?',
+        proposal: telegramFixtureProposal({
+          move: 'browse_catalog',
+          message: 'Sí: tenemos Inglés 1, Inglés 2 e Inglés 3. ¿Qué nivel te interesa?',
+          factIds: [
+            'offering:ingles_1:name:v1',
+            'offering:ingles_2:name:v1',
+            'offering:ingles_3:name:v1',
+          ],
+        }),
+        selectedOfferingCode: null,
+      },
+      {
+        customer: 'El nivel 2.',
+        proposal: telegramFixtureProposal({
+          move: 'select_course',
+          courseReference: 'ingles_2',
+          message: 'Buenísimo, entonces vemos Inglés 2.',
+          factIds: ['offering:ingles_2:name:v1'],
+          callOffer: 'Si querés, coordinamos una llamada breve para orientarte; si no, seguimos por acá.',
+        }),
+        selectedOfferingCode: 'ingles_2',
+      },
+    ],
+  },
+  {
+    label: 'Lucas',
+    steps: [
+      {
+        customer: 'Me interesa Fotografía Profesional.',
+        proposal: telegramFixtureProposal({
+          move: 'select_course',
+          courseReference: 'fotografia_profesional',
+          message: 'Perfecto, vemos Fotografía Profesional.',
+          factIds: ['offering:fotografia_profesional:name:v1'],
+          callOffer: 'Si querés, coordinamos una llamada breve para orientarte; si no, seguimos por acá.',
+        }),
+        selectedOfferingCode: 'fotografia_profesional',
+      },
+      {
+        customer: 'En realidad prefiero Excel Integral.',
+        proposal: telegramFixtureProposal({
+          move: 'select_course',
+          courseReference: 'excel_integral',
+          message: 'Claro, cambiamos a Excel Integral. ¿Qué uso te gustaría darle?',
+          factIds: ['offering:excel_integral:name:v1'],
+        }),
+        selectedOfferingCode: 'excel_integral',
+      },
+      {
+        customer: '¿Y ese se cursa online?',
+        proposal: telegramFixtureProposal({
+          move: 'ask_course_information',
+          courseReference: 'excel_integral',
+          message: 'Sí, Excel Integral se cursa 100% online. ¿Querés que te cuente cómo son las clases?',
+          factIds: [
+            'offering:excel_integral:name:v1',
+            'offering:excel_integral:modality:v1',
+          ],
+        }),
+        selectedOfferingCode: 'excel_integral',
+      },
+    ],
+  },
+] as const;
+
+describe('frontera Telegram anonimizada por workflow real sin costo', () => {
+  it.each(telegramBoundarySequences)('$label conserva lote, identidad, estado y entrega', async ({ label, steps }) => {
+    const apiBaseUrl = process.env.STUDYX_EVAL_API_BASE_URL ?? 'http://127.0.0.1:3217';
+    const databaseUrl = process.env.TEST_DATABASE_URL
+      ?? 'postgresql://postgres@127.0.0.1:55435/studyx_test';
+    const backend = new URL(apiBaseUrl);
+    expect(backend.hostname).toBe('127.0.0.1');
+    expect(backend.protocol).toBe('http:');
+    expect(backend.port).toMatch(/^32\d\d$/u);
+    const fetchLocal = globalThis.fetch;
+    const previousKey = secrets.DEEPSEEK_API_KEY;
+    const previousBaseUrl = configuration.apiBaseUrl;
+    let currentProposal: AgentATurnProposalV1 | null = null;
+    const observedContexts: ContextObservation[] = [];
+    const identity = {
+      conversationId: `telegram-boundary-${normalize(label).replace(/\s+/gu, '-')}-${randomUUID()}`,
+      userId: `telegram-boundary-user-${randomUUID()}`,
+      phoneE164: `+999${String(Date.now() + Math.floor(Math.random() * 1000)).slice(-10)}`,
+      providerMode: 'fixture' as const,
+    };
+    const turns: { customer: string; evidence: WorkflowTurnEvidenceV1 }[] = [];
+
+    try {
+      configuration.apiBaseUrl = apiBaseUrl;
+      configuration.agentAPlannerlessV2Enabled = true;
+      secrets.DEEPSEEK_API_KEY = 'workflow-fixture-no-credentials';
+      const readiness = await fetchLocal(`${apiBaseUrl}/api/ready`, {
+        signal: AbortSignal.timeout(4_000),
+      });
+      expect(readiness.ok, 'LABORATORIO_NO_DISPONIBLE').toBe(true);
+      vi.stubGlobal('fetch', async (request: RequestInfo | URL, init?: RequestInit) => {
+        const target = new URL(request instanceof Request ? request.url : String(request));
+        if (target.origin === backend.origin) return fetchLocal(request, init);
+        if (target.href !== 'https://api.deepseek.com/responses') {
+          throw new Error('UNEXPECTED_EXTERNAL_WORKFLOW_REQUEST');
+        }
+        if (!currentProposal) throw new Error('TELEGRAM_FIXTURE_PROPOSAL_MISSING');
+        const payload = JSON.parse(String(init?.body)) as { instructions?: string };
+        const serialized = payload.instructions?.match(
+          /<authorized_context>\s*([\s\S]*?)\s*<\/authorized_context>/u,
+        )?.[1];
+        if (!serialized) throw new Error('TELEGRAM_FIXTURE_CONTEXT_MISSING');
+        const context = JSON.parse(serialized) as ContextObservation & {
+          readonly turn_rejection?: { readonly rejection_id?: string };
+        };
+        observedContexts.push(context);
+        const proposal = {
+          ...currentProposal,
+          repair_of: context.turn_rejection?.rejection_id
+            ? { rejection_id: context.turn_rejection.rejection_id, attempt: 1 as const }
+            : null,
+        };
+        return new Response(JSON.stringify({
+          output: [{
+            type: 'message',
+            content: [{ type: 'output_text', text: JSON.stringify(proposal) }],
+          }],
+          usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+          fixture: true,
+        }), { headers: { 'content-type': 'application/json' } });
+      });
+
+      for (const [index, step] of steps.entries()) {
+        currentProposal = step.proposal;
+        const evidence = await runWorkflowTurnV1({ ...identity, text: step.customer });
+        turns.push({ customer: step.customer, evidence });
+        const db = await readWorkflowDbEvidenceV1({
+          databaseUrl,
+          externalConversationId: identity.conversationId,
+          adapterCaptures: turns.flatMap((turn) => turn.evidence.adapterCaptures),
+        });
+        const context = observedContexts.at(-1);
+
+        expect(evidence.errorCode).toBeNull();
+        expect(evidence.commitSucceeded).toBe(true);
+        expect(evidence.httpExchanges.filter((exchange) => exchange.boundary === 'deepseek'))
+          .toHaveLength(1);
+        expect(context?.turn?.batch_messages).toHaveLength(1);
+        expect(context?.turn?.batch_messages?.[0]?.text).toBe(step.customer);
+        expect(evidence.adapterCaptures).toHaveLength(1);
+        expect(evidence.authorizedMessages).toHaveLength(1);
+        expect(db.state?.selectedOfferingCode).toBe(step.selectedOfferingCode);
+        expect(db.decisions).toHaveLength(index + 1);
+        expect(db.outboundCount).toBe(index + 1);
+        const capture = evidence.adapterCaptures[0]!;
+        const outbound = db.outbound.find((item) => item.id === evidence.outboundId);
+        expect(outbound).toBeDefined();
+        expect(capture).toMatchObject({
+          outboundId: outbound?.id,
+          turnId: outbound?.turnId,
+          traceId: outbound?.traceId,
+          conversationId: identity.conversationId,
+          content: outbound?.content,
+        });
+        expect(db.outbound.every((item) => item.externalConversationId === identity.conversationId))
+          .toBe(true);
+      }
+
+      const finalDb = await readWorkflowDbEvidenceV1({
+        databaseUrl,
+        externalConversationId: identity.conversationId,
+        adapterCaptures: turns.flatMap((turn) => turn.evidence.adapterCaptures),
+      });
+      expect(turns.flatMap((turn) => turn.evidence.adapterCaptures)).toHaveLength(steps.length);
+      if (label === 'Lucas') {
+        expect(finalDb.state?.selectedOfferingCode, 'la referencia no puede resucitar el curso anterior')
+          .toBe('excel_integral');
+        expect(finalDb.outbound.at(-1)?.content).not.toMatch(/Fotograf[ií]a Profesional/iu);
+      }
+      writeWorkflowReportV1('workflow-telegram-boundary-fixture', {
+        provider: 'fixture',
+        api_cost_usd: 0,
+        scenario_role: 'telegram_boundary',
+        participant: label,
+        ...identity,
+        turns,
+        db: finalDb,
+        transcript: turns.flatMap((turn) => [
+          { role: 'user', text: turn.customer },
+          ...turn.evidence.authorizedMessages.map((text) => ({ role: 'assistant', text })),
+        ]),
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      configuration.apiBaseUrl = previousBaseUrl;
+      if (previousKey === undefined) delete secrets.DEEPSEEK_API_KEY;
+      else secrets.DEEPSEEK_API_KEY = previousKey;
+    }
+  }, 120_000);
+});
+
 function nextSeparateIntakeReply(
   assistantText: string,
   remaining: readonly IntakeField[],
@@ -92,6 +355,11 @@ function nextSeparateIntakeReply(
 }
 
 it('recovers the failed photography Telegram path through call-first and a delivered cash link', async () => {
+  // This separate regression calls DeepSeek and must only run under the
+  // centralized cumulative budget. The fixture suite above never needs it.
+  expect(secrets.DEEPSEEK_API_KEY?.trim(), 'DEEPSEEK_API_KEY_MISSING').toBeTruthy();
+  expect(process.env.STUDYX_AGENT_A_BUDGET_FILE, 'CUMULATIVE_BUDGET_REQUIRED').toBeTruthy();
+  expect(process.env.TEST_DATABASE_URL, 'ISOLATED_TEST_DATABASE_REQUIRED').toBeTruthy();
   const databaseUrl = process.env.TEST_DATABASE_URL!;
   const identity = {
     conversationId: `telegram-regression-${randomUUID()}`,
