@@ -160,7 +160,9 @@ export interface CommitDecisionResult {
   call_request: ReservedCallRequest | null;
   /** Structured evaluator/observability evidence; never inferred from copy. */
   conversation_effects?: {
-    readonly technical_fallback_reason: 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED';
+    readonly technical_fallback_reason:
+      | 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED'
+      | 'EGRESS_PARTIAL_VETO_TRANSITION_REFUSED';
     readonly human_review_requested: boolean;
   };
 }
@@ -471,6 +473,10 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       ReturnType<PostgresConversationStateStoreV1['load']>
     > = null;
     let technicalFallback: TechnicalFallbackV1 | null = null;
+    let technicalFallbackReasonCode:
+      | 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED'
+      | 'EGRESS_PARTIAL_VETO_TRANSITION_REFUSED'
+      | null = null;
     if (validatedInput.conversation_pipeline_v1) {
       pipelineStateBefore = await new PostgresConversationStateStoreV1(db).load(
         workspaceSlug, turn.conversation_id, turn.contact_id,
@@ -806,12 +812,6 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     // frontera con criterio propio.
     let authorizedEgress: AuthorizedEgressV1 | null = null;
     let egressSuppressed = false;
-    // Un veto PARCIAL (algunas oraciones caen, otras sobreviven) deja
-    // `preparedAgentTurn` vivo pero su `transition` describe el texto
-    // PRE-veto. Sobrevive al bloque del guard para que el chequeo antes de
-    // escribir la transición (más abajo) pueda distinguirlo de una respuesta
-    // que se entregó intacta.
-    let egressRemovedSentences = false;
     if (finalResponse !== null) {
       const offerings = await loadCanonicalOfferings('protected_facts');
       const canonicalTruth = canonicalTruthSetFromOfferingsV1({
@@ -858,7 +858,6 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       }
 
       if (verdict.removed.length > 0) {
-        egressRemovedSentences = true;
         counter.increment('egress_sentences_vetoed', verdict.removed.length);
         logger.warn({
           event: 'orchestration.egress.sentences_vetoed',
@@ -868,12 +867,30 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         });
       }
 
-      if (verdict.content !== null) {
+      // Un veto PARCIAL sobre un turno del agente (`preparedAgentTurn`) deja
+      // sobrevivir texto, pero `preparedAgentTurn.transition` se calculó
+      // sobre AMBAS oraciones — la que sobrevive y la que se acaba de vetar.
+      // Ese cálculo describe un mensaje que el cliente nunca recibió
+      // completo, y no se recomputa sobre el texto podado: eso sería el
+      // backend eligiendo el estado por su cuenta otra vez. Cae por la MISMA
+      // puerta que una supresión total —silencio técnico, nunca silencio
+      // llano (A7)— con su propio `reason_code` para que la telemetría
+      // pueda distinguir un veto parcial de una supresión completa.
+      const partialVetoOnAgentTurn = preparedAgentTurn !== null
+        && verdict.removed.length > 0
+        && verdict.content !== null;
+
+      if (verdict.content !== null && !partialVetoOnAgentTurn) {
         finalResponse = verdict.content;
       } else {
-        counter.increment('egress_response_suppressed', 1);
+        counter.increment(
+          partialVetoOnAgentTurn ? 'egress_partial_veto_transition_refused' : 'egress_response_suppressed',
+          1,
+        );
         logger.warn({
-          event: 'orchestration.egress.response_suppressed',
+          event: partialVetoOnAgentTurn
+            ? 'orchestration.egress.partial_veto_transition_refused'
+            : 'orchestration.egress.response_suppressed',
           trace_id: validatedInput.trace_id,
           turn_id: turn.id,
           reason: verdict.violations[0]?.code ?? 'COMMERCIAL_TRUTH_VIOLATION',
@@ -899,9 +916,14 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           memory_candidates: [],
           missing_information: [],
           next_state: 'completed',
-          reason_code: 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED',
+          reason_code: partialVetoOnAgentTurn
+            ? 'EGRESS_PARTIAL_VETO_TRANSITION_REFUSED'
+            : 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED',
           confidence: 1,
         });
+        technicalFallbackReasonCode = partialVetoOnAgentTurn
+          ? 'EGRESS_PARTIAL_VETO_TRANSITION_REFUSED'
+          : 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED';
         finalResponse = technicalFallback.text;
         authorizedUrls = [];
         authorizedProtectedFacts = [];
@@ -1263,14 +1285,10 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         reportedPaymentContactId = turn.contact_id;
       }
     }
-    // La transición se calculó sobre el texto PRE-veto. Si el guard quitó
-    // aunque sea una oración, ese cálculo describe un mensaje que el cliente
-    // nunca recibió. No se recomputa sobre el texto podado: eso sería el
-    // backend eligiendo el estado por su cuenta otra vez. Se rechaza el turno
-    // y lo repara el agente.
-    if (preparedAgentTurn !== null && egressRemovedSentences) {
-      throw new DecisionPolicyError('PARTIAL_VETO_TRANSITION_REFUSED');
-    }
+    // Un veto PARCIAL sobre `preparedAgentTurn` ya cayó por la rama de
+    // silencio técnico más arriba y dejó `preparedAgentTurn` en null — no
+    // hay nada que recomputar ni que rechazar acá. Esta escritura sólo ve un
+    // turno cuya `transition` describe exactamente el texto que se entregó.
     if (preparedAgentTurn) {
       await new PostgresConversationStateStoreV1(db).transition(preparedAgentTurn.transition);
       if (preparedAgentTurn.transition.payment_reported) {
@@ -1309,9 +1327,9 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         next_state: decision.next_state,
         outbound,
         call_request: callRequest,
-        ...(technicalFallback ? {
+        ...(technicalFallback && technicalFallbackReasonCode ? {
           conversation_effects: {
-            technical_fallback_reason: 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED' as const,
+            technical_fallback_reason: technicalFallbackReasonCode,
             human_review_requested: technicalFallback.requests_human_review,
           },
         } : {}),

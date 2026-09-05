@@ -43,6 +43,7 @@ type CounterName =
   // recorte por párrafos: hoy cae la oración, no el turno.
   | 'egress_sentences_vetoed'
   | 'egress_response_suppressed'
+  | 'egress_partial_veto_transition_refused'
   // Reconciliación (fase 7). `reconcile_deliveries_ambiguous` es la métrica que
   // hay que mirar todos los días: cada unidad es un cliente que puede haber
   // recibido o no una respuesta, y ninguna máquina va a decidirlo.
