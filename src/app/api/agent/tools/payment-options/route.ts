@@ -1,19 +1,14 @@
 import { NextResponse } from 'next/server';
-import { getPaymentOptionsToolV1 } from '@/features/conversation/application/agent-tools-read';
+import {
+  getPaymentOptionsToolV1,
+  readToolFailureV1,
+} from '@/features/conversation/application/agent-tools-read';
 import { businessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
 import { buildBusinessContextView } from '@/features/orchestration/domain/business-context';
 import { loadBusinessWorkspaceConfig } from '@/lib/config';
 
 function unavailable() {
-  return {
-    tool: 'get_payment_options',
-    success: false,
-    canonical_data: null,
-    error_code: 'PAYMENT_OPTIONS_UNAVAILABLE',
-    recoverable: true,
-    idempotency_result: 'not_applicable' as const,
-    preparation_id: null,
-  };
+  return readToolFailureV1('get_payment_options', 'PAYMENT_OPTIONS_UNAVAILABLE');
 }
 
 export async function GET() {
