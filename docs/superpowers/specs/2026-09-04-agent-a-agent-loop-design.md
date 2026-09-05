@@ -515,17 +515,25 @@ en el prompt o en las herramientas, y es visible.
 
 ### 3.9 Release manifest por turno (enmienda 8)
 
-La paridad de prompt deja de depender del Control Panel de Botpress. Cada turno
-persiste y loguea:
+La paridad de prompt deja de depender del Control Panel de Botpress.
+
+**No se construye de cero.** `scripts/generate-release-manifest.mjs` ya produce
+`git_sha`, `botpress_artifact_sha` (el `bundle_sha` de esta spec),
+`prompt_version`, `provider`, `model`, `latest_migration` y
+`catalog_source_sha256`, con validación estricta de cada campo. Lo que falta es
+sólo: (a) agregarle `prompt_sha256` y `tool_contract_version`, y (b) que el
+manifiesto **viaje y se persista por turno**, no sólo en build.
+
+Cada turno persiste y loguea:
 
 ```ts
 interface ReleaseManifestV1 {
-  readonly git_sha: string;             // inyectado en build
-  readonly bundle_sha: string;          // hash del bundle ADK desplegado
-  readonly prompt_sha256: string;       // hash del prompt EFECTIVO, ya sustituido
-  readonly agent_version: string;       // 'studyx-agent-a-brain-v21'
-  readonly model: string;               // 'deepseek-v4-flash'
-  readonly tool_contract_version: string;
+  readonly git_sha: string;               // ya existe
+  readonly botpress_artifact_sha: string; // ya existe = bundle_sha
+  readonly prompt_version: string;        // ya existe = agent_version
+  readonly model: string;                 // ya existe
+  readonly prompt_sha256: string;         // NUEVO: hash del prompt EFECTIVO, ya sustituido
+  readonly tool_contract_version: string; // NUEVO
 }
 ```
 
@@ -721,9 +729,9 @@ vs. efectos producidos; estado resultante; latencia p50/p95;
 
 ### Fase 4 — Shadow productivo asíncrono (enmienda 7)
 
-`mode='shadow'` en tráfico real, restringido a
-`AGENT_LOOP_V3_CANARY_PHONE_E164S` (mismo patrón que
-`WHATSAPP_CANARY_PHONE_E164S`, `agent.config.ts:75`).
+`mode='shadow'` en tráfico real, restringido a las filas por `contact_id` de
+`agent_loop_rollout_v3` (§5.0). Neutral al canal: sirve igual para el piloto de
+Telegram y para WhatsApp oficial, sin depender de un E.164 real.
 
 **Fuera del hot path, sin excepción:**
 - El turno productivo termina y entrega **antes** de que arranque el shadow.
