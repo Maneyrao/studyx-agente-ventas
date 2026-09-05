@@ -67,6 +67,11 @@ describe('narrativeViolationsV3', () => {
     'Cuesta mil doscientos',
     'Cuesta trescientos sesenta dólares.',
     'Sale U$S 360',
+    'Un pago de 360',
+    'La inversión es de trescientos sesenta',
+    'Se abona en 12 pagos de 30',
+    'El precio ronda los 360',
+    'El total es 360',
   ])('rejects the amount in %s', (text) => {
     expect(narrativeViolationsV3(text)).toEqual(['NARRATIVE_CONTAINS_AMOUNT']);
   });
@@ -83,6 +88,9 @@ describe('narrativeViolationsV3', () => {
     'La cursada es de 10 días',
     'La duración del curso es de 10 días',
     'El programa se extiende durante 10 semanas',
+    'Cursás durante 10 meses',
+    'La carrera se cursa durante 3 años',
+    'Cursada de 10 meses',
   ])('rejects the course duration in %s', (text) => {
     expect(narrativeViolationsV3(text)).toEqual(['NARRATIVE_CONTAINS_DURATION']);
   });
@@ -92,6 +100,8 @@ describe('narrativeViolationsV3', () => {
     'Escribime en studyx.com',
     'Abrí 192.168.1.10/pago',
     'Abrí localhost:3000/pago',
+    'Abrí localhost:3000',
+    'Conectá a 192.168.1.10',
   ])('rejects the bare URL in %s', (text) => {
     expect(narrativeViolationsV3(text)).toEqual(['NARRATIVE_CONTAINS_URL']);
   });
@@ -128,6 +138,12 @@ describe('narrativeViolationsV3', () => {
     'El archivo se llama manual.pdf.',
     'El valor es una experiencia transformadora.',
     'El precio: un beneficio para tu carrera.',
+    'La llamada dura 10 minutos.',
+    'La espera dura 10 minutos.',
+    'Registrarte cuesta dos minutos.',
+    'Vale mil veces la pena.',
+    'El valor es dos beneficios en uno.',
+    'Descargá brochure.zip.',
   ])('does not flag the ordinary prose in %s', (text) => {
     expect(narrativeViolationsV3(text)).toEqual([]);
   });

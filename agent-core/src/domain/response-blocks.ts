@@ -32,8 +32,8 @@ export function renderBlocksV3(
 const URL_IN_NARRATIVE = new RegExp([
   String.raw`https?:\/\/\S+`,
   String.raw`\bwww\.\S+`,
-  String.raw`\b(?:localhost(?::\d{1,5})?|(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?)(?:\/\S*)`,
-  String.raw`(?<![@\w])(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?!(?:js|json|ts|tsx|jsx|css|html?|md|txt|xml|ya?ml|csv|pdf|docx?|xlsx?|pptx?)\b)[a-z]{2,63}(?:\/\S*)?`,
+  String.raw`\b(?:localhost(?::\d{1,5})?|(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?)(?:\/\S*)?`,
+  String.raw`(?<![@\w])(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?!(?:js|json|ts|tsx|jsx|css|html?|md|txt|xml|ya?ml|csv|pdf|docx?|xlsx?|pptx?|zip|rar|7z|tar|gz)\b)[a-z]{2,63}(?:\/\S*)?`,
 ].join('|'), 'iu');
 
 const DIGIT_VALUE = String.raw`\d[\d.,]*`;
@@ -42,14 +42,17 @@ const WRITTEN_VALUE = String.raw`${NUMBER_WORD}(?:\s+(?:y\s+)?${NUMBER_WORD})*`;
 const AMOUNT_VALUE = String.raw`(?:${DIGIT_VALUE}|${WRITTEN_VALUE})`;
 const CONTEXT_AMOUNT_VALUE = String.raw`(?:${DIGIT_VALUE}|(?!(?:un(?:o|a)?)\b)${WRITTEN_VALUE})`;
 const CURRENCY = String.raw`(?:usd|ars|eur|u\s*\$\s*s|d[oó]lares?|pesos?|euros?)`;
+const NON_MONETARY_AMOUNT_FOLLOWUP = String.raw`(?:minutos?|horas?|d[ií]as?|semanas?|meses?|a[nñ]os?|veces?|beneficios?)`;
+const NOT_NON_MONETARY_AMOUNT_FOLLOWUP = String.raw`(?!\s+${NON_MONETARY_AMOUNT_FOLLOWUP}\b)`;
 
 const AMOUNT_IN_NARRATIVE = new RegExp([
   String.raw`(?:\b(?:usd|ars|eur)\b\s*\$?|u\s*\$\s*s|\$)\s*${AMOUNT_VALUE}\b`,
   String.raw`\b${AMOUNT_VALUE}\s*${CURRENCY}\b`,
-  String.raw`\b(?:sale|cuesta|vale)\s+${CONTEXT_AMOUNT_VALUE}\b`,
-  String.raw`\b(?:el\s+)?(?:precio|valor)(?:\s+final)?\s*(?::|\s+(?:es(?:\s+de)?|de))?\s*${CONTEXT_AMOUNT_VALUE}\b`,
+  String.raw`\b(?:sale|cuesta|vale)\s+${CONTEXT_AMOUNT_VALUE}\b${NOT_NON_MONETARY_AMOUNT_FOLLOWUP}`,
+  String.raw`\b(?:el\s+)?(?:precio|valor)(?:\s+final)?\s*(?::|\s+(?:es(?:\s+de)?|de|ronda(?:\s+los)?))?\s*${CONTEXT_AMOUNT_VALUE}\b${NOT_NON_MONETARY_AMOUNT_FOLLOWUP}`,
+  String.raw`\b(?:la\s+|el\s+)?(?:inversi[oó]n|total)(?:\s+final)?\s*(?::|\s+(?:es(?:\s+de)?|de))\s*${CONTEXT_AMOUNT_VALUE}\b${NOT_NON_MONETARY_AMOUNT_FOLLOWUP}`,
   String.raw`\b(?:la\s+|el\s+)?(?:cuota|importe)\s*(?::|\s+(?:es(?:\s+de)?|de))\s*${CONTEXT_AMOUNT_VALUE}\b`,
-  String.raw`\b${AMOUNT_VALUE}\s+cuotas?\s+de\s+${CONTEXT_AMOUNT_VALUE}\b`,
+  String.raw`\b${AMOUNT_VALUE}\s+(?:cuotas?|pagos?)\s+de\s+${CONTEXT_AMOUNT_VALUE}\b`,
 ].join('|'), 'iu');
 
 const COURSE_COUNT_UNIT = String.raw`(?:clases?|m[oó]dulos?)`;
@@ -57,9 +60,12 @@ const TIME_DURATION_UNIT = String.raw`(?:semanas?|meses?|a[nñ]os?|horas?|d[ií]
 const APPROXIMATELY = String.raw`(?:(?:aproximadamente|aprox\.?)\s+)?`;
 const DURATION_IN_NARRATIVE = new RegExp([
   String.raw`\b${AMOUNT_VALUE}\s*${COURSE_COUNT_UNIT}\b`,
-  String.raw`\b(?:dura(?:ci[oó]n)?(?:\s+(?:es|de))?|se\s+cursa\s+en|cursarlo\s+en|carrera\s+de|curso\s+de)\s+${APPROXIMATELY}${AMOUNT_VALUE}\s*${TIME_DURATION_UNIT}\b`,
+  String.raw`^\s*dura(?:\s+(?:aproximadamente|aprox\.?))?\s+${AMOUNT_VALUE}\s*${TIME_DURATION_UNIT}\b`,
+  String.raw`\b(?:se\s+cursa\s+en|cursarlo\s+en|carrera\s+de|curso\s+de)\s+${APPROXIMATELY}${AMOUNT_VALUE}\s*${TIME_DURATION_UNIT}\b`,
+  String.raw`\b(?:curs(?:a|á)s|se\s+cursa)\s+durante\s+${APPROXIMATELY}${AMOUNT_VALUE}\s*${TIME_DURATION_UNIT}\b`,
+  String.raw`\bcursada\s+de\s+${APPROXIMATELY}${AMOUNT_VALUE}\s*${TIME_DURATION_UNIT}\b`,
   String.raw`\b(?:curso|cursada|programa|capacitaci[oó]n|carrera)\b[^.!?;\n]{0,48}\b(?:dura|es\s+de|se\s+completa\s+en|se\s+cursa\s+en|se\s+extiende\s+(?:por|durante)|consta\s+de|incluye)\s+${APPROXIMATELY}${AMOUNT_VALUE}\s*${TIME_DURATION_UNIT}\b`,
-  String.raw`\bduraci[oó]n(?:\s+del?\s+(?:curso|cursada|programa|capacitaci[oó]n|carrera))?\s*(?::|\s+(?:es(?:\s+de)?|de))\s+${APPROXIMATELY}${AMOUNT_VALUE}\s*${TIME_DURATION_UNIT}\b`,
+  String.raw`^\s*(?:la\s+)?duraci[oó]n(?:\s+del?\s+(?:curso|cursada|programa|capacitaci[oó]n|carrera))?\s*(?::|\s+(?:es(?:\s+de)?|de))\s+${APPROXIMATELY}${AMOUNT_VALUE}\s*${TIME_DURATION_UNIT}\b`,
   String.raw`\b(?:la\s+)?carga\s+horaria\s+(?:es\s+de|de|totaliza)\s+${APPROXIMATELY}${AMOUNT_VALUE}\s*${TIME_DURATION_UNIT}\b`,
   String.raw`\b${AMOUNT_VALUE}\s*${TIME_DURATION_UNIT}\s+de\s+cursada\b`,
 ].join('|'), 'iu');

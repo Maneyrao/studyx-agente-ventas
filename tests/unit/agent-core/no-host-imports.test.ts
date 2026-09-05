@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
@@ -44,8 +44,12 @@ function moduleSpecifiers(source: string): readonly (string | null)[] {
     } else if (ts.isCallExpression(node)) {
       const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
       const isRequire = ts.isIdentifier(node.expression) && node.expression.text === 'require';
+      const isModuleRequire = ts.isPropertyAccessExpression(node.expression)
+        && ts.isIdentifier(node.expression.expression)
+        && node.expression.expression.text === 'module'
+        && node.expression.name.text === 'require';
       const [argument] = node.arguments;
-      if (isDynamicImport || isRequire) {
+      if (isDynamicImport || isRequire || isModuleRequire) {
         specifiers.push(argument && ts.isStringLiteralLike(argument) ? argument.text : null);
       }
     }
@@ -56,23 +60,24 @@ function moduleSpecifiers(source: string): readonly (string | null)[] {
   return specifiers;
 }
 
-function isForbiddenHostSpecifier(specifier: string | null): boolean {
+const AGENT_CORE_SOURCE_ROOT = resolve('agent-core/src');
+
+function isForbiddenHostSpecifier(specifier: string | null, sourceFile: string): boolean {
   if (specifier === null) return true;
-  if (specifier === 'next' || specifier.startsWith('next/')) return true;
-  if (specifier === 'postgres' || specifier.startsWith('postgres/')) return true;
-  if (specifier === 'pg' || specifier.startsWith('pg/')) return true;
-  if (specifier === '@supabase/supabase-js' || specifier.startsWith('@supabase/')) return true;
-  if (specifier.startsWith('@/') || specifier.startsWith('@botpress/')) return true;
-  if (specifier === 'botpress-agent' || specifier.startsWith('botpress-agent/')) return true;
   const normalized = specifier.replaceAll('\\', '/');
-  if (!normalized.startsWith('.') && !normalized.startsWith('/')) return false;
-  if (/(?:^|\/)botpress-agent(?:\/|$)/u.test(normalized)) return true;
-  return !/(?:^|\/)agent-core\/src(?:\/|$)/u.test(normalized)
-    && /(?:^|\/)src(?:\/|$)/u.test(normalized);
+  if (!normalized.startsWith('.')) return true;
+  const resolvedImport = resolve(dirname(sourceFile), normalized);
+  const relativeImport = relative(AGENT_CORE_SOURCE_ROOT, resolvedImport);
+  return relativeImport.startsWith('..') || isAbsolute(relativeImport);
 }
 
-function hasForbiddenHostImport(source: string): boolean {
-  return moduleSpecifiers(source).some(isForbiddenHostSpecifier);
+function hasForbiddenHostImport(
+  source: string,
+  sourceFile = join(AGENT_CORE_SOURCE_ROOT, 'probe.ts'),
+): boolean {
+  return moduleSpecifiers(source).some((specifier) => (
+    isForbiddenHostSpecifier(specifier, sourceFile)
+  ));
 }
 
 describe('agent-core isolation', () => {
@@ -88,6 +93,12 @@ describe('agent-core isolation', () => {
     "import x from '../../../src/features/conversation/domain/x';",
     "import x from '../../../botpress-agent/src/x';",
     "import x from '/repo/src/lib/db';",
+    "import { createRequire } from 'node:module'; const load = createRequire(import.meta.url); load('postgres');",
+    "module.require('postgres');",
+    "import db from '@vercel/postgres';",
+    "import x from 'file:///repo/src/lib/db';",
+    "import x from 'C:/repo/src/lib/db';",
+    String.raw`import x from 'C:\repo\src\lib\db';`,
   ])('detects a forbidden host dependency in %s', (source) => {
     expect(hasForbiddenHostImport(source)).toBe(true);
   });
@@ -103,7 +114,7 @@ describe('agent-core isolation', () => {
 
   it('never imports from the Botpress agent, the Next app or the database', () => {
     const offenders = tsFiles('agent-core/src')
-      .filter((file) => hasForbiddenHostImport(readFileSync(file, 'utf8')));
+      .filter((file) => hasForbiddenHostImport(readFileSync(file, 'utf8'), resolve(file)));
     expect(offenders).toEqual([]);
   });
 });
