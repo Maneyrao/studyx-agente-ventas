@@ -91,6 +91,7 @@ import {
   type ReservedCallRequest,
 } from '@/features/calls/application/request-call';
 import { selectAuthorizedVoiceConsentSourceIndex } from '@/features/calls/domain/call-consent';
+import { applyAcceptedOutboundStatePatchV3 } from '@/features/conversation/application/commit-agent-turn-v3';
 
 /**
  * The wire accepts every frozen schema version. Each one is a strict superset
@@ -1627,6 +1628,7 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
       }
 
       await markPaymentProjectionJobDelivered(db, input.outbound_id);
+      await applyAcceptedOutboundStatePatchV3(db, input.outbound_id);
 
     } else {
       if (!input.error_code) throw new DeliveryReportConflictError('Failed report requires error_code');

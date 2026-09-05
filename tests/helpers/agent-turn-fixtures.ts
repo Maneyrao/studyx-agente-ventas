@@ -83,8 +83,8 @@ export interface SeededAgentTurn {
  * 5. La segunda oración de `proposalWithCallOfferAndFalsePrice.response.messages`
  *    se reescribió para que dispare `solicitsACall` de verdad: el guard exige
  *    `CALL_SUBJECT` (p. ej. "llamemos") Y `SOLICITATION` ("te gustaría", "te
- *    parece", etc.). "¿Te sirve que te llamemos para verlo?" no matchea
- *    `SOLICITATION`; "¿Te gustaría que te llamemos para contarte más?" sí.
+ *    parece", etc.). El vocabulario también cubre "¿Te sirve que te
+ *    llamemos?" porque es la frase usada por la prueba de entrega diferida.
  * 6. `commitAgentDecision`/`CommitDecisionInput` (decision.service.ts) no
  *    declara `batch_id` ni `claim_token` — el fencing por lote vive en la capa
  *    de orquestación (`commit-claimed-decision.ts`), no en esta función. Se
