@@ -3,7 +3,7 @@
 Fecha: 2026-09-05
 Rama: `codex/agent-a-semantic-catalog`
 Base verificada: `21c47d3bf9916f465ff87784316eb90adc46368c`
-Prompt actual: `studyx-agent-a-brain-v23` (las campañas pagas congeladas usaron v22)
+Prompt actual: `studyx-agent-a-brain-v24` (las campañas pagas congeladas usaron v22 y v23)
 Modelo de producción previsto: `deepseek-v4-flash`
 
 ## Alcance ejecutado
@@ -207,7 +207,7 @@ La corrección pasó 214/214 pruebas focales, 7/7 integraciones de veto/silencio
 
 v23 **no tiene una evaluación paga nueva**. Las pruebas gratuitas verifican el contrato y la persistencia, pero no permiten afirmar que DeepSeek ya alcance el gate conversacional. La segunda campaña tampoco incluyó pago; el envío de enlace sólo está demostrado con el workflow gratuito y un enlace sintético autorizado. No se desplegó este candidato a Vercel ni a Botpress y no se abrió el canario de Telegram.
 
-## Presupuesto acumulado
+## Presupuesto antes de la tercera campaña
 
 - Último gasto informado al inicio del trabajo: **USD 0.38**.
 - Gasto registrado después de ese punto: **USD 0.744803640**.
@@ -216,7 +216,35 @@ v23 **no tiene una evaluación paga nueva**. Las pruebas gratuitas verifican el 
 - Techo acumulado autorizado: **USD 1.185364112**.
 - Margen no consumido: **USD 0.060560472**.
 
-Para intentar el gate otra vez hace falta una nueva autorización paga. El alcance mínimo es congelar v23, ejecutar seis conversaciones no vistas sin superar el margen restante y exigir 6/6 funcional, cero invenciones/falsas ausencias/acciones no autorizadas/silencios y al menos 5/6 en naturalidad. Sólo si eso pasa corresponde desplegar exactamente el mismo commit en Vercel y Botpress y preparar el canario de Telegram.
+El usuario autorizó usar ese margen para congelar v23 y ejecutar una sola campaña nueva de seis conversaciones no vistas. El resultado se documenta a continuación.
+
+## Tercera campaña held-out paga y cierre v24
+
+La tercera fuente quedó congelada antes de la primera solicitud en el commit `19c6c57672b39428593f1e7729b598b0ef1778f6`, árbol `b30dc0e0114ca05728fe1603e9300334f5542e20`, test SHA-256 `eb5026d06353e5f81a1703d0886c86cc6d309711d33b39f6144b4afe1a65af1f`, prompt v23, modelo `deepseek-v4-flash`, 40 cursos y catálogo SHA-256 `2bf9adf270fadbb2f775ab134cd9573a0f64c770f200c00ac94d0a41a975eeac`.
+
+La campaña se ejecutó una sola vez: seis conversaciones, nueve turnos y doce llamadas a DeepSeek, todas HTTP 200. Ocho turnos se entregaron por el adaptador local correlacionado y uno quedó en silencio. Hubo dos reparaciones. El costo fue **USD 0.035393960**.
+
+El test congelado dio **3/6 automático**. La reconciliación manual dio **4/6 funcional**: Inglés, `fotgrafia profecional`, curso inexistente y cambio a Community Manager. Dos aserciones automáticas fueron falsos negativos: pedir 40 identidades compactas después de una selección exacta y exigir una sola oferta cuando la política permite una segunda si la primera se ignoró. El fallo de naturalidad en el cambio de curso sí fue real porque repitió la misma invitación palabra por palabra.
+
+Los dos fallos funcionales reales fueron:
+
+1. Al elegir Fotografía con Celulares desde la lista compacta, describió bien el objetivo, pero inventó clases en vivo grabadas y acceso a la plataforma cuando quisiera; esos hechos todavía no estaban autorizados.
+2. Ante dos cursos, el primer turno terminó sin outbound porque la reparación conservó selección y llamada con la referencia sin resolver. En el segundo turno persistió correctamente `energia_solar_fotovoltaica`, pero no respondió “8 clases” e inventó una clase semanal grabada.
+
+Las seis transcripciones y los estados durables están preservados en [`transcript.md`](evidence/2026-09-05-agent-a-semantic-heldout-v3/transcript.md).
+
+El commit `3fa4346` abre y cierra la única iteración TDD posterior permitida por el plan. El prompt v24 aclara que `available_offerings` autoriza identidades, no detalles; la reparación de una referencia ambigua elimina selección y llamada; el ADK y el backend vetan afirmaciones no documentadas sobre clases en vivo, frecuencia, grabaciones y acceso irrestricto; y una segunda llamada literal se rechaza para que el modelo la reformule.
+
+Verificación gratuita posterior:
+
+- 134/134 pruebas RED/GREEN focales de prompt y guardas.
+- 207/207 pruebas ampliadas de brain, egress y manifiesto.
+- 7/7 integraciones de veto, persistencia y cero silencios.
+- 5/5 casos por el workflow real para `foto`, `fotografía`, `fotgrafia`, `inglés` y curso inexistente.
+- 3.008 unitarias aprobadas, 7 omitidas y 7 TODO en 191 archivos aprobados; 2 archivos omitidos.
+- lint, typecheck, `adk check`, build de Botpress y `git diff --check`: PASS.
+
+No hubo otra llamada paga después de v3. El acumulado es **USD 1.160197600** y quedan **USD 0.025166512** dentro del techo autorizado. v24 no se desplegó: el gate pago anterior falló y falta autorización para congelar y ejecutar otra campaña no vista. Tampoco se abrió Telegram.
 
 Estado de cierre:
 
