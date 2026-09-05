@@ -41,14 +41,14 @@ const PLAN_PATTERNS: ReadonlyArray<{ readonly code: PaymentPlanCode; readonly pa
   {
     code: 'one_time',
     pattern:
-      /\b(?:contado|pago\s+unico|todo\s+junto|un\s+solo\s+pago|pago\s+total|(?:un\s+)?unico\s+pago)\b/,
+      /\b(?:contado|pago\s+unico|todo\s+junto|un\s+solo\s+pago|pago\s+total|(?:un\s+)?unico\s+pago|un\s+pago\s+de\s+(?:usd\s*)?360(?:\s*(?:usd|dolares?))?)\b/,
   },
 ]
 
 const NARRATIVE_CONTADO_PATTERN =
   /\b(?:(?:me|te|le|nos|les)\s+)?(?:habia|habias|habiamos|habian|he|has|ha|hemos|han)\s+contado\b/
 const EXPLICIT_ONE_TIME_WITHOUT_CONTADO_PATTERN =
-  /\b(?:pago\s+unico|todo\s+junto|un\s+solo\s+pago|pago\s+total|(?:un\s+)?unico\s+pago)\b/
+  /\b(?:pago\s+unico|todo\s+junto|un\s+solo\s+pago|pago\s+total|(?:un\s+)?unico\s+pago|un\s+pago\s+de\s+(?:usd\s*)?360(?:\s*(?:usd|dolares?))?)\b/
 
 const TEMPORAL_PAYMENT_DEFERRAL_PATTERNS: readonly RegExp[] = [
   /\bno\s+me\s+(?:mandes|envies|pases|compartas)\s+(?:el\s+)?(?:link|enlace)\b/,

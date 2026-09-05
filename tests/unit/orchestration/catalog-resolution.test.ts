@@ -67,6 +67,17 @@ describe('resolveCatalogRequest', () => {
     });
   });
 
+  it('keeps a positive replacement after rejecting the previously offered choices', () => {
+    expect(resolveCatalogRequest('Ninguno, el de fotografía', snapshot([
+      SOLAR, PHOTOGRAPHY, MARKETING, MOBILE_PHOTOGRAPHY,
+    ]))).toEqual({
+      kind: 'ambiguous',
+      requestedText: 'Ninguno, el de fotografía',
+      candidateCodes: ['fotografia_celulares_tiendas_online', 'fotografia_profesional'],
+      clarification: 'choose_offering',
+    });
+  });
+
   it('uses whole topic words for other partial course families', () => {
     expect(resolveCatalogRequest('Busco un curso de reparación', snapshot([
       CELLPHONES,

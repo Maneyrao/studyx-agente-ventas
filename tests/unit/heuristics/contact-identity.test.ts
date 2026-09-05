@@ -149,6 +149,13 @@ describe('splitFullName', () => {
 
 
 describe('extractContactNameAnswer', () => {
+  it('captures the production surname-first correction after a delivered full-name request', () => {
+    expect(extractContactNameAnswer(
+      'Maneyro, Thiago es mi nombre ya lo sabes',
+      'Para dejarlo registrado necesito tu nombre y apellido.',
+    )).toEqual({ firstName: 'Thiago', surname: 'Maneyro', name: 'Thiago Maneyro' });
+  });
+
   it('retains separate first and surname answers when one delivered request asks for both', () => {
     const first = extractContactNameAnswer('Inés', 'Necesito tu nombre y apellido.');
     expect(first).toEqual({ firstName: 'Inés', surname: null, name: 'Inés' });

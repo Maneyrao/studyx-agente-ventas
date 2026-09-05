@@ -171,6 +171,12 @@ describe('derivePaymentChoiceFromBatch', () => {
     expect(derivePaymentChoiceFromBatch([msg('quiero hacer el pago total')])).toBe('one_time');
   });
 
+  it('derives one_time from the production wording "un pago de 360"', () => {
+    expect(derivePaymentPlanSelectionFromBatch([msg('un pago de 360')])).toBe('one_time');
+    expect(classifyCurrentPaymentIntent([msg('un pago de 360')]))
+      .toEqual({ kind: 'direct', planCode: 'one_time' });
+  });
+
   it('still returns null on ambiguity between the new phrasings', () => {
     expect(derivePaymentChoiceFromBatch([msg('¿6 pagos o todo junto?')])).toBeNull();
   });

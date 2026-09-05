@@ -168,6 +168,17 @@ export function extractContactNameAnswer(
   const asksSurname = /\bapellido\b|\bnombre\s+completo\b/iu.test(request);
   if ((!asksFirstName && !asksSurname) || UNSAFE_NAME_OWNER.test(text)) return null;
 
+  const surnameFirst = new RegExp(
+    `^\\s*(${NAME_SEQUENCE})\\s*,\\s*(${NAME_SEQUENCE})\\s+es\\s+mi\\s+nombre\\b`,
+    'u',
+  ).exec(text);
+  if (asksFirstName && asksSurname && surnameFirst
+    && isPlausibleName(surnameFirst[1]) && isPlausibleName(surnameFirst[2])) {
+    const firstName = surnameFirst[2].trim();
+    const surname = surnameFirst[1].trim();
+    return { firstName, surname, name: `${firstName} ${surname}` };
+  }
+
   // A phone link is transport formatting, not part of the written name. Only
   // the leading identity segment is eligible; no scanning arbitrary prose.
   const plain = text.replace(/\[([^\]]+)\]\(tel:[^)]+\)/gu, '$1').trim();

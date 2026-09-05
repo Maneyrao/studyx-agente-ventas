@@ -91,6 +91,9 @@ const BARE_COURSE_SELECTION_PATTERN =
 const CATALOG_REJECTION_PATTERN =
   /\b(?:no quiero|no me interesa|no prefiero|no elijo|ya no quiero|descarto|cancelo|no mejor no|mejor no|dejalo|dejala|ninguno|ninguna|cambi(?:o|emos|ar) de (?:curso|programa))\b/u;
 
+const CATALOG_REPLACEMENT_AFTER_REJECTION_PATTERN =
+  /\b(?:ninguno|ninguna)\b\s+(?:mejor\s+)?(?:el|la|uno|una)\s+de\s+[\p{L}\p{N}]/u;
+
 const PAYMENT_OR_LINK_CONTEXT_PATTERN =
   /\b(?:pag(?:o|ar|arlo|arla|arlos|arlas)?|cuotas?|dolares?|usd|link|plan(?:es)?|mensual(?:es)?|mes(?:es)?|pensar(?:lo|la)?|decidir)\b/u;
 
@@ -411,7 +414,7 @@ function partialSubjectMatches(
     // course, or confuse "fot" with "fotovoltaica". A bare title fragment is
     // also a subject; surrounding unrelated prose is not stripped from it.
     const cues = [...normalized.matchAll(
-      /\b(?:cursos?|diplomados?|capacitaciones|capacitacion|formaciones|formacion|programas?|estudiar|aprender|busco|quiero|me interesa|me interesan|informacion sobre)\s+(?:(?:el|la|un|una|de)\s+)*/gu,
+      /\b(?:cursos?|diplomados?|capacitaciones|capacitacion|formaciones|formacion|programas?|estudiar|aprender|busco|quiero|me interesa|me interesan|informacion sobre|el|la)\s+(?:(?:el|la|un|una|de)\s+)*/gu,
     )];
     const cue = cues.at(-1);
     const subject = (cue?.index === undefined
@@ -557,12 +560,15 @@ export function resolveCatalogRequest(
   const hits = literalHits(messages, offerings);
   const positiveHits = positiveLiteralHits(messages, hits);
   const literalMatches = distinctLiteralMatches(positiveHits);
+  const hasReplacementAfterRejection = messages.some((message) => (
+    CATALOG_REPLACEMENT_AFTER_REJECTION_PATTERN.test(message)
+  ));
 
-  if (
+  if (!hasReplacementAfterRejection && (
     latestMessageCancelsSelection(messages, positiveHits)
     || (hits.length > 0 && positiveHits.length === 0)
     || (positiveHits.length === 0 && messages.some((message) => CATALOG_REJECTION_PATTERN.test(message)))
-  ) {
+  )) {
     return { kind: 'no_catalog_intent' };
   }
 
