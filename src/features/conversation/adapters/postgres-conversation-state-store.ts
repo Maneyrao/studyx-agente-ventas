@@ -9,12 +9,13 @@ import type { ConversationStateStoreV1 } from '../ports/conversation-state-store
 
 interface ConversationStateRowV1 extends Omit<
   ConversationStateV1,
-  'created_at' | 'updated_at' | 'payment_reported_at' | 'human_review_requested_at'
+  'created_at' | 'updated_at' | 'payment_reported_at' | 'human_review_requested_at' | 'version'
 > {
   created_at: Date | string;
   updated_at: Date | string;
   payment_reported_at: Date | string | null;
   human_review_requested_at: Date | string | null;
+  version: number | string;
 }
 
 function iso(value: Date | string): string {
@@ -34,6 +35,7 @@ function isoOrNull(value: Date | string | null): string | null {
 function mapRow(row: ConversationStateRowV1): ConversationStateV1 {
   return {
     ...row,
+    version: Number(row.version ?? 0),
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
     payment_reported_at: isoOrNull(row.payment_reported_at),

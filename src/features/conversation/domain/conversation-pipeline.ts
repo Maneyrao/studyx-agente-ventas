@@ -112,6 +112,7 @@ export interface ConversationStateV1 {
   /** Fallbacks técnicos seguidos. Un turno exitoso lo reinicia a 0. */
   readonly consecutive_technical_fallbacks: number;
   readonly source_turn_id: string | null;
+  /** Versión optimista de la fila. La escribe el store, nunca el modelo. */
   readonly version: number;
   readonly created_at: string;
   readonly updated_at: string;
