@@ -141,6 +141,18 @@ describe('Agent A Brain V1 prompt', () => {
     expect(instructions).toContain('wait for a current explicit request');
   });
 
+  it('delegates customer-language catalog interpretation to the brain using the complete compact index', () => {
+    const instructions = buildAgentABrainInstructionsV1(context());
+
+    expect(instructions).toContain('catalog.available_offerings');
+    expect(instructions).toMatch(/available_offerings[\s\S]*complete active catalog/iu);
+    expect(instructions).toMatch(/candidate_offerings[\s\S]*never proves[\s\S]*(?:existence|absence)/iu);
+    expect(instructions).toMatch(/(?:photography|fotograf[ií]a)[\s\S]*(?:English|ingl[eé]s)/iu);
+    expect(instructions).toMatch(/ask one natural clarification/iu);
+    expect(instructions).toMatch(/recommend at most three[\s\S]*available_offerings/iu);
+    expect(instructions).toMatch(/never list the complete catalog/iu);
+  });
+
   it('resolves the canonical identity from the structured context, not the process env', () => {
     const withIdentity = context();
     withIdentity.identity = {

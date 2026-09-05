@@ -792,6 +792,69 @@ describe('buildAgentAContextV1', () => {
     claimed.conversation_state_v1 = null;
     expect(buildAgentAContextV1(claimed)).toBeNull();
   });
+
+  it('exposes the complete sorted active catalog as compact identities while no course is selected', () => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      selected_offering_code: null,
+      selected_payment_plan: null,
+      stage: 'exploring',
+      awaiting_reply: 'none',
+    };
+    claimed.sales_context.offering_code = null;
+    claimed.sales_context.course_of_interest = null;
+    const required = [
+      ['fotografia_profesional', 'Fotografía Profesional', 'Emprendedores'],
+      [
+        'fotografia_celulares_tiendas_online',
+        'Fotografía con Celulares para Tiendas Online',
+        'Marketing',
+      ],
+      ['ingles_1', 'Inglés 1', 'Idiomas'],
+      ['ingles_2', 'Inglés 2', 'Idiomas'],
+      ['ingles_3', 'Inglés 3', 'Idiomas'],
+    ] as const;
+    const fillers = Array.from({ length: 35 }, (_, index) => ({
+      code: `curso_${String(index + 1).padStart(2, '0')}`,
+      display_name: `Curso ${String(index + 1).padStart(2, '0')}`,
+      academy: index % 2 === 0 ? 'Tecnología' : 'Negocios',
+      aliases: [`alias privado ${index + 1}`],
+    }));
+    claimed.catalog_index = {
+      as_of: NOW,
+      offerings_total: 40,
+      offerings: [
+        ...fillers,
+        ...required.map(([code, display_name, academy]) => ({
+          code, display_name, academy, aliases: ['alias privado'],
+        })),
+      ].reverse(),
+      injection_suspected_count: 0,
+    };
+
+    const context = buildAgentAContextV1(claimed);
+    const available = context?.catalog.available_offerings;
+
+    expect(available).toHaveLength(40);
+    expect(available).toEqual(expect.arrayContaining(required.map(([code]) => (
+      expect.objectContaining({ code })
+    ))));
+    expect(available?.map((offering) => offering.code)).toEqual(
+      [...(available ?? [])].map((offering) => offering.code).sort(),
+    );
+    for (const offering of available ?? []) {
+      expect(Object.keys(offering).sort()).toEqual([
+        'area_code', 'code', 'display_name', 'fact_id',
+      ]);
+      expect(offering).not.toHaveProperty('aliases');
+      expect(offering).not.toHaveProperty('description');
+      expect(offering).not.toHaveProperty('details');
+      expect(offering).not.toHaveProperty('price');
+      expect(offering).not.toHaveProperty('payment_link');
+    }
+  });
 });
 
 /**
