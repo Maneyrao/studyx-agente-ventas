@@ -305,6 +305,8 @@ interface StrandedSupersessionRow {
   successor_decision_id: string;
   successor_trace_id: string;
   successor_candidate_index: number;
+  successor_job_status: 'completed' | 'failed';
+  successor_job_result: 'rejected' | null;
   attempt_count: number;
   last_error_code: string | null;
 }
@@ -315,13 +317,13 @@ interface StrandedSupersessionRow {
  * the decision transaction, ahead of the successor's own row even existing —
  * see the header of that migration and `commit-agent-turn-v3.ts:957-971`.
  * The async worker above normally completes that link to `superseded` once
- * the successor becomes durable. But if the successor's OWN job hits a
- * DETERMINISTIC failure (an invalid prepared candidate or a durable context/
- * store invariant that fails the same way on every retry),
- * the claim query's `attempt_count < MAX_MEMORY_PROJECTION_ATTEMPTS` gate
- * (above) means that job can never be picked up again once it reaches
- * `status = 'failed'` at the attempt cap. Nothing else ever revisits it: the
- * predecessor would sit at `pending_supersession` forever — invisible to
+ * the successor becomes durable. But if the successor's OWN job either hits
+ * a DETERMINISTIC failure (an invalid prepared candidate or a durable context/
+ * store invariant that fails the same way on every retry) or completes as
+ * `rejected` without creating the reserved successor. The failed job becomes
+ * unclaimable at the attempt cap; the rejected job is already completed.
+ * Nothing else revisits either terminal outcome, so the predecessor would sit
+ * at `pending_supersession` forever — invisible to
  * `search_selected_memories` (`status = 'active'` only) and to both sweepers
  * that only touch `'active'` rows (`expire_selected_memories`, the embedding
  * worker) — a silent, permanent loss of whatever the customer told us.
@@ -338,10 +340,10 @@ interface StrandedSupersessionRow {
  * freshly recorded memory, so the embedding worker re-embeds it normally.
  * This restores the pre-P1-B behaviour (a stale recall) rather than losing
  * the memory outright: strictly safer, per the review's own ruling, and
- * genuinely observable — the terminally-failed job itself is left exactly as
- * it was (`status = 'failed'`, `last_error_code` intact), while the recovery
- * audit points back to that immutable decision/job evidence. Reverting the
- * memory does not erase the cause an operator needs to investigate.
+ * genuinely observable — the terminal job itself is left exactly as it was,
+ * while the recovery audit points back to its status, result, attempt/error
+ * metadata and immutable decision evidence. Reverting the memory does not
+ * erase the cause an operator needs to investigate.
  *
  * Idempotent by construction: once reverted to `active`, the `WHERE
  * memory.status = 'pending_supersession'` guard no longer matches it, so a
@@ -376,6 +378,8 @@ export async function reclaimStrandedMemorySupersessions(
         decision.id AS successor_decision_id,
         decision.trace_id AS successor_trace_id,
         job.candidate_index AS successor_candidate_index,
+        job.status AS successor_job_status,
+        job.result AS successor_job_result,
         job.attempt_count,
         job.last_error_code
       FROM agent_a_memory_projection_jobs AS job
@@ -403,8 +407,13 @@ export async function reclaimStrandedMemorySupersessions(
         ON origin_state.conversation_id = memory.conversation_id
        AND origin_state.contact_id = memory.contact_id
        AND origin_state.workspace_id = successor_state.workspace_id
-      WHERE job.status = 'failed'
-        AND job.attempt_count >= ${MAX_MEMORY_PROJECTION_ATTEMPTS}
+      WHERE (
+          job.status = 'failed'
+          AND job.attempt_count >= ${MAX_MEMORY_PROJECTION_ATTEMPTS}
+        ) OR (
+          job.status = 'completed'
+          AND job.result = 'rejected'
+        )
       ORDER BY memory.id, job.created_at, job.decision_id, job.candidate_index
       LIMIT ${limit}
     `;
@@ -438,9 +447,11 @@ export async function reclaimStrandedMemorySupersessions(
           memory_key: row.memory_key,
           successor_decision_id: row.successor_decision_id,
           successor_candidate_index: row.successor_candidate_index,
+          successor_job_status: row.successor_job_status,
+          successor_job_result: row.successor_job_result,
           attempt_count: row.attempt_count,
           last_error_code: row.last_error_code,
-          reason: 'SUCCESSOR_PROJECTION_TERMINALLY_FAILED',
+          reason: 'SUCCESSOR_PROJECTION_TERMINAL_WITHOUT_MEMORY',
           new_status: 'active',
         },
         event_key: `memory:${row.memory_id}:supersession_reclaimed`,
@@ -470,9 +481,11 @@ export async function reclaimStrandedMemorySupersessions(
       memory_key: row.memory_key,
       successor_decision_id: row.successor_decision_id,
       successor_candidate_index: row.successor_candidate_index,
+      successor_job_status: row.successor_job_status,
+      successor_job_result: row.successor_job_result,
       attempt_count: row.attempt_count,
       last_error_code: row.last_error_code,
-      reason: 'SUCCESSOR_PROJECTION_TERMINALLY_FAILED',
+      reason: 'SUCCESSOR_PROJECTION_TERMINAL_WITHOUT_MEMORY',
     });
   }
 

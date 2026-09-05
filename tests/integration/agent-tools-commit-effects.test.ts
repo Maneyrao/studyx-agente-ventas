@@ -536,6 +536,8 @@ run('Agent Loop preparation materialization', () => {
       payload: {
         workspace_id?: string;
         successor_decision_id?: string;
+        successor_job_status?: string;
+        successor_job_result?: string | null;
         attempt_count?: number;
         last_error_code?: string;
       };
@@ -546,6 +548,8 @@ run('Agent Loop preparation materialization', () => {
       payload: expect.objectContaining({
         workspace_id: seeded.workspace_id,
         successor_decision_id: second.decision_id,
+        successor_job_status: 'failed',
+        successor_job_result: null,
         attempt_count: 3,
         last_error_code: 'MEMORY_CANDIDATE_INVALID',
       }),
@@ -558,6 +562,109 @@ run('Agent Loop preparation materialization', () => {
       memory_supersessions?: { examined: number; reclaimed: number; failed: number };
     };
     expect(secondSweep.memory_supersessions).toMatchObject({ reclaimed: 0, failed: 0 });
+    await expect(sql<Array<{ count: string }>>`
+      SELECT count(*)::text AS count FROM audit_log WHERE event_key = ${auditEventKey}
+    `).resolves.toEqual([{ count: '1' }]);
+  });
+
+  it('reclaims a predecessor when the successor job completes as rejected without materializing a memory', async () => {
+    const seeded = await seedConversationForAgentTurn();
+    await sql`
+      UPDATE messages SET content = 'Quiero estudiar marketing'
+      WHERE id = ${seeded.turn_id}::uuid
+    `;
+    const original = await prepareMemoryToolV1({
+      db: sql,
+      turn_id: seeded.turn_id,
+      conversation_id: seeded.conversation_id,
+    }, {
+      candidates: [{ text: 'Quiero estudiar marketing', type: 'study_goal', supersedes: [] }],
+    });
+    expect(original.success).toBe(true);
+    const originalId = original.canonical_data!.accepted[0]!.id;
+    const first = await commit(seeded, { preparation_ids: [original.preparation_id!] });
+    await projectMemoryJob(first.decision_id);
+
+    await sql`
+      UPDATE messages SET content = 'Ahora busco algo de 50000 pesos'
+      WHERE id = ${seeded.second_turn_id}::uuid
+    `;
+    const prohibitedSuccessor = await prepareMemoryToolV1({
+      db: sql,
+      turn_id: seeded.second_turn_id,
+      conversation_id: seeded.conversation_id,
+    }, {
+      candidates: [{
+        text: 'Ahora busco algo de 50000 pesos',
+        type: 'study_goal',
+        supersedes: [originalId],
+      }],
+    });
+    expect(prohibitedSuccessor.success).toBe(true);
+    const second = await commit(seeded, {
+      turn_id: seeded.second_turn_id,
+      preparation_ids: [prohibitedSuccessor.preparation_id!],
+    });
+    await expect(sql<Array<{ status: string }>>`
+      SELECT status FROM selected_memories WHERE id = ${originalId}::uuid
+    `).resolves.toEqual([{ status: 'pending_supersession' }]);
+
+    // This is a genuine terminal path in the worker, distinct from exhausted
+    // retries: the price guard intentionally completes the job as rejected
+    // and creates no successor selected_memory row.
+    await sql`
+      UPDATE agent_a_memory_projection_jobs
+      SET created_at = '-infinity'::timestamptz, available_at = now()
+      WHERE decision_id = ${second.decision_id}::uuid
+    `;
+    await projectAgentAMemories({ limit: 1 }, { db: sql, audit: async () => {} });
+    await expect(sql<Array<{
+      status: string;
+      result: string | null;
+      attempt_count: number;
+    }>>`
+      SELECT status, result, attempt_count
+      FROM agent_a_memory_projection_jobs
+      WHERE decision_id = ${second.decision_id}::uuid
+    `).resolves.toEqual([{
+      status: 'completed',
+      result: 'rejected',
+      attempt_count: 1,
+    }]);
+    await expect(sql<Array<{ id: string }>>`
+      SELECT id FROM selected_memories WHERE id = ${prohibitedSuccessor.canonical_data!.accepted[0]!.id}::uuid
+    `).resolves.toHaveLength(0);
+
+    process.env.CRON_SECRET = `test-reconcile-${randomUUID()}`;
+    const request = () => new NextRequest('http://localhost/api/cron/reconcile-orchestration', {
+      headers: {
+        authorization: `Bearer ${process.env.CRON_SECRET}`,
+        'x-trace-id': randomUUID(),
+      },
+    });
+    const response = await reconcileOrchestrationCron(request());
+    const sweep = await response.json() as {
+      memory_supersessions?: { examined: number; reclaimed: number; failed: number };
+    };
+    expect(sweep.memory_supersessions?.failed).toBe(0);
+    expect(sweep.memory_supersessions?.reclaimed).toBeGreaterThanOrEqual(1);
+    await expect(sql<Array<{ status: string; embedding_state: string }>>`
+      SELECT status, embedding_state FROM selected_memories WHERE id = ${originalId}::uuid
+    `).resolves.toEqual([{ status: 'active', embedding_state: 'pending' }]);
+
+    const auditEventKey = `memory:${originalId}:supersession_reclaimed`;
+    await expect(sql<Array<{
+      payload: { successor_job_status?: string; successor_job_result?: string };
+    }>>`
+      SELECT payload FROM audit_log WHERE event_key = ${auditEventKey}
+    `).resolves.toEqual([{
+      payload: expect.objectContaining({
+        successor_job_status: 'completed',
+        successor_job_result: 'rejected',
+      }),
+    }]);
+
+    await reconcileOrchestrationCron(request());
     await expect(sql<Array<{ count: string }>>`
       SELECT count(*)::text AS count FROM audit_log WHERE event_key = ${auditEventKey}
     `).resolves.toEqual([{ count: '1' }]);
