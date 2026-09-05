@@ -8,6 +8,7 @@ import {
   probePostgres,
 } from '@/features/observability/adapters/probes';
 import { runDiagnosticsProbes } from '@/features/observability/application/run-diagnostics-probes';
+import { sql } from '@/lib/db/orchestrator';
 import { withTrace } from '@/lib/observability/structured-log';
 
 /**
@@ -32,6 +33,13 @@ export async function GET(request: NextRequest) {
 
   const traceId = request.headers.get('x-trace-id') ?? randomUUID();
   const log = withTrace({ trace_id: traceId });
+  const observedPromptShaPromise = sql<Array<{ sha: string | null }>>`
+    SELECT release_manifest ->> 'prompt_sha256' AS sha
+    FROM agent_decisions
+    WHERE release_manifest IS NOT NULL
+    ORDER BY created_at DESC
+    LIMIT 1
+  `.then((rows) => rows[0]?.sha ?? null).catch(() => null);
 
   // Gemini is a real, bounded embedding call here — not a key-presence check.
   // /api/diagnostics is the ops-facing poll, not the hot path, so the cost of
@@ -54,6 +62,10 @@ export async function GET(request: NextRequest) {
   if (verdict.degraded.length > 0) {
     log.warn({ event: 'diagnostics.degraded', degraded: verdict.degraded });
   }
+  const expectedPromptSha = /^[a-f0-9]{64}$/u.test(process.env.AGENT_A_PROMPT_SHA256 ?? '')
+    ? process.env.AGENT_A_PROMPT_SHA256!
+    : null;
+  const observedPromptSha = await observedPromptShaPromise;
 
   return NextResponse.json(
     {
@@ -64,6 +76,13 @@ export async function GET(request: NextRequest) {
       probes: verdict.probes,
       degraded: verdict.degraded,
       failed_required: verdict.failed_required,
+      prompt_parity: {
+        expected_sha256: expectedPromptSha,
+        last_observed_sha256: observedPromptSha,
+        matches: expectedPromptSha && observedPromptSha
+          ? expectedPromptSha === observedPromptSha
+          : null,
+      },
     },
     // A degraded dependency is news, not an error: the caller polls this to
     // learn what is degraded, and a 503 here would be indistinguishable from

@@ -11,6 +11,7 @@ const execFileAsync = promisify(execFile);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SHA_1_PATTERN = /^[a-f0-9]{40}$/u;
 const SHA_256_PATTERN = /^[a-f0-9]{64}$/u;
+export const AGENT_LOOP_TOOL_CONTRACT_VERSION = 'agent-tools-v3.0.0';
 
 export const REQUIRED_RELEASE_CONFIG = Object.freeze([
   'DATABASE_URL',
@@ -90,6 +91,14 @@ export function createReleaseManifest(input) {
       input.catalogSourceSha256,
       'INVALID_RELEASE_MANIFEST_CATALOG_SOURCE_SHA256',
     ),
+    prompt_sha256: requireDigest(
+      input.promptSha256,
+      'INVALID_RELEASE_MANIFEST_PROMPT_SHA256',
+    ),
+    tool_contract_version: requireNonEmptyString(
+      input.toolContractVersion,
+      'INVALID_RELEASE_MANIFEST_TOOL_CONTRACT_VERSION',
+    ),
     required_config: Object.freeze(requiredConfig),
     complete: true,
     built_at: requireNonEmptyString(input.builtAt, 'INVALID_RELEASE_MANIFEST_BUILT_AT'),
@@ -131,6 +140,27 @@ async function activePromptVersion() {
   return match[1];
 }
 
+async function effectivePromptSha256(environment) {
+  const source = `
+    import { createHash } from 'node:crypto';
+    import { buildAgentABrainInstructionsV1 } from './botpress-agent/src/prompts/agent-a-brain-v1.ts';
+    import { loadAgentAIdentityV1 } from './botpress-agent/src/prompts/agent-a-identity.ts';
+    const context = {
+      identity: loadAgentAIdentityV1(process.env),
+      turn: { recent_turns: [] },
+      turn_rejection: null,
+    };
+    const prompt = buildAgentABrainInstructionsV1(context);
+    process.stdout.write(createHash('sha256').update(prompt).digest('hex'));
+  `;
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    ['--import', 'tsx', '--input-type=module', '--eval', source],
+    { cwd: ROOT, env: environment, maxBuffer: 16 * 1024 * 1024 },
+  );
+  return requireDigest(stdout.trim(), 'INVALID_RELEASE_MANIFEST_PROMPT_SHA256');
+}
+
 function presentConfig(environment) {
   return Object.fromEntries(
     REQUIRED_RELEASE_CONFIG.map((key) => [key, typeof environment[key] === 'string' && environment[key].trim() !== '']),
@@ -138,11 +168,12 @@ function presentConfig(environment) {
 }
 
 async function collectRuntimeManifest(environment = process.env) {
-  const [gitSha, trackedBotpress, migration, promptVersion] = await Promise.all([
+  const [gitSha, trackedBotpress, migration, promptVersion, promptSha256] = await Promise.all([
     gitStdout(['rev-parse', 'HEAD']).then((value) => value.trim()),
     gitStdout(['ls-files', '-z', '--', 'botpress-agent']).then((value) => value.split('\0').filter(Boolean)),
     latestMigration(),
     activePromptVersion(),
+    effectivePromptSha256(environment),
   ]);
   if (trackedBotpress.length === 0) throw new Error('RELEASE_MANIFEST_BOTPRESS_SOURCE_MISSING');
 
@@ -155,6 +186,8 @@ async function collectRuntimeManifest(environment = process.env) {
     model: environment.GEMINI_MODEL ?? 'gemini-3.6-flash',
     latestMigration: migration,
     catalogSourceSha256: await sha256Files(['supabase/seed/studyx-manual.sql']),
+    promptSha256,
+    toolContractVersion: AGENT_LOOP_TOOL_CONTRACT_VERSION,
     requiredConfig: presentConfig(environment),
     builtAt: environment.RELEASE_BUILT_AT ?? new Date().toISOString(),
   });

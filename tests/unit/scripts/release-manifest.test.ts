@@ -13,6 +13,8 @@ const input = {
   model: 'gemini-3.6-flash',
   latestMigration: '20260825010001_payment_projection_jobs.sql',
   catalogSourceSha256: 'b'.repeat(64),
+  promptSha256: 'c'.repeat(64),
+  toolContractVersion: 'agent-tools-v3.0.0',
   requiredConfig: Object.fromEntries(REQUIRED_RELEASE_CONFIG.map((key) => [key, true])),
   builtAt: '2026-08-26T20:00:00.000Z',
 };
@@ -32,6 +34,8 @@ describe('createReleaseManifest', () => {
       model: input.model,
       latest_migration: input.latestMigration,
       catalog_source_sha256: input.catalogSourceSha256,
+      prompt_sha256: input.promptSha256,
+      tool_contract_version: input.toolContractVersion,
       required_config: input.requiredConfig,
       complete: true,
       built_at: input.builtAt,
