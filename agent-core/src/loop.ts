@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type {
   AgentTurnDecisionV3,
   ModelProvider,
@@ -7,6 +6,7 @@ import type {
 } from './ports/model-provider';
 import type { ToolExecutor } from './ports/tool-executor';
 import type { IntegrityRejectionV1 } from './domain/integrity-rejection';
+import { sha256TextHexV1 } from './domain/sha256';
 
 export const MAX_TOOL_ROUNDS = 2;
 export const MAX_TOOL_CALLS_PER_ROUND = 4;
@@ -198,7 +198,7 @@ function canonicalJson(value: unknown): string {
 }
 
 function traceHash(value: unknown): string {
-  return createHash('sha256').update(canonicalJson(value)).digest('hex');
+  return sha256TextHexV1(canonicalJson(value));
 }
 
 export function modelPromptSha256V3(input: Pick<
