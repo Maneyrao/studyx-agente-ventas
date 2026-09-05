@@ -334,6 +334,27 @@ export async function prepareLeadProjectionToolV1(
   );
 }
 
+/**
+ * Preparations are inert reservations. The reconciler expires abandoned rows
+ * through the workspace-scoped SECURITY DEFINER boundary; the application role
+ * never receives table-wide DELETE.
+ */
+export async function expireStalePreparationsV1(
+  db: DbClient,
+  olderThanMs: number,
+): Promise<number> {
+  if (!Number.isSafeInteger(olderThanMs) || olderThanMs <= 0) {
+    throw new Error('INVALID_PREPARATION_EXPIRATION_AGE');
+  }
+  const [row] = await db<Array<{ expired: number }>>`
+    SELECT COALESCE(sum(
+      public.expire_agent_turn_preparations_v1(workspace.id, ${olderThanMs}::bigint)
+    ), 0)::int AS expired
+    FROM workspaces AS workspace
+  `;
+  return Number(row?.expired ?? 0);
+}
+
 export async function preparePaymentLinkToolV1(
   deps: PrepareDeps,
   args: { readonly offering_code: string; readonly payment_plan: string },

@@ -10,6 +10,10 @@ import { counter } from '@/lib/observability/counters';
 import { logger } from '@/lib/observability/structured-log';
 import { reconcileDeliveredPaymentProjections } from '@/lib/services/decision.service';
 import { projectAgentAMemories } from '@/features/memory/application/project-agent-a-memories';
+import { expireStalePreparationsV1 } from '@/features/conversation/application/agent-tools-prepare';
+import { sql } from '@/lib/db/orchestrator';
+
+const PREPARATION_EXPIRATION_AGE_MS = 15 * 60 * 1_000;
 
 /**
  * GET /api/cron/reconcile-orchestration
@@ -34,6 +38,10 @@ export async function GET(request: NextRequest) {
   const traceId = request.headers.get('x-trace-id') ?? randomUUID();
 
   try {
+    await expireStalePreparationsV1(
+      sql,
+      PREPARATION_EXPIRATION_AGE_MS,
+    );
     const result = await reconcileOrchestration(
       { trace_id: traceId },
       {
