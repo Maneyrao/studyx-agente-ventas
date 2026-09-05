@@ -12,6 +12,8 @@ import {
 } from '../domain/integrity-check-v3';
 import { getCourseInformationToolV1 } from './agent-tools-read';
 import { missingContactIntakeFieldsV1 } from '../domain/conversation-planner';
+import { resolveTechnicalFallbackV1 } from '../domain/technical-fallback';
+import { PostgresConversationStateStoreV1 } from '../adapters/postgres-conversation-state-store';
 import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
 import { commercialIntakeFromContactRowV1 } from '@/lib/heuristics/contact-identity';
 import {
@@ -59,6 +61,8 @@ interface TurnContextRowV3 {
   readonly call_offer_count: 0 | 1 | 2;
   readonly awaiting_reply: StatePatchFieldsV3['awaiting_reply'];
   readonly payment_reported_at: Date | string | null;
+  readonly human_review_requested_at: Date | string | null;
+  readonly consecutive_technical_fallbacks: number;
   readonly version: number;
 }
 
@@ -107,7 +111,7 @@ export class AgentTurnV3ConflictError extends Error {
 
 type FallbackInputV3 = {
   readonly reason: 'AGENT_LOOP_INTEGRITY_FAILED' | 'AGENT_LOOP_BUDGET_EXHAUSTED';
-  readonly rejection: { readonly rejection_id: string } | null;
+  readonly rejection: IntegrityRejectionV1 | null;
 };
 
 type CommitAgentTurnV3Input = {
@@ -200,6 +204,8 @@ async function loadTurnContext(db: DbClient, turnId: string): Promise<TurnContex
       state.call_offer_count,
       state.awaiting_reply,
       state.payment_reported_at,
+      state.human_review_requested_at,
+      state.consecutive_technical_fallbacks,
       state.version
     FROM messages AS turn
     JOIN conversations AS conversation ON conversation.id = turn.conversation_id
@@ -420,10 +426,11 @@ export async function commitAgentTurnV3(
   db: DbClient,
   input: CommitAgentTurnV3Input,
 ): Promise<{ readonly decision_id: string; readonly outbound_id: string | null }> {
-  if (!input.decision) throw new Error('AGENT_TURN_V3_FALLBACK_NOT_IMPLEMENTED');
   const payloadHash = sha256Hex({
     turn_id: input.turn_id,
-    decision: input.decision,
+    outcome: input.decision
+      ? { decision: input.decision }
+      : { fallback: input.fallback },
     release_manifest: input.release_manifest,
   });
 
@@ -435,6 +442,154 @@ export async function commitAgentTurnV3(
     }
 
     const context = await loadTurnContext(transaction, input.turn_id);
+    if (!input.decision) {
+      const fallback = resolveTechnicalFallbackV1({
+        consecutive_technical_fallbacks: context.consecutive_technical_fallbacks,
+        human_review_already_requested: context.human_review_requested_at !== null,
+      });
+      await new PostgresConversationStateStoreV1(transaction).recordTechnicalFallbackV1({
+        workspace_slug: context.workspace_slug,
+        conversation_id: context.conversation_id,
+        contact_id: context.contact_id,
+        source_turn_id: context.turn_id,
+        consecutive_technical_fallbacks: fallback.next_consecutive_count,
+        request_human_review: fallback.requests_human_review,
+      });
+      await transaction`
+        INSERT INTO conversation_sales_context_state_events_v1 (
+          workspace_id, conversation_id, contact_id, state_version, source_turn_id,
+          selected_offering_code, selected_payment_plan, stage,
+          call_preference, call_offer_status, call_offer_count, awaiting_reply,
+          payment_reported_at, human_review_requested_at, consecutive_technical_fallbacks
+        )
+        SELECT
+          state.workspace_id, state.conversation_id, state.contact_id, state.version,
+          ${context.turn_id}::uuid,
+          state.selected_offering_code, state.selected_payment_plan, state.stage,
+          state.call_preference, state.call_offer_status, state.call_offer_count,
+          state.awaiting_reply, state.payment_reported_at,
+          state.human_review_requested_at, state.consecutive_technical_fallbacks
+        FROM conversation_sales_context_states_v1 AS state
+        WHERE state.workspace_id = ${context.workspace_id}::uuid
+          AND state.conversation_id = ${context.conversation_id}::uuid
+          AND state.contact_id = ${context.contact_id}::uuid
+        ON CONFLICT DO NOTHING
+      `;
+
+      const model = modelIdentity(input.release_manifest);
+      const inserted = await transaction<Array<{ id: string }>>`
+        INSERT INTO agent_decisions (
+          turn_id, trace_id, schema_version, intent, decision_kind, response,
+          response_type, business_action, retrieval_used, memory_candidates,
+          missing_information, next_state, reason_code, confidence,
+          model_provider, model_name, prompt_version, payload_hash, release_manifest
+        ) VALUES (
+          ${input.turn_id}::uuid, ${input.trace_id}::uuid, 4, 'commercial', 'reply',
+          ${fallback.text}, 'clarification', NULL, NULL, ${jsonbParam(transaction, [])},
+          ARRAY[]::text[], 'waiting_user', ${input.fallback.reason}, 1,
+          'deepseek-direct', ${model.model}, ${model.promptVersion},
+          decode(${payloadHash}, 'hex'), ${jsonbParam(transaction, input.release_manifest)}
+        )
+        RETURNING id
+      `;
+      const decisionId = inserted[0]?.id;
+      if (!decisionId) throw new Error('AGENT_TURN_V3_DECISION_INSERT_FAILED');
+
+      const authorizedEgress = buildAuthorizedEgress({
+        content: fallback.text,
+        authorized_urls: [],
+        protected_facts: [],
+      });
+      const fallbackTrace = {
+        reason: input.fallback.reason,
+        rejection: input.fallback.rejection,
+      };
+      const { message } = await registerMessage({
+        conversation_id: context.conversation_id,
+        direction: 'outbound',
+        content: fallback.text,
+        in_reply_to: input.turn_id,
+        metadata: {
+          decision_id: decisionId,
+          response_type: 'clarification',
+          authorized_egress: authorizedEgress,
+          release_manifest: input.release_manifest,
+          agent_loop_fallback: fallbackTrace,
+        },
+      }, {
+        db: transaction,
+        embedding: 'skip',
+        audit: {
+          event_key: `decision:${decisionId}:message`,
+          correlation_id: input.trace_id,
+          causation_id: input.turn_id,
+        },
+      });
+      await transaction`
+        UPDATE agent_decisions
+        SET outbound_message_id = ${message.id}::uuid
+        WHERE id = ${decisionId}::uuid
+      `;
+
+      const outboxPayload = {
+        decision_id: decisionId,
+        outbound_id: message.id,
+        turn_id: input.turn_id,
+        trace_id: input.trace_id,
+        content: fallback.text,
+        response_type: 'clarification',
+        authorized_egress: authorizedEgress,
+        agent_loop_fallback: fallbackTrace,
+      };
+      const queued = await transaction<Array<{ delivery_id: string; outbox_id: string }>>`
+        SELECT delivery_id, outbox_id
+        FROM enqueue_outbound_delivery(
+          ${message.id}::uuid,
+          ${context.provider},
+          ${context.integration_id},
+          ${context.channel},
+          'conversational',
+          ${context.destination},
+          ${`outbound:${decisionId}`},
+          ${jsonbParam(transaction, outboxPayload)},
+          3
+        )
+      `;
+      const queue = queued[0];
+      if (!queue) throw new Error('AGENT_TURN_V3_OUTBOX_ENQUEUE_FAILED');
+      const leased = await transaction<Array<{ attempt_count: number }>>`
+        UPDATE outbound_deliveries
+        SET
+          state = 'leased',
+          leased_by = ${`botpress:${input.trace_id}`},
+          lease_until = now() + interval '5 minutes',
+          attempt_count = attempt_count + 1,
+          deferred_state_patch = NULL
+        WHERE id = ${queue.delivery_id}::uuid
+          AND state = 'pending'
+        RETURNING attempt_count
+      `;
+      if (Number(leased[0]?.attempt_count) !== 1) {
+        throw new Error('AGENT_TURN_V3_DELIVERY_LEASE_FAILED');
+      }
+      await transaction`
+        UPDATE outbox_events
+        SET
+          state = 'leased',
+          leased_by = ${`botpress:${input.trace_id}`},
+          lease_until = now() + interval '5 minutes',
+          attempt_count = attempt_count + 1
+        WHERE id = ${queue.outbox_id}::uuid
+          AND state = 'pending'
+      `;
+      await transaction`
+        UPDATE contacts
+        SET pending_turns = pending_turns + 1
+        WHERE id = ${context.contact_id}::uuid
+      `;
+      return { decision_id: decisionId, outbound_id: message.id };
+    }
+
     const preparations = await loadOpenPreparations(transaction, context);
     const facts = await loadCanonicalFacts(
       transaction,

@@ -57,18 +57,23 @@ export async function runAgentTurnV3(
     readonly instructions: string;
     readonly conversation: readonly ModelTurnItemV3[];
     readonly toolDefinitions: readonly ToolDefinitionV3[];
+    /** Internal shared deadline used when one logical turn needs a repair pass. */
+    readonly absolute_deadline_ms?: number;
   },
 ): Promise<AgentLoopResultV3> {
   const startedAt = deps.now();
-  const deadlineMs = startedAt + AGENT_LOOP_DEADLINE_MS;
+  const ownDeadlineMs = startedAt + AGENT_LOOP_DEADLINE_MS;
+  const deadlineMs = Math.min(input.absolute_deadline_ms ?? ownDeadlineMs, ownDeadlineMs);
   const conversation: ModelTurnItemV3[] = [...input.conversation];
   const spent = () => deps.now() - startedAt;
+  const deadlineReached = () => deps.now() >= deadlineMs;
   const controller = new AbortController();
-  const deadlineTimer = setTimeout(() => controller.abort(), AGENT_LOOP_DEADLINE_MS);
+  const remainingMs = Math.max(0, deadlineMs - startedAt);
+  const deadlineTimer = setTimeout(() => controller.abort(), remainingMs);
 
   try {
     for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
-      if (spent() >= AGENT_LOOP_DEADLINE_MS) {
+      if (deadlineReached()) {
         return { outcome: 'exhausted', reason: 'DEADLINE' };
       }
 
@@ -85,7 +90,7 @@ export async function runAgentTurnV3(
         signal: controller.signal,
       }), controller.signal);
 
-      if (output === DEADLINE_REACHED || spent() >= AGENT_LOOP_DEADLINE_MS) {
+      if (output === DEADLINE_REACHED || deadlineReached()) {
         return { outcome: 'exhausted', reason: 'DEADLINE' };
       }
 
@@ -125,7 +130,7 @@ export async function runAgentTurnV3(
           return failedToolResult(call.name);
         }
       })), controller.signal);
-      if (results === DEADLINE_REACHED || spent() >= AGENT_LOOP_DEADLINE_MS) {
+      if (results === DEADLINE_REACHED || deadlineReached()) {
         return { outcome: 'exhausted', reason: 'DEADLINE' };
       }
       calls.forEach((call, index) => {
@@ -143,4 +148,87 @@ export async function runAgentTurnV3(
     clearTimeout(deadlineTimer);
     controller.abort();
   }
+}
+
+export type AgentTurnWithIntegrityResultV3 =
+  | {
+      readonly outcome: 'decided';
+      readonly decision: AgentTurnDecisionV3;
+      readonly repaired: boolean;
+    }
+  | {
+      readonly outcome: 'fallback';
+      readonly reason: 'AGENT_LOOP_INTEGRITY_FAILED' | 'AGENT_LOOP_BUDGET_EXHAUSTED';
+      readonly rejection: unknown | null;
+    };
+
+/**
+ * Runs one logical turn with at most one integrity repair. Both generations
+ * share the same hard deadline, and integrity feedback is an orchestrator
+ * message rather than a model-callable tool.
+ */
+export async function runAgentTurnWithIntegrityV3(
+  deps: {
+    readonly model: ModelProvider;
+    readonly tools: ToolExecutor;
+    readonly now: () => number;
+    readonly check: (
+      decision: AgentTurnDecisionV3,
+    ) => { readonly ok: true } | { readonly ok: false; readonly rejection: unknown };
+  },
+  input: {
+    readonly instructions: string;
+    readonly conversation: readonly ModelTurnItemV3[];
+    readonly toolDefinitions: readonly ToolDefinitionV3[];
+  },
+): Promise<AgentTurnWithIntegrityResultV3> {
+  const absoluteDeadlineMs = deps.now() + AGENT_LOOP_DEADLINE_MS;
+  const toolDefinitions = input.toolDefinitions.filter(
+    (definition) => definition.name !== 'integrity_check',
+  );
+  const first = await runAgentTurnV3(deps, {
+    ...input,
+    toolDefinitions,
+    absolute_deadline_ms: absoluteDeadlineMs,
+  });
+  if (first.outcome === 'exhausted') {
+    return {
+      outcome: 'fallback',
+      reason: 'AGENT_LOOP_BUDGET_EXHAUSTED',
+      rejection: null,
+    };
+  }
+
+  const firstVerdict = deps.check(first.decision);
+  if (firstVerdict.ok) {
+    return { outcome: 'decided', decision: first.decision, repaired: false };
+  }
+
+  const repaired = await runAgentTurnV3(deps, {
+    ...input,
+    toolDefinitions,
+    absolute_deadline_ms: absoluteDeadlineMs,
+    conversation: [
+      ...input.conversation,
+      { role: 'developer', content: JSON.stringify(firstVerdict.rejection) },
+    ],
+  });
+  if (repaired.outcome === 'exhausted') {
+    return {
+      outcome: 'fallback',
+      reason: 'AGENT_LOOP_INTEGRITY_FAILED',
+      rejection: firstVerdict.rejection,
+    };
+  }
+
+  const repairedVerdict = deps.check(repaired.decision);
+  if (repairedVerdict.ok) {
+    return { outcome: 'decided', decision: repaired.decision, repaired: true };
+  }
+
+  return {
+    outcome: 'fallback',
+    reason: 'AGENT_LOOP_INTEGRITY_FAILED',
+    rejection: firstVerdict.rejection,
+  };
 }
