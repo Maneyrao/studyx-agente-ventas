@@ -65,7 +65,7 @@ describe('release manifest for the agent loop', () => {
   });
 
   it('rejects a divergent release model before provider fetch or commit', async () => {
-    const providerFetch = vi.fn(async (_url: string) => new Response(null, { status: 200 }));
+    const providerFetch = vi.fn(async () => new Response(null, { status: 200 }));
     const commit = vi.fn();
     const environment = {
       ...Object.fromEntries(REQUIRED_RELEASE_CONFIG.map((key) => [key, 'configured-for-test'])),
