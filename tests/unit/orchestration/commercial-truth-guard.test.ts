@@ -296,6 +296,27 @@ describe('registro canónico desde el catálogo', () => {
   });
 
   it.each([
+    ['otra oferta con un total distinto', 'mkt-digital'],
+    ['una oferta inexistente', 'missing-course'],
+  ])('no usa planes globales como precio de %s', (_case, selectedOfferingCode) => {
+    const set = canonicalTruthSetFromOfferingsV1({
+      offerings: [PYTHON, MARKETING],
+      selected_offering_code: selectedOfferingCode,
+      payment_options: [{
+        total: { currency: 'USD', amount: '360' },
+        installment_amount: '60',
+        installments: 6,
+        label: '6 pagos mensuales de USD 60',
+      }],
+    });
+
+    expect(set.prices).not.toContain('USD 360');
+    expect(set.prices).not.toContain('USD 60');
+    expect(set.payment_terms).toEqual([]);
+    expect(enforce('El precio es USD 360.', set).content).toBeNull();
+  });
+
+  it.each([
     'Sí, ofrecemos Mecánica Automotriz.',
     'Podés estudiar Mecánica Automotriz.',
     'Tenemos Programación en Python y Mecánica Automotriz.',

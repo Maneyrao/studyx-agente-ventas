@@ -69,6 +69,17 @@ export interface CanonicalPaymentOptionSourceV1 {
   readonly label?: string;
 }
 
+function paymentOptionMatchesOffering(
+  option: CanonicalPaymentOptionSourceV1,
+  offering: CanonicalOfferingSourceV1,
+): boolean {
+  if (offering.price_type !== 'fixed' || offering.price_amount === null || offering.currency === null) {
+    return false;
+  }
+  return normalize(offering.currency) === normalize(option.total.currency)
+    && canonicalAmount(offering.price_amount) === canonicalAmount(option.total.amount);
+}
+
 const URL_PATTERN = /https?:\/\/[^\s<>"')]+/giu;
 
 const MONEY_PATTERNS = [
@@ -356,7 +367,16 @@ export function canonicalTruthSetFromOfferingsV1(input: {
     if (hours !== null) durations.push(`${hours} horas por mes`);
   }
 
-  for (const option of input.payment_options ?? []) {
+  // Los planes son configuración del workspace, pero un precio sólo puede
+  // autorizarse para la oferta concreta cuyo total coincide. Sin una selección
+  // resuelta, o si el código no existe, agregar esos importes contaminaría el
+  // alcance y permitiría atribuir el precio de otro curso.
+  const applicablePaymentOptions = selected === null
+    ? []
+    : (input.payment_options ?? []).filter((option) => (
+        selected.some((offering) => paymentOptionMatchesOffering(option, offering))
+      ));
+  for (const option of applicablePaymentOptions) {
     const currency = option.total.currency.trim();
     if (currency.length === 0) continue;
     prices.push(`${currency} ${canonicalAmount(option.total.amount)}`);
