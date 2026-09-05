@@ -17,6 +17,26 @@ export interface SeededAgentTurn {
   readonly model: { provider: string; model: string; prompt_version: string };
   readonly placeholderDecision: Record<string, unknown>;
   readonly proposalWithCallOfferAndFalsePrice: Record<string, unknown>;
+  /**
+   * Mismo escenario que `proposalWithCallOfferAndFalsePrice` pero para la
+   * autoridad `conversation_pipeline_v1` (Tarea 0.2, ronda 2): un `move`
+   * `select_course` que dispara `should_offer_call` en el planner
+   * determinista, para usar junto con `compositionWithCallOfferAndFalsePrice`.
+   * `plan_hash` NO va acá — depende del estado leído en el momento del commit,
+   * así que el test lo deriva llamando a `authoritativelyPlanConversationTurnV1`
+   * con este mismo `move`.
+   */
+  readonly moveSelectCourseWithCallOffer: Record<string, unknown>;
+  /**
+   * Composición canónica cuya `narrative.explanation` afirma un precio falso
+   * ("USD 47") que ningún hecho canónico respalda. El compositor determinista
+   * no lo rechaza —sólo exige cita para valores que SÍ coinciden con un hecho
+   * real (`COMPOSER_UNCITED_CANONICAL_FACT`)— así que sobrevive hasta
+   * `enforceCommercialTruthV1`, que lo veta por `PRICE_NOT_CANONICAL` mientras
+   * dispara la aparición de la llamada por separado (`plan.should_offer_call`,
+   * en su propio párrafo).
+   */
+  readonly compositionWithCallOfferAndFalsePrice: Record<string, unknown>;
 }
 
 /**
@@ -222,6 +242,27 @@ export async function seedConversationForAgentTurn(options: {
       memory_candidates: [],
       proposed_action: { type: 'none' },
       repair_of: null,
+    },
+    moveSelectCourseWithCallOffer: {
+      schema_version: 1,
+      move: 'select_course',
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 1,
+      course_reference: options.selected_offering_code ?? 'entrenamiento_funcional',
+    },
+    // 'entrenamiento_funcional' vale USD 360, no USD 47 — el mismo precio
+    // falso que usa el escenario del proposal, para que ambas autoridades
+    // ejerciten exactamente la misma verdad canónica.
+    compositionWithCallOfferAndFalsePrice: {
+      schema_version: 1,
+      narrative: {
+        opening: 'Genial, ese es un gran curso.',
+        explanation: 'El curso sale USD 47.',
+        next_question: null,
+      },
+      call_offer: null,
+      used_fact_ids: [],
     },
   };
 }

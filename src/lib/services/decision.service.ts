@@ -164,6 +164,8 @@ export interface CommitDecisionResult {
       | 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED'
       | 'EGRESS_PARTIAL_VETO_TRANSITION_REFUSED';
     readonly human_review_requested: boolean;
+    /** Sólo presente en un veto parcial: qué autoridad preparó el turno refusado. */
+    readonly partial_veto_refused_authority?: 'agent_turn_v2' | 'conversation_pipeline_v1';
   };
 }
 
@@ -476,6 +478,15 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     let technicalFallbackReasonCode:
       | 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED'
       | 'EGRESS_PARTIAL_VETO_TRANSITION_REFUSED'
+      | null = null;
+    // Cuál autoridad preparó el turno que un veto parcial refusó —
+    // `agent_turn_v2` o `conversation_pipeline_v1`, mutuamente excluyentes.
+    // `reason_code` no distingue (columna acotada); esto sí, en
+    // `conversation_effects`, que es evidencia estructurada y admite el
+    // campo extra sin tocar el esquema de `agent_decisions`.
+    let technicalFallbackRefusedAuthority:
+      | 'agent_turn_v2'
+      | 'conversation_pipeline_v1'
       | null = null;
     if (validatedInput.conversation_pipeline_v1) {
       pipelineStateBefore = await new PostgresConversationStateStoreV1(db).load(
@@ -867,33 +878,42 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         });
       }
 
-      // Un veto PARCIAL sobre un turno del agente (`preparedAgentTurn`) deja
-      // sobrevivir texto, pero `preparedAgentTurn.transition` se calculó
-      // sobre AMBAS oraciones — la que sobrevive y la que se acaba de vetar.
-      // Ese cálculo describe un mensaje que el cliente nunca recibió
-      // completo, y no se recomputa sobre el texto podado: eso sería el
-      // backend eligiendo el estado por su cuenta otra vez. Cae por la MISMA
-      // puerta que una supresión total —silencio técnico, nunca silencio
-      // llano (A7)— con su propio `reason_code` para que la telemetría
-      // pueda distinguir un veto parcial de una supresión completa.
-      const partialVetoOnAgentTurn = preparedAgentTurn !== null
+      // Un veto PARCIAL sobre un turno preparado (`preparedAgentTurn` O
+      // `preparedPipeline` — nunca ambos a la vez, son autoridades
+      // mutuamente excluyentes) deja sobrevivir texto, pero la `transition`
+      // de esa autoridad se calculó sobre AMBAS oraciones — la que sobrevive
+      // y la que se acaba de vetar. Ese cálculo describe un mensaje que el
+      // cliente nunca recibió completo, y no se recomputa sobre el texto
+      // podado: eso sería el backend eligiendo el estado por su cuenta otra
+      // vez. Cae por la MISMA puerta que una supresión total —silencio
+      // técnico, nunca silencio llano (A7)— con su propio `reason_code` para
+      // que la telemetría pueda distinguir un veto parcial de una supresión
+      // completa. Ambas autoridades comparten el mismo `reason_code`: la
+      // columna no admite un enum por autoridad, así que la distinción vive
+      // en `conversation_effects` (barato de agregar), no en `reason_code`.
+      const partialVetoOnPreparedTurn = (preparedAgentTurn !== null || preparedPipeline !== null)
         && verdict.removed.length > 0
         && verdict.content !== null;
+      const partialVetoRefusedAuthority: 'agent_turn_v2' | 'conversation_pipeline_v1' | null =
+        !partialVetoOnPreparedTurn
+          ? null
+          : preparedAgentTurn !== null ? 'agent_turn_v2' : 'conversation_pipeline_v1';
 
-      if (verdict.content !== null && !partialVetoOnAgentTurn) {
+      if (verdict.content !== null && !partialVetoOnPreparedTurn) {
         finalResponse = verdict.content;
       } else {
         counter.increment(
-          partialVetoOnAgentTurn ? 'egress_partial_veto_transition_refused' : 'egress_response_suppressed',
+          partialVetoOnPreparedTurn ? 'egress_partial_veto_transition_refused' : 'egress_response_suppressed',
           1,
         );
         logger.warn({
-          event: partialVetoOnAgentTurn
+          event: partialVetoOnPreparedTurn
             ? 'orchestration.egress.partial_veto_transition_refused'
             : 'orchestration.egress.response_suppressed',
           trace_id: validatedInput.trace_id,
           turn_id: turn.id,
           reason: verdict.violations[0]?.code ?? 'COMMERCIAL_TRUTH_VIOLATION',
+          ...(partialVetoRefusedAuthority ? { refused_authority: partialVetoRefusedAuthority } : {}),
         });
         // A7: el silencio técnico deja de ser un resultado posible. El turno
         // sigue siendo una supresión comercial —ninguna acción, ningún hecho,
@@ -916,14 +936,15 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           memory_candidates: [],
           missing_information: [],
           next_state: 'completed',
-          reason_code: partialVetoOnAgentTurn
+          reason_code: partialVetoOnPreparedTurn
             ? 'EGRESS_PARTIAL_VETO_TRANSITION_REFUSED'
             : 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED',
           confidence: 1,
         });
-        technicalFallbackReasonCode = partialVetoOnAgentTurn
+        technicalFallbackReasonCode = partialVetoOnPreparedTurn
           ? 'EGRESS_PARTIAL_VETO_TRANSITION_REFUSED'
           : 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED';
+        technicalFallbackRefusedAuthority = partialVetoRefusedAuthority;
         finalResponse = technicalFallback.text;
         authorizedUrls = [];
         authorizedProtectedFacts = [];
@@ -1285,10 +1306,11 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         reportedPaymentContactId = turn.contact_id;
       }
     }
-    // Un veto PARCIAL sobre `preparedAgentTurn` ya cayó por la rama de
-    // silencio técnico más arriba y dejó `preparedAgentTurn` en null — no
-    // hay nada que recomputar ni que rechazar acá. Esta escritura sólo ve un
-    // turno cuya `transition` describe exactamente el texto que se entregó.
+    // Un veto PARCIAL sobre CUALQUIERA de las dos autoridades ya cayó por
+    // la rama de silencio técnico más arriba y dejó tanto `preparedPipeline`
+    // como `preparedAgentTurn` en null — no hay nada que recomputar ni que
+    // rechazar acá. Esta escritura sólo ve un turno cuya `transition`
+    // describe exactamente el texto que se entregó.
     if (preparedAgentTurn) {
       await new PostgresConversationStateStoreV1(db).transition(preparedAgentTurn.transition);
       if (preparedAgentTurn.transition.payment_reported) {
@@ -1331,6 +1353,9 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           conversation_effects: {
             technical_fallback_reason: technicalFallbackReasonCode,
             human_review_requested: technicalFallback.requests_human_review,
+            ...(technicalFallbackRefusedAuthority
+              ? { partial_veto_refused_authority: technicalFallbackRefusedAuthority }
+              : {}),
           },
         } : {}),
       };
