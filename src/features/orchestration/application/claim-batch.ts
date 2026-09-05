@@ -911,13 +911,22 @@ export async function claimBatch(
   const persistedDisplayName = persistedOffering === null
     ? null
     : resolvedCatalogIndex?.offerings.find((offering) => offering.code === persistedOffering)?.display_name ?? null;
-  const selection = currentSelection.offering_code === null && persistedOffering !== null
+  const mayInheritPersistedSelection = catalog_resolution.kind === 'no_catalog_intent';
+  const selection = currentSelection.offering_code === null
+    && persistedOffering !== null
+    && mayInheritPersistedSelection
     ? { course_of_interest: persistedDisplayName, offering_code: persistedOffering }
     : currentSelection;
+  const selectionKeepsPersistedCourse = selection.offering_code !== null
+    && selection.offering_code === persistedOffering;
   const salesContext: ClaimedSalesContext = {
     ...initialSalesContext,
-    stage: persistedState?.stage ?? initialSalesContext.stage,
-    selected_payment_plan: persistedState?.selected_payment_plan ?? null,
+    stage: selection.offering_code === null
+      ? initialSalesContext.stage
+      : persistedState?.stage ?? initialSalesContext.stage,
+    selected_payment_plan: selectionKeepsPersistedCourse
+      ? persistedState?.selected_payment_plan ?? null
+      : null,
     ...selection,
   };
   const rawPersistedConversationState = persisted_conversation_state as ConversationStateV1 | null;
@@ -931,13 +940,26 @@ export async function claimBatch(
   const conversationStateV1 = conversationStateEnabled
     ? persistedConversationState
       ? {
-          selected_offering_code: persistedConversationState.selected_offering_code,
-          selected_payment_plan: persistedConversationState.selected_payment_plan,
-          stage: persistedConversationState.stage,
+          selected_offering_code: currentSelection.offering_code
+            ?? (mayInheritPersistedSelection
+              ? persistedConversationState.selected_offering_code
+              : null),
+          selected_payment_plan: (
+            currentSelection.offering_code === null
+            && !mayInheritPersistedSelection
+          ) || (
+            currentSelection.offering_code !== null
+            && currentSelection.offering_code !== persistedConversationState.selected_offering_code
+          ) ? null : persistedConversationState.selected_payment_plan,
+          stage: currentSelection.offering_code === null && !mayInheritPersistedSelection
+            ? 'exploring' as const
+            : persistedConversationState.stage,
           call_preference: persistedConversationState.call_preference,
           call_offer_status: persistedConversationState.call_offer_status,
           call_offer_count: persistedConversationState.call_offer_count,
-          awaiting_reply: persistedConversationState.awaiting_reply,
+          awaiting_reply: currentSelection.offering_code === null && !mayInheritPersistedSelection
+            ? 'none' as const
+            : persistedConversationState.awaiting_reply,
           payment_reported: persistedConversationState.payment_reported_at !== null,
           version: persistedConversationState.version,
         }

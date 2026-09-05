@@ -9,7 +9,7 @@ const valid = {
   environment: 'test',
   git_sha: 'a'.repeat(40),
   botpress_artifact_sha: 'b'.repeat(64),
-  prompt_version: 'studyx-agent-a-brain-v21',
+  prompt_version: 'studyx-agent-a-brain-v22',
   provider: 'deepseek-direct',
   model: 'deepseek-v4-flash',
   latest_migration: '20260905000005_agent_loop_commit_trace.sql',

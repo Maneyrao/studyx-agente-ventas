@@ -235,6 +235,49 @@ describe('claimBatch', () => {
     });
   });
 
+  it.each([
+    ['not_found', 'Quiero estudiar Medicina'],
+    ['ambiguous', 'Quiero estudiar fotografía'],
+  ] as const)(
+    'does not restore a persisted course or payment plan for a current %s request',
+    async (expectedKind, current) => {
+      const business = businessContextView({
+        offerings: [
+          businessOffering('redes_informaticas', 'Redes Informáticas', 'Tecnología'),
+          businessOffering('fotografia_profesional', 'Fotografía Profesional', 'Emprendedores'),
+          businessOffering(
+            'fotografia_celulares_tiendas_online',
+            'Fotografía con Celulares para Tiendas Online',
+            'Marketing',
+          ),
+        ],
+      });
+      const result = await claimBatch(input, {
+        ...buildDeps({ messagesResult: [{
+          id: 'm1', conversation_seq: 1, content: current,
+          created_at: '2026-08-11T12:00:00.000Z', message_type: 'text',
+        }] }),
+        business: { load: vi.fn().mockResolvedValue(business) },
+        sales: { load: vi.fn().mockResolvedValue({
+          workspace_id: 'workspace-1', contact_id: 'contact-1', conversation_id: 'conversation-1',
+          selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_12',
+          stage: 'plan_selected', source_turn_id: 'turn-0', version: 3,
+          updated_at: '2026-08-10T00:00:00.000Z',
+        }) },
+      });
+
+      expect(result).toMatchObject({
+        outcome: 'claimed',
+        catalog_resolution: { kind: expectedKind },
+        sales_context: {
+          offering_code: null,
+          course_of_interest: null,
+          selected_payment_plan: null,
+        },
+      });
+    },
+  );
+
   it('returns the controlled context to the caller that owns the batch', async () => {
     const deps = buildDeps();
     const result = await claimBatch(input, deps);

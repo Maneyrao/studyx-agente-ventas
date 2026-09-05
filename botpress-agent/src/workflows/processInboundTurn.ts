@@ -673,7 +673,9 @@ export const processInboundTurn = new Workflow({
           pipelineDecisionModel = generated.model
           pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
           const authoritativeMove = bindCurrentConversationalIntentToMoveV1(
-            bindCurrentCatalogResolutionToMoveV1(generated.proposal.move, owned),
+            plannerlessV2Enabled
+              ? generated.proposal.move
+              : bindCurrentCatalogResolutionToMoveV1(generated.proposal.move, owned),
             owned,
           )
           if (plannerlessV2Enabled) {
@@ -705,7 +707,7 @@ export const processInboundTurn = new Workflow({
                   { maxAttempts: 1 },
                 )
                 const repairedMove = bindCurrentConversationalIntentToMoveV1(
-                  bindCurrentCatalogResolutionToMoveV1(repaired.proposal.move, owned),
+                  repaired.proposal.move,
                   owned,
                 )
                 return { ...repaired, proposal: { ...repaired.proposal, move: repairedMove } }

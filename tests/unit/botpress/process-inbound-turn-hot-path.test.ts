@@ -436,12 +436,24 @@ describe('processInboundTurn hot path', () => {
       call_offer_count: 0, awaiting_reply: 'none', version: 1,
     };
     claimed.context.batch_messages[0].content = 'Quiero aprender sobre redes';
+    claimed.catalog_resolution = {
+      kind: 'ambiguous',
+      requestedText: 'Quiero aprender sobre redes',
+      candidateCodes: ['redes-informaticas', 'excel_integral'],
+      clarification: 'choose_offering',
+    };
     claimed.catalog_index = {
-      as_of: NOW, offerings_total: 1,
-      offerings: [{
-        code: 'redes-informaticas', display_name: 'Redes Informáticas',
-        academy: 'Tecnología', aliases: ['redes'],
-      }],
+      as_of: NOW, offerings_total: 2,
+      offerings: [
+        {
+          code: 'redes-informaticas', display_name: 'Redes Informáticas',
+          academy: 'Tecnología', aliases: ['redes'],
+        },
+        {
+          code: 'excel_integral', display_name: 'Excel Integral',
+          academy: 'Tecnología', aliases: [],
+        },
+      ],
       injection_suspected_count: 0,
     };
     claimed.business_context = paymentBusinessContext();
