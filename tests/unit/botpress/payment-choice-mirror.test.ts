@@ -87,4 +87,17 @@ describe('payment-choice mirror parity (botpress-agent vs backend)', () => {
     expect(backendClassify(messages)).toEqual(expectedIntent);
     expect(mirrorClassify(messages)).toEqual(expectedIntent);
   });
+
+  it.each([
+    ['same-message revocation', [{ content: 'Prefiero un pago de 360, no' }]],
+    ['later-message revocation', [
+      { content: 'Prefiero un pago de 360' },
+      { content: 'No, mejor no' },
+    ]],
+  ] as const)('keeps %s from authorizing checkout in either copy', (_name, messages) => {
+    expect(backendSelection(messages)).toBeNull();
+    expect(mirrorSelection(messages)).toBeNull();
+    expect(backendClassify(messages)).toEqual({ kind: 'veto' });
+    expect(mirrorClassify(messages)).toEqual({ kind: 'veto' });
+  });
 });

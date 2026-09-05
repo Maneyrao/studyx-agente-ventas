@@ -130,6 +130,9 @@ export function materializePaymentLinkAction(
   }
 
   const currentIntent = classifyCurrentPaymentIntent(batchMessages);
+  if (currentIntent.kind === 'veto') {
+    return { ok: false, reason: 'AMBIGUOUS_OR_ABSENT_CHOICE' };
+  }
   const allowedPlan = backendAuthorizedPlanCode ?? (
     currentIntent.kind === 'direct'
       ? currentIntent.planCode ?? selectedPlanCode ?? null

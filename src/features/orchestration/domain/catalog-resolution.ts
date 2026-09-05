@@ -94,6 +94,9 @@ const CATALOG_REJECTION_PATTERN =
 const CATALOG_REPLACEMENT_AFTER_REJECTION_PATTERN =
   /\b(?:ninguno|ninguna)\b\s+(?:mejor\s+)?(?:el|la|uno|una)\s+de\s+([\p{L}\p{N}].*)$/u;
 
+const NEUTRAL_CATALOG_TRAILING_FRAGMENT_PATTERN =
+  /^(?:(?:muchas\s+)?gracias(?:\s+(?:igual|por\s+(?:la\s+)?(?:info|informacion|ayuda)))?|dale|ok|okay|perfecto|listo)$/u;
+
 const PAYMENT_OR_LINK_CONTEXT_PATTERN =
   /\b(?:pag(?:o|ar|arlo|arla|arlos|arlas)?|cuotas?|dolares?|usd|link|plan(?:es)?|mensual(?:es)?|mes(?:es)?|pensar(?:lo|la)?|decidir)\b/u;
 
@@ -149,7 +152,9 @@ function explicitCatalogReplacementSubject(text: string | readonly string[]): st
   const directives = values.flatMap((value) => value.split(/[.!?;\n]/u))
     .map((value) => normalizeSpanishCatalogText(value))
     .filter(Boolean);
-  const latest = directives.at(-1);
+  const latest = directives.findLast((directive) => (
+    !NEUTRAL_CATALOG_TRAILING_FRAGMENT_PATTERN.test(directive)
+  ));
   if (!latest) return null;
 
   const subject = CATALOG_REPLACEMENT_AFTER_REJECTION_PATTERN.exec(latest)?.[1]?.trim() ?? null;

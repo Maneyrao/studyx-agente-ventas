@@ -186,6 +186,14 @@ describe('derivePaymentChoiceFromBatch', () => {
   });
 
   it.each([
+    { messages: [msg('Prefiero un pago de 360, no')] },
+    { messages: [msg('Prefiero un pago de 360'), msg('No, mejor no')] },
+  ])('lets a later revocation cancel an affirmative one-time amount: $messages', ({ messages }) => {
+    expect(derivePaymentPlanSelectionFromBatch(messages)).toBeNull();
+    expect(classifyCurrentPaymentIntent(messages)).toEqual({ kind: 'veto' });
+  });
+
+  it.each([
     'El curso requiere un pago de 360 antes de empezar',
     'Me dijeron que es un pago de 360',
   ])('does not persist or authorize a narrative one-time amount: %s', (content) => {
@@ -418,6 +426,23 @@ describe('materializePaymentLinkAction', () => {
       resolver,
     });
     expect(result).toEqual({ ok: false, reason: 'AMBIGUOUS_OR_ABSENT_CHOICE' });
+  });
+
+  it.each([
+    { messages: [msg('Prefiero un pago de 360, no')] },
+    { messages: [msg('Prefiero un pago de 360'), msg('No, mejor no')] },
+  ])('never materializes a link after a later plan revocation: $messages', ({ messages }) => {
+    expect(materializePaymentLinkAction({
+      action: action({ plan_code: 'one_time' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
+      backendAuthorizedPlanCode: 'one_time',
+      selectedPlanCode: 'one_time',
+      batchMessages: messages,
+      businessSnapshot,
+      contact: allowedContact(),
+      modelResponseText: 'Te comparto el link.',
+      resolver,
+    })).toEqual({ ok: false, reason: 'AMBIGUOUS_OR_ABSENT_CHOICE' });
   });
 
   it('accepts only the plan rederived by the backend V1 planner for semantic wording', () => {

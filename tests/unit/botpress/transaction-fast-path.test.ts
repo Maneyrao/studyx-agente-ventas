@@ -215,6 +215,10 @@ describe('transaction fast paths', () => {
     expect(matchPaymentSelectionFastPath(claimed('confirmo 12 cuotas', { prices: false }))).toBeNull();
   });
 
+  it('does not send a link when the customer revokes the selection in the last clause', () => {
+    expect(matchPaymentSelectionFastPath(claimed('Prefiero un pago de 360, no'))).toBeNull();
+  });
+
   it('sends the link when the same turn explicitly chooses a plan and requests it', () => {
     expect(matchPaymentSelectionFastPath(
       claimed('Confirmo 12 cuotas y pasame el link'),

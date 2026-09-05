@@ -79,6 +79,19 @@ describe('resolveCatalogRequest', () => {
   });
 
   it.each([
+    ['Ninguno, el de fotografía. Gracias'],
+    [['Ninguno, el de fotografía', 'Gracias']],
+  ])('keeps the latest explicit replacement across a neutral trailing fragment: %j', (messages) => {
+    expect(resolveCatalogRequest(messages, snapshot([
+      SOLAR, PHOTOGRAPHY, MARKETING, MOBILE_PHOTOGRAPHY,
+    ]))).toMatchObject({
+      kind: 'ambiguous',
+      candidateCodes: ['fotografia_celulares_tiendas_online', 'fotografia_profesional'],
+      clarification: 'choose_offering',
+    });
+  });
+
+  it.each([
     [['Ninguno, el de fotografía', 'No, ninguno']],
     [['Ninguno, el de fotografía. No, ninguno.']],
     [['Ninguno, el de fotografía, no']],

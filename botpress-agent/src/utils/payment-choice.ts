@@ -57,6 +57,8 @@ const SHORT_ONE_TIME_AMOUNT_SELECTION_PATTERN =
 const COMMITTED_ONE_TIME_AMOUNT_SELECTION_PATTERN =
   /\b(?:confirmo|prefiero|elijo|elegi|me\s+quedo\s+con|voy\s+con|quiero(?:\s+pagar)?)\b[^.!?;,\n]{0,48}\bun\s+pago\s+de\s+(?:usd\s*)?360(?:\s*(?:usd|dolares?))?\b/u
 const NEGATED_ONE_TIME_AMOUNT_PATTERN = /\b(?:no|nunca|ni|tampoco)\b/u
+const SHORT_PAYMENT_SELECTION_REVOCATION_PATTERN =
+  /^(?:no|no\s+mejor\s+no|mejor\s+no|dejalo|dejala|cancelo)(?:\s+gracias)?$/u
 
 function hasExplicitOneTimeAmountSelection(normalized: string): boolean {
   return normalized.split(/[.!?;,\n]+/u).some((rawClause) => {
@@ -127,6 +129,26 @@ function plansMentionedIn(normalized: string): Set<PaymentPlanCode> {
   return matched
 }
 
+function hasTrailingPaymentSelectionRevocation(
+  normalizedMessages: readonly string[],
+): boolean {
+  let selectionSeen = false
+  let revoked = false
+  for (const normalized of normalizedMessages) {
+    for (const rawClause of normalized.split(/[.!?;,\n]+/u)) {
+      const clause = rawClause.trim()
+      if (!clause) continue
+      if (plansMentionedIn(clause).size > 0) {
+        selectionSeen = true
+        revoked = false
+      } else if (selectionSeen && SHORT_PAYMENT_SELECTION_REVOCATION_PATTERN.test(clause)) {
+        revoked = true
+      }
+    }
+  }
+  return revoked
+}
+
 export type CurrentPaymentIntent =
   | { readonly kind: 'direct'; readonly planCode: PaymentPlanCode | null }
   | { readonly kind: 'resume' }
@@ -141,6 +163,7 @@ export function classifyCurrentPaymentIntent(
     hasTemporalPaymentDeferralIn(message, false)
     || hasExplicitPurchaseDeclineIn(message)
   ))) return { kind: 'veto' }
+  if (hasTrailingPaymentSelectionRevocation(normalizedMessages)) return { kind: 'veto' }
 
   const matched = new Set<PaymentPlanCode>()
   for (const message of normalizedMessages) {
@@ -168,9 +191,10 @@ export function classifyCurrentPaymentIntent(
 export function derivePaymentPlanSelectionFromBatch(
   messages: readonly PolicyBatchMessage[]
 ): PaymentPlanCode | null {
+  const normalizedMessages = messages.map((message) => normalize(message.content ?? ''))
+  if (hasTrailingPaymentSelectionRevocation(normalizedMessages)) return null
   const matched = new Set<PaymentPlanCode>()
-  for (const message of messages) {
-    const normalized = normalize(message.content ?? '')
+  for (const normalized of normalizedMessages) {
     for (const plan of plansMentionedIn(normalized)) matched.add(plan)
   }
   if (matched.size !== 1) return null
