@@ -129,6 +129,7 @@ type FallbackInputV3 =
 type CommitAgentTurnV3Input = {
   readonly turn_id: string;
   readonly trace_id: string;
+  readonly effective_prompt_sha256: string;
   readonly release_manifest: ReleaseManifestV1;
 } & (
   | { readonly decision: AgentTurnDecisionV3; readonly fallback?: never }
@@ -479,6 +480,9 @@ export async function commitAgentTurnV3(
   input: CommitAgentTurnV3Input,
 ): Promise<{ readonly decision_id: string; readonly outbound_id: string | null }> {
   const releaseManifest = parseReleaseManifestV1(input.release_manifest);
+  if (releaseManifest.prompt_sha256 !== input.effective_prompt_sha256) {
+    throw new Error('AGENT_TURN_V3_PROMPT_SHA_MISMATCH');
+  }
   const payloadHash = sha256Hex({
     turn_id: input.turn_id,
     outcome: input.decision

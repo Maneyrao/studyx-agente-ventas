@@ -162,8 +162,16 @@ export type AgentTurnWithIntegrityResultV3 =
     }
   | {
       readonly outcome: 'fallback';
-      readonly reason: 'AGENT_LOOP_INTEGRITY_FAILED' | 'AGENT_LOOP_BUDGET_EXHAUSTED';
-      readonly rejection: IntegrityRejectionV1 | null;
+      readonly reason: 'AGENT_LOOP_INTEGRITY_FAILED';
+      readonly rejection: IntegrityRejectionV1;
+      readonly trace: AgentTurnIntegrityTraceV3;
+      /** Hash of the last instruction envelope attempted for this turn. */
+      readonly prompt_sha256: string;
+    }
+  | {
+      readonly outcome: 'fallback';
+      readonly reason: 'AGENT_LOOP_BUDGET_EXHAUSTED';
+      readonly rejection: null;
       readonly trace: AgentTurnIntegrityTraceV3;
       /** Hash of the last instruction envelope attempted for this turn. */
       readonly prompt_sha256: string;

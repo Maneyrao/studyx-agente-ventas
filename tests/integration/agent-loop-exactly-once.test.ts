@@ -15,6 +15,7 @@ describe('agent loop exactly once commit', () => {
     const committed = await commitAgentTurnV3(sql, {
       turn_id: seeded.turn_id,
       trace_id: seeded.trace_id,
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       decision: {
         schema_version: 3,
         blocks: [
@@ -62,12 +63,14 @@ describe('agent loop exactly once commit', () => {
     const first = await commitAgentTurnV3(sql, {
       turn_id: seeded.turn_id,
       trace_id: seeded.trace_id,
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       decision,
       release_manifest: seeded.release_manifest,
     });
     const second = await commitAgentTurnV3(sql, {
       turn_id: seeded.turn_id,
       trace_id: seeded.trace_id,
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       decision,
       release_manifest: seeded.release_manifest,
     });
@@ -126,6 +129,7 @@ describe('agent loop exactly once commit', () => {
     await expect(commitAgentTurnV3(sql, {
       turn_id: seeded.turn_id,
       trace_id: seeded.trace_id,
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       decision: {
         schema_version: 3,
         blocks: [
@@ -183,6 +187,7 @@ describe('agent loop exactly once commit', () => {
     await commitAgentTurnV3(sql, {
       turn_id: seeded.turn_id,
       trace_id: seeded.trace_id,
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       decision: {
         schema_version: 3,
         blocks: [{ type: 'narrative', text: 'Mejor lo vemos con calma.' }],

@@ -16,6 +16,7 @@ run('Agent Loop optimistic concurrency', () => {
     ) => ({
       turn_id: turnId,
       trace_id: seeded.trace_id,
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       release_manifest: seeded.release_manifest,
       decision: {
         schema_version: 3 as const,

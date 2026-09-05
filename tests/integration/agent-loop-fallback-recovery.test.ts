@@ -39,6 +39,7 @@ run('Agent Loop technical fallback recovery', () => {
     await commitAgentTurnV3(sql, {
       turn_id: seeded.turn_id,
       trace_id: seeded.trace_id,
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       release_manifest: seeded.release_manifest,
       fallback: {
         reason: 'AGENT_LOOP_INTEGRITY_FAILED',
@@ -92,6 +93,7 @@ run('Agent Loop technical fallback recovery', () => {
     const recovered = await commitAgentTurnV3(sql, {
       turn_id: seeded.second_turn_id,
       trace_id: seeded.trace_id,
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       release_manifest: seeded.release_manifest,
       decision: {
         schema_version: 3,

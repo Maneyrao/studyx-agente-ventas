@@ -34,6 +34,7 @@ describe('agent loop deferred state patch', () => {
       turn_id: seeded.turn_id,
       trace_id: seeded.trace_id,
       decision: callOfferDecision(before!.version),
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       release_manifest: seeded.release_manifest,
     });
 
@@ -86,6 +87,7 @@ describe('agent loop deferred state patch', () => {
       turn_id: seeded.turn_id,
       trace_id: seeded.trace_id,
       decision: callOfferDecision(before!.version),
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       release_manifest: seeded.release_manifest,
     });
     const report = {

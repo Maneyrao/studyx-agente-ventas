@@ -17,6 +17,7 @@ describe('agent loop atomic commit regressions', () => {
     await expect(commitAgentTurnV3(sql, {
       turn_id: seeded.turn_id,
       trace_id: seeded.trace_id,
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       decision: {
         schema_version: 3,
         blocks: [{ type: 'narrative', text: 'Seguimos.' }],
@@ -57,6 +58,7 @@ describe('agent loop atomic commit regressions', () => {
     await expect(commitAgentTurnV3(alternate!, {
       turn_id: seeded.turn_id,
       trace_id: seeded.trace_id,
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       decision: {
         schema_version: 3,
         blocks: [
@@ -107,6 +109,7 @@ describe('agent loop atomic commit regressions', () => {
     const committed = await commitAgentTurnV3(sql, {
       turn_id: seeded.turn_id,
       trace_id: seeded.trace_id,
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       decision: {
         schema_version: 3,
         blocks: [{ type: 'narrative', text: '¿Te sirve que te llamemos?' }],
@@ -163,6 +166,7 @@ describe('agent loop atomic commit regressions', () => {
     const committed = await commitAgentTurnV3(sql, {
       turn_id: seeded.turn_id,
       trace_id: seeded.trace_id,
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       decision: {
         schema_version: 3,
         blocks: [{ type: 'artifact', preparation_id: prepared.preparation_id! }],
@@ -216,6 +220,7 @@ describe('agent loop atomic commit regressions', () => {
     await expect(commitAgentTurnV3(sql, {
       turn_id: seeded.turn_id,
       trace_id: seeded.trace_id,
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       decision: {
         schema_version: 3,
         blocks: [
@@ -276,6 +281,7 @@ describe('agent loop atomic commit regressions', () => {
     const committed = await commitAgentTurnV3(sql, {
       turn_id: seeded.turn_id,
       trace_id: seeded.trace_id,
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       decision: {
         schema_version: 3,
         blocks: [

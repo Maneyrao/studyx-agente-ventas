@@ -49,6 +49,7 @@ describe('agent loop technical fallback commit', () => {
       turn_id: seeded.turn_id,
       trace_id: seeded.trace_id,
       fallback: { reason: 'AGENT_LOOP_INTEGRITY_FAILED', rejection, trace },
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       release_manifest: seeded.release_manifest,
     });
 
@@ -151,6 +152,7 @@ describe('agent loop technical fallback commit', () => {
         rejection,
         trace: integrityTrace(rejection),
       },
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       release_manifest: seeded.release_manifest,
     });
     const store = new PostgresConversationStateStoreV1(sql);
@@ -162,6 +164,7 @@ describe('agent loop technical fallback commit', () => {
     await commitAgentTurnV3(sql, {
       turn_id: seeded.second_turn_id,
       trace_id: seeded.trace_id,
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       decision: {
         schema_version: 3,
         blocks: [{ type: 'narrative', text: 'Retomamos. ¿Qué necesitás saber?' }],
@@ -206,6 +209,7 @@ describe('agent loop technical fallback commit', () => {
         rejection: null,
         trace,
       },
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       release_manifest: seeded.release_manifest,
     })).rejects.toThrow('Contact is blocked or deleted');
 
