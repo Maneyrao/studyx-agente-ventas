@@ -7,6 +7,7 @@ import type {
 
 const NAME_FACT = 'offering:maquillaje-profesional:name:v1';
 const DURATION_FACT = 'offering:maquillaje-profesional:duration:v1';
+const AVAILABLE_NAME_FACT = 'offering:fotografia-profesional:name:v1';
 
 function context(): AgentAContextV1 {
   return {
@@ -149,6 +150,42 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.evidence).toEqual({
       rejection_codes: [], repair_attempted: false, repaired: false,
       proposal_generation_calls: 1,
+    });
+  });
+
+  it('authorizes a cited offering name from the complete visible catalog', async () => {
+    const current = context();
+    current.commercial_state.selected_offering_code = null;
+    current.commercial_state.stage = 'discovery';
+    current.catalog.selected_offering = null;
+    current.catalog.available_offerings = [{
+      code: 'fotografia-profesional',
+      fact_id: AVAILABLE_NAME_FACT,
+      display_name: 'Fotografía Profesional',
+      area_code: 'fotografia',
+    }];
+    const initial = generated(proposal({
+      move: {
+        schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [],
+        confidence: 1,
+      },
+      response: {
+        messages: ['Tenemos Fotografía Profesional. ¿Querés conocerla mejor?'],
+        call_offer: null,
+      },
+      used_fact_ids: [AVAILABLE_NAME_FACT],
+    }));
+    const repair = vi.fn();
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: true, repair,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective).toBe(initial);
+    expect(result.evidence).toMatchObject({
+      rejection_codes: [], repair_attempted: false, proposal_generation_calls: 1,
     });
   });
 

@@ -13,6 +13,7 @@ import type {
 function authorizedFactIds(context: AgentAContextV1): string[] {
   return [
     ...(context.catalog.selected_offering?.facts.map((fact) => fact.id) ?? []),
+    ...context.catalog.available_offerings.map((offering) => offering.fact_id),
     ...context.catalog.areas.map((area) => area.fact_id),
     ...context.catalog.candidate_offerings.map((offering) => offering.fact_id),
     ...context.catalog.payment_plans.map((plan) => plan.fact_id),
