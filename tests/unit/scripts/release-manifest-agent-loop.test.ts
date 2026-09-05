@@ -55,6 +55,7 @@ describe('release manifest for the agent loop', () => {
       NODE_ENV: 'test' as const,
       RELEASE_BUILT_AT: '2026-09-05T00:00:00.000Z',
       DEEPSEEK_MODEL: 'deepseek-v4-flash',
+      BOTPRESS_ARTIFACT_SHA256: 'f'.repeat(64),
     };
     const first = await generateReleaseManifest(environment, {
       promptSha256: '1'.repeat(64),
@@ -64,6 +65,7 @@ describe('release manifest for the agent loop', () => {
     });
 
     expect(first).toMatchObject({
+      botpress_artifact_sha: 'f'.repeat(64),
       prompt_sha256: '1'.repeat(64),
       prompt_version: 'studyx-agent-a-brain-v21',
       provider: 'deepseek-direct',
@@ -85,6 +87,7 @@ describe('release manifest for the agent loop', () => {
       NODE_ENV: 'test' as const,
       RELEASE_BUILT_AT: '2026-09-05T00:00:00.000Z',
       DEEPSEEK_MODEL: 'deepseek-reasoner',
+      BOTPRESS_ARTIFACT_SHA256: 'f'.repeat(64),
     };
 
     const run = async () => {
@@ -105,6 +108,7 @@ describe('release manifest for the agent loop', () => {
       ...Object.fromEntries(REQUIRED_RELEASE_CONFIG.map((key) => [key, 'configured-for-test'])),
       NODE_ENV: 'test' as const,
       RELEASE_BUILT_AT: '2026-09-05T00:00:00.000Z',
+      BOTPRESS_ARTIFACT_SHA256: 'f'.repeat(64),
     };
     await expect(generateReleaseManifest(environment)).rejects
       .toThrow('RELEASE_MANIFEST_TURN_PROMPT_REQUIRED');
@@ -116,9 +120,22 @@ describe('release manifest for the agent loop', () => {
       NODE_ENV: 'test' as const,
       RELEASE_BUILT_AT: '2026-09-05T00:00:00.000Z',
       DEEPSEEK_MODEL: 'deepseek-v4-flash',
+      BOTPRESS_ARTIFACT_SHA256: 'f'.repeat(64),
       AGENT_A_PROMPT_SHA256: '9'.repeat(64),
     };
     const manifest = await generateReleaseManifest(environment, { promptSha256: null });
     expect(manifest.prompt_sha256).toBeNull();
+  });
+
+  it('fails closed when the deployed Botpress bundle digest is absent', async () => {
+    const environment = {
+      ...Object.fromEntries(REQUIRED_RELEASE_CONFIG.map((key) => [key, 'configured-for-test'])),
+      NODE_ENV: 'test' as const,
+      RELEASE_BUILT_AT: '2026-09-05T00:00:00.000Z',
+      DEEPSEEK_MODEL: 'deepseek-v4-flash',
+    };
+
+    await expect(generateReleaseManifest(environment, { promptSha256: '1'.repeat(64) }))
+      .rejects.toThrow('RELEASE_MANIFEST_BOTPRESS_ARTIFACT_SHA_REQUIRED');
   });
 });

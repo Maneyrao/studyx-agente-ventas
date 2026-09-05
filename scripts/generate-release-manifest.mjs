@@ -169,14 +169,12 @@ function presentConfig(environment) {
 async function collectRuntimeManifest(environment, promptSha256) {
   const [
     gitSha,
-    trackedBotpress,
     migration,
     promptVersion,
     promptTemplateSha256,
     deepSeekModel,
   ] = await Promise.all([
     gitStdout(['rev-parse', 'HEAD']).then((value) => value.trim()),
-    gitStdout(['ls-files', '-z', '--', 'botpress-agent']).then((value) => value.split('\0').filter(Boolean)),
     latestMigration(),
     activePromptVersion(),
     sha256Files([
@@ -186,7 +184,6 @@ async function collectRuntimeManifest(environment, promptSha256) {
     ]),
     activeDeepSeekModel(),
   ]);
-  if (trackedBotpress.length === 0) throw new Error('RELEASE_MANIFEST_BOTPRESS_SOURCE_MISSING');
   const configuredModel = environment.DEEPSEEK_MODEL?.trim();
   if (configuredModel && configuredModel !== deepSeekModel) {
     throw new Error('RELEASE_MANIFEST_MODEL_MISMATCH');
@@ -195,7 +192,10 @@ async function collectRuntimeManifest(environment, promptSha256) {
   return createReleaseManifest({
     environment: environment.VERCEL_ENV ?? environment.NODE_ENV ?? 'development',
     gitSha,
-    botpressArtifactSha: await sha256Files(trackedBotpress),
+    botpressArtifactSha: requireDigest(
+      environment.BOTPRESS_ARTIFACT_SHA256,
+      'RELEASE_MANIFEST_BOTPRESS_ARTIFACT_SHA_REQUIRED',
+    ),
     promptVersion,
     provider: 'deepseek-direct',
     model: deepSeekModel,
