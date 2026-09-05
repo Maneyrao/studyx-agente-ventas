@@ -453,6 +453,43 @@ describe('checkAgentTurnIntegrityV3', () => {
     expect(result).toEqual({ ok: true });
   });
 
+  it('does not combine a call mention and a commercial offer across semicolon clauses', () => {
+    const result = checkAgentTurnIntegrityV3({
+      ...base,
+      decision: {
+        ...base.decision,
+        blocks: [{
+          type: 'narrative',
+          text: 'La llamada es opcional; si querés, te cuento el programa.',
+        }],
+      },
+    });
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('rejects a negated call confirmation even with structured confirmation and preparation', () => {
+    const result = checkAgentTurnIntegrityV3({
+      ...base,
+      decision: {
+        ...base.decision,
+        blocks: [{ type: 'narrative', text: 'La solicitud de llamada no fue registrada.' }],
+        response_type: 'call_confirmation',
+        commit_preparations: ['call-prep'],
+      },
+      context: {
+        ...base.context,
+        open_preparations: ['call-prep'],
+        preparation_tools: { 'call-prep': 'prepare_call_request' },
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.rejection.violations).toContainEqual({
+      code: 'STATE_ACTION_INCOHERENT',
+      subject: 'call_confirmation',
+    });
+  });
+
   it('returns only authorized alternatives for one repair attempt', () => {
     const result = checkAgentTurnIntegrityV3({
       ...base,

@@ -129,7 +129,7 @@ export function stripUnsupportedOperationalClaims(text: string): string {
  * or acknowledging that they declined one, talks about calls without offering
  * one, and neither consumes the budget nor is removed.
  */
-const CALL_SUBJECT = /(?:llamada|llamemos|llamarte|llamarnos|telef[oó]nic|por\s+tel[eé]fono|contactemos|contactarte)/iu;
+const CALL_SUBJECT = /(?:llamada|llam(?:emos|amos|arte|arnos|o)|telef[oó]nic|por\s+tel[eé]fono|contactemos|contactarte)/iu;
 
 const SOLICITATION = new RegExp(
   '(?:'
@@ -142,13 +142,23 @@ const SOLICITATION = new RegExp(
 );
 
 /** A negation or a completed request is not an offer. */
-const NOT_AN_OFFER = /(?:ya\s+(?:registr|qued|solicit|ped)|no\s+te\s+llam|sin\s+llamada|nada\s+de\s+llam)/iu;
+const NOT_AN_OFFER = new RegExp(
+  '(?:'
+  + 'ya\\s+(?:registr|qued|solicit|ped)'
+  + '|no\\s+te\\s+llam|sin\\s+llamada|nada\\s+de\\s+llam'
+  + '|no\\s+(?:podemos|puedo|vamos\\s+a)\\s+(?:coordinar|agendar|organizar|hablar|llamar|contactar)'
+  + ')',
+  'iu',
+);
+const FIRST_PERSON_CALL_QUESTION = /(?:hablamos|coordinamos|agendamos|organizamos|te\s+llam(?:o|amos))/iu;
 // El campo dedicado ya declara intención de ofrecer: basta una referencia
 // al canal de voz, sin exigir una fórmula de pregunta o conjugación concreta.
 const DECLARED_CALL_CHANNEL = /\b(?:llam|videollam)|tel[eé]fon|telef[oó]n|\bvoz\b|\bcontact(?:arte|emos)\b/iu;
 
-function callSentences(text: string): string[] {
-  return text.split(/\n+/u).flatMap((paragraph) => sentences(paragraph));
+function callClauses(text: string): string[] {
+  return text
+    .split(/[;,\n]+/u)
+    .flatMap((paragraph) => sentences(paragraph));
 }
 
 export function solicitsACall(text: string, declaredOffer = false): boolean {
@@ -157,19 +167,31 @@ export function solicitsACall(text: string, declaredOffer = false): boolean {
     return text.split(/[.;!?…¿¡,]|\s+(?:y|pero|aunque|sin embargo)\s+/iu)
       .some(clause => DECLARED_CALL_CHANNEL.test(clause) && !NOT_AN_OFFER.test(clause));
   }
-  return callSentences(text).some((sentence) => (
+  return callClauses(text).some((sentence) => (
     CALL_SUBJECT.test(sentence)
-    && SOLICITATION.test(sentence)
+    && (SOLICITATION.test(sentence)
+      || (/[¿?]/u.test(sentence) && FIRST_PERSON_CALL_QUESTION.test(sentence)))
     && !NOT_AN_OFFER.test(sentence)
   ));
 }
 
 const CALL_CONFIRMATION = /(?:registr|solicit|pedid|coordin|agend|reserv|confirm|te\s+(?:van\s+a\s+)?llam|te\s+contact)/iu;
-const NOT_A_CALL_CONFIRMATION = /(?:no|todav[ií]a\s+no|a[uú]n\s+no).{0,40}(?:llam|coordin|agend|contact)/iu;
+const NOT_A_CALL_CONFIRMATION = new RegExp(
+  '(?:'
+  + '(?:todav[ií]a\\s+|a[uú]n\\s+)?no\\s+(?:se\\s+)?'
+  + '(?:registr|solicit|ped|coordin|agend|reserv|confirm|llam|contact)'
+  + '|no\\s+(?:fue|est[aá]|qued[oó])\\s+'
+  + '(?:registr|solicit|ped|coordin|agend|reserv|confirm)'
+  + '|(?:todav[ií]a|a[uú]n)\\s+no\\s+(?:fue|est[aá]|qued[oó])\\s+'
+  + '(?:registr|solicit|ped|coordin|agend|reserv|confirm)'
+  + '|no\\s+(?:podemos|puedo)\\s+(?:registr|solicit|ped|coordin|agend|reserv|confirm|llam|contact)'
+  + ')',
+  'iu',
+);
 
 /** A call preparation must be represented in text the customer can actually see. */
 export function confirmsACall(text: string): boolean {
-  return callSentences(text).some((sentence) => (
+  return callClauses(text).some((sentence) => (
     DECLARED_CALL_CHANNEL.test(sentence)
     && CALL_CONFIRMATION.test(sentence)
     && !NOT_A_CALL_CONFIRMATION.test(sentence)

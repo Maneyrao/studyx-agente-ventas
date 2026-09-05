@@ -69,6 +69,8 @@ describe('call offers never outnumber the ledger', () => {
       '¿Te gustaría que te llamemos?',
       '¿Te sirve que te llamemos?',
       '¿Podemos hablar por teléfono?',
+      '¿Hablamos por teléfono?',
+      '¿Coordinamos una llamada?',
       'Podés pedir que te contactemos por teléfono.',
     ]) {
       expect(solicitsACall(offer)).toBe(true);
@@ -80,6 +82,9 @@ describe('call offers never outnumber the ledger', () => {
       'Ya registré tu solicitud de llamada.',
       'Entendido, no te llamamos y seguimos por acá.',
       'La llamada es opcional. ¿Querés conocer el programa?',
+      'La llamada es opcional; si querés, te cuento el programa.',
+      'La llamada es opcional, si querés, te cuento el programa.',
+      'No podemos coordinar una llamada.',
       'El valor total del programa es USD 360.',
     ]) {
       expect(solicitsACall(honest)).toBe(false);
@@ -88,7 +93,12 @@ describe('call offers never outnumber the ledger', () => {
 
   it('recognizes a visible call confirmation without mistaking an offer for one', () => {
     expect(confirmsACall('Perfecto, coordinamos la llamada.')).toBe(true);
+    expect(confirmsACall('No hay problema, coordinamos la llamada.')).toBe(true);
     expect(confirmsACall('Ya registré tu solicitud de llamada.')).toBe(true);
+    expect(confirmsACall('La solicitud de llamada no fue registrada.')).toBe(false);
+    expect(confirmsACall('Todavía no coordinamos la llamada.')).toBe(false);
+    expect(confirmsACall('La llamada todavía no está confirmada.')).toBe(false);
+    expect(confirmsACall('No podemos coordinar una llamada.')).toBe(false);
     expect(confirmsACall('Si querés, podemos coordinar una llamada.')).toBe(false);
     expect(confirmsACall('Dale, te cuento.')).toBe(false);
   });
