@@ -80,7 +80,7 @@ Las cuatro regresiones determinísticas comprobaron: oferta de llamada y ledger,
 | `npm run lint` | PASS |
 | `npm run typecheck` | PASS |
 | `npm --prefix botpress-agent run typecheck` | PASS |
-| `npm run test:unit` | PASS — 191 archivos, 2 omitidos; 2.995 tests, 7 omitidos, 7 TODO |
+| `npm run test:unit` | PASS — 191 archivos, 2 omitidos; 2.998 tests, 7 omitidos, 7 TODO |
 | `npm --prefix botpress-agent run check` | PASS — 0 errores, 0 warnings |
 | `npm --prefix botpress-agent run build` | PASS |
 | `git diff --check` | PASS |
@@ -165,9 +165,17 @@ Resultado del gate estricto: **0/6 funcional**, **1/6 con commit y entrega**, **
 
 Las respuestas originales de DeepSeek contenían `course_reference` canónico en cuatro de los cinco rechazos. DeepSeek devolvió esos movimientos en una variante plana del objeto estructurado. El adaptador conservó `move`, texto y citas, pero descartó `course_reference`, `secondary_moves`, `vetoes`, `payment_plan` y `confidence` al convertirlo al contrato anidado. El backend recibió entonces una selección sin referencia: no eligió un curso por inferencia, no autorizó sus hechos detallados y no autorizó la llamada.
 
-La prueba nueva reprodujo primero el fallo: `select_course` llegaba con `confidence=1` y sin `course_reference`. El commit `2034605` conserva los campos emitidos, normaliza el nombre visible al código canónico y mantiene el backend como autoridad final. Luego pasaron 111 pruebas focales y todos los gates gratuitos listados arriba.
+La prueba nueva reprodujo primero el fallo: `select_course` llegaba con `confidence=1` y sin `course_reference`. El commit `2034605` conserva los campos emitidos, normaliza el nombre visible al código canónico y mantiene el backend como autoridad final. Esa corrección pasó 111 pruebas focales.
 
-Esta corrección posterior **no tiene un held-out pago verde**, porque el plan permitía una sola campaña y esa campaña ya se consumió. Tampoco corrige por evidencia el caso de Inglés, donde el propio modelo propuso una selección sin curso único, ni el cierre sin siguiente paso del caso Derecho. No se desplegó a Vercel ni a Botpress y no se ejecutó el canario de Telegram.
+El commit `84e0112` cerró los otros dos fallos observados sin agregar selección semántica al backend:
+
+- un `select_course` sin `course_reference` canónico abre la única reparación permitida con `COURSE_NOT_RESOLVED`;
+- una exploración o selección de área aún no resuelta debe dejar una pregunta útil, o abre la misma reparación con sujeto `next_step`;
+- la política del backend rechaza también un `select_course` cuyo referente no resuelve contra el catálogo canónico.
+
+Las pruebas TDD nuevas fallaron primero tanto en ADK como en backend, luego quedaron verdes. La suite focal posterior aprobó 160/160 pruebas. La verificación gratuita completa aprobó 2.998 unitarias y el workflow real aprobó 12/12 casos gratuitos, con un único test pago omitido. En ese workflow, el backend materializó, registró y entregó una sola vez el enlace sintético autorizado sólo después de persistir curso, plan, consentimiento y los cuatro datos de contacto.
+
+Estas correcciones posteriores **no tienen un held-out pago verde**, porque el plan permitía una sola campaña y esa campaña ya se consumió. Demuestran el contrato de reparación, persistencia y entrega con proveedor fixture; todavía no demuestran que DeepSeek produzca seis conversaciones nuevas aceptables. No se desplegó a Vercel ni a Botpress y no se ejecutó el canario de Telegram.
 
 ### Presupuesto
 
