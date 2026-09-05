@@ -1,4 +1,5 @@
 import type { AgentTurnDecisionV3 } from '../../../../agent-core/src/ports/model-provider';
+import type { AgentTurnIntegrityTraceV3 } from '../../../../agent-core/src/loop';
 import { renderBlocksV3 } from '../../../../agent-core/src/domain/response-blocks';
 import {
   splitStatePatchV3,
@@ -109,10 +110,17 @@ export class AgentTurnV3ConflictError extends Error {
   }
 }
 
-type FallbackInputV3 = {
-  readonly reason: 'AGENT_LOOP_INTEGRITY_FAILED' | 'AGENT_LOOP_BUDGET_EXHAUSTED';
-  readonly rejection: IntegrityRejectionV1 | null;
-};
+type FallbackInputV3 =
+  | {
+      readonly reason: 'AGENT_LOOP_INTEGRITY_FAILED';
+      readonly rejection: IntegrityRejectionV1;
+      readonly trace: AgentTurnIntegrityTraceV3;
+    }
+  | {
+      readonly reason: 'AGENT_LOOP_BUDGET_EXHAUSTED';
+      readonly rejection: null;
+      readonly trace: AgentTurnIntegrityTraceV3;
+    };
 
 type CommitAgentTurnV3Input = {
   readonly turn_id: string;
@@ -125,6 +133,21 @@ type CommitAgentTurnV3Input = {
 
 function own(object: object, field: string): boolean {
   return Object.prototype.hasOwnProperty.call(object, field);
+}
+
+function assertFallbackInput(fallback: FallbackInputV3): void {
+  const rejectionMatchesReason = fallback.reason === 'AGENT_LOOP_INTEGRITY_FAILED'
+    ? fallback.rejection !== null
+    : fallback.rejection === null;
+  const digest = /^[a-f0-9]{64}$/u;
+  const hashesAreValid = digest.test(fallback.trace.attempt_hashes.first)
+    && (
+      fallback.trace.attempt_hashes.second === null
+      || digest.test(fallback.trace.attempt_hashes.second)
+    );
+  if (!rejectionMatchesReason || !hashesAreValid) {
+    throw new Error('AGENT_TURN_V3_INVALID_FALLBACK_TRACE');
+  }
 }
 
 function paymentArtifact(value: unknown): PaymentArtifactV3 | null {
@@ -327,14 +350,17 @@ async function applyStatePatch(
   context: Pick<
     TurnContextRowV3,
     'workspace_id' | 'conversation_id' | 'contact_id' | 'version'
-  >,
+  > & { readonly consecutive_technical_fallbacks?: number },
   patch: StatePatchV3,
   sourceTurnId: string | null,
+  options: { readonly resetTechnicalFallbacks?: boolean } = {},
 ): Promise<number> {
   if (context.version !== patch.expected_state_version) {
     throw new Error('STATE_VERSION_CONFLICT');
   }
-  if (!hasEffectiveFields(patch)) return context.version;
+  const resetsTechnicalFallbacks = options.resetTechnicalFallbacks === true
+    && (context.consecutive_technical_fallbacks ?? 0) > 0;
+  if (!hasEffectiveFields(patch) && !resetsTechnicalFallbacks) return context.version;
 
   const set = patch.set;
   const hasOffering = own(set, 'selected_offering_code');
@@ -367,7 +393,8 @@ async function applyStatePatch(
         THEN COALESCE(state.payment_reported_at, now()) ELSE state.payment_reported_at END,
       source_turn_id = CASE WHEN ${sourceTurnId}::uuid IS NULL
         THEN state.source_turn_id ELSE ${sourceTurnId}::uuid END,
-      consecutive_technical_fallbacks = 0,
+      consecutive_technical_fallbacks = CASE WHEN ${resetsTechnicalFallbacks}
+        THEN 0 ELSE state.consecutive_technical_fallbacks END,
       version = state.version + 1,
       updated_at = now()
     WHERE state.workspace_id = ${context.workspace_id}::uuid
@@ -464,6 +491,7 @@ export async function commitAgentTurnV3(
 
     const context = await loadTurnContext(transaction, input.turn_id);
     if (!input.decision) {
+      assertFallbackInput(input.fallback);
       const fallback = resolveTechnicalFallbackV1({
         consecutive_technical_fallbacks: context.consecutive_technical_fallbacks,
         human_review_already_requested: context.human_review_requested_at !== null,
@@ -524,6 +552,7 @@ export async function commitAgentTurnV3(
       const fallbackTrace = {
         reason: input.fallback.reason,
         rejection: input.fallback.rejection,
+        ...input.fallback.trace,
       };
       const { message } = await registerMessage({
         conversation_id: context.conversation_id,
@@ -697,6 +726,7 @@ export async function commitAgentTurnV3(
       context,
       immediate,
       context.turn_id,
+      { resetTechnicalFallbacks: true },
     );
     const storedDeferred: StatePatchV3 = {
       expected_state_version: versionAfterImmediate,

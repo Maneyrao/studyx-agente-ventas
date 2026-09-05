@@ -38,9 +38,10 @@ function deps(decisions: AgentTurnDecisionV3[], checks: boolean[]) {
   let checkIndex = 0;
   return {
     model: {
-      generate: vi.fn(async (_input: GenerateInput) => ({
-        decision: decisions[decisionIndex++]!,
-      })),
+      generate: vi.fn(async (input: GenerateInput) => {
+        void input;
+        return { decision: decisions[decisionIndex++]! };
+      }),
     },
     tools: { execute: vi.fn() },
     now: () => 0,
@@ -94,7 +95,7 @@ describe('runAgentTurnWithIntegrityV3', () => {
       deps([bad, bad], [false, false]),
       { instructions: 'x', conversation: [], toolDefinitions: [] },
     );
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       outcome: 'fallback',
       reason: 'AGENT_LOOP_INTEGRITY_FAILED',
       rejection,
@@ -114,7 +115,8 @@ describe('runAgentTurnWithIntegrityV3', () => {
   it('keeps the repair inside the original hard deadline', async () => {
     let clock = 0;
     const model = {
-      generate: vi.fn(async (_input: GenerateInput) => {
+      generate: vi.fn(async (input: GenerateInput) => {
+        void input;
         clock = model.generate.mock.calls.length === 1 ? 6_400 : 6_600;
         return { decision: model.generate.mock.calls.length === 1 ? bad : good };
       }),
@@ -129,23 +131,156 @@ describe('runAgentTurnWithIntegrityV3', () => {
     });
 
     expect(model.generate.mock.calls[1]![0]!.deadline_ms).toBe(6_500);
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       outcome: 'fallback',
       reason: 'AGENT_LOOP_INTEGRITY_FAILED',
       rejection,
     });
   });
 
+  it('forces the repair to one final generation and never executes requested tools', async () => {
+    const model = {
+      generate: vi.fn(async (input: GenerateInput) => {
+        void input;
+        return model.generate.mock.calls.length === 1
+          ? { decision: bad }
+          : {
+              tool_calls: [{
+                call_id: 'repair-tool',
+                name: 'search_catalog',
+                arguments: '{}',
+              }],
+            };
+      }),
+    };
+    const execute = vi.fn();
+    const result = await runAgentTurnWithIntegrityV3({
+      model,
+      tools: { execute },
+      now: () => 0,
+      check: vi.fn(() => ({ ok: false as const, rejection })),
+    }, {
+      instructions: 'x',
+      conversation: [],
+      toolDefinitions: [{
+        type: 'function', name: 'search_catalog', description: 'Search',
+        parameters: { type: 'object' },
+      }],
+    });
+
+    expect(result).toMatchObject({
+      outcome: 'fallback',
+      reason: 'AGENT_LOOP_INTEGRITY_FAILED',
+      trace: {
+        tools_requested: [{ attempt: 2, name: 'search_catalog', call_id: 'repair-tool' }],
+        tools_executed: [],
+      },
+    });
+    expect(model.generate).toHaveBeenCalledTimes(2);
+    expect(model.generate.mock.calls[1]![0]).toMatchObject({
+      force_final: true,
+      toolDefinitions: [],
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('repairs with the first tool results and rejected decision still in context', async () => {
+    const outputs = [
+      { tool_calls: [{ call_id: 'catalog-1', name: 'search_catalog', arguments: '{}' }] },
+      { decision: bad },
+      { decision: good },
+    ];
+    const model = {
+      generate: vi.fn(async (input: GenerateInput) => {
+        void input;
+        return outputs.shift()!;
+      }),
+    };
+    const execute = vi.fn(async () => ({
+      tool: 'search_catalog',
+      success: true,
+      canonical_data: { offerings: [{ code: 'course' }] },
+      error_code: null,
+      recoverable: false,
+      idempotency_result: 'not_applicable' as const,
+      preparation_id: null,
+    }));
+    const check = vi.fn((decision: AgentTurnDecisionV3) => (
+      decision === good ? { ok: true as const } : { ok: false as const, rejection }
+    ));
+
+    const result = await runAgentTurnWithIntegrityV3({
+      model, tools: { execute }, now: () => 0, check,
+    }, {
+      instructions: 'x',
+      conversation: [{ role: 'user', content: 'Hola' }],
+      toolDefinitions: [{
+        type: 'function', name: 'search_catalog', description: 'Search',
+        parameters: { type: 'object' },
+      }],
+    });
+
+    expect(result).toEqual({ outcome: 'decided', decision: good, repaired: true });
+    const repairConversation = model.generate.mock.calls[2]![0]!.conversation;
+    expect(repairConversation).toContainEqual(expect.objectContaining({
+      role: 'tool',
+      call_id: 'catalog-1',
+      content: expect.stringContaining('"code":"course"'),
+    }));
+    expect(repairConversation).toContainEqual({
+      role: 'assistant',
+      content: JSON.stringify(bad),
+    });
+    expect(repairConversation.at(-1)).toEqual({
+      role: 'developer',
+      content: JSON.stringify(rejection),
+    });
+  });
+
+  it('traces both rejected attempts by hash and preserves both verdicts', async () => {
+    const secondRejection = {
+      ...rejection,
+      rejection_id: 'r-2',
+      violations: [{ code: 'UNRESOLVED_REFERENCE', subject: 'blocks.1' }],
+    };
+    let checks = 0;
+    const result = await runAgentTurnWithIntegrityV3({
+      model: {
+        generate: vi.fn(async (input: GenerateInput) => {
+          void input;
+          return { decision: bad };
+        }),
+      },
+      tools: { execute: vi.fn() },
+      now: () => 0,
+      check: vi.fn(() => ({
+        ok: false as const,
+        rejection: checks++ === 0 ? rejection : secondRejection,
+      })),
+    }, { instructions: 'x', conversation: [], toolDefinitions: [] });
+
+    expect(result).toMatchObject({
+      outcome: 'fallback',
+      trace: { rejections: [rejection, secondRejection] },
+    });
+    if (result.outcome !== 'fallback') throw new Error('expected fallback');
+    expect(result.trace.attempt_hashes.first).toMatch(/^[a-f0-9]{64}$/u);
+    expect(result.trace.attempt_hashes.second).toMatch(/^[a-f0-9]{64}$/u);
+  });
+
   it('falls back with the budget reason when the loop never decides', async () => {
     const result = await runAgentTurnWithIntegrityV3({
-      model: { generate: vi.fn(async (_input: GenerateInput) => ({ tool_calls: [] })) },
+      model: { generate: vi.fn(async (input: GenerateInput) => {
+        void input;
+        return { tool_calls: [] };
+      }) },
       tools: { execute: vi.fn() },
       now: () => 0,
       check: vi.fn(),
     }, {
       instructions: 'x', conversation: [], toolDefinitions: [],
     });
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       outcome: 'fallback',
       reason: 'AGENT_LOOP_BUDGET_EXHAUSTED',
       rejection: null,

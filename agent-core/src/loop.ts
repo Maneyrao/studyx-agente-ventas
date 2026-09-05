@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type {
   AgentTurnDecisionV3,
   ModelProvider,
@@ -160,7 +161,40 @@ export type AgentTurnWithIntegrityResultV3 =
       readonly outcome: 'fallback';
       readonly reason: 'AGENT_LOOP_INTEGRITY_FAILED' | 'AGENT_LOOP_BUDGET_EXHAUSTED';
       readonly rejection: unknown | null;
+      readonly trace: AgentTurnIntegrityTraceV3;
     };
+
+export interface AgentTurnIntegrityTraceV3 {
+  readonly attempt_hashes: {
+    readonly first: string;
+    readonly second: string | null;
+  };
+  readonly rejections: readonly unknown[];
+  readonly tools_requested: readonly {
+    readonly attempt: 1 | 2;
+    readonly name: string;
+    readonly call_id: string;
+  }[];
+  readonly tools_executed: readonly {
+    readonly attempt: 1;
+    readonly name: string;
+    readonly call_id: string;
+  }[];
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (isRecord(value)) {
+    return `{${Object.keys(value).sort().map((key) => (
+      `${JSON.stringify(key)}:${canonicalJson(value[key])}`
+    )).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+function traceHash(value: unknown): string {
+  return createHash('sha256').update(canonicalJson(value)).digest('hex');
+}
 
 /**
  * Runs one logical turn with at most one integrity repair. Both generations
@@ -186,7 +220,40 @@ export async function runAgentTurnWithIntegrityV3(
   const toolDefinitions = input.toolDefinitions.filter(
     (definition) => definition.name !== 'integrity_check',
   );
-  const first = await runAgentTurnV3(deps, {
+  const firstOutputs: unknown[] = [];
+  const toolsRequested: Array<{
+    attempt: 1 | 2;
+    name: string;
+    call_id: string;
+  }> = [];
+  const toolsExecuted: Array<{
+    attempt: 1;
+    name: string;
+    call_id: string;
+  }> = [];
+  let firstConversation: readonly ModelTurnItemV3[] = input.conversation;
+  const first = await runAgentTurnV3({
+    ...deps,
+    model: {
+      generate: async (request) => {
+        firstConversation = request.conversation;
+        const output = await deps.model.generate(request);
+        firstOutputs.push(output);
+        if ('tool_calls' in output && Array.isArray(output.tool_calls)) {
+          for (const call of output.tool_calls) {
+            toolsRequested.push({ attempt: 1, name: call.name, call_id: call.call_id });
+          }
+        }
+        return output;
+      },
+    },
+    tools: {
+      execute: async (call, context) => {
+        toolsExecuted.push({ attempt: 1, name: call.name, call_id: call.call_id });
+        return deps.tools.execute(call, context);
+      },
+    },
+  }, {
     ...input,
     toolDefinitions,
     absolute_deadline_ms: absoluteDeadlineMs,
@@ -196,6 +263,12 @@ export async function runAgentTurnWithIntegrityV3(
       outcome: 'fallback',
       reason: 'AGENT_LOOP_BUDGET_EXHAUSTED',
       rejection: null,
+      trace: {
+        attempt_hashes: { first: traceHash(firstOutputs), second: null },
+        rejections: [],
+        tools_requested: toolsRequested,
+        tools_executed: toolsExecuted,
+      },
     };
   }
 
@@ -204,31 +277,79 @@ export async function runAgentTurnWithIntegrityV3(
     return { outcome: 'decided', decision: first.decision, repaired: false };
   }
 
-  const repaired = await runAgentTurnV3(deps, {
-    ...input,
-    toolDefinitions,
-    absolute_deadline_ms: absoluteDeadlineMs,
-    conversation: [
-      ...input.conversation,
-      { role: 'developer', content: JSON.stringify(firstVerdict.rejection) },
-    ],
-  });
-  if (repaired.outcome === 'exhausted') {
+  const repairConversation: readonly ModelTurnItemV3[] = [
+    ...firstConversation,
+    { role: 'assistant', content: JSON.stringify(first.decision) },
+    { role: 'developer', content: JSON.stringify(firstVerdict.rejection) },
+  ];
+  const remainingMs = Math.max(0, absoluteDeadlineMs - deps.now());
+  let repairOutput: unknown = null;
+  if (remainingMs > 0) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), remainingMs);
+    try {
+      repairOutput = await beforeDeadline(deps.model.generate({
+        instructions: input.instructions,
+        conversation: repairConversation,
+        toolDefinitions: [],
+        force_final: true,
+        deadline_ms: absoluteDeadlineMs,
+        signal: controller.signal,
+      }), controller.signal);
+    } finally {
+      clearTimeout(timer);
+      controller.abort();
+    }
+  }
+
+  if (isRecord(repairOutput) && Array.isArray(repairOutput.tool_calls)) {
+    for (const call of repairOutput.tool_calls) {
+      if (isRecord(call) && typeof call.name === 'string' && typeof call.call_id === 'string') {
+        toolsRequested.push({ attempt: 2, name: call.name, call_id: call.call_id });
+      }
+    }
+  }
+  const repairDecision = isRecord(repairOutput)
+    && Object.prototype.hasOwnProperty.call(repairOutput, 'decision')
+    && !Object.prototype.hasOwnProperty.call(repairOutput, 'tool_calls')
+    && isRecord(repairOutput.decision)
+      ? repairOutput.decision as unknown as AgentTurnDecisionV3
+      : null;
+  const secondHash = repairOutput === null || repairOutput === DEADLINE_REACHED
+    ? null
+    : traceHash(repairDecision ?? repairOutput);
+
+  if (!repairDecision || deps.now() >= absoluteDeadlineMs) {
     return {
       outcome: 'fallback',
       reason: 'AGENT_LOOP_INTEGRITY_FAILED',
       rejection: firstVerdict.rejection,
+      trace: {
+        attempt_hashes: { first: traceHash(first.decision), second: secondHash },
+        rejections: [firstVerdict.rejection],
+        tools_requested: toolsRequested,
+        tools_executed: toolsExecuted,
+      },
     };
   }
 
-  const repairedVerdict = deps.check(repaired.decision);
+  const repairedVerdict = deps.check(repairDecision);
   if (repairedVerdict.ok) {
-    return { outcome: 'decided', decision: repaired.decision, repaired: true };
+    return { outcome: 'decided', decision: repairDecision, repaired: true };
   }
 
   return {
     outcome: 'fallback',
     reason: 'AGENT_LOOP_INTEGRITY_FAILED',
     rejection: firstVerdict.rejection,
+    trace: {
+      attempt_hashes: {
+        first: traceHash(first.decision),
+        second: traceHash(repairDecision),
+      },
+      rejections: [firstVerdict.rejection, repairedVerdict.rejection],
+      tools_requested: toolsRequested,
+      tools_executed: toolsExecuted,
+    },
   };
 }
