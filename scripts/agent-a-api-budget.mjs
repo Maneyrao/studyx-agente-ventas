@@ -6,7 +6,15 @@ import { closeSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSyn
 const INPUT_RATE = 0.44 / 1_000_000;
 const CACHED_RATE = 0.014 / 1_000_000;
 const OUTPUT_RATE = 1.32 / 1_000_000;
-const AUTHORIZED_LIMIT_USD = 1.08;
+const DEFAULT_AUTHORIZED_LIMIT_USD = 1.08;
+
+export function resolveAuthorizedLimitUsd(environment = process.env) {
+  const raw = environment.STUDYX_AGENT_A_BUDGET_LIMIT_USD;
+  if (raw === undefined) return DEFAULT_AUTHORIZED_LIMIT_USD;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) throw new Error('AGENT_A_BUDGET_LIMIT_INVALID');
+  return parsed;
+}
 
 function mutateLedger(filename, change) {
   const lock = `${filename}.lock`;
@@ -14,7 +22,7 @@ function mutateLedger(filename, change) {
   try {
     const ledger = JSON.parse(readFileSync(filename, 'utf8'));
     if (!Number.isFinite(ledger.priorSpendUsd) || ledger.priorSpendUsd < 0.38
-      || ledger.limitUsd !== AUTHORIZED_LIMIT_USD || !Array.isArray(ledger.calls)
+      || ledger.limitUsd !== resolveAuthorizedLimitUsd() || !Array.isArray(ledger.calls)
       || !ledger.calls.every((call) => Number.isFinite(call.accountedUsd) && call.accountedUsd >= 0
         && Number.isFinite(call.reservedUsd) && call.reservedUsd >= 0)) throw new Error('AGENT_A_BUDGET_INVALID');
     change(ledger);

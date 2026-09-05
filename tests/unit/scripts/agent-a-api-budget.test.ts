@@ -2,14 +2,14 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { withAgentAApiBudget } from '../../../scripts/agent-a-api-budget.mjs';
+import { withAgentAApiBudget, resolveAuthorizedLimitUsd } from '../../../scripts/agent-a-api-budget.mjs';
 
 const dirs: string[] = [];
 function ledger(priorSpendUsd = 0.38) {
   const dir = mkdtempSync(path.join(tmpdir(), 'studyx-budget-'));
   dirs.push(dir);
   const file = path.join(dir, 'budget.json');
-  writeFileSync(file, JSON.stringify({ priorSpendUsd, limitUsd: 1, calls: [] }));
+  writeFileSync(file, JSON.stringify({ priorSpendUsd, limitUsd: resolveAuthorizedLimitUsd({}), calls: [] }));
   return file;
 }
 afterEach(() => dirs.splice(0).forEach((dir) => rmSync(dir, { recursive: true })));
@@ -27,7 +27,7 @@ describe('cumulative Agent A paid-call budget', () => {
   });
   it.each([null, -1])('rejects an invalid accounted cost %s before another request', async (cost) => {
     const file = ledger();
-    writeFileSync(file, JSON.stringify({ priorSpendUsd: 0.38, limitUsd: 1, calls: [{ accountedUsd: cost, reservedUsd: 0.01 }] }));
+    writeFileSync(file, JSON.stringify({ priorSpendUsd: 0.38, limitUsd: resolveAuthorizedLimitUsd({}), calls: [{ accountedUsd: cost, reservedUsd: 0.01 }] }));
     let sent = 0;
     const budgeted = withAgentAApiBudget(async () => { sent++; return new Response('{}'); }, file);
     await expect(budgeted('https://api.deepseek.com/responses', request)).rejects.toThrow('AGENT_A_BUDGET_INVALID');
@@ -45,7 +45,7 @@ describe('cumulative Agent A paid-call budget', () => {
   });
   it('refuses a request before sending when its reservation exceeds the remaining campaign cap', async () => {
     let sent = 0;
-    const budgeted = withAgentAApiBudget(async () => { sent++; return new Response('{}'); }, ledger(0.999));
+    const budgeted = withAgentAApiBudget(async () => { sent++; return new Response('{}'); }, ledger(1.079));
     await expect(budgeted('https://api.deepseek.com/responses', request)).rejects.toThrow('AGENT_A_BUDGET_EXHAUSTED');
     expect(sent).toBe(0);
   });
@@ -64,5 +64,20 @@ describe('cumulative Agent A paid-call budget', () => {
     expect(result.calls[0].usage).toBeNull();
     expect(result.calls[0].reservedUsd).toBeGreaterThan(0);
     expect(result.calls[1].accountedUsd).toBeCloseTo(0.000359, 8);
+  });
+});
+
+describe('authorized limit resolution', () => {
+  it('defaults to 1.08 when the environment does not set a limit', () => {
+    expect(resolveAuthorizedLimitUsd({})).toBe(1.08);
+  });
+
+  it('takes the limit from configuration when present', () => {
+    expect(resolveAuthorizedLimitUsd({ STUDYX_AGENT_A_BUDGET_LIMIT_USD: '2.5' })).toBe(2.5);
+  });
+
+  it.each(['0', '-1', 'abc', ''])('rejects the invalid configured limit %s', (value) => {
+    expect(() => resolveAuthorizedLimitUsd({ STUDYX_AGENT_A_BUDGET_LIMIT_USD: value }))
+      .toThrow('AGENT_A_BUDGET_LIMIT_INVALID');
   });
 });
