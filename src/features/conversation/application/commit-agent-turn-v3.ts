@@ -170,29 +170,42 @@ type FallbackInputV3 =
   | {
       readonly reason: 'AGENT_LOOP_INTEGRITY_FAILED';
       readonly rejection: IntegrityRejectionV1;
+      readonly prompt_sha256: string;
       readonly trace: AgentTurnIntegrityTraceV3;
     }
   | {
       readonly reason: 'AGENT_LOOP_BUDGET_EXHAUSTED';
       readonly rejection: null;
+      readonly prompt_sha256: string | null;
       readonly trace: AgentTurnIntegrityTraceV3;
     };
 
-type CommitAgentTurnV3Input = {
+type CommitAgentTurnV3BaseInput = {
   readonly turn_id: string;
   readonly trace_id: string;
-  readonly effective_prompt_sha256: string;
   readonly release_manifest: ReleaseManifestV1;
-} & (
-  | { readonly decision: AgentTurnDecisionV3; readonly fallback?: never }
-  | { readonly decision?: never; readonly fallback: FallbackInputV3 }
-);
+};
+
+type CommitAgentTurnV3Input =
+  | CommitAgentTurnV3BaseInput & {
+      readonly effective_prompt_sha256: string;
+      readonly decision: AgentTurnDecisionV3;
+      readonly fallback?: never;
+    }
+  | CommitAgentTurnV3BaseInput & {
+      readonly effective_prompt_sha256: string | null;
+      readonly decision?: never;
+      readonly fallback: FallbackInputV3;
+    };
 
 function own(object: object, field: string): boolean {
   return Object.prototype.hasOwnProperty.call(object, field);
 }
 
-function assertFallbackInput(fallback: FallbackInputV3): void {
+function assertFallbackInput(
+  fallback: FallbackInputV3,
+  effectivePromptSha256: string | null,
+): void {
   const rejectionMatchesReason = fallback.reason === 'AGENT_LOOP_INTEGRITY_FAILED'
     ? fallback.rejection !== null
     : fallback.rejection === null;
@@ -202,7 +215,24 @@ function assertFallbackInput(fallback: FallbackInputV3): void {
       fallback.trace.attempt_hashes.second === null
       || digest.test(fallback.trace.attempt_hashes.second)
     );
-  if (!rejectionMatchesReason || !hashesAreValid) {
+  const modelRequestPromptSha256s = fallback.trace.model_request_prompt_sha256s;
+  const requestHashesAreValid = Array.isArray(modelRequestPromptSha256s)
+    && modelRequestPromptSha256s.every((hash) => digest.test(hash));
+  const lastRequestPromptSha256 = modelRequestPromptSha256s.at(-1) ?? null;
+  const promptMatchesTrace = fallback.prompt_sha256 === lastRequestPromptSha256
+    && effectivePromptSha256 === fallback.prompt_sha256;
+  const promptMatchesReason = fallback.reason === 'AGENT_LOOP_INTEGRITY_FAILED'
+    ? digest.test(fallback.prompt_sha256) && modelRequestPromptSha256s.length > 0
+    : fallback.prompt_sha256 === null
+      ? modelRequestPromptSha256s.length === 0
+      : digest.test(fallback.prompt_sha256) && modelRequestPromptSha256s.length > 0;
+  if (
+    !rejectionMatchesReason
+    || !hashesAreValid
+    || !requestHashesAreValid
+    || !promptMatchesTrace
+    || !promptMatchesReason
+  ) {
     throw new Error('AGENT_TURN_V3_INVALID_FALLBACK_TRACE');
   }
 }
@@ -638,6 +668,12 @@ export async function commitAgentTurnV3(
   if (releaseManifest.prompt_sha256 !== input.effective_prompt_sha256) {
     throw new Error('AGENT_TURN_V3_PROMPT_SHA_MISMATCH');
   }
+  if (input.decision && input.effective_prompt_sha256 === null) {
+    throw new Error('AGENT_TURN_V3_PROMPT_SHA_REQUIRED');
+  }
+  if (!input.decision) {
+    assertFallbackInput(input.fallback, input.effective_prompt_sha256);
+  }
   const payloadHash = sha256Hex({
     turn_id: input.turn_id,
     outcome: input.decision
@@ -655,7 +691,6 @@ export async function commitAgentTurnV3(
 
     const context = await loadTurnContext(transaction, input.turn_id);
     if (!input.decision) {
-      assertFallbackInput(input.fallback);
       const fallback = resolveTechnicalFallbackV1({
         consecutive_technical_fallbacks: context.consecutive_technical_fallbacks,
         human_review_already_requested: context.human_review_requested_at !== null,

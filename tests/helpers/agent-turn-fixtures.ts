@@ -17,7 +17,7 @@ export interface SeededAgentTurn {
   readonly claim_token: string;
   readonly trace_id: string;
   readonly state_version: number;
-  readonly release_manifest: ReleaseManifestV1;
+  readonly release_manifest: ReleaseManifestV1 & { readonly prompt_sha256: string };
   readonly model: { provider: string; model: string; prompt_version: string };
   readonly placeholderDecision: Record<string, unknown>;
   readonly proposalWithCallOfferAndFalsePrice: Record<string, unknown>;

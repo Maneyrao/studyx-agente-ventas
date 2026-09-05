@@ -173,11 +173,13 @@ export type AgentTurnWithIntegrityResultV3 =
       readonly reason: 'AGENT_LOOP_BUDGET_EXHAUSTED';
       readonly rejection: null;
       readonly trace: AgentTurnIntegrityTraceV3;
-      /** Hash of the last instruction envelope attempted for this turn. */
-      readonly prompt_sha256: string;
+      /** Hash of the last attempted envelope, or null when no model request began. */
+      readonly prompt_sha256: string | null;
     };
 
 export interface AgentTurnIntegrityTraceV3 {
+  /** Ordered hashes captured immediately before each real provider invocation. */
+  readonly model_request_prompt_sha256s: readonly string[];
   readonly attempt_hashes: {
     readonly first: string;
     readonly second: string | null;
@@ -258,12 +260,8 @@ export async function runAgentTurnWithIntegrityV3(
   }> = [];
   let firstConversation: readonly ModelTurnItemV3[] = input.conversation;
   let firstProviderFailed = false;
-  let lastPromptSha256 = modelPromptSha256V3({
-    instructions: input.instructions,
-    conversation: input.conversation,
-    toolDefinitions,
-    force_final: false,
-  });
+  let lastPromptSha256: string | null = null;
+  const modelRequestPromptSha256s: string[] = [];
   let first: AgentLoopResultV3;
   try {
     first = await runAgentTurnV3({
@@ -272,6 +270,7 @@ export async function runAgentTurnWithIntegrityV3(
         generate: async (request) => {
           firstConversation = request.conversation;
           lastPromptSha256 = modelPromptSha256V3(request);
+          modelRequestPromptSha256s.push(lastPromptSha256);
           try {
             const output = await deps.model.generate(request);
             firstOutputs.push(output);
@@ -306,6 +305,7 @@ export async function runAgentTurnWithIntegrityV3(
       rejection: null,
       prompt_sha256: lastPromptSha256,
       trace: {
+        model_request_prompt_sha256s: modelRequestPromptSha256s,
         attempt_hashes: { first: traceHash(firstOutputs), second: null },
         rejections: [],
         tools_requested: toolsRequested,
@@ -320,6 +320,7 @@ export async function runAgentTurnWithIntegrityV3(
       rejection: null,
       prompt_sha256: lastPromptSha256,
       trace: {
+        model_request_prompt_sha256s: modelRequestPromptSha256s,
         attempt_hashes: { first: traceHash(firstOutputs), second: null },
         rejections: [],
         tools_requested: toolsRequested,
@@ -328,13 +329,18 @@ export async function runAgentTurnWithIntegrityV3(
     };
   }
 
+  if (lastPromptSha256 === null) {
+    throw new Error('AGENT_LOOP_DECISION_WITHOUT_MODEL_REQUEST');
+  }
+  const firstPromptSha256 = lastPromptSha256;
+
   const firstVerdict = deps.check(first.decision);
   if (firstVerdict.ok) {
     return {
       outcome: 'decided',
       decision: first.decision,
       repaired: false,
-      prompt_sha256: lastPromptSha256,
+      prompt_sha256: firstPromptSha256,
     };
   }
 
@@ -352,13 +358,16 @@ export async function runAgentTurnWithIntegrityV3(
     force_final: true,
     deadline_ms: absoluteDeadlineMs,
   };
-  const repairPromptSha256 = modelPromptSha256V3(repairRequest);
+  let repairPromptSha256: string | null = null;
   let repairProviderFailed = false;
   if (remainingMs > 0) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), remainingMs);
     try {
       try {
+        repairPromptSha256 = modelPromptSha256V3(repairRequest);
+        lastPromptSha256 = repairPromptSha256;
+        modelRequestPromptSha256s.push(repairPromptSha256);
         repairOutput = await beforeDeadline(deps.model.generate({
           ...repairRequest,
           signal: controller.signal,
@@ -394,14 +403,19 @@ export async function runAgentTurnWithIntegrityV3(
       outcome: 'fallback',
       reason: 'AGENT_LOOP_INTEGRITY_FAILED',
       rejection: firstVerdict.rejection,
-      prompt_sha256: repairPromptSha256,
+      prompt_sha256: lastPromptSha256,
       trace: {
+        model_request_prompt_sha256s: modelRequestPromptSha256s,
         attempt_hashes: { first: traceHash(first.decision), second: secondHash },
         rejections: [firstVerdict.rejection],
         tools_requested: toolsRequested,
         tools_executed: toolsExecuted,
       },
     };
+  }
+
+  if (repairPromptSha256 === null) {
+    throw new Error('AGENT_LOOP_REPAIR_WITHOUT_MODEL_REQUEST');
   }
 
   const repairedVerdict = deps.check(repairDecision);
@@ -420,6 +434,7 @@ export async function runAgentTurnWithIntegrityV3(
     rejection: firstVerdict.rejection,
     prompt_sha256: repairPromptSha256,
     trace: {
+      model_request_prompt_sha256s: modelRequestPromptSha256s,
       attempt_hashes: {
         first: traceHash(first.decision),
         second: traceHash(repairDecision),

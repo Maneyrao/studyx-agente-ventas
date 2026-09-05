@@ -156,6 +156,50 @@ describe('runAgentTurnWithIntegrityV3', () => {
     });
   });
 
+  it('keeps the first observed prompt when the deadline expires before repair starts', async () => {
+    const times = [0, 0, 0, 0, 6_500];
+    const model = {
+      generate: vi.fn(async (input: GenerateInput) => {
+        void input;
+        return { decision: bad };
+      }),
+    };
+    const result = await runAgentTurnWithIntegrityV3({
+      model,
+      tools: { execute: vi.fn() },
+      now: () => times.shift() ?? 6_500,
+      check: vi.fn(() => ({ ok: false as const, rejection })),
+    }, { instructions: 'x', conversation: [], toolDefinitions: [] });
+
+    expect(model.generate).toHaveBeenCalledTimes(1);
+    const observedPromptSha256 = modelPromptSha256V3(model.generate.mock.calls[0]![0]);
+    expect(result).toMatchObject({
+      outcome: 'fallback',
+      reason: 'AGENT_LOOP_INTEGRITY_FAILED',
+      prompt_sha256: observedPromptSha256,
+      trace: { model_request_prompt_sha256s: [observedPromptSha256] },
+    });
+  });
+
+  it('reports explicit prompt absence when the deadline expires before any generation', async () => {
+    const times = [0, 0, 6_500];
+    const model = { generate: vi.fn(async () => ({ decision: good })) };
+    const result = await runAgentTurnWithIntegrityV3({
+      model,
+      tools: { execute: vi.fn() },
+      now: () => times.shift() ?? 6_500,
+      check: vi.fn(() => ({ ok: true as const })),
+    }, { instructions: 'x', conversation: [], toolDefinitions: [] });
+
+    expect(model.generate).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      outcome: 'fallback',
+      reason: 'AGENT_LOOP_BUDGET_EXHAUSTED',
+      prompt_sha256: null,
+      trace: { model_request_prompt_sha256s: [] },
+    });
+  });
+
   it('forces the repair to one final generation and never executes requested tools', async () => {
     const model = {
       generate: vi.fn(async (input: GenerateInput) => {
@@ -307,8 +351,12 @@ describe('runAgentTurnWithIntegrityV3', () => {
 
   it('emits a technical fallback when the provider fails on the first generation', async () => {
     const providerMessage = 'provider secret failure';
+    const model = { generate: vi.fn(async (input: GenerateInput) => {
+      void input;
+      throw new Error(providerMessage);
+    }) };
     const result = await runAgentTurnWithIntegrityV3({
-      model: { generate: vi.fn(async () => { throw new Error(providerMessage); }) },
+      model,
       tools: { execute: vi.fn() },
       now: () => 0,
       check: vi.fn(),
@@ -319,6 +367,10 @@ describe('runAgentTurnWithIntegrityV3', () => {
       reason: 'AGENT_LOOP_BUDGET_EXHAUSTED',
       rejection: null,
     });
+    const observedPromptSha256 = modelPromptSha256V3(model.generate.mock.calls[0]![0]);
+    expect(result.prompt_sha256).toBe(observedPromptSha256);
+    if (result.outcome !== 'fallback') throw new Error('expected fallback');
+    expect(result.trace.model_request_prompt_sha256s).toEqual([observedPromptSha256]);
     expect(JSON.stringify(result)).not.toContain(providerMessage);
   });
 

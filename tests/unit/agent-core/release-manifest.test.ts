@@ -29,6 +29,11 @@ describe('ReleaseManifestV1 boundary', () => {
     expect(parseReleaseManifestV1(valid)).toEqual(valid);
   });
 
+  it('preserves explicit prompt absence for a turn with zero model requests', () => {
+    const withoutModelRequest = { ...valid, prompt_sha256: null };
+    expect(parseReleaseManifestV1(withoutModelRequest)).toEqual(withoutModelRequest);
+  });
+
   it.each([
     {},
     { ...valid, prompt_sha256: 'synthetic' },

@@ -30,8 +30,8 @@ export interface ReleaseManifestV1 {
   readonly model: string;
   readonly latest_migration: string;
   readonly catalog_source_sha256: string;
-  /** Per-turn hash returned by runAgentTurnWithIntegrityV3. */
-  readonly prompt_sha256: string;
+  /** Per-turn hash, or null only when the loop made no model request. */
+  readonly prompt_sha256: string | null;
   /** Stable release/template fingerprint, suitable for deployment parity. */
   readonly prompt_template_sha256: string;
   readonly tool_contract_version: string;
@@ -59,7 +59,7 @@ export function parseReleaseManifestV1(value: unknown): ReleaseManifestV1 {
     && SHA1.test(text(candidate.git_sha) ?? '')
     && SHA256.test(text(candidate.botpress_artifact_sha) ?? '')
     && SHA256.test(text(candidate.catalog_source_sha256) ?? '')
-    && SHA256.test(text(candidate.prompt_sha256) ?? '')
+    && (candidate.prompt_sha256 === null || SHA256.test(text(candidate.prompt_sha256) ?? ''))
     && SHA256.test(text(candidate.prompt_template_sha256) ?? '')
     && text(candidate.environment) !== null
     && text(candidate.prompt_version) !== null

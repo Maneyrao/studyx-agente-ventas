@@ -43,6 +43,10 @@ function requireDigest(value, code) {
   return value;
 }
 
+function requirePromptEvidence(value, code) {
+  return value === null ? null : requireDigest(value, code);
+}
+
 function requireGitSha(value) {
   if (typeof value !== 'string' || !SHA_1_PATTERN.test(value)) {
     throw new Error('INVALID_RELEASE_MANIFEST_GIT_SHA');
@@ -93,7 +97,7 @@ export function createReleaseManifest(input) {
       input.catalogSourceSha256,
       'INVALID_RELEASE_MANIFEST_CATALOG_SOURCE_SHA256',
     ),
-    prompt_sha256: requireDigest(
+    prompt_sha256: requirePromptEvidence(
       input.promptSha256,
       'INVALID_RELEASE_MANIFEST_PROMPT_SHA256',
     ),
@@ -206,10 +210,12 @@ async function collectRuntimeManifest(environment, promptSha256) {
 }
 
 export async function generateReleaseManifest(environment = process.env, options = {}) {
-  const promptSha256 = options.promptSha256 ?? environment.AGENT_A_PROMPT_SHA256;
+  const promptSha256 = Object.prototype.hasOwnProperty.call(options, 'promptSha256')
+    ? options.promptSha256
+    : environment.AGENT_A_PROMPT_SHA256;
   return collectRuntimeManifest(
     environment,
-    requireDigest(promptSha256, 'RELEASE_MANIFEST_TURN_PROMPT_REQUIRED'),
+    requirePromptEvidence(promptSha256, 'RELEASE_MANIFEST_TURN_PROMPT_REQUIRED'),
   );
 }
 

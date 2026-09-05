@@ -44,7 +44,9 @@ run('Agent Loop technical fallback recovery', () => {
       fallback: {
         reason: 'AGENT_LOOP_INTEGRITY_FAILED',
         rejection,
+        prompt_sha256: seeded.release_manifest.prompt_sha256,
         trace: {
+          model_request_prompt_sha256s: ['0'.repeat(64), seeded.release_manifest.prompt_sha256],
           attempt_hashes: { first: '1'.repeat(64), second: '2'.repeat(64) },
           rejections: [rejection],
           tools_requested: [],

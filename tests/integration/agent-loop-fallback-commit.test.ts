@@ -12,8 +12,9 @@ const alternate = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null
 
 afterAll(async () => alternate?.end());
 
-function integrityTrace(rejection: IntegrityRejectionV1) {
+function integrityTrace(rejection: IntegrityRejectionV1, promptSha256: string) {
   return {
+    model_request_prompt_sha256s: ['0'.repeat(64), promptSha256],
     attempt_hashes: { first: '1'.repeat(64), second: '2'.repeat(64) },
     rejections: [rejection],
     tools_requested: [],
@@ -44,11 +45,15 @@ describe('agent loop technical fallback commit', () => {
         missing_information: [],
       },
     };
-    const trace = integrityTrace(rejection);
+    const trace = integrityTrace(rejection, seeded.release_manifest.prompt_sha256);
     const committed = await commitAgentTurnV3(sql, {
       turn_id: seeded.turn_id,
       trace_id: seeded.trace_id,
-      fallback: { reason: 'AGENT_LOOP_INTEGRITY_FAILED', rejection, trace },
+      fallback: {
+        reason: 'AGENT_LOOP_INTEGRITY_FAILED', rejection,
+        prompt_sha256: seeded.release_manifest.prompt_sha256,
+        trace,
+      },
       effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       release_manifest: seeded.release_manifest,
     });
@@ -150,7 +155,8 @@ describe('agent loop technical fallback commit', () => {
       fallback: {
         reason: 'AGENT_LOOP_INTEGRITY_FAILED',
         rejection,
-        trace: integrityTrace(rejection),
+        prompt_sha256: seeded.release_manifest.prompt_sha256,
+        trace: integrityTrace(rejection, seeded.release_manifest.prompt_sha256),
       },
       effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
       release_manifest: seeded.release_manifest,
@@ -195,6 +201,7 @@ describe('agent loop technical fallback commit', () => {
       WHERE id = ${seeded.contact_id}::uuid
     `;
     const trace = {
+      model_request_prompt_sha256s: [seeded.release_manifest.prompt_sha256],
       attempt_hashes: { first: '3'.repeat(64), second: null },
       rejections: [],
       tools_requested: [],
@@ -207,6 +214,7 @@ describe('agent loop technical fallback commit', () => {
       fallback: {
         reason: 'AGENT_LOOP_BUDGET_EXHAUSTED',
         rejection: null,
+        prompt_sha256: seeded.release_manifest.prompt_sha256,
         trace,
       },
       effective_prompt_sha256: seeded.release_manifest.prompt_sha256,

@@ -34,6 +34,16 @@ describe('release manifest for the agent loop', () => {
       .toThrow('INVALID_RELEASE_MANIFEST_PROMPT_SHA256');
   });
 
+  it('preserves explicit prompt absence but rejects missing prompt evidence', () => {
+    expect(createReleaseManifest({ ...base, promptSha256: null }).prompt_sha256).toBeNull();
+    expect(() => createReleaseManifest({ ...base, promptSha256: undefined }))
+      .toThrow('INVALID_RELEASE_MANIFEST_PROMPT_SHA256');
+    const { promptSha256, ...withoutPromptEvidence } = base;
+    void promptSha256;
+    expect(() => createReleaseManifest(withoutPromptEvidence))
+      .toThrow('INVALID_RELEASE_MANIFEST_PROMPT_SHA256');
+  });
+
   it('refuses an empty tool contract version', () => {
     expect(() => createReleaseManifest({ ...base, toolContractVersion: '' }))
       .toThrow('INVALID_RELEASE_MANIFEST_TOOL_CONTRACT_VERSION');
@@ -98,5 +108,17 @@ describe('release manifest for the agent loop', () => {
     };
     await expect(generateReleaseManifest(environment)).rejects
       .toThrow('RELEASE_MANIFEST_TURN_PROMPT_REQUIRED');
+  });
+
+  it('generates a truthful manifest for an explicit zero-request turn', async () => {
+    const environment = {
+      ...Object.fromEntries(REQUIRED_RELEASE_CONFIG.map((key) => [key, 'configured-for-test'])),
+      NODE_ENV: 'test' as const,
+      RELEASE_BUILT_AT: '2026-09-05T00:00:00.000Z',
+      DEEPSEEK_MODEL: 'deepseek-v4-flash',
+      AGENT_A_PROMPT_SHA256: '9'.repeat(64),
+    };
+    const manifest = await generateReleaseManifest(environment, { promptSha256: null });
+    expect(manifest.prompt_sha256).toBeNull();
   });
 });
