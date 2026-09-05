@@ -321,6 +321,80 @@ describe('validación de la propuesta del turno', () => {
     });
   });
 
+  it.each([
+    'La clase en vivo es semanal y queda grabada.',
+    'Las clases en vivo quedan grabadas y accedés a la plataforma cuando quieras.',
+  ])('rechaza logística de vivo, grabación o acceso libre no autorizada: %s', (message) => {
+    const selected = context({
+      commercial_state: {
+        ...context().commercial_state,
+        selected_offering_code: 'energia_solar_fotovoltaica',
+        call_offer_count: 1,
+        call_offer_status: 'offered',
+      },
+      catalog: {
+        available_offerings: [],
+        selected_offering: {
+          code: 'energia_solar_fotovoltaica',
+          display_name: 'Energía Solar Fotovoltaica',
+          area_code: 'oficios',
+          facts: [
+            { id: 'offering:energia_solar_fotovoltaica:name:v1', kind: 'offering_name', value: 'Energía Solar Fotovoltaica' },
+            { id: 'offering:energia_solar_fotovoltaica:duration:v1', kind: 'offering_duration', value: '8 clases' },
+            { id: 'offering:energia_solar_fotovoltaica:modality:v1', kind: 'offering_modality', value: 'online' },
+          ],
+        },
+        areas: [],
+        candidate_offerings: [],
+        payment_plans: [],
+      },
+    });
+    const factIds = selected.catalog.selected_offering!.facts.map((fact) => fact.id);
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({ response: { messages: [message], call_offer: null }, used_fact_ids: factIds }),
+      context: selected,
+      planned_fact_ids: factIds,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection?.rejections).toContainEqual({
+      code: 'FACT_VALUE_MISMATCH',
+      subject: 'course_logistics',
+    });
+  });
+
+  it('rechaza repetir literalmente la invitación de llamada anterior', () => {
+    const previousOffer = 'Si querés, podemos coordinar una llamada breve para contarte los detalles del curso.';
+    const current = context({
+      turn: {
+        batch_messages: [{ id: 'm2', text: 'Cambié a Community Manager.' }],
+        recent_turns: [
+          { id: 'r1', direction: 'inbound', content: 'Quiero Marketing Digital.' },
+          { id: 'r2', direction: 'outbound', content: `Marketing Digital tiene 16 clases.\n\n${previousOffer}` },
+        ],
+      },
+      commercial_state: {
+        ...context().commercial_state,
+        call_offer_count: 1,
+        call_offer_status: 'offered',
+      },
+      capabilities: { ...context().capabilities, may_offer_call: true },
+    });
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        response: { messages: ['Community Manager tiene 16 clases.'], call_offer: previousOffer },
+      }),
+      context: current,
+      planned_fact_ids: ['offering:redes-informaticas:name:v1'],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection?.rejections).toContainEqual({
+      code: 'REPEATED_AGENT_REPLY',
+      subject: 'previous_call_offer',
+    });
+  });
+
   it.each(['¿Te llamo?', '¿Hablamos por teléfono?', '¿Quieres que te llame para explicarte el curso?', 'Ya registré tus datos. ¿Hablamos por teléfono?', 'Ya registré tus datos, ¿Hablamos por teléfono?', 'Entendido, seguimos sin llamada. ¿Quieres que te llame para explicarte el curso?'])('una tercera oferta de llamada es CALL_BUDGET_EXHAUSTED: %s', (offer) => {
     const rejection = validateAgentATurnProposalV1({
       proposal: proposal({ response: { messages: ['Bien.'], call_offer: offer } }),

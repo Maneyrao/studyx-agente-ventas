@@ -848,12 +848,23 @@ function canonicalPrerequisiteStatement(
   return null;
 }
 
-type CourseLogisticsFactV1 = 'access_24_7' | 'open_ended' | 'access_duration';
+type CourseLogisticsFactV1 =
+  | 'access_24_7'
+  | 'open_ended'
+  | 'access_duration'
+  | 'live_classes'
+  | 'recorded_classes'
+  | 'class_frequency'
+  | 'unrestricted_access';
 
 const COURSE_LOGISTICS_PATTERNS: Readonly<Record<CourseLogisticsFactV1, RegExp>> = {
   access_24_7: /\b24\s*\/\s*7\b/u,
   open_ended: /\b(?:sin\s+(?:una\s+)?fecha\s+fija|no\s+hay\s+presion\s+de\s+terminar)\b/u,
   access_duration: /\b(?:plataforma|acceso)\b[^.!?\n]{0,48}\b(?:varios?|algunos?|\d+)\s+mes(?:es)?\b/u,
+  live_classes: /\bclases?\s+en\s+vivo\b/u,
+  recorded_classes: /\b(?:clases?\s+en\s+vivo[^.!?\n]{0,48})?(?:queda|quedan)\s+grabad[ao]s?\b|\bclases?\s+grabad[ao]s?\b/u,
+  class_frequency: /\bclases?[^.!?\n]{0,32}\b(?:semanal(?:es)?|cada\s+semana)\b|\b(?:semanal(?:es)?|cada\s+semana)\b[^.!?\n]{0,32}\bclases?\b/u,
+  unrestricted_access: /\b(?:acceso|plataforma|acced(?:e|er|es|en)|entr(?:a|ar|as))\b[^.!?\n]{0,48}\b(?:cuando\s+quieras|a\s+cualquier\s+hora|cuando\s+te\s+quede\s+comodo)\b/u,
 };
 
 function courseLogisticsInV1(text: string): CourseLogisticsFactV1[] {
@@ -1204,6 +1215,12 @@ function sameVisibleText(messages: readonly string[], previous: string): boolean
   return draft.length > 0 && draft === normalize(previous);
 }
 
+function sameVisibleFragment(value: string, previous: string): boolean {
+  const normalize = (text: string): string => text.replace(/\s+/gu, ' ').trim();
+  const fragment = normalize(value);
+  return fragment.length > 0 && normalize(previous).includes(fragment);
+}
+
 function normalizedQuestionKeys(value: string): Set<string> {
   const questions = value.split('?').slice(0, -1).map((fragment) => {
     const start = Math.max(
@@ -1348,6 +1365,13 @@ export function validateAgentATurnProposalV1(input: {
   const previousReply = lastAgentReplyV1(input.context.turn.recent_turns);
   if (previousReply && sameVisibleText(input.proposal.response.messages, previousReply)) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_reply' });
+  }
+  if (
+    previousReply
+    && input.proposal.response.call_offer
+    && sameVisibleFragment(input.proposal.response.call_offer, previousReply)
+  ) {
+    rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_call_offer' });
   }
   const currentCustomerText = input.context.turn.batch_messages.map((message) => message.text).join('\n');
   if (

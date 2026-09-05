@@ -11,7 +11,7 @@ const base = {
   environment: 'test',
   gitSha: 'a'.repeat(40),
   botpressArtifactSha: 'b'.repeat(64),
-  promptVersion: 'studyx-agent-a-brain-v23',
+  promptVersion: 'studyx-agent-a-brain-v24',
   provider: 'deepseek-direct',
   model: 'deepseek-v4-flash',
   latestMigration: '20260905000004_agent_turn_preparations.sql',
@@ -67,7 +67,7 @@ describe('release manifest for the agent loop', () => {
     expect(first).toMatchObject({
       botpress_artifact_sha: 'f'.repeat(64),
       prompt_sha256: '1'.repeat(64),
-      prompt_version: 'studyx-agent-a-brain-v23',
+      prompt_version: 'studyx-agent-a-brain-v24',
       provider: 'deepseek-direct',
       model: 'deepseek-v4-flash',
     });

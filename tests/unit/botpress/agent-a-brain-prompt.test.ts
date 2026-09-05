@@ -62,7 +62,7 @@ describe('Agent A Brain V1 prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v9');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v23');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v24');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('Backend policy and capabilities are authoritative');
     expect(instructions).toContain('commercial_state.awaiting_reply only to resolve an otherwise ambiguous answer');
@@ -152,6 +152,34 @@ describe('Agent A Brain V1 prompt', () => {
     expect(instructions).toMatch(/ask one natural clarification/iu);
     expect(instructions).toMatch(/recommend at most three[\s\S]*available_offerings/iu);
     expect(instructions).toMatch(/never list the complete catalog/iu);
+    expect(instructions).toContain('available_offerings authorizes identities only');
+    expect(instructions).toContain('Do not reuse the previous call invitation verbatim');
+  });
+
+  it('repairs unresolved catalog choices without another call offer or select-course secondary move', () => {
+    const rejected = context();
+    rejected.commercial_state.selected_offering_code = null;
+    rejected.catalog.selected_offering = null;
+    rejected.catalog.available_offerings = [
+      { code: 'aires', fact_id: 'offering:aires:name:v1', display_name: 'Aires Acondicionados', area_code: 'oficios' },
+      { code: 'solar', fact_id: 'offering:solar:name:v1', display_name: 'Energía Solar Fotovoltaica', area_code: 'oficios' },
+    ];
+    rejected.turn_rejection = {
+      schema_version: 1,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+      attempt: 1,
+      rejections: [{ code: 'COURSE_NOT_RESOLVED', subject: 'course_reference' }],
+      authorized_alternatives: {
+        fact_ids: rejected.catalog.available_offerings.map((item) => item.fact_id),
+        actions: ['none'],
+        missing_information: [],
+      },
+    };
+
+    const instructions = buildAgentABrainInstructionsV1(rejected);
+
+    expect(instructions).toContain('remove select_course from secondary_moves');
+    expect(instructions).toContain('set response.call_offer to null');
   });
 
   it('resolves the canonical identity from the structured context, not the process env', () => {

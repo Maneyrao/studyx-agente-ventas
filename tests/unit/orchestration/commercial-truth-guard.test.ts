@@ -150,6 +150,24 @@ describe('lenguaje natural liberado', () => {
       .toContain('LOGISTICS_NOT_CANONICAL');
   });
 
+  it.each([
+    'La clase en vivo es semanal y queda grabada.',
+    'Tenés clases en vivo que quedan grabadas y acceso a la plataforma cuando quieras.',
+  ])('veta modalidad sincrónica, grabaciones o acceso libre no documentados: %s', (content) => {
+    const canonical = canonicalTruthSetFromOfferingsV1({
+      offerings: [{
+        code: 'solar', display_name: 'Energía Solar Fotovoltaica',
+        price_type: 'fixed', price_amount: '360', currency: 'USD',
+        description: 'Cuenta con 8 clases sobre módulos fotovoltaicos.',
+        delivery: { classes: 8, modality: 'online' },
+      }],
+      selected_offering_code: 'solar',
+    });
+
+    expect(enforce(content, canonical).violations.map((violation) => violation.code))
+      .toContain('LOGISTICS_NOT_CANONICAL');
+  });
+
 
   it('conserva el salto de párrafo que separa los mensajes del modelo', () => {
     // `processInboundTurn` une `response.messages` con `\n\n`. Colapsarlo a un
