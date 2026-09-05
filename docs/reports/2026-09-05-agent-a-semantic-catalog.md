@@ -251,3 +251,29 @@ Estado de cierre:
 `READY_FOR_AGENT_A_TRAINING: NO`
 
 `READY_FOR_TELEGRAM_CANARY: NO`
+
+## Cuarta campaña held-out paga y corrección posterior
+
+El usuario autorizó hasta USD 0,04 adicionales para una única evaluación v24 de seis conversaciones, con despliegue condicionado a 6/6 funcional y al menos 5/6 de naturalidad. La fuente quedó congelada en `2111a6ff2b81c644a684c79aa36c1e927a56e65b`, árbol `e2c2d7afb05146094eab0ab61ac89a2bd0898ca1`, test SHA-256 `cc60902d767287f23ce6f99dda300828b623c9cab564901b5be9842323ffd296`, prompt v24 y el mismo catálogo canónico de 40 cursos.
+
+La evaluación se invocó una sola vez. Seis solicitudes a DeepSeek devolvieron HTTP 200 y otras cinco fueron bloqueadas localmente antes de la red por `AGENT_A_BUDGET_EXHAUSTED`. El gasto fue **USD 0.020443912**: el acumulado pasó de **USD 1.160197600** a **USD 1.180641512**, dejando **USD 0.019556088** bajo el techo autorizado. La estimación previa de USD 0,04 usó el costo real de campañas anteriores y no contempló que el guard reserva el máximo estimado antes de cada llamada; las reservas observadas fueron de USD 0.020320520 a USD 0.025571040 por solicitud.
+
+El test histórico informó 3/6. Fotografía ambigua, `fotgrafia` y el curso de tablets ausente terminaron con estado y outbound correlacionados. Inglés produjo un primer borrador correcto, pero su reparación quedó bloqueada; el cambio de Excel a Community Manager no llegó al proveedor; y los tres turnos de la referencia ordinal tampoco llegaron al proveedor. Por eso el resultado estricto es **campaña inconclusa**, no una medición válida de seis conversaciones. La revisión independiente aprobó la naturalidad de las tres conversaciones completas y dejó las demás sin puntuar. La evidencia completa está en [`transcript.md`](evidence/2026-09-05-agent-a-semantic-heldout-v4/transcript.md).
+
+La única causa conductual reproducible dentro de esta campaña fue el gasto innecesario de una reparación cuando un catálogo sin curso resuelto traía una oferta de llamada separada. El test TDD nuevo reprodujo primero `PLANNERLESS_PROPOSAL_REJECTED`. El commit `7ccee71` permite que la frontera quite únicamente esa acción no autorizada, vuelva a validar y preserve palabra por palabra la respuesta de catálogo escrita por el modelo. No selecciona cursos, no redacta y no amplía capacidades.
+
+Verificación gratuita posterior a `7ccee71`:
+
+- 23/23 pruebas focales de resolución plannerless.
+- 3.009 unitarias aprobadas, 7 omitidas y 7 TODO; 191 archivos aprobados y 2 omitidos.
+- 5/5 casos de catálogo por el workflow real con backend y PostgreSQL aislados.
+- 7/7 integraciones de veto, persistencia y cero silencios con PostgreSQL.
+- lint, ambos typechecks, `adk check`, build de Botpress y `git diff --check`: PASS.
+
+El commit corregido `7ccee71` no fue parte de la campaña paga y por lo tanto no puede desplegarse bajo el gate acordado. Se necesita una nueva campaña held-out completa con un techo calculado según las reservas máximas. No se desplegó nada en Vercel ni Botpress; producción permanece en su versión anterior y Telegram no está abierto.
+
+Estado actual:
+
+`READY_FOR_AGENT_A_TRAINING: NO`
+
+`READY_FOR_TELEGRAM_CANARY: NO`
