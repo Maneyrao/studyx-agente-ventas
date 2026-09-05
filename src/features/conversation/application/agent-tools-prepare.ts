@@ -34,6 +34,7 @@ type PreparationToolV1 =
 
 interface AuthorizedContactRow {
   readonly workspace_id: string;
+  readonly contact_id: string;
   readonly phone: string;
   readonly declared_phone: string | null;
   readonly name: string | null;
@@ -51,10 +52,27 @@ interface PreparedMemoryV1 {
     readonly id: string;
     readonly text: string;
     readonly type: string;
+    readonly supersedes: readonly string[];
   }>;
   readonly rejected: readonly [];
   readonly supersedes: readonly string[];
 }
+
+interface PreparedContactDetailsV1 {
+  readonly recorded: readonly ('nombre' | 'apellido' | 'correo' | 'telefono')[];
+  readonly still_missing: readonly ('nombre' | 'apellido' | 'correo' | 'telefono')[];
+  readonly values: Readonly<{
+    nombre?: string;
+    apellido?: string;
+    correo?: string;
+    telefono?: string;
+  }>;
+}
+
+const MEMORY_TYPES = new Set([
+  'study_goal', 'study_context', 'preference', 'constraint',
+  'objection', 'timeline', 'contact_preference',
+]);
 
 interface PaymentLinkResolverLike {
   resolve(planCode: PaymentPlanCode): string | null;
@@ -87,6 +105,7 @@ async function loadAuthorizedContact(
   const rows = await deps.db<AuthorizedContactRow[]>`
     SELECT DISTINCT
       state.workspace_id,
+      state.contact_id,
       contact.phone,
       contact.declared_phone,
       contact.name,
@@ -212,10 +231,7 @@ export async function prepareContactDetailsToolV1(
     readonly email?: string;
     readonly phone?: string;
   },
-): Promise<ToolResultV1<{
-  readonly recorded: readonly ('nombre' | 'apellido' | 'correo' | 'telefono')[];
-  readonly still_missing: readonly ('nombre' | 'apellido' | 'correo' | 'telefono')[];
-}>> {
+): Promise<ToolResultV1<PreparedContactDetailsV1>> {
   const tool = 'prepare_contact_details';
   const supplied = [
     ['first_name', 'nombre'],
@@ -244,20 +260,38 @@ export async function prepareContactDetailsToolV1(
   } catch {
     return failed(tool, 'PREPARATION_STORE_UNAVAILABLE', true);
   }
-  const proposed: ContactIntakeV1 = {
-    nombre: args.first_name?.trim() ?? durable.nombre,
-    apellido: args.last_name?.trim() ?? durable.apellido,
-    correo: args.email?.trim() ?? durable.correo,
-    telefono: args.phone?.trim() ?? durable.telefono,
+  const normalized = {
+    ...(args.first_name !== undefined
+      ? { nombre: args.first_name.trim().replace(/\s+/gu, ' ') } : {}),
+    ...(args.last_name !== undefined
+      ? { apellido: args.last_name.trim().replace(/\s+/gu, ' ') } : {}),
+    ...(args.email !== undefined ? { correo: args.email.trim().toLowerCase() } : {}),
+    ...(args.phone !== undefined
+      ? {
+          telefono: `${args.phone.trim().startsWith('+') ? '+' : ''}${args.phone.replace(/\D/gu, '')}`,
+        }
+      : {}),
   };
-  const canonicalArgs = supplied.flatMap(([field]) => (
-    Object.prototype.hasOwnProperty.call(args, field) ? [[field, args[field]!.trim()]] : []
-  ));
+  if (
+    (normalized.correo !== undefined
+      && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(normalized.correo))
+    || (normalized.telefono !== undefined
+      && !/^\+?\d{8,15}$/u.test(normalized.telefono))
+  ) {
+    return failed(tool, 'INVALID_CONTACT_DETAILS', false);
+  }
+  const proposed: ContactIntakeV1 = {
+    nombre: normalized.nombre ?? durable.nombre,
+    apellido: normalized.apellido ?? durable.apellido,
+    correo: normalized.correo ?? durable.correo,
+    telefono: normalized.telefono ?? durable.telefono,
+  };
+  const canonicalArgs = Object.entries(normalized).sort(([left], [right]) => left.localeCompare(right));
   return reserveAuthorized(
     deps,
     tool,
     `contact:${sha256(JSON.stringify(canonicalArgs))}`,
-    { recorded, still_missing: missingContactIntakeFieldsV1(proposed) },
+    { recorded, still_missing: missingContactIntakeFieldsV1(proposed), values: normalized },
     { expectedContactId: deps.contact_id },
   );
 }
@@ -265,17 +299,21 @@ export async function prepareContactDetailsToolV1(
 export async function prepareCallRequestToolV1(
   deps: ContactPrepareDeps,
   args: { readonly reason: string },
-): Promise<ToolResultV1<{ readonly call_id: string; readonly status: 'reserved' }>> {
+): Promise<ToolResultV1<{
+  readonly call_id: string;
+  readonly status: 'reserved';
+  readonly reason: 'customer_request' | 'accepted_offer';
+}>> {
   const tool = 'prepare_call_request';
-  if (typeof args.reason !== 'string' || args.reason.trim().length === 0 || args.reason.length > 256) {
+  if (args.reason !== 'customer_request' && args.reason !== 'accepted_offer') {
     return failed(tool, 'INVALID_CALL_REASON', false);
   }
-  const reason = args.reason.trim();
+  const reason: 'customer_request' | 'accepted_offer' = args.reason;
   return reserveAuthorized(
     deps,
     tool,
     `call:${reason}`,
-    { call_id: randomUUID(), status: 'reserved' as const },
+    { call_id: randomUUID(), status: 'reserved' as const, reason },
     { expectedContactId: deps.contact_id },
   );
 }
@@ -294,31 +332,77 @@ export async function prepareMemoryToolV1(
       || candidate.text.trim().length === 0
       || candidate.text.length > 2_048
       || typeof candidate.type !== 'string'
-      || candidate.type.trim().length === 0
-      || candidate.type.length > 128
+      || !MEMORY_TYPES.has(candidate.type.trim())
       || !Array.isArray(candidate.supersedes)
       || candidate.supersedes.some((id: unknown) => typeof id !== 'string' || !isUuid(id))
     ))
   ) {
     return failed(tool, 'INVALID_MEMORY_CANDIDATES', false);
   }
-  const candidates = args.candidates.map((candidate) => ({
+  const candidates: Array<{
+    text: string;
+    type: string;
+    supersedes: string[];
+  }> = args.candidates.map((candidate) => ({
     text: candidate.text.trim(),
     type: candidate.type.trim(),
-    supersedes: [...candidate.supersedes],
+    supersedes: [...new Set<string>(candidate.supersedes)].sort(),
   }));
+  const supersedes: string[] = [
+    ...new Set(candidates.flatMap((candidate) => candidate.supersedes)),
+  ];
+  if (supersedes.length > 0) {
+    let authorized: number;
+    try {
+      const contact = await loadAuthorizedContact(deps);
+      if (!contact) return failed(tool, 'PREPARATION_CONTEXT_INVALID', false);
+      const [row] = await deps.db<Array<{ authorized: number }>>`
+        WITH authorized_ids AS (
+          SELECT memory.id::text AS id
+          FROM selected_memories AS memory
+          JOIN workspace_contacts AS membership
+            ON membership.contact_id = memory.contact_id
+           AND membership.workspace_id = ${contact.workspace_id}::uuid
+           AND membership.lifecycle_status = 'active'
+          WHERE memory.contact_id = ${contact.contact_id}::uuid
+            AND memory.id = ANY(${supersedes}::uuid[])
+            AND memory.status IN ('accepted', 'active')
+          UNION
+          SELECT accepted.item ->> 'id' AS id
+          FROM agent_turn_preparations AS preparation
+          JOIN conversation_sales_context_states_v1 AS state
+            ON state.conversation_id = preparation.conversation_id
+           AND state.workspace_id = ${contact.workspace_id}::uuid
+           AND state.contact_id = ${contact.contact_id}::uuid
+          CROSS JOIN LATERAL jsonb_array_elements(
+            COALESCE(preparation.canonical_data -> 'accepted', '[]'::jsonb)
+          ) AS accepted(item)
+          WHERE preparation.tool = 'prepare_memory'
+            AND accepted.item ->> 'id' = ANY(${supersedes}::text[])
+        )
+        SELECT count(DISTINCT id)::int AS authorized FROM authorized_ids
+      `;
+      authorized = Number(row?.authorized ?? 0);
+    } catch {
+      return failed(tool, 'PREPARATION_STORE_UNAVAILABLE', true);
+    }
+    if (authorized !== supersedes.length) {
+      return failed(tool, 'MEMORY_SUPERSEDES_NOT_AUTHORIZED', false);
+    }
+  }
   return reserveAuthorized(
     deps,
     tool,
-    `memory:${sha256(JSON.stringify(candidates.map((candidate) => candidate.text)))}`,
+    `memory:${sha256(JSON.stringify(candidates))}`,
     {
       accepted: candidates.map((candidate) => ({
         id: randomUUID(),
         text: candidate.text,
         type: candidate.type,
+        supersedes: candidate.supersedes,
       })),
       rejected: [],
-      supersedes: candidates.flatMap((candidate) => candidate.supersedes),
+      supersedes,
     },
   );
 }

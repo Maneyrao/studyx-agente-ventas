@@ -20,7 +20,13 @@ import { missingContactIntakeFieldsV1 } from '../domain/conversation-planner';
 import { resolveTechnicalFallbackV1 } from '../domain/technical-fallback';
 import { PostgresConversationStateStoreV1 } from '../adapters/postgres-conversation-state-store';
 import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
-import { commercialIntakeFromContactRowV1 } from '@/lib/heuristics/contact-identity';
+import {
+  commercialIntakeFromContactRowV1,
+  splitFullName,
+} from '@/lib/heuristics/contact-identity';
+import { reserveCallForDecision } from '@/features/calls/application/request-call';
+import { enqueueLeadProjection } from '@/lib/services/projection.service';
+import { loadSheetsProjectionConfig } from '@/lib/config';
 import {
   PAYMENT_PLAN_CODES,
   PAYMENT_PLAN_PRESENTATIONS,
@@ -48,6 +54,8 @@ interface ExistingDecisionRowV3 {
 interface TurnContextRowV3 {
   readonly turn_id: string;
   readonly conversation_id: string;
+  readonly turn_content: string;
+  readonly batch_id: string | null;
   readonly contact_id: string;
   readonly workspace_id: string;
   readonly workspace_slug: string;
@@ -84,6 +92,49 @@ interface PaymentArtifactV3 {
   readonly payment_plan: 'monthly_12' | 'monthly_6' | 'one_time';
 }
 
+interface ContactArtifactV3 {
+  readonly values: Readonly<{
+    readonly nombre?: string;
+    readonly apellido?: string;
+    readonly correo?: string;
+    readonly telefono?: string;
+  }>;
+}
+
+interface CallArtifactV3 {
+  readonly call_id: string;
+  readonly status: 'reserved';
+  readonly reason: 'customer_request' | 'accepted_offer';
+}
+
+interface RequestCallActionV3 {
+  readonly type: 'request_call_now';
+  readonly reason: 'direct_request' | 'accepted_offer';
+  readonly course_of_interest: string | null;
+}
+
+interface MemoryArtifactV3 {
+  readonly accepted: ReadonlyArray<{
+    readonly id: string;
+    readonly text: string;
+    readonly type: string;
+    readonly supersedes: readonly string[];
+  }>;
+  readonly supersedes: readonly string[];
+}
+
+interface ContactSnapshotV3 {
+  readonly name: string | null;
+  readonly email: string | null;
+  readonly declared_phone: string | null;
+  readonly intake: ReturnType<typeof commercialIntakeFromContactRowV1>;
+}
+
+const MEMORY_TYPES_V3 = new Set([
+  'study_goal', 'study_context', 'preference', 'constraint',
+  'objection', 'timeline', 'contact_preference',
+]);
+
 const STORED_RESPONSE_TYPES = new Set([
   'social_reply',
   'commercial_reply',
@@ -94,6 +145,7 @@ const STORED_RESPONSE_TYPES = new Set([
   'out_of_scope',
   'technical_fallback',
   'call_offer',
+  'call_confirmation',
 ]);
 
 export class AgentTurnV3RejectedError extends Error {
@@ -173,6 +225,107 @@ function paymentArtifact(value: unknown): PaymentArtifactV3 | null {
   };
 }
 
+function objectValue(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function contactArtifact(value: unknown): ContactArtifactV3 | null {
+  const candidate = objectValue(value);
+  const values = objectValue(candidate?.values);
+  if (!values) return null;
+  const allowed = new Set(['nombre', 'apellido', 'correo', 'telefono']);
+  if (
+    Object.keys(values).some((field) => !allowed.has(field))
+    || Object.values(values).some((field) => typeof field !== 'string' || field.length === 0)
+  ) return null;
+  return { values: values as ContactArtifactV3['values'] };
+}
+
+function callArtifact(value: unknown): CallArtifactV3 | null {
+  const candidate = objectValue(value);
+  if (
+    typeof candidate?.call_id !== 'string'
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
+      .test(candidate.call_id)
+    || candidate.status !== 'reserved'
+    || (candidate.reason !== 'customer_request' && candidate.reason !== 'accepted_offer')
+  ) return null;
+  return candidate as unknown as CallArtifactV3;
+}
+
+function memoryArtifact(value: unknown): MemoryArtifactV3 | null {
+  const candidate = objectValue(value);
+  if (!candidate || !Array.isArray(candidate.accepted) || !Array.isArray(candidate.supersedes)) {
+    return null;
+  }
+  const supersedes = candidate.supersedes;
+  if (supersedes.some((id) => typeof id !== 'string')) return null;
+  const accepted = candidate.accepted.map(objectValue);
+  if (accepted.some((item) => (
+    !item
+    || typeof item.id !== 'string'
+    || typeof item.text !== 'string'
+    || item.text.length === 0
+    || typeof item.type !== 'string'
+    || !MEMORY_TYPES_V3.has(item.type)
+    || !Array.isArray(item.supersedes)
+    || item.supersedes.some((id) => typeof id !== 'string')
+  ))) return null;
+  return {
+    accepted: accepted as unknown as MemoryArtifactV3['accepted'],
+    supersedes: supersedes as string[],
+  };
+}
+
+function selectedPreparations(
+  preparations: readonly PreparationRowV3[],
+  committedIds: readonly string[],
+): readonly PreparationRowV3[] {
+  const committed = new Set(committedIds);
+  return preparations.filter((preparation) => committed.has(preparation.id));
+}
+
+function projectContactSnapshot(
+  context: Pick<TurnContextRowV3, 'destination' | 'declared_phone' | 'contact_name' | 'contact_email'>,
+  preparations: readonly PreparationRowV3[],
+): ContactSnapshotV3 {
+  const current = commercialIntakeFromContactRowV1({
+    phone: context.destination,
+    declared_phone: context.declared_phone,
+    name: context.contact_name,
+    email: context.contact_email,
+  });
+  let nombre = current.nombre;
+  let apellido = current.apellido;
+  let email = context.contact_email;
+  let declaredPhone = context.declared_phone;
+  for (const preparation of preparations) {
+    if (preparation.tool !== 'prepare_contact_details') continue;
+    const artifact = contactArtifact(preparation.canonical_data);
+    if (!artifact) throw new Error('PREPARATION_CANONICAL_DATA_INVALID');
+    nombre = artifact.values.nombre ?? nombre;
+    apellido = artifact.values.apellido ?? apellido;
+    email = artifact.values.correo ?? email;
+    declaredPhone = artifact.values.telefono ?? declaredPhone;
+  }
+  const name = nombre
+    ? [nombre, apellido].filter((part): part is string => Boolean(part)).join(' ')
+    : context.contact_name;
+  return {
+    name,
+    email,
+    declared_phone: declaredPhone,
+    intake: {
+      nombre,
+      apellido,
+      correo: email,
+      telefono: declaredPhone ?? current.telefono,
+    },
+  };
+}
+
 function rejected(
   rejectionId: string,
   code: string,
@@ -214,6 +367,8 @@ async function loadTurnContext(db: DbClient, turnId: string): Promise<TurnContex
       turn.id AS turn_id,
       turn.conversation_id,
       turn.contact_id,
+      turn.content AS turn_content,
+      turn.batch_id,
       state.workspace_id,
       workspace.slug AS workspace_slug,
       thread.provider,
@@ -656,13 +811,12 @@ export async function commitAgentTurnV3(
       input.decision,
     );
     const renderedArtifacts = renderableArtifacts(preparations);
-    const intake = commercialIntakeFromContactRowV1({
-      phone: context.destination,
-      declared_phone: context.declared_phone,
-      name: context.contact_name,
-      email: context.contact_email,
-    });
-    const missing = missingContactIntakeFieldsV1(intake);
+    const committedPreparations = selectedPreparations(
+      preparations,
+      input.decision.commit_preparations,
+    );
+    const projectedContact = projectContactSnapshot(context, committedPreparations);
+    const missing = missingContactIntakeFieldsV1(projectedContact.intake);
     const preparationTools = Object.fromEntries(
       preparations.map((preparation) => [preparation.id, preparation.tool]),
     );
@@ -680,6 +834,38 @@ export async function commitAgentTurnV3(
       rejection_id: input.trace_id,
     });
     if (!integrity.ok) throw new AgentTurnV3RejectedError(integrity.rejection);
+
+    const committedCalls = committedPreparations.filter(
+      (preparation) => preparation.tool === 'prepare_call_request',
+    );
+    const committedMemories = committedPreparations.filter(
+      (preparation) => preparation.tool === 'prepare_memory',
+    );
+    const committedLeads = committedPreparations.filter(
+      (preparation) => preparation.tool === 'prepare_lead_projection',
+    );
+    if (committedCalls.length > 1) {
+      throw rejected(
+        input.trace_id,
+        'MULTIPLE_CALL_PREPARATIONS',
+        'commit_preparations',
+        { factIds: [...facts.keys()], preparationIds, missing },
+      );
+    }
+    for (const preparation of committedCalls) {
+      if (!callArtifact(preparation.canonical_data)) {
+        throw new Error('PREPARATION_CANONICAL_DATA_INVALID');
+      }
+    }
+    for (const preparation of committedMemories) {
+      if (!memoryArtifact(preparation.canonical_data)) {
+        throw new Error('PREPARATION_CANONICAL_DATA_INVALID');
+      }
+    }
+    for (const preparation of committedLeads) {
+      const canonical = objectValue(preparation.canonical_data);
+      if (canonical?.queued !== false) throw new Error('PREPARATION_CANONICAL_DATA_INVALID');
+    }
 
     const committedPayment = input.decision.commit_preparations
       .map((id) => renderedArtifacts.paymentById.get(id) ?? null)
@@ -742,8 +928,18 @@ export async function commitAgentTurnV3(
       set: deferred.set,
     };
 
-    const businessAction: SendPaymentLinkAction | null = committedPayment[0]
+    const committedCallArtifact = committedCalls[0]
+      ? callArtifact(committedCalls[0].canonical_data)
+      : null;
+    const businessAction: SendPaymentLinkAction | RequestCallActionV3 | null = committedCallArtifact
       ? {
+          type: 'request_call_now',
+          reason: committedCallArtifact.reason === 'accepted_offer'
+            ? 'accepted_offer' : 'direct_request',
+          course_of_interest: input.decision.state_patch.set.selected_offering_code
+            ?? context.selected_offering_code,
+        }
+      : committedPayment[0] ? {
           type: 'send_payment_link',
           plan_code: committedPayment[0].payment_plan,
           offering_sku: committedPayment[0].offering_code,
@@ -769,6 +965,111 @@ export async function commitAgentTurnV3(
     `;
     const decisionId = inserted[0]?.id;
     if (!decisionId) throw new Error('AGENT_TURN_V3_DECISION_INSERT_FAILED');
+
+    if (committedPreparations.some(
+      (preparation) => preparation.tool === 'prepare_contact_details',
+    )) {
+      await transaction`
+        UPDATE contacts
+        SET
+          name = ${projectedContact.name},
+          email = ${projectedContact.email},
+          declared_phone = ${projectedContact.declared_phone},
+          updated_at = now()
+        WHERE id = ${context.contact_id}::uuid
+      `;
+    }
+
+    let committedCallId: string | null = null;
+    const committedCall = committedCalls[0];
+    if (committedCall) {
+      const artifact = callArtifact(committedCall.canonical_data)!;
+      const consentMessages = context.batch_id === null
+        ? [{ id: context.turn_id, content: context.turn_content }]
+        : await transaction<Array<{ id: string; content: string }>>`
+            SELECT id, content
+            FROM messages
+            WHERE batch_id = ${context.batch_id}::uuid
+              AND direction = 'inbound'
+              AND conversation_id = ${context.conversation_id}::uuid
+              AND contact_id = ${context.contact_id}::uuid
+            ORDER BY conversation_seq NULLS LAST, created_at, id
+          `;
+      const reserved = await reserveCallForDecision(transaction, {
+        turn_id: context.turn_id,
+        trace_id: input.trace_id,
+        decision_id: decisionId,
+        contact_id: context.contact_id,
+        conversation_id: context.conversation_id,
+        contact_name: projectedContact.name,
+        phone: projectedContact.declared_phone ?? context.destination,
+        consent_messages: consentMessages,
+        course_of_interest: input.decision.state_patch.set.selected_offering_code
+          ?? context.selected_offering_code,
+        prompt_version: model.promptVersion,
+        reserved_call_id: artifact.call_id,
+        expected_consent_mode: artifact.reason === 'accepted_offer'
+          ? 'accepted_offer' : 'direct_request',
+      });
+      committedCallId = reserved.call_id;
+    }
+
+    let memoryCandidateIndex = 0;
+    for (const preparation of committedMemories) {
+      const artifact = memoryArtifact(preparation.canonical_data)!;
+      for (const candidate of artifact.accepted) {
+        const candidateIndex = memoryCandidateIndex;
+        memoryCandidateIndex += 1;
+        if (candidateIndex >= 20) throw new Error('TOO_MANY_MEMORY_PREPARATIONS');
+        const memoryKey = `agent_loop_${candidate.type}`;
+        const durableCandidate = {
+          id: candidate.id,
+          text: candidate.text,
+          type: candidate.type,
+          supersedes: candidate.supersedes,
+          key: memoryKey,
+          value: candidate.text,
+          source_quote: candidate.text,
+          confidence: 1,
+        };
+        await transaction`
+          INSERT INTO agent_a_memory_projection_jobs (
+            decision_id, candidate_index, turn_id, idempotency_key, candidate
+          ) VALUES (
+            ${decisionId}::uuid,
+            ${candidateIndex},
+            ${context.turn_id}::uuid,
+            ${`agent-a-memory:${context.turn_id}:${candidate.type}:candidate_${candidateIndex}`},
+            ${jsonbParam(transaction, durableCandidate)}
+          )
+          ON CONFLICT DO NOTHING
+        `;
+      }
+    }
+
+    if (committedLeads.length > 0) {
+      const sheets = loadSheetsProjectionConfig();
+      if (!sheets) throw new Error('AGENT_TURN_V3_LEAD_PROJECTION_CONFIG_MISSING');
+      const names = projectedContact.name ? splitFullName(projectedContact.name) : null;
+      await enqueueLeadProjection({
+        workspaceId: context.workspace_id,
+        contactId: context.contact_id,
+        spreadsheetId: sheets.spreadsheetId,
+        tabName: sheets.tabName,
+        telefono: projectedContact.declared_phone ?? context.destination,
+        nombre: names?.nombre,
+        apellido: names?.apellido,
+        email: projectedContact.email ?? undefined,
+        etapaComercial: input.decision.state_patch.set.stage ?? context.stage,
+        cursoInteres: input.decision.state_patch.set.selected_offering_code
+          ?? context.selected_offering_code ?? undefined,
+        plan: input.decision.state_patch.set.selected_payment_plan
+          ?? context.selected_payment_plan ?? undefined,
+        callId: committedCallId ?? undefined,
+        ultimaSenal: 'agent_loop_lead_committed',
+        traceId: input.trace_id,
+      }, { sql: transaction });
+    }
 
     const authorizedUrls = committedPayment.map((artifact) => artifact.url);
     const authorizedEgress = buildAuthorizedEgress({
@@ -803,7 +1104,8 @@ export async function commitAgentTurnV3(
       SET outbound_message_id = ${message.id}::uuid
       WHERE id = ${decisionId}::uuid
     `;
-    if (businessAction?.type === 'send_payment_link') {
+    const paymentAction = committedPayment[0];
+    if (paymentAction) {
       await transaction`
         INSERT INTO workspace_contacts (
           workspace_id, contact_id, lifecycle_status, source_channel
@@ -826,8 +1128,8 @@ export async function commitAgentTurnV3(
           ${context.contact_id}::uuid,
           ${message.id}::uuid,
           decision.trace_id,
-          ${businessAction.offering_sku},
-          ${businessAction.plan_code},
+          ${paymentAction.offering_code},
+          ${paymentAction.payment_plan},
           decision.created_at
         FROM agent_decisions AS decision
         WHERE decision.id = ${decisionId}::uuid

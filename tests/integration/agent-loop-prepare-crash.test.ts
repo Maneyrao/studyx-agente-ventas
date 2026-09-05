@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   expireStalePreparationsV1,
@@ -5,6 +6,7 @@ import {
   prepareLeadProjectionToolV1,
   preparePaymentLinkToolV1,
 } from '@/features/conversation/application/agent-tools-prepare';
+import { commitAgentTurnV3 } from '@/features/conversation/application/commit-agent-turn-v3';
 import { sql } from '@/lib/db/orchestrator';
 import { seedConversationForAgentTurn } from '../helpers/agent-turn-fixtures';
 
@@ -88,6 +90,46 @@ run('crash between Agent Loop preparation and commit', () => {
     ]));
     expect(surviving).toHaveLength(2);
     expect(surviving.some((row) => row.id === stale.preparation_id)).toBe(false);
+
+    const recovered = await preparePaymentLinkToolV1(
+      {
+        db: sql,
+        turn_id: seeded.second_turn_id,
+        conversation_id: seeded.conversation_id,
+      },
+      { offering_code: 'entrenamiento_funcional', payment_plan: 'one_time' },
+      { resolver },
+    );
+    expect(recovered).toMatchObject({ success: true, idempotency_result: 'applied' });
+    await commitAgentTurnV3(sql, {
+      turn_id: seeded.second_turn_id,
+      trace_id: randomUUID(),
+      effective_prompt_sha256: seeded.release_manifest.prompt_sha256,
+      release_manifest: seeded.release_manifest,
+      decision: {
+        schema_version: 3,
+        blocks: [
+          { type: 'narrative', text: 'Perfecto, podés completar el pago acá:' },
+          { type: 'artifact', preparation_id: recovered.preparation_id! },
+        ],
+        commit_preparations: [recovered.preparation_id!],
+        used_memory_ids: [],
+        state_patch: {
+          expected_state_version: seeded.state_version,
+          set: { stage: 'payment_link_sent' },
+        },
+        response_type: 'commercial_reply',
+      },
+    });
+    const [recoveryProof] = await sql<Array<{ jobs: number; decisions: number }>>`
+      SELECT
+        (SELECT count(*)::int FROM payment_projection_jobs AS job
+          JOIN agent_decisions AS decision ON decision.id = job.decision_id
+          WHERE decision.turn_id = ${seeded.second_turn_id}::uuid) AS jobs,
+        (SELECT count(*)::int FROM agent_decisions
+          WHERE turn_id = ${seeded.second_turn_id}::uuid) AS decisions
+    `;
+    expect(recoveryProof).toEqual({ jobs: 1, decisions: 1 });
     await sql`
       DELETE FROM agent_turn_preparations
       WHERE id IN (${committed.preparation_id}::uuid, ${fresh.preparation_id}::uuid)

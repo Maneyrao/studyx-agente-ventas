@@ -5,6 +5,7 @@ import type { DbClient } from '@/lib/db/types';
 import type { DecisionMemoryCandidate } from '@/features/orchestration/domain/decision';
 import { selectMemories } from '@/features/orchestration/application/select-memories';
 import { PostgresMemoryStore } from '@/features/orchestration/adapters/postgres-memory-store';
+import type { MemoryStore } from '@/features/orchestration/ports/memory-store';
 import { normalizeMemoryText } from '@/features/orchestration/domain/memory-selection';
 import {
   isAgentAMemoryCandidateProhibited,
@@ -76,6 +77,29 @@ function parseCandidate(value: unknown): AgentAMemoryCandidateV1 {
   return candidate as unknown as AgentAMemoryCandidateV1;
 }
 
+interface PreparedMemoryIdentityV1 {
+  readonly id: string;
+  readonly supersedes: readonly string[];
+}
+
+function parsePreparedMemoryIdentity(value: unknown): PreparedMemoryIdentityV1 | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.id === undefined && candidate.supersedes === undefined) return null;
+  if (
+    typeof candidate.id !== 'string'
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
+      .test(candidate.id)
+    || !Array.isArray(candidate.supersedes)
+    || candidate.supersedes.some((id) => (
+      typeof id !== 'string'
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
+        .test(id)
+    ))
+  ) throw new Error('MEMORY_CANDIDATE_INVALID');
+  return { id: candidate.id, supersedes: candidate.supersedes as string[] };
+}
+
 async function completeJob(
   db: DbClient,
   job: ClaimedMemoryJob,
@@ -131,6 +155,7 @@ export async function projectAgentAMemories(
   for (const job of jobs) {
     try {
       const candidate = parseCandidate(job.candidate);
+      const preparedIdentity = parsePreparedMemoryIdentity(job.candidate);
       const contexts = await db<ProjectionContext[]>`
         SELECT message.contact_id, message.conversation_id, message.batch_id,
                decision.trace_id, contact.name AS contact_name,
@@ -175,6 +200,18 @@ export async function projectAgentAMemories(
           )
         ORDER BY conversation_seq NULLS LAST, created_at, id
       `;
+      const postgresStore = new PostgresMemoryStore(db);
+      const store: MemoryStore = preparedIdentity
+        ? {
+            recordAccepted: (accepted) => postgresStore.recordPreparedAccepted({
+              ...accepted,
+              memory_id: preparedIdentity.id,
+              supersedes_memory_ids: preparedIdentity.supersedes,
+            }),
+            recordRejected: (rejected) => postgresStore.recordRejected(rejected),
+            expireDueMemories: (limit) => postgresStore.expireDueMemories(limit),
+          }
+        : postgresStore;
       const outcome = await selectMemories({
         contact_id: context.contact_id,
         conversation_id: context.conversation_id,
@@ -189,7 +226,7 @@ export async function projectAgentAMemories(
         },
         candidates: [candidate],
       }, {
-        store: new PostgresMemoryStore(db),
+        store,
         log: deps.log,
       });
       if (outcome.failed > 0) throw new Error('MEMORY_PROJECTION_STORE_FAILED');

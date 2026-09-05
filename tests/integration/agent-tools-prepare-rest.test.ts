@@ -274,6 +274,48 @@ run('remaining Agent Loop preparation tools', () => {
     expect(jobs?.n).toBe(0);
   });
 
+  it('keys memory by text, type, and supersedes and rejects foreign supersedes authority', async () => {
+    const seeded = await seedFixture();
+    const foreign = await seedFixture();
+    const base = { db: db!, turn_id: seeded.turnId, conversation_id: seeded.conversationId };
+    const foreignMemory = await prepareMemoryToolV1(
+      { db: db!, turn_id: foreign.turnId, conversation_id: foreign.conversationId },
+      { candidates: [{ text: 'Quiere marketing', type: 'study_goal', supersedes: [] }] },
+    );
+    const textAndType = await prepareMemoryToolV1(base, {
+      candidates: [{ text: 'Quiere marketing', type: 'study_goal', supersedes: [] }],
+    });
+    const differentType = await prepareMemoryToolV1(base, {
+      candidates: [{ text: 'Quiere marketing', type: 'preference', supersedes: [] }],
+    });
+    const differentSupersedes = await prepareMemoryToolV1(base, {
+      candidates: [{
+        text: 'Quiere marketing',
+        type: 'study_goal',
+        supersedes: [textAndType.canonical_data!.accepted[0]!.id],
+      }],
+    });
+    const foreignSupersedes = await prepareMemoryToolV1(base, {
+      candidates: [{
+        text: 'Quiere marketing',
+        type: 'study_goal',
+        supersedes: [foreignMemory.canonical_data!.accepted[0]!.id],
+      }],
+    });
+
+    expect(new Set([
+      textAndType.preparation_id,
+      differentType.preparation_id,
+      differentSupersedes.preparation_id,
+    ]).size).toBe(3);
+    expect(foreignSupersedes).toMatchObject({
+      success: false,
+      error_code: 'MEMORY_SUPERSEDES_NOT_AUTHORIZED',
+      recoverable: false,
+      preparation_id: null,
+    });
+  });
+
   it('reserves the inert lead projection contract idempotently', async () => {
     const seeded = await seedFixture();
     const first = await asOrchestrator((transaction) => prepareLeadProjectionToolV1({

@@ -56,6 +56,10 @@ export interface ReserveCallInput {
   };
   course_of_interest: string | null;
   prompt_version: string;
+  /** UUID returned by prepare_call_request; commit materializes that exact reservation. */
+  reserved_call_id?: string;
+  /** Consent mode reserved by the caller; the ledger rejects a different observed signal. */
+  expected_consent_mode?: 'direct_request' | 'accepted_offer';
   now?: () => Date;
 }
 
@@ -76,6 +80,13 @@ export async function reserveCallForDecision(
   db: DbClient,
   input: ReserveCallInput,
 ): Promise<ReservedCallRequest> {
+  if (
+    input.reserved_call_id !== undefined
+    && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
+      .test(input.reserved_call_id)
+  ) {
+    throw new CallRequestRejectedError('CALL_RESERVATION_ID_INVALID');
+  }
   if (input.phone === null || !E164.test(input.phone)) {
     throw new CallRequestRejectedError('CALL_PHONE_INVALID');
   }
@@ -122,6 +133,9 @@ export async function reserveCallForDecision(
   if (!verdict.allowed) {
     throw new CallRequestRejectedError(verdict.code);
   }
+  if (input.expected_consent_mode && verdict.mode !== input.expected_consent_mode) {
+    throw new CallRequestRejectedError('CALL_CONSENT_MODE_MISMATCH');
+  }
   const consentSourceMessageId = input.consent_messages[verdict.sourceIndex].id;
 
   const active = await db<Array<{ id: string }>>`
@@ -135,7 +149,7 @@ export async function reserveCallForDecision(
   }
 
   const provider = resolveVoiceProvider();
-  const callId = randomUUID();
+  const callId = input.reserved_call_id ?? randomUUID();
   const context = parseCallContext({
     call_id: callId,
     nombre_lead: input.contact_name ?? '',

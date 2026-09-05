@@ -7,6 +7,11 @@ import type {
   RejectedMemoryInput,
 } from '../ports/memory-store';
 
+export interface PreparedAcceptedMemoryInput extends AcceptedMemoryInput {
+  readonly memory_id: string;
+  readonly supersedes_memory_ids: readonly string[];
+}
+
 /**
  * PostgreSQL adapter for the selected-memory store.
  *
@@ -51,6 +56,40 @@ export class PostgresMemoryStore implements MemoryStore {
       outcome: row.outcome,
       memory_id: row.memory_id,
       superseded_memory_id: row.superseded_memory_id,
+    };
+  }
+
+  async recordPreparedAccepted(input: PreparedAcceptedMemoryInput): Promise<RecordedMemory> {
+    const rows = await this.db<Array<{
+      outcome: 'recorded' | 'duplicate';
+      memory_id: string;
+      superseded_memory_ids: string[];
+    }>>`
+      SELECT outcome, memory_id, superseded_memory_ids
+      FROM record_prepared_agent_memory_v1(
+        ${input.memory_id}::uuid,
+        ${input.supersedes_memory_ids}::uuid[],
+        ${input.contact_id}::uuid,
+        ${input.conversation_id}::uuid,
+        ${input.source_message_id}::uuid,
+        ${input.source_batch_id}::uuid,
+        ${input.decision_id}::uuid,
+        ${input.memory_type},
+        ${input.memory_key},
+        ${input.value_normalized},
+        ${input.source_quote},
+        ${input.confidence},
+        ${input.dedupe_hash},
+        ${input.ttl_days},
+        ${input.trace_id}::uuid
+      )
+    `;
+    const row = rows[0];
+    if (!row) throw new Error('record_prepared_agent_memory_v1 returned no row');
+    return {
+      outcome: row.outcome,
+      memory_id: row.memory_id,
+      superseded_memory_id: row.superseded_memory_ids[0] ?? null,
     };
   }
 
