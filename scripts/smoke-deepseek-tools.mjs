@@ -25,7 +25,7 @@ export function classifySmokeOutcome(payload) {
 // Forma plana (Responses API), no la forma anidada `function: {...}` de Chat
 // Completions. DeepSeek respondió 400 "missing field `name`" contra la forma
 // anidada: /responses exige name/description/parameters al nivel superior.
-const TOOLS = [{
+export const TOOLS = [{
   type: 'function',
   name: 'search_catalog',
   description: 'Busca cursos en el catálogo canónico de StudyX.',
