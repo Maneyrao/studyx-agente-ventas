@@ -27,20 +27,40 @@ trabajo. Origen: sesión previa (Codex), sin commitear.
 
 Tema coherente: **endurecimiento de heurísticas léxicas**, cada fix con su test.
 
-**Preservación (hecha, no destructiva):**
-- Patch: `scratchpad/preexisting-lexical-hardening-20260904.patch` (11.545 bytes)
-- Commit-snapshot: `58e7dd669d8cf79975526f3fcb738ab98e7b2068`, etiquetado
-  `wip/pre-agent-loop-lexical-hardening`
-- El working tree **no se tocó**: los nueve archivos siguen modificados.
+**Decisión del usuario (4-sep-2026): NO se integran.** Contradicen la regla de no
+seguir agregando regex para frases puntuales, y cuatro de ellos parchean
+justamente los módulos que esta migración saca del hot path (`payment-choice`,
+`payment-choice-policy`, `catalog-resolution`, `contact-identity`).
 
-**Colisión con esta migración, que hay que resolver antes de implementar.**
-Cuatro de esos archivos son exactamente los módulos que esta especificación
-propone sacar del hot path (`payment-choice`, `payment-choice-policy`,
-`catalog-resolution`, `contact-identity`). Son parches al rule engine que
-estamos desmantelando. **No se mezclan con la implementación.** La decisión
-—commitearlos aparte como último mantenimiento de la ruta actual, o descartarlos
-porque el agent loop los vuelve innecesarios— es del usuario y es previa a la
-Fase 0.
+**Estado ejecutado:** los nueve archivos fueron restaurados a HEAD. El working
+tree está limpio. **No se hizo cherry-pick de `58e7dd6`.**
+
+**Preservación (dos rutas, ambas verificadas):**
+- Patch acotado: `.git/preserved/preexisting-lexical-hardening-20260904.patch`
+  (11.545 bytes). Recuperación: `git apply <ruta>`.
+- Tag `wip/pre-agent-loop-lexical-hardening` → `58e7dd6`. **Ojo:** el snapshot es
+  de la revisión 1 de esta spec, así que un `git diff HEAD wip/...` completo
+  también revertiría el documento. La recuperación por tag debe acotarse a las
+  nueve rutas.
+
+### 0.1 Consecuencia medida: HEAD queda con tres tests rojos
+
+Uno de los nueve archivos no era un regex nuevo: reparaba
+`tests/unit/scripts/agent-a-api-budget.test.ts`. En HEAD,
+`scripts/agent-a-api-budget.mjs:9` exige `AUTHORIZED_LIMIT_USD = 1.08` y el test
+sigue construyendo el ledger con `limitUsd: 1`, así que toda mutación falla con
+`AGENT_A_BUDGET_INVALID`.
+
+```
+Test Files  1 failed (1)
+     Tests  3 failed | 4 passed (7)
+```
+
+**Esto bloquea el arranque:** no se puede hacer TDD sobre una suite roja, y ese
+ledger es exactamente el mecanismo que gobierna el gasto del smoke de Fase 1
+(§5). La reparación **no es** uno de los nueve cambios rechazados: es un fix
+independiente que la Tarea 0.1 del plan resuelve por su cuenta, moviendo el tope
+a configuración (§5, Fase 1).
 
 ---
 
@@ -405,11 +425,23 @@ el agente sólo puede declarar que hizo una invitación más, no fijar el total.
 como `state.version`, leído en el mismo `claimBatch` que arma la fotografía. El
 agente lo devuelve tal cual; alterarlo es una violación de integridad.
 
+**La tabla es `conversation_sales_context_states_v1`** (no `conversation_state_v1`,
+que no existe). Su tabla de eventos es
+`conversation_sales_context_state_events_v1`.
+
+**La columna `version` ya existe y ya funciona.**
+`postgres-conversation-state-store.ts:136` la incrementa en cada `DO UPDATE`
+(`version = conversation_sales_context_states_v1.version + 1`) y la copia al
+evento como `state_version`. **No hace falta migración.** Lo único que falta es
+exponerla: `load()` hace `SELECT state.*`, así que el valor ya viaja en la fila,
+pero `ConversationStateV1` no lo mapea hacia el contexto ni nadie lo compara al
+commitear.
+
 Concurrencia optimista: el commit falla con `STATE_VERSION_CONFLICT` si
-`conversation_state_v1.version != expected_state_version`. Ese conflicto **no se
-resuelve fusionando**: el turno se reintenta completo con el estado nuevo, porque
-un patch calculado sobre otra fotografía ya no significa lo mismo. Requiere una
-migración aditiva (§8).
+`conversation_sales_context_states_v1.version != expected_state_version`. Ese
+conflicto **no se resuelve fusionando**: el turno se reintenta completo con el
+estado nuevo, porque un patch calculado sobre otra fotografía ya no significa lo
+mismo.
 
 ### 3.7 Estado ligado a visibilidad (enmienda 5)
 
@@ -427,16 +459,37 @@ campos, no por juicio del modelo:
 | **`awaiting_reply`** | **diferido** | Es «lo que pregunté»; sin mensaje no hay pregunta |
 | **`stage ∈ {payment_link_sent, handoff}`** | **diferido** | Refleja algo que el agente entregó |
 
-El patch diferido se persiste junto al outbound (columna aditiva en la fila del
-outbox) y lo aplica `reportDelivery` **sólo** con
-`status === 'submitted_to_botpress'`, en la misma transacción que el reporte,
-incrementando `version`.
+#### Aceptado ≠ entregado
+
+`outbound_deliveries` distingue dos estados terminales distintos, y la máquina de
+estados del esquema los separa
+(`20260805010005_phase1_outbox_delivery.sql:279`):
+
+| Estado | Qué prueba | Quién lo escribe |
+|---|---|---|
+| `submitted` | **Aceptación**: el canal tomó el mensaje de forma irrevocable (`createMessage` devolvió un id). **No prueba que el cliente lo haya visto.** | `reportDelivery` desde el workflow |
+| `delivered` | **Entrega**: el proveedor confirmó la entrega al destinatario. | Sólo un acuse del proveedor |
+
+El contrato de la API los colapsa hoy en un único `submitted_to_botpress`
+(`decision.service.ts:226`), y **esa conflación es la que hay que deshacer**.
+
+**Regla adoptada: el patch diferido se aplica con `submitted`**, y la fila
+registra `applied_on: 'accepted'`. Motivo: `delivered` requiere un acuse del
+proveedor que hoy **no existe para el sandbox de Telegram**, así que exigirlo
+dejaría el estado congelado para siempre en el único canal que corre. Una
+aceptación irrevocable es la prueba más fuerte disponible, y es estrictamente
+mejor que la actual, que no exige ninguna.
+
+Cuando un canal sí reporte `delivered` (WhatsApp oficial), el campo
+`applied_on` sube a `'delivered'` sin cambiar la lógica. La distinción queda
+registrada por turno, así que la calidad de la prueba es auditable en vez de
+supuesta. **Lo que la spec no hace es llamar «visible» a `submitted`.**
 
 Rutas de fallo:
 - Entrega fallida ⇒ el patch diferido se descarta. El estado ligado a visibilidad
   queda donde estaba. Es exactamente la corrección de §1.4, generalizada.
 - Entrega ambigua (`OUTBOUND_DELIVERY_UNRESOLVED`, `processInboundTurn.ts:395`)
-  ⇒ el patch queda pendiente y lo aplica el reconciliador cuando la entrega se
+  ⇒ el patch queda pendiente y lo aplica el reconciliador cuando la aceptación se
   prueba, o lo descarta al vencer.
 
 ### 3.8 Fallback técnico, sin poda (enmienda 6)
@@ -553,13 +606,57 @@ outbox de proyecciones. La capa de transporte no cambia.
 
 ## 5. Migración
 
-Bandera `agentAAgentLoopV3Mode: 'off' | 'shadow' | 'authoritative'`
-(`botpress-agent/agent.config.ts`), por defecto `'off'`. La ruta `plannerless_v2`
-sigue viva y sin tocar durante toda la transición.
+### 5.0 La bandera: runtime, y neutral al canal
 
-### Fase −1 — Resolver los nueve archivos preexistentes
+Esta spec promete «rollback sin deploy», así que la bandera **tiene que ser
+runtime de verdad**. Ninguno de los dos mecanismos existentes lo es:
 
-Decisión del usuario (§0). Bloquea la Fase 0 porque toca los mismos módulos.
+| Mecanismo | Cambiar su valor cuesta | Runtime |
+|---|---|---|
+| `configuration.*` (`agent.config.ts`) | Agregar un campo nuevo exige **publicar el bundle** en Botpress Cloud. Sólo el valor de un campo ya publicado se cambia desde el Control Panel | No para un campo nuevo |
+| `owned.features.*` vía `loadAgentARolloutConfig()` | Lee `process.env.AGENT_A_*`; en Vercel un cambio de variable exige **redeploy** | No |
+
+Publicar el bundle está **actualmente bloqueado** (EXT-05: el registro de la
+integración de Telegram falla). Colgar el rollback de eso sería prometer algo que
+hoy no se puede ejecutar.
+
+**Decisión: la bandera vive en la base**, en una tabla de rollout que
+`claimBatch` ya consulta al armar el turno, y viaja en `features` del claim:
+
+```sql
+CREATE TABLE agent_loop_rollout_v3 (
+  workspace_id  uuid    NOT NULL REFERENCES workspaces(id),
+  contact_id    uuid        NULL REFERENCES contacts(id),  -- NULL = default del workspace
+  mode          text    NOT NULL CHECK (mode IN ('off','shadow','authoritative')),
+  updated_at    timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (workspace_id, contact_id)
+);
+```
+
+Resolución: fila del `contact_id` si existe; si no, la fila `contact_id IS NULL`
+del workspace; si no hay ninguna, `'off'`. **Rollback = un `UPDATE`.** Sin
+publicar bundle, sin redeploy de Vercel, efectivo en el turno siguiente.
+
+**El allowlist es el mismo mecanismo, y es neutral al canal.** Se indexa por
+`contact_id` —la identidad canónica que ya existe para todo canal—, nunca por
+`phone_e164`. Un contacto de Telegram tiene un E.164 **sintético** derivado del
+user id (`+999…`), que `commercialIntakeFromContactRowV1` ya trata como no
+comercial: un allowlist telefónico como el de WhatsApp
+(`WHATSAPP_CANARY_PHONE_E164S`) **no funcionaría para Telegram**, que es
+justamente el canal donde corre el piloto. Por eso no se reusa ese patrón.
+
+El campo `configuration.agentAAgentLoopV3KillSwitch: boolean` se agrega igual como
+**freno de mano independiente de la base**, y se publica una sola vez en Fase 2.
+Queda documentado que **ese** campo sí exige publicar el bundle, y que por lo
+tanto **no** es la vía de rollback: la vía es la tabla.
+
+La ruta `plannerless_v2` sigue viva y sin tocar durante toda la transición.
+
+### Fase −1 — Archivos preexistentes: RESUELTA
+
+No se integran; restaurados a HEAD; preservados en patch y tag (§0). Queda
+pendiente la consecuencia medida: **la suite de presupuesto está roja en HEAD**
+(§0.1) y se repara en la Tarea 0.1, antes de cualquier trabajo con TDD.
 
 ### Fase 0 — Reparar el bug de transición
 
@@ -584,8 +681,26 @@ en un turno con dos rondas. Se mide la latencia real por ronda contra el
 presupuesto de §3.2.
 
 Si el smoke falla, la decisión «function calling nativo» se revisa antes de
-escribir el núcleo. El presupuesto de gasto del smoke usa el ledger existente
-(`scripts/agent-a-api-budget.mjs`).
+escribir el núcleo.
+
+**Gobierno del gasto y de las credenciales del smoke, sin excepciones:**
+
+- El tope **sale del ledger o de la configuración**, nunca de una constante en el
+  código. Hoy `scripts/agent-a-api-budget.mjs:9` lo tiene hardcodeado en
+  `AUTHORIZED_LIMIT_USD = 1.08`, y esa constante es la causa de los tres tests
+  rojos de §0.1. La Tarea 0.1 lo mueve a
+  `STUDYX_AGENT_A_BUDGET_LIMIT_USD` (con el mismo default), de modo que subir el
+  tope sea una decisión de configuración explícita y auditable en vez de un
+  cambio de código acompañado de un ajuste de test.
+- El ledger sigue siendo el único punto de reserva y de corte: una reserva que
+  exceda el remanente **falla antes de enviar**.
+- **La API key nunca se expone.** Sale de `secrets.DEEPSEEK_API_KEY` o del entorno
+  del proceso; no se imprime, no se loguea, no se escribe en el ledger, no se
+  pasa por línea de comandos y no entra en ningún artefacto de evidencia. El
+  smoke registra endpoint, modelo, latencia, códigos y tokens — nunca
+  credenciales, y nunca contenido de cliente.
+- El smoke corre contra el cluster desechable y datos sintéticos: no toca la
+  Supabase de producción ni conversaciones reales.
 
 ### Fase 2 — Núcleo y herramientas, sin loop en producción
 
@@ -670,31 +785,44 @@ apuntando al cluster desechable.** `tests/setup/integration.ts` pisa
 | Sin poda, más turnos pueden terminar en fallback técnico | Media | `technical_fallback_rate` ≤ 2 % es puerta de fase. Un fallback honesto es preferible a un parcial engañoso (§3.8) |
 | `STATE_VERSION_CONFLICT` frecuente si el debounce agrupa mal | Media | Test de concurrencia dedicado; el reintento completo es correcto por construcción |
 | Un patch diferido pendiente por entrega ambigua envejece | Media | El reconciliador lo aplica o lo descarta al vencer; test dedicado |
-| El bug §1.4 ya contaminó estado real en producción | Media | Fase 0 corrige el mecanismo. La limpieza histórica es decisión aparte (§9) |
-| Los nueve archivos preexistentes se mezclan con la implementación | Media | Preservados y aislados (§0); Fase −1 los resuelve antes de empezar |
+| El bug §1.4 ya contaminó estado real en producción | Media | Fase 0 corrige el mecanismo. La limpieza histórica es decisión aparte (§10) |
+| **La suite de presupuesto está roja en HEAD** (§0.1) | **Alta** | Bloquea el TDD. Tarea 0.1 la repara moviendo el tope a configuración, antes de todo lo demás |
+| `applied_on: 'accepted'` no es prueba de visibilidad (§3.7) | Media | Queda registrado por turno y sube a `'delivered'` sin cambiar lógica cuando el canal lo reporte. La spec no lo llama «visible» |
+| Publicar el bundle está bloqueado (EXT-05) | **Alta** | La bandera de rollout vive en la base, no en el bundle (§5.0). El único cambio que exige publicar es el kill switch, que no es la vía de rollback |
+| El allowlist por teléfono no sirve para Telegram (E.164 sintético `+999…`) | Media | El allowlist se indexa por `contact_id`; no se reusa el patrón de `WHATSAPP_CANARY_PHONE_E164S` (§5.0) |
 
 ---
 
 ## 8. Migraciones
 
-Tres, **todas aditivas y con valor por defecto**:
+**La migración de `version` que la revisión 2 proponía NO hace falta:** la columna
+ya existe en `conversation_sales_context_states_v1` y ya se incrementa (§3.6).
 
-1. `conversation_state_v1` + `version integer NOT NULL DEFAULT 0` — concurrencia
-   optimista (§3.6).
-2. `agent_decisions` + `release_manifest jsonb` — manifiesto por turno (§3.9).
-3. La fila del outbox + `deferred_state_patch jsonb` — patch diferido (§3.7).
+Quedan tres, **todas aditivas y con valor por defecto**:
+
+1. `agent_decisions` + `release_manifest jsonb` — manifiesto por turno (§3.9).
+2. `outbound_deliveries` + `deferred_state_patch jsonb` y
+   `deferred_patch_applied_on text` — patch diferido y calidad de la prueba (§3.7).
+3. `agent_loop_rollout_v3` — tabla nueva, bandera runtime y allowlist neutral al
+   canal (§5.0).
 
 Ninguna borra ni transforma datos existentes. Ninguna es bloqueante para la ruta
-actual, que simplemente ignora las columnas nuevas.
+actual, que simplemente ignora las columnas y la tabla nuevas.
 
 ---
 
 ## 9. Rollback
 
-- **Fases 1-4:** `agentAAgentLoopV3Mode = 'off'`. La ruta `plannerless_v2` no fue
-  modificada; el rollback es un cambio de configuración en Botpress, sin deploy.
-- **Fase 5:** `mode = 'shadow'`, después `'off'`. Los turnos ya entregados por el
-  loop quedan persistidos y son válidos: escriben en las mismas tablas.
+- **Fases 1-4:** `UPDATE agent_loop_rollout_v3 SET mode = 'off'`. La ruta
+  `plannerless_v2` no fue modificada. **Sin publicar bundle y sin redeploy de
+  Vercel**, efectivo en el turno siguiente (§5.0).
+- **Fase 5:** `mode = 'shadow'`, después `'off'`, por el mismo `UPDATE`. Los
+  turnos ya entregados por el loop quedan persistidos y son válidos: escriben en
+  las mismas tablas.
+- **Kill switch de bundle:** `configuration.agentAAgentLoopV3KillSwitch` existe
+  como freno independiente de la base, pero **cambiarlo exige publicar el
+  bundle**, hoy bloqueado por EXT-05. No es la vía de rollback; es el respaldo
+  para el caso en que la base sea inalcanzable.
 - **Fase 0:** `git revert`. Su rollback deja el bug; no rompe nada más.
 - **Migraciones:** no se revierten. Las tres columnas quedan con su default y la
   ruta vieja las ignora. Revertirlas sería el único paso destructivo del plan y no
