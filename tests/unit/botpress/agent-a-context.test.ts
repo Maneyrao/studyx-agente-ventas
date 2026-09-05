@@ -225,6 +225,31 @@ describe('buildAgentAContextV1', () => {
     expect(context?.catalog.selected_offering).toBeNull();
   });
 
+  it('keeps the call budget available for a course selected semantically in this turn', () => {
+    const claimed = claimedTurn();
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'El de celulares.',
+    };
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      selected_offering_code: null,
+      selected_payment_plan: null,
+      stage: 'exploring',
+      call_preference: 'unknown',
+      call_offer_status: 'not_offered',
+      call_offer_count: 0,
+      awaiting_reply: 'course_choice',
+    };
+
+    const context = buildAgentAContextV1(claimed);
+
+    expect(context?.catalog.available_offerings.length).toBeGreaterThan(0);
+    expect(context?.capabilities.may_offer_call).toBe(true);
+    expect(context?.capabilities.may_present_payment_options).toBe(false);
+  });
+
   it('projects an exact current course into the brain despite an older exploring state', () => {
     const claimed = claimedTurn();
     claimed.context.batch_messages[0] = {

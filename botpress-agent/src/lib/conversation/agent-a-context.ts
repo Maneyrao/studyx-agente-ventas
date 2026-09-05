@@ -593,7 +593,6 @@ export function buildAgentAContextV1(
     capabilities: {
       may_reply: claimed.policy.may_respond,
       may_offer_call: claimed.policy.may_respond
-        && selectedCode !== null
         && state.call_preference === 'unknown'
         && callOfferCount < 2,
       may_request_call_now: claimed.policy.may_respond
