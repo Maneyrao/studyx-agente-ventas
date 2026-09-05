@@ -102,7 +102,11 @@ describe('runAgentTurnV3', () => {
       ] },
       { decision },
     ]);
-    const execute = vi.fn(async (call: { name: string }) => {
+    const execute = vi.fn(async (
+      call: Parameters<ToolExecutor['execute']>[0],
+      context: Parameters<ToolExecutor['execute']>[1],
+    ) => {
+      void context;
       if (call.name === 'prepare_payment_link') throw new Error('private adapter details');
       return {
         tool: call.name, success: true, canonical_data: { offerings: [] },
@@ -116,10 +120,32 @@ describe('runAgentTurnV3', () => {
       { instructions: 'x', conversation: [], toolDefinitions },
     );
 
-    const returned = JSON.stringify(model.generate.mock.calls[1]![0].conversation);
-    expect(returned).toContain('offerings');
-    expect(returned).toContain('TOOL_EXECUTION_FAILED');
-    expect(returned).not.toContain('private adapter details');
+    const returned = model.generate.mock.calls[1]![0].conversation;
+    expect(returned).toEqual([
+      {
+        role: 'tool',
+        call_id: 'ok',
+        content: JSON.stringify({
+          tool: 'search_catalog', success: true, canonical_data: { offerings: [] },
+          error_code: null, recoverable: false,
+          idempotency_result: 'not_applicable', preparation_id: null,
+        }),
+      },
+      {
+        role: 'tool',
+        call_id: 'failed',
+        content: JSON.stringify({
+          tool: 'prepare_payment_link', success: false, canonical_data: null,
+          error_code: 'TOOL_EXECUTION_FAILED', recoverable: true,
+          idempotency_result: 'not_applicable', preparation_id: null,
+        }),
+      },
+    ]);
+    expect(JSON.stringify(returned)).not.toContain('private adapter details');
+    for (const call of execute.mock.calls) {
+      expect(call[1]).toMatchObject({ deadline_ms: AGENT_LOOP_DEADLINE_MS });
+      expect(call[1].signal).toBeInstanceOf(AbortSignal);
+    }
   });
 
   it('executes at most four calls and starts the selected calls in parallel', async () => {
@@ -228,9 +254,10 @@ describe('runAgentTurnV3', () => {
   it('aborts a model promise that never settles at the hard wall deadline', async () => {
     vi.useFakeTimers();
     const model = {
-      generate: vi.fn(async (_input: Parameters<ModelProvider['generate']>[0]) => (
-        new Promise<ModelOutputV3>(() => undefined)
-      )),
+      generate: vi.fn(async (input: Parameters<ModelProvider['generate']>[0]) => {
+        void input;
+        return new Promise<ModelOutputV3>(() => undefined);
+      }),
     };
     const running = runAgentTurnV3(
       { model, tools: { execute: vi.fn() }, now: () => Date.now() },
@@ -247,9 +274,13 @@ describe('runAgentTurnV3', () => {
       tool_calls: [{ call_id: 'c1', name: 'search_catalog', arguments: '{}' }],
     }]);
     const execute = vi.fn(async (
-      _call: Parameters<ToolExecutor['execute']>[0],
-      _context: Parameters<ToolExecutor['execute']>[1],
-    ) => new Promise<never>(() => undefined));
+      call: Parameters<ToolExecutor['execute']>[0],
+      context: Parameters<ToolExecutor['execute']>[1],
+    ) => {
+      void call;
+      void context;
+      return new Promise<never>(() => undefined);
+    });
     const running = runAgentTurnV3(
       { model, tools: { execute }, now: () => Date.now() },
       { instructions: 'x', conversation: [], toolDefinitions },
@@ -260,8 +291,11 @@ describe('runAgentTurnV3', () => {
   });
 
   it.each([
+    null,
     {},
+    { decision: null },
     { decision, tool_calls: [] },
+    { decision, tool_calls: 'invalid' },
   ])('fails closed for a malformed provider output: %j', async (malformed) => {
     const model = {
       generate: vi.fn(async () => malformed as unknown as ModelOutputV3),

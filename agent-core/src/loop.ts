@@ -43,6 +43,10 @@ function failedToolResult(tool: string) {
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 export async function runAgentTurnV3(
   deps: {
     readonly model: ModelProvider;
@@ -85,12 +89,24 @@ export async function runAgentTurnV3(
         return { outcome: 'exhausted', reason: 'DEADLINE' };
       }
 
-      const hasDecision = 'decision' in output && output.decision !== undefined;
-      const hasToolCalls = 'tool_calls' in output && Array.isArray(output.tool_calls);
-      if (hasDecision && !hasToolCalls) {
-        return { outcome: 'decided', decision: output.decision!, rounds: round };
+      if (!isRecord(output)) {
+        return { outcome: 'exhausted', reason: 'MAX_ROUNDS' };
       }
-      if (!hasToolCalls || hasDecision) {
+      const hasDecision = Object.prototype.hasOwnProperty.call(output, 'decision');
+      const hasToolCalls = Object.prototype.hasOwnProperty.call(output, 'tool_calls');
+      if (hasDecision === hasToolCalls) {
+        return { outcome: 'exhausted', reason: 'MAX_ROUNDS' };
+      }
+      if (hasDecision) {
+        return isRecord(output.decision)
+          ? {
+              outcome: 'decided',
+              decision: output.decision as unknown as AgentTurnDecisionV3,
+              rounds: round,
+            }
+          : { outcome: 'exhausted', reason: 'MAX_ROUNDS' };
+      }
+      if (!Array.isArray(output.tool_calls)) {
         return { outcome: 'exhausted', reason: 'MAX_ROUNDS' };
       }
 
