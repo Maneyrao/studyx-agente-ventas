@@ -1,5 +1,6 @@
 import { narrativeViolationsV3 } from '../../../../agent-core/src/domain/response-blocks';
 import type { AgentTurnDecisionV3 } from '../../../../agent-core/src/ports/model-provider';
+import { solicitsACall } from './operational-promise-guard';
 
 export interface IntegrityViolationV3 {
   readonly code: string;
@@ -59,9 +60,11 @@ export function checkAgentTurnIntegrityV3(input: {
   const openPreparations = new Set(input.context.open_preparations);
   const committedPreparations = new Set(input.decision.commit_preparations);
   const artifactPreparations = new Set<string>();
+  let narrativeOffersCall = false;
 
   for (const block of input.decision.blocks) {
     if (block.type === 'narrative') {
+      narrativeOffersCall ||= solicitsACall(block.text);
       for (const code of narrativeViolationsV3(block.text)) {
         violations.push({ code, subject: 'narrative' });
       }
@@ -91,10 +94,12 @@ export function checkAgentTurnIntegrityV3(input: {
     }
   }
 
-  for (const preparationId of new Set([...artifactPreparations, ...committedPreparations])) {
-    if (openPreparations.has(preparationId)
-      && !isPreparationToolV3(input.context.preparation_tools[preparationId])) {
+  const authorizedPreparations: string[] = [];
+  for (const preparationId of openPreparations) {
+    if (!isPreparationToolV3(input.context.preparation_tools[preparationId])) {
       violations.push({ code: 'PREPARATION_TYPE_UNKNOWN', subject: preparationId });
+    } else {
+      authorizedPreparations.push(preparationId);
     }
   }
 
@@ -133,19 +138,29 @@ export function checkAgentTurnIntegrityV3(input: {
     patch.awaiting_reply === 'call_or_chat',
   ];
   const offersCall = callOfferSignals.every(Boolean);
-  if (callOfferSignals.some(Boolean) && !offersCall) {
+  if ((callOfferSignals.some(Boolean) && !offersCall) || narrativeOffersCall !== offersCall) {
     violations.push({ code: 'STATE_ACTION_INCOHERENT', subject: 'call_offer' });
   }
-  if (offersCall && !input.context.call_policy.offer_allowed) {
+  if ((offersCall || narrativeOffersCall) && !input.context.call_policy.offer_allowed) {
     violations.push({ code: 'CALL_OFFER_NOT_AUTHORIZED', subject: 'response_type' });
   }
-  if (input.context.call_policy.offer_required && !offersCall) {
+  if (input.context.call_policy.offer_required && !(offersCall && narrativeOffersCall)) {
     violations.push({ code: 'CALL_OFFER_REQUIRED', subject: 'response_type' });
   }
-  for (const preparationId of committedPreparations) {
-    if (input.context.preparation_tools[preparationId] === 'prepare_call_request'
-      && !input.context.call_policy.request_allowed) {
+  const callRequestCommits = [...committedPreparations].filter((preparationId) => (
+    input.context.preparation_tools[preparationId] === 'prepare_call_request'
+  ));
+  const confirmsCall = input.decision.response_type === 'call_confirmation';
+  if (confirmsCall !== (callRequestCommits.length > 0)) {
+    violations.push({ code: 'STATE_ACTION_INCOHERENT', subject: 'call_confirmation' });
+  }
+  if ((confirmsCall || callRequestCommits.length > 0)
+    && !input.context.call_policy.request_allowed) {
+    for (const preparationId of callRequestCommits) {
       violations.push({ code: 'CALL_REQUEST_NOT_AUTHORIZED', subject: preparationId });
+    }
+    if (callRequestCommits.length === 0) {
+      violations.push({ code: 'CALL_REQUEST_NOT_AUTHORIZED', subject: 'response_type' });
     }
   }
 
@@ -158,7 +173,7 @@ export function checkAgentTurnIntegrityV3(input: {
       violations,
       authorized_alternatives: {
         fact_ids: [...input.context.authorized_fact_ids],
-        preparations: [...input.context.open_preparations],
+        preparations: authorizedPreparations,
         missing_information: [...input.context.intake_missing],
       },
     },

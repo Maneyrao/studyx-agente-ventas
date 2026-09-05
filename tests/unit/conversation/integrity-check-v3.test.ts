@@ -46,13 +46,15 @@ describe('checkAgentTurnIntegrityV3', () => {
   });
 
   it('rejects every narrative violation and carries no customer text', () => {
-    const result = checkAgentTurnIntegrityV3({
+    const input = {
       ...base,
       decision: {
         ...base.decision,
-        blocks: [{ type: 'narrative', text: 'Sale USD 999 en https://x.com/a' }],
+        blocks: [{ type: 'narrative' as const, text: 'Sale USD 999 en https://x.com/a' }],
       },
-    });
+    };
+    const before = JSON.stringify(input);
+    const result = checkAgentTurnIntegrityV3(input);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.rejection.violations.map((violation) => violation.code)).toEqual([
@@ -60,6 +62,7 @@ describe('checkAgentTurnIntegrityV3', () => {
       'NARRATIVE_CONTAINS_AMOUNT',
     ]);
     expect(JSON.stringify(result)).not.toContain('Sale USD');
+    expect(JSON.stringify(input)).toBe(before);
   });
 
   it('rejects facts and artifact preparations outside the authorized context', () => {
@@ -153,7 +156,11 @@ describe('checkAgentTurnIntegrityV3', () => {
   it('does not require payment intake for a call preparation', () => {
     const result = checkAgentTurnIntegrityV3({
       ...base,
-      decision: { ...base.decision, commit_preparations: ['call-prep'] },
+      decision: {
+        ...base.decision,
+        response_type: 'call_confirmation',
+        commit_preparations: ['call-prep'],
+      },
       context: {
         ...base.context,
         open_preparations: ['call-prep'],
@@ -246,6 +253,28 @@ describe('checkAgentTurnIntegrityV3', () => {
     });
   });
 
+  it('rejects an unused open preparation without an authoritative tool type', () => {
+    const result = checkAgentTurnIntegrityV3({
+      ...base,
+      decision: {
+        ...base.decision,
+        blocks: [{ type: 'fact', fact_id: 'fact:invented' }],
+      },
+      context: {
+        ...base.context,
+        open_preparations: ['untyped-open'],
+        preparation_tools: {},
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.rejection.violations).toContainEqual({
+      code: 'PREPARATION_TYPE_UNKNOWN',
+      subject: 'untyped-open',
+    });
+    expect(result.rejection.authorized_alternatives.preparations).toEqual([]);
+  });
+
   it('rejects a call offer forbidden by the authoritative call policy', () => {
     const result = checkAgentTurnIntegrityV3({
       ...base,
@@ -276,6 +305,54 @@ describe('checkAgentTurnIntegrityV3', () => {
       code: 'CALL_OFFER_NOT_AUTHORIZED',
       subject: 'response_type',
     });
+  });
+
+  it('rejects a visible call offer that omits its structured signals', () => {
+    const result = checkAgentTurnIntegrityV3({
+      ...base,
+      decision: {
+        ...base.decision,
+        blocks: [{ type: 'narrative', text: 'Si querés, podemos coordinar una llamada.' }],
+      },
+      context: {
+        ...base.context,
+        call_policy: {
+          offer_allowed: false,
+          offer_required: false,
+          request_allowed: false,
+        },
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.rejection.violations).toContainEqual({
+      code: 'STATE_ACTION_INCOHERENT',
+      subject: 'call_offer',
+    });
+    expect(result.rejection.violations).toContainEqual({
+      code: 'CALL_OFFER_NOT_AUTHORIZED',
+      subject: 'response_type',
+    });
+  });
+
+  it('accepts a visible call offer with every structured signal when policy allows it', () => {
+    const result = checkAgentTurnIntegrityV3({
+      ...base,
+      decision: {
+        ...base.decision,
+        blocks: [{ type: 'narrative', text: 'Si querés, podemos coordinar una llamada.' }],
+        response_type: 'call_offer',
+        state_patch: {
+          expected_state_version: 5,
+          set: {
+            call_offer_delta: 1 as const,
+            call_offer_status: 'offered' as const,
+            awaiting_reply: 'call_or_chat' as const,
+          },
+        },
+      },
+    });
+    expect(result).toEqual({ ok: true });
   });
 
   it('rejects omitting a call offer when the authoritative policy requires it', () => {
@@ -318,6 +395,23 @@ describe('checkAgentTurnIntegrityV3', () => {
     expect(result.rejection.violations).toContainEqual({
       code: 'CALL_REQUEST_NOT_AUTHORIZED',
       subject: 'call-prep',
+    });
+  });
+
+  it('rejects a call confirmation without a committed call preparation', () => {
+    const result = checkAgentTurnIntegrityV3({
+      ...base,
+      decision: {
+        ...base.decision,
+        blocks: [{ type: 'narrative', text: 'Perfecto, coordinamos la llamada.' }],
+        response_type: 'call_confirmation',
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.rejection.violations).toContainEqual({
+      code: 'STATE_ACTION_INCOHERENT',
+      subject: 'call_confirmation',
     });
   });
 
