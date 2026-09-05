@@ -177,6 +177,22 @@ describe('derivePaymentChoiceFromBatch', () => {
       .toEqual({ kind: 'direct', planCode: 'one_time' });
   });
 
+  it.each([
+    'No quiero un pago de 360',
+    'No, un pago de 360 no',
+  ])('does not persist or authorize a negated one-time amount: %s', (content) => {
+    expect(derivePaymentPlanSelectionFromBatch([msg(content)])).toBeNull();
+    expect(classifyCurrentPaymentIntent([msg(content)]).kind).not.toBe('direct');
+  });
+
+  it.each([
+    'El curso requiere un pago de 360 antes de empezar',
+    'Me dijeron que es un pago de 360',
+  ])('does not persist or authorize a narrative one-time amount: %s', (content) => {
+    expect(derivePaymentPlanSelectionFromBatch([msg(content)])).toBeNull();
+    expect(classifyCurrentPaymentIntent([msg(content)])).toEqual({ kind: 'none' });
+  });
+
   it('still returns null on ambiguity between the new phrasings', () => {
     expect(derivePaymentChoiceFromBatch([msg('¿6 pagos o todo junto?')])).toBeNull();
   });

@@ -71,4 +71,20 @@ describe('payment-choice mirror parity (botpress-agent vs backend)', () => {
     expect(mirrorDeferral(messages, true)).toBe(backendDeferral(messages, true));
     expect(mirrorDecline(messages)).toBe(backendDecline(messages));
   });
+
+  it.each([
+    ['No quiero un pago de 360', { kind: 'none' }],
+    ['No, un pago de 360 no', { kind: 'none' }],
+    ['El curso requiere un pago de 360 antes de empezar', { kind: 'none' }],
+    ['Me dijeron que es un pago de 360', { kind: 'none' }],
+  ] as const)('keeps non-selections from acquiring payment authority in both copies: %s', (
+    text,
+    expectedIntent,
+  ) => {
+    const messages = [{ content: text }];
+    expect(backendSelection(messages)).toBeNull();
+    expect(mirrorSelection(messages)).toBeNull();
+    expect(backendClassify(messages)).toEqual(expectedIntent);
+    expect(mirrorClassify(messages)).toEqual(expectedIntent);
+  });
 });

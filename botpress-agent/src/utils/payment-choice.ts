@@ -41,14 +41,33 @@ const PLAN_PATTERNS: ReadonlyArray<{ readonly code: PaymentPlanCode; readonly pa
   {
     code: 'one_time',
     pattern:
-      /\b(?:contado|pago\s+unico|todo\s+junto|un\s+solo\s+pago|pago\s+total|(?:un\s+)?unico\s+pago|un\s+pago\s+de\s+(?:usd\s*)?360(?:\s*(?:usd|dolares?))?)\b/,
+      /\b(?:contado|pago\s+unico|todo\s+junto|un\s+solo\s+pago|pago\s+total|(?:un\s+)?unico\s+pago)\b/,
   },
 ]
 
 const NARRATIVE_CONTADO_PATTERN =
   /\b(?:(?:me|te|le|nos|les)\s+)?(?:habia|habias|habiamos|habian|he|has|ha|hemos|han)\s+contado\b/
 const EXPLICIT_ONE_TIME_WITHOUT_CONTADO_PATTERN =
-  /\b(?:pago\s+unico|todo\s+junto|un\s+solo\s+pago|pago\s+total|(?:un\s+)?unico\s+pago|un\s+pago\s+de\s+(?:usd\s*)?360(?:\s*(?:usd|dolares?))?)\b/
+  /\b(?:pago\s+unico|todo\s+junto|un\s+solo\s+pago|pago\s+total|(?:un\s+)?unico\s+pago)\b/
+
+const ONE_TIME_AMOUNT_PATTERN =
+  /\bun\s+pago\s+de\s+(?:usd\s*)?360(?:\s*(?:usd|dolares?))?\b/
+const SHORT_ONE_TIME_AMOUNT_SELECTION_PATTERN =
+  /^(?:un\s+pago\s+de\s+(?:usd\s*)?360(?:\s*(?:usd|dolares?))?)(?:\s+(?:por\s+favor|porfa|me\s+sirve|esta\s+bien))?$/u
+const COMMITTED_ONE_TIME_AMOUNT_SELECTION_PATTERN =
+  /\b(?:confirmo|prefiero|elijo|elegi|me\s+quedo\s+con|voy\s+con|quiero(?:\s+pagar)?)\b[^.!?;,\n]{0,48}\bun\s+pago\s+de\s+(?:usd\s*)?360(?:\s*(?:usd|dolares?))?\b/u
+const NEGATED_ONE_TIME_AMOUNT_PATTERN = /\b(?:no|nunca|ni|tampoco)\b/u
+
+function hasExplicitOneTimeAmountSelection(normalized: string): boolean {
+  return normalized.split(/[.!?;,\n]+/u).some((rawClause) => {
+    const clause = rawClause.trim()
+    if (!ONE_TIME_AMOUNT_PATTERN.test(clause) || NEGATED_ONE_TIME_AMOUNT_PATTERN.test(clause)) {
+      return false
+    }
+    return SHORT_ONE_TIME_AMOUNT_SELECTION_PATTERN.test(clause)
+      || COMMITTED_ONE_TIME_AMOUNT_SELECTION_PATTERN.test(clause)
+  })
+}
 
 const TEMPORAL_PAYMENT_DEFERRAL_PATTERNS: readonly RegExp[] = [
   /\bno\s+me\s+(?:mandes|envies|pases|compartas)\s+(?:el\s+)?(?:link|enlace)\b/,
@@ -104,6 +123,7 @@ function plansMentionedIn(normalized: string): Set<PaymentPlanCode> {
     ) continue
     matched.add(code)
   }
+  if (hasExplicitOneTimeAmountSelection(normalized)) matched.add('one_time')
   return matched
 }
 

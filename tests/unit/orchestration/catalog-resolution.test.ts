@@ -78,6 +78,25 @@ describe('resolveCatalogRequest', () => {
     });
   });
 
+  it.each([
+    [['Ninguno, el de fotografía', 'No, ninguno']],
+    [['Ninguno, el de fotografía. No, ninguno.']],
+    [['Ninguno, el de fotografía, no']],
+  ])('lets the latest rejection override an earlier replacement: %j', (messages) => {
+    expect(resolveCatalogRequest(messages, snapshot([
+      SOLAR, PHOTOGRAPHY, MARKETING, MOBILE_PHOTOGRAPHY,
+    ]))).toEqual({ kind: 'no_catalog_intent' });
+  });
+
+  it.each([
+    'Me gusta la fotografía',
+    'Trabajo con la fotografía',
+  ])('does not infer catalog intent from an ordinary article: %s', (text) => {
+    expect(resolveCatalogRequest(text, snapshot([
+      SOLAR, PHOTOGRAPHY, MARKETING, MOBILE_PHOTOGRAPHY,
+    ]))).toEqual({ kind: 'no_catalog_intent' });
+  });
+
   it('uses whole topic words for other partial course families', () => {
     expect(resolveCatalogRequest('Busco un curso de reparación', snapshot([
       CELLPHONES,

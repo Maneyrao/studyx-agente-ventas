@@ -175,8 +175,18 @@ export function extractContactNameAnswer(
   if (asksFirstName && asksSurname && surnameFirst
     && isPlausibleName(surnameFirst[1]) && isPlausibleName(surnameFirst[2])) {
     const firstName = surnameFirst[2].trim();
-    const surname = surnameFirst[1].trim();
-    return { firstName, surname, name: `${firstName} ${surname}` };
+    const statedSurname = surnameFirst[1].trim();
+    const suffix = text.slice(surnameFirst[0].length).trim();
+    const harmlessAcknowledgement = /^(?:[,;.!?…]\s*)?(?:ya\s+lo\s+sab(?:es|ias))?[.!?…]*$/iu
+      .test(suffix);
+    const correctedSurname = new RegExp(
+      `^(?:[,;.!?…]\\s*)?(?:pero\\s+)?(?:mi\\s+apellido(?:\\s+correcto)?\\s+es|me\\s+equivoqu[eé].{0,48}?\\bes)\\s+(${NAME_SEQUENCE})(?:\\s+con\\s+tilde)?[.!?…]*$`,
+      'iu',
+    ).exec(suffix)?.[1]?.trim() ?? null;
+    if (harmlessAcknowledgement || (correctedSurname && isPlausibleName(correctedSurname))) {
+      const surname = correctedSurname ?? statedSurname;
+      return { firstName, surname, name: `${firstName} ${surname}` };
+    }
   }
 
   // A phone link is transport formatting, not part of the written name. Only

@@ -92,7 +92,7 @@ const CATALOG_REJECTION_PATTERN =
   /\b(?:no quiero|no me interesa|no prefiero|no elijo|ya no quiero|descarto|cancelo|no mejor no|mejor no|dejalo|dejala|ninguno|ninguna|cambi(?:o|emos|ar) de (?:curso|programa))\b/u;
 
 const CATALOG_REPLACEMENT_AFTER_REJECTION_PATTERN =
-  /\b(?:ninguno|ninguna)\b\s+(?:mejor\s+)?(?:el|la|uno|una)\s+de\s+[\p{L}\p{N}]/u;
+  /\b(?:ninguno|ninguna)\b\s+(?:mejor\s+)?(?:el|la|uno|una)\s+de\s+([\p{L}\p{N}].*)$/u;
 
 const PAYMENT_OR_LINK_CONTEXT_PATTERN =
   /\b(?:pag(?:o|ar|arlo|arla|arlos|arlas)?|cuotas?|dolares?|usd|link|plan(?:es)?|mensual(?:es)?|mes(?:es)?|pensar(?:lo|la)?|decidir)\b/u;
@@ -142,6 +142,19 @@ function toMessages(text: string | readonly string[]): string[] {
 function requestedText(text: string | readonly string[]): string {
   const values = typeof text === 'string' ? [text] : text;
   return values.map((value) => value.trim()).filter(Boolean).join('\n');
+}
+
+function explicitCatalogReplacementSubject(text: string | readonly string[]): string | null {
+  const values = typeof text === 'string' ? [text] : text;
+  const directives = values.flatMap((value) => value.split(/[.!?;\n]/u))
+    .map((value) => normalizeSpanishCatalogText(value))
+    .filter(Boolean);
+  const latest = directives.at(-1);
+  if (!latest) return null;
+
+  const subject = CATALOG_REPLACEMENT_AFTER_REJECTION_PATTERN.exec(latest)?.[1]?.trim() ?? null;
+  if (!subject || /\bno\b/u.test(subject) || CATALOG_REJECTION_PATTERN.test(subject)) return null;
+  return subject;
 }
 
 function snapshotIsInvalid(snapshot: CatalogResolutionSnapshot): boolean {
@@ -414,7 +427,7 @@ function partialSubjectMatches(
     // course, or confuse "fot" with "fotovoltaica". A bare title fragment is
     // also a subject; surrounding unrelated prose is not stripped from it.
     const cues = [...normalized.matchAll(
-      /\b(?:cursos?|diplomados?|capacitaciones|capacitacion|formaciones|formacion|programas?|estudiar|aprender|busco|quiero|me interesa|me interesan|informacion sobre|el|la)\s+(?:(?:el|la|un|una|de)\s+)*/gu,
+      /\b(?:cursos?|diplomados?|capacitaciones|capacitacion|formaciones|formacion|programas?|estudiar|aprender|busco|quiero|me interesa|me interesan|informacion sobre)\s+(?:(?:el|la|un|una|de)\s+)*/gu,
     )];
     const cue = cues.at(-1);
     const subject = (cue?.index === undefined
@@ -543,7 +556,8 @@ export function resolveCatalogRequest(
 ): CatalogResolution {
   const request = requestedText(text);
   const messages = toMessages(text);
-  const explicitCatalogIntent = hasCatalogIntent(messages);
+  const replacementSubject = explicitCatalogReplacementSubject(text);
+  const explicitCatalogIntent = hasCatalogIntent(messages) || replacementSubject !== null;
 
   if (snapshot === null) {
     return explicitCatalogIntent
@@ -557,14 +571,12 @@ export function resolveCatalogRequest(
   }
 
   const offerings = indexOfferings(snapshot);
-  const hits = literalHits(messages, offerings);
-  const positiveHits = positiveLiteralHits(messages, hits);
+  const resolutionMessages = replacementSubject === null ? messages : [replacementSubject];
+  const hits = literalHits(resolutionMessages, offerings);
+  const positiveHits = positiveLiteralHits(resolutionMessages, hits);
   const literalMatches = distinctLiteralMatches(positiveHits);
-  const hasReplacementAfterRejection = messages.some((message) => (
-    CATALOG_REPLACEMENT_AFTER_REJECTION_PATTERN.test(message)
-  ));
 
-  if (!hasReplacementAfterRejection && (
+  if (replacementSubject === null && (
     latestMessageCancelsSelection(messages, positiveHits)
     || (hits.length > 0 && positiveHits.length === 0)
     || (positiveHits.length === 0 && messages.some((message) => CATALOG_REJECTION_PATTERN.test(message)))
@@ -582,7 +594,7 @@ export function resolveCatalogRequest(
       return exact(literalMatches[0].offering, 'canonical');
     }
     const namedAcademy = explicitAcademy(
-      messages,
+      resolutionMessages,
       literalMatches.map((match) => match.offering),
     );
     if (namedAcademy !== null) {
@@ -594,12 +606,12 @@ export function resolveCatalogRequest(
         return exact(academyMatches[0].offering, 'canonical');
       }
     }
-    const selected = explicitSelection(messages, positiveHits);
+    const selected = explicitSelection(resolutionMessages, positiveHits);
     if (selected !== null) return exact(selected.offering, 'canonical');
     return ambiguous(request, literalMatches.map((match) => match.offering));
   }
 
-  const partialMatches = partialSubjectMatches(text, offerings);
+  const partialMatches = partialSubjectMatches(replacementSubject ?? text, offerings);
   if (partialMatches.length > 0) {
     if (snapshot.offerings_truncated > 0) {
       return { kind: 'unavailable', reason: 'snapshot_truncated' };
@@ -613,7 +625,7 @@ export function resolveCatalogRequest(
   // is only a spelling aid after the customer explicitly asked about catalog.
   if (!explicitCatalogIntent) return { kind: 'no_catalog_intent' };
 
-  const fuzzyMatches = typoMatches(messages, offerings);
+  const fuzzyMatches = typoMatches(resolutionMessages, offerings);
   if (fuzzyMatches.length > 1) return ambiguous(request, fuzzyMatches);
   if (fuzzyMatches.length === 1) {
     // A truncated snapshot cannot establish that a fuzzy candidate is unique.
