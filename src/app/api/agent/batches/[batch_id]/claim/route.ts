@@ -14,6 +14,7 @@ import {
 import { businessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
 import { salesContextStore } from '@/features/sales/adapters/postgres-sales-context-store';
 import { PostgresConversationStateStoreV1 } from '@/features/conversation/adapters/postgres-conversation-state-store';
+import { PostgresAgentLoopRolloutReaderV3 } from '@/features/orchestration/adapters/postgres-agent-loop-rollout';
 import {
   buildBusinessContextView,
   buildCatalogIndexView,
@@ -132,6 +133,7 @@ export async function POST(
       return NextResponse.json({ error: 'AGENT_A_BRAIN_CONFIGURATION_INVALID' }, { status: 503 });
     }
     const conversationStateStore = new PostgresConversationStateStoreV1();
+    const agentLoopRollout = new PostgresAgentLoopRolloutReaderV3(workspaceSlug);
     const result = await timedStage(
       'orchestration.claim',
       { trace_id: parsed.data.trace_id, batch_id },
@@ -166,6 +168,7 @@ export async function POST(
         agentAStateAssertions: rolloutConfig.stateAssertions,
         agentASingleRoute: rolloutConfig.singleRoute,
         agentABrainShadow: brainConfig.shadow,
+        agentLoopRollout,
       }
     )
     );

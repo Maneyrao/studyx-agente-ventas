@@ -335,6 +335,41 @@ describe('claimBatch', () => {
     });
   });
 
+  it('resolves and projects the runtime agent-loop mode for the claimed contact', async () => {
+    const load = vi.fn().mockResolvedValue([
+      { contact_id: null, mode: 'off' as const },
+      { contact_id: 'contact-1', mode: 'shadow' as const },
+    ]);
+    const result = await claimBatch(input, {
+      ...buildDeps(),
+      agentLoopRollout: { load },
+    });
+
+    expect(load).toHaveBeenCalledWith('contact-1');
+    expect(result).toMatchObject({
+      outcome: 'claimed',
+      features: { agent_loop_v3_mode: 'shadow' },
+    });
+  });
+
+  it('fails the runtime agent-loop rollout closed when its store is unavailable', async () => {
+    const log = vi.fn();
+    const result = await claimBatch(input, {
+      ...buildDeps(),
+      log,
+      agentLoopRollout: { load: vi.fn().mockRejectedValue(new Error('rollout unavailable')) },
+    });
+
+    expect(result).toMatchObject({
+      outcome: 'claimed',
+      features: { agent_loop_v3_mode: 'off' },
+    });
+    expect(log).toHaveBeenCalledWith(
+      'orchestration.claim.agent_loop_rollout_unavailable',
+      expect.objectContaining({ batch_id: 'batch-1' }),
+    );
+  });
+
   it('loads facts, batch messages and call facts through one core snapshot port', async () => {
     const deps = buildDeps();
 
@@ -447,8 +482,14 @@ describe('claimBatch', () => {
     const legacyBackendPayload: Record<string, unknown> = { ...withWireUuids(result) };
     delete legacyBackendPayload.deterministic_route;
     delete legacyBackendPayload.diagnostics;
+    const legacyFeatures = {
+      ...(legacyBackendPayload.features as Record<string, unknown>),
+    };
+    delete legacyFeatures.agent_loop_v3_mode;
+    legacyBackendPayload.features = legacyFeatures;
 
     const parsed = ClaimedTurnSchema.parse(legacyBackendPayload);
+    expect(parsed.features?.agent_loop_v3_mode).toBe('off');
     expect(parsed.deterministic_route).toBeNull();
     expect(parsed.diagnostics).toEqual({
       timings: {

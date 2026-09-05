@@ -79,7 +79,7 @@ function claimedTurn(): ClaimedTurn {
       allowed_actions: ['offer_call', 'request_call_now'],
       last_call_result: null,
     },
-    features: { conversation_pipeline_v1_enabled: true },
+    features: { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: true },
     conversation_state_v1: {
       selected_offering_code: 'redes-informaticas',
       selected_payment_plan: null,

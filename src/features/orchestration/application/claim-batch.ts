@@ -20,6 +20,11 @@ import {
   classifyDeterministicSalesSignal,
 } from '../domain/sales-signal';
 import { evaluateCallOfferPolicy } from '../domain/call-offer-policy';
+import {
+  resolveAgentLoopModeV3,
+  type AgentLoopModeV3,
+  type AgentLoopRolloutReaderV3,
+} from '../domain/agent-loop-rollout';
 import { isTrivial } from '@/lib/heuristics/triviality';
 import { isExplicitOptOut } from '@/lib/heuristics/opt-out';
 import type {
@@ -92,6 +97,8 @@ export interface ClaimBatchDependencies {
   /** Inyectable para test; por defecto lee `contacts` con el cliente compartido. */
   readonly contactIntake?: (contactId: string) => Promise<ContactIntakeV1>;
   readonly agentABrainShadow?: boolean;
+  /** Runtime rollout resolved after the batch is owned and its contact is canonical. */
+  readonly agentLoopRollout?: AgentLoopRolloutReaderV3;
 }
 
 export interface ContextLimits {
@@ -199,6 +206,7 @@ export interface ClaimedTurn {
   };
   readonly sales_context: ClaimedSalesContext;
   readonly features: {
+    readonly agent_loop_v3_mode: AgentLoopModeV3;
     readonly conversation_pipeline_v1_enabled: boolean;
     readonly agent_a_brain_v1_enabled: boolean;
     readonly agent_a_context_scoping: boolean;
@@ -620,6 +628,7 @@ export async function claimBatch(
   let catalog_index: CatalogIndexView | null = null;
   let persisted_sales_context: SalesContextState | null = null;
   let persisted_conversation_state: ConversationStateV1 | null = null;
+  let agentLoopMode: AgentLoopModeV3 = 'off';
   const businessTask = (async () => {
     if (!policy.may_respond || optOutAcknowledgementOnly || !deps.business) return;
     counters.business_snapshot_calls += 1;
@@ -691,6 +700,19 @@ export async function claimBatch(
       );
     } catch (error) {
       log('orchestration.claim.conversation_state_v1_unavailable', {
+        trace_id: input.trace_id,
+        batch_id: claim.batch_id,
+        error: String(error),
+      });
+    }
+  })();
+  const agentLoopRolloutTask = (async () => {
+    if (!deps.agentLoopRollout) return;
+    try {
+      const rows = await deps.agentLoopRollout.load(facts.contact.id);
+      agentLoopMode = resolveAgentLoopModeV3(rows, facts.contact.id);
+    } catch (error) {
+      log('orchestration.claim.agent_loop_rollout_unavailable', {
         trace_id: input.trace_id,
         batch_id: claim.batch_id,
         error: String(error),
@@ -835,7 +857,7 @@ export async function claimBatch(
     }
   }
 
-  await Promise.all([businessTask, conversationStateTask]);
+  await Promise.all([businessTask, conversationStateTask, agentLoopRolloutTask]);
   const catalog_resolution = resolveCatalogFromSnapshot(
     batchMessages
       .filter((message) => message.message_type === 'text')
@@ -1004,6 +1026,7 @@ export async function claimBatch(
     },
     sales_context: salesContext,
     features: {
+      agent_loop_v3_mode: agentLoopMode,
       conversation_pipeline_v1_enabled: deps.conversationPipelineEnabled === true,
       agent_a_brain_v1_enabled: deps.agentABrainEnabled === true,
       agent_a_context_scoping: deps.agentAContextScoping === true,

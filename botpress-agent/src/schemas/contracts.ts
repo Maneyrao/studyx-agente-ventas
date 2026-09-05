@@ -560,6 +560,7 @@ export const ClaimedTurnSchema = z.object({
   }),
   sales_context: SalesContextSchema,
   features: z.object({
+    agent_loop_v3_mode: z.enum(['off', 'shadow', 'authoritative']).default('off'),
     conversation_pipeline_v1_enabled: z.boolean().default(false),
     agent_a_brain_v1_enabled: z.boolean().optional(),
     agent_a_brain_v1_shadow: z.boolean().optional(),

@@ -222,6 +222,7 @@ function localBrainClaimedTurn(): ClaimedTurn {
   return {
     ...claimed,
     features: {
+      agent_loop_v3_mode: 'off',
       conversation_pipeline_v1_enabled: false,
       agent_a_brain_v1_enabled: true,
       agent_a_brain_v1_shadow: false,
@@ -677,6 +678,7 @@ describe('Agent A conversation runner', () => {
   it('runs the same one-repair authority cycle as production when the flag is enabled', async () => {
     const claimed = localBrainClaimedTurn();
     claimed.features = {
+      agent_loop_v3_mode: 'off',
       conversation_pipeline_v1_enabled: false,
       agent_a_brain_v1_enabled: true,
       agent_a_brain_v1_shadow: false,

@@ -379,6 +379,7 @@ describe('processInboundTurn hot path', () => {
   it('sends the complete Brain proposal to backend authority without invoking the planner', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
+      agent_loop_v3_mode: 'off',
       conversation_pipeline_v1_enabled: true,
       agent_a_brain_v1_enabled: true,
       agent_a_brain_v1_shadow: false,
@@ -453,6 +454,7 @@ describe('processInboundTurn hot path', () => {
     async (_mode, enabled, shadow, expectedBrainCalls, expectedPlannerCalls, expectedLegacyCalls) => {
       const claimed = claimedResponse() as unknown as ClaimedTurn;
       claimed.features = {
+        agent_loop_v3_mode: 'off',
         conversation_pipeline_v1_enabled: false,
         agent_a_brain_v1_enabled: enabled,
         agent_a_brain_v1_shadow: shadow,
@@ -547,6 +549,7 @@ describe('processInboundTurn hot path', () => {
   it('fails closed silently when the authoritative brain is unavailable', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
+      agent_loop_v3_mode: 'off',
       conversation_pipeline_v1_enabled: false,
       agent_a_brain_v1_enabled: true,
       agent_a_brain_v1_shadow: false,
@@ -611,6 +614,7 @@ describe('processInboundTurn hot path', () => {
   it('does not use Botpress managed extraction when DeepSeek fails', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
+      agent_loop_v3_mode: 'off',
       conversation_pipeline_v1_enabled: false,
       agent_a_brain_v1_enabled: true,
       agent_a_brain_v1_shadow: false,
@@ -672,6 +676,7 @@ describe('processInboundTurn hot path', () => {
   it('preserves DeepSeek wording but strips every action when the planner rejects it', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
+      agent_loop_v3_mode: 'off',
       conversation_pipeline_v1_enabled: false,
       agent_a_brain_v1_enabled: true,
       agent_a_brain_v1_shadow: false,
@@ -746,6 +751,7 @@ describe('processInboundTurn hot path', () => {
   it('does not use a managed model when DeepSeek is rate limited', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
+      agent_loop_v3_mode: 'off',
       conversation_pipeline_v1_enabled: false,
       agent_a_brain_v1_enabled: true,
       agent_a_brain_v1_shadow: false,
@@ -810,6 +816,7 @@ describe('processInboundTurn hot path', () => {
   it('ignores an OpenAI secret and keeps DeepSeek as the authoritative brain', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
+      agent_loop_v3_mode: 'off',
       conversation_pipeline_v1_enabled: false,
       agent_a_brain_v1_enabled: true,
       agent_a_brain_v1_shadow: false,
@@ -878,6 +885,7 @@ describe('processInboundTurn hot path', () => {
   it('uses DeepSeek Flash before every legacy provider when its production secret exists', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
+      agent_loop_v3_mode: 'off',
       conversation_pipeline_v1_enabled: false,
       agent_a_brain_v1_enabled: true,
       agent_a_brain_v1_shadow: false,
@@ -947,6 +955,7 @@ describe('processInboundTurn hot path', () => {
   it('fails closed without invoking a second model when DeepSeek is unavailable', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
+      agent_loop_v3_mode: 'off',
       conversation_pipeline_v1_enabled: false,
       agent_a_brain_v1_enabled: true,
       agent_a_brain_v1_shadow: false,
@@ -1023,6 +1032,7 @@ describe('processInboundTurn hot path', () => {
   it('binds the backend-resolved current course before planning a fluent brain reply', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
+      agent_loop_v3_mode: 'off',
       conversation_pipeline_v1_enabled: false,
       agent_a_brain_v1_enabled: true,
       agent_a_brain_v1_shadow: false,
@@ -1109,6 +1119,7 @@ describe('processInboundTurn hot path', () => {
   it('lets the authoritative DeepSeek brain compose a greeting without an optional runtime flag', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
+      agent_loop_v3_mode: 'off',
       conversation_pipeline_v1_enabled: false,
       agent_a_brain_v1_enabled: true,
       agent_a_brain_v1_shadow: false,
@@ -1172,6 +1183,7 @@ describe('processInboundTurn hot path', () => {
   it('never replaces an unavailable authoritative brain with a deterministic greeting', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
+      agent_loop_v3_mode: 'off',
       conversation_pipeline_v1_enabled: false,
       agent_a_brain_v1_enabled: true,
       agent_a_brain_v1_shadow: false,
@@ -1216,6 +1228,7 @@ describe('processInboundTurn hot path', () => {
   it('lets a greeting reach the planner under the V1 pipeline instead of a canned answer', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
+      agent_loop_v3_mode: 'off',
       conversation_pipeline_v1_enabled: true,
       agent_a_brain_v1_enabled: true,
       agent_a_brain_v1_shadow: false,
@@ -1268,6 +1281,7 @@ describe('processInboundTurn hot path', () => {
   it('ignores a Gemini secret and keeps DeepSeek as the authoritative brain', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
+      agent_loop_v3_mode: 'off',
       conversation_pipeline_v1_enabled: false,
       agent_a_brain_v1_enabled: true,
       agent_a_brain_v1_shadow: false,
@@ -1779,6 +1793,7 @@ describe('processInboundTurn hot path', () => {
     configuration.agentAPlannerlessV2Enabled = false;
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
+      agent_loop_v3_mode: 'off',
       conversation_pipeline_v1_enabled: true,
       agent_a_brain_v1_enabled: false,
       agent_a_brain_v1_shadow: false,
@@ -1846,6 +1861,7 @@ describe('processInboundTurn hot path', () => {
   it('does not execute the legacy conversation pipeline when single-route is enabled', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
+      agent_loop_v3_mode: 'off',
       conversation_pipeline_v1_enabled: true,
       agent_a_brain_v1_enabled: false,
       agent_a_brain_v1_shadow: false,
@@ -1891,7 +1907,7 @@ describe('processInboundTurn hot path', () => {
   it('keeps V1 behind the automation kill switch even when the feature flag is projected', async () => {
     configuration.automationEnabled = false;
     const claimed = claimedResponse() as unknown as ClaimedTurn;
-    claimed.features = { conversation_pipeline_v1_enabled: true };
+    claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: true };
     claimed.context.batch_messages[0].content = 'Necesito orientación comercial';
     actionSpies.claim.mockResolvedValue(claimed);
     const step = Object.assign(
@@ -1919,7 +1935,7 @@ describe('processInboundTurn hot path', () => {
 
   it('projects an authorized backend call acceptance through the V1 planner without a model call', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
-    claimed.features = { conversation_pipeline_v1_enabled: true };
+    claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: true };
     claimed.deterministic_route = 'call_accepted_offer';
     claimed.conversation_state_v1 = {
       selected_offering_code: 'redes-informaticas', selected_payment_plan: null,
@@ -1975,6 +1991,7 @@ describe('processInboundTurn hot path', () => {
   it('does not execute a canned call route when the authoritative brain is unavailable', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
+      agent_loop_v3_mode: 'off',
       conversation_pipeline_v1_enabled: false,
       agent_a_brain_v1_enabled: true,
       agent_a_brain_v1_shadow: false,
@@ -2031,7 +2048,7 @@ describe('processInboundTurn hot path', () => {
 
   it('fails closed on interpreter timeout without invoking the legacy model or planner', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
-    claimed.features = { conversation_pipeline_v1_enabled: true };
+    claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: true };
     claimed.conversation_state_v1 = {
       selected_offering_code: 'redes-informaticas', selected_payment_plan: null,
       stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
