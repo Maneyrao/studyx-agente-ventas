@@ -32,12 +32,17 @@ BEGIN;
 ALTER TABLE public.selected_memories
   DROP CONSTRAINT selected_memories_status_check;
 
+-- `NOT VALID` keeps the short catalog change separate from the table scan;
+-- `VALIDATE` preserves the same constraint semantics with a weaker lock.
 ALTER TABLE public.selected_memories
   ADD CONSTRAINT selected_memories_status_check
   CHECK (status IN (
     'proposed', 'accepted', 'rejected',
     'active', 'pending_supersession', 'superseded', 'expired'
-  ));
+  )) NOT VALID;
+
+ALTER TABLE public.selected_memories
+  VALIDATE CONSTRAINT selected_memories_status_check;
 
 CREATE OR REPLACE FUNCTION public.record_prepared_agent_memory_v1(
   p_memory_id            uuid,
