@@ -208,12 +208,42 @@ describe('agent loop atomic commit regressions', () => {
         violations: [{ code: 'MULTIPLE_PAYMENT_PREPARATIONS' }],
       },
     });
+    const [effects] = await sql<Array<{
+      decisions: number;
+      outbounds: number;
+      committed_preparations: number;
+      projection_jobs: number;
+    }>>`
+      SELECT
+        (SELECT count(*)::int FROM agent_decisions
+          WHERE turn_id = ${seeded.turn_id}::uuid) AS decisions,
+        (SELECT count(*)::int FROM messages
+          WHERE in_reply_to = ${seeded.turn_id}::uuid AND direction = 'outbound') AS outbounds,
+        (SELECT count(*)::int FROM agent_turn_preparations
+          WHERE id IN (${first.preparation_id}::uuid, ${second.preparation_id}::uuid)
+            AND committed_at IS NOT NULL) AS committed_preparations,
+        (SELECT count(*)::int FROM payment_projection_jobs AS job
+          JOIN agent_decisions AS decision ON decision.id = job.decision_id
+          WHERE decision.turn_id = ${seeded.turn_id}::uuid) AS projection_jobs
+    `;
+    expect(effects).toEqual({
+      decisions: 0,
+      outbounds: 0,
+      committed_preparations: 0,
+      projection_jobs: 0,
+    });
   });
 
   it('persists the memory and canonical-reference provenance declared by the agent', async () => {
     const seeded = await seedConversationForAgentTurn({
+      intake_complete: true,
       selected_offering_code: 'entrenamiento_funcional',
     });
+    const prepared = await preparePaymentLinkToolV1(
+      { db: sql, turn_id: seeded.turn_id, conversation_id: seeded.conversation_id },
+      { offering_code: 'entrenamiento_funcional', payment_plan: 'one_time' },
+      { resolver },
+    );
     const committed = await commitAgentTurnV3(sql, {
       turn_id: seeded.turn_id,
       trace_id: seeded.trace_id,
@@ -222,10 +252,14 @@ describe('agent loop atomic commit regressions', () => {
         blocks: [
           { type: 'narrative', text: 'El valor vigente es:' },
           { type: 'fact', fact_id: 'offering:entrenamiento_funcional:price:v1' },
+          { type: 'artifact', preparation_id: prepared.preparation_id! },
         ],
-        commit_preparations: [],
+        commit_preparations: [prepared.preparation_id!],
         used_memory_ids: ['memory-123'],
-        state_patch: { expected_state_version: seeded.state_version, set: {} },
+        state_patch: {
+          expected_state_version: seeded.state_version,
+          set: { stage: 'payment_link_sent' },
+        },
         response_type: 'commercial_reply',
       },
       release_manifest: seeded.release_manifest,
@@ -249,10 +283,24 @@ describe('agent loop atomic commit regressions', () => {
     const expected = {
       used_memory_ids: ['memory-123'],
       fact_ids: ['offering:entrenamiento_funcional:price:v1'],
-      preparation_ids: [],
+      preparation_ids: [prepared.preparation_id!],
     };
     expect(proof?.used_memory_ids).toEqual(['memory-123']);
     expect(proof?.message_provenance).toEqual(expected);
     expect(proof?.outbox_provenance).toEqual(expected);
+
+    await expect(sql.begin(async (transaction) => {
+      await transaction`SET LOCAL ROLE orchestrator_role`;
+      await transaction`
+        UPDATE agent_decisions
+        SET used_memory_ids = ARRAY['tampered']::text[]
+        WHERE id = ${committed.decision_id}::uuid
+      `;
+    })).rejects.toMatchObject({ code: '23514' });
+    const [immutable] = await sql<Array<{ used_memory_ids: string[] }>>`
+      SELECT used_memory_ids FROM agent_decisions
+      WHERE id = ${committed.decision_id}::uuid
+    `;
+    expect(immutable?.used_memory_ids).toEqual(['memory-123']);
   });
 });

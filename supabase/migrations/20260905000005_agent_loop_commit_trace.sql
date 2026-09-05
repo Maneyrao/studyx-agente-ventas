@@ -22,4 +22,51 @@ CREATE INDEX IF NOT EXISTS conversation_sales_context_events_v1_source_idx
 COMMENT ON COLUMN agent_decisions.used_memory_ids IS
   'Immutable memory identifiers explicitly used by an Agent Loop V3 decision.';
 
+-- Replacing the trigger function is required when immutable decision columns
+-- are added: table-level UPDATE remains available for the one legal transition
+-- that binds outbound_message_id after message creation.
+CREATE OR REPLACE FUNCTION public.enforce_agent_decision_immutability()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
+BEGIN
+  IF OLD.turn_id IS DISTINCT FROM NEW.turn_id
+     OR OLD.trace_id IS DISTINCT FROM NEW.trace_id
+     OR OLD.schema_version IS DISTINCT FROM NEW.schema_version
+     OR OLD.intent IS DISTINCT FROM NEW.intent
+     OR OLD.decision_kind IS DISTINCT FROM NEW.decision_kind
+     OR OLD.response IS DISTINCT FROM NEW.response
+     OR OLD.response_type IS DISTINCT FROM NEW.response_type
+     OR OLD.business_action IS DISTINCT FROM NEW.business_action
+     OR OLD.retrieval_used IS DISTINCT FROM NEW.retrieval_used
+     OR OLD.memory_candidates IS DISTINCT FROM NEW.memory_candidates
+     OR OLD.used_memory_ids IS DISTINCT FROM NEW.used_memory_ids
+     OR OLD.missing_information IS DISTINCT FROM NEW.missing_information
+     OR OLD.next_state IS DISTINCT FROM NEW.next_state
+     OR OLD.reason_code IS DISTINCT FROM NEW.reason_code
+     OR OLD.confidence IS DISTINCT FROM NEW.confidence
+     OR OLD.model_provider IS DISTINCT FROM NEW.model_provider
+     OR OLD.model_name IS DISTINCT FROM NEW.model_name
+     OR OLD.prompt_version IS DISTINCT FROM NEW.prompt_version
+     OR OLD.payload_hash IS DISTINCT FROM NEW.payload_hash
+     OR OLD.release_manifest IS DISTINCT FROM NEW.release_manifest
+     OR (
+       OLD.outbound_message_id IS DISTINCT FROM NEW.outbound_message_id
+       AND NOT (
+         OLD.outbound_message_id IS NULL
+         AND NEW.outbound_message_id IS NOT NULL
+         AND OLD.decision_kind IN ('reply', 'clarify')
+         AND OLD.response IS NOT NULL
+         AND btrim(OLD.response) <> ''
+       )
+     ) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23514',
+      MESSAGE = 'Agent decision is immutable after commit';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
 COMMIT;
