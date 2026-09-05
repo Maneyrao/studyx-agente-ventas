@@ -358,15 +358,22 @@ export async function prepareMemoryToolV1(
       if (!contact) return failed(tool, 'PREPARATION_CONTEXT_INVALID', false);
       const [row] = await deps.db<Array<{ authorized: number }>>`
         WITH authorized_ids AS (
+          -- Contacts are global; workspace_contacts membership alone would
+          -- authorize a memory that originated in a DIFFERENT workspace the
+          -- same contact also happens to belong to (P1-A, 2026-09-05). The
+          -- authoritative origin is the durable link this memory was
+          -- actually recorded under: its own conversation_id joined to
+          -- conversation_sales_context_states_v1, the same pattern the
+          -- reserved-preparation branch below already uses.
           SELECT memory.id::text AS id
           FROM selected_memories AS memory
-          JOIN workspace_contacts AS membership
-            ON membership.contact_id = memory.contact_id
-           AND membership.workspace_id = ${contact.workspace_id}::uuid
-           AND membership.lifecycle_status = 'active'
+          JOIN conversation_sales_context_states_v1 AS origin
+            ON origin.conversation_id = memory.conversation_id
+           AND origin.contact_id = memory.contact_id
           WHERE memory.contact_id = ${contact.contact_id}::uuid
             AND memory.id = ANY(${supersedes}::uuid[])
             AND memory.status IN ('accepted', 'active')
+            AND origin.workspace_id = ${contact.workspace_id}::uuid
           UNION
           SELECT accepted.item ->> 'id' AS id
           FROM agent_turn_preparations AS preparation

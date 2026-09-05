@@ -57,6 +57,16 @@ interface ClaimedMemoryJob {
 interface ProjectionContext {
   contact_id: string;
   conversation_id: string;
+  /**
+   * The workspace durably linked to this turn's conversation
+   * (`conversation_sales_context_states_v1`), NOT inferred from
+   * `workspace_contacts` membership — see P1-A (2026-09-05): a global
+   * contact can be an active member of several workspaces at once, so
+   * membership alone cannot identify which workspace a given memory
+   * originated in. LEFT JOINed: pre-Agent-Loop conversations have no such
+   * row, and only the prepared-identity path below needs this value.
+   */
+  workspace_id: string | null;
   batch_id: string | null;
   trace_id: string;
   contact_name: string | null;
@@ -157,14 +167,17 @@ export async function projectAgentAMemories(
       const candidate = parseCandidate(job.candidate);
       const preparedIdentity = parsePreparedMemoryIdentity(job.candidate);
       const contexts = await db<ProjectionContext[]>`
-        SELECT message.contact_id, message.conversation_id, message.batch_id,
-               decision.trace_id, contact.name AS contact_name,
+        SELECT message.contact_id, message.conversation_id, state.workspace_id,
+               message.batch_id, decision.trace_id, contact.name AS contact_name,
                contact.status AS contact_status, permission.consent_status
         FROM messages AS message
         JOIN agent_decisions AS decision ON decision.id = ${job.decision_id}::uuid
           AND decision.turn_id = message.id
         JOIN contacts AS contact ON contact.id = message.contact_id
         JOIN conversations AS conversation ON conversation.id = message.conversation_id
+        LEFT JOIN conversation_sales_context_states_v1 AS state
+          ON state.conversation_id = message.conversation_id
+         AND state.contact_id = message.contact_id
         LEFT JOIN contact_channel_permissions AS permission
           ON permission.contact_id = contact.id
          AND permission.channel = conversation.channel
@@ -174,6 +187,17 @@ export async function projectAgentAMemories(
       `;
       const context = contexts[0];
       if (!context) throw new Error('MEMORY_PROJECTION_CONTEXT_NOT_FOUND');
+      // The prepared-identity path activates through
+      // `record_prepared_agent_memory_v1`, which requires the authoritative
+      // workspace to validate every `supersedes` target against (P1-A,
+      // 2026-09-05). Every Agent Loop turn has a
+      // `conversation_sales_context_states_v1` row by construction; a
+      // prepared candidate without one is an invariant violation, not a
+      // pre-Agent-Loop conversation, so this fails closed rather than
+      // silently recording without workspace authority.
+      if (preparedIdentity && context.workspace_id === null) {
+        throw new Error('MEMORY_PROJECTION_WORKSPACE_NOT_FOUND');
+      }
 
       if (isAgentAMemoryCandidateProhibited(candidate)) {
         rejected += 1;
@@ -201,12 +225,17 @@ export async function projectAgentAMemories(
         ORDER BY conversation_seq NULLS LAST, created_at, id
       `;
       const postgresStore = new PostgresMemoryStore(db);
-      const store: MemoryStore = preparedIdentity
+      // Narrowed once, right after the fail-closed guard above, so the
+      // closure below does not have to re-derive `string | null` on every
+      // call — `preparedIdentity` implies `context.workspace_id` is set.
+      const preparedWorkspaceId = context.workspace_id;
+      const store: MemoryStore = preparedIdentity && preparedWorkspaceId
         ? {
             recordAccepted: (accepted) => postgresStore.recordPreparedAccepted({
               ...accepted,
               memory_id: preparedIdentity.id,
               supersedes_memory_ids: preparedIdentity.supersedes,
+              workspace_id: preparedWorkspaceId,
             }),
             recordRejected: (rejected) => postgresStore.recordRejected(rejected),
             expireDueMemories: (limit) => postgresStore.expireDueMemories(limit),

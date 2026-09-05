@@ -898,12 +898,17 @@ export async function commitAgentTurnV3(
       }
     }
     // Fail closed on every `supersedes` target before any write happens: a
-    // successor may only reference (a) a memory that is ALREADY durable and
-    // authorized, or (b) a predecessor preparation that is part of THIS SAME
-    // commit (a closed dependency materialized atomically by the worker).
-    // Anything else — most importantly a reservation from a turn that never
-    // committed it — must reject the whole commit, never silently defer the
-    // failure to the async worker (`MEMORY_PROJECTION_STORE_FAILED`).
+    // successor may only reference (a) a memory that is ALREADY durable,
+    // contact-authorized, AND originating from a conversation durably linked
+    // to THIS SAME workspace (P1-A, 2026-09-05 — contacts are global, so
+    // contact scoping alone cannot stop a workspace-B conversation from
+    // superseding a workspace-A memory of the same contact), or (b) a
+    // predecessor preparation that is part of THIS SAME commit (a closed
+    // dependency materialized atomically by the worker). Anything else —
+    // most importantly a reservation from a turn that never committed it, or
+    // a memory that originated in a different workspace — must reject the
+    // whole commit, never silently defer the failure to the async worker
+    // (`MEMORY_PROJECTION_STORE_FAILED`).
     const committedMemoryArtifacts = committedMemories.map(
       (preparation) => memoryArtifact(preparation.canonical_data)!,
     );
@@ -921,9 +926,13 @@ export async function commitAgentTurnV3(
       const authorizedDurable = await transaction<Array<{ id: string }>>`
         SELECT memory.id::text AS id
         FROM selected_memories AS memory
+        JOIN conversation_sales_context_states_v1 AS origin
+          ON origin.conversation_id = memory.conversation_id
+         AND origin.contact_id = memory.contact_id
         WHERE memory.contact_id = ${context.contact_id}::uuid
           AND memory.id = ANY(${durableSupersedes}::uuid[])
           AND memory.status IN ('accepted', 'active')
+          AND origin.workspace_id = ${context.workspace_id}::uuid
         FOR UPDATE OF memory
       `;
       if (authorizedDurable.length !== durableSupersedes.length) {

@@ -10,6 +10,15 @@ import type {
 export interface PreparedAcceptedMemoryInput extends AcceptedMemoryInput {
   readonly memory_id: string;
   readonly supersedes_memory_ids: readonly string[];
+  /**
+   * The authoritative workspace of the conversation THIS memory is being
+   * recorded from. `record_prepared_agent_memory_v1` (20260905000008)
+   * validates every `supersedes` target against it: contacts are global
+   * (workspace membership is a join, `workspace_contacts`), so contact
+   * scoping alone cannot stop a workspace-B conversation from superseding a
+   * workspace-A memory of the same contact.
+   */
+  readonly workspace_id: string;
 }
 
 /**
@@ -69,6 +78,7 @@ export class PostgresMemoryStore implements MemoryStore {
       FROM record_prepared_agent_memory_v1(
         ${input.memory_id}::uuid,
         ${input.supersedes_memory_ids}::uuid[],
+        ${input.workspace_id}::uuid,
         ${input.contact_id}::uuid,
         ${input.conversation_id}::uuid,
         ${input.source_message_id}::uuid,
