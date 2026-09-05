@@ -4,10 +4,9 @@ import { PostgresConversationStateStoreV1 } from '@/features/conversation/adapte
 import type { DbClient } from '@/lib/db/types';
 import { openLocalTestDatabase } from '../helpers/db';
 
-const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
-const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
+const db = openLocalTestDatabase();
 
-afterAll(async () => db?.end());
+afterAll(async () => db.end());
 
 async function seedConversationStateVersionFixture() {
   const suffix = randomUUID().replace(/\D/g, '').slice(0, 10).padEnd(10, '0');
@@ -47,31 +46,10 @@ async function seedConversationStateVersionFixture() {
   };
 }
 
-/**
- * PostgreSQL clients may expose numeric columns as strings. This wrapper keeps
- * the real disposable database and only simulates that valid driver shape at
- * the adapter boundary.
- */
-function withStringVersions(delegate: DbClient): DbClient {
-  const execute = delegate as unknown as (
-    strings: TemplateStringsArray,
-    ...parameters: unknown[]
-  ) => Promise<Array<Record<string, unknown>>>;
-
-  return (async (strings: TemplateStringsArray, ...parameters: unknown[]) => {
-    const rows = await execute(strings, ...parameters);
-    return rows.map((row) => (
-      Object.hasOwn(row, 'version')
-        ? { ...row, version: String(row.version) }
-        : row
-    ));
-  }) as unknown as DbClient;
-}
-
-run('conversation state version', () => {
+describe('conversation state version', () => {
   it('exposes the stored version as a number and increments it on every transition', async () => {
     const seeded = await seedConversationStateVersionFixture();
-    const store = new PostgresConversationStateStoreV1(withStringVersions(db!));
+    const store = new PostgresConversationStateStoreV1(db as unknown as DbClient);
 
     await store.transition({
       workspace_slug: 'studyx',
