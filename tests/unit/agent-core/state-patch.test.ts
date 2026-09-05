@@ -32,8 +32,65 @@ describe('splitStatePatchV3', () => {
   });
 
   it('treats an accepted or declined call offer as customer-declared', () => {
-    expect(splitStatePatchV3({ expected_state_version: 1, set: { call_offer_status: 'accepted' } })
-      .immediate.set).toEqual({ call_offer_status: 'accepted' });
+    for (const call_offer_status of ['accepted', 'declined', 'not_offered'] as const) {
+      expect(splitStatePatchV3({ expected_state_version: 1, set: { call_offer_status } })
+        .immediate.set).toEqual({ call_offer_status });
+    }
+  });
+
+  it('classifies every customer-declared field as immediate', () => {
+    const { immediate, deferred } = splitStatePatchV3({
+      expected_state_version: 3,
+      set: {
+        selected_offering_code: 'dip-mkt',
+        selected_payment_plan: 'monthly_12',
+        stage: 'plan_selected',
+        call_preference: 'chat',
+        payment_reported: false,
+      },
+    });
+    expect(immediate.set).toEqual({
+      selected_offering_code: 'dip-mkt',
+      selected_payment_plan: 'monthly_12',
+      stage: 'plan_selected',
+      call_preference: 'chat',
+      payment_reported: false,
+    });
+    expect(deferred.set).toEqual({});
+  });
+
+  it.each(['course_selected', 'closed'] as const)
+    ('keeps the customer-owned stage %s immediate', (stage) => {
+      expect(splitStatePatchV3({ expected_state_version: 1, set: { stage } }).immediate.set)
+        .toEqual({ stage });
+    });
+
+  it('defers handoff as an outbound-dependent stage', () => {
+    expect(splitStatePatchV3({ expected_state_version: 1, set: { stage: 'handoff' } }).deferred.set)
+      .toEqual({ stage: 'handoff' });
+  });
+
+  it.each([
+    ['stage', 'payment_link_send'],
+    ['call_preference', 'telephone'],
+    ['call_offer_status', 'offerred'],
+    ['awaiting_reply', 'name'],
+    ['selected_payment_plan', 'cash'],
+  ] as const)('rejects an unknown %s value instead of classifying it as immediate', (field, value) => {
+    const invalid = {
+      expected_state_version: 1,
+      set: { [field]: value },
+    } as unknown as Parameters<typeof splitStatePatchV3>[0];
+    expect(() => splitStatePatchV3(invalid)).toThrow(`STATE_PATCH_INVALID:${field}`);
+  });
+
+  it('rejects unknown fields and invalid expected versions', () => {
+    expect(() => splitStatePatchV3({
+      expected_state_version: 1,
+      set: { typo: true },
+    } as unknown as Parameters<typeof splitStatePatchV3>[0])).toThrow('STATE_PATCH_INVALID:typo');
+    expect(() => splitStatePatchV3({ expected_state_version: 0, set: {} }))
+      .toThrow('STATE_PATCH_INVALID:expected_state_version');
   });
 
   it('carries the expected version into both halves', () => {
