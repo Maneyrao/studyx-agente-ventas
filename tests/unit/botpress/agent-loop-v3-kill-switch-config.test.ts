@@ -11,3 +11,12 @@ describe('Agent Loop V3 bundle kill switch configuration', () => {
     );
   });
 });
+
+describe('Botpress outbound message tag declarations', () => {
+  it('declares every tag used by multi-part createMessage calls', () => {
+    const source = readFileSync(join(process.cwd(), 'botpress-agent/agent.config.ts'), 'utf8');
+
+    expect(source).toContain('studyxPartIndex:');
+    expect(source).toContain('studyxPartCount:');
+  });
+});

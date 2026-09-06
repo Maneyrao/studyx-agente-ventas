@@ -121,6 +121,14 @@ export default defineConfig({
         title: "StudyX trace ID",
         description: "End-to-end correlation ID without customer content.",
       },
+      studyxPartIndex: {
+        title: "StudyX outbound part index",
+        description: "Zero-based position of this message inside one Agent A turn.",
+      },
+      studyxPartCount: {
+        title: "StudyX outbound part count",
+        description: "Total physical messages emitted for the same Agent A turn.",
+      },
     },
   },
 
