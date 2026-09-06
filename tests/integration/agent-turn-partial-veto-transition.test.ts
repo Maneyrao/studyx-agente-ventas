@@ -31,6 +31,7 @@ run('partial commercial-truth veto', () => {
     const seeded = await seedConversationForAgentTurn({
       call_offer_count: 0,
       selected_offering_code: 'entrenamiento_funcional',
+      intake_complete: true,
     });
 
     // `commitAgentDecision` (decision.service.ts) no acepta `batch_id` ni
@@ -108,6 +109,7 @@ run('partial commercial-truth veto', () => {
     const seeded = await seedConversationForAgentTurn({
       call_offer_count: 0,
       selected_offering_code: 'entrenamiento_funcional',
+      intake_complete: true,
     });
 
     const move = seeded.moveSelectCourseWithCallOffer as unknown as ConversationMoveV1;

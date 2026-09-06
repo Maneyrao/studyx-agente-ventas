@@ -127,6 +127,17 @@ describe('extractContactIdentity', () => {
     });
   });
 
+  it('adds an explicitly labeled surname to an existing first name', () => {
+    expect(extractContactIdentity(
+      'Quiero avanzar. Mi apellido es Damonte, mi mail es matidamonte@inventado.com y mi teléfono es +5491123456789.',
+      'Matías',
+    )).toEqual({
+      name: 'Matías Damonte',
+      email: 'matidamonte@inventado.com',
+      declaredPhone: '+5491123456789',
+    });
+  });
+
   it('does not manufacture a full name from a surname correction without an existing identity', () => {
     expect(extractContactIdentity('Me equivoqué: es Suárez con tilde.', null)).toEqual({
       name: null,

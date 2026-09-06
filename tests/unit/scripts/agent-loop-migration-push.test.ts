@@ -9,7 +9,7 @@ const script = resolve(process.cwd(), 'scripts/push-agent-loop-migrations.mjs');
 const localDatabaseUrl =
   'postgresql://postgres@127.0.0.1:55433/studyx_push_test?sslmode=disable';
 
-function fakeNpx(version: string, migrations = ['20260905000009_outbound_deferred_lead_projection.sql']) {
+function fakeNpx(version: string, migrations = ['20260906170927_outbound_message_parts.sql']) {
   const directory = mkdtempSync(join(tmpdir(), 'studyx-supabase-cli-'));
   temporaryDirectories.push(directory);
   const calls = join(directory, 'calls.log');

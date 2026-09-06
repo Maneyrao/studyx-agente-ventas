@@ -80,6 +80,30 @@ const completeIntake = async () => ({
 });
 
 describe('prepareAgentTurnV2', () => {
+  it('does not authorize a call invitation before the first name is known', async () => {
+    await expect(prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'select_course', secondary_moves: [], vetoes: [],
+          course_reference: 'redes', confidence: 0.98,
+        },
+        response: {
+          messages: ['Redes Informáticas puede ser una buena opción para empezar.'],
+          call_offer: 'Si querés, podemos verlo mejor en una llamada.',
+        },
+        used_fact_ids: ['offering:redes_informaticas:name:v1'],
+      }),
+    }, {
+      state_store: store(state()),
+      contact_intake: async () => ({ nombre: null, apellido: null, correo: null, telefono: null }),
+      now: () => Date.parse(index.as_of),
+    })).rejects.toMatchObject({
+      code: 'AGENT_TURN_V2_REJECTED', reasons: ['CALL_OFFER_NOT_AUTHORIZED'],
+    });
+  });
+
   it('turns the model-owned response into a decision without creating a TurnPlan', async () => {
     const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },

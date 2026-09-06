@@ -27,7 +27,7 @@ describe('prompt canónico v2', () => {
   });
 
   it('está versionado como v2 y el generado coincide con la fuente', () => {
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v9');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v11');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toBe(source);
   });
 
@@ -76,7 +76,7 @@ describe('prompt canónico v2', () => {
 
     expect(diagnosis).toMatch(/después de ofrecer la llamada/iu);
     expect(diagnosis).toMatch(/no la mezcles con la invitación/iu);
-    expect(callPolicy).toMatch(/antes del diagnóstico, los datos y el cierre por chat/iu);
+    expect(callPolicy).toMatch(/antes del diagnóstico, los (?:demás )?datos y el cierre por chat/iu);
     expect(callPolicy).toMatch(/sin preguntas de diagnóstico, datos o pago en ese mismo turno/iu);
     expect(never).not.toContain('links de cualquier tipo');
     expect(never).toMatch(/link de pago autorizado.*backend/iu);

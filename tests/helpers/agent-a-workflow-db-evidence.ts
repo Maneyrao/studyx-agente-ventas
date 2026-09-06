@@ -121,11 +121,16 @@ export async function readWorkflowDbEvidenceV1(input: {
       id: string; turn_id: string; trace_id: string | null; authorized_outbound_id: string | null;
       content: string; state: string | null; provider_message_id: string | null;
     }>>`
-      SELECT m.id, m.in_reply_to AS turn_id, d.trace_id,
-             d.outbound_message_id AS authorized_outbound_id,
+      SELECT m.id, m.in_reply_to AS turn_id,
+             COALESCE(part_decision.trace_id, direct_decision.trace_id) AS trace_id,
+             COALESCE(part.message_id, direct_decision.outbound_message_id) AS authorized_outbound_id,
              m.content, od.state, od.provider_message_id
       FROM messages AS m
-      LEFT JOIN agent_decisions AS d ON d.turn_id = m.in_reply_to AND d.outbound_message_id = m.id
+      LEFT JOIN agent_decision_outbound_parts AS part ON part.message_id = m.id
+      LEFT JOIN agent_decisions AS part_decision
+        ON part_decision.id = part.decision_id AND part_decision.turn_id = m.in_reply_to
+      LEFT JOIN agent_decisions AS direct_decision
+        ON direct_decision.turn_id = m.in_reply_to AND direct_decision.outbound_message_id = m.id
       LEFT JOIN outbound_deliveries AS od ON od.message_id = m.id AND od.conversation_id = m.conversation_id
       WHERE m.conversation_id = ${row.conversation_id}::uuid AND m.direction = 'outbound'
       ORDER BY m.created_at ASC

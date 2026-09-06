@@ -12,7 +12,7 @@ import {
   MEMORY_CANDIDATE_TYPES as DOMAIN_MEMORY_CANDIDATE_TYPES,
   parseDecisionV2,
 } from '@/features/orchestration/domain/decision';
-import { MemoryCandidateSchema } from '../../botpress-agent/src/schemas/contracts';
+import { CatalogResolutionSchema, MemoryCandidateSchema } from '../../botpress-agent/src/schemas/contracts';
 import * as backendCommercialCopy from '@/features/orchestration/domain/canonical-commercial-copy';
 import * as botpressCommercialCopy from '../../botpress-agent/src/utils/canonical-commercial-copy';
 
@@ -127,6 +127,17 @@ describe('ingest response parity', () => {
     // `context` was removed in fase 3; declaring it again would reject every
     // real response.
     expect(block).not.toMatch(/\n\s{2}context:/);
+  });
+});
+
+describe('catalog resolution response parity', () => {
+  it('accepts the one-candidate ambiguous result that the backend domain can emit', () => {
+    expect(CatalogResolutionSchema.parse({
+      kind: 'ambiguous',
+      requestedText: 'Quiero algo de fotos, aunque también me interesa marketing.',
+      candidateCodes: ['marketing_digital'],
+      clarification: 'choose_offering',
+    })).toMatchObject({ kind: 'ambiguous', candidateCodes: ['marketing_digital'] });
   });
 });
 

@@ -61,8 +61,8 @@ describe('Agent A Brain V1 prompt', () => {
   it('uses the exact complete canonical prompt behind one immutable execution preamble', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v9');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v24');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v11');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v28');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('Backend policy and capabilities are authoritative');
     expect(instructions).toContain('commercial_state.awaiting_reply only to resolve an otherwise ambiguous answer');
@@ -80,6 +80,7 @@ describe('Agent A Brain V1 prompt', () => {
     expect(instructions).toContain('Do not infer a course or area from old memory when the current message is vague');
     expect(instructions).toContain('offer to help them find a fit');
     expect(instructions).toContain('never do is name, offer or promise a course that is not there');
+    expect(instructions).toContain('at most three course names in one reply');
     expect(instructions).toContain('Pedí únicamente los campos enumerados en `capabilities.intake_missing`');
     expect(instructions).toContain('<authorized_context>');
     expect(instructions).toContain('"memory-1"');
@@ -91,7 +92,7 @@ describe('Agent A Brain V1 prompt', () => {
 
     expect(execution).toMatch(/canonical course is known and capabilities\.may_offer_call is true/u);
     expect(execution).toMatch(/call_offer is required[\s\S]*select_course or ask_course_information \(including secondary_moves\)[\s\S]*call_offer_count is 0/u);
-    expect(execution).toContain('before diagnosis, contact intake or a chat sales close');
+    expect(execution).toContain('after the first name is known and before diagnosis');
     expect(execution).toContain('answer it briefly');
     expect(execution).toContain('do not ask a diagnostic, intake or payment question in that same turn');
     expect(execution).toContain('After a rejection or chat preference, continue the diagnostic once if it is still needed');
@@ -193,7 +194,7 @@ describe('Agent A Brain V1 prompt', () => {
 
     const instructions = buildAgentABrainInstructionsV1(withIdentity);
 
-    expect(instructions).toContain('Sos **Camila**, asesor/a educativo/a de **StudyX**');
+    expect(instructions).toContain('Sos el/la **asistente virtual de StudyX**');
     expect(instructions).not.toContain('{{NOMBRE_ASESOR}}');
     expect(instructions).not.toContain('{{NOMBRE_ACADEMIA}}');
     // The behaviour itself is never summarized: every canonical section stays.
@@ -325,8 +326,9 @@ describe('orientación de fase en el prompt', () => {
     );
   });
 
-  it('sin nombre configurado se presenta como equipo, sin placeholder ni bot', () => {
-    expect(instructions).toMatch(/introduce\s+yourself as part of the StudyX team/u);
-    expect(instructions).toMatch(/never describe yourself as a bot/u);
+  it('se presenta transparentemente como asistente virtual y pide primero el nombre', () => {
+    expect(instructions).toMatch(/virtual assistant for StudyX/u);
+    expect(instructions).toMatch(/ask only for their first name/u);
+    expect(instructions).toMatch(/Never pretend to be human/u);
   });
 });

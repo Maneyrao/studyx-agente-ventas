@@ -495,7 +495,11 @@ export const CatalogResolutionSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('ambiguous'),
     requestedText: z.string(),
-    candidateCodes: z.array(z.string().min(1)).min(2).max(3),
+    // The backend can conservatively classify a mixed/elliptical request as
+    // ambiguous while only one literal candidate is proven. The complete
+    // compact catalog still travels with the claim so the brain can clarify;
+    // rejecting this shape here turned a valid customer turn into silence.
+    candidateCodes: z.array(z.string().min(1)).min(1).max(3),
     clarification: z.enum(['choose_offering', 'choose_area']),
   }).strict(),
   z.object({

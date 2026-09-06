@@ -59,6 +59,11 @@ const CORRECTED_SURNAME_PATTERN = new RegExp(
   'iu',
 );
 
+const STATED_SURNAME_PATTERN = new RegExp(
+  `\\bmi\\s+apellido\\s+es\\s+(${NAME_TOKEN})(?=\\s*(?:[,;.:!?]|$))`,
+  'iu',
+);
+
 function isPlausibleName(candidate: string): boolean {
   const tokens = candidate.trim().split(/\s+/u);
   if (tokens.length === 0 || tokens.length > 4) return false;
@@ -136,12 +141,12 @@ export function extractContactIdentity(
   }
 
   if (name === null && existingName) {
-    const correctedSurname = CORRECTED_SURNAME_PATTERN.exec(text)?.[1] ?? null;
-    if (correctedSurname && isPlausibleName(correctedSurname)) {
+    const statedSurname = STATED_SURNAME_PATTERN.exec(text)?.[1]
+      ?? CORRECTED_SURNAME_PATTERN.exec(text)?.[1]
+      ?? null;
+    if (statedSurname && isPlausibleName(statedSurname)) {
       const existingTokens = existingName.trim().split(/\s+/u);
-      if (existingTokens.length >= 2) {
-        name = [...existingTokens.slice(0, -1), correctedSurname].join(' ');
-      }
+      name = `${existingTokens[0]} ${statedSurname}`;
     }
   }
 

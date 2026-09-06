@@ -490,6 +490,7 @@ export function buildAgentAContextV1(
   const maySendPaymentLink = claimed.policy.may_respond
     && selectedCode !== null
     && selectedPlan !== null
+    && state.stage !== 'payment_link_sent'
     && intakeStatus === 'known'
     && intakeMissing.length === 0;
   const obligations = options.rigidObligations !== true ? null : salesObligationsV1({
@@ -593,6 +594,8 @@ export function buildAgentAContextV1(
     capabilities: {
       may_reply: claimed.policy.may_respond,
       may_offer_call: claimed.policy.may_respond
+        && intakeStatus === 'known'
+        && !intakeMissing.includes('nombre')
         && state.call_preference === 'unknown'
         && callOfferCount < 2,
       may_request_call_now: claimed.policy.may_respond

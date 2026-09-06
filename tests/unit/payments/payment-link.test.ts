@@ -101,6 +101,12 @@ describe('isPaymentPlanCode / isStripePaymentLinkUrl', () => {
 });
 
 describe('derivePaymentChoiceFromBatch', () => {
+  it('treats wanting to advance and receive the link as explicit current consent', () => {
+    expect(classifyCurrentPaymentIntent([
+      msg('Quiero avanzar y recibir el link.'),
+    ])).toEqual({ kind: 'direct', planCode: null });
+  });
+
   it('derives monthly_12 from "12 meses" or "12 cuotas", case/accent-insensitive', () => {
     expect(derivePaymentChoiceFromBatch([msg('Quiero los 12 MESES')])).toBe('monthly_12');
     expect(derivePaymentChoiceFromBatch([msg('me sirven 12 cuótas')])).toBe('monthly_12');

@@ -178,6 +178,37 @@ function claimedTurn(): ClaimedTurn {
 }
 
 describe('buildAgentAContextV1', () => {
+  it('does not authorize a second payment-link action after the canonical link was sent', () => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      selected_payment_plan: 'monthly_12',
+      stage: 'payment_link_sent',
+      awaiting_reply: 'none',
+    };
+
+    const context = buildAgentAContextV1(claimed);
+
+    expect(context?.capabilities.may_send_payment_link).toBe(false);
+  });
+
+  it('keeps the call invitation unavailable until the first name is known', () => {
+    const claimed = claimedTurn();
+    claimed.contact.name = null;
+    claimed.contact_intake_missing = ['nombre', 'apellido', 'correo', 'telefono'];
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      call_preference: 'unknown',
+      call_offer_status: 'not_offered',
+      call_offer_count: 0,
+    };
+
+    const context = buildAgentAContextV1(claimed);
+
+    expect(context?.capabilities.may_offer_call).toBe(false);
+  });
+
   it('takes the academy from the canonical snapshot and the advisor from configuration', () => {
     const context = buildAgentAContextV1(claimedTurn(), 'Camila');
 

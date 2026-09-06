@@ -14,6 +14,7 @@ import type {
 import {
   createDefaultConversationStateV1,
   effectiveConversationStateV1,
+  missingContactIntakeFieldsV1,
   type ContactIntakeV1,
 } from '../domain/conversation-planner';
 import { solicitsACall } from '../domain/operational-promise-guard';
@@ -165,6 +166,7 @@ export async function prepareAgentTurnV2(input: {
     }),
   );
   const noActiveCall = callFacts?.active_call == null;
+  const firstNameKnown = !missingContactIntakeFieldsV1(contactIntake).includes('nombre');
   const authority = authorizeAgentTurnV2({
     proposal: input.proposal,
     state,
@@ -173,7 +175,7 @@ export async function prepareAgentTurnV2(input: {
     contact_intake: contactIntake,
     current_customer_messages: input.current_customer_messages,
     call_policy: {
-      may_offer_call: noActiveCall && callFacts?.last_decline_at == null,
+      may_offer_call: firstNameKnown && noActiveCall && callFacts?.last_decline_at == null,
       // A direct customer request remains valid after an earlier decline.
       may_request_call_now: noActiveCall,
     },

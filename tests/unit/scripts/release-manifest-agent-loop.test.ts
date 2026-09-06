@@ -67,7 +67,7 @@ describe('release manifest for the agent loop', () => {
     expect(first).toMatchObject({
       botpress_artifact_sha: 'f'.repeat(64),
       prompt_sha256: '1'.repeat(64),
-      prompt_version: 'studyx-agent-a-brain-v24',
+      prompt_version: 'studyx-agent-a-brain-v28',
       provider: 'deepseek-direct',
       model: 'deepseek-v4-flash',
     });

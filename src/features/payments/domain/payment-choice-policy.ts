@@ -134,7 +134,7 @@ const EXPLICIT_PAYMENT_COMMITMENT_PATTERN =
   /\b(?:confirmo|quiero\s+pagar(?:l[oa]s?)?|lo\s+quiero\s+pagar|me\s+quedo\s+con|elijo|elegi|ya\s+(?:elegi|me\s+decidi)|me\s+decido|voy\s+con)\b/u;
 
 const EXPLICIT_PAYMENT_LINK_REQUEST_PATTERN =
-  /(?:\b(?:manda|mandame|mandamelo|envia|enviame|pasame|comparti|compartime)\b.{0,24}\b(?:link|enlace)\b|\b(?:link|enlace)\b.{0,24}\b(?:manda|mandame|envia|enviame|pasame|comparti|compartime)\b)/u;
+  /(?:\b(?:manda|mandame|mandamelo|envia|enviame|pasame|comparti|compartime)\b.{0,24}\b(?:link|enlace)\b|\b(?:link|enlace)\b.{0,24}\b(?:manda|mandame|envia|enviame|pasame|comparti|compartime)\b|\bquiero\s+(?:(?:avanzar|seguir|continuar)\s+y\s+)?(?:recibir|obtener|tener)\s+(?:el\s+)?(?:link|enlace)\b)/u;
 
 function isExplicitPaymentLinkRequest(messages: readonly PolicyBatchMessage[]): boolean {
   return messages.some((message) => {
