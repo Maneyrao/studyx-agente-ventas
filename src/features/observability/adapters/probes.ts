@@ -62,6 +62,70 @@ export async function probePostgres(db: DbClient = sql): Promise<DependencyProbe
   }
 }
 
+const REQUIRED_AGENT_LOOP_DELIVERY_COLUMNS = [
+  'deferred_state_patch',
+  'deferred_patch_applied_on',
+  'deferred_lead_projection',
+  'deferred_lead_projection_applied_on',
+] as const;
+
+/**
+ * Required: the running Agent Loop reads and writes these columns while
+ * committing and reporting delivery. A reachable database with an older
+ * migration level is not ready to serve this release.
+ */
+export async function probeAgentLoopSchema(db: DbClient = sql): Promise<DependencyProbe> {
+  const startedAt = Date.now();
+  try {
+    const rows = await withTimeout(db<Array<Record<string, boolean>> >`
+      SELECT
+        EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'outbound_deliveries'
+            AND column_name = 'deferred_state_patch'
+        ) AS deferred_state_patch,
+        EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'outbound_deliveries'
+            AND column_name = 'deferred_patch_applied_on'
+        ) AS deferred_patch_applied_on,
+        EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'outbound_deliveries'
+            AND column_name = 'deferred_lead_projection'
+        ) AS deferred_lead_projection,
+        EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'outbound_deliveries'
+            AND column_name = 'deferred_lead_projection_applied_on'
+        ) AS deferred_lead_projection_applied_on
+    `);
+    const schema = rows[0] ?? {};
+    const missing = REQUIRED_AGENT_LOOP_DELIVERY_COLUMNS.filter(
+      (column) => schema[column] !== true,
+    );
+    return {
+      name: 'agent_loop_schema',
+      required: true,
+      status: missing.length === 0 ? 'ok' : 'down',
+      detail: missing.length === 0 ? null : `missing: ${missing.join(', ')}`,
+      latency_ms: Date.now() - startedAt,
+    };
+  } catch (error) {
+    return {
+      name: 'agent_loop_schema',
+      required: true,
+      status: 'down',
+      detail: String(error).slice(0, 200),
+      latency_ms: Date.now() - startedAt,
+    };
+  }
+}
+
 /**
  * Required: an Agent A deployment with a reachable database but no configured
  * commercial snapshot cannot answer catalog or payment questions truthfully.

@@ -127,6 +127,10 @@ export interface CommitDecisionInput {
     readonly schema_version: 2;
     readonly proposal: AgentATurnProposalV1;
   } | null;
+  /** Additive capability negotiation: older Botpress bundles keep one outbound. */
+  supports_multi_outbound?: boolean;
+  /** New workflow capability: stale model results may yield to a newer inbound batch. */
+  supports_turn_supersession?: boolean;
   decision: AnyDecision;
   model: {
     provider: 'botpress' | 'google-ai-direct' | 'groq-direct' | 'openai-direct' | 'deepseek-direct';
@@ -156,6 +160,16 @@ export interface CommitDecisionResult {
     /** Exact backend authorization that must verify against `content` before any send. */
     authorized_egress: AuthorizedEgressV1;
   } | null;
+  /** Physical customer-visible parts. Empty on suppression; one for legacy callers. */
+  outbounds: Array<{
+    id: string;
+    content: string;
+    status: 'pending' | 'submitted_to_botpress' | 'failed';
+    delivery_attempt: number;
+    authorized_egress: AuthorizedEgressV1;
+    part_index: number;
+    part_count: number;
+  }>;
   /**
    * Present exactly when this decision reserved a call. On replay it carries
    * the same call_id the first commit reserved — the workflow can dispatch
@@ -208,6 +222,7 @@ interface TurnPolicyRow extends Message {
   integration_id: string;
   channel: ConversationChannel;
   batch_id: string | null;
+  conversation_seq: number;
   /** Contents carrying durable evidence that this batch caused the first
    * effective opt-out transition. The representative turn is often the
    * first message in a burst, so `content` alone is not authoritative. */
@@ -226,6 +241,15 @@ interface DecisionRow {
   delivery_state: string | null;
   delivery_attempt: number | null;
   authorized_egress: unknown;
+}
+
+interface PersistedOutboundPartRow {
+  id: string;
+  content: string;
+  delivery_state: string | null;
+  delivery_attempt: number | null;
+  authorized_egress: unknown;
+  part_index: number;
 }
 
 const AGENT_DECISION_TURN_UNIQUE_CONSTRAINT = 'agent_decisions_turn_id_uq';
@@ -257,6 +281,48 @@ async function loadDecision(turnId: string, db: DbClient): Promise<DecisionRow |
     LIMIT 1
   `;
   return rows[0] ?? null;
+}
+
+async function loadDecisionOutbounds(
+  decision: DecisionRow,
+  db: DbClient,
+): Promise<CommitDecisionResult['outbounds']> {
+  if (!decision.outbound_message_id || !decision.response) return [];
+  const rows = await db<PersistedOutboundPartRow[]>`
+    SELECT
+      message.id,
+      message.content,
+      delivery.state AS delivery_state,
+      delivery.attempt_count AS delivery_attempt,
+      message.metadata -> 'authorized_egress' AS authorized_egress,
+      part.part_index::integer AS part_index
+    FROM agent_decision_outbound_parts AS part
+    JOIN messages AS message ON message.id = part.message_id
+    LEFT JOIN outbound_deliveries AS delivery ON delivery.message_id = message.id
+    WHERE part.decision_id = ${decision.id}::uuid
+    ORDER BY part.part_index
+  `;
+  if (rows.length === 0) {
+    const legacyManifest = verifyPersistedEgress(decision.response, decision.authorized_egress);
+    return [{
+      id: decision.outbound_message_id,
+      content: decision.response,
+      status: mapDeliveryState(decision.delivery_state),
+      delivery_attempt: Number(decision.delivery_attempt ?? 1),
+      authorized_egress: legacyManifest,
+      part_index: 0,
+      part_count: 1,
+    }];
+  }
+  return rows.map((row) => ({
+    id: row.id,
+    content: row.content,
+    status: mapDeliveryState(row.delivery_state),
+    delivery_attempt: Number(row.delivery_attempt ?? 1),
+    authorized_egress: verifyPersistedEgress(row.content, row.authorized_egress),
+    part_index: Number(row.part_index),
+    part_count: rows.length,
+  }));
 }
 
 async function loadTurnPolicy(turnId: string, db: DbClient): Promise<TurnPolicyRow> {
@@ -343,6 +409,8 @@ function decisionPayload(input: CommitDecisionInput) {
     ...(input.agent_turn_v2
       ? { agent_turn_v2: input.agent_turn_v2 }
       : {}),
+    ...(input.supports_multi_outbound ? { supports_multi_outbound: true } : {}),
+    ...(input.supports_turn_supersession ? { supports_turn_supersession: true } : {}),
   };
 }
 
@@ -411,13 +479,42 @@ function paymentPlanProtectedFacts(
   return [{ kind: 'price', value: `${presentation.currency} ${amount}` }];
 }
 
-function duplicateDecisionResult(
+/**
+ * Preserve the model-authored message boundaries only when the final text is
+ * still an exact composition of those messages. Guards may replace or prune a
+ * response; in that case falling back to one part is safer than inventing new
+ * boundaries. A canonical payment block is attached as the last part without
+ * exceeding the model contract of three customer-visible messages.
+ */
+function physicalOutboundTexts(input: {
+  readonly final_response: string;
+  readonly authored_messages: readonly string[] | null;
+  readonly enabled: boolean;
+}): string[] {
+  if (!input.enabled || !input.authored_messages?.length) return [input.final_response];
+  const authored = input.authored_messages.map((message) => message.trim()).filter(Boolean);
+  if (authored.length === 0) return [input.final_response];
+  const joined = authored.join('\n\n');
+  if (input.final_response === joined) return authored.slice(0, 3);
+  const prefix = `${joined}\n\n`;
+  if (!input.final_response.startsWith(prefix)) return [input.final_response];
+
+  const suffix = input.final_response.slice(prefix.length).trim();
+  if (!suffix) return authored.slice(0, 3);
+  if (authored.length < 3) return [...authored, suffix];
+  return [...authored.slice(0, 2), `${authored[2]}\n\n${suffix}`];
+}
+
+async function duplicateDecisionResult(
   existing: DecisionRow,
   input: CommitDecisionInput,
   payloadHash: string,
-  callRequest: ReservedCallRequest | null
-): CommitDecisionResult {
+  callRequest: ReservedCallRequest | null,
+  db: DbClient,
+): Promise<CommitDecisionResult> {
   if (existing.payload_hash_hex !== payloadHash) throw new DecisionConflictError();
+  const outbounds = await loadDecisionOutbounds(existing, db);
+  const firstOutbound = outbounds[0] ?? null;
   return {
     status: 'duplicate',
     replayed: true,
@@ -425,13 +522,14 @@ function duplicateDecisionResult(
     turn_id: input.turn_id,
     decision_id: existing.id,
     next_state: existing.next_state,
-    outbound: existing.outbound_message_id && existing.response ? {
-      id: existing.outbound_message_id,
-      content: existing.response,
-      status: mapDeliveryState(existing.delivery_state),
-      delivery_attempt: Number(existing.delivery_attempt ?? 1),
-      authorized_egress: verifyPersistedEgress(existing.response, existing.authorized_egress),
+    outbound: firstOutbound ? {
+      id: firstOutbound.id,
+      content: firstOutbound.content,
+      status: firstOutbound.status,
+      delivery_attempt: firstOutbound.delivery_attempt,
+      authorized_egress: firstOutbound.authorized_egress,
     } : null,
+    outbounds,
     call_request: callRequest,
   };
 }
@@ -465,10 +563,79 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       const existing = await loadDecision(validatedInput.turn_id, db);
       if (existing) {
         const replayedCall = await findCallRequestByTurn(db, validatedInput.turn_id);
-        return duplicateDecisionResult(existing, validatedInput, payloadHash, replayedCall);
+        return duplicateDecisionResult(existing, validatedInput, payloadHash, replayedCall, db);
       }
 
     const turn = await loadTurnPolicy(validatedInput.turn_id, db);
+    // Capability-gated so legacy callers retain their established concurrency
+    // contract. The current Botpress workflow opts in: if a customer sends a
+    // new batch while the model is generating, the stale proposal is persisted
+    // as suppressed and the newer batch owns the next visible answer.
+    if (validatedInput.supports_turn_supersession === true) {
+      await db`SELECT id FROM conversations WHERE id = ${turn.conversation_id}::uuid FOR UPDATE`;
+      const newerInbound = await db<Array<{ id: string }>>`
+        SELECT newer.id
+        FROM messages AS newer
+        WHERE newer.conversation_id = ${turn.conversation_id}::uuid
+          AND newer.direction = 'inbound'
+          AND newer.conversation_seq > ${turn.conversation_seq}
+          AND newer.batch_id IS DISTINCT FROM ${turn.batch_id}::uuid
+        ORDER BY newer.conversation_seq
+        LIMIT 1
+      `;
+      if (newerInbound.length > 0) {
+        const suppressed = await db<Array<{ id: string }>>`
+          INSERT INTO agent_decisions (
+            turn_id, trace_id, schema_version, intent, decision_kind, response,
+            response_type, business_action, retrieval_used, memory_candidates,
+            missing_information, next_state, reason_code, confidence,
+            model_provider, model_name, prompt_version, payload_hash
+          ) VALUES (
+            ${validatedInput.turn_id}::uuid,
+            ${validatedInput.trace_id}::uuid,
+            ${decision.schema_version},
+            'commercial',
+            'suppress',
+            NULL,
+            NULL,
+            NULL,
+            ${jsonbParam(db, retrievalUsedOf(decision))},
+            ${jsonbParam(db, [])},
+            ${[]}::text[],
+            'waiting_user',
+            'SUPERSEDED_BY_NEWER_INBOUND',
+            1,
+            ${validatedInput.model.provider},
+            ${validatedInput.model.model},
+            ${validatedInput.model.prompt_version},
+            decode(${payloadHash}, 'hex')
+          )
+          RETURNING id
+        `;
+        const suppressedDecisionId = suppressed[0]!.id;
+        await auditLog({
+          action: 'agent.decision.superseded_by_newer_inbound',
+          entity_type: 'agent_decision',
+          entity_id: suppressedDecisionId,
+          payload: { turn_id: turn.id, newer_turn_id: newerInbound[0]!.id },
+          event_key: `decision:${suppressedDecisionId}:superseded`,
+          correlation_id: validatedInput.trace_id,
+          causation_id: turn.id,
+          source_event_id: turn.source_event_id ?? undefined,
+        }, db);
+        return {
+          status: 'committed',
+          replayed: false,
+          trace_id: validatedInput.trace_id,
+          turn_id: validatedInput.turn_id,
+          decision_id: suppressedDecisionId,
+          next_state: 'waiting_user',
+          outbound: null,
+          outbounds: [],
+          call_request: null,
+        };
+      }
+    }
     const workspaceSlug = loadBusinessWorkspaceConfig().workspaceSlug;
     let preparedPipeline: Awaited<ReturnType<typeof prepareConversationPipelineCommitV1>> | null = null;
     let preparedAgentTurn: Awaited<ReturnType<typeof prepareAgentTurnV2>> | null = null;
@@ -825,7 +992,6 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     // en el piso técnico. El manifiesto se sigue emitiendo porque el egress y
     // el ADK verifican su hash aguas abajo, pero deja de ser una segunda
     // frontera con criterio propio.
-    let authorizedEgress: AuthorizedEgressV1 | null = null;
     let egressSuppressed = false;
     if (finalResponse !== null) {
       const offerings = await loadCanonicalOfferings('protected_facts');
@@ -958,12 +1124,6 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         effectiveAuthorizedOfferingCode = null;
         egressSuppressed = true;
       }
-
-      authorizedEgress = buildAuthorizedEgress({
-        content: finalResponse,
-        authorized_urls: authorizedUrls,
-        protected_facts: protectedFactsInContentV1(finalResponse),
-      });
     }
 
     const inserted = await db<Array<{ id: string }>>`
@@ -1019,6 +1179,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       });
     }
     let outbound: CommitDecisionResult['outbound'] = null;
+    const outbounds: CommitDecisionResult['outbounds'] = [];
 
     // A non-empty list here is an injection/jailbreak signal: the model
     // wrote a URL it has no authority to write, and it was silently removed
@@ -1098,117 +1259,153 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     }
 
     if (finalResponse) {
-      let message: Message;
-      try {
-        ({ message } = await registerMessage({
-          conversation_id: turn.conversation_id,
-          direction: 'outbound',
-          content: finalResponse,
-          in_reply_to: turn.id,
-          metadata: {
-            decision_id: decisionId,
-            response_type: decision.response_type,
-            model: validatedInput.model,
-            authorized_egress: authorizedEgress,
-          },
-        }, {
-          db,
-          // Fase 4: ver ingestion.service. El outbound tampoco se vectoriza por
-          // defecto; la memoria histórica sale de selected_memories.
-          embedding: 'skip',
-          audit: {
-            event_key: `decision:${decisionId}:message`,
-            correlation_id: validatedInput.trace_id,
-            causation_id: turn.id,
-            source_event_id: turn.source_event_id ?? undefined,
-          },
-        }));
-      } catch (error) {
-        const pg = getPostgresError(error);
-        if (pg?.code === '23505' && (pg.constraint_name ?? pg.constraint) === 'messages_in_reply_to_unique') {
-          throw new DecisionConflictError();
-        }
-        throw error;
-      }
-
-      await db`
-        UPDATE agent_decisions
-        SET outbound_message_id = ${message.id}::uuid
-        WHERE id = ${decisionId}::uuid
-      `;
-
+      const partTexts = physicalOutboundTexts({
+        final_response: finalResponse,
+        authored_messages: preparedAgentTurn?.response_messages ?? null,
+        enabled: validatedInput.supports_multi_outbound === true,
+      });
       const purpose = decision.response_type === 'opt_out_ack'
         ? 'consent_confirmation'
         : decision.response_type === 'commercial_reply' || decision.response_type === 'clarification'
           ? 'conversational'
           : 'support';
-      const outboxPayload = {
-        decision_id: decisionId,
-        outbound_id: message.id,
-        turn_id: turn.id,
-        trace_id: validatedInput.trace_id,
-        content: message.content,
-        response_type: decision.response_type,
-        authorized_egress: authorizedEgress,
-      };
-      const queued = await db<Array<{ delivery_id: string; outbox_id: string }>>`
-        SELECT delivery_id, outbox_id
-        FROM enqueue_outbound_delivery(
-          ${message.id}::uuid,
-          ${turn.provider},
-          ${turn.integration_id},
-          ${turn.channel},
-          ${purpose},
-          ${turn.phone},
-          ${`outbound:${decisionId}`},
-          ${jsonbParam(db, outboxPayload)},
-          ${3}
-        )
-      `;
-      const queue = queued[0];
+      const persistedParts: Array<{ message: Message; manifest: AuthorizedEgressV1 }> = [];
 
-      // The Botpress workflow receiving this response owns the first short
-      // lease. A replay sees the existing decision and never sends again.
-      // El intento sale del mismo UPDATE que toma el lease: es el número que
-      // este workflow tiene que devolver al reportar, y leerlo aparte abriría
-      // una ventana en la que ya no sería el suyo.
-      const leased = await db<Array<{ attempt_count: number }>>`
-        UPDATE outbound_deliveries
-        SET
-          state = 'leased',
-          leased_by = ${`botpress:${validatedInput.trace_id}`},
-          lease_until = now() + interval '5 minutes',
-          attempt_count = attempt_count + 1
-        WHERE id = ${queue.delivery_id}::uuid AND state = 'pending'
-        RETURNING attempt_count
-      `;
+      for (const [partIndex, content] of partTexts.entries()) {
+        const partManifest = buildAuthorizedEgress({
+          content,
+          authorized_urls: authorizedUrls.filter((url) => content.includes(url)),
+          protected_facts: protectedFactsInContentV1(content),
+        });
+        let message: Message;
+        try {
+          ({ message } = await registerMessage({
+            conversation_id: turn.conversation_id,
+            direction: 'outbound',
+            content,
+            in_reply_to: turn.id,
+            part_index: partIndex,
+            metadata: {
+              decision_id: decisionId,
+              response_type: decision.response_type,
+              model: validatedInput.model,
+              part_index: partIndex,
+              part_count: partTexts.length,
+              authorized_egress: partManifest,
+            },
+          }, {
+            db,
+            embedding: 'skip',
+            audit: {
+              event_key: `decision:${decisionId}:message:${partIndex}`,
+              correlation_id: validatedInput.trace_id,
+              causation_id: turn.id,
+              source_event_id: turn.source_event_id ?? undefined,
+            },
+          }));
+        } catch (error) {
+          const pg = getPostgresError(error);
+          const constraint = pg?.constraint_name ?? pg?.constraint;
+          if (pg?.code === '23505' && (
+            constraint === 'messages_in_reply_to_unique'
+            || constraint === 'messages_in_reply_to_part_unique'
+          )) throw new DecisionConflictError();
+          throw error;
+        }
+
+        await db`
+          INSERT INTO agent_decision_outbound_parts (decision_id, part_index, message_id)
+          VALUES (${decisionId}::uuid, ${partIndex}, ${message.id}::uuid)
+        `;
+        persistedParts.push({ message, manifest: partManifest });
+      }
+
+      const firstMessage = persistedParts[0]!.message;
       await db`
-        UPDATE outbox_events
-        SET
-          state = 'leased',
-          leased_by = ${`botpress:${validatedInput.trace_id}`},
-          lease_until = now() + interval '5 minutes',
-          attempt_count = attempt_count + 1
-        WHERE id = ${queue.outbox_id}::uuid AND state = 'pending'
+        UPDATE agent_decisions
+        SET outbound_message_id = ${firstMessage.id}::uuid
+        WHERE id = ${decisionId}::uuid
       `;
+
+      for (const [partIndex, persisted] of persistedParts.entries()) {
+        const { message, manifest } = persisted;
+        const outboxPayload = {
+          decision_id: decisionId,
+          outbound_id: message.id,
+          turn_id: turn.id,
+          trace_id: validatedInput.trace_id,
+          content: message.content,
+          response_type: decision.response_type,
+          part_index: partIndex,
+          part_count: persistedParts.length,
+          authorized_egress: manifest,
+        };
+        const queued = await db<Array<{ delivery_id: string; outbox_id: string }>>`
+          SELECT delivery_id, outbox_id
+          FROM enqueue_outbound_delivery(
+            ${message.id}::uuid,
+            ${turn.provider},
+            ${turn.integration_id},
+            ${turn.channel},
+            ${purpose},
+            ${turn.phone},
+            ${validatedInput.supports_multi_outbound
+              ? `outbound:${decisionId}:part:${partIndex}`
+              : `outbound:${decisionId}`},
+            ${jsonbParam(db, outboxPayload)},
+            ${3}
+          )
+        `;
+        const queue = queued[0];
+        if (!queue) throw new DecisionPolicyError('OUTBOUND_ENQUEUE_FAILED');
+        const leased = await db<Array<{ attempt_count: number }>>`
+          UPDATE outbound_deliveries
+          SET
+            state = 'leased',
+            leased_by = ${`botpress:${validatedInput.trace_id}`},
+            lease_until = now() + interval '5 minutes',
+            attempt_count = attempt_count + 1
+          WHERE id = ${queue.delivery_id}::uuid AND state = 'pending'
+          RETURNING attempt_count
+        `;
+        await db`
+          UPDATE outbox_events
+          SET
+            state = 'leased',
+            leased_by = ${`botpress:${validatedInput.trace_id}`},
+            lease_until = now() + interval '5 minutes',
+            attempt_count = attempt_count + 1
+          WHERE id = ${queue.outbox_id}::uuid AND state = 'pending'
+        `;
+        outbounds.push({
+          id: message.id,
+          content: message.content,
+          status: 'pending',
+          delivery_attempt: Number(leased[0]?.attempt_count ?? 1),
+          authorized_egress: manifest,
+          part_index: partIndex,
+          part_count: persistedParts.length,
+        });
+      }
 
       await db`
         UPDATE contacts
         SET pending_turns = pending_turns + 1
         WHERE id = ${turn.contact_id}::uuid
       `;
+      const firstOutbound = outbounds[0]!;
       outbound = {
-        id: message.id,
-        content: message.content,
-        status: 'pending',
-        delivery_attempt: Number(leased[0]?.attempt_count ?? 1),
-        authorized_egress: authorizedEgress!,
+        id: firstOutbound.id,
+        content: firstOutbound.content,
+        status: firstOutbound.status,
+        delivery_attempt: firstOutbound.delivery_attempt,
+        authorized_egress: firstOutbound.authorized_egress,
       };
 
-      if (
-        committedBusinessAction?.type === 'send_payment_link'
-        && canonicalWorkspaceId
-      ) {
+      if (committedBusinessAction?.type === 'send_payment_link' && canonicalWorkspaceId) {
+        const paymentMessage = persistedParts.find(({ message }) => (
+          authorizedUrls.some((url) => message.content.includes(url))
+        ))?.message ?? firstMessage;
         // The configured deployment, not model output, establishes the
         // tenant/contact relation. The durable job is created before any
         // physical send and therefore survives a later report/projection
@@ -1233,7 +1430,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             ad.id,
             ${canonicalWorkspaceId}::uuid,
             ${turn.contact_id}::uuid,
-            ${message.id}::uuid,
+            ${paymentMessage.id}::uuid,
             ad.trace_id,
             ${committedBusinessAction.offering_sku},
             ${committedBusinessAction.plan_code},
@@ -1352,6 +1549,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         decision_id: decisionId,
         next_state: decision.next_state,
         outbound,
+        outbounds,
         call_request: callRequest,
         ...(technicalFallback && technicalFallbackReasonCode ? {
           conversation_effects: {
@@ -1377,7 +1575,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       const existing = await loadDecision(validatedInput.turn_id, db);
       if (!existing) throw error;
       const replayedCall = await findCallRequestByTurn(db, validatedInput.turn_id);
-      return duplicateDecisionResult(existing, validatedInput, payloadHash, replayedCall);
+      return duplicateDecisionResult(existing, validatedInput, payloadHash, replayedCall, db);
     });
   }
   };

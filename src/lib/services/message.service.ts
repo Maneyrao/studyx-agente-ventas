@@ -15,6 +15,7 @@ export const registerMessageSchema = z.object({
   in_reply_to: z.string().uuid().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   source_event_id: z.string().uuid().optional(),
+  part_index: z.number().int().min(0).max(2).optional(),
 });
 
 export type RegisterMessageInput = z.infer<typeof registerMessageSchema>;
@@ -29,6 +30,7 @@ export interface Message {
   metadata: unknown;
   created_at: string;
   source_event_id: string | null;
+  part_index: number;
 }
 
 export class MessageNotFoundError extends Error {
@@ -58,7 +60,14 @@ export async function registerMessage(
     };
   } = {}
 ): Promise<{ message: Message; embedding_status: 'indexed' | 'pending' }> {
-  const { conversation_id, direction, content, metadata, source_event_id } = input;
+  const {
+    conversation_id,
+    direction,
+    content,
+    metadata,
+    source_event_id,
+    part_index,
+  } = input;
   const { db = sql, embedding = 'sync', audit } = options;
 
   const conversation = await getConversation(conversation_id, db);
@@ -69,7 +78,10 @@ export async function registerMessage(
   const { in_reply_to } = input;
 
   const rows = await db<Message[]>`
-    INSERT INTO messages (conversation_id, contact_id, direction, content, in_reply_to, metadata, source_event_id)
+    INSERT INTO messages (
+      conversation_id, contact_id, direction, content, in_reply_to, metadata,
+      source_event_id, part_index
+    )
     VALUES (
       ${conversation_id},
       ${conversation.contact_id},
@@ -77,7 +89,8 @@ export async function registerMessage(
       ${content},
       ${in_reply_to ?? null},
       ${jsonbParam(db, metadata)},
-      ${source_event_id ?? null}::uuid
+      ${source_event_id ?? null}::uuid,
+      ${part_index ?? 0}
     )
     RETURNING *
   `;

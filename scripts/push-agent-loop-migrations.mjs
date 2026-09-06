@@ -27,6 +27,7 @@ const AGENT_LOOP_MIGRATIONS = [
   '20260905000007_agent_loop_prepared_memory_in_txn_supersede.sql',
   '20260905000008_agent_loop_prepared_memory_workspace.sql',
   '20260905000009_outbound_deferred_lead_projection.sql',
+  '20260906170927_outbound_message_parts.sql',
 ];
 const allowedModes = new Set(['--dry-run', '--apply']);
 const loopbackHosts = new Set(['127.0.0.1', 'localhost', '::1']);

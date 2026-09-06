@@ -726,12 +726,22 @@ export const CommitDecisionInputSchema = z.object({
   authorized_payment_plan: z.enum(['monthly_12', 'monthly_6', 'one_time']).nullable().default(null),
   conversation_pipeline_v1: ConversationPipelineCommitV1Schema.nullable().default(null),
   agent_turn_v2: AgentATurnCommitV2Schema.nullable().default(null),
+  supports_multi_outbound: z.boolean().default(false),
+  supports_turn_supersession: z.boolean().default(false),
   decision: DecisionSchema,
   model: z.object({
     provider: z.enum(['botpress', 'google-ai-direct', 'groq-direct', 'openai-direct', 'deepseek-direct']),
     model: z.string().min(1),
     prompt_version: z.string().min(1),
   }),
+})
+
+const CommittedOutboundSchema = z.object({
+  id: z.string().uuid(),
+  content: z.string().min(1).max(4096),
+  status: z.enum(['pending', 'submitted_to_botpress', 'failed']),
+  delivery_attempt: z.number().int().min(1),
+  authorized_egress: AuthorizedEgressSchema,
 })
 
 export const CommitDecisionResponseSchema = z.object({
@@ -741,20 +751,13 @@ export const CommitDecisionResponseSchema = z.object({
   turn_id: z.string().uuid(),
   decision_id: z.string().uuid(),
   next_state: z.enum(['completed', 'waiting_user']),
-  outbound: z
-    .object({
-      id: z.string().uuid(),
-      content: z.string().min(1).max(4096),
-      status: z.enum(['pending', 'submitted_to_botpress', 'failed']),
-      // El intento que el backend le confía a ESTE workflow. Vuelve en el
-      // reporte de entrega: es lo que permite distinguir "falló este intento"
-      // de "falló un intento que ya no corre", y sólo el primero puede llevar
-      // a otro envío.
-      delivery_attempt: z.number().int().min(1),
-      authorized_egress: AuthorizedEgressSchema,
-    })
+  outbound: CommittedOutboundSchema
     .nullable()
     .default(null),
+  outbounds: z.array(CommittedOutboundSchema.extend({
+    part_index: z.number().int().min(0).max(2),
+    part_count: z.number().int().min(1).max(3),
+  })).max(3).default([]),
   // Presente exactamente cuando la decisión reservó una llamada. En replay
   // trae el mismo call_id de la primera reserva; el workflow despacha por
   // call_id y nunca conoce el teléfono.

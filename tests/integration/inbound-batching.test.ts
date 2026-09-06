@@ -4,6 +4,7 @@ import { openIndependentLocalTestDatabases, openLocalTestDatabase } from '../hel
 import { processInboundMessage, type InboundEnvelope } from '@/lib/services/ingestion.service';
 import { PostgresOrchestrationStore } from '@/features/orchestration/adapters/postgres-orchestration-store';
 import { sql } from '@/lib/db/orchestrator';
+import { commitClaimedDecision } from '@/features/orchestration/application/commit-claimed-decision';
 
 /**
  * Durable batching invariants (Fase 2).
@@ -144,6 +145,54 @@ run('durable inbound batching', () => {
     } finally {
       await Promise.all(clients.map((client) => client.end()));
     }
+  });
+
+  it('suppresses a stale generated reply when a newer inbound arrived before commit', async () => {
+    const firstEnvelope = envelope();
+    const first = await processInboundMessage(firstEnvelope);
+    await forceDue(first.batch.id);
+    const firstClaim = await store.claimBatch({
+      batch_id: first.batch.id,
+      claimed_by: 'slow-model',
+    });
+    expect(firstClaim.outcome).toBe('claimed');
+
+    const second = await processInboundMessage(followUp(firstEnvelope, 'Y también quiero saber el precio'));
+    expect(second.batch.id).not.toBe(first.batch.id);
+
+    const committed = await commitClaimedDecision({
+      turn_id: first.turn_id,
+      trace_id: firstEnvelope.trace_id,
+      decision: {
+        schema_version: 2,
+        intent: 'commercial',
+        kind: 'reply',
+        response: 'Esta respuesta quedó vieja.',
+        response_type: 'commercial_reply',
+        business_action: null,
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'waiting_user',
+        reason_code: 'SLOW_MODEL_RESULT',
+        confidence: 1,
+      },
+      model: { provider: 'botpress', model: 'test', prompt_version: 'test' },
+      supports_turn_supersession: true,
+      batch_id: first.batch.id,
+      claim_token: firstClaim.claim_token,
+    }, { store });
+
+    expect(committed.status).toBe('committed');
+    expect(committed.outbound).toBeNull();
+    expect(committed.outbounds).toEqual([]);
+    expect(committed.batch_completion).toBe('completed');
+    const proof = await db!<Array<{ reason_code: string; outbounds: number }>>`
+      SELECT ad.reason_code,
+        (SELECT count(*)::integer FROM messages m
+         WHERE m.in_reply_to = ad.turn_id AND m.direction = 'outbound') AS outbounds
+      FROM agent_decisions ad WHERE ad.turn_id = ${first.turn_id}::uuid
+    `;
+    expect(proof).toEqual([{ reason_code: 'SUPERSEDED_BY_NEWER_INBOUND', outbounds: 0 }]);
   });
 
   it('answers waiting with a bounded retry delay before the window is due', async () => {

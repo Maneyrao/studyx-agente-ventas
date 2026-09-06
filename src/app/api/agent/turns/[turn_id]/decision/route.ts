@@ -144,6 +144,8 @@ const schema = z.object({
   authorized_payment_plan: z.enum(['monthly_12', 'monthly_6', 'one_time']).nullable().optional(),
   conversation_pipeline_v1: ConversationPipelineCommitV1Schema.nullable().optional(),
   agent_turn_v2: AgentATurnCommitV2Schema.nullable().optional(),
+  supports_multi_outbound: z.boolean().optional(),
+  supports_turn_supersession: z.boolean().optional(),
   decision: decisionSchema,
   model: z.object({
     provider: z.enum(['botpress', 'google-ai-direct', 'groq-direct', 'openai-direct', 'deepseek-direct']),

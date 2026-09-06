@@ -15,6 +15,7 @@ import {
   WorkflowInputSchema,
   WorkflowResultSchema,
   type ClaimedTurn,
+  type CommitDecisionResponse,
   type Decision,
   type IngestResponse,
   type WorkflowResult,
@@ -1172,7 +1173,7 @@ export const processInboundTurn = new Workflow({
     }
 
     // ---- Paso 10: commitear en Next.js -----------------------------------
-    let committed
+    let committed: CommitDecisionResponse
     const commitStartedAt = Date.now()
     try {
       committed = await step(
@@ -1192,6 +1193,8 @@ export const processInboundTurn = new Workflow({
               authorized_payment_plan: authorizedPaymentPlan,
               conversation_pipeline_v1: pipelineCommit,
               agent_turn_v2: agentTurnV2Commit,
+              supports_multi_outbound: true,
+              supports_turn_supersession: true,
               decision,
               model: {
                 provider: decisionProvider,
@@ -1278,6 +1281,214 @@ export const processInboundTurn = new Workflow({
     if (committed.status === 'rejected' || !committed.outbound) {
       state.phase = committed.next_state
       emitTimings()
+      return resultFromState(state, input.trace_id)
+    }
+
+    // New backend capability: each model-authored part has its own durable
+    // message, manifest, delivery lease and report. Older backends omit the
+    // array and continue through the singular compatibility path below.
+    if ((committed.outbounds?.length ?? 0) > 0) {
+      const multiSendStartedAt = Date.now()
+      let lastBotpressMessageId: string | null = null
+
+      for (const outboundPart of committed.outbounds) {
+        // A replay may contain parts already acknowledged by Botpress. Their
+        // durable delivery state is the fence: never submit those texts again;
+        // continue from the first unfinished part only.
+        if (outboundPart.status === 'submitted_to_botpress') {
+          safeLog('studyx.turn.outbound_part_already_submitted', {
+            trace_id: input.trace_id,
+            turn_id: owned.turn_id,
+            outbound_id: outboundPart.id,
+            part_index: outboundPart.part_index,
+          })
+          continue
+        }
+        if (outboundPart.status === 'failed') {
+          // Retry leasing belongs to the delivery reconciler. A workflow
+          // replay has no new attempt token and therefore must not redeliver.
+          state.deliveryStatus = 'failed'
+          state.phase = 'retry_pending'
+          state.errorCode = 'OUTBOUND_RETRY_PENDING'
+          emitTimings()
+          return resultFromState(state, input.trace_id)
+        }
+        const verification = await verifyAuthorizedEgressPortable({
+          content: outboundPart.content,
+          manifest: outboundPart.authorized_egress,
+        }).catch(() => ({ ok: false, reason: 'CRYPTO_UNAVAILABLE' } as const))
+
+        if (!verification.ok) {
+          state.deliveryStatus = 'failed'
+          state.phase = 'paused_error'
+          state.errorCode = `EGRESS_${verification.reason}`
+          try {
+            await step(
+              `report-egress-verification-failure-part-${outboundPart.part_index}`,
+              () => reportDelivery.execute({
+                client,
+                input: {
+                  outbound_id: outboundPart.id,
+                  trace_id: input.trace_id,
+                  status: 'failed',
+                  botpress_message_id: null,
+                  replayed: false,
+                  error_code: state.errorCode,
+                  delivery_attempt: outboundPart.delivery_attempt,
+                },
+              }),
+              { maxAttempts: 1 }
+            )
+          } catch (reportError) {
+            safeLog('studyx.turn.delivery_report_failed', {
+              trace_id: input.trace_id,
+              turn_id: owned.turn_id,
+              outbound_id: outboundPart.id,
+              part_index: outboundPart.part_index,
+              error_code: errorCode(reportError),
+            })
+          }
+          emitTimings()
+          return resultFromState(state, input.trace_id)
+        }
+
+        let delivery: { message: { id: string } }
+        try {
+          delivery = await step(
+            `submit-outbound-to-botpress-part-${outboundPart.part_index}`,
+            () => {
+              if (input.channel === 'whatsapp' && input.sandbox_provider !== 'telegram_sandbox') {
+                const canary = evaluateWhatsAppCanarySend({
+                  automationEnabled: configuration.automationEnabled,
+                  whatsappCanaryEnabled: configuration.whatsappCanaryEnabled === true,
+                  allowlist: secrets.WHATSAPP_CANARY_PHONE_E164S,
+                  phoneE164: input.phone_e164,
+                  log: (event) => console.info(JSON.stringify(event)),
+                })
+                if (!canary.allowed) {
+                  const blocked = new Error(canary.reason)
+                  blocked.name = canary.reason
+                  throw blocked
+                }
+              }
+              return client.createMessage({
+                conversationId: input.botpress_conversation_id,
+                userId: context.get('botId'),
+                type: 'text',
+                payload: { text: outboundPart.content },
+                tags: {
+                  studyxOutboundId: outboundPart.id,
+                  studyxTraceId: input.trace_id,
+                  studyxPartIndex: String(outboundPart.part_index),
+                  studyxPartCount: String(outboundPart.part_count),
+                },
+              }) as Promise<{ message: { id: string } }>
+            },
+            { maxAttempts: 1 }
+          )
+        } catch (error) {
+          state.deliveryStatus = 'failed'
+          state.phase = 'paused_error'
+          state.errorCode = errorCode(error)
+          try {
+            await step(
+              `report-botpress-failure-part-${outboundPart.part_index}`,
+              () => reportDelivery.execute({
+                client,
+                input: {
+                  outbound_id: outboundPart.id,
+                  trace_id: input.trace_id,
+                  status: 'failed',
+                  botpress_message_id: null,
+                  replayed: false,
+                  error_code: state.errorCode,
+                  delivery_attempt: outboundPart.delivery_attempt,
+                },
+              }),
+              { maxAttempts: 1 }
+            )
+          } catch (reportError) {
+            safeLog('studyx.turn.delivery_report_failed', {
+              trace_id: input.trace_id,
+              turn_id: owned.turn_id,
+              outbound_id: outboundPart.id,
+              part_index: outboundPart.part_index,
+              error_code: errorCode(reportError),
+            })
+          }
+          emitTimings()
+          return resultFromState(state, input.trace_id)
+        }
+
+        // Report immediately. If this becomes ambiguous after createMessage
+        // returned an id, stop before the next part; never resend this one.
+        try {
+          await step(
+            `report-botpress-submission-part-${outboundPart.part_index}`,
+            () => reportDelivery.execute({
+              client,
+              input: {
+                outbound_id: outboundPart.id,
+                trace_id: input.trace_id,
+                status: 'submitted_to_botpress',
+                botpress_message_id: delivery.message.id,
+                replayed: false,
+                error_code: null,
+                delivery_attempt: outboundPart.delivery_attempt,
+              },
+            }),
+            { maxAttempts: 1 }
+          )
+        } catch (error) {
+          state.phase = 'paused_error'
+          state.errorCode = errorCode(error)
+          safeLog('studyx.turn.delivery_report_failed', {
+            trace_id: input.trace_id,
+            turn_id: owned.turn_id,
+            outbound_id: outboundPart.id,
+            part_index: outboundPart.part_index,
+            botpress_message_id: delivery.message.id,
+            error_code: state.errorCode,
+          })
+          emitTimings()
+          return resultFromState(state, input.trace_id)
+        }
+        lastBotpressMessageId = delivery.message.id
+      }
+
+      timings.send_ms = Date.now() - multiSendStartedAt
+      if (Number.isFinite(occurredAtMs)) {
+        timings.event_to_visible_outbound_ms = Math.max(0, Date.now() - occurredAtMs)
+        timings.event_to_visible_outbound_over_budget =
+          timings.event_to_visible_outbound_ms >= 10_000 ? 1 : 0
+      }
+      state.deliveryStatus = 'submitted_to_botpress'
+      try {
+        await step(
+          'flush-lead-projection-multi',
+          () => flushLeadProjection.execute({ client, input: { trace_id: input.trace_id } }),
+          { maxAttempts: 1 }
+        )
+      } catch (error) {
+        safeLog('studyx.turn.projection_flush_skipped', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          error_code: errorCode(error),
+        })
+      }
+      state.phase = committed.next_state
+      safeLog('studyx.turn.completed', {
+        trace_id: input.trace_id,
+        turn_id: owned.turn_id,
+        batch_id: owned.batch.id,
+        outbound_ids: committed.outbounds.map((part) => part.id),
+        botpress_message_id: lastBotpressMessageId,
+        botpress_message_replayed: false,
+      })
+      emitTimings({
+        model: decisionModel,
+        fast_path: commercialRoute.kind === 'deterministic',
+      })
       return resultFromState(state, input.trace_id)
     }
 

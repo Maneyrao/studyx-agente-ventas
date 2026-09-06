@@ -131,6 +131,7 @@ export async function prepareAgentTurnV2(input: {
   readonly now?: () => number;
 }): Promise<{
   readonly decision: DecisionV4;
+  readonly response_messages: readonly string[];
   readonly transition: ConversationStateTransitionV1;
   readonly authorized_offering_code: string | null;
   readonly authorized_payment_plan: 'monthly_12' | 'monthly_6' | 'one_time' | null;
@@ -197,6 +198,7 @@ export async function prepareAgentTurnV2(input: {
   });
   return {
     decision,
+    response_messages: authority.response_messages,
     transition,
     authorized_offering_code: authority.transition.selected_offering_code,
     authorized_payment_plan: authority.action.type === 'send_payment_link'

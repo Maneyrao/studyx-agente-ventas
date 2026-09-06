@@ -55,6 +55,8 @@ export type AgentTurnRejectionReasonV2 =
 export type AgentTurnAuthorityResultV2 = {
   readonly ok: true;
   readonly response: string;
+  /** Customer-visible parts authored by the model, after state-claim pruning. */
+  readonly response_messages: readonly string[];
   readonly action: AgentAProposedActionV1;
   readonly transition: AgentTurnStateTransitionV2;
   readonly authorized_fact_ids: readonly string[];
@@ -342,6 +344,7 @@ export function authorizeAgentTurnV2(input: {
   return {
     ok: true,
     response,
+    response_messages: [...authorizedMessages, ...(authorizedCallOffer ? [authorizedCallOffer] : [])],
     action,
     authorized_fact_ids: unique(authorizedFactIds),
     state_facts: stateFacts,

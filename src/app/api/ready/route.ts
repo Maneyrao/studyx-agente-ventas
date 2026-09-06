@@ -5,7 +5,11 @@ import {
   probeAgentABrainConfiguration,
   probeEnvironment,
 } from '@/features/observability/domain/readiness';
-import { probeCommercialSnapshot, probePostgres } from '@/features/observability/adapters/probes';
+import {
+  probeAgentLoopSchema,
+  probeCommercialSnapshot,
+  probePostgres,
+} from '@/features/observability/adapters/probes';
 import { businessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
 import { loadAgentABrainConfig, loadBusinessWorkspaceConfig } from '@/lib/config';
 import { withTrace } from '@/lib/observability/structured-log';
@@ -31,6 +35,7 @@ export async function GET() {
     ...probeEnvironment((name: string) => process.env[name]).filter((probe) => probe.required),
     probeAgentABrainConfiguration(loadAgentABrainConfig()),
     await probePostgres(),
+    await probeAgentLoopSchema(),
     await probeCommercialSnapshot(loadBusinessWorkspaceConfig, businessContextStore),
   ]);
 

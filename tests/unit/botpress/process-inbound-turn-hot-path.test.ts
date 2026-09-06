@@ -1413,6 +1413,10 @@ describe('processInboundTurn hot path', () => {
   async function runCommittedOutbound(
     outbound: Record<string, unknown>,
     inputOverrides: Record<string, unknown> = {},
+    options: {
+      outbounds?: Array<Record<string, unknown>>;
+      createMessage?: ReturnType<typeof vi.fn>;
+    } = {},
   ) {
     actionSpies.commit.mockResolvedValue({
       status: 'committed',
@@ -1428,9 +1432,11 @@ describe('processInboundTurn hot path', () => {
         delivery_attempt: 1,
         ...outbound,
       },
+      outbounds: options.outbounds ?? [],
       call_request: null,
     });
-    const createMessage = vi.fn(async () => ({ message: { id: 'bp-message-1' } }));
+    const createMessage = options.createMessage
+      ?? vi.fn(async () => ({ message: { id: 'bp-message-1' } }));
     const step = Object.assign(
       async (_name: string, run: () => Promise<unknown>) => run(),
       { sleep: vi.fn(async () => undefined) },
@@ -1469,6 +1475,83 @@ describe('processInboundTurn hot path', () => {
 
     return { createMessage, result };
   }
+
+  it('delivers two durable outbound parts in order and reports each part', async () => {
+    const createMessage = vi.fn()
+      .mockResolvedValueOnce({ message: { id: 'bp-part-1' } })
+      .mockResolvedValueOnce({ message: { id: 'bp-part-2' } });
+    const manifests = [
+      { schema_version: 1, content_hash: '67d02dfce5ef9a0aa49675a19b9f92983e52abb2cceb96e6e932c26f171e68aa', authorized_urls: [], protected_facts: [] },
+      { schema_version: 1, content_hash: '2f50e3d71e066e86ebb03e28f5bac2e90cd0de1982f34ecef3f0753b14b27897', authorized_urls: [], protected_facts: [] },
+    ];
+    const { result } = await runCommittedOutbound({
+      authorized_egress: manifests[0],
+    }, {}, {
+      createMessage,
+      outbounds: [
+        { id: UUID, content: 'Primero', status: 'pending', delivery_attempt: 1, authorized_egress: manifests[0], part_index: 0, part_count: 2 },
+        { id: '28a823e8-27c2-4279-9956-058f45f33cd6', content: 'Segundo', status: 'pending', delivery_attempt: 1, authorized_egress: manifests[1], part_index: 1, part_count: 2 },
+      ],
+    });
+
+    expect(createMessage).toHaveBeenCalledTimes(2);
+    expect(createMessage.mock.calls.map(([input]) => input.payload.text)).toEqual(['Primero', 'Segundo']);
+    expect(actionSpies.delivery.mock.calls.map(([call]) => call.input)).toEqual([
+      expect.objectContaining({ outbound_id: UUID, status: 'submitted_to_botpress', botpress_message_id: 'bp-part-1' }),
+      expect.objectContaining({ outbound_id: '28a823e8-27c2-4279-9956-058f45f33cd6', status: 'submitted_to_botpress', botpress_message_id: 'bp-part-2' }),
+    ]);
+    expect(result).toMatchObject({ status: 'completed', delivery_status: 'submitted_to_botpress' });
+  });
+
+  it('stops after a failed second part without resending the first', async () => {
+    const createMessage = vi.fn()
+      .mockResolvedValueOnce({ message: { id: 'bp-part-1' } })
+      .mockRejectedValueOnce(Object.assign(new Error('channel failed'), { code: 'CHANNEL_FAILED' }));
+    const manifests = [
+      { schema_version: 1, content_hash: '67d02dfce5ef9a0aa49675a19b9f92983e52abb2cceb96e6e932c26f171e68aa', authorized_urls: [], protected_facts: [] },
+      { schema_version: 1, content_hash: '2f50e3d71e066e86ebb03e28f5bac2e90cd0de1982f34ecef3f0753b14b27897', authorized_urls: [], protected_facts: [] },
+    ];
+    const { result } = await runCommittedOutbound({
+      authorized_egress: manifests[0],
+    }, {}, {
+      createMessage,
+      outbounds: [
+        { id: UUID, content: 'Primero', status: 'pending', delivery_attempt: 1, authorized_egress: manifests[0], part_index: 0, part_count: 2 },
+        { id: '28a823e8-27c2-4279-9956-058f45f33cd6', content: 'Segundo', status: 'pending', delivery_attempt: 1, authorized_egress: manifests[1], part_index: 1, part_count: 2 },
+      ],
+    });
+
+    expect(createMessage).toHaveBeenCalledTimes(2);
+    expect(actionSpies.delivery.mock.calls.map(([call]) => call.input.status)).toEqual([
+      'submitted_to_botpress', 'failed',
+    ]);
+    expect(result).toMatchObject({ status: 'paused_error', delivery_status: 'failed' });
+  });
+
+  it('never resends submitted or retryable-failed parts without a new delivery lease', async () => {
+    const createMessage = vi.fn();
+    const manifests = [
+      { schema_version: 1, content_hash: '67d02dfce5ef9a0aa49675a19b9f92983e52abb2cceb96e6e932c26f171e68aa', authorized_urls: [], protected_facts: [] },
+      { schema_version: 1, content_hash: '2f50e3d71e066e86ebb03e28f5bac2e90cd0de1982f34ecef3f0753b14b27897', authorized_urls: [], protected_facts: [] },
+    ];
+    const { result } = await runCommittedOutbound({
+      authorized_egress: manifests[0],
+    }, {}, {
+      createMessage,
+      outbounds: [
+        { id: UUID, content: 'Primero', status: 'submitted_to_botpress', delivery_attempt: 1, authorized_egress: manifests[0], part_index: 0, part_count: 2 },
+        { id: '28a823e8-27c2-4279-9956-058f45f33cd6', content: 'Segundo', status: 'failed', delivery_attempt: 2, authorized_egress: manifests[1], part_index: 1, part_count: 2 },
+      ],
+    });
+
+    expect(createMessage).not.toHaveBeenCalled();
+    expect(actionSpies.delivery).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: 'retry_pending',
+      delivery_status: 'failed',
+      error_code: 'OUTBOUND_RETRY_PENDING',
+    });
+  });
 
   it('blocks altered committed content before createMessage and reports a safe failure', async () => {
     const { createMessage, result } = await runCommittedOutbound({

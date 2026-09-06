@@ -692,9 +692,27 @@ export async function processInboundMessage(envelope: InboundEnvelope): Promise<
     state: string | null;
     next_state: 'completed' | 'waiting_user';
   }>>`
-    SELECT ad.id AS decision_id, ad.outbound_message_id AS outbound_id, od.state, ad.next_state
+    SELECT
+      ad.id AS decision_id,
+      ad.outbound_message_id AS outbound_id,
+      CASE
+        WHEN part_delivery.part_count > 0 AND part_delivery.has_failed THEN 'failed_retryable'
+        WHEN part_delivery.part_count > 0 AND part_delivery.all_submitted THEN 'submitted'
+        WHEN part_delivery.part_count > 0 THEN 'pending'
+        ELSE od.state
+      END AS state,
+      ad.next_state
     FROM agent_decisions AS ad
     LEFT JOIN outbound_deliveries AS od ON od.message_id = ad.outbound_message_id
+    LEFT JOIN LATERAL (
+      SELECT
+        count(*)::integer AS part_count,
+        bool_or(delivery.state IN ('failed_retryable', 'dead_letter', 'cancelled')) AS has_failed,
+        bool_and(delivery.state IN ('submitted', 'delivered')) AS all_submitted
+      FROM agent_decision_outbound_parts AS part
+      JOIN outbound_deliveries AS delivery ON delivery.message_id = part.message_id
+      WHERE part.decision_id = ad.id
+    ) AS part_delivery ON true
     WHERE ad.turn_id = ${inbound.id}::uuid
     LIMIT 1
   `;

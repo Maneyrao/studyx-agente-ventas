@@ -172,6 +172,7 @@ run('plannerless Agent A vertical', () => {
       authorized_payment_plan: null,
       conversation_pipeline_v1: null,
       agent_turn_v2: { schema_version: 2 as const, proposal },
+      supports_multi_outbound: true,
       decision: placeholderDecision(),
       model: {
         provider: 'deepseek-direct' as const,
@@ -212,8 +213,21 @@ run('plannerless Agent A vertical', () => {
       },
     );
     expect(selected.committed.outbound?.content).toContain('Buenísimo, veamos si Redes encaja');
-    expect(selected.committed.outbound?.content).toContain('podemos conversarlo en una llamada');
     expect(selected.committed.outbound?.content).not.toContain('siguiente paso autorizado');
+    expect(selected.committed.outbounds).toHaveLength(2);
+    expect(selected.committed.outbounds.map((outbound) => outbound.content)).toEqual([
+      'Buenísimo, veamos si Redes encaja con lo que querés lograr.',
+      'Si te resulta más cómodo, también podemos conversarlo en una llamada.',
+    ]);
+    expect(selected.committed.outbounds.map((outbound) => outbound.part_index)).toEqual([0, 1]);
+    expect(selected.committed.outbounds.every((outbound) => outbound.part_count === 2)).toBe(true);
+
+    const selectedReplay = await commitClaimedDecision(
+      selected.commitInput,
+      { store: orchestrationStore },
+    );
+    expect(selectedReplay.status).toBe('duplicate');
+    expect(selectedReplay.outbounds).toEqual(selected.committed.outbounds);
 
     await commitTurn('Me quedo con 6 cuotas', {
       schema_version: 1,
@@ -239,7 +253,8 @@ run('plannerless Agent A vertical', () => {
       used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
     });
     expect(payment.committed.outbound?.content).toContain('Dale, te lo comparto');
-    expect(payment.committed.outbound?.content.split(link)).toHaveLength(2);
+    expect(payment.committed.outbounds.filter((outbound) => outbound.content.includes(link))).toHaveLength(1);
+    expect(payment.committed.outbounds.map((outbound) => outbound.content).join('\n')).toContain(link);
 
     const replay = await commitClaimedDecision(payment.commitInput, { store: orchestrationStore });
     expect(replay.status).toBe('duplicate');

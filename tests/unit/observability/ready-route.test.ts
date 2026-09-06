@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AGENT_A_REQUIRED_ENVIRONMENT } from '@/lib/config';
 
 const probePostgres = vi.hoisted(() => vi.fn());
+const probeAgentLoopSchema = vi.hoisted(() => vi.fn());
 const probeCommercialSnapshot = vi.hoisted(() => vi.fn());
 
 vi.mock('@/features/observability/adapters/probes', () => ({
   probePostgres,
+  probeAgentLoopSchema,
   probeCommercialSnapshot,
 }));
 
@@ -15,6 +17,9 @@ describe('GET /api/ready', () => {
     vi.stubEnv('DATABASE_URL', 'postgresql://test:test@localhost:5432/test');
     probePostgres.mockResolvedValue({
       name: 'postgres', required: true, status: 'ok', detail: null, latency_ms: 1,
+    });
+    probeAgentLoopSchema.mockResolvedValue({
+      name: 'agent_loop_schema', required: true, status: 'ok', detail: null, latency_ms: 1,
     });
     probeCommercialSnapshot.mockResolvedValue({
       name: 'commercial_snapshot',
@@ -40,5 +45,22 @@ describe('GET /api/ready', () => {
       ready: false,
       failed_required: ['commercial_snapshot'],
     });
+  });
+
+  it('refuses traffic when the deployed database is missing columns used by the Agent Loop', async () => {
+    probeCommercialSnapshot.mockResolvedValue({
+      name: 'commercial_snapshot', required: true, status: 'ok', detail: null, latency_ms: 1,
+    });
+    probeAgentLoopSchema.mockResolvedValue({
+      name: 'agent_loop_schema', required: true, status: 'down',
+      detail: 'missing: deferred_state_patch', latency_ms: 1,
+    });
+
+    const { GET } = await import('@/app/api/ready/route');
+    const response = await GET();
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.failed_required).toContain('agent_loop_schema');
   });
 });

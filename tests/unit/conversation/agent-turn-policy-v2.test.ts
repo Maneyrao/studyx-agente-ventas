@@ -358,6 +358,44 @@ describe('plannerless Agent A authority', () => {
 
     expect(result).toEqual({ ok: false, reasons: ['CALL_OFFER_NOT_AUTHORIZED'] });
   });
+
+  it('persists call refusal and a payment-plan choice from the same customer message', () => {
+    const result = authorize({
+      customerText: 'No quiero que me llamen; quiero pagar en un solo pago.',
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        stage: 'course_selected',
+        call_offer_status: 'offered',
+        call_offer_count: 1,
+        awaiting_reply: 'call_or_chat',
+      }),
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'select_payment_plan',
+          secondary_moves: ['decline_call'],
+          vetoes: ['call'],
+          payment_plan: 'one_time',
+          confidence: 1,
+        },
+        response: { messages: ['Perfecto, seguimos por chat y dejo elegido el pago único.'] },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: { type: 'none' },
+      transition: {
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'one_time',
+        stage: 'plan_selected',
+        call_preference: 'declined',
+        call_offer_status: 'declined',
+        call_offer_count: 1,
+        awaiting_reply: 'payment_confirmation',
+      },
+    });
+  });
 });
 
 // A pending intake carries link consent only after an explicit request.
