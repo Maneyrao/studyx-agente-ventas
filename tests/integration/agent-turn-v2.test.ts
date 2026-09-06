@@ -240,15 +240,17 @@ run('plannerless Agent A vertical', () => {
       used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
     });
 
-    const payment = await commitTurn('Ahora sí, mandame el link', {
+    const payment = await commitTurn('Mandame el link de pago', {
       schema_version: 1,
       move: {
         schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
-        confidence: 0.99,
+        // Reproduce the production failure: the model inferred another plan
+        // even though this turn did not change the durable customer choice.
+        payment_plan: 'one_time', confidence: 0.99,
       },
       response: { messages: ['Dale, te lo comparto para que puedas avanzar.'] },
       proposed_action: {
-        type: 'send_payment_link', offering_code: 'redes-informaticas', payment_plan: 'monthly_6',
+        type: 'send_payment_link', offering_code: 'redes-informaticas', payment_plan: 'one_time',
       },
       used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
     });

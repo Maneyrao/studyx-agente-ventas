@@ -21,6 +21,7 @@ import {
 } from './state-fact-registry';
 import { missingContactIntakeFieldsV1, type ContactIntakeV1 } from './conversation-planner';
 import {
+  classifyCurrentPaymentIntent,
   hasExplicitPurchaseDecline,
   hasTemporalPaymentDeferral,
 } from '@/features/payments/domain/payment-choice-policy';
@@ -136,7 +137,20 @@ export function authorizeAgentTurnV2(input: {
   const changesCourse = moves.has('select_course') || moves.has('ask_course_information');
   const selectedOffering = requestedOffering ?? state.selected_offering_code;
   const courseChanged = selectedOffering !== state.selected_offering_code;
-  const selectedPlan = proposal.move.payment_plan ?? (courseChanged ? null : state.selected_payment_plan);
+  const currentPaymentIntent = classifyCurrentPaymentIntent(
+    (input.current_customer_messages ?? []).map((content) => ({ content })),
+  );
+  const resumesDurablePlan = moves.has('request_payment_link')
+    && state.selected_payment_plan !== null
+    && (
+      currentPaymentIntent.kind === 'resume'
+      || (currentPaymentIntent.kind === 'direct' && currentPaymentIntent.planCode === null)
+    );
+  // A generic “mandame el link” authorizes the already selected durable plan;
+  // it never lets a model-inferred plan silently replace that customer choice.
+  const selectedPlan = resumesDurablePlan
+    ? state.selected_payment_plan
+    : proposal.move.payment_plan ?? (courseChanged ? null : state.selected_payment_plan);
   const selectionChanged = courseChanged || selectedPlan !== state.selected_payment_plan;
   const plannedPaymentReported = moves.has('report_payment') || state.payment_reported_at !== null;
   const stateFacts = materializeStateFactsV1({
@@ -241,7 +255,7 @@ export function authorizeAgentTurnV2(input: {
     const matchesState = selectedOffering !== null
       && proposal.proposed_action.offering_code === selectedOffering
       && selectedPlan !== null
-      && proposal.proposed_action.payment_plan === selectedPlan;
+      && (resumesDurablePlan || proposal.proposed_action.payment_plan === selectedPlan);
     if (!paymentLinkRequested || !matchesState
       || proposal.move.vetoes.includes('payment_link')
       || proposal.move.vetoes.includes('purchase')) {
@@ -249,7 +263,13 @@ export function authorizeAgentTurnV2(input: {
     } else if (!stateFacts.has('state:intake_recorded:v1')) {
       reasons.push('MISSING_INTAKE');
     } else {
-      action = proposal.proposed_action;
+      action = resumesDurablePlan
+        ? {
+            type: 'send_payment_link',
+            offering_code: selectedOffering,
+            payment_plan: selectedPlan,
+          }
+        : proposal.proposed_action;
     }
   }
   if (

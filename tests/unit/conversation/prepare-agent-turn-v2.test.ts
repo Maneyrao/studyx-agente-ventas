@@ -160,6 +160,39 @@ describe('prepareAgentTurnV2', () => {
     expect(prepared.decision.response).not.toContain('stripe');
   });
 
+  it('resumes the durable plan for a generic link request instead of trusting a model-inferred plan', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Mandame el link de pago'],
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+          payment_plan: 'monthly_6', confidence: 0.99,
+        },
+        response: { messages: ['Perfecto, te comparto el link seguro para que avances.'] },
+        proposed_action: {
+          type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+        },
+      }),
+    }, {
+      state_store: store(state({
+        selected_offering_code: 'redes_informaticas', selected_payment_plan: 'one_time',
+        stage: 'plan_selected', awaiting_reply: 'contact_details',
+      })),
+      contact_intake: completeIntake,
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.decision.business_action).toEqual({
+      type: 'send_payment_link', offering_sku: 'redes_informaticas', plan_code: 'one_time',
+    });
+    expect(prepared.authorized_payment_plan).toBe('one_time');
+    expect(prepared.transition).toMatchObject({
+      selected_payment_plan: 'one_time', stage: 'payment_link_sent', awaiting_reply: 'none',
+    });
+  });
+
   it('rejects a response citing a fact from outside the selected course', async () => {
     await expect(prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
