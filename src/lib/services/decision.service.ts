@@ -795,6 +795,13 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     let canonicalSnapshotAttempted = false;
     const salesContextStore = new PostgresSalesContextStore(db);
     const existingSalesContext = await salesContextStore.load(workspaceSlug, turn.contact_id);
+    // Agent Turn V2 authorizes against its conversation-state row inside this
+    // same transaction. The legacy sales projection may legitimately lag (or
+    // predate plannerless V2), so it must not override or erase that durable
+    // plan during a later generic “mandame el link” request.
+    const authoritativeSelectedPaymentPlan = preparedAgentTurn !== null
+      ? pipelineStateBefore?.selected_payment_plan ?? null
+      : existingSalesContext?.selected_payment_plan ?? null;
     let loadedBatchMessages: Array<{ content: string }> | null = null;
 
     const loadBatchMessages = async (): Promise<Array<{ content: string }>> => {
@@ -823,7 +830,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         ?? derivePaymentPlanSelectionFromBatch(batchMessages)
         ?? (currentPaymentIntent.kind === 'direct' || currentPaymentIntent.kind === 'resume'
           || completesRequestedIntake
-          ? existingSalesContext?.selected_payment_plan ?? null
+          ? authoritativeSelectedPaymentPlan
           : null);
       if (backendDerivedPlan !== authorizedPaymentPlan) {
         throw new DecisionPolicyError('PAYMENT_PLAN_MISMATCH');
@@ -902,7 +909,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         action,
         authorizedOfferingCode: effectiveAuthorizedOfferingCode ?? null,
         deferredPlanCode,
-        selectedPlanCode: existingSalesContext?.selected_payment_plan ?? null,
+        selectedPlanCode: authoritativeSelectedPaymentPlan,
         backendAuthorizedPlanCode: preparedAgentTurn?.decision.business_action?.type === 'send_payment_link'
           ? preparedAgentTurn.decision.business_action.plan_code
           : preparedPipeline?.plan.allowed_business_action.type === 'send_payment_link'

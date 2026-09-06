@@ -229,7 +229,7 @@ run('plannerless Agent A vertical', () => {
     expect(selectedReplay.status).toBe('duplicate');
     expect(selectedReplay.outbounds).toEqual(selected.committed.outbounds);
 
-    await commitTurn('Me quedo con 6 cuotas', {
+    const planSelected = await commitTurn('Me quedo con 6 cuotas', {
       schema_version: 1,
       move: {
         schema_version: 1, move: 'select_payment_plan', secondary_moves: [], vetoes: [],
@@ -239,6 +239,16 @@ run('plannerless Agent A vertical', () => {
       proposed_action: { type: 'none' },
       used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
     });
+
+    // Production can contain a stale legacy row from before plannerless V2:
+    // the active conversation state has the durable plan, while the legacy
+    // sales projection still says no plan. Payment authority must follow the
+    // state reloaded and authorized by this same Agent Turn V2 transaction.
+    await db!`
+      UPDATE sales_context_states
+      SET stage = 'course_selected', selected_payment_plan = NULL
+      WHERE contact_id = ${planSelected.claimed.batch.contact_id}::uuid
+    `;
 
     const payment = await commitTurn('Mandame el link de pago', {
       schema_version: 1,
