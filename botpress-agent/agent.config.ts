@@ -77,8 +77,9 @@ export default defineConfig({
         "Bearer token for /api/cron/flush-projections, used only by flushLeadProjection's opportunistic (best-effort, never blocking) Sheets-outbox flush. Same secret Next.js's cron routes already require — no value here, only the declaration; the value is provisioned per environment.",
     },
     WHATSAPP_CANARY_PHONE_E164S: {
+      optional: true,
       description:
-        "One strict E.164 tester identity authorized for the supervised WhatsApp canary.",
+        "Optional strict E.164 tester identity for the supervised WhatsApp canary. Required by the runtime only when the canary flag is enabled.",
     },
   },
 
