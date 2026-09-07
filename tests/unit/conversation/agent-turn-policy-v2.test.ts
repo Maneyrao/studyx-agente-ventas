@@ -188,6 +188,71 @@ describe('plannerless Agent A authority', () => {
     });
   });
 
+  it.each([
+    'Sí, ¿cómo se paga?',
+    '¿Hay un link?',
+  ])('keeps the persisted plan for a contextual link request: %s', (customerText) => {
+    const result = authorize({
+      customerText,
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'monthly_12',
+        stage: 'plan_selected',
+        awaiting_reply: 'payment_confirmation',
+      }),
+      intake: completeIntake,
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+          payment_plan: 'one_time', confidence: 0.99,
+        },
+        response: { messages: ['Te comparto el enlace seguro para avanzar.'] },
+        proposed_action: {
+          type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'one_time',
+        },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: {
+        type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_12',
+      },
+      transition: { stage: 'payment_link_sent', selected_payment_plan: 'monthly_12' },
+    });
+  });
+
+  it('accepts an explicit current plan change even if request_payment_link is the primary move', () => {
+    const result = authorize({
+      customerText: 'Mejor 6 cuotas, pasame el link.',
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'monthly_12',
+        stage: 'plan_selected',
+        awaiting_reply: 'payment_confirmation',
+      }),
+      intake: completeIntake,
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+          payment_plan: 'monthly_6', confidence: 0.99,
+        },
+        response: { messages: ['Te comparto el enlace seguro de las 6 cuotas.'] },
+        proposed_action: {
+          type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+        },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: {
+        type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+      },
+      transition: { stage: 'payment_link_sent', selected_payment_plan: 'monthly_6' },
+    });
+  });
+
   it('materializes a requested link from the authorized move when the model omits the side effect', () => {
     const result = authorize({
       state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected' }),

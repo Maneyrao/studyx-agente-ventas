@@ -68,9 +68,9 @@ function identity() {
 }
 
 describe('contratos por workflow real con proveedor determinístico sin costo', () => {
-  it('ofrece llamada, captura nombre por partes y entrega el link sólo con intake completo', async () => {
+  it('persiste la selección contextual, captura el intake y entrega el link correcto', async () => {
     const id = identity();
-    const expectedLink = 'https://example.invalid/eval/contado';
+    const expectedLink = 'https://example.invalid/eval/12m';
     const turns: { customer: string; evidence: WorkflowTurnEvidenceV1 }[] = [];
 
     async function send(customer: string, next: AgentATurnProposalV1, linkMayBeDelivered = false) {
@@ -92,7 +92,8 @@ describe('contratos por workflow real con proveedor determinístico sin costo', 
       expect(evidence.errorCode, JSON.stringify(evidence)).toBeNull();
       expect(evidence.commitSucceeded).toBe(true);
       expect(evidence.authorizedMessages, 'el turno comercial debe entregar respuesta').not.toHaveLength(0);
-      expect(evidence.adapterCaptures, 'la entrega debe quedar correlacionada').toHaveLength(1);
+      expect(evidence.adapterCaptures, 'cada salida autorizada debe quedar correlacionada')
+        .toHaveLength(evidence.authorizedMessages.length);
       expect(evidence.httpExchanges.filter((item) => item.boundary === 'deepseek'),
         'la propuesta fixture debe aceptarse en el primer intento').toHaveLength(1);
       expect(countWorkflowAvailabilityFailuresV1({ turns, db }), 'disponibilidad por turno').toBe(0);
@@ -115,16 +116,11 @@ describe('contratos por workflow real con proveedor determinístico sin costo', 
         'offering:fotografia_profesional:duration:v1',
         'offering:fotografia_profesional:modality:v1',
       ],
-      response: {
-        ...next.response,
-        call_offer: 'Si preferís, podemos coordinar una llamada breve para contarte todos los detalles.',
-      },
     };
     let result = await send('Me interesa Fotografía Profesional.', next);
     expect(result.db.state?.selectedOfferingCode).toBe('fotografia_profesional');
-    expect(result.db.state?.callOfferStatus).toBe('offered');
-    expect(result.db.state?.callOfferCount).toBe(1);
-    expect(result.text).toMatch(/llamada/iu);
+    expect(result.db.state?.callOfferStatus).toBe('not_offered');
+    expect(result.db.state?.callOfferCount).toBe(0);
 
     result = await send(
       'No quiero una llamada; prefiero seguir por chat.',
@@ -134,7 +130,7 @@ describe('contratos por workflow real con proveedor determinístico sin costo', 
     );
     expect(result.db.state?.callOfferStatus).toBe('declined');
     expect(result.db.state?.callPreference).toBe('chat');
-    expect(result.db.state?.callOfferCount).toBe(1);
+    expect(result.db.state?.callOfferCount).toBe(0);
 
     next = proposal('ask_payment_options',
       'El valor total es USD 360. Podés elegir 12 pagos de USD 30, 6 pagos de USD 60 o un pago único de USD 360.',
@@ -152,21 +148,31 @@ describe('contratos por workflow real con proveedor determinístico sin costo', 
     expect(result.text).toContain('12 pagos de USD 30');
     expect(result.text).toContain('6 pagos de USD 60');
 
-    next = proposal('select_payment_plan', 'Perfecto, quedó elegido el pago único de USD 360. ¿Querés avanzar?', {
-      course_reference: 'fotografia_profesional', payment_plan: 'one_time',
+    next = proposal('ask_payment_options',
+      'Para que te quede más cómodo, te recomiendo 12 pagos de USD 30. ¿Te sirve esa opción?', {
+        course_reference: 'fotografia_profesional',
+      });
+    next = { ...next, used_fact_ids: [
+      'payment:fotografia_profesional:monthly_12:label:v1',
+      'payment:fotografia_profesional:monthly_12:price:v1',
+    ] };
+    result = await send('Pero es caro.', next);
+
+    next = proposal('select_payment_plan', 'Perfecto, quedó elegida la opción de 12 pagos de USD 30. ¿Querés avanzar?', {
+      course_reference: 'fotografia_profesional', payment_plan: 'monthly_12',
     });
     next = { ...next, used_fact_ids: [
-      'payment:fotografia_profesional:one_time:label:v1',
-      'payment:fotografia_profesional:one_time:price:v1',
+      'payment:fotografia_profesional:monthly_12:label:v1',
+      'payment:fotografia_profesional:monthly_12:price:v1',
     ] };
-    result = await send('Elijo el pago único al contado.', next);
-    expect(result.db.state?.selectedPaymentPlan).toBe('one_time');
+    result = await send('Dale', next);
+    expect(result.db.state?.selectedPaymentPlan).toBe('monthly_12');
 
     result = await send(
-      'Sí, mandame el enlace para pagar.',
+      'Sí, ¿cómo se paga?',
       proposal('request_payment_link',
         'Para dejarlo registrado necesito tu nombre, apellido, correo electrónico y teléfono. ¿Me los pasás?', {
-          course_reference: 'fotografia_profesional', payment_plan: 'one_time',
+          course_reference: 'fotografia_profesional', payment_plan: 'monthly_12',
         }),
     );
     expect(result.text).toMatch(/nombre[\s\S]*apellido[\s\S]*correo[\s\S]*tel[eé]fono/iu);
@@ -175,7 +181,7 @@ describe('contratos por workflow real con proveedor determinístico sin costo', 
       'Inés',
       proposal('provide_contact_details',
         '¡Gracias, Inés! Me falta tu apellido, tu correo electrónico y tu teléfono para dejarlo registrado. ¿Me los pasás?', {
-          course_reference: 'fotografia_profesional', payment_plan: 'one_time',
+          course_reference: 'fotografia_profesional', payment_plan: 'monthly_12',
         }),
     );
     expect(result.db.contact?.name).toBe('Inés');
@@ -185,7 +191,7 @@ describe('contratos por workflow real con proveedor determinístico sin costo', 
       'Valdés',
       proposal('provide_contact_details',
         '¡Gracias, Inés Valdés! Me falta tu correo electrónico y tu teléfono para dejarlo registrado. ¿Me los pasás?', {
-          course_reference: 'fotografia_profesional', payment_plan: 'one_time',
+          course_reference: 'fotografia_profesional', payment_plan: 'monthly_12',
         }),
     );
     expect(result.db.contact?.name).toBe('Inés Valdés');
@@ -195,7 +201,7 @@ describe('contratos por workflow real con proveedor determinístico sin costo', 
       'ines.valdes@example.test',
       proposal('provide_contact_details',
         '¡Gracias, Inés! Me falta tu teléfono para dejarlo registrado. ¿Me lo pasás?', {
-          course_reference: 'fotografia_profesional', payment_plan: 'one_time',
+          course_reference: 'fotografia_profesional', payment_plan: 'monthly_12',
         }),
     );
     expect(result.db.contact?.email).toBe('ines.valdes@example.test');
@@ -203,11 +209,11 @@ describe('contratos por workflow real con proveedor determinístico sin costo', 
 
     next = proposal(
       'provide_contact_details',
-      '¡Gracias, Inés Valdés! Ya tengo todos tus datos. Te comparto el enlace para pagar al contado.',
-      { course_reference: 'fotografia_profesional', payment_plan: 'one_time' },
-      { type: 'send_payment_link', offering_code: 'fotografia_profesional', payment_plan: 'one_time' },
+      '¡Gracias, Inés Valdés! Ya tengo todos tus datos. Te comparto el enlace para pagar en 12 cuotas.',
+      { course_reference: 'fotografia_profesional', payment_plan: 'monthly_12' },
+      { type: 'send_payment_link', offering_code: 'fotografia_profesional', payment_plan: 'monthly_12' },
     );
-    next = { ...next, used_fact_ids: ['payment:fotografia_profesional:one_time:label:v1'] };
+    next = { ...next, used_fact_ids: ['payment:fotografia_profesional:monthly_12:label:v1'] };
     result = await send('+1 305 555 0176', next, true);
     expect(result.db.contact?.name).toBe('Inés Valdés');
     expect(result.db.contact?.email).toBe('ines.valdes@example.test');

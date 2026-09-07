@@ -21,7 +21,7 @@ import {
 } from './state-fact-registry';
 import { missingContactIntakeFieldsV1, type ContactIntakeV1 } from './conversation-planner';
 import {
-  classifyCurrentPaymentIntent,
+  derivePaymentPlanSelectionFromBatch,
   hasExplicitPurchaseDecline,
   hasTemporalPaymentDeferral,
 } from '@/features/payments/domain/payment-choice-policy';
@@ -137,17 +137,19 @@ export function authorizeAgentTurnV2(input: {
   const changesCourse = moves.has('select_course') || moves.has('ask_course_information');
   const selectedOffering = requestedOffering ?? state.selected_offering_code;
   const courseChanged = selectedOffering !== state.selected_offering_code;
-  const currentPaymentIntent = classifyCurrentPaymentIntent(
-    (input.current_customer_messages ?? []).map((content) => ({ content })),
+  const currentPaymentMessages = (input.current_customer_messages ?? [])
+    .map((content) => ({ content }));
+  const explicitCurrentPlan = derivePaymentPlanSelectionFromBatch(currentPaymentMessages);
+  const selectsPaymentPlanNow = proposal.move.payment_plan !== undefined && (
+    proposal.move.move === 'select_payment_plan'
+    || proposal.move.payment_plan === explicitCurrentPlan
   );
   const resumesDurablePlan = moves.has('request_payment_link')
     && state.selected_payment_plan !== null
-    && (
-      currentPaymentIntent.kind === 'resume'
-      || (currentPaymentIntent.kind === 'direct' && currentPaymentIntent.planCode === null)
-    );
-  // A generic “mandame el link” authorizes the already selected durable plan;
-  // it never lets a model-inferred plan silently replace that customer choice.
+    && !selectsPaymentPlanNow;
+  // A link request without a simultaneous plan-selection move always uses the
+  // already persisted customer choice. Agent A owns the meaning of the request;
+  // the backend prevents an incidental model field from replacing that plan.
   const selectedPlan = resumesDurablePlan
     ? state.selected_payment_plan
     : proposal.move.payment_plan ?? (courseChanged ? null : state.selected_payment_plan);
@@ -226,11 +228,11 @@ export function authorizeAgentTurnV2(input: {
 
   let action: AgentAProposedActionV1 = { type: 'none' };
   const currentPaymentDeferral = hasTemporalPaymentDeferral(
-    (input.current_customer_messages ?? []).map((content) => ({ content })),
+    currentPaymentMessages,
     state.awaiting_reply === 'payment_confirmation' || state.awaiting_reply === 'contact_details',
   );
   const currentPurchaseDecline = hasExplicitPurchaseDecline(
-    (input.current_customer_messages ?? []).map((content) => ({ content })),
+    currentPaymentMessages,
   );
   const paymentDeferred = (moves.has('decline_purchase') && currentPurchaseDecline) || (
     currentPaymentDeferral && (

@@ -92,8 +92,9 @@ export function bindCurrentCatalogResolutionToMoveV1(
  *
  * Ya no clasifica intención: DeepSeek elige el `move`. Lo único que el backend
  * sigue imponiendo acá es la selección de plan de pago derivada del mensaje
- * actual —nunca de la memoria— y la desambiguación de un área nombrada, que
- * son las dos cosas cuyo error cuesta dinero o manda al cliente a otro lado.
+ * actual o de una aceptación corta de la única opción del último outbound
+ * —nunca de la memoria— y la desambiguación de un área nombrada. Son las dos
+ * cosas cuyo error cuesta dinero o manda al cliente a otro lado.
  */
 export function bindCurrentConversationalIntentToMoveV1(
   move: ConversationMoveV1,
@@ -125,6 +126,15 @@ export function bindCurrentConversationalIntentToMoveV1(
       .test(recentCustomerText);
   const explicitPaymentPlan = derivePaymentPlanSelectionFromBatch(currentBatchMessages);
   const currentPaymentIntent = classifyCurrentPaymentIntent(currentBatchMessages);
+  const shortContextualAcceptance = /^(?:si(?:\s+por\s+favor)?|dale|de\s+una|bueno|ok|okay|perfecto|listo)$/u
+    .test(currentBatch);
+  const previousTurn = claimed.context.recent_turns.at(-1);
+  const lastAgentReply = previousTurn?.direction === 'outbound'
+    ? previousTurn.content
+    : undefined;
+  const contextualPaymentPlan = shortContextualAcceptance && lastAgentReply
+    ? derivePaymentPlanSelectionFromBatch([{ content: lastAgentReply }])
+    : null;
   const awaitingPaymentReply = claimed.conversation_state_v1?.awaiting_reply === 'payment_confirmation'
     || claimed.conversation_state_v1?.awaiting_reply === 'contact_details';
   const currentPaymentDeferral = hasTemporalPaymentDeferral(
@@ -180,6 +190,9 @@ export function bindCurrentConversationalIntentToMoveV1(
     };
   }
   if (move.move === 'select_payment_plan' && currentPaymentIntent.kind === 'none') {
+    if (contextualPaymentPlan !== null) {
+      return { ...move, payment_plan: contextualPaymentPlan };
+    }
     const { payment_plan: _ignoredPaymentPlan, ...withoutPlan } = move;
     return {
       ...withoutPlan,

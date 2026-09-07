@@ -826,12 +826,20 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       const completesRequestedIntake = preparedAgentTurn !== null
         && validatedInput.agent_turn_v2?.proposal.move.move === 'provide_contact_details'
         && pipelineStateBefore?.awaiting_reply === 'contact_details';
-      const backendDerivedPlan = preparedPipeline?.plan.selected_payment_plan
-        ?? derivePaymentPlanSelectionFromBatch(batchMessages)
-        ?? (currentPaymentIntent.kind === 'direct' || currentPaymentIntent.kind === 'resume'
-          || completesRequestedIntake
-          ? authoritativeSelectedPaymentPlan
-          : null);
+      // Agent Turn V2 already authorized the model-owned interpretation against
+      // the conversation state reloaded inside this transaction. Reclassifying
+      // the same prose here made contextual confirmations such as
+      // “Sí, ¿cómo se paga?” lose their durable plan merely because they were
+      // phrased as a question. Keep the legacy text-derived check for the older
+      // paths; plannerless V2 validates canonical plan identity, not language.
+      const backendDerivedPlan = preparedAgentTurn !== null
+        ? preparedAgentTurn.authorized_payment_plan
+        : preparedPipeline?.plan.selected_payment_plan
+          ?? derivePaymentPlanSelectionFromBatch(batchMessages)
+          ?? (currentPaymentIntent.kind === 'direct' || currentPaymentIntent.kind === 'resume'
+            || completesRequestedIntake
+            ? authoritativeSelectedPaymentPlan
+            : null);
       if (backendDerivedPlan !== authorizedPaymentPlan) {
         throw new DecisionPolicyError('PAYMENT_PLAN_MISMATCH');
       }

@@ -18,7 +18,8 @@ import { openLocalTestDatabase } from '../helpers/db';
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
 
-const link = 'https://buy.stripe.com/test_plannerless_v2_6';
+const link12 = 'https://buy.stripe.com/test_plannerless_v2_12';
+const link6 = 'https://buy.stripe.com/test_plannerless_v2_6';
 
 function placeholderDecision() {
   return {
@@ -89,8 +90,8 @@ run('plannerless Agent A vertical', () => {
       'PAYMENT_LINK_CONTADO', 'VOICE_PROVIDER',
     ]) previousEnv[key] = process.env[key];
     process.env.BUSINESS_WORKSPACE_SLUG = workspaceSlug;
-    process.env.PAYMENT_LINK_12M = 'https://buy.stripe.com/test_plannerless_v2_12';
-    process.env.PAYMENT_LINK_6M = link;
+    process.env.PAYMENT_LINK_12M = link12;
+    process.env.PAYMENT_LINK_6M = link6;
     process.env.PAYMENT_LINK_CONTADO = 'https://buy.stripe.com/test_plannerless_v2_once';
     process.env.VOICE_PROVIDER = 'telegram_sandbox';
 
@@ -101,7 +102,7 @@ run('plannerless Agent A vertical', () => {
         ${db!.json({
           payment_options: [
             { code: 'monthly_12', currency: 'USD', total_amount: '360.00', installments: 12, installment_amount: '30.00', payment_link: process.env.PAYMENT_LINK_12M },
-            { code: 'monthly_6', currency: 'USD', total_amount: '360.00', installments: 6, installment_amount: '60.00', payment_link: link },
+            { code: 'monthly_6', currency: 'USD', total_amount: '360.00', installments: 6, installment_amount: '60.00', payment_link: link6 },
             { code: 'one_time', currency: 'USD', total_amount: '360.00', installments: 1, installment_amount: '360.00', payment_link: process.env.PAYMENT_LINK_CONTADO },
           ],
         })}
@@ -229,11 +230,11 @@ run('plannerless Agent A vertical', () => {
     expect(selectedReplay.status).toBe('duplicate');
     expect(selectedReplay.outbounds).toEqual(selected.committed.outbounds);
 
-    const planSelected = await commitTurn('Me quedo con 6 cuotas', {
+    const planSelected = await commitTurn('Me quedo con 12 cuotas', {
       schema_version: 1,
       move: {
         schema_version: 1, move: 'select_payment_plan', secondary_moves: [], vetoes: [],
-        payment_plan: 'monthly_6', confidence: 0.99,
+        payment_plan: 'monthly_12', confidence: 0.99,
       },
       response: { messages: ['Perfecto, guardo esa opción. Cuando quieras avanzar, decime y seguimos.'] },
       proposed_action: { type: 'none' },
@@ -242,15 +243,18 @@ run('plannerless Agent A vertical', () => {
 
     // Production can contain a stale legacy row from before plannerless V2:
     // the active conversation state has the durable plan, while the legacy
-    // sales projection still says no plan. Payment authority must follow the
+    // sales projection still says the older one-time plan. Payment authority must follow the
     // state reloaded and authorized by this same Agent Turn V2 transaction.
     await db!`
       UPDATE sales_context_states
-      SET stage = 'course_selected', selected_payment_plan = NULL
+      SET stage = 'course_selected', selected_payment_plan = 'one_time'
       WHERE contact_id = ${planSelected.claimed.batch.contact_id}::uuid
     `;
 
-    const payment = await commitTurn('Mandame el link de pago', {
+    // Exact production wording after the agent asked whether to proceed with
+    // the already persisted plan. Agent A owns that semantic interpretation;
+    // the backend must validate the selected plan without reclassifying text.
+    const payment = await commitTurn('Sí, ¿cómo se paga?', {
       schema_version: 1,
       move: {
         schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
@@ -265,8 +269,8 @@ run('plannerless Agent A vertical', () => {
       used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
     });
     expect(payment.committed.outbound?.content).toContain('Dale, te lo comparto');
-    expect(payment.committed.outbounds.filter((outbound) => outbound.content.includes(link))).toHaveLength(1);
-    expect(payment.committed.outbounds.map((outbound) => outbound.content).join('\n')).toContain(link);
+    expect(payment.committed.outbounds.filter((outbound) => outbound.content.includes(link12))).toHaveLength(1);
+    expect(payment.committed.outbounds.map((outbound) => outbound.content).join('\n')).toContain(link12);
 
     const replay = await commitClaimedDecision(payment.commitInput, { store: orchestrationStore });
     expect(replay.status).toBe('duplicate');
@@ -275,7 +279,7 @@ run('plannerless Agent A vertical', () => {
       SELECT
         (SELECT count(*)::integer FROM messages
          WHERE conversation_id = ${payment.claimed.batch.conversation_id}::uuid
-           AND direction = 'outbound' AND content LIKE ${`%${link}%`}) AS links,
+           AND direction = 'outbound' AND content LIKE ${`%${link12}%`}) AS links,
         (SELECT count(*)::integer FROM agent_decisions ad
          JOIN messages m ON m.id = ad.turn_id
          WHERE m.conversation_id = ${payment.claimed.batch.conversation_id}::uuid
@@ -291,7 +295,7 @@ run('plannerless Agent A vertical', () => {
       workspaceSlug, payment.claimed.batch.conversation_id, payment.claimed.batch.contact_id,
     );
     expect(state).toMatchObject({
-      selected_offering_code: 'redes-informaticas', selected_payment_plan: 'monthly_6',
+      selected_offering_code: 'redes-informaticas', selected_payment_plan: 'monthly_12',
       stage: 'payment_link_sent', call_offer_count: 1,
     });
   });

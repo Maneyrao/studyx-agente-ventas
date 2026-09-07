@@ -743,6 +743,67 @@ describe('buildAgentAContextV1', () => {
     });
   });
 
+  it('preserves Agent A contextual plan selection for a short acceptance', () => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'Dale',
+    };
+    claimed.context.recent_turns.push({
+      direction: 'outbound',
+      content: 'Para que te quede más cómodo, te recomiendo 12 pagos de USD 30. ¿Te sirve esa opción?',
+      created_at: NOW,
+    });
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      selected_payment_plan: 'one_time',
+      awaiting_reply: 'none',
+    };
+
+    expect(bindCurrentConversationalIntentToMoveV1({
+      schema_version: 1,
+      move: 'select_payment_plan',
+      secondary_moves: [],
+      vetoes: [],
+      payment_plan: 'monthly_12',
+      confidence: 0.99,
+    }, claimed)).toMatchObject({
+      move: 'select_payment_plan',
+      payment_plan: 'monthly_12',
+    });
+  });
+
+  it('does not bind a short acceptance to an older offer after a newer inbound turn', () => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'Dale',
+    };
+    claimed.context.recent_turns.push(
+      {
+        direction: 'outbound',
+        content: 'Te recomiendo 12 pagos de USD 30. ¿Te sirve esa opción?',
+        created_at: NOW,
+      },
+      {
+        direction: 'inbound',
+        content: 'Antes quiero consultar otra cosa.',
+        created_at: NOW,
+      },
+    );
+
+    expect(bindCurrentConversationalIntentToMoveV1({
+      schema_version: 1,
+      move: 'select_payment_plan',
+      secondary_moves: [],
+      vetoes: [],
+      payment_plan: 'monthly_12',
+      confidence: 0.99,
+    }, claimed)).toMatchObject({ move: 'ask_payment_options' });
+  });
+
   it('never resumes a link when the current plan selection carries a payment veto', () => {
     const claimed = claimedTurn();
     claimed.catalog_resolution = { kind: 'no_catalog_intent' };
