@@ -158,7 +158,7 @@ export const AgentATurnProposalV1Schema = z.object({
     call_offer: CustomerMessageSchema.nullable().optional(),
   }).strict(),
   proposed_action: ProposedActionSchema,
-  used_fact_ids: z.array(IdentifierSchema).max(32),
+  used_fact_ids: z.array(IdentifierSchema).max(60),
   used_memory_ids: z.array(IdentifierSchema).max(5),
   // Asesor. No persiste y no autoriza nada (§ 09): el backend conserva
   // sus siete hitos duros y sólo con evidencia durable. Entra para que

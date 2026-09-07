@@ -475,7 +475,7 @@ function proposalJsonSchema(context: AgentAContextV1): unknown {
         attempt: { type: 'integer', enum: [1] },
       })
       : { type: 'null' },
-    used_fact_ids: { type: 'array', maxItems: 32, items: { type: 'string' } },
+    used_fact_ids: { type: 'array', maxItems: 60, items: { type: 'string' } },
     used_memory_ids: { type: 'array', maxItems: 5, items: { type: 'string' } },
     memory_candidates: {
       type: 'array',

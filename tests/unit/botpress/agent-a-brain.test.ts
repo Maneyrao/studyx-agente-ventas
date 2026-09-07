@@ -794,6 +794,7 @@ describe('Agent A Brain V1', () => {
     expect(body.input).toContain(JSON.stringify(context().turn.batch_messages.map((message) => message.text)));
     const moveProperties = body.text.format.schema.properties.move.properties;
     const responseProperties = body.text.format.schema.properties.response.properties;
+    expect(body.text.format.schema.properties.used_fact_ids.maxItems).toBe(60);
     expect(responseProperties.messages.maxItems).toBe(2);
     expect(responseProperties.messages.description).toContain(
       'when call_offer is non-null, return exactly one response message',

@@ -773,7 +773,14 @@ describe('buildAgentAContextV1', () => {
     ]);
     expect(context!.commercial_state.call_offer_status).toBe('offered');
     expect(context!.commercial_state.call_offer_count).toBe(1);
-    expect(context!.catalog.available_offerings).toEqual([]);
+    expect(context!.catalog.available_offerings).toHaveLength(5);
+    expect(context!.catalog.available_offerings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'redes-informaticas',
+        fact_id: 'offering:redes-informaticas:name:v1',
+        display_name: 'Redes Informáticas',
+      }),
+    ]));
     expect(context!.catalog.candidate_offerings).toHaveLength(0);
     expect(context!.catalog.areas[0]).toMatchObject({
       code: 'tecnologia',

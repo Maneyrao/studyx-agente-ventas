@@ -92,6 +92,16 @@ describe('Agent A brain schema parity', () => {
     for (const schema of proposalSchemas) expect(schema.safeParse(validProposal).success).toBe(true);
   });
 
+  it('accepts citations for every course in a 40-offering catalog at both boundaries', () => {
+    const usedFactIds = Array.from(
+      { length: 40 },
+      (_, index) => `offering:curso-${index + 1}:name:v1`,
+    );
+    const candidate = { ...validProposal, used_fact_ids: usedFactIds };
+
+    for (const schema of proposalSchemas) expect(schema.safeParse(candidate).success).toBe(true);
+  });
+
   it.each([
     ['unknown action', { proposed_action: { type: 'enroll_student' } }],
     ['fourth payment plan', { proposed_action: { type: 'send_payment_link', offering_code: 'redes-informaticas', payment_plan: 'monthly_3' } }],

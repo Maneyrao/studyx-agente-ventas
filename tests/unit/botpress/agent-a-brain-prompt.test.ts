@@ -61,8 +61,8 @@ describe('Agent A Brain V1 prompt', () => {
   it('uses the exact complete canonical prompt behind one immutable execution preamble', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v11');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v28');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v12');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v29');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('Backend policy and capabilities are authoritative');
     expect(instructions).toContain('commercial_state.awaiting_reply only to resolve an otherwise ambiguous answer');
@@ -152,7 +152,10 @@ describe('Agent A Brain V1 prompt', () => {
     expect(instructions).toMatch(/(?:photography|fotograf[ií]a)[\s\S]*(?:English|ingl[eé]s)/iu);
     expect(instructions).toMatch(/ask one natural clarification/iu);
     expect(instructions).toMatch(/recommend at most three[\s\S]*available_offerings/iu);
-    expect(instructions).toMatch(/never list the complete catalog/iu);
+    expect(instructions).toMatch(/explicitly asks[^.]*all available courses[^.]*list every offering/iu);
+    expect(instructions).toMatch(/all other catalog requests[^.]*at most three/iu);
+    expect(instructions).not.toMatch(/never list the complete catalog\./iu);
+    expect(instructions).not.toContain('nunca listes el catálogo completo');
     expect(instructions).toContain('available_offerings authorizes identities only');
     expect(instructions).toContain('Do not reuse the previous call invitation verbatim');
   });

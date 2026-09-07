@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { lastAgentReplyV1 } from '../lib/conversation/conversation-composer';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v28' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v29' as const;
 
 const EXECUTION_PREAMBLE = `You are the bounded conversational brain for StudyX Agent A.
 Backend policy and capabilities are authoritative. Propose the next conversational move and write
@@ -61,7 +61,10 @@ Group related canonical courses for broad terms such as photography or fotograf√
 ingl√©s. If several offerings fit, ask one natural clarification that names only those relevant
 options, with at most three course names in one reply. For a broad area request, guide with at most
 three representative courses and ask which direction interests the customer. If none fit, explain the absence and recommend at most three real offerings from
-catalog.available_offerings using the customer's stated goal. Never list the complete catalog.
+catalog.available_offerings using the customer's stated goal. If the customer explicitly asks for all available courses or the complete catalog,
+list every offering in catalog.available_offerings using its canonical display name, even when a course is already selected.
+Cite every listed offering fact id, split the complete list across response.messages when useful, and omit none. This request browses the catalog;
+it does not by itself select or replace a course. For all other catalog requests, keep the recommendation or clarification to at most three courses.
 Never continue as if a course were already selected. Course references must use an exact visible
 canonical code, and a plan choice must populate move.payment_plan.
 continue_by_chat and decline_call express an actual current channel preference, not merely
