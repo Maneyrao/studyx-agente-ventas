@@ -293,7 +293,14 @@ function splitEmbeddedInitialCallOffer<T extends AgentAProposalEnvelopeV1>(input
   const parts = paragraphs.length >= 2 ? paragraphs : sentences
   if (parts.length < 2) return null
   const embeddedOffers = parts.filter((part) => solicitsACallV1(part))
-  const information = parts.filter((part) => !solicitsACallV1(part)).join('\n\n')
+  // The validator has already proved that one of the visible parts solicits a
+  // call.  When it is phrased in a way the lightweight detector cannot
+  // isolate, the final sentence is still the only safe removable boundary if
+  // a separate declared offer exists; validation below rejects any wrong cut.
+  const informationParts = embeddedOffers.length > 0
+    ? parts.filter((part) => !solicitsACallV1(part))
+    : input.initial.proposal.response.call_offer === null ? [] : parts.slice(0, -1)
+  const information = informationParts.join('\n\n')
   const callOffer = input.initial.proposal.response.call_offer ?? embeddedOffers.at(-1) ?? null
   if (!information || callOffer === null) return null
   const candidate = {
