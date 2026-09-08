@@ -129,7 +129,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
         move: { schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 1 },
         response: {
           messages: [
-            'Tenemos Fotografía Profesional.\n\nSi querés, podemos coordinar una llamada breve para orientarte.',
+            'Tenemos Fotografía Profesional. Si querés, podemos coordinar una llamada breve para orientarte.',
           ],
           call_offer: null,
         },

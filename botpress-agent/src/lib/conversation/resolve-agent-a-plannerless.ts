@@ -282,13 +282,18 @@ function splitEmbeddedInitialCallOffer<T extends AgentAProposalEnvelopeV1>(input
   if (input.initial.proposal.response.call_offer !== null) return null
   if (input.initial.proposal.response.messages.length !== 1) return null
 
-  const paragraphs = input.initial.proposal.response.messages[0]
+  const source = input.initial.proposal.response.messages[0]
+  const paragraphs = source
     .split(/\n\s*\n/u)
     .map((paragraph) => paragraph.trim())
     .filter(Boolean)
-  if (paragraphs.length < 2) return null
-  const callOffer = paragraphs.at(-1)!
-  const information = paragraphs.slice(0, -1).join('\n\n')
+  const sentences = source.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/gu)
+    ?.map((sentence) => sentence.trim())
+    .filter(Boolean) ?? []
+  const parts = paragraphs.length >= 2 ? paragraphs : sentences
+  if (parts.length < 2) return null
+  const callOffer = parts.at(-1)!
+  const information = parts.slice(0, -1).join('\n\n')
   if (!information) return null
   const candidate = {
     ...input.initial,
