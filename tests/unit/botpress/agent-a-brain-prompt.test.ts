@@ -62,7 +62,7 @@ describe('Agent A Brain V1 prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v12');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v31');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v32');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('Backend policy and capabilities are authoritative');
     expect(instructions).toContain('commercial_state.awaiting_reply only to resolve an otherwise ambiguous answer');
@@ -87,6 +87,7 @@ describe('Agent A Brain V1 prompt', () => {
     expect(instructions).toContain('For the English family, Inglés 1, Inglés 2 and');
     expect(instructions).toContain('Inglés 3 are levels, not a selected course');
     expect(instructions).toContain('Do not add curricular details before that selection is durable');
+    expect(instructions).toMatch(/return its exact visible canonical code in\s+course_reference/u);
     expect(instructions).toContain('Pedí únicamente los campos enumerados en `capabilities.intake_missing`');
     expect(instructions).toContain('<authorized_context>');
     expect(instructions).toContain('"memory-1"');
