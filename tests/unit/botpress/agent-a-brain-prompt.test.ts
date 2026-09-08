@@ -286,6 +286,20 @@ describe('directiva de reparación por repetición', () => {
     // sobre lo que se puede afirmar.
     expect(instructions).toMatch(/REPEATED_AGENT_REPLY[\s\S]*hechos autorizados no cambian/iu);
   });
+
+  it('instruye la reparación de la invitación embebida sin aportar copy fija', () => {
+    const current = context();
+    current.turn_rejection = {
+      schema_version: 1,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+      attempt: 1,
+      rejections: [{ code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID', subject: 'call_offer' }],
+      authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: [] },
+    };
+    const instructions = buildAgentABrainInstructionsV1(current);
+    expect(instructions).toMatch(/CALL_OFFER_MESSAGE_BOUNDARY_INVALID[\s\S]*one informational/u);
+    expect(instructions).toMatch(/response\.call_offer/u);
+  });
 });
 
 /**

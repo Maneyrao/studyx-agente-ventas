@@ -181,6 +181,9 @@ customer message did not request the link, acknowledge the current message with 
 and wait for a current explicit request; never infer consent from the saved plan.
 CALL_OFFER_REQUIRED means include one genuine optional voice-call invitation in response.call_offer;
 answer the current course question briefly and do not add a diagnostic or intake question.
+CALL_OFFER_MESSAGE_BOUNDARY_INVALID means the invitation was embedded or the turn had too many
+parts. Return exactly one informational response.messages item and one separate optional voice-call
+invitation in response.call_offer; do not mention a call inside response.messages.
 CHANNEL_PREFERENCE_NOT_SUPPORTED means the current message did not choose chat or reject a call.
 Interpret its actual meaning without continue_by_chat, decline_call or an invented call veto.
 UNSUPPORTED_OPERATIONAL_CLAIM for contact_details means do not say a partial or incomplete intake
