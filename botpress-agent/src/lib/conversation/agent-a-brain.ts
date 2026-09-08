@@ -1634,6 +1634,16 @@ export function validateAgentATurnProposalV1(input: {
   if (missingCourseSubject !== null) {
     rejections.push({ code: 'COURSE_NOT_RESOLVED', subject: missingCourseSubject });
   }
+  const selectedCourseName = input.context.catalog.selected_offering?.display_name ?? null;
+  if (moves.has('select_course') && selectedCourseName !== null) {
+    const visibleModelText = [
+      ...input.proposal.response.messages,
+      input.proposal.response.call_offer ?? '',
+    ].join('\n').toLocaleLowerCase('es');
+    if (!visibleModelText.includes(selectedCourseName.toLocaleLowerCase('es'))) {
+      rejections.push({ code: 'COURSE_NOT_RESOLVED', subject: 'course_name' });
+    }
+  }
   if (((moves.has('select_course') || moves.has('ask_course_information')) && hasCanonicalCourse
       || hasResolvedCourseFamily)
     && input.context.capabilities.may_offer_call

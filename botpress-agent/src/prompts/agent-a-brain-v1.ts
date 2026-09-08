@@ -235,6 +235,8 @@ when more than one candidate fits, change move to browse_catalog and keep course
 For an unresolved course, remove select_course from secondary_moves and set response.call_offer to null.
 Use select_course only with exactly one canonical course_reference. Do not ask for contact details
 or claim a payment is ready while its course is unresolved.
+If subject is course_name, keep the selected canonical course and rewrite the first response using
+the exact catalog.selected_offering.display_name plus one confirmed fact before any diagnosis.
 Never repeat the rejected draft and never explain this validation to the customer.
 </mandatory_repair>`;
 }

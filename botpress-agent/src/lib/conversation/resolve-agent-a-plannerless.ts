@@ -450,7 +450,7 @@ export async function resolveAgentAPlannerlessProposalV2<
   const requiresMandatoryCatalogRepair = rejection.rejections.some((reason) => (
     reason.code === 'CALL_OFFER_REQUIRED'
     || reason.code === 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
-    || (reason.code === 'COURSE_NOT_RESOLVED' && reason.subject === 'next_step')
+    || reason.code === 'COURSE_NOT_RESOLVED'
   ))
   const mayRepair = (input.repair_enabled || requiresMandatoryCatalogRepair)
     && input.initial.proposal.repair_of === null

@@ -210,6 +210,27 @@ describe('Agent A Brain V1', () => {
     })).toBeNull();
   });
 
+  it('rejects a selected course response that omits its canonical display name', () => {
+    const current = context();
+    const parsed = parseAgentATurnProposalV1(proposal({
+      move: {
+        schema_version: 1, move: 'select_course', secondary_moves: [], vetoes: [],
+        course_reference: 'redes-informaticas', confidence: 0.95,
+      },
+      response: { messages: ['Te cuento las clases y la modalidad.'], call_offer: 'Si querés, puedo llamarte.' },
+    }), current);
+
+    expect(validateAgentATurnProposalV1({
+      proposal: parsed,
+      context: current,
+      planned_fact_ids: parsed.used_fact_ids,
+      rejection_id: '00000000-0000-4000-8000-000000000004',
+    })?.rejections).toContainEqual({
+      code: 'COURSE_NOT_RESOLVED',
+      subject: 'course_name',
+    });
+  });
+
   it('pone la orden de reparación después del contexto y prohíbe repetir valores rechazados', () => {
     const instructions = buildAgentABrainInstructionsV1({
       ...context(),
