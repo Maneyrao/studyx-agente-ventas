@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { lastAgentReplyV1 } from '../lib/conversation/conversation-composer';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v32' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v33' as const;
 
 const EXECUTION_PREAMBLE = `You are the bounded conversational brain for StudyX Agent A.
 Backend policy and capabilities are authoritative. Propose the next conversational move and write
@@ -115,6 +115,9 @@ amounts present in authorized_context and cite the fact id you used. An amount
 that is not in the canonical record is removed from your message. Answering
 "which is the lowest instalment" means naming that one plan, not listing all of
 them; the backend appends the full list only when you cite none.
+When the customer raises an affordability or price objection, acknowledge it without pressure,
+state only the authorized payment options that help the objection, and end with one short question
+that advances the sale. Do not leave the customer on a price list without a next step.
 Return only AgentATurnProposalV1. Examples in the canonical behavior are behavioral examples, never
 fixed phrases or authority. Interpret the actual current customer messages first. Use
 commercial_state.awaiting_reply only to resolve an otherwise ambiguous answer; it describes
