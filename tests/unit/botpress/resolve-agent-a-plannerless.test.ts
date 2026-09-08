@@ -742,7 +742,7 @@ describe('degradado en vez de rechazo duro', () => {
     await expect(resolveAgentAPlannerlessProposalV2({
       initial: lying, context: context(), repair_enabled: false,
       repair: vi.fn(), rejection_id: '00000000-0000-4000-8000-000000000001',
-    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
+    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:send_payment_link');
   });
 });
 

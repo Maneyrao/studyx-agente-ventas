@@ -352,6 +352,16 @@ function mayDegradeToBackendBoundary(
   return rejection.rejections.every((reason) => BACKEND_ENFORCEABLE_CODES.has(reason.code))
 }
 
+function plannerlessRejectionError(rejection: TurnRejectionV1): Error {
+  // Preserve the stable prefix used by callers while exposing only structural
+  // rejection classes.  The workflow can then distinguish an invalid proposal
+  // from a transport outage without recording customer text or model output.
+  const classes = rejection.rejections
+    .map((reason) => `${reason.code}:${reason.subject}`)
+    .join(',')
+  return new Error(`PLANNERLESS_PROPOSAL_REJECTED:${classes}`)
+}
+
 /**
  * Pre-commit validation for the plannerless route. DeepSeek still owns the
  * complete response and the next move. This boundary only tells it which
@@ -511,7 +521,7 @@ export async function resolveAgentAPlannerlessProposalV2<
     && input.initial.proposal.repair_of === null
   if (!mayRepair) {
     if (mayDegradeToBackendBoundary(input.initial.proposal, rejection)) return degraded(false)
-    throw new Error('PLANNERLESS_PROPOSAL_REJECTED')
+    throw plannerlessRejectionError(rejection)
   }
 
   try {
@@ -576,7 +586,7 @@ export async function resolveAgentAPlannerlessProposalV2<
     }
   }
 
-  throw new Error('PLANNERLESS_PROPOSAL_REJECTED')
+  throw plannerlessRejectionError(rejection)
 }
 
 /**
