@@ -257,6 +257,42 @@ function demoteCourseSwitchCallOffer<T extends AgentAProposalEnvelopeV1>(input: 
 }
 
 /**
+ * The first invitation is mandatory at course discovery; a second is useful
+ * only when the model is actually explaining the selected course.  Merely
+ * repeating a catalog reference must not reopen an already pending call.
+ * This removes only the optional invitation and never writes customer copy.
+ */
+function demoteUnsolicitedFollowupCallOffer<T extends AgentAProposalEnvelopeV1>(input: {
+  readonly initial: T
+  readonly context: AgentAContextV1
+  readonly authorized_fact_ids: readonly string[]
+  readonly rejection_id: string
+}): T | null {
+  const moves = new Set([
+    input.initial.proposal.move.move,
+    ...input.initial.proposal.move.secondary_moves,
+  ])
+  if (
+    input.context.commercial_state.call_offer_count < 1
+    || input.initial.proposal.response.call_offer === null
+    || moves.has('ask_course_information')
+  ) return null
+  const candidate = {
+    ...input.initial,
+    proposal: {
+      ...input.initial.proposal,
+      response: { ...input.initial.proposal.response, call_offer: null },
+    },
+  }
+  return validatePlannerless({
+    proposal: candidate.proposal,
+    context: input.context,
+    rejection_id: input.rejection_id,
+    authorized_fact_ids: input.authorized_fact_ids,
+  }) === null ? candidate : null
+}
+
+/**
  * Códigos que el backend vuelve a verificar por su cuenta y puede vetar a
  * nivel de oración. Dejar pasar la propuesta con uno de estos es más seguro
  * que descartarla: el hecho falso muere igual en el egress, y la conversación
@@ -298,6 +334,21 @@ export async function resolveAgentAPlannerlessProposalV2<
   readonly rejection: TurnRejectionV1 | null
 }> {
   const factIds = authorizedFactIds(input.context)
+  const demotedUnsolicitedFollowup = demoteUnsolicitedFollowupCallOffer({
+    initial: input.initial,
+    context: input.context,
+    authorized_fact_ids: factIds,
+    rejection_id: input.rejection_id,
+  })
+  if (demotedUnsolicitedFollowup !== null) {
+    return {
+      effective: demotedUnsolicitedFollowup,
+      evidence: {
+        rejection_codes: [], repair_attempted: false, repaired: false, proposal_generation_calls: 1,
+      },
+      rejection: null,
+    }
+  }
   const rejection = validatePlannerless({
     proposal: input.initial.proposal,
     context: input.context,

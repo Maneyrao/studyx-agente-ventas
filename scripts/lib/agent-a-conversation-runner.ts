@@ -87,6 +87,7 @@ export type AgentTurnDiagnostic = {
     readonly move: string;
     readonly secondary_moves: readonly string[];
     readonly vetoes: readonly string[];
+    readonly course_reference?: string;
     readonly confidence: number;
   };
   plannedResponseGoal?: string;

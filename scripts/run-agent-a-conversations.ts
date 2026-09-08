@@ -831,6 +831,9 @@ export function createLocalTurnSender(
           move: authoritativeMove.move,
           secondary_moves: authoritativeMove.secondary_moves,
           vetoes: authoritativeMove.vetoes,
+          ...(typeof authoritativeMove.course_reference === 'string'
+            ? { course_reference: authoritativeMove.course_reference }
+            : {}),
           confidence: authoritativeMove.confidence,
         };
         if (plannerlessV2) {
