@@ -267,7 +267,7 @@ describe('validación de la propuesta del turno', () => {
     });
   });
 
-  it('rechaza una exploración ambigua que omite opciones canónicas resueltas', () => {
+  it('permite una recomendación parcial de una familia ambigua con pregunta de seguimiento', () => {
     const discovery = context({
       commercial_state: {
         ...context().commercial_state,
@@ -301,9 +301,7 @@ describe('validación de la propuesta del turno', () => {
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 
-    expect(rejection?.rejections).toContainEqual({
-      code: 'COURSE_NOT_RESOLVED', subject: 'candidate_offerings',
-    });
+    expect(rejection).toBeNull();
   });
 
   it('permite una pregunta de seguimiento cuando las opciones ya fueron mostradas en el turno anterior', () => {

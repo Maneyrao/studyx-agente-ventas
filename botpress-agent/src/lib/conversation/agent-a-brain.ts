@@ -1375,21 +1375,6 @@ function mentionsMissingIntakeField(messages: readonly string[], missing: readon
 /** Únicos géneros que el ADK sigue bloqueando por su cuenta. */
 const ADK_BLOCKING_FACT_KINDS = new Set(['price', 'promise']);
 
-function recentOutboundAlreadyNamesCandidates(
-  context: AgentAContextV1,
-  candidates: readonly { readonly display_name: string }[],
-): boolean {
-  if (candidates.length === 0) return false;
-  return context.turn.recent_turns
-    .filter((turn) => turn.direction === 'outbound')
-    .some((turn) => {
-      const text = turn.content.toLocaleLowerCase('es');
-      return candidates.every((candidate) => text.includes(
-        candidate.display_name.toLocaleLowerCase('es'),
-      ));
-    });
-}
-
 function comparableProtectedFact(fact: ReturnType<typeof extractProtectedFacts>[number]): string {
   // Zero cents in the catalog's dot-decimal format do not change an amount.
   // Do not normalize commas: the portable extractor can truncate 360,000 to
@@ -1657,32 +1642,6 @@ export function validateAgentATurnProposalV1(input: {
     ].join('\n').toLocaleLowerCase('es');
     if (!visibleModelText.includes(selectedCourseName.toLocaleLowerCase('es'))) {
       rejections.push({ code: 'COURSE_NOT_RESOLVED', subject: 'course_name' });
-    }
-  }
-  const resolvedCandidates = input.context.catalog.candidate_offerings;
-  const candidatesWereShownInRecentOutbound = recentOutboundAlreadyNamesCandidates(
-    input.context,
-    resolvedCandidates,
-  );
-  const visibleModelText = [
-    ...input.proposal.response.messages,
-    input.proposal.response.call_offer ?? '',
-  ].join('\n').toLocaleLowerCase('es');
-  const presentsCandidateOptions = resolvedCandidates.some((offering) => (
-    cited.has(offering.fact_id)
-    || visibleModelText.includes(offering.display_name.toLocaleLowerCase('es'))
-  ));
-  if (
-    moves.has('browse_catalog')
-    && resolvedCandidates.length > 1
-    && presentsCandidateOptions
-    && state.selected_offering_code === null
-    && !candidatesWereShownInRecentOutbound
-  ) {
-    if (resolvedCandidates.some((offering) => !visibleModelText.includes(
-      offering.display_name.toLocaleLowerCase('es'),
-    ))) {
-      rejections.push({ code: 'COURSE_NOT_RESOLVED', subject: 'candidate_offerings' });
     }
   }
   if (((moves.has('select_course') || moves.has('ask_course_information')) && hasCanonicalCourse
