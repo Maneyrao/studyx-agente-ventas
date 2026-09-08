@@ -4,6 +4,7 @@ import {
   removeUnsupportedPrerequisiteAssertionsV1,
   removeRepeatedAgentOpeningMessagesV1,
   removeRepeatedAgentQuestionMessagesV1,
+  solicitsACallV1,
   validateAgentATurnProposalV1,
 } from './agent-a-brain'
 import type {
@@ -357,9 +358,15 @@ function demoteUnsolicitedFollowupCallOffer<T extends AgentAProposalEnvelopeV1>(
     input.initial.proposal.move.move,
     ...input.initial.proposal.move.secondary_moves,
   ])
+  const embeddedCallOfferIndexes = input.initial.proposal.response.messages
+    .map((message, index) => (solicitsACallV1(message) ? index : -1))
+    .filter((index) => index >= 0)
   if (
     input.context.commercial_state.call_offer_count < 1
-    || input.initial.proposal.response.call_offer === null
+    || (
+      input.initial.proposal.response.call_offer === null
+      && embeddedCallOfferIndexes.length === 0
+    )
   ) return null
   // A prior invitation is still awaiting a chat/call answer.  Explaining the
   // course again is not an answer to that invitation and must not silently
@@ -372,7 +379,13 @@ function demoteUnsolicitedFollowupCallOffer<T extends AgentAProposalEnvelopeV1>(
     ...input.initial,
     proposal: {
       ...input.initial.proposal,
-      response: { ...input.initial.proposal.response, call_offer: null },
+      response: {
+        ...input.initial.proposal.response,
+        messages: input.initial.proposal.response.messages.filter((_, index) => (
+          !embeddedCallOfferIndexes.includes(index)
+        )),
+        call_offer: null,
+      },
     },
   }
   return validatePlannerless({

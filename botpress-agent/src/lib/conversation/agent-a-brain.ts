@@ -1732,7 +1732,7 @@ const CALL_SOLICITATION_V1 = /\b(?:te\s+llamo|te\s+llamamos|una\s+llamada|coordi
 const NOT_AN_OFFER_V1 = /\b(?:ya\s+(?:qued|registr|solicit)|no\s+te\s+llam|sin\s+llamada)/iu
 const DECLARED_CALL_CHANNEL_V1 = /\b(?:llam|videollam)|tel[eé]fon|telef[oó]n|\bvoz\b|\bcontact(?:arte|emos)\b/iu
 
-function solicitsACallV1(message: string, declaredOffer = false): boolean {
+export function solicitsACallV1(message: string, declaredOffer = false): boolean {
   if (declaredOffer) {
     return message.split(/[.;!?…¿¡,]|\s+(?:y|pero|aunque|sin embargo)\s+/iu)
       .some(clause => DECLARED_CALL_CHANNEL_V1.test(clause) && !NOT_AN_OFFER_V1.test(clause))

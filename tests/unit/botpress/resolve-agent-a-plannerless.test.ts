@@ -186,6 +186,39 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
         schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [], confidence: 1,
       },
       response: {
+        messages: [
+          'Fotografía Profesional tiene 41 clases online.',
+          'Si preferís, podemos coordinar una llamada breve.',
+        ],
+        call_offer: null,
+      },
+    }));
+
+    const resolved = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: true,
+      repair: async () => { throw new Error('REPAIR_MUST_NOT_RUN'); },
+      rejection_id: '00000000-0000-4000-8000-000000000002',
+    });
+
+    expect(resolved.effective.proposal.response.call_offer).toBeNull();
+    expect(resolved.effective.proposal.response.messages)
+      .toEqual(['Fotografía Profesional tiene 41 clases online.']);
+  });
+
+  it('strips a reoffered call even when the explanation itself repeats the prior reply', async () => {
+    const current = context();
+    current.commercial_state.call_offer_count = 1;
+    current.commercial_state.call_offer_status = 'offered';
+    current.commercial_state.awaiting_reply = 'call_or_chat';
+    current.turn.recent_turns = [{
+      id: 'prior-agent', direction: 'outbound',
+      content: 'Fotografía Profesional tiene 41 clases online.\n\nSi preferís, podemos coordinar una llamada breve.',
+    }];
+    const initial = generated(proposal({
+      move: {
+        schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [], confidence: 1,
+      },
+      response: {
         messages: ['Fotografía Profesional tiene 41 clases online.'],
         call_offer: 'Si preferís, podemos coordinar una llamada breve.',
       },
