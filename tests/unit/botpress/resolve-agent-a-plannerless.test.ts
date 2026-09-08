@@ -113,6 +113,44 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
+  it('splits a model-authored embedded initial invitation into its two delivery bubbles', async () => {
+    const current = context();
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_status = 'not_offered';
+    current.capabilities.may_offer_call = true;
+    current.catalog.selected_offering = null;
+    current.catalog.available_offerings = [{
+      code: 'fotografia-profesional', fact_id: AVAILABLE_NAME_FACT,
+      display_name: 'Fotografía Profesional', area_code: 'fotografia',
+    }];
+    const repair = vi.fn();
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({
+        move: { schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: {
+          messages: [
+            'Tenemos Fotografía Profesional.\n\nSi querés, podemos coordinar una llamada breve para orientarte.',
+          ],
+          call_offer: null,
+        },
+        used_fact_ids: [AVAILABLE_NAME_FACT],
+      })),
+      context: current,
+      repair_enabled: true,
+      repair,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.response).toEqual({
+      messages: ['Tenemos Fotografía Profesional.'],
+      call_offer: 'Si querés, podemos coordinar una llamada breve para orientarte.',
+    });
+    expect(result.evidence).toMatchObject({
+      rejection_codes: ['CALL_OFFER_MESSAGE_BOUNDARY_INVALID'], repair_attempted: false,
+    });
+  });
+
   it('removes an unsolicited follow-up call offer while preserving a catalog reply', async () => {
     const current = context();
     current.commercial_state.call_offer_count = 1;

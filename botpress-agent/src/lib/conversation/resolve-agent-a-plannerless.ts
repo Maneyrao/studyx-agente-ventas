@@ -263,6 +263,48 @@ function trimSurplusInitialCallOfferBubble<T extends AgentAProposalEnvelopeV1>(i
   }) === null ? candidate : null
 }
 
+/**
+ * Some otherwise valid drafts put the informational answer and the optional
+ * first-call invitation in one paragraph-delimited message.  The model has
+ * already authored both pieces; splitting that boundary is safer than
+ * replacing the answer with a generic technical fallback.  The normal
+ * proposal validator remains the authority for recognizing a real invitation.
+ */
+function splitEmbeddedInitialCallOffer<T extends AgentAProposalEnvelopeV1>(input: {
+  readonly initial: T
+  readonly rejection: TurnRejectionV1
+  readonly context: AgentAContextV1
+  readonly authorized_fact_ids: readonly string[]
+}): T | null {
+  if (!input.rejection.rejections.every((reason) => (
+    reason.code === 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
+  ))) return null
+  if (input.initial.proposal.response.call_offer !== null) return null
+  if (input.initial.proposal.response.messages.length !== 1) return null
+
+  const paragraphs = input.initial.proposal.response.messages[0]
+    .split(/\n\s*\n/u)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+  if (paragraphs.length < 2) return null
+  const callOffer = paragraphs.at(-1)!
+  const information = paragraphs.slice(0, -1).join('\n\n')
+  if (!information) return null
+  const candidate = {
+    ...input.initial,
+    proposal: {
+      ...input.initial.proposal,
+      response: { messages: [information], call_offer: callOffer },
+    },
+  } as T
+  return validatePlannerless({
+    proposal: candidate.proposal,
+    context: input.context,
+    rejection_id: input.rejection.rejection_id,
+    authorized_fact_ids: input.authorized_fact_ids,
+  }) === null ? candidate : null
+}
+
 function demoteCourseSwitchCallOffer<T extends AgentAProposalEnvelopeV1>(input: {
   readonly initial: T
   readonly context: AgentAContextV1
@@ -472,6 +514,23 @@ export async function resolveAgentAPlannerlessProposalV2<
   if (trimmedInitialOffer !== null) {
     return {
       effective: trimmedInitialOffer,
+      evidence: {
+        rejection_codes: rejection.rejections.map((reason) => reason.code),
+        repair_attempted: false, repaired: false, proposal_generation_calls: 1,
+      },
+      rejection,
+    }
+  }
+
+  const splitInitialOffer = splitEmbeddedInitialCallOffer({
+    initial: input.initial,
+    rejection,
+    context: input.context,
+    authorized_fact_ids: factIds,
+  })
+  if (splitInitialOffer !== null) {
+    return {
+      effective: splitInitialOffer,
       evidence: {
         rejection_codes: rejection.rejections.map((reason) => reason.code),
         repair_attempted: false, repaired: false, proposal_generation_calls: 1,
