@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { commitAgentDecision } from '@/lib/services/decision.service';
 import { PostgresConversationStateStoreV1 } from '@/features/conversation/adapters/postgres-conversation-state-store';
-import { TECHNICAL_FALLBACK_TEXT_V1 } from '@/features/conversation/domain/technical-fallback';
 import { authoritativelyPlanConversationTurnV1 } from '@/features/conversation/application/plan-conversation-turn';
 import type { ConversationMoveV1 } from '@/features/conversation/domain/conversation-pipeline';
 import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
@@ -14,20 +13,15 @@ const databaseAvailable = process.env.TEST_DATABASE_URL;
 const run = databaseAvailable ? describe : describe.skip;
 
 run('partial commercial-truth veto', () => {
-  it('does not persist a transition computed on text that was not delivered', async () => {
+  it('keeps a safe transition when the vetoed sentence carries no stateful effect', async () => {
     // El turno ofrece una llamada Y afirma un precio inexistente. El guard veta
     // la oración del precio; la invitación sobrevive. La transición se había
     // calculado sobre AMBAS oraciones.
     //
-    // Ruling (fix round 1): un veto parcial NO rechaza el commit — eso dejaba
-    // el turno mudo, porque la ruta de reparación existente sólo atrapa
-    // `AgentTurnV2RejectedError` desde `authorizeAgentTurnV2`, que corre
-    // ANTES del guard de verdad comercial. En cambio, el veto parcial cae por
-    // la MISMA puerta que ya usa una supresión total: silencio técnico, con
-    // su propio `reason_code` (`EGRESS_PARTIAL_VETO_TRANSITION_REFUSED`) para
-    // que la telemetría distinga un veto parcial de uno total. El commit
-    // sigue siendo exitoso, pero ninguna transición se persiste y el cliente
-    // recibe el piso técnico en vez de una fracción vetada del texto.
+    // El precio falso no cambia el efecto de la transición: el curso ya se
+    // resolvió canónicamente y la invitación a llamada sobrevive intacta. Un
+    // veto de esa oración no debe degradar una respuesta comercial sana a un
+    // fallback técnico ni borrar la transición independiente.
     const seeded = await seedConversationForAgentTurn({
       call_offer_count: 0,
       selected_offering_code: 'entrenamiento_funcional',
@@ -46,21 +40,25 @@ run('partial commercial-truth veto', () => {
       conversation_pipeline_v1: null,
       agent_turn_v2: {
         schema_version: 2,
-        proposal: seeded.proposalWithCallOfferAndFalsePrice as never,
+        proposal: {
+          ...seeded.proposalWithCallOfferAndFalsePrice,
+          response: {
+            messages: ['El diplomado sale USD 47.'],
+            call_offer: '¿Te gustaría que te llamemos para contarte más?',
+          },
+        } as never,
       },
       decision: seeded.placeholderDecision as never,
       model: seeded.model as never,
     });
 
     expect(committed.status).toBe('committed');
-    // El cliente recibe el piso técnico, nunca la fracción sobreviviente del
-    // texto vetado: ni la oración con el precio falso ni la de la invitación
-    // a llamar aparecen en la respuesta persistida.
-    expect(committed.outbound?.content).toBe(TECHNICAL_FALLBACK_TEXT_V1);
+    // Sólo cae el precio falso; la invitación segura sigue siendo la respuesta
+    // entregada y su transición queda durable.
+    expect(committed.outbound?.content).toBe('¿Te gustaría que te llamemos para contarte más?');
     expect(committed.outbound?.content ?? '').not.toContain('USD 47');
-    expect(committed.outbound?.content ?? '').not.toContain('llamemos');
-    expect(committed.conversation_effects?.technical_fallback_reason)
-      .toBe('EGRESS_PARTIAL_VETO_TRANSITION_REFUSED');
+    expect(committed.outbound?.content).toContain('llamemos');
+    expect(committed.conversation_effects).toBeUndefined();
 
     const [decision] = await sql<Array<{
       response: string | null;
@@ -74,38 +72,28 @@ run('partial commercial-truth veto', () => {
       WHERE turn_id = ${seeded.turn_id}::uuid
     `;
     expect(decision).toMatchObject({
-      response: TECHNICAL_FALLBACK_TEXT_V1,
+      response: '¿Te gustaría que te llamemos para contarte más?',
       business_action: null,
-      reason_code: 'EGRESS_PARTIAL_VETO_TRANSITION_REFUSED',
     });
 
-    // La prueba real: ninguna transición calculada sobre el texto pre-veto
-    // se escribió. El offer de llamada que el modelo autoredactó no cuenta,
-    // y el estado de la conversación queda exactamente como estaba antes del
-    // turno.
+    // La transición depende del curso canónico y de la invitación entregada,
+    // no de la afirmación de precio que se vetó.
     const state = await new PostgresConversationStateStoreV1(sql).load(
       'studyx', seeded.conversation_id, seeded.contact_id,
     );
-    expect(state?.call_offer_count).toBe(0);
-    expect(state?.awaiting_reply).toBe('none');
+    expect(state?.call_offer_count).toBe(1);
+    expect(state?.awaiting_reply).toBe('call_or_chat');
     // El fixture ya sembró 'entrenamiento_funcional' como curso elegido
     // ANTES de este turno; el punto es que sigue siendo ese valor sembrado —
     // el `move: 'select_course'` del turno vetado nunca se persistió — no
     // que se haya vuelto null.
     expect(state?.selected_offering_code).toBe('entrenamiento_funcional');
-    expect(state?.stage).toBe('exploring');
+    expect(state?.stage).toBe('course_selected');
   });
 
-  it('does not persist a conversation_pipeline_v1 transition computed on text that was not delivered', async () => {
-    // Ruling (fix round 2): el mismo bug existe en la OTRA autoridad. El gate
-    // original sólo miraba `preparedAgentTurn !== null`; un veto parcial sobre
-    // `preparedPipeline` (el compositor determinista de conversation_pipeline_v1)
-    // seguía cayendo en la rama vieja — `finalResponse = verdict.content` con
-    // la fracción podada, `preparedPipeline` vivo, su `transition` persistida
-    // igual — exactamente el bug que esta tarea existe para matar, en la otra
-    // ruta. CONVERSATION_PIPELINE_V1_ENABLED es un flag opt-in que hoy vale
-    // false por default, pero no se puede confirmar el valor real en
-    // producción, así que este camino no queda sin cubrir.
+  it('keeps a pipeline transition when only an unrelated false price is vetoed', async () => {
+    // La misma propiedad debe valer para la autoridad pipeline: el precio
+    // removido no transporta la llamada ni el curso que persistirá.
     const seeded = await seedConversationForAgentTurn({
       call_offer_count: 0,
       selected_offering_code: 'entrenamiento_funcional',
@@ -164,13 +152,10 @@ run('partial commercial-truth veto', () => {
     });
 
     expect(committed.status).toBe('committed');
-    expect(committed.outbound?.content).toBe(TECHNICAL_FALLBACK_TEXT_V1);
+    expect(committed.outbound?.content).toBe('Genial, ese es un gran curso.\n\n¿Preferís que sigamos por chat o querés solicitar una llamada?');
     expect(committed.outbound?.content ?? '').not.toContain('USD 47');
-    expect(committed.outbound?.content ?? '').not.toContain('llamemos');
-    expect(committed.conversation_effects?.technical_fallback_reason)
-      .toBe('EGRESS_PARTIAL_VETO_TRANSITION_REFUSED');
-    expect(committed.conversation_effects?.partial_veto_refused_authority)
-      .toBe('conversation_pipeline_v1');
+    expect(committed.outbound?.content).toContain('llamada');
+    expect(committed.conversation_effects).toBeUndefined();
 
     const [decision] = await sql<Array<{
       response: string | null;
@@ -182,20 +167,18 @@ run('partial commercial-truth veto', () => {
       WHERE turn_id = ${seeded.turn_id}::uuid
     `;
     expect(decision).toMatchObject({
-      response: TECHNICAL_FALLBACK_TEXT_V1,
+      response: 'Genial, ese es un gran curso.\n\n¿Preferís que sigamos por chat o querés solicitar una llamada?',
       business_action: null,
-      reason_code: 'EGRESS_PARTIAL_VETO_TRANSITION_REFUSED',
     });
 
-    // La prueba real: la transición de `preparedPipeline` —calculada sobre el
-    // texto PRE-veto, con la llamada ofrecida y el curso "confirmado"— nunca
-    // se escribió.
+    // La transición se escribe porque el texto que la respalda sí llegó al
+    // cliente; sólo se removió el precio no canónico.
     const state = await new PostgresConversationStateStoreV1(sql).load(
       'studyx', seeded.conversation_id, seeded.contact_id,
     );
-    expect(state?.call_offer_count).toBe(0);
-    expect(state?.awaiting_reply).toBe('none');
+    expect(state?.call_offer_count).toBe(1);
+    expect(state?.awaiting_reply).toBe('call_or_chat');
     expect(state?.selected_offering_code).toBe('entrenamiento_funcional');
-    expect(state?.stage).toBe('exploring');
+    expect(state?.stage).toBe('course_selected');
   });
 });

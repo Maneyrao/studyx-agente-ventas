@@ -30,6 +30,7 @@ import {
   resolveTechnicalFallbackV1,
   type TechnicalFallbackV1,
 } from '@/features/conversation/domain/technical-fallback';
+import { solicitsACall } from '@/features/conversation/domain/operational-promise-guard';
 import { PostgresOrchestrationStore } from '@/features/orchestration/adapters/postgres-orchestration-store';
 import { enqueueAgentAMemoryProjectionJobs } from '@/features/memory/application/project-agent-a-memories';
 import {
@@ -1076,9 +1077,18 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       // completa. Ambas autoridades comparten el mismo `reason_code`: la
       // columna no admite un enum por autoridad, así que la distinción vive
       // en `conversation_effects` (barato de agregar), no en `reason_code`.
+      // Una transición sólo deja de ser representativa cuando el fragmento
+      // vetado contenía el efecto que iba a persistir (una llamada o una
+      // acción comercial). Un precio o dato curricular falso no altera un
+      // curso canónico ya resuelto ni una invitación a llamada que sobrevivió;
+      // degradar todo ese turno a una disculpa técnica escondía precisamente
+      // la respuesta comercial segura que el cliente debía recibir.
+      const partialVetoRemovedStatefulEffect = verdict.removed.some((sentence) => solicitsACall(sentence))
+        || committedBusinessAction !== null;
       const partialVetoOnPreparedTurn = (preparedAgentTurn !== null || preparedPipeline !== null)
         && verdict.removed.length > 0
-        && verdict.content !== null;
+        && verdict.content !== null
+        && partialVetoRemovedStatefulEffect;
       const partialVetoRefusedAuthority: 'agent_turn_v2' | 'conversation_pipeline_v1' | null =
         !partialVetoOnPreparedTurn
           ? null
