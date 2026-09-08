@@ -193,7 +193,7 @@ describe('Agent A Brain V1', () => {
     });
   });
 
-  it('requires the second call reminder on a new question about the selected course', () => {
+  it('does not force a second call reminder on a repeated course question', () => {
     const current = context();
     current.commercial_state.call_offer_count = 1;
     current.commercial_state.call_offer_status = 'offered';
@@ -207,10 +207,7 @@ describe('Agent A Brain V1', () => {
       context: current,
       planned_fact_ids: parsed.used_fact_ids,
       rejection_id: '00000000-0000-4000-8000-000000000004',
-    })?.rejections).toContainEqual({
-      code: 'CALL_OFFER_REQUIRED',
-      subject: 'second_call_offer',
-    });
+    })).toBeNull();
   });
 
   it('pone la orden de reparación después del contexto y prohíbe repetir valores rechazados', () => {

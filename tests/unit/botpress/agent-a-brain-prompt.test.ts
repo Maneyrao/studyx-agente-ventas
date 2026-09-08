@@ -106,7 +106,7 @@ describe('Agent A Brain V1 prompt', () => {
     expect(execution).toContain('After a rejection or chat preference, continue the diagnostic once if it is still needed');
     expect(execution).toContain('A missing capability, call veto, rejection or chat preference always takes priority');
     expect(execution).toContain('An unknown course or area alone does not authorize a call invitation');
-    expect(execution).toMatch(/call_offer_count is 1[\s\S]*second invitation is required/u);
+    expect(execution).toMatch(/call_offer_count is 1[\s\S]*second invitation may help/u);
   });
 
   it('greets once and then advances through the earliest incomplete sales phase', () => {

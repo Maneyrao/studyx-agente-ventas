@@ -1642,14 +1642,6 @@ export function validateAgentATurnProposalV1(input: {
     && !requestedCallNow && !offersACall) {
     rejections.push({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
   }
-  if (moves.has('ask_course_information') && hasCanonicalCourse
-    && input.context.capabilities.may_offer_call
-    && state.call_offer_count === 1 && state.call_preference === 'unknown'
-    && state.call_offer_status === 'offered' && !channelChoice
-    && !requestedCallNow && !offersACall) {
-    rejections.push({ code: 'CALL_OFFER_REQUIRED', subject: 'second_call_offer' });
-  }
-
   // V7 — ninguna URL escrita por el modelo. El link lo inserta el backend.
   for (const message of input.proposal.response.messages) {
     if (extractUrlCandidates(message).length > 0) {
