@@ -151,6 +151,30 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
+  it('keeps a declared initial invitation while removing its duplicate from the information bubble', async () => {
+    const current = context();
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_status = 'not_offered';
+    current.capabilities.may_offer_call = true;
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({
+        response: {
+          messages: ['Maquillaje Profesional tiene 38 clases. Si querés, podemos coordinar una llamada breve.'],
+          call_offer: 'Si querés, puedo llamarte para orientarte.',
+        },
+      })),
+      context: current,
+      repair_enabled: true,
+      repair: async () => { throw new Error('REPAIR_MUST_NOT_RUN'); },
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(result.effective.proposal.response).toEqual({
+      messages: ['Maquillaje Profesional tiene 38 clases.'],
+      call_offer: 'Si querés, puedo llamarte para orientarte.',
+    });
+  });
+
   it('removes an unsolicited follow-up call offer while preserving a catalog reply', async () => {
     const current = context();
     current.commercial_state.call_offer_count = 1;

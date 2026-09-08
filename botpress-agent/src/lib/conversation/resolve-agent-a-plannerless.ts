@@ -280,7 +280,6 @@ function splitEmbeddedInitialCallOffer<T extends AgentAProposalEnvelopeV1>(input
   if (!input.rejection.rejections.every((reason) => (
     reason.code === 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
   ))) return null
-  if (input.initial.proposal.response.call_offer !== null) return null
   if (input.initial.proposal.response.messages.length !== 1) return null
 
   const source = input.initial.proposal.response.messages[0]
@@ -293,9 +292,10 @@ function splitEmbeddedInitialCallOffer<T extends AgentAProposalEnvelopeV1>(input
     .filter(Boolean) ?? []
   const parts = paragraphs.length >= 2 ? paragraphs : sentences
   if (parts.length < 2) return null
-  const callOffer = parts.at(-1)!
-  const information = parts.slice(0, -1).join('\n\n')
-  if (!information) return null
+  const embeddedOffers = parts.filter((part) => solicitsACallV1(part))
+  const information = parts.filter((part) => !solicitsACallV1(part)).join('\n\n')
+  const callOffer = input.initial.proposal.response.call_offer ?? embeddedOffers.at(-1) ?? null
+  if (!information || callOffer === null) return null
   const candidate = {
     ...input.initial,
     proposal: {
