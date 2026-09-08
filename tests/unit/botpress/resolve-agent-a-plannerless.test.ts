@@ -176,6 +176,32 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       .toEqual(['Fotografía Profesional tiene 41 clases online.']);
   });
 
+  it('does not repeat a call offer before the customer answers the first invitation', async () => {
+    const current = context();
+    current.commercial_state.call_offer_count = 1;
+    current.commercial_state.call_offer_status = 'offered';
+    current.commercial_state.awaiting_reply = 'call_or_chat';
+    const initial = generated(proposal({
+      move: {
+        schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [], confidence: 1,
+      },
+      response: {
+        messages: ['Fotografía Profesional tiene 41 clases online.'],
+        call_offer: 'Si preferís, podemos coordinar una llamada breve.',
+      },
+    }));
+
+    const resolved = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: true,
+      repair: async () => { throw new Error('REPAIR_MUST_NOT_RUN'); },
+      rejection_id: '00000000-0000-4000-8000-000000000002',
+    });
+
+    expect(resolved.effective.proposal.response.call_offer).toBeNull();
+    expect(resolved.effective.proposal.response.messages)
+      .toEqual(['Fotografía Profesional tiene 41 clases online.']);
+  });
+
   it('accepts an explicit payment deferral during pending intake without consuming a repair', async () => {
       const current = context();
       current.turn.batch_messages[0].text = 'Todavía no, prefiero pagar más adelante.';

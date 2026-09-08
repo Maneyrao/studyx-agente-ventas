@@ -360,7 +360,13 @@ function demoteUnsolicitedFollowupCallOffer<T extends AgentAProposalEnvelopeV1>(
   if (
     input.context.commercial_state.call_offer_count < 1
     || input.initial.proposal.response.call_offer === null
-    || moves.has('ask_course_information')
+  ) return null
+  // A prior invitation is still awaiting a chat/call answer.  Explaining the
+  // course again is not an answer to that invitation and must not silently
+  // consume the second-offer budget.
+  if (
+    input.context.commercial_state.awaiting_reply !== 'call_or_chat'
+    && moves.has('ask_course_information')
   ) return null
   const candidate = {
     ...input.initial,
