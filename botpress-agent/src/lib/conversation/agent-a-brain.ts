@@ -770,8 +770,9 @@ export function normalizeCallOfferResponseV1(
   suppressOffer = false,
 ): AgentATurnProposalV1['response'] {
   if (!Array.isArray(response.messages) || !response.messages.every((message) => typeof message === 'string')) return response;
+  if (response.call_offer != null && typeof response.call_offer !== 'string') return response;
   const invitations: string[] = [];
-  const messages = response.messages.map((message) => {
+  const retainInformation = (message: string): string => {
     const parts = message.split(/(?<=[.!?])\s+|\n\s*\n/u);
     const retained = parts.filter((part) => {
       // A sentence that merely mentions a call, confirms one, or mixes facts
@@ -785,7 +786,19 @@ export function normalizeCallOfferResponseV1(
       return false;
     });
     return retained.length === parts.length ? message : retained.join(' ').trim();
-  }).filter((message) => message.length > 0);
+  };
+  const messages = response.messages.map(retainInformation).filter((message) => message.length > 0);
+  if (suppressOffer && response.call_offer) {
+    const retainedOfferInformation = retainInformation(response.call_offer);
+    // A mixed/unknown invitation cannot be suppressed without losing its
+    // information. Preserve the proposal so validation requests model repair.
+    if (solicitsACallV1(retainedOfferInformation, true)) return response;
+    if (retainedOfferInformation.length > 0) {
+      const last = messages.length - 1;
+      if (last >= 0) messages[last] += `\n\n${retainedOfferInformation}`;
+      else messages.push(retainedOfferInformation);
+    }
+  }
   // Without a declared offer, distinct invitations are ambiguous: do not
   // silently select one of several model-authored intentions.
   if (!suppressOffer && !response.call_offer && new Set(invitations).size > 1) return response;

@@ -203,6 +203,92 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
+  it.each(['initial', 'repair'] as const)('preserves information inside a suppressed declared offer in the %s proposal', async (phase) => {
+    const current = context();
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_count = 1;
+    current.commercial_state.call_offer_status = 'offered';
+    current.commercial_state.awaiting_reply = 'call_or_chat';
+    const value = proposal({ response: {
+      messages: ['Maquillaje Profesional.'],
+      call_offer: 'La formación tiene 38 clases. Si querés, coordinamos una llamada.',
+    } });
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(phase === 'initial' ? value : proposal({ response: { messages: [] as never, call_offer: null } })),
+      context: current, repair_enabled: true,
+      repair: async () => generated({ ...value,
+        repair_of: { rejection_id: '00000000-0000-4000-8000-000000000001', attempt: 1 },
+      }),
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+    expect(result.effective.proposal.response).toEqual({
+      messages: ['Maquillaje Profesional.\n\nLa formación tiene 38 clases.'], call_offer: null,
+    });
+    expect(result.evidence.repaired).toBe(phase === 'repair');
+  });
+
+  it.each(['initial', 'repair'] as const)('does not silently drop inseparable information and invitation in the %s declared offer', async (phase) => {
+    const current = context();
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_count = 1;
+    current.commercial_state.call_offer_status = 'offered';
+    current.commercial_state.awaiting_reply = 'call_or_chat';
+    const value = proposal({ response: {
+      messages: ['Maquillaje Profesional.'],
+      call_offer: 'Si querés coordinamos una llamada, la formación tiene 38 clases.',
+    } });
+    await expect(resolveAgentAPlannerlessProposalV2({
+      initial: generated(phase === 'initial' ? value : proposal({ response: { messages: [] as never, call_offer: null } })),
+      context: current, repair_enabled: true,
+      repair: async () => generated({ ...value,
+        repair_of: { rejection_id: '00000000-0000-4000-8000-000000000001', attempt: 1 },
+      }),
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:CALL_BUDGET_EXHAUSTED:call_offer');
+  });
+
+  it.each(['initial', 'repair'] as const)('preserves information when demoting an unresolved-course offer in the %s proposal', async (phase) => {
+    const current = context();
+    current.commercial_state.selected_offering_code = null;
+    current.commercial_state.stage = 'exploring';
+    current.commercial_state.call_preference = 'unknown';
+    current.catalog.selected_offering = null;
+    current.catalog.areas = [{ code: 'tecnologia', display_name: 'Tecnología', fact_id: 'area:tecnologia:name:v1' }];
+    current.capabilities.may_offer_call = true;
+    const value = proposal({
+      move: { schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 1 },
+      response: {
+        messages: ['¿Qué te gustaría aprender?'],
+        call_offer: 'El área es Tecnología. Si querés, coordinamos una llamada.',
+      },
+      used_fact_ids: ['area:tecnologia:name:v1'],
+    });
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(phase === 'initial' ? value : proposal({ response: { messages: [] as never, call_offer: null } })),
+      context: current, repair_enabled: true,
+      repair: async () => generated({ ...value,
+        repair_of: { rejection_id: '00000000-0000-4000-8000-000000000001', attempt: 1 },
+      }),
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+    expect(result.effective.proposal.response).toEqual({
+      messages: ['¿Qué te gustaría aprender?\n\nEl área es Tecnología.'], call_offer: null,
+    });
+    expect(result.evidence.repaired).toBe(phase === 'repair');
+  });
+
+  it('rejects a malformed declared offer instead of throwing during suppression', async () => {
+    const current = context();
+    current.commercial_state.call_offer_count = 1;
+    current.commercial_state.awaiting_reply = 'call_or_chat';
+    await expect(resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({ response: { messages: ['La formación tiene 38 clases.'], call_offer: 123 as never } })),
+      context: current, repair_enabled: false,
+      repair: async () => { throw new Error('Unexpected repair'); },
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:PROPOSAL_SCHEMA_INVALID:response.call_offer');
+  });
+
   it('repairs a mixed information/reminder sentence rather than accepting a renewed pending offer', async () => {
     const current = context();
     current.commercial_state.call_preference = 'unknown';

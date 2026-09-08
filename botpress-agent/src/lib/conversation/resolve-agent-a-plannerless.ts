@@ -228,7 +228,7 @@ function demoteUnresolvedCallOffer<T extends AgentAProposalEnvelopeV1>(input: {
     ...input.initial,
     proposal: {
       ...input.initial.proposal,
-      response: { ...input.initial.proposal.response, call_offer: null },
+      response: normalizeCallOfferResponseV1(input.initial.proposal.response, true),
     },
   }
   const candidateRejection = validatePlannerless({
