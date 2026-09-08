@@ -62,7 +62,7 @@ describe('Agent A Brain V1 prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v12');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v30');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v31');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('Backend policy and capabilities are authoritative');
     expect(instructions).toContain('commercial_state.awaiting_reply only to resolve an otherwise ambiguous answer');
@@ -76,15 +76,17 @@ describe('Agent A Brain V1 prompt', () => {
     expect(instructions).toContain('never ask again for a field that is absent from intake_missing');
     expect(instructions).toContain('The customer may select the canonical plan and explicitly request its link');
     expect(instructions).toContain('select_course or ask_course_information (including secondary_moves)');
-    expect(instructions).toContain('a second invitation is required for ask_course_information');
+    expect(instructions).toContain('Never make a second invitation mandatory');
     expect(instructions).toContain('Do not infer a course or area from old memory when the current message is vague');
     expect(instructions).toContain('offer to help them find a fit');
     expect(instructions).toContain('never do is name, offer or promise a course that is not there');
     expect(instructions).toContain('at most three course names in one reply');
     expect(instructions).toContain('bare availability question');
+    expect(instructions).toContain('catalog.resolution is backend-verified');
     expect(instructions).toContain('an active selected offering remains among a broad family');
     expect(instructions).toContain('For the English family, Inglés 1, Inglés 2 and');
     expect(instructions).toContain('Inglés 3 are levels, not a selected course');
+    expect(instructions).toContain('Do not add curricular details before that selection is durable');
     expect(instructions).toContain('Pedí únicamente los campos enumerados en `capabilities.intake_missing`');
     expect(instructions).toContain('<authorized_context>');
     expect(instructions).toContain('"memory-1"');
