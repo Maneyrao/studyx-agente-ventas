@@ -1664,11 +1664,20 @@ export function validateAgentATurnProposalV1(input: {
     input.context,
     resolvedCandidates,
   );
-  if (moves.has('browse_catalog') && resolvedCandidates.length > 1 && !candidatesWereShownInRecentOutbound) {
-    const visibleModelText = [
-      ...input.proposal.response.messages,
-      input.proposal.response.call_offer ?? '',
-    ].join('\n').toLocaleLowerCase('es');
+  const visibleModelText = [
+    ...input.proposal.response.messages,
+    input.proposal.response.call_offer ?? '',
+  ].join('\n').toLocaleLowerCase('es');
+  const presentsCandidateOptions = resolvedCandidates.some((offering) => (
+    cited.has(offering.fact_id)
+    || visibleModelText.includes(offering.display_name.toLocaleLowerCase('es'))
+  ));
+  if (
+    moves.has('browse_catalog')
+    && resolvedCandidates.length > 1
+    && presentsCandidateOptions
+    && !candidatesWereShownInRecentOutbound
+  ) {
     if (resolvedCandidates.some((offering) => !visibleModelText.includes(
       offering.display_name.toLocaleLowerCase('es'),
     ))) {
