@@ -1021,8 +1021,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           total: { currency: plan.currency, amount: plan.total_amount },
         })),
       });
-      const verdict = enforceCommercialTruthV1({
-        content: finalResponse,
+      const inspectCommercialText = (content: string) => enforceCommercialTruthV1({
+        content,
         authorized_urls: authorizedUrls,
         canonical: {
           ...canonicalTruth,
@@ -1042,6 +1042,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           ],
         },
       });
+      const verdict = inspectCommercialText(finalResponse);
 
       // La URL sigue fallando cerrado sobre el turno completo: no es una frase
       // que se pueda quitar, es un canal de cobro.
@@ -1083,7 +1084,21 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       // curso canónico ya resuelto ni una invitación a llamada que sobrevivió;
       // degradar todo ese turno a una disculpa técnica escondía precisamente
       // la respuesta comercial segura que el cliente debía recibir.
-      const partialVetoRemovedStatefulEffect = verdict.removed.some((sentence) => solicitsACall(sentence))
+      // A dedicated offer accepts natural declarative wording ("puedo
+      // llamarte"), while narrative solicitation detection is narrower. Check
+      // its surviving evidence with the same declared-offer semantics that
+      // authorized the transition; otherwise a veto can leave a ghost count.
+      const declaredOffer = preparedAgentTurn !== null
+        ? validatedInput.agent_turn_v2?.proposal.response.call_offer ?? null : null;
+      const declaredOfferLost = declaredOffer !== null && solicitsACall(declaredOffer, true)
+        && !solicitsACall(inspectCommercialText(declaredOffer).content ?? '', true);
+      const initialOfferLostInformation = declaredOffer !== null
+        && preparedAgentTurn?.transition.call_offer_count === 1
+        && !preparedAgentTurn.response_messages.slice(0, -1).some((content) => (
+          inspectCommercialText(content).content !== null
+        ));
+      const partialVetoRemovedStatefulEffect = declaredOfferLost || initialOfferLostInformation
+        || verdict.removed.some((sentence) => solicitsACall(sentence))
         || committedBusinessAction !== null;
       const partialVetoOnPreparedTurn = (preparedAgentTurn !== null || preparedPipeline !== null)
         && verdict.removed.length > 0
@@ -1096,6 +1111,18 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
 
       if (verdict.content !== null && !partialVetoOnPreparedTurn) {
         finalResponse = verdict.content;
+        if (preparedAgentTurn !== null && verdict.removed.length > 0) {
+          const retainedParts = preparedAgentTurn.response_messages
+            .map((content) => inspectCommercialText(content).content)
+            .filter((content): content is string => content !== null && content.trim().length > 0);
+          const compact = (content: string) => content.replace(/\s+/gu, ' ').trim();
+          // Preserve existing physical boundaries only when individually
+          // validated parts contain exactly the surviving whole-turn text.
+          if (retainedParts.length > 0 && compact(retainedParts.join(' ')) === compact(finalResponse)) {
+            finalResponse = retainedParts.join('\n\n');
+            preparedAgentTurn = { ...preparedAgentTurn, response_messages: retainedParts };
+          }
+        }
       } else {
         counter.increment(
           partialVetoOnPreparedTurn ? 'egress_partial_veto_transition_refused' : 'egress_response_suppressed',

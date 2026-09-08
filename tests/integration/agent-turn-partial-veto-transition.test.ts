@@ -13,6 +13,58 @@ const databaseAvailable = process.env.TEST_DATABASE_URL;
 const run = databaseAvailable ? describe : describe.skip;
 
 run('partial commercial-truth veto', () => {
+  it('does not persist an initial offer whose informational bubble was completely removed', async () => {
+    const seeded = await seedConversationForAgentTurn({
+      call_offer_count: 0, selected_offering_code: 'entrenamiento_funcional', intake_complete: true,
+    });
+    const committed = await commitAgentDecision({
+      turn_id: seeded.turn_id, trace_id: seeded.trace_id,
+      authorized_offering_code: 'entrenamiento_funcional', authorized_payment_plan: null,
+      conversation_pipeline_v1: null,
+      agent_turn_v2: { schema_version: 2, proposal: {
+        ...seeded.proposalWithCallOfferAndFalsePrice,
+        response: {
+          messages: ['El diplomado sale USD 47.'],
+          call_offer: 'Si querés, puedo llamarte para asesorarte.',
+        },
+      } as never },
+      decision: seeded.placeholderDecision as never, model: seeded.model as never,
+    });
+    expect(committed.status).toBe('committed');
+    const state = await new PostgresConversationStateStoreV1(sql).load('studyx', seeded.conversation_id, seeded.contact_id);
+    expect(state).toMatchObject({ call_offer_count: 0, call_offer_status: 'not_offered', awaiting_reply: 'none' });
+  });
+  it('does not persist a call transition when its only declared invitation is vetoed', async () => {
+    const seeded = await seedConversationForAgentTurn({
+      call_offer_count: 0, selected_offering_code: 'entrenamiento_funcional', intake_complete: true,
+    });
+    const committed = await commitAgentDecision({
+      turn_id: seeded.turn_id, trace_id: seeded.trace_id,
+      authorized_offering_code: 'entrenamiento_funcional', authorized_payment_plan: null,
+      conversation_pipeline_v1: null,
+      agent_turn_v2: { schema_version: 2, proposal: {
+        ...seeded.proposalWithCallOfferAndFalsePrice,
+        response: {
+          messages: ['Tenemos Entrenamiento Funcional.'],
+          call_offer: 'Puedo llamarte por USD 47.',
+        },
+      } as never },
+      decision: seeded.placeholderDecision as never, model: seeded.model as never,
+    });
+    expect(committed.status).toBe('committed');
+    expect(committed.outbound?.content).not.toContain('USD 47');
+    const state = await new PostgresConversationStateStoreV1(sql).load(
+      'studyx', seeded.conversation_id, seeded.contact_id,
+    );
+    expect(state).toMatchObject({
+      call_offer_count: 0, call_offer_status: 'not_offered', awaiting_reply: 'none',
+    });
+    const [eventCount] = await sql<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count FROM conversation_sales_context_state_events_v1
+      WHERE conversation_id = ${seeded.conversation_id}::uuid AND call_offer_count > 0
+    `;
+    expect(eventCount?.count).toBe(0);
+  });
   it('keeps a safe transition when the vetoed sentence carries no stateful effect', async () => {
     // El turno ofrece una llamada Y afirma un precio inexistente. El guard veta
     // la oración del precio; la invitación sobrevive. La transición se había
@@ -35,6 +87,7 @@ run('partial commercial-truth veto', () => {
     const committed = await commitAgentDecision({
       turn_id: seeded.turn_id,
       trace_id: seeded.trace_id,
+      supports_multi_outbound: true,
       authorized_offering_code: 'entrenamiento_funcional',
       authorized_payment_plan: null,
       conversation_pipeline_v1: null,
@@ -43,7 +96,7 @@ run('partial commercial-truth veto', () => {
         proposal: {
           ...seeded.proposalWithCallOfferAndFalsePrice,
           response: {
-            messages: ['El diplomado sale USD 47.'],
+            messages: ['Tenemos Entrenamiento Funcional. El diplomado sale USD 47.'],
             call_offer: '¿Te gustaría que te llamemos para contarte más?',
           },
         } as never,
@@ -55,9 +108,10 @@ run('partial commercial-truth veto', () => {
     expect(committed.status).toBe('committed');
     // Sólo cae el precio falso; la invitación segura sigue siendo la respuesta
     // entregada y su transición queda durable.
-    expect(committed.outbound?.content).toBe('¿Te gustaría que te llamemos para contarte más?');
+    expect(committed.outbounds?.map((message) => message.content)).toEqual([
+      'Tenemos Entrenamiento Funcional.', '¿Te gustaría que te llamemos para contarte más?',
+    ]);
     expect(committed.outbound?.content ?? '').not.toContain('USD 47');
-    expect(committed.outbound?.content).toContain('llamemos');
     expect(committed.conversation_effects).toBeUndefined();
 
     const [decision] = await sql<Array<{
@@ -72,7 +126,7 @@ run('partial commercial-truth veto', () => {
       WHERE turn_id = ${seeded.turn_id}::uuid
     `;
     expect(decision).toMatchObject({
-      response: '¿Te gustaría que te llamemos para contarte más?',
+      response: 'Tenemos Entrenamiento Funcional.\n\n¿Te gustaría que te llamemos para contarte más?',
       business_action: null,
     });
 
