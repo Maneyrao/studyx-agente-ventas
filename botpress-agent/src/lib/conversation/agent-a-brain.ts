@@ -466,7 +466,7 @@ function proposalJsonSchema(context: AgentAContextV1): unknown {
     response: closedObject({
       messages: {
         type: 'array', minItems: 1, maxItems: 3, items: { type: 'string' },
-        description: 'Use one to three short messages; when call_offer is non-null, return at most two response messages so the whole turn stays within three physical messages.',
+        description: 'Use one to three short messages; when call_offer is non-null, return exactly one response message so the initial course guidance and its separate call invitation stay within two physical messages.',
       },
       call_offer: {
         anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -1608,7 +1608,7 @@ export function validateAgentATurnProposalV1(input: {
   const state = input.context.commercial_state;
   const validInitialCallOfferBoundary = typeof declaredCallOffer === 'string'
     && solicitsACallV1(declaredCallOffer, true)
-    && input.proposal.response.messages.length <= 2
+    && input.proposal.response.messages.length === 1
     && !input.proposal.response.messages.some((message) => solicitsACallV1(message));
   if (offersACall && state.call_offer_count === 0 && !validInitialCallOfferBoundary) {
     rejections.push({ code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID', subject: 'call_offer' });

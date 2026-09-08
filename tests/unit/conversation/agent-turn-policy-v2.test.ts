@@ -422,7 +422,7 @@ describe('plannerless Agent A authority', () => {
     });
   });
 
-  it('accepts two course messages and a separate first call invitation as three physical parts', () => {
+  it('rejects two course messages before a separate first call invitation', () => {
     const result = authorize({
       state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected' }),
       mayOfferCall: true,
@@ -438,13 +438,8 @@ describe('plannerless Agent A authority', () => {
     });
 
     expect(result).toMatchObject({
-      ok: true,
-      response_messages: [
-        'Redes Informáticas es una opción práctica para tecnología.',
-        'Puedo contarte también cómo se cursa.',
-        'Si te sirve, coordinamos una llamada breve.',
-      ],
-      transition: { call_offer_count: 1, call_offer_status: 'offered' },
+      ok: false,
+      reasons: expect.arrayContaining(['CALL_OFFER_MESSAGE_BOUNDARY_INVALID']),
     });
   });
 

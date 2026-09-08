@@ -103,6 +103,25 @@ describe('validación de la propuesta del turno', () => {
     });
   });
 
+  it('rechaza dos mensajes informativos antes de la primera oferta separada de llamada', () => {
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        response: {
+          messages: ['Te cuento de Redes Informáticas.', 'Tiene 16 clases.'],
+          call_offer: 'Si querés, puedo llamarte para orientarte.',
+        },
+      }),
+      context: context({
+        capabilities: { ...context().capabilities, may_offer_call: true },
+      }),
+      planned_fact_ids: ['offering:redes-informaticas:name:v1'],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+    expect(rejection?.rejections).toContainEqual({
+      code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID', subject: 'call_offer',
+    });
+  });
+
   // V2
   it('citar un hecho que el turno no materializó es FACT_NOT_AUTHORIZED', () => {
     const rejection = validateAgentATurnProposalV1({

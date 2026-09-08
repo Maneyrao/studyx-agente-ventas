@@ -905,7 +905,7 @@ describe('Agent A Brain V1', () => {
     expect(body.text.format.schema.properties.used_fact_ids.maxItems).toBe(60);
     expect(responseProperties.messages.maxItems).toBe(3);
     expect(responseProperties.messages.description).toContain(
-      'when call_offer is non-null, return at most two response messages',
+      'when call_offer is non-null, return exactly one response message',
     );
     expect(responseProperties.call_offer.description).toContain('must not contain a question');
     expect(moveProperties.move.enum).toEqual(expect.arrayContaining([

@@ -124,7 +124,7 @@ describe('Agent A Brain V1 prompt', () => {
     expect(execution).toContain(
       'Use one to three physical messages and at most one question in the whole turn',
     );
-    expect(execution).toMatch(/call_offer is non-null[\s\S]*at most two response\.messages/u);
+    expect(execution).toMatch(/call_offer is non-null[\s\S]*exactly one response\.messages/u);
   });
 
   it('repairs an early payment action by continuing the intake instead of claiming a link', () => {
@@ -324,7 +324,7 @@ describe('directiva de reparación por repetición', () => {
       authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: [] },
     };
     const instructions = buildAgentABrainInstructionsV1(current);
-    expect(instructions).toMatch(/CALL_OFFER_MESSAGE_BOUNDARY_INVALID[\s\S]*one or two informational/u);
+    expect(instructions).toMatch(/CALL_OFFER_MESSAGE_BOUNDARY_INVALID[\s\S]*one informational/u);
     expect(instructions).toMatch(/response\.call_offer/u);
   });
 });

@@ -160,7 +160,7 @@ Capabilities authorize effects, not completed sales phases. The initial call inv
 When capabilities.intake_status is unknown the backend has not established which contact details
 are on file: do not claim any detail is registered and do not imply a payment link is available.
 Use one to three physical messages and at most one question in the whole turn. response.messages may
-contain up to three items when call_offer is null. When call_offer is non-null, use at most two response.messages.
+contain up to three items when call_offer is null. When call_offer is non-null, use exactly one response.messages item.
 Keep response.call_offer separate and count it as one physical message. Prefer one direct answer plus one brief next step.
 do not restate facts from last_agent_reply unless the customer asks for that exact fact again.
 Use request_payment_link only when the customer actually requests the link or affirmatively accepts
@@ -223,8 +223,8 @@ CALL_OFFER_REQUIRED means include one genuine optional voice-call invitation in 
 answer the current course question briefly and do not add a diagnostic or intake question. When subject
 is second_call_offer, write a subtle reminder in the style shown above instead of repeating the initial pitch.
 CALL_OFFER_MESSAGE_BOUNDARY_INVALID means the invitation was embedded or the turn had too many
-parts. Return one or two informational response.messages items and one separate optional voice-call
-invitation in response.call_offer, with no more than three physical messages total; do not mention a call inside response.messages.
+parts. Return one informational response.messages item and one separate optional voice-call
+invitation in response.call_offer, with exactly two physical messages total; do not mention a call inside response.messages.
 CHANNEL_PREFERENCE_NOT_SUPPORTED means the current message did not choose chat or reject a call.
 Interpret its actual meaning without continue_by_chat, decline_call or an invented call veto.
 UNSUPPORTED_OPERATIONAL_CLAIM for contact_details means do not say a partial or incomplete intake
