@@ -56,7 +56,8 @@ vi.mock('../../../botpress-agent/src/lib/decision/groq-direct', () => ({
 vi.mock('../../../botpress-agent/src/lib/conversation/conversation-interpreter', () => ({
   generateGroqConversationMoveV1: actionSpies.conversationInterpreter,
 }));
-vi.mock('../../../botpress-agent/src/lib/conversation/agent-a-brain', () => ({
+vi.mock('../../../botpress-agent/src/lib/conversation/agent-a-brain', async (importOriginal) => ({
+  normalizeCallOfferResponseV1: (await importOriginal<typeof import('../../../botpress-agent/src/lib/conversation/agent-a-brain')>()).normalizeCallOfferResponseV1,
   // La validación real vive en su propio test. Acá se neutraliza para que
   // estos casos midan el ruteo de proveedores, que es lo que afirman: un
   // rechazo real convertiría cada caso en una prueba de la escalera.

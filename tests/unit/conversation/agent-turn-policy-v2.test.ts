@@ -86,6 +86,36 @@ function authorize(input: {
 }
 
 describe('plannerless Agent A authority', () => {
+  it('rejects an unsolicited new invitation while the prior call answer is pending', () => {
+    const result = authorize({
+      customerText: 'Contame cuánto dura.',
+      state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected',
+        call_offer_count: 1, call_offer_status: 'offered', awaiting_reply: 'call_or_chat' }),
+      proposal: proposal({
+        move: { schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Tiene 16 clases.'], call_offer: 'Si querés, podemos coordinar una llamada.' },
+        used_fact_ids: ['offering:redes_informaticas:duration:v1'],
+      }),
+    });
+    expect(result).toMatchObject({ ok: false, reasons: ['CALL_OFFER_NOT_AUTHORIZED'] });
+  });
+  it('does not count a confirmed call acknowledgement as another optional offer', () => {
+    const result = authorize({
+      customerText: 'Sí, llamame ahora.', mayOfferCall: false,
+      state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected',
+        call_offer_count: 1, call_offer_status: 'offered', awaiting_reply: 'call_or_chat' }),
+      proposal: proposal({
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Perfecto, podemos coordinar una llamada ahora.'], call_offer: null },
+        proposed_action: { type: 'request_call_now', reason: 'accepted_offer' },
+      }),
+    });
+    expect(result).toMatchObject({ ok: true,
+      response: 'Perfecto, podemos coordinar una llamada ahora.',
+      action: { type: 'request_call_now', reason: 'accepted_offer' },
+      transition: { call_offer_count: 1, call_offer_status: 'accepted', stage: 'handoff' },
+    });
+  });
   it('preserves model-owned copy while reducing a canonical course selection', () => {
     const result = authorize({
       mayOfferCall: false, // This fixture isolates course/fact authority when a call is unavailable.

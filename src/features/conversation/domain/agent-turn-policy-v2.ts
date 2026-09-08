@@ -192,6 +192,11 @@ export function authorizeAgentTurnV2(input: {
     && authorizedFactIds.some((factId) => factsById.get(factId)?.kind === 'offering_name');
 
   const authoredMessages = [...proposal.response.messages];
+  const currentText = (input.current_customer_messages ?? []).join('\n');
+  const callRequestSupported = supportsCallRequestV1(currentText, state.awaiting_reply === 'call_or_chat');
+  const requestedCallNow = moves.has('request_call') && proposal.proposed_action.type === 'request_call_now'
+    && input.call_policy.may_request_call_now && callRequestSupported
+    && !proposal.move.vetoes.includes('call');
   const authoredCallOffer = proposal.response.call_offer?.trim() || null;
   const authorizedCallOffer = authoredCallOffer === null
     ? null
@@ -200,9 +205,9 @@ export function authorizeAgentTurnV2(input: {
     .map((message) => dropUnsupportedStateAssertionsV1(message, stateFacts).trim())
     .filter((message) => message.length > 0);
   const draftedCallOffer = (authoredCallOffer !== null && solicitsACall(authoredCallOffer, true))
-    || authoredMessages.some((message) => solicitsACall(message));
+    || !requestedCallNow && authoredMessages.some((message) => solicitsACall(message));
   const visibleCallOffer = (authorizedCallOffer !== null && solicitsACall(authorizedCallOffer, true))
-    || authorizedMessages.some((message) => solicitsACall(message));
+    || !requestedCallNow && authorizedMessages.some((message) => solicitsACall(message));
   // The first invitation is intentionally a second physical message, not a
   // paragraph tacked onto the course answer. The delivery layer persists each
   // item in response_messages as its own outbound part. The invitation stays
@@ -221,24 +226,18 @@ export function authorizeAgentTurnV2(input: {
     || state.call_offer_count >= 2
     || state.call_offer_status === 'accepted'
     || state.call_offer_status === 'declined'
+    || (state.call_offer_count >= 1 && (state.awaiting_reply === 'call_or_chat' || !moves.has('ask_course_information')))
     || proposal.move.vetoes.includes('call')
   )) {
     reasons.push('CALL_OFFER_NOT_AUTHORIZED');
   }
 
   const channelChoice = moves.has('continue_by_chat') || moves.has('decline_call');
-  const currentText = (input.current_customer_messages ?? []).join('\n');
   if ((channelChoice || proposal.move.vetoes.includes('call')) && !supportsChatPreferenceV1(currentText, state.awaiting_reply === 'call_or_chat')) {
     reasons.push('CHANNEL_PREFERENCE_NOT_SUPPORTED');
   }
   if (proposal.move.vetoes.includes('call') && !channelChoice) reasons.push('CHANNEL_PREFERENCE_NOT_SUPPORTED');
   if (channelChoice && draftedCallOffer) reasons.push('CHANNEL_PREFERENCE_NOT_SUPPORTED');
-  const callRequestSupported = supportsCallRequestV1(
-    currentText,
-    state.awaiting_reply === 'call_or_chat',
-  );
-  const requestedCallNow = moves.has('request_call') && proposal.proposed_action.type === 'request_call_now'
-    && input.call_policy.may_request_call_now && callRequestSupported;
   if ((moves.has('request_call') || proposal.proposed_action.type === 'request_call_now')
       && !requestedCallNow) reasons.push('ACTION_NOT_AUTHORIZED');
   const needsInitialCall = ((changesCourse && selectedOffering !== null) || citedCourseFamily)

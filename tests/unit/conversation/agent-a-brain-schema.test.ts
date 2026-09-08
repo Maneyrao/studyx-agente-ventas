@@ -39,6 +39,12 @@ describe('AgentATurnProposalV1Schema', () => {
     expect(AgentATurnProposalV1Schema.safeParse(proposal({ response: { messages: ['1', '2', '3', '4'] } })).success).toBe(false);
   });
 
+  it('requires exactly one information message when the offer has its own bubble', () => {
+    const call_offer = 'Si querés, podemos coordinar una llamada.';
+    expect(AgentATurnProposalV1Schema.safeParse(proposal({ response: { messages: ['Información.'], call_offer } })).success).toBe(true);
+    expect(AgentATurnProposalV1Schema.safeParse(proposal({ response: { messages: ['Información.', 'Más información.'], call_offer } })).success).toBe(false);
+  });
+
   it('rejects URLs from any proposed response message', () => {
     expect(AgentATurnProposalV1Schema.safeParse(proposal({
       response: { messages: ['Mirá http://example.test'] },

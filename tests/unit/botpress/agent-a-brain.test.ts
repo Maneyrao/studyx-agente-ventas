@@ -11,6 +11,7 @@ import {
   generateAgentATurnProposalV1,
   generateOpenAIAgentATurnProposalV1,
   parseAgentATurnProposalV1,
+  normalizeCallOfferResponseV1,
   validateAgentATurnProposalV1,
 } from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
 import { buildAgentABrainInstructionsV1 } from '../../../botpress-agent/src/prompts/agent-a-brain-v1';
@@ -91,6 +92,28 @@ afterEach(() => {
 });
 
 describe('Agent A Brain V1', () => {
+  it('never discards an informational fact mixed into the same sentence as a reminder', () => {
+    const response = {
+      messages: ['Si querés podemos llamarte, la formación tiene 38 clases.'] as [string],
+      call_offer: null,
+    };
+    expect(normalizeCallOfferResponseV1(response, true)).toEqual(response);
+  });
+
+  it('normalizes provider fragments before enforcing the physical offer schema', () => {
+    const result = parseAgentATurnProposalV1(proposal({
+      response: {
+        messages: ['Te cuento sobre Redes Informáticas.', 'Podemos ver qué temas te interesan.'],
+        call_offer: 'Si querés, podemos coordinar una llamada.',
+      },
+    }), context());
+    expect(result.response).toEqual({
+      messages: ['Te cuento sobre Redes Informáticas.\n\nPodemos ver qué temas te interesan.'],
+      call_offer: 'Si querés, podemos coordinar una llamada.',
+    });
+    expect(BackendAgentATurnProposalV1Schema.safeParse(result).success).toBe(true);
+  });
+
   it('recognizes an unsupported beginner-level assertion without rejecting a diagnostic question', () => {
     expect(assertsUnsupportedPrerequisitesV1(
       'Si partís desde cero, este nivel es el punto de partida para quienes no tienen conocimientos previos.',
@@ -152,7 +175,7 @@ describe('Agent A Brain V1', () => {
     expect(parseAgentATurnProposalV1(proposal(), context()).response.messages).toHaveLength(2);
   });
 
-  it('caps the whole turn at three physical messages even when a call invitation is present', () => {
+  it('merges surplus information into one physical message and preserves the separate invitation', () => {
     const fourPartTurn = proposal({
       response: {
         messages: ['Primera idea.', 'Segunda idea.', 'Tercera idea.'],
@@ -160,8 +183,12 @@ describe('Agent A Brain V1', () => {
       },
     });
 
-    expect(() => parseAgentATurnProposalV1(fourPartTurn, context()))
-      .toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
+    const normalized = parseAgentATurnProposalV1(fourPartTurn, context());
+    expect(normalized.response).toEqual({
+      messages: ['Primera idea.\n\nSegunda idea.\n\nTercera idea.'],
+      call_offer: 'Recordá que puedo llamarte y aclararte todo mejor, si gustás.',
+    });
+    expect(BackendAgentATurnProposalV1Schema.safeParse(normalized).success).toBe(true);
     expect(BackendAgentATurnProposalV1Schema.safeParse(fourPartTurn).success).toBe(false);
   });
 

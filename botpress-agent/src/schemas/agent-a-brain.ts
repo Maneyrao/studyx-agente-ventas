@@ -197,6 +197,9 @@ export const AgentATurnProposalV1Schema = z.object({
   }).strict().nullable().default(null),
   memory_candidates: z.array(MemoryCandidateSchema).max(10),
 }).strict().superRefine((value, context) => {
+  if (value.response.call_offer && value.response.messages.length !== 1) {
+    context.addIssue({ code: 'custom', path: ['response', 'messages'], message: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID' });
+  }
   const physicalMessageCount = value.response.messages.length
     + (value.response.call_offer ? 1 : 0);
   if (physicalMessageCount > 3) {

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { resolveAgentAPlannerlessProposalV2 } from '../../../botpress-agent/src/lib/conversation/resolve-agent-a-plannerless';
+import { AgentABrainError } from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
 import type {
   AgentAContextV1,
   AgentATurnProposalV1,
@@ -82,7 +83,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.effective.proposal.response.messages).toEqual(['¿Querés que te prepare el enlace para avanzar?']);
   });
 
-  it('keeps the first model-authored course message when a separate initial call offer has one surplus bubble', async () => {
+  it('merges all informational fragments before the separate initial call offer without dropping facts', async () => {
     const current = context();
     current.commercial_state.call_preference = 'unknown';
     current.commercial_state.call_offer_status = 'not_offered';
@@ -91,7 +92,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     const result = await resolveAgentAPlannerlessProposalV2({
       initial: generated(proposal({
         response: {
-          messages: ['Maquillaje Profesional tiene 38 clases.', 'La modalidad es online.'],
+          messages: ['Maquillaje Profesional.', 'La formación tiene 38 clases.'],
           call_offer: 'Si querés, puedo llamarte para orientarte.',
         },
       })),
@@ -103,7 +104,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
 
     expect(repair).not.toHaveBeenCalled();
     expect(result.effective.proposal.response).toEqual({
-      messages: ['Maquillaje Profesional tiene 38 clases.'],
+      messages: ['Maquillaje Profesional.\n\nLa formación tiene 38 clases.'],
       call_offer: 'Si querés, puedo llamarte para orientarte.',
     });
     expect(result.evidence).toMatchObject({
@@ -111,6 +112,141 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       repair_attempted: false,
       repaired: false,
     });
+  });
+
+  it('normalizes a repaired multi-fragment initial offer through the same boundary', async () => {
+    const current = context();
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_status = 'not_offered';
+    current.capabilities.may_offer_call = true;
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal()), context: current, repair_enabled: true,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+      repair: async () => generated(proposal({
+        response: {
+          messages: ['Maquillaje Profesional.', 'La formación tiene 38 clases.'],
+          call_offer: 'Si querés, puedo llamarte para orientarte.',
+        },
+        repair_of: { rejection_id: '00000000-0000-4000-8000-000000000001', attempt: 1 },
+      })),
+    });
+    expect(result.effective.proposal.response).toEqual({
+      messages: ['Maquillaje Profesional.\n\nLa formación tiene 38 clases.'],
+      call_offer: 'Si querés, puedo llamarte para orientarte.',
+    });
+    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
+  });
+
+  it('reports the terminal repair schema rejection instead of only the initial missing call', async () => {
+    const current = context();
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_status = 'not_offered';
+    current.capabilities.may_offer_call = true;
+    await expect(resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal()), context: current, repair_enabled: true,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+      repair: async () => generated(proposal({
+        response: { messages: [] as never, call_offer: null },
+        repair_of: { rejection_id: '00000000-0000-4000-8000-000000000001', attempt: 1 },
+      })),
+    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:PROPOSAL_SCHEMA_INVALID:response.messages');
+  });
+
+  it('records the terminal provider-parser rejection when repair cannot form a proposal', async () => {
+    const current = context();
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_status = 'not_offered';
+    current.capabilities.may_offer_call = true;
+    await expect(resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal()), context: current, repair_enabled: true,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+      repair: async () => { throw new AgentABrainError('BRAIN_INVALID_SCHEMA', null, 'response.messages:invalid_union'); },
+    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:PROPOSAL_SCHEMA_INVALID:response.messages');
+  });
+
+  it('preserves a confirmed call action and its model-authored acknowledgement after an offer', async () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm1', text: 'Sí, llamame ahora.' }];
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_count = 1;
+    current.commercial_state.call_offer_status = 'offered';
+    current.commercial_state.awaiting_reply = 'call_or_chat';
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Perfecto, te llamo ahora.'], call_offer: null },
+        proposed_action: { type: 'request_call_now', reason: 'accepted_offer' },
+      })),
+      context: current, repair_enabled: false,
+      repair: async () => { throw new Error('Unexpected repair'); },
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+    expect(result.effective.proposal.response.messages).toEqual(['Perfecto, te llamo ahora.']);
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'request_call_now', reason: 'accepted_offer' });
+  });
+
+  it('preserves requested information embedded with an unsolicited pending-call reminder', async () => {
+    const current = context();
+    current.commercial_state.call_offer_count = 1;
+    current.commercial_state.call_offer_status = 'offered';
+    current.commercial_state.awaiting_reply = 'call_or_chat';
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({ response: {
+        messages: ['La formación tiene 38 clases. Si querés, coordinamos una llamada.'], call_offer: null,
+      } })),
+      context: current, repair_enabled: false,
+      repair: async () => { throw new Error('Unexpected repair'); },
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+    expect(result.effective.proposal.response).toEqual({
+      messages: ['La formación tiene 38 clases.'], call_offer: null,
+    });
+  });
+
+  it('repairs a mixed information/reminder sentence rather than accepting a renewed pending offer', async () => {
+    const current = context();
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_count = 1;
+    current.commercial_state.call_offer_status = 'offered';
+    current.commercial_state.awaiting_reply = 'call_or_chat';
+    current.capabilities.may_offer_call = true;
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({ response: {
+        messages: ['Si querés coordinamos una llamada, la formación tiene 38 clases.'], call_offer: null,
+      } })),
+      context: current, repair_enabled: true,
+      repair: async () => generated(proposal({
+        response: { messages: ['La formación tiene 38 clases.'], call_offer: null },
+        repair_of: { rejection_id: '00000000-0000-4000-8000-000000000001', attempt: 1 },
+      })),
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+    expect(result.effective.proposal.response.messages).toEqual(['La formación tiene 38 clases.']);
+    expect(result.evidence.repaired).toBe(true);
+  });
+
+  it.each([{ messages: [] }, { messages: [' '] }])('rejects an empty proposal rather than accepting a typed but invalid object $messages', async ({ messages }) => {
+    await expect(resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({ response: { messages: messages as never, call_offer: null } })),
+      context: context(), repair_enabled: false,
+      repair: async () => { throw new Error('Unexpected repair'); },
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    })).rejects.toThrow('PROPOSAL_SCHEMA_INVALID:response.messages');
+  });
+
+  it('does not authorize an empty response after removing its only unsolicited offer', async () => {
+    const current = context();
+    current.commercial_state.call_offer_count = 1;
+    current.commercial_state.call_offer_status = 'offered';
+    current.commercial_state.awaiting_reply = 'call_or_chat';
+    await expect(resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({ response: {
+        messages: ['Si querés, coordinamos una llamada.'], call_offer: null,
+      } })),
+      context: current, repair_enabled: false,
+      repair: async () => { throw new Error('Unexpected repair'); },
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    })).rejects.toThrow('PROPOSAL_SCHEMA_INVALID:response.messages');
   });
 
   it('splits a model-authored embedded initial invitation into its two delivery bubbles', async () => {

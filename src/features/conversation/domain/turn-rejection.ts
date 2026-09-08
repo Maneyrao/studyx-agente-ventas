@@ -26,6 +26,7 @@ export const TURN_REJECTION_CODES_V1 = [
   'CALL_OFFER_REQUIRED',
   /** La invitación inicial debe ser el segundo outbound separado. */
   'CALL_OFFER_MESSAGE_BOUNDARY_INVALID',
+  'PROPOSAL_SCHEMA_INVALID',
   'CHANNEL_PREFERENCE_NOT_SUPPORTED',
   /** Afirmó alta, acceso, inscripción o pago verificado sin respaldo. */
   'UNSUPPORTED_OPERATIONAL_CLAIM',

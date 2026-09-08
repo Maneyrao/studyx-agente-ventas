@@ -666,14 +666,16 @@ describe('Agent A conversation runner', () => {
     const commitBody = JSON.parse(String(fetchMock.mock.calls[3]?.[1]?.body));
     expect(commitBody).toMatchObject({
       conversation_pipeline_v1: null,
-      agent_turn_v2: { schema_version: 2, proposal },
+      agent_turn_v2: { schema_version: 2, proposal: {
+        ...proposal,
+        response: { messages: ['Te cuento lo más importante y vemos qué necesitás.'], call_offer: null },
+      } },
       supports_multi_outbound: true,
       decision: { reason_code: 'AGENT_A_PLANNERLESS_V2_PENDING_BACKEND' },
     });
     expect(result.runtime?.capabilities).toMatchObject({ agent_a_plannerless_v2: true });
     expect(result.turnDiagnostic).toMatchObject({
-      visibleCallOffers: 1,
-      callOfferLedgerEntries: 1,
+      conversationState: { call_offer_count: 1, call_offer_status: 'offered' },
     });
   });
 

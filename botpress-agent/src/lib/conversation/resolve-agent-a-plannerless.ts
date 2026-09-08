@@ -1,10 +1,12 @@
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
-import type { AgentAContextV1, AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
+import { AgentATurnProposalV1Schema, type AgentAContextV1, type AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
+import { supportsCallRequestV1 } from './channel-preference-evidence'
 import {
+  AgentABrainError,
   removeUnsupportedPrerequisiteAssertionsV1,
   removeRepeatedAgentOpeningMessagesV1,
   removeRepeatedAgentQuestionMessagesV1,
-  solicitsACallV1,
+  normalizeCallOfferResponseV1,
   validateAgentATurnProposalV1,
 } from './agent-a-brain'
 import type {
@@ -28,6 +30,18 @@ function validatePlannerless(input: {
   readonly rejection_id: string
   readonly authorized_fact_ids: readonly string[]
 }): TurnRejectionV1 | null {
+  const parsed = AgentATurnProposalV1Schema.safeParse(input.proposal)
+  if (!parsed.success) {
+    return {
+      schema_version: 1, rejection_id: input.rejection_id, attempt: 1,
+      rejections: parsed.error.issues.map((issue) => ({
+        code: issue.message === 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
+          ? 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID' as const : 'PROPOSAL_SCHEMA_INVALID' as const,
+        subject: issue.path.filter((part) => typeof part === 'string' && /^[a-z_]+$/iu.test(part)).join('.') || 'proposal',
+      })),
+      authorized_alternatives: { fact_ids: [...input.authorized_fact_ids], actions: ['none'], missing_information: [] },
+    }
+  }
   const authorized = new Set(input.authorized_fact_ids)
   // In the plannerless route, a fact becomes usable only when the model cites
   // it. The complete context list is returned as the repair alternative; it
@@ -227,180 +241,55 @@ function demoteUnresolvedCallOffer<T extends AgentAProposalEnvelopeV1>(input: {
 }
 
 /**
- * Course discovery is delivered as two bubbles: the explanation and the
- * invitation to call.  A model can occasionally put a second explanatory
- * bubble before that invitation.  That is a presentation-boundary defect,
- * not a reason to discard an otherwise safe, model-authored answer and fall
- * back to generic copy.  Keep the first explanation and the separate offer;
- * validation below proves that no fact or action is being widened.
+ * Normalize only message boundaries already authored by the model. A supported
+ * call confirmation is not a fresh offer and must keep its acknowledgement.
  */
-function trimSurplusInitialCallOfferBubble<T extends AgentAProposalEnvelopeV1>(input: {
-  readonly initial: T
-  readonly rejection: TurnRejectionV1
-  readonly context: AgentAContextV1
-  readonly authorized_fact_ids: readonly string[]
-}): T | null {
-  if (!input.rejection.rejections.every((reason) => (
-    reason.code === 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
-  ))) return null
-  if (input.initial.proposal.response.call_offer === null) return null
-  if (input.initial.proposal.response.messages.length < 2) return null
-
-  const candidate = {
-    ...input.initial,
-    proposal: {
-      ...input.initial.proposal,
-      response: {
-        ...input.initial.proposal.response,
-        messages: [input.initial.proposal.response.messages[0]],
-      },
-    },
-  } as T
-  return validatePlannerless({
-    proposal: candidate.proposal,
-    context: input.context,
-    rejection_id: input.rejection.rejection_id,
-    authorized_fact_ids: input.authorized_fact_ids,
-  }) === null ? candidate : null
-}
-
-/**
- * Some otherwise valid drafts put the informational answer and the optional
- * first-call invitation in one paragraph-delimited message.  The model has
- * already authored both pieces; splitting that boundary is safer than
- * replacing the answer with a generic technical fallback.  The normal
- * proposal validator remains the authority for recognizing a real invitation.
- */
-function splitEmbeddedInitialCallOffer<T extends AgentAProposalEnvelopeV1>(input: {
-  readonly initial: T
-  readonly rejection: TurnRejectionV1
-  readonly context: AgentAContextV1
-  readonly authorized_fact_ids: readonly string[]
-}): T | null {
-  if (!input.rejection.rejections.every((reason) => (
-    reason.code === 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
-  ))) return null
-  if (input.initial.proposal.response.messages.length !== 1) return null
-
-  const source = input.initial.proposal.response.messages[0]
-  const paragraphs = source
-    .split(/\n\s*\n/u)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean)
-  const sentences = source.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/gu)
-    ?.map((sentence) => sentence.trim())
-    .filter(Boolean) ?? []
-  const parts = paragraphs.length >= 2 ? paragraphs : sentences
-  if (parts.length < 2) return null
-  const embeddedOffers = parts.filter((part) => solicitsACallV1(part))
-  // The validator has already proved that one of the visible parts solicits a
-  // call.  When it is phrased in a way the lightweight detector cannot
-  // isolate, the final sentence is still the only safe removable boundary if
-  // a separate declared offer exists; validation below rejects any wrong cut.
-  const informationParts = embeddedOffers.length > 0
-    ? parts.filter((part) => !solicitsACallV1(part))
-    : input.initial.proposal.response.call_offer === null ? [] : parts.slice(0, -1)
-  const information = informationParts.join('\n\n')
-  const callOffer = input.initial.proposal.response.call_offer ?? embeddedOffers.at(-1) ?? null
-  if (!information || callOffer === null) return null
-  const candidate = {
-    ...input.initial,
-    proposal: {
-      ...input.initial.proposal,
-      response: { messages: [information], call_offer: callOffer },
-    },
-  } as T
-  return validatePlannerless({
-    proposal: candidate.proposal,
-    context: input.context,
-    rejection_id: input.rejection.rejection_id,
-    authorized_fact_ids: input.authorized_fact_ids,
-  }) === null ? candidate : null
-}
-
-function demoteCourseSwitchCallOffer<T extends AgentAProposalEnvelopeV1>(input: {
-  readonly initial: T
-  readonly context: AgentAContextV1
-  readonly authorized_fact_ids: readonly string[]
-  readonly rejection_id: string
-}): T | null {
-  const moves = new Set([
-    input.initial.proposal.move.move,
-    ...input.initial.proposal.move.secondary_moves,
-  ])
-  if (
-    input.context.commercial_state.call_offer_count < 1
-    || input.initial.proposal.response.call_offer === null
-    || !moves.has('select_course')
-    || moves.has('ask_course_information')
-  ) return null
-  const candidate = {
-    ...input.initial,
-    proposal: {
-      ...input.initial.proposal,
-      response: { ...input.initial.proposal.response, call_offer: null },
-    },
-  }
-  return validatePlannerless({
-    proposal: candidate.proposal,
-    context: input.context,
-    rejection_id: input.rejection_id,
-    authorized_fact_ids: input.authorized_fact_ids,
-  }) === null ? candidate : null
-}
-
-/**
- * The first invitation is mandatory at course discovery; a second is useful
- * only when the model is actually explaining the selected course.  Merely
- * repeating a catalog reference must not reopen an already pending call.
- * This removes only the optional invitation and never writes customer copy.
- */
-function demoteUnsolicitedFollowupCallOffer<T extends AgentAProposalEnvelopeV1>(input: {
-  readonly initial: T
-  readonly context: AgentAContextV1
-  readonly authorized_fact_ids: readonly string[]
-  readonly rejection_id: string
-}): T | null {
-  const moves = new Set([
-    input.initial.proposal.move.move,
-    ...input.initial.proposal.move.secondary_moves,
-  ])
-  const embeddedCallOfferIndexes = input.initial.proposal.response.messages
-    .map((message, index) => (solicitsACallV1(message) ? index : -1))
-    .filter((index) => index >= 0)
-  if (
-    input.context.commercial_state.call_offer_count < 1
-    || (
-      input.initial.proposal.response.call_offer === null
-      && embeddedCallOfferIndexes.length === 0
+function normalizePlannerlessBoundary<T extends AgentAProposalEnvelopeV1>(
+  initial: T,
+  context: AgentAContextV1,
+): T {
+  const proposal = initial.proposal
+  if (!proposal.response || !proposal.move) return initial
+  const moves = new Set([proposal.move.move, ...(proposal.move.secondary_moves ?? [])])
+  const confirmedCall = moves.has('request_call')
+    && proposal.proposed_action?.type === 'request_call_now'
+    && context.capabilities.may_request_call_now
+    && !proposal.move.vetoes?.includes('call')
+    && supportsCallRequestV1(
+      context.turn.batch_messages.map((message) => message.text).join(' '),
+      context.commercial_state.awaiting_reply === 'call_or_chat',
     )
-  ) return null
-  // A prior invitation is still awaiting a chat/call answer.  Explaining the
-  // course again is not an answer to that invitation and must not silently
-  // consume the second-offer budget.
-  if (
-    input.context.commercial_state.awaiting_reply !== 'call_or_chat'
-    && moves.has('ask_course_information')
-  ) return null
-  const candidate = {
-    ...input.initial,
-    proposal: {
-      ...input.initial.proposal,
-      response: {
-        ...input.initial.proposal.response,
-        messages: input.initial.proposal.response.messages.filter((_, index) => (
-          !embeddedCallOfferIndexes.includes(index)
-        )),
-        call_offer: null,
-      },
-    },
+  if (confirmedCall) return initial
+  const suppressOffer = context.commercial_state.call_offer_count >= 1
+    && (context.commercial_state.awaiting_reply === 'call_or_chat'
+      || !moves.has('ask_course_information'))
+  const response = normalizeCallOfferResponseV1(proposal.response, suppressOffer)
+  return response === proposal.response ? initial : {
+    ...initial, proposal: { ...proposal, response },
   }
-  return validatePlannerless({
-    proposal: candidate.proposal,
-    context: input.context,
-    rejection_id: input.rejection_id,
-    authorized_fact_ids: input.authorized_fact_ids,
-  }) === null ? candidate : null
+}
+
+/** Both the initial proposal and its one repair use this exact pipeline. */
+function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
+  readonly initial: T
+  readonly context: AgentAContextV1
+  readonly authorized_fact_ids: readonly string[]
+  readonly rejection_id: string
+}): { effective: T; rejection: TurnRejectionV1 | null; originalRejection: TurnRejectionV1 | null } {
+  const validate = (candidate: T) => validatePlannerless({
+    proposal: candidate.proposal, context: input.context,
+    authorized_fact_ids: input.authorized_fact_ids, rejection_id: input.rejection_id,
+  })
+  const originalRejection = validate(input.initial)
+  const effective = normalizePlannerlessBoundary(input.initial, input.context)
+  const rejection = validate(effective)
+  if (rejection === null) return { effective, rejection, originalRejection }
+  // Each demotion/prune revalidates its result, including the full schema.
+  for (const transform of [pruneRepeatedAgentContent, demoteUnresolvedCallOffer, demoteUnauthorizedPaymentAction]) {
+    const candidate = transform({ ...input, initial: effective, rejection })
+    if (candidate !== null) return { effective: candidate, rejection: null, originalRejection }
+  }
+  return { effective, rejection, originalRejection }
 }
 
 /**
@@ -455,228 +344,103 @@ export async function resolveAgentAPlannerlessProposalV2<
   readonly rejection: TurnRejectionV1 | null
 }> {
   const factIds = authorizedFactIds(input.context)
-  const demotedUnsolicitedFollowup = demoteUnsolicitedFollowupCallOffer({
-    initial: input.initial,
-    context: input.context,
-    authorized_fact_ids: factIds,
+  const prepared = preparePlannerlessProposal({
+    initial: input.initial, context: input.context, authorized_fact_ids: factIds,
     rejection_id: input.rejection_id,
   })
-  if (demotedUnsolicitedFollowup !== null) {
-    return {
-      effective: demotedUnsolicitedFollowup,
-      evidence: {
-        rejection_codes: [], repair_attempted: false, repaired: false, proposal_generation_calls: 1,
-      },
-      rejection: null,
-    }
-  }
-  const rejection = validatePlannerless({
-    proposal: input.initial.proposal,
-    context: input.context,
-    rejection_id: input.rejection_id,
-    authorized_fact_ids: factIds,
-  })
-  const courseSwitchWithoutRenewal = demoteCourseSwitchCallOffer({
-    initial: input.initial,
-    context: input.context,
-    authorized_fact_ids: factIds,
-    rejection_id: input.rejection_id,
-  })
-  if (courseSwitchWithoutRenewal !== null) {
-    return {
-      effective: courseSwitchWithoutRenewal,
-      evidence: {
-        rejection_codes: [], repair_attempted: false, repaired: false, proposal_generation_calls: 1,
-      },
-      rejection,
-    }
-  }
+  const rejection = prepared.rejection
+  const initial = prepared.effective
+  const originalRejection = prepared.originalRejection ?? rejection
   if (rejection === null) {
     return {
-      effective: input.initial,
+      effective: initial,
       evidence: {
-        rejection_codes: [], repair_attempted: false, repaired: false,
-        proposal_generation_calls: 1,
-      },
-      rejection: null,
-    }
-  }
-
-  const prunedRepeat = pruneRepeatedAgentContent({
-    initial: input.initial,
-    rejection,
-    context: input.context,
-    authorized_fact_ids: factIds,
-  })
-  if (prunedRepeat !== null) {
-    return {
-      effective: prunedRepeat,
-      evidence: {
-        rejection_codes: rejection.rejections.map((reason) => reason.code),
+        rejection_codes: originalRejection?.rejections.map((reason) => reason.code) ?? [],
         repair_attempted: false, repaired: false, proposal_generation_calls: 1,
       },
-      rejection,
+      rejection: originalRejection,
     }
   }
-
-  const demotedCallOffer = demoteUnresolvedCallOffer({
-    initial: input.initial,
-    rejection,
-    context: input.context,
-    authorized_fact_ids: factIds,
-  })
-  if (demotedCallOffer !== null) {
-    return {
-      effective: demotedCallOffer,
-      evidence: {
-        rejection_codes: rejection.rejections.map((reason) => reason.code),
-        repair_attempted: false, repaired: false, proposal_generation_calls: 1,
-      },
-      rejection,
-    }
-  }
-
-  const trimmedInitialOffer = trimSurplusInitialCallOfferBubble({
-    initial: input.initial,
-    rejection,
-    context: input.context,
-    authorized_fact_ids: factIds,
-  })
-  if (trimmedInitialOffer !== null) {
-    return {
-      effective: trimmedInitialOffer,
-      evidence: {
-        rejection_codes: rejection.rejections.map((reason) => reason.code),
-        repair_attempted: false, repaired: false, proposal_generation_calls: 1,
-      },
-      rejection,
-    }
-  }
-
-  const splitInitialOffer = splitEmbeddedInitialCallOffer({
-    initial: input.initial,
-    rejection,
-    context: input.context,
-    authorized_fact_ids: factIds,
-  })
-  if (splitInitialOffer !== null) {
-    return {
-      effective: splitInitialOffer,
-      evidence: {
-        rejection_codes: rejection.rejections.map((reason) => reason.code),
-        repair_attempted: false, repaired: false, proposal_generation_calls: 1,
-      },
-      rejection,
-    }
-  }
-
-  const demoted = demoteUnauthorizedPaymentAction({
-    initial: input.initial,
-    rejection,
-    context: input.context,
-    authorized_fact_ids: factIds,
-  })
-  if (demoted !== null) {
-    return {
-      effective: demoted,
-      evidence: {
-        rejection_codes: rejection.rejections.map((reason) => reason.code),
-        repair_attempted: false, repaired: false, proposal_generation_calls: 1,
-      },
-      rejection,
-    }
-  }
-
+  let terminalRejection = rejection
+  const rejectedCodes = () => [...new Set([
+    ...(originalRejection?.rejections.map((reason) => reason.code) ?? []),
+    ...terminalRejection.rejections.map((reason) => reason.code),
+  ])]
   const degraded = (repair_attempted: boolean) => ({
-    effective: input.initial,
+    effective: initial,
     evidence: {
-      rejection_codes: rejection.rejections.map((reason) => reason.code),
-      repair_attempted,
-      repaired: false,
+      rejection_codes: rejectedCodes(),
+      repair_attempted, repaired: false,
       proposal_generation_calls: repair_attempted ? (2 as const) : (1 as const),
     },
-    rejection,
+    rejection: terminalRejection,
   })
-
-  // An omitted mandatory call invitation cannot be repaired by pruning: the
-  // backend must reject it, which would turn a safe catalog reply into a 500.
-  // Give the original author one bounded rewrite even while optional repair is
-  // rolled out off; the canonical backend still validates the rewrite.
   const requiresMandatoryCatalogRepair = rejection.rejections.some((reason) => (
     reason.code === 'CALL_OFFER_REQUIRED'
     || reason.code === 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
     || reason.code === 'COURSE_NOT_RESOLVED'
   ))
   const mayRepair = (input.repair_enabled || requiresMandatoryCatalogRepair)
-    && input.initial.proposal.repair_of === null
+    && initial.proposal.repair_of === null
   if (!mayRepair) {
-    if (mayDegradeToBackendBoundary(input.initial.proposal, rejection)) return degraded(false)
+    if (mayDegradeToBackendBoundary(initial.proposal, rejection)) return degraded(false)
     throw plannerlessRejectionError(rejection)
   }
-
   try {
     const candidate = await input.repair(rejection)
     if (candidate.proposal.repair_of?.rejection_id !== rejection.rejection_id) {
-      throw new Error('PLANNERLESS_REPAIR_ID_MISMATCH')
+      terminalRejection = {
+        ...rejection,
+        rejections: [{ code: 'PROPOSAL_SCHEMA_INVALID', subject: 'repair_of.rejection_id' }],
+      }
+    } else {
+      const repaired = preparePlannerlessProposal({
+        initial: candidate, context: input.context, authorized_fact_ids: factIds,
+        rejection_id: rejection.rejection_id,
+      })
+      if (repaired.rejection === null) {
+        return {
+          effective: repaired.effective,
+          evidence: {
+            rejection_codes: rejectedCodes(),
+            repair_attempted: true, repaired: true, proposal_generation_calls: 2,
+          },
+          rejection: originalRejection,
+        }
+      }
+      terminalRejection = repaired.rejection
     }
-    const candidateRejection = validatePlannerless({
-      proposal: candidate.proposal,
-      context: input.context,
-      rejection_id: rejection.rejection_id,
-      authorized_fact_ids: factIds,
+  } catch (error) {
+    // A transport error never opens a second rewrite or authorizes a draft.
+    // Retain the last structured validation result, not any customer text.
+    if (error instanceof AgentABrainError && error.code === 'BRAIN_INVALID_SCHEMA') {
+      const path = error.detail?.split(':')[0] ?? ''
+      terminalRejection = {
+        ...rejection,
+        rejections: [{
+          code: 'PROPOSAL_SCHEMA_INVALID',
+          subject: /^[a-z_]+(?:\.[a-z_]+)*$/iu.test(path) ? path.slice(0, 160) : 'proposal',
+        }],
+      }
+    }
+  }
+  for (const prune of [pruneUnsupportedPrerequisiteClaimV1, pruneFalseLinkDeliveryClaimV1]) {
+    const candidate = prune({
+      initial, rejection, context: input.context, authorized_fact_ids: factIds,
     })
-    if (candidateRejection === null) {
+    if (candidate !== null) {
       return {
         effective: candidate,
         evidence: {
-          rejection_codes: rejection.rejections.map((reason) => reason.code),
-          repair_attempted: true, repaired: true, proposal_generation_calls: 2,
+          rejection_codes: rejectedCodes(),
+          repair_attempted: true, repaired: false, proposal_generation_calls: 2,
         },
-        rejection,
+        rejection: terminalRejection,
       }
     }
-  } catch {
-    // The backend remains the final fail-closed boundary. A provider failure
-    // never opens a second rewrite and never authorizes the original draft.
   }
-
-  const prunedPrerequisites = pruneUnsupportedPrerequisiteClaimV1({
-    initial: input.initial,
-    rejection,
-    context: input.context,
-    authorized_fact_ids: factIds,
-  })
-  if (prunedPrerequisites !== null) {
-    return {
-      effective: prunedPrerequisites,
-      evidence: {
-        rejection_codes: rejection.rejections.map((reason) => reason.code),
-        repair_attempted: true, repaired: false, proposal_generation_calls: 2,
-      },
-      rejection,
-    }
-  }
-
-  if (mayDegradeToBackendBoundary(input.initial.proposal, rejection)) return degraded(true)
-
-  const pruned = pruneFalseLinkDeliveryClaimV1({
-    initial: input.initial,
-    rejection,
-    context: input.context,
-    authorized_fact_ids: factIds,
-  })
-  if (pruned !== null) {
-    return {
-      effective: pruned,
-      evidence: {
-        rejection_codes: rejection.rejections.map((reason) => reason.code),
-        repair_attempted: true, repaired: false, proposal_generation_calls: 2,
-      },
-      rejection,
-    }
-  }
-
-  throw plannerlessRejectionError(rejection)
+  if (mayDegradeToBackendBoundary(initial.proposal, rejection)) return degraded(true)
+  throw plannerlessRejectionError(terminalRejection)
 }
 
 /**

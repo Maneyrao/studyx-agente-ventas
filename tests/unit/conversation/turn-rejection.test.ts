@@ -25,6 +25,7 @@ describe('TurnRejectionV1', () => {
       'FACT_VALUE_MISMATCH',
       'MISSING_INTAKE',
       'PLAN_NOT_SELECTED',
+      'PROPOSAL_SCHEMA_INVALID',
       // V8: devolver el mismo mensaje que ya se mandó no es contestar.
       'REPEATED_AGENT_REPLY',
       'UNSUPPORTED_OPERATIONAL_CLAIM',

@@ -750,7 +750,50 @@ function normalizeStrictProposal(value: unknown, context: AgentAContextV1): unkn
   if (![...moveKinds].some((kind) => PAYMENT_PLAN_MOVES.has(kind))) {
     delete normalizedMove.payment_plan;
   }
-  return { ...normalizedProposal, move: normalizedMove };
+  const normalized: Record<string, unknown> = { ...normalizedProposal, move: normalizedMove };
+  const normalizedResponse = normalized.response;
+  if (normalizedResponse && typeof normalizedResponse === 'object' && !Array.isArray(normalizedResponse)) {
+    const response = normalizedResponse as AgentATurnProposalV1['response'];
+    if (Array.isArray(response.messages) && response.messages.every((message) => typeof message === 'string')) {
+      const action = normalized.proposed_action as { type?: string } | undefined;
+      // The capability validator decides whether this request is supported;
+      // its acknowledgement must never be normalized as a new invitation.
+      if (action?.type !== 'request_call_now') normalized.response = normalizeCallOfferResponseV1(response);
+    }
+  }
+  return normalized;
+}
+
+/** Only move sentence-bounded invitations; never infer that the last sentence is disposable. */
+export function normalizeCallOfferResponseV1(
+  response: AgentATurnProposalV1['response'],
+  suppressOffer = false,
+): AgentATurnProposalV1['response'] {
+  if (!Array.isArray(response.messages) || !response.messages.every((message) => typeof message === 'string')) return response;
+  const invitations: string[] = [];
+  const messages = response.messages.map((message) => {
+    const parts = message.split(/(?<=[.!?])\s+|\n\s*\n/u);
+    const retained = parts.filter((part) => {
+      // A sentence that merely mentions a call, confirms one, or mixes facts
+      // with an invitation is not safe to discard. Let validation/repair decide.
+      const optionalInvitation = /^(?:[¿¡]\s*)?(?:si\s+(?:quer[eé]s|prefer[ií]s|gust[aá]s)|(?:te\s+)?(?:gustar[ií]a|parece|sirve)|prefer[ií]s|podemos|puedo|quer[eé]s|record[aá]\s+que\s+puedo)\b/iu.test(part.trim());
+      const invitationBody = part.replace(/^\s*si\s+(?:quer[eé]s|prefer[ií]s|gust[aá]s)\s*,?\s*/iu, '');
+      const mixedClause = /[,;:]|\b(?:y|pero|adem[aá]s|porque)\b/iu.test(invitationBody);
+      if (!optionalInvitation || !solicitsACallV1(part, true)
+        || mixedClause || extractProtectedFacts(part).length > 0) return true;
+      invitations.push(part.trim());
+      return false;
+    });
+    return retained.length === parts.length ? message : retained.join(' ').trim();
+  }).filter((message) => message.length > 0);
+  // Without a declared offer, distinct invitations are ambiguous: do not
+  // silently select one of several model-authored intentions.
+  if (!suppressOffer && !response.call_offer && new Set(invitations).size > 1) return response;
+  const callOffer = suppressOffer ? null : response.call_offer ?? invitations[0] ?? null;
+  const merged = callOffer && messages.length > 1 ? [messages.join('\n\n')] : messages;
+  if (invitations.length === 0 && merged.length === response.messages.length
+    && callOffer === (response.call_offer ?? null)) return response;
+  return { messages: merged as AgentATurnProposalV1['response']['messages'], call_offer: callOffer };
 }
 
 function authorizedFactIds(context: AgentAContextV1): Set<string> {
@@ -1572,6 +1615,13 @@ export function validateAgentATurnProposalV1(input: {
   // V6 — ofertas visibles <= ledger, tope dos. Una oferta que el modelo
   // escribe dentro de su propia narrativa cuenta igual que la del campo.
   const declaredCallOffer = input.proposal.response.call_offer;
+  const callRequestSupported = supportsCallRequestV1(
+    currentCustomerText,
+    input.context.commercial_state.awaiting_reply === 'call_or_chat',
+  );
+  const requestedCallNow = moves.has('request_call') && input.proposal.proposed_action.type === 'request_call_now'
+    && input.context.capabilities.may_request_call_now && callRequestSupported
+    && !input.proposal.move.vetoes.includes('call');
   // A declaration that also claims an enrolment already exists is removed by
   // the backend's state guard, so it cannot count as the required visible offer.
   const unsupportedDeclaredOffer = typeof declaredCallOffer === 'string'
@@ -1581,8 +1631,11 @@ export function validateAgentATurnProposalV1(input: {
   }
   const offersACall = !unsupportedDeclaredOffer && typeof declaredCallOffer === 'string'
     && solicitsACallV1(declaredCallOffer, true)
-    || input.proposal.response.messages.some((message) => solicitsACallV1(message))
-  if (offersACall && !input.context.capabilities.may_offer_call) {
+    || !requestedCallNow && input.proposal.response.messages.some((message) => solicitsACallV1(message))
+  const renewsPendingOffer = input.context.commercial_state.call_offer_count >= 1
+    && (input.context.commercial_state.awaiting_reply === 'call_or_chat'
+      || !moves.has('ask_course_information'));
+  if (offersACall && (!input.context.capabilities.may_offer_call || renewsPendingOffer)) {
     rejections.push({ code: 'CALL_BUDGET_EXHAUSTED', subject: 'call_offer' })
   }
 
@@ -1594,12 +1647,6 @@ export function validateAgentATurnProposalV1(input: {
   }
   if (input.proposal.move.vetoes.includes('call') && !channelChoice) rejections.push({ code: 'CHANNEL_PREFERENCE_NOT_SUPPORTED', subject: 'call_preference' });
   if (channelChoice && offersACall) rejections.push({ code: 'CHANNEL_PREFERENCE_NOT_SUPPORTED', subject: 'call_offer' });
-  const callRequestSupported = supportsCallRequestV1(
-    currentCustomerText,
-    input.context.commercial_state.awaiting_reply === 'call_or_chat',
-  );
-  const requestedCallNow = moves.has('request_call') && input.proposal.proposed_action.type === 'request_call_now'
-    && input.context.capabilities.may_request_call_now && callRequestSupported;
   if ((moves.has('request_call') || input.proposal.proposed_action.type === 'request_call_now')
       && !requestedCallNow
       && !rejections.some((reason) => reason.code === 'ACTION_NOT_AUTHORIZED' && reason.subject === 'request_call_now')) {
