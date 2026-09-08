@@ -608,6 +608,12 @@ export function buildAgentAContextV1(
       // pendiente, una lista vacía es justamente lo que dejaba al modelo sin
       // nada que ofrecer: ahí las alternativas son la respuesta.
       candidate_offerings: selectedOffering && !wanderingTurn ? [] : candidates,
+      // Older in-process doubles used `none`; expose the canonical neutral
+      // status rather than leaking that producer-only compatibility value to
+      // the model contract.
+      resolution: (claimed.catalog_resolution as { kind: string }).kind === 'none'
+        ? 'no_catalog_intent'
+        : claimed.catalog_resolution.kind,
       // El id sigue el esquema del registro canónico del backend, igual que
       // `area:<code>:name:v1` arriba. Sin offering seleccionado no hay plan que
       // referenciar, así que la lista queda vacía.

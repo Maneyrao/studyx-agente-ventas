@@ -387,6 +387,27 @@ describe('buildAgentAContextV1', () => {
     }, claimed)).toMatchObject({ move: 'browse_catalog' });
   });
 
+  it('exposes a backend-confirmed missing course as catalog state without inventing an identity', () => {
+    const claimed = claimedTurn();
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      selected_offering_code: null,
+      selected_payment_plan: null,
+      stage: 'exploring',
+    };
+    claimed.catalog_resolution = {
+      kind: 'not_found',
+      requestedText: 'consulta por una formación que no está en el catálogo',
+      requestedArea: null,
+      alternativeCodes: ['coaching_liderazgo'],
+    };
+
+    const context = buildAgentAContextV1(claimed);
+
+    expect(context?.catalog).toMatchObject({ resolution: 'not_found' });
+    expect(context?.catalog.selected_offering).toBeNull();
+  });
+
   it('deja la intención elegida por el modelo ante un pedido genérico de info', () => {
     const claimed = claimedTurn();
     claimed.context.batch_messages[0] = {

@@ -111,6 +111,10 @@ export const AgentAContextV1Schema = z.object({
       display_name: z.string().trim().min(1).max(240),
       area_code: IdentifierSchema.nullable(),
     }).strict()).max(3),
+    // Resolver output is evidence, not a conversational instruction. It lets
+    // the brain distinguish a confirmed absence from an open-ended browse.
+    resolution: z.enum(['exact', 'ambiguous', 'not_found', 'no_catalog_intent', 'unavailable'])
+      .optional(),
     payment_plans: z.array(z.object({
       code: PaymentPlanSchema,
       // Referencia estructurada: el modelo cita este id para poder nombrar el
