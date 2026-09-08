@@ -380,6 +380,44 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
+  it('removes a repeated greeting and introduction before delivery without another model call', async () => {
+    const current = context();
+    current.customer.display_name = 'Thiago';
+    current.turn.batch_messages[0].text = 'Thiago me llamo';
+    current.turn.recent_turns = [{
+      id: 'prior-agent',
+      direction: 'outbound',
+      content: '¡Buenas tardes! Soy el asistente virtual de StudyX. ¿Cómo te llamás?',
+    }];
+    const initial = generated(proposal({
+      response: {
+        messages: [
+          '¡Buenas tardes, Thiago! Soy el asistente virtual de StudyX. La formación tiene 38 clases.',
+        ],
+        call_offer: null,
+      },
+    }));
+    const repair = vi.fn();
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial,
+      context: current,
+      repair_enabled: true,
+      repair,
+      rejection_id: '00000000-0000-4000-8000-000000000003',
+    });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.response.messages).toEqual([
+      'La formación tiene 38 clases.',
+    ]);
+    expect(result.evidence).toMatchObject({
+      rejection_codes: ['REPEATED_AGENT_REPLY'],
+      repair_attempted: false,
+      proposal_generation_calls: 1,
+    });
+  });
+
   it.each([
     {
       draft: '¡Perfecto, seguimos por acá sin problema! 😊 Para contarte bien cómo funciona el curso, ¿ya tenías pensado estudiar maquillaje o recién estás empezando a averiguar?',

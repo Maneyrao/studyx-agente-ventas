@@ -2,6 +2,7 @@ import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import type { AgentAContextV1, AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
 import {
   removeUnsupportedPrerequisiteAssertionsV1,
+  removeRepeatedAgentOpeningMessagesV1,
   removeRepeatedAgentQuestionMessagesV1,
   validateAgentATurnProposalV1,
 } from './agent-a-brain'
@@ -109,7 +110,7 @@ function claimsImmediatePaymentLinkDelivery(proposal: AgentATurnProposalV1): boo
   ))
 }
 
-function pruneRepeatedQuestion<T extends AgentAProposalEnvelopeV1>(input: {
+function pruneRepeatedAgentContent<T extends AgentAProposalEnvelopeV1>(input: {
   readonly initial: T
   readonly rejection: TurnRejectionV1
   readonly context: AgentAContextV1
@@ -123,8 +124,11 @@ function pruneRepeatedQuestion<T extends AgentAProposalEnvelopeV1>(input: {
     .find((turn) => turn.direction === 'outbound')?.content
   if (!previous) return null
   const currentCustomerText = input.context.turn.batch_messages.map((message) => message.text).join(' ')
-  const messages = removeRepeatedAgentQuestionMessagesV1(
+  const withoutOpening = removeRepeatedAgentOpeningMessagesV1(
     input.initial.proposal.response.messages,
+  )
+  const messages = removeRepeatedAgentQuestionMessagesV1(
+    withoutOpening,
     previous,
     currentCustomerText,
   )
@@ -326,7 +330,7 @@ export async function resolveAgentAPlannerlessProposalV2<
     }
   }
 
-  const prunedRepeat = pruneRepeatedQuestion({
+  const prunedRepeat = pruneRepeatedAgentContent({
     initial: input.initial,
     rejection,
     context: input.context,

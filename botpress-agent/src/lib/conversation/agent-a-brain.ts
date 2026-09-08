@@ -1336,6 +1336,20 @@ export function removeRepeatedAgentQuestionMessagesV1(
     .filter((message) => message.length > 0);
 }
 
+const REPEATED_GREETING_PREFIX = /^\s*[¡¿]*\s*(?:hola|buen\s+d[ií]a|buenos\s+d[ií]as|buenas(?:\s+tardes|\s+noches)?)\b(?:\s*,?\s*[\p{L}'’-]+(?:\s+[\p{L}'’-]+){0,2})?\s*[!.,:;—-]+\s*/iu;
+const REPEATED_IDENTITY_PREFIX = /^\s*(?:soy|me\s+presento,?\s+soy)\s+(?:(?:el|la|tu)\s+)?asistente\s+virtual(?:\s+de\s+StudyX)?\s*[!.,:;—-]*\s*/iu;
+
+/** Removes the salutation and self-introduction from a later response. */
+export function removeRepeatedAgentOpeningMessagesV1(messages: readonly string[]): string[] {
+  return messages
+    .map((message) => message
+      .replace(REPEATED_GREETING_PREFIX, '')
+      .replace(REPEATED_IDENTITY_PREFIX, '')
+      .replace(/\s+/gu, ' ')
+      .trim())
+    .filter((message) => message.length > 0);
+}
+
 function mentionsMissingIntakeField(messages: readonly string[], missing: readonly string[]): boolean {
   const text = messages.join(' ').normalize('NFD')
     .replace(/[\u0300-\u036f]/gu, '')
@@ -1395,6 +1409,12 @@ export function validateAgentATurnProposalV1(input: {
   const previousReply = lastAgentReplyV1(input.context.turn.recent_turns);
   if (previousReply && sameVisibleText(input.proposal.response.messages, previousReply)) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_reply' });
+  }
+  if (previousReply && input.proposal.response.messages.some((message) => {
+    const withoutOpening = removeRepeatedAgentOpeningMessagesV1([message]);
+    return withoutOpening.length === 0 || withoutOpening[0] !== message.trim();
+  })) {
+    rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'repeated_greeting' });
   }
   if (
     previousReply

@@ -151,6 +151,34 @@ describe('Agent A Brain V1', () => {
     expect(parseAgentATurnProposalV1(proposal(), context()).response.messages).toHaveLength(2);
   });
 
+  it('rejects a new greeting after the agent already opened the conversation', () => {
+    const current = context();
+    current.customer.display_name = 'Thiago';
+    current.capabilities.may_offer_call = false;
+    current.turn.batch_messages[0].text = 'Thiago me llamo';
+    current.turn.recent_turns = [{
+      id: 'prior-agent',
+      direction: 'outbound',
+      content: '¡Buenas tardes! Soy el asistente virtual de StudyX. ¿Cómo te llamás?',
+    }];
+    const parsed = parseAgentATurnProposalV1(proposal({
+      response: {
+        messages: ['¡Buenas tardes, Thiago! Soy el asistente virtual de StudyX. ¿En qué curso te puedo ayudar hoy?'],
+        call_offer: null,
+      },
+    }), current);
+
+    expect(validateAgentATurnProposalV1({
+      proposal: parsed,
+      context: current,
+      planned_fact_ids: parsed.used_fact_ids,
+      rejection_id: '00000000-0000-4000-8000-000000000003',
+    })?.rejections).toContainEqual({
+      code: 'REPEATED_AGENT_REPLY',
+      subject: 'repeated_greeting',
+    });
+  });
+
   it('pone la orden de reparación después del contexto y prohíbe repetir valores rechazados', () => {
     const instructions = buildAgentABrainInstructionsV1({
       ...context(),
