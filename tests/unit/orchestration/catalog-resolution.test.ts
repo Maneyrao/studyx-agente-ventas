@@ -426,6 +426,15 @@ describe('resolveCatalogRequest', () => {
     });
   });
 
+  it('treats a bare availability question about an absent subject as catalog intent', () => {
+    expect(resolveCatalogRequest('¿Tienen Astronomía?', snapshot([MARKETING, COMMUNITY]))).toEqual({
+      kind: 'not_found',
+      requestedText: '¿Tienen Astronomía?',
+      requestedArea: null,
+      alternativeCodes: ['community_manager', 'marketing_digital'],
+    });
+  });
+
   it('treats a bare explicit unknown-course selection as catalog intent', () => {
     expect(resolveCatalogRequest('Quiero Python', snapshot([MARKETING, COMMUNITY]))).toEqual({
       kind: 'not_found',

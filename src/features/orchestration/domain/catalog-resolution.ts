@@ -123,6 +123,13 @@ const INFORMATION_REQUEST_CUE_PATTERN =
 const INFORMAL_AVAILABILITY_FAMILY_REQUEST_PATTERN =
   /\b(?:ten(?:e|é)s|tienen|ofrecen|hay)\b.{0,16}\b(?:algo|opcion|opciones)\b\s+(?:d|de|sobre)\s+([\p{L}\p{N}]{4,})/u;
 
+// A customer often omits "curso" in a short availability question ("¿Tienen
+// Astronomía?").  The grammar is deliberately narrow: routine questions such
+// as "¿Tienen horarios los sábados?" contain additional terms and remain
+// neutral rather than becoming a false catalog absence.
+const BARE_AVAILABILITY_SUBJECT_REQUEST_PATTERN =
+  /^(?:tienen|ofrecen|hay)\s+(?:un|una)?\s*[\p{L}\p{N}][\p{L}\p{N}-]{2,}$/u;
+
 const HEDGED_FAMILY_FRAGMENT_PATTERN =
   /^([\p{L}\p{N}]{4,})\s+(?:creo|quizas|capaz)$/u;
 
@@ -574,6 +581,7 @@ function hasCatalogIntent(messages: readonly string[]): boolean {
       )
     )
     || INFORMAL_AVAILABILITY_FAMILY_REQUEST_PATTERN.test(message)
+    || BARE_AVAILABILITY_SUBJECT_REQUEST_PATTERN.test(message)
   ));
 }
 
