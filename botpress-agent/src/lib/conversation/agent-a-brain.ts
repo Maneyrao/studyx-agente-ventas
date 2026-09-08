@@ -1676,6 +1676,7 @@ export function validateAgentATurnProposalV1(input: {
     moves.has('browse_catalog')
     && resolvedCandidates.length > 1
     && presentsCandidateOptions
+    && state.selected_offering_code === null
     && !candidatesWereShownInRecentOutbound
   ) {
     if (resolvedCandidates.some((offering) => !visibleModelText.includes(

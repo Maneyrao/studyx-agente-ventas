@@ -346,6 +346,28 @@ describe('validación de la propuesta del turno', () => {
     })).toBeNull();
   });
 
+  it('does not reopen an already selected course merely because a later mention is ambiguous', () => {
+    const selected = context({
+      catalog: {
+        ...context().catalog,
+        candidate_offerings: [
+          { code: 'redes_informaticas', fact_id: 'offering:redes-informaticas:name:v1', display_name: 'Redes Informáticas', area_code: 'tecnologia' },
+          { code: 'armado_reparacion_pc', fact_id: 'offering:armado-reparacion-pc:name:v1', display_name: 'Armado y Reparación de PC', area_code: 'tecnologia' },
+        ],
+      },
+    });
+
+    expect(validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: { schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Seguimos con Redes Informáticas. ¿Qué te gustaría saber?'], call_offer: null },
+      }),
+      context: selected,
+      planned_fact_ids: ['offering:redes-informaticas:name:v1'],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    })).toBeNull();
+  });
+
   it('rechaza una recomendación de catálogo que termina sin siguiente paso útil', () => {
     const discovery = context({
       commercial_state: {
