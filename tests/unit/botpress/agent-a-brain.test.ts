@@ -767,8 +767,10 @@ describe('Agent A Brain V1', () => {
     ));
     vi.stubGlobal('fetch', fetchMock);
 
+    const ctx = context();
+    ctx.catalog.resolution = 'not_found';
     const result = await generateWithDeepSeek!({
-      context: context(), apiKey: 'deepseek-test-key', signal: new AbortController().signal,
+      context: ctx, apiKey: 'deepseek-test-key', signal: new AbortController().signal,
       model: 'deepseek-v4-flash',
     });
 
@@ -804,6 +806,7 @@ describe('Agent A Brain V1', () => {
     expect(body.instructions).toContain('<canonical_sales_behavior');
     expect(body.input).toContain('JSON');
     expect(body.input).toContain(JSON.stringify(context().turn.batch_messages.map((message) => message.text)));
+    expect(body.input).toContain('The current catalog resolution is not_found.');
     const moveProperties = body.text.format.schema.properties.move.properties;
     const responseProperties = body.text.format.schema.properties.response.properties;
     expect(body.text.format.schema.properties.used_fact_ids.maxItems).toBe(60);

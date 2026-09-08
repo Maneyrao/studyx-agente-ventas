@@ -165,6 +165,11 @@ function addTokenUsage(
   };
 }
 
+function currentCatalogResolutionDirective(context: AgentAContextV1): string {
+  if (context.catalog.resolution !== 'not_found') return '';
+  return '\nThe current catalog resolution is not_found. The customer asked about an inactive offering: answer that honest absence, browse up to three real alternatives from catalog.available_offerings, include the required initial call_offer when allowed, and do not ask the customer to reinterpret the noun.';
+}
+
 export async function generateDeepSeekAgentATurnProposalV1(input: {
   readonly context: AgentAContextV1;
   readonly apiKey: string;
@@ -203,7 +208,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
           body: JSON.stringify({
             model,
             instructions: buildAgentABrainInstructionsV1(input.context),
-            input: `Current customer messages: ${JSON.stringify(input.context.turn.batch_messages.map((message) => message.text))}\nAnswer these messages and return only the single AgentATurnProposalV1 JSON object.${retryDiagnostic ? `\nThe previous output failed validation at ${retryDiagnostic}. Return a corrected full object. When call_offer is non-null, response.messages must contain exactly one item and call_offer must be declarative without a question mark.` : ''}`,
+            input: `Current customer messages: ${JSON.stringify(input.context.turn.batch_messages.map((message) => message.text))}${currentCatalogResolutionDirective(input.context)}\nAnswer these messages and return only the single AgentATurnProposalV1 JSON object.${retryDiagnostic ? `\nThe previous output failed validation at ${retryDiagnostic}. Return a corrected full object. When call_offer is non-null, response.messages must contain exactly one item and call_offer must be declarative without a question mark.` : ''}`,
             reasoning: { effort: 'none' },
             temperature: 0.2,
             stream: false,
