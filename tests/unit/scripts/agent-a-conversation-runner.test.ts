@@ -606,6 +606,7 @@ describe('Agent A conversation runner', () => {
         move: { move: 'continue_by_chat' },
         plan_hash: 'a'.repeat(64),
       },
+      supports_multi_outbound: true,
       model: {
         provider: 'deepseek-direct',
         model: 'deepseek-v4-flash',
@@ -666,6 +667,7 @@ describe('Agent A conversation runner', () => {
     expect(commitBody).toMatchObject({
       conversation_pipeline_v1: null,
       agent_turn_v2: { schema_version: 2, proposal },
+      supports_multi_outbound: true,
       decision: { reason_code: 'AGENT_A_PLANNERLESS_V2_PENDING_BACKEND' },
     });
     expect(result.runtime?.capabilities).toMatchObject({ agent_a_plannerless_v2: true });

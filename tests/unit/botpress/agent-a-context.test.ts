@@ -344,7 +344,7 @@ describe('buildAgentAContextV1', () => {
     });
   });
 
-  it('refuses to select either course when the backend resolution is ambiguous', () => {
+  it('turns a model selection into non-selecting browse when the backend resolution is ambiguous', () => {
     const claimed = claimedTurn();
     claimed.catalog_resolution = {
       kind: 'ambiguous',
@@ -362,11 +362,29 @@ describe('buildAgentAContextV1', () => {
       confidence: 0.98,
     }, claimed)).toEqual({
       schema_version: 1,
-      move: 'unknown',
+      move: 'browse_catalog',
       secondary_moves: [],
       vetoes: [],
       confidence: 1,
     });
+  });
+
+  it('keeps a catalog-browse move for an ambiguous backend-resolved family', () => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = {
+      kind: 'ambiguous',
+      requestedText: 'info de inglés',
+      candidateCodes: ['ingles_1', 'ingles_2', 'ingles_3'],
+      clarification: 'choose_offering',
+    };
+
+    expect(bindCurrentCatalogResolutionToMoveV1({
+      schema_version: 1,
+      move: 'browse_catalog',
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 0.98,
+    }, claimed)).toMatchObject({ move: 'browse_catalog' });
   });
 
   it('deja la intención elegida por el modelo ante un pedido genérico de info', () => {

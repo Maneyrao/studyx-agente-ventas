@@ -80,6 +80,8 @@ export type CommercialRouteOrigin =
 
 export type ModelRequiredReason =
   | 'MULTI_MESSAGE_BATCH'
+  | 'AMBIGUOUS_CATALOG_REQUIRES_BRAIN'
+  | 'CATALOG_RESOLUTION_REQUIRES_BRAIN'
   | 'NEGATIVE_SIGNAL_REQUIRES_MODEL'
   | 'OPEN_CATALOG_REQUIRES_SALES_MODEL'
   | 'ADVISORY_REQUIRES_SALES_MODEL'
@@ -490,6 +492,33 @@ function routeCatalogResolution(claimed: ClaimedTurn): CommercialRouteResult | n
 }
 
 /**
+ * The authoritative brain is allowed to write the customer-visible catalog
+ * clarification, while catalog resolution remains entirely backend-owned.
+ *
+ * This matters for a broad family such as "ingles": the resolver has already
+ * proven the three canonical candidates, but the deterministic legacy reply
+ * consumes the turn before the brain can produce its separately persisted
+ * first call invitation.  We therefore hand the resolved identity set to the
+ * brain rather than collapsing it to a fixed one-message clarification.
+ */
+function catalogResolutionNeedsAuthoritativeBrain(claimed: ClaimedTurn): boolean {
+  if (claimed.features?.agent_a_brain_v1_enabled !== true) return false
+  const resolution = claimed.catalog_resolution.kind
+  return resolution === 'exact' || resolution === 'ambiguous' || resolution === 'not_found'
+}
+
+function catalogBrainRoute(claimed: ClaimedTurn): CommercialRouteResult | null {
+  if (!catalogResolutionNeedsAuthoritativeBrain(claimed)) return null
+  return {
+    kind: 'model_required',
+    origin: 'advisory_model',
+    reason: claimed.catalog_resolution.kind === 'ambiguous'
+      ? 'AMBIGUOUS_CATALOG_REQUIRES_BRAIN'
+      : 'CATALOG_RESOLUTION_REQUIRES_BRAIN',
+  }
+}
+
+/**
  * The payment matcher intentionally accepts a one-message view. For a batch
  * that would otherwise be consumed by a catalog fail-closed route, preserve
  * every message in one immutable composite and clear course identity. The
@@ -685,6 +714,8 @@ export function routeCommercialTurn(input: CommercialRouterInput): CommercialRou
           : undefined,
       )
     }
+    const catalogBrain = catalogBrainRoute(claimed)
+    if (catalogBrain) return catalogBrain
     const catalogRoute = routeCatalogResolution(claimed)
     if (catalogRoute) return catalogRoute
     return {
@@ -710,6 +741,8 @@ export function routeCommercialTurn(input: CommercialRouterInput): CommercialRou
 
   // Exact/ambiguous/not-found catalog ownership belongs to the backend. The
   // model may recommend and explain, but it must never decide what exists.
+  const catalogBrain = catalogBrainRoute(claimed)
+  if (catalogBrain) return catalogBrain
   const catalogRoute = routeCatalogResolution(claimed)
   if (catalogRoute) return catalogRoute
 

@@ -49,6 +49,60 @@ const MOBILE_PHOTOGRAPHY = offering(
 const SOLAR = offering('energia_solar_fotovoltaica', 'Energía Solar Fotovoltaica', 'Oficios');
 
 describe('resolveCatalogRequest', () => {
+  it('keeps an informal no-accent family request inside its canonical course family', () => {
+    expect(resolveCatalogRequest('holaa, qiero info d ingles', snapshot([
+      offering('ingles_1', 'Inglés 1', 'Idiomas'),
+      offering('ingles_2', 'Inglés 2', 'Idiomas'),
+      offering('ingles_3', 'Inglés 3', 'Idiomas'),
+      MARKETING,
+    ]))).toEqual({
+      kind: 'ambiguous',
+      requestedText: 'holaa, qiero info d ingles',
+      candidateCodes: ['ingles_1', 'ingles_2', 'ingles_3'],
+      clarification: 'choose_offering',
+    });
+  });
+
+  it('recovers a misspelled family after an informal availability question', () => {
+    expect(resolveCatalogRequest('tenes algo d fotogrfia? con camara', snapshot([
+      PHOTOGRAPHY,
+      MOBILE_PHOTOGRAPHY,
+      MARKETING,
+    ]))).toEqual({
+      kind: 'ambiguous',
+      requestedText: 'tenes algo d fotogrfia? con camara',
+      candidateCodes: ['fotografia_celulares_tiendas_online', 'fotografia_profesional'],
+      clarification: 'choose_offering',
+    });
+  });
+
+  it('keeps a hedged final fragment in a burst inside its canonical family', () => {
+    expect(resolveCatalogRequest([
+      'hola', 'quiero estudiar', 'algo d compu', 'redes creo',
+    ], snapshot([
+      offering('redes_informaticas', 'Redes Informáticas', 'Tecnología'),
+      CELLPHONES,
+    ]))).toEqual({
+      kind: 'ambiguous',
+      requestedText: 'hola\nquiero estudiar\nalgo d compu\nredes creo',
+      candidateCodes: ['redes_informaticas'],
+      clarification: 'choose_offering',
+    });
+  });
+
+  it('uses the full burst to distinguish computer repair from phone repair', () => {
+    expect(resolveCatalogRequest([
+      'soy lucas', 'quiero reparacion', 'de compus', 'cuanto sale?',
+    ], snapshot([
+      CELLPHONES,
+      offering('armado_reparacion_pc', 'Armado y Reparación de PC', 'Tecnología'),
+      offering('redes_informaticas', 'Redes Informáticas', 'Tecnología'),
+    ]))).toMatchObject({
+      kind: 'exact',
+      offeringCode: 'armado_reparacion_pc',
+    });
+  });
+
   it.each([
     'Fotografía',
     'Hola! Colo estas? Me pasas información del curso de fotografia?',

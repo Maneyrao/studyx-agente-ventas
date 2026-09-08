@@ -64,6 +64,12 @@ function uniqueProtectedFacts(facts: readonly ProtectedFactRef[]): ProtectedFact
   return [...new Map(facts.map((fact) => [`${fact.kind}\u0000${fact.value}`, fact])).values()];
 }
 
+function suppliesFirstNameInCurrentTurn(messages: readonly string[] | undefined): boolean {
+  return (messages ?? []).some((message) => (
+    /\b(?:soy|me llamo|mi nombre es)\s+[\p{L}]{2,}/iu.test(message)
+  ));
+}
+
 function responseType(input: {
   readonly proposal: AgentATurnProposalV1;
   readonly response: string;
@@ -166,7 +172,8 @@ export async function prepareAgentTurnV2(input: {
     }),
   );
   const noActiveCall = callFacts?.active_call == null;
-  const firstNameKnown = !missingContactIntakeFieldsV1(contactIntake).includes('nombre');
+  const firstNameKnown = !missingContactIntakeFieldsV1(contactIntake).includes('nombre')
+    || suppliesFirstNameInCurrentTurn(input.current_customer_messages);
   const authority = authorizeAgentTurnV2({
     proposal: input.proposal,
     state,

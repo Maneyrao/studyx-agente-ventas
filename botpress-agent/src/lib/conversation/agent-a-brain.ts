@@ -1558,10 +1558,16 @@ export function validateAgentATurnProposalV1(input: {
   const state = input.context.commercial_state;
   const hasCanonicalCourse = state.selected_offering_code !== null
     || typeof input.proposal.move.course_reference === 'string';
+  const hasResolvedCourseFamily = !hasCanonicalCourse
+    && moves.has('browse_catalog')
+    && [
+      ...input.context.catalog.candidate_offerings,
+      ...input.context.catalog.available_offerings,
+    ].some((offering) => cited.has(offering.fact_id));
   const missingCourseSubject = moves.has('select_course')
     && typeof input.proposal.move.course_reference !== 'string'
     ? 'course_reference'
-    : offersACall && !hasCanonicalCourse
+    : offersACall && !hasCanonicalCourse && !hasResolvedCourseFamily
       ? 'call_offer'
       : (moves.has('browse_catalog') || moves.has('select_area'))
         && !hasCanonicalCourse
@@ -1571,8 +1577,9 @@ export function validateAgentATurnProposalV1(input: {
   if (missingCourseSubject !== null) {
     rejections.push({ code: 'COURSE_NOT_RESOLVED', subject: missingCourseSubject });
   }
-  if ((moves.has('select_course') || moves.has('ask_course_information'))
-    && state.selected_offering_code !== null && input.context.capabilities.may_offer_call
+  if (((moves.has('select_course') || moves.has('ask_course_information')) && hasCanonicalCourse
+      || hasResolvedCourseFamily)
+    && input.context.capabilities.may_offer_call
     && state.call_offer_count === 0 && state.call_preference === 'unknown'
     && state.call_offer_status === 'not_offered' && !channelChoice
     && !requestedCallNow && !offersACall) {

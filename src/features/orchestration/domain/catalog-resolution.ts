@@ -109,6 +109,27 @@ const NON_CATALOG_PROGRAM_CONTEXT_PATTERN =
 const EXPLICIT_PROGRAM_INFORMATION_REQUEST_PATTERN =
   /\b(?:necesito|quiero|busco|solicito)\b.{0,24}\b(?:informacion|info|datos|detalles)\b.{0,24}\b(?:del?|sobre(?: el)?)\s+programa de\b/u;
 
+// A person can write a malformed lead-in ("qiero info d") while still
+// naming a recognizable course family.  Information language plus a complete
+// canonical family token is enough to ask a safe clarification; the token by
+// itself is not, so ordinary sentences such as "me gusta fotografía" remain
+// outside the commercial catalog flow.
+const INFORMATION_REQUEST_CUE_PATTERN =
+  /\b(?:info(?:rmacion)?|detalle(?:s)?|datos|quiero saber|contame)\b/u;
+
+// A short availability question is also a clear catalog request even when it
+// omits the word "curso" ("tenés algo de fotografía?"). We only use its
+// captured subject as a typo-tolerant *family* match, never as an exact SKU.
+const INFORMAL_AVAILABILITY_FAMILY_REQUEST_PATTERN =
+  /\b(?:ten(?:e|é)s|tienen|ofrecen|hay)\b.{0,16}\b(?:algo|opcion|opciones)\b\s+(?:d|de|sobre)\s+([\p{L}\p{N}]{4,})/u;
+
+const HEDGED_FAMILY_FRAGMENT_PATTERN =
+  /^([\p{L}\p{N}]{4,})\s+(?:creo|quizas|capaz)$/u;
+
+const REPAIR_SUBJECT_PATTERN = /\breparacion\b/u;
+const COMPUTER_SUBJECT_PATTERN =
+  /\b(?:pc|computadora(?:s)?|compu(?:tadora)?s?|informatica(?:s)?)\b/u;
+
 const NEGATED_OFFERING_PREFIX_PATTERN =
   /(?:^|\s)(?:no quiero|no me interesa|no prefiero|no elijo|ya no quiero|descarto|cancelo)(?:\s+(?:hacer|estudiar|aprender|el|la|un|una|curso|programa|de)){0,4}\s*$/u;
 
@@ -448,6 +469,94 @@ function partialSubjectMatches(
   )));
 }
 
+function computerRepairMatches(
+  messages: readonly string[],
+  offerings: readonly IndexedOffering[],
+): IndexedOffering[] {
+  const subject = messages.join(' ');
+  if (!REPAIR_SUBJECT_PATTERN.test(subject) || !COMPUTER_SUBJECT_PATTERN.test(subject)) {
+    return [];
+  }
+  return offerings.filter((offering) => {
+    const identities = [
+      offering.normalizedName,
+      offering.normalizedCode,
+      ...offering.normalizedAliases,
+    ];
+    return identities.some((identity) => (
+      REPAIR_SUBJECT_PATTERN.test(identity) && /(?:^| )pc(?: |$)/u.test(identity)
+    ));
+  });
+}
+
+function informationalFamilyMatches(
+  messages: readonly string[],
+  offerings: readonly IndexedOffering[],
+): IndexedOffering[] {
+  if (!messages.some((message) => INFORMATION_REQUEST_CUE_PATTERN.test(message))) return [];
+  const matched = new Map<string, IndexedOffering>();
+  for (const offering of offerings) {
+    const terms = [offering.normalizedName, ...offering.normalizedAliases]
+      .map((value) => value.split(' ')[0] ?? '')
+      .filter((value) => value.length >= 4);
+    const matchesCompleteFamily = terms.some((term) => messages.some((message) => (
+      termOccurrences(message, term).some((occurrence) => {
+        // This is a family request, not a longer unknown course that merely
+        // starts with the same word ("Marketing de Afiliados").
+        return /^(?:\d+)?$/u.test(message.slice(occurrence.end).trim());
+      })
+    )));
+    if (matchesCompleteFamily) {
+      matched.set(offering.source.code, offering);
+    }
+  }
+  return [...matched.values()].sort(compareOfferings);
+}
+
+function availabilityFamilyMatches(
+  messages: readonly string[],
+  offerings: readonly IndexedOffering[],
+): IndexedOffering[] {
+  const requestedFamilies = messages.flatMap((message) => {
+    const matched = INFORMAL_AVAILABILITY_FAMILY_REQUEST_PATTERN.exec(message)?.[1];
+    return matched ? [matched] : [];
+  });
+  if (requestedFamilies.length === 0) return [];
+
+  const matched = new Map<string, IndexedOffering>();
+  for (const offering of offerings) {
+    const familyTerms = [offering.normalizedName, ...offering.normalizedAliases]
+      .map((value) => value.split(' ')[0] ?? '')
+      .filter((value) => value.length >= 5);
+    if (familyTerms.some((term) => requestedFamilies.some((requested) => {
+      const distance = levenshteinDistance(term, requested);
+      return distance <= typoDistanceLimit(term);
+    }))) {
+      matched.set(offering.source.code, offering);
+    }
+  }
+  return [...matched.values()].sort(compareOfferings);
+}
+
+function hedgedFamilyFragmentMatches(
+  messages: readonly string[],
+  offerings: readonly IndexedOffering[],
+): IndexedOffering[] {
+  const requestedFamilies = messages.flatMap((message) => {
+    const matched = HEDGED_FAMILY_FRAGMENT_PATTERN.exec(message)?.[1];
+    return matched ? [matched] : [];
+  });
+  if (requestedFamilies.length === 0) return [];
+  return offerings.filter((offering) => (
+    [offering.normalizedName, ...offering.normalizedAliases]
+      .map((value) => value.split(' ')[0] ?? '')
+      .filter((value) => value.length >= 5)
+      .some((term) => requestedFamilies.some((requested) => (
+        levenshteinDistance(term, requested) <= typoDistanceLimit(term)
+      )))
+  ));
+}
+
 function hasCatalogIntent(messages: readonly string[]): boolean {
   return messages.some((message) => (
     (
@@ -464,6 +573,7 @@ function hasCatalogIntent(messages: readonly string[]): boolean {
         && !EXPLICIT_COURSE_NOUN_PATTERN.test(message)
       )
     )
+    || INFORMAL_AVAILABILITY_FAMILY_REQUEST_PATTERN.test(message)
   ));
 }
 
@@ -616,6 +726,16 @@ export function resolveCatalogRequest(
     return ambiguous(request, literalMatches.map((match) => match.offering));
   }
 
+  const computerRepair = computerRepairMatches(resolutionMessages, offerings);
+  if (computerRepair.length > 0) {
+    if (snapshot.offerings_truncated > 0) {
+      return { kind: 'unavailable', reason: 'snapshot_truncated' };
+    }
+    return computerRepair.length === 1
+      ? exact(computerRepair[0], 'canonical')
+      : ambiguous(request, computerRepair);
+  }
+
   const partialMatches = partialSubjectMatches(replacementSubject ?? text, offerings);
   if (partialMatches.length > 0) {
     if (snapshot.offerings_truncated > 0) {
@@ -624,6 +744,30 @@ export function resolveCatalogRequest(
     // A partial title narrows the clarification, never establishes identity,
     // even when the current complete snapshot has just one matching course.
     return ambiguous(request, partialMatches);
+  }
+
+  const familyMatches = informationalFamilyMatches(resolutionMessages, offerings);
+  if (familyMatches.length > 0) {
+    if (snapshot.offerings_truncated > 0) {
+      return { kind: 'unavailable', reason: 'snapshot_truncated' };
+    }
+    return ambiguous(request, familyMatches);
+  }
+
+  const availabilityMatches = availabilityFamilyMatches(resolutionMessages, offerings);
+  if (availabilityMatches.length > 0) {
+    if (snapshot.offerings_truncated > 0) {
+      return { kind: 'unavailable', reason: 'snapshot_truncated' };
+    }
+    return ambiguous(request, availabilityMatches);
+  }
+
+  const hedgedMatches = hedgedFamilyFragmentMatches(resolutionMessages, offerings);
+  if (hedgedMatches.length > 0 && explicitCatalogIntent) {
+    if (snapshot.offerings_truncated > 0) {
+      return { kind: 'unavailable', reason: 'snapshot_truncated' };
+    }
+    return ambiguous(request, hedgedMatches);
   }
 
   // A nearby word is not enough to create commercial intent. Fuzzy matching

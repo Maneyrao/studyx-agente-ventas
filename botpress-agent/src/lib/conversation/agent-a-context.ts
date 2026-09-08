@@ -42,6 +42,12 @@ const LOW_INFORMATION_TOKENS = new Set([
   'saber', 'sos', 'tarde', 'tenes', 'tienen', 'toda', 'todas', 'todos', 'vos',
 ]);
 
+function currentBatchSuppliesFirstName(claimed: ClaimedTurn): boolean {
+  return claimed.context.batch_messages.some((message) => (
+    /\b(?:soy|me llamo|mi nombre es)\s+[\p{L}]{2,}/iu.test(message.content)
+  ));
+}
+
 function currentTurnIsUnderspecifiedV1(claimed: ClaimedTurn): boolean {
   const normalized = claimed.context.batch_messages
     .filter((message) => message.message_type === 'text')
@@ -70,9 +76,14 @@ export function bindCurrentCatalogResolutionToMoveV1(
   claimed: ClaimedTurn,
 ): ConversationMoveV1 {
   if (claimed.catalog_resolution.kind === 'ambiguous') {
+    // Clarifying a backend-resolved family is safe: it keeps every candidate
+    // visible without selecting one. The semantic action is materialized here
+    // because a model's generic `unknown` would otherwise discard the
+    // resolver's canonical family before the delivery contract can run.
+    if (move.move === 'browse_catalog') return move;
     return {
       schema_version: 1,
-      move: 'unknown',
+      move: 'browse_catalog',
       secondary_moves: [],
       vetoes: move.vetoes,
       confidence: 1,
@@ -498,6 +509,8 @@ export function buildAgentAContextV1(
   const intakeAnswered = Array.isArray(claimed.contact_intake_missing);
   const intakeMissing = intakeAnswered ? claimed.contact_intake_missing! : [];
   const intakeStatus: 'known' | 'unknown' = intakeAnswered ? 'known' : 'unknown';
+  const firstNameKnownNow = !intakeMissing.includes('nombre')
+    || currentBatchSuppliesFirstName(claimed);
   // Desconocido no abre el gate. La única lectura segura de una respuesta que
   // nadie dio es que todavía falta algo.
   const maySendPaymentLink = claimed.policy.may_respond
@@ -610,7 +623,7 @@ export function buildAgentAContextV1(
       may_reply: claimed.policy.may_respond,
       may_offer_call: claimed.policy.may_respond
         && intakeStatus === 'known'
-        && !intakeMissing.includes('nombre')
+        && firstNameKnownNow
         && state.call_preference === 'unknown'
         && callOfferCount < 2,
       may_request_call_now: claimed.policy.may_respond

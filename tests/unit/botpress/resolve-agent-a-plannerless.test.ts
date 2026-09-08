@@ -160,6 +160,9 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     const current = context();
     current.commercial_state.selected_offering_code = null;
     current.commercial_state.stage = 'exploring';
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_status = 'not_offered';
+    current.commercial_state.call_offer_count = 0;
     current.catalog.selected_offering = null;
     current.catalog.available_offerings = [{
       code: 'fotografia-profesional',
@@ -192,7 +195,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
-  it('preserves an unresolved catalog answer while removing only its premature call offer', async () => {
+  it('preserves a call offer after naming a backend-confirmed unresolved family', async () => {
     const current = context();
     current.turn.batch_messages[0].text = 'Estoy averiguando inglés y todavía no sé qué nivel elegir. ¿Cuáles son los cursos disponibles?';
     current.commercial_state.selected_offering_code = null;
@@ -227,15 +230,55 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
 
     expect(repair).not.toHaveBeenCalled();
-    expect(result.effective.proposal.response).toEqual({
-      messages: initial.proposal.response.messages,
-      call_offer: null,
-    });
+    expect(result.effective.proposal.response).toEqual(initial.proposal.response);
     expect(result.evidence).toEqual({
-      rejection_codes: ['COURSE_NOT_RESOLVED'],
+      rejection_codes: [],
       repair_attempted: false,
       repaired: false,
       proposal_generation_calls: 1,
+    });
+  });
+
+  it('repairs a missing mandatory call offer even when optional repair is disabled', async () => {
+    const current = context();
+    current.commercial_state.selected_offering_code = null;
+    current.commercial_state.stage = 'exploring';
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_status = 'not_offered';
+    current.commercial_state.call_offer_count = 0;
+    current.catalog.selected_offering = null;
+    current.catalog.available_offerings = [{
+      code: 'fotografia-profesional',
+      fact_id: AVAILABLE_NAME_FACT,
+      display_name: 'Fotografía Profesional',
+      area_code: 'fotografia',
+    }];
+    current.capabilities.may_offer_call = true;
+    const initial = generated(proposal({
+      move: { schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 1 },
+      response: { messages: ['Tenemos Fotografía Profesional. ¿Querés conocerla mejor?'], call_offer: null },
+      used_fact_ids: [AVAILABLE_NAME_FACT],
+    }));
+    const repaired = generated(proposal({
+      move: initial.proposal.move,
+      response: {
+        messages: ['Tenemos Fotografía Profesional. ¿Querés conocerla mejor?'],
+        call_offer: 'Si querés, podemos coordinar una llamada breve para orientarte.',
+      },
+      used_fact_ids: [AVAILABLE_NAME_FACT],
+      repair_of: { rejection_id: '00000000-0000-4000-8000-000000000002', attempt: 1 },
+    }));
+    const repair = vi.fn().mockResolvedValue(repaired);
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: false, repair,
+      rejection_id: '00000000-0000-4000-8000-000000000002',
+    });
+
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.effective).toBe(repaired);
+    expect(result.evidence).toMatchObject({
+      rejection_codes: ['CALL_OFFER_REQUIRED'], repair_attempted: true, repaired: true,
     });
   });
 

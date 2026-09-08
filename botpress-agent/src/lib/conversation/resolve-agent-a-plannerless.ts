@@ -221,6 +221,37 @@ function demoteUnresolvedCallOffer<T extends AgentAProposalEnvelopeV1>(input: {
   return candidateRejection === null ? candidate : null
 }
 
+function demoteCourseSwitchCallOffer<T extends AgentAProposalEnvelopeV1>(input: {
+  readonly initial: T
+  readonly context: AgentAContextV1
+  readonly authorized_fact_ids: readonly string[]
+  readonly rejection_id: string
+}): T | null {
+  const moves = new Set([
+    input.initial.proposal.move.move,
+    ...input.initial.proposal.move.secondary_moves,
+  ])
+  if (
+    input.context.commercial_state.call_offer_count < 1
+    || input.initial.proposal.response.call_offer === null
+    || !moves.has('select_course')
+    || moves.has('ask_course_information')
+  ) return null
+  const candidate = {
+    ...input.initial,
+    proposal: {
+      ...input.initial.proposal,
+      response: { ...input.initial.proposal.response, call_offer: null },
+    },
+  }
+  return validatePlannerless({
+    proposal: candidate.proposal,
+    context: input.context,
+    rejection_id: input.rejection_id,
+    authorized_fact_ids: input.authorized_fact_ids,
+  }) === null ? candidate : null
+}
+
 /**
  * Códigos que el backend vuelve a verificar por su cuenta y puede vetar a
  * nivel de oración. Dejar pasar la propuesta con uno de estos es más seguro
@@ -269,6 +300,21 @@ export async function resolveAgentAPlannerlessProposalV2<
     rejection_id: input.rejection_id,
     authorized_fact_ids: factIds,
   })
+  const courseSwitchWithoutRenewal = demoteCourseSwitchCallOffer({
+    initial: input.initial,
+    context: input.context,
+    authorized_fact_ids: factIds,
+    rejection_id: input.rejection_id,
+  })
+  if (courseSwitchWithoutRenewal !== null) {
+    return {
+      effective: courseSwitchWithoutRenewal,
+      evidence: {
+        rejection_codes: [], repair_attempted: false, repaired: false, proposal_generation_calls: 1,
+      },
+      rejection,
+    }
+  }
   if (rejection === null) {
     return {
       effective: input.initial,
@@ -342,7 +388,16 @@ export async function resolveAgentAPlannerlessProposalV2<
     rejection,
   })
 
-  const mayRepair = input.repair_enabled && input.initial.proposal.repair_of === null
+  // An omitted mandatory call invitation cannot be repaired by pruning: the
+  // backend must reject it, which would turn a safe catalog reply into a 500.
+  // Give the original author one bounded rewrite even while optional repair is
+  // rolled out off; the canonical backend still validates the rewrite.
+  const requiresMandatoryCatalogRepair = rejection.rejections.some((reason) => (
+    reason.code === 'CALL_OFFER_REQUIRED'
+    || (reason.code === 'COURSE_NOT_RESOLVED' && reason.subject === 'next_step')
+  ))
+  const mayRepair = (input.repair_enabled || requiresMandatoryCatalogRepair)
+    && input.initial.proposal.repair_of === null
   if (!mayRepair) {
     if (mayDegradeToBackendBoundary(input.initial.proposal, rejection)) return degraded(false)
     throw new Error('PLANNERLESS_PROPOSAL_REJECTED')

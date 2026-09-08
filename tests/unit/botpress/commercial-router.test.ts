@@ -1002,6 +1002,35 @@ describe('routeCommercialTurn', () => {
     expect(response.length).toBeLessThanOrEqual(220);
   });
 
+  it('lets the authoritative brain answer an ambiguous no-accent course family', () => {
+    const route = routeCommercialTurn({
+      automationEnabled: true,
+      claimed: claimedTurn({
+        texts: ['holaa, qiero info d ingles'],
+        courseOfInterest: null,
+        offeringCode: null,
+        conversationPipelineV1: true,
+        offerings: [
+          businessOffering('ingles-1', 'Inglés 1', 'Academia Cultural'),
+          businessOffering('ingles-2', 'Inglés 2', 'Academia Cultural'),
+          businessOffering('ingles-3', 'Inglés 3', 'Academia Cultural'),
+        ],
+        catalogResolution: {
+          kind: 'ambiguous',
+          requestedText: 'holaa, qiero info d ingles',
+          candidateCodes: ['ingles-1', 'ingles-2', 'ingles-3'],
+          clarification: 'choose_offering',
+        },
+      }),
+    });
+
+    expect(route).toMatchObject({
+      kind: 'model_required',
+      origin: 'advisory_model',
+      reason: 'AMBIGUOUS_CATALOG_REQUIRES_BRAIN',
+    });
+  });
+
   it('fails closed when fewer than two ambiguous candidates exist in the authorized snapshot', () => {
     const route = routeCommercialTurn({
       automationEnabled: true,

@@ -89,6 +89,18 @@ afterEach(() => {
 });
 
 describe('Agent A Brain V1', () => {
+  it('requires a separate initial call offer after any canonical catalog recommendation', () => {
+    expect(buildAgentABrainInstructionsV1(context())).toContain(
+      'When you name one or more canonical courses while browsing the catalog',
+    );
+  });
+
+  it('does not renew a call invitation merely because the customer changes course', () => {
+    expect(buildAgentABrainInstructionsV1(context())).toContain(
+      'A course switch by itself does not renew a previous call invitation',
+    );
+  });
+
   it.each(['USD 360', 'USD 360.0', 'USD 360.00'])(
     'accepts equivalent zero cents without rejecting an authorized total: %s', (total) => {
       const ctx = context();

@@ -49,6 +49,7 @@ export type AgentTurnRejectionReasonV2 =
   | 'ACTION_NOT_AUTHORIZED'
   | 'MISSING_INTAKE'
   | 'CALL_OFFER_NOT_AUTHORIZED'
+  | 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
   | 'CALL_OFFER_REQUIRED'
   | 'COURSE_NOT_RESOLVED'
   | 'CHANNEL_PREFERENCE_NOT_SUPPORTED';
@@ -182,6 +183,14 @@ export function authorizeAgentTurnV2(input: {
     else reasons.push('FACT_NOT_AUTHORIZED');
   }
 
+  // A broad canonical family (for example Inglés 1/2/3) intentionally has no
+  // selected SKU yet.  A cited navigation fact proves that the model is
+  // presenting backend-confirmed alternatives, so its first optional call
+  // invitation may be recorded without guessing which course was chosen.
+  const citedCourseFamily = selectedOffering === null
+    && moves.has('browse_catalog')
+    && authorizedFactIds.some((factId) => factsById.get(factId)?.kind === 'offering_name');
+
   const authoredMessages = [...proposal.response.messages];
   const authoredCallOffer = proposal.response.call_offer?.trim() || null;
   const authorizedCallOffer = authoredCallOffer === null
@@ -194,9 +203,21 @@ export function authorizeAgentTurnV2(input: {
     || authoredMessages.some((message) => solicitsACall(message));
   const visibleCallOffer = (authorizedCallOffer !== null && solicitsACall(authorizedCallOffer, true))
     || authorizedMessages.some((message) => solicitsACall(message));
+  // The first invitation is intentionally a second physical message, not a
+  // paragraph tacked onto the course answer. The delivery layer persists each
+  // item in response_messages as its own outbound part, so keep exactly one
+  // informational first part and the invitation in the dedicated field.
+  if (visibleCallOffer && state.call_offer_count === 0 && (
+    authorizedCallOffer === null
+    || !solicitsACall(authorizedCallOffer, true)
+    || authorizedMessages.length !== 1
+    || authorizedMessages.some((message) => solicitsACall(message))
+  )) {
+    reasons.push('CALL_OFFER_MESSAGE_BOUNDARY_INVALID');
+  }
   if (draftedCallOffer && (
     !input.call_policy.may_offer_call
-    || selectedOffering === null
+    || (selectedOffering === null && !citedCourseFamily)
     || state.call_offer_count >= 2
     || state.call_offer_status === 'accepted'
     || state.call_offer_status === 'declined'
@@ -220,7 +241,7 @@ export function authorizeAgentTurnV2(input: {
     && input.call_policy.may_request_call_now && callRequestSupported;
   if ((moves.has('request_call') || proposal.proposed_action.type === 'request_call_now')
       && !requestedCallNow) reasons.push('ACTION_NOT_AUTHORIZED');
-  const needsInitialCall = changesCourse && selectedOffering !== null
+  const needsInitialCall = ((changesCourse && selectedOffering !== null) || citedCourseFamily)
     && input.call_policy.may_offer_call && state.call_offer_count === 0
     && state.call_preference === 'unknown' && state.call_offer_status === 'not_offered'
     && !channelChoice && !requestedCallNow;

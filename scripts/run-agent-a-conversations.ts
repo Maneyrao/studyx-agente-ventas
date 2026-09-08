@@ -614,7 +614,12 @@ export function createLocalTurnSender(
   return async (
     message: string,
     existingConversationId: string | null,
-    evaluationControl?: { readonly forceProviderFailure: boolean; readonly replayCommit: boolean },
+    evaluationControl?: {
+      readonly forceProviderFailure: boolean;
+      readonly replayCommit: boolean;
+      /** Multiple source events ingested concurrently before one batch claim. */
+      readonly burstMessages?: readonly { readonly text: string; readonly delayMs: number }[];
+    },
   ): Promise<AgentChatResult> => {
     const turnStartedAt = Date.now();
     const latenciesMs: Record<string, number> = {};
@@ -624,28 +629,40 @@ export function createLocalTurnSender(
     const traceId = randomUUID();
     let evaluationPacingMs = 0;
     let postCommitMaintenanceMs = 0;
-    const externalMessageId = `local-eval:${runId}:${turnNumber}:${randomUUID()}`;
-    const envelope = buildEmulatorEnvelope({
-      emulatorPhoneE164: DEFAULT_DEVELOPMENT_EMULATOR_PHONE_E164,
-      integrationId: 'local-agent-a-eval',
-      externalMessageId,
-      externalConversationId: conversationId,
-      externalUserId: conversationId,
-      traceId,
-      text: message,
-      occurredAt: new Date().toISOString(),
-      botpressConversationId: conversationId,
-      botpressUserId: conversationId,
-    });
+    const burst = evaluationControl?.burstMessages ?? [{ text: message, delayMs: 0 }];
+    if (burst.length === 0 || burst.some((item) => !item.text.trim() || item.delayMs < 0)) {
+      throw new Error('INVALID_LOCAL_BURST');
+    }
     const ingestStartedAt = Date.now();
-    const ingested = await localSignedJson({
-      credentials,
-      path: '/api/agent/ingest',
-      body: envelope,
-      idempotencyKey: `inbound:${envelope.source}:${envelope.integration_id}:${externalMessageId}`,
-      traceId,
-      parse: (value) => IngestResponseSchema.parse(value),
-    });
+    // Start every source event at once and let the real ingest window combine
+    // them. Awaiting each request here would falsely turn a burst into a
+    // sequence of independent claims.
+    const ingestedEvents = await Promise.all(burst.map(async (item, index) => {
+      if (item.delayMs > 0) await new Promise((resolve) => setTimeout(resolve, item.delayMs));
+      const externalMessageId = `local-eval:${runId}:${turnNumber}:${index}:${randomUUID()}`;
+      const envelope = buildEmulatorEnvelope({
+        emulatorPhoneE164: DEFAULT_DEVELOPMENT_EMULATOR_PHONE_E164,
+        integrationId: 'local-agent-a-eval',
+        externalMessageId,
+        externalConversationId: conversationId,
+        externalUserId: conversationId,
+        traceId,
+        text: item.text,
+        occurredAt: new Date(Date.now()).toISOString(),
+        botpressConversationId: conversationId,
+        botpressUserId: conversationId,
+      });
+      return await localSignedJson({
+        credentials,
+        path: '/api/agent/ingest',
+        body: envelope,
+        idempotencyKey: `inbound:${envelope.source}:${envelope.integration_id}:${externalMessageId}`,
+        traceId,
+        parse: (value) => IngestResponseSchema.parse(value),
+      });
+    }));
+    const ingested = ingestedEvents.at(-1);
+    if (!ingested) throw new Error('LOCAL_BURST_INGEST_EMPTY');
     latenciesMs.ingest_ms = Date.now() - ingestStartedAt;
 
     let claimed: ClaimedTurn | null = null;
@@ -1066,6 +1083,7 @@ export function createLocalTurnSender(
           authorized_payment_plan: authorizedPaymentPlan,
           conversation_pipeline_v1: conversationPipelineV1,
           agent_turn_v2: agentTurnV2,
+          supports_multi_outbound: true,
           decision,
           model: {
             provider,
@@ -1098,6 +1116,7 @@ export function createLocalTurnSender(
           authorized_payment_plan: authorizedPaymentPlan,
           conversation_pipeline_v1: conversationPipelineV1,
           agent_turn_v2: agentTurnV2,
+          supports_multi_outbound: true,
           decision,
           model: { provider, model: decisionModel, prompt_version: promptVersion },
           batch_id: claimed.batch.id,
@@ -1183,40 +1202,45 @@ export function createLocalTurnSender(
       };
     }
 
-    let localDelivery;
+    const outbounds = committed.outbounds.length > 0
+      ? committed.outbounds
+      : [committed.outbound];
+    const localDeliveries = [];
     const deliveryStartedAt = Date.now();
     try {
-      localDelivery = await deliverAuthorizedLocalOutbound({
-        trace_id: traceId,
-        outbound: committed.outbound,
-        createMessageId: () => `local-eval-${randomUUID()}`,
-        reportDelivery: async (report) => {
-          const reportIdentity = report.botpress_message_id ?? report.error_code ?? 'egress-blocked';
-          await localSignedJson({
-            credentials,
-            path: `/api/agent/outbounds/${committed.outbound!.id}/delivery`,
-            body: report,
-            idempotencyKey:
-              `delivery:${committed.outbound!.id}:${reportIdentity}:${report.status}`,
-            traceId,
-            parse: (value) => DeliveryReportResponseSchema.parse(value),
-          });
-        },
-        // Evals must opt in to queue drains: payment projection could otherwise
-        // reach a real Sheets destination while validating a local database.
-        afterSubmitted: skipPostTurnCrons
-          ? async () => undefined
-          : async () => {
-              postCommitMaintenanceMs = await flushLocalPostTurn(credentials, traceId);
-            },
-      });
+      for (const outbound of outbounds) {
+        localDeliveries.push(await deliverAuthorizedLocalOutbound({
+          trace_id: traceId,
+          outbound,
+          createMessageId: () => `local-eval-${randomUUID()}`,
+          reportDelivery: async (report) => {
+            const reportIdentity = report.botpress_message_id ?? report.error_code ?? 'egress-blocked';
+            await localSignedJson({
+              credentials,
+              path: `/api/agent/outbounds/${outbound.id}/delivery`,
+              body: report,
+              idempotencyKey: `delivery:${outbound.id}:${reportIdentity}:${report.status}`,
+              traceId,
+              parse: (value) => DeliveryReportResponseSchema.parse(value),
+            });
+          },
+          // Evals must opt in to queue drains: payment projection could otherwise
+          // reach a real Sheets destination while validating a local database.
+          afterSubmitted: skipPostTurnCrons
+            ? async () => undefined
+            : async () => {
+                postCommitMaintenanceMs = await flushLocalPostTurn(credentials, traceId);
+              },
+        }));
+      }
     } catch (error) {
       throw withTurnDiagnostic(error, turnDiagnostic);
     }
     latenciesMs.delivery_ms = Date.now() - deliveryStartedAt;
     latenciesMs.total_turn_ms = Date.now() - turnStartedAt;
     evaluationPacingMs += postCommitMaintenanceMs;
-    if (localDelivery.kind === 'blocked') {
+    const submitted = localDeliveries.filter((delivery) => delivery.kind !== 'blocked');
+    if (submitted.length === 0) {
       return {
         conversationId,
         responses: [],
@@ -1228,8 +1252,8 @@ export function createLocalTurnSender(
     }
     return {
       conversationId,
-      responses: [{ type: 'text', text: localDelivery.content }],
-      authorizedUrls: [...committed.outbound.authorized_egress.authorized_urls],
+      responses: submitted.map((delivery) => ({ type: 'text' as const, text: delivery.content })),
+      authorizedUrls: [...new Set(outbounds.flatMap((outbound) => outbound.authorized_egress.authorized_urls))],
       commercialEvidence,
       turnDiagnostic,
       runtime: {

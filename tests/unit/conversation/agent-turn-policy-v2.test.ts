@@ -385,8 +385,59 @@ describe('plannerless Agent A authority', () => {
     expect(result).toMatchObject({
       ok: true,
       response: 'Por chat también puedo ayudarte.\n\nSi preferís, coordinamos una llamada y lo vemos juntos.',
+      response_messages: [
+        'Por chat también puedo ayudarte.',
+        'Si preferís, coordinamos una llamada y lo vemos juntos.',
+      ],
       transition: { call_offer_count: 1, call_offer_status: 'offered', awaiting_reply: 'call_or_chat' },
     });
+  });
+
+  it('permits the first separate call invitation for a cited unresolved course family', () => {
+    const result = authorize({
+      mayOfferCall: true,
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 0.98,
+        },
+        response: {
+          messages: ['Tenemos niveles de Inglés para que elijas el que mejor te sirva.'],
+          call_offer: 'Si preferís, podemos hablar por llamada y te ayudo a ubicarte.',
+        },
+        used_fact_ids: ['offering:redes_informaticas:name:v1'],
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      response_messages: [
+        'Tenemos niveles de Inglés para que elijas el que mejor te sirva.',
+        'Si preferís, podemos hablar por llamada y te ayudo a ubicarte.',
+      ],
+      transition: {
+        selected_offering_code: null,
+        call_offer_count: 1,
+        call_offer_status: 'offered',
+      },
+    });
+  });
+
+  it('rejects a first call offer unless course information and invitation are exactly two physical parts', () => {
+    const result = authorize({
+      state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected' }),
+      mayOfferCall: true,
+      proposal: proposal({
+        response: {
+          messages: [
+            'Redes Informáticas es una opción práctica para tecnología.',
+            'Puedo contarte también cómo se cursa.',
+          ],
+          call_offer: 'Si te sirve, coordinamos una llamada breve.',
+        },
+      }),
+    });
+
+    expect(result).toEqual({ ok: false, reasons: ['CALL_OFFER_MESSAGE_BOUNDARY_INVALID'] });
   });
 
   it.each([

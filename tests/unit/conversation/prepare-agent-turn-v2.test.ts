@@ -104,6 +104,31 @@ describe('prepareAgentTurnV2', () => {
     });
   });
 
+  it('authorizes the initial offer when the customer supplies a first name in this batch', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Soy Lucas', 'Quiero aprender redes'],
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'select_course', secondary_moves: [], vetoes: [],
+          course_reference: 'redes', confidence: 0.98,
+        },
+        response: {
+          messages: ['Redes Informáticas puede ser una buena opción para empezar.'],
+          call_offer: 'Si querés, podemos verlo mejor en una llamada.',
+        },
+        used_fact_ids: ['offering:redes_informaticas:name:v1'],
+      }),
+    }, {
+      state_store: store(state()),
+      contact_intake: async () => ({ nombre: null, apellido: null, correo: null, telefono: null }),
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.transition).toMatchObject({ call_offer_count: 1, call_offer_status: 'offered' });
+  });
+
   it('turns the model-owned response into a decision without creating a TurnPlan', async () => {
     const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },

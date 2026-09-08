@@ -27,4 +27,13 @@ describe('formatBridgeWorkerError', () => {
     expect(formatBridgeWorkerError(error))
       .toBe('LOCAL_STUDYX_DECISION_REJECTED:PAYMENT_PLAN_MISMATCH');
   });
+
+  it('keeps a bounded chain of backend policy codes', () => {
+    const error = Object.assign(new Error('LOCAL_STUDYX_DECISION_REJECTED'), {
+      reason: 'AGENT_TURN_V2_REJECTED:CALL_OFFER_REQUIRED',
+    });
+
+    expect(formatBridgeWorkerError(error))
+      .toBe('LOCAL_STUDYX_DECISION_REJECTED:AGENT_TURN_V2_REJECTED:CALL_OFFER_REQUIRED');
+  });
 });

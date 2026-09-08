@@ -10,7 +10,11 @@ export function formatBridgeWorkerError(error: unknown): string {
     }
   }
   const reason = (error as Error & { readonly reason?: unknown }).reason;
-  if (typeof reason === 'string' && /^[A-Z][A-Z0-9_]{0,127}$/u.test(reason)) {
+  if (
+    typeof reason === 'string'
+    && reason.length <= 255
+    && reason.split(':').every((part) => /^[A-Z][A-Z0-9_]{0,127}$/u.test(part))
+  ) {
     return `${error.message}:${reason}`;
   }
   return error.message;

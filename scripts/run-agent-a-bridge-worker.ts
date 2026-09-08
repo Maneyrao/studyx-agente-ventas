@@ -10,7 +10,10 @@ type WorkerRequest = {
   readonly id: string;
   readonly message: string;
   readonly conversationId: string | null;
-  readonly configuration?: { readonly replayCommitOnTurn?: number };
+  readonly configuration?: {
+    readonly replayCommitOnTurn?: number;
+    readonly burstMessages?: readonly { readonly text: string; readonly delayMs: number }[];
+  };
 };
 
 function required(name: string): string {
@@ -80,6 +83,9 @@ async function main(): Promise<void> {
         const result = await send(request.message, request.conversationId, {
           forceProviderFailure: false,
           replayCommit: request.configuration?.replayCommitOnTurn === turnNumber,
+          ...(request.configuration?.burstMessages
+            ? { burstMessages: request.configuration.burstMessages }
+            : {}),
         });
         completedTurns.set(result.conversationId, turnNumber);
         process.stdout.write(`${JSON.stringify({
