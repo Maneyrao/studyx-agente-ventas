@@ -82,6 +82,37 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.effective.proposal.response.messages).toEqual(['¿Querés que te prepare el enlace para avanzar?']);
   });
 
+  it('keeps the first model-authored course message when a separate initial call offer has one surplus bubble', async () => {
+    const current = context();
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_status = 'not_offered';
+    current.capabilities.may_offer_call = true;
+    const repair = vi.fn();
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({
+        response: {
+          messages: ['Maquillaje Profesional tiene 38 clases.', 'La modalidad es online.'],
+          call_offer: 'Si querés, puedo llamarte para orientarte.',
+        },
+      })),
+      context: current,
+      repair_enabled: true,
+      repair,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.response).toEqual({
+      messages: ['Maquillaje Profesional tiene 38 clases.'],
+      call_offer: 'Si querés, puedo llamarte para orientarte.',
+    });
+    expect(result.evidence).toMatchObject({
+      rejection_codes: ['CALL_OFFER_MESSAGE_BOUNDARY_INVALID'],
+      repair_attempted: false,
+      repaired: false,
+    });
+  });
+
   it('removes an unsolicited follow-up call offer while preserving a catalog reply', async () => {
     const current = context();
     current.commercial_state.call_offer_count = 1;

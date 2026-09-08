@@ -225,6 +225,44 @@ function demoteUnresolvedCallOffer<T extends AgentAProposalEnvelopeV1>(input: {
   return candidateRejection === null ? candidate : null
 }
 
+/**
+ * Course discovery is delivered as two bubbles: the explanation and the
+ * invitation to call.  A model can occasionally put a second explanatory
+ * bubble before that invitation.  That is a presentation-boundary defect,
+ * not a reason to discard an otherwise safe, model-authored answer and fall
+ * back to generic copy.  Keep the first explanation and the separate offer;
+ * validation below proves that no fact or action is being widened.
+ */
+function trimSurplusInitialCallOfferBubble<T extends AgentAProposalEnvelopeV1>(input: {
+  readonly initial: T
+  readonly rejection: TurnRejectionV1
+  readonly context: AgentAContextV1
+  readonly authorized_fact_ids: readonly string[]
+}): T | null {
+  if (!input.rejection.rejections.every((reason) => (
+    reason.code === 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
+  ))) return null
+  if (input.initial.proposal.response.call_offer === null) return null
+  if (input.initial.proposal.response.messages.length < 2) return null
+
+  const candidate = {
+    ...input.initial,
+    proposal: {
+      ...input.initial.proposal,
+      response: {
+        ...input.initial.proposal.response,
+        messages: [input.initial.proposal.response.messages[0]],
+      },
+    },
+  } as T
+  return validatePlannerless({
+    proposal: candidate.proposal,
+    context: input.context,
+    rejection_id: input.rejection.rejection_id,
+    authorized_fact_ids: input.authorized_fact_ids,
+  }) === null ? candidate : null
+}
+
 function demoteCourseSwitchCallOffer<T extends AgentAProposalEnvelopeV1>(input: {
   readonly initial: T
   readonly context: AgentAContextV1
@@ -407,6 +445,23 @@ export async function resolveAgentAPlannerlessProposalV2<
   if (demotedCallOffer !== null) {
     return {
       effective: demotedCallOffer,
+      evidence: {
+        rejection_codes: rejection.rejections.map((reason) => reason.code),
+        repair_attempted: false, repaired: false, proposal_generation_calls: 1,
+      },
+      rejection,
+    }
+  }
+
+  const trimmedInitialOffer = trimSurplusInitialCallOfferBubble({
+    initial: input.initial,
+    rejection,
+    context: input.context,
+    authorized_fact_ids: factIds,
+  })
+  if (trimmedInitialOffer !== null) {
+    return {
+      effective: trimmedInitialOffer,
       evidence: {
         rejection_codes: rejection.rejections.map((reason) => reason.code),
         repair_attempted: false, repaired: false, proposal_generation_calls: 1,
