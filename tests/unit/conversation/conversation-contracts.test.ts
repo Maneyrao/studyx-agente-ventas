@@ -88,6 +88,17 @@ describe('conversation pipeline V1 contracts', () => {
     }
   });
 
+  it('rejects a course-selection move that omits its canonical course reference', () => {
+    const payload = {
+      ...validMove,
+      move: 'select_course',
+      course_reference: undefined,
+    };
+
+    expect(ConversationMoveV1Schema.safeParse(payload).success).toBe(false);
+    expect(BotpressConversationMoveV1Schema.safeParse(payload).success).toBe(false);
+  });
+
   it('rejects free-form fact requests and missing-information values', () => {
     const invalidFact = {
       ...validPlan,

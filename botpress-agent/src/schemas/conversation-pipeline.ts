@@ -37,6 +37,9 @@ export const ConversationMoveV1Schema = z.object({
     context.addIssue({ code: 'custom', path: ['vetoes'], message: 'DUPLICATE_VETO' });
   }
   const moves = new Set([value.move, ...value.secondary_moves]);
+  if (moves.has('select_course') && !value.course_reference) {
+    context.addIssue({ code: 'custom', path: ['course_reference'], message: 'COURSE_REFERENCE_REQUIRED' });
+  }
   if (value.course_reference && ![...moves].some((move) => COURSE_REFERENCE_MOVES.has(move))) {
     context.addIssue({ code: 'custom', path: ['course_reference'], message: 'COURSE_REFERENCE_NOT_APPLICABLE' });
   }

@@ -826,6 +826,9 @@ describe('Agent A Brain V1', () => {
     expect(moveProperties.move.description).toContain(
       'use browse_catalog when you present several courses and ask the customer to choose',
     );
+    expect(moveProperties.course_reference.description).toContain(
+      'required whenever move or secondary_moves includes select_course',
+    );
     expect(body.instructions).toContain(
       'The customer may select the canonical plan and explicitly request its link in',
     );

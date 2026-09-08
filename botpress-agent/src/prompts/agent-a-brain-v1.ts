@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { lastAgentReplyV1 } from '../lib/conversation/conversation-composer';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v33' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v34' as const;
 
 const EXECUTION_PREAMBLE = `You are the bounded conversational brain for StudyX Agent A.
 Backend policy and capabilities are authoritative. Propose the next conversational move and write

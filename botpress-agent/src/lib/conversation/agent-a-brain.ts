@@ -433,7 +433,10 @@ function proposalJsonSchema(context: AgentAContextV1): unknown {
       description: 'Include a veto only when the current customer message explicitly refuses that action: call, payment_link, or purchase. Otherwise return an empty array.',
       items: { type: 'string', enum: ['call', 'payment_link', 'purchase'] },
     },
-    course_reference: nullableString,
+    course_reference: {
+      ...nullableString,
+      description: 'Use null unless a course-scoped move applies. It is required whenever move or secondary_moves includes select_course: return the exact canonical code from catalog.available_offerings or catalog.candidate_offerings.',
+    },
     area_reference: nullableString,
     payment_plan: { anyOf: [{ type: 'string', enum: [...PAYMENT_PLANS] }, { type: 'null' }] },
     confidence: { type: 'number' },
