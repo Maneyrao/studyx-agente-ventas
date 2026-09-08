@@ -1256,7 +1256,8 @@ function repeatsPreviousQuestion(messages: readonly string[], previous: string):
 }
 
 const CUSTOMER_REQUESTS_REPEAT = /\b(?:repet|otra\s+vez|no\s+entend|de\s+nuevo)\w*/iu;
-const UNSUPPORTED_PREREQUISITE_ASSERTION = /(?:\bno\s+(?:necesit\w*|hace\s+falta|se\s+requiere)\b[^.!?\n]{0,80}\b(?:experiencia|conocimientos?|requisitos?)\b|\bsin\s+(?:experiencia|conocimientos?\s+previos?)\b|\b(?:pod[eé]s|puedes|empez[aá]s?|part[ií]s?)\b[^.!?\n]{0,32}\bdesde\s+cero\b|\bdesde\s+los\s+fundamentos\b)/iu;
+const UNSUPPORTED_PREREQUISITE_ASSERTION = /(?:\bno\s+(?:necesit\w*|hace\s+falta|se\s+requiere|tienen)\b[^.!?\n]{0,80}\b(?:experiencia|conocimientos?|requisitos?)\b|\bsin\s+(?:experiencia|conocimientos?\s+previos?)\b|\b(?:pod[eé]s|puedes|empez[aá]s?|part[ií]s?)\b[^.!?\n]{0,32}\bdesde\s+cero\b|\bdesde\s+los\s+fundamentos\b)/iu;
+const REMOVABLE_UNSUPPORTED_PREREQUISITE_CLAUSE = /\s*,?\s*para\s+(?:quienes|personas?\s+que)\s+no\s+tienen\s+conocimientos?\s+previos\b/iu;
 
 /**
  * Preguntar por los conocimientos previos no es afirmar que no hacen falta.
@@ -1281,6 +1282,27 @@ export function assertsUnsupportedPrerequisitesV1(message: string): boolean {
     .split(/(?<=[.!?\n])/u)
     .filter((sentence) => !sentence.includes('?'))
     .some((sentence) => UNSUPPORTED_PREREQUISITE_ASSERTION.test(sentence));
+}
+
+/**
+ * Preserve the independently supported part of a sentence when an unsupported
+ * prerequisite claim appears as a removable subordinate clause.  Otherwise
+ * drop the whole assertion: a partial sentence must never turn an unconfirmed
+ * course requirement into customer-facing copy.
+ */
+export function removeUnsupportedPrerequisiteAssertionsV1(message: string): string[] {
+  return message
+    .split(/(?<=[.!?\n])/u)
+    .flatMap((sentence) => {
+      if (!assertsUnsupportedPrerequisitesV1(sentence)) return [sentence];
+      const stripped = sentence
+        .replace(REMOVABLE_UNSUPPORTED_PREREQUISITE_CLAUSE, '')
+        .replace(/\s+([,.!?])/gu, '$1')
+        .trim();
+      return stripped.length > 0 && !assertsUnsupportedPrerequisitesV1(stripped)
+        ? [stripped]
+        : [];
+    });
 }
 
 /**

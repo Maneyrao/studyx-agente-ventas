@@ -768,6 +768,30 @@ describe('prerequisitos sin respaldo se podan, no se entregan', () => {
     expect(mensajes.join(' ')).toMatch(/38 clases/u);
   });
 
+  it('preserves a valid course selection while removing an unsupported prerequisite clause', async () => {
+    const initial = generated(proposal({
+      response: {
+        messages: [
+          'Inglés 1 es el punto de partida para quienes no tienen conocimientos previos.',
+        ],
+        call_offer: null,
+      },
+    }));
+
+    const resolved = await resolveAgentAPlannerlessProposalV2({
+      initial,
+      context: context(),
+      repair_enabled: true,
+      rejection_id: '00000000-0000-4000-8000-0000000000ae',
+      repair: async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); },
+    });
+
+    expect(resolved.effective.proposal.response.messages.join(' '))
+      .toContain('Inglés 1');
+    expect(resolved.effective.proposal.response.messages.join(' '))
+      .not.toMatch(/no tienen conocimientos previos/iu);
+  });
+
   it('una pregunta de diagnóstico no se poda: no afirma nada', async () => {
     const initial = generated(proposal({
       response: {

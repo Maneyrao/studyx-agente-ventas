@@ -1,7 +1,7 @@
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import type { AgentAContextV1, AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
 import {
-  assertsUnsupportedPrerequisitesV1,
+  removeUnsupportedPrerequisiteAssertionsV1,
   removeRepeatedAgentQuestionMessagesV1,
   validateAgentATurnProposalV1,
 } from './agent-a-brain'
@@ -532,9 +532,8 @@ export type PlannerlessAgentATurnProposalV2 = AgentATurnProposalV1
  * Se quitó también del prompt canónico (v4), donde la biblioteca de objeciones
  * la ordenaba, pero el modelo la sigue produciendo por su cuenta.
  *
- * Sólo se podan afirmaciones: `assertsUnsupportedPrerequisitesV1` ya saltea las
- * interrogativas, así que la pregunta de diagnóstico que el canónico prescribe
- * pasa intacta.
+ * Sólo se podan afirmaciones: el normalizador ya saltea las interrogativas, así
+ * que la pregunta de diagnóstico que el canónico prescribe pasa intacta.
  */
 function pruneUnsupportedPrerequisiteClaimV1<T extends AgentAProposalEnvelopeV1>(input: {
   readonly initial: T
@@ -547,7 +546,7 @@ function pruneUnsupportedPrerequisiteClaimV1<T extends AgentAProposalEnvelopeV1>
   ))) return null
 
   const safeMessages = input.initial.proposal.response.messages
-    .filter((message) => !assertsUnsupportedPrerequisitesV1(message))
+    .flatMap(removeUnsupportedPrerequisiteAssertionsV1)
   if (safeMessages.length === 0) return null
 
   const candidate = {

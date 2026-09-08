@@ -5,6 +5,7 @@ import {
   AGENT_A_BRAIN_DEADLINE_MS,
   AGENT_A_BRAIN_DEEPSEEK_DEADLINE_MS,
   AgentABrainError,
+  assertsUnsupportedPrerequisitesV1,
   buildSafeAgentABrainCompositionV1,
   generateDeepSeekAgentATurnProposalV1,
   generateAgentATurnProposalV1,
@@ -89,6 +90,18 @@ afterEach(() => {
 });
 
 describe('Agent A Brain V1', () => {
+  it('recognizes an unsupported beginner-level assertion without rejecting a diagnostic question', () => {
+    expect(assertsUnsupportedPrerequisitesV1(
+      'Si partís desde cero, este nivel es el punto de partida para quienes no tienen conocimientos previos.',
+    )).toBe(true);
+    expect(assertsUnsupportedPrerequisitesV1(
+      'Es el punto de partida para quienes no tienen conocimientos previos.',
+    )).toBe(true);
+    expect(assertsUnsupportedPrerequisitesV1(
+      '¿Tenés conocimientos previos o partís desde cero?',
+    )).toBe(false);
+  });
+
   it('requires a separate initial call offer after any canonical catalog recommendation', () => {
     expect(buildAgentABrainInstructionsV1(context())).toContain(
       'When you name one or more canonical courses while browsing the catalog',
