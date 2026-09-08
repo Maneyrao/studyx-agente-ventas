@@ -278,6 +278,50 @@ describe('claimBatch', () => {
     },
   );
 
+  it('keeps the active course when a broad family reference still includes it', async () => {
+    const catalog = businessContextView({
+      offerings: [
+        businessOffering('fotografia_profesional', 'Fotografía Profesional', 'Fotografía'),
+        businessOffering(
+          'fotografia_celulares_tiendas_online',
+          'Fotografía con Celulares para Tiendas Online',
+          'Fotografía',
+        ),
+      ],
+    });
+    const persisted = {
+      workspace_id: 'workspace-1', conversation_id: 'conversation-1', contact_id: 'contact-1',
+      selected_offering_code: 'fotografia_profesional', selected_payment_plan: null,
+      stage: 'course_selected' as const, call_preference: 'unknown' as const,
+      call_offer_status: 'offered' as const, call_offer_count: 1 as const,
+      awaiting_reply: 'call_or_chat' as const, payment_reported_at: null,
+      human_review_requested_at: null, consecutive_technical_fallbacks: 0,
+      source_turn_id: 'turn-0', version: 2,
+      created_at: '2026-08-11T11:00:00.000Z', updated_at: '2026-08-11T11:59:00.000Z',
+    };
+    const result = await claimBatch(input, {
+      ...buildDeps({ messagesResult: [{
+        id: 'm1', conversation_seq: 1, content: 'me interesa fotografía',
+        created_at: '2026-08-11T12:00:00.000Z', message_type: 'text',
+      }] }),
+      business: { load: vi.fn().mockResolvedValue(catalog) },
+      sales: { load: vi.fn().mockResolvedValue(persisted) },
+      agentABrainEnabled: true,
+      conversationState: { load: vi.fn().mockResolvedValue(persisted) },
+      now: () => '2026-08-11T12:00:00.000Z',
+    });
+
+    expect(result).toMatchObject({
+      outcome: 'claimed',
+      catalog_resolution: { kind: 'ambiguous' },
+      sales_context: { offering_code: 'fotografia_profesional', course_of_interest: 'Fotografía Profesional' },
+      conversation_state_v1: {
+        selected_offering_code: 'fotografia_profesional', stage: 'course_selected',
+        call_offer_count: 1,
+      },
+    });
+  });
+
   it('returns the controlled context to the caller that owns the batch', async () => {
     const deps = buildDeps();
     const result = await claimBatch(input, deps);

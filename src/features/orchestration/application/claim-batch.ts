@@ -911,7 +911,15 @@ export async function claimBatch(
   const persistedDisplayName = persistedOffering === null
     ? null
     : resolvedCatalogIndex?.offerings.find((offering) => offering.code === persistedOffering)?.display_name ?? null;
-  const mayInheritPersistedSelection = catalog_resolution.kind === 'no_catalog_intent';
+  // A broad family reference ("fotografía") must not erase an already
+  // selected member of that family. It is not a switch; a genuinely different
+  // family cannot inherit because its candidates omit the stored SKU.
+  const mayInheritPersistedSelection = catalog_resolution.kind === 'no_catalog_intent'
+    || (
+      catalog_resolution.kind === 'ambiguous'
+      && persistedOffering !== null
+      && catalog_resolution.candidateCodes.includes(persistedOffering)
+    );
   const selection = currentSelection.offering_code === null
     && persistedOffering !== null
     && mayInheritPersistedSelection
