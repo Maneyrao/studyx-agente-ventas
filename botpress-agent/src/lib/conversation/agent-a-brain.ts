@@ -465,8 +465,8 @@ function proposalJsonSchema(context: AgentAContextV1): unknown {
     move,
     response: closedObject({
       messages: {
-        type: 'array', minItems: 1, maxItems: 2, items: { type: 'string' },
-        description: 'Use at most two short messages; when call_offer is non-null, return exactly one response message.',
+        type: 'array', minItems: 1, maxItems: 3, items: { type: 'string' },
+        description: 'Use one to three short messages; when call_offer is non-null, return at most two response messages so the whole turn stays within three physical messages.',
       },
       call_offer: {
         anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -1608,7 +1608,7 @@ export function validateAgentATurnProposalV1(input: {
   const state = input.context.commercial_state;
   const validInitialCallOfferBoundary = typeof declaredCallOffer === 'string'
     && solicitsACallV1(declaredCallOffer, true)
-    && input.proposal.response.messages.length === 1
+    && input.proposal.response.messages.length <= 2
     && !input.proposal.response.messages.some((message) => solicitsACallV1(message));
   if (offersACall && state.call_offer_count === 0 && !validInitialCallOfferBoundary) {
     rejections.push({ code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID', subject: 'call_offer' });
@@ -1641,6 +1641,13 @@ export function validateAgentATurnProposalV1(input: {
     && state.call_offer_status === 'not_offered' && !channelChoice
     && !requestedCallNow && !offersACall) {
     rejections.push({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
+  }
+  if (moves.has('ask_course_information') && hasCanonicalCourse
+    && input.context.capabilities.may_offer_call
+    && state.call_offer_count === 1 && state.call_preference === 'unknown'
+    && state.call_offer_status === 'offered' && !channelChoice
+    && !requestedCallNow && !offersACall) {
+    rejections.push({ code: 'CALL_OFFER_REQUIRED', subject: 'second_call_offer' });
   }
 
   // V7 — ninguna URL escrita por el modelo. El link lo inserta el backend.

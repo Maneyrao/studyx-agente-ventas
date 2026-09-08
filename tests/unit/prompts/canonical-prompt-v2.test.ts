@@ -27,7 +27,7 @@ describe('prompt canónico v2', () => {
   });
 
   it('está versionado como v2 y el generado coincide con la fuente', () => {
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v12');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v13');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toBe(source);
   });
 

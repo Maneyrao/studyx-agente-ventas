@@ -176,6 +176,15 @@ export const AgentATurnProposalV1Schema = z.object({
   }).strict().nullable().default(null),
   memory_candidates: z.array(MemoryCandidateSchema).max(10),
 }).strict().superRefine((value, context) => {
+  const physicalMessageCount = value.response.messages.length
+    + (value.response.call_offer ? 1 : 0);
+  if (physicalMessageCount > 3) {
+    context.addIssue({
+      code: 'custom',
+      path: ['response', 'messages'],
+      message: 'MAX_PHYSICAL_MESSAGES_EXCEEDED',
+    });
+  }
   if (new Set(value.used_fact_ids).size !== value.used_fact_ids.length) {
     context.addIssue({ code: 'custom', path: ['used_fact_ids'], message: 'DUPLICATE_FACT_ID' });
   }

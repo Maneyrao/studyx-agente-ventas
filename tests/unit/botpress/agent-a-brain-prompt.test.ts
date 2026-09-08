@@ -61,8 +61,8 @@ describe('Agent A Brain V1 prompt', () => {
   it('uses the exact complete canonical prompt behind one immutable execution preamble', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v12');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v35');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v13');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v36');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('Backend policy and capabilities are authoritative');
     expect(instructions).toContain('commercial_state.awaiting_reply only to resolve an otherwise ambiguous answer');
@@ -76,7 +76,7 @@ describe('Agent A Brain V1 prompt', () => {
     expect(instructions).toContain('never ask again for a field that is absent from intake_missing');
     expect(instructions).toContain('The customer may select the canonical plan and explicitly request its link');
     expect(instructions).toContain('select_course or ask_course_information (including secondary_moves)');
-    expect(instructions).toContain('Never make a second invitation mandatory');
+    expect(instructions).toContain('Recordá que puedo llamarte y aclararte todo mejor, si gustás.');
     expect(instructions).toContain('Do not infer a course or area from old memory when the current message is vague');
     expect(instructions).toContain('offer to help them find a fit');
     expect(instructions).toContain('never do is name, offer or promise a course that is not there');
@@ -106,6 +106,25 @@ describe('Agent A Brain V1 prompt', () => {
     expect(execution).toContain('After a rejection or chat preference, continue the diagnostic once if it is still needed');
     expect(execution).toContain('A missing capability, call veto, rejection or chat preference always takes priority');
     expect(execution).toContain('An unknown course or area alone does not authorize a call invitation');
+    expect(execution).toMatch(/call_offer_count is 1[\s\S]*second invitation is required/u);
+  });
+
+  it('greets once and then advances through the earliest incomplete sales phase', () => {
+    const execution = buildAgentABrainInstructionsV1(context()).split('<canonical_sales_behavior')[0];
+
+    expect(execution).toMatch(/After the first outbound[\s\S]*never greet or introduce yourself again/u);
+    expect(execution).toMatch(/opening, diagnosis, presentation, pricing, closing and payment notice/u);
+    expect(execution).toMatch(/earliest incomplete phase/u);
+    expect(execution).toMatch(/answer it first[\s\S]*resume the ordered path/u);
+  });
+
+  it('allows one to three physical messages while keeping a call offer separate', () => {
+    const execution = buildAgentABrainInstructionsV1(context()).split('<canonical_sales_behavior')[0];
+
+    expect(execution).toContain(
+      'Use one to three physical messages and at most one question in the whole turn',
+    );
+    expect(execution).toMatch(/call_offer is non-null[\s\S]*at most two response\.messages/u);
   });
 
   it('repairs an early payment action by continuing the intake instead of claiming a link', () => {
@@ -305,7 +324,7 @@ describe('directiva de reparación por repetición', () => {
       authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: [] },
     };
     const instructions = buildAgentABrainInstructionsV1(current);
-    expect(instructions).toMatch(/CALL_OFFER_MESSAGE_BOUNDARY_INVALID[\s\S]*one informational/u);
+    expect(instructions).toMatch(/CALL_OFFER_MESSAGE_BOUNDARY_INVALID[\s\S]*one or two informational/u);
     expect(instructions).toMatch(/response\.call_offer/u);
   });
 });

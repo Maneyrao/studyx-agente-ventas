@@ -205,12 +205,13 @@ export function authorizeAgentTurnV2(input: {
     || authorizedMessages.some((message) => solicitsACall(message));
   // The first invitation is intentionally a second physical message, not a
   // paragraph tacked onto the course answer. The delivery layer persists each
-  // item in response_messages as its own outbound part, so keep exactly one
-  // informational first part and the invitation in the dedicated field.
+  // item in response_messages as its own outbound part. The invitation stays
+  // in the dedicated field and the complete turn stays within three parts.
   if (visibleCallOffer && state.call_offer_count === 0 && (
     authorizedCallOffer === null
     || !solicitsACall(authorizedCallOffer, true)
-    || authorizedMessages.length !== 1
+    || authorizedMessages.length < 1
+    || authorizedMessages.length > 2
     || authorizedMessages.some((message) => solicitsACall(message))
   )) {
     reasons.push('CALL_OFFER_MESSAGE_BOUNDARY_INVALID');

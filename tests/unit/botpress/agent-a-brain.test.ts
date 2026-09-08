@@ -14,6 +14,7 @@ import {
   validateAgentATurnProposalV1,
 } from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
 import { buildAgentABrainInstructionsV1 } from '../../../botpress-agent/src/prompts/agent-a-brain-v1';
+import { AgentATurnProposalV1Schema as BackendAgentATurnProposalV1Schema } from '../../../src/features/conversation/adapters/agent-a-brain-schema';
 
 function context(): AgentAContextV1 {
   return {
@@ -151,6 +152,19 @@ describe('Agent A Brain V1', () => {
     expect(parseAgentATurnProposalV1(proposal(), context()).response.messages).toHaveLength(2);
   });
 
+  it('caps the whole turn at three physical messages even when a call invitation is present', () => {
+    const fourPartTurn = proposal({
+      response: {
+        messages: ['Primera idea.', 'Segunda idea.', 'Tercera idea.'],
+        call_offer: 'Recordá que puedo llamarte y aclararte todo mejor, si gustás.',
+      },
+    });
+
+    expect(() => parseAgentATurnProposalV1(fourPartTurn, context()))
+      .toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
+    expect(BackendAgentATurnProposalV1Schema.safeParse(fourPartTurn).success).toBe(false);
+  });
+
   it('rejects a new greeting after the agent already opened the conversation', () => {
     const current = context();
     current.customer.display_name = 'Thiago';
@@ -176,6 +190,26 @@ describe('Agent A Brain V1', () => {
     })?.rejections).toContainEqual({
       code: 'REPEATED_AGENT_REPLY',
       subject: 'repeated_greeting',
+    });
+  });
+
+  it('requires the second call reminder on a new question about the selected course', () => {
+    const current = context();
+    current.commercial_state.call_offer_count = 1;
+    current.commercial_state.call_offer_status = 'offered';
+    current.turn.batch_messages[0].text = '¿Cuánto dura Redes Informáticas?';
+    const parsed = parseAgentATurnProposalV1(proposal({
+      response: { messages: ['Te cuento cuánto dura.'], call_offer: null },
+    }), current);
+
+    expect(validateAgentATurnProposalV1({
+      proposal: parsed,
+      context: current,
+      planned_fact_ids: parsed.used_fact_ids,
+      rejection_id: '00000000-0000-4000-8000-000000000004',
+    })?.rejections).toContainEqual({
+      code: 'CALL_OFFER_REQUIRED',
+      subject: 'second_call_offer',
     });
   });
 
@@ -851,9 +885,9 @@ describe('Agent A Brain V1', () => {
     const moveProperties = body.text.format.schema.properties.move.properties;
     const responseProperties = body.text.format.schema.properties.response.properties;
     expect(body.text.format.schema.properties.used_fact_ids.maxItems).toBe(60);
-    expect(responseProperties.messages.maxItems).toBe(2);
+    expect(responseProperties.messages.maxItems).toBe(3);
     expect(responseProperties.messages.description).toContain(
-      'when call_offer is non-null, return exactly one response message',
+      'when call_offer is non-null, return at most two response messages',
     );
     expect(responseProperties.call_offer.description).toContain('must not contain a question');
     expect(moveProperties.move.enum).toEqual(expect.arrayContaining([
@@ -889,7 +923,7 @@ describe('Agent A Brain V1', () => {
       'ask one of the fields still present in capabilities.intake_missing',
     );
     expect(body.instructions).toContain(
-      'Use at most two response.messages and at most one question in the whole turn',
+      'Use one to three physical messages and at most one question in the whole turn',
     );
     expect(body.instructions).toContain(
       'Product logistics mentioned in behavioral examples are not authorized facts',
