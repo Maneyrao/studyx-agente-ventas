@@ -306,6 +306,46 @@ describe('validación de la propuesta del turno', () => {
     });
   });
 
+  it('permite una pregunta de seguimiento cuando las opciones ya fueron mostradas en el turno anterior', () => {
+    const discovery = context({
+      turn: {
+        batch_messages: [{ id: 'm2', text: '¿Cuál me conviene si recién empiezo?' }],
+        recent_turns: [{
+          id: 'prior-agent', direction: 'outbound',
+          content: 'Tenemos Inglés 1, Inglés 2 e Inglés 3. ¿Cuál de los niveles te interesa?',
+        }],
+      },
+      commercial_state: {
+        ...context().commercial_state,
+        selected_offering_code: null,
+        stage: 'exploring',
+        call_offer_count: 1,
+        call_offer_status: 'offered',
+      },
+      catalog: {
+        available_offerings: [], selected_offering: null, areas: [],
+        candidate_offerings: [
+          { code: 'ingles_1', fact_id: 'offering:ingles_1:name:v1', display_name: 'Inglés 1', area_code: 'idiomas' },
+          { code: 'ingles_2', fact_id: 'offering:ingles_2:name:v1', display_name: 'Inglés 2', area_code: 'idiomas' },
+          { code: 'ingles_3', fact_id: 'offering:ingles_3:name:v1', display_name: 'Inglés 3', area_code: 'idiomas' },
+        ],
+        payment_plans: [],
+      },
+      capabilities: { ...context().capabilities, may_offer_call: false },
+    });
+
+    expect(validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: { schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Si recién empezás, ¿querés contarme qué objetivo tenés con el idioma?'], call_offer: null },
+        used_fact_ids: [],
+      }),
+      context: discovery,
+      planned_fact_ids: [],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    })).toBeNull();
+  });
+
   it('rechaza una recomendación de catálogo que termina sin siguiente paso útil', () => {
     const discovery = context({
       commercial_state: {

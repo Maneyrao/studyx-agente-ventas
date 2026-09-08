@@ -1375,6 +1375,21 @@ function mentionsMissingIntakeField(messages: readonly string[], missing: readon
 /** Únicos géneros que el ADK sigue bloqueando por su cuenta. */
 const ADK_BLOCKING_FACT_KINDS = new Set(['price', 'promise']);
 
+function recentOutboundAlreadyNamesCandidates(
+  context: AgentAContextV1,
+  candidates: readonly { readonly display_name: string }[],
+): boolean {
+  if (candidates.length === 0) return false;
+  return context.turn.recent_turns
+    .filter((turn) => turn.direction === 'outbound')
+    .some((turn) => {
+      const text = turn.content.toLocaleLowerCase('es');
+      return candidates.every((candidate) => text.includes(
+        candidate.display_name.toLocaleLowerCase('es'),
+      ));
+    });
+}
+
 function comparableProtectedFact(fact: ReturnType<typeof extractProtectedFacts>[number]): string {
   // Zero cents in the catalog's dot-decimal format do not change an amount.
   // Do not normalize commas: the portable extractor can truncate 360,000 to
@@ -1645,7 +1660,11 @@ export function validateAgentATurnProposalV1(input: {
     }
   }
   const resolvedCandidates = input.context.catalog.candidate_offerings;
-  if (moves.has('browse_catalog') && resolvedCandidates.length > 1) {
+  const candidatesWereShownInRecentOutbound = recentOutboundAlreadyNamesCandidates(
+    input.context,
+    resolvedCandidates,
+  );
+  if (moves.has('browse_catalog') && resolvedCandidates.length > 1 && !candidatesWereShownInRecentOutbound) {
     const visibleModelText = [
       ...input.proposal.response.messages,
       input.proposal.response.call_offer ?? '',
