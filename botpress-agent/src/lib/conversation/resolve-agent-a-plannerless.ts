@@ -394,6 +394,7 @@ export async function resolveAgentAPlannerlessProposalV2<
   // rolled out off; the canonical backend still validates the rewrite.
   const requiresMandatoryCatalogRepair = rejection.rejections.some((reason) => (
     reason.code === 'CALL_OFFER_REQUIRED'
+    || reason.code === 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
     || (reason.code === 'COURSE_NOT_RESOLVED' && reason.subject === 'next_step')
   ))
   const mayRepair = (input.repair_enabled || requiresMandatoryCatalogRepair)

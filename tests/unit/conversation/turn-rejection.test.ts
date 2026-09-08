@@ -17,6 +17,7 @@ describe('TurnRejectionV1', () => {
     expect([...TURN_REJECTION_CODES_V1].sort()).toEqual([
       'ACTION_NOT_AUTHORIZED',
       'CALL_BUDGET_EXHAUSTED',
+      'CALL_OFFER_MESSAGE_BOUNDARY_INVALID',
       'CALL_OFFER_REQUIRED',
       'CHANNEL_PREFERENCE_NOT_SUPPORTED',
       'COURSE_NOT_RESOLVED',
@@ -71,6 +72,7 @@ describe('TurnRejectionV1', () => {
     for (const code of [
       'ACTION_NOT_AUTHORIZED',
       'CALL_BUDGET_EXHAUSTED',
+      'CALL_OFFER_MESSAGE_BOUNDARY_INVALID',
       'CALL_OFFER_REQUIRED',
       'CHANNEL_PREFERENCE_NOT_SUPPORTED',
       'MISSING_INTAKE',

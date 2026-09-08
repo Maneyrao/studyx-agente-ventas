@@ -24,6 +24,8 @@ export const TURN_REJECTION_CODES_V1 = [
   /** Tercera oferta de llamada. */
   'CALL_BUDGET_EXHAUSTED',
   'CALL_OFFER_REQUIRED',
+  /** La invitación inicial debe ser el segundo outbound separado. */
+  'CALL_OFFER_MESSAGE_BOUNDARY_INVALID',
   'CHANNEL_PREFERENCE_NOT_SUPPORTED',
   /** Afirmó alta, acceso, inscripción o pago verificado sin respaldo. */
   'UNSUPPORTED_OPERATIONAL_CLAIM',
@@ -97,6 +99,7 @@ export function isPrunableRejectionV1(rejection: TurnRejectionV1): boolean {
     || reason.code === 'CALL_BUDGET_EXHAUSTED'
     || reason.code === 'MISSING_INTAKE'
     || reason.code === 'CALL_OFFER_REQUIRED'
+    || reason.code === 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
     || reason.code === 'CHANNEL_PREFERENCE_NOT_SUPPORTED'
   ));
 }

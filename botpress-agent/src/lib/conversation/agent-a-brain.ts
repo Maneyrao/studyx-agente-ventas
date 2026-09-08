@@ -1556,6 +1556,13 @@ export function validateAgentATurnProposalV1(input: {
     rejections.push({ code: 'ACTION_NOT_AUTHORIZED', subject: 'request_call_now' });
   }
   const state = input.context.commercial_state;
+  const validInitialCallOfferBoundary = typeof declaredCallOffer === 'string'
+    && solicitsACallV1(declaredCallOffer, true)
+    && input.proposal.response.messages.length === 1
+    && !input.proposal.response.messages.some((message) => solicitsACallV1(message));
+  if (offersACall && state.call_offer_count === 0 && !validInitialCallOfferBoundary) {
+    rejections.push({ code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID', subject: 'call_offer' });
+  }
   const hasCanonicalCourse = state.selected_offering_code !== null
     || typeof input.proposal.move.course_reference === 'string';
   const hasResolvedCourseFamily = !hasCanonicalCourse
@@ -1666,6 +1673,7 @@ export function decideRepairLevelV1(input: {
     || reason.code === 'MISSING_INTAKE'
     || reason.code === 'REPEATED_AGENT_REPLY'
     || reason.code === 'CALL_OFFER_REQUIRED'
+    || reason.code === 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
     || reason.code === 'CHANNEL_PREFERENCE_NOT_SUPPORTED'
   ))
 
