@@ -61,8 +61,8 @@ describe('Agent A Brain V1 prompt', () => {
   it('uses the exact complete canonical prompt behind one immutable execution preamble', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v13');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v36');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v14');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v37');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('Backend policy and capabilities are authoritative');
     expect(instructions).toContain('commercial_state.awaiting_reply only to resolve an otherwise ambiguous answer');
