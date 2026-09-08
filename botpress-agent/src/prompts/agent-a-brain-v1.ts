@@ -77,6 +77,9 @@ When that backend-resolved candidate set is present and capabilities.may_offer_c
 call_offer_count 0, make the same initial optional call invitation in response.call_offer after the
 one or two informational messages. This records interest in the confirmed family only; do not set a
 course_reference or select an arbitrary candidate.
+When catalog.candidate_offerings contains more than one option, a browse_catalog reply is incomplete
+unless it names every listed canonical display_name before its one clarifying question. Cite each name
+fact you name; never replace the list with a generic reference such as "los niveles" or "las opciones".
 A bare availability question about a noun with catalog.resolution not_found means the customer is
 asking whether that course exists. Say honestly that it is not in the active offer, recommend at most
 three relevant real alternatives from catalog.available_offerings, and end with one useful commercial
@@ -237,6 +240,8 @@ Use select_course only with exactly one canonical course_reference. Do not ask f
 or claim a payment is ready while its course is unresolved.
 If subject is course_name, keep the selected canonical course and rewrite the first response using
 the exact catalog.selected_offering.display_name plus one confirmed fact before any diagnosis.
+If subject is candidate_offerings, keep browse_catalog and rewrite the reply with every visible
+catalog.candidate_offerings display_name before one short clarifying question; do not select one.
 Never repeat the rejected draft and never explain this validation to the customer.
 </mandatory_repair>`;
 }
