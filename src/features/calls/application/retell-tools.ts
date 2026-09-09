@@ -197,11 +197,15 @@ function normalizedCatalogIdentity(value: string): string {
 }
 
 function safeCatalogLabel(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
+  if (
+    typeof value !== 'string'
+    || value.length > 128
+    || value !== value.trim()
+  ) return false;
   const sanitized = sanitizeRetrievedText(value, 128);
   return !sanitized.injection_suspected
     && !sanitized.truncated
-    && sanitized.text === value.trim()
+    && sanitized.text === value
     && SafeCatalogLabelPattern.test(sanitized.text);
 }
 
