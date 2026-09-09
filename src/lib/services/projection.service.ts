@@ -1,3 +1,4 @@
+import type postgres from 'postgres';
 import { sql as orchestratorSql } from '@/lib/db/orchestrator';
 import { loadBusinessWorkspaceConfig, loadSheetsProjectionConfig } from '@/lib/config';
 import { jsonbParam } from '@/lib/db/json';
@@ -47,6 +48,8 @@ export interface LeadProjectionInput {
   tabName: string;
   /** Monotonic inbound message sequence; never part of the visible row. */
   sourceOrder?: number;
+  /** Stable trusted producer identity; never part of the visible row. */
+  sourceKey?: string;
   /** Retained for existing call sites; not part of the visible Sheet row. */
   telefono?: string;
   /**
@@ -82,6 +85,7 @@ interface ExistingRow {
   id: string;
   row_number: number;
   source_order: string | number;
+  source_key: string | null;
   payload: Partial<SheetRowValues> & {
     /** Read only so an existing row converges to the A:D contract on correction. */
     email?: string;
@@ -101,6 +105,15 @@ function sourceOrder(input: LeadProjectionInput): number | null {
   if (input.sourceOrder === undefined) return null;
   const value = input.sourceOrder;
   if (!Number.isSafeInteger(value) || value < 0) throw new Error('INVALID_LEAD_PROJECTION_SOURCE_ORDER');
+  return value;
+}
+
+function sourceKey(input: LeadProjectionInput, inputSourceOrder: number | null): string | null {
+  if (input.sourceKey === undefined) return null;
+  const value = input.sourceKey.trim();
+  if (inputSourceOrder === null || value.length === 0 || value.length > 256) {
+    throw new Error('INVALID_LEAD_PROJECTION_SOURCE_KEY');
+  }
   return value;
 }
 
@@ -136,24 +149,40 @@ export function agentBLeadProjectionSourceOrder(callSourceOrder: number): number
  * correction updates the same row without erasing another captured value.
  *
  * `row_number` is reserved once, on first insert, as
- * `MAX(row_number in this spreadsheet+tab) + 1`; a concurrent first insert
- * for a different lead can race on that reservation, so a unique-violation
- * on the (spreadsheet_id, tab_name, row_number) constraint is treated as a
- * retry signal, not an error.
+ * `MAX(row_number in this spreadsheet+tab) + 1`. A transaction-scoped lock
+ * serializes allocators for that target; a savepoint keeps the transaction
+ * usable if a mixed-version writer still causes a unique-violation retry.
  */
 export async function enqueueLeadProjection(
   input: LeadProjectionInput,
   deps: { sql?: DbClient } = {},
 ): Promise<EnqueueCompleteLeadProjectionResult> {
   const sql = deps.sql ?? orchestratorSql;
+  if ('begin' in sql && typeof sql.begin === 'function') {
+    return sql.begin((tx) => enqueueLeadProjectionInTransaction(input, tx));
+  }
+  return enqueueLeadProjectionInTransaction(input, sql as postgres.TransactionSql);
+}
+
+async function enqueueLeadProjectionInTransaction(
+  input: LeadProjectionInput,
+  sql: postgres.TransactionSql,
+): Promise<EnqueueCompleteLeadProjectionResult> {
   const projectionKey = leadProjectionKey(input.workspaceId, input.contactId);
   const inputSourceOrder = sourceOrder(input);
+  const inputSourceKey = sourceKey(input, inputSourceOrder);
   const hasOrderingProof = inputSourceOrder !== null;
   const persistedSourceOrder = inputSourceOrder ?? 0;
 
+  await sql`
+    SELECT pg_advisory_xact_lock(
+      hashtextextended(${JSON.stringify([input.spreadsheetId, input.tabName])}, 0)
+    )
+  `;
+
   for (let attempt = 0; attempt < MAX_ROW_RESERVE_ATTEMPTS; attempt++) {
     const existingRows = await sql<ExistingRow[]>`
-      SELECT id, row_number, source_order, payload
+      SELECT id, row_number, source_order, source_key, payload
       FROM sheet_projection_rows
       WHERE projection_key = ${projectionKey}
     `;
@@ -177,7 +206,14 @@ export async function enqueueLeadProjection(
         throw new Error('INVALID_STORED_LEAD_PROJECTION_SOURCE_ORDER');
       }
       if (
-        (hasOrderingProof && existingSourceOrder >= persistedSourceOrder)
+        (hasOrderingProof && existingSourceOrder > persistedSourceOrder)
+        || (hasOrderingProof
+          && existingSourceOrder === persistedSourceOrder
+          && (
+            existing.payload && sha256Hex(existing.payload) === payloadHash
+            || inputSourceKey === null
+            || existing.source_key !== inputSourceKey
+          ))
         || (!hasOrderingProof && (
           existingSourceOrder > 0
           || (existing.payload && sha256Hex(existing.payload) === payloadHash)
@@ -191,11 +227,20 @@ export async function enqueueLeadProjection(
             payload_hash = ${payloadHash},
             source_order = CASE WHEN ${hasOrderingProof}
               THEN ${persistedSourceOrder} ELSE source_order END,
+            source_key = CASE WHEN ${hasOrderingProof}
+              THEN ${inputSourceKey}::text ELSE source_key END,
             state = 'pending',
             available_at = now()
         WHERE id = ${existing.id}
           AND (
-            (${hasOrderingProof} AND source_order < ${persistedSourceOrder})
+            (${hasOrderingProof} AND (
+              source_order < ${persistedSourceOrder}
+              OR (
+                source_order = ${persistedSourceOrder}
+                AND ${inputSourceKey}::text IS NOT NULL
+                AND source_key = ${inputSourceKey}::text
+              )
+            ))
             OR (NOT ${hasOrderingProof} AND source_order = 0)
           )
         RETURNING id, row_number
@@ -205,26 +250,30 @@ export async function enqueueLeadProjection(
     }
 
     try {
-      const inserted = await sql<Array<{ id: string; row_number: number }>>`
-        INSERT INTO sheet_projection_rows (
-          projection_key, workspace_id, projection_type, spreadsheet_id, tab_name,
-          row_number, payload, payload_hash, source_order, state
-        )
-        SELECT
-          ${projectionKey},
-          ${input.workspaceId}::uuid,
-          'lead',
-          ${input.spreadsheetId},
-          ${input.tabName},
-          COALESCE(MAX(row_number), 1) + 1,
-          ${jsonbParam(sql, values)},
-          ${payloadHash},
-          ${persistedSourceOrder},
-          'pending'
-        FROM sheet_projection_rows
-        WHERE spreadsheet_id = ${input.spreadsheetId} AND tab_name = ${input.tabName}
-        RETURNING id, row_number
-      `;
+      const inserted = await sql.savepoint((savepoint) => savepoint<Array<{
+        id: string;
+        row_number: number;
+      }>>`
+          INSERT INTO sheet_projection_rows (
+            projection_key, workspace_id, projection_type, spreadsheet_id, tab_name,
+            row_number, payload, payload_hash, source_order, source_key, state
+          )
+          SELECT
+            ${projectionKey},
+            ${input.workspaceId}::uuid,
+            'lead',
+            ${input.spreadsheetId},
+            ${input.tabName},
+            COALESCE(MAX(row_number), 1) + 1,
+            ${jsonbParam(savepoint, values)},
+            ${payloadHash},
+            ${persistedSourceOrder},
+            ${inputSourceKey},
+            'pending'
+          FROM sheet_projection_rows
+          WHERE spreadsheet_id = ${input.spreadsheetId} AND tab_name = ${input.tabName}
+          RETURNING id, row_number
+        `);
       return { id: inserted[0].id, rowNumber: inserted[0].row_number, changed: true };
     } catch (error) {
       const pg = getPostgresError(error);

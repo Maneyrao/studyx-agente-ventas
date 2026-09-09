@@ -1204,6 +1204,7 @@ export async function commitAgentTurnV3(
           spreadsheetId: sheets.spreadsheetId,
           tabName: sheets.tabName,
           sourceOrder: agentALeadProjectionSourceOrder(context.source_order),
+          sourceKey: `agent-a-turn:${context.turn_id}`,
           telefono: projectedContact.declared_phone ?? context.destination,
           nombre: names.nombre,
           apellido: names.apellido,

@@ -23,3 +23,12 @@ export interface RetellCallCorrelationStore {
     readonly metadata: RetellCorrelationMetadata | null;
   }): Promise<{ readonly callId: string }>;
 }
+
+/** Correlates a tool call and authorizes its tenant before any attach mutation. */
+export interface RetellToolCallCorrelationStore extends RetellCallCorrelationStore {
+  resolveRetellToolCall(input: {
+    readonly providerCallId: string;
+    readonly metadata: RetellCorrelationMetadata;
+    readonly workspaceSlug: string;
+  }): Promise<{ readonly callId: string }>;
+}

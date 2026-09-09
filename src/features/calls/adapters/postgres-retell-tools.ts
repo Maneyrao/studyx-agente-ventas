@@ -27,33 +27,6 @@ function normalizedName(input: string, existing: string | null): string {
 export class PostgresRetellContactToolStore implements RetellContactToolStore {
   constructor(private readonly db: postgres.Sql) {}
 
-  async isCorrelatedToWorkspace(input: {
-    readonly callId: string;
-    readonly workspaceSlug: string;
-  }): Promise<boolean> {
-    const rows = await this.db<Array<{ id: string }>>`
-      SELECT cs.id
-      FROM call_sessions AS cs
-      JOIN contacts AS contact
-        ON contact.id = cs.contact_id
-       AND contact.deleted_at IS NULL
-      JOIN conversation_sales_context_states_v1 AS state
-        ON state.conversation_id = cs.conversation_id
-       AND state.contact_id = cs.contact_id
-      JOIN workspaces AS workspace
-        ON workspace.id = state.workspace_id
-       AND workspace.status = 'active'
-       AND workspace.slug = ${input.workspaceSlug}
-      JOIN workspace_contacts AS membership
-        ON membership.workspace_id = workspace.id
-       AND membership.contact_id = cs.contact_id
-       AND membership.lifecycle_status = 'active'
-      WHERE cs.id = ${input.callId}::uuid
-        AND cs.provider = 'retell'
-    `;
-    return rows.length === 1;
-  }
-
   async saveCorrelatedContact(input: {
     readonly callId: string;
     readonly workspaceSlug: string;
@@ -138,6 +111,7 @@ export class PostgresRetellContactToolStore implements RetellContactToolStore {
         spreadsheetId: input.sheets.spreadsheetId,
         tabName: input.sheets.tabName,
         sourceOrder: agentBLeadProjectionSourceOrder(callSourceOrder),
+        sourceKey: `retell-call:${input.callId}`,
         nombre: identity!.nombre,
         apellido: identity!.apellido,
         email: nextEmail!,

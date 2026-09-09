@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { CallStore } from '../ports/call-store';
 import {
   RetellCallCorrelationError,
-  type RetellCallCorrelationStore,
+  type RetellToolCallCorrelationStore,
 } from '../ports/retell-call-correlation-store';
 import type { BusinessContextStore } from '@/features/orchestration/ports/business-context-store';
 import {
@@ -11,7 +11,6 @@ import {
   buildCatalogIndexView,
   DEFAULT_BUSINESS_CONTEXT_LIMITS,
 } from '@/features/orchestration/domain/business-context';
-import { resolveCatalogRequest } from '@/features/orchestration/domain/catalog-resolution';
 import { sanitizeRetrievedText } from '@/features/orchestration/domain/retrieved-context';
 import { verifyRetellSignature } from '../adapters/retell-lifecycle';
 import { recordCallEvent } from './record-call-event';
@@ -23,10 +22,6 @@ export type RetellP0ToolName =
   | 'registrar_resultado';
 
 export interface RetellContactToolStore {
-  isCorrelatedToWorkspace(input: {
-    readonly callId: string;
-    readonly workspaceSlug: string;
-  }): Promise<boolean>;
   saveCorrelatedContact(input: {
     readonly callId: string;
     readonly workspaceSlug: string;
@@ -41,7 +36,7 @@ export interface RetellToolDependencies {
   readonly apiKey: string;
   readonly toolsSecret: string;
   readonly workspaceSlug: string;
-  readonly calls: CallStore & RetellCallCorrelationStore;
+  readonly calls: CallStore & RetellToolCallCorrelationStore;
   readonly business: Pick<BusinessContextStore, 'loadCompleteIndex' | 'loadByCode' | 'loadBusinessContext'>;
   readonly contacts: RetellContactToolStore;
   readonly sheets: { readonly spreadsheetId: string; readonly tabName: string } | null;
@@ -188,6 +183,55 @@ function inputIsUnsafe(value: string): boolean {
   return sanitizeRetrievedText(value, value.length).injection_suspected;
 }
 
+const SafeCatalogLabelPattern = /^[\p{L}\p{N}][\p{L}\p{N}\p{M} &'’().,/:+\-\u2010-\u2015]*$/u;
+const SafeCatalogCodePattern = /^[a-z0-9][a-z0-9_-]{0,127}$/u;
+
+function normalizedCatalogIdentity(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .replace(/\s+/gu, ' ');
+}
+
+function safeCatalogLabel(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const sanitized = sanitizeRetrievedText(value, 128);
+  return !sanitized.injection_suspected
+    && !sanitized.truncated
+    && sanitized.text === value.trim()
+    && SafeCatalogLabelPattern.test(sanitized.text);
+}
+
+function safeCatalogCode(value: unknown): value is string {
+  if (typeof value !== 'string' || !SafeCatalogCodePattern.test(value)) return false;
+  const semantic = sanitizeRetrievedText(value.replace(/[_-]+/gu, ' '), 128);
+  return !semantic.injection_suspected && !semantic.truncated;
+}
+
+function rawCatalogIdentitiesAreSafe(raw: {
+  readonly offerings: ReadonlyArray<{
+    readonly code: unknown;
+    readonly display_name: unknown;
+    readonly metadata?: Record<string, unknown> | null;
+  }>;
+}): boolean {
+  return raw.offerings.every((offering) => {
+    const academy = offering.metadata?.academy;
+    const aliases = offering.metadata?.aliases;
+    return safeCatalogCode(offering.code)
+      && safeCatalogLabel(offering.display_name)
+      && (academy === undefined || academy === null || safeCatalogLabel(academy))
+      && (aliases === undefined || (
+        Array.isArray(aliases)
+        && aliases.length <= 12
+        && aliases.every(safeCatalogLabel)
+      ));
+  });
+}
+
 function resolveCourse(
   requestedCourse: string,
   requestedAcademy: string | undefined,
@@ -201,11 +245,27 @@ function resolveCourse(
   if (inputIsUnsafe(requestedCourse) || (requestedAcademy && inputIsUnsafe(requestedAcademy))) {
     return null;
   }
-  const resolution = resolveCatalogRequest(
-    requestedAcademy ? [requestedCourse, requestedAcademy] : requestedCourse,
-    { offerings, offerings_truncated: 0 },
-  );
-  return resolution.kind === 'exact' ? resolution.offeringCode : null;
+  const courseIdentity = normalizedCatalogIdentity(requestedCourse);
+  const academyIdentity = requestedAcademy
+    ? normalizedCatalogIdentity(requestedAcademy)
+    : null;
+  const matches = offerings.filter((offering) => {
+    if (
+      !safeCatalogCode(offering.code)
+      || !safeCatalogLabel(offering.display_name)
+      || (offering.academy !== null && !safeCatalogLabel(offering.academy))
+      || (offering.aliases?.some((alias) => !safeCatalogLabel(alias)) ?? false)
+    ) return false;
+    if (
+      academyIdentity !== null
+      && (offering.academy === null
+        || normalizedCatalogIdentity(offering.academy) !== academyIdentity)
+    ) return false;
+    const canonicalIdentities = [offering.code, offering.display_name, ...(offering.aliases ?? [])]
+      .map(normalizedCatalogIdentity);
+    return canonicalIdentities.includes(courseIdentity);
+  });
+  return matches.length === 1 ? matches[0].code : null;
 }
 
 async function consultCourse(
@@ -213,7 +273,7 @@ async function consultCourse(
   dependencies: RetellToolDependencies,
 ): Promise<Response> {
   const rawIndex = await dependencies.business.loadCompleteIndex(dependencies.workspaceSlug);
-  if (!rawIndex) return resultError('COURSE_UNAVAILABLE');
+  if (!rawIndex || !rawCatalogIdentitiesAreSafe(rawIndex)) return resultError('COURSE_UNAVAILABLE');
   const index = buildCatalogIndexView(rawIndex);
   if (
     index.injection_suspected_count > 0
@@ -223,7 +283,7 @@ async function consultCourse(
   if (!code) return resultError('COURSE_UNAVAILABLE');
 
   const rawDetail = await dependencies.business.loadByCode(dependencies.workspaceSlug, code);
-  if (!rawDetail) return resultError('COURSE_UNAVAILABLE');
+  if (!rawDetail || !rawCatalogIdentitiesAreSafe(rawDetail)) return resultError('COURSE_UNAVAILABLE');
   const detail = buildBusinessContextView(rawDetail, {
     ...DEFAULT_BUSINESS_CONTEXT_LIMITS,
     maxOfferings: 1,
@@ -254,7 +314,7 @@ async function consultOffer(
 ): Promise<Response> {
   if (args.cursos.length !== 1 || args.pais !== undefined) return resultError('OFFER_UNAVAILABLE');
   const raw = await dependencies.business.loadBusinessContext(dependencies.workspaceSlug);
-  if (!raw) return resultError('OFFER_UNAVAILABLE');
+  if (!raw || !rawCatalogIdentitiesAreSafe(raw)) return resultError('OFFER_UNAVAILABLE');
   const snapshot = buildBusinessContextView(raw);
   if (
     snapshot.offerings_truncated > 0
@@ -322,13 +382,26 @@ export async function handleRetellToolRequest(
     dependencies.toolsSecret,
   )) return resultError('UNAUTHORIZED', 401);
 
+  const nowMs = (dependencies.now?.() ?? new Date()).getTime();
+  const signature = request.headers.get('x-retell-signature');
+  const signatureMatch = signature
+    ? /^v=(\d+),d=([0-9a-f]{64})$/u.exec(signature)
+    : null;
+  const signatureTimestamp = signatureMatch ? Number(signatureMatch[1]) : Number.NaN;
+  if (
+    dependencies.apiKey.length === 0
+    || !signatureMatch
+    || !Number.isSafeInteger(signatureTimestamp)
+    || Math.abs(nowMs - signatureTimestamp) > 300_000
+  ) return resultError('UNAUTHORIZED', 401);
+
   const body = await readBoundedBody(request);
   if (!body) return resultError('PAYLOAD_TOO_LARGE', 413);
   if (!verifyRetellSignature({
     rawBody: body,
-    signature: request.headers.get('x-retell-signature'),
+    signature,
     apiKey: dependencies.apiKey,
-    nowMs: (dependencies.now?.() ?? new Date()).getTime(),
+    nowMs,
   })) return resultError('UNAUTHORIZED', 401);
 
   let raw: unknown;
@@ -342,19 +415,16 @@ export async function handleRetellToolRequest(
 
   let callId: string;
   try {
-    const correlation = await dependencies.calls.resolveRetellCall({
+    const correlation = await dependencies.calls.resolveRetellToolCall({
       providerCallId: envelope.call.call_id,
       metadata: {
         internalCallId: envelope.call.metadata.internal_call_id,
         contactId: envelope.call.metadata.contact_id,
         conversationId: envelope.call.metadata.conversation_id,
       },
+      workspaceSlug: dependencies.workspaceSlug,
     });
     callId = correlation.callId;
-    if (!await dependencies.contacts.isCorrelatedToWorkspace({
-      callId,
-      workspaceSlug: dependencies.workspaceSlug,
-    })) return resultError('CALL_CORRELATION_MISMATCH');
   } catch (error) {
     if (error instanceof RetellCallCorrelationError) return resultError(error.code);
     return resultError('TOOL_UNAVAILABLE');

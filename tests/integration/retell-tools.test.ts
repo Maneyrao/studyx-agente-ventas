@@ -8,7 +8,7 @@ import { recordCallEvent } from '@/features/calls/application/record-call-event'
 import { hashCallContext } from '@/features/calls/domain/call-context';
 import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
 import { enqueueLeadProjection } from '@/lib/services/projection.service';
-import { openLocalTestDatabase } from '../helpers/db';
+import { openIndependentLocalTestDatabases, openLocalTestDatabase } from '../helpers/db';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
@@ -149,15 +149,18 @@ function request(body: unknown) {
   });
 }
 
-function dependencies(ids: Awaited<ReturnType<typeof fixture>>) {
-  const calls = new PostgresCallStore(db!);
+function dependencies(
+  ids: Awaited<ReturnType<typeof fixture>>,
+  database = db!,
+) {
+  const calls = new PostgresCallStore(database);
   return {
     apiKey,
     toolsSecret,
     workspaceSlug: ids.workspaceSlug,
     calls,
-    business: new PostgresBusinessContextStore(db!),
-    contacts: new PostgresRetellContactToolStore(db!),
+    business: new PostgresBusinessContextStore(database),
+    contacts: new PostgresRetellContactToolStore(database),
     sheets: { spreadsheetId: ids.spreadsheetId, tabName: 'Leads' },
     now: () => new Date(nowMs),
   };
@@ -167,11 +170,12 @@ async function callTool(
   ids: Awaited<ReturnType<typeof fixture>>,
   name: Parameters<typeof handleRetellToolRequest>[1],
   args: unknown,
+  database = db!,
 ) {
   const response = await handleRetellToolRequest(
     request(envelope(ids, name, args)),
     name,
-    dependencies(ids),
+    dependencies(ids, database),
   );
   return { response, body: await response.json() };
 }
@@ -221,31 +225,63 @@ run('Retell P0 tools with PostgreSQL', () => {
       email: 'maria@example.test',
       telefono_alternativo: '+5491199999999',
     });
+    expect(first.body).toEqual({ ok: true, saved: true, projected: true });
+    const initialProjection = await db!<Array<{ id: string }>>`
+      SELECT id FROM sheet_projection_rows
+      WHERE projection_key = ${`lead:${ids.workspaceId}:${ids.contactId}`}
+    `;
+    const correction = await callTool(ids, 'guardar_datos_contacto', {
+      nombre: 'Mariana López',
+      email: 'mariana@example.test',
+      telefono_alternativo: '+5491199999999',
+    });
     const replay = await callTool(ids, 'guardar_datos_contacto', {
-      nombre: 'María',
-      email: 'maria@example.test',
+      nombre: 'Mariana López',
+      email: 'mariana@example.test',
       telefono_alternativo: '+5491199999999',
     });
 
-    expect(first.body).toEqual({ ok: true, saved: true, projected: true });
+    expect(correction.body).toEqual({ ok: true, saved: true, projected: true });
     expect(replay.body).toEqual({ ok: true, saved: false, projected: false });
+    const unrelatedSamePosition = await enqueueLeadProjection({
+      workspaceId: ids.workspaceId,
+      contactId: ids.contactId,
+      spreadsheetId: ids.spreadsheetId,
+      tabName: 'Leads',
+      sourceOrder: 9,
+      sourceKey: `retell-call:${randomUUID()}`,
+      nombre: 'Ataque',
+      apellido: 'Tardío',
+      email: 'attack@example.test',
+      cursoInteres: 'Curso Incorrecto',
+      ultimaSenal: 'unrelated_same_position',
+      traceId: randomUUID(),
+    }, { sql: db! });
+    expect(unrelatedSamePosition).toMatchObject({ changed: false });
     await expect(db!<Array<{ phone: string; declared_phone: string; name: string; email: string }>>`
       SELECT phone, declared_phone, name, email FROM contacts WHERE id = ${ids.contactId}::uuid
     `).resolves.toEqual([{
       phone: ids.phone,
       declared_phone: '+5491199999999',
-      name: 'María López',
-      email: 'maria@example.test',
+      name: 'Mariana López',
+      email: 'mariana@example.test',
     }]);
-    await expect(db!<Array<{ payload: Record<string, string>; source_order: string }>>`
-      SELECT payload, source_order FROM sheet_projection_rows
+    await expect(db!<Array<{
+      id: string;
+      payload: Record<string, string>;
+      source_order: string;
+      source_key: string;
+    }>>`
+      SELECT id, payload, source_order, source_key FROM sheet_projection_rows
       WHERE projection_key = ${`lead:${ids.workspaceId}:${ids.contactId}`}
     `).resolves.toEqual([{
+      id: initialProjection[0].id,
       source_order: '9',
+      source_key: `retell-call:${ids.callId}`,
       payload: {
-        nombre: 'María',
+        nombre: 'Mariana',
         apellido: 'López',
-        mail: 'maria@example.test',
+        mail: 'mariana@example.test',
         tipo_de_curso: 'Reparación de Celulares',
       },
     }]);
@@ -316,6 +352,107 @@ run('Retell P0 tools with PostgreSQL', () => {
     });
   });
 
+  it.each(['dispatching', 'dispatch_ambiguous'] as const)(
+    'does not mutate an unbound foreign-workspace %s call before authorization',
+    async (status) => {
+      const configured = await fixture({ name: 'Local Persona', email: 'local@example.test' });
+      const foreign = await fixture({ name: 'Foreign Persona', email: 'foreign@example.test' });
+      await db!`
+        UPDATE call_sessions
+        SET provider_call_id = NULL,
+            status = ${status},
+            provider_accepted_at = NULL,
+            dispatch_lease_owner = 'foreign-owner',
+            dispatch_lease_until = '2026-09-09T16:30:00Z'::timestamptz,
+            error_code = 'FOREIGN_BEFORE_TOOL'
+        WHERE id = ${foreign.callId}::uuid
+      `;
+      const before = await db!<Array<Record<string, string | null>>>`
+        SELECT provider_call_id, status, dispatch_lease_owner,
+               dispatch_lease_until::text, error_code,
+               provider_accepted_at::text, started_at::text, completed_at::text,
+               updated_at::text
+        FROM call_sessions WHERE id = ${foreign.callId}::uuid
+      `;
+
+      const response = await handleRetellToolRequest(
+        request(envelope(foreign, 'consultar_curso', { curso: 'reparacion_celulares' })),
+        'consultar_curso',
+        dependencies(configured),
+      );
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        ok: false,
+        error: { code: 'CALL_CORRELATION_MISMATCH' },
+      });
+      await expect(db!<Array<Record<string, string | null>>>`
+        SELECT provider_call_id, status, dispatch_lease_owner,
+               dispatch_lease_until::text, error_code,
+               provider_accepted_at::text, started_at::text, completed_at::text,
+               updated_at::text
+        FROM call_sessions WHERE id = ${foreign.callId}::uuid
+      `).resolves.toEqual(before);
+    },
+  );
+
+  it('serializes different-contact first projections so both contact transactions commit', async () => {
+    const first = await fixture({ name: 'Ana López', email: 'ana@example.test' });
+    const second = await fixture({ name: 'Beto Pérez', email: 'beto@example.test' });
+    second.spreadsheetId = first.spreadsheetId;
+    const suffix = randomUUID().replaceAll('-', '').slice(0, 12);
+    const functionName = `test_pause_retell_projection_${suffix}`;
+    const triggerName = `test_pause_retell_projection_trigger_${suffix}`;
+    await db!.unsafe(`
+      CREATE FUNCTION public.${functionName}() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.spreadsheet_id = '${first.spreadsheetId}' THEN
+          PERFORM pg_sleep(0.25);
+        END IF;
+        RETURN NEW;
+      END
+      $$;
+      CREATE TRIGGER ${triggerName}
+      BEFORE INSERT ON sheet_projection_rows
+      FOR EACH ROW EXECUTE FUNCTION public.${functionName}();
+    `);
+    const [firstClient, secondClient] = openIndependentLocalTestDatabases(2);
+
+    try {
+      const [firstResult, secondResult] = await Promise.all([
+        callTool(first, 'guardar_datos_contacto', {
+          telefono_alternativo: '+5491188888888',
+        }, firstClient),
+        callTool(second, 'guardar_datos_contacto', {
+          telefono_alternativo: '+5491177777777',
+        }, secondClient),
+      ]);
+
+      expect(firstResult.body).toEqual({ ok: true, saved: true, projected: true });
+      expect(secondResult.body).toEqual({ ok: true, saved: true, projected: true });
+      await expect(db!<Array<{ row_number: number }>>`
+        SELECT row_number FROM sheet_projection_rows
+        WHERE spreadsheet_id = ${first.spreadsheetId} AND tab_name = 'Leads'
+        ORDER BY row_number
+      `).resolves.toEqual([{ row_number: 2 }, { row_number: 3 }]);
+      await expect(db!<Array<{ declared_phone: string | null }>>`
+        SELECT declared_phone FROM contacts
+        WHERE id IN (${first.contactId}::uuid, ${second.contactId}::uuid)
+        ORDER BY declared_phone
+      `).resolves.toEqual([
+        { declared_phone: '+5491177777777' },
+        { declared_phone: '+5491188888888' },
+      ]);
+    } finally {
+      await Promise.all([firstClient.end(), secondClient.end()]);
+      await db!.unsafe(`
+        DROP TRIGGER IF EXISTS ${triggerName} ON sheet_projection_rows;
+        DROP FUNCTION IF EXISTS public.${functionName}();
+      `);
+    }
+  });
+
   it('uses first-writer-wins for tool-first, webhook-first, and changed replay', async () => {
     const toolFirst = await fixture({ name: 'Ana López', email: 'ana@example.test' });
     const tool = await callTool(toolFirst, 'registrar_resultado', {
@@ -354,5 +491,28 @@ run('Retell P0 tools with PostgreSQL', () => {
     await expect(db!<Array<{ result: string }>>`
       SELECT result FROM call_sessions WHERE id = ${webhookFirst.callId}::uuid
     `).resolves.toEqual([{ result: 'seguimiento_agendado' }]);
+  });
+
+  it('does not grant first-writer-wins to an analyzed event with only the canonical prefix', async () => {
+    const ids = await fixture({ name: 'Ana López', email: 'ana@example.test' });
+    const first = lifecycleAnalysis(ids, 'no_interesado');
+    const wrongIdentity = {
+      ...first,
+      event_id: `retell:call_analyzed:${ids.providerCallId}:wrong-suffix`,
+    };
+    await recordCallEvent(wrongIdentity, { store: new PostgresCallStore(db!) });
+
+    await expect(recordCallEvent({
+      ...wrongIdentity,
+      payload: {
+        event_type: 'analyzed',
+        analysis: {
+          result: 'seguimiento_agendado',
+          nivel_interes: 'medio',
+          objecion: null,
+          notas: 'Changed replay must conflict.',
+        },
+      },
+    }, { store: new PostgresCallStore(db!) })).rejects.toThrow('CALL_EVENT_REPLAY_CONFLICT');
   });
 });

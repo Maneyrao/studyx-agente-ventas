@@ -7,7 +7,7 @@ import type { CallStore, DispatchClaim } from '../ports/call-store';
 import {
   RetellCallCorrelationError,
   type RetellCorrelationMetadata,
-  type RetellCallCorrelationStore,
+  type RetellToolCallCorrelationStore,
 } from '../ports/retell-call-correlation-store';
 
 type CallRow = {
@@ -35,7 +35,11 @@ type RetellCorrelationRow = {
   status: string;
 };
 
-export class PostgresCallStore implements CallStore, RetellCallCorrelationStore {
+type RetellToolCorrelationRow = RetellCorrelationRow & {
+  workspace_authorized: boolean;
+};
+
+export class PostgresCallStore implements CallStore, RetellToolCallCorrelationStore {
   constructor(private readonly db: postgres.Sql) {}
 
   async claimDispatch(callId: string, workerId: string): Promise<DispatchClaim> {
@@ -193,6 +197,85 @@ export class PostgresCallStore implements CallStore, RetellCallCorrelationStore 
     });
   }
 
+  async resolveRetellToolCall(input: {
+    providerCallId: string;
+    metadata: RetellCorrelationMetadata;
+    workspaceSlug: string;
+  }): Promise<{ callId: string }> {
+    return this.db.begin(async (tx) => {
+      const rows = await tx<RetellToolCorrelationRow[]>`
+        SELECT
+          cs.id,
+          cs.contact_id,
+          cs.conversation_id,
+          cs.provider_call_id,
+          cs.status,
+          EXISTS (
+            SELECT 1
+            FROM conversation_sales_context_states_v1 AS state
+            JOIN workspaces AS workspace
+              ON workspace.id = state.workspace_id
+             AND workspace.status = 'active'
+             AND workspace.slug = ${input.workspaceSlug}
+            JOIN workspace_contacts AS membership
+              ON membership.workspace_id = workspace.id
+             AND membership.contact_id = cs.contact_id
+             AND membership.lifecycle_status = 'active'
+            JOIN contacts AS contact
+              ON contact.id = cs.contact_id
+             AND contact.deleted_at IS NULL
+            WHERE state.conversation_id = cs.conversation_id
+              AND state.contact_id = cs.contact_id
+          ) AS workspace_authorized
+        FROM call_sessions AS cs
+        WHERE cs.provider = 'retell'
+          AND (cs.provider_call_id = ${input.providerCallId} OR cs.id = ${input.metadata.internalCallId}::uuid)
+        ORDER BY cs.id
+        FOR UPDATE OF cs
+      `;
+
+      const byProvider = rows.find((row) => row.provider_call_id === input.providerCallId);
+      const byMetadata = rows.find((row) => row.id === input.metadata.internalCallId);
+      if (!byMetadata) {
+        throw new RetellCallCorrelationError(byProvider
+          ? 'CALL_CORRELATION_MISMATCH'
+          : 'CALL_CORRELATION_NOT_FOUND');
+      }
+      if (byProvider && byProvider.id !== byMetadata.id) {
+        throw new RetellCallCorrelationError('CALL_CORRELATION_MISMATCH');
+      }
+
+      const row = byProvider ?? byMetadata;
+      if (
+        row.contact_id !== input.metadata.contactId
+        || row.conversation_id !== input.metadata.conversationId
+      ) {
+        throw new RetellCallCorrelationError('CALL_CORRELATION_MISMATCH');
+      }
+      if (!row.workspace_authorized) {
+        throw new RetellCallCorrelationError('CALL_CORRELATION_MISMATCH');
+      }
+      if (row.provider_call_id && row.provider_call_id !== input.providerCallId) {
+        throw new RetellCallCorrelationError('CALL_PROVIDER_ID_CONFLICT');
+      }
+
+      if (row.provider_call_id === null) {
+        if (row.status !== 'dispatching' && row.status !== 'dispatch_ambiguous') {
+          throw new RetellCallCorrelationError('CALL_CORRELATION_STATE_INVALID');
+        }
+        await tx`
+          UPDATE call_sessions
+          SET provider_call_id = ${input.providerCallId}, status = 'provider_accepted',
+              provider_accepted_at = COALESCE(provider_accepted_at, now()),
+              dispatch_lease_owner = NULL, dispatch_lease_until = NULL, error_code = NULL
+          WHERE id = ${row.id}::uuid
+        `;
+      }
+
+      return { callId: row.id };
+    });
+  }
+
   async appendEvent(rawEvent: CallEvent): Promise<'recorded' | 'duplicate'> {
     const event = CallEventSchema.parse(rawEvent);
     const payloadHash = createHash('sha256').update(JSON.stringify(event), 'utf8').digest('hex');
@@ -211,15 +294,21 @@ export class PostgresCallStore implements CallStore, RetellCallCorrelationStore 
       call_id: string;
       event_type: CallEvent['event_type'];
       payload_hash_hex: string;
+      provider_call_id: string | null;
     }>>`
-      SELECT call_id, event_type, encode(payload_hash, 'hex') AS payload_hash_hex
-      FROM call_events WHERE provider = ${event.provider} AND event_id = ${event.event_id}
+      SELECT event.call_id, event.event_type,
+             encode(event.payload_hash, 'hex') AS payload_hash_hex,
+             session.provider_call_id
+      FROM call_events AS event
+      JOIN call_sessions AS session ON session.id = event.call_id
+      WHERE event.provider = ${event.provider} AND event.event_id = ${event.event_id}
     `;
     const firstWriterWinsAnalyzed = event.provider === 'retell'
       && event.event_type === 'analyzed'
-      && event.event_id.startsWith('retell:call_analyzed:')
       && existing[0]?.event_type === 'analyzed'
-      && existing[0]?.call_id === event.call_id;
+      && existing[0]?.call_id === event.call_id
+      && existing[0]?.provider_call_id !== null
+      && event.event_id === `retell:call_analyzed:${existing[0]?.provider_call_id}`;
     if (
       existing[0]?.call_id !== event.call_id
       || (existing[0]?.payload_hash_hex !== payloadHash && !firstWriterWinsAnalyzed)
