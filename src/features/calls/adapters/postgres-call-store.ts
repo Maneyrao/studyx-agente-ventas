@@ -100,7 +100,7 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
       SET status = 'provider_accepted', provider_call_id = ${providerCallId},
           provider_accepted_at = ${acceptedAt}::timestamptz,
           dispatch_lease_owner = NULL, dispatch_lease_until = NULL, error_code = NULL
-      WHERE id = ${callId}::uuid AND status = 'dispatching'
+      WHERE id = ${callId}::uuid AND status IN ('dispatching', 'dispatch_ambiguous')
         AND (provider_call_id IS NULL OR provider_call_id = ${providerCallId})
       RETURNING id
     `;

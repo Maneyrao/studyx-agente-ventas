@@ -212,6 +212,21 @@ run('Retell call lifecycle persistence', () => {
     }));
   });
 
+  it('attaches a provider call found while reconciling an ambiguous dispatch', async () => {
+    const ids = await fixture({ status: 'dispatch_ambiguous' });
+    const providerCallId = `retell:${randomUUID()}`;
+    const store = new PostgresCallStore(db!);
+
+    await expect(store.attachProviderCall(
+      ids.callId,
+      providerCallId,
+      '2026-09-09T15:00:00.000Z',
+    )).resolves.toBeUndefined();
+    await expect(db!<Array<{ status: string; provider_call_id: string }>>`
+      SELECT status, provider_call_id FROM call_sessions WHERE id = ${ids.callId}::uuid
+    `).resolves.toEqual([{ status: 'provider_accepted', provider_call_id: providerCallId }]);
+  });
+
   it('rejects a cross-provider internal ID even when all metadata IDs match', async () => {
     const ids = await fixture({ provider: 'telegram_sandbox', status: 'dispatching' });
     const store = new PostgresCallStore(db!);
