@@ -1,0 +1,398 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
+import { z } from 'zod';
+import type { CallStore } from '../ports/call-store';
+import {
+  RetellCallCorrelationError,
+  type RetellCallCorrelationStore,
+} from '../ports/retell-call-correlation-store';
+import type { BusinessContextStore } from '@/features/orchestration/ports/business-context-store';
+import {
+  buildBusinessContextView,
+  buildCatalogIndexView,
+  DEFAULT_BUSINESS_CONTEXT_LIMITS,
+} from '@/features/orchestration/domain/business-context';
+import { resolveCatalogRequest } from '@/features/orchestration/domain/catalog-resolution';
+import { sanitizeRetrievedText } from '@/features/orchestration/domain/retrieved-context';
+import { verifyRetellSignature } from '../adapters/retell-lifecycle';
+import { recordCallEvent } from './record-call-event';
+
+export type RetellP0ToolName =
+  | 'consultar_curso'
+  | 'consultar_oferta'
+  | 'guardar_datos_contacto'
+  | 'registrar_resultado';
+
+export interface RetellContactToolStore {
+  isCorrelatedToWorkspace(input: {
+    readonly callId: string;
+    readonly workspaceSlug: string;
+  }): Promise<boolean>;
+  saveCorrelatedContact(input: {
+    readonly callId: string;
+    readonly workspaceSlug: string;
+    readonly nombre?: string;
+    readonly email?: string;
+    readonly telefonoAlternativo?: string;
+    readonly sheets: { readonly spreadsheetId: string; readonly tabName: string } | null;
+  }): Promise<{ readonly updated: boolean; readonly projected: boolean }>;
+}
+
+export interface RetellToolDependencies {
+  readonly apiKey: string;
+  readonly toolsSecret: string;
+  readonly workspaceSlug: string;
+  readonly calls: CallStore & RetellCallCorrelationStore;
+  readonly business: Pick<BusinessContextStore, 'loadCompleteIndex' | 'loadByCode' | 'loadBusinessContext'>;
+  readonly contacts: RetellContactToolStore;
+  readonly sheets: { readonly spreadsheetId: string; readonly tabName: string } | null;
+  readonly now?: () => Date;
+}
+
+export const RETELL_TOOL_MAX_BODY_BYTES = 32 * 1_024;
+
+const ToolMetadataSchema = z.object({
+  internal_call_id: z.string().uuid(),
+  contact_id: z.string().uuid(),
+  conversation_id: z.string().uuid(),
+}).strict();
+
+const ToolCallSchema = z.object({
+  call_id: z.string().trim().min(1).max(512),
+  metadata: ToolMetadataSchema,
+}).passthrough();
+
+const SafeNameSchema = z.string().trim().min(1).max(128)
+  .regex(/^[\p{L}][\p{L}'’ -]*$/u);
+const SafeEmailSchema = z.string().trim().max(254).email();
+const SafePhoneSchema = z.string().trim().regex(/^\+[1-9]\d{7,14}$/u);
+const CourseTextSchema = z.string().trim().min(1).max(128);
+
+const ToolArgsSchemas = {
+  consultar_curso: z.object({
+    curso: CourseTextSchema,
+    academia: CourseTextSchema.optional(),
+  }).strict(),
+  consultar_oferta: z.object({
+    cursos: z.array(CourseTextSchema).min(1).max(4),
+    pais: z.string().trim().min(1).max(64).optional(),
+  }).strict(),
+  guardar_datos_contacto: z.object({
+    nombre: SafeNameSchema.optional(),
+    telefono_alternativo: SafePhoneSchema.optional(),
+    email: SafeEmailSchema.optional(),
+  }).strict().refine(
+    (value) => value.nombre !== undefined
+      || value.telefono_alternativo !== undefined
+      || value.email !== undefined,
+  ),
+  registrar_resultado: z.object({
+    resultado: z.enum([
+      'venta_confirmada',
+      'link_enviado_sin_pago',
+      'seguimiento_agendado',
+      'no_interesado',
+      'derivado_humano',
+      'no_es_buen_momento',
+      'no_contactar',
+      'ya_es_alumno',
+      'no_calificado',
+    ]),
+    resumen: z.string().trim().min(1).max(2_048),
+    objeciones: z.array(z.enum([
+      'precio',
+      'tiempo',
+      'confianza',
+      'capacidad_propia',
+      'consultar_con_tercero',
+      'comparando_opciones',
+      'conectividad_o_dispositivo',
+      'timing',
+      'otra',
+    ])).max(8).optional(),
+    proximo_paso: z.string().trim().min(1).max(512).optional(),
+    nivel_interes: z.enum(['alto', 'medio', 'bajo', 'nulo']).optional(),
+    curso: CourseTextSchema.optional(),
+  }).strict(),
+} as const;
+
+type ParsedEnvelope<Name extends RetellP0ToolName> = {
+  readonly name: Name;
+  readonly call: z.infer<typeof ToolCallSchema>;
+  readonly args: z.infer<(typeof ToolArgsSchemas)[Name]>;
+};
+
+function resultError(code: string, status = 200): Response {
+  return Response.json({ ok: false, error: { code } }, { status });
+}
+
+function constantTimeSecretMatches(actual: string | null, expected: string): boolean {
+  if (!actual || expected.length === 0) return false;
+  const actualHash = createHash('sha256').update(actual, 'utf8').digest();
+  const expectedHash = createHash('sha256').update(expected, 'utf8').digest();
+  return timingSafeEqual(actualHash, expectedHash);
+}
+
+async function readBoundedBody(request: Request): Promise<Uint8Array | null> {
+  const declaredLength = request.headers.get('content-length');
+  if (declaredLength && /^\d+$/u.test(declaredLength)) {
+    const size = Number(declaredLength);
+    if (!Number.isSafeInteger(size) || size > RETELL_TOOL_MAX_BODY_BYTES) return null;
+  }
+  if (!request.body) return new Uint8Array();
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      size += chunk.value.byteLength;
+      if (size > RETELL_TOOL_MAX_BODY_BYTES) {
+        try {
+          await reader.cancel();
+        } catch {
+          // Best effort: the bounded request is already rejected.
+        }
+        return null;
+      }
+      chunks.push(chunk.value);
+    }
+  } catch {
+    return null;
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
+function parseEnvelope<Name extends RetellP0ToolName>(
+  value: unknown,
+  expectedName: Name,
+): ParsedEnvelope<Name> | null {
+  const schema = z.object({
+    name: z.literal(expectedName),
+    call: ToolCallSchema,
+    args: ToolArgsSchemas[expectedName],
+  }).strict();
+  const parsed = schema.safeParse(value);
+  return parsed.success ? parsed.data as ParsedEnvelope<Name> : null;
+}
+
+function inputIsUnsafe(value: string): boolean {
+  return sanitizeRetrievedText(value, value.length).injection_suspected;
+}
+
+function resolveCourse(
+  requestedCourse: string,
+  requestedAcademy: string | undefined,
+  offerings: ReadonlyArray<{
+    code: string;
+    display_name: string;
+    academy: string | null;
+    aliases?: readonly string[];
+  }>,
+): string | null {
+  if (inputIsUnsafe(requestedCourse) || (requestedAcademy && inputIsUnsafe(requestedAcademy))) {
+    return null;
+  }
+  const resolution = resolveCatalogRequest(
+    requestedAcademy ? [requestedCourse, requestedAcademy] : requestedCourse,
+    { offerings, offerings_truncated: 0 },
+  );
+  return resolution.kind === 'exact' ? resolution.offeringCode : null;
+}
+
+async function consultCourse(
+  args: z.infer<typeof ToolArgsSchemas.consultar_curso>,
+  dependencies: RetellToolDependencies,
+): Promise<Response> {
+  const rawIndex = await dependencies.business.loadCompleteIndex(dependencies.workspaceSlug);
+  if (!rawIndex) return resultError('COURSE_UNAVAILABLE');
+  const index = buildCatalogIndexView(rawIndex);
+  if (
+    index.injection_suspected_count > 0
+    || index.offerings_total !== index.offerings.length
+  ) return resultError('COURSE_UNAVAILABLE');
+  const code = resolveCourse(args.curso, args.academia, index.offerings);
+  if (!code) return resultError('COURSE_UNAVAILABLE');
+
+  const rawDetail = await dependencies.business.loadByCode(dependencies.workspaceSlug, code);
+  if (!rawDetail) return resultError('COURSE_UNAVAILABLE');
+  const detail = buildBusinessContextView(rawDetail, {
+    ...DEFAULT_BUSINESS_CONTEXT_LIMITS,
+    maxOfferings: 1,
+  });
+  const course = detail.offerings.find((candidate) => candidate.code === code);
+  if (!course || detail.offerings_truncated > 0 || detail.injection_suspected_count > 0) {
+    return resultError('COURSE_UNAVAILABLE');
+  }
+  return Response.json({
+    ok: true,
+    curso: {
+      codigo: course.code,
+      nombre: course.display_name,
+      academia: course.academy,
+      descripcion: course.description,
+      modalidad: course.modality,
+      clases: course.classes,
+      modulos: course.modules,
+      certificacion: course.certification,
+      incluye: course.includes,
+    },
+  });
+}
+
+async function consultOffer(
+  args: z.infer<typeof ToolArgsSchemas.consultar_oferta>,
+  dependencies: RetellToolDependencies,
+): Promise<Response> {
+  if (args.cursos.length !== 1 || args.pais !== undefined) return resultError('OFFER_UNAVAILABLE');
+  const raw = await dependencies.business.loadBusinessContext(dependencies.workspaceSlug);
+  if (!raw) return resultError('OFFER_UNAVAILABLE');
+  const snapshot = buildBusinessContextView(raw);
+  if (
+    snapshot.offerings_truncated > 0
+    || snapshot.injection_suspected_count > 0
+    || snapshot.workspace.payment_options.length === 0
+  ) return resultError('OFFER_UNAVAILABLE');
+  const code = resolveCourse(args.cursos[0], undefined, snapshot.offerings);
+  const course = snapshot.offerings.find((candidate) => candidate.code === code);
+  if (!course?.price_assertable || !course.price) return resultError('OFFER_UNAVAILABLE');
+  const coherent = snapshot.workspace.payment_options.every((option) => (
+    option.total.amount === course.price!.amount
+    && option.total.currency === course.price!.currency
+  ));
+  if (!coherent) return resultError('OFFER_UNAVAILABLE');
+  return Response.json({
+    ok: true,
+    oferta: {
+      moneda: course.price.currency,
+      precio_lista: course.price.amount,
+      precio_final: course.price.amount,
+      cuotas_texto: snapshot.workspace.payment_options.map((option) => option.label).join('; '),
+    },
+  });
+}
+
+async function recordResult(
+  envelope: ParsedEnvelope<'registrar_resultado'>,
+  callId: string,
+  dependencies: RetellToolDependencies,
+): Promise<Response> {
+  const { args } = envelope;
+  const notes = [
+    args.resumen,
+    args.proximo_paso ? `Próximo paso: ${args.proximo_paso}` : null,
+    args.curso ? `Curso: ${args.curso}` : null,
+  ].filter((value): value is string => value !== null).join('\n');
+  await recordCallEvent({
+    schema_version: 1,
+    event_id: `retell:call_analyzed:${envelope.call.call_id}`,
+    call_id: callId,
+    event_type: 'analyzed',
+    sequence: 3,
+    occurred_at: (dependencies.now?.() ?? new Date()).toISOString(),
+    provider: 'retell',
+    payload: {
+      event_type: 'analyzed',
+      analysis: {
+        result: args.resultado,
+        nivel_interes: args.nivel_interes === 'nulo' ? null : (args.nivel_interes ?? null),
+        objecion: args.objeciones?.join(', ') ?? null,
+        notas: notes,
+      },
+    },
+  }, { store: dependencies.calls });
+  return Response.json({ ok: true, recorded: true });
+}
+
+export async function handleRetellToolRequest(
+  request: Request,
+  expectedName: RetellP0ToolName,
+  dependencies: RetellToolDependencies,
+): Promise<Response> {
+  if (!constantTimeSecretMatches(
+    request.headers.get('x-studyx-tools-secret'),
+    dependencies.toolsSecret,
+  )) return resultError('UNAUTHORIZED', 401);
+
+  const body = await readBoundedBody(request);
+  if (!body) return resultError('PAYLOAD_TOO_LARGE', 413);
+  if (!verifyRetellSignature({
+    rawBody: body,
+    signature: request.headers.get('x-retell-signature'),
+    apiKey: dependencies.apiKey,
+    nowMs: (dependencies.now?.() ?? new Date()).getTime(),
+  })) return resultError('UNAUTHORIZED', 401);
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(body)) as unknown;
+  } catch {
+    return resultError('INVALID_TOOL_REQUEST');
+  }
+  const envelope = parseEnvelope(raw, expectedName);
+  if (!envelope) return resultError('INVALID_TOOL_REQUEST');
+
+  let callId: string;
+  try {
+    const correlation = await dependencies.calls.resolveRetellCall({
+      providerCallId: envelope.call.call_id,
+      metadata: {
+        internalCallId: envelope.call.metadata.internal_call_id,
+        contactId: envelope.call.metadata.contact_id,
+        conversationId: envelope.call.metadata.conversation_id,
+      },
+    });
+    callId = correlation.callId;
+    if (!await dependencies.contacts.isCorrelatedToWorkspace({
+      callId,
+      workspaceSlug: dependencies.workspaceSlug,
+    })) return resultError('CALL_CORRELATION_MISMATCH');
+  } catch (error) {
+    if (error instanceof RetellCallCorrelationError) return resultError(error.code);
+    return resultError('TOOL_UNAVAILABLE');
+  }
+
+  try {
+    if (expectedName === 'consultar_curso') {
+      return await consultCourse(
+        envelope.args as z.infer<typeof ToolArgsSchemas.consultar_curso>,
+        dependencies,
+      );
+    }
+    if (expectedName === 'consultar_oferta') {
+      return await consultOffer(
+        envelope.args as z.infer<typeof ToolArgsSchemas.consultar_oferta>,
+        dependencies,
+      );
+    }
+    if (expectedName === 'guardar_datos_contacto') {
+      const args = envelope.args as z.infer<typeof ToolArgsSchemas.guardar_datos_contacto>;
+      const saved = await dependencies.contacts.saveCorrelatedContact({
+        callId,
+        workspaceSlug: dependencies.workspaceSlug,
+        ...(args.nombre === undefined ? {} : { nombre: args.nombre }),
+        ...(args.email === undefined ? {} : { email: args.email }),
+        ...(args.telefono_alternativo === undefined
+          ? {}
+          : { telefonoAlternativo: args.telefono_alternativo }),
+        sheets: dependencies.sheets,
+      });
+      return Response.json({ ok: true, saved: saved.updated, projected: saved.projected });
+    }
+    return await recordResult(
+      envelope as ParsedEnvelope<'registrar_resultado'>,
+      callId,
+      dependencies,
+    );
+  } catch {
+    return resultError('TOOL_UNAVAILABLE');
+  }
+}

@@ -13,6 +13,8 @@ import { openLocalTestDatabase } from '../../helpers/db';
 vi.mock('@/lib/db/orchestrator', () => ({ sql: undefined }));
 
 const {
+  agentALeadProjectionSourceOrder,
+  agentBLeadProjectionSourceOrder,
   enqueueLeadProjection,
   flushSheetProjections,
   leadProjectionKey,
@@ -117,6 +119,22 @@ async function drainPending() {
 }
 
 run('sheet projection idempotency', () => {
+  it('rejects Agent A source orders that cannot be doubled safely', () => {
+    expect(() => agentALeadProjectionSourceOrder(Number.MAX_SAFE_INTEGER)).toThrow(
+      'INVALID_LEAD_PROJECTION_SOURCE_ORDER',
+    );
+    expect(() => agentALeadProjectionSourceOrder(1.5)).toThrow(
+      'INVALID_LEAD_PROJECTION_SOURCE_ORDER',
+    );
+  });
+
+  it('anchors Agent B immediately after its source Agent A turn and rejects overflow', () => {
+    expect(agentBLeadProjectionSourceOrder(4)).toBe(9);
+    expect(() => agentBLeadProjectionSourceOrder(Number.MAX_SAFE_INTEGER)).toThrow(
+      'INVALID_LEAD_PROJECTION_SOURCE_ORDER',
+    );
+  });
+
   it('does not create an outbox row until all four visible lead values are complete', async () => {
     const workspaceId = await workspaceFixture();
     const spreadsheetId = randomUUID();

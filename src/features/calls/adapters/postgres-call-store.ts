@@ -207,11 +207,23 @@ export class PostgresCallStore implements CallStore, RetellCallCorrelationStore 
       RETURNING id
     `;
     if (inserted.length > 0) return 'recorded';
-    const existing = await this.db<Array<{ call_id: string; payload_hash_hex: string }>>`
-      SELECT call_id, encode(payload_hash, 'hex') AS payload_hash_hex
+    const existing = await this.db<Array<{
+      call_id: string;
+      event_type: CallEvent['event_type'];
+      payload_hash_hex: string;
+    }>>`
+      SELECT call_id, event_type, encode(payload_hash, 'hex') AS payload_hash_hex
       FROM call_events WHERE provider = ${event.provider} AND event_id = ${event.event_id}
     `;
-    if (existing[0]?.call_id !== event.call_id || existing[0]?.payload_hash_hex !== payloadHash) {
+    const firstWriterWinsAnalyzed = event.provider === 'retell'
+      && event.event_type === 'analyzed'
+      && event.event_id.startsWith('retell:call_analyzed:')
+      && existing[0]?.event_type === 'analyzed'
+      && existing[0]?.call_id === event.call_id;
+    if (
+      existing[0]?.call_id !== event.call_id
+      || (existing[0]?.payload_hash_hex !== payloadHash && !firstWriterWinsAnalyzed)
+    ) {
       throw new Error('CALL_EVENT_REPLAY_CONFLICT');
     }
     return 'duplicate';

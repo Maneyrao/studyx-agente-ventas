@@ -104,6 +104,30 @@ function sourceOrder(input: LeadProjectionInput): number | null {
   return value;
 }
 
+/** Agent A occupies the even positions in the shared A/B projection order. */
+export function agentALeadProjectionSourceOrder(inboundSourceOrder: number): number {
+  if (
+    !Number.isSafeInteger(inboundSourceOrder)
+    || inboundSourceOrder < 0
+    || inboundSourceOrder > Math.floor(Number.MAX_SAFE_INTEGER / 2)
+  ) {
+    throw new Error('INVALID_LEAD_PROJECTION_SOURCE_ORDER');
+  }
+  return inboundSourceOrder * 2;
+}
+
+/** Agent B is ordered immediately after the Agent A turn that opened its call. */
+export function agentBLeadProjectionSourceOrder(callSourceOrder: number): number {
+  if (
+    !Number.isSafeInteger(callSourceOrder)
+    || callSourceOrder < 0
+    || callSourceOrder > Math.floor(Number.MAX_SAFE_INTEGER / 2)
+  ) {
+    throw new Error('INVALID_LEAD_PROJECTION_SOURCE_ORDER');
+  }
+  return callSourceOrder * 2 + 1;
+}
+
 /**
  * Idempotent upsert of the single outbox row for one lead.
  *

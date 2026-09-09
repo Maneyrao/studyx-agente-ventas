@@ -1079,7 +1079,7 @@ run('Agent Loop preparation materialization', () => {
       SELECT payload, source_order FROM sheet_projection_rows
       WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
     `).resolves.toEqual([{
-      source_order: '4',
+      source_order: '8',
       payload: {
         nombre: 'Ana',
         apellido: 'García',
@@ -1134,7 +1134,7 @@ run('Agent Loop preparation materialization', () => {
       SELECT payload, source_order FROM sheet_projection_rows
       WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
     `).resolves.toEqual([{
-      source_order: '2',
+      source_order: '4',
       payload: {
         nombre: 'Ana',
         apellido: 'García',

@@ -25,7 +25,11 @@ import {
   splitFullName,
 } from '@/lib/heuristics/contact-identity';
 import { reserveCallForDecision } from '@/features/calls/application/request-call';
-import { enqueueLeadProjection, type LeadProjectionInput } from '@/lib/services/projection.service';
+import {
+  agentALeadProjectionSourceOrder,
+  enqueueLeadProjection,
+  type LeadProjectionInput,
+} from '@/lib/services/projection.service';
 import { loadSheetsProjectionConfig } from '@/lib/config';
 import {
   PAYMENT_PLAN_CODES,
@@ -1199,7 +1203,7 @@ export async function commitAgentTurnV3(
           contactId: context.contact_id,
           spreadsheetId: sheets.spreadsheetId,
           tabName: sheets.tabName,
-          sourceOrder: context.source_order,
+          sourceOrder: agentALeadProjectionSourceOrder(context.source_order),
           telefono: projectedContact.declared_phone ?? context.destination,
           nombre: names.nombre,
           apellido: names.apellido,
