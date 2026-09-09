@@ -72,6 +72,7 @@ describe('call offers never outnumber the ledger', () => {
       '¿Hablamos por teléfono?',
       '¿Coordinamos una llamada?',
       'Podés pedir que te contactemos por teléfono.',
+      'Si querés, puedo llamarte y explicarte todo con más detalle.',
     ]) {
       expect(solicitsACall(offer)).toBe(true);
     }

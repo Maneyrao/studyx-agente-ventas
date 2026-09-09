@@ -77,7 +77,7 @@ const METHOD_PRIORITY: Readonly<Record<LiteralMatchMethod, number>> = {
 };
 
 const CATALOG_INTENT_PATTERN =
-  /(?:\b(?:cursos|diplomados|capacitaciones|formaciones|programas|catalogo|oferta academica|academia|estudiar|aprender|inscribirme|inscribime|anotarme|anotame|busco)\b|\b(?:curso|diplomado|capacitacion|formacion|programa)\s+de\s+[\p{L}\p{N}]|\b(?:tienen|ofrecen|hay)\b.{0,24}\b(?:curso|diplomado|capacitacion|formacion|programa)\b)/u;
+  /(?:\b(?:cursos|diplomados|capacitaciones|formaciones|programas|catalogo|oferta academica|academia|inscribirme|inscribime|anotarme|anotame)\b|\bestudiar\b(?!\s+para\b)|\b(?:curso|diplomado|capacitacion|formacion|programa)\s+de\s+[\p{L}\p{N}]|\b(?:tienen|ofrecen|hay)\b.{0,24}\b(?:curso|diplomado|capacitacion|formacion|programa)\b)/u;
 
 const SELECTION_CUE_PATTERN =
   /\b(?:prefiero|elijo|elegi|selecciono|me quedo con|voy con|quiero|mejor|cambio a)\b/gu;
@@ -86,7 +86,7 @@ const BARE_COURSE_SELECTION_PATTERN =
   // Clitic forms (pagarlo, abonarla…) must stay payment cues, not course
   // selections: "quiero pagarlo en 12 cuotas" cannot reset the remembered
   // course. Mirrored in botpress-agent/src/utils/commercial-router.ts.
-  /\b(?:quiero|prefiero|elijo|elegi|selecciono|me quedo con|voy con|cambio a)\s+(?!(?:que|pagar(?:l[oa]s?)?|abonar(?:l[oa]s?)?|comprar(?:l[oa]s?)?|hablar|llamar|una llamada|un llamado|saber|consultar|confirmar|verificar|revisar|continuar|seguir|el plan|un plan|plan|cuotas?|por chat|mas informacion|informacion|info|es[ae]|est[ae]|aquel(?:la)?|(?:(?:el|la|un|una)\s+)?(?:opcion|alternativa))\b)(?:el|la|un|una)?\s*[\p{L}][\p{L}\p{N}]*(?:\s+[\p{L}\p{N}]+){0,4}\b/u;
+  /\b(?:quiero|prefiero|elijo|elegi|selecciono|me quedo con|voy con|cambio a)\s+(?!(?:que|para|aprender|estudiar|pagar(?:l[oa]s?)?|abonar(?:l[oa]s?)?|comprar(?:l[oa]s?)?|hablar|llamar|una llamada|un llamado|saber|consultar|confirmar|verificar|revisar|continuar|seguir|el plan|un plan|plan|cuotas?|por chat|mas informacion|informacion|info|es[ae]|est[ae]|aquel(?:la)?|(?:(?:el|la|un|una)\s+)?(?:opcion|alternativa))\b)(?:el|la|un|una)?\s*[\p{L}][\p{L}\p{N}]*(?:\s+[\p{L}\p{N}]+){0,4}\b/u;
 
 const CATALOG_REJECTION_PATTERN =
   /\b(?:no quiero|no me interesa|no prefiero|no elijo|ya no quiero|descarto|cancelo|no mejor no|mejor no|dejalo|dejala|ninguno|ninguna|cambi(?:o|emos|ar) de (?:curso|programa))\b/u;

@@ -12,6 +12,7 @@ import {
   generateOpenAIAgentATurnProposalV1,
   parseAgentATurnProposalV1,
   normalizeCallOfferResponseV1,
+  solicitsACallV1,
   validateAgentATurnProposalV1,
 } from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
 import { buildAgentABrainInstructionsV1 } from '../../../botpress-agent/src/prompts/agent-a-brain-v1';
@@ -92,6 +93,12 @@ afterEach(() => {
 });
 
 describe('Agent A Brain V1', () => {
+  it('recognizes the natural call invitation emitted by the sales prompt', () => {
+    expect(solicitsACallV1(
+      'Si querés, puedo llamarte y explicarte todo con más detalle.',
+    )).toBe(true);
+  });
+
   it('never discards an informational fact mixed into the same sentence as a reminder', () => {
     const response = {
       messages: ['Si querés podemos llamarte, la formación tiene 38 clases.'] as [string],
@@ -114,12 +121,206 @@ describe('Agent A Brain V1', () => {
     expect(BackendAgentATurnProposalV1Schema.safeParse(result).success).toBe(true);
   });
 
+  it('preserves two informational bubbles before the second call reminder', () => {
+    const current = context();
+    current.commercial_state.call_offer_count = 1;
+    current.commercial_state.call_offer_status = 'offered';
+    const result = parseAgentATurnProposalV1(proposal({
+      response: {
+        messages: ['Primero, qué vas a aprender.', 'Después, cómo se cursa y qué obtenés.'],
+        call_offer: 'Si te sirve, también puedo explicártelo con más detalle por llamada.',
+      },
+    }), current);
+
+    expect(result.response).toEqual({
+      messages: ['Primero, qué vas a aprender.', 'Después, cómo se cursa y qué obtenés.'],
+      call_offer: 'Si te sirve, también puedo explicártelo con más detalle por llamada.',
+    });
+    expect(BackendAgentATurnProposalV1Schema.safeParse(result).success).toBe(true);
+  });
+
+  it('rejects oversized or five-line WhatsApp bubbles in both schema mirrors', () => {
+    const tooLong = proposal({ response: { messages: ['x'.repeat(351)], call_offer: null } });
+    const tooManyLines = proposal({
+      response: { messages: ['uno\ndos\ntres\ncuatro\ncinco'], call_offer: null },
+    });
+
+    for (const invalid of [tooLong, tooManyLines]) {
+      expect(() => parseAgentATurnProposalV1(invalid, context()))
+        .toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
+      expect(BackendAgentATurnProposalV1Schema.safeParse(invalid).success).toBe(false);
+    }
+  });
+
+  it('rejects a question in the call reminder or more than one question per turn', () => {
+    const callQuestion = proposal({
+      response: { messages: ['Te cuento lo principal.'], call_offer: '¿Querés que te llame?' },
+    });
+    const twoQuestions = proposal({
+      response: { messages: ['¿Qué objetivo tenés?', '¿Partís desde cero?'], call_offer: null },
+    });
+
+    for (const invalid of [callQuestion, twoQuestions]) {
+      expect(() => parseAgentATurnProposalV1(invalid, context()))
+        .toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
+      expect(BackendAgentATurnProposalV1Schema.safeParse(invalid).success).toBe(false);
+    }
+  });
+
+  it('keeps all payment options in exactly one physical message', () => {
+    const twoBubbles = proposal({
+      move: 'ask_payment_options',
+      response: { messages: ['12 pagos de USD 30.', '6 pagos de USD 60.'], call_offer: null },
+    });
+
+    expect(() => parseAgentATurnProposalV1(twoBubbles, context()))
+      .toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
+  });
+
+  it('keeps a pure chat preference in one physical message', () => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'Contame por acá, por favor.';
+    current.commercial_state.awaiting_reply = 'call_or_chat';
+    const twoBubbles = proposal({
+      move: 'continue_by_chat',
+      response: { messages: ['Claro, seguimos por acá.', 'Te cuento lo principal.'], call_offer: null },
+    });
+
+    expect(() => parseAgentATurnProposalV1(twoBubbles, current))
+      .toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
+  });
+
+  it('requires two informational bubbles for a detailed course explanation', () => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'Contame en detalle qué voy a aprender y cómo se cursa.';
+    current.commercial_state.call_preference = 'chat';
+    current.commercial_state.call_offer_status = 'declined';
+    current.commercial_state.call_offer_count = 1;
+    current.capabilities.may_offer_call = false;
+    const oneBubble = proposal({
+      response: { messages: ['Te cuento todo el programa en un único bloque.'], call_offer: null },
+    });
+
+    expect(() => parseAgentATurnProposalV1(oneBubble, current))
+      .toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
+  });
+
+  it('requires the subtle second call reminder on a new detailed explanation', () => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'Contame en detalle qué incluye el curso.';
+    current.commercial_state.call_offer_count = 1;
+    current.commercial_state.call_offer_status = 'offered';
+    const missingReminder = proposal({
+      response: {
+        messages: ['Primero, qué vas a aprender.', 'Después, cómo se cursa.'],
+        call_offer: null,
+      },
+    });
+
+    expect(() => parseAgentATurnProposalV1(missingReminder, current))
+      .toThrowError(expect.objectContaining({
+        code: 'BRAIN_INVALID_SCHEMA',
+        detail: 'response.call_offer:second_reminder_required',
+      }));
+  });
+
+  it('normalizes a collapsed detailed explanation only at a sentence boundary', () => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'Contame en detalle qué voy a aprender y cómo se cursa.';
+    current.commercial_state.call_offer_count = 1;
+    const collapsed = proposal({
+      response: {
+        messages: [
+          'Redes Informáticas tiene 16 clases online. Vas a conocer cómo funcionan las redes. También vas a reconocer los dispositivos que las componen.',
+          'Recordá que puedo llamarte y aclararte todos los detalles de Redes Informáticas, si gustás.',
+        ],
+        call_offer: null,
+      },
+    });
+
+    const parsed = parseAgentATurnProposalV1(collapsed, current);
+
+    expect(parsed.response.messages).toHaveLength(2);
+    expect(parsed.response.messages.join(' ')).toContain(
+      'Redes Informáticas tiene 16 clases online. Vas a conocer cómo funcionan las redes.',
+    );
+    expect(parsed.response.call_offer).toBe(
+      'Recordá que puedo llamarte y aclararte todos los detalles de Redes Informáticas, si gustás.',
+    );
+  });
+
+  it('keeps a direct duration answer in one bubble of at most 180 characters', () => {
+    const current = context();
+    current.turn.batch_messages[0].text = '¿Cuánto dura el curso?';
+    current.commercial_state.call_preference = 'chat';
+    current.capabilities.may_offer_call = false;
+    const oversized = proposal({
+      response: { messages: ['x'.repeat(181)], call_offer: null },
+    });
+
+    expect(() => parseAgentATurnProposalV1(oversized, current))
+      .toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
+  });
+
+  it('keeps a direct next-step answer in one bubble of at most 180 characters', () => {
+    const current = context();
+    current.turn.batch_messages[0].text = '¿Cuál sería el siguiente paso para conocerlo mejor?';
+    current.commercial_state.call_preference = 'chat';
+    current.capabilities.may_offer_call = false;
+    const oversized = proposal({
+      response: { messages: ['x'.repeat(181)], call_offer: null },
+    });
+
+    expect(() => parseAgentATurnProposalV1(oversized, current))
+      .toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
+  });
+
+  it('keeps a reply to starting from zero in one short bubble', () => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'Empiezo desde cero.';
+    current.commercial_state.call_preference = 'chat';
+    current.capabilities.may_offer_call = false;
+    const oversized = proposal({
+      response: { messages: ['x'.repeat(181)], call_offer: null },
+    });
+
+    expect(() => parseAgentATurnProposalV1(oversized, current))
+      .toThrowError(expect.objectContaining({
+        code: 'BRAIN_INVALID_SCHEMA',
+        detail: 'response.messages:beginner_reply_single_short_message',
+      }));
+  });
+
+  it('does not mix a diagnostic question into the initial call invitation turn', () => {
+    const mixedTurn = proposal({
+      response: {
+        messages: ['Te cuento el curso. ¿Partís desde cero?'],
+        call_offer: 'Si querés, puedo llamarte y explicarte más.',
+      },
+    });
+
+    expect(() => parseAgentATurnProposalV1(mixedTurn, context()))
+      .toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
+  });
+
   it('recognizes an unsupported beginner-level assertion without rejecting a diagnostic question', () => {
     expect(assertsUnsupportedPrerequisitesV1(
       'Si partís desde cero, este nivel es el punto de partida para quienes no tienen conocimientos previos.',
     )).toBe(true);
     expect(assertsUnsupportedPrerequisitesV1(
       'Es el punto de partida para quienes no tienen conocimientos previos.',
+    )).toBe(true);
+    expect(assertsUnsupportedPrerequisitesV1(
+      'El curso está pensado justamente para quienes empiezan desde cero.',
+    )).toBe(true);
+    expect(assertsUnsupportedPrerequisitesV1(
+      'El curso está pensado para que aprendas desde la base, paso a paso.',
+    )).toBe(true);
+    expect(assertsUnsupportedPrerequisitesV1(
+      'El curso está pensado para que aprendas desde lo básico.',
+    )).toBe(true);
+    expect(assertsUnsupportedPrerequisitesV1(
+      'Maquillaje Profesional está pensado justamente para empezar desde cero.',
     )).toBe(true);
     expect(assertsUnsupportedPrerequisitesV1(
       '¿Tenés conocimientos previos o partís desde cero?',
@@ -397,7 +598,10 @@ describe('Agent A Brain V1', () => {
   });
 
   it('normalizes only a known compact move enum into the closed move contract', () => {
-    const parsed = parseAgentATurnProposalV1(proposal({ move: 'ask_payment_options' }), context());
+    const parsed = parseAgentATurnProposalV1(proposal({
+      move: 'ask_payment_options',
+      response: { messages: ['Te cuento las opciones de pago.'], call_offer: null },
+    }), context());
 
     expect(parsed.move).toEqual({
       schema_version: 1,
@@ -745,6 +949,60 @@ describe('Agent A Brain V1', () => {
     );
   });
 
+  it('rejects inferred syllabus examples absent from the authorized course facts', () => {
+    const current = context();
+    current.capabilities.may_offer_call = false;
+    current.catalog.selected_offering!.facts.push({
+      id: 'offering:redes-informaticas:description:v1',
+      kind: 'offering_description',
+      value: 'Una formación para fortalecer habilidades de liderazgo.',
+    });
+    const parsed = parseAgentATurnProposalV1(proposal({
+      response: {
+        messages: [
+          'La formación fortalece tus habilidades de liderazgo.',
+          'Vas a trabajar toma de decisiones y gestión de personas.',
+        ],
+        call_offer: null,
+      },
+      used_fact_ids: [
+        'offering:redes-informaticas:name:v1',
+        'offering:redes-informaticas:description:v1',
+      ],
+    }), current);
+
+    expect(validateAgentATurnProposalV1({
+      proposal: parsed,
+      context: current,
+      planned_fact_ids: parsed.used_fact_ids,
+      rejection_id: '00000000-0000-4000-8000-000000000005',
+    })?.rejections).toContainEqual({
+      code: 'FACT_VALUE_MISMATCH',
+      subject: 'inferred_course_detail',
+    });
+  });
+
+  it.each([
+    'Al ser online, podés avanzar a tu ritmo.',
+    'Al ser online, podés avanzar con las clases desde donde estés.',
+  ])('rejects inferred study flexibility absent from authorized facts: %s', (message) => {
+    const current = context();
+    current.capabilities.may_offer_call = false;
+    const parsed = parseAgentATurnProposalV1(proposal({
+      response: { messages: [message], call_offer: null },
+    }), current);
+
+    expect(validateAgentATurnProposalV1({
+      proposal: parsed,
+      context: current,
+      planned_fact_ids: parsed.used_fact_ids,
+      rejection_id: '00000000-0000-4000-8000-000000000006',
+    })?.rejections).toContainEqual({
+      code: 'FACT_VALUE_MISMATCH',
+      subject: 'course_logistics',
+    });
+  });
+
   it('compacts multiline model copy before canonical assembly', () => {
     const composition = buildSafeAgentABrainCompositionV1({
       proposal: parseAgentATurnProposalV1(proposal({
@@ -930,7 +1188,7 @@ describe('Agent A Brain V1', () => {
     const moveProperties = body.text.format.schema.properties.move.properties;
     const responseProperties = body.text.format.schema.properties.response.properties;
     expect(body.text.format.schema.properties.used_fact_ids.maxItems).toBe(60);
-    expect(responseProperties.messages.maxItems).toBe(3);
+    expect(responseProperties.messages.maxItems).toBe(1);
     expect(responseProperties.messages.description).toContain(
       'when call_offer is non-null, return exactly one response message',
     );
@@ -968,7 +1226,7 @@ describe('Agent A Brain V1', () => {
       'ask one of the fields still present in capabilities.intake_missing',
     );
     expect(body.instructions).toContain(
-      'Use one to three physical messages and at most one question in the whole turn',
+      'Normally use one or two physical messages and at most one question in the whole turn',
     );
     expect(body.instructions).toContain(
       'Product logistics mentioned in behavioral examples are not authorized facts',

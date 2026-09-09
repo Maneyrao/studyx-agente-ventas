@@ -114,6 +114,39 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
+  it('preserves two informational messages before an authorized second call reminder', async () => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'Contame en detalle qué voy a aprender y cómo se cursa.';
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_status = 'offered';
+    current.commercial_state.call_offer_count = 1;
+    current.capabilities.may_offer_call = true;
+    const messages: [string, string] = [
+      `Primera parte. ${'a'.repeat(175)}`,
+      `Segunda parte. ${'b'.repeat(175)}`,
+    ];
+    const repair = vi.fn();
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({
+        response: {
+          messages,
+          call_offer: 'Recordá que puedo llamarte y explicarte más, si querés.',
+        },
+      })),
+      context: current,
+      repair_enabled: true,
+      repair,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.response).toEqual({
+      messages,
+      call_offer: 'Recordá que puedo llamarte y explicarte más, si querés.',
+    });
+  });
+
   it('normalizes a repaired multi-fragment initial offer through the same boundary', async () => {
     const current = context();
     current.commercial_state.call_preference = 'unknown';
@@ -1247,5 +1280,39 @@ describe('prerequisitos sin respaldo se podan, no se entregan', () => {
 
     expect(resolved.effective.proposal.response.messages)
       .toEqual(['¿Tenés conocimientos previos o partís desde cero?']);
+  });
+});
+
+describe('flexibilidad de cursada sin respaldo se poda, no se entrega', () => {
+  it('conserva las partes seguras cuando la reparación repite la inferencia', async () => {
+    const initial = generated(proposal({
+      response: {
+        messages: [
+          'La formación tiene 38 clases.',
+          'Al ser online, podés avanzar a tu ritmo desde donde estés. ¿Querés conocer el contenido?',
+        ],
+        call_offer: null,
+      },
+    }));
+
+    const resolved = await resolveAgentAPlannerlessProposalV2({
+      initial,
+      context: context(),
+      repair_enabled: true,
+      rejection_id: '00000000-0000-4000-8000-0000000000af',
+      repair: async () => generated({
+        ...initial.proposal,
+        repair_of: {
+          rejection_id: '00000000-0000-4000-8000-0000000000af', attempt: 1,
+        },
+      }),
+    });
+
+    expect(resolved.effective.proposal.response.messages).toEqual([
+      'La formación tiene 38 clases.',
+      '¿Querés conocer el contenido?',
+    ]);
+    expect(resolved.effective.proposal.response.messages.join(' '))
+      .not.toMatch(/a tu ritmo|desde donde est[eé]s/iu);
   });
 });

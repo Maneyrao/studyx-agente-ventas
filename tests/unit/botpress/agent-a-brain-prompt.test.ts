@@ -62,7 +62,7 @@ describe('Agent A Brain V1 prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v14');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v37');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v41');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('Backend policy and capabilities are authoritative');
     expect(instructions).toContain('commercial_state.awaiting_reply only to resolve an otherwise ambiguous answer');
@@ -118,13 +118,13 @@ describe('Agent A Brain V1 prompt', () => {
     expect(execution).toMatch(/answer it first[\s\S]*resume the ordered path/u);
   });
 
-  it('allows one to three physical messages while keeping a call offer separate', () => {
+  it('keeps the bounded physical-message contract while separating call offers', () => {
     const execution = buildAgentABrainInstructionsV1(context()).split('<canonical_sales_behavior')[0];
 
     expect(execution).toContain(
-      'Use one to three physical messages and at most one question in the whole turn',
+      'Normally use one or two physical messages and at most one question in the whole turn',
     );
-    expect(execution).toMatch(/call_offer is non-null[\s\S]*exactly one response\.messages/u);
+    expect(execution).toMatch(/call_offer_count is 0[\s\S]*exactly one response\.messages/u);
   });
 
   it('repairs an early payment action by continuing the intake instead of claiming a link', () => {
@@ -326,6 +326,18 @@ describe('directiva de reparación por repetición', () => {
     const instructions = buildAgentABrainInstructionsV1(current);
     expect(instructions).toMatch(/CALL_OFFER_MESSAGE_BOUNDARY_INVALID[\s\S]*one informational/u);
     expect(instructions).toMatch(/response\.call_offer/u);
+  });
+
+  it('fija el contrato breve de WhatsApp sin cambiar las fases comerciales', () => {
+    const instructions = buildAgentABrainInstructionsV1(context());
+
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v41');
+    expect(instructions).toMatch(/Each physical message must stay within 350 characters and four non-empty lines/u);
+    expect(instructions).toMatch(/Detailed course explanations use exactly two informational messages/u);
+    expect(instructions).toMatch(/Payment options always stay together in exactly one response\.messages item/u);
+    expect(instructions).toMatch(/second call reminder must follow those two informational messages/u);
+    expect(instructions).toMatch(/Do not infer common course features/u);
+    expect(instructions).toMatch(/do not ask it again/u);
   });
 });
 

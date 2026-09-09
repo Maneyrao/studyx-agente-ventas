@@ -25,7 +25,8 @@ function channelPreferenceEvidenceV1(
     const writtenChoice = !rejectsWritten && (
       /\bprefiero\s+(?:mantener|seguir|continuar)[^.!?]{0,40}\bpor\s+(?:chat|escrito|mensajes?)\b/u.test(clause)
       || /\b(?:(?:prefiero|sigamos|seguimos|continuemos|continuar|mejor)\s+(?:(?:seguir|continuar)\s+)?(?:por\s+)?(?:chat|escrito|mensajes?)|(?:sigamos|seguimos|continuemos|prefiero\s+seguir|mejor\s+seguimos)\s+(?:por\s+)?(?:aca|aqui))\b/u.test(clause)
-      || /^(?:chat|por aca|por aqui|por escrito(?:\s+por favor)?|por mensajes?)$/u.test(clause)
+      || /\b(?:contame|cuentame|explicame|decime|dime)(?:\s+todo)?\s+por\s+(?:aca|aqui|chat|escrito)\b/u.test(clause)
+      || /^(?:chat|por chat(?:\s+por favor)?|por aca|por aqui|por escrito(?:\s+por favor)?|por mensajes?)$/u.test(clause)
     );
     if (refusesCall || writtenChoice) return 'chat';
     const choosesCall = /\b(?:mejor\s+llamame|prefiero\s+(?:una\s+)?llamada|prefiero\s+(?:hablar\s+)?por\s+telefono|quiero\s+(?:una\s+)?llamada|(?:podes|puedes)\s+llamarme|(?:hablemos|hablamos|podemos\s+(?:hablar|conversar)|podriamos\s+(?:hablar|conversar))\s+por\s+telefono|llamame)\b/u.test(clause);

@@ -271,6 +271,16 @@ describe('resolveCatalogRequest', () => {
     expect(isCatalogRequestNeutral(text)).toBe(true);
   });
 
+  it('keeps a generic request about the selected course out of catalog resolution', () => {
+    const text = 'Contame en detalle qué incluye el curso.';
+    expect(resolveCatalogRequest(text, snapshot([
+      offering('autocad', 'AutoCAD orientado al Diseño de Interiores', 'Tecnología'),
+      offering('coaching_liderazgo', 'Coaching y Liderazgo', 'Administración'),
+      offering('illustrator', 'Adobe Illustrator', 'Diseño'),
+    ]))).toEqual({ kind: 'no_catalog_intent' });
+    expect(isCatalogRequestNeutral(text)).toBe(true);
+  });
+
   it.each([
     '¿Se puede hacer sin usar un programa de diseño?',
     'Nunca usé un programa de diseño, ¿igual puedo hacer el curso?',
@@ -491,6 +501,17 @@ describe('resolveCatalogRequest', () => {
     expect(
       resolveCatalogRequest('¿Cuántas clases tiene el programa completo?', snapshot([MARKETING])),
     ).toEqual({ kind: 'no_catalog_intent' });
+  });
+
+  it.each([
+    'Lo busco para trabajar en soporte técnico.',
+    'Lo busco para mejorar como líder de equipo.',
+    'Lo quiero para promocionar mi emprendimiento.',
+    'Quiero aprender para empezar un emprendimiento.',
+  ])('does not reinterpret a diagnostic goal as a new catalog search: %s', (message) => {
+    expect(resolveCatalogRequest(message, snapshot([MARKETING, COMMUNITY]))).toEqual({
+      kind: 'no_catalog_intent',
+    });
   });
 
   it('does not treat a demonstrative payment-plan choice as a new course selection', () => {

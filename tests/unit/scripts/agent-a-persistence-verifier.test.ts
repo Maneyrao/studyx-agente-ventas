@@ -344,6 +344,33 @@ describe('Agent A durable conversation evidence', () => {
     });
   });
 
+  it('accepts physical outbound counts declared as per-turn message ranges', () => {
+    const testCase = {
+      ...buyerCase(),
+      ideal_result: {
+        ...buyerCase().ideal_result,
+        turn_assertions: [
+          { min_messages: 1, max_messages: 1 },
+          { min_messages: 2, max_messages: 2 },
+          { min_messages: 1, max_messages: 2 },
+        ],
+      },
+    };
+    const evidence = {
+      ...completeEvidence(),
+      outboundMessages: 5,
+    };
+
+    const result = evaluatePersistenceEvidence(testCase, evidence, { runId: RUN_ID });
+
+    expect(result.failures).toEqual([]);
+    expect(result.checks).toMatchObject({
+      expected_outbound_messages: null,
+      expected_outbound_messages_min: 4,
+      expected_outbound_messages_max: 5,
+    });
+  });
+
   it('detects misplaced outbounds even when the aggregate total is correct', () => {
     const testCase = {
       ...buyerCase(),

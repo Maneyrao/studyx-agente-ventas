@@ -128,12 +128,12 @@ const CATALOG_RETRIEVAL_NONE = {
 } as const
 
 const CATALOG_INTENT_PATTERN =
-  /(?:\b(?:cursos|diplomados|capacitaciones|formaciones|programas|catalogo|oferta academica|academia|estudiar|aprender|inscribirme|inscribime|anotarme|anotame|busco)\b|\b(?:curso|diplomado|capacitacion|formacion|programa)\s+de\s+[a-z0-9]|\b(?:tienen|ofrecen|hay)\b.{0,24}\b(?:curso|diplomado|capacitacion|formacion|programa)\b)/u
+  /(?:\b(?:cursos|diplomados|capacitaciones|formaciones|programas|catalogo|oferta academica|academia|inscribirme|inscribime|anotarme|anotame)\b|\bestudiar\b(?!\s+para\b)|\b(?:curso|diplomado|capacitacion|formacion|programa)\s+de\s+[a-z0-9]|\b(?:tienen|ofrecen|hay)\b.{0,24}\b(?:curso|diplomado|capacitacion|formacion|programa)\b)/u
 
 const BARE_COURSE_SELECTION_PATTERN =
   // Clitic forms (pagarlo, abonarla…) must stay payment cues, not course
   // selections. Mirror of src/features/orchestration/domain/catalog-resolution.ts.
-  /\b(?:quiero|prefiero|elijo|elegi|selecciono|me quedo con|voy con|cambio a)\s+(?!(?:que|pagar(?:l[oa]s?)?|abonar(?:l[oa]s?)?|comprar(?:l[oa]s?)?|hablar|llamar|una llamada|un llamado|saber|consultar|confirmar|verificar|revisar|continuar|seguir|el plan|un plan|plan|cuotas?|por chat|mas informacion|informacion|info|es[ae]|est[ae]|aquel(?:la)?|(?:(?:el|la|un|una)\s+)?(?:opcion|alternativa))\b)(?:el|la|un|una)?\s*[a-z][a-z0-9]*(?:\s+[a-z0-9]+){0,4}\b/u
+  /\b(?:quiero|prefiero|elijo|elegi|selecciono|me quedo con|voy con|cambio a)\s+(?!(?:que|para|aprender|estudiar|pagar(?:l[oa]s?)?|abonar(?:l[oa]s?)?|comprar(?:l[oa]s?)?|hablar|llamar|una llamada|un llamado|saber|consultar|confirmar|verificar|revisar|continuar|seguir|el plan|un plan|plan|cuotas?|por chat|mas informacion|informacion|info|es[ae]|est[ae]|aquel(?:la)?|(?:(?:el|la|un|una)\s+)?(?:opcion|alternativa))\b)(?:el|la|un|una)?\s*[a-z][a-z0-9]*(?:\s+[a-z0-9]+){0,4}\b/u
 
 const PAYMENT_OR_LINK_CONTEXT_PATTERN =
   /\b(?:pag(?:o|ar|arlo|arla|arlos|arlas)?|cuotas?|dolares?|usd|link|plan(?:es)?|mensual(?:es)?|mes(?:es)?|pensar(?:lo|la)?|decidir)\b/u

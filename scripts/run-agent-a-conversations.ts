@@ -106,6 +106,10 @@ const namedSuites: Readonly<Record<string, string>> = {
     botpressDir,
     'evals/personas/studyx-agent-a-conversational-baseline.json',
   ),
+  'studyx-agent-a-naturalness-v1': path.join(
+    botpressDir,
+    'evals/personas/studyx-agent-a-naturalness-v1.json',
+  ),
 };
 
 function argument(name: string): string | null {

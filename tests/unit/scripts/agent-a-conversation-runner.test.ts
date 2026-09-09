@@ -559,7 +559,7 @@ describe('Agent A conversation runner', () => {
           move: {
             schema_version: 1, move: 'continue_by_chat', secondary_moves: [], vetoes: [], confidence: 0.98,
           },
-          response: { messages: ['Perfecto, seguimos por acá.', '¿Qué aspecto querés revisar?'], call_offer: null },
+          response: { messages: ['Perfecto, seguimos por acá. ¿Qué aspecto querés revisar?'], call_offer: null },
           proposed_action: { type: 'none' },
           used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
         }) }] }],
@@ -1198,6 +1198,86 @@ describe('Agent A conversation runner', () => {
     ]);
   });
 
+  it('measures each WhatsApp bubble and accepts an explicit two-message turn', async () => {
+    const result = await runConversationCase(
+      {
+        id: 'physical_message_quality',
+        name: 'Calidad por burbuja',
+        course: 'Redes Informáticas',
+        turns: ['Contame sobre el curso'],
+        ideal_result: {
+          turn_assertions: [{
+            min_messages: 2,
+            max_messages: 2,
+            max_chars_per_message: 40,
+            max_lines_per_message: 1,
+            min_call_offers: 1,
+            max_call_offers: 1,
+          }],
+        },
+      },
+      {
+        runId: 'run123',
+        sendTurn: vi.fn().mockResolvedValue({
+          conversationId: 'conv-physical-quality',
+          responses: [
+            { type: 'text', text: 'Info breve.' },
+            { type: 'text', text: 'Si querés, puedo explicarte por llamada.' },
+          ],
+        }),
+      },
+    );
+
+    expect(result.status).toBe('passed');
+    expect(result.checks.turn_quality).toEqual([
+      expect.objectContaining({
+        messages: 2,
+        message_chars: [11, 40],
+        message_lines: [1, 1],
+        call_offers: 1,
+      }),
+    ]);
+  });
+
+  it('fails when a later turn repeats a question already asked to the customer', async () => {
+    const result = await runConversationCase(
+      {
+        id: 'repeated_question_quality',
+        name: 'Pregunta repetida',
+        course: 'Introducción al Catering',
+        turns: ['Quiero aprender para emprender', '¿Cómo sigo?'],
+        ideal_result: {
+          no_repeated_questions: true,
+          turn_assertions: [
+            { max_questions: 1 },
+            { max_questions: 1 },
+          ],
+        },
+      },
+      {
+        runId: 'run123',
+        sendTurn: vi.fn()
+          .mockResolvedValueOnce({
+            conversationId: 'conv-repeat',
+            responses: [{ type: 'text', text: '¿Ya pensabas dedicarte al catering o recién empezás?' }],
+          })
+          .mockResolvedValueOnce({
+            conversationId: 'conv-repeat',
+            responses: [{ type: 'text', text: 'Hugo, para orientarte: ¿Ya pensabas dedicarte al catering o recién empezás?' }],
+          }),
+      },
+    );
+
+    expect(result.status).toBe('failed');
+    expect(result.failures).toContain('turn_2_repeated_question');
+    expect(result.checks.turn_quality).toEqual([
+      expect.objectContaining({ repeated_questions: [] }),
+      expect.objectContaining({
+        repeated_questions: ['ya pensabas dedicarte al catering o recien empezas'],
+      }),
+    ]);
+  });
+
   it('fails the exact turn that violates content and latency budgets', async () => {
     const now = vi.spyOn(Date, 'now')
       .mockReturnValueOnce(1_000)
@@ -1311,6 +1391,9 @@ describe('Agent A conversation runner', () => {
       expect(expectedPromptVersionForSuite('studyx-agent-a-brain-v1-heldout')).toBe(
         AGENT_A_BRAIN_PROMPT_VERSION,
       );
+      expect(expectedPromptVersionForSuite('studyx-agent-a-naturalness-v1')).toBe(
+        AGENT_A_BRAIN_PROMPT_VERSION,
+      );
       expect(expectedPromptVersionForSuite('studyx-agent-a-historical-20')).toBe(
         AGENT_A_BRAIN_PROMPT_VERSION,
       );
@@ -1321,6 +1404,25 @@ describe('Agent A conversation runner', () => {
         AGENT_A_PROMPT_VERSION,
       );
     });
+  });
+
+  it('keeps the naturalness matrix fixed at the eight reviewed cases', () => {
+    const suite = JSON.parse(readFileSync(
+      resolve(__dirname, '../../../botpress-agent/evals/personas/studyx-agent-a-naturalness-v1.json'),
+      'utf8',
+    )) as ConversationSuite;
+
+    expect(suite.cases.map((testCase) => testCase.id)).toEqual([
+      'nat_01_short_reply',
+      'nat_02_extensive_course_info',
+      'nat_03_initial_call_offer',
+      'nat_04_second_call_reminder',
+      'nat_05_rejected_call',
+      'nat_06_payment_options',
+      'nat_07_keep_brief_text_whole',
+      'nat_08_no_repeated_pitch',
+    ]);
+    expect(validateSuiteCaseInvariants(suite)).toEqual([]);
   });
 
   it('marks the case failed when durable registration evidence is missing', async () => {

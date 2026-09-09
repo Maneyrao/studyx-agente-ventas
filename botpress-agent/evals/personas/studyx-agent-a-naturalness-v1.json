@@ -1,0 +1,238 @@
+{
+  "schema_version": "1.0",
+  "prompt_version": "studyx-agent-a-brain-v41",
+  "suite": "studyx-agent-a-naturalness-v1",
+  "cases": [
+    {
+      "id": "nat_01_short_reply",
+      "name": "Respuesta corta y una sola pregunta útil",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "consulta_breve", "goal": "orientarse" },
+      "customer": {
+        "first_name": "Ana",
+        "last_name": "Ríos",
+        "email": "nat-01-short-reply-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Soy Ana. Hola, ¿cómo estás?",
+        "Me interesa Redes Informáticas.",
+        "Prefiero seguir por chat.",
+        "¿Cuánto dura?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "no_repeated_questions": true,
+        "expected_interest": "Redes Informáticas",
+        "no_call_after_turn": 3,
+        "turn_assertions": [
+          { "min_messages": 1, "max_messages": 1, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0 },
+          { "min_messages": 2, "max_messages": 2, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "min_call_offers": 1, "max_call_offers": 1 },
+          { "min_messages": 1, "max_messages": 1, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0 },
+          { "min_messages": 1, "max_messages": 1, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0 }
+        ]
+      }
+    },
+    {
+      "id": "nat_02_extensive_course_info",
+      "name": "Información extensa de curso en dos burbujas",
+      "course": "Redes Informáticas",
+      "persona": { "segment": "detalle_extenso", "goal": "comparar_contenido" },
+      "customer": {
+        "first_name": "Bruno",
+        "last_name": "Paz",
+        "email": "nat-02-extensive-info-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Soy Bruno. Me interesa Redes Informáticas.",
+        "Prefiero que sigamos por chat.",
+        "Lo busco para trabajar en soporte técnico.",
+        "Contame en detalle qué voy a aprender, cómo se cursa y qué obtengo al terminar."
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "no_repeated_questions": true,
+        "expected_interest": "Redes Informáticas",
+        "no_call_after_turn": 2,
+        "turn_assertions": [
+          { "min_messages": 2, "max_messages": 2, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "min_call_offers": 1, "max_call_offers": 1 },
+          { "min_messages": 1, "max_messages": 1, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0 },
+          { "min_messages": 1, "max_messages": 2, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0 },
+          { "min_messages": 2, "max_messages": 2, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0 }
+        ]
+      }
+    },
+    {
+      "id": "nat_03_initial_call_offer",
+      "name": "Primera propuesta de llamada separada",
+      "course": "Maquillaje Profesional",
+      "persona": { "segment": "primer_contacto", "goal": "conocer_curso" },
+      "customer": {
+        "first_name": "Carla",
+        "last_name": "Sosa",
+        "email": "nat-03-initial-call-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Soy Carla. Me interesa Maquillaje Profesional.",
+        "Contame por acá, por favor.",
+        "Empiezo desde cero.",
+        "¿Qué se aprende?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "no_repeated_questions": true,
+        "expected_interest": "Maquillaje Profesional",
+        "no_call_after_turn": 2,
+        "turn_assertions": [
+          { "min_messages": 2, "max_messages": 2, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "min_call_offers": 1, "max_call_offers": 1 },
+          { "min_messages": 1, "max_messages": 1, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0 },
+          { "min_messages": 1, "max_messages": 1, "max_chars_per_message": 180, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0, "must_not_include": ["pensado justamente para quienes empiezan desde cero", "pensado justamente para empezar desde cero", "desde lo básico", "desde lo basico", "38 clases", "100% online", "materiales", "tipos de piel", "formas de rostro"] },
+          { "min_messages": 1, "max_messages": 2, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0 }
+        ]
+      }
+    },
+    {
+      "id": "nat_04_second_call_reminder",
+      "name": "Segundo recordatorio sutil como tercera burbuja",
+      "course": "Sushi para Principiantes",
+      "persona": { "segment": "cambio_de_curso", "goal": "pedir_detalle" },
+      "customer": {
+        "first_name": "Diego",
+        "last_name": "Luna",
+        "email": "nat-04-second-call-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Soy Diego. Me interesa Sushi para Principiantes.",
+        "Mejor quiero ver Redes Informáticas.",
+        "Contame en detalle qué voy a aprender y cómo se cursa Redes Informáticas.",
+        "¿Y cuánto dura?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "no_repeated_questions": true,
+        "expected_interest": "Redes Informáticas",
+        "turn_assertions": [
+          { "min_messages": 2, "max_messages": 2, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "min_call_offers": 1, "max_call_offers": 1 },
+          { "min_messages": 1, "max_messages": 1, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0 },
+          { "min_messages": 3, "max_messages": 3, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "min_call_offers": 1, "max_call_offers": 1, "must_not_include": ["a tu ritmo", "profesores", "certificado"] },
+          { "min_messages": 1, "max_messages": 1, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0 }
+        ]
+      }
+    },
+    {
+      "id": "nat_05_rejected_call",
+      "name": "Rechazo de llamada sin reoferta",
+      "course": "Coaching y Liderazgo",
+      "persona": { "segment": "rechazo_llamada", "goal": "seguir_por_chat" },
+      "customer": {
+        "first_name": "Elena",
+        "last_name": "Vidal",
+        "email": "nat-05-rejected-call-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Soy Elena. Quiero información de Coaching y Liderazgo.",
+        "No quiero una llamada; sigamos por chat.",
+        "Lo busco para mejorar como líder de equipo.",
+        "Contame en detalle qué incluye el curso."
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "no_repeated_questions": true,
+        "expected_interest": "Coaching y Liderazgo",
+        "no_call_after_turn": 2,
+        "turn_assertions": [
+          { "min_messages": 2, "max_messages": 2, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "min_call_offers": 1, "max_call_offers": 1 },
+          { "min_messages": 1, "max_messages": 1, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0 },
+          { "min_messages": 1, "max_messages": 2, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0 },
+          { "min_messages": 2, "max_messages": 2, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0, "must_not_include": ["toma de decisiones", "gestión de personas", "gestion de personas", "desde donde estés", "desde donde estes"] }
+        ]
+      }
+    },
+    {
+      "id": "nat_06_payment_options",
+      "name": "Opciones de pago en una sola burbuja",
+      "course": "Publicidad en Redes Sociales",
+      "persona": { "segment": "consulta_pago", "goal": "comparar_planes" },
+      "customer": {
+        "first_name": "Fabio",
+        "last_name": "Ortiz",
+        "email": "nat-06-payment-options-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Soy Fabio. Me interesa Publicidad en Redes Sociales.",
+        "Prefiero seguir por chat.",
+        "Lo quiero para promocionar mi emprendimiento.",
+        "¿Qué opciones de pago tienen?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "no_repeated_questions": true,
+        "expected_interest": "Publicidad en Redes Sociales",
+        "no_call_after_turn": 2,
+        "turn_assertions": [
+          { "min_messages": 2, "max_messages": 2, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "min_call_offers": 1, "max_call_offers": 1 },
+          { "min_messages": 1, "max_messages": 1, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0 },
+          { "min_messages": 1, "max_messages": 2, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0 },
+          { "min_messages": 1, "max_messages": 1, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0, "must_include": ["USD 30", "USD 60", "USD 360"] }
+        ]
+      }
+    },
+    {
+      "id": "nat_07_keep_brief_text_whole",
+      "name": "Respuesta breve sin corte mecánico",
+      "course": "Reparación de Celulares",
+      "persona": { "segment": "dato_puntual", "goal": "resolver_una_duda" },
+      "customer": {
+        "first_name": "Gina",
+        "last_name": "Mora",
+        "email": "nat-07-brief-whole-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Soy Gina. Hola.",
+        "Me interesa Reparación de Celulares.",
+        "Por chat, por favor.",
+        "¿Cuánto dura el curso?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "no_repeated_questions": true,
+        "expected_interest": "Reparación de Celulares",
+        "no_call_after_turn": 3,
+        "turn_assertions": [
+          { "min_messages": 1, "max_messages": 1, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0 },
+          { "min_messages": 2, "max_messages": 2, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "min_call_offers": 1, "max_call_offers": 1 },
+          { "min_messages": 1, "max_messages": 1, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0 },
+          { "min_messages": 1, "max_messages": 1, "max_chars": 180, "max_chars_per_message": 180, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0 }
+        ]
+      }
+    },
+    {
+      "id": "nat_08_no_repeated_pitch",
+      "name": "Continuidad sin repetir presentación ni oferta",
+      "course": "Introducción al Catering",
+      "persona": { "segment": "continuidad", "goal": "profundizar_sin_repeticion" },
+      "customer": {
+        "first_name": "Hugo",
+        "last_name": "Roldán",
+        "email": "nat-08-no-repeat-{{run_id}}@example.test"
+      },
+      "turns": [
+        "Soy Hugo. Me interesa Introducción al Catering.",
+        "Sigamos por escrito.",
+        "Quiero aprender para empezar un emprendimiento.",
+        "Bien, ¿cuál sería el siguiente paso para conocerlo mejor?"
+      ],
+      "ideal_result": {
+        "no_technical_fallback": true,
+        "no_repeated_questions": true,
+        "expected_interest": "Introducción al Catering",
+        "no_call_after_turn": 2,
+        "turn_assertions": [
+          { "min_messages": 2, "max_messages": 2, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "min_call_offers": 1, "max_call_offers": 1 },
+          { "min_messages": 1, "max_messages": 1, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0 },
+          { "min_messages": 1, "max_messages": 2, "max_chars_per_message": 350, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0 },
+          { "min_messages": 1, "max_messages": 1, "max_chars": 180, "max_chars_per_message": 180, "max_lines_per_message": 4, "max_questions": 1, "max_call_offers": 0 }
+        ]
+      }
+    }
+  ]
+}

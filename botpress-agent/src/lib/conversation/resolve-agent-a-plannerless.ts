@@ -3,6 +3,7 @@ import { AgentATurnProposalV1Schema, type AgentAContextV1, type AgentATurnPropos
 import { supportsCallRequestV1 } from './channel-preference-evidence'
 import {
   AgentABrainError,
+  removeUnsupportedCourseLogisticsAssertionsV1,
   removeUnsupportedPrerequisiteAssertionsV1,
   removeRepeatedAgentOpeningMessagesV1,
   removeRepeatedAgentQuestionMessagesV1,
@@ -263,7 +264,13 @@ function normalizePlannerlessBoundary<T extends AgentAProposalEnvelopeV1>(
   const suppressOffer = context.commercial_state.call_offer_count >= 1
     && (context.commercial_state.awaiting_reply === 'call_or_chat'
       || !moves.has('ask_course_information'))
-  const response = normalizeCallOfferResponseV1(proposal.response, suppressOffer)
+  const maxInformationalMessages = context.commercial_state.call_offer_count === 1
+    && moves.has('ask_course_information') ? 2 : 1
+  const response = normalizeCallOfferResponseV1(
+    proposal.response,
+    suppressOffer,
+    maxInformationalMessages,
+  )
   return response === proposal.response ? initial : {
     ...initial, proposal: { ...proposal, response },
   }
@@ -304,6 +311,12 @@ const BACKEND_ENFORCEABLE_CODES = new Set([
   'REPEATED_AGENT_REPLY',
 ])
 
+const NON_DEGRADABLE_FACT_SUBJECTS = new Set([
+  'course_logistics',
+  'inferred_course_detail',
+  'prerequisites',
+])
+
 function mayDegradeToBackendBoundary(
   proposal: AgentATurnProposalV1,
   rejection: TurnRejectionV1,
@@ -311,6 +324,10 @@ function mayDegradeToBackendBoundary(
   // Afirmar un efecto que no ocurrió no es un hecho que el egress pueda podar:
   // la oración entera es la mentira. Eso sigue siendo un rechazo duro.
   if (claimsImmediatePaymentLinkDelivery(proposal)) return false
+  if (rejection.rejections.some((reason) => (
+    reason.code === 'FACT_VALUE_MISMATCH'
+    && NON_DEGRADABLE_FACT_SUBJECTS.has(reason.subject)
+  ))) return false
   return rejection.rejections.every((reason) => BACKEND_ENFORCEABLE_CODES.has(reason.code))
 }
 
@@ -424,7 +441,11 @@ export async function resolveAgentAPlannerlessProposalV2<
       }
     }
   }
-  for (const prune of [pruneUnsupportedPrerequisiteClaimV1, pruneFalseLinkDeliveryClaimV1]) {
+  for (const prune of [
+    pruneUnsupportedPrerequisiteClaimV1,
+    pruneUnsupportedCourseLogisticsClaimV1,
+    pruneFalseLinkDeliveryClaimV1,
+  ]) {
     const candidate = prune({
       initial, rejection, context: input.context, authorized_fact_ids: factIds,
     })
@@ -521,6 +542,43 @@ function pruneUnsupportedPrerequisiteClaimV1<T extends AgentAProposalEnvelopeV1>
 
   const safeMessages = input.initial.proposal.response.messages
     .flatMap(removeUnsupportedPrerequisiteAssertionsV1)
+  if (safeMessages.length === 0) return null
+
+  const candidate = {
+    ...input.initial,
+    proposal: {
+      ...input.initial.proposal,
+      response: { ...input.initial.proposal.response, messages: safeMessages },
+    },
+  } as T
+  const candidateRejection = validatePlannerless({
+    proposal: candidate.proposal,
+    context: input.context,
+    rejection_id: input.rejection.rejection_id,
+    authorized_fact_ids: input.authorized_fact_ids,
+  })
+  return candidateRejection === null ? candidate : null
+}
+
+function pruneUnsupportedCourseLogisticsClaimV1<T extends AgentAProposalEnvelopeV1>(input: {
+  readonly initial: T
+  readonly rejection: TurnRejectionV1
+  readonly context: AgentAContextV1
+  readonly authorized_fact_ids: readonly string[]
+}): T | null {
+  if (!input.rejection.rejections.some((reason) => (
+    reason.code === 'FACT_VALUE_MISMATCH' && reason.subject === 'course_logistics'
+  ))) return null
+
+  const authorizedIds = new Set(input.authorized_fact_ids)
+  const authorizedValues = input.context.catalog.selected_offering?.facts
+    .filter((fact) => authorizedIds.has(fact.id))
+    .map((fact) => fact.value) ?? []
+  const safeMessages = input.initial.proposal.response.messages
+    .flatMap((message) => removeUnsupportedCourseLogisticsAssertionsV1(
+      message,
+      authorizedValues,
+    ))
   if (safeMessages.length === 0) return null
 
   const candidate = {

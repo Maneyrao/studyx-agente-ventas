@@ -208,7 +208,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
           body: JSON.stringify({
             model,
             instructions: buildAgentABrainInstructionsV1(input.context),
-            input: `Current customer messages: ${JSON.stringify(input.context.turn.batch_messages.map((message) => message.text))}${currentCatalogResolutionDirective(input.context)}\nAnswer these messages and return only the single AgentATurnProposalV1 JSON object.${retryDiagnostic ? `\nThe previous output failed validation at ${retryDiagnostic}. Return a corrected full object. When call_offer is non-null, response.messages must contain exactly one item and call_offer must be declarative without a question mark.` : ''}`,
+            input: `Current customer messages: ${JSON.stringify(input.context.turn.batch_messages.map((message) => message.text))}${currentCatalogResolutionDirective(input.context)}\nAnswer these messages and return only the single AgentATurnProposalV1 JSON object.${retryDiagnostic ? `\nThe previous output failed validation at ${retryDiagnostic}. Return a corrected full object. ${naturalnessRepairDirectiveV1(input.context)}` : ''}`,
             reasoning: { effort: 'none' },
             temperature: 0.2,
             stream: false,
@@ -417,12 +417,97 @@ const AREA_REFERENCE_MOVES = new Set(['browse_catalog', 'select_area']);
 const PAYMENT_PLAN_MOVES = new Set(['select_payment_plan', 'defer_payment', 'request_payment_link']);
 const MOVE_SEMANTICS = `Classify only the current customer message, using prior state solely to resolve short contextual replies. continue_by_chat and decline_call require an explicit channel preference or a refusal of a pending call offer; study goals and ordinary diagnostic replies are not channel choices. greeting is a current greeting or social opening. report_payment requires an explicit current-message claim that payment already happened; never use it for a greeting, a status question, a future intention, or merely because a link was sent earlier. ask_current_state is a question about what is already selected, sent, or recorded. provide_contact_details means the current message actually supplies identity details. select_course requires exactly one resolved canonical course_reference; use browse_catalog when you present several courses and ask the customer to choose. select_payment_plan records a chosen plan; request_payment_link requires an explicit request to receive or advance with the link. unknown is only for meaning that remains unresolved after applying awaiting_reply.`;
 
+function normalizedCurrentCustomerTextV1(context: AgentAContextV1): string {
+  return context.turn.batch_messages
+    .map((message) => message.text)
+    .join(' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLowerCase()
+    .replace(/\s+/gu, ' ')
+    .trim();
+}
+
+function requestsDetailedCourseExplanationV1(context: AgentAContextV1): boolean {
+  return /\b(?:en detalle|detalladamente|que incluye el curso)\b/u
+    .test(normalizedCurrentCustomerTextV1(context));
+}
+
+function asksDirectDurationV1(context: AgentAContextV1): boolean {
+  return /\b(?:cuanto dura|que duracion)\b/u.test(normalizedCurrentCustomerTextV1(context));
+}
+
+function asksDirectNextStepV1(context: AgentAContextV1): boolean {
+  return /\b(?:cual seria el siguiente paso|siguiente paso|como sigo|como avanzo)\b/u
+    .test(normalizedCurrentCustomerTextV1(context));
+}
+
+function makesExplicitChatChoiceV1(context: AgentAContextV1): boolean {
+  return supportsChatPreferenceV1(
+    context.turn.batch_messages.at(-1)?.text ?? '',
+    context.commercial_state.awaiting_reply === 'call_or_chat',
+  );
+}
+
+function customerStatesStartingFromZeroV1(context: AgentAContextV1): boolean {
+  const text = normalizedCurrentCustomerTextV1(context);
+  return !/[?¿]/u.test(text)
+    && /\b(?:empiezo|arranco|parto)\s+desde\s+cero\b/u.test(text);
+}
+
+function isInitialCallWindowV1(context: AgentAContextV1): boolean {
+  return context.catalog.selected_offering !== null
+    && context.capabilities.may_offer_call
+    && context.commercial_state.call_offer_count === 0;
+}
+
+function isSecondCallReminderWindowV1(context: AgentAContextV1): boolean {
+  return requestsDetailedCourseExplanationV1(context)
+    && context.catalog.selected_offering !== null
+    && context.capabilities.may_offer_call
+    && context.commercial_state.call_offer_count === 1
+    && context.commercial_state.call_offer_status === 'offered'
+    && context.commercial_state.call_preference === 'unknown'
+    && context.commercial_state.awaiting_reply !== 'call_or_chat';
+}
+
+function naturalnessRepairDirectiveV1(context: AgentAContextV1): string {
+  if (requestsDetailedCourseExplanationV1(context) && !isInitialCallWindowV1(context)) {
+    return isSecondCallReminderWindowV1(context)
+      ? 'Use exactly two response.messages items for the detailed explanation and include the required separate, subtle call_offer reminder. Use only course details explicitly present in authorized_context.'
+      : 'Use exactly two response.messages items for the detailed explanation; call_offer stays separate when authorized. Use only course details explicitly present in authorized_context.';
+  }
+  if (asksDirectDurationV1(context) || asksDirectNextStepV1(context)) {
+    return 'Use exactly one response.messages item of at most 180 characters that answers the direct request without restating prior information.';
+  }
+  if (customerStatesStartingFromZeroV1(context)) {
+    return 'Use exactly one response.messages item of at most 180 characters. Acknowledge briefly and continue with one useful diagnostic question; do not repeat course facts or infer beginner suitability.';
+  }
+  if (makesExplicitChatChoiceV1(context)) {
+    return 'Acknowledge the chat choice in exactly one response.messages item and keep call_offer null.';
+  }
+  return `When call_offer is non-null, response.messages must contain ${context.commercial_state.call_offer_count === 1 ? 'one or two items' : 'exactly one item with no diagnostic question'} and call_offer must be declarative without a question mark.`;
+}
+
 function closedObject(properties: Record<string, unknown>) {
   return { type: 'object', properties, required: Object.keys(properties), additionalProperties: false };
 }
 
 function proposalJsonSchema(context: AgentAContextV1): unknown {
   const nullableString = { anyOf: [{ type: 'string' }, { type: 'null' }] };
+  const secondCallWindow = context.commercial_state.call_offer_count === 1;
+  const initialCallWindow = isInitialCallWindowV1(context);
+  const detailedCourseExplanation = requestsDetailedCourseExplanationV1(context)
+    && !initialCallWindow;
+  const secondCallReminderRequired = isSecondCallReminderWindowV1(context);
+  const shortDirectAnswer = asksDirectDurationV1(context) || asksDirectNextStepV1(context);
+  const shortBeginnerReply = customerStatesStartingFromZeroV1(context);
+  const pureChatChoice = makesExplicitChatChoiceV1(context);
+  const exactMessageCount = detailedCourseExplanation
+    ? 2
+    : initialCallWindow || shortDirectAnswer || shortBeginnerReply || pureChatChoice
+      ? 1
+      : null;
   const move = closedObject({
     schema_version: { type: 'integer', enum: [1] },
     move: { type: 'string', enum: [...MOVE_KINDS], description: MOVE_SEMANTICS },
@@ -465,11 +550,26 @@ function proposalJsonSchema(context: AgentAContextV1): unknown {
     move,
     response: closedObject({
       messages: {
-        type: 'array', minItems: 1, maxItems: 3, items: { type: 'string' },
-        description: 'Use one to three short messages; when call_offer is non-null, return exactly one response message so the initial course guidance and its separate call invitation stay within two physical messages.',
+        type: 'array',
+        minItems: exactMessageCount ?? 1,
+        maxItems: exactMessageCount ?? 3,
+        items: { type: 'string', maxLength: shortDirectAnswer || shortBeginnerReply ? 180 : 350 },
+        description: detailedCourseExplanation
+          ? 'Return exactly two short informational messages for this detailed course explanation. When required by the current call policy, the separate second reminder follows in call_offer.'
+          : shortDirectAnswer
+            ? 'Answer this direct request without restating prior information, in exactly one message of at most 180 characters.'
+            : shortBeginnerReply
+              ? 'Acknowledge briefly and continue with one useful diagnostic question, without repeating course facts or inferring beginner suitability. Use exactly one message of at most 180 characters.'
+            : pureChatChoice
+              ? 'Acknowledge this explicit chat choice in exactly one short message.'
+              : secondCallWindow
+                ? 'Use one or two short messages normally; never exceed three physical messages total including a separate call_offer.'
+                : 'Use one or two short messages normally; when call_offer is non-null, return exactly one response message so the initial course guidance and its separate call invitation stay within two physical messages.',
       },
       call_offer: {
-        anyOf: [{ type: 'string' }, { type: 'null' }],
+        ...(secondCallReminderRequired
+          ? { type: 'string', minLength: 1, maxLength: 350, pattern: '^[^?¿]*$' }
+          : { anyOf: [{ type: 'string', maxLength: 350, pattern: '^[^?¿]*$' }, { type: 'null' }] }),
         description: 'Brief declarative invitation to a phone call, required when the call policy in the instructions applies and the capability allows it; otherwise null. It must not contain a question.',
       },
     }),
@@ -758,7 +858,24 @@ function normalizeStrictProposal(value: unknown, context: AgentAContextV1): unkn
       const action = normalized.proposed_action as { type?: string } | undefined;
       // The capability validator decides whether this request is supported;
       // its acknowledgement must never be normalized as a new invitation.
-      if (action?.type !== 'request_call_now') normalized.response = normalizeCallOfferResponseV1(response);
+      if (action?.type !== 'request_call_now') {
+        let normalizedCallResponse = normalizeCallOfferResponseV1(
+          response,
+          false,
+          context.commercial_state.call_offer_count === 1 ? 2 : 1,
+        );
+        if (
+          requestsDetailedCourseExplanationV1(context)
+          && !isInitialCallWindowV1(context)
+          && normalizedCallResponse.messages.length === 1
+        ) {
+          const split = splitDetailedMessageAtSentenceBoundaryV1(
+            normalizedCallResponse.messages[0],
+          );
+          if (split) normalizedCallResponse = { ...normalizedCallResponse, messages: split };
+        }
+        normalized.response = normalizedCallResponse;
+      }
     }
   }
   return normalized;
@@ -768,6 +885,7 @@ function normalizeStrictProposal(value: unknown, context: AgentAContextV1): unkn
 export function normalizeCallOfferResponseV1(
   response: AgentATurnProposalV1['response'],
   suppressOffer = false,
+  maxInformationalMessages = 1,
 ): AgentATurnProposalV1['response'] {
   if (!Array.isArray(response.messages) || !response.messages.every((message) => typeof message === 'string')) return response;
   if (response.call_offer != null && typeof response.call_offer !== 'string') return response;
@@ -779,7 +897,13 @@ export function normalizeCallOfferResponseV1(
       // with an invitation is not safe to discard. Let validation/repair decide.
       const optionalInvitation = /^(?:[¿¡]\s*)?(?:si\s+(?:quer[eé]s|prefer[ií]s|gust[aá]s)|(?:te\s+)?(?:gustar[ií]a|parece|sirve)|prefer[ií]s|podemos|puedo|quer[eé]s|record[aá]\s+que\s+puedo)\b/iu.test(part.trim());
       const invitationBody = part.replace(/^\s*si\s+(?:quer[eé]s|prefer[ií]s|gust[aá]s)\s*,?\s*/iu, '');
-      const mixedClause = /[,;:]|\b(?:y|pero|adem[aá]s|porque)\b/iu.test(invitationBody);
+      const invitationCore = invitationBody.replace(
+        /,\s*si\s+(?:quer[eé]s|prefer[ií]s|gust[aá]s)\s*[.!]?\s*$/iu,
+        '',
+      );
+      const mixedClause = /[,;:]|\b(?:pero|adem[aá]s|porque)\b/iu.test(invitationCore)
+        || /\by\b(?!\s+(?:aclararte|explicarte|contarte|resolver|repasar|conversar|orientarte)\b)/iu
+          .test(invitationCore);
       if (!optionalInvitation || !solicitsACallV1(part, true)
         || mixedClause || extractProtectedFacts(part).length > 0) return true;
       invitations.push(part.trim());
@@ -803,10 +927,33 @@ export function normalizeCallOfferResponseV1(
   // silently select one of several model-authored intentions.
   if (!suppressOffer && !response.call_offer && new Set(invitations).size > 1) return response;
   const callOffer = suppressOffer ? null : response.call_offer ?? invitations[0] ?? null;
-  const merged = callOffer && messages.length > 1 ? [messages.join('\n\n')] : messages;
+  const merged = callOffer && messages.length > maxInformationalMessages
+    ? [
+      ...messages.slice(0, Math.max(0, maxInformationalMessages - 1)),
+      messages.slice(Math.max(0, maxInformationalMessages - 1)).join('\n\n'),
+    ]
+    : messages;
   if (invitations.length === 0 && merged.length === response.messages.length
     && callOffer === (response.call_offer ?? null)) return response;
   return { messages: merged as AgentATurnProposalV1['response']['messages'], call_offer: callOffer };
+}
+
+function splitDetailedMessageAtSentenceBoundaryV1(
+  message: string,
+): [string, string] | null {
+  const sentences = message.match(/[^.!?]+(?:[.!?]+|$)/gu)
+    ?.map((sentence) => sentence.trim())
+    .filter(Boolean) ?? [];
+  if (sentences.length < 2) return null;
+
+  const candidates = Array.from({ length: sentences.length - 1 }, (_, index) => {
+    const splitAt = index + 1;
+    const left = sentences.slice(0, splitAt).join(' ');
+    const right = sentences.slice(splitAt).join(' ');
+    return { left, right, imbalance: Math.abs(left.length - right.length) };
+  }).filter(({ left, right }) => left.length <= 350 && right.length <= 350);
+  const best = candidates.sort((left, right) => left.imbalance - right.imbalance)[0];
+  return best ? [best.left, best.right] : null;
 }
 
 function authorizedFactIds(context: AgentAContextV1): Set<string> {
@@ -881,6 +1028,80 @@ export function parseAgentATurnProposalV1(raw: unknown, context: AgentAContextV1
   if (parsed.data.used_memory_ids.some((id) => !memories.has(id))) {
     throw new AgentABrainError('BRAIN_UNKNOWN_MEMORY_ID');
   }
+  const parsedMoveKinds = new Set([
+    parsed.data.move.move,
+    ...parsed.data.move.secondary_moves,
+  ]);
+  if (
+    makesExplicitChatChoiceV1(context)
+    && ['continue_by_chat', 'decline_call'].some((move) => parsedMoveKinds.has(move as typeof MOVE_KINDS[number]))
+    && (parsed.data.response.messages.length !== 1 || parsed.data.response.call_offer)
+  ) {
+    throw new AgentABrainError(
+      'BRAIN_INVALID_SCHEMA',
+      null,
+      'response.messages:chat_preference_single_message',
+    );
+  }
+  if (
+    requestsDetailedCourseExplanationV1(context)
+    && !isInitialCallWindowV1(context)
+    && parsed.data.response.messages.length !== 2
+  ) {
+    throw new AgentABrainError(
+      'BRAIN_INVALID_SCHEMA',
+      null,
+      'response.messages:detailed_course_two_messages',
+    );
+  }
+  if (isSecondCallReminderWindowV1(context) && !parsed.data.response.call_offer) {
+    throw new AgentABrainError(
+      'BRAIN_INVALID_SCHEMA',
+      null,
+      'response.call_offer:second_reminder_required',
+    );
+  }
+  if (
+    (asksDirectDurationV1(context) || asksDirectNextStepV1(context))
+    && (parsed.data.response.messages.length !== 1 || parsed.data.response.messages[0].length > 180)
+  ) {
+    throw new AgentABrainError(
+      'BRAIN_INVALID_SCHEMA',
+      null,
+      'response.messages:direct_answer_single_short_message',
+    );
+  }
+  if (
+    customerStatesStartingFromZeroV1(context)
+    && (parsed.data.response.messages.length !== 1 || parsed.data.response.messages[0].length > 180)
+  ) {
+    throw new AgentABrainError(
+      'BRAIN_INVALID_SCHEMA',
+      null,
+      'response.messages:beginner_reply_single_short_message',
+    );
+  }
+  if (
+    context.commercial_state.call_offer_count === 0
+    && parsed.data.response.call_offer
+    && parsed.data.response.messages.some((message) => /[?¿]/u.test(message))
+  ) {
+    throw new AgentABrainError(
+      'BRAIN_INVALID_SCHEMA',
+      null,
+      'response.messages:initial_call_turn_must_not_diagnose',
+    );
+  }
+  if (
+    parsedMoveKinds.has('ask_payment_options')
+    && (parsed.data.response.messages.length !== 1 || parsed.data.response.call_offer)
+  ) {
+    throw new AgentABrainError(
+      'BRAIN_INVALID_SCHEMA',
+      null,
+      'response.messages:payment_options_single_message',
+    );
+  }
   return parsed.data;
 }
 
@@ -919,7 +1140,9 @@ type CourseLogisticsFactV1 =
   | 'live_classes'
   | 'recorded_classes'
   | 'class_frequency'
-  | 'unrestricted_access';
+  | 'unrestricted_access'
+  | 'self_paced'
+  | 'remote_location';
 
 const COURSE_LOGISTICS_PATTERNS: Readonly<Record<CourseLogisticsFactV1, RegExp>> = {
   access_24_7: /\b24\s*\/\s*7\b/u,
@@ -929,6 +1152,8 @@ const COURSE_LOGISTICS_PATTERNS: Readonly<Record<CourseLogisticsFactV1, RegExp>>
   recorded_classes: /\b(?:clases?\s+en\s+vivo[^.!?\n]{0,48})?(?:queda|quedan)\s+grabad[ao]s?\b|\bclases?\s+grabad[ao]s?\b/u,
   class_frequency: /\bclases?[^.!?\n]{0,32}\b(?:semanal(?:es)?|cada\s+semana)\b|\b(?:semanal(?:es)?|cada\s+semana)\b[^.!?\n]{0,32}\bclases?\b/u,
   unrestricted_access: /\b(?:acceso|plataforma|acced(?:e|er|es|en)|entr(?:a|ar|as))\b[^.!?\n]{0,48}\b(?:cuando\s+quieras|a\s+cualquier\s+hora|cuando\s+te\s+quede\s+comodo)\b/u,
+  self_paced: /\ba\s+tu\s+ritmo\b/u,
+  remote_location: /\b(?:desde\s+donde\s+estes|desde\s+cualquier\s+lugar)\b/u,
 };
 
 function courseLogisticsInV1(text: string): CourseLogisticsFactV1[] {
@@ -938,6 +1163,18 @@ function courseLogisticsInV1(text: string): CourseLogisticsFactV1[] {
   return (Object.entries(COURSE_LOGISTICS_PATTERNS) as Array<[CourseLogisticsFactV1, RegExp]>)
     .filter(([, pattern]) => pattern.test(normalized))
     .map(([kind]) => kind);
+}
+
+export function removeUnsupportedCourseLogisticsAssertionsV1(
+  message: string,
+  authorizedValues: readonly string[],
+): string[] {
+  const authorized = new Set(authorizedValues.flatMap(courseLogisticsInV1));
+  return message
+    .split(/(?<=[.!?\n])/u)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => courseLogisticsInV1(sentence)
+      .every((fact) => authorized.has(fact)));
 }
 
 /**
@@ -1312,7 +1549,7 @@ function repeatsPreviousQuestion(messages: readonly string[], previous: string):
 }
 
 const CUSTOMER_REQUESTS_REPEAT = /\b(?:repet|otra\s+vez|no\s+entend|de\s+nuevo)\w*/iu;
-const UNSUPPORTED_PREREQUISITE_ASSERTION = /(?:\bno\s+(?:necesit\w*|hace\s+falta|se\s+requiere|tienen)\b[^.!?\n]{0,80}\b(?:experiencia|conocimientos?|requisitos?)\b|\bsin\s+(?:experiencia|conocimientos?\s+previos?)\b|\b(?:pod[eé]s|puedes|empez[aá]s?|part[ií]s?)\b[^.!?\n]{0,32}\bdesde\s+cero\b|\bdesde\s+los\s+fundamentos\b)/iu;
+const UNSUPPORTED_PREREQUISITE_ASSERTION = /(?:\bno\s+(?:necesit\w*|hace\s+falta|se\s+requiere|tienen)\b[^.!?\n]{0,80}\b(?:experiencia|conocimientos?|requisitos?)\b|\bsin\s+(?:experiencia|conocimientos?\s+previos?)\b|\b(?:pod[eé]s|puedes|empez[aá]s?|part[ií]s?)\b[^.!?\n]{0,32}\bdesde\s+cero\b|\b(?:pensad[oa]|dise[nñ]ad[oa])\w*\b[^.!?\n]{0,80}\b(?:(?:empe\w*)\s+)?(?:desde\s+(?:cero|la\s+base|lo\s+b[aá]sico)|paso\s+a\s+paso)\b|\bdesde\s+los\s+fundamentos\b)/iu;
 const REMOVABLE_UNSUPPORTED_PREREQUISITE_CLAUSE = /\s*,?\s*para\s+(?:quienes|personas?\s+que)\s+no\s+tienen\s+conocimientos?\s+previos\b/iu;
 
 /**
@@ -1431,6 +1668,22 @@ function mentionsMissingIntakeField(messages: readonly string[], missing: readon
 /** Únicos géneros que el ADK sigue bloqueando por su cuenta. */
 const ADK_BLOCKING_FACT_KINDS = new Set(['price', 'promise']);
 
+const COMMON_INFERRED_COURSE_DETAILS = [
+  ['decision_making', /\btoma de decisiones\b/u],
+  ['people_management', /\bgestion de personas\b/u],
+] as const;
+
+function inferredCourseDetailsInV1(value: string): Set<string> {
+  const normalized = value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLowerCase()
+    .replace(/\s+/gu, ' ');
+  return new Set(COMMON_INFERRED_COURSE_DETAILS
+    .filter(([, pattern]) => pattern.test(normalized))
+    .map(([key]) => key));
+}
+
 function comparableProtectedFact(fact: ReturnType<typeof extractProtectedFacts>[number]): string {
   // Zero cents in the catalog's dot-decimal format do not change an amount.
   // Do not normalize commas: the portable extractor can truncate 360,000 to
@@ -1528,6 +1781,15 @@ export function validateAgentATurnProposalV1(input: {
   if (authoredNarrative.flatMap(courseLogisticsInV1)
     .some((fact) => !authorizedCourseLogistics.has(fact))) {
     rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'course_logistics' });
+  }
+  const authorizedCourseDetails = new Set(
+    [...selectedFactsById]
+      .filter(([factId]) => planned.has(factId))
+      .flatMap(([, fact]) => [...inferredCourseDetailsInV1(fact.value)]),
+  );
+  if (authoredNarrative.flatMap((message) => [...inferredCourseDetailsInV1(message)])
+    .some((detail) => !authorizedCourseDetails.has(detail))) {
+    rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'inferred_course_detail' });
   }
   // Dinero y promesa siguen siendo frontera acá: el error es caro y conviene
   // abrir la reparación antes del commit. El resto de los sustantivos
@@ -1747,7 +2009,7 @@ function authorizedActionsV1(context: AgentAContextV1): string[] {
  * llamada no es ofrecerla: confirmar una que el cliente pidió, o reconocer que
  * la rechazó, habla de llamadas sin gastar presupuesto.
  */
-const CALL_SOLICITATION_V1 = /\b(?:te\s+llamo|te\s+llamamos|una\s+llamada|coordinamos\s+una\s+llamada|prefer[íi]s\s+que\s+te\s+llame)\b/iu
+const CALL_SOLICITATION_V1 = /\b(?:te\s+llamo|te\s+llamamos|(?:puedo|podemos)\s+llamar(?:te|los?|las?|le|les|nos)?|una\s+llamada|coordinamos\s+una\s+llamada|prefer[íi]s\s+que\s+te\s+llame)\b/iu
 const NOT_AN_OFFER_V1 = /\b(?:ya\s+(?:qued|registr|solicit)|no\s+te\s+llam|sin\s+llamada)/iu
 const DECLARED_CALL_CHANNEL_V1 = /\b(?:llam|videollam)|tel[eé]fon|telef[oó]n|\bvoz\b|\bcontact(?:arte|emos)\b/iu
 

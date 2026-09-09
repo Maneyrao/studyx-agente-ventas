@@ -11,12 +11,19 @@ const FactKindSchema = z.enum([
   'offering_modality', 'payment_plan_label', 'payment_plan_price',
 ]);
 const IdentifierSchema = z.string().trim().min(1).max(160);
-const CustomerMessageSchema = z.string().trim().min(1).max(1_500).refine(
+const CustomerMessageSchema = z.string().trim().min(1).max(350).refine(
   (value) => !/https?:\/\//iu.test(value),
   'MODEL_RESPONSE_URL_FORBIDDEN',
 ).refine(
   (value) => !/\{\{[^}]+\}\}/u.test(value),
   'MODEL_RESPONSE_PLACEHOLDER_FORBIDDEN',
+).refine(
+  (value) => value.split(/\r?\n/u).filter((line) => line.trim().length > 0).length <= 4,
+  'MODEL_RESPONSE_MAX_LINES_EXCEEDED',
+);
+const CallOfferMessageSchema = CustomerMessageSchema.refine(
+  (value) => !/[¿?]/u.test(value),
+  'CALL_OFFER_MUST_BE_DECLARATIVE',
 );
 
 const AgentAMemorySchema = z.object({
@@ -176,7 +183,7 @@ export const AgentATurnProposalV1Schema = z.object({
       z.tuple([CustomerMessageSchema, CustomerMessageSchema]),
       z.tuple([CustomerMessageSchema, CustomerMessageSchema, CustomerMessageSchema]),
     ]),
-    call_offer: CustomerMessageSchema.nullable().optional(),
+    call_offer: CallOfferMessageSchema.nullable().optional(),
   }).strict(),
   proposed_action: ProposedActionSchema,
   used_fact_ids: z.array(IdentifierSchema).max(60),
@@ -197,9 +204,6 @@ export const AgentATurnProposalV1Schema = z.object({
   }).strict().nullable().default(null),
   memory_candidates: z.array(MemoryCandidateSchema).max(10),
 }).strict().superRefine((value, context) => {
-  if (value.response.call_offer && value.response.messages.length !== 1) {
-    context.addIssue({ code: 'custom', path: ['response', 'messages'], message: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID' });
-  }
   const physicalMessageCount = value.response.messages.length
     + (value.response.call_offer ? 1 : 0);
   if (physicalMessageCount > 3) {
@@ -207,6 +211,15 @@ export const AgentATurnProposalV1Schema = z.object({
       code: 'custom',
       path: ['response', 'messages'],
       message: 'MAX_PHYSICAL_MESSAGES_EXCEEDED',
+    });
+  }
+  const questionCount = [...value.response.messages, value.response.call_offer ?? '']
+    .reduce((total, message) => total + (message.match(/\?/gu)?.length ?? 0), 0);
+  if (questionCount > 1) {
+    context.addIssue({
+      code: 'custom',
+      path: ['response'],
+      message: 'MAX_TURN_QUESTIONS_EXCEEDED',
     });
   }
   if (new Set(value.used_fact_ids).size !== value.used_fact_ids.length) {

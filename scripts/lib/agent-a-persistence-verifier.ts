@@ -103,12 +103,28 @@ export function evaluatePersistenceEvidence(
     ? expected.min_ready_memory_embeddings
     : 0;
   const expectedSheetRows = typeof expected.sheet_rows === 'number' ? expected.sheet_rows : null;
-  const expectedResponseCounts = expected.expected_response_count_by_turn
-    ?? testCase.turns.map(() => 1 as const);
-  const expectedOutboundMessages = expectedResponseCounts.reduce<number>(
+  const explicitResponseCounts = expected.expected_response_count_by_turn;
+  const expectedResponseCounts = explicitResponseCounts ?? testCase.turns.map(() => 1 as const);
+  const exactExpectedOutboundMessages = expectedResponseCounts.reduce<number>(
     (total, count) => total + count,
     0,
   );
+  const messageRanges = !explicitResponseCounts
+    && expected.turn_assertions?.length === testCase.turns.length
+    ? expected.turn_assertions.map((assertion) => ({
+      min: assertion.min_messages ?? assertion.max_messages ?? 1,
+      max: assertion.max_messages ?? assertion.min_messages ?? 1,
+    }))
+    : null;
+  const expectedOutboundMessagesMin = messageRanges
+    ? messageRanges.reduce((total, range) => total + range.min, 0)
+    : exactExpectedOutboundMessages;
+  const expectedOutboundMessagesMax = messageRanges
+    ? messageRanges.reduce((total, range) => total + range.max, 0)
+    : exactExpectedOutboundMessages;
+  const expectedOutboundMessages = expectedOutboundMessagesMin === expectedOutboundMessagesMax
+    ? expectedOutboundMessagesMin
+    : null;
   const forbiddenPersistenceValues = Array.isArray(expected.forbidden_persistence_values)
     ? expected.forbidden_persistence_values.filter((value): value is string => typeof value === 'string')
     : [];
@@ -185,8 +201,14 @@ export function evaluatePersistenceEvidence(
   if (evidence.inboundMessages !== testCase.turns.length) {
     failures.push(`expected_inbound_messages_${testCase.turns.length}_got_${evidence.inboundMessages}`);
   }
-  if (evidence.outboundMessages !== expectedOutboundMessages) {
-    failures.push(`expected_outbound_messages_${expectedOutboundMessages}_got_${evidence.outboundMessages}`);
+  if (
+    evidence.outboundMessages < expectedOutboundMessagesMin
+    || evidence.outboundMessages > expectedOutboundMessagesMax
+  ) {
+    const expectedLabel = expectedOutboundMessagesMin === expectedOutboundMessagesMax
+      ? String(expectedOutboundMessagesMin)
+      : `${expectedOutboundMessagesMin}_to_${expectedOutboundMessagesMax}`;
+    failures.push(`expected_outbound_messages_${expectedLabel}_got_${evidence.outboundMessages}`);
   }
   if (evidence.decisions !== testCase.turns.length) {
     failures.push(`expected_decisions_${testCase.turns.length}_got_${evidence.decisions}`);
@@ -285,6 +307,8 @@ export function evaluatePersistenceEvidence(
       inbound_messages: evidence.inboundMessages,
       outbound_messages: evidence.outboundMessages,
       expected_outbound_messages: expectedOutboundMessages,
+      expected_outbound_messages_min: expectedOutboundMessagesMin,
+      expected_outbound_messages_max: expectedOutboundMessagesMax,
       turn_outbound_counts: turnOutboundCounts,
       turn_persistence_evidence: evidence.turnEvidence ?? [],
       decisions: evidence.decisions,

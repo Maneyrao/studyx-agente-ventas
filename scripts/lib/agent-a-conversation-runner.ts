@@ -162,6 +162,13 @@ export type TurnQualityAssertion = {
   max_chars?: number;
   max_questions?: number;
   max_lines?: number;
+  min_messages?: number;
+  max_messages?: number;
+  max_chars_per_message?: number;
+  max_lines_per_message?: number;
+  min_call_offers?: number;
+  max_call_offers?: number;
+  no_repeated_questions?: boolean;
   must_include?: string[];
   /** At least one semantically acceptable phrase must be present. */
   must_include_any?: string[];
@@ -253,6 +260,8 @@ export type ConversationCase = {
     /** Objective copy constraints evaluated against each assistant turn, not
      * against the aggregated transcript. Array index 0 corresponds to turn 1. */
     turn_assertions?: TurnQualityAssertion[];
+    /** No later turn may ask a normalized question already asked earlier. */
+    no_repeated_questions?: boolean;
     /** Visible text cardinality for each inbound turn. The default is one;
      * explicit zeroes model durable silence after opt-out. */
     expected_response_count_by_turn?: Array<0 | 1>;
@@ -707,6 +716,7 @@ const AGENT_A_BRAIN_SUITE_NAMES = new Set([
   'studyx-agent-a-brain-v1-heldout',
   'studyx-agent-a-historical-20',
   'studyx-agent-a-conversational-baseline',
+  'studyx-agent-a-naturalness-v1',
 ]);
 
 export function expectedPromptVersionForSuite(suiteName: string): string {
@@ -731,6 +741,23 @@ function normalizeOracleText(value: string): string {
     .toLocaleLowerCase('es')
     .replace(/\s+/gu, ' ')
     .trim();
+}
+
+function normalizedQuestions(value: string): string[] {
+  const questions: string[] = [];
+  const fragments = value.split('?');
+  for (const fragment of fragments.slice(0, -1)) {
+    const invertedStart = fragment.lastIndexOf('¿');
+    const sentenceStart = Math.max(
+      fragment.lastIndexOf('.'),
+      fragment.lastIndexOf('!'),
+      fragment.lastIndexOf('\n'),
+    );
+    const start = invertedStart >= 0 ? invertedStart + 1 : sentenceStart + 1;
+    const normalized = normalizeOracleText(fragment.slice(start).replace(/^[,:;\s]+/u, ''));
+    if (normalized) questions.push(normalized);
+  }
+  return questions;
 }
 
 const ABSENCE_CLAUSE_PATTERN =
@@ -903,6 +930,7 @@ export async function runConversationCase(
   const turnLatenciesMs: number[] = [];
   const brainLatenciesMs: number[] = [];
   const assistantRepliesByTurn: string[] = [];
+  const assistantMessagesByTurn: string[][] = [];
   const responseCountsByTurn: number[] = [];
   const authorizedUrlsByTurn: Array<readonly string[] | null> = [];
   const commercialEvidenceByTurn: Array<AgentCommercialEvidence | undefined> = [];
@@ -934,15 +962,19 @@ export async function runConversationCase(
           response.type === 'text' && typeof response.text === 'string',
       );
 
-      const expectedResponseCount =
-        testCase.ideal_result.expected_response_count_by_turn?.[index] ?? 1;
+      const turnAssertion = testCase.ideal_result.turn_assertions?.[index];
+      const hasMessageRange = turnAssertion?.min_messages !== undefined
+        || turnAssertion?.max_messages !== undefined;
+      const expectedResponseCount = testCase.ideal_result.expected_response_count_by_turn?.[index]
+        ?? (hasMessageRange ? null : 1);
       responseCountsByTurn[index] = textResponses.length;
-      if (textResponses.length !== expectedResponseCount) {
+      if (expectedResponseCount !== null && textResponses.length !== expectedResponseCount) {
         failures.push(expectedResponseCount === 1
           ? `turn_${index + 1}_expected_one_text_response_got_${textResponses.length}`
           : `turn_${index + 1}_expected_text_response_count_${expectedResponseCount}_got_${textResponses.length}`);
       }
-      assistantRepliesByTurn[index] = textResponses.map((response) => response.text).join('\n');
+      assistantMessagesByTurn[index] = textResponses.map((response) => response.text);
+      assistantRepliesByTurn[index] = assistantMessagesByTurn[index]!.join('\n');
       const urls = assistantRepliesByTurn[index]!.match(URL_PATTERN) ?? [];
       authorizedUrlsByTurn[index] = result.authorizedUrls ? [...result.authorizedUrls] : null;
       commercialEvidenceByTurn[index] = result.commercialEvidence;
@@ -1161,12 +1193,67 @@ export async function runConversationCase(
     const turnQuality = testCase.ideal_result.turn_assertions.map((assertion, index) => {
       const turnNumber = index + 1;
       const reply = assistantRepliesByTurn[index] ?? '';
+      const messages = assistantMessagesByTurn[index] ?? [];
       const normalized = reply.toLocaleLowerCase('es');
       const chars = reply.length;
       const questions = (reply.match(/\?/gu) ?? []).length;
       const lines = reply === ''
         ? 0
         : reply.split(/\r?\n/u).filter((line) => line.trim().length > 0).length;
+      const messageChars = messages.map((message) => message.length);
+      const messageLines = messages.map((message) => (
+        message.split(/\r?\n/u).filter((line) => line.trim().length > 0).length
+      ));
+      const callOffers = messages.filter((message) => solicitsACall(message)).length;
+      const priorQuestions = new Set(
+        assistantMessagesByTurn
+          .slice(0, index)
+          .flatMap((priorMessages) => priorMessages.flatMap(normalizedQuestions)),
+      );
+      const repeatedQuestions = [...new Set(
+        messages.flatMap(normalizedQuestions).filter((question) => priorQuestions.has(question)),
+      )];
+
+      if (assertion.min_messages !== undefined && messages.length < assertion.min_messages) {
+        failures.push(`turn_${turnNumber}_min_messages_${assertion.min_messages}_got_${messages.length}`);
+      }
+      if (assertion.max_messages !== undefined && messages.length > assertion.max_messages) {
+        failures.push(`turn_${turnNumber}_max_messages_${assertion.max_messages}_got_${messages.length}`);
+      }
+      for (const [messageIndex, messageLength] of messageChars.entries()) {
+        if (assertion.max_chars_per_message !== undefined
+          && messageLength > assertion.max_chars_per_message) {
+          failures.push(
+            `turn_${turnNumber}_message_${messageIndex + 1}_max_chars_` +
+              `${assertion.max_chars_per_message}_got_${messageLength}`,
+          );
+        }
+      }
+      for (const [messageIndex, lineCount] of messageLines.entries()) {
+        if (assertion.max_lines_per_message !== undefined
+          && lineCount > assertion.max_lines_per_message) {
+          failures.push(
+            `turn_${turnNumber}_message_${messageIndex + 1}_max_lines_` +
+              `${assertion.max_lines_per_message}_got_${lineCount}`,
+          );
+        }
+      }
+      if (assertion.min_call_offers !== undefined && callOffers < assertion.min_call_offers) {
+        failures.push(
+          `turn_${turnNumber}_min_call_offers_${assertion.min_call_offers}_got_${callOffers}`,
+        );
+      }
+      if (assertion.max_call_offers !== undefined && callOffers > assertion.max_call_offers) {
+        failures.push(
+          `turn_${turnNumber}_max_call_offers_${assertion.max_call_offers}_got_${callOffers}`,
+        );
+      }
+      if (
+        (testCase.ideal_result.no_repeated_questions || assertion.no_repeated_questions)
+        && repeatedQuestions.length > 0
+      ) {
+        failures.push(`turn_${turnNumber}_repeated_question`);
+      }
 
       if (assertion.max_chars !== undefined && chars > assertion.max_chars) {
         failures.push(`turn_${turnNumber}_max_chars_${assertion.max_chars}_got_${chars}`);
@@ -1200,7 +1287,16 @@ export async function runConversationCase(
         }
       }
 
-      return { chars, questions, lines };
+      return {
+        chars,
+        questions,
+        lines,
+        messages: messages.length,
+        message_chars: messageChars,
+        message_lines: messageLines,
+        call_offers: callOffers,
+        repeated_questions: repeatedQuestions,
+      };
     });
     checks.turn_quality = turnQuality;
   }
@@ -1405,6 +1501,7 @@ const KNOWN_IDEAL_RESULT_KEYS = new Set([
   'no_payment_link_before_turn',
   'must_not_echo',
   'no_technical_fallback',
+  'no_repeated_questions',
   'registered_contact',
   'expected_interest',
   'expected_vector_memory',
@@ -1512,11 +1609,25 @@ export function validateSuiteCaseInvariants(suite: ConversationSuite): string[] 
       }
     }
     const turnAssertions = testCase.ideal_result.turn_assertions;
+    if (
+      testCase.ideal_result.no_repeated_questions !== undefined
+      && typeof testCase.ideal_result.no_repeated_questions !== 'boolean'
+    ) {
+      violations.push(`invalid_no_repeated_questions:${testCase.id}`);
+    }
     if (turnAssertions && turnAssertions.length !== testCase.turns.length) {
       violations.push(
         `turn_assertions_length_mismatch:${testCase.id}:` +
           `${turnAssertions.length}:${testCase.turns.length}`,
       );
+    }
+    for (const [index, assertion] of turnAssertions?.entries() ?? []) {
+      if (
+        assertion.no_repeated_questions !== undefined
+        && typeof assertion.no_repeated_questions !== 'boolean'
+      ) {
+        violations.push(`invalid_no_repeated_questions:${testCase.id}:${index + 1}`);
+      }
     }
     const catalogAbsenceOracle = testCase.ideal_result.catalog_absence_oracle;
     if (catalogAbsenceOracle) {

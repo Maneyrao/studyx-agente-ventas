@@ -20,7 +20,7 @@ describe('call preference requires current customer evidence',()=>{
   expect(backend(x)).toMatchObject({ok:false,reasons:['CHANNEL_PREFERENCE_NOT_SUPPORTED']});
   expect(adk(x)?.rejections).toContainEqual({code:'CHANNEL_PREFERENCE_NOT_SUPPORTED',subject:'call_preference'});
  });
- it.each(['Prefiero seguir por chat','No quiero una llamada','Mejor seguimos por acá','Por escrito, por favor','No me llames'])('accepts an explicit preference: %s',text=>{
+ it.each(['Prefiero seguir por chat','No quiero una llamada','Mejor seguimos por acá','Por escrito, por favor','Por chat, por favor','Contame por acá, por favor','No me llames'])('accepts an explicit preference: %s',text=>{
   const x=setup(text,'continue_by_chat');
   expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'chat',call_offer_status:'declined'}});
   expect(adk(x)).toBeNull();
