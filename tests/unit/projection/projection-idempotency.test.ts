@@ -250,6 +250,50 @@ run('sheet projection idempotency', () => {
     expect(rows[0].payload.mail).toBe('after@example.com');
   });
 
+  it('does not let a source-less refresh overwrite a newer ordered lead snapshot', async () => {
+    const workspaceId = await workspaceFixture();
+    const spreadsheetId = randomUUID();
+    const contactId = await contactFixture();
+
+    await enqueueLeadProjection(
+      leadInput(workspaceId, contactId, spreadsheetId, {
+        sourceOrder: undefined,
+        email: 'legacy@example.com',
+      }),
+      { sql: db! },
+    );
+    await enqueueLeadProjection(
+      leadInput(workspaceId, contactId, spreadsheetId, {
+        sourceOrder: 2,
+        apellido: 'García',
+        email: 'ordered@example.com',
+      }),
+      { sql: db! },
+    );
+    const delayedLegacy = await enqueueLeadProjection(
+      leadInput(workspaceId, contactId, spreadsheetId, {
+        sourceOrder: undefined,
+        email: 'delayed@example.com',
+      }),
+      { sql: db! },
+    );
+
+    expect(delayedLegacy).toMatchObject({ changed: false });
+    await expect(db!<Array<{ source_order: string; payload: Record<string, string> }>>`
+      SELECT source_order, payload
+      FROM sheet_projection_rows
+      WHERE projection_key = ${leadProjectionKey(workspaceId, contactId)}
+    `).resolves.toEqual([{
+      source_order: '2',
+      payload: {
+        nombre: 'Ada',
+        apellido: 'García',
+        mail: 'ordered@example.com',
+        tipo_de_curso: 'reparacion-celulares',
+      },
+    }]);
+  });
+
   it('a provider timeout during flush leaves the outbox row retryable with an incremented attempt count', async () => {
     // `claim_sheet_projection_rows` claims globally across every spreadsheet,
     // not just this test's own — drain whatever the earlier enqueue-only

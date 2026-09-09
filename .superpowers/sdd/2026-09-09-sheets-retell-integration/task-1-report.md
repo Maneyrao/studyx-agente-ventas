@@ -192,3 +192,48 @@ The visible payload remains exactly `nombre`, `apellido`, `mail`, and
 `tipo_de_curso`; no migration, Retell code, export, credentials, or live Google
 effect was touched. The test obtains all required contact fields across actual
 accepted turns in a deliberately non-field order. No concerns remain.
+
+## Fix Round 3 — independent field capture and legacy-order fence
+
+### Implementation
+
+- The integration proof now starts empty and accepts the four required values
+  independently in non-field order: first name, canonical selected course,
+  email, then surname. It asserts no stable projection after each of the first
+  three accepted deliveries and exactly one complete four-column row after the
+  fourth.
+- A source-less refresh may only update an existing legacy row whose durable
+  `source_order` is zero. It is a no-op once Agent A has written a positive
+  ordered snapshot. The SQL update repeats that condition, preventing a
+  source-less read/update race from overwriting an ordered correction.
+
+### RED evidence
+
+`TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55433/studyx_test npm run test:unit -- tests/unit/projection/projection-idempotency.test.ts`
+
+Before the new fence, the source-less-after-ordered test failed as intended:
+the delayed unversioned enqueue returned `changed: true` after an ordered
+source-order-2 correction, demonstrating that it could overwrite the newer
+payload.
+
+### GREEN evidence
+
+1. `TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55433/studyx_test npm run test:unit -- tests/unit/projection/projection-idempotency.test.ts`
+   — 12/12 passed.
+2. `TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55433/studyx_test npm run test:integration -- tests/integration/agent-tools-commit-effects.test.ts`
+   — 14/14 passed.
+3. `npm run typecheck` — passed.
+4. `git diff --check` — passed.
+
+### Files changed in this round
+
+- `src/lib/services/projection.service.ts`
+- `tests/unit/projection/projection-idempotency.test.ts`
+- `tests/integration/agent-tools-commit-effects.test.ts`
+
+### Round self-review and concerns
+
+The positive-order guard is both checked before updating and included in the
+durable SQL predicate. This leaves source-order-zero compatibility intact,
+maintains strict monotonic ordered writes, and keeps the visible A:D payload
+unchanged. No migration or live Google effect was used. No concerns remain.

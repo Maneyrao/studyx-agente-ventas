@@ -154,7 +154,10 @@ export async function enqueueLeadProjection(
       }
       if (
         (hasOrderingProof && existingSourceOrder >= persistedSourceOrder)
-        || (!hasOrderingProof && existing.payload && sha256Hex(existing.payload) === payloadHash)
+        || (!hasOrderingProof && (
+          existingSourceOrder > 0
+          || (existing.payload && sha256Hex(existing.payload) === payloadHash)
+        ))
       ) {
         return { id: existing.id, rowNumber: existing.row_number, changed: false };
       }
@@ -167,7 +170,10 @@ export async function enqueueLeadProjection(
             state = 'pending',
             available_at = now()
         WHERE id = ${existing.id}
-          AND (NOT ${hasOrderingProof} OR source_order < ${persistedSourceOrder})
+          AND (
+            (${hasOrderingProof} AND source_order < ${persistedSourceOrder})
+            OR (NOT ${hasOrderingProof} AND source_order = 0)
+          )
         RETURNING id, row_number
       `;
       if (updated[0]) return { id: updated[0].id, rowNumber: updated[0].row_number, changed: true };

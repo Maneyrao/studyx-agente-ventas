@@ -927,19 +927,19 @@ run('Agent Loop preparation materialization', () => {
     process.env.GOOGLE_SHEETS_SPREADSHEET_ID = spreadsheetId;
     process.env.GOOGLE_SHEETS_TAB_NAME = 'Leads';
 
-    const emailFirst = await prepareContactDetailsToolV1({
+    const firstNameFirst = await prepareContactDetailsToolV1({
       db: sql,
       turn_id: seeded.turn_id,
       conversation_id: seeded.conversation_id,
       contact_id: seeded.contact_id,
-    }, { email: 'ana.garcia@example.test' });
-    expect(emailFirst.success).toBe(true);
-    const first = await commit(seeded, { preparation_ids: [emailFirst.preparation_id!] });
+    }, { first_name: 'Ana' });
+    expect(firstNameFirst.success).toBe(true);
+    const first = await commit(seeded, { preparation_ids: [firstNameFirst.preparation_id!] });
     await recordDeliveryReport({
       outbound_id: first.outbound_id!,
       trace_id: randomUUID(),
       status: 'submitted_to_botpress',
-      botpress_message_id: `bp-email-${seeded.turn_id}`,
+      botpress_message_id: `bp-first-name-${seeded.turn_id}`,
       replayed: false,
       error_code: null,
       delivery_attempt: 1,
@@ -993,19 +993,19 @@ run('Agent Loop preparation materialization', () => {
       trace_id: randomUUID(),
       message: {
         type: 'text',
-        text: 'Mi nombre es Ana García',
+        text: 'Mi correo es ana.garcia@example.test',
         occurred_at: new Date().toISOString(),
         reply_to_external_message_id: null,
       },
     };
     const thirdInboundResult = await processInboundMessage(thirdInbound);
-    const namesThird = await prepareContactDetailsToolV1({
+    const emailThird = await prepareContactDetailsToolV1({
       db: sql,
       turn_id: thirdInboundResult.turn_id,
       conversation_id: seeded.conversation_id,
       contact_id: seeded.contact_id,
-    }, { last_name: 'García', first_name: 'Ana' });
-    expect(namesThird.success).toBe(true);
+    }, { email: 'ana.garcia@example.test' });
+    expect(emailThird.success).toBe(true);
     const [state] = await sql<Array<{ version: number }>>`
       SELECT version
       FROM conversation_sales_context_states_v1
@@ -1017,13 +1017,59 @@ run('Agent Loop preparation materialization', () => {
     const third = await commit(seeded, {
       turn_id: thirdInboundResult.turn_id,
       state_version: Number(state.version),
-      preparation_ids: [namesThird.preparation_id!],
+      preparation_ids: [emailThird.preparation_id!],
     });
     await recordDeliveryReport({
       outbound_id: third.outbound_id!,
       trace_id: randomUUID(),
       status: 'submitted_to_botpress',
-      botpress_message_id: `bp-names-${thirdInboundResult.turn_id}`,
+      botpress_message_id: `bp-email-${thirdInboundResult.turn_id}`,
+      replayed: false,
+      error_code: null,
+      delivery_attempt: 1,
+    });
+    await expect(sql<Array<{ id: string }>>`
+      SELECT id FROM sheet_projection_rows
+      WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
+    `).resolves.toHaveLength(0);
+
+    const fourthInboundResult = await processInboundMessage({
+      ...thirdInbound,
+      external_message_id: `agent-turn-fixture-fourth-${randomUUID()}`,
+      external_user_id: `agent-turn-fixture-fourth-user-${randomUUID()}`,
+      trace_id: randomUUID(),
+      message: {
+        type: 'text',
+        text: 'Mi apellido es García',
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    });
+    const surnameFourth = await prepareContactDetailsToolV1({
+      db: sql,
+      turn_id: fourthInboundResult.turn_id,
+      conversation_id: seeded.conversation_id,
+      contact_id: seeded.contact_id,
+    }, { last_name: 'García' });
+    expect(surnameFourth.success).toBe(true);
+    const [latestState] = await sql<Array<{ version: number }>>`
+      SELECT version
+      FROM conversation_sales_context_states_v1
+      WHERE workspace_id = ${seeded.workspace_id}::uuid
+        AND conversation_id = ${seeded.conversation_id}::uuid
+        AND contact_id = ${seeded.contact_id}::uuid
+    `;
+    if (!latestState) throw new Error('TEST_CONVERSATION_STATE_MISSING');
+    const fourth = await commit(seeded, {
+      turn_id: fourthInboundResult.turn_id,
+      state_version: Number(latestState.version),
+      preparation_ids: [surnameFourth.preparation_id!],
+    });
+    await recordDeliveryReport({
+      outbound_id: fourth.outbound_id!,
+      trace_id: randomUUID(),
+      status: 'submitted_to_botpress',
+      botpress_message_id: `bp-surname-${fourthInboundResult.turn_id}`,
       replayed: false,
       error_code: null,
       delivery_attempt: 1,
@@ -1033,7 +1079,7 @@ run('Agent Loop preparation materialization', () => {
       SELECT payload, source_order FROM sheet_projection_rows
       WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
     `).resolves.toEqual([{
-      source_order: '3',
+      source_order: '4',
       payload: {
         nombre: 'Ana',
         apellido: 'García',
