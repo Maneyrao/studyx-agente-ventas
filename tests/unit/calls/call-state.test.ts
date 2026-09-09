@@ -33,6 +33,11 @@ describe('call state projection', () => {
     expect(projectCallState({ providerAccepted: true, cancelledAt: null, events: [ended, event('started')] }).status).toBe('no_answer');
   });
 
+  it('treats a provider hangup ending as completed even when started is delayed', () => {
+    expect(projectCallState({ providerAccepted: true, cancelledAt: null, events: [event('ended')] }).status)
+      .toBe('completed');
+  });
+
   it('keeps technical and analysis status orthogonal', () => {
     expect(projectCallState({ providerAccepted: true, cancelledAt: null, events: [event('analyzed')] })).toEqual({
       status: 'provider_accepted', analysisStatus: 'completed', result: 'venta_confirmada',

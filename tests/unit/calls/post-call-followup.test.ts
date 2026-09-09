@@ -74,6 +74,22 @@ describe('post-call followup verdicts (spec 007)', () => {
     }
   });
 
+  it('offers a retry for voicemail without claiming a sale or payment', () => {
+    expect(decidePostCallFollowup({ status: 'completed', result: 'buzon_de_voz', ...base })).toEqual({
+      action: 'send',
+      content: expect.any(String),
+      reason: 'VOICEMAIL_OUTCOME',
+    });
+  });
+
+  it('closes safely when the person ended the call without claiming a sale or payment', () => {
+    expect(decidePostCallFollowup({ status: 'completed', result: 'corto_la_llamada', ...base })).toEqual({
+      action: 'send',
+      content: expect.any(String),
+      reason: 'CALL_ENDED_BY_CONTACT',
+    });
+  });
+
   it('is a pure function of its inputs: same call, same verdict, every time', () => {
     const input = { status: 'completed' as const, result: 'seguimiento_agendado' as const, ...base };
     const first = decidePostCallFollowup(input);

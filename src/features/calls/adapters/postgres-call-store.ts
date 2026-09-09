@@ -4,6 +4,11 @@ import { CallEventSchema, type CallEvent } from '@/lib/contracts/call-event';
 import { hashCallContext, parseCallContext } from '../domain/call-context';
 import { projectCallState, type CallProjection } from '../domain/call-state';
 import type { CallStore, DispatchClaim } from '../ports/call-store';
+import {
+  RetellCallCorrelationError,
+  type RetellCorrelationMetadata,
+  type RetellCallCorrelationStore,
+} from '../ports/retell-call-correlation-store';
 
 type CallRow = {
   id: string;
@@ -22,7 +27,15 @@ function iso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
-export class PostgresCallStore implements CallStore {
+type RetellCorrelationRow = {
+  id: string;
+  contact_id: string;
+  conversation_id: string;
+  provider_call_id: string | null;
+  status: string;
+};
+
+export class PostgresCallStore implements CallStore, RetellCallCorrelationStore {
   constructor(private readonly db: postgres.Sql) {}
 
   async claimDispatch(callId: string, workerId: string): Promise<DispatchClaim> {
@@ -110,6 +123,70 @@ export class PostgresCallStore implements CallStore {
           dispatch_lease_owner = NULL, dispatch_lease_until = NULL
       WHERE id = ${callId}::uuid AND status = 'dispatching'
     `;
+  }
+
+  async resolveRetellCall(input: {
+    providerCallId: string;
+    metadata: RetellCorrelationMetadata | null;
+  }): Promise<{ callId: string }> {
+    return this.db.begin(async (tx) => {
+      const rows = input.metadata
+        ? await tx<Array<RetellCorrelationRow>>`
+            SELECT id, contact_id, conversation_id, provider_call_id, status
+            FROM call_sessions
+            WHERE provider = 'retell'
+              AND (provider_call_id = ${input.providerCallId} OR id = ${input.metadata.internalCallId}::uuid)
+            ORDER BY id
+            FOR UPDATE
+          `
+        : await tx<Array<RetellCorrelationRow>>`
+            SELECT id, contact_id, conversation_id, provider_call_id, status
+            FROM call_sessions
+            WHERE provider = 'retell' AND provider_call_id = ${input.providerCallId}
+            FOR UPDATE
+          `;
+
+      const byProvider = rows.find((row) => row.provider_call_id === input.providerCallId);
+      const byMetadata = input.metadata
+        ? rows.find((row) => row.id === input.metadata!.internalCallId)
+        : undefined;
+
+      if (input.metadata && !byMetadata) {
+        throw new RetellCallCorrelationError(byProvider
+          ? 'CALL_CORRELATION_MISMATCH'
+          : 'CALL_CORRELATION_NOT_FOUND');
+      }
+      if (byProvider && byMetadata && byProvider.id !== byMetadata.id) {
+        throw new RetellCallCorrelationError('CALL_CORRELATION_MISMATCH');
+      }
+
+      const row = byProvider ?? byMetadata;
+      if (!row) throw new RetellCallCorrelationError('CALL_CORRELATION_NOT_FOUND');
+      if (
+        input.metadata
+        && (row.contact_id !== input.metadata.contactId || row.conversation_id !== input.metadata.conversationId)
+      ) {
+        throw new RetellCallCorrelationError('CALL_CORRELATION_MISMATCH');
+      }
+      if (row.provider_call_id && row.provider_call_id !== input.providerCallId) {
+        throw new RetellCallCorrelationError('CALL_PROVIDER_ID_CONFLICT');
+      }
+
+      if (row.provider_call_id === null) {
+        if (row.status !== 'dispatching' && row.status !== 'dispatch_ambiguous') {
+          throw new RetellCallCorrelationError('CALL_CORRELATION_STATE_INVALID');
+        }
+        await tx`
+          UPDATE call_sessions
+          SET provider_call_id = ${input.providerCallId}, status = 'provider_accepted',
+              provider_accepted_at = COALESCE(provider_accepted_at, now()),
+              dispatch_lease_owner = NULL, dispatch_lease_until = NULL, error_code = NULL
+          WHERE id = ${row.id}::uuid
+        `;
+      }
+
+      return { callId: row.id };
+    });
   }
 
   async appendEvent(rawEvent: CallEvent): Promise<'recorded' | 'duplicate'> {

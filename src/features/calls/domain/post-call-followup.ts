@@ -97,6 +97,10 @@ export function decidePostCallFollowup(input: {
     case 'no_calificado':
     case 'no_es_buen_momento':
       return { action: 'send', content: neutralNoClaimFollowup(), reason: `NEUTRAL_${result.toUpperCase()}` };
+    case 'buzon_de_voz':
+      return { action: 'send', content: RETRY_OFFER, reason: 'VOICEMAIL_OUTCOME' };
+    case 'corto_la_llamada':
+      return { action: 'send', content: neutralNoClaimFollowup(), reason: 'CALL_ENDED_BY_CONTACT' };
     default:
       return { action: 'send', content: NEUTRAL_CONTINUITY, reason: 'UNKNOWN_RESULT' };
   }

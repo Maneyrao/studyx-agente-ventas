@@ -39,6 +39,7 @@ export function projectCallState(input: {
   if (ended) {
     switch (ended.disconnection_reason) {
       case 'no_answer':
+      case 'voicemail':
         status = 'no_answer';
         break;
       case 'timed_out':
@@ -49,7 +50,7 @@ export function projectCallState(input: {
         status = 'failed';
         break;
       default:
-        status = started ? 'completed' : 'failed';
+        status = 'completed';
     }
   } else if (started) {
     status = 'in_progress';
