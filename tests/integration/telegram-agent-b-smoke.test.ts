@@ -24,6 +24,15 @@ afterAll(async () => db?.end());
 async function seedRequestedCall(input: { callId: string; userId: string; chatId: string }) {
   const phone = `+999${Math.floor(10_000_000 + Math.random() * 89_999_999).toString().padStart(10, '0')}`;
   const contacts = await db!<Array<{ id: string }>>`INSERT INTO contacts (phone, channel_origin) VALUES (${phone}, 'whatsapp') RETURNING id`;
+  const workspaces = await db!<Array<{ id: string }>>`
+    INSERT INTO workspaces (slug, display_name, environment, status)
+    VALUES (${`telegram-smoke-${randomUUID()}`}, 'Telegram smoke', 'sandbox', 'active')
+    RETURNING id
+  `;
+  await db!`
+    INSERT INTO workspace_contacts (workspace_id, contact_id, lifecycle_status)
+    VALUES (${workspaces[0].id}::uuid, ${contacts[0].id}::uuid, 'active')
+  `;
   await db!`INSERT INTO sandbox_identities (provider, external_user_id, contact_id, synthetic_phone) VALUES ('telegram_sandbox', ${input.userId}, ${contacts[0].id}::uuid, ${phone})`;
   // `synthesize-call-result-turn.ts` exige un `channel_threads` resuelto
   // (provider + integration_id) para escribir el `channel_events` de cierre;
