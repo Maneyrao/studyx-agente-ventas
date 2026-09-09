@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { decidePostCallFollowup } from '@/features/calls/domain/post-call-followup';
+import { runPostCallFollowup } from '@/features/calls/application/post-call-followup';
+import type { PostCallFollowupStore } from '@/features/calls/ports/post-call-followup-store';
 
 const base = { analysisStatus: 'completed' as const, paymentVerified: false };
 
@@ -95,5 +97,71 @@ describe('post-call followup verdicts (spec 007)', () => {
     const first = decidePostCallFollowup(input);
     const second = decidePostCallFollowup(input);
     expect(first).toEqual(second);
+  });
+});
+
+describe('post-call followup delivery boundary', () => {
+  function storeFor(call: {
+    status?: 'completed' | 'failed' | 'cancelled';
+    result?: 'seguimiento_agendado' | 'no_contactar' | null;
+  }): PostCallFollowupStore & { completed: string[] } {
+    const completed: string[] = [];
+    return {
+      completed,
+      async listPendingFollowups() {
+        return [{
+          call_id: '00000000-0000-4000-8000-000000000001',
+          contact_id: '00000000-0000-4000-8000-000000000002',
+          conversation_id: '00000000-0000-4000-8000-000000000003',
+          workspace_id: '00000000-0000-4000-8000-000000000004',
+          status: call.status ?? 'completed',
+          result: call.result ?? 'seguimiento_agendado',
+          analysis_status: 'completed' as const,
+          prompt_version: 'agent-b-v1',
+        }];
+      },
+      async hasVerifiedPayment() { return false; },
+      async isContactBlocked() { return false; },
+      async revokeContact() {},
+      async markFollowupCompleted(input) { completed.push(input.call_id); },
+    };
+  }
+
+  it('uses one stable key and marks completion only after provider acceptance', async () => {
+    const store = storeFor({});
+    const attempts: string[] = [];
+    const result = await runPostCallFollowup(
+      { trace_id: '00000000-0000-4000-8000-000000000005' },
+      {
+        store,
+        sendOutbound: async (input) => {
+          attempts.push(input.idempotencyKey);
+          return { outcome: 'sent', channel: 'whatsapp', providerMessageId: 'wamid.1', deliveryId: 'delivery-1', reason: null };
+        },
+      },
+    );
+
+    expect(result.findings).toEqual([{
+      call_id: '00000000-0000-4000-8000-000000000001',
+      action: 'send',
+      reason: 'FOLLOWUP_SCHEDULED',
+    }]);
+    expect(attempts).toEqual(['post-call:00000000-0000-4000-8000-000000000001']);
+    expect(store.completed).toEqual(['00000000-0000-4000-8000-000000000001']);
+  });
+
+  it('leaves retryable delivery without a completion marker', async () => {
+    const store = storeFor({});
+    const result = await runPostCallFollowup(
+      { trace_id: '00000000-0000-4000-8000-000000000005' },
+      {
+        store,
+        sendOutbound: async () => ({ outcome: 'retryable', channel: 'whatsapp', providerMessageId: null, deliveryId: 'delivery-1', reason: 'TIMEOUT' }),
+      },
+    );
+
+    expect(result.sent).toBe(0);
+    expect(result.failed).toBe(1);
+    expect(store.completed).toEqual([]);
   });
 });

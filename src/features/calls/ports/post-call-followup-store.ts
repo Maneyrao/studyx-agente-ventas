@@ -12,6 +12,7 @@ export interface TerminalCallForFollowup {
   readonly call_id: string;
   readonly contact_id: string;
   readonly conversation_id: string;
+  readonly workspace_id: string;
   readonly status: CallStatus;
   readonly result: CallResult | null;
   readonly analysis_status: 'pending' | 'completed' | 'failed';
@@ -38,6 +39,14 @@ export interface PostCallFollowupStore {
   revokeContact(input: {
     readonly contact_id: string;
     readonly call_id: string;
+    readonly trace_id: string;
+  }): Promise<void>;
+
+  /** Durable completion marker written only after a provider accepts the message. */
+  markFollowupCompleted(input: {
+    readonly call_id: string;
+    readonly contact_id: string;
+    readonly conversation_id: string;
     readonly trace_id: string;
   }): Promise<void>;
 }

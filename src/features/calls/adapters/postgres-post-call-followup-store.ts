@@ -2,6 +2,8 @@ import type postgres from 'postgres';
 import type { CallResult } from '@/lib/contracts/call-event';
 import type { CallStatus } from '../domain/call-state';
 import type { PostCallFollowupStore, TerminalCallForFollowup } from '../ports/post-call-followup-store';
+import { synthesizeCallResultTurn } from '../application/synthesize-call-result-turn';
+import { withSerializableTransactionOn } from '@/lib/db/transaction';
 
 const TERMINAL_STATUSES: readonly CallStatus[] = [
   'completed',
@@ -22,14 +24,22 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
       id: string;
       contact_id: string;
       conversation_id: string;
+      workspace_id: string;
       status: CallStatus;
       result: CallResult | null;
       analysis_status: 'pending' | 'completed' | 'failed';
       prompt_version: string;
     }>>`
       SELECT cs.id, cs.contact_id, cs.conversation_id, cs.status, cs.result,
-             cs.analysis_status, cs.prompt_version
+             wc.workspace_id, cs.analysis_status, cs.prompt_version
       FROM call_sessions AS cs
+      JOIN LATERAL (
+        SELECT workspace_id
+        FROM workspace_contacts
+        WHERE contact_id = cs.contact_id AND lifecycle_status = 'active'
+        ORDER BY created_at ASC, id ASC
+        LIMIT 1
+      ) AS wc ON true
       WHERE cs.status = ANY(${TERMINAL_STATUSES})
         AND cs.updated_at < now() - make_interval(secs => ${input.grace_seconds})
         AND NOT EXISTS (
@@ -44,6 +54,7 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
       call_id: row.id,
       contact_id: row.contact_id,
       conversation_id: row.conversation_id,
+      workspace_id: row.workspace_id,
       status: row.status,
       result: row.result,
       analysis_status: row.analysis_status,
@@ -105,5 +116,14 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
         )
       `;
     });
+  }
+
+  async markFollowupCompleted(input: {
+    call_id: string;
+    contact_id: string;
+    conversation_id: string;
+    trace_id: string;
+  }): Promise<void> {
+    await withSerializableTransactionOn(this.db, (db) => synthesizeCallResultTurn(input, db));
   }
 }

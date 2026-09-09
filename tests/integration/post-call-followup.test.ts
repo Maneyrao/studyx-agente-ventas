@@ -5,9 +5,19 @@ import { processInboundMessage, type InboundEnvelope } from '@/lib/services/inge
 import { hashCallContext } from '@/features/calls/domain/call-context';
 import { runPostCallFollowup } from '@/features/calls/application/post-call-followup';
 import { PostgresPostCallFollowupStore } from '@/features/calls/adapters/postgres-post-call-followup-store';
+import { sendOutboundMessage } from '@/features/messaging/application/send-outbound-message';
+import { PostgresChannelIdentityStore } from '@/features/messaging/adapters/postgres-channel-identity-store';
+import { AuthorizedEgressContentAuthorizer } from '@/features/messaging/adapters/authorized-egress-content-authorizer';
+import type { MessageChannel } from '@/features/messaging/ports/message-channel';
 import type { CallStatus } from '@/features/calls/domain/call-state';
 import type { CallResult } from '@/lib/contracts/call-event';
 import { sql } from '@/lib/db/orchestrator';
+import { PostgresCallStore } from '@/features/calls/adapters/postgres-call-store';
+import { mapRetellLifecycleEvent } from '@/features/calls/adapters/retell-lifecycle';
+import { recordCallEvent } from '@/features/calls/application/record-call-event';
+import { dispatchCall } from '@/features/calls/application/dispatch-call';
+import type { VoiceProvider } from '@/features/calls/ports/voice-provider';
+import { enqueueLeadProjection, leadProjectionKey } from '@/lib/services/projection.service';
 
 /**
  * Spec 007 (B → A) against a real database. Unit tests already cover
@@ -21,6 +31,15 @@ import { sql } from '@/lib/db/orchestrator';
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
 const store = new PostgresPostCallFollowupStore(sql);
+const postCallChannel: MessageChannel = {
+  channel: 'whatsapp',
+  provider: 'whatsapp_cloud',
+  integrationId: 'post-call-test',
+  maxTextLength: 4096,
+  async sendText(input) {
+    return { providerMessageId: `wamid.${input.correlationId}`, acceptedAt: new Date().toISOString() };
+  },
+};
 
 afterAll(async () => {
   await db?.end();
@@ -62,8 +81,18 @@ async function seedTerminalCall(overrides: {
   result?: CallResult | null;
   analysis_status?: 'pending' | 'completed' | 'failed';
   ageMinutes?: number;
+  provider?: 'telegram_sandbox' | 'retell';
 }) {
   const context = await processInboundMessage(envelope('dale, llamame'));
+  const workspaces = await sql<Array<{ id: string }>>`
+    INSERT INTO workspaces (slug, display_name, environment, status)
+    VALUES (${`post-call-${randomUUID()}`}, 'Post-call test', 'sandbox', 'active')
+    RETURNING id
+  `;
+  await sql`
+    INSERT INTO workspace_contacts (workspace_id, contact_id, lifecycle_status)
+    VALUES (${workspaces[0].id}::uuid, ${context.contact.id}::uuid, 'active')
+  `;
   const callId = randomUUID();
   const callContext = {
     call_id: callId,
@@ -83,7 +112,7 @@ async function seedTerminalCall(overrides: {
       prompt_version, requested_at, completed_at, updated_at
     ) VALUES (
       ${callId}::uuid, ${context.turn_id}::uuid, ${context.contact.id}::uuid, ${context.conversation_id}::uuid,
-      'telegram_sandbox', ${`voice-call:${callId}`}, ${overrides.status},
+      ${overrides.provider ?? 'telegram_sandbox'}, ${`voice-call:${callId}`}, ${overrides.status},
       ${overrides.result ?? null}, ${overrides.analysis_status ?? 'completed'},
       ${context.turn_id}::uuid, ${sql.json(callContext)}, decode(${hashCallContext(callContext)}, 'hex'),
       'agent-b-v1',
@@ -93,7 +122,13 @@ async function seedTerminalCall(overrides: {
     )
   `;
 
-  return { callId, contactId: context.contact.id, conversationId: context.conversation_id };
+  return {
+    callId,
+    contactId: context.contact.id,
+    conversationId: context.conversation_id,
+    providerCallId: `retell-${callId}`,
+    workspaceId: workspaces[0].id,
+  };
 }
 
 async function revokeConsent(contactId: string) {
@@ -111,13 +146,26 @@ async function revokeConsent(contactId: string) {
   `;
 }
 
-async function sweep(traceId = randomUUID()) {
+async function sweep(traceId = randomUUID(), graceSeconds = 60) {
   // `listPendingFollowups` orders oldest-first with no per-test scoping, so a
   // generous limit keeps this test's own fixture from being crowded out by
   // whatever else is pending in the shared disposable DB (e.g. FR-4/FR-5's
   // fixtures are deliberately left with no channel_events row forever, since
   // that's the correct "no message" outcome, and accumulate across runs).
-  return runPostCallFollowup({ trace_id: traceId, grace_seconds: 60, limit: 500 }, { store });
+  return runPostCallFollowup(
+    { trace_id: traceId, grace_seconds: graceSeconds, limit: 500 },
+    {
+      store,
+      sendOutbound: (input) => sendOutboundMessage(input, {
+        identities: new PostgresChannelIdentityStore(sql),
+        channels: { whatsapp: postCallChannel },
+        preferenceOrder: ['whatsapp'],
+        contentAuthorizer: new AuthorizedEgressContentAuthorizer(),
+        sideEffectAuthorizer: { authorize: async () => ({ allowed: true as const, reason: null }) },
+        db: sql,
+      }),
+    },
+  );
 }
 
 async function systemCallResultEventCount(callId: string) {
@@ -172,7 +220,7 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
       analysis_status: 'completed',
     });
 
-    const first = await sweep();
+    const first = await sweep(randomUUID(), 0);
     // The sweep is a global, unscoped query (`listPendingFollowups` has no
     // per-test filter), so `sent`/`skipped`/`revoked` aggregate over whatever
     // else is pending in the shared disposable DB at the time. The real
@@ -180,10 +228,10 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
     expect(first.findings.find((f) => f.call_id === callId)?.action).toBe('send');
     expect(await systemCallResultEventCount(callId)).toBe(1);
     expect(await syntheticMessageCount(callId)).toBe(1);
-    expect(await agentDecisionCountForCall(callId)).toBe(1);
+    expect(await agentDecisionCountForCall(callId)).toBe(0);
     expect(await outboundDeliveryCountForConversation(conversationId)).toBe(1);
 
-    const second = await sweep();
+    const second = await sweep(randomUUID(), 0);
     // The antijoin in listPendingFollowups no longer selects this call at
     // all once channel_events has its row, so the second run doesn't even
     // examine it -- but the row counts are the real assertion here, not the
@@ -192,7 +240,7 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
 
     expect(await systemCallResultEventCount(callId)).toBe(1);
     expect(await syntheticMessageCount(callId)).toBe(1);
-    expect(await agentDecisionCountForCall(callId)).toBe(1);
+    expect(await agentDecisionCountForCall(callId)).toBe(0);
     expect(await outboundDeliveryCountForConversation(conversationId)).toBe(1);
   });
 
@@ -261,5 +309,106 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
     expect(await systemCallResultEventCount(callId)).toBe(0);
     expect(await syntheticMessageCount(callId)).toBe(0);
     expect(await outboundDeliveryCountForConversation(conversationId)).toBe(0);
+  });
+
+  it('Task 5 E2E: lead projection + Retell lifecycle + physical follow-up replay once', async () => {
+    const fixture = await seedTerminalCall({
+      status: 'requested',
+      result: null,
+      analysis_status: 'pending',
+      provider: 'retell',
+      ageMinutes: 0,
+    });
+
+    const dispatch = await dispatchCall(
+      { callId: fixture.callId, workerId: `e2e-${fixture.callId}` },
+      {
+        store: new PostgresCallStore(sql),
+        provider: {
+          async placeCall() {
+            return { providerCallId: fixture.providerCallId, acceptedAt: new Date().toISOString() };
+          },
+          async findCallByInternalId() { return { providerCallId: fixture.providerCallId }; },
+          async cancelCall() {},
+        } satisfies VoiceProvider,
+      },
+    );
+    expect(dispatch).toEqual({ status: 'provider_accepted', providerCallId: fixture.providerCallId });
+
+    await enqueueLeadProjection({
+      workspaceId: fixture.workspaceId,
+      contactId: fixture.contactId,
+      spreadsheetId: `e2e-sheet-${fixture.callId}`,
+      tabName: 'Leads',
+      sourceOrder: 2,
+      sourceKey: `agent-a:${fixture.callId}`,
+      nombre: 'Ariana',
+      apellido: 'Paz',
+      email: 'ariana.paz@example.test',
+      cursoInteres: 'Curso E2E',
+      ultimaSenal: 'complete_lead',
+      traceId: randomUUID(),
+    }, { sql });
+
+    const callStore = new PostgresCallStore(sql);
+    const metadata = {
+      internal_call_id: fixture.callId,
+      contact_id: fixture.contactId,
+      conversation_id: fixture.conversationId,
+    };
+    const lifecycle = [
+      {
+        event: 'call_started' as const,
+        call: { call_id: fixture.providerCallId, metadata, start_timestamp: Date.now() - 2_000 },
+      },
+      {
+        event: 'call_ended' as const,
+        call: {
+          call_id: fixture.providerCallId,
+          metadata,
+          end_timestamp: Date.now() - 1_000,
+          disconnection_reason: 'user_hangup',
+        },
+      },
+      {
+        event: 'call_analyzed' as const,
+        call: {
+          call_id: fixture.providerCallId,
+          metadata,
+          end_timestamp: Date.now(),
+          call_analysis: {
+            call_summary: 'E2E summary',
+            custom_analysis_data: { resultado: 'seguimiento_agendado' as const, nivel_interes: 'medio' as const },
+          },
+        },
+      },
+    ];
+    for (const raw of lifecycle) {
+      const event = mapRetellLifecycleEvent(raw, fixture.callId);
+      await recordCallEvent(event, { store: callStore });
+      await recordCallEvent(event, { store: callStore });
+    }
+
+    const first = await sweep(randomUUID(), 0);
+    expect(first.findings.find((finding) => finding.call_id === fixture.callId)).toMatchObject({ action: 'send' });
+    const second = await sweep(randomUUID(), 0);
+    expect(second.findings.find((finding) => finding.call_id === fixture.callId)).toBeUndefined();
+
+    await expect(sql<Array<{ count: string }>>`
+      SELECT count(*)::text AS count FROM call_events WHERE call_id = ${fixture.callId}::uuid
+    `).resolves.toEqual([{ count: '3' }]);
+    expect(await systemCallResultEventCount(fixture.callId)).toBe(1);
+    expect(await outboundDeliveryCountForConversation(fixture.conversationId)).toBe(1);
+    await expect(sql<Array<{ payload: Record<string, string> }>>`
+      SELECT payload FROM sheet_projection_rows
+      WHERE projection_key = ${leadProjectionKey(fixture.workspaceId, fixture.contactId)}
+    `).resolves.toEqual([{
+      payload: {
+        nombre: 'Ariana',
+        apellido: 'Paz',
+        mail: 'ariana.paz@example.test',
+        tipo_de_curso: 'Curso E2E',
+      },
+    }]);
   });
 });

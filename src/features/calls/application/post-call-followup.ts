@@ -1,8 +1,7 @@
-import { withSerializableTransaction } from '@/lib/db/transaction';
-import { commitAgentDecision } from '@/lib/services/decision.service';
-import { decidePostCallFollowup, POST_CALL_FOLLOWUP_PROMPT_VERSION } from '../domain/post-call-followup';
-import { synthesizeCallResultTurn } from './synthesize-call-result-turn';
+import { decidePostCallFollowup } from '../domain/post-call-followup';
 import type { PostCallFollowupStore } from '../ports/post-call-followup-store';
+import type { SendOutboundMessageInput, SendOutboundMessageResult } from '@/features/messaging/application/send-outbound-message';
+import { buildAuthorizedEgress } from '@/features/orchestration/domain/egress-guard';
 
 /**
  * Spec 007 — el sweep que cierra el loop B→A: una llamada en estado terminal
@@ -39,6 +38,7 @@ export interface PostCallFollowupResult {
 
 export interface PostCallFollowupDependencies {
   readonly store: PostCallFollowupStore;
+  readonly sendOutbound: (input: SendOutboundMessageInput) => Promise<SendOutboundMessageResult>;
   readonly log?: (event: string, fields: Record<string, unknown>) => void;
 }
 
@@ -85,23 +85,18 @@ export async function runPostCallFollowup(
       }
 
       if (verdict.action === 'revoke_contact') {
-        // El turno de sistema se sintetiza igual, aunque no vaya a generar
-        // una decisión: es la evidencia (channel_events) que ancla la
-        // revocación y le da idempotencia sobre reintentos del cron.
-        await withSerializableTransaction(async (db) => {
-          await synthesizeCallResultTurn(
-            {
-              call_id: call.call_id,
-              contact_id: call.contact_id,
-              conversation_id: call.conversation_id,
-              trace_id: input.trace_id,
-            },
-            db
-          );
-        });
+        // Revoke first, then persist the system-call-result marker. If the
+        // process crashes between them, the next sweep repeats the idempotent
+        // permission event instead of hiding an incomplete revocation.
         await deps.store.revokeContact({
           contact_id: call.contact_id,
           call_id: call.call_id,
+          trace_id: input.trace_id,
+        });
+        await deps.store.markFollowupCompleted({
+          call_id: call.call_id,
+          contact_id: call.contact_id,
+          conversation_id: call.conversation_id,
           trace_id: input.trace_id,
         });
         findings.push({ call_id: call.call_id, action: 'revoke_contact', reason: verdict.reason });
@@ -110,45 +105,41 @@ export async function runPostCallFollowup(
       }
 
       // verdict.action === 'send'
-      const turn = await withSerializableTransaction((db) =>
-        synthesizeCallResultTurn(
-          {
-            call_id: call.call_id,
-            contact_id: call.contact_id,
-            conversation_id: call.conversation_id,
-            trace_id: input.trace_id,
-          },
-          db
-        )
-      );
+      const delivery = await deps.sendOutbound({
+        workspaceId: call.workspace_id,
+        contactId: call.contact_id,
+        text: verdict.content,
+        authorizedEgress: buildAuthorizedEgress({
+          content: verdict.content,
+          authorized_urls: [],
+          protected_facts: [],
+        }),
+        idempotencyKey: `post-call:${call.call_id}`,
+        preferredChannel: 'whatsapp',
+        purpose: 'conversational',
+      });
 
-      const commit = await commitAgentDecision({
-        turn_id: turn.message.id,
+      if (delivery.outcome !== 'sent') {
+        failed += 1;
+        findings.push({
+          call_id: call.call_id,
+          action: 'error',
+          reason: delivery.reason ?? `OUTBOUND_${delivery.outcome.toUpperCase()}`,
+        });
+        continue;
+      }
+
+      await deps.store.markFollowupCompleted({
+        call_id: call.call_id,
+        contact_id: call.contact_id,
+        conversation_id: call.conversation_id,
         trace_id: input.trace_id,
-        decision: {
-          schema_version: 2,
-          intent: 'commercial',
-          kind: 'reply',
-          response: verdict.content,
-          response_type: 'commercial_reply',
-          confidence: 1,
-          reason_code: verdict.reason,
-          business_action: null,
-          memory_candidates: [],
-          missing_information: [],
-          next_state: 'waiting_user',
-        },
-        model: {
-          provider: 'botpress',
-          model: 'system:post-call-reconciler',
-          prompt_version: `${POST_CALL_FOLLOWUP_PROMPT_VERSION}:${call.prompt_version}`,
-        },
       });
 
       findings.push({
         call_id: call.call_id,
         action: 'send',
-        reason: commit.status === 'duplicate' ? `${verdict.reason}_REPLAYED` : verdict.reason,
+        reason: verdict.reason,
       });
       sent += 1;
     } catch (error) {

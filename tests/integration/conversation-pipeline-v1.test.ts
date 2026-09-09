@@ -419,17 +419,12 @@ run('conversation pipeline V1 vertical', () => {
       WHERE projection_key = ${leadProjectionKey(workspaceId, payment.claimed.batch.contact_id)}
     `;
     expect(afterReport).toHaveLength(1);
-    expect(afterReport[0].payload).toMatchObject({
+    expect(afterReport[0].payload).toEqual({
       nombre: 'Ariana',
       apellido: 'Paz',
-      email: 'ariana.paz@example.test',
-      curso_interes: 'Redes Informáticas',
-      plan: 'monthly_12',
-      estado_pago: 'reportado_por_cliente',
-      estado_alta: 'pendiente_operador',
-      ultima_senal: 'payment_reported',
+      mail: 'ariana.paz@example.test',
+      tipo_de_curso: 'Redes Informáticas',
     });
-    expect(afterReport[0].payload.telefono).toBe(phone);
 
     const finalState = await stateStore.load(
       workspaceSlug,

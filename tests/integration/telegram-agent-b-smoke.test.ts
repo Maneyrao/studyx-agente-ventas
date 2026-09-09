@@ -176,15 +176,29 @@ run('Agent B Telegram smoke vertical slice', () => {
     // no se puede adelantar el reloj a mano: se usa `grace_seconds: 0` para
     // que la ventana de gracia del cron no dependa de esperar en el test.
     const followupStore = new PostgresPostCallFollowupStore(db!);
-    const sweep = await runPostCallFollowup({ trace_id: randomUUID(), grace_seconds: 0, limit: 500 }, { store: followupStore });
-    expect(sweep.findings.find((finding) => finding.call_id === callId)).toMatchObject({ action: 'send' });
+    const sweep = await runPostCallFollowup(
+      { trace_id: randomUUID(), grace_seconds: 0, limit: 500 },
+      {
+        store: followupStore,
+        // This fixture is deliberately sandbox-locked. The production
+        // physical consumer therefore refuses it before any provider call.
+        sendOutbound: async () => ({
+          outcome: 'unreachable' as const,
+          channel: null,
+          providerMessageId: null,
+          deliveryId: null,
+          reason: 'SANDBOX_LOCKED',
+        }),
+      },
+    );
+    expect(sweep.findings.find((finding) => finding.call_id === callId)).toMatchObject({ action: 'error' });
 
     const outbound = await db!<Array<{ count: string }>>`
       SELECT count(*)::text AS count
       FROM outbound_deliveries od JOIN messages m ON m.id = od.message_id
       WHERE m.conversation_id = ${conversationId}::uuid
     `;
-    expect(Number(outbound[0].count)).toBeGreaterThan(0);
+    expect(Number(outbound[0].count)).toBe(0);
   });
 
   /**
