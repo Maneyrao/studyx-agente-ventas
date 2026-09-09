@@ -6,6 +6,9 @@ Complete.
 
 - Implementation commit: `9bf3c37b8592696e937c3f7a101803b8deef3613`
   (`feat(calls): add authenticated Retell P0 tools`).
+- Independent-review corrective commit:
+  `f850cf1974b43e412a44a3432b30a0be9794e333`
+  (`fix(calls): harden Retell tool convergence`).
 
 ## Scope delivered
 
@@ -17,15 +20,25 @@ Complete.
 - Added one shared 32 KiB streamed-body boundary with dual authentication:
   untouched raw-body Retell HMAC using `RETELL_API_KEY` and a separately hashed,
   timing-safe `x-studyx-tools-secret` comparison using `RETELL_TOOLS_SECRET`.
+  Missing/invalid tool secrets and missing/malformed/stale signature headers are
+  rejected before consuming the body. A syntactically current signature on an
+  oversized body receives transport `413`, because its digest cannot be fully
+  verified without exceeding the byte cap.
 - Strictly validates `{name, call, args}`, exact route/name pairing, the exact
   metadata UUID trio, bounded P0 argument contracts, and the required Retell
   `call_id`. Extra top-level/argument keys fail closed; non-contract call data is
   discarded.
 - Resolves Task 3 Retell correlation and proves the resolved call belongs to the
-  configured active workspace before every read or write tool runs.
-- Resolves course code, display name, alias, and optional academy through the
-  deterministic canonical catalog path. Unknown, ambiguous, truncated, or
-  injection-suspected data returns a strict error without an LLM.
+  configured active workspace inside the same locked transaction, before an
+  unbound provider call ID, dispatch state, lease, error, or timestamp can be
+  mutated and before every read or write tool runs.
+- Resolves the entire normalized course input by exact safe code, display name,
+  or owner alias. Optional academy is a mandatory exact filter. Raw codes,
+  display names, academies, and aliases are independently bounded and validated
+  before the canonical view; malformed or instruction-like identities fail
+  closed rather than relying on the builder's injection tally. Unknown,
+  ambiguous, typo, promotion-suffixed, or truncated requests return a strict
+  error without an LLM.
 - Reads one coherent canonical offer snapshot and returns only assertable fixed
   price/currency and canonical configured payment labels. Multi-course,
   country-specific, missing, truncated, inconsistent, or non-fixed offers fail
@@ -39,11 +52,18 @@ Complete.
 - Established the shared safe-integer total order: Agent A uses
   `2 * inbound_source_order`; Agent B uses `2 * call_source_order + 1`. The same
   lead row converges under replay/correction, an older delayed A write loses,
-  and a later A write wins. Source-less legacy fencing remains unchanged.
+  and a later A write wins. A non-visible bounded `source_key` permits an
+  equal-order correction only from the exact same trusted Agent A turn or
+  correlated Retell call; a different key at the same position loses.
+  Source-less legacy fencing remains unchanged.
+- Row allocation is serialized per spreadsheet/tab inside a transaction. The
+  insert uses a savepoint so a mixed-version unique collision can be retried
+  without leaving the containing contact transaction aborted.
 - Maps `registrar_resultado` into the canonical analyzed event identity
   `retell:call_analyzed:<provider_call_id>`, including `nulo -> null`. The shared
   PostgreSQL event path now applies same-call analyzed first-writer-wins across
-  tool-first, webhook-first, exact replay, and changed replay.
+  tool-first, webhook-first, exact replay, and changed replay. Prefix-only or
+  wrong-suffix event IDs retain the normal changed-replay conflict.
 - No tool writes Google, sends an outbound message, creates payment proof, calls
   Stripe, or performs another direct effect.
 
@@ -80,16 +100,34 @@ Complete.
 8. Route structure:
    `npm test -- tests/unit/calls/retell-tool-routes.test.ts`
    - The suite failed while the four App Router modules were absent.
+9. Independent-review unit boundary:
+   `npm test -- tests/unit/calls/retell-tools.test.ts`
+   - 9 failed and 14 passed. Oversized missing/malformed signature requests
+     returned `413`; wrong-academy and promotion-suffixed requests resolved;
+     five malformed, overlong, control-bearing, or instructional raw catalog
+     identities escaped; and an unsafe offer was returned.
+10. Independent-review PostgreSQL boundary:
+    `TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55433/studyx_test npm run test:integration -- tests/integration/retell-tools.test.ts`
+    - 5 failed and 2 passed. A same-call correction updated the contact but not
+      the Sheet row; unbound foreign `dispatching` and `dispatch_ambiguous`
+      calls were attached before rejection; a forced two-client row-number
+      collision rolled back one complete contact transaction; and an analyzed
+      event with only the canonical prefix incorrectly received
+      first-writer-wins.
 
 ## GREEN evidence
 
 - Focused P0/order unit set:
   `TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55433/studyx_test npm test -- tests/unit/calls/retell-tools.test.ts tests/unit/calls/retell-tool-routes.test.ts tests/unit/projection/projection-idempotency.test.ts`
-  - 3 files, 30/30 passed.
+  - 3 files, 41/41 passed.
+- Focused corrective PostgreSQL boundary:
+  `TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55433/studyx_test npm run test:integration -- tests/integration/retell-tools.test.ts`
+  - 7/7 passed, including two independent database clients forced into the
+    same empty-sheet allocation window.
 - Focused PostgreSQL set:
   `TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55433/studyx_test npm run test:integration -- tests/integration/retell-tools.test.ts tests/integration/retell-call-lifecycle.test.ts tests/integration/agent-tools-commit-effects.test.ts`
-  - 3 files, 23/23 passed.
-- Full root unit/contract suite: 198 files passed, 2 skipped; 3,179 tests
+  - 3 files, 27/27 passed.
+- Full root unit/contract suite: 198 files passed, 2 skipped; 3,190 tests
   passed, 14 skipped, 7 todo; 0 failed.
 - Root `npm run typecheck`: passed.
 - Root `npm run lint`: passed with zero warnings.
@@ -104,7 +142,7 @@ Complete.
 ## Full integration-suite disclosure
 
 `TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55433/studyx_test npm run test:integration`
-was not fully green: 62 files passed and 2 failed; 471 tests passed, 4 failed,
+was not fully green: 62 files passed and 2 failed; 475 tests passed, 4 failed,
 and 1 skipped. The four exact failures are:
 
 1. `tests/integration/delivery-attempt-fencing.test.ts` — `enqueues exactly one
@@ -127,33 +165,45 @@ under Task 4.
 
 ## Self-review
 
-- Authentication is performed on the bounded untouched bytes before JSON
-  parsing; secrets, signatures, body data, transcripts, URLs, metadata, and PII
-  are never logged or returned.
+- Clear secret/header auth failures are rejected before the body read. For a
+  bounded body, full HMAC authentication is performed on untouched bytes before
+  JSON parsing. A current, syntactically valid header whose body exceeds the cap
+  receives the documented transport `413`; it cannot reach parsing,
+  correlation, or a tool. Secrets, signatures, body data, transcripts, URLs,
+  metadata, and PII are never logged or returned.
 - The body reader bounds actual streamed bytes independently of `Content-Length`.
   Every accepted string/array is bounded, top-level and argument objects are
   strict, and ignored call fields cannot influence execution.
-- Correlation uses Task 3's Retell-only store plus an active workspace/contact
-  membership proof. Arbitrary payload IDs cannot select a different tenant,
-  contact, conversation, or provider.
-- Catalog and offer tools use only canonical bounded views. They fail closed on
-  ambiguity, suspected injection, truncation, non-assertable pricing, missing
-  payment configuration, or incoherent totals/currencies.
+- Tool correlation uses a specialized Task 3-compatible Retell-only operation.
+  The call row is locked and active workspace/contact membership is proven in
+  that transaction before any permitted attach. PostgreSQL tests compare every
+  provider ID, status, lease, error, and lifecycle/update timestamp before and
+  after foreign-workspace rejection.
+- Catalog identities are validated from the raw rows before a view can copy
+  them. Matching is whole normalized-string equality only; academy narrows the
+  result exactly and homonyms without one remain ambiguous. Catalog and offer
+  tools also fail closed on suspected injection, truncation, non-assertable
+  pricing, missing payment configuration, or incoherent totals/currencies.
 - Contact writes lock and update only the correlated, non-deleted contact in the
   same transaction as outbox convergence. Omitted fields merge, the channel
   phone is untouched, and the call snapshot freezes the projected course.
 - The projection helpers reject negative, fractional, non-finite, and overflow
-  source positions. Existing source-less behavior in the shared projection
-  service is unchanged.
+  source positions and invalid source keys. Equal-order changes require the
+  persisted trusted source key to match. The advisory allocator lock covers the
+  entire root or caller-owned transaction; savepoint retry cannot poison it.
+  Existing source-less behavior and the visible four-field payload are
+  unchanged.
 - The analyzed-event exception is deliberately narrow: provider `retell`, event
-  type `analyzed`, exact canonical `retell:call_analyzed:` identity, and the same
-  call. Cross-call reuse and changed replays for all other events still raise
+  type `analyzed`, the same call, and event ID exactly equal to
+  `retell:call_analyzed:<that call's persisted provider_call_id>`. Cross-call,
+  prefix-only, wrong-suffix, and all other changed replays still raise
   conflicts. The database uniqueness constraint makes concurrent first writes
   deterministic.
 - `registrar_resultado` invokes only canonical append/recompute; a reported
   `venta_confirmada` cannot establish verified payment or directly enqueue a
   Sheet/outbound/payment action.
-- Each `route.ts` exports only `runtime` and `POST`. No migrations, prompts,
+- Each `route.ts` exports only `runtime` and `POST`. One additive PostgreSQL
+  migration adds only the non-visible projection `source_key`; no prompts,
   naturality, seven non-P0 tools, supplied export, Retell publish/import, live
   call, external API, deployment, or secret material changed.
 
@@ -167,8 +217,10 @@ under Task 4.
 - `src/features/calls/adapters/postgres-call-store.ts`
 - `src/features/calls/adapters/postgres-retell-tools.ts`
 - `src/features/calls/application/retell-tools.ts`
+- `src/features/calls/ports/retell-call-correlation-store.ts`
 - `src/features/conversation/application/commit-agent-turn-v3.ts`
 - `src/lib/services/projection.service.ts`
+- `supabase/migrations/20260909000002_sheet_projection_source_identity.sql`
 - `tests/integration/agent-tools-commit-effects.test.ts`
 - `tests/integration/retell-tools.test.ts`
 - `tests/unit/calls/retell-tool-routes.test.ts`
