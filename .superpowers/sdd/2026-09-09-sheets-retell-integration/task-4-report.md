@@ -9,6 +9,9 @@ Complete.
 - Independent-review corrective commit:
   `f850cf1974b43e412a44a3432b30a0be9794e333`
   (`fix(calls): harden Retell tool convergence`).
+- Re-review catalog-boundary corrective commit:
+  `41bb0d950a417acca3a0ec3f2b6eea08389774f4`
+  (`fix(calls): reject padded Retell catalog identities`).
 
 ## Scope delivered
 
@@ -35,8 +38,10 @@ Complete.
 - Resolves the entire normalized course input by exact safe code, display name,
   or owner alias. Optional academy is a mandatory exact filter. Raw codes,
   display names, academies, and aliases are independently bounded and validated
-  before the canonical view; malformed or instruction-like identities fail
-  closed rather than relying on the builder's injection tally. Unknown,
+  in their raw representation before the canonical view. Leading/trailing
+  padding, overlength, controls, malformed values, or instruction-like
+  identities fail closed rather than relying on the builder's trimmed value or
+  injection tally. Unknown,
   ambiguous, typo, promotion-suffixed, or truncated requests return a strict
   error without an LLM.
 - Reads one coherent canonical offer snapshot and returns only assertable fixed
@@ -114,6 +119,12 @@ Complete.
       collision rolled back one complete contact transaction; and an analyzed
       event with only the canonical prefix incorrectly received
       first-writer-wins.
+11. Re-review raw identity padding boundary:
+    `npm test -- tests/unit/calls/retell-tools.test.ts`
+    - 3 failed and 25 passed. A display name containing 100,000 trailing spaces
+      was returned successfully as a 100,012-character `curso.nombre`; a
+      leading-padded academy and trailing-padded alias were also accepted after
+      the builder trimmed them.
 
 ## GREEN evidence
 
@@ -124,6 +135,11 @@ Complete.
   `TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55433/studyx_test npm run test:integration -- tests/integration/retell-tools.test.ts`
   - 7/7 passed, including two independent database clients forced into the
     same empty-sheet allocation window.
+- Re-review Retell tool boundary:
+  `npm test -- tests/unit/calls/retell-tools.test.ts`
+  - 28/28 passed. The adversarial matrix covers leading/trailing raw padding,
+    overlength display names and codes, and leading/trailing control characters.
+- Re-review `npm run typecheck`: passed.
 - Focused PostgreSQL set:
   `TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55433/studyx_test npm run test:integration -- tests/integration/retell-tools.test.ts tests/integration/retell-call-lifecycle.test.ts tests/integration/agent-tools-commit-effects.test.ts`
   - 3 files, 27/27 passed.
@@ -180,10 +196,15 @@ under Task 4.
   provider ID, status, lease, error, and lifecycle/update timestamp before and
   after foreign-workspace rejection.
 - Catalog identities are validated from the raw rows before a view can copy
-  them. Matching is whole normalized-string equality only; academy narrows the
-  result exactly and homonyms without one remain ambiguous. Catalog and offer
-  tools also fail closed on suspected injection, truncation, non-assertable
-  pricing, missing payment configuration, or incoherent totals/currencies.
+  them. A safe raw label is at most 128 characters, already trimmed, unchanged
+  by control/fence sanitization, injection-free, and limited to the accepted
+  label alphabet. Thus the original `curso.nombre`, code, or academy can be
+  returned only after validating the same representation; aliases are used
+  only for matching and never returned. Matching is whole normalized-string
+  equality only; academy narrows the result exactly and homonyms without one
+  remain ambiguous. Catalog and offer tools also fail closed on suspected
+  injection, truncation, non-assertable pricing, missing payment configuration,
+  or incoherent totals/currencies.
 - Contact writes lock and update only the correlated, non-deleted contact in the
   same transaction as outbox convergence. Omitted fields merge, the channel
   phone is untouched, and the call snapshot freezes the projected course.
