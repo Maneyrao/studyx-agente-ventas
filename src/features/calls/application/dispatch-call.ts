@@ -25,6 +25,8 @@ export async function dispatchCall(
   try {
     const accepted = await dependencies.provider.placeCall({
       callId: claim.call.id,
+      contactId: claim.call.contactId,
+      conversationId: claim.call.conversationId,
       phoneE164: claim.call.phoneE164,
       context: claim.call.context,
       idempotencyKey: claim.call.requestIdempotencyKey,

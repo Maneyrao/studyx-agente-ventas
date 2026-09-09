@@ -4,6 +4,8 @@ import type { CallProjection, CallStatus } from '../domain/call-state';
 
 export interface DispatchableCall {
   id: string;
+  contactId: string;
+  conversationId: string;
   phoneE164: string;
   status: CallStatus;
   providerCallId: string | null;

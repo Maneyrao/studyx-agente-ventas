@@ -8,6 +8,8 @@ function session(): DispatchableCall {
   const callId = randomUUID();
   return {
     id: callId,
+    contactId: randomUUID(),
+    conversationId: randomUUID(),
     phoneE164: '+999000000001',
     status: 'requested',
     providerCallId: null,
@@ -39,6 +41,14 @@ describe('dispatchCall', () => {
     await expect(dispatchCall({ callId: call.id, workerId: 'worker-1' }, { store, provider }))
       .resolves.toEqual({ status: 'provider_accepted', providerCallId: 'telegram:77' });
     expect(provider.placeCall).toHaveBeenCalledOnce();
+    expect(provider.placeCall).toHaveBeenCalledWith({
+      callId: call.id,
+      contactId: call.contactId,
+      conversationId: call.conversationId,
+      phoneE164: call.phoneE164,
+      context: call.context,
+      idempotencyKey: call.requestIdempotencyKey,
+    });
     expect(store.attachProviderCall).toHaveBeenCalledWith(call.id, 'telegram:77', '2026-08-16T12:00:00.000Z');
   });
 

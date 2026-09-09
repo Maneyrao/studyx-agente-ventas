@@ -7,6 +7,8 @@ import type { CallStore, DispatchClaim } from '../ports/call-store';
 
 type CallRow = {
   id: string;
+  contact_id: string;
+  conversation_id: string;
   phone_e164: string;
   status: string;
   provider_call_id: string | null;
@@ -26,7 +28,8 @@ export class PostgresCallStore implements CallStore {
   async claimDispatch(callId: string, workerId: string): Promise<DispatchClaim> {
     return this.db.begin(async (tx) => {
       const rows = await tx<Array<CallRow>>`
-        SELECT cs.id, c.phone AS phone_e164, cs.status, cs.provider_call_id,
+        SELECT cs.id, cs.contact_id, cs.conversation_id, c.phone AS phone_e164,
+               cs.status, cs.provider_call_id,
                cs.request_idempotency_key, cs.context_snapshot,
                encode(cs.context_hash, 'hex') AS context_hash_hex,
                cs.dispatch_lease_until
@@ -62,6 +65,8 @@ export class PostgresCallStore implements CallStore {
         outcome: 'claimed' as const,
         call: {
           id: row.id,
+          contactId: row.contact_id,
+          conversationId: row.conversation_id,
           phoneE164: row.phone_e164,
           status: 'dispatching' as const,
           providerCallId: null,
