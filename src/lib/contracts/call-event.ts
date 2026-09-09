@@ -52,9 +52,25 @@ export const CallEndedPayloadSchema = z.object({
 
 export const CallAnalysisSchema = z.object({
   result: CallResultSchema,
-  nivel_interes: z.enum(['alto', 'medio', 'bajo']).nullable().default(null),
+  resultado: CallResultSchema.optional(),
+  nivel_interes: z.enum(['alto', 'medio', 'bajo', 'nulo']).nullable().default(null),
   objecion: z.string().max(512).nullable().default(null),
   notas: z.string().max(4096).nullable().default(null),
+  call_summary: z.string().trim().min(1).max(4096).optional(),
+  user_sentiment: z.enum(['positive', 'neutral', 'negative']).optional(),
+  curso_ofrecido: z.string().trim().min(1).max(256).optional(),
+  precio_ofrecido: z.string().trim().min(1).max(256).optional(),
+  objecion_principal: z.enum([
+    'precio', 'tiempo', 'confianza', 'capacidad_propia', 'consultar_con_tercero',
+    'comparando_opciones', 'conectividad_o_dispositivo', 'timing', 'otra', 'ninguna',
+  ]).optional(),
+  email_capturado: z.string().trim().max(254).email().optional(),
+  link_pago_enviado: z.boolean().optional(),
+  pago_confirmado: z.boolean().optional(),
+  pidio_humano: z.boolean().optional(),
+  pidio_no_contactar: z.boolean().optional(),
+  pregunto_si_es_ia: z.boolean().optional(),
+  compromiso_pendiente: z.string().trim().min(1).max(1024).optional(),
 }).strict();
 
 export const CallAnalyzedPayloadSchema = z.object({

@@ -272,6 +272,82 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
     expect(await consentStatus(contactId)).toBe('revoked');
   });
 
+  it('Task 3: pidio_no_contactar revokes before a different analysis result can send follow-up', async () => {
+    const fixture = await seedTerminalCall({
+      status: 'completed',
+      result: 'seguimiento_agendado',
+      analysis_status: 'completed',
+      provider: 'retell',
+    });
+    await new PostgresCallStore(sql).appendEvent({
+      schema_version: 1,
+      event_id: `retell:call_analyzed:${fixture.providerCallId}`,
+      call_id: fixture.callId,
+      event_type: 'analyzed',
+      sequence: 3,
+      occurred_at: new Date().toISOString(),
+      provider: 'retell',
+      payload: {
+        event_type: 'analyzed',
+        analysis: {
+          result: 'seguimiento_agendado',
+          nivel_interes: 'alto',
+          objecion: null,
+          notas: 'La persona pidió no recibir más contactos.',
+          pidio_no_contactar: true,
+        },
+      },
+    });
+
+    const result = await sweep();
+    expect(result.findings.find((finding) => finding.call_id === fixture.callId)).toMatchObject({
+      action: 'revoke_contact',
+      reason: 'DO_NOT_CONTACT',
+    });
+    expect(await consentStatus(fixture.contactId)).toBe('revoked');
+    expect(await outboundDeliveryCountForConversation(fixture.conversationId)).toBe(0);
+  });
+
+  it('Task 3: pago_confirmado from Retell cannot manufacture a sale without canonical payment proof', async () => {
+    const fixture = await seedTerminalCall({
+      status: 'completed',
+      result: 'venta_confirmada',
+      analysis_status: 'completed',
+      provider: 'retell',
+    });
+    await new PostgresCallStore(sql).appendEvent({
+      schema_version: 1,
+      event_id: `retell:call_analyzed:${fixture.providerCallId}`,
+      call_id: fixture.callId,
+      event_type: 'analyzed',
+      sequence: 3,
+      occurred_at: new Date().toISOString(),
+      provider: 'retell',
+      payload: {
+        event_type: 'analyzed',
+        analysis: {
+          result: 'venta_confirmada',
+          nivel_interes: 'alto',
+          objecion: null,
+          notas: 'El análisis afirma que pagó.',
+          pago_confirmado: true,
+        },
+      },
+    });
+
+    const result = await sweep();
+    expect(result.findings.find((finding) => finding.call_id === fixture.callId)).toMatchObject({
+      action: 'send',
+      reason: 'SALE_CLAIMED_PAYMENT_UNVERIFIED',
+    });
+    await expect(sql<Array<{ count: string }>>`
+      SELECT count(*)::text AS count FROM payments
+      WHERE workspace_id = ${fixture.workspaceId}::uuid
+        AND contact_id = ${fixture.contactId}::uuid
+        AND status = 'paid'
+    `).resolves.toEqual([{ count: '0' }]);
+  });
+
   it('FR-4: status = cancelled emits no message', async () => {
     const { callId, conversationId } = await seedTerminalCall({
       status: 'cancelled',

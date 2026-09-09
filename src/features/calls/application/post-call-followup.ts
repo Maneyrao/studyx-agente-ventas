@@ -76,6 +76,7 @@ export async function runPostCallFollowup(
         result: call.result,
         analysisStatus: call.analysis_status,
         paymentVerified,
+        doNotContact: call.do_not_contact,
       });
 
       if (verdict.action === 'skip') {

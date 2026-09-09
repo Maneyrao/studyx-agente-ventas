@@ -47,7 +47,19 @@ const RetellEndedWebhookSchema = z.object({
 const RetellAnalysisDataSchema = z.object({
   resultado: CallResultSchema,
   nivel_interes: z.enum(['alto', 'medio', 'bajo', 'nulo']).optional().nullable(),
-  objecion_principal: z.string().trim().min(1).max(512).optional().nullable(),
+  curso_ofrecido: z.string().trim().min(1).max(256).optional().nullable(),
+  precio_ofrecido: z.string().trim().min(1).max(256).optional().nullable(),
+  objecion_principal: z.enum([
+    'precio', 'tiempo', 'confianza', 'capacidad_propia', 'consultar_con_tercero',
+    'comparando_opciones', 'conectividad_o_dispositivo', 'timing', 'otra', 'ninguna',
+  ]).optional().nullable(),
+  email_capturado: z.string().trim().max(254).email().optional().nullable(),
+  link_pago_enviado: z.boolean().optional(),
+  pago_confirmado: z.boolean().optional(),
+  pidio_humano: z.boolean().optional(),
+  pidio_no_contactar: z.boolean().optional(),
+  pregunto_si_es_ia: z.boolean().optional(),
+  compromiso_pendiente: z.string().trim().min(1).max(1024).optional().nullable(),
 }).passthrough();
 
 const RetellAnalyzedWebhookSchema = z.object({
@@ -56,6 +68,7 @@ const RetellAnalyzedWebhookSchema = z.object({
     end_timestamp: ProviderTimestampSchema,
     call_analysis: z.object({
       call_summary: z.string().trim().min(1).max(4096).optional().nullable(),
+      user_sentiment: z.enum(['positive', 'neutral', 'negative']).optional().nullable(),
       custom_analysis_data: RetellAnalysisDataSchema,
     }).passthrough(),
   }),
@@ -184,6 +197,41 @@ export function mapRetellLifecycleEvent(raw: unknown, internalCallId: string): C
 
   const custom = webhook.call.call_analysis.custom_analysis_data;
   const occurredAt = providerIso(webhook.call.end_timestamp);
+  const hasExtendedAnalysis = custom.link_pago_enviado !== undefined
+    || custom.pago_confirmado !== undefined
+    || custom.pidio_humano !== undefined
+    || custom.pidio_no_contactar !== undefined
+    || custom.pregunto_si_es_ia !== undefined;
+  const analysis = {
+    result: custom.resultado,
+    nivel_interes: custom.nivel_interes === 'nulo' ? null : (custom.nivel_interes ?? null),
+    objecion: custom.objecion_principal ?? null,
+    notas: webhook.call.call_analysis.call_summary ?? null,
+    ...(hasExtendedAnalysis ? {
+      resultado: custom.resultado,
+      ...(webhook.call.call_analysis.call_summary === undefined || webhook.call.call_analysis.call_summary === null
+        ? {} : { call_summary: webhook.call.call_analysis.call_summary }),
+      ...(webhook.call.call_analysis.user_sentiment === undefined || webhook.call.call_analysis.user_sentiment === null
+        ? {} : { user_sentiment: webhook.call.call_analysis.user_sentiment }),
+      ...(custom.curso_ofrecido === undefined || custom.curso_ofrecido === null
+        ? {} : { curso_ofrecido: custom.curso_ofrecido }),
+      ...(custom.precio_ofrecido === undefined || custom.precio_ofrecido === null
+        ? {} : { precio_ofrecido: custom.precio_ofrecido }),
+      ...(custom.objecion_principal === undefined || custom.objecion_principal === null
+        ? {} : { objecion_principal: custom.objecion_principal }),
+      ...(custom.nivel_interes === undefined || custom.nivel_interes === null
+        ? {} : { nivel_interes: custom.nivel_interes }),
+      ...(custom.email_capturado === undefined || custom.email_capturado === null
+        ? {} : { email_capturado: custom.email_capturado }),
+      ...(custom.link_pago_enviado === undefined ? {} : { link_pago_enviado: custom.link_pago_enviado }),
+      ...(custom.pago_confirmado === undefined ? {} : { pago_confirmado: custom.pago_confirmado }),
+      ...(custom.pidio_humano === undefined ? {} : { pidio_humano: custom.pidio_humano }),
+      ...(custom.pidio_no_contactar === undefined ? {} : { pidio_no_contactar: custom.pidio_no_contactar }),
+      ...(custom.pregunto_si_es_ia === undefined ? {} : { pregunto_si_es_ia: custom.pregunto_si_es_ia }),
+      ...(custom.compromiso_pendiente === undefined || custom.compromiso_pendiente === null
+        ? {} : { compromiso_pendiente: custom.compromiso_pendiente }),
+    } : {}),
+  };
   return CallEventSchema.parse({
     ...base,
     event_type: 'analyzed',
@@ -191,12 +239,7 @@ export function mapRetellLifecycleEvent(raw: unknown, internalCallId: string): C
     occurred_at: occurredAt,
     payload: {
       event_type: 'analyzed',
-      analysis: {
-        result: custom.resultado,
-        nivel_interes: custom.nivel_interes === 'nulo' ? null : (custom.nivel_interes ?? null),
-        objecion: custom.objecion_principal ?? null,
-        notas: webhook.call.call_analysis.call_summary ?? null,
-      },
+      analysis,
     },
   });
 }

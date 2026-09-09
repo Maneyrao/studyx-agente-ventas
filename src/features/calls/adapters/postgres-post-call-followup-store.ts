@@ -29,9 +29,16 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
       result: CallResult | null;
       analysis_status: 'pending' | 'completed' | 'failed';
       prompt_version: string;
+      do_not_contact: boolean;
     }>>`
       SELECT cs.id, cs.contact_id, cs.conversation_id, cs.status, cs.result,
-             wc.workspace_id, cs.analysis_status, cs.prompt_version
+             wc.workspace_id, cs.analysis_status, cs.prompt_version,
+             EXISTS (
+               SELECT 1 FROM call_events AS analysis_event
+               WHERE analysis_event.call_id = cs.id
+                 AND analysis_event.event_type = 'analyzed'
+                 AND analysis_event.payload -> 'analysis' ->> 'pidio_no_contactar' = 'true'
+             ) AS do_not_contact
       FROM call_sessions AS cs
       JOIN LATERAL (
         SELECT state.workspace_id
@@ -70,6 +77,7 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
       result: row.result,
       analysis_status: row.analysis_status,
       prompt_version: row.prompt_version,
+      do_not_contact: row.do_not_contact,
     }));
   }
 

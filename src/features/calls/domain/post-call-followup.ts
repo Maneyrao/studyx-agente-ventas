@@ -55,11 +55,16 @@ export function decidePostCallFollowup(input: {
   readonly result: CallResult | null;
   readonly analysisStatus: 'pending' | 'completed' | 'failed';
   readonly paymentVerified: boolean;
+  readonly doNotContact?: boolean;
 }): PostCallFollowupVerdict {
-  const { status, result, analysisStatus, paymentVerified } = input;
+  const { status, result, analysisStatus, paymentVerified, doNotContact = false } = input;
 
   if (status === 'cancelled') {
     return { action: 'skip', reason: 'CALL_CANCELLED' };
+  }
+
+  if (doNotContact) {
+    return { action: 'revoke_contact', reason: 'DO_NOT_CONTACT' };
   }
 
   if (status === 'no_answer' || status === 'timed_out' || status === 'failed') {

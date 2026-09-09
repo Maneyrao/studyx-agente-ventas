@@ -153,7 +153,9 @@ const ToolArgsSchemas = {
       'ya_es_alumno',
       'no_calificado',
     ]),
-    resumen: z.string().trim().min(1).max(2_048),
+    resumen: z.string().trim().min(1).max(2_048).optional(),
+    call_summary: z.string().trim().min(1).max(4_096).optional(),
+    user_sentiment: z.enum(['positive', 'neutral', 'negative']).optional(),
     objeciones: z.array(z.enum([
       'precio',
       'tiempo',
@@ -168,7 +170,20 @@ const ToolArgsSchemas = {
     proximo_paso: z.string().trim().min(1).max(512).optional(),
     nivel_interes: z.enum(['alto', 'medio', 'bajo', 'nulo']).optional(),
     curso: CourseTextSchema.optional(),
-  }).strict(),
+    curso_ofrecido: z.string().trim().min(1).max(256).optional(),
+    precio_ofrecido: z.string().trim().min(1).max(256).optional(),
+    objecion_principal: z.enum([
+      'precio', 'tiempo', 'confianza', 'capacidad_propia', 'consultar_con_tercero',
+      'comparando_opciones', 'conectividad_o_dispositivo', 'timing', 'otra', 'ninguna',
+    ]).optional(),
+    email_capturado: SafeEmailSchema.optional(),
+    link_pago_enviado: z.boolean().optional(),
+    pago_confirmado: z.boolean().optional(),
+    pidio_humano: z.boolean().optional(),
+    pidio_no_contactar: z.boolean().optional(),
+    pregunto_si_es_ia: z.boolean().optional(),
+    compromiso_pendiente: z.string().trim().min(1).max(1_024).optional(),
+  }).strict().refine((value) => value.resumen !== undefined || value.call_summary !== undefined),
   enviar_link_pago: z.object({
     cursos: z.array(CourseTextSchema).min(1).max(8),
     plan: z.enum(['contado', 'cuotas']),
@@ -434,11 +449,17 @@ async function recordResult(
   dependencies: RetellToolDependencies,
 ): Promise<Response> {
   const { args } = envelope;
+  const summary = args.call_summary ?? args.resumen!;
   const notes = [
-    args.resumen,
+    summary,
     args.proximo_paso ? `Próximo paso: ${args.proximo_paso}` : null,
     args.curso ? `Curso: ${args.curso}` : null,
   ].filter((value): value is string => value !== null).join('\n');
+  const extended = args.link_pago_enviado !== undefined
+    || args.pago_confirmado !== undefined
+    || args.pidio_humano !== undefined
+    || args.pidio_no_contactar !== undefined
+    || args.pregunto_si_es_ia !== undefined;
   await recordCallEvent({
     schema_version: 1,
     event_id: `retell:call_analyzed:${envelope.call.call_id}`,
@@ -454,6 +475,22 @@ async function recordResult(
         nivel_interes: args.nivel_interes === 'nulo' ? null : (args.nivel_interes ?? null),
         objecion: args.objeciones?.join(', ') ?? null,
         notas: notes,
+        ...(extended ? {
+          resultado: args.resultado,
+          ...(args.call_summary === undefined ? {} : { call_summary: args.call_summary }),
+          ...(args.user_sentiment === undefined ? {} : { user_sentiment: args.user_sentiment }),
+          ...(args.curso_ofrecido === undefined ? {} : { curso_ofrecido: args.curso_ofrecido }),
+          ...(args.precio_ofrecido === undefined ? {} : { precio_ofrecido: args.precio_ofrecido }),
+          ...(args.objecion_principal === undefined ? {} : { objecion_principal: args.objecion_principal }),
+          ...(args.nivel_interes === undefined ? {} : { nivel_interes: args.nivel_interes }),
+          ...(args.email_capturado === undefined ? {} : { email_capturado: args.email_capturado }),
+          ...(args.link_pago_enviado === undefined ? {} : { link_pago_enviado: args.link_pago_enviado }),
+          ...(args.pago_confirmado === undefined ? {} : { pago_confirmado: args.pago_confirmado }),
+          ...(args.pidio_humano === undefined ? {} : { pidio_humano: args.pidio_humano }),
+          ...(args.pidio_no_contactar === undefined ? {} : { pidio_no_contactar: args.pidio_no_contactar }),
+          ...(args.pregunto_si_es_ia === undefined ? {} : { pregunto_si_es_ia: args.pregunto_si_es_ia }),
+          ...(args.compromiso_pendiente === undefined ? {} : { compromiso_pendiente: args.compromiso_pendiente }),
+        } : {}),
       },
     },
   }, { store: dependencies.calls });

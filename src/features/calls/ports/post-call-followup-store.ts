@@ -17,6 +17,7 @@ export interface TerminalCallForFollowup {
   readonly result: CallResult | null;
   readonly analysis_status: 'pending' | 'completed' | 'failed';
   readonly prompt_version: string;
+  readonly do_not_contact?: boolean;
 }
 
 export interface PostCallFollowupStore {

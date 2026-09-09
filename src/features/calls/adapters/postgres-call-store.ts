@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type postgres from 'postgres';
-import { CallEventSchema, type CallEvent } from '@/lib/contracts/call-event';
+import { CallEventSchema, type CallAnalysis, type CallEvent } from '@/lib/contracts/call-event';
 import { hashCallContext, parseCallContext } from '../domain/call-context';
 import { projectCallState, type CallProjection } from '../domain/call-state';
 import type { CallStore, DispatchClaim } from '../ports/call-store';
@@ -9,6 +9,9 @@ import {
   type RetellCorrelationMetadata,
   type RetellToolCallCorrelationStore,
 } from '../ports/retell-call-correlation-store';
+import { splitFullName } from '@/lib/heuristics/contact-identity';
+import { agentBLeadProjectionSourceOrder, enqueueLeadProjection, leadProjectionKey } from '@/lib/services/projection.service';
+import { loadSheetsProjectionConfig } from '@/lib/config';
 
 type CallRow = {
   id: string;
@@ -289,7 +292,10 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
       ON CONFLICT (provider, event_id) DO NOTHING
       RETURNING id
     `;
-    if (inserted.length > 0) return 'recorded';
+    if (inserted.length > 0) {
+      if (event.payload.event_type === 'analyzed') await this.convergeRetellAnalysis(event.call_id, event.payload.analysis);
+      return 'recorded';
+    }
     const existing = await this.db<Array<{
       call_id: string;
       event_type: CallEvent['event_type'];
@@ -315,7 +321,112 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
     ) {
       throw new Error('CALL_EVENT_REPLAY_CONFLICT');
     }
+    if (event.payload.event_type === 'analyzed') await this.convergeRetellAnalysis(event.call_id, event.payload.analysis);
     return 'duplicate';
+  }
+
+  /**
+   * Retell analysis is a bounded fact envelope, not a second contact system.
+   * Only the call's canonical workspace membership can authorize the email
+   * update; the stable four-column projection is then refreshed from that
+   * same membership. Replays intentionally run this idempotent convergence
+   * again so a delivery interrupted after the event insert can heal.
+   */
+  private async convergeRetellAnalysis(callId: string, analysis: CallAnalysis): Promise<void> {
+    const email = analysis.email_capturado;
+    if (!email) return;
+    const rows = await this.db<Array<{
+      contact_id: string;
+      workspace_id: string;
+      source_order: string | number | null;
+      name: string | null;
+      email: string | null;
+      course_name: string | null;
+      course_code: string | null;
+    }>>`
+      SELECT
+        cs.contact_id,
+        state.workspace_id,
+        source.conversation_seq AS source_order,
+        contact.name,
+        contact.email,
+        offering.display_name AS course_name,
+        NULLIF(btrim(cs.context_snapshot ->> 'curso_interes'), '') AS course_code
+      FROM call_sessions AS cs
+      JOIN messages AS source
+        ON source.id = cs.source_turn_id
+       AND source.conversation_id = cs.conversation_id
+       AND source.contact_id = cs.contact_id
+       AND source.direction = 'inbound'
+      JOIN contacts AS contact
+        ON contact.id = cs.contact_id
+       AND contact.deleted_at IS NULL
+      JOIN conversation_sales_context_states_v1 AS state
+        ON state.conversation_id = cs.conversation_id
+       AND state.contact_id = cs.contact_id
+      JOIN workspaces AS workspace
+        ON workspace.id = state.workspace_id
+       AND workspace.status = 'active'
+      JOIN workspace_contacts AS membership
+        ON membership.workspace_id = state.workspace_id
+       AND membership.contact_id = cs.contact_id
+       AND membership.lifecycle_status = 'active'
+      LEFT JOIN offerings AS offering
+        ON offering.workspace_id = state.workspace_id
+       AND offering.code = NULLIF(btrim(cs.context_snapshot ->> 'curso_interes'), '')
+       AND offering.status = 'active'
+      WHERE cs.id = ${callId}::uuid
+        AND cs.provider = 'retell'
+      ORDER BY state.updated_at DESC, state.workspace_id
+      LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) return;
+
+    if (row.email !== email) {
+      await this.db`
+        UPDATE contacts
+        SET email = ${email}
+        WHERE id = ${row.contact_id}::uuid
+          AND deleted_at IS NULL
+      `;
+    }
+
+    const identity = row.name ? splitFullName(row.name) : null;
+    if (!identity?.nombre.trim() || !identity.apellido.trim()) return;
+    const course = row.course_name ?? analysis.curso_ofrecido ?? row.course_code;
+    if (!course?.trim() || row.source_order === null) return;
+
+    const sheetsFromEnvironment = loadSheetsProjectionConfig();
+    const existingProjection = await this.db<Array<{ spreadsheet_id: string; tab_name: string }>>`
+      SELECT spreadsheet_id, tab_name
+      FROM sheet_projection_rows
+      WHERE projection_key = ${leadProjectionKey(row.workspace_id, row.contact_id)}
+      LIMIT 1
+    `;
+    const sheets = sheetsFromEnvironment
+      ? { spreadsheetId: sheetsFromEnvironment.spreadsheetId, tabName: sheetsFromEnvironment.tabName }
+      : existingProjection[0]
+        ? { spreadsheetId: existingProjection[0].spreadsheet_id, tabName: existingProjection[0].tab_name }
+        : null;
+    if (!sheets) return;
+
+    const sourceOrder = Number(row.source_order);
+    if (!Number.isSafeInteger(sourceOrder) || sourceOrder < 0) return;
+    await enqueueLeadProjection({
+      workspaceId: row.workspace_id,
+      contactId: row.contact_id,
+      spreadsheetId: sheets.spreadsheetId,
+      tabName: sheets.tabName,
+      sourceOrder: agentBLeadProjectionSourceOrder(sourceOrder),
+      sourceKey: `retell-call:${callId}`,
+      nombre: identity.nombre,
+      apellido: identity.apellido,
+      email,
+      cursoInteres: course,
+      ultimaSenal: 'retell_post_call_analysis_email_captured',
+      traceId: callId,
+    }, { sql: this.db });
   }
 
   async recomputeProjection(callId: string): Promise<CallProjection> {

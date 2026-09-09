@@ -515,4 +515,88 @@ run('Retell P0 tools with PostgreSQL', () => {
       },
     }, { store: new PostgresCallStore(db!) })).rejects.toThrow('CALL_EVENT_REPLAY_CONFLICT');
   });
+
+  it('persists the complete bounded analysis out of order and converges captured email once', async () => {
+    const ids = await fixture({ name: 'Ana López', email: null, sourceOrder: 7 });
+    const oldIdentity = await callTool(ids, 'guardar_datos_contacto', {
+      email: 'old@example.test',
+    });
+    expect(oldIdentity.body).toEqual({ ok: true, saved: true, projected: true });
+
+    const metadata = {
+      internal_call_id: ids.callId,
+      contact_id: ids.contactId,
+      conversation_id: ids.conversationId,
+    };
+    const fullAnalysis = {
+      event: 'call_analyzed' as const,
+      call: {
+        call_id: ids.providerCallId,
+        metadata,
+        end_timestamp: nowMs,
+        transcript: 'discarded',
+        recording_url: 'https://example.invalid/discarded',
+        call_analysis: {
+          call_summary: 'Revisará el enlace de pago.',
+          user_sentiment: 'positive' as const,
+          custom_analysis_data: {
+            resultado: 'link_enviado_sin_pago' as const,
+            curso_ofrecido: 'Reparación de Celulares',
+            precio_ofrecido: 'USD 360',
+            objecion_principal: 'precio' as const,
+            nivel_interes: 'alto' as const,
+            email_capturado: 'new@example.test',
+            link_pago_enviado: true,
+            pago_confirmado: false,
+            pidio_humano: false,
+            pidio_no_contactar: false,
+            pregunto_si_es_ia: false,
+            compromiso_pendiente: 'Revisar mañana.',
+          },
+        },
+      },
+    };
+    const analyzed = mapRetellLifecycleEvent(fullAnalysis, ids.callId);
+    const ended = mapRetellLifecycleEvent({
+      event: 'call_ended',
+      call: { call_id: ids.providerCallId, metadata, start_timestamp: nowMs - 10_000, end_timestamp: nowMs, disconnection_reason: 'user_hangup' },
+    }, ids.callId);
+    const started = mapRetellLifecycleEvent({
+      event: 'call_started',
+      call: { call_id: ids.providerCallId, metadata, start_timestamp: nowMs - 10_000 },
+    }, ids.callId);
+    const store = new PostgresCallStore(db!);
+
+    await recordCallEvent(analyzed, { store });
+    await recordCallEvent(ended, { store });
+    await recordCallEvent(started, { store });
+    await expect(recordCallEvent(analyzed, { store })).resolves.toMatchObject({ persistence: 'duplicate' });
+
+    await expect(db!<Array<{ email: string | null }>>`
+      SELECT email FROM contacts WHERE id = ${ids.contactId}::uuid
+    `).resolves.toEqual([{ email: 'new@example.test' }]);
+    await expect(db!<Array<{ payload: Record<string, string> }>>`
+      SELECT payload FROM sheet_projection_rows
+      WHERE projection_key = ${`lead:${ids.workspaceId}:${ids.contactId}`}
+    `).resolves.toEqual([{
+      payload: {
+        nombre: 'Ana',
+        apellido: 'López',
+        mail: 'new@example.test',
+        tipo_de_curso: 'Reparación de Celulares',
+      },
+    }]);
+    await expect(db!<Array<{ event_type: string; payload: Record<string, unknown> }>>`
+      SELECT event_type, payload FROM call_events
+      WHERE call_id = ${ids.callId}::uuid
+      ORDER BY sequence
+    `).resolves.toHaveLength(3);
+    const analysisRows = await db!<Array<{ payload: Record<string, unknown> }>>`
+      SELECT payload FROM call_events
+      WHERE call_id = ${ids.callId}::uuid AND event_type = 'analyzed'
+    `;
+    expect(analysisRows).toHaveLength(1);
+    expect(JSON.stringify(analysisRows[0].payload)).toContain('new@example.test');
+    expect(JSON.stringify(analysisRows[0].payload)).not.toContain('discarded');
+  });
 });
