@@ -17,7 +17,7 @@
 - Retell never writes directly to Google Sheets, Stripe, or WhatsApp. It calls authenticated orchestration endpoints; canonical services decide and persist effects.
 - The Retell tool envelope is strict `{ name, call, args }`. Invalid/missing tool auth returns `401`. Authenticated validation/business errors return HTTP `200` with `{ ok: false, error: { code } }` so the voice flow can recover conversationally.
 - P0 tools only: `consultar_curso`, `consultar_oferta`, `guardar_datos_contacto`, `registrar_resultado`. Payment/material/follow-up/human-transfer tools remain disabled until their ledgers and production policies are explicitly approved.
-- Retell webhook verification uses the raw request body plus `x-retell-signature`; duplicate/replayed lifecycle events must be idempotent.
+- Retell webhook verification uses the raw request body plus `x-retell-signature` and the webhook-enabled `RETELL_API_KEY`; duplicate/replayed lifecycle events must be idempotent.
 - Dispatch carries `internal_call_id`, `contact_id`, and `conversation_id` in metadata; dynamic variables come only from the frozen canonical context snapshot.
 - Keep explicit Agent B version configuration. Never publish a Retell draft or place a real call from tests.
 - No secrets, personal data, downloaded exports, or generated credentials may enter Git, logs, test snapshots, or reports.
@@ -49,20 +49,22 @@
 **Acceptance:**
 - RED proves exact create-phone-call request, explicit Agent/LLM version policy, idempotent recovery lookup, cancel mapping, confirmed-vs-ambiguous errors, and sandbox prohibition before any phone network effect.
 - Provider uses the existing `VoiceProvider` port and preserves the existing `dispatchCall` state machine.
-- Retell credentials, phone number, API base URL, Agent ID/version, and webhook secret are validated by name without logging values.
+- Retell credentials, phone number, API base URL, Agent ID/version, expected LLM ID/version, tool secret, and webhook signature key are validated by name without logging values. Use Agent ID `agent_d2c1a4ac7900ae95a47727156b`, Agent version `0`, LLM ID `llm_eea8f670b6569b44689e9394b150`, and LLM version `0` as documented defaults/examples, never as secret values.
+- Use `POST /v2/create-phone-call`, `POST /v3/list-calls` filtered by metadata `internal_call_id` for ambiguous recovery, and `POST /v2/stop-call/{call_id}`. Send `override_agent_id`, numeric `override_agent_version`, and an `agent_override.agent.response_engine` locked to the configured Retell LLM ID/version.
+- Send metadata `internal_call_id`, `contact_id`, `conversation_id`; map the frozen context to `nombre_lead`, `curso_interes`, `pais`, `email_lead`, `resumen_whatsapp`, plus backend-configured `nombre_asesor`. Do not send transcript history.
 - Telegram sandbox dispatch remains behaviorally unchanged.
 
 ## Task 3: Verified Retell webhook and canonical call lifecycle
 
 **Files:**
 - Create: Retell lifecycle schemas/adapter under `src/features/calls/`
-- Create: `src/app/api/webhooks/voice/retell/route.ts`
+- Create: `src/app/retell/eventos/route.ts` (the exact path already present in the supplied Retell export)
 - Reuse the existing call event application/store path
 - Add focused webhook and integration tests
 
 **Acceptance:**
 - RED proves bad signature `401`, unknown call correlation rejection, started/ended/analyzed mapping, duplicate replay no-op, out-of-order event safety, and terminal structured outcome compatibility with post-call follow-up.
-- Route verifies the raw body before JSON parsing.
+- Route verifies the raw body before JSON parsing. The signature format is `v=<timestamp_ms>,d=<hex_hmac>` over `raw_body + timestamp`, keyed by the webhook-enabled Retell API key, with a five-minute tolerance and timing-safe comparison.
 - External Retell `call_id` maps to the internal UUID using metadata and/or the persisted provider call ID; arbitrary IDs from the payload never select a tenant contact.
 - Event payloads are minimized and do not persist transcript/audio content unless the existing canonical contract explicitly requires it.
 
@@ -70,7 +72,7 @@
 
 **Files:**
 - Create: shared Retell tool authentication/envelope/result adapter
-- Create four route handlers under `src/app/api/retell/tools/`
+- Create four route handlers under `src/app/retell/tools/` at the exact supplied paths `consultar-curso`, `consultar-oferta`, `guardar-datos-contacto`, and `registrar-resultado`
 - Reuse catalog/offering, pricing, contact identity, call-result, and Sheets projection services
 - Add focused contract/application tests
 
@@ -80,6 +82,8 @@
 - `guardar_datos_contacto` validates call correlation, updates only the correlated contact identity, and enqueues the four-column Sheet row only when all values are complete.
 - `registrar_resultado` writes/reuses the canonical call-result path with an idempotency key and cannot trigger direct side effects.
 - Unknown tool names or extra envelope keys fail deterministically; body size and input lengths are bounded.
+- Preserve the supplied argument contracts: `consultar_curso({curso, academia?})`; `consultar_oferta({cursos, pais?})`; `guardar_datos_contacto({nombre?, telefono_alternativo?, email?})`; `registrar_resultado({resultado, resumen, objeciones?, proximo_paso?, nivel_interes?, curso?})`. Require at least one contact field for the contact tool. Map interest `nulo` to canonical `null`.
+- Preserve the response fields referenced by the supplied agent: `curso.nombre`, `curso.clases`, `curso.certificacion`, `oferta.moneda`, `oferta.precio_lista`, `oferta.precio_final`, and `oferta.cuotas_texto`. If a requested combo or promotion has no canonical configuration, return an authenticated `{ok:false}` result rather than calculating it.
 
 ## Task 5: End-to-end readiness and post-call WhatsApp proof
 
