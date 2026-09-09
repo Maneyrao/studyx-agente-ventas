@@ -94,3 +94,72 @@ passed
 git diff --check
 passed
 ```
+
+## Round 2 reviewer fix — StudyX custom payment-plan authority
+
+The remaining reviewer finding was that the first-round guard only understood
+`one_time`/`monthly` offering intervals, while StudyX intentionally uses
+`billing_interval = 'custom'` and stores the three owner-approved options in
+`workspaces.metadata.payment_options`. The adapter now reuses the canonical
+`readStudyxPaymentOptions` resolver from the business-context domain. Retell's
+coarse `contado` enum resolves only to a configured `one_time` option;
+`cuotas` resolves to the sole configured installment option, or returns the
+stable `PAYMENT_PLAN_CHOICE_REQUIRED` error when both 6- and 12-payment
+options exist. Missing or malformed canonical options return
+`PAYMENT_PLAN_UNAVAILABLE`. Custom offerings also require the canonical
+`payment` checkout mode, so a subscription cannot materialize a contado link.
+Legacy non-custom offerings retain the existing checkout-mode/interval
+compatibility.
+
+### Round 2 RED/GREEN evidence
+
+- RED: the new unit test for StudyX `custom/payment_options` initially failed
+  with `TypeError: resolveRetellPaymentPlan is not a function`; the additional
+  custom-subscription authority assertion then failed until the resolver
+  rejected non-`payment` checkout mode.
+- GREEN: the focused unit test passed after implementation (14 tests).
+- GREEN: the actual StudyX-shaped PostgreSQL fixture uses all three canonical
+  owner-confirmed payment options and `billing_interval='custom'`. It proves
+  `contado` succeeds and replays durably, `cuotas` fails with
+  `PAYMENT_PLAN_CHOICE_REQUIRED` rather than choosing 6/12 arbitrarily, and a
+  workspace missing the exact `one_time` configuration fails closed.
+
+Exact PostgreSQL command and result:
+
+```text
+TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55435/studyx_test npm run test:integration -- tests/integration/retell-five-tools-postgres.test.ts
+
+Test Files  1 passed (1)
+Tests       4 passed (4)
+```
+
+Exact covering commands and results:
+
+```text
+npm test -- --run tests/unit/calls/retell-five-tools.test.ts tests/unit/calls/retell-tool-routes.test.ts tests/unit/calls/retell-tools.test.ts
+
+Test Files  3 passed (3)
+Tests       51 passed (51)
+
+npm run typecheck
+passed
+
+git diff --check
+passed
+```
+
+### Round 2 files and self-review
+
+- `src/features/orchestration/domain/business-context.ts`: exported the
+  existing canonical StudyX payment-options resolver for adapter reuse.
+- `src/features/calls/adapters/postgres-retell-orchestration-store.ts`: loads
+  workspace metadata, resolves plan authority against canonical options, and
+  retains legacy interval behavior for non-StudyX offerings.
+- `tests/unit/calls/retell-five-tools.test.ts` and
+  `tests/integration/retell-five-tools-postgres.test.ts`: added RED→GREEN
+  coverage for custom billing, exact option presence, ambiguous installments,
+  and subscription mismatch.
+
+No migration, Agent A prompt, natural-language behavior, live network call, or
+credential was changed. The focused PostgreSQL database was the disposable
+`127.0.0.1:55435/studyx_test` instance supplied for this review.

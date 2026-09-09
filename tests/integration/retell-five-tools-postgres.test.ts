@@ -9,11 +9,28 @@ const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
 afterAll(async () => db?.end());
 
-async function fixture(input: { readonly planMode?: 'payment' | 'subscription' } = {}) {
+async function fixture(input: { readonly planMode?: 'payment' | 'subscription'; readonly omitOneTime?: boolean } = {}) {
   const workspaceSlug = `retell-five-${randomUUID()}`;
+  const paymentOptions = [
+    {
+      code: 'monthly_12', currency: 'USD', total_amount: '360.00', installments: 12,
+      installment_amount: '30.00', payment_link: 'https://buy.stripe.com/14A5kC31I3Nwfbq67Fdwc0f',
+    },
+    {
+      code: 'monthly_6', currency: 'USD', total_amount: '360.00', installments: 6,
+      installment_amount: '60.00', payment_link: 'https://buy.stripe.com/4gMdR8cCi97Q7IYdA7dwc0a',
+    },
+    {
+      code: 'one_time', currency: 'USD', total_amount: '360.00', installments: 1,
+      installment_amount: '360.00', payment_link: 'https://buy.stripe.com/9B64gy7hYesaaVa1Rpdwc0j',
+    },
+  ];
   const workspaces = await db!<Array<{ id: string }>>`
     INSERT INTO workspaces (slug, display_name, metadata)
-    VALUES (${workspaceSlug}, 'Retell five tools', ${db!.json({ human_available: false })})
+    VALUES (${workspaceSlug}, 'Retell five tools', ${db!.json({
+      human_available: false,
+      payment_options: input.omitOneTime ? paymentOptions.slice(0, 2) : paymentOptions,
+    })})
     RETURNING id
   `;
   const workspaceId = workspaces[0].id;
@@ -30,7 +47,7 @@ async function fixture(input: { readonly planMode?: 'payment' | 'subscription' }
       price_type, price_amount, currency, billing_interval
     ) VALUES (
       ${workspaceId}::uuid, 'retell_course', 'Retell Course', 'course', 'active', 'Canonical course',
-      'fixed', 360, 'USD', ${input.planMode === 'subscription' ? 'monthly' : 'one_time'}
+      'fixed', 360, 'USD', 'custom'
     ) RETURNING id
   `;
   await db!`
@@ -99,7 +116,7 @@ run('Retell five tools PostgreSQL adapter', () => {
     await expect(store.createPaymentLink({
       callId: randomUUID(), contactId: ids.contactId, workspaceSlug: ids.workspaceSlug,
       courses: ['retell_course'], plan: 'cuotas', email: 'lead@example.test', channel: 'whatsapp',
-    })).resolves.toMatchObject({ sent: false, reason: 'PAYMENT_PLAN_UNAVAILABLE' });
+    })).resolves.toMatchObject({ sent: false, reason: 'PAYMENT_PLAN_CHOICE_REQUIRED' });
     const callId = randomUUID();
     const first = await store.createPaymentLink({ callId, contactId: ids.contactId, workspaceSlug: ids.workspaceSlug, courses: ['retell_course'], plan: 'contado', email: 'lead@example.test', channel: 'whatsapp' });
     const replay = await store.createPaymentLink({ callId, contactId: ids.contactId, workspaceSlug: ids.workspaceSlug, courses: ['retell_course'], plan: 'contado', email: 'lead@example.test', channel: 'whatsapp' });
@@ -108,6 +125,11 @@ run('Retell five tools PostgreSQL adapter', () => {
     expect(provider.calls).toHaveLength(1);
     expect(outbound.calls).toHaveLength(1);
     await expect(db!<{ count: string }[]>`SELECT count(*) FROM payments WHERE workspace_id = ${ids.workspaceId}::uuid`).resolves.toEqual([{ count: '1' }]);
+    const withoutOneTime = await fixture({ omitOneTime: true });
+    await expect(store.createPaymentLink({
+      callId: randomUUID(), contactId: withoutOneTime.contactId, workspaceSlug: withoutOneTime.workspaceSlug,
+      courses: ['retell_course'], plan: 'contado', email: 'lead@example.test', channel: 'whatsapp',
+    })).resolves.toMatchObject({ sent: false, reason: 'PAYMENT_PLAN_UNAVAILABLE' });
   });
 
   it('scopes payment references to the correlated workspace/contact and returns missing proof as failure', async () => {

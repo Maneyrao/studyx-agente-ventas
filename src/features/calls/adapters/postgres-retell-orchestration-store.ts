@@ -6,6 +6,11 @@ import {
   type ProtectedFactRef,
 } from '@/features/orchestration/domain/egress-guard';
 import { sanitizeRetrievedText } from '@/features/orchestration/domain/retrieved-context';
+import {
+  readStudyxPaymentOptions,
+  type PaymentOptionView,
+  type PaymentPlanCode,
+} from '@/features/orchestration/domain/business-context';
 import type { sendOutboundMessage, SendOutboundMessageResult } from '@/features/messaging/application/send-outbound-message';
 import { reservePayment, type ReservedPayment } from '@/features/payments/application/reserve-payment';
 import { createCheckout, type CreateCheckoutResult } from '@/features/payments/application/create-checkout';
@@ -57,9 +62,14 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     `;
     const offering = offerings[0];
     if (!offering) return { sent: false, reference: null, reason: 'COURSE_UNAVAILABLE' };
-    if (!retellPaymentPlanIsSupported(input.plan, offering.checkout_mode, offering.billing_interval)) {
-      return { sent: false, reference: null, reason: 'PAYMENT_PLAN_UNAVAILABLE' };
-    }
+    const workspacePaymentOptions = readStudyxPaymentOptions((workspace.metadata ?? {}) as Record<string, unknown>);
+    const plan = resolveRetellPaymentPlan(
+      input.plan,
+      offering.checkout_mode,
+      offering.billing_interval,
+      workspacePaymentOptions,
+    );
+    if (!plan.ok) return { sent: false, reference: null, reason: plan.reason };
     await this.db`
       UPDATE contacts AS c
       SET email = ${input.email}
@@ -68,7 +78,7 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
         AND wc.workspace_id = ${workspace.id}::uuid
         AND c.id = ${input.contactId}::uuid
     `;
-    const planCode = input.plan === 'contado' ? 'one_time' : 'monthly_12';
+    const planCode = plan.planCode;
     const idempotencyKey = `retell:payment:${input.callId}:${offering.id}:${planCode}`;
     let reserved: ReservedPayment;
     try {
@@ -234,8 +244,8 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
   }
 
   private async workspaceForContact(workspaceSlug: string, contactId: string) {
-    const rows = await this.db<Array<{ id: string }>>`
-      SELECT w.id
+    const rows = await this.db<Array<{ id: string; metadata: Record<string, unknown> | null }>>`
+      SELECT w.id, w.metadata
       FROM workspaces AS w
       JOIN workspace_contacts AS wc ON wc.workspace_id = w.id
       WHERE w.slug = ${workspaceSlug}
@@ -267,6 +277,43 @@ export function retellPaymentPlanIsSupported(
   return plan === 'contado'
     ? checkoutMode === 'payment' && billingInterval === 'one_time'
     : checkoutMode === 'subscription' && billingInterval === 'monthly';
+}
+
+type RetellPaymentPlanResolution =
+  | { readonly ok: true; readonly planCode: PaymentPlanCode }
+  | { readonly ok: false; readonly reason: 'PAYMENT_PLAN_UNAVAILABLE' | 'PAYMENT_PLAN_CHOICE_REQUIRED' };
+
+/**
+ * Resolves Retell's coarse enum against the owner-approved canonical options.
+ * A StudyX `custom` offering has no billing interval semantics to infer from;
+ * its workspace metadata is the authority. For legacy offerings without that
+ * metadata, retain the existing checkout-mode/interval compatibility.
+ */
+export function resolveRetellPaymentPlan(
+  plan: 'contado' | 'cuotas',
+  checkoutMode: 'payment' | 'subscription',
+  billingInterval: string | null,
+  configuredOptions: readonly Pick<PaymentOptionView, 'code'>[] = [],
+): RetellPaymentPlanResolution {
+  if (billingInterval === 'custom') {
+    if (checkoutMode !== 'payment') return { ok: false, reason: 'PAYMENT_PLAN_UNAVAILABLE' };
+    if (plan === 'contado') {
+      return configuredOptions.some((option) => option.code === 'one_time')
+        ? { ok: true, planCode: 'one_time' }
+        : { ok: false, reason: 'PAYMENT_PLAN_UNAVAILABLE' };
+    }
+    const installmentOptions = configuredOptions.filter((option) => (
+      option.code === 'monthly_12' || option.code === 'monthly_6'
+    ));
+    if (installmentOptions.length === 1) return { ok: true, planCode: installmentOptions[0].code };
+    if (installmentOptions.length > 1) return { ok: false, reason: 'PAYMENT_PLAN_CHOICE_REQUIRED' };
+    return { ok: false, reason: 'PAYMENT_PLAN_UNAVAILABLE' };
+  }
+
+  if (!retellPaymentPlanIsSupported(plan, checkoutMode, billingInterval)) {
+    return { ok: false, reason: 'PAYMENT_PLAN_UNAVAILABLE' };
+  }
+  return { ok: true, planCode: plan === 'contado' ? 'one_time' : 'monthly_12' };
 }
 
 const MATERIAL_FACT_KINDS = new Set<ProtectedFactRef['kind']>([

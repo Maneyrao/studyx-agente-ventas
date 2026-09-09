@@ -10,6 +10,7 @@ import type { RetellToolCallCorrelationStore } from '@/features/calls/ports/rete
 import {
   buildRetellMaterialAuthorization,
   resolveRetellFollowupTimestamp,
+  resolveRetellPaymentPlan,
   retellPaymentPlanIsSupported,
 } from '@/features/calls/adapters/postgres-retell-orchestration-store';
 
@@ -107,6 +108,37 @@ describe('remaining Retell orchestration tools', () => {
     expect(retellPaymentPlanIsSupported('cuotas', 'subscription', 'monthly')).toBe(true);
     expect(retellPaymentPlanIsSupported('cuotas', 'payment', 'one_time')).toBe(false);
     expect(retellPaymentPlanIsSupported('cuotas', 'subscription', 'one_time')).toBe(false);
+  });
+
+  it('uses the owner-configured StudyX payment options for custom billing', () => {
+    const options = [
+      { code: 'monthly_12' as const },
+      { code: 'monthly_6' as const },
+      { code: 'one_time' as const },
+    ];
+    expect(resolveRetellPaymentPlan('contado', 'payment', 'custom', options)).toEqual({
+      ok: true,
+      planCode: 'one_time',
+    });
+    expect(resolveRetellPaymentPlan('cuotas', 'payment', 'custom', options)).toEqual({
+      ok: false,
+      reason: 'PAYMENT_PLAN_CHOICE_REQUIRED',
+    });
+    expect(resolveRetellPaymentPlan('cuotas', 'payment', 'custom', [{ code: 'monthly_12' }])).toEqual({
+      ok: true,
+      planCode: 'monthly_12',
+    });
+    expect(resolveRetellPaymentPlan('contado', 'payment', 'custom', [
+      { code: 'monthly_12' },
+      { code: 'monthly_6' },
+    ])).toEqual({
+      ok: false,
+      reason: 'PAYMENT_PLAN_UNAVAILABLE',
+    });
+    expect(resolveRetellPaymentPlan('contado', 'subscription', 'custom', options)).toEqual({
+      ok: false,
+      reason: 'PAYMENT_PLAN_UNAVAILABLE',
+    });
   });
 
   it('authorizes only exact sanitized canonical material URLs/facts', () => {
