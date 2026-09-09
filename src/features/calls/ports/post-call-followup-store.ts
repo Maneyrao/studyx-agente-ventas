@@ -13,6 +13,7 @@ export interface TerminalCallForFollowup {
   readonly contact_id: string;
   readonly conversation_id: string;
   readonly workspace_id: string;
+  readonly provider: 'telegram_sandbox' | 'retell';
   readonly status: CallStatus;
   readonly result: CallResult | null;
   readonly analysis_status: 'pending' | 'completed' | 'failed';
@@ -32,7 +33,7 @@ export interface PostCallFollowupStore {
   }): Promise<TerminalCallForFollowup[]>;
 
   /** True if the contact has a payment with status 'paid' in this workspace. */
-  hasVerifiedPayment(contactId: string, workspaceId: string): Promise<boolean>;
+  hasVerifiedPayment(contactId: string, workspaceId: string, callId: string, provider: 'telegram_sandbox' | 'retell'): Promise<boolean>;
 
   /** True if the contact is currently blocked/opted-out on whatsapp. */
   isContactBlocked(contactId: string): Promise<boolean>;

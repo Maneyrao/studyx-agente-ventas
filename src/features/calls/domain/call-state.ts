@@ -33,11 +33,11 @@ export function mergeCallAnalyses(events: readonly CallEvent[]): CallAnalysis {
     .sort((left, right) => {
       const sourceRank = (event: CallEvent): number => {
         if (event.event_id.startsWith('retell:webhook:')) return 0;
-        if (event.event_id.startsWith('retell:call_analyzed:')) return 0;
-        if (event.event_id.startsWith('retell:tool:')) return 1;
+        if (event.event_id.startsWith('retell:call_analyzed:')) return 1;
+        if (event.event_id.startsWith('retell:tool:')) return 2;
         return 2;
       };
-      return sourceRank(left) - sourceRank(right) || left.event_id.localeCompare(right.event_id);
+      return sourceRank(left) - sourceRank(right);
     });
   if (analyzed.length === 0) {
     throw new Error('CALL_ANALYSIS_MISSING');

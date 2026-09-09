@@ -36,13 +36,70 @@ type RetellCorrelationRow = {
   conversation_id: string;
   provider_call_id: string | null;
   status: string;
+  workspace_id: string | null;
 };
 
 type RetellToolCorrelationRow = RetellCorrelationRow & {
   workspace_authorized: boolean;
 };
 
+function eventPayloadHash(event: CallEvent): string {
+  // Retell can retry the same tool request with a fresh delivery timestamp.
+  // The timestamp is transport metadata, not semantic analysis evidence.
+  const identity = event.event_type === 'analyzed'
+    && event.provider === 'retell'
+    && event.event_id.startsWith('retell:tool:call_analyzed:')
+    ? { ...event, occurred_at: undefined }
+    : event;
+  return createHash('sha256').update(JSON.stringify(identity), 'utf8').digest('hex');
+}
+
 type SqlExecutor = postgres.Sql | postgres.TransactionSql;
+
+async function bindLegacyWorkspace(
+  tx: postgres.TransactionSql,
+  row: RetellCorrelationRow,
+): Promise<string | null> {
+  if (row.workspace_id) return row.workspace_id;
+  const candidates = await tx<Array<{ workspace_id: string }>>`
+    WITH candidates AS (
+      SELECT state.workspace_id
+      FROM conversation_sales_context_states_v1 AS state
+      JOIN workspaces AS workspace
+        ON workspace.id = state.workspace_id AND workspace.status = 'active'
+      JOIN workspace_contacts AS membership
+        ON membership.workspace_id = state.workspace_id
+       AND membership.contact_id = ${row.contact_id}::uuid
+       AND membership.lifecycle_status = 'active'
+      WHERE state.conversation_id = ${row.conversation_id}::uuid
+        AND state.contact_id = ${row.contact_id}::uuid
+      UNION
+      SELECT state.workspace_id
+      FROM sales_context_states AS state
+      JOIN workspaces AS workspace
+        ON workspace.id = state.workspace_id AND workspace.status = 'active'
+      JOIN workspace_contacts AS membership
+        ON membership.workspace_id = state.workspace_id
+       AND membership.contact_id = ${row.contact_id}::uuid
+       AND membership.lifecycle_status = 'active'
+      WHERE state.conversation_id = ${row.conversation_id}::uuid
+        AND state.contact_id = ${row.contact_id}::uuid
+    )
+    SELECT (array_agg(workspace_id ORDER BY workspace_id))[1] AS workspace_id
+    FROM candidates
+    HAVING count(DISTINCT workspace_id) = 1
+  `;
+  const workspaceId = candidates[0]?.workspace_id ?? null;
+  if (workspaceId) {
+    await tx`
+      UPDATE call_sessions
+      SET workspace_id = ${workspaceId}::uuid
+      WHERE id = ${row.id}::uuid AND workspace_id IS NULL
+    `;
+    row.workspace_id = workspaceId;
+  }
+  return workspaceId;
+}
 
 export class PostgresCallStore implements CallStore, RetellToolCallCorrelationStore {
   constructor(private readonly db: postgres.Sql) {}
@@ -145,7 +202,7 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
     return this.db.begin(async (tx) => {
       const rows = input.metadata
         ? await tx<Array<RetellCorrelationRow>>`
-            SELECT id, contact_id, conversation_id, provider_call_id, status
+            SELECT id, contact_id, conversation_id, provider_call_id, status, workspace_id
             FROM call_sessions
             WHERE provider = 'retell'
               AND (provider_call_id = ${input.providerCallId} OR id = ${input.metadata.internalCallId}::uuid)
@@ -153,7 +210,7 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
             FOR UPDATE
           `
         : await tx<Array<RetellCorrelationRow>>`
-            SELECT id, contact_id, conversation_id, provider_call_id, status
+            SELECT id, contact_id, conversation_id, provider_call_id, status, workspace_id
             FROM call_sessions
             WHERE provider = 'retell' AND provider_call_id = ${input.providerCallId}
             FOR UPDATE
@@ -185,6 +242,8 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
         throw new RetellCallCorrelationError('CALL_PROVIDER_ID_CONFLICT');
       }
 
+      await bindLegacyWorkspace(tx, row);
+
       if (row.provider_call_id === null) {
         if (row.status !== 'dispatching' && row.status !== 'dispatch_ambiguous') {
           throw new RetellCallCorrelationError('CALL_CORRELATION_STATE_INVALID');
@@ -215,6 +274,7 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
           cs.conversation_id,
           cs.provider_call_id,
           cs.status,
+          cs.workspace_id,
           EXISTS (
             SELECT 1
             FROM conversation_sales_context_states_v1 AS state
@@ -229,7 +289,8 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
             JOIN contacts AS contact
               ON contact.id = cs.contact_id
              AND contact.deleted_at IS NULL
-            WHERE state.conversation_id = cs.conversation_id
+            WHERE (cs.workspace_id IS NULL OR state.workspace_id = cs.workspace_id)
+              AND state.conversation_id = cs.conversation_id
               AND state.contact_id = cs.contact_id
           ) AS workspace_authorized
         FROM call_sessions AS cs
@@ -257,11 +318,29 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
       ) {
         throw new RetellCallCorrelationError('CALL_CORRELATION_MISMATCH');
       }
-      if (!row.workspace_authorized) {
-        throw new RetellCallCorrelationError('CALL_CORRELATION_MISMATCH');
-      }
       if (row.provider_call_id && row.provider_call_id !== input.providerCallId) {
         throw new RetellCallCorrelationError('CALL_PROVIDER_ID_CONFLICT');
+      }
+
+      await bindLegacyWorkspace(tx, row);
+      const authorized = row.workspace_id === null ? [] : await tx<Array<{ allowed: boolean }>>`
+        SELECT TRUE AS allowed
+        FROM call_sessions AS cs
+        JOIN workspaces AS workspace
+          ON workspace.id = cs.workspace_id
+         AND workspace.status = 'active'
+         AND workspace.slug = ${input.workspaceSlug}
+        JOIN workspace_contacts AS membership
+          ON membership.workspace_id = cs.workspace_id
+         AND membership.contact_id = cs.contact_id
+         AND membership.lifecycle_status = 'active'
+        JOIN contacts AS contact
+          ON contact.id = cs.contact_id
+         AND contact.deleted_at IS NULL
+        WHERE cs.id = ${row.id}::uuid
+      `;
+      if (!authorized[0]?.allowed || row.workspace_id === null) {
+        throw new RetellCallCorrelationError('CALL_CORRELATION_MISMATCH');
       }
 
       if (row.provider_call_id === null) {
@@ -283,8 +362,12 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
 
   async appendEvent(rawEvent: CallEvent): Promise<'recorded' | 'duplicate'> {
     const event = CallEventSchema.parse(rawEvent);
-    const payloadHash = createHash('sha256').update(JSON.stringify(event), 'utf8').digest('hex');
+    const payloadHash = eventPayloadHash(event);
     return this.db.begin(async (tx) => {
+      const locked = await tx<Array<{ id: string }>>`
+        SELECT id FROM call_sessions WHERE id = ${event.call_id}::uuid FOR UPDATE
+      `;
+      if (!locked[0]) throw new Error('CALL_NOT_FOUND');
       const inserted = await tx<Array<{ id: string }>>`
         INSERT INTO call_events (
           call_id, provider, event_id, event_type, sequence, occurred_at, payload, payload_hash
@@ -302,7 +385,7 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
           FROM call_events AS event
           WHERE event.provider = ${event.provider} AND event.event_id = ${event.event_id}
         `;
-        if (existing[0]?.call_id !== event.call_id || existing[0]?.payload_hash_hex !== payloadHash) {
+        if (existing[0]?.call_id !== event.call_id || existing[0]?.payload_hash_hex !== eventPayloadHash(event)) {
           throw new Error('CALL_EVENT_REPLAY_CONFLICT');
         }
       }
@@ -353,7 +436,7 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
     }>>`
       SELECT
         cs.contact_id,
-        canonical_workspace.workspace_id,
+        canonical_workspace.id AS workspace_id,
         source.conversation_seq AS source_order,
         contact.name,
         contact.email,
@@ -368,26 +451,15 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
       JOIN contacts AS contact
         ON contact.id = cs.contact_id
        AND contact.deleted_at IS NULL
-      JOIN LATERAL (
-        SELECT candidate.workspace_id
-        FROM (
-          SELECT state.workspace_id, count(*) OVER () AS candidate_count
-          FROM conversation_sales_context_states_v1 AS state
-          JOIN workspaces AS candidate_workspace
-            ON candidate_workspace.id = state.workspace_id
-           AND candidate_workspace.status = 'active'
-          JOIN workspace_contacts AS candidate_membership
-            ON candidate_membership.workspace_id = state.workspace_id
-           AND candidate_membership.contact_id = cs.contact_id
-           AND candidate_membership.lifecycle_status = 'active'
-          WHERE state.conversation_id = cs.conversation_id
-            AND state.contact_id = cs.contact_id
-          GROUP BY state.workspace_id
-        ) AS candidate
-        WHERE candidate.candidate_count = 1
-      ) AS canonical_workspace ON true
+      JOIN workspaces AS canonical_workspace
+        ON canonical_workspace.id = cs.workspace_id
+       AND canonical_workspace.status = 'active'
+      JOIN workspace_contacts AS canonical_membership
+        ON canonical_membership.workspace_id = cs.workspace_id
+       AND canonical_membership.contact_id = cs.contact_id
+       AND canonical_membership.lifecycle_status = 'active'
       LEFT JOIN offerings AS offering
-        ON offering.workspace_id = canonical_workspace.workspace_id
+        ON offering.workspace_id = canonical_workspace.id
        AND offering.code = NULLIF(btrim(cs.context_snapshot ->> 'curso_interes'), '')
        AND offering.status = 'active'
       WHERE cs.id = ${callId}::uuid
@@ -476,34 +548,15 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
       });
       let canonicalResult = projection.result;
       if (canonicalResult === 'venta_confirmada') {
-        const workspaces = await tx<Array<{ workspace_id: string }>>`
-          SELECT candidate.workspace_id
-          FROM (
-            SELECT state.workspace_id, count(*) OVER () AS candidate_count
-            FROM conversation_sales_context_states_v1 AS state
-            JOIN workspaces AS workspace
-              ON workspace.id = state.workspace_id
-             AND workspace.status = 'active'
-            JOIN workspace_contacts AS membership
-              ON membership.workspace_id = state.workspace_id
-             AND membership.contact_id = (SELECT contact_id FROM call_sessions WHERE id = ${callId}::uuid)
-             AND membership.lifecycle_status = 'active'
-            WHERE state.conversation_id = (SELECT conversation_id FROM call_sessions WHERE id = ${callId}::uuid)
-              AND state.contact_id = (SELECT contact_id FROM call_sessions WHERE id = ${callId}::uuid)
-            GROUP BY state.workspace_id
-          ) AS candidate
-          WHERE candidate.candidate_count = 1
+        const payment = await tx<Array<{ exists: boolean }>>`
+          SELECT EXISTS (
+            SELECT 1 FROM payments
+            WHERE workspace_id = (SELECT workspace_id FROM call_sessions WHERE id = ${callId}::uuid)
+              AND contact_id = (SELECT contact_id FROM call_sessions WHERE id = ${callId}::uuid)
+              AND status = 'paid'
+              AND idempotency_key LIKE ${`retell:payment:${callId}:%`}
+          ) AS exists
         `;
-        const payment = workspaces.length === 1
-          ? await tx<Array<{ exists: boolean }>>`
-              SELECT EXISTS (
-                SELECT 1 FROM payments
-                WHERE workspace_id = ${workspaces[0].workspace_id}::uuid
-                  AND contact_id = (SELECT contact_id FROM call_sessions WHERE id = ${callId}::uuid)
-                  AND status = 'paid'
-              ) AS exists
-            `
-          : [];
         if (!payment[0]?.exists) canonicalResult = null;
       }
       await tx`

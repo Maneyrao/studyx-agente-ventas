@@ -29,6 +29,13 @@ async function fixture(input: {
     INSERT INTO conversations (contact_id, channel)
     VALUES (${contacts[0].id}::uuid, 'whatsapp') RETURNING id
   `;
+  const workspaces = await db!<Array<{ id: string }>>`
+    INSERT INTO workspaces (slug, display_name, environment, status)
+    VALUES (${`lifecycle-${randomUUID()}`}, 'Lifecycle test', 'sandbox', 'active') RETURNING id
+  `;
+  await db!`INSERT INTO workspace_contacts (workspace_id, contact_id) VALUES (${workspaces[0].id}::uuid, ${contacts[0].id}::uuid)`;
+  await db!`INSERT INTO conversation_sales_context_states_v1 (workspace_id, conversation_id, contact_id)
+             VALUES (${workspaces[0].id}::uuid, ${conversations[0].id}::uuid, ${contacts[0].id}::uuid)`;
   const messages = await db!<Array<{ id: string }>>`
     INSERT INTO messages (conversation_id, contact_id, direction, content)
     VALUES (${conversations[0].id}::uuid, ${contacts[0].id}::uuid, 'inbound', 'Llamame') RETURNING id
@@ -47,12 +54,12 @@ async function fixture(input: {
   const providerCallId = input.providerCallId ?? null;
   await db!`
     INSERT INTO call_sessions (
-      id, source_turn_id, contact_id, conversation_id, provider, provider_call_id,
+      id, source_turn_id, contact_id, conversation_id, workspace_id, provider, provider_call_id,
       request_idempotency_key, status, consent_source_message_id, context_snapshot,
       context_hash, prompt_version
     ) VALUES (
       ${callId}::uuid, ${messages[0].id}::uuid, ${contacts[0].id}::uuid,
-      ${conversations[0].id}::uuid, ${provider}, ${providerCallId}, ${`voice-call:${callId}`},
+      ${conversations[0].id}::uuid, ${workspaces[0].id}::uuid, ${provider}, ${providerCallId}, ${`voice-call:${callId}`},
       ${status}, ${messages[0].id}::uuid, ${db!.json(context)},
       decode(${hashCallContext(context)}, 'hex'), 'agent-b-v1'
     )
@@ -89,6 +96,11 @@ function wrapper(
           resultado: 'no_interesado',
           nivel_interes: 'bajo',
           objecion_principal: 'precio',
+          link_pago_enviado: false,
+          pago_confirmado: false,
+          pidio_humano: false,
+          pidio_no_contactar: false,
+          pregunto_si_es_ia: false,
         },
       },
     },

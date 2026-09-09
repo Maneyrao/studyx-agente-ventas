@@ -185,7 +185,20 @@ const ToolArgsSchemas = {
     pidio_no_contactar: z.boolean().optional(),
     pregunto_si_es_ia: z.boolean().optional(),
     compromiso_pendiente: z.string().trim().min(1).max(1_024).optional(),
-  }).strict().refine((value) => value.resumen !== undefined || value.call_summary !== undefined),
+  }).strict().refine((value) => value.resumen !== undefined || value.call_summary !== undefined)
+    .superRefine((value, context) => {
+      const legacyKeys = new Set(['resultado', 'resumen', 'objeciones', 'proximo_paso', 'nivel_interes', 'curso', 'call_summary']);
+      const hasExtendedField = Object.keys(value).some((key) => !legacyKeys.has(key));
+      if (!hasExtendedField) return;
+      for (const key of [
+        'objecion_principal', 'nivel_interes', 'link_pago_enviado', 'pago_confirmado',
+        'pidio_humano', 'pidio_no_contactar', 'pregunto_si_es_ia',
+      ] as const) {
+        if (!(key in value) || value[key] === null) {
+          context.addIssue({ code: 'custom', message: `COMPLETE_ANALYSIS_FIELD_REQUIRED:${key}`, path: [key] });
+        }
+      }
+    }),
   enviar_link_pago: z.object({
     cursos: z.array(CourseTextSchema).min(1).max(8),
     plan: z.enum(['contado', 'cuotas']),

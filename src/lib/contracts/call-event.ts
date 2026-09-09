@@ -71,7 +71,18 @@ export const CallAnalysisSchema = z.object({
   pidio_no_contactar: z.boolean().optional(),
   pregunto_si_es_ia: z.boolean().optional(),
   compromiso_pendiente: z.string().trim().min(1).max(1024).optional(),
-}).strict();
+}).strict().superRefine((analysis, context) => {
+  const legacyKeys = new Set(['result', 'nivel_interes', 'objecion', 'notas', 'call_summary']);
+  if (!Object.keys(analysis).some((key) => !legacyKeys.has(key))) return;
+  for (const key of [
+    'objecion_principal', 'nivel_interes', 'link_pago_enviado', 'pago_confirmado',
+    'pidio_humano', 'pidio_no_contactar', 'pregunto_si_es_ia',
+  ] as const) {
+    if (!(key in analysis) || analysis[key] === null) {
+      context.addIssue({ code: 'custom', message: `COMPLETE_ANALYSIS_FIELD_REQUIRED:${key}`, path: [key] });
+    }
+  }
+});
 
 export const CallAnalyzedPayloadSchema = z.object({
   event_type: z.literal('analyzed'),

@@ -44,7 +44,7 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
       return { sent: false, reference: null, reason: 'PAYMENT_UNAVAILABLE' };
     }
     if (input.courses.length !== 1) return { sent: false, reference: null, reason: 'COURSE_UNAVAILABLE' };
-    const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId);
+    const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId, input.callId);
     if (!workspace) return { sent: false, reference: null, reason: 'CONTACT_UNAVAILABLE' };
     const offerings = await this.db<Array<{
       id: string;
@@ -132,7 +132,7 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
   }
 
   async verifyPayment(input: Parameters<RetellOrchestrationStore['verifyPayment']>[0]) {
-    const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId);
+    const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId, input.callId);
     if (!workspace) return { found: false as const, reason: 'PAYMENT_NOT_FOUND' };
     const rows = input.reference
       ? await this.db<Array<{ status: string }>>`
@@ -140,6 +140,7 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
           FROM payments AS p
           WHERE p.workspace_id = ${workspace.id}::uuid
             AND p.contact_id = ${input.contactId}::uuid
+            AND p.idempotency_key LIKE ${`retell:payment:${input.callId}:%`}
             AND (p.id::text = ${input.reference} OR p.provider_session_id = ${input.reference})
           ORDER BY p.created_at DESC LIMIT 1
         `
@@ -148,6 +149,7 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
           FROM payments AS p
           WHERE p.workspace_id = ${workspace.id}::uuid
             AND p.contact_id = ${input.contactId}::uuid
+            AND p.idempotency_key LIKE ${`retell:payment:${input.callId}:%`}
           ORDER BY p.created_at DESC LIMIT 1
         `;
     return rows[0]
@@ -157,7 +159,7 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
 
   async sendMaterial(input: Parameters<RetellOrchestrationStore['sendMaterial']>[0]) {
     if (!this.options.sendOutbound) return { sent: false, reference: null, reason: 'OUTBOUND_UNAVAILABLE' };
-    const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId);
+    const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId, input.callId);
     if (!workspace) return { sent: false, reference: null, reason: 'CONTACT_UNAVAILABLE' };
     const rows = await this.db<Array<{ id: string; content: string; metadata: Record<string, unknown> }>>`
       SELECT ks.id, ks.content, ks.metadata
@@ -188,7 +190,7 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
   }
 
   async requestHumanHandoff(input: Parameters<RetellOrchestrationStore['requestHumanHandoff']>[0]) {
-    const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId);
+    const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId, input.callId);
     if (!workspace) throw new Error('CONTACT_UNAVAILABLE');
     const rows = await this.db<Array<{ id: string; available: boolean | null }>>`
       INSERT INTO retell_handoff_requests (
@@ -209,7 +211,7 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
   }
 
   async scheduleFollowup(input: Parameters<RetellOrchestrationStore['scheduleFollowup']>[0]) {
-    const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId);
+    const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId, input.callId);
     if (!workspace) throw new Error('CONTACT_UNAVAILABLE');
     const scheduledAt = resolveRetellFollowupTimestamp(input.whenText);
     const rows = await this.db<Array<{
@@ -243,15 +245,19 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     };
   }
 
-  private async workspaceForContact(workspaceSlug: string, contactId: string) {
+  private async workspaceForContact(workspaceSlug: string, contactId: string, callId: string) {
     const rows = await this.db<Array<{ id: string; metadata: Record<string, unknown> | null }>>`
       SELECT w.id, w.metadata
-      FROM workspaces AS w
-      JOIN workspace_contacts AS wc ON wc.workspace_id = w.id
-      WHERE w.slug = ${workspaceSlug}
+      FROM call_sessions AS cs
+      JOIN workspaces AS w ON w.id = cs.workspace_id
+      JOIN workspace_contacts AS wc
+        ON wc.workspace_id = cs.workspace_id
+       AND wc.contact_id = cs.contact_id
+       AND wc.lifecycle_status = 'active'
+      WHERE cs.id = ${callId}::uuid
+        AND w.slug = ${workspaceSlug}
         AND w.status = 'active'
-        AND wc.contact_id = ${contactId}::uuid
-        AND wc.lifecycle_status = 'active'
+        AND cs.contact_id = ${contactId}::uuid
       LIMIT 1
     `;
     return rows[0] ?? null;

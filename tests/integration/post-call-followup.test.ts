@@ -18,6 +18,7 @@ import { recordCallEvent } from '@/features/calls/application/record-call-event'
 import { dispatchCall } from '@/features/calls/application/dispatch-call';
 import type { VoiceProvider } from '@/features/calls/ports/voice-provider';
 import { enqueueLeadProjection, leadProjectionKey } from '@/lib/services/projection.service';
+import { commitAgentDecision } from '@/lib/services/decision.service';
 
 /**
  * Spec 007 (B → A) against a real database. Unit tests already cover
@@ -98,6 +99,7 @@ async function seedTerminalCall(overrides: {
     VALUES (${workspaces[0].id}::uuid, ${context.conversation_id}::uuid, ${context.contact.id}::uuid)
   `;
   const callId = randomUUID();
+  const providerCallId = `retell-${callId}`;
   const callContext = {
     call_id: callId,
     nombre_lead: '',
@@ -111,14 +113,14 @@ async function seedTerminalCall(overrides: {
 
   await sql`
     INSERT INTO call_sessions (
-      id, source_turn_id, contact_id, conversation_id, provider, request_idempotency_key,
-      status, result, analysis_status, consent_source_message_id, context_snapshot, context_hash,
+      id, source_turn_id, contact_id, conversation_id, provider, provider_call_id, request_idempotency_key,
+      status, result, analysis_status, consent_source_message_id, workspace_id, context_snapshot, context_hash,
       prompt_version, requested_at, completed_at, updated_at
     ) VALUES (
       ${callId}::uuid, ${context.turn_id}::uuid, ${context.contact.id}::uuid, ${context.conversation_id}::uuid,
-      ${overrides.provider ?? 'telegram_sandbox'}, ${`voice-call:${callId}`}, ${overrides.status},
+      ${overrides.provider ?? 'telegram_sandbox'}, ${overrides.provider === 'retell' ? providerCallId : null}, ${`voice-call:${callId}`}, ${overrides.status},
       ${overrides.result ?? null}, ${overrides.analysis_status ?? 'completed'},
-      ${context.turn_id}::uuid, ${sql.json(callContext)}, decode(${hashCallContext(callContext)}, 'hex'),
+      ${context.turn_id}::uuid, ${workspaces[0].id}::uuid, ${sql.json(callContext)}, decode(${hashCallContext(callContext)}, 'hex'),
       'agent-b-v1',
       now() - make_interval(mins => ${ageMinutes}),
       now() - make_interval(mins => ${ageMinutes}),
@@ -130,7 +132,7 @@ async function seedTerminalCall(overrides: {
     callId,
     contactId: context.contact.id,
     conversationId: context.conversation_id,
-    providerCallId: `retell-${callId}`,
+    providerCallId,
     workspaceId: workspaces[0].id,
   };
 }
@@ -208,6 +210,15 @@ async function outboundDeliveryCountForConversation(conversationId: string) {
   return Number(rows[0].count);
 }
 
+async function postCallOutboundDeliveryCount(callId: string) {
+  const rows = await sql<Array<{ count: string }>>`
+    SELECT count(*)::text AS count
+    FROM outbound_deliveries
+    WHERE idempotency_key = ${`post-call:${callId}`}
+  `;
+  return Number(rows[0].count);
+}
+
 async function consentStatus(contactId: string) {
   const rows = await sql<Array<{ consent_status: string | null }>>`
     SELECT consent_status FROM contact_channel_permissions
@@ -257,7 +268,7 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
 
     expect(await consentStatus(contactId)).not.toBe('revoked');
 
-    const result = await sweep();
+    const result = await sweep(randomUUID(), 0);
     expect(result.findings.find((f) => f.call_id === callId)).toMatchObject({
       action: 'revoke_contact',
       reason: 'DO_NOT_CONTACT',
@@ -294,7 +305,12 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
           nivel_interes: 'alto',
           objecion: null,
           notas: 'La persona pidió no recibir más contactos.',
+          objecion_principal: 'ninguna',
+          link_pago_enviado: false,
+          pago_confirmado: false,
+          pidio_humano: false,
           pidio_no_contactar: true,
+          pregunto_si_es_ia: false,
         },
       },
     });
@@ -317,7 +333,7 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
     });
     await new PostgresCallStore(sql).appendEvent({
       schema_version: 1,
-      event_id: `retell:call_analyzed:${fixture.providerCallId}`,
+      event_id: `retell:webhook:call_analyzed:${fixture.providerCallId}`,
       call_id: fixture.callId,
       event_type: 'analyzed',
       sequence: 3,
@@ -330,7 +346,12 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
           nivel_interes: 'alto',
           objecion: null,
           notas: 'La llamada fue cancelada, pero pidió no contactar.',
+          objecion_principal: 'ninguna',
+          link_pago_enviado: false,
+          pago_confirmado: false,
+          pidio_humano: false,
           pidio_no_contactar: true,
+          pregunto_si_es_ia: false,
         },
       },
     });
@@ -353,7 +374,7 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
     });
     await new PostgresCallStore(sql).appendEvent({
       schema_version: 1,
-      event_id: `retell:call_analyzed:${fixture.providerCallId}`,
+      event_id: `retell:webhook:call_analyzed:${fixture.providerCallId}`,
       call_id: fixture.callId,
       event_type: 'analyzed',
       sequence: 3,
@@ -366,16 +387,19 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
           nivel_interes: 'alto',
           objecion: null,
           notas: 'El análisis afirma que pagó.',
+          objecion_principal: 'ninguna',
+          link_pago_enviado: false,
           pago_confirmado: true,
+          pidio_humano: false,
+          pidio_no_contactar: false,
+          pregunto_si_es_ia: false,
         },
       },
     });
 
-    const result = await sweep();
-    expect(result.findings.find((finding) => finding.call_id === fixture.callId)).toMatchObject({
-      action: 'send',
-      reason: 'SALE_CLAIMED_PAYMENT_UNVERIFIED',
-    });
+    await sweep(randomUUID(), 0);
+    expect(await systemCallResultEventCount(fixture.callId)).toBe(1);
+    expect(await syntheticMessageCount(fixture.callId)).toBe(1);
     await expect(sql<Array<{ count: string }>>`
       SELECT count(*)::text AS count FROM payments
       WHERE workspace_id = ${fixture.workspaceId}::uuid
@@ -428,13 +452,96 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
   });
 
   it('Task 5 E2E: lead projection + Retell lifecycle + physical follow-up replay once', async () => {
-    const fixture = await seedTerminalCall({
-      status: 'requested',
-      result: null,
-      analysis_status: 'pending',
-      provider: 'retell',
-      ageMinutes: 0,
-    });
+    // This fixture intentionally enters through the same Agent A commit path
+    // that production uses. It must not manufacture call_sessions directly:
+    // reserveCallForDecision binds the canonical workspace and writes the
+    // requested ledger event atomically.
+    const inbound = await processInboundMessage(envelope('dale, llamame'));
+    const e2eWorkspace = await sql<Array<{ id: string }>>`
+      INSERT INTO workspaces (slug, display_name, environment, status)
+      VALUES (${`post-call-e2e-${randomUUID()}`}, 'Post-call E2E', 'sandbox', 'active')
+      RETURNING id
+    `;
+    await sql`
+      INSERT INTO workspace_contacts (workspace_id, contact_id, lifecycle_status)
+      VALUES (${e2eWorkspace[0].id}::uuid, ${inbound.contact.id}::uuid, 'active')
+    `;
+    await sql`
+      INSERT INTO conversation_sales_context_states_v1 (workspace_id, conversation_id, contact_id)
+      VALUES (${e2eWorkspace[0].id}::uuid, ${inbound.conversation_id}::uuid, ${inbound.contact.id}::uuid)
+    `;
+    const workspaceRows = await sql<Array<{ workspace_id: string }>>`
+      WITH candidates AS (
+        SELECT state.workspace_id
+        FROM conversation_sales_context_states_v1 AS state
+        JOIN workspaces AS workspace
+          ON workspace.id = state.workspace_id AND workspace.status = 'active'
+        JOIN workspace_contacts AS membership
+          ON membership.workspace_id = state.workspace_id
+         AND membership.contact_id = ${inbound.contact.id}::uuid
+         AND membership.lifecycle_status = 'active'
+        WHERE state.conversation_id = ${inbound.conversation_id}::uuid
+          AND state.contact_id = ${inbound.contact.id}::uuid
+        UNION
+        SELECT state.workspace_id
+        FROM sales_context_states AS state
+        JOIN workspaces AS workspace
+          ON workspace.id = state.workspace_id AND workspace.status = 'active'
+        JOIN workspace_contacts AS membership
+          ON membership.workspace_id = state.workspace_id
+         AND membership.contact_id = ${inbound.contact.id}::uuid
+         AND membership.lifecycle_status = 'active'
+        WHERE state.conversation_id = ${inbound.conversation_id}::uuid
+          AND state.contact_id = ${inbound.contact.id}::uuid
+      )
+      SELECT workspace_id FROM candidates
+    `;
+    expect(workspaceRows).toHaveLength(1);
+    const previousProvider = process.env.VOICE_PROVIDER;
+    process.env.VOICE_PROVIDER = 'retell';
+    let committed: Awaited<ReturnType<typeof commitAgentDecision>>;
+    try {
+      committed = await commitAgentDecision({
+        turn_id: inbound.turn_id,
+        trace_id: randomUUID(),
+        decision: {
+          schema_version: 4,
+          intent: 'commercial',
+          kind: 'reply',
+          response: 'Perfecto. Registré la llamada.',
+          response_type: 'call_confirmation',
+          business_action: { type: 'request_call_now', reason: 'direct_request', course_of_interest: 'Python' },
+          memory_candidates: [],
+          missing_information: [],
+          next_state: 'completed',
+          reason_code: 'CALL_CONSENT_ACCEPTED',
+          confidence: 1,
+          retrieval_used: null,
+        },
+        model: {
+          provider: 'botpress',
+          model: 'vitest-agent-a',
+          prompt_version: 'studyx-agent-a-sales-bridge-v1',
+        },
+      });
+    } finally {
+      if (previousProvider === undefined) delete process.env.VOICE_PROVIDER;
+      else process.env.VOICE_PROVIDER = previousProvider;
+    }
+    expect(committed.status).toBe('committed');
+    expect(committed.call_request?.call_id).toBeDefined();
+    const callRows = await sql<Array<{ id: string; provider_call_id: string | null }>>`
+      SELECT id, provider_call_id FROM call_sessions
+      WHERE source_turn_id = ${inbound.turn_id}::uuid
+    `;
+    expect(callRows).toHaveLength(1);
+    const fixture = {
+      callId: callRows[0].id,
+      contactId: inbound.contact.id,
+      conversationId: inbound.conversation_id,
+      providerCallId: `retell-e2e-${callRows[0].id}`,
+      workspaceId: workspaceRows[0].workspace_id,
+    };
 
     const dispatch = await dispatchCall(
       { callId: fixture.callId, workerId: `e2e-${fixture.callId}` },
@@ -494,7 +601,21 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
           end_timestamp: Date.now(),
           call_analysis: {
             call_summary: 'E2E summary',
-            custom_analysis_data: { resultado: 'seguimiento_agendado' as const, nivel_interes: 'medio' as const },
+            user_sentiment: 'positive' as const,
+            custom_analysis_data: {
+              resultado: 'seguimiento_agendado' as const,
+              nivel_interes: 'medio' as const,
+              curso_ofrecido: 'Python',
+              precio_ofrecido: 'USD 360',
+              objecion_principal: 'ninguna' as const,
+              email_capturado: 'e2e@example.test',
+              link_pago_enviado: true,
+              pago_confirmado: false,
+              pidio_humano: false,
+              pidio_no_contactar: false,
+              pregunto_si_es_ia: true,
+              compromiso_pendiente: 'Revisar el enlace.',
+            },
           },
         },
       },
@@ -503,6 +624,11 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
       const event = mapRetellLifecycleEvent(raw, fixture.callId);
       await recordCallEvent(event, { store: callStore });
       await recordCallEvent(event, { store: callStore });
+      if (raw.event === 'call_analyzed') {
+        const toolEvent = { ...event, event_id: `retell:tool:call_analyzed:${fixture.providerCallId}` };
+        await recordCallEvent(toolEvent, { store: callStore });
+        await recordCallEvent(toolEvent, { store: callStore });
+      }
     }
 
     const first = await sweep(randomUUID(), 0);
@@ -512,9 +638,9 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
 
     await expect(sql<Array<{ count: string }>>`
       SELECT count(*)::text AS count FROM call_events WHERE call_id = ${fixture.callId}::uuid
-    `).resolves.toEqual([{ count: '3' }]);
+    `).resolves.toEqual([{ count: '5' }]);
     expect(await systemCallResultEventCount(fixture.callId)).toBe(1);
-    expect(await outboundDeliveryCountForConversation(fixture.conversationId)).toBe(1);
+    expect(await postCallOutboundDeliveryCount(fixture.callId)).toBe(1);
     await expect(sql<Array<{ payload: Record<string, string> }>>`
       SELECT payload FROM sheet_projection_rows
       WHERE projection_key = ${leadProjectionKey(fixture.workspaceId, fixture.contactId)}
@@ -568,8 +694,10 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
     `;
 
     const pending = await store.listPendingFollowups({ limit: 500, grace_seconds: 0 });
-    expect(pending.find((call) => call.call_id === fixture.callId)).toBeUndefined();
-    await expect(store.hasVerifiedPayment(fixture.contactId, newerWorkspaceId)).resolves.toBe(false);
-    await expect(store.hasVerifiedPayment(fixture.contactId, fixture.workspaceId)).resolves.toBe(true);
+    expect(pending.find((call) => call.call_id === fixture.callId)).toMatchObject({
+      workspace_id: fixture.workspaceId,
+    });
+    await expect(store.hasVerifiedPayment(fixture.contactId, newerWorkspaceId, fixture.callId, 'telegram_sandbox')).resolves.toBe(false);
+    await expect(store.hasVerifiedPayment(fixture.contactId, fixture.workspaceId, fixture.callId, 'telegram_sandbox')).resolves.toBe(true);
   });
 });

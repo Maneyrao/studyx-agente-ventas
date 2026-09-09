@@ -148,6 +148,37 @@ export async function reserveCallForDecision(
     throw new CallRequestRejectedError('ACTIVE_CALL_IN_PROGRESS');
   }
 
+  const workspaces = await db<Array<{ workspace_id: string }>>`
+    WITH candidates AS (
+      SELECT state.workspace_id
+      FROM conversation_sales_context_states_v1 AS state
+      JOIN workspaces AS workspace
+        ON workspace.id = state.workspace_id AND workspace.status = 'active'
+      JOIN workspace_contacts AS membership
+        ON membership.workspace_id = state.workspace_id
+       AND membership.contact_id = ${input.contact_id}::uuid
+       AND membership.lifecycle_status = 'active'
+      WHERE state.conversation_id = ${input.conversation_id}::uuid
+        AND state.contact_id = ${input.contact_id}::uuid
+      UNION
+      SELECT state.workspace_id
+      FROM sales_context_states AS state
+      JOIN workspaces AS workspace
+        ON workspace.id = state.workspace_id AND workspace.status = 'active'
+      JOIN workspace_contacts AS membership
+        ON membership.workspace_id = state.workspace_id
+       AND membership.contact_id = ${input.contact_id}::uuid
+       AND membership.lifecycle_status = 'active'
+      WHERE state.conversation_id = ${input.conversation_id}::uuid
+        AND state.contact_id = ${input.contact_id}::uuid
+    )
+    SELECT (array_agg(workspace_id ORDER BY workspace_id))[1] AS workspace_id
+    FROM candidates
+    HAVING count(DISTINCT workspace_id) = 1
+  `;
+  const workspaceId = workspaces[0]?.workspace_id;
+  if (!workspaceId) throw new CallRequestRejectedError('CALL_WORKSPACE_UNRESOLVED');
+
   const provider = resolveVoiceProvider();
   const callId = input.reserved_call_id ?? randomUUID();
   const context = parseCallContext({
@@ -169,6 +200,7 @@ export async function reserveCallForDecision(
       offered_by_decision_id,
       contact_id,
       conversation_id,
+      workspace_id,
       provider,
       request_idempotency_key,
       status,
@@ -184,6 +216,7 @@ export async function reserveCallForDecision(
       ${verdict.offeredByDecisionId}::uuid,
       ${input.contact_id}::uuid,
       ${input.conversation_id}::uuid,
+      ${workspaceId}::uuid,
       ${provider},
       ${`voice-call:turn:${input.turn_id}`},
       'requested',

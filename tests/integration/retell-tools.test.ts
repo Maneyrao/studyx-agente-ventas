@@ -460,6 +460,29 @@ run('Retell P0 tools with PostgreSQL', () => {
       resumen: 'No avanzó.',
     });
     expect(tool.body).toEqual({ ok: true, recorded: true });
+    const storedToolEvent = await db!<Array<{
+      event_id: string;
+      call_id: string;
+      event_type: 'analyzed';
+      sequence: number;
+      occurred_at: Date;
+      provider: 'retell';
+      payload: Record<string, unknown>;
+    }>>`
+      SELECT event_id, call_id, event_type, sequence, occurred_at, provider, payload
+      FROM call_events
+      WHERE call_id = ${toolFirst.callId}::uuid AND event_id = ${`retell:tool:call_analyzed:${toolFirst.providerCallId}`}
+    `;
+    expect(await new PostgresCallStore(db!).appendEvent({
+      schema_version: 1,
+      event_id: storedToolEvent[0].event_id,
+      call_id: storedToolEvent[0].call_id,
+      event_type: storedToolEvent[0].event_type,
+      sequence: storedToolEvent[0].sequence,
+      occurred_at: new Date(storedToolEvent[0].occurred_at.getTime() + 60_000).toISOString(),
+      provider: storedToolEvent[0].provider,
+      payload: storedToolEvent[0].payload as never,
+    })).toBe('duplicate');
     await expect(recordCallEvent(
       lifecycleAnalysis(toolFirst, 'seguimiento_agendado'),
       { store: new PostgresCallStore(db!) },
@@ -689,6 +712,13 @@ run('Retell P0 tools with PostgreSQL', () => {
       call_summary: 'Análisis atrasado.',
       email_capturado: 'stale@example.test',
       curso_ofrecido: 'Reparación de Celulares',
+      objecion_principal: 'ninguna',
+      nivel_interes: 'medio',
+      link_pago_enviado: false,
+      pago_confirmado: false,
+      pidio_humano: false,
+      pidio_no_contactar: false,
+      pregunto_si_es_ia: false,
     });
     expect(response.body).toEqual({ ok: true, recorded: true });
     await expect(db!<Array<{ email: string | null }>>`

@@ -74,8 +74,8 @@ function sender() {
   };
 }
 
-async function callFixture() {
-  const ids = await fixture();
+async function callFixture(input: { readonly planMode?: 'payment' | 'subscription'; readonly omitOneTime?: boolean } = {}) {
+  const ids = await fixture(input);
   const conversations = await db!<Array<{ id: string }>>`
     INSERT INTO conversations (contact_id, channel) VALUES (${ids.contactId}::uuid, 'whatsapp') RETURNING id
   `;
@@ -109,15 +109,15 @@ async function callFixture() {
 
 run('Retell five tools PostgreSQL adapter', () => {
   it('enforces canonical plan authority and makes payment/send replay idempotent', async () => {
-    const ids = await fixture();
+    const ids = await callFixture();
     const provider = new FakePaymentProvider();
     const outbound = sender();
     const store = new PostgresRetellOrchestrationStore(db!, { paymentProvider: provider, sendOutbound: outbound.send });
     await expect(store.createPaymentLink({
-      callId: randomUUID(), contactId: ids.contactId, workspaceSlug: ids.workspaceSlug,
+      callId: ids.callId, contactId: ids.contactId, workspaceSlug: ids.workspaceSlug,
       courses: ['retell_course'], plan: 'cuotas', email: 'lead@example.test', channel: 'whatsapp',
     })).resolves.toMatchObject({ sent: false, reason: 'PAYMENT_PLAN_CHOICE_REQUIRED' });
-    const callId = randomUUID();
+    const callId = ids.callId;
     const first = await store.createPaymentLink({ callId, contactId: ids.contactId, workspaceSlug: ids.workspaceSlug, courses: ['retell_course'], plan: 'contado', email: 'lead@example.test', channel: 'whatsapp' });
     const replay = await store.createPaymentLink({ callId, contactId: ids.contactId, workspaceSlug: ids.workspaceSlug, courses: ['retell_course'], plan: 'contado', email: 'lead@example.test', channel: 'whatsapp' });
     expect(first).toMatchObject({ sent: true });
@@ -125,30 +125,30 @@ run('Retell five tools PostgreSQL adapter', () => {
     expect(provider.calls).toHaveLength(1);
     expect(outbound.calls).toHaveLength(1);
     await expect(db!<{ count: string }[]>`SELECT count(*) FROM payments WHERE workspace_id = ${ids.workspaceId}::uuid`).resolves.toEqual([{ count: '1' }]);
-    const withoutOneTime = await fixture({ omitOneTime: true });
+    const withoutOneTime = await callFixture({ omitOneTime: true });
     await expect(store.createPaymentLink({
-      callId: randomUUID(), contactId: withoutOneTime.contactId, workspaceSlug: withoutOneTime.workspaceSlug,
+      callId: withoutOneTime.callId, contactId: withoutOneTime.contactId, workspaceSlug: withoutOneTime.workspaceSlug,
       courses: ['retell_course'], plan: 'contado', email: 'lead@example.test', channel: 'whatsapp',
     })).resolves.toMatchObject({ sent: false, reason: 'PAYMENT_PLAN_UNAVAILABLE' });
   });
 
   it('scopes payment references to the correlated workspace/contact and returns missing proof as failure', async () => {
-    const one = await fixture();
-    const two = await fixture();
+    const one = await callFixture();
+    const two = await callFixture();
     const payment = await db!<Array<{ id: string }>>`
       INSERT INTO payments (workspace_id, contact_id, offering_id, amount, currency, status, provider, environment, checkout_mode, idempotency_key, paid_at)
       VALUES (${two.workspaceId}::uuid, ${two.contactId}::uuid, ${two.offeringId}::uuid, 360, 'USD', 'paid', 'fake', 'test', 'payment', ${`test:${randomUUID()}`}, now())
       RETURNING id
     `;
     const store = new PostgresRetellOrchestrationStore(db!);
-    await expect(store.verifyPayment({ callId: randomUUID(), contactId: one.contactId, workspaceSlug: one.workspaceSlug, reference: payment[0].id }))
+    await expect(store.verifyPayment({ callId: one.callId, contactId: one.contactId, workspaceSlug: one.workspaceSlug, reference: payment[0].id }))
       .resolves.toEqual({ found: false, reason: 'PAYMENT_NOT_FOUND' });
-    await expect(store.verifyPayment({ callId: randomUUID(), contactId: one.contactId, workspaceSlug: one.workspaceSlug }))
+    await expect(store.verifyPayment({ callId: one.callId, contactId: one.contactId, workspaceSlug: one.workspaceSlug }))
       .resolves.toEqual({ found: false, reason: 'PAYMENT_NOT_FOUND' });
   });
 
   it('sends approved material only when exact canonical URL/fact authorization passes', async () => {
-    const ids = await fixture();
+    const ids = await callFixture();
     const outbound = sender();
     const content = 'Temario oficial. Modalidad online. https://studyx.example/temario';
     const sources = await db!<Array<{ id: string }>>`
@@ -157,10 +157,10 @@ run('Retell five tools PostgreSQL adapter', () => {
       RETURNING id
     `;
     const store = new PostgresRetellOrchestrationStore(db!, { sendOutbound: outbound.send });
-    await expect(store.sendMaterial({ callId: randomUUID(), contactId: ids.contactId, workspaceSlug: ids.workspaceSlug, type: 'temario', course: 'retell_course' })).resolves.toMatchObject({ sent: true });
+    await expect(store.sendMaterial({ callId: ids.callId, contactId: ids.contactId, workspaceSlug: ids.workspaceSlug, type: 'temario', course: 'retell_course' })).resolves.toMatchObject({ sent: true });
     expect(outbound.calls).toHaveLength(1);
     await db!`UPDATE knowledge_sources SET content = 'Temario https://foreign.example/nope' WHERE id = ${sources[0].id}::uuid`;
-    await expect(store.sendMaterial({ callId: randomUUID(), contactId: ids.contactId, workspaceSlug: ids.workspaceSlug, type: 'temario', course: 'retell_course' })).resolves.toMatchObject({ sent: false, reason: 'MATERIAL_UNAVAILABLE' });
+    await expect(store.sendMaterial({ callId: ids.callId, contactId: ids.contactId, workspaceSlug: ids.workspaceSlug, type: 'temario', course: 'retell_course' })).resolves.toMatchObject({ sent: false, reason: 'MATERIAL_UNAVAILABLE' });
   });
 
   it('keeps follow-up/handoff replay stable and rejects cross-tenant request inserts', async () => {

@@ -60,7 +60,19 @@ const RetellAnalysisDataSchema = z.object({
   pidio_no_contactar: z.boolean().optional(),
   pregunto_si_es_ia: z.boolean().optional(),
   compromiso_pendiente: z.string().trim().min(1).max(1024).optional().nullable(),
-}).passthrough();
+}).passthrough().superRefine((analysis, context) => {
+  const legacyKeys = new Set(['resultado', 'nivel_interes', 'objecion_principal']);
+  const hasExtendedField = Object.keys(analysis).some((key) => !legacyKeys.has(key));
+  if (!hasExtendedField) return;
+  for (const key of [
+    'objecion_principal', 'nivel_interes', 'link_pago_enviado', 'pago_confirmado',
+    'pidio_humano', 'pidio_no_contactar', 'pregunto_si_es_ia',
+  ] as const) {
+    if (!(key in analysis) || analysis[key] === null) {
+      context.addIssue({ code: 'custom', message: `COMPLETE_ANALYSIS_FIELD_REQUIRED:${key}`, path: [key] });
+    }
+  }
+});
 
 const RetellAnalyzedWebhookSchema = z.object({
   event: z.literal('call_analyzed'),
@@ -202,7 +214,6 @@ export function mapRetellLifecycleEvent(raw: unknown, internalCallId: string): C
   const hasExtendedAnalysis = Object.keys(custom).some((key) => ![
     'resultado', 'nivel_interes', 'objecion_principal',
   ].includes(key))
-    || webhook.call.call_analysis.call_summary !== undefined
     || webhook.call.call_analysis.user_sentiment !== undefined;
   const analysis = {
     result: custom.resultado,

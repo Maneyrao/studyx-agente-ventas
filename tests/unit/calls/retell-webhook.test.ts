@@ -39,6 +39,11 @@ function wrapper(event: 'call_started' | 'call_ended' | 'call_analyzed') {
         nivel_interes: 'bajo',
         objecion_principal: 'precio',
         precio_ofrecido: 'sensitive-commercial-detail',
+        link_pago_enviado: false,
+        pago_confirmado: false,
+        pidio_humano: false,
+        pidio_no_contactar: false,
+        pregunto_si_es_ia: false,
       },
     },
   };
@@ -149,6 +154,11 @@ describe('Retell lifecycle mapping', () => {
         objecion: 'precio',
         objecion_principal: 'precio',
         precio_ofrecido: 'sensitive-commercial-detail',
+        link_pago_enviado: false,
+        pago_confirmado: false,
+        pidio_humano: false,
+        pidio_no_contactar: false,
+        pregunto_si_es_ia: false,
         notas: 'Pidió información y cerró sin comprar.',
       },
     });

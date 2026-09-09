@@ -114,6 +114,7 @@ describe('post-call followup delivery boundary', () => {
           contact_id: '00000000-0000-4000-8000-000000000002',
           conversation_id: '00000000-0000-4000-8000-000000000003',
           workspace_id: '00000000-0000-4000-8000-000000000004',
+          provider: 'telegram_sandbox' as const,
           status: call.status ?? 'completed',
           result: call.result ?? 'seguimiento_agendado',
           analysis_status: 'completed' as const,

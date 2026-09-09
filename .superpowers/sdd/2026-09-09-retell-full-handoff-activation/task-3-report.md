@@ -129,3 +129,36 @@ git diff --check         passed
 - `tests/integration/post-call-followup.test.ts`
 
 No migration, deploy, push, merge, or network/provider call was performed.
+
+## Fix round 2 — revisión cerrada
+
+### RED → GREEN
+
+Se agregaron primero los casos RED de export webhook parcial, `registrar_resultado` parcial y precedencia webhook sobre el evento legacy compartido. La ronda también cubre null en los enums requeridos, el fixture legacy real con `objecion_principal`, replay del mismo tool con reloj avanzado, compatibilidad de pago Telegram y la reserva E2E por Agent A.
+
+### Hallazgos corregidos
+
+- El sweep de Retell queda cercado por el hecho webhook autoritativo `retell:webhook:call_analyzed:<provider_call_id>`; no emite outbound post-call antes de ese hecho. La señal `pidio_no_contactar` de cualquier análisis durable conserva la revocación monotónica y puede revocar un contacto aunque todavía falte el webhook.
+- `venta_confirmada` solo se proyecta como venta cuando existe un pago `paid` del workspace/contacto ligado a esa llamada por `retell:payment:<callId>:`. `verifyPayment` usa el mismo vínculo; Telegram conserva su semántica histórica sin filtro Retell.
+- La migración aditiva `20260909000004_retell_call_workspace_binding.sql` agrega `call_sessions.workspace_id` con FK e índice, backfill únicamente para candidatos únicos, reserva nueva con binding canónico y binding tardío legacy dentro del lock. El trigger permite solo el primer `NULL → workspace_id` validado contra el candidato único; después el tenant es inmutable. Guards, follow-up, email y payment usan el valor ligado.
+- Webhook > evento legacy compartido > tool; dentro de un mismo rango no hay desempate lexicográfico. El hash semántico de tool omite solo `occurred_at`, por lo que el mismo payload con reloj distinto es duplicate y un cambio semántico sigue siendo conflicto.
+- La forma legacy real permanece compatible: `call_summary` solo y `objecion_principal` legacy no activan el conjunto completo. Si aparece un campo extendido, webhook y tool exigen los siete requeridos (`objecion_principal`, `nivel_interes`, cinco booleanos); enum requerido `null`/ausente falla, mientras `false`, `nulo` y `ninguna` conservan su semántica válida.
+- `appendEvent` serializa por `call_sessions ... FOR UPDATE`, haciendo durable el merge frente a tool/webhook concurrentes. La prueba E2E entra por `commitAgentDecision`/`reserveCallForDecision` real de Agent A, despacha Retell, procesa tool + webhook completos, recomputa, ejecuta follow-up una vez y verifica el outbox de Sheets.
+
+### Evidencia
+
+Migración aplicada exitosamente en `postgresql://postgres@127.0.0.1:55435/studyx_test` (incluida la función/trigger de binding validado).
+
+```text
+Unit focal: 8 files passed, 114 tests passed
+PostgreSQL focal: 4 files passed, 30 tests passed
+npm run typecheck: passed
+npm run lint: passed
+git diff --check: passed
+```
+
+Archivos adicionales de esta ronda: `supabase/migrations/20260909000004_retell_call_workspace_binding.sql`, los guards/adapters de calls, `request-call.ts`, contratos de análisis, tests focales y este reporte. No hubo prompts/naturalidad, red externa, deploy, push ni merge.
+
+### Límites residuales
+
+Sesiones legacy con workspace ambiguo o sin candidato siguen `NULL` y fallan cerrado; no se elige otro tenant aunque cambien membresías. El sweep de Retell espera webhook salvo una revocación DNC durable. La evidencia de pago sigue siendo exclusivamente el ledger canónico call-specific para Retell.

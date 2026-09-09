@@ -101,6 +101,17 @@ function toolDependencies() {
 }
 
 describe('bounded Retell post-call analysis', () => {
+  it('rejects a partially extended webhook export instead of treating it as complete', () => {
+    const partial = completeWebhook();
+    const custom = (partial.call as { call_analysis: { custom_analysis_data: Record<string, unknown> } })
+      .call_analysis.custom_analysis_data;
+    delete custom.pago_confirmado;
+    delete custom.pidio_humano;
+    delete custom.pidio_no_contactar;
+    delete custom.pregunto_si_es_ia;
+    expect(() => mapRetellLifecycleEvent(partial, callId)).toThrow();
+  });
+
   it('maps the complete 14-field analysis while discarding transcript and recording data', () => {
     const event = mapRetellLifecycleEvent(completeWebhook(), callId);
     expect(event.payload).toMatchObject({
@@ -132,6 +143,40 @@ describe('bounded Retell post-call analysis', () => {
       email_capturado: 'not-an-email',
     });
     expect(RetellLifecycleWebhookSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  it.each(['nivel_interes', 'objecion_principal'] as const)(
+    'rejects null for required complete enum field %s',
+    (field) => {
+      const invalid = completeWebhook({ [field]: null });
+      expect(RetellLifecycleWebhookSchema.safeParse(invalid).success).toBe(false);
+    },
+  );
+
+  it('preserves the real legacy export containing objecion_principal without requiring complete booleans', () => {
+    const legacy = completeWebhook() as unknown as {
+      call: {
+        call_analysis: {
+          custom_analysis_data: Record<string, unknown>;
+          user_sentiment?: string;
+        };
+      };
+    };
+    legacy.call.call_analysis.custom_analysis_data = {
+      resultado: 'seguimiento_agendado',
+      nivel_interes: 'medio',
+      objecion_principal: 'precio',
+    };
+    legacy.call.call_analysis.user_sentiment = undefined;
+    expect(RetellLifecycleWebhookSchema.safeParse(legacy).success).toBe(true);
+    expect(mapRetellLifecycleEvent(legacy, callId).payload).toMatchObject({
+      event_type: 'analyzed',
+      analysis: {
+        result: 'seguimiento_agendado',
+        nivel_interes: 'medio',
+        objecion: 'precio',
+      },
+    });
   });
 
   it('records the complete analysis from registrar_resultado using canonical event persistence', async () => {
@@ -235,5 +280,34 @@ describe('bounded Retell post-call analysis', () => {
       const response = await handleRetellToolRequest(signedRequest(body), 'registrar_resultado', deps);
       expect(response.status).toBe(200);
     }
+  });
+
+  it('rejects a partially extended registrar_resultado payload', async () => {
+    const deps = toolDependencies();
+    const response = await handleRetellToolRequest(signedRequest({
+      name: 'registrar_resultado',
+      call: {
+        call_id: providerCallId,
+        metadata: { internal_call_id: callId, contact_id: contactId, conversation_id: conversationId },
+      },
+      args: {
+        resultado: 'link_enviado_sin_pago',
+        call_summary: 'Resumen legacy real.',
+        email_capturado: 'lead@example.test',
+      },
+    }), 'registrar_resultado', deps);
+    expect(await response.json()).toEqual({ ok: false, error: { code: 'INVALID_TOOL_REQUEST' } });
+  });
+
+  it('gives webhook authority over the shared legacy analyzed identity without lexical ordering', () => {
+    const base = mapRetellLifecycleEvent(completeWebhook({
+      email_capturado: 'tool@example.test',
+    }), callId);
+    const legacy = { ...base, event_id: `retell:call_analyzed:${providerCallId}` };
+    const webhook = { ...base, event_id: `retell:webhook:call_analyzed:${providerCallId}`, payload: {
+      event_type: 'analyzed' as const,
+      analysis: { ...(base.payload as Extract<typeof base.payload, { event_type: 'analyzed' }>).analysis, email_capturado: 'webhook@example.test' },
+    } };
+    expect(mergeCallAnalyses([legacy, webhook]).email_capturado).toBe('webhook@example.test');
   });
 });
