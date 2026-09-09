@@ -831,22 +831,18 @@ run('Agent Loop preparation materialization', () => {
   // exactly one claimable row, flushed exactly once), and one for the
   // negative path (delivery reported failed -> never claimable).
   it('defers the lead projection until delivery is confirmed: no claimable row and no Sheets contact before a delivery report', async () => {
-    const seeded = await seedConversationForAgentTurn({ intake_complete: true });
+    const seeded = await seedConversationForAgentTurn({
+      intake_complete: true,
+      selected_offering_code: 'entrenamiento_funcional',
+    });
     // Unique per test run: lets a flush assertion below distinguish "nothing
     // was ever written for THIS lead" from "the shared disposable database
     // happens to have unrelated pending rows from other tests/prior runs".
     const spreadsheetId = `agent-loop-${randomUUID()}`;
     process.env.GOOGLE_SHEETS_SPREADSHEET_ID = spreadsheetId;
     process.env.GOOGLE_SHEETS_TAB_NAME = 'Leads';
-    const prepared = await prepareLeadProjectionToolV1({
-      db: sql,
-      turn_id: seeded.turn_id,
-      conversation_id: seeded.conversation_id,
-    });
-    expect(prepared.success).toBe(true);
-
-    const first = await commit(seeded, { preparation_ids: [prepared.preparation_id!] });
-    const replay = await commit(seeded, { preparation_ids: [prepared.preparation_id!] });
+    const first = await commit(seeded, { preparation_ids: [] });
+    const replay = await commit(seeded, { preparation_ids: [] });
     expect(replay).toEqual(first);
 
     // The outbound is still sitting `leased` (no delivery report was ever
@@ -876,18 +872,62 @@ run('Agent Loop preparation materialization', () => {
     expect(fake.calls.some((call) => call.spreadsheetId === spreadsheetId)).toBe(false);
   });
 
+  it('projects a complete lead after accepted delivery without a payment or lead-projection preparation', async () => {
+    const seeded = await seedConversationForAgentTurn({
+      intake_complete: true,
+      selected_offering_code: 'entrenamiento_funcional',
+    });
+    const spreadsheetId = `complete-lead-${randomUUID()}`;
+    process.env.GOOGLE_SHEETS_SPREADSHEET_ID = spreadsheetId;
+    process.env.GOOGLE_SHEETS_TAB_NAME = 'Leads';
+
+    const committed = await commit(seeded, { preparation_ids: [] });
+
+    await expect(sql<Array<{ id: string }>>`
+      SELECT id FROM sheet_projection_rows
+      WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
+    `).resolves.toHaveLength(0);
+
+    await recordDeliveryReport({
+      outbound_id: committed.outbound_id!,
+      trace_id: randomUUID(),
+      status: 'submitted_to_botpress',
+      botpress_message_id: `bp-${seeded.turn_id}`,
+      replayed: false,
+      error_code: null,
+      delivery_attempt: 1,
+    });
+
+    await expect(sql<Array<{ payload: Record<string, string> }>>`
+      SELECT payload FROM sheet_projection_rows
+      WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
+    `).resolves.toEqual([{
+      payload: {
+        nombre: 'Ana',
+        apellido: 'Pérez',
+        mail: expect.stringMatching(/^ana\..+@example\.test$/u),
+        tipo_de_curso: 'entrenamiento_funcional',
+      },
+    }]);
+
+    await expect(sql<Array<{ projections: number; payment_jobs: number }>>`
+      SELECT
+        (SELECT count(*)::int FROM sheet_projection_rows
+          WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}) AS projections,
+        (SELECT count(*)::int FROM payment_projection_jobs
+          WHERE decision_id = ${committed.decision_id}::uuid) AS payment_jobs
+    `).resolves.toEqual([{ projections: 1, payment_jobs: 0 }]);
+  });
+
   it('promotes the deferred lead to a claimable Sheets row once delivery is accepted, and flushes it exactly once', async () => {
-    const seeded = await seedConversationForAgentTurn({ intake_complete: true });
+    const seeded = await seedConversationForAgentTurn({
+      intake_complete: true,
+      selected_offering_code: 'entrenamiento_funcional',
+    });
     const spreadsheetId = `agent-loop-${randomUUID()}`;
     process.env.GOOGLE_SHEETS_SPREADSHEET_ID = spreadsheetId;
     process.env.GOOGLE_SHEETS_TAB_NAME = 'Leads';
-    const prepared = await prepareLeadProjectionToolV1({
-      db: sql,
-      turn_id: seeded.turn_id,
-      conversation_id: seeded.conversation_id,
-    });
-    expect(prepared.success).toBe(true);
-    const committed = await commit(seeded, { preparation_ids: [prepared.preparation_id!] });
+    const committed = await commit(seeded, { preparation_ids: [] });
 
     // Before delivery: nothing claimable yet (same guarantee as the previous test).
     await expect(sql<Array<{ id: string }>>`
@@ -897,8 +937,7 @@ run('Agent Loop preparation materialization', () => {
 
     // `submitted_to_botpress` means the channel ACCEPTED the message, not that
     // the customer has seen it — the strongest proof available for the
-    // Telegram sandbox, which emits no delivery receipt. That is the bar this
-    // gate uses, and the row is honest about it (`ultima_senal` below).
+    // Telegram sandbox, which emits no delivery receipt.
     await recordDeliveryReport({
       outbound_id: committed.outbound_id!,
       trace_id: randomUUID(),
@@ -926,7 +965,12 @@ run('Agent Loop preparation materialization', () => {
       projection_key: `lead:${seeded.workspace_id}:${seeded.contact_id}`,
       state: 'pending',
       attempt_count: 0,
-      payload: { contact_id: seeded.contact_id, ultima_senal: 'agent_loop_lead_committed' },
+      payload: {
+        nombre: 'Ana',
+        apellido: 'Pérez',
+        mail: expect.stringMatching(/^ana\..+@example\.test$/u),
+        tipo_de_curso: 'entrenamiento_funcional',
+      },
     });
     const ourRowNumber = rows[0]!.row_number;
 
@@ -967,17 +1011,14 @@ run('Agent Loop preparation materialization', () => {
   });
 
   it('never makes the lead claimable when the channel reports delivery failed', async () => {
-    const seeded = await seedConversationForAgentTurn({ intake_complete: true });
+    const seeded = await seedConversationForAgentTurn({
+      intake_complete: true,
+      selected_offering_code: 'entrenamiento_funcional',
+    });
     const spreadsheetId = `agent-loop-${randomUUID()}`;
     process.env.GOOGLE_SHEETS_SPREADSHEET_ID = spreadsheetId;
     process.env.GOOGLE_SHEETS_TAB_NAME = 'Leads';
-    const prepared = await prepareLeadProjectionToolV1({
-      db: sql,
-      turn_id: seeded.turn_id,
-      conversation_id: seeded.conversation_id,
-    });
-    expect(prepared.success).toBe(true);
-    const committed = await commit(seeded, { preparation_ids: [prepared.preparation_id!] });
+    const committed = await commit(seeded, { preparation_ids: [] });
 
     await recordDeliveryReport({
       outbound_id: committed.outbound_id!,

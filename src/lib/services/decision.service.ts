@@ -2220,6 +2220,7 @@ async function enqueuePaymentLinkSentProjection(
     callId: '',
     traceId: signal.traceId,
   }, { sql: db });
+  if (!projection) return 'skipped';
   return projection.changed ? 'repaired' : 'unchanged';
 }
 

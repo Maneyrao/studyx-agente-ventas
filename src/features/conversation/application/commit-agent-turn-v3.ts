@@ -1177,28 +1177,35 @@ export async function commitAgentTurnV3(
     // delivered (decision.service.ts) — the existing "gate on delivery"
     // mechanism, not a new parallel scheduler.
     let pendingLeadProjection: LeadProjectionInput | null = null;
-    if (committedLeads.length > 0) {
+    const names = projectedContact.name ? splitFullName(projectedContact.name) : null;
+    const selectedCourse = input.decision.state_patch.set.selected_offering_code
+      ?? context.selected_offering_code;
+    if (
+      names?.nombre?.trim()
+      && names.apellido?.trim()
+      && projectedContact.email?.trim()
+      && selectedCourse?.trim()
+    ) {
       const sheets = loadSheetsProjectionConfig();
-      if (!sheets) throw new Error('AGENT_TURN_V3_LEAD_PROJECTION_CONFIG_MISSING');
-      const names = projectedContact.name ? splitFullName(projectedContact.name) : null;
-      pendingLeadProjection = {
-        workspaceId: context.workspace_id,
-        contactId: context.contact_id,
-        spreadsheetId: sheets.spreadsheetId,
-        tabName: sheets.tabName,
-        telefono: projectedContact.declared_phone ?? context.destination,
-        nombre: names?.nombre,
-        apellido: names?.apellido,
-        email: projectedContact.email ?? undefined,
-        etapaComercial: input.decision.state_patch.set.stage ?? context.stage,
-        cursoInteres: input.decision.state_patch.set.selected_offering_code
-          ?? context.selected_offering_code ?? undefined,
-        plan: input.decision.state_patch.set.selected_payment_plan
-          ?? context.selected_payment_plan ?? undefined,
-        callId: committedCallId ?? undefined,
-        ultimaSenal: 'agent_loop_lead_committed',
-        traceId: input.trace_id,
-      };
+      if (sheets) {
+        pendingLeadProjection = {
+          workspaceId: context.workspace_id,
+          contactId: context.contact_id,
+          spreadsheetId: sheets.spreadsheetId,
+          tabName: sheets.tabName,
+          telefono: projectedContact.declared_phone ?? context.destination,
+          nombre: names.nombre,
+          apellido: names.apellido,
+          email: projectedContact.email,
+          etapaComercial: input.decision.state_patch.set.stage ?? context.stage,
+          cursoInteres: selectedCourse,
+          plan: input.decision.state_patch.set.selected_payment_plan
+            ?? context.selected_payment_plan ?? undefined,
+          callId: committedCallId ?? undefined,
+          ultimaSenal: 'agent_loop_lead_committed',
+          traceId: input.trace_id,
+        };
+      }
     }
 
     const authorizedUrls = committedPayment.map((artifact) => artifact.url);

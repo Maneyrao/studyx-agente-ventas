@@ -31,7 +31,6 @@ export { leadProjectionKey };
  * transaction.
  */
 
-const DEFAULT_ESTADO_ALTA = 'pendiente_operador';
 const MAX_ROW_RESERVE_ATTEMPTS = 8;
 const MAX_BACKOFF_SECONDS = 3600;
 const MAX_BATCH_SIZE = 10;
@@ -46,21 +45,18 @@ export interface LeadProjectionInput {
   contactId: string;
   spreadsheetId: string;
   tabName: string;
-  telefono: string;
+  /** Retained for existing call sites; not part of the visible Sheet row. */
+  telefono?: string;
   /**
-   * Optional: an event that doesn't carry identity data (e.g. a bare
-   * `payment_link_sent` update) omits these, and the merge below must not
-   * blank out whatever a previous event already projected for this same
-   * contact_id.
+   * Canonical application names remain compatible with the existing callers.
+   * They are persisted as `nombre`, `apellido`, and visible `mail`.
    */
   nombre?: string;
   apellido?: string;
   email?: string;
   /**
-   * Commercial fields are optional for the same merge reason: an
-   * identity-only refresh (customer volunteered name/email after the link
-   * was already projected) must never blank out the commercial state a
-   * previous `payment_link_sent` event wrote for this contact_id.
+   * `cursoInteres` is persisted as visible `tipo_de_curso`. The remaining
+   * fields are retained for existing callers but are never written to Sheets.
    */
   etapaComercial?: string;
   cursoInteres?: string;
@@ -78,29 +74,32 @@ export interface EnqueueLeadProjectionResult {
   changed: boolean;
 }
 
+export type EnqueueCompleteLeadProjectionResult = EnqueueLeadProjectionResult | null;
+
 interface ExistingRow {
   id: string;
   row_number: number;
-  payload: Partial<SheetRowValues>;
+  payload: Partial<SheetRowValues> & {
+    /** Read only so an existing row converges to the A:D contract on correction. */
+    email?: string;
+    curso_interes?: string;
+  };
 }
 
 function backoffSeconds(attemptCount: number): number {
   return Math.min(MAX_BACKOFF_SECONDS, 30 * 2 ** Math.max(0, attemptCount - 1));
 }
 
+function isCompleteLead(values: SheetRowValues): boolean {
+  return Object.values(values).every((value) => value.trim().length > 0);
+}
+
 /**
  * Idempotent upsert of the single outbox row for one lead.
  *
- * `estado_alta` is only ever defaulted to 'pendiente_operador' the first
- * time a projection_key is seen; every later call preserves whatever value
- * currently sits in the row (in particular a human-set
- * 'hecha_por_operador'), so a new commercial signal can never clobber an
- * operator's manual mark. `fecha_alta` is likewise fixed at first insert.
- *
- * `nombre`/`apellido`/`email` are optional per call: an event that omits one
- * (e.g. a bare `payment_link_sent` update) falls back to whatever value the
- * row already carries, so a partial later event can never blank out an
- * identity a previous event projected for the same `contact_id`.
+ * The persisted payload is deliberately the four visible A:D values only.
+ * Optional canonical input values merge with the existing row so a later
+ * correction updates the same row without erasing another captured value.
  *
  * `row_number` is reserved once, on first insert, as
  * `MAX(row_number in this spreadsheet+tab) + 1`; a concurrent first insert
@@ -111,7 +110,7 @@ function backoffSeconds(attemptCount: number): number {
 export async function enqueueLeadProjection(
   input: LeadProjectionInput,
   deps: { sql?: DbClient } = {},
-): Promise<EnqueueLeadProjectionResult> {
+): Promise<EnqueueCompleteLeadProjectionResult> {
   const sql = deps.sql ?? orchestratorSql;
   const projectionKey = leadProjectionKey(input.workspaceId, input.contactId);
 
@@ -124,25 +123,15 @@ export async function enqueueLeadProjection(
     const existing = existingRows[0];
 
     const values: SheetRowValues = {
-      fecha_alta: existing?.payload.fecha_alta ?? new Date().toISOString().slice(0, 10),
-      contact_id: input.contactId,
-      // Identity fields are optional per event: an event that omits them
-      // (e.g. a bare payment update) must not blank out an identity a prior
-      // event already projected for this same contact_id.
       nombre: input.nombre ?? existing?.payload.nombre ?? '',
       apellido: input.apellido ?? existing?.payload.apellido ?? '',
-      email: input.email ?? existing?.payload.email ?? '',
-      telefono: input.telefono,
-      etapa_comercial: input.etapaComercial ?? existing?.payload.etapa_comercial ?? '',
-      curso_interes: input.cursoInteres ?? existing?.payload.curso_interes ?? '',
-      plan: input.plan ?? existing?.payload.plan ?? '',
-      estado_pago: input.estadoPago ?? existing?.payload.estado_pago ?? '',
-      fecha_pago: input.fechaPago ?? existing?.payload.fecha_pago ?? '',
-      estado_alta: existing?.payload.estado_alta ?? DEFAULT_ESTADO_ALTA,
-      call_id: input.callId ?? existing?.payload.call_id ?? '',
-      ultima_senal: input.ultimaSenal,
-      trace_id: input.traceId,
+      mail: input.email ?? existing?.payload.mail ?? existing?.payload.email ?? '',
+      tipo_de_curso: input.cursoInteres
+        ?? existing?.payload.tipo_de_curso
+        ?? existing?.payload.curso_interes
+        ?? '',
     };
+    if (!isCompleteLead(values)) return null;
     const payloadHash = sha256Hex(values);
 
     if (existing) {
@@ -285,12 +274,18 @@ export interface FlushSheetProjectionsResult {
 interface ClaimedRow {
   id: string;
   workspace_id: string;
+  projection_key: string;
   spreadsheet_id: string;
   tab_name: string;
   row_number: number;
   payload: SheetRowValues;
   attempt_count: number;
   max_attempts: number;
+}
+
+function contactIdFromLeadProjectionKey(projectionKey: string): string {
+  const [, workspaceId, contactId] = projectionKey.split(':');
+  return workspaceId && contactId ? contactId : '';
 }
 
 export interface FlushSheetProjectionsDeps {
@@ -334,7 +329,7 @@ export async function flushSheetProjections(
     let rows: ClaimedRow[];
     try {
       rows = await runDeadlineQuery(deadline, 'claim-sheet-projection', () => sql<ClaimedRow[]>`
-        SELECT id, workspace_id, spreadsheet_id, tab_name, row_number, payload, attempt_count, max_attempts
+        SELECT id, workspace_id, projection_key, spreadsheet_id, tab_name, row_number, payload, attempt_count, max_attempts
         FROM claim_sheet_projection_rows(${input.worker_id}, 1, ${leaseSeconds})
       `);
     } catch (error) {
@@ -354,7 +349,7 @@ export async function flushSheetProjections(
         spreadsheetId: row.spreadsheet_id,
         tabName: row.tab_name,
         rowNumber: row.row_number,
-        contactId: row.payload.contact_id ?? '',
+        contactId: contactIdFromLeadProjectionKey(row.projection_key),
         values: row.payload,
       }));
 

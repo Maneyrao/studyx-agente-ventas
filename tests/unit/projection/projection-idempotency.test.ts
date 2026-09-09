@@ -67,10 +67,9 @@ function leadInput(
     spreadsheetId,
     tabName: TAB_NAME,
     telefono: '+5491100000000',
-    // nombre/apellido/email are intentionally NOT defaulted here: they are
-    // optional per event, and tests that care about the preserve-on-omit
-    // merge semantics must pass them explicitly via `overrides` to simulate
-    // an event that does or doesn't carry identity data.
+    nombre: 'Ada',
+    apellido: 'Lovelace',
+    email: 'ada@example.com',
     etapaComercial: 'proposal',
     cursoInteres: 'reparacion-celulares',
     plan: 'monthly_12',
@@ -117,6 +116,44 @@ async function drainPending() {
 }
 
 run('sheet projection idempotency', () => {
+  it('does not create an outbox row until all four visible lead values are complete', async () => {
+    const workspaceId = await workspaceFixture();
+    const spreadsheetId = randomUUID();
+    const contactId = await contactFixture();
+
+    await enqueueLeadProjection(
+      leadInput(workspaceId, contactId, spreadsheetId, { apellido: '' }),
+      { sql: db! },
+    );
+
+    await expect(outboxRowsFor(spreadsheetId, TAB_NAME)).resolves.toHaveLength(0);
+  });
+
+  it('stores only the four visible complete-lead values in the exact Sheets order', async () => {
+    const workspaceId = await workspaceFixture();
+    const spreadsheetId = randomUUID();
+    const contactId = await contactFixture();
+
+    await enqueueLeadProjection(
+      leadInput(workspaceId, contactId, spreadsheetId, {
+        nombre: 'Ada',
+        apellido: 'Lovelace',
+        email: 'ada@example.com',
+        cursoInteres: 'programacion',
+      }),
+      { sql: db! },
+    );
+
+    const rows = await outboxRowsFor(spreadsheetId, TAB_NAME);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].payload).toEqual({
+      nombre: 'Ada',
+      apellido: 'Lovelace',
+      mail: 'ada@example.com',
+      tipo_de_curso: 'programacion',
+    });
+  });
+
   it('replaying enqueue 10x for the same lead keeps a single outbox row and a single sheet row', async () => {
     // A prior run of this same suite against the same disposable DB can
     // leave enqueue-only tests' rows pending (e.g. "two different contact_ids
@@ -156,38 +193,34 @@ run('sheet projection idempotency', () => {
     const a = await enqueueLeadProjection(leadInput(workspaceId, contactA, spreadsheetId), { sql: db! });
     const b = await enqueueLeadProjection(leadInput(workspaceId, contactB, spreadsheetId), { sql: db! });
 
-    expect(a.rowNumber).not.toBe(b.rowNumber);
+    expect(a!.rowNumber).not.toBe(b!.rowNumber);
     const rows = await outboxRowsFor(spreadsheetId, TAB_NAME);
     expect(rows).toHaveLength(2);
   });
 
-  it('preserves a human-set estado_alta=hecha_por_operador across later re-projections', async () => {
+  it('updates a correction on the same stable row without widening the payload', async () => {
     const workspaceId = await workspaceFixture();
     const spreadsheetId = randomUUID();
     const contactId = await contactFixture();
 
     const first = await enqueueLeadProjection(leadInput(workspaceId, contactId, spreadsheetId), { sql: db! });
-    // Simulates an operator marking the row done: the row's last-known state
-    // (our outbox payload) is what a later re-projection reads back from.
-    await db!`
-      UPDATE sheet_projection_rows
-      SET payload = jsonb_set(payload, '{estado_alta}', '"hecha_por_operador"')
-      WHERE id = ${first.id}
-    `;
-
-    // A new commercial signal re-projects the same row.
     await enqueueLeadProjection(
       leadInput(workspaceId, contactId, spreadsheetId, {
-        etapaComercial: 'hot_lead',
-        ultimaSenal: 'mark_hot_lead',
+        apellido: 'Byron',
+        cursoInteres: 'matematicas',
       }),
       { sql: db! },
     );
 
     const rows = await outboxRowsFor(spreadsheetId, TAB_NAME);
     expect(rows).toHaveLength(1);
-    expect(rows[0].payload.estado_alta).toBe('hecha_por_operador');
-    expect(rows[0].payload.etapa_comercial).toBe('hot_lead');
+    expect(rows[0].id).toBe(first!.id);
+    expect(rows[0].payload).toEqual({
+      nombre: 'Ada',
+      apellido: 'Byron',
+      mail: 'ada@example.com',
+      tipo_de_curso: 'matematicas',
+    });
   });
 
   it('a provider timeout during flush leaves the outbox row retryable with an incremented attempt count', async () => {
@@ -229,7 +262,7 @@ run('sheet projection idempotency', () => {
     expect(finalRows[0].attempt_count).toBe(2);
   });
 
-  it('projects nombre/apellido/email into their own columns in the 15-column order', async () => {
+  it('projects nombre, apellido, mail and tipo_de_curso into A:D order', async () => {
     // Isolate this flush from any pending row another test in this file left
     // behind (claim_sheet_projection_rows claims globally, not per-spreadsheet).
     await drainPending();
@@ -254,17 +287,10 @@ run('sheet projection idempotency', () => {
     const written = provider.rowAt(spreadsheetId, TAB_NAME, rows[0].row_number);
     expect(written).toBeDefined();
 
-    // The 15-column contract order (docs/contracts/agent-a-operational-mvp.md §5):
-    // fecha_alta | contact_id | nombre | apellido | email | telefono | ...
-    expect(SHEET_COLUMN_ORDER.indexOf('nombre')).toBe(2);
-    expect(SHEET_COLUMN_ORDER.indexOf('apellido')).toBe(3);
-    expect(SHEET_COLUMN_ORDER.indexOf('email')).toBe(4);
+    expect(SHEET_COLUMN_ORDER).toEqual(['nombre', 'apellido', 'mail', 'tipo_de_curso']);
 
     const rowArray = SHEET_COLUMN_ORDER.map((column) => written!.values[column]);
-    expect(rowArray).toHaveLength(15);
-    expect(rowArray[2]).toBe('Ada');
-    expect(rowArray[3]).toBe('Lovelace');
-    expect(rowArray[4]).toBe('ada@example.com');
+    expect(rowArray).toEqual(['Ada', 'Lovelace', 'ada@example.com', 'reparacion-celulares']);
   });
 
   it('mixed events (replays plus a later identity-less payment update) stay on one row and never erase a previously projected identity', async () => {
@@ -302,11 +328,11 @@ run('sheet projection idempotency', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].payload.nombre).toBe('Ada');
     expect(rows[0].payload.apellido).toBe('Lovelace');
-    expect(rows[0].payload.email).toBe('ada@example.com');
-    expect(rows[0].payload.etapa_comercial).toBe('proposal');
-    expect(rows[0].payload.estado_pago).toBe('pendiente');
-    expect(rows[0].payload.plan).toBe('monthly_12');
-    expect(rows[0].payload.ultima_senal).toBe('payment_link_sent');
+    expect(rows[0].payload.mail).toBe('ada@example.com');
+    expect(rows[0].payload.tipo_de_curso).toBe('reparacion-celulares');
+    expect(Object.keys(rows[0].payload).sort()).toEqual([
+      'apellido', 'mail', 'nombre', 'tipo_de_curso',
+    ]);
 
     const provider = new FakeSheetsProvider();
     const result = await flushSheetProjections({ worker_id: 'w-mixed', limit: 5 }, { sql: db!, provider });
@@ -315,7 +341,7 @@ run('sheet projection idempotency', () => {
     const written = provider.rowAt(spreadsheetId, TAB_NAME, rows[0].row_number);
     expect(written?.values.nombre).toBe('Ada');
     expect(written?.values.apellido).toBe('Lovelace');
-    expect(written?.values.email).toBe('ada@example.com');
+    expect(written?.values.mail).toBe('ada@example.com');
   });
 
   it('two different contact_ids never share a row even with identical identity fields', async () => {
@@ -328,9 +354,12 @@ run('sheet projection idempotency', () => {
     const a = await enqueueLeadProjection(leadInput(workspaceId, contactA, spreadsheetId, shared), { sql: db! });
     const b = await enqueueLeadProjection(leadInput(workspaceId, contactB, spreadsheetId, shared), { sql: db! });
 
-    expect(a.rowNumber).not.toBe(b.rowNumber);
+    expect(a!.rowNumber).not.toBe(b!.rowNumber);
     const rows = await outboxRowsFor(spreadsheetId, TAB_NAME);
     expect(rows).toHaveLength(2);
-    expect(rows.map((row) => row.payload.contact_id).sort()).toEqual([contactA, contactB].sort());
+    expect(rows.map((row) => row.projection_key).sort()).toEqual([
+      leadProjectionKey(workspaceId, contactA),
+      leadProjectionKey(workspaceId, contactB),
+    ].sort());
   });
 });
