@@ -151,7 +151,7 @@ Migración aplicada exitosamente en `postgresql://postgres@127.0.0.1:55435/study
 
 ```text
 Unit focal: 8 files passed, 114 tests passed
-PostgreSQL focal: 4 files passed, 30 tests passed
+PostgreSQL focal: 4 files passed, 31 tests passed
 npm run typecheck: passed
 npm run lint: passed
 git diff --check: passed

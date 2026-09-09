@@ -396,6 +396,77 @@ run('Retell P0 tools with PostgreSQL', () => {
     },
   );
 
+  it('binds a legacy NULL workspace once before tool authorization and rejects rebinding', async () => {
+    const configured = await fixture({ name: 'Legacy Persona', email: 'legacy@example.test' });
+    const phone = `+54911${randomUUID().replace(/\D/gu, '').padEnd(8, '2').slice(0, 8)}`;
+    const contact = await db!<Array<{ id: string }>>`
+      INSERT INTO contacts (phone, channel_origin) VALUES (${phone}, 'whatsapp') RETURNING id
+    `;
+    const conversation = await db!<Array<{ id: string }>>`
+      INSERT INTO conversations (contact_id, channel) VALUES (${contact[0].id}::uuid, 'whatsapp') RETURNING id
+    `;
+    await db!`
+      INSERT INTO workspace_contacts (workspace_id, contact_id)
+      VALUES (${configured.workspaceId}::uuid, ${contact[0].id}::uuid)
+    `;
+    const message = await db!<Array<{ id: string }>>`
+      INSERT INTO messages (conversation_id, contact_id, direction, content)
+      VALUES (${conversation[0].id}::uuid, ${contact[0].id}::uuid, 'inbound', 'Llamame')
+      RETURNING id
+    `;
+    const callId = randomUUID();
+    const providerCallId = `retell:legacy:${randomUUID()}`;
+    const context = {
+      call_id: callId,
+      nombre_lead: 'Legacy Persona',
+      curso_interes: 'reparacion_celulares',
+      pais: '',
+      email_lead: 'legacy@example.test',
+      resumen_whatsapp: 'Legacy call.',
+      prompt_version: 'agent-b-v1',
+    };
+    // No state exists at INSERT time, so the database trigger must retain NULL.
+    await db!`
+      INSERT INTO call_sessions (
+        id, source_turn_id, contact_id, conversation_id, provider, provider_call_id,
+        request_idempotency_key, status, consent_source_message_id, context_snapshot,
+        context_hash, prompt_version
+      ) VALUES (
+        ${callId}::uuid, ${message[0].id}::uuid, ${contact[0].id}::uuid,
+        ${conversation[0].id}::uuid, 'retell', ${providerCallId}, ${`voice-call:${callId}`},
+        'provider_accepted', ${message[0].id}::uuid, ${db!.json(context)},
+        decode(${hashCallContext(context)}, 'hex'), 'agent-b-v1'
+      )
+    `;
+    await db!`
+      INSERT INTO conversation_sales_context_states_v1 (workspace_id, conversation_id, contact_id)
+      VALUES (${configured.workspaceId}::uuid, ${conversation[0].id}::uuid, ${contact[0].id}::uuid)
+    `;
+
+    await expect(new PostgresCallStore(db!).resolveRetellToolCall({
+      providerCallId,
+      metadata: {
+        internalCallId: callId,
+        contactId: contact[0].id,
+        conversationId: conversation[0].id,
+      },
+      workspaceSlug: configured.workspaceSlug,
+    })).resolves.toEqual({ callId });
+    await expect(db!<Array<{ workspace_id: string | null }>>`
+      SELECT workspace_id FROM call_sessions WHERE id = ${callId}::uuid
+    `).resolves.toEqual([{ workspace_id: configured.workspaceId }]);
+
+    const otherWorkspace = await db!<Array<{ id: string }>>`
+      INSERT INTO workspaces (slug, display_name, metadata)
+      VALUES (${`legacy-other-${randomUUID()}`}, 'Other', ${db!.json({})})
+      RETURNING id
+    `;
+    await expect(db!`
+      UPDATE call_sessions SET workspace_id = ${otherWorkspace[0].id}::uuid
+      WHERE id = ${callId}::uuid
+    `).rejects.toThrow(/immutable|check constraint/iu);
+  });
+
   it('serializes different-contact first projections so both contact transactions commit', async () => {
     const first = await fixture({ name: 'Ana López', email: 'ana@example.test' });
     const second = await fixture({ name: 'Beto Pérez', email: 'beto@example.test' });
