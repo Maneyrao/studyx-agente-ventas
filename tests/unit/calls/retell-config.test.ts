@@ -15,8 +15,7 @@ const complete = {
   RETELL_LLM_ID: 'llm_eea8f670b6569b44689e9394b150',
   RETELL_LLM_VERSION: '0',
   RETELL_ADVISOR_NAME: 'Sofía',
-  RETELL_TOOL_SECRET: 'tool-secret',
-  RETELL_WEBHOOK_SIGNATURE_KEY: 'webhook-signature-key',
+  RETELL_TOOLS_SECRET: 'tools-secret',
   RETELL_REQUEST_TIMEOUT_MS: '4500',
 } satisfies Readonly<Record<string, string | undefined>>;
 
@@ -32,10 +31,25 @@ describe('loadRetellVoiceConfig', () => {
       llmId: 'llm_eea8f670b6569b44689e9394b150',
       llmVersion: 0,
       advisorName: 'Sofía',
-      toolSecret: 'tool-secret',
-      webhookSignatureKey: 'webhook-signature-key',
+      toolsSecret: 'tools-secret',
       requestTimeoutMs: 4500,
     });
+  });
+
+  it('uses apiKey for future webhook verification and requires only the approved names', () => {
+    const loaded = loadRetellVoiceConfig(complete);
+    expect(loaded.apiKey).toBe('retell-api-key');
+    expect(RETELL_REQUIRED_ENVIRONMENT).toEqual([
+      'RETELL_API_KEY',
+      'RETELL_FROM_NUMBER',
+      'RETELL_API_BASE_URL',
+      'RETELL_AGENT_ID',
+      'RETELL_AGENT_VERSION',
+      'RETELL_LLM_ID',
+      'RETELL_LLM_VERSION',
+      'RETELL_ADVISOR_NAME',
+      'RETELL_TOOLS_SECRET',
+    ]);
   });
 
   it.each(RETELL_REQUIRED_ENVIRONMENT)('fails by variable name when %s is absent', (missing) => {

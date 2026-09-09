@@ -121,7 +121,11 @@ export class RetellVoiceProvider implements VoiceProvider {
     }
 
     const payload = record(await this.json(response));
-    if (!payload || !Array.isArray(payload.items)) {
+    if (
+      !payload
+      || !Array.isArray(payload.items)
+      || typeof payload.has_more !== 'boolean'
+    ) {
       throw new AmbiguousVoiceProviderError('RETELL_LOOKUP_RESPONSE_MALFORMED');
     }
     const matches = payload.items.flatMap((item) => {
@@ -133,10 +137,10 @@ export class RetellVoiceProvider implements VoiceProvider {
         ? [call.call_id]
         : [];
     });
-    if (matches.length === 0 && payload.has_more !== true) return null;
-    if (matches.length !== 1 || payload.has_more === true) {
+    if (payload.has_more || matches.length > 1) {
       throw new AmbiguousVoiceProviderError('RETELL_LOOKUP_NOT_UNIQUE');
     }
+    if (matches.length === 0) return null;
     return { providerCallId: matches[0] };
   }
 

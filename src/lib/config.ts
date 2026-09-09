@@ -288,8 +288,7 @@ export const RETELL_REQUIRED_ENVIRONMENT = [
   'RETELL_LLM_ID',
   'RETELL_LLM_VERSION',
   'RETELL_ADVISOR_NAME',
-  'RETELL_TOOL_SECRET',
-  'RETELL_WEBHOOK_SIGNATURE_KEY',
+  'RETELL_TOOLS_SECRET',
 ] as const;
 
 export type RetellVoiceConfig = {
@@ -302,8 +301,7 @@ export type RetellVoiceConfig = {
   llmId: string;
   llmVersion: number;
   advisorName: string;
-  toolSecret: string;
-  webhookSignatureKey: string;
+  toolsSecret: string;
   requestTimeoutMs: number;
 };
 
@@ -370,8 +368,7 @@ export function loadRetellVoiceConfig(
     llmId,
     llmVersion: retellInteger(environment, 'RETELL_LLM_VERSION'),
     advisorName: environment.RETELL_ADVISOR_NAME!.trim(),
-    toolSecret: environment.RETELL_TOOL_SECRET!.trim(),
-    webhookSignatureKey: environment.RETELL_WEBHOOK_SIGNATURE_KEY!.trim(),
+    toolsSecret: environment.RETELL_TOOLS_SECRET!.trim(),
     requestTimeoutMs: parsePositiveInt(environment.RETELL_REQUEST_TIMEOUT_MS, 5_000),
   };
 }

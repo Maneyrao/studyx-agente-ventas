@@ -18,8 +18,7 @@ const config: RetellVoiceConfig = {
   llmId: 'llm_eea8f670b6569b44689e9394b150',
   llmVersion: 0,
   advisorName: 'Sofía',
-  toolSecret: 'test-tool-secret',
-  webhookSignatureKey: 'test-webhook-key',
+  toolsSecret: 'test-tools-secret',
   requestTimeoutMs: 1000,
 };
 
@@ -174,6 +173,17 @@ describe('RetellVoiceProvider.findCallByInternalId', () => {
   it('returns null for zero exact metadata matches', async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => json({ has_more: false, items: [] }));
     await expect(provider(fetchImpl).findCallByInternalId(randomUUID())).resolves.toBeNull();
+  });
+
+  it.each([
+    ['missing', { items: [] }],
+    ['non-Boolean', { has_more: 'false', items: [] }],
+    ['true', { has_more: true, items: [] }],
+  ])('keeps a %s has_more response ambiguous', async (_name, responseBody) => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => json(responseBody));
+    await expect(provider(fetchImpl).findCallByInternalId(randomUUID()))
+      .rejects.toBeInstanceOf(AmbiguousVoiceProviderError);
+    expect(fetchImpl).toHaveBeenCalledOnce();
   });
 
   it('rejects multiple exact metadata matches as ambiguous', async () => {
