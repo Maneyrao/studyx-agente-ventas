@@ -45,7 +45,10 @@ export interface RetellOrchestrationStore {
     readonly contactId: string;
     readonly workspaceSlug: string;
     readonly reference?: string;
-  }): Promise<{ readonly state: string }>;
+  }): Promise<
+    | { readonly found: true; readonly state: string }
+    | { readonly found: false; readonly reason?: string }
+  >;
   sendMaterial(input: {
     readonly callId: string;
     readonly contactId: string;
@@ -68,7 +71,14 @@ export interface RetellOrchestrationStore {
     readonly whenText: string;
     readonly channel: 'llamada' | 'whatsapp';
     readonly reason: string;
-  }): Promise<{ readonly requestId: string; readonly scheduledAt: string | null; readonly needsResolution: boolean }>;
+  }): Promise<{
+    readonly requestId: string;
+    readonly scheduledAt: string | null;
+    readonly needsResolution: boolean;
+    readonly whenText: string;
+    readonly channel: 'llamada' | 'whatsapp';
+    readonly reason: string;
+  }>;
 }
 
 export interface RetellContactToolStore {
@@ -178,7 +188,7 @@ const ToolArgsSchemas = {
     urgencia: z.enum(['alta', 'normal']).optional(),
   }).strict(),
   agendar_seguimiento: z.object({
-    cuando: z.string().trim().min(1).max(512),
+    cuando: z.string().max(512).refine((value) => value.trim().length > 0),
     canal: z.enum(['llamada', 'whatsapp']),
     motivo: z.string().trim().min(1).max(2_048),
   }).strict(),
@@ -486,6 +496,7 @@ async function runOrchestrationTool(
       ...common,
       ...(args.referencia_pago === undefined ? {} : { reference: args.referencia_pago }),
     });
+    if (!result.found) return resultError(result.reason ?? 'PAYMENT_NOT_FOUND');
     return Response.json({ ok: true, pago: { estado: result.state } });
   }
   if (envelope.name === 'enviar_material') {
@@ -524,9 +535,9 @@ async function runOrchestrationTool(
     seguimiento: {
       agendado: result.scheduledAt !== null && !result.needsResolution,
       referencia: result.requestId,
-      cuando: args.cuando,
-      canal: args.canal,
-      motivo: args.motivo,
+      cuando: result.whenText,
+      canal: result.channel,
+      motivo: result.reason,
       needs_resolution: result.needsResolution,
       ...(result.scheduledAt === null ? {} : { programado_para: result.scheduledAt }),
     },

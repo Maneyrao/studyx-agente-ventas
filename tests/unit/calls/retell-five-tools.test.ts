@@ -7,7 +7,11 @@ import {
 } from '@/features/calls/application/retell-tools';
 import type { CallStore } from '@/features/calls/ports/call-store';
 import type { RetellToolCallCorrelationStore } from '@/features/calls/ports/retell-call-correlation-store';
-import { resolveRetellFollowupTimestamp } from '@/features/calls/adapters/postgres-retell-orchestration-store';
+import {
+  buildRetellMaterialAuthorization,
+  resolveRetellFollowupTimestamp,
+  retellPaymentPlanIsSupported,
+} from '@/features/calls/adapters/postgres-retell-orchestration-store';
 
 const apiKey = 'five-tools-api-key';
 const toolsSecret = 'five-tools-secret';
@@ -59,11 +63,12 @@ function dependencies(overrides: Partial<RetellOrchestrationStore> = {}) {
   } satisfies CallStore & RetellToolCallCorrelationStore;
   const orchestration: RetellOrchestrationStore = {
     createPaymentLink: vi.fn(async () => ({ sent: true, reference: 'pay_1' })),
-    verifyPayment: vi.fn(async () => ({ state: 'paid' })),
+    verifyPayment: vi.fn(async () => ({ found: true as const, state: 'paid' })),
     sendMaterial: vi.fn(async () => ({ sent: true, reference: 'delivery_1' })),
     requestHumanHandoff: vi.fn(async () => ({ requestId: 'handoff_1', available: null })),
     scheduleFollowup: vi.fn(async () => ({
       requestId: 'followup_1', scheduledAt: null, needsResolution: true,
+      whenText: 'el lunes por la mañana', channel: 'whatsapp' as const, reason: 'Lo habla con su pareja',
     })),
     ...overrides,
   };
@@ -92,6 +97,31 @@ describe('remaining Retell orchestration tools', () => {
     expect(resolveRetellFollowupTimestamp('2026-09-10T15:30:00-03:00')).toBe('2026-09-10T18:30:00.000Z');
     expect(resolveRetellFollowupTimestamp('el lunes por la mañana')).toBeNull();
     expect(resolveRetellFollowupTimestamp('2026-09-10T15:30:00')).toBeNull();
+    expect(resolveRetellFollowupTimestamp('2026-02-30T15:30:00-03:00')).toBeNull();
+    expect(resolveRetellFollowupTimestamp('2026-04-31T15:30:00-03:00')).toBeNull();
+  });
+
+  it('requires canonical checkout mode and billing interval to match the requested plan', () => {
+    expect(retellPaymentPlanIsSupported('contado', 'payment', 'one_time')).toBe(true);
+    expect(retellPaymentPlanIsSupported('contado', 'subscription', 'monthly')).toBe(false);
+    expect(retellPaymentPlanIsSupported('cuotas', 'subscription', 'monthly')).toBe(true);
+    expect(retellPaymentPlanIsSupported('cuotas', 'payment', 'one_time')).toBe(false);
+    expect(retellPaymentPlanIsSupported('cuotas', 'subscription', 'one_time')).toBe(false);
+  });
+
+  it('authorizes only exact sanitized canonical material URLs/facts', () => {
+    const approved = buildRetellMaterialAuthorization(
+      'Temario oficial: modalidad online. Ver https://studyx.example/temario',
+      {
+        authorized_urls: ['https://studyx.example/temario'],
+        protected_facts: [{ kind: 'modality', value: 'online' }],
+      },
+    );
+    expect(approved).not.toBeNull();
+    expect(buildRetellMaterialAuthorization(
+      'Temario oficial. Ver https://evil.example/steal',
+      { authorized_urls: [], protected_facts: [] },
+    )).toBeNull();
   });
 
   it('returns 401 before effects when the shared secret is missing or invalid', async () => {
@@ -122,6 +152,13 @@ describe('remaining Retell orchestration tools', () => {
     expect(result.deps.orchestration.verifyPayment).toHaveBeenCalledWith(expect.objectContaining({
       callId: internalCallId, contactId, reference: 'arbitrary-reference',
     }));
+  });
+
+  it('returns a structured authenticated failure when no canonical payment exists', async () => {
+    const deps = dependencies({ verifyPayment: vi.fn(async () => ({ found: false as const, reason: 'PAYMENT_NOT_FOUND' })) });
+    const result = await invoke('verificar_pago', {}, deps);
+    expect(result.response.status).toBe(200);
+    expect(result.body).toEqual({ ok: false, error: { code: 'PAYMENT_NOT_FOUND' } });
   });
 
   it('accepts the export-compatible empty payment reference and resolves by correlated contact', async () => {
@@ -163,6 +200,24 @@ describe('remaining Retell orchestration tools', () => {
     expect(result.deps.orchestration.scheduleFollowup).toHaveBeenCalledWith(expect.objectContaining({
       whenText: 'el lunes por la mañana', channel: 'whatsapp', reason: 'Lo habla con su pareja',
     }));
+  });
+
+  it('returns the durable first-write follow-up fields on replay', async () => {
+    const deps = dependencies({
+      scheduleFollowup: vi.fn(async () => ({
+        requestId: 'followup_original', scheduledAt: null, needsResolution: true,
+        whenText: 'mañana a las 6', channel: 'llamada' as const, reason: 'cobra el viernes',
+      })),
+    });
+    const result = await invoke('agendar_seguimiento', {
+      cuando: 'el lunes por la mañana', canal: 'whatsapp', motivo: 'Lo habla con su pareja',
+    }, deps);
+    expect(result.body).toMatchObject({
+      seguimiento: {
+        referencia: 'followup_original', cuando: 'mañana a las 6',
+        canal: 'llamada', motivo: 'cobra el viernes',
+      },
+    });
   });
 
   it('returns structured authenticated validation failures with HTTP 200', async () => {

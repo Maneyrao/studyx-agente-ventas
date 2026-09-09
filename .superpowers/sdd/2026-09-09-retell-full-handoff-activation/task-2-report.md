@@ -51,3 +51,18 @@
 - The export allows `sms` and `email` for `enviar_link_pago`, but this repository’s canonical outbound provider path currently exposes WhatsApp/Telegram only. Those requested channels fail closed as `CHANNEL_UNAVAILABLE` rather than claiming delivery.
 - Material assets must be authored as active `knowledge_sources` rows with `metadata.material_type` (and, for course-specific assets, `metadata.course_code`); absent metadata intentionally fails closed.
 - No live Retell, Stripe, WhatsApp, or other external calls were made.
+
+## Round 1 reviewer fixes
+
+- Added canonical payment-plan authority: `contado` requires an active `payment`/`one_time` configuration and `cuotas` requires an active `subscription`/`monthly` configuration. Unsupported or mismatched mappings fail closed before reservation.
+- Payment verification now returns a structured `PAYMENT_NOT_FOUND` failure when correlated canonical proof is absent; it never exposes `ok: true` with an invented `not_found` state. Unexpected reservation/database failures map to stable public codes.
+- Material delivery now sanitizes the exact canonical asset and builds/verifies its egress manifest from owner-authored URL/protected-fact allowlists. Foreign URLs or unapproved protected facts fail closed.
+- Follow-up timestamp parsing validates calendar month/day bounds before JavaScript date conversion. Replay responses return the durable first-write wording/channel/reason, and `cuando` validation no longer trims the stored or returned literal.
+- Added composite workspace/contact and call/contact foreign keys plus a workspace-to-call consistency trigger for both durable request tables. RLS remains defense-in-depth rather than the integrity boundary.
+
+### Round 1 RED/GREEN evidence
+
+- RED: focused unit tests reproduced date normalization (`2026-02-30` became March), `ok:true` missing-payment state, replay echoing the new request, and absent canonical plan/material authorization.
+- GREEN: focused five-tool tests now pass (13 tests); all calls unit tests pass (19 files, 199 tests).
+- Added `tests/integration/retell-five-tools-postgres.test.ts` covering real-Postgres payment idempotency/plan authority, scoped payment reads, material egress, invalid dates, durable replay, and cross-tenant inserts. The disposable endpoint was present but its baseline reset stops earlier at the repository’s pre-existing `extensions.vector` migration mismatch, so the adapter integration file is guarded and could not execute against a migrated schema in this environment.
+- `npm run typecheck`, `supabase db lint --local --level error --fail-on error`, and `git diff --check` pass after the fixes.

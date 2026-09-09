@@ -1,5 +1,11 @@
 import type postgres from 'postgres';
-import { buildAuthorizedEgress } from '@/features/orchestration/domain/egress-guard';
+import {
+  buildAuthorizedEgress,
+  verifyAuthorizedEgress,
+  type AuthorizedEgressV1,
+  type ProtectedFactRef,
+} from '@/features/orchestration/domain/egress-guard';
+import { sanitizeRetrievedText } from '@/features/orchestration/domain/retrieved-context';
 import type { sendOutboundMessage, SendOutboundMessageResult } from '@/features/messaging/application/send-outbound-message';
 import { reservePayment, type ReservedPayment } from '@/features/payments/application/reserve-payment';
 import { createCheckout, type CreateCheckoutResult } from '@/features/payments/application/create-checkout';
@@ -35,15 +41,25 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     if (input.courses.length !== 1) return { sent: false, reference: null, reason: 'COURSE_UNAVAILABLE' };
     const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId);
     if (!workspace) return { sent: false, reference: null, reason: 'CONTACT_UNAVAILABLE' };
-    const offerings = await this.db<Array<{ id: string; code: string }>>`
-      SELECT o.id, o.code
+    const offerings = await this.db<Array<{
+      id: string;
+      code: string;
+      checkout_mode: 'payment' | 'subscription';
+      billing_interval: string | null;
+    }>>`
+      SELECT o.id, o.code, o.billing_interval, opc.checkout_mode
       FROM offerings AS o
+      JOIN offering_payment_configs AS opc
+        ON opc.offering_id = o.id AND opc.status = 'active'
       WHERE o.workspace_id = ${workspace.id}::uuid
         AND o.code = ${input.courses[0]}
         AND o.status = 'active'
     `;
     const offering = offerings[0];
     if (!offering) return { sent: false, reference: null, reason: 'COURSE_UNAVAILABLE' };
+    if (!retellPaymentPlanIsSupported(input.plan, offering.checkout_mode, offering.billing_interval)) {
+      return { sent: false, reference: null, reason: 'PAYMENT_PLAN_UNAVAILABLE' };
+    }
     await this.db`
       UPDATE contacts AS c
       SET email = ${input.email}
@@ -63,7 +79,8 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
         idempotency_key: idempotencyKey,
       });
     } catch (error) {
-      return { sent: false, reference: null, reason: error instanceof Error ? error.message.replace(/^Payment reservation rejected: /u, '') : 'PAYMENT_UNAVAILABLE' };
+      void error;
+      return { sent: false, reference: null, reason: 'PAYMENT_UNAVAILABLE' };
     }
     let checkout: CreateCheckoutResult;
     try {
@@ -92,7 +109,7 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
 
   async verifyPayment(input: Parameters<RetellOrchestrationStore['verifyPayment']>[0]) {
     const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId);
-    if (!workspace) return { state: 'not_found' };
+    if (!workspace) return { found: false as const, reason: 'PAYMENT_NOT_FOUND' };
     const rows = input.reference
       ? await this.db<Array<{ status: string }>>`
           SELECT p.status
@@ -109,15 +126,17 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
             AND p.contact_id = ${input.contactId}::uuid
           ORDER BY p.created_at DESC LIMIT 1
         `;
-    return { state: rows[0]?.status ?? 'not_found' };
+    return rows[0]
+      ? { found: true as const, state: rows[0].status }
+      : { found: false as const, reason: 'PAYMENT_NOT_FOUND' };
   }
 
   async sendMaterial(input: Parameters<RetellOrchestrationStore['sendMaterial']>[0]) {
     if (!this.options.sendOutbound) return { sent: false, reference: null, reason: 'OUTBOUND_UNAVAILABLE' };
     const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId);
     if (!workspace) return { sent: false, reference: null, reason: 'CONTACT_UNAVAILABLE' };
-    const rows = await this.db<Array<{ id: string; content: string }>>`
-      SELECT ks.id, ks.content
+    const rows = await this.db<Array<{ id: string; content: string; metadata: Record<string, unknown> }>>`
+      SELECT ks.id, ks.content, ks.metadata
       FROM knowledge_sources AS ks
       WHERE ks.workspace_id = ${workspace.id}::uuid
         AND ks.status = 'active'
@@ -128,11 +147,13 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     `;
     const asset = rows[0];
     if (!asset || asset.content.trim().length === 0) return { sent: false, reference: null, reason: 'MATERIAL_UNAVAILABLE' };
+    const authorized = buildRetellMaterialAuthorization(asset.content, asset.metadata);
+    if (!authorized) return { sent: false, reference: null, reason: 'MATERIAL_UNAVAILABLE' };
     const sent = await this.options.sendOutbound({
       workspaceId: workspace.id,
       contactId: input.contactId,
-      text: asset.content,
-      authorizedEgress: buildAuthorizedEgress({ content: asset.content, authorized_urls: [], protected_facts: [] }),
+      text: authorized.content,
+      authorizedEgress: authorized.manifest,
       idempotencyKey: `retell:material:${input.callId}:${asset.id}`,
       preferredChannel: 'whatsapp',
       purpose: 'support',
@@ -167,7 +188,14 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId);
     if (!workspace) throw new Error('CONTACT_UNAVAILABLE');
     const scheduledAt = resolveRetellFollowupTimestamp(input.whenText);
-    const rows = await this.db<Array<{ id: string; scheduled_at: string | null; needs_resolution: boolean }>>`
+    const rows = await this.db<Array<{
+      id: string;
+      scheduled_at: string | null;
+      needs_resolution: boolean;
+      when_text: string;
+      channel: 'llamada' | 'whatsapp';
+      reason: string;
+    }>>`
       INSERT INTO retell_followup_requests (
         workspace_id, contact_id, call_id, when_text, channel, reason,
         scheduled_at, needs_resolution
@@ -178,13 +206,16 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
       )
       ON CONFLICT (workspace_id, contact_id, call_id)
       DO UPDATE SET updated_at = now()
-      RETURNING id, scheduled_at, needs_resolution
+      RETURNING id, scheduled_at, needs_resolution, when_text, channel, reason
     `;
     if (!rows[0]) throw new Error('FOLLOWUP_UNAVAILABLE');
     return {
       requestId: rows[0].id,
       scheduledAt: rows[0].scheduled_at,
       needsResolution: rows[0].needs_resolution,
+      whenText: rows[0].when_text,
+      channel: rows[0].channel,
+      reason: rows[0].reason,
     };
   }
 
@@ -206,6 +237,69 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
 /** ISO timestamps with an explicit offset are deterministic; local/free text is not. */
 export function resolveRetellFollowupTimestamp(value: string): string | null {
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/u.test(value)) return null;
+  const datePart = value.slice(0, 10);
+  const [year, month, day] = datePart.split('-').map(Number);
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth) return null;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+export function retellPaymentPlanIsSupported(
+  plan: 'contado' | 'cuotas',
+  checkoutMode: 'payment' | 'subscription',
+  billingInterval: string | null,
+): boolean {
+  return plan === 'contado'
+    ? checkoutMode === 'payment' && billingInterval === 'one_time'
+    : checkoutMode === 'subscription' && billingInterval === 'monthly';
+}
+
+const MATERIAL_FACT_KINDS = new Set<ProtectedFactRef['kind']>([
+  'price', 'duration', 'modality', 'certification', 'offering', 'promise',
+]);
+
+function isHttpUrl(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length === 0 || /\s/u.test(value)) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/** Build an egress manifest from the exact approved canonical asset metadata. */
+export function buildRetellMaterialAuthorization(
+  rawContent: string,
+  metadata: Record<string, unknown> | null | undefined,
+): { readonly content: string; readonly manifest: AuthorizedEgressV1 } | null {
+  const sanitized = sanitizeRetrievedText(rawContent, 4_096);
+  if (sanitized.injection_suspected || sanitized.truncated || sanitized.text.length === 0) return null;
+  const rawUrls = metadata?.authorized_urls;
+  const authorizedUrls = Array.isArray(rawUrls) && rawUrls.every(isHttpUrl)
+    ? rawUrls
+    : rawUrls === undefined ? [] : null;
+  if (authorizedUrls === null) return null;
+  const rawFacts = metadata?.protected_facts;
+  const protectedFacts = Array.isArray(rawFacts) && rawFacts.every((fact): fact is ProtectedFactRef => (
+    typeof fact === 'object'
+    && fact !== null
+    && !Array.isArray(fact)
+    && typeof (fact as { kind?: unknown }).kind === 'string'
+    && MATERIAL_FACT_KINDS.has((fact as { kind: ProtectedFactRef['kind'] }).kind)
+    && typeof (fact as { value?: unknown }).value === 'string'
+    && (fact as { value: string }).value.trim().length > 0
+  ))
+    ? rawFacts
+    : rawFacts === undefined ? [] : null;
+  if (protectedFacts === null) return null;
+  const manifest = buildAuthorizedEgress({
+    content: sanitized.text,
+    authorized_urls: authorizedUrls,
+    protected_facts: protectedFacts,
+  });
+  return verifyAuthorizedEgress({ content: sanitized.text, manifest }).ok
+    ? { content: sanitized.text, manifest }
+    : null;
 }
