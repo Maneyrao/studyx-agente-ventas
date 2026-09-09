@@ -66,6 +66,7 @@ function leadInput(
     contactId,
     spreadsheetId,
     tabName: TAB_NAME,
+    sourceOrder: 1,
     telefono: '+5491100000000',
     nombre: 'Ada',
     apellido: 'Lovelace',
@@ -154,7 +155,7 @@ run('sheet projection idempotency', () => {
     });
   });
 
-  it('replaying enqueue 10x for the same lead keeps a single outbox row and a single sheet row', async () => {
+  it('replaying concurrently 10x for the same lead keeps a single outbox row and a single sheet row', async () => {
     // A prior run of this same suite against the same disposable DB can
     // leave enqueue-only tests' rows pending (e.g. "two different contact_ids
     // ..." below never flushes) — drain them first so this flush's global
@@ -165,9 +166,9 @@ run('sheet projection idempotency', () => {
     const contactId = await contactFixture();
     const spreadsheetId = randomUUID();
 
-    for (let i = 0; i < 10; i++) {
-      await enqueueLeadProjection(leadInput(workspaceId, contactId, spreadsheetId), { sql: db! });
-    }
+    await Promise.all(Array.from({ length: 10 }, () => (
+      enqueueLeadProjection(leadInput(workspaceId, contactId, spreadsheetId), { sql: db! })
+    )));
 
     const rows = await outboxRowsFor(spreadsheetId, TAB_NAME);
     expect(rows).toHaveLength(1);
@@ -208,6 +209,7 @@ run('sheet projection idempotency', () => {
       leadInput(workspaceId, contactId, spreadsheetId, {
         apellido: 'Byron',
         cursoInteres: 'matematicas',
+        sourceOrder: 2,
       }),
       { sql: db! },
     );
@@ -260,6 +262,38 @@ run('sheet projection idempotency', () => {
     const finalRows = await outboxRowsFor(spreadsheetId, TAB_NAME);
     expect(finalRows[0].state).toBe('projected');
     expect(finalRows[0].attempt_count).toBe(2);
+  });
+
+  it('moves a repeatedly failing provider row to dead_letter at its maximum attempts', async () => {
+    await drainPending();
+
+    const workspaceId = await workspaceFixture();
+    const spreadsheetId = randomUUID();
+    const contactId = await contactFixture();
+    const enqueued = await enqueueLeadProjection(leadInput(workspaceId, contactId, spreadsheetId), { sql: db! });
+    await db!`
+      UPDATE sheet_projection_rows SET max_attempts = 2 WHERE id = ${enqueued!.id}
+    `;
+
+    const provider = new FakeSheetsProvider();
+    provider.simulateTimeouts(2);
+    await expect(flushSheetProjections(
+      { worker_id: 'dead-letter-first', limit: 1 },
+      { sql: db!, provider },
+    )).resolves.toMatchObject({ failed: 1 });
+
+    await db!`
+      UPDATE sheet_projection_rows SET available_at = now() - interval '1 second' WHERE id = ${enqueued!.id}
+    `;
+    await expect(flushSheetProjections(
+      { worker_id: 'dead-letter-second', limit: 1 },
+      { sql: db!, provider },
+    )).resolves.toMatchObject({ failed: 1 });
+
+    const rows = await outboxRowsFor(spreadsheetId, TAB_NAME);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ state: 'dead_letter', attempt_count: 2 });
+    expect(provider.writtenRowCount).toBe(0);
   });
 
   it('projects nombre, apellido, mail and tipo_de_curso into A:D order', async () => {

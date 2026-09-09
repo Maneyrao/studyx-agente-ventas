@@ -45,6 +45,8 @@ export interface LeadProjectionInput {
   contactId: string;
   spreadsheetId: string;
   tabName: string;
+  /** Monotonic inbound message sequence; never part of the visible row. */
+  sourceOrder?: number;
   /** Retained for existing call sites; not part of the visible Sheet row. */
   telefono?: string;
   /**
@@ -79,6 +81,7 @@ export type EnqueueCompleteLeadProjectionResult = EnqueueLeadProjectionResult | 
 interface ExistingRow {
   id: string;
   row_number: number;
+  source_order: string | number;
   payload: Partial<SheetRowValues> & {
     /** Read only so an existing row converges to the A:D contract on correction. */
     email?: string;
@@ -92,6 +95,12 @@ function backoffSeconds(attemptCount: number): number {
 
 function isCompleteLead(values: SheetRowValues): boolean {
   return Object.values(values).every((value) => value.trim().length > 0);
+}
+
+function sourceOrder(input: LeadProjectionInput): number {
+  const value = input.sourceOrder ?? 0;
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error('INVALID_LEAD_PROJECTION_SOURCE_ORDER');
+  return value;
 }
 
 /**
@@ -113,10 +122,11 @@ export async function enqueueLeadProjection(
 ): Promise<EnqueueCompleteLeadProjectionResult> {
   const sql = deps.sql ?? orchestratorSql;
   const projectionKey = leadProjectionKey(input.workspaceId, input.contactId);
+  const inputSourceOrder = sourceOrder(input);
 
   for (let attempt = 0; attempt < MAX_ROW_RESERVE_ATTEMPTS; attempt++) {
     const existingRows = await sql<ExistingRow[]>`
-      SELECT id, row_number, payload
+      SELECT id, row_number, source_order, payload
       FROM sheet_projection_rows
       WHERE projection_key = ${projectionKey}
     `;
@@ -135,26 +145,32 @@ export async function enqueueLeadProjection(
     const payloadHash = sha256Hex(values);
 
     if (existing) {
-      if (existing.payload && sha256Hex(existing.payload) === payloadHash) {
+      const existingSourceOrder = Number(existing.source_order);
+      if (!Number.isSafeInteger(existingSourceOrder) || existingSourceOrder < 0) {
+        throw new Error('INVALID_STORED_LEAD_PROJECTION_SOURCE_ORDER');
+      }
+      if (existingSourceOrder >= inputSourceOrder) {
         return { id: existing.id, rowNumber: existing.row_number, changed: false };
       }
       const updated = await sql<Array<{ id: string; row_number: number }>>`
         UPDATE sheet_projection_rows
         SET payload = ${jsonbParam(sql, values)},
             payload_hash = ${payloadHash},
+            source_order = ${inputSourceOrder},
             state = 'pending',
             available_at = now()
-        WHERE id = ${existing.id}
+        WHERE id = ${existing.id} AND source_order < ${inputSourceOrder}
         RETURNING id, row_number
       `;
-      return { id: updated[0].id, rowNumber: updated[0].row_number, changed: true };
+      if (updated[0]) return { id: updated[0].id, rowNumber: updated[0].row_number, changed: true };
+      return { id: existing.id, rowNumber: existing.row_number, changed: false };
     }
 
     try {
       const inserted = await sql<Array<{ id: string; row_number: number }>>`
         INSERT INTO sheet_projection_rows (
           projection_key, workspace_id, projection_type, spreadsheet_id, tab_name,
-          row_number, payload, payload_hash, state
+          row_number, payload, payload_hash, source_order, state
         )
         SELECT
           ${projectionKey},
@@ -165,6 +181,7 @@ export async function enqueueLeadProjection(
           COALESCE(MAX(row_number), 1) + 1,
           ${jsonbParam(sql, values)},
           ${payloadHash},
+          ${inputSourceOrder},
           'pending'
         FROM sheet_projection_rows
         WHERE spreadsheet_id = ${input.spreadsheetId} AND tab_name = ${input.tabName}

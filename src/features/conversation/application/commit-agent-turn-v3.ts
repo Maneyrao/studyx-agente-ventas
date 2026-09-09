@@ -53,6 +53,7 @@ interface ExistingDecisionRowV3 {
 
 interface TurnContextRowV3 {
   readonly turn_id: string;
+  readonly source_order: number;
   readonly conversation_id: string;
   readonly turn_content: string;
   readonly batch_id: string | null;
@@ -395,6 +396,7 @@ async function loadTurnContext(db: DbClient, turnId: string): Promise<TurnContex
   const rows = await db<TurnContextRowV3[]>`
     SELECT
       turn.id AS turn_id,
+      COALESCE(turn.conversation_seq, 0) AS source_order,
       turn.conversation_id,
       turn.contact_id,
       turn.content AS turn_content,
@@ -436,7 +438,11 @@ async function loadTurnContext(db: DbClient, turnId: string): Promise<TurnContex
     FOR UPDATE OF turn, contact, state
   `;
   if (!rows[0]) throw new Error('AGENT_TURN_V3_CONTEXT_NOT_FOUND');
-  return { ...rows[0], version: Number(rows[0].version) };
+  return {
+    ...rows[0],
+    version: Number(rows[0].version),
+    source_order: Number(rows[0].source_order),
+  };
 }
 
 async function loadOpenPreparations(
@@ -1193,6 +1199,7 @@ export async function commitAgentTurnV3(
           contactId: context.contact_id,
           spreadsheetId: sheets.spreadsheetId,
           tabName: sheets.tabName,
+          sourceOrder: context.source_order,
           telefono: projectedContact.declared_phone ?? context.destination,
           nombre: names.nombre,
           apellido: names.apellido,

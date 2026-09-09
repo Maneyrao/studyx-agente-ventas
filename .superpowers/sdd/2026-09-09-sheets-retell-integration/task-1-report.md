@@ -85,3 +85,65 @@ disposable database on port 55433 produced the RED evidence above.
 None. The only operational prerequisite for a live projection remains the
 existing Sheets configuration and credentials; all verification here used the
 fake provider and disposable local PostgreSQL only.
+
+## Fix Round 1 — ordering fence and coverage completion
+
+### Implementation
+
+- Added `sheet_projection_rows.source_order` through the additive migration
+  `20260909000001_sheet_projection_source_order.sql`. It is durable outbox
+  metadata, not part of the visible four-field JSON payload.
+- Agent A captures the inbound message's monotonic `conversation_seq` with the
+  deferred lead snapshot. `enqueueLeadProjection` updates an existing stable
+  row only when that source order is strictly newer; equal or older accepted
+  deliveries are no-ops. This keeps a late older delivery from restoring stale
+  values after a correction was already accepted.
+- Retained a safe default source order of zero for legacy/non-Agent-A callers;
+  it cannot overwrite a newer Agent A snapshot.
+
+### New focused coverage
+
+- Multi-turn capture in non-field order: selected course exists, email is
+  accepted first, then name/surname are accepted; exactly one complete row is
+  created only after the final required values exist.
+- Out-of-order acceptance: a second-turn surname correction is accepted before
+  the first outbound; accepting the first outbound afterward leaves the newer
+  surname intact.
+- `Promise.all` ten-way same-lead enqueue: one outbox row and one stable Sheet
+  row.
+- Repeated simulated provider timeouts: the row reaches `dead_letter` at its
+  configured maximum attempt count.
+
+### RED evidence
+
+`TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55433/studyx_test npm run test:integration -- tests/integration/agent-tools-commit-effects.test.ts`
+
+Before the fence, the new out-of-order test failed as intended: after accepting
+the newer `García` correction and then the older outbound, the stored payload
+was rolled back to `Pérez`.
+
+### GREEN evidence
+
+1. Applied the additive migration to the disposable local database:
+   `psql postgresql://postgres@127.0.0.1:55433/studyx_test -v ON_ERROR_STOP=1 -f supabase/migrations/20260909000001_sheet_projection_source_order.sql`
+   — `ALTER TABLE`, `COMMENT`.
+2. `TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55433/studyx_test npm run test:unit -- tests/unit/projection/projection-idempotency.test.ts`
+   — 10/10 passed.
+3. `TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55433/studyx_test npm run test:integration -- tests/integration/agent-tools-commit-effects.test.ts`
+   — 14/14 passed.
+4. `npm run typecheck` — passed.
+5. `git diff --check` — passed.
+
+### Files changed in this round
+
+- `supabase/migrations/20260909000001_sheet_projection_source_order.sql`
+- `src/lib/services/projection.service.ts`
+- `src/features/conversation/application/commit-agent-turn-v3.ts`
+- `tests/unit/projection/projection-idempotency.test.ts`
+- `tests/integration/agent-tools-commit-effects.test.ts`
+
+### Round self-review and concerns
+
+The fence is per stable projection key and does not alter the A:D payload,
+retry/dead-letter state machine, delivery gate, or sandbox guard. No live
+Google effect ran. No concerns remain.
