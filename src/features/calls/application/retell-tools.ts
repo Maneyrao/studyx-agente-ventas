@@ -21,6 +21,56 @@ export type RetellP0ToolName =
   | 'guardar_datos_contacto'
   | 'registrar_resultado';
 
+export type RetellOrchestrationToolName =
+  | 'enviar_link_pago'
+  | 'verificar_pago'
+  | 'enviar_material'
+  | 'derivar_a_asesor_humano'
+  | 'agendar_seguimiento';
+
+export type RetellToolName = RetellP0ToolName | RetellOrchestrationToolName;
+
+export interface RetellOrchestrationStore {
+  createPaymentLink(input: {
+    readonly callId: string;
+    readonly contactId: string;
+    readonly workspaceSlug: string;
+    readonly courses: readonly string[];
+    readonly plan: 'contado' | 'cuotas';
+    readonly email: string;
+    readonly channel: 'whatsapp' | 'sms' | 'email';
+  }): Promise<{ readonly sent: boolean; readonly reference: string | null; readonly reason?: string }>;
+  verifyPayment(input: {
+    readonly callId: string;
+    readonly contactId: string;
+    readonly workspaceSlug: string;
+    readonly reference?: string;
+  }): Promise<{ readonly state: string }>;
+  sendMaterial(input: {
+    readonly callId: string;
+    readonly contactId: string;
+    readonly workspaceSlug: string;
+    readonly type: 'temario' | 'testimonios' | 'acceso_campus' | 'comprobante';
+    readonly course?: string;
+  }): Promise<{ readonly sent: boolean; readonly reference: string | null; readonly reason?: string }>;
+  requestHumanHandoff(input: {
+    readonly callId: string;
+    readonly contactId: string;
+    readonly workspaceSlug: string;
+    readonly reason: 'pedido_explicito' | 'reclamo' | 'alumno_existente' | 'caso_fuera_de_alcance' | 'cierre_complejo';
+    readonly detail: string;
+    readonly urgency: 'alta' | 'normal';
+  }): Promise<{ readonly requestId: string; readonly available: boolean | null }>;
+  scheduleFollowup(input: {
+    readonly callId: string;
+    readonly contactId: string;
+    readonly workspaceSlug: string;
+    readonly whenText: string;
+    readonly channel: 'llamada' | 'whatsapp';
+    readonly reason: string;
+  }): Promise<{ readonly requestId: string; readonly scheduledAt: string | null; readonly needsResolution: boolean }>;
+}
+
 export interface RetellContactToolStore {
   saveCorrelatedContact(input: {
     readonly callId: string;
@@ -40,6 +90,7 @@ export interface RetellToolDependencies {
   readonly business: Pick<BusinessContextStore, 'loadCompleteIndex' | 'loadByCode' | 'loadBusinessContext'>;
   readonly contacts: RetellContactToolStore;
   readonly sheets: { readonly spreadsheetId: string; readonly tabName: string } | null;
+  readonly orchestration?: RetellOrchestrationStore;
   readonly now?: () => Date;
 }
 
@@ -108,9 +159,32 @@ const ToolArgsSchemas = {
     nivel_interes: z.enum(['alto', 'medio', 'bajo', 'nulo']).optional(),
     curso: CourseTextSchema.optional(),
   }).strict(),
+  enviar_link_pago: z.object({
+    cursos: z.array(CourseTextSchema).min(1).max(8),
+    plan: z.enum(['contado', 'cuotas']),
+    email: SafeEmailSchema,
+    canal: z.enum(['whatsapp', 'sms', 'email']).optional(),
+  }).strict(),
+  verificar_pago: z.object({
+    referencia_pago: z.string().trim().max(255).optional().transform((value) => value || undefined),
+  }).strict(),
+  enviar_material: z.object({
+    tipo: z.enum(['temario', 'testimonios', 'acceso_campus', 'comprobante']),
+    curso: CourseTextSchema.optional(),
+  }).strict(),
+  derivar_a_asesor_humano: z.object({
+    motivo: z.enum(['pedido_explicito', 'reclamo', 'alumno_existente', 'caso_fuera_de_alcance', 'cierre_complejo']),
+    detalle: z.string().trim().min(1).max(2_048),
+    urgencia: z.enum(['alta', 'normal']).optional(),
+  }).strict(),
+  agendar_seguimiento: z.object({
+    cuando: z.string().trim().min(1).max(512),
+    canal: z.enum(['llamada', 'whatsapp']),
+    motivo: z.string().trim().min(1).max(2_048),
+  }).strict(),
 } as const;
 
-type ParsedEnvelope<Name extends RetellP0ToolName> = {
+type ParsedEnvelope<Name extends RetellToolName> = {
   readonly name: Name;
   readonly call: z.infer<typeof ToolCallSchema>;
   readonly args: z.infer<(typeof ToolArgsSchemas)[Name]>;
@@ -166,7 +240,7 @@ async function readBoundedBody(request: Request): Promise<Uint8Array | null> {
   return body;
 }
 
-function parseEnvelope<Name extends RetellP0ToolName>(
+function parseEnvelope<Name extends RetellToolName>(
   value: unknown,
   expectedName: Name,
 ): ParsedEnvelope<Name> | null {
@@ -376,9 +450,92 @@ async function recordResult(
   return Response.json({ ok: true, recorded: true });
 }
 
+function orchestrationError(dependencies: RetellToolDependencies): Response {
+  void dependencies;
+  return resultError('TOOL_UNAVAILABLE');
+}
+
+async function runOrchestrationTool(
+  envelope: ParsedEnvelope<RetellOrchestrationToolName>,
+  callId: string,
+  dependencies: RetellToolDependencies,
+): Promise<Response> {
+  const store = dependencies.orchestration;
+  if (!store) return orchestrationError(dependencies);
+  const common = {
+    callId,
+    contactId: envelope.call.metadata.contact_id,
+    workspaceSlug: dependencies.workspaceSlug,
+  };
+  if (envelope.name === 'enviar_link_pago') {
+    const args = envelope.args as z.infer<typeof ToolArgsSchemas.enviar_link_pago>;
+    const result = await store.createPaymentLink({
+      ...common,
+      courses: args.cursos,
+      plan: args.plan,
+      email: args.email,
+      channel: args.canal ?? 'whatsapp',
+    });
+    return result.sent
+      ? Response.json({ ok: true, pago: { enviado: true, referencia: result.reference } })
+      : resultError(result.reason ?? 'PAYMENT_UNAVAILABLE');
+  }
+  if (envelope.name === 'verificar_pago') {
+    const args = envelope.args as z.infer<typeof ToolArgsSchemas.verificar_pago>;
+    const result = await store.verifyPayment({
+      ...common,
+      ...(args.referencia_pago === undefined ? {} : { reference: args.referencia_pago }),
+    });
+    return Response.json({ ok: true, pago: { estado: result.state } });
+  }
+  if (envelope.name === 'enviar_material') {
+    const args = envelope.args as z.infer<typeof ToolArgsSchemas.enviar_material>;
+    const result = await store.sendMaterial({
+      ...common,
+      type: args.tipo,
+      ...(args.curso === undefined ? {} : { course: args.curso }),
+    });
+    return result.sent
+      ? Response.json({ ok: true, material: { enviado: true, referencia: result.reference } })
+      : resultError(result.reason ?? 'MATERIAL_UNAVAILABLE');
+  }
+  if (envelope.name === 'derivar_a_asesor_humano') {
+    const args = envelope.args as z.infer<typeof ToolArgsSchemas.derivar_a_asesor_humano>;
+    const result = await store.requestHumanHandoff({
+      ...common,
+      reason: args.motivo,
+      detail: args.detalle,
+      urgency: args.urgencia ?? 'normal',
+    });
+    return Response.json({
+      ok: true,
+      derivacion: { creada: true, referencia: result.requestId, disponible: result.available },
+    });
+  }
+  const args = envelope.args as z.infer<typeof ToolArgsSchemas.agendar_seguimiento>;
+  const result = await store.scheduleFollowup({
+    ...common,
+    whenText: args.cuando,
+    channel: args.canal,
+    reason: args.motivo,
+  });
+  return Response.json({
+    ok: true,
+    seguimiento: {
+      agendado: result.scheduledAt !== null && !result.needsResolution,
+      referencia: result.requestId,
+      cuando: args.cuando,
+      canal: args.canal,
+      motivo: args.motivo,
+      needs_resolution: result.needsResolution,
+      ...(result.scheduledAt === null ? {} : { programado_para: result.scheduledAt }),
+    },
+  });
+}
+
 export async function handleRetellToolRequest(
   request: Request,
-  expectedName: RetellP0ToolName,
+  expectedName: RetellToolName,
   dependencies: RetellToolDependencies,
 ): Promise<Response> {
   if (!constantTimeSecretMatches(
@@ -460,6 +617,14 @@ export async function handleRetellToolRequest(
         sheets: dependencies.sheets,
       });
       return Response.json({ ok: true, saved: saved.updated, projected: saved.projected });
+    }
+    if ((['enviar_link_pago', 'verificar_pago', 'enviar_material', 'derivar_a_asesor_humano', 'agendar_seguimiento'] as const)
+      .includes(expectedName as RetellOrchestrationToolName)) {
+      return await runOrchestrationTool(
+        envelope as ParsedEnvelope<RetellOrchestrationToolName>,
+        callId,
+        dependencies,
+      );
     }
     return await recordResult(
       envelope as ParsedEnvelope<'registrar_resultado'>,
