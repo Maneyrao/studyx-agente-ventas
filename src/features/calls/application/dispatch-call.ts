@@ -12,10 +12,31 @@ export type DispatchCallResult = {
 
 export async function dispatchCall(
   input: { callId: string; workerId: string },
-  dependencies: { store: CallStore; provider: VoiceProvider },
+  dependencies: { store: CallStore; provider: VoiceProvider; now?: () => Date },
 ): Promise<DispatchCallResult> {
   const claim = await dependencies.store.claimDispatch(input.callId, input.workerId);
   if (claim.outcome !== 'claimed') {
+    if (claim.outcome === 'dispatch_ambiguous') {
+      // A prior request may have reached the provider while its response was
+      // lost. Reconcile by the stable internal id before allowing any future
+      // action; never place a second call merely because the first outcome is
+      // unknown. A missing/ambiguous lookup keeps the state conservative and
+      // returns promptly for a later bounded reconciliation attempt.
+      try {
+        const found = await dependencies.provider.findCallByInternalId(input.callId);
+        if (found) {
+          await dependencies.store.attachProviderCall(
+            input.callId,
+            found.providerCallId,
+            (dependencies.now ?? (() => new Date()))().toISOString(),
+          );
+          return { status: 'provider_accepted', providerCallId: found.providerCallId };
+        }
+      } catch {
+        // Provider lookup is itself an ambiguous operation. Keep the call
+        // fenced; the caller can retry reconciliation without redialling.
+      }
+    }
     return {
       status: claim.outcome === 'busy' ? 'busy' : claim.outcome,
       providerCallId: claim.outcome === 'provider_accepted' ? claim.providerCallId : null,
