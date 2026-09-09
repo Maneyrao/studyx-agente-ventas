@@ -34,10 +34,21 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
              wc.workspace_id, cs.analysis_status, cs.prompt_version
       FROM call_sessions AS cs
       JOIN LATERAL (
-        SELECT workspace_id
-        FROM workspace_contacts
-        WHERE contact_id = cs.contact_id AND lifecycle_status = 'active'
-        ORDER BY created_at ASC, id ASC
+        SELECT state.workspace_id
+        FROM conversation_sales_context_states_v1 AS state
+        JOIN conversations AS conversation
+          ON conversation.id = state.conversation_id
+         AND conversation.contact_id = state.contact_id
+        JOIN workspaces AS workspace
+          ON workspace.id = state.workspace_id
+         AND workspace.status = 'active'
+        JOIN workspace_contacts AS membership
+          ON membership.workspace_id = state.workspace_id
+         AND membership.contact_id = state.contact_id
+         AND membership.lifecycle_status = 'active'
+        WHERE state.conversation_id = cs.conversation_id
+          AND state.contact_id = cs.contact_id
+        ORDER BY state.updated_at DESC, state.workspace_id ASC
         LIMIT 1
       ) AS wc ON true
       WHERE cs.status = ANY(${TERMINAL_STATUSES})
@@ -62,10 +73,14 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
     }));
   }
 
-  async hasVerifiedPayment(contactId: string): Promise<boolean> {
+  async hasVerifiedPayment(contactId: string, workspaceId: string): Promise<boolean> {
     const rows = await this.db<Array<{ exists: boolean }>>`
       SELECT EXISTS (
-        SELECT 1 FROM payments WHERE contact_id = ${contactId}::uuid AND status = 'paid'
+        SELECT 1
+        FROM payments
+        WHERE contact_id = ${contactId}::uuid
+          AND workspace_id = ${workspaceId}::uuid
+          AND status = 'paid'
       ) AS exists
     `;
     return rows[0]?.exists ?? false;

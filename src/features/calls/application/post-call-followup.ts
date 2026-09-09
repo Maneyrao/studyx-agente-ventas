@@ -70,7 +70,7 @@ export async function runPostCallFollowup(
         continue;
       }
 
-      const paymentVerified = await deps.store.hasVerifiedPayment(call.contact_id);
+      const paymentVerified = await deps.store.hasVerifiedPayment(call.contact_id, call.workspace_id);
       const verdict = decidePostCallFollowup({
         status: call.status,
         result: call.result,

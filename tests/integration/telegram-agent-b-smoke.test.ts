@@ -47,6 +47,10 @@ async function seedRequestedCall(input: { callId: string; userId: string; chatId
   const conversations = await db!<Array<{ id: string }>>`
     INSERT INTO conversations (contact_id, channel, channel_thread_id) VALUES (${contacts[0].id}::uuid, 'whatsapp', ${threads[0].id}::uuid) RETURNING id
   `;
+  await db!`
+    INSERT INTO conversation_sales_context_states_v1 (workspace_id, conversation_id, contact_id)
+    VALUES (${workspaces[0].id}::uuid, ${conversations[0].id}::uuid, ${contacts[0].id}::uuid)
+  `;
   const messages = await db!<Array<{ id: string }>>`INSERT INTO messages (conversation_id, contact_id, direction, content) VALUES (${conversations[0].id}::uuid, ${contacts[0].id}::uuid, 'inbound', 'Llamame') RETURNING id`;
   // El cron post-llamada exige consentimiento de WhatsApp explícito (fail
   // closed sobre NULL, ver `isContactBlocked`); el fixture manual no pasa por

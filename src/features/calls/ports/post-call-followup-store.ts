@@ -30,8 +30,8 @@ export interface PostCallFollowupStore {
     readonly grace_seconds: number;
   }): Promise<TerminalCallForFollowup[]>;
 
-  /** True if the contact has a payment with status 'paid' for any offering. */
-  hasVerifiedPayment(contactId: string): Promise<boolean>;
+  /** True if the contact has a payment with status 'paid' in this workspace. */
+  hasVerifiedPayment(contactId: string, workspaceId: string): Promise<boolean>;
 
   /** True if the contact is currently blocked/opted-out on whatsapp. */
   isContactBlocked(contactId: string): Promise<boolean>;

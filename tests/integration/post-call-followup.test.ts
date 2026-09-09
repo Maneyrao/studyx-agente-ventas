@@ -93,6 +93,10 @@ async function seedTerminalCall(overrides: {
     INSERT INTO workspace_contacts (workspace_id, contact_id, lifecycle_status)
     VALUES (${workspaces[0].id}::uuid, ${context.contact.id}::uuid, 'active')
   `;
+  await sql`
+    INSERT INTO conversation_sales_context_states_v1 (workspace_id, conversation_id, contact_id)
+    VALUES (${workspaces[0].id}::uuid, ${context.conversation_id}::uuid, ${context.contact.id}::uuid)
+  `;
   const callId = randomUUID();
   const callContext = {
     call_id: callId,
@@ -410,5 +414,50 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
         tipo_de_curso: 'Curso E2E',
       },
     }]);
+  });
+
+  it('binds followup payment proof to the conversation workspace, not oldest contact membership', async () => {
+    const fixture = await seedTerminalCall({ status: 'completed', result: 'venta_confirmada' });
+    const newerWorkspace = await sql<Array<{ id: string }>>`
+      INSERT INTO workspaces (slug, display_name, environment, status)
+      VALUES (${`post-call-newer-${randomUUID()}`}, 'Post-call newer', 'sandbox', 'active')
+      RETURNING id
+    `;
+    const newerWorkspaceId = newerWorkspace[0].id;
+    await sql`
+      INSERT INTO workspace_contacts (workspace_id, contact_id, lifecycle_status)
+      VALUES (${newerWorkspaceId}::uuid, ${fixture.contactId}::uuid, 'active')
+    `;
+    const offerings = await sql<Array<{ id: string }>>`
+      INSERT INTO offerings (
+        workspace_id, code, display_name, offering_type, status, description,
+        price_type, price_amount, currency
+      ) VALUES
+        (${fixture.workspaceId}::uuid, ${`old-course-${fixture.callId}`}, 'Old course', 'course', 'active', 'Old', 'fixed', 10, 'USD'),
+        (${newerWorkspaceId}::uuid, ${`new-course-${fixture.callId}`}, 'New course', 'course', 'active', 'New', 'fixed', 10, 'USD')
+      RETURNING id
+    `;
+    await sql`
+      INSERT INTO conversation_sales_context_states_v1 (
+        workspace_id, conversation_id, contact_id, selected_offering_code
+      ) VALUES (
+        ${newerWorkspaceId}::uuid, ${fixture.conversationId}::uuid, ${fixture.contactId}::uuid,
+        ${`new-course-${fixture.callId}`}
+      )
+    `;
+    await sql`
+      INSERT INTO payments (
+        workspace_id, contact_id, offering_id, amount, currency, status,
+        provider, environment, checkout_mode, idempotency_key, paid_at
+      ) VALUES (
+        ${fixture.workspaceId}::uuid, ${fixture.contactId}::uuid, ${offerings[0].id}::uuid,
+        10, 'USD', 'paid', 'fake', 'test', 'payment', ${`paid-${fixture.callId}`}, now()
+      )
+    `;
+
+    const pending = await store.listPendingFollowups({ limit: 500, grace_seconds: 0 });
+    expect(pending.find((call) => call.call_id === fixture.callId)?.workspace_id).toBe(newerWorkspaceId);
+    await expect(store.hasVerifiedPayment(fixture.contactId, newerWorkspaceId)).resolves.toBe(false);
+    await expect(store.hasVerifiedPayment(fixture.contactId, fixture.workspaceId)).resolves.toBe(true);
   });
 });
