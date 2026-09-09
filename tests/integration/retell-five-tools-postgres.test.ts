@@ -42,9 +42,15 @@ async function fixture(input: { readonly planMode?: 'payment' | 'subscription' }
 
 function sender() {
   const calls: Array<Record<string, unknown>> = [];
+  const settledKeys = new Set<string>();
   return {
     calls,
     send: async (input: Record<string, unknown>) => {
+      const key = String(input.idempotencyKey);
+      if (settledKeys.has(key)) {
+        return { outcome: 'sent' as const, channel: 'whatsapp' as const, providerMessageId: 'wamid.test', deliveryId: `delivery-replay-${key}`, reason: null };
+      }
+      settledKeys.add(key);
       calls.push(input);
       return { outcome: 'sent' as const, channel: 'whatsapp' as const, providerMessageId: 'wamid.test', deliveryId: `delivery-${calls.length}`, reason: null };
     },
@@ -108,8 +114,8 @@ run('Retell five tools PostgreSQL adapter', () => {
     const one = await fixture();
     const two = await fixture();
     const payment = await db!<Array<{ id: string }>>`
-      INSERT INTO payments (workspace_id, contact_id, offering_id, amount, currency, status, provider, environment, checkout_mode, idempotency_key)
-      VALUES (${two.workspaceId}::uuid, ${two.contactId}::uuid, ${two.offeringId}::uuid, 360, 'USD', 'paid', 'fake', 'test', 'payment', ${`test:${randomUUID()}`})
+      INSERT INTO payments (workspace_id, contact_id, offering_id, amount, currency, status, provider, environment, checkout_mode, idempotency_key, paid_at)
+      VALUES (${two.workspaceId}::uuid, ${two.contactId}::uuid, ${two.offeringId}::uuid, 360, 'USD', 'paid', 'fake', 'test', 'payment', ${`test:${randomUUID()}`}, now())
       RETURNING id
     `;
     const store = new PostgresRetellOrchestrationStore(db!);

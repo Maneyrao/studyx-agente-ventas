@@ -92,13 +92,27 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
       return { sent: false, reference: reserved.payment_id, reason: 'CHECKOUT_UNAVAILABLE' };
     }
     if (!checkout.checkout_url) return { sent: false, reference: reserved.payment_id, reason: 'CHECKOUT_UNAVAILABLE' };
+    const sendIdempotencyKey = `retell:payment-send:${reserved.payment_id}`;
+    const priorDelivery = await this.db<Array<{ state: string; delivery_id: string }>>`
+      SELECT id AS delivery_id, state
+      FROM outbound_deliveries
+      WHERE idempotency_key = ${sendIdempotencyKey}
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    if (priorDelivery[0]?.state === 'submitted' || priorDelivery[0]?.state === 'delivered') {
+      return { sent: true, reference: reserved.payment_id };
+    }
+    if (priorDelivery[0]?.state === 'dead_letter') {
+      return { sent: false, reference: reserved.payment_id, reason: 'OUTBOUND_PERMANENT_FAILURE' };
+    }
     const text = `Te comparto el link seguro para completar tu inscripción: ${checkout.checkout_url}`;
     const sent = await this.options.sendOutbound({
       workspaceId: workspace.id,
       contactId: input.contactId,
       text,
       authorizedEgress: buildAuthorizedEgress({ content: text, authorized_urls: [checkout.checkout_url], protected_facts: [] }),
-      idempotencyKey: `retell:payment-send:${reserved.payment_id}`,
+      idempotencyKey: sendIdempotencyKey,
       preferredChannel: 'whatsapp',
       purpose: 'transactional',
     });

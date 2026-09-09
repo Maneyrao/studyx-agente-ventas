@@ -66,3 +66,31 @@
 - GREEN: focused five-tool tests now pass (13 tests); all calls unit tests pass (19 files, 199 tests).
 - Added `tests/integration/retell-five-tools-postgres.test.ts` covering real-Postgres payment idempotency/plan authority, scoped payment reads, material egress, invalid dates, durable replay, and cross-tenant inserts. The disposable endpoint was present but its baseline reset stops earlier at the repository’s pre-existing `extensions.vector` migration mismatch, so the adapter integration file is guarded and could not execute against a migrated schema in this environment.
 - `npm run typecheck`, `supabase db lint --local --level error --fail-on error`, and `git diff --check` pass after the fixes.
+
+### Round 1 PostgreSQL rerun
+
+Reviewer reproduction initially reported 2 failures: the payment replay invoked the outbound seam twice, and the scoped-payment fixture violated the canonical `paid_at` invariant. The production adapter now checks the durable outbound delivery fence before invoking the sender again; the fixture now supplies `paid_at` and leaves the schema invariant intact.
+
+Exact command and result:
+
+```text
+TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55435/studyx_test npm run test:integration -- tests/integration/retell-five-tools-postgres.test.ts
+
+Test Files  1 passed (1)
+Tests       4 passed (4)
+```
+
+Covering command and result:
+
+```text
+npm test -- --run tests/unit/calls/retell-five-tools.test.ts tests/unit/calls/retell-tool-routes.test.ts tests/unit/calls/retell-tools.test.ts
+
+Test Files  3 passed (3)
+Tests       50 passed (50)
+
+npm run typecheck
+passed
+
+git diff --check
+passed
+```
