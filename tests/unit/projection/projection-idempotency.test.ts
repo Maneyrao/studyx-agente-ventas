@@ -225,6 +225,31 @@ run('sheet projection idempotency', () => {
     });
   });
 
+  it('allows a legacy source-less identity refresh to update its stable row', async () => {
+    const workspaceId = await workspaceFixture();
+    const spreadsheetId = randomUUID();
+    const contactId = await contactFixture();
+
+    await enqueueLeadProjection(
+      leadInput(workspaceId, contactId, spreadsheetId, {
+        sourceOrder: undefined,
+        email: 'before@example.com',
+      }),
+      { sql: db! },
+    );
+    await enqueueLeadProjection(
+      leadInput(workspaceId, contactId, spreadsheetId, {
+        sourceOrder: undefined,
+        email: 'after@example.com',
+      }),
+      { sql: db! },
+    );
+
+    const rows = await outboxRowsFor(spreadsheetId, TAB_NAME);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].payload.mail).toBe('after@example.com');
+  });
+
   it('a provider timeout during flush leaves the outbox row retryable with an incremented attempt count', async () => {
     // `claim_sheet_projection_rows` claims globally across every spreadsheet,
     // not just this test's own — drain whatever the earlier enqueue-only

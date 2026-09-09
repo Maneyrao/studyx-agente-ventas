@@ -22,6 +22,7 @@ import { recordDeliveryReport } from '@/lib/services/decision.service';
 import { flushSheetProjections } from '@/lib/services/projection.service';
 import { FakeSheetsProvider } from '@/lib/providers/sheets/fake-sheets-provider';
 import { sql } from '@/lib/db/orchestrator';
+import { processInboundMessage, type InboundEnvelope } from '@/lib/services/ingestion.service';
 import { seedConversationForAgentTurn, type SeededAgentTurn } from '../helpers/agent-turn-fixtures';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
@@ -37,6 +38,7 @@ function commit(
     readonly text?: string;
     readonly response_type?: string;
     readonly state_patch?: Record<string, unknown>;
+    readonly state_version?: number;
     readonly artifact_ids?: readonly string[];
   },
 ) {
@@ -60,7 +62,7 @@ function commit(
       commit_preparations: input.preparation_ids,
       used_memory_ids: [],
       state_patch: {
-        expected_state_version: seeded.state_version,
+        expected_state_version: input.state_version ?? seeded.state_version,
         set: input.state_patch ?? {},
       },
       response_type: input.response_type ?? 'commercial_reply',
@@ -920,9 +922,7 @@ run('Agent Loop preparation materialization', () => {
   });
 
   it('projects once after contact details arrive across accepted turns in arbitrary order', async () => {
-    const seeded = await seedConversationForAgentTurn({
-      selected_offering_code: 'entrenamiento_funcional',
-    });
+    const seeded = await seedConversationForAgentTurn({ call_offer_count: 2 });
     const spreadsheetId = `captured-lead-${randomUUID()}`;
     process.env.GOOGLE_SHEETS_SPREADSHEET_ID = spreadsheetId;
     process.env.GOOGLE_SHEETS_TAB_NAME = 'Leads';
@@ -949,22 +949,81 @@ run('Agent Loop preparation materialization', () => {
       WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
     `).resolves.toHaveLength(0);
 
-    const namesLater = await prepareContactDetailsToolV1({
-      db: sql,
+    const courseSecond = await commit(seeded, {
       turn_id: seeded.second_turn_id,
+      preparation_ids: [],
+      state_patch: { selected_offering_code: 'entrenamiento_funcional' },
+    });
+    await recordDeliveryReport({
+      outbound_id: courseSecond.outbound_id!,
+      trace_id: randomUUID(),
+      status: 'submitted_to_botpress',
+      botpress_message_id: `bp-course-${seeded.second_turn_id}`,
+      replayed: false,
+      error_code: null,
+      delivery_attempt: 1,
+    });
+    await expect(sql<Array<{ id: string }>>`
+      SELECT id FROM sheet_projection_rows
+      WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
+    `).resolves.toHaveLength(0);
+
+    const [channel] = await sql<Array<{
+      provider: string;
+      integration_id: string;
+      external_conversation_id: string;
+      phone: string;
+    }>>`
+      SELECT thread.provider, thread.integration_id, thread.external_conversation_id, contact.phone
+      FROM conversations AS conversation
+      JOIN channel_threads AS thread ON thread.id = conversation.channel_thread_id
+      JOIN contacts AS contact ON contact.id = conversation.contact_id
+      WHERE conversation.id = ${seeded.conversation_id}::uuid
+    `;
+    if (!channel) throw new Error('TEST_CHANNEL_CONTEXT_MISSING');
+    const thirdInbound: InboundEnvelope = {
+      schema_version: 1,
+      source: 'botpress',
+      channel: 'emulator',
+      integration_id: channel.integration_id,
+      external_message_id: `agent-turn-fixture-third-${randomUUID()}`,
+      external_conversation_id: channel.external_conversation_id,
+      external_user_id: `agent-turn-fixture-third-user-${randomUUID()}`,
+      phone_e164: channel.phone,
+      trace_id: randomUUID(),
+      message: {
+        type: 'text',
+        text: 'Mi nombre es Ana García',
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    };
+    const thirdInboundResult = await processInboundMessage(thirdInbound);
+    const namesThird = await prepareContactDetailsToolV1({
+      db: sql,
+      turn_id: thirdInboundResult.turn_id,
       conversation_id: seeded.conversation_id,
       contact_id: seeded.contact_id,
     }, { last_name: 'García', first_name: 'Ana' });
-    expect(namesLater.success).toBe(true);
-    const second = await commit(seeded, {
-      turn_id: seeded.second_turn_id,
-      preparation_ids: [namesLater.preparation_id!],
+    expect(namesThird.success).toBe(true);
+    const [state] = await sql<Array<{ version: number }>>`
+      SELECT version
+      FROM conversation_sales_context_states_v1
+      WHERE workspace_id = ${seeded.workspace_id}::uuid
+        AND conversation_id = ${seeded.conversation_id}::uuid
+        AND contact_id = ${seeded.contact_id}::uuid
+    `;
+    if (!state) throw new Error('TEST_CONVERSATION_STATE_MISSING');
+    const third = await commit(seeded, {
+      turn_id: thirdInboundResult.turn_id,
+      state_version: Number(state.version),
+      preparation_ids: [namesThird.preparation_id!],
     });
     await recordDeliveryReport({
-      outbound_id: second.outbound_id!,
+      outbound_id: third.outbound_id!,
       trace_id: randomUUID(),
       status: 'submitted_to_botpress',
-      botpress_message_id: `bp-names-${seeded.second_turn_id}`,
+      botpress_message_id: `bp-names-${thirdInboundResult.turn_id}`,
       replayed: false,
       error_code: null,
       delivery_attempt: 1,
@@ -974,7 +1033,7 @@ run('Agent Loop preparation materialization', () => {
       SELECT payload, source_order FROM sheet_projection_rows
       WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
     `).resolves.toEqual([{
-      source_order: '2',
+      source_order: '3',
       payload: {
         nombre: 'Ana',
         apellido: 'García',

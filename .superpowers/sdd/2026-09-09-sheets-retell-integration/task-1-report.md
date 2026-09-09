@@ -147,3 +147,48 @@ was rolled back to `Pérez`.
 The fence is per stable projection key and does not alter the A:D payload,
 retry/dead-letter state machine, delivery gate, or sandbox guard. No live
 Google effect ran. No concerns remain.
+
+## Fix Round 2 — complete multi-turn proof and legacy refresh compatibility
+
+### Implementation
+
+- Reworked the complete-lead integration case to start with neither selected
+  course nor complete identity. It accepts email first, sets the canonical
+  selected course in a second accepted turn, then ingests and accepts
+  name/surname in a third turn. The test proves no stable row exists before
+  completion and exactly one four-column row exists afterwards.
+- Treat a missing `sourceOrder` as absence of ordering proof rather than as
+  the equal numeric order `0`. Legacy callers can therefore refresh the same
+  stable row when the merged payload changes, while leaving its stored source
+  order intact. Ordered Agent A writes retain the strict greater-than fence.
+
+### RED evidence
+
+`TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55433/studyx_test npm run test:unit -- tests/unit/projection/projection-idempotency.test.ts`
+
+Before the implementation, the new source-less identity-refresh test failed
+as intended: its second enqueue expected `after@example.com`, but the existing
+row still held `before@example.com` because both calls were coerced to source
+order zero and the equality fence returned unchanged.
+
+### GREEN evidence
+
+1. `TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55433/studyx_test npm run test:unit -- tests/unit/projection/projection-idempotency.test.ts`
+   — 11/11 passed.
+2. `TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55433/studyx_test npm run test:integration -- tests/integration/agent-tools-commit-effects.test.ts`
+   — 14/14 passed.
+3. `npm run typecheck` — passed.
+4. `git diff --check` — passed.
+
+### Files changed in this round
+
+- `src/lib/services/projection.service.ts`
+- `tests/unit/projection/projection-idempotency.test.ts`
+- `tests/integration/agent-tools-commit-effects.test.ts`
+
+### Round self-review and concerns
+
+The visible payload remains exactly `nombre`, `apellido`, `mail`, and
+`tipo_de_curso`; no migration, Retell code, export, credentials, or live Google
+effect was touched. The test obtains all required contact fields across actual
+accepted turns in a deliberately non-field order. No concerns remain.

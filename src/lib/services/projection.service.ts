@@ -97,8 +97,9 @@ function isCompleteLead(values: SheetRowValues): boolean {
   return Object.values(values).every((value) => value.trim().length > 0);
 }
 
-function sourceOrder(input: LeadProjectionInput): number {
-  const value = input.sourceOrder ?? 0;
+function sourceOrder(input: LeadProjectionInput): number | null {
+  if (input.sourceOrder === undefined) return null;
+  const value = input.sourceOrder;
   if (!Number.isSafeInteger(value) || value < 0) throw new Error('INVALID_LEAD_PROJECTION_SOURCE_ORDER');
   return value;
 }
@@ -123,6 +124,8 @@ export async function enqueueLeadProjection(
   const sql = deps.sql ?? orchestratorSql;
   const projectionKey = leadProjectionKey(input.workspaceId, input.contactId);
   const inputSourceOrder = sourceOrder(input);
+  const hasOrderingProof = inputSourceOrder !== null;
+  const persistedSourceOrder = inputSourceOrder ?? 0;
 
   for (let attempt = 0; attempt < MAX_ROW_RESERVE_ATTEMPTS; attempt++) {
     const existingRows = await sql<ExistingRow[]>`
@@ -149,17 +152,22 @@ export async function enqueueLeadProjection(
       if (!Number.isSafeInteger(existingSourceOrder) || existingSourceOrder < 0) {
         throw new Error('INVALID_STORED_LEAD_PROJECTION_SOURCE_ORDER');
       }
-      if (existingSourceOrder >= inputSourceOrder) {
+      if (
+        (hasOrderingProof && existingSourceOrder >= persistedSourceOrder)
+        || (!hasOrderingProof && existing.payload && sha256Hex(existing.payload) === payloadHash)
+      ) {
         return { id: existing.id, rowNumber: existing.row_number, changed: false };
       }
       const updated = await sql<Array<{ id: string; row_number: number }>>`
         UPDATE sheet_projection_rows
         SET payload = ${jsonbParam(sql, values)},
             payload_hash = ${payloadHash},
-            source_order = ${inputSourceOrder},
+            source_order = CASE WHEN ${hasOrderingProof}
+              THEN ${persistedSourceOrder} ELSE source_order END,
             state = 'pending',
             available_at = now()
-        WHERE id = ${existing.id} AND source_order < ${inputSourceOrder}
+        WHERE id = ${existing.id}
+          AND (NOT ${hasOrderingProof} OR source_order < ${persistedSourceOrder})
         RETURNING id, row_number
       `;
       if (updated[0]) return { id: updated[0].id, rowNumber: updated[0].row_number, changed: true };
@@ -181,7 +189,7 @@ export async function enqueueLeadProjection(
           COALESCE(MAX(row_number), 1) + 1,
           ${jsonbParam(sql, values)},
           ${payloadHash},
-          ${inputSourceOrder},
+          ${persistedSourceOrder},
           'pending'
         FROM sheet_projection_rows
         WHERE spreadsheet_id = ${input.spreadsheetId} AND tab_name = ${input.tabName}
