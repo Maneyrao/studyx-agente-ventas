@@ -70,7 +70,7 @@ export const RetellLifecycleWebhookSchema = z.discriminatedUnion('event', [
 export type RetellLifecycleWebhook = z.infer<typeof RetellLifecycleWebhookSchema>;
 
 export function verifyRetellSignature(input: {
-  readonly rawBody: string;
+  readonly rawBody: string | Uint8Array;
   readonly signature: string | null;
   readonly apiKey: string;
   readonly nowMs?: number;
@@ -85,7 +85,8 @@ export function verifyRetellSignature(input: {
   }
 
   const expected = createHmac('sha256', input.apiKey)
-    .update(input.rawBody + match[1], 'utf8')
+    .update(input.rawBody)
+    .update(match[1], 'utf8')
     .digest();
   const actual = Buffer.from(match[2], 'hex');
   return actual.length === expected.length && timingSafeEqual(actual, expected);

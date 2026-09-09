@@ -15,6 +15,7 @@ const internalCallId = randomUUID();
 const contactId = randomUUID();
 const conversationId = randomUUID();
 const providerCallId = 'call_retell_fixture_1';
+const expectedBodyLimit = 256 * 1_024;
 
 function wrapper(event: 'call_started' | 'call_ended' | 'call_analyzed') {
   const common = {
@@ -55,6 +56,30 @@ function request(rawBody: string, header = signature(rawBody)): Request {
     headers: { 'content-type': 'application/json', 'x-retell-signature': header },
     body: rawBody,
   });
+}
+
+function streamedRequest(input: {
+  chunks: Array<string | Uint8Array>;
+  signatureHeader?: string;
+  contentLength?: string;
+}): Request {
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of input.chunks) {
+        controller.enqueue(typeof chunk === 'string' ? new TextEncoder().encode(chunk) : chunk);
+      }
+      controller.close();
+    },
+  });
+  const headers = new Headers({ 'content-type': 'application/json' });
+  if (input.signatureHeader) headers.set('x-retell-signature', input.signatureHeader);
+  if (input.contentLength) headers.set('content-length', input.contentLength);
+  return new Request('http://localhost/retell/eventos', {
+    method: 'POST',
+    headers,
+    body: stream,
+    duplex: 'half',
+  } as RequestInit & { duplex: 'half' });
 }
 
 function dependencies(overrides: Partial<CallStore & RetellCallCorrelationStore> = {}) {
@@ -161,6 +186,57 @@ describe('Retell lifecycle mapping', () => {
 });
 
 describe('Retell webhook application boundary', () => {
+  it('returns 413 for an oversized signed body before parsing or correlation', async () => {
+    const deps = dependencies();
+    const rawBody = 'x'.repeat(expectedBodyLimit + 1);
+    const response = await handleRetellWebhook(request(rawBody), deps);
+    expect(response.status).toBe(413);
+    expect(deps.calls.resolveRetellCall).not.toHaveBeenCalled();
+    expect(deps.calls.appendEvent).not.toHaveBeenCalled();
+  });
+
+  it('returns 413 for an oversized unsigned body before authentication or correlation', async () => {
+    const deps = dependencies();
+    const response = await handleRetellWebhook(streamedRequest({
+      chunks: ['x'.repeat(expectedBodyLimit), 'x'],
+    }), deps);
+    expect(response.status).toBe(413);
+    expect(deps.calls.resolveRetellCall).not.toHaveBeenCalled();
+    expect(deps.calls.appendEvent).not.toHaveBeenCalled();
+  });
+
+  it('enforces the streamed byte cap when Content-Length lies about a chunked body', async () => {
+    const deps = dependencies();
+    const chunks = ['x'.repeat(128 * 1_024), 'x'.repeat(128 * 1_024), 'x'];
+    const rawBody = chunks.join('');
+    const response = await handleRetellWebhook(streamedRequest({
+      chunks,
+      contentLength: '12',
+      signatureHeader: signature(rawBody),
+    }), deps);
+    expect(response.status).toBe(413);
+    expect(deps.calls.resolveRetellCall).not.toHaveBeenCalled();
+    expect(deps.calls.appendEvent).not.toHaveBeenCalled();
+  });
+
+  it('preserves exact signed UTF-8 bytes when a multibyte character is split across chunks', async () => {
+    const deps = dependencies();
+    const payload = wrapper('call_started');
+    payload.call.transcript = 'señal';
+    const rawBody = JSON.stringify(payload);
+    const encoded = new TextEncoder().encode(rawBody);
+    const marker = new TextEncoder().encode('ñ');
+    const markerIndex = encoded.findIndex((byte, index) => (
+      byte === marker[0] && encoded[index + 1] === marker[1]
+    ));
+    const response = await handleRetellWebhook(streamedRequest({
+      chunks: [encoded.slice(0, markerIndex + 1), encoded.slice(markerIndex + 1)],
+      signatureHeader: signature(rawBody),
+    }), deps);
+    expect(response.status).toBe(204);
+    expect(deps.calls.resolveRetellCall).toHaveBeenCalledOnce();
+  });
+
   it('returns 401 before parsing or persistence for a bad signature', async () => {
     const deps = dependencies();
     const response = await handleRetellWebhook(request('{invalid-json', 'v=0,d=bad'), deps);

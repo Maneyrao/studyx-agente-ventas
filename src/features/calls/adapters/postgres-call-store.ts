@@ -97,13 +97,17 @@ export class PostgresCallStore implements CallStore, RetellCallCorrelationStore 
           provider_accepted_at = ${acceptedAt}::timestamptz,
           dispatch_lease_owner = NULL, dispatch_lease_until = NULL, error_code = NULL
       WHERE id = ${callId}::uuid AND status = 'dispatching'
+        AND (provider_call_id IS NULL OR provider_call_id = ${providerCallId})
       RETURNING id
     `;
     if (updated.length > 0) return;
     const existing = await this.db<Array<{ provider_call_id: string | null; status: string }>>`
       SELECT provider_call_id, status FROM call_sessions WHERE id = ${callId}::uuid
     `;
-    if (existing[0]?.status === 'provider_accepted' && existing[0].provider_call_id === providerCallId) return;
+    if (
+      existing[0]?.provider_call_id === providerCallId
+      && ['provider_accepted', 'in_progress', 'completed', 'no_answer', 'timed_out'].includes(existing[0].status)
+    ) return;
     throw new Error('CALL_DISPATCH_FENCE_LOST');
   }
 
