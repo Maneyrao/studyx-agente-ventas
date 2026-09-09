@@ -160,7 +160,9 @@ export function mapRetellLifecycleEvent(raw: unknown, internalCallId: string): C
   const webhook = RetellLifecycleWebhookSchema.parse(raw);
   const base = {
     schema_version: 1 as const,
-    event_id: `retell:${webhook.event}:${webhook.call.call_id}`,
+    event_id: webhook.event === 'call_analyzed'
+      ? `retell:webhook:call_analyzed:${webhook.call.call_id}`
+      : `retell:${webhook.event}:${webhook.call.call_id}`,
     call_id: internalCallId,
     provider: 'retell' as const,
   };
@@ -197,11 +199,11 @@ export function mapRetellLifecycleEvent(raw: unknown, internalCallId: string): C
 
   const custom = webhook.call.call_analysis.custom_analysis_data;
   const occurredAt = providerIso(webhook.call.end_timestamp);
-  const hasExtendedAnalysis = custom.link_pago_enviado !== undefined
-    || custom.pago_confirmado !== undefined
-    || custom.pidio_humano !== undefined
-    || custom.pidio_no_contactar !== undefined
-    || custom.pregunto_si_es_ia !== undefined;
+  const hasExtendedAnalysis = Object.keys(custom).some((key) => ![
+    'resultado', 'nivel_interes', 'objecion_principal',
+  ].includes(key))
+    || webhook.call.call_analysis.call_summary !== undefined
+    || webhook.call.call_analysis.user_sentiment !== undefined;
   const analysis = {
     result: custom.resultado,
     nivel_interes: custom.nivel_interes === 'nulo' ? null : (custom.nivel_interes ?? null),

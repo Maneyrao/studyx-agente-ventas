@@ -152,6 +152,8 @@ const ToolArgsSchemas = {
       'no_contactar',
       'ya_es_alumno',
       'no_calificado',
+      'buzon_de_voz',
+      'corto_la_llamada',
     ]),
     resumen: z.string().trim().min(1).max(2_048).optional(),
     call_summary: z.string().trim().min(1).max(4_096).optional(),
@@ -455,14 +457,12 @@ async function recordResult(
     args.proximo_paso ? `Próximo paso: ${args.proximo_paso}` : null,
     args.curso ? `Curso: ${args.curso}` : null,
   ].filter((value): value is string => value !== null).join('\n');
-  const extended = args.link_pago_enviado !== undefined
-    || args.pago_confirmado !== undefined
-    || args.pidio_humano !== undefined
-    || args.pidio_no_contactar !== undefined
-    || args.pregunto_si_es_ia !== undefined;
+  const extended = Object.keys(args).some((key) => ![
+    'resultado', 'resumen', 'objeciones', 'proximo_paso', 'nivel_interes', 'curso',
+  ].includes(key));
   await recordCallEvent({
     schema_version: 1,
-    event_id: `retell:call_analyzed:${envelope.call.call_id}`,
+    event_id: `retell:tool:call_analyzed:${envelope.call.call_id}`,
     call_id: callId,
     event_type: 'analyzed',
     sequence: 3,

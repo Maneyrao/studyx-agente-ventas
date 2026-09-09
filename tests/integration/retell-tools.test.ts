@@ -7,7 +7,7 @@ import { handleRetellToolRequest } from '@/features/calls/application/retell-too
 import { recordCallEvent } from '@/features/calls/application/record-call-event';
 import { hashCallContext } from '@/features/calls/domain/call-context';
 import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
-import { enqueueLeadProjection } from '@/lib/services/projection.service';
+import { agentALeadProjectionSourceOrder, enqueueLeadProjection, leadProjectionKey } from '@/lib/services/projection.service';
 import { openIndependentLocalTestDatabases, openLocalTestDatabase } from '../helpers/db';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
@@ -453,7 +453,7 @@ run('Retell P0 tools with PostgreSQL', () => {
     }
   });
 
-  it('uses first-writer-wins for tool-first, webhook-first, and changed replay', async () => {
+  it('merges tool/webhook sources deterministically regardless of arrival order', async () => {
     const toolFirst = await fixture({ name: 'Ana López', email: 'ana@example.test' });
     const tool = await callTool(toolFirst, 'registrar_resultado', {
       resultado: 'no_interesado',
@@ -463,7 +463,7 @@ run('Retell P0 tools with PostgreSQL', () => {
     await expect(recordCallEvent(
       lifecycleAnalysis(toolFirst, 'seguimiento_agendado'),
       { store: new PostgresCallStore(db!) },
-    )).resolves.toMatchObject({ persistence: 'duplicate' });
+    )).resolves.toMatchObject({ persistence: 'recorded' });
 
     const webhookFirst = await fixture({ name: 'Beto Pérez', email: 'beto@example.test' });
     await recordCallEvent(
@@ -484,10 +484,14 @@ run('Retell P0 tools with PostgreSQL', () => {
     await expect(db!<Array<{ id: string }>>`
       SELECT id FROM call_events
       WHERE call_id = ${webhookFirst.callId}::uuid AND event_type = 'analyzed'
-    `).resolves.toHaveLength(1);
+    `).resolves.toHaveLength(2);
+    await expect(db!<Array<{ id: string }>>`
+      SELECT id FROM call_events
+      WHERE call_id = ${toolFirst.callId}::uuid AND event_type = 'analyzed'
+    `).resolves.toHaveLength(2);
     await expect(db!<Array<{ result: string }>>`
       SELECT result FROM call_sessions WHERE id = ${toolFirst.callId}::uuid
-    `).resolves.toEqual([{ result: 'no_interesado' }]);
+    `).resolves.toEqual([{ result: 'seguimiento_agendado' }]);
     await expect(db!<Array<{ result: string }>>`
       SELECT result FROM call_sessions WHERE id = ${webhookFirst.callId}::uuid
     `).resolves.toEqual([{ result: 'seguimiento_agendado' }]);
@@ -598,5 +602,108 @@ run('Retell P0 tools with PostgreSQL', () => {
     expect(analysisRows).toHaveLength(1);
     expect(JSON.stringify(analysisRows[0].payload)).toContain('new@example.test');
     expect(JSON.stringify(analysisRows[0].payload)).not.toContain('discarded');
+  });
+
+  it('keeps both durable sources and merges webhook email/DNC over tool-first analysis', async () => {
+    const ids = await fixture({ name: 'Ana López', email: 'old@example.test', sourceOrder: 7 });
+    expect((await callTool(ids, 'guardar_datos_contacto', { email: 'old@example.test' })).body)
+      .toEqual({ ok: true, saved: false, projected: true });
+    const tool = await callTool(ids, 'registrar_resultado', {
+      resultado: 'seguimiento_agendado',
+      call_summary: 'La persona revisará la propuesta.',
+      user_sentiment: 'positive',
+      curso_ofrecido: 'Reparación de Celulares',
+      precio_ofrecido: 'USD 360',
+      objecion_principal: 'precio',
+      nivel_interes: 'alto',
+      email_capturado: 'tool@example.test',
+      link_pago_enviado: true,
+      pago_confirmado: false,
+      pidio_humano: false,
+      pidio_no_contactar: false,
+      pregunto_si_es_ia: false,
+      compromiso_pendiente: 'Revisar mañana.',
+    });
+    expect(tool.body).toEqual({ ok: true, recorded: true });
+    const webhook = mapRetellLifecycleEvent({
+      event: 'call_analyzed',
+      call: {
+        call_id: ids.providerCallId,
+        metadata: {
+          internal_call_id: ids.callId,
+          contact_id: ids.contactId,
+          conversation_id: ids.conversationId,
+        },
+        end_timestamp: nowMs,
+        call_analysis: {
+          call_summary: 'La persona confirmó que no desea más contactos.',
+          user_sentiment: 'neutral',
+          custom_analysis_data: {
+            resultado: 'no_contactar',
+            curso_ofrecido: 'Reparación de Celulares',
+            precio_ofrecido: 'USD 360',
+            objecion_principal: 'ninguna',
+            nivel_interes: 'nulo',
+            email_capturado: 'webhook@example.test',
+            link_pago_enviado: false,
+            pago_confirmado: false,
+            pidio_humano: false,
+            pidio_no_contactar: true,
+            pregunto_si_es_ia: false,
+            compromiso_pendiente: 'No contactar.',
+          },
+        },
+      }}, ids.callId);
+    await recordCallEvent(webhook, { store: new PostgresCallStore(db!) });
+
+    await expect(db!<Array<{ count: string }>>`
+      SELECT count(*)::text AS count FROM call_events
+      WHERE call_id = ${ids.callId}::uuid AND event_type = 'analyzed'
+    `).resolves.toEqual([{ count: '2' }]);
+    await expect(db!<Array<{ email: string | null }>>`
+      SELECT email FROM contacts WHERE id = ${ids.contactId}::uuid
+    `).resolves.toEqual([{ email: 'webhook@example.test' }]);
+    await expect(db!<Array<{ result: string | null }>>`
+      SELECT result FROM call_sessions WHERE id = ${ids.callId}::uuid
+    `).resolves.toEqual([{ result: 'no_contactar' }]);
+  });
+
+  it('does not let a stale analysis email cross the newer Agent A Sheet fence', async () => {
+    const ids = await fixture({ name: 'Ana López', email: 'agent@example.test', sourceOrder: 7 });
+    await enqueueLeadProjection({
+      workspaceId: ids.workspaceId,
+      contactId: ids.contactId,
+      spreadsheetId: ids.spreadsheetId,
+      tabName: 'Leads',
+      sourceOrder: agentALeadProjectionSourceOrder(8),
+      sourceKey: 'agent-a:newer-turn',
+      nombre: 'Ana',
+      apellido: 'López',
+      email: 'agent@example.test',
+      cursoInteres: 'Reparación de Celulares',
+      ultimaSenal: 'agent_a_newer_identity',
+      traceId: ids.callId,
+    }, { sql: db! });
+    const response = await callTool(ids, 'registrar_resultado', {
+      resultado: 'seguimiento_agendado',
+      call_summary: 'Análisis atrasado.',
+      email_capturado: 'stale@example.test',
+      curso_ofrecido: 'Reparación de Celulares',
+    });
+    expect(response.body).toEqual({ ok: true, recorded: true });
+    await expect(db!<Array<{ email: string | null }>>`
+      SELECT email FROM contacts WHERE id = ${ids.contactId}::uuid
+    `).resolves.toEqual([{ email: 'agent@example.test' }]);
+    await expect(db!<Array<{ payload: Record<string, string> }>>`
+      SELECT payload FROM sheet_projection_rows
+      WHERE projection_key = ${leadProjectionKey(ids.workspaceId, ids.contactId)}
+    `).resolves.toEqual([{
+      payload: {
+        nombre: 'Ana',
+        apellido: 'López',
+        mail: 'agent@example.test',
+        tipo_de_curso: 'Reparación de Celulares',
+      },
+    }]);
   });
 });

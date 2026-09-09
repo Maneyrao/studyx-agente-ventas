@@ -142,13 +142,18 @@ describe('Retell lifecycle mapping', () => {
     expect(analyzed.payload).toEqual({
       event_type: 'analyzed',
       analysis: {
+        call_summary: 'Pidió información y cerró sin comprar.',
         result: 'no_interesado',
+        resultado: 'no_interesado',
         nivel_interes: 'bajo',
         objecion: 'precio',
+        objecion_principal: 'precio',
+        precio_ofrecido: 'sensitive-commercial-detail',
         notas: 'Pidió información y cerró sin comprar.',
       },
     });
-    expect(JSON.stringify([started, ended, analyzed])).not.toContain('sensitive');
+    expect(JSON.stringify([started, ended, analyzed])).not.toContain('transcript');
+    expect(JSON.stringify([started, ended, analyzed])).not.toContain('recording');
     expect([started.sequence, ended.sequence, analyzed.sequence]).toEqual([1, 2, 3]);
   });
 
@@ -275,7 +280,9 @@ describe('Retell webhook application boundary', () => {
       metadata: { internalCallId, contactId, conversationId },
     });
     expect(deps.calls.appendEvent).toHaveBeenCalledWith(expect.objectContaining({
-      event_id: `retell:${event}:${providerCallId}`,
+      event_id: event === 'call_analyzed'
+        ? `retell:webhook:call_analyzed:${providerCallId}`
+        : `retell:${event}:${providerCallId}`,
       call_id: internalCallId,
     }));
     expect(deps.calls.recomputeProjection).toHaveBeenCalledWith(internalCallId);

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type postgres from 'postgres';
 import { CallEventSchema, type CallAnalysis, type CallEvent } from '@/lib/contracts/call-event';
 import { hashCallContext, parseCallContext } from '../domain/call-context';
-import { projectCallState, type CallProjection } from '../domain/call-state';
+import { mergeCallAnalyses, projectCallState, type CallProjection } from '../domain/call-state';
 import type { CallStore, DispatchClaim } from '../ports/call-store';
 import {
   RetellCallCorrelationError,
@@ -41,6 +41,8 @@ type RetellCorrelationRow = {
 type RetellToolCorrelationRow = RetellCorrelationRow & {
   workspace_authorized: boolean;
 };
+
+type SqlExecutor = postgres.Sql | postgres.TransactionSql;
 
 export class PostgresCallStore implements CallStore, RetellToolCallCorrelationStore {
   constructor(private readonly db: postgres.Sql) {}
@@ -282,47 +284,52 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
   async appendEvent(rawEvent: CallEvent): Promise<'recorded' | 'duplicate'> {
     const event = CallEventSchema.parse(rawEvent);
     const payloadHash = createHash('sha256').update(JSON.stringify(event), 'utf8').digest('hex');
-    const inserted = await this.db<Array<{ id: string }>>`
-      INSERT INTO call_events (
-        call_id, provider, event_id, event_type, sequence, occurred_at, payload, payload_hash
-      ) VALUES (
-        ${event.call_id}::uuid, ${event.provider}, ${event.event_id}, ${event.event_type},
-        ${event.sequence}, ${event.occurred_at}::timestamptz, ${this.db.json(event.payload)}, decode(${payloadHash}, 'hex')
-      )
-      ON CONFLICT (provider, event_id) DO NOTHING
-      RETURNING id
-    `;
-    if (inserted.length > 0) {
-      if (event.payload.event_type === 'analyzed') await this.convergeRetellAnalysis(event.call_id, event.payload.analysis);
-      return 'recorded';
-    }
-    const existing = await this.db<Array<{
-      call_id: string;
-      event_type: CallEvent['event_type'];
-      payload_hash_hex: string;
-      provider_call_id: string | null;
-    }>>`
-      SELECT event.call_id, event.event_type,
-             encode(event.payload_hash, 'hex') AS payload_hash_hex,
-             session.provider_call_id
-      FROM call_events AS event
-      JOIN call_sessions AS session ON session.id = event.call_id
-      WHERE event.provider = ${event.provider} AND event.event_id = ${event.event_id}
-    `;
-    const firstWriterWinsAnalyzed = event.provider === 'retell'
-      && event.event_type === 'analyzed'
-      && existing[0]?.event_type === 'analyzed'
-      && existing[0]?.call_id === event.call_id
-      && existing[0]?.provider_call_id !== null
-      && event.event_id === `retell:call_analyzed:${existing[0]?.provider_call_id}`;
-    if (
-      existing[0]?.call_id !== event.call_id
-      || (existing[0]?.payload_hash_hex !== payloadHash && !firstWriterWinsAnalyzed)
-    ) {
-      throw new Error('CALL_EVENT_REPLAY_CONFLICT');
-    }
-    if (event.payload.event_type === 'analyzed') await this.convergeRetellAnalysis(event.call_id, event.payload.analysis);
-    return 'duplicate';
+    return this.db.begin(async (tx) => {
+      const inserted = await tx<Array<{ id: string }>>`
+        INSERT INTO call_events (
+          call_id, provider, event_id, event_type, sequence, occurred_at, payload, payload_hash
+        ) VALUES (
+          ${event.call_id}::uuid, ${event.provider}, ${event.event_id}, ${event.event_type},
+          ${event.sequence}, ${event.occurred_at}::timestamptz, ${tx.json(event.payload)}, decode(${payloadHash}, 'hex')
+        )
+        ON CONFLICT (provider, event_id) DO NOTHING
+        RETURNING id
+      `;
+      const persistence: 'recorded' | 'duplicate' = inserted.length > 0 ? 'recorded' : 'duplicate';
+      if (inserted.length === 0) {
+        const existing = await tx<Array<{ call_id: string; payload_hash_hex: string }>>`
+          SELECT event.call_id, encode(event.payload_hash, 'hex') AS payload_hash_hex
+          FROM call_events AS event
+          WHERE event.provider = ${event.provider} AND event.event_id = ${event.event_id}
+        `;
+        if (existing[0]?.call_id !== event.call_id || existing[0]?.payload_hash_hex !== payloadHash) {
+          throw new Error('CALL_EVENT_REPLAY_CONFLICT');
+        }
+      }
+      if (event.payload.event_type === 'analyzed') {
+        const rows = await tx<Array<{
+          event_id: string; event_type: CallEvent['event_type']; sequence: number;
+          occurred_at: Date | string; provider: CallEvent['provider']; payload: unknown;
+        }>>`
+          SELECT event_id, event_type, sequence, occurred_at, provider, payload
+          FROM call_events
+          WHERE call_id = ${event.call_id}::uuid AND event_type = 'analyzed'
+          ORDER BY event_id
+        `;
+        const events = rows.map((row) => CallEventSchema.parse({
+          schema_version: 1,
+          event_id: row.event_id,
+          call_id: event.call_id,
+          event_type: row.event_type,
+          sequence: row.sequence,
+          occurred_at: iso(row.occurred_at),
+          provider: row.provider,
+          payload: row.payload,
+        }));
+        await this.convergeRetellAnalysis(tx, event.call_id, mergeCallAnalyses(events));
+      }
+      return persistence;
+    });
   }
 
   /**
@@ -332,10 +339,10 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
    * same membership. Replays intentionally run this idempotent convergence
    * again so a delivery interrupted after the event insert can heal.
    */
-  private async convergeRetellAnalysis(callId: string, analysis: CallAnalysis): Promise<void> {
+  private async convergeRetellAnalysis(db: SqlExecutor, callId: string, analysis: CallAnalysis): Promise<void> {
     const email = analysis.email_capturado;
     if (!email) return;
-    const rows = await this.db<Array<{
+    const rows = await db<Array<{
       contact_id: string;
       workspace_id: string;
       source_order: string | number | null;
@@ -346,7 +353,7 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
     }>>`
       SELECT
         cs.contact_id,
-        state.workspace_id,
+        canonical_workspace.workspace_id,
         source.conversation_seq AS source_order,
         contact.name,
         contact.email,
@@ -361,36 +368,34 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
       JOIN contacts AS contact
         ON contact.id = cs.contact_id
        AND contact.deleted_at IS NULL
-      JOIN conversation_sales_context_states_v1 AS state
-        ON state.conversation_id = cs.conversation_id
-       AND state.contact_id = cs.contact_id
-      JOIN workspaces AS workspace
-        ON workspace.id = state.workspace_id
-       AND workspace.status = 'active'
-      JOIN workspace_contacts AS membership
-        ON membership.workspace_id = state.workspace_id
-       AND membership.contact_id = cs.contact_id
-       AND membership.lifecycle_status = 'active'
+      JOIN LATERAL (
+        SELECT candidate.workspace_id
+        FROM (
+          SELECT state.workspace_id, count(*) OVER () AS candidate_count
+          FROM conversation_sales_context_states_v1 AS state
+          JOIN workspaces AS candidate_workspace
+            ON candidate_workspace.id = state.workspace_id
+           AND candidate_workspace.status = 'active'
+          JOIN workspace_contacts AS candidate_membership
+            ON candidate_membership.workspace_id = state.workspace_id
+           AND candidate_membership.contact_id = cs.contact_id
+           AND candidate_membership.lifecycle_status = 'active'
+          WHERE state.conversation_id = cs.conversation_id
+            AND state.contact_id = cs.contact_id
+          GROUP BY state.workspace_id
+        ) AS candidate
+        WHERE candidate.candidate_count = 1
+      ) AS canonical_workspace ON true
       LEFT JOIN offerings AS offering
-        ON offering.workspace_id = state.workspace_id
+        ON offering.workspace_id = canonical_workspace.workspace_id
        AND offering.code = NULLIF(btrim(cs.context_snapshot ->> 'curso_interes'), '')
        AND offering.status = 'active'
       WHERE cs.id = ${callId}::uuid
         AND cs.provider = 'retell'
-      ORDER BY state.updated_at DESC, state.workspace_id
       LIMIT 1
     `;
     const row = rows[0];
     if (!row) return;
-
-    if (row.email !== email) {
-      await this.db`
-        UPDATE contacts
-        SET email = ${email}
-        WHERE id = ${row.contact_id}::uuid
-          AND deleted_at IS NULL
-      `;
-    }
 
     const identity = row.name ? splitFullName(row.name) : null;
     if (!identity?.nombre.trim() || !identity.apellido.trim()) return;
@@ -398,7 +403,7 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
     if (!course?.trim() || row.source_order === null) return;
 
     const sheetsFromEnvironment = loadSheetsProjectionConfig();
-    const existingProjection = await this.db<Array<{ spreadsheet_id: string; tab_name: string }>>`
+    const existingProjection = await db<Array<{ spreadsheet_id: string; tab_name: string }>>`
       SELECT spreadsheet_id, tab_name
       FROM sheet_projection_rows
       WHERE projection_key = ${leadProjectionKey(row.workspace_id, row.contact_id)}
@@ -413,7 +418,7 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
 
     const sourceOrder = Number(row.source_order);
     if (!Number.isSafeInteger(sourceOrder) || sourceOrder < 0) return;
-    await enqueueLeadProjection({
+    const projection = await enqueueLeadProjection({
       workspaceId: row.workspace_id,
       contactId: row.contact_id,
       spreadsheetId: sheets.spreadsheetId,
@@ -426,7 +431,18 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
       cursoInteres: course,
       ultimaSenal: 'retell_post_call_analysis_email_captured',
       traceId: callId,
-    }, { sql: this.db });
+    }, { sql: db });
+    // A late event cannot win the outbox ordering fence and then mutate the
+    // canonical contact independently of that projection decision.
+    if (!projection?.changed) return;
+    if (row.email !== email) {
+      await db`
+        UPDATE contacts
+        SET email = ${email}
+        WHERE id = ${row.contact_id}::uuid
+          AND deleted_at IS NULL
+      `;
+    }
   }
 
   async recomputeProjection(callId: string): Promise<CallProjection> {
@@ -458,15 +474,47 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
         cancelledAt: sessions[0].status === 'cancelled' ? new Date().toISOString() : null,
         events,
       });
+      let canonicalResult = projection.result;
+      if (canonicalResult === 'venta_confirmada') {
+        const workspaces = await tx<Array<{ workspace_id: string }>>`
+          SELECT candidate.workspace_id
+          FROM (
+            SELECT state.workspace_id, count(*) OVER () AS candidate_count
+            FROM conversation_sales_context_states_v1 AS state
+            JOIN workspaces AS workspace
+              ON workspace.id = state.workspace_id
+             AND workspace.status = 'active'
+            JOIN workspace_contacts AS membership
+              ON membership.workspace_id = state.workspace_id
+             AND membership.contact_id = (SELECT contact_id FROM call_sessions WHERE id = ${callId}::uuid)
+             AND membership.lifecycle_status = 'active'
+            WHERE state.conversation_id = (SELECT conversation_id FROM call_sessions WHERE id = ${callId}::uuid)
+              AND state.contact_id = (SELECT contact_id FROM call_sessions WHERE id = ${callId}::uuid)
+            GROUP BY state.workspace_id
+          ) AS candidate
+          WHERE candidate.candidate_count = 1
+        `;
+        const payment = workspaces.length === 1
+          ? await tx<Array<{ exists: boolean }>>`
+              SELECT EXISTS (
+                SELECT 1 FROM payments
+                WHERE workspace_id = ${workspaces[0].workspace_id}::uuid
+                  AND contact_id = (SELECT contact_id FROM call_sessions WHERE id = ${callId}::uuid)
+                  AND status = 'paid'
+              ) AS exists
+            `
+          : [];
+        if (!payment[0]?.exists) canonicalResult = null;
+      }
       await tx`
         UPDATE call_sessions
         SET status = ${projection.status}, analysis_status = ${projection.analysisStatus},
-            result = ${projection.result},
+            result = ${canonicalResult},
             started_at = CASE WHEN ${projection.status} IN ('in_progress', 'completed') THEN COALESCE(started_at, now()) ELSE started_at END,
             completed_at = CASE WHEN ${projection.status} IN ('completed', 'failed', 'no_answer', 'timed_out', 'cancelled') THEN COALESCE(completed_at, now()) ELSE completed_at END
         WHERE id = ${callId}::uuid
       `;
-      return projection;
+      return { ...projection, result: canonicalResult };
     });
   }
 }

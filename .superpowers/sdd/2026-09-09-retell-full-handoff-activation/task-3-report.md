@@ -78,3 +78,54 @@ No migration was required: the existing append-only `call_events.payload` JSON i
 - Conditional string fields may be absent when the export marks them conditional; required boolean values are accepted when present and never treated as payment evidence.
 - The Sheet worker remains the existing derived outbox worker; this task only enqueues/converges its canonical row and does not make Google network calls.
 - Live Retell credentials/publication, WhatsApp credentials, and production deployment remain outside this task and require the release checkpoint.
+
+## Fix round 1 — revisión NOT APPROVED
+
+### Hallazgos corregidos
+
+- `registrar_resultado` y `call_analyzed` ahora tienen identidades durables independientes (`retell:tool:call_analyzed:<provider_call_id>` y `retell:webhook:call_analyzed:<provider_call_id>`). Ambos hechos se conservan; la convergencia ordena siempre webhook antes que tool y completa campo por campo sin depender del último payload recibido.
+- La proyección de `venta_confirmada` consulta pagos canónicos `paid` ligados al workspace canónico y contacto de la llamada. Sin esa prueba, `call_sessions.result` queda `NULL`; el claim queda únicamente en el evento de análisis acotado y no llega como venta a Agent A.
+- La resolución de workspace exige una única membresía/estado activo candidato. La convergencia de email, el outbox de Sheets y el sweep de follow-up fallan cerrado ante dos workspaces y nunca eligen el más reciente.
+- La detección de análisis completo reconoce cualquier campo extendido (no solo cinco booleanos), conserva los 14 campos conocidos y mantiene la forma legacy cuando solo llegan los campos legacy. `CallResultSchema` y `registrar_resultado` incluyen `buzon_de_voz` y `corto_la_llamada`.
+- Email y Sheet convergen dentro de la misma transacción y en el orden `outbox fence → contacto`. Un evento atrasado rechazado por el fence no muta el contacto; sin destino de Sheet no se actualiza PII.
+- `pidio_no_contactar` se evalúa antes de `cancelled`, por lo que revoca incluso una llamada cancelada.
+
+### RED → GREEN de la ronda
+
+Se agregaron primero pruebas unitarias RED para la precedencia/merge de fuentes, DNC sobre cancelación y los dos outcomes faltantes. Luego se agregaron pruebas PostgreSQL para tool-first → webhook completo (14 campos, email y DNC), replays alternados, venta sin pago, workspace ambiguo, y análisis atrasado frente a un orden de Sheet más nuevo de Agent A.
+
+Pruebas focales unitarias:
+
+```text
+8 files passed — 108 tests passed
+```
+
+Pruebas focales PostgreSQL en `127.0.0.1:55435`:
+
+```text
+4 files passed — 30 tests passed
+```
+
+Checks adicionales:
+
+```text
+npm run typecheck        passed
+npm run lint -- --quiet  passed
+git diff --check         passed
+```
+
+### Archivos tocados en Fix round 1
+
+- `src/features/calls/domain/call-state.ts`
+- `src/features/calls/domain/post-call-followup.ts`
+- `src/features/calls/adapters/postgres-call-store.ts`
+- `src/features/calls/adapters/postgres-post-call-followup-store.ts`
+- `src/features/calls/adapters/retell-lifecycle.ts`
+- `src/features/calls/application/retell-tools.ts`
+- `tests/unit/calls/retell-post-call-analysis.test.ts`
+- `tests/unit/calls/retell-tools.test.ts`
+- `tests/unit/calls/retell-webhook.test.ts`
+- `tests/integration/retell-tools.test.ts`
+- `tests/integration/post-call-followup.test.ts`
+
+No migration, deploy, push, merge, or network/provider call was performed.

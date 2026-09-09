@@ -308,6 +308,42 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
     expect(await outboundDeliveryCountForConversation(fixture.conversationId)).toBe(0);
   });
 
+  it('Task 3: do-not-contact still revokes when the call was cancelled', async () => {
+    const fixture = await seedTerminalCall({
+      status: 'cancelled',
+      result: 'seguimiento_agendado',
+      analysis_status: 'completed',
+      provider: 'retell',
+    });
+    await new PostgresCallStore(sql).appendEvent({
+      schema_version: 1,
+      event_id: `retell:call_analyzed:${fixture.providerCallId}`,
+      call_id: fixture.callId,
+      event_type: 'analyzed',
+      sequence: 3,
+      occurred_at: new Date().toISOString(),
+      provider: 'retell',
+      payload: {
+        event_type: 'analyzed',
+        analysis: {
+          result: 'seguimiento_agendado',
+          nivel_interes: 'alto',
+          objecion: null,
+          notas: 'La llamada fue cancelada, pero pidió no contactar.',
+          pidio_no_contactar: true,
+        },
+      },
+    });
+
+    const result = await sweep();
+    expect(result.findings.find((finding) => finding.call_id === fixture.callId)).toMatchObject({
+      action: 'revoke_contact',
+      reason: 'DO_NOT_CONTACT',
+    });
+    expect(await consentStatus(fixture.contactId)).toBe('revoked');
+    expect(await outboundDeliveryCountForConversation(fixture.conversationId)).toBe(0);
+  });
+
   it('Task 3: pago_confirmado from Retell cannot manufacture a sale without canonical payment proof', async () => {
     const fixture = await seedTerminalCall({
       status: 'completed',
@@ -492,7 +528,7 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
     }]);
   });
 
-  it('binds followup payment proof to the conversation workspace, not oldest contact membership', async () => {
+  it('fails closed when the call has ambiguous workspace membership', async () => {
     const fixture = await seedTerminalCall({ status: 'completed', result: 'venta_confirmada' });
     const newerWorkspace = await sql<Array<{ id: string }>>`
       INSERT INTO workspaces (slug, display_name, environment, status)
@@ -532,7 +568,7 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
     `;
 
     const pending = await store.listPendingFollowups({ limit: 500, grace_seconds: 0 });
-    expect(pending.find((call) => call.call_id === fixture.callId)?.workspace_id).toBe(newerWorkspaceId);
+    expect(pending.find((call) => call.call_id === fixture.callId)).toBeUndefined();
     await expect(store.hasVerifiedPayment(fixture.contactId, newerWorkspaceId)).resolves.toBe(false);
     await expect(store.hasVerifiedPayment(fixture.contactId, fixture.workspaceId)).resolves.toBe(true);
   });

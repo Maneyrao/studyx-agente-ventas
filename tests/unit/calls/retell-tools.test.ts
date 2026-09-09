@@ -405,7 +405,7 @@ describe('Retell P0 tool boundary', () => {
 
     expect(result.body).toEqual({ ok: true, recorded: true });
     expect(deps.calls.appendEvent).toHaveBeenCalledWith(expect.objectContaining({
-      event_id: `retell:call_analyzed:${providerCallId}`,
+      event_id: `retell:tool:call_analyzed:${providerCallId}`,
       call_id: internalCallId,
       event_type: 'analyzed',
       payload: {

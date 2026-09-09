@@ -10,6 +10,7 @@ import {
 import type { CallStore } from '@/features/calls/ports/call-store';
 import type { RetellToolCallCorrelationStore } from '@/features/calls/ports/retell-call-correlation-store';
 import { decidePostCallFollowup } from '@/features/calls/domain/post-call-followup';
+import { mergeCallAnalyses } from '@/features/calls/domain/call-state';
 
 const apiKey = 'analysis-api-key';
 const toolsSecret = 'analysis-tools-secret';
@@ -179,5 +180,60 @@ describe('bounded Retell post-call analysis', () => {
       paymentVerified: true,
       doNotContact: true,
     })).toEqual({ action: 'revoke_contact', reason: 'DO_NOT_CONTACT' });
+  });
+
+  it('keeps webhook and tool analyses as separate durable sources and gives webhook fields precedence', () => {
+    const tool = mapRetellLifecycleEvent(completeWebhook({
+      email_capturado: 'tool@example.test',
+      pidio_no_contactar: false,
+    }), callId);
+    const toolSource = { ...tool, event_id: `retell:tool:call_analyzed:${providerCallId}` };
+    const toolAnalysis = (tool.payload as Extract<typeof tool.payload, { event_type: 'analyzed' }>).analysis;
+    const webhook = { ...tool, event_id: `retell:webhook:call_analyzed:${providerCallId}`, payload: {
+      event_type: 'analyzed' as const,
+      analysis: { ...toolAnalysis, email_capturado: 'webhook@example.test', pidio_no_contactar: true },
+    } };
+    const mergedForward = mergeCallAnalyses([toolSource, webhook]);
+    const mergedReverse = mergeCallAnalyses([webhook, toolSource]);
+    expect(mergedForward).toEqual(mergedReverse);
+    expect(mergedForward).toMatchObject({
+      email_capturado: 'webhook@example.test',
+      pidio_no_contactar: true,
+    });
+    const optOutTool = {
+      ...toolSource,
+      payload: { event_type: 'analyzed' as const, analysis: { ...toolAnalysis, pidio_no_contactar: true } },
+    };
+    const nonOptOutWebhook = {
+      ...webhook,
+      payload: { event_type: 'analyzed' as const, analysis: { ...toolAnalysis, pidio_no_contactar: false } },
+    };
+    expect(mergeCallAnalyses([nonOptOutWebhook, optOutTool]).pidio_no_contactar).toBe(true);
+  });
+
+  it('does not let a cancelled call bypass a durable do-not-contact claim', () => {
+    expect(decidePostCallFollowup({
+      status: 'cancelled',
+      result: 'seguimiento_agendado',
+      analysisStatus: 'completed',
+      paymentVerified: false,
+      doNotContact: true,
+    })).toEqual({ action: 'revoke_contact', reason: 'DO_NOT_CONTACT' });
+  });
+
+  it('accepts both missing Retell call-result outcomes', async () => {
+    const deps = toolDependencies();
+    for (const resultado of ['buzon_de_voz', 'corto_la_llamada'] as const) {
+      const body = {
+        name: 'registrar_resultado',
+        call: {
+          call_id: providerCallId,
+          metadata: { internal_call_id: callId, contact_id: contactId, conversation_id: conversationId },
+        },
+        args: { resultado, resumen: 'Resultado de prueba.' },
+      };
+      const response = await handleRetellToolRequest(signedRequest(body), 'registrar_resultado', deps);
+      expect(response.status).toBe(200);
+    }
   });
 });

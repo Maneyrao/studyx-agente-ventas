@@ -41,22 +41,25 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
              ) AS do_not_contact
       FROM call_sessions AS cs
       JOIN LATERAL (
-        SELECT state.workspace_id
-        FROM conversation_sales_context_states_v1 AS state
-        JOIN conversations AS conversation
-          ON conversation.id = state.conversation_id
-         AND conversation.contact_id = state.contact_id
-        JOIN workspaces AS workspace
-          ON workspace.id = state.workspace_id
-         AND workspace.status = 'active'
-        JOIN workspace_contacts AS membership
-          ON membership.workspace_id = state.workspace_id
-         AND membership.contact_id = state.contact_id
-         AND membership.lifecycle_status = 'active'
-        WHERE state.conversation_id = cs.conversation_id
-          AND state.contact_id = cs.contact_id
-        ORDER BY state.updated_at DESC, state.workspace_id ASC
-        LIMIT 1
+        SELECT candidate.workspace_id
+        FROM (
+          SELECT state.workspace_id, count(*) OVER () AS candidate_count
+          FROM conversation_sales_context_states_v1 AS state
+          JOIN conversations AS conversation
+            ON conversation.id = state.conversation_id
+           AND conversation.contact_id = state.contact_id
+          JOIN workspaces AS workspace
+            ON workspace.id = state.workspace_id
+           AND workspace.status = 'active'
+          JOIN workspace_contacts AS membership
+            ON membership.workspace_id = state.workspace_id
+           AND membership.contact_id = state.contact_id
+           AND membership.lifecycle_status = 'active'
+          WHERE state.conversation_id = cs.conversation_id
+            AND state.contact_id = cs.contact_id
+          GROUP BY state.workspace_id
+        ) AS candidate
+        WHERE candidate.candidate_count = 1
       ) AS wc ON true
       WHERE cs.status = ANY(${TERMINAL_STATUSES})
         AND cs.updated_at < now() - make_interval(secs => ${input.grace_seconds})
