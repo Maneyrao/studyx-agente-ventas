@@ -84,6 +84,41 @@ describe('validación de la propuesta del turno', () => {
     })).toBeNull();
   });
 
+  it('no confunde formato multilínea con un saludo repetido', () => {
+    expect(validateAgentATurnProposalV1({
+      proposal: proposal({
+        response: {
+          messages: ['Te paso lo confirmado:\n\nRedes Informáticas tiene 16 clases.'],
+          call_offer: null,
+        },
+      }),
+      context: context({
+        turn: {
+          batch_messages: [{ id: 'm2', text: 'Pasame la info' }],
+          recent_turns: [{
+            id: 'prior-agent', direction: 'outbound',
+            content: 'Elegiste Redes Informáticas. ¿Querés que te detalle el curso?',
+          }],
+        },
+        catalog: {
+          ...context().catalog,
+          selected_offering: {
+            ...context().catalog.selected_offering!,
+            facts: [
+              ...context().catalog.selected_offering!.facts,
+              { id: 'offering:redes-informaticas:duration:v1', kind: 'offering_duration', value: '16 clases' },
+            ],
+          },
+        },
+      }),
+      planned_fact_ids: [
+        'offering:redes-informaticas:name:v1',
+        'offering:redes-informaticas:duration:v1',
+      ],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    })).toBeNull();
+  });
+
   it('rechaza una oferta inicial de llamada embebida para que el modelo la reescriba separada', () => {
     const rejection = validateAgentATurnProposalV1({
       proposal: proposal({
@@ -340,6 +375,98 @@ describe('validación de la propuesta del turno', () => {
       }),
       context: discovery,
       planned_fact_ids: [],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    })).toBeNull();
+  });
+
+  it('acepta un próximo paso conversacional sin exigir signo de pregunta', () => {
+    const discovery = context({
+      turn: {
+        batch_messages: [{ id: 'm2', text: 'Info de los tres' }],
+        recent_turns: [{
+          id: 'prior-agent', direction: 'outbound',
+          content: 'Podés mirar Influencers, Fotografía Profesional o Fotografía con Celulares.',
+        }],
+      },
+      commercial_state: {
+        ...context().commercial_state,
+        selected_offering_code: null,
+        stage: 'exploring',
+        call_offer_count: 1,
+        call_offer_status: 'offered',
+      },
+      catalog: {
+        available_offerings: [
+          { code: 'influencers', fact_id: 'offering:influencers:name:v1', display_name: 'Influencers', area_code: 'creatividad' },
+          { code: 'fotografia', fact_id: 'offering:fotografia:name:v1', display_name: 'Fotografía Profesional', area_code: 'creatividad' },
+          { code: 'fotografia_celular', fact_id: 'offering:fotografia-celular:name:v1', display_name: 'Fotografía con Celulares', area_code: 'creatividad' },
+        ],
+        selected_offering: null,
+        areas: [],
+        candidate_offerings: [],
+        payment_plans: [],
+      },
+      capabilities: { ...context().capabilities, may_offer_call: false },
+    });
+    const facts = discovery.catalog.available_offerings.map((offering) => offering.fact_id);
+
+    expect(validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: { schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: {
+          messages: ['Son Influencers, Fotografía Profesional y Fotografía con Celulares. Decime cuál querés que te detalle primero.'],
+          call_offer: null,
+        },
+        used_fact_ids: facts,
+      }),
+      context: discovery,
+      planned_fact_ids: facts,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    })).toBeNull();
+  });
+
+  it('no bloquea una respuesta útil de catálogo por omitir el próximo paso', () => {
+    const discovery = context({
+      turn: {
+        batch_messages: [{ id: 'm2', text: 'Info de los tres' }],
+        recent_turns: [{
+          id: 'prior-agent', direction: 'outbound',
+          content: 'Podés mirar Influencers, Fotografía Profesional o Fotografía con Celulares.',
+        }],
+      },
+      commercial_state: {
+        ...context().commercial_state,
+        selected_offering_code: null,
+        stage: 'exploring',
+        call_offer_count: 1,
+        call_offer_status: 'offered',
+      },
+      catalog: {
+        available_offerings: [
+          { code: 'influencers', fact_id: 'offering:influencers:name:v1', display_name: 'Influencers', area_code: 'creatividad' },
+          { code: 'fotografia', fact_id: 'offering:fotografia:name:v1', display_name: 'Fotografía Profesional', area_code: 'creatividad' },
+          { code: 'fotografia_celular', fact_id: 'offering:fotografia-celular:name:v1', display_name: 'Fotografía con Celulares', area_code: 'creatividad' },
+        ],
+        selected_offering: null,
+        areas: [],
+        candidate_offerings: [],
+        payment_plans: [],
+      },
+      capabilities: { ...context().capabilities, may_offer_call: false },
+    });
+    const facts = discovery.catalog.available_offerings.map((offering) => offering.fact_id);
+
+    expect(validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: { schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: {
+          messages: ['Son Influencers, Fotografía Profesional y Fotografía con Celulares.'],
+          call_offer: null,
+        },
+        used_fact_ids: facts,
+      }),
+      context: discovery,
+      planned_fact_ids: facts,
       rejection_id: '00000000-0000-4000-8000-000000000001',
     })).toBeNull();
   });

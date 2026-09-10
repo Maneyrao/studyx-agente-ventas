@@ -139,9 +139,12 @@ describe('planBatchWait', () => {
 });
 
 describe('DEFAULT_BATCH_WINDOW_POLICY', () => {
-  it('matches the frozen 1s rolling window and 4s hard deadline', () => {
-    expect(policy.windowMs).toBe(1000);
-    expect(policy.hardDeadlineMs).toBe(4000);
+  it('keeps a natural two-part customer message inside the same rolling window', () => {
+    // Producción observó "quiero info" + "qué necesitás" separados por
+    // 1.87 s. Con una ventana de 1 s el primer mensaje se procesa y luego se
+    // suprime, aunque para la persona ambos forman una sola intervención.
+    expect(policy.windowMs).toBeGreaterThanOrEqual(2_500);
+    expect(policy.hardDeadlineMs).toBeGreaterThanOrEqual(6_000);
   });
 
   it('keeps the hard deadline at or beyond the rolling window', () => {
@@ -150,16 +153,17 @@ describe('DEFAULT_BATCH_WINDOW_POLICY', () => {
 });
 
 describe('DEFAULT_BATCH_WINDOW_POLICY (latency contract)', () => {
-  it('debounces at 1s so a turn starts a full second earlier than the old 2s window', () => {
-    expect(policy.windowMs).toBe(1_000);
+  it('allows the observed 1.87s pause without creating two independent turns', () => {
+    const secondFragmentAt = 1_870;
+    expect(secondFragmentAt).toBeLessThan(policy.windowMs);
   });
 
-  it('keeps the 4s hard deadline: a message stream cannot postpone the turn forever', () => {
-    expect(policy.hardDeadlineMs).toBe(4_000);
+  it('keeps a finite hard deadline: a message stream cannot postpone the turn forever', () => {
+    expect(policy.hardDeadlineMs).toBe(6_000);
     expect(policy.hardDeadlineMs).toBeGreaterThan(policy.windowMs);
   });
 
-  it('plans a 1s sleep from a freshly opened window', () => {
+  it('plans the complete rolling wait from a freshly opened window', () => {
     const plan = planBatchWait({
       now: t0,
       dueAt: at(policy.windowMs),
@@ -168,14 +172,15 @@ describe('DEFAULT_BATCH_WINDOW_POLICY (latency contract)', () => {
       policy,
     });
     expect(plan.action).toBe('sleep');
-    expect(plan.sleepMs).toBe(1_000);
+    expect(plan.sleepMs).toBe(policy.windowMs);
   });
 
   it('a message extending the window still claims by the hard deadline, not later', () => {
-    // Messages keep arriving <1s apart: due_at slides but is capped at 4s.
+    // Messages keep arriving inside the rolling window: due_at slides but the
+    // hard deadline remains the absolute ceiling.
     const plan = planBatchWait({
-      now: at(3_500),
-      dueAt: at(4_500), // backend would clamp this; the planner clamps too
+      now: at(5_500),
+      dueAt: at(8_000), // backend would clamp this; the planner clamps too
       hardDeadlineAt: at(policy.hardDeadlineMs),
       attempt: 2,
       policy,

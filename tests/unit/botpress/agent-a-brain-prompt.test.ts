@@ -62,7 +62,7 @@ describe('Agent A Brain V1 prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v14');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v42');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v43');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('Backend policy and capabilities are authoritative');
     expect(instructions).toContain('commercial_state.awaiting_reply only to resolve an otherwise ambiguous answer');
@@ -74,7 +74,7 @@ describe('Agent A Brain V1 prompt', () => {
     expect(instructions).not.toContain('exact wording of a');
     expect(instructions).toContain('stock chatbot openings such as "Claro"');
     expect(instructions).toContain('"¿Qué te gustaría aprender?"');
-    expect(instructions).toMatch(/ask directly what course or\s+area they mean/u);
+    expect(instructions).toMatch(/Ask which course or area they mean only when/u);
     expect(instructions).toMatch(/These are writing\s+instructions, not validity conditions/u);
     expect(instructions).toContain('intake_missing is authoritative');
     expect(instructions).toContain('never ask again for a field that is absent from intake_missing');
@@ -296,6 +296,37 @@ describe('Agent A Brain V1 continuidad entre turnos', () => {
     ]));
     expect(instructions).not.toContain('<last_agent_reply>');
   });
+
+  it('resuelve referencias como "los tres" contra lo que acaba de ofrecer', () => {
+    const current = withTurns([
+      {
+        id: 'recent:1', direction: 'outbound',
+        content: 'Podés mirar Influencers, Fotografía Profesional o Fotografía con Celulares.',
+      },
+    ]);
+    current.turn.batch_messages = [{ id: 'message-1', text: 'Info de los tres' }];
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+
+    expect(instructions).toMatch(
+      /resolve contextual references such as "ese",\s*"esa", "el curso" or "los tres"[\s\S]*last_agent_reply and recent_turns/iu,
+    );
+    expect(instructions).toMatch(/never treat that shorthand as a literal course name/iu);
+  });
+
+  it('interpreta todos los fragmentos del batch como una sola intervención', () => {
+    const current = context();
+    current.turn.batch_messages = [
+      { id: 'message-1', text: 'Sí, dale, quiero info del curso' },
+      { id: 'message-2', text: '¿Qué necesitás?' },
+    ];
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+
+    expect(instructions).toMatch(
+      /all batch_messages form one customer turn[\s\S]*read them in order[\s\S]*combined intent/iu,
+    );
+  });
 });
 
 describe('directiva de reparación por repetición', () => {
@@ -335,7 +366,7 @@ describe('directiva de reparación por repetición', () => {
   it('fija el contrato breve de WhatsApp sin cambiar las fases comerciales', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v42');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v43');
     expect(instructions).toMatch(/Each physical message must stay within 350 characters and four non-empty lines/u);
     expect(instructions).toMatch(/Detailed course explanations use exactly two informational messages/u);
     expect(instructions).toMatch(/Payment options always stay together in exactly one response\.messages item/u);

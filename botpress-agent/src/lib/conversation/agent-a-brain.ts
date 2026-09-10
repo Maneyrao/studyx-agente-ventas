@@ -1532,7 +1532,10 @@ export function validateAgentATurnProposalV1(input: {
   }
   if (previousReply && input.proposal.response.messages.some((message) => {
     const withoutOpening = removeRepeatedAgentOpeningMessagesV1([message]);
-    return withoutOpening.length === 0 || withoutOpening[0] !== message.trim();
+    // The helper also normalizes whitespace for delivery. A multiline answer
+    // therefore differs byte-for-byte even when no greeting was removed; only
+    // a visible-text change proves that a repeated opening was present.
+    return withoutOpening.length === 0 || !sameVisibleText(withoutOpening, message);
   })) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'repeated_greeting' });
   }
@@ -1759,11 +1762,7 @@ export function validateAgentATurnProposalV1(input: {
     ? 'course_reference'
     : offersACall && !hasCanonicalCourse && !hasResolvedCourseFamily
       ? 'call_offer'
-      : (moves.has('browse_catalog') || moves.has('select_area'))
-        && !hasCanonicalCourse
-        && !input.proposal.response.messages.some((message) => /[?¿]/u.test(message))
-        ? 'next_step'
-        : null;
+      : null;
   if (missingCourseSubject !== null) {
     rejections.push({ code: 'COURSE_NOT_RESOLVED', subject: missingCourseSubject });
   }
