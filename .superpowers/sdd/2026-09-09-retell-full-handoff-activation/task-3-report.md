@@ -162,3 +162,32 @@ Archivos adicionales de esta ronda: `supabase/migrations/20260909000004_retell_c
 ### Límites residuales
 
 Sesiones legacy con workspace ambiguo o sin candidato siguen `NULL` y fallan cerrado; no se elige otro tenant aunque cambien membresías. El sweep de Retell espera webhook salvo una revocación DNC durable. La evidencia de pago sigue siendo exclusivamente el ledger canónico call-specific para Retell.
+
+## Fix round 3 — revisión de los seis abiertos
+
+### RED → GREEN
+
+Se agregaron primero pruebas PostgreSQL RED para: `workspace_id` explícito incompatible/ambiguo y compatible; convergencia visible al retornar `appendEvent`; pago `paid` de Telegram sin clave Retell; DNC con sesión legacy `workspace_id = NULL`; y un interleaving real append-webhook/sweep. También se añadió una matriz unitaria parametrizada para tipos, enums y bordes exactos de los 14 campos.
+
+### Hallazgos corregidos
+
+- `20260909000004_retell_call_workspace_binding.sql` ahora deriva el único workspace desde `conversation_id + contact_id`. Un `workspace_id` explícito sólo se acepta si coincide con ese candidato único; un candidato ambiguo o incompatible se rechaza. El binding automático de inserts nuevos, el backfill único y la transición legacy `NULL → workspace` válida se conservan; después la identidad queda inmutable. Se probaron miembro de dos workspaces, insert incompatible y compatible.
+- `appendEvent` persiste evento, convergencia de análisis/email y `call_sessions` projection bajo el mismo `FOR UPDATE` y transacción. `recordCallEvent` conserva la API y su recomputación posterior es redundante/idempotente. El payment gate de `recomputeProjection` aplica la clave `retell:payment:<call_id>:` sólo a Retell; Telegram conserva cualquier pago canónico `paid` del contacto/workspace.
+- El sweep permite la ruta DNC global aunque el workspace legacy sea `NULL`, ambiguo u orphan; decide DNC antes de bloqueo, workspace o pago, revoca consentimiento y nunca llama outbound sin workspace. La gracia usa la terminación durable y no se pierde al tocar `updated_at` durante la convergencia.
+- El E2E usa `commitAgentDecision` + `reserveCallForDecision`, dispatch local, boundary real de `registrar_resultado`, boundary real de webhook Retell con los 14 campos y replay. Captura `e2e@example.test`, converge Sheet A:D una sola vez, ejecuta follow-up una sola vez y verifica un único `system_call_result`/delivery.
+
+### Evidencia Fix round 3
+
+Migración 4 actualizada y aplicada únicamente al PostgreSQL disposable `127.0.0.1:55435/studyx_test` (no producción).
+
+```text
+Unit focal: 8 files passed, 130 tests passed
+PostgreSQL focal: 4 files passed, 36 tests passed
+npm run typecheck: passed
+npm run lint -- --quiet: passed
+git diff --check: passed
+```
+
+Archivos adicionales/modificados en esta ronda: `src/features/calls/adapters/postgres-call-store.ts`, `src/features/calls/adapters/postgres-post-call-followup-store.ts`, `src/features/calls/application/post-call-followup.ts`, `src/features/calls/ports/post-call-followup-store.ts`, `supabase/migrations/20260909000004_retell_call_workspace_binding.sql`, `tests/integration/retell-tools.test.ts`, `tests/integration/post-call-followup.test.ts` y `tests/unit/calls/retell-post-call-analysis.test.ts`.
+
+No se hicieron prompts/naturalidad, llamadas de red/provider, deploy, push ni merge.

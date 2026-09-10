@@ -12,7 +12,8 @@ export interface TerminalCallForFollowup {
   readonly call_id: string;
   readonly contact_id: string;
   readonly conversation_id: string;
-  readonly workspace_id: string;
+  /** NULL is retained for ambiguous/orphan legacy calls; only DNC may act on it. */
+  readonly workspace_id: string | null;
   readonly provider: 'telegram_sandbox' | 'retell';
   readonly status: CallStatus;
   readonly result: CallResult | null;

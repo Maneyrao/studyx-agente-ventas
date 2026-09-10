@@ -411,6 +411,11 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
         }));
         await this.convergeRetellAnalysis(tx, event.call_id, mergeCallAnalyses(events));
       }
+      // Keep the durable event and the call_sessions snapshot in one commit.
+      // The public recordCallEvent API may perform a redundant recompute after
+      // this transaction; it is then an idempotent read/repair, never the first
+      // visible projection of an already-persisted webhook.
+      await this.recomputeProjectionOnTransaction(tx, event.call_id);
       return persistence;
     });
   }
@@ -518,9 +523,15 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
   }
 
   async recomputeProjection(callId: string): Promise<CallProjection> {
-    return this.db.begin(async (tx) => {
-      const sessions = await tx<Array<{ status: string; provider_call_id: string | null }>>`
-        SELECT status, provider_call_id FROM call_sessions WHERE id = ${callId}::uuid FOR UPDATE
+    return this.db.begin(async (tx) => this.recomputeProjectionOnTransaction(tx, callId));
+  }
+
+  private async recomputeProjectionOnTransaction(
+    tx: postgres.TransactionSql,
+    callId: string,
+  ): Promise<CallProjection> {
+      const sessions = await tx<Array<{ status: string; provider: CallEvent['provider']; provider_call_id: string | null }>>`
+        SELECT status, provider, provider_call_id FROM call_sessions WHERE id = ${callId}::uuid FOR UPDATE
       `;
       if (!sessions[0]) throw new Error('CALL_NOT_FOUND');
       const rows = await tx<Array<{
@@ -546,6 +557,13 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
         cancelledAt: sessions[0].status === 'cancelled' ? new Date().toISOString() : null,
         events,
       });
+      // Legacy fixtures/calls can already be terminal before their lifecycle
+      // events are replayed. Analysis convergence must never regress that
+      // durable terminal status to provider_accepted/requested.
+      const terminalStatuses = new Set(['completed', 'failed', 'no_answer', 'timed_out', 'cancelled']);
+      const projectedStatus = terminalStatuses.has(sessions[0].status)
+        ? sessions[0].status as CallProjection['status']
+        : projection.status;
       let canonicalResult = projection.result;
       if (canonicalResult === 'venta_confirmada') {
         const payment = await tx<Array<{ exists: boolean }>>`
@@ -554,20 +572,22 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
             WHERE workspace_id = (SELECT workspace_id FROM call_sessions WHERE id = ${callId}::uuid)
               AND contact_id = (SELECT contact_id FROM call_sessions WHERE id = ${callId}::uuid)
               AND status = 'paid'
-              AND idempotency_key LIKE ${`retell:payment:${callId}:%`}
+              AND (
+                ${sessions[0].provider} <> 'retell'
+                OR idempotency_key LIKE ${`retell:payment:${callId}:%`}
+              )
           ) AS exists
         `;
         if (!payment[0]?.exists) canonicalResult = null;
       }
       await tx`
         UPDATE call_sessions
-        SET status = ${projection.status}, analysis_status = ${projection.analysisStatus},
+        SET status = ${projectedStatus}, analysis_status = ${projection.analysisStatus},
             result = ${canonicalResult},
-            started_at = CASE WHEN ${projection.status} IN ('in_progress', 'completed') THEN COALESCE(started_at, now()) ELSE started_at END,
-            completed_at = CASE WHEN ${projection.status} IN ('completed', 'failed', 'no_answer', 'timed_out', 'cancelled') THEN COALESCE(completed_at, now()) ELSE completed_at END
+            started_at = CASE WHEN ${projectedStatus} IN ('in_progress', 'completed') THEN COALESCE(started_at, now()) ELSE started_at END,
+            completed_at = CASE WHEN ${projectedStatus} IN ('completed', 'failed', 'no_answer', 'timed_out', 'cancelled') THEN COALESCE(completed_at, now()) ELSE completed_at END
         WHERE id = ${callId}::uuid
       `;
-      return { ...projection, result: canonicalResult };
-    });
+      return { ...projection, status: projectedStatus, result: canonicalResult };
   }
 }

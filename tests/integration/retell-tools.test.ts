@@ -467,6 +467,83 @@ run('Retell P0 tools with PostgreSQL', () => {
     `).rejects.toThrow(/immutable|check constraint/iu);
   });
 
+  it('derives and validates explicit workspace binding on every new Retell session', async () => {
+    const configured = await fixture({ name: 'Bound Persona', email: 'bound@example.test' });
+    const foreign = await db!<Array<{ id: string }>>`
+      INSERT INTO workspaces (slug, display_name, metadata)
+      VALUES (${`binding-foreign-${randomUUID()}`}, 'Foreign', ${db!.json({})})
+      RETURNING id
+    `;
+    const makeSource = async () => {
+      const message = await db!<Array<{ id: string }>>`
+        INSERT INTO messages (conversation_id, contact_id, direction, content)
+        VALUES (${configured.conversationId}::uuid, ${configured.contactId}::uuid, 'inbound', 'Nueva llamada')
+        RETURNING id
+      `;
+      return message[0].id;
+    };
+    const context = (callId: string) => ({
+      call_id: callId,
+      nombre_lead: 'Bound Persona',
+      curso_interes: 'reparacion_celulares',
+      pais: '',
+      email_lead: 'bound@example.test',
+      resumen_whatsapp: 'Bound call.',
+      prompt_version: 'agent-b-v1',
+    });
+    const insertCall = async (workspaceId: string, explicitCallId = randomUUID()) => {
+      const sourceId = await makeSource();
+      const snapshot = context(explicitCallId);
+      return db!`
+        INSERT INTO call_sessions (
+          id, source_turn_id, contact_id, conversation_id, workspace_id, provider, provider_call_id,
+          request_idempotency_key, status, consent_source_message_id, context_snapshot, context_hash,
+          prompt_version
+        ) VALUES (
+          ${explicitCallId}::uuid, ${sourceId}::uuid, ${configured.contactId}::uuid,
+          ${configured.conversationId}::uuid, ${workspaceId}::uuid, 'retell', ${`retell:binding:${explicitCallId}`},
+          ${`binding:${explicitCallId}`}, 'completed', ${sourceId}::uuid, ${db!.json(snapshot)},
+          decode(${hashCallContext(snapshot)}, 'hex'), 'agent-b-v1'
+        )
+      `;
+    };
+
+    await expect(insertCall(configured.workspaceId)).resolves.toBeDefined();
+    await expect(insertCall(foreign[0].id)).rejects.toThrow(/workspace|binding|tenant|candidate|check/iu);
+
+    await db!`
+      INSERT INTO workspace_contacts (workspace_id, contact_id)
+      VALUES (${foreign[0].id}::uuid, ${configured.contactId}::uuid)
+    `;
+    await db!`
+      INSERT INTO conversation_sales_context_states_v1 (workspace_id, conversation_id, contact_id)
+      VALUES (${foreign[0].id}::uuid, ${configured.conversationId}::uuid, ${configured.contactId}::uuid)
+    `;
+    await expect(insertCall(configured.workspaceId)).rejects.toThrow(/ambiguous|binding|tenant|candidate|workspace/iu);
+  });
+
+  it('converges the call snapshot before appendEvent commits', async () => {
+    const ids = await fixture({ name: 'Atomic Persona', email: 'atomic@example.test' });
+    const event = mapRetellLifecycleEvent({
+      event: 'call_ended',
+      call: {
+        call_id: ids.providerCallId,
+        metadata: {
+          internal_call_id: ids.callId,
+          contact_id: ids.contactId,
+          conversation_id: ids.conversationId,
+        },
+        start_timestamp: nowMs - 5_000,
+        end_timestamp: nowMs,
+        disconnection_reason: 'user_hangup',
+      },
+    }, ids.callId);
+    await expect(new PostgresCallStore(db!).appendEvent(event)).resolves.toBe('recorded');
+    await expect(db!<Array<{ status: string; analysis_status: string }>>`
+      SELECT status, analysis_status FROM call_sessions WHERE id = ${ids.callId}::uuid
+    `).resolves.toEqual([{ status: 'completed', analysis_status: 'pending' }]);
+  });
+
   it('serializes different-contact first projections so both contact transactions commit', async () => {
     const first = await fixture({ name: 'Ana López', email: 'ana@example.test' });
     const second = await fixture({ name: 'Beto Pérez', email: 'beto@example.test' });

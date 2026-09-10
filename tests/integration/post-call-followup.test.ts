@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
 import { processInboundMessage, type InboundEnvelope } from '@/lib/services/ingestion.service';
@@ -13,12 +13,14 @@ import type { CallStatus } from '@/features/calls/domain/call-state';
 import type { CallResult } from '@/lib/contracts/call-event';
 import { sql } from '@/lib/db/orchestrator';
 import { PostgresCallStore } from '@/features/calls/adapters/postgres-call-store';
-import { mapRetellLifecycleEvent } from '@/features/calls/adapters/retell-lifecycle';
-import { recordCallEvent } from '@/features/calls/application/record-call-event';
+import { handleRetellWebhook } from '@/features/calls/application/retell-webhook';
+import { handleRetellToolRequest } from '@/features/calls/application/retell-tools';
 import { dispatchCall } from '@/features/calls/application/dispatch-call';
 import type { VoiceProvider } from '@/features/calls/ports/voice-provider';
 import { enqueueLeadProjection, leadProjectionKey } from '@/lib/services/projection.service';
 import { commitAgentDecision } from '@/lib/services/decision.service';
+import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
+import { PostgresRetellContactToolStore } from '@/features/calls/adapters/postgres-retell-tools';
 
 /**
  * Spec 007 (B → A) against a real database. Unit tests already cover
@@ -41,6 +43,24 @@ const postCallChannel: MessageChannel = {
     return { providerMessageId: `wamid.${input.correlationId}`, acceptedAt: new Date().toISOString() };
   },
 };
+const boundaryApiKey = 'post-call-retell-api-key';
+const boundaryToolsSecret = 'post-call-retell-tools-secret';
+
+function signedBoundaryRequest(body: unknown, path: string) {
+  const raw = JSON.stringify(body);
+  const timestamp = 1_788_966_000_000;
+  const digest = createHmac('sha256', boundaryApiKey)
+    .update(raw + String(timestamp), 'utf8')
+    .digest('hex');
+  return new Request(`http://localhost/${path}`, {
+    method: 'POST',
+    headers: {
+      'x-retell-signature': `v=${timestamp},d=${digest}`,
+      ...(path.includes('tools') ? { 'x-studyx-tools-secret': boundaryToolsSecret } : {}),
+    },
+    body: raw,
+  });
+}
 
 afterAll(async () => {
   await db?.end();
@@ -408,6 +428,134 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
     `).resolves.toEqual([{ count: '0' }]);
   });
 
+  it('Task 3: Telegram paid payment remains canonical sale evidence without a Retell key', async () => {
+    const fixture = await seedTerminalCall({
+      status: 'completed',
+      result: 'venta_confirmada',
+      analysis_status: 'completed',
+      provider: 'telegram_sandbox',
+    });
+    const offerings = await sql<Array<{ id: string }>>`
+      INSERT INTO offerings (
+        workspace_id, code, display_name, offering_type, status, description,
+        price_type, price_amount, currency
+      ) VALUES (
+        ${fixture.workspaceId}::uuid, ${`telegram-course-${fixture.callId}`}, 'Telegram Course',
+        'course', 'active', 'Telegram payment fixture', 'fixed', 360, 'USD'
+      ) RETURNING id
+    `;
+    await sql`
+      INSERT INTO payments (
+        workspace_id, contact_id, offering_id, amount, currency, status,
+        provider, environment, checkout_mode, idempotency_key, paid_at
+      ) VALUES (
+        ${fixture.workspaceId}::uuid, ${fixture.contactId}::uuid, ${offerings[0].id}::uuid,
+        360, 'USD', 'paid', 'fake', 'test', 'payment', ${`telegram:payment:${fixture.callId}`}, now()
+      )
+    `;
+    await new PostgresCallStore(sql).appendEvent({
+      schema_version: 1,
+      event_id: `telegram:analyzed:${fixture.callId}`,
+      call_id: fixture.callId,
+      event_type: 'analyzed',
+      sequence: 3,
+      occurred_at: new Date().toISOString(),
+      provider: 'telegram_sandbox',
+      payload: {
+        event_type: 'analyzed',
+        analysis: {
+          result: 'venta_confirmada',
+          nivel_interes: 'alto',
+          objecion: null,
+          notas: 'Pago canónico Telegram.',
+        },
+      },
+    });
+    await expect(sql<Array<{ result: string | null }>>`
+      SELECT result FROM call_sessions WHERE id = ${fixture.callId}::uuid
+    `).resolves.toEqual([{ result: 'venta_confirmada' }]);
+  });
+
+  it('Task 3: concurrent webhook append and sweep never projects the stale pre-webhook result', async () => {
+    const fixture = await seedTerminalCall({
+      status: 'completed',
+      result: 'seguimiento_agendado',
+      analysis_status: 'completed',
+      provider: 'retell',
+    });
+    const append = new PostgresCallStore(sql).appendEvent({
+      schema_version: 1,
+      event_id: `retell:webhook:call_analyzed:${fixture.providerCallId}`,
+      call_id: fixture.callId,
+      event_type: 'analyzed',
+      sequence: 3,
+      occurred_at: new Date().toISOString(),
+      provider: 'retell',
+      payload: {
+        event_type: 'analyzed',
+        analysis: {
+          result: 'venta_confirmada',
+          nivel_interes: 'alto',
+          objecion: null,
+          notas: 'El pago todavía no está verificado.',
+        },
+      },
+    });
+    const [, concurrentSweep] = await Promise.all([append, sweep(randomUUID(), 0)]);
+    const finalSweep = await sweep(randomUUID(), 0);
+    const finding = concurrentSweep.findings.find((candidate) => candidate.call_id === fixture.callId)
+      ?? finalSweep.findings.find((candidate) => candidate.call_id === fixture.callId);
+    expect(finding?.action).toBe('send');
+    expect(finding?.reason).not.toBe('FOLLOWUP_SCHEDULED');
+    await expect(sql<Array<{ result: string | null }>>`
+      SELECT result FROM call_sessions WHERE id = ${fixture.callId}::uuid
+    `).resolves.toEqual([{ result: null }]);
+    expect(await postCallOutboundDeliveryCount(fixture.callId)).toBe(1);
+  });
+
+  it('Task 3: legacy NULL workspace DNC is revoked without payment lookup or outbound', async () => {
+    const inbound = await processInboundMessage(envelope('llamame'));
+    const callId = randomUUID();
+    const callContext = {
+      call_id: callId,
+      nombre_lead: '',
+      curso_interes: 'Python',
+      pais: '',
+      email_lead: '',
+      resumen_whatsapp: 'Legacy DNC',
+      prompt_version: 'agent-b-v1',
+    };
+    await sql`
+      INSERT INTO call_sessions (
+        id, source_turn_id, contact_id, conversation_id, provider, provider_call_id,
+        request_idempotency_key, status, result, analysis_status, consent_source_message_id,
+        context_snapshot, context_hash, prompt_version, requested_at, completed_at, updated_at
+      ) VALUES (
+        ${callId}::uuid, ${inbound.turn_id}::uuid, ${inbound.contact.id}::uuid,
+        ${inbound.conversation_id}::uuid, 'retell', ${`legacy-dnc-${callId}`}, ${`legacy-dnc:${callId}`},
+        'completed', 'seguimiento_agendado', 'completed', ${inbound.turn_id}::uuid,
+        ${sql.json(callContext)}, decode(${hashCallContext(callContext)}, 'hex'), 'agent-b-v1',
+        now() - interval '10 minutes', now() - interval '10 minutes', now() - interval '10 minutes'
+      )
+    `;
+    await sql`
+      INSERT INTO call_events (
+        call_id, provider, event_id, event_type, sequence, occurred_at, payload, payload_hash
+      ) VALUES (
+        ${callId}::uuid, 'retell', ${`retell:webhook:call_analyzed:legacy-dnc-${callId}`}, 'analyzed', 3,
+        now(), ${sql.json({ event_type: 'analyzed', analysis: {
+          result: 'seguimiento_agendado', pidio_no_contactar: true,
+        } })}, decode(repeat('00', 32), 'hex')
+      )
+    `;
+    const result = await sweep(randomUUID(), 0);
+    expect(result.findings.find((finding) => finding.call_id === callId)).toMatchObject({
+      action: 'revoke_contact', reason: 'DO_NOT_CONTACT',
+    });
+    expect(await consentStatus(inbound.contact.id)).toBe('revoked');
+    expect(await outboundDeliveryCountForConversation(inbound.conversation_id)).toBe(0);
+  });
+
   it('FR-4: status = cancelled emits no message', async () => {
     const { callId, conversationId } = await seedTerminalCall({
       status: 'cancelled',
@@ -457,6 +605,14 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
     // reserveCallForDecision binds the canonical workspace and writes the
     // requested ledger event atomically.
     const inbound = await processInboundMessage(envelope('dale, llamame'));
+    // Give the canonical inbound turn an explicit sequence so the Agent B
+    // projection is ordered immediately after Agent A's source order below.
+    await sql`
+      UPDATE messages SET conversation_seq = 1 WHERE id = ${inbound.turn_id}::uuid
+    `;
+    await sql`
+      UPDATE contacts SET name = 'Ariana Paz' WHERE id = ${inbound.contact.id}::uuid
+    `;
     const e2eWorkspace = await sql<Array<{ id: string }>>`
       INSERT INTO workspaces (slug, display_name, environment, status)
       VALUES (${`post-call-e2e-${randomUUID()}`}, 'Post-call E2E', 'sandbox', 'active')
@@ -574,6 +730,19 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
     }, { sql });
 
     const callStore = new PostgresCallStore(sql);
+    const workspaceSlugRows = await sql<Array<{ slug: string }>>`
+      SELECT slug FROM workspaces WHERE id = ${fixture.workspaceId}::uuid
+    `;
+    const toolDependencies = {
+      apiKey: boundaryApiKey,
+      toolsSecret: boundaryToolsSecret,
+      workspaceSlug: workspaceSlugRows[0].slug,
+      calls: callStore,
+      business: new PostgresBusinessContextStore(sql),
+      contacts: new PostgresRetellContactToolStore(sql),
+      sheets: { spreadsheetId: `e2e-sheet-${fixture.callId}`, tabName: 'Leads' },
+      now: () => new Date(1_788_966_000_000),
+    };
     const metadata = {
       internal_call_id: fixture.callId,
       contact_id: fixture.contactId,
@@ -621,14 +790,46 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
       },
     ];
     for (const raw of lifecycle) {
-      const event = mapRetellLifecycleEvent(raw, fixture.callId);
-      await recordCallEvent(event, { store: callStore });
-      await recordCallEvent(event, { store: callStore });
       if (raw.event === 'call_analyzed') {
-        const toolEvent = { ...event, event_id: `retell:tool:call_analyzed:${fixture.providerCallId}` };
-        await recordCallEvent(toolEvent, { store: callStore });
-        await recordCallEvent(toolEvent, { store: callStore });
+        const analysis = raw.call.call_analysis;
+        const toolBody = {
+          name: 'registrar_resultado',
+          call: { call_id: fixture.providerCallId, metadata },
+          args: {
+            resultado: analysis.custom_analysis_data.resultado,
+            call_summary: analysis.call_summary,
+            user_sentiment: analysis.user_sentiment,
+            curso_ofrecido: analysis.custom_analysis_data.curso_ofrecido,
+            precio_ofrecido: analysis.custom_analysis_data.precio_ofrecido,
+            objecion_principal: analysis.custom_analysis_data.objecion_principal,
+            nivel_interes: analysis.custom_analysis_data.nivel_interes,
+            email_capturado: analysis.custom_analysis_data.email_capturado,
+            link_pago_enviado: analysis.custom_analysis_data.link_pago_enviado,
+            pago_confirmado: analysis.custom_analysis_data.pago_confirmado,
+            pidio_humano: analysis.custom_analysis_data.pidio_humano,
+            pidio_no_contactar: analysis.custom_analysis_data.pidio_no_contactar,
+            pregunto_si_es_ia: analysis.custom_analysis_data.pregunto_si_es_ia,
+            compromiso_pendiente: analysis.custom_analysis_data.compromiso_pendiente,
+          },
+        };
+        const invokeRegistrarResultado = () => handleRetellToolRequest(
+          signedBoundaryRequest(toolBody, 'retell/tools/registrar-resultado'),
+          'registrar_resultado',
+          toolDependencies,
+        );
+        await expect(invokeRegistrarResultado()).resolves.toMatchObject({ status: 200 });
+        await expect(invokeRegistrarResultado()).resolves.toMatchObject({ status: 200 });
       }
+      const webhookResponse = await handleRetellWebhook(
+        signedBoundaryRequest(raw, 'retell/eventos'),
+        { apiKey: boundaryApiKey, calls: callStore, now: () => new Date(1_788_966_000_000) },
+      );
+      expect(webhookResponse.status).toBe(204);
+      const webhookReplay = await handleRetellWebhook(
+        signedBoundaryRequest(raw, 'retell/eventos'),
+        { apiKey: boundaryApiKey, calls: callStore, now: () => new Date(1_788_966_000_000) },
+      );
+      expect(webhookReplay.status).toBe(204);
     }
 
     const first = await sweep(randomUUID(), 0);
@@ -641,6 +842,9 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
     `).resolves.toEqual([{ count: '5' }]);
     expect(await systemCallResultEventCount(fixture.callId)).toBe(1);
     expect(await postCallOutboundDeliveryCount(fixture.callId)).toBe(1);
+    await expect(sql<Array<{ email: string | null }>>`
+      SELECT email FROM contacts WHERE id = ${fixture.contactId}::uuid
+    `).resolves.toEqual([{ email: 'e2e@example.test' }]);
     await expect(sql<Array<{ payload: Record<string, string> }>>`
       SELECT payload FROM sheet_projection_rows
       WHERE projection_key = ${leadProjectionKey(fixture.workspaceId, fixture.contactId)}
@@ -648,10 +852,14 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
       payload: {
         nombre: 'Ariana',
         apellido: 'Paz',
-        mail: 'ariana.paz@example.test',
-        tipo_de_curso: 'Curso E2E',
+        mail: 'e2e@example.test',
+        tipo_de_curso: 'Python',
       },
     }]);
+    await expect(sql<Array<{ count: string }>>`
+      SELECT count(*)::text AS count FROM sheet_projection_rows
+      WHERE projection_key = ${leadProjectionKey(fixture.workspaceId, fixture.contactId)}
+    `).resolves.toEqual([{ count: '1' }]);
   });
 
   it('fails closed when the call has ambiguous workspace membership', async () => {

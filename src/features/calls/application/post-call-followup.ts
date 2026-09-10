@@ -62,10 +62,36 @@ export async function runPostCallFollowup(
 
   for (const call of pending) {
     try {
+      // DNC is a contact/channel fact. Decide it before workspace resolution,
+      // blocking checks, or payment lookup so a legacy NULL-tenant call still
+      // revokes and can never enter an outbound branch.
+      if (call.do_not_contact) {
+        await deps.store.revokeContact({
+          contact_id: call.contact_id,
+          call_id: call.call_id,
+          trace_id: input.trace_id,
+        });
+        await deps.store.markFollowupCompleted({
+          call_id: call.call_id,
+          contact_id: call.contact_id,
+          conversation_id: call.conversation_id,
+          trace_id: input.trace_id,
+        });
+        findings.push({ call_id: call.call_id, action: 'revoke_contact', reason: 'DO_NOT_CONTACT' });
+        revoked += 1;
+        continue;
+      }
+
       // Un contacto ya bloqueado por cualquier otro motivo no recibe outbound
       // comercial — mismo guardrail que rige cualquier otro mensaje saliente.
       if (await deps.store.isContactBlocked(call.contact_id)) {
         findings.push({ call_id: call.call_id, action: 'skip', reason: 'CONTACT_BLOCKED' });
+        skipped += 1;
+        continue;
+      }
+
+      if (!call.workspace_id) {
+        findings.push({ call_id: call.call_id, action: 'skip', reason: 'WORKSPACE_UNRESOLVED' });
         skipped += 1;
         continue;
       }

@@ -24,7 +24,7 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
       id: string;
       contact_id: string;
       conversation_id: string;
-      workspace_id: string;
+      workspace_id: string | null;
       status: CallStatus;
       provider: 'telegram_sandbox' | 'retell';
       result: CallResult | null;
@@ -39,17 +39,31 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
                WHERE analysis_event.call_id = cs.id
                  AND analysis_event.event_type = 'analyzed'
                  AND analysis_event.payload -> 'analysis' ->> 'pidio_no_contactar' = 'true'
-             ) AS do_not_contact
+             ) OR cs.result = 'no_contactar' AS do_not_contact
       FROM call_sessions AS cs
-      JOIN workspaces AS workspace
+      LEFT JOIN workspaces AS workspace
         ON workspace.id = cs.workspace_id
        AND workspace.status = 'active'
-      JOIN workspace_contacts AS wc
+      LEFT JOIN workspace_contacts AS wc
         ON wc.workspace_id = cs.workspace_id
        AND wc.contact_id = cs.contact_id
        AND wc.lifecycle_status = 'active'
       WHERE cs.status = ANY(${TERMINAL_STATUSES})
-        AND cs.updated_at < now() - make_interval(secs => ${input.grace_seconds})
+        -- Recomputing analysis legitimately touches updated_at; grace is
+        -- measured from terminal completion so an append+projection commit
+        -- cannot hide an already-completed call from the next sweep.
+        AND COALESCE(cs.completed_at, cs.updated_at)
+          < now() - make_interval(secs => ${input.grace_seconds})
+        AND (
+          EXISTS (
+            SELECT 1 FROM call_events AS dnc_event
+            WHERE dnc_event.call_id = cs.id
+              AND dnc_event.event_type = 'analyzed'
+              AND dnc_event.payload -> 'analysis' ->> 'pidio_no_contactar' = 'true'
+          )
+          OR cs.result = 'no_contactar'
+          OR (cs.workspace_id IS NOT NULL AND workspace.id IS NOT NULL AND wc.contact_id IS NOT NULL)
+        )
         AND (
           cs.provider <> 'retell'
           OR EXISTS (
@@ -64,13 +78,14 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
               AND dnc_event.event_type = 'analyzed'
               AND dnc_event.payload -> 'analysis' ->> 'pidio_no_contactar' = 'true'
           )
+          OR cs.result = 'no_contactar'
         )
         AND NOT EXISTS (
           SELECT 1 FROM channel_events AS ce
           WHERE ce.event_kind = 'system_call_result'
             AND ce.external_event_id = 'system:call_result:' || cs.id::text
         )
-      ORDER BY cs.updated_at ASC
+      ORDER BY COALESCE(cs.completed_at, cs.updated_at) ASC
       LIMIT ${input.limit}
     `;
     return rows.map((row) => ({

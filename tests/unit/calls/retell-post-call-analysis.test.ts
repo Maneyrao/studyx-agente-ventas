@@ -56,6 +56,16 @@ function completeWebhook(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function completeWebhookWithField(field: string, value: unknown) {
+  const webhook = completeWebhook();
+  if (field === 'call_summary' || field === 'user_sentiment') {
+    (webhook.call.call_analysis as Record<string, unknown>)[field] = value;
+  } else {
+    (webhook.call.call_analysis.custom_analysis_data as Record<string, unknown>)[field] = value;
+  }
+  return webhook;
+}
+
 function signedRequest(body: unknown) {
   const raw = JSON.stringify(body);
   const digest = createHmac('sha256', apiKey).update(raw + String(nowMs), 'utf8').digest('hex');
@@ -143,6 +153,46 @@ describe('bounded Retell post-call analysis', () => {
       email_capturado: 'not-an-email',
     });
     expect(RetellLifecycleWebhookSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  it.each([
+    ['call_summary', ''],
+    ['call_summary', 'x'.repeat(4_097)],
+    ['user_sentiment', 'joyful'],
+    ['resultado', 'unknown_result'],
+    ['curso_ofrecido', 'x'.repeat(257)],
+    ['precio_ofrecido', 'x'.repeat(257)],
+    ['objecion_principal', 'other_objection'],
+    ['nivel_interes', 'extremo'],
+    ['email_capturado', 'not-an-email'],
+    ['link_pago_enviado', 'true'],
+    ['pago_confirmado', 1],
+    ['pidio_humano', null],
+    ['pidio_no_contactar', 'false'],
+    ['pregunto_si_es_ia', 0],
+    ['compromiso_pendiente', 'x'.repeat(1_025)],
+  ] as const)('rejects invalid type, enum, or exact upper-bound value for %s', (field, value) => {
+    const invalid = completeWebhookWithField(field, value);
+    expect(RetellLifecycleWebhookSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  it('accepts exact bounded string edges and both boolean values for all complete fields', () => {
+    const maxEmail = `${'a'.repeat(64)}@${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(61)}`;
+    const valid = completeWebhook({});
+    valid.call.call_analysis.call_summary = 'x'.repeat(4_096);
+    valid.call.call_analysis.custom_analysis_data = {
+      ...valid.call.call_analysis.custom_analysis_data,
+      curso_ofrecido: 'x'.repeat(256),
+      precio_ofrecido: 'x'.repeat(256),
+      email_capturado: maxEmail,
+      compromiso_pendiente: 'x'.repeat(1_024),
+      link_pago_enviado: false,
+      pago_confirmado: true,
+      pidio_humano: false,
+      pidio_no_contactar: true,
+      pregunto_si_es_ia: false,
+    };
+    expect(RetellLifecycleWebhookSchema.safeParse(valid).success).toBe(true);
   });
 
   it.each(['nivel_interes', 'objecion_principal'] as const)(
