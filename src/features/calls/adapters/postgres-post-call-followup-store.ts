@@ -35,8 +35,13 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
               SELECT 1 FROM call_events AS analysis_event
               WHERE analysis_event.call_id = cs.id
                 AND analysis_event.event_type = 'analyzed'
-                AND analysis_event.payload -> 'analysis' ->> 'pidio_no_contactar' = 'true'
+                AND (
+                  analysis_event.payload -> 'analysis' ->> 'pidio_no_contactar' = 'true'
+                  OR analysis_event.payload -> 'analysis' ->> 'result' = 'no_contactar'
+                  OR analysis_event.payload -> 'analysis' ->> 'resultado' = 'no_contactar'
+                )
             )
+            OR EXISTS (SELECT 1 FROM consent_events WHERE event_key = 'call:' || cs.id::text || ':no_contactar')
           ) AS do_not_contact
         FROM call_sessions AS cs
         WHERE cs.id = ${input.call_id}::uuid
@@ -84,9 +89,15 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
              EXISTS (
                SELECT 1 FROM call_events AS analysis_event
                WHERE analysis_event.call_id = cs.id
-                 AND analysis_event.event_type = 'analyzed'
-                 AND analysis_event.payload -> 'analysis' ->> 'pidio_no_contactar' = 'true'
-             ) OR cs.result = 'no_contactar' AS do_not_contact
+               AND analysis_event.event_type = 'analyzed'
+               AND (
+                 analysis_event.payload -> 'analysis' ->> 'pidio_no_contactar' = 'true'
+                 OR analysis_event.payload -> 'analysis' ->> 'result' = 'no_contactar'
+                 OR analysis_event.payload -> 'analysis' ->> 'resultado' = 'no_contactar'
+               )
+             )
+             OR cs.result = 'no_contactar'
+             OR EXISTS (SELECT 1 FROM consent_events WHERE event_key = 'call:' || cs.id::text || ':no_contactar') AS do_not_contact
       FROM call_sessions AS cs
       LEFT JOIN workspaces AS workspace
         ON workspace.id = cs.workspace_id
@@ -106,9 +117,14 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
             SELECT 1 FROM call_events AS dnc_event
             WHERE dnc_event.call_id = cs.id
               AND dnc_event.event_type = 'analyzed'
-              AND dnc_event.payload -> 'analysis' ->> 'pidio_no_contactar' = 'true'
-          )
+              AND (
+                dnc_event.payload -> 'analysis' ->> 'pidio_no_contactar' = 'true'
+                OR dnc_event.payload -> 'analysis' ->> 'result' = 'no_contactar'
+                OR dnc_event.payload -> 'analysis' ->> 'resultado' = 'no_contactar'
+              )
+            )
           OR cs.result = 'no_contactar'
+          OR EXISTS (SELECT 1 FROM consent_events WHERE event_key = 'call:' || cs.id::text || ':no_contactar')
           OR (cs.workspace_id IS NOT NULL AND workspace.id IS NOT NULL AND wc.contact_id IS NOT NULL)
         )
         AND (
@@ -123,9 +139,14 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
             SELECT 1 FROM call_events AS dnc_event
             WHERE dnc_event.call_id = cs.id
               AND dnc_event.event_type = 'analyzed'
-              AND dnc_event.payload -> 'analysis' ->> 'pidio_no_contactar' = 'true'
-          )
+              AND (
+                dnc_event.payload -> 'analysis' ->> 'pidio_no_contactar' = 'true'
+                OR dnc_event.payload -> 'analysis' ->> 'result' = 'no_contactar'
+                OR dnc_event.payload -> 'analysis' ->> 'resultado' = 'no_contactar'
+              )
+            )
           OR cs.result = 'no_contactar'
+          OR EXISTS (SELECT 1 FROM consent_events WHERE event_key = 'call:' || cs.id::text || ':no_contactar')
         )
         AND NOT EXISTS (
           SELECT 1 FROM channel_events AS ce

@@ -10,6 +10,9 @@ import type { RetellCorrelationMetadata } from '../ports/retell-call-correlation
 
 const RETELL_SIGNATURE_TOLERANCE_MS = 5 * 60 * 1_000;
 const ProviderTimestampSchema = z.number().int().nonnegative().max(8_640_000_000_000_000);
+const RetellSentimentSchema = z.enum([
+  'Positive', 'Neutral', 'Negative', 'positive', 'neutral', 'negative',
+]).transform((value) => value.toLowerCase() as 'positive' | 'neutral' | 'negative');
 
 const RetellMetadataSchema = z.object({
   internal_call_id: z.string().uuid().optional(),
@@ -80,7 +83,9 @@ const RetellAnalyzedWebhookSchema = z.object({
     end_timestamp: ProviderTimestampSchema,
     call_analysis: z.object({
       call_summary: z.string().trim().min(1).max(4096).optional().nullable(),
-      user_sentiment: z.enum(['positive', 'neutral', 'negative']).optional().nullable(),
+      // Retell's system-presets export uses title case; normalize only this
+      // provider spelling at the boundary and keep the internal enum stable.
+      user_sentiment: RetellSentimentSchema.optional().nullable(),
       custom_analysis_data: RetellAnalysisDataSchema,
     }).passthrough(),
   }),

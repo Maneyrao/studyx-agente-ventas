@@ -67,7 +67,11 @@ export function mergeCallAnalyses(events: readonly CallEvent[]): CallAnalysis {
   // false.
   if (analyzed.some((event) => (
     event.payload.event_type === 'analyzed'
-    && event.payload.analysis.pidio_no_contactar === true
+    && (
+      event.payload.analysis.pidio_no_contactar === true
+      || event.payload.analysis.result === 'no_contactar'
+      || event.payload.analysis.resultado === 'no_contactar'
+    )
   ))) {
     output.pidio_no_contactar = true;
   }

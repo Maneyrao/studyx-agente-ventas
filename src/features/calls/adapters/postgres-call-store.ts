@@ -11,7 +11,10 @@ import {
 } from '../ports/retell-call-correlation-store';
 import { splitFullName } from '@/lib/heuristics/contact-identity';
 import { agentBLeadProjectionSourceOrder, enqueueLeadProjection, leadProjectionKey } from '@/lib/services/projection.service';
-import { loadSheetsProjectionConfig } from '@/lib/config';
+import { loadBusinessWorkspaceConfig, loadSheetsProjectionConfig } from '@/lib/config';
+import { resolveRetellProjectionTarget } from '../domain/retell-final-review-policy';
+
+export { resolveRetellProjectionTarget } from '../domain/retell-final-review-policy';
 
 type CallRow = {
   id: string;
@@ -435,6 +438,7 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
     const rows = await db<Array<{
       contact_id: string;
       workspace_id: string;
+      workspace_slug: string;
       source_order: string | number | null;
       name: string | null;
       email: string | null;
@@ -444,6 +448,7 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
       SELECT
         cs.contact_id,
         canonical_workspace.id AS workspace_id,
+        canonical_workspace.slug AS workspace_slug,
         source.conversation_seq AS source_order,
         contact.name,
         contact.email,
@@ -478,7 +483,9 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
 
     const identity = row.name ? splitFullName(row.name) : null;
     if (!identity?.nombre.trim() || !identity.apellido.trim()) return;
-    const course = row.course_name ?? analysis.curso_ofrecido ?? row.course_code;
+    // Retell's declared course is bounded evidence only. A commercial Sheet
+    // row requires an active offering resolved in the canonical workspace.
+    const course = row.course_name;
     if (!course?.trim() || row.source_order === null) return;
 
     const sheetsFromEnvironment = loadSheetsProjectionConfig();
@@ -488,11 +495,22 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
       WHERE projection_key = ${leadProjectionKey(row.workspace_id, row.contact_id)}
       LIMIT 1
     `;
-    const sheets = sheetsFromEnvironment
-      ? { spreadsheetId: sheetsFromEnvironment.spreadsheetId, tabName: sheetsFromEnvironment.tabName }
-      : existingProjection[0]
+    let configuredWorkspaceSlug: string | null = null;
+    try {
+      configuredWorkspaceSlug = loadBusinessWorkspaceConfig().workspaceSlug;
+    } catch {
+      configuredWorkspaceSlug = null;
+    }
+    const sheets = resolveRetellProjectionTarget({
+      configuredWorkspaceSlug,
+      canonicalWorkspaceSlug: row.workspace_slug,
+      globalSheets: sheetsFromEnvironment
+        ? { spreadsheetId: sheetsFromEnvironment.spreadsheetId, tabName: sheetsFromEnvironment.tabName }
+        : null,
+      existingProjection: existingProjection[0]
         ? { spreadsheetId: existingProjection[0].spreadsheet_id, tabName: existingProjection[0].tab_name }
-        : null;
+        : null,
+    });
     if (!sheets) return;
 
     const sourceOrder = Number(row.source_order);
@@ -535,7 +553,7 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
     callId: string,
     analysis: CallAnalysis,
   ): Promise<void> {
-    if (analysis.pidio_no_contactar !== true) return;
+    if (analysis.pidio_no_contactar !== true && analysis.result !== 'no_contactar' && analysis.resultado !== 'no_contactar') return;
 
     const existing = await db<Array<{ id: string }>>`
       SELECT id FROM consent_events

@@ -229,6 +229,29 @@ describe('bounded Retell post-call analysis', () => {
     });
   });
 
+  it('accepts Retell system-presets sentiment casing and maps it to the internal enum', () => {
+    const providerPayload = completeWebhook();
+    providerPayload.call.call_analysis.user_sentiment = 'Positive';
+    expect(mapRetellLifecycleEvent(providerPayload, callId).payload).toMatchObject({
+      event_type: 'analyzed',
+      analysis: { user_sentiment: 'positive' },
+    });
+  });
+
+  it('treats a legacy no_contactar result as monotonic consent revocation', () => {
+    const base = mapRetellLifecycleEvent(completeWebhook({
+      pidio_no_contactar: false,
+      resultado: 'no_contactar',
+    }), callId);
+    const webhook = { ...base, event_id: `retell:webhook:call_analyzed:${providerCallId}` };
+    const later = { ...base, event_id: `retell:tool:call_analyzed:${providerCallId}`, payload: {
+      event_type: 'analyzed' as const,
+      analysis: { ...(base.payload as Extract<typeof base.payload, { event_type: 'analyzed' }>).analysis,
+        resultado: 'seguimiento_agendado' as const, result: 'seguimiento_agendado' as const, pidio_no_contactar: false },
+    } };
+    expect(mergeCallAnalyses([webhook, later]).pidio_no_contactar).toBe(true);
+  });
+
   it('records the complete analysis from registrar_resultado using canonical event persistence', async () => {
     const deps = toolDependencies();
     const body = {
@@ -344,6 +367,22 @@ describe('bounded Retell post-call analysis', () => {
         resultado: 'link_enviado_sin_pago',
         call_summary: 'Resumen legacy real.',
         email_capturado: 'lead@example.test',
+      },
+    }), 'registrar_resultado', deps);
+    expect(await response.json()).toEqual({ ok: false, error: { code: 'INVALID_TOOL_REQUEST' } });
+  });
+
+  it('rejects call_summary-only registrar_resultado as a partial extended analysis', async () => {
+    const deps = toolDependencies();
+    const response = await handleRetellToolRequest(signedRequest({
+      name: 'registrar_resultado',
+      call: {
+        call_id: providerCallId,
+        metadata: { internal_call_id: callId, contact_id: contactId, conversation_id: conversationId },
+      },
+      args: {
+        resultado: 'link_enviado_sin_pago',
+        call_summary: 'Resumen externo.',
       },
     }), 'registrar_resultado', deps);
     expect(await response.json()).toEqual({ ok: false, error: { code: 'INVALID_TOOL_REQUEST' } });

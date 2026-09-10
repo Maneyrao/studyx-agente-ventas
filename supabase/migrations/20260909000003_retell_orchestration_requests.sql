@@ -80,25 +80,15 @@ LANGUAGE plpgsql
 SET search_path = pg_catalog, public
 AS $$
 BEGIN
+  -- The call's workspace binding is immutable and is the only tenant proof
+  -- this request needs. Mutable sales-state membership must not authorize a
+  -- cross-workspace request after the call was created.
   IF NOT EXISTS (
     SELECT 1
     FROM call_sessions AS cs
-    JOIN conversation_sales_context_states_v1 AS state
-      ON state.conversation_id = cs.conversation_id
-     AND state.contact_id = cs.contact_id
-     AND state.workspace_id = NEW.workspace_id
     WHERE cs.id = NEW.call_id
       AND cs.contact_id = NEW.contact_id
-  )
-  AND NOT EXISTS (
-    SELECT 1
-    FROM call_sessions AS cs
-    JOIN sales_context_states AS state
-      ON state.conversation_id = cs.conversation_id
-     AND state.contact_id = cs.contact_id
-     AND state.workspace_id = NEW.workspace_id
-    WHERE cs.id = NEW.call_id
-      AND cs.contact_id = NEW.contact_id
+      AND cs.workspace_id IS NOT DISTINCT FROM NEW.workspace_id
   ) THEN
     RAISE EXCEPTION USING
       ERRCODE = '23514',

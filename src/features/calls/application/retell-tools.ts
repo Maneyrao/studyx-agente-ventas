@@ -122,6 +122,13 @@ const SafeNameSchema = z.string().trim().min(1).max(128)
 const SafeEmailSchema = z.string().trim().max(254).email();
 const SafePhoneSchema = z.string().trim().regex(/^\+[1-9]\d{7,14}$/u);
 const CourseTextSchema = z.string().trim().min(1).max(128);
+const RETELL_LEGACY_RESULT_KEYS = new Set([
+  'resultado', 'resumen', 'objeciones', 'proximo_paso', 'nivel_interes', 'curso',
+]);
+
+function hasRetellExtendedResultFields(value: Record<string, unknown>): boolean {
+  return Object.keys(value).some((key) => !RETELL_LEGACY_RESULT_KEYS.has(key));
+}
 
 const ToolArgsSchemas = {
   consultar_curso: z.object({
@@ -187,8 +194,7 @@ const ToolArgsSchemas = {
     compromiso_pendiente: z.string().trim().min(1).max(1_024).optional(),
   }).strict().refine((value) => value.resumen !== undefined || value.call_summary !== undefined)
     .superRefine((value, context) => {
-      const legacyKeys = new Set(['resultado', 'resumen', 'objeciones', 'proximo_paso', 'nivel_interes', 'curso', 'call_summary']);
-      const hasExtendedField = Object.keys(value).some((key) => !legacyKeys.has(key));
+      const hasExtendedField = hasRetellExtendedResultFields(value);
       if (!hasExtendedField) return;
       for (const key of [
         'objecion_principal', 'nivel_interes', 'link_pago_enviado', 'pago_confirmado',
@@ -470,9 +476,7 @@ async function recordResult(
     args.proximo_paso ? `Próximo paso: ${args.proximo_paso}` : null,
     args.curso ? `Curso: ${args.curso}` : null,
   ].filter((value): value is string => value !== null).join('\n');
-  const extended = Object.keys(args).some((key) => ![
-    'resultado', 'resumen', 'objeciones', 'proximo_paso', 'nivel_interes', 'curso',
-  ].includes(key));
+  const extended = hasRetellExtendedResultFields(args as Record<string, unknown>);
   await recordCallEvent({
     schema_version: 1,
     event_id: `retell:tool:call_analyzed:${envelope.call.call_id}`,

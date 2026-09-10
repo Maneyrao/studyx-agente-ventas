@@ -17,6 +17,9 @@ import { WhatsAppCloudChannel } from '@/features/messaging/adapters/whatsapp-clo
 import { FakePaymentProvider } from '@/features/payments/adapters/fake-payment-provider';
 import { StripeCheckoutProvider } from '@/features/payments/adapters/stripe-checkout-provider';
 import Stripe from 'stripe';
+import { retellPaymentProviderCanWireLiveOutbound } from '@/features/calls/domain/retell-final-review-policy';
+
+export { retellPaymentProviderCanWireLiveOutbound } from '@/features/calls/domain/retell-final-review-policy';
 
 function misconfigured(): Response {
   return Response.json(
@@ -53,6 +56,11 @@ export async function handleRetellToolRoute(
     let paymentProvider;
     try {
       const payment = loadPaymentProviderConfig();
+      // Retell live wiring must never pair real WhatsApp with a fake/test
+      // checkout URL. Fake providers remain explicit test dependencies only.
+      if (!retellPaymentProviderCanWireLiveOutbound(payment.provider)) {
+        throw new Error('RETELL_PAYMENT_PROVIDER_NOT_LIVE');
+      }
       paymentProvider = payment.provider === 'fake'
         ? new FakePaymentProvider()
         : new StripeCheckoutProvider({
