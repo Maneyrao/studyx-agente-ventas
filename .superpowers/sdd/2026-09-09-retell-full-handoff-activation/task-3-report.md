@@ -191,3 +191,64 @@ git diff --check: passed
 Archivos adicionales/modificados en esta ronda: `src/features/calls/adapters/postgres-call-store.ts`, `src/features/calls/adapters/postgres-post-call-followup-store.ts`, `src/features/calls/application/post-call-followup.ts`, `src/features/calls/ports/post-call-followup-store.ts`, `supabase/migrations/20260909000004_retell_call_workspace_binding.sql`, `tests/integration/retell-tools.test.ts`, `tests/integration/post-call-followup.test.ts` y `tests/unit/calls/retell-post-call-analysis.test.ts`.
 
 No se hicieron prompts/naturalidad, llamadas de red/provider, deploy, push ni merge.
+
+## Fix round 4 — DNC tardío después del snapshot del sweep
+
+### Hallazgo corregido
+
+`listPendingFollowups` sigue siendo deliberadamente un snapshot, pero cada fila
+ahora se revalida contra el estado durable inmediatamente antes de poder entrar
+en una rama de outbound. La revalidación toma `call_sessions FOR UPDATE`, por
+lo que queda serializada con `appendEvent`; si ve `pidio_no_contactar=true` o
+el resultado canónico `no_contactar`, registra/reutiliza la revocación
+`call:<call_id>:no_contactar`, sintetiza el marker idempotente
+`system:call_result:<call_id>` y termina esa ejecución sin invocar
+`sendOutbound`. Se repite una segunda vez justo antes de la llamada al
+provider, cerrando también la ventana introducida por las consultas de
+bloqueo, pago y decisión.
+
+La persistencia/merge de cualquier análisis DNC también converge
+`contact_channel_permissions` dentro de la misma transacción de `appendEvent`,
+reutilizando `record_contact_permission_event` y la misma clave durable. Si la
+convergencia ocurre antes de que exista el marker, conserva `source_event_id =
+NULL`; replays posteriores no intentan re-enlazar la misma clave a otro UUID.
+
+La revocación global previa de un contacto sigue siendo `CONTACT_BLOCKED` y no
+se convierte artificialmente en un marker de esta llamada; solo el DNC durable
+de la llamada (`call_events`/resultado) activa la rama de revocación del
+sweep.
+
+### RED → GREEN
+
+Se agregó una prueba PostgreSQL que pausa el sweep después de
+`listPendingFollowups`, invoca dos veces el boundary real de
+`registrar_resultado` con `pidio_no_contactar=true`, y luego reanuda el sweep.
+Exige cero llamadas al sender/provider, consentimiento `revoked`, un único
+`system_call_result`, un único mensaje sintético y una única fila de
+`consent_events` para `call:<id>:no_contactar`.
+
+### Evidencia Fix round 4
+
+Pruebas focales unitarias:
+
+```text
+8 files passed — 130 tests passed
+```
+
+Pruebas focales PostgreSQL en `127.0.0.1:55435`:
+
+```text
+4 files passed — 37 tests passed
+```
+
+Checks adicionales:
+
+```text
+npm run typecheck        passed
+npm run lint -- --quiet  passed
+git diff --check         passed
+```
+
+Archivos adicionales/modificados en esta ronda: `src/features/calls/application/post-call-followup.ts`, `src/features/calls/ports/post-call-followup-store.ts`, `src/features/calls/adapters/postgres-post-call-followup-store.ts`, `src/features/calls/adapters/postgres-call-store.ts` y `tests/integration/post-call-followup.test.ts`.
+
+No se hicieron prompts/naturalidad, llamadas de red/provider, deploy, push ni merge. El orden residual honesto es: la revalidación transaccional termina antes de `sendOutbound`, y el sender conserva su propio gate de consentimiento; una nueva revocación que se confirme después de esa última lectura queda para el gate de mensajería/reintento siguiente, no se mantiene una transacción abierta durante la red externa.

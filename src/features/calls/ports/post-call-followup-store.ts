@@ -33,6 +33,17 @@ export interface PostCallFollowupStore {
     readonly grace_seconds: number;
   }): Promise<TerminalCallForFollowup[]>;
 
+  /**
+   * Re-read the durable call/consent state after listing and before any
+   * provider send.  A DNC found here is revoked and completed atomically by
+   * the adapter, so a late analysis cannot race a stale list snapshot into an
+   * outbound branch.
+   */
+  revalidateFollowup?(input: {
+    readonly call_id: string;
+    readonly trace_id: string;
+  }): Promise<{ readonly do_not_contact: boolean }>;
+
   /** True if the contact has a payment with status 'paid' in this workspace. */
   hasVerifiedPayment(contactId: string, workspaceId: string, callId: string, provider: 'telegram_sandbox' | 'retell'): Promise<boolean>;
 

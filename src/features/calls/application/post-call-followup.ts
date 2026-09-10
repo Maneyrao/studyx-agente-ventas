@@ -62,6 +62,22 @@ export async function runPostCallFollowup(
 
   for (const call of pending) {
     try {
+      // `pending` is intentionally a snapshot. A registrar_resultado or
+      // webhook can commit DNC after listPendingFollowups returns, so the
+      // adapter re-reads under the call lock immediately before this row can
+      // enter any outbound path. When it finds DNC, the adapter also performs
+      // the canonical revocation and completion marker in that same durable
+      // operation; no provider call is made here.
+      const revalidated = await deps.store.revalidateFollowup?.({
+        call_id: call.call_id,
+        trace_id: input.trace_id,
+      });
+      if (revalidated?.do_not_contact) {
+        findings.push({ call_id: call.call_id, action: 'revoke_contact', reason: 'DO_NOT_CONTACT' });
+        revoked += 1;
+        continue;
+      }
+
       // DNC is a contact/channel fact. Decide it before workspace resolution,
       // blocking checks, or payment lookup so a legacy NULL-tenant call still
       // revokes and can never enter an outbound branch.
@@ -137,6 +153,19 @@ export async function runPostCallFollowup(
       }
 
       // verdict.action === 'send'
+      // Revalidate at the actual outbound boundary too. The first check
+      // protects the snapshot, while this one closes the gap introduced by
+      // blocked/payment/verdict reads before provider contact.
+      const outboundRevalidated = await deps.store.revalidateFollowup?.({
+        call_id: call.call_id,
+        trace_id: input.trace_id,
+      });
+      if (outboundRevalidated?.do_not_contact) {
+        findings.push({ call_id: call.call_id, action: 'revoke_contact', reason: 'DO_NOT_CONTACT' });
+        revoked += 1;
+        continue;
+      }
+
       const delivery = await deps.sendOutbound({
         workspaceId: call.workspace_id,
         contactId: call.contact_id,

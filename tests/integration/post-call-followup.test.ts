@@ -344,6 +344,133 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
     expect(await outboundDeliveryCountForConversation(fixture.conversationId)).toBe(0);
   });
 
+  it('Task 3 Fix round 4: late boundary DNC after list revalidation revokes without outbound', async () => {
+    const fixture = await seedTerminalCall({
+      status: 'completed',
+      result: 'seguimiento_agendado',
+      analysis_status: 'completed',
+      provider: 'retell',
+    });
+    const workspaceRows = await sql<Array<{ slug: string }>>`
+      SELECT slug FROM workspaces WHERE id = ${fixture.workspaceId}::uuid
+    `;
+    const callStore = new PostgresCallStore(sql);
+    // Retell sweeps require the authoritative webhook fence before a call is
+    // eligible. This baseline webhook says nothing about DNC; the late tool
+    // boundary below is the event that must revoke during the paused sweep.
+    await callStore.appendEvent({
+      schema_version: 1,
+      event_id: `retell:webhook:call_analyzed:${fixture.providerCallId}`,
+      call_id: fixture.callId,
+      event_type: 'analyzed',
+      sequence: 3,
+      occurred_at: new Date().toISOString(),
+      provider: 'retell',
+      payload: {
+        event_type: 'analyzed',
+        analysis: {
+          result: 'seguimiento_agendado',
+          nivel_interes: 'medio',
+          objecion: null,
+          notas: 'Webhook baseline before the late tool result.',
+        },
+      },
+    });
+    const toolDependencies = {
+      apiKey: boundaryApiKey,
+      toolsSecret: boundaryToolsSecret,
+      workspaceSlug: workspaceRows[0].slug,
+      calls: callStore,
+      business: new PostgresBusinessContextStore(sql),
+      contacts: new PostgresRetellContactToolStore(sql),
+      sheets: null,
+      now: () => new Date(1_788_966_000_000),
+    };
+    const metadata = {
+      internal_call_id: fixture.callId,
+      contact_id: fixture.contactId,
+      conversation_id: fixture.conversationId,
+    };
+    const lateDncBody = {
+      name: 'registrar_resultado' as const,
+      call: { call_id: fixture.providerCallId, metadata },
+      args: {
+        resultado: 'seguimiento_agendado' as const,
+        call_summary: 'La persona pidió no recibir más contactos.',
+        user_sentiment: 'neutral' as const,
+        curso_ofrecido: 'Python',
+        precio_ofrecido: 'USD 360',
+        objecion_principal: 'ninguna' as const,
+        nivel_interes: 'medio' as const,
+        email_capturado: `late-dnc-${fixture.callId}@example.test`,
+        link_pago_enviado: false,
+        pago_confirmado: false,
+        pidio_humano: false,
+        pidio_no_contactar: true,
+        pregunto_si_es_ia: false,
+        compromiso_pendiente: 'Ninguno.',
+      },
+    };
+
+    let listReturned!: () => void;
+    let resumeSweep!: () => void;
+    const listed = new Promise<void>((resolve) => { listReturned = resolve; });
+    const resumed = new Promise<void>((resolve) => { resumeSweep = resolve; });
+    let providerAttempts = 0;
+    const pausedStore = {
+      listPendingFollowups: async (input: { limit: number; grace_seconds: number }) => {
+        const rows = await store.listPendingFollowups(input);
+        listReturned();
+        await resumed;
+        return rows;
+      },
+      revalidateFollowup: store.revalidateFollowup.bind(store),
+      hasVerifiedPayment: store.hasVerifiedPayment.bind(store),
+      isContactBlocked: store.isContactBlocked.bind(store),
+      revokeContact: store.revokeContact.bind(store),
+      markFollowupCompleted: store.markFollowupCompleted.bind(store),
+    };
+    const sweepPromise = runPostCallFollowup(
+      { trace_id: randomUUID(), grace_seconds: 0, limit: 500 },
+      {
+        store: pausedStore,
+        sendOutbound: async () => {
+          providerAttempts += 1;
+          return { outcome: 'sent' as const, channel: 'whatsapp' as const, providerMessageId: 'unexpected', deliveryId: 'unexpected', reason: null };
+        },
+      },
+    );
+    await listed;
+
+    // The real registrar_resultado boundary commits after listPendingFollowups
+    // has returned, reproducing the stale-snapshot interleaving exactly.
+    await expect(handleRetellToolRequest(
+      signedBoundaryRequest(lateDncBody, 'retell/tools/registrar-resultado'),
+      'registrar_resultado',
+      toolDependencies,
+    )).resolves.toMatchObject({ status: 200 });
+    await expect(handleRetellToolRequest(
+      signedBoundaryRequest(lateDncBody, 'retell/tools/registrar-resultado'),
+      'registrar_resultado',
+      toolDependencies,
+    )).resolves.toMatchObject({ status: 200 });
+
+    resumeSweep();
+    const result = await sweepPromise;
+    expect(result.findings.find((finding) => finding.call_id === fixture.callId)).toMatchObject({
+      action: 'revoke_contact', reason: 'DO_NOT_CONTACT',
+    });
+    expect(providerAttempts).toBe(0);
+    expect(await consentStatus(fixture.contactId)).toBe('revoked');
+    expect(await systemCallResultEventCount(fixture.callId)).toBe(1);
+    expect(await syntheticMessageCount(fixture.callId)).toBe(1);
+    expect(await postCallOutboundDeliveryCount(fixture.callId)).toBe(0);
+    await expect(sql<Array<{ count: string }>>`
+      SELECT count(*)::text AS count FROM consent_events
+      WHERE event_key = ${`call:${fixture.callId}:no_contactar`}
+    `).resolves.toEqual([{ count: '1' }]);
+  });
+
   it('Task 3: do-not-contact still revokes when the call was cancelled', async () => {
     const fixture = await seedTerminalCall({
       status: 'cancelled',

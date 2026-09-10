@@ -409,7 +409,9 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
           provider: row.provider,
           payload: row.payload,
         }));
-        await this.convergeRetellAnalysis(tx, event.call_id, mergeCallAnalyses(events));
+        const analysis = mergeCallAnalyses(events);
+        await this.convergeRetellAnalysis(tx, event.call_id, analysis);
+        await this.convergeDoNotContact(tx, event.call_id, analysis);
       }
       // Keep the durable event and the call_sessions snapshot in one commit.
       // The public recordCallEvent API may perform a redundant recompute after
@@ -520,6 +522,49 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
           AND deleted_at IS NULL
       `;
     }
+  }
+
+  /**
+   * Consent is a canonical projection, not merely an analysis field. Persist
+   * it under the same call-session lock/transaction as the analyzed event so
+   * a late DNC is visible to every messaging boundary before the sweep runs.
+   * The stable event key is shared with the post-call revocation path.
+   */
+  private async convergeDoNotContact(
+    db: SqlExecutor,
+    callId: string,
+    analysis: CallAnalysis,
+  ): Promise<void> {
+    if (analysis.pidio_no_contactar !== true) return;
+
+    const existing = await db<Array<{ id: string }>>`
+      SELECT id FROM consent_events
+      WHERE event_key = ${`call:${callId}:no_contactar`}
+      LIMIT 1
+    `;
+    if (existing[0]) return;
+
+    const rows = await db<Array<{ contact_id: string }>>`
+      SELECT contact_id FROM call_sessions WHERE id = ${callId}::uuid
+    `;
+    const contactId = rows[0]?.contact_id;
+    if (!contactId) throw new Error('CALL_CONTACT_NOT_FOUND');
+
+    // No system_call_result exists yet during analysis ingestion. Keeping the
+    // source event NULL is intentional; later revocation reuses this existing
+    // idempotency record instead of rebinding the key to a marker UUID.
+    await db`
+      SELECT * FROM record_contact_permission_event(
+        ${`call:${callId}:no_contactar`},
+        ${contactId}::uuid,
+        'whatsapp',
+        'revoked',
+        'call_analysis_no_contactar',
+        NULL::uuid,
+        ${db.json({ call_id: callId })},
+        now()
+      )
+    `;
   }
 
   async recomputeProjection(callId: string): Promise<CallProjection> {
