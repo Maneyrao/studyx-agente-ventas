@@ -56,8 +56,7 @@ vi.mock('../../../botpress-agent/src/lib/decision/groq-direct', () => ({
 vi.mock('../../../botpress-agent/src/lib/conversation/conversation-interpreter', () => ({
   generateGroqConversationMoveV1: actionSpies.conversationInterpreter,
 }));
-vi.mock('../../../botpress-agent/src/lib/conversation/agent-a-brain', async (importOriginal) => ({
-  normalizeCallOfferResponseV1: (await importOriginal<typeof import('../../../botpress-agent/src/lib/conversation/agent-a-brain')>()).normalizeCallOfferResponseV1,
+vi.mock('../../../botpress-agent/src/lib/conversation/agent-a-brain', () => ({
   // La validación real vive en su propio test. Acá se neutraliza para que
   // estos casos midan el ruteo de proveedores, que es lo que afirman: un
   // rechazo real convertiría cada caso en una prueba de la escalera.
@@ -605,7 +604,7 @@ describe('processInboundTurn hot path', () => {
     },
   );
 
-  it('fails closed silently when the authoritative brain is unavailable', async () => {
+  it('returns an honest technical reply instead of silence when the authoritative brain is unavailable', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -653,9 +652,10 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       conversation_pipeline_v1: null,
       decision: {
-        kind: 'suppress',
-        response: null,
-        reason_code: 'BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK',
+        kind: 'reply',
+        response: 'Se me trabó la respuesta. ¿Me lo mandás otra vez en un ratito?',
+        response_type: 'commercial_reply',
+        reason_code: 'MODEL_UNAVAILABLE',
         business_action: null,
       },
     });
@@ -666,6 +666,7 @@ describe('processInboundTurn hot path', () => {
       rollout_mode: 'authoritative',
       brain_source: 'fallback',
       brain_failure_reason: 'rate_limited',
+      failure_code: 'BRAIN_RATE_LIMITED',
       authorized_action_type: 'none',
     });
   });
@@ -726,8 +727,9 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       conversation_pipeline_v1: null,
       decision: {
-        kind: 'suppress',
-        reason_code: 'BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK',
+        kind: 'reply',
+        response: 'Se me trabó la respuesta. ¿Me lo mandás otra vez en un ratito?',
+        reason_code: 'MODEL_UNAVAILABLE',
       },
     });
   });
@@ -866,8 +868,9 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       conversation_pipeline_v1: null,
       decision: {
-        kind: 'suppress',
-        reason_code: 'BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK',
+        kind: 'reply',
+        response: 'Se me trabó la respuesta. ¿Me lo mandás otra vez en un ratito?',
+        reason_code: 'MODEL_UNAVAILABLE',
       },
     });
   });
@@ -1081,9 +1084,9 @@ describe('processInboundTurn hot path', () => {
       conversation_pipeline_v1: null,
       agent_turn_v2: null,
       decision: {
-        kind: 'suppress',
-        response: null,
-        reason_code: 'BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK',
+        kind: 'reply',
+        response: 'Se me trabó la respuesta. ¿Me lo mandás otra vez en un ratito?',
+        reason_code: 'MODEL_UNAVAILABLE',
       },
     });
   });
@@ -1277,9 +1280,9 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       conversation_pipeline_v1: null,
       decision: {
-        kind: 'suppress',
-        response: null,
-        reason_code: 'BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK',
+        kind: 'reply',
+        response: 'Se me trabó la respuesta. ¿Me lo mandás otra vez en un ratito?',
+        reason_code: 'MODEL_UNAVAILABLE',
       },
     });
   });
@@ -1996,7 +1999,7 @@ describe('processInboundTurn hot path', () => {
     expect(execute).not.toHaveBeenCalled();
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       conversation_pipeline_v1: null,
-      decision: { reason_code: 'BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK' },
+      decision: { kind: 'reply', reason_code: 'MODEL_UNAVAILABLE' },
     });
   });
 
@@ -2180,10 +2183,10 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       conversation_pipeline_v1: null,
       decision: {
-        kind: 'suppress',
-        response: null,
+        kind: 'reply',
+        response: 'Se me trabó la respuesta. ¿Me lo mandás otra vez en un ratito?',
         business_action: null,
-        reason_code: 'BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK',
+        reason_code: 'MODEL_UNAVAILABLE',
       },
     });
   });

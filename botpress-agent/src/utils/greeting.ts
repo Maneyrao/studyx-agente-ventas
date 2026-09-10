@@ -30,10 +30,10 @@ function buildGreetingResponse(claimed: ClaimedTurn): string {
     : 'Soy la asesora virtual del equipo.'
   const firstName = claimed.contact.name?.trim().split(/\s+/u)[0] || null
   const salutation = firstName ? `¡Hola, ${firstName}!` : '¡Hola!'
-  return (
-    `${salutation} 😊 ${identity} Puedo darte información sobre nuestros cursos, ` +
-    'modalidades y horarios. ¿En qué te puedo ayudar?'
-  )
+  const nextStep = firstName
+    ? '¿Ya tenés un curso en mente o querés que veamos opciones?'
+    : '¿Cómo te llamás?'
+  return `${salutation} 😊 ${identity} ${nextStep}`
 }
 
 export function matchDeterministicGreeting(claimed: ClaimedTurn): Decision | null {

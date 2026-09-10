@@ -31,6 +31,7 @@ import {
   classifyBrainFailureReason,
   constrainModelToAdvisory,
   suppress,
+  technicalFallback,
   modelUnavailableFallback,
 } from '../utils/decision-policy'
 import { routeCommercialTurn } from '../utils/commercial-router'
@@ -857,6 +858,7 @@ export const processInboundTurn = new Workflow({
             : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
           brain_source: 'fallback',
           brain_failure_reason: brainFailureReason,
+          failure_code: failureCode,
           context_recent_turn_count: agentABrainContext.turn.recent_turns.length,
           context_memory_count: agentABrainContext.customer.memories.length,
           used_memory_count: 0,
@@ -864,12 +866,15 @@ export const processInboundTurn = new Workflow({
           proposed_action_type: 'none',
           authorized_action_type: 'none',
         })
-        // Authoritative means the conversational brain owns all customer
-        // copy. Never substitute a catalog, greeting, call, or payment
-        // template when generation/planning fails: commit a silent decision
-        // and preserve the backend safety boundaries instead.
+        // Keep the brain as the sole commercial author. If it is genuinely
+        // unavailable, return an honest technical acknowledgement rather than
+        // inventing sales copy or leaving the customer in silence.
         if (brainAuthoritative) {
-          pipelineFailureDecision = suppress('BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK')
+          pipelineFailureDecision = technicalFallback(
+            owned.policy.allowed_response_types.includes('technical_fallback')
+              ? 'technical_fallback'
+              : 'commercial_reply',
+          )
         }
       }
     }
@@ -999,13 +1004,12 @@ export const processInboundTurn = new Workflow({
           brain_source: 'fallback',
           brain_failure_reason: brainFailureReason,
         })
-        // Same rule as the authoritative brain route above: when the model
-        // owns the copy, a provider outage never licenses another component to
-        // write. This route used to call `modelUnavailableFallback`, a lexical
-        // engine that answered from regex over the customer's own text — which
-        // is inventing conversation under load. Commit a silent decision and
-        // keep every backend safety boundary instead.
-        pipelineFailureDecision = suppress('BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK')
+        // No lexical sales substitute: only an explicit technical acknowledgement.
+        pipelineFailureDecision = technicalFallback(
+          owned.policy.allowed_response_types.includes('technical_fallback')
+            ? 'technical_fallback'
+            : 'commercial_reply',
+        )
       }
     }
 

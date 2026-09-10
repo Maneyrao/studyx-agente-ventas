@@ -112,7 +112,8 @@ export interface AgentATurnProposalV1 {
   readonly schema_version: 1;
   readonly move: ConversationMoveV1;
   readonly response: {
-    readonly messages: readonly [string] | readonly [string, string] | readonly [string, string, string];
+    /** Non-empty at the transport schema; bubble count is conversational guidance. */
+    readonly messages: readonly string[];
     readonly call_offer?: string | null;
   };
   readonly proposed_action: AgentAProposedActionV1;

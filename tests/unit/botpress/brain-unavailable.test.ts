@@ -9,20 +9,20 @@ const workflowSource = readFileSync(
 
 /**
  * When the model owns the copy, a provider outage does not license another
- * component to write. `processInboundTurn` already states that rule for the
- * authoritative brain route: it commits a silent decision instead of a
- * template. The conversation-pipeline route used to disagree — it called
+ * component to invent sales prose. Both model-owned routes emit the same
+ * honest technical acknowledgement instead of leaving the customer silent.
+ * The conversation-pipeline route used to disagree — it called
  * `modelUnavailableFallback`, a nine-regex engine over the customer's own text
  * that produced greetings, identity lines and price answers. Two behaviours
  * for the same event is the defect; these tests pin them together.
  */
 describe('brain unavailable is one behaviour, not two', () => {
-  it('resolves both brain-failure routes with the same silent decision', () => {
-    const suppressions = workflowSource.match(
-      /pipelineFailureDecision = suppress\('BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK'\)/gu,
+  it('resolves both brain-failure routes with the same technical acknowledgement', () => {
+    const acknowledgements = workflowSource.match(
+      /pipelineFailureDecision = technicalFallback\(/gu,
     );
 
-    expect(suppressions).toHaveLength(2);
+    expect(acknowledgements).toHaveLength(2);
   });
 
   it('never routes a brain failure into the lexical fallback engine', () => {

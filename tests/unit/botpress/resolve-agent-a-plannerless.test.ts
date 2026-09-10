@@ -83,7 +83,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.effective.proposal.response.messages).toEqual(['¿Querés que te prepare el enlace para avanzar?']);
   });
 
-  it('merges all informational fragments before the separate initial call offer without dropping facts', async () => {
+  it('keeps model-authored message boundaries even when the call invitation format is imperfect', async () => {
     const current = context();
     current.commercial_state.call_preference = 'unknown';
     current.commercial_state.call_offer_status = 'not_offered';
@@ -104,7 +104,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
 
     expect(repair).not.toHaveBeenCalled();
     expect(result.effective.proposal.response).toEqual({
-      messages: ['Maquillaje Profesional.\n\nLa formación tiene 38 clases.'],
+      messages: ['Maquillaje Profesional.', 'La formación tiene 38 clases.'],
       call_offer: 'Si querés, puedo llamarte para orientarte.',
     });
     expect(result.evidence).toMatchObject({
@@ -147,7 +147,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
-  it('normalizes a repaired multi-fragment initial offer through the same boundary', async () => {
+  it('does not spend a repair merely to add or reformat a recommended call offer', async () => {
     const current = context();
     current.commercial_state.call_preference = 'unknown';
     current.commercial_state.call_offer_status = 'not_offered';
@@ -163,11 +163,8 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
         repair_of: { rejection_id: '00000000-0000-4000-8000-000000000001', attempt: 1 },
       })),
     });
-    expect(result.effective.proposal.response).toEqual({
-      messages: ['Maquillaje Profesional.\n\nLa formación tiene 38 clases.'],
-      call_offer: 'Si querés, puedo llamarte para orientarte.',
-    });
-    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
+    expect(result.effective.proposal.response).toEqual(proposal().response);
+    expect(result.evidence).toMatchObject({ repair_attempted: false, repaired: false });
   });
 
   it('reports the terminal repair schema rejection instead of only the initial missing call', async () => {
@@ -176,7 +173,9 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     current.commercial_state.call_offer_status = 'not_offered';
     current.capabilities.may_offer_call = true;
     await expect(resolveAgentAPlannerlessProposalV2({
-      initial: generated(proposal()), context: current, repair_enabled: true,
+      initial: generated(proposal({
+        response: { messages: ['No necesitás experiencia previa.'], call_offer: null },
+      })), context: current, repair_enabled: true,
       rejection_id: '00000000-0000-4000-8000-000000000001',
       repair: async () => generated(proposal({
         response: { messages: [] as never, call_offer: null },
@@ -191,7 +190,9 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     current.commercial_state.call_offer_status = 'not_offered';
     current.capabilities.may_offer_call = true;
     await expect(resolveAgentAPlannerlessProposalV2({
-      initial: generated(proposal()), context: current, repair_enabled: true,
+      initial: generated(proposal({
+        response: { messages: ['No necesitás experiencia previa.'], call_offer: null },
+      })), context: current, repair_enabled: true,
       rejection_id: '00000000-0000-4000-8000-000000000001',
       repair: async () => { throw new AgentABrainError('BRAIN_INVALID_SCHEMA', null, 'response.messages:invalid_union'); },
     })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:PROPOSAL_SCHEMA_INVALID:response.messages');
@@ -232,7 +233,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
     expect(result.effective.proposal.response).toEqual({
-      messages: ['La formación tiene 38 clases.'], call_offer: null,
+      messages: ['La formación tiene 38 clases. Si querés, coordinamos una llamada.'], call_offer: null,
     });
   });
 
@@ -254,13 +255,11 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       }),
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
-    expect(result.effective.proposal.response).toEqual({
-      messages: ['Maquillaje Profesional.\n\nLa formación tiene 38 clases.'], call_offer: null,
-    });
+    expect(result.effective.proposal.response).toEqual(value.response);
     expect(result.evidence.repaired).toBe(phase === 'repair');
   });
 
-  it.each(['initial', 'repair'] as const)('does not silently drop inseparable information and invitation in the %s declared offer', async (phase) => {
+  it.each(['initial', 'repair'] as const)('keeps an imperfect information and invitation mix in the %s declared offer', async (phase) => {
     const current = context();
     current.commercial_state.call_preference = 'unknown';
     current.commercial_state.call_offer_count = 1;
@@ -270,14 +269,16 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       messages: ['Maquillaje Profesional.'],
       call_offer: 'Si querés coordinamos una llamada, la formación tiene 38 clases.',
     } });
-    await expect(resolveAgentAPlannerlessProposalV2({
+    const result = await resolveAgentAPlannerlessProposalV2({
       initial: generated(phase === 'initial' ? value : proposal({ response: { messages: [] as never, call_offer: null } })),
       context: current, repair_enabled: true,
       repair: async () => generated({ ...value,
         repair_of: { rejection_id: '00000000-0000-4000-8000-000000000001', attempt: 1 },
       }),
       rejection_id: '00000000-0000-4000-8000-000000000001',
-    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:CALL_BUDGET_EXHAUSTED:call_offer');
+    });
+    expect(result.effective.proposal.response).toEqual(value.response);
+    expect(result.evidence.repaired).toBe(phase === 'repair');
   });
 
   it.each(['initial', 'repair'] as const)('preserves information when demoting an unresolved-course offer in the %s proposal', async (phase) => {
@@ -291,7 +292,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     const value = proposal({
       move: { schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 1 },
       response: {
-        messages: ['¿Qué te gustaría aprender?'],
+        messages: ['¿Buscás algo de tecnología o ya tenés un curso en mente?'],
         call_offer: 'El área es Tecnología. Si querés, coordinamos una llamada.',
       },
       used_fact_ids: ['area:tecnologia:name:v1'],
@@ -304,9 +305,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       }),
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
-    expect(result.effective.proposal.response).toEqual({
-      messages: ['¿Qué te gustaría aprender?\n\nEl área es Tecnología.'], call_offer: null,
-    });
+    expect(result.effective.proposal.response).toEqual(value.response);
     expect(result.evidence.repaired).toBe(phase === 'repair');
   });
 
@@ -322,7 +321,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:PROPOSAL_SCHEMA_INVALID:response.call_offer');
   });
 
-  it('repairs a mixed information/reminder sentence rather than accepting a renewed pending offer', async () => {
+  it('keeps a mixed information/reminder sentence and records the quality warning', async () => {
     const current = context();
     current.commercial_state.call_preference = 'unknown';
     current.commercial_state.call_offer_count = 1;
@@ -340,8 +339,10 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       })),
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
-    expect(result.effective.proposal.response.messages).toEqual(['La formación tiene 38 clases.']);
-    expect(result.evidence.repaired).toBe(true);
+    expect(result.effective.proposal.response.messages).toEqual([
+      'Si querés coordinamos una llamada, la formación tiene 38 clases.',
+    ]);
+    expect(result.evidence.repaired).toBe(false);
   });
 
   it.each([{ messages: [] }, { messages: [' '] }])('rejects an empty proposal rather than accepting a typed but invalid object $messages', async ({ messages }) => {
@@ -353,22 +354,23 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     })).rejects.toThrow('PROPOSAL_SCHEMA_INVALID:response.messages');
   });
 
-  it('does not authorize an empty response after removing its only unsolicited offer', async () => {
+  it('does not turn an imperfect offer-only response into silence', async () => {
     const current = context();
     current.commercial_state.call_offer_count = 1;
     current.commercial_state.call_offer_status = 'offered';
     current.commercial_state.awaiting_reply = 'call_or_chat';
-    await expect(resolveAgentAPlannerlessProposalV2({
+    const result = await resolveAgentAPlannerlessProposalV2({
       initial: generated(proposal({ response: {
         messages: ['Si querés, coordinamos una llamada.'], call_offer: null,
       } })),
       context: current, repair_enabled: false,
       repair: async () => { throw new Error('Unexpected repair'); },
       rejection_id: '00000000-0000-4000-8000-000000000001',
-    })).rejects.toThrow('PROPOSAL_SCHEMA_INVALID:response.messages');
+    });
+    expect(result.effective.proposal.response.messages).toEqual(['Si querés, coordinamos una llamada.']);
   });
 
-  it('splits a model-authored embedded initial invitation into its two delivery bubbles', async () => {
+  it('does not rewrite a model-authored embedded initial invitation', async () => {
     const current = context();
     current.commercial_state.call_preference = 'unknown';
     current.commercial_state.call_offer_status = 'not_offered';
@@ -398,15 +400,15 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
 
     expect(repair).not.toHaveBeenCalled();
     expect(result.effective.proposal.response).toEqual({
-      messages: ['Tenemos Fotografía Profesional.'],
-      call_offer: 'Si querés, podemos coordinar una llamada breve para orientarte.',
+      messages: ['Tenemos Fotografía Profesional. Si querés, podemos coordinar una llamada breve para orientarte.'],
+      call_offer: null,
     });
     expect(result.evidence).toMatchObject({
       rejection_codes: ['CALL_OFFER_MESSAGE_BOUNDARY_INVALID'], repair_attempted: false,
     });
   });
 
-  it('keeps a declared initial invitation while removing its duplicate from the information bubble', async () => {
+  it('keeps the model copy when it duplicates an invitation across fields', async () => {
     const current = context();
     current.commercial_state.call_preference = 'unknown';
     current.commercial_state.call_offer_status = 'not_offered';
@@ -425,12 +427,12 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
 
     expect(result.effective.proposal.response).toEqual({
-      messages: ['Maquillaje Profesional tiene 38 clases.'],
+      messages: ['Maquillaje Profesional tiene 38 clases. Si querés, podemos coordinar una llamada breve.'],
       call_offer: 'Si querés, puedo llamarte para orientarte.',
     });
   });
 
-  it('removes an unsolicited follow-up call offer while preserving a catalog reply', async () => {
+  it('keeps an unsolicited follow-up offer as model-owned copy', async () => {
     const current = context();
     current.commercial_state.call_offer_count = 1;
     current.commercial_state.call_offer_status = 'offered';
@@ -450,12 +452,13 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       rejection_id: '00000000-0000-4000-8000-000000000002',
     });
 
-    expect(resolved.effective.proposal.response.call_offer).toBeNull();
+    expect(resolved.effective.proposal.response.call_offer)
+      .toBe('Si preferís, podemos coordinar una llamada breve.');
     expect(resolved.effective.proposal.response.messages)
       .toEqual(['Fotografía Profesional tiene 41 clases online.']);
   });
 
-  it('does not repeat a call offer before the customer answers the first invitation', async () => {
+  it('does not block a response that repeats an offer before the customer answers', async () => {
     const current = context();
     current.commercial_state.call_offer_count = 1;
     current.commercial_state.call_offer_status = 'offered';
@@ -481,10 +484,10 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
 
     expect(resolved.effective.proposal.response.call_offer).toBeNull();
     expect(resolved.effective.proposal.response.messages)
-      .toEqual(['Fotografía Profesional tiene 41 clases online.']);
+      .toEqual(['Fotografía Profesional tiene 41 clases online.', 'Si preferís, podemos coordinar una llamada breve.']);
   });
 
-  it('strips a reoffered call even when the explanation itself repeats the prior reply', async () => {
+  it('records but does not strip a reoffered call when the explanation repeats', async () => {
     const current = context();
     current.commercial_state.call_offer_count = 1;
     current.commercial_state.call_offer_status = 'offered';
@@ -509,7 +512,8 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       rejection_id: '00000000-0000-4000-8000-000000000002',
     });
 
-    expect(resolved.effective.proposal.response.call_offer).toBeNull();
+    expect(resolved.effective.proposal.response.call_offer)
+      .toBe('Si preferís, podemos coordinar una llamada breve.');
     expect(resolved.effective.proposal.response.messages)
       .toEqual(['Fotografía Profesional tiene 41 clases online.']);
   });
@@ -533,7 +537,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       expect(result.evidence).toMatchObject({ rejection_codes: [], repair_attempted: false });
   });
 
-  it('repairs a fabricated deferral instead of abandoning pending intake', async () => {
+  it('keeps a fabricated deferral visible without mutating or repairing it', async () => {
     const current = context();
     current.turn.batch_messages[0].text = 'Inés';
     current.commercial_state.awaiting_reply = 'contact_details';
@@ -546,28 +550,17 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       },
       response: { messages: ['¡Gracias, Inés!'], call_offer: null },
     }));
-    const repaired = generated(proposal({
-      move: {
-        schema_version: 1, move: 'provide_contact_details', secondary_moves: [],
-        vetoes: [], confidence: 1,
-      },
-      response: { messages: ['¡Gracias, Inés! ¿Cuál es tu apellido?'], call_offer: null },
-      repair_of: {
-        rejection_id: '00000000-0000-4000-8000-000000000001',
-        attempt: 1,
-      },
-    }));
-    const repair = vi.fn().mockResolvedValue(repaired);
+    const repair = vi.fn();
 
     const result = await resolveAgentAPlannerlessProposalV2({
       initial, context: current, repair_enabled: true, repair,
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 
-    expect(repair).toHaveBeenCalledTimes(1);
-    expect(result.effective).toBe(repaired);
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective).toBe(initial);
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['MISSING_INTAKE'], repair_attempted: true, repaired: true,
+      rejection_codes: ['MISSING_INTAKE'], repair_attempted: false, repaired: false,
     });
   });
 
@@ -671,7 +664,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
-  it('repairs a missing mandatory call offer even when optional repair is disabled', async () => {
+  it('treats a missing recommended call offer as guidance and never blocks the useful reply', async () => {
     const current = context();
     current.commercial_state.selected_offering_code = null;
     current.commercial_state.stage = 'exploring';
@@ -691,26 +684,17 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       response: { messages: ['Tenemos Fotografía Profesional. ¿Querés conocerla mejor?'], call_offer: null },
       used_fact_ids: [AVAILABLE_NAME_FACT],
     }));
-    const repaired = generated(proposal({
-      move: initial.proposal.move,
-      response: {
-        messages: ['Tenemos Fotografía Profesional. ¿Querés conocerla mejor?'],
-        call_offer: 'Si querés, podemos coordinar una llamada breve para orientarte.',
-      },
-      used_fact_ids: [AVAILABLE_NAME_FACT],
-      repair_of: { rejection_id: '00000000-0000-4000-8000-000000000002', attempt: 1 },
-    }));
-    const repair = vi.fn().mockResolvedValue(repaired);
+    const repair = vi.fn();
 
     const result = await resolveAgentAPlannerlessProposalV2({
       initial, context: current, repair_enabled: false, repair,
       rejection_id: '00000000-0000-4000-8000-000000000002',
     });
 
-    expect(repair).toHaveBeenCalledTimes(1);
-    expect(result.effective).toBe(repaired);
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective).toBe(initial);
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['CALL_OFFER_REQUIRED'], repair_attempted: true, repaired: true,
+      rejection_codes: ['CALL_OFFER_REQUIRED'], repair_attempted: false, repaired: false,
     });
   });
 
@@ -772,7 +756,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(repair).toHaveBeenCalledTimes(1);
   });
 
-  it('prunes only a repeated prior question and preserves the current useful answer', async () => {
+  it('records a repeated prior question without rewriting the model response', async () => {
     const current = context();
     current.turn.batch_messages[0].text = 'Prefiero seguir por chat';
     current.turn.recent_turns = [{
@@ -802,9 +786,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
 
     expect(repair).not.toHaveBeenCalled();
-    expect(result.effective.proposal.response.messages).toEqual([
-      'Perfecto, seguimos por chat.',
-    ]);
+    expect(result.effective.proposal.response.messages).toEqual(initial.proposal.response.messages);
     expect(result.evidence).toMatchObject({
       rejection_codes: ['REPEATED_AGENT_REPLY'],
       repair_attempted: false,
@@ -812,7 +794,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
-  it('removes a repeated greeting and introduction before delivery without another model call', async () => {
+  it('records a repeated greeting without blocking or rewriting the response', async () => {
     const current = context();
     current.customer.display_name = 'Thiago';
     current.turn.batch_messages[0].text = 'Thiago me llamo';
@@ -840,9 +822,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
 
     expect(repair).not.toHaveBeenCalled();
-    expect(result.effective.proposal.response.messages).toEqual([
-      'La formación tiene 38 clases.',
-    ]);
+    expect(result.effective.proposal.response.messages).toEqual(initial.proposal.response.messages);
     expect(result.evidence).toMatchObject({
       rejection_codes: ['REPEATED_AGENT_REPLY'],
       repair_attempted: false,
@@ -859,7 +839,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       draft: 'De acuerdo, seguimos por escrito. La formación tiene 38 clases. ¿Ya tenías pensado estudiar maquillaje o recién estás empezando a averiguar?',
       retained: 'De acuerdo, seguimos por escrito. La formación tiene 38 clases.',
     },
-  ])('prunes the repeated question inside one compound message: $retained', async ({ draft, retained }) => {
+  ])('records the repeated question inside one compound message: $retained', async ({ draft }) => {
     const current = context();
     current.turn.batch_messages[0].text = 'No quiero que me llamen, prefiero por chat';
     current.turn.recent_turns = [{
@@ -881,7 +861,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
 
     expect(repair).not.toHaveBeenCalled();
-    expect(result.effective.proposal.response.messages).toEqual([retained]);
+    expect(result.effective.proposal.response.messages).toEqual([draft]);
     expect(result.effective.proposal.move).toEqual(initial.proposal.move);
     expect(result.effective.proposal.proposed_action).toEqual(initial.proposal.proposed_action);
     expect(result.evidence).toMatchObject({

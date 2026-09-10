@@ -62,7 +62,7 @@ describe('Agent A Brain V1 prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v14');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v41');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v42');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('Backend policy and capabilities are authoritative');
     expect(instructions).toContain('commercial_state.awaiting_reply only to resolve an otherwise ambiguous answer');
@@ -72,6 +72,10 @@ describe('Agent A Brain V1 prompt', () => {
     // El prompt ya no impone una redacción canónica: sólo el valor.
     expect(instructions).toContain('the wording is yours');
     expect(instructions).not.toContain('exact wording of a');
+    expect(instructions).toContain('stock chatbot openings such as "Claro"');
+    expect(instructions).toContain('"¿Qué te gustaría aprender?"');
+    expect(instructions).toMatch(/ask directly what course or\s+area they mean/u);
+    expect(instructions).toMatch(/These are writing\s+instructions, not validity conditions/u);
     expect(instructions).toContain('intake_missing is authoritative');
     expect(instructions).toContain('never ask again for a field that is absent from intake_missing');
     expect(instructions).toContain('The customer may select the canonical plan and explicitly request its link');
@@ -331,7 +335,7 @@ describe('directiva de reparación por repetición', () => {
   it('fija el contrato breve de WhatsApp sin cambiar las fases comerciales', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v41');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v42');
     expect(instructions).toMatch(/Each physical message must stay within 350 characters and four non-empty lines/u);
     expect(instructions).toMatch(/Detailed course explanations use exactly two informational messages/u);
     expect(instructions).toMatch(/Payment options always stay together in exactly one response\.messages item/u);

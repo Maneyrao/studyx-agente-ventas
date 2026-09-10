@@ -86,7 +86,7 @@ function authorize(input: {
 }
 
 describe('plannerless Agent A authority', () => {
-  it('rejects an unsolicited new invitation while the prior call answer is pending', () => {
+  it('keeps an unsolicited invitation visible without advancing the call ledger', () => {
     const result = authorize({
       customerText: 'Contame cuánto dura.',
       state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected',
@@ -97,7 +97,10 @@ describe('plannerless Agent A authority', () => {
         used_fact_ids: ['offering:redes_informaticas:duration:v1'],
       }),
     });
-    expect(result).toMatchObject({ ok: false, reasons: ['CALL_OFFER_NOT_AUTHORIZED'] });
+    expect(result).toMatchObject({
+      ok: true,
+      transition: { call_offer_count: 1, call_offer_status: 'offered', awaiting_reply: 'call_or_chat' },
+    });
   });
   it('does not count a confirmed call acknowledgement as another optional offer', () => {
     const result = authorize({
@@ -137,7 +140,7 @@ describe('plannerless Agent A authority', () => {
     });
   });
 
-  it('rejects select_course when the model omitted its canonical reference', () => {
+  it('keeps the conversation alive without mutating course state when a reference is ambiguous', () => {
     const result = authorize({
       mayOfferCall: false,
       proposal: proposal({
@@ -149,7 +152,11 @@ describe('plannerless Agent A authority', () => {
       }),
     });
 
-    expect(result).toEqual({ ok: false, reasons: ['COURSE_NOT_RESOLVED'] });
+    expect(result).toMatchObject({
+      ok: true,
+      response: 'Tenemos Redes Informáticas y Excel Integral.',
+      transition: { selected_offering_code: null, stage: 'exploring' },
+    });
   });
 
   it('rejects a detailed fact from a course other than the resolved course', () => {
@@ -452,7 +459,7 @@ describe('plannerless Agent A authority', () => {
     });
   });
 
-  it('rejects two course messages before a separate first call invitation', () => {
+  it('preserves the model messages when the first call invitation boundary is imperfect', () => {
     const result = authorize({
       state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected' }),
       mayOfferCall: true,
@@ -468,8 +475,13 @@ describe('plannerless Agent A authority', () => {
     });
 
     expect(result).toMatchObject({
-      ok: false,
-      reasons: expect.arrayContaining(['CALL_OFFER_MESSAGE_BOUNDARY_INVALID']),
+      ok: true,
+      response_messages: [
+        'Redes Informáticas es una opción práctica para tecnología.',
+        'Puedo contarte también cómo se cursa.',
+        'Si te sirve, coordinamos una llamada breve.',
+      ],
+      transition: { call_offer_count: 1, call_offer_status: 'offered' },
     });
   });
 
@@ -490,7 +502,7 @@ describe('plannerless Agent A authority', () => {
     if (result.ok) expect(result.response).toContain(text);
   });
 
-  it.each(['¿Querés que coordinemos una llamada?', '¿Hablamos por teléfono?', '¿Quieres que te llame para explicarte el curso?', 'Ya registré tus datos. ¿Hablamos por teléfono?', 'Ya registré tus datos, ¿Hablamos por teléfono?', 'Entendido, seguimos sin llamada. ¿Quieres que te llame para explicarte el curso?'])('rejects a third proactive call offer: %s', (offer) => {
+  it.each(['¿Querés que coordinemos una llamada?', '¿Hablamos por teléfono?', '¿Quieres que te llame para explicarte el curso?', 'Ya registré tus datos. ¿Hablamos por teléfono?', 'Ya registré tus datos, ¿Hablamos por teléfono?', 'Entendido, seguimos sin llamada. ¿Quieres que te llame para explicarte el curso?'])('keeps a third proactive call offer as copy without advancing its ledger: %s', (offer) => {
     const result = authorize({
       state: state({
         selected_offering_code: 'redes_informaticas', stage: 'course_selected',
@@ -505,7 +517,10 @@ describe('plannerless Agent A authority', () => {
       }),
     });
 
-    expect(result).toEqual({ ok: false, reasons: ['CALL_OFFER_NOT_AUTHORIZED'] });
+    expect(result).toMatchObject({
+      ok: true,
+      transition: { call_offer_count: 2, call_offer_status: 'offered' },
+    });
   });
 
   it('persists call refusal and a payment-plan choice from the same customer message', () => {
@@ -627,7 +642,7 @@ describe('payment link consent across intake', () => {
     expect(details).toMatchObject({ ok: true, action: { type: 'none' } });
   });
 
-  it('rejects a fabricated payment deferral while durable intake is pending', () => {
+  it('keeps a fabricated payment deferral visible but preserves pending intake', () => {
     const result = authorize({
       customerText: 'Inés',
       state: state({
@@ -645,10 +660,13 @@ describe('payment link consent across intake', () => {
       }),
     });
 
-    expect(result).toEqual({ ok: false, reasons: ['MISSING_INTAKE'] });
+    expect(result).toMatchObject({
+      ok: true,
+      transition: { stage: 'plan_selected', awaiting_reply: 'contact_details' },
+    });
   });
 
-  it('rejects a fabricated purchase decline and keeps durable intake pending', () => {
+  it('keeps a fabricated purchase decline visible but does not close the durable sale', () => {
     const result = authorize({
       customerText: 'Inés',
       state: state({
@@ -666,7 +684,10 @@ describe('payment link consent across intake', () => {
       }),
     });
 
-    expect(result).toEqual({ ok: false, reasons: ['MISSING_INTAKE'] });
+    expect(result).toMatchObject({
+      ok: true,
+      transition: { stage: 'plan_selected', awaiting_reply: 'contact_details' },
+    });
   });
 
   it('closes the sale only when the current message explicitly declines the purchase', () => {
@@ -722,7 +743,7 @@ describe('payment link consent across intake', () => {
     });
   });
 
-  it('checks intake continuation after removing an unsupported state claim', () => {
+  it('removes an unsupported state claim without blocking the remaining acknowledgement', () => {
     const result = authorize({
       customerText: 'Inés',
       state: state({
@@ -745,7 +766,11 @@ describe('payment link consent across intake', () => {
       }),
     });
 
-    expect(result).toEqual({ ok: false, reasons: ['MISSING_INTAKE'] });
+    expect(result).toMatchObject({
+      ok: true,
+      response_messages: ['Gracias, Inés.'],
+      transition: { stage: 'plan_selected', awaiting_reply: 'contact_details' },
+    });
   });
 
   it('a postponement takes precedence over a conflicting link request', () => {

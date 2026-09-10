@@ -36,13 +36,15 @@ export function suppress(reasonCode: string): Decision {
   }
 }
 
-export function technicalFallback(): Decision {
+export function technicalFallback(
+  responseType: 'technical_fallback' | 'commercial_reply' = 'technical_fallback',
+): Decision {
   return {
     schema_version: 3,
     intent: 'unknown',
     kind: 'reply',
-    response: 'No pude procesar tu consulta en este momento. Por favor, intentá nuevamente más tarde.',
-    response_type: 'technical_fallback',
+    response: 'Se me trabó la respuesta. ¿Me lo mandás otra vez en un ratito?',
+    response_type: responseType,
     business_action: null,
     memory_candidates: [],
     missing_information: [],
@@ -67,8 +69,10 @@ export function classifyBrainFailureReason(
 ): BrainFailureReason {
   if (!catalogAvailable) return 'catalog_unavailable'
   if (code === 'BRAIN_TIMEOUT' || code === 'BRAIN_OPENAI_TIMEOUT'
+    || code === 'BRAIN_DEEPSEEK_TIMEOUT'
     || code === 'TimeoutError' || code === 'AbortError') return 'timeout'
   if (code === 'BRAIN_RATE_LIMITED' || code === 'BRAIN_OPENAI_RATE_LIMITED'
+    || code === 'BRAIN_DEEPSEEK_RATE_LIMITED'
     || code === 'GROQ_HTTP_429') return 'rate_limited'
   if (
     code === 'BRAIN_INVALID_SCHEMA'
@@ -76,6 +80,9 @@ export function classifyBrainFailureReason(
     || code === 'BRAIN_OPENAI_INVALID_JSON'
     || code === 'BRAIN_OPENAI_INVALID_RESPONSE'
     || code === 'BRAIN_OPENAI_EMPTY_RESPONSE'
+    || code === 'BRAIN_DEEPSEEK_INVALID_JSON'
+    || code === 'BRAIN_DEEPSEEK_INVALID_RESPONSE'
+    || code === 'BRAIN_DEEPSEEK_EMPTY_RESPONSE'
     || code === 'BRAIN_INVALID_RESPONSE'
     || code === 'BRAIN_EMPTY_RESPONSE'
   ) return 'invalid_schema'
@@ -107,7 +114,7 @@ export function modelUnavailableFallback(
   const genericInformationRequest = /^(?:(?:quiero|necesito|busco|dame|pasame)\s+)?(?:toda\s+la\s+)?(?:informacion|info|detalles?)$/u.test(currentBatch)
   const response = socialResponse
     ?? (genericInformationRequest
-      ? 'Claro. Contame qué te gustaría aprender o qué área te interesa y te ayudo a encontrar una opción.'
+      ? '¿Consultás por un curso puntual o querés ver opciones por área?'
       : guidance?.response)
     ?? (/\b(?:prefiero|quiero|sigamos|seguir|continuar)\b.{0,32}\b(?:chat|texto|sin llamada|no quiero llamada)\b/u.test(latest)
       ? 'Seguimos por chat, sin problema. ¿Con qué parte de la compra querés avanzar?'
@@ -152,7 +159,7 @@ function allowedTextFallback(claimed: ClaimedTurn, reasonCode: string): Decision
     schema_version: 3,
     intent: 'unknown',
     kind: 'reply',
-    response: 'No pude completar esa respuesta. ¿Podés reformularme la consulta?',
+    response: 'Se me trabó la respuesta. ¿Me lo mandás otra vez en un ratito?',
     response_type: responseType,
     business_action: null,
     memory_candidates: [],

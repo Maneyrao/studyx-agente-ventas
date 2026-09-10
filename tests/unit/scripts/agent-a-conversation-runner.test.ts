@@ -668,7 +668,13 @@ describe('Agent A conversation runner', () => {
       conversation_pipeline_v1: null,
       agent_turn_v2: { schema_version: 2, proposal: {
         ...proposal,
-        response: { messages: ['Te cuento lo más importante y vemos qué necesitás.'], call_offer: null },
+        response: {
+          messages: [
+            'Te cuento lo más importante y vemos qué necesitás.',
+            'Si querés, puedo ofrecerte una llamada para asesorarte mejor.',
+          ],
+          call_offer: null,
+        },
       } },
       supports_multi_outbound: true,
       decision: { reason_code: 'AGENT_A_PLANNERLESS_V2_PENDING_BACKEND' },

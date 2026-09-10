@@ -17,7 +17,7 @@ function adk(x:ReturnType<typeof setup>){return validateAgentATurnProposalV1({pr
 describe('call preference requires current customer evidence',()=>{
  it.each(['Quizás personal','Para mi trabajo','Me interesa como hobby'])('does not persist a chat refusal from a study purpose: %s',text=>{
   const x=setup(text,'continue_by_chat');
-  expect(backend(x)).toMatchObject({ok:false,reasons:['CHANNEL_PREFERENCE_NOT_SUPPORTED']});
+  expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'unknown'}});
   expect(adk(x)?.rejections).toContainEqual({code:'CHANNEL_PREFERENCE_NOT_SUPPORTED',subject:'call_preference'});
  });
  it.each(['Prefiero seguir por chat','No quiero una llamada','Mejor seguimos por acá','Por escrito, por favor','Por chat, por favor','Contame por acá, por favor','No me llames'])('accepts an explicit preference: %s',text=>{
@@ -27,13 +27,13 @@ describe('call preference requires current customer evidence',()=>{
  });
  it.each(['¿Por chat o por teléfono?', '¿Podemos seguir por chat o tiene que ser llamada?'])('does not treat a channel question as a choice: %s',text=>{
   const x=setup(text,'continue_by_chat');
-  expect(backend(x)).toMatchObject({ok:false,reasons:['CHANNEL_PREFERENCE_NOT_SUPPORTED']});
+  expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'unknown'}});
   expect(adk(x)?.rejections).toContainEqual({code:'CHANNEL_PREFERENCE_NOT_SUPPORTED',subject:'call_preference'});
  });
  it('does not allow an unsupported call veto to suppress the first invitation',()=>{
   const x=setup('Contame sobre Fotografía Profesional','ask_course_information');
   x.proposal.move.vetoes=['call'];
-  expect(backend(x).ok).toBe(false);
+  expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'unknown'}});
   expect(adk(x)?.rejections).toContainEqual({code:'CHANNEL_PREFERENCE_NOT_SUPPORTED',subject:'call_preference'});
  });
  it('rejects a fabricated call request that has no call action',()=>{
@@ -41,15 +41,15 @@ describe('call preference requires current customer evidence',()=>{
   expect(backend(x)).toMatchObject({ok:false});
   expect(adk(x)?.rejections).toContainEqual({code:'ACTION_NOT_AUTHORIZED',subject:'request_call_now'});
  });
- it('rejects offering a call in the same proposal that records chat preference',()=>{
+ it('records chat preference without blocking contradictory model copy',()=>{
   const x=setup('Prefiero seguir por chat','continue_by_chat');
   x.proposal.response.call_offer='Si querés, podemos coordinar una llamada.';
-  expect(backend(x)).toMatchObject({ok:false});
+  expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'chat',call_offer_status:'declined'}});
   expect(adk(x)?.rejections).toContainEqual({code:'CHANNEL_PREFERENCE_NOT_SUPPORTED',subject:'call_offer'});
  });
  it('uses the latest message in a batch as the channel decision',()=>{
   const x=setup('mejor llamame','continue_by_chat');
-  expect(authorizeAgentTurnV2({proposal:x.proposal,state:x.state,offerings:[{code:'fotografia_profesional',display_name:'Fotografía Profesional'}],facts:[],current_customer_messages:['Prefiero chat','mejor llamame'],call_policy:{may_offer_call:true,may_request_call_now:false}}).ok).toBe(false);
+  expect(authorizeAgentTurnV2({proposal:x.proposal,state:x.state,offerings:[{code:'fotografia_profesional',display_name:'Fotografía Profesional'}],facts:[],current_customer_messages:['Prefiero chat','mejor llamame'],call_policy:{may_offer_call:true,may_request_call_now:false}})).toMatchObject({ok:true,transition:{call_preference:'unknown'}});
   x.context.turn.batch_messages=[{id:'m1',text:'Prefiero chat'},{id:'m2',text:'mejor llamame'}];
   expect(adk(x)).not.toBeNull();
  });
@@ -89,23 +89,23 @@ describe('call preference requires current customer evidence',()=>{
  });
  it('uses the last decisive choice inside one message',()=>{
   const x=setup('Prefiero chat, aunque mejor llamame','continue_by_chat');
-  expect(backend(x).ok).toBe(false);expect(adk(x)).not.toBeNull();
+  expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'unknown'}});expect(adk(x)).not.toBeNull();
  });
  it('accepts a short refusal only in response to a pending call offer',()=>{
   const x=setup('No gracias','decline_call');
-  expect(backend(x).ok).toBe(false);expect(adk(x)).not.toBeNull();
+  expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'unknown'}});expect(adk(x)).not.toBeNull();
   x.state.awaiting_reply='call_or_chat';x.context.commercial_state.awaiting_reply='call_or_chat';
   expect(backend(x).ok).toBe(true);expect(adk(x)).toBeNull();
  });
- it('requires the first call offer when a known course is requested',()=>{
+ it('reports a missing first call offer as guidance without blocking the reply',()=>{
   const x=setup('Contame sobre Fotografía Profesional','ask_course_information');
-  expect(backend(x)).toMatchObject({ok:false,reasons:['CALL_OFFER_REQUIRED']});
+  expect(backend(x)).toMatchObject({ok:true,transition:{call_offer_count:0}});
   expect(adk(x)?.rejections).toContainEqual({code:'CALL_OFFER_REQUIRED',subject:'call_offer'});
  });
- it('rejects an offer whose call sentence would be removed before delivery',()=>{
+ it('removes an unsupported call sentence while preserving safe copy',()=>{
   const x=setup('Contame sobre Fotografía Profesional','ask_course_information');
   x.proposal.response.call_offer='Tu inscripción quedó confirmada y podemos coordinar una llamada.';
-  expect(backend(x).ok).toBe(false);
+  expect(backend(x)).toMatchObject({ok:true,response:'Te cuento cómo podemos seguir.',transition:{call_offer_count:0}});
   expect(adk(x)?.rejections).toContainEqual({code:'UNSUPPORTED_OPERATIONAL_CLAIM',subject:'call_offer'});
  });
  it('accepts a genuine first call offer',()=>{

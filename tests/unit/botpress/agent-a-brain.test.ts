@@ -11,7 +11,6 @@ import {
   generateAgentATurnProposalV1,
   generateOpenAIAgentATurnProposalV1,
   parseAgentATurnProposalV1,
-  normalizeCallOfferResponseV1,
   solicitsACallV1,
   validateAgentATurnProposalV1,
 } from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
@@ -99,15 +98,7 @@ describe('Agent A Brain V1', () => {
     )).toBe(true);
   });
 
-  it('never discards an informational fact mixed into the same sentence as a reminder', () => {
-    const response = {
-      messages: ['Si querés podemos llamarte, la formación tiene 38 clases.'] as [string],
-      call_offer: null,
-    };
-    expect(normalizeCallOfferResponseV1(response, true)).toEqual(response);
-  });
-
-  it('normalizes provider fragments before enforcing the physical offer schema', () => {
+  it('preserves provider-authored bubble boundaries and call invitation copy', () => {
     const result = parseAgentATurnProposalV1(proposal({
       response: {
         messages: ['Te cuento sobre Redes Informáticas.', 'Podemos ver qué temas te interesan.'],
@@ -115,7 +106,7 @@ describe('Agent A Brain V1', () => {
       },
     }), context());
     expect(result.response).toEqual({
-      messages: ['Te cuento sobre Redes Informáticas.\n\nPodemos ver qué temas te interesan.'],
+      messages: ['Te cuento sobre Redes Informáticas.', 'Podemos ver qué temas te interesan.'],
       call_offer: 'Si querés, podemos coordinar una llamada.',
     });
     expect(BackendAgentATurnProposalV1Schema.safeParse(result).success).toBe(true);
@@ -139,20 +130,19 @@ describe('Agent A Brain V1', () => {
     expect(BackendAgentATurnProposalV1Schema.safeParse(result).success).toBe(true);
   });
 
-  it('rejects oversized or five-line WhatsApp bubbles in both schema mirrors', () => {
-    const tooLong = proposal({ response: { messages: ['x'.repeat(351)], call_offer: null } });
-    const tooManyLines = proposal({
+  it('treats bubble length and line count as writing guidance in both schema mirrors', () => {
+    const longer = proposal({ response: { messages: ['x'.repeat(351)], call_offer: null } });
+    const multiline = proposal({
       response: { messages: ['uno\ndos\ntres\ncuatro\ncinco'], call_offer: null },
     });
 
-    for (const invalid of [tooLong, tooManyLines]) {
-      expect(() => parseAgentATurnProposalV1(invalid, context()))
-        .toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
-      expect(BackendAgentATurnProposalV1Schema.safeParse(invalid).success).toBe(false);
+    for (const stylisticVariant of [longer, multiline]) {
+      expect(() => parseAgentATurnProposalV1(stylisticVariant, context())).not.toThrow();
+      expect(BackendAgentATurnProposalV1Schema.safeParse(stylisticVariant).success).toBe(true);
     }
   });
 
-  it('rejects a question in the call reminder or more than one question per turn', () => {
+  it('treats question count and call-invitation phrasing as writing guidance', () => {
     const callQuestion = proposal({
       response: { messages: ['Te cuento lo principal.'], call_offer: '¿Querés que te llame?' },
     });
@@ -160,24 +150,64 @@ describe('Agent A Brain V1', () => {
       response: { messages: ['¿Qué objetivo tenés?', '¿Partís desde cero?'], call_offer: null },
     });
 
-    for (const invalid of [callQuestion, twoQuestions]) {
-      expect(() => parseAgentATurnProposalV1(invalid, context()))
-        .toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
-      expect(BackendAgentATurnProposalV1Schema.safeParse(invalid).success).toBe(false);
+    for (const stylisticVariant of [callQuestion, twoQuestions]) {
+      expect(() => parseAgentATurnProposalV1(stylisticVariant, context())).not.toThrow();
+      expect(BackendAgentATurnProposalV1Schema.safeParse(stylisticVariant).success).toBe(true);
     }
   });
 
-  it('keeps all payment options in exactly one physical message', () => {
+  it('keeps conversational-shape guidance soft instead of rejecting a useful reply', () => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'buenas info';
+    current.catalog.selected_offering = null;
+    current.commercial_state.selected_offering_code = null;
+    current.commercial_state.stage = 'exploring';
+    current.capabilities.may_offer_call = false;
+
+    const parsed = parseAgentATurnProposalV1(proposal({
+      move: {
+        schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [],
+        confidence: 0.82,
+      },
+      response: {
+        messages: [
+          'Buenas, ¿de qué curso querés info?',
+          'Si todavía no elegiste uno, ¿qué te interesa aprender?',
+        ],
+        call_offer: null,
+      },
+      used_fact_ids: [],
+    }), current);
+
+    expect(parsed.response.messages).toEqual([
+      'Buenas, ¿de qué curso querés info?',
+      'Si todavía no elegiste uno, ¿qué te interesa aprender?',
+    ]);
+    expect(BackendAgentATurnProposalV1Schema.safeParse(parsed).success).toBe(true);
+  });
+
+  it('accepts a natural question as a call invitation', () => {
+    const parsed = parseAgentATurnProposalV1(proposal({
+      response: {
+        messages: ['Te cuento lo principal del curso.'],
+        call_offer: '¿Preferís que te llame y te lo explique mejor?',
+      },
+    }), context());
+
+    expect(parsed.response.call_offer).toBe('¿Preferís que te llame y te lo explique mejor?');
+    expect(BackendAgentATurnProposalV1Schema.safeParse(parsed).success).toBe(true);
+  });
+
+  it('does not reject payment options solely because they use two messages', () => {
     const twoBubbles = proposal({
       move: 'ask_payment_options',
       response: { messages: ['12 pagos de USD 30.', '6 pagos de USD 60.'], call_offer: null },
     });
 
-    expect(() => parseAgentATurnProposalV1(twoBubbles, context()))
-      .toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
+    expect(() => parseAgentATurnProposalV1(twoBubbles, context())).not.toThrow();
   });
 
-  it('keeps a pure chat preference in one physical message', () => {
+  it('does not reject a chat preference solely because it uses two messages', () => {
     const current = context();
     current.turn.batch_messages[0].text = 'Contame por acá, por favor.';
     current.commercial_state.awaiting_reply = 'call_or_chat';
@@ -186,11 +216,10 @@ describe('Agent A Brain V1', () => {
       response: { messages: ['Claro, seguimos por acá.', 'Te cuento lo principal.'], call_offer: null },
     });
 
-    expect(() => parseAgentATurnProposalV1(twoBubbles, current))
-      .toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
+    expect(() => parseAgentATurnProposalV1(twoBubbles, current)).not.toThrow();
   });
 
-  it('requires two informational bubbles for a detailed course explanation', () => {
+  it('does not reject a detailed explanation solely because it uses one message', () => {
     const current = context();
     current.turn.batch_messages[0].text = 'Contame en detalle qué voy a aprender y cómo se cursa.';
     current.commercial_state.call_preference = 'chat';
@@ -201,11 +230,10 @@ describe('Agent A Brain V1', () => {
       response: { messages: ['Te cuento todo el programa en un único bloque.'], call_offer: null },
     });
 
-    expect(() => parseAgentATurnProposalV1(oneBubble, current))
-      .toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
+    expect(() => parseAgentATurnProposalV1(oneBubble, current)).not.toThrow();
   });
 
-  it('requires the subtle second call reminder on a new detailed explanation', () => {
+  it('does not discard a detailed explanation when the suggested reminder is missing', () => {
     const current = context();
     current.turn.batch_messages[0].text = 'Contame en detalle qué incluye el curso.';
     current.commercial_state.call_offer_count = 1;
@@ -217,14 +245,10 @@ describe('Agent A Brain V1', () => {
       },
     });
 
-    expect(() => parseAgentATurnProposalV1(missingReminder, current))
-      .toThrowError(expect.objectContaining({
-        code: 'BRAIN_INVALID_SCHEMA',
-        detail: 'response.call_offer:second_reminder_required',
-      }));
+    expect(() => parseAgentATurnProposalV1(missingReminder, current)).not.toThrow();
   });
 
-  it('normalizes a collapsed detailed explanation only at a sentence boundary', () => {
+  it('does not extract or rewrite a natural reminder authored inside the messages', () => {
     const current = context();
     current.turn.batch_messages[0].text = 'Contame en detalle qué voy a aprender y cómo se cursa.';
     current.commercial_state.call_offer_count = 1;
@@ -244,12 +268,13 @@ describe('Agent A Brain V1', () => {
     expect(parsed.response.messages.join(' ')).toContain(
       'Redes Informáticas tiene 16 clases online. Vas a conocer cómo funcionan las redes.',
     );
-    expect(parsed.response.call_offer).toBe(
+    expect(parsed.response.messages[1]).toBe(
       'Recordá que puedo llamarte y aclararte todos los detalles de Redes Informáticas, si gustás.',
     );
+    expect(parsed.response.call_offer).toBeNull();
   });
 
-  it('keeps a direct duration answer in one bubble of at most 180 characters', () => {
+  it('does not reject a direct duration answer solely because it exceeds the preferred length', () => {
     const current = context();
     current.turn.batch_messages[0].text = '¿Cuánto dura el curso?';
     current.commercial_state.call_preference = 'chat';
@@ -258,11 +283,10 @@ describe('Agent A Brain V1', () => {
       response: { messages: ['x'.repeat(181)], call_offer: null },
     });
 
-    expect(() => parseAgentATurnProposalV1(oversized, current))
-      .toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
+    expect(() => parseAgentATurnProposalV1(oversized, current)).not.toThrow();
   });
 
-  it('keeps a direct next-step answer in one bubble of at most 180 characters', () => {
+  it('does not reject a next-step answer solely because it exceeds the preferred length', () => {
     const current = context();
     current.turn.batch_messages[0].text = '¿Cuál sería el siguiente paso para conocerlo mejor?';
     current.commercial_state.call_preference = 'chat';
@@ -271,11 +295,10 @@ describe('Agent A Brain V1', () => {
       response: { messages: ['x'.repeat(181)], call_offer: null },
     });
 
-    expect(() => parseAgentATurnProposalV1(oversized, current))
-      .toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
+    expect(() => parseAgentATurnProposalV1(oversized, current)).not.toThrow();
   });
 
-  it('keeps a reply to starting from zero in one short bubble', () => {
+  it('does not reject a starting-from-zero reply solely because it exceeds the preferred length', () => {
     const current = context();
     current.turn.batch_messages[0].text = 'Empiezo desde cero.';
     current.commercial_state.call_preference = 'chat';
@@ -284,14 +307,10 @@ describe('Agent A Brain V1', () => {
       response: { messages: ['x'.repeat(181)], call_offer: null },
     });
 
-    expect(() => parseAgentATurnProposalV1(oversized, current))
-      .toThrowError(expect.objectContaining({
-        code: 'BRAIN_INVALID_SCHEMA',
-        detail: 'response.messages:beginner_reply_single_short_message',
-      }));
+    expect(() => parseAgentATurnProposalV1(oversized, current)).not.toThrow();
   });
 
-  it('does not mix a diagnostic question into the initial call invitation turn', () => {
+  it('does not discard a useful initial reply solely because it includes a diagnostic question', () => {
     const mixedTurn = proposal({
       response: {
         messages: ['Te cuento el curso. ¿Partís desde cero?'],
@@ -299,8 +318,7 @@ describe('Agent A Brain V1', () => {
       },
     });
 
-    expect(() => parseAgentATurnProposalV1(mixedTurn, context()))
-      .toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
+    expect(() => parseAgentATurnProposalV1(mixedTurn, context())).not.toThrow();
   });
 
   it('recognizes an unsupported beginner-level assertion without rejecting a diagnostic question', () => {
@@ -376,7 +394,7 @@ describe('Agent A Brain V1', () => {
     expect(parseAgentATurnProposalV1(proposal(), context()).response.messages).toHaveLength(2);
   });
 
-  it('merges surplus information into one physical message and preserves the separate invitation', () => {
+  it('preserves the model-authored message sequence and separate invitation', () => {
     const fourPartTurn = proposal({
       response: {
         messages: ['Primera idea.', 'Segunda idea.', 'Tercera idea.'],
@@ -384,13 +402,13 @@ describe('Agent A Brain V1', () => {
       },
     });
 
-    const normalized = parseAgentATurnProposalV1(fourPartTurn, context());
-    expect(normalized.response).toEqual({
-      messages: ['Primera idea.\n\nSegunda idea.\n\nTercera idea.'],
+    const parsed = parseAgentATurnProposalV1(fourPartTurn, context());
+    expect(parsed.response).toEqual({
+      messages: ['Primera idea.', 'Segunda idea.', 'Tercera idea.'],
       call_offer: 'Recordá que puedo llamarte y aclararte todo mejor, si gustás.',
     });
-    expect(BackendAgentATurnProposalV1Schema.safeParse(normalized).success).toBe(true);
-    expect(BackendAgentATurnProposalV1Schema.safeParse(fourPartTurn).success).toBe(false);
+    expect(BackendAgentATurnProposalV1Schema.safeParse(parsed).success).toBe(true);
+    expect(BackendAgentATurnProposalV1Schema.safeParse(fourPartTurn).success).toBe(true);
   });
 
   it('rejects a new greeting after the agent already opened the conversation', () => {
@@ -548,7 +566,7 @@ describe('Agent A Brain V1', () => {
     expect(parsed.used_fact_ids).toEqual(['offering:fotografia_profesional:name:v1']);
   });
 
-  it('rejects a course reference that is absent from the complete visible catalog', () => {
+  it('keeps the reply but drops a course reference absent from the visible catalog', () => {
     const ctx = context() as AgentAContextV1 & {
       catalog: AgentAContextV1['catalog'] & {
         available_offerings: Array<{
@@ -568,7 +586,7 @@ describe('Agent A Brain V1', () => {
       area_code: 'idiomas',
     }];
 
-    expect(() => parseAgentATurnProposalV1(proposal({
+    const parsed = parseAgentATurnProposalV1(proposal({
       move: {
         schema_version: 1,
         move: 'select_course',
@@ -578,7 +596,11 @@ describe('Agent A Brain V1', () => {
         confidence: 0.99,
       },
       used_fact_ids: [],
-    }), ctx)).toThrowError(expect.objectContaining({ code: 'BRAIN_UNKNOWN_COURSE_REFERENCE' }));
+    }), ctx);
+
+    expect(parsed.response.messages).toEqual(proposal().response.messages);
+    expect(parsed.move.move).toBe('unknown');
+    expect(parsed.move.course_reference).toBeUndefined();
   });
 
   it('removes duplicate secondary moves and vetoes without adding authority', () => {
@@ -779,17 +801,19 @@ describe('Agent A Brain V1', () => {
     }
   });
 
-  it('rejects a model URL and evidence IDs outside the supplied context', () => {
+  it('rejects model-authored URLs/placeholders but only drops unknown audit ids', () => {
     expect(() => parseAgentATurnProposalV1(proposal({
       response: { messages: ['Pagá en https://buy.stripe.com/model-link'] },
     }), context())).toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
     expect(() => parseAgentATurnProposalV1(proposal({
       response: { messages: ['El próximo inicio es {{FECHA}}.'] },
     }), context())).toThrowError(expect.objectContaining({ code: 'BRAIN_INVALID_SCHEMA' }));
-    expect(() => parseAgentATurnProposalV1(proposal({ used_fact_ids: ['fact-not-supplied'] }), context()))
-      .toThrowError(expect.objectContaining({ code: 'BRAIN_UNKNOWN_FACT_ID' }));
-    expect(() => parseAgentATurnProposalV1(proposal({ used_memory_ids: ['memory-not-supplied'] }), context()))
-      .toThrowError(expect.objectContaining({ code: 'BRAIN_UNKNOWN_MEMORY_ID' }));
+    expect(parseAgentATurnProposalV1(
+      proposal({ used_fact_ids: ['fact-not-supplied'] }), context(),
+    ).used_fact_ids).toEqual([]);
+    expect(parseAgentATurnProposalV1(
+      proposal({ used_memory_ids: ['memory-not-supplied'] }), context(),
+    ).used_memory_ids).toEqual([]);
   });
 
   it('drops only an unsafe secondary message so the backend can materialize an authorized link', () => {
@@ -1188,11 +1212,11 @@ describe('Agent A Brain V1', () => {
     const moveProperties = body.text.format.schema.properties.move.properties;
     const responseProperties = body.text.format.schema.properties.response.properties;
     expect(body.text.format.schema.properties.used_fact_ids.maxItems).toBe(60);
-    expect(responseProperties.messages.maxItems).toBe(1);
+    expect(responseProperties.messages.maxItems).toBeUndefined();
     expect(responseProperties.messages.description).toContain(
-      'when call_offer is non-null, return exactly one response message',
+      'preferences, never reasons to discard',
     );
-    expect(responseProperties.call_offer.description).toContain('must not contain a question');
+    expect(responseProperties.call_offer.description).toContain('a natural question is allowed');
     expect(moveProperties.move.enum).toEqual(expect.arrayContaining([
       'report_payment',
       'ask_current_state',

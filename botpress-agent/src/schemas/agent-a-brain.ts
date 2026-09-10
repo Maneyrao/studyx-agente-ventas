@@ -11,20 +11,14 @@ const FactKindSchema = z.enum([
   'offering_modality', 'payment_plan_label', 'payment_plan_price',
 ]);
 const IdentifierSchema = z.string().trim().min(1).max(160);
-const CustomerMessageSchema = z.string().trim().min(1).max(350).refine(
+const CustomerMessageSchema = z.string().trim().min(1).max(2_000).refine(
   (value) => !/https?:\/\//iu.test(value),
   'MODEL_RESPONSE_URL_FORBIDDEN',
 ).refine(
   (value) => !/\{\{[^}]+\}\}/u.test(value),
   'MODEL_RESPONSE_PLACEHOLDER_FORBIDDEN',
-).refine(
-  (value) => value.split(/\r?\n/u).filter((line) => line.trim().length > 0).length <= 4,
-  'MODEL_RESPONSE_MAX_LINES_EXCEEDED',
 );
-const CallOfferMessageSchema = CustomerMessageSchema.refine(
-  (value) => !/[¿?]/u.test(value),
-  'CALL_OFFER_MUST_BE_DECLARATIVE',
-);
+const CallOfferMessageSchema = CustomerMessageSchema;
 
 const AgentAMemorySchema = z.object({
   id: IdentifierSchema,
@@ -178,11 +172,9 @@ export const AgentATurnProposalV1Schema = z.object({
   schema_version: z.literal(1),
   move: ConversationMoveV1Schema,
   response: z.object({
-    messages: z.union([
-      z.tuple([CustomerMessageSchema]),
-      z.tuple([CustomerMessageSchema, CustomerMessageSchema]),
-      z.tuple([CustomerMessageSchema, CustomerMessageSchema, CustomerMessageSchema]),
-    ]),
+    // Keep at least one visible answer, but do not turn the recommended bubble
+    // count into a rejection boundary. The prompt and evaluator own brevity.
+    messages: z.array(CustomerMessageSchema).min(1),
     call_offer: CallOfferMessageSchema.nullable().optional(),
   }).strict(),
   proposed_action: ProposedActionSchema,
@@ -204,24 +196,6 @@ export const AgentATurnProposalV1Schema = z.object({
   }).strict().nullable().default(null),
   memory_candidates: z.array(MemoryCandidateSchema).max(10),
 }).strict().superRefine((value, context) => {
-  const physicalMessageCount = value.response.messages.length
-    + (value.response.call_offer ? 1 : 0);
-  if (physicalMessageCount > 3) {
-    context.addIssue({
-      code: 'custom',
-      path: ['response', 'messages'],
-      message: 'MAX_PHYSICAL_MESSAGES_EXCEEDED',
-    });
-  }
-  const questionCount = [...value.response.messages, value.response.call_offer ?? '']
-    .reduce((total, message) => total + (message.match(/\?/gu)?.length ?? 0), 0);
-  if (questionCount > 1) {
-    context.addIssue({
-      code: 'custom',
-      path: ['response'],
-      message: 'MAX_TURN_QUESTIONS_EXCEEDED',
-    });
-  }
   if (new Set(value.used_fact_ids).size !== value.used_fact_ids.length) {
     context.addIssue({ code: 'custom', path: ['used_fact_ids'], message: 'DUPLICATE_FACT_ID' });
   }

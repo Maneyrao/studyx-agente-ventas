@@ -19,7 +19,7 @@ import {
   materializeStateFactsV1,
   type StateFactIdV1,
 } from './state-fact-registry';
-import { missingContactIntakeFieldsV1, type ContactIntakeV1 } from './conversation-planner';
+import type { ContactIntakeV1 } from './conversation-planner';
 import {
   derivePaymentPlanSelectionFromBatch,
   hasExplicitPurchaseDecline,
@@ -88,17 +88,6 @@ function resolveOffering(
   return matches.length === 1 ? matches[0].code : null;
 }
 
-function mentionsMissingIntakeField(messages: readonly string[], missing: readonly string[]): boolean {
-  const text = messages.join(' ').normalize('NFD').replace(/[\u0300-\u036f]/gu, '').toLowerCase();
-  const patterns: Record<string, RegExp> = {
-    nombre: /\bnombre\b/u, apellido: /\bapellido\b/u,
-    correo: /\b(?:correo|email|e mail)\b/u,
-    telefono: /\b(?:telefono|celular|numero)\b/u,
-  };
-  const hasRequestCue = /\b(?:falta|necesito|pasame|decime|indicame|confirmame|comparti|enviame|dame)\w*\b|[?¿]/u.test(text);
-  return hasRequestCue && missing.some((field) => patterns[field]?.test(text));
-}
-
 function unique<T>(values: readonly T[]): T[] {
   return [...new Set(values)];
 }
@@ -164,9 +153,8 @@ export function authorizeAgentTurnV2(input: {
   const authorizedFactIds: string[] = [];
   const reasons: AgentTurnRejectionReasonV2[] = [];
 
-  if (moves.has('select_course') && requestedOffering === null) {
-    reasons.push('COURSE_NOT_RESOLVED');
-  }
+  // An ambiguous course reference is a conversational miss, not a reason to
+  // discard the reply. It simply cannot mutate the canonical course state.
 
   for (const factId of proposal.used_fact_ids) {
     if (stateFactId(factId)) {
@@ -204,23 +192,12 @@ export function authorizeAgentTurnV2(input: {
   const authorizedMessages = authoredMessages
     .map((message) => dropUnsupportedStateAssertionsV1(message, stateFacts).trim())
     .filter((message) => message.length > 0);
-  const draftedCallOffer = (authoredCallOffer !== null && solicitsACall(authoredCallOffer, true))
-    || !requestedCallNow && authoredMessages.some((message) => solicitsACall(message));
   const visibleCallOffer = (authorizedCallOffer !== null && solicitsACall(authorizedCallOffer, true))
     || !requestedCallNow && authorizedMessages.some((message) => solicitsACall(message));
-  // The first invitation is intentionally a second physical message, not a
-  // paragraph tacked onto the course answer. The delivery layer persists each
-  // item in response_messages as its own outbound part. The invitation stays
-  // in the dedicated field and the complete turn stays within two parts.
-  if (visibleCallOffer && state.call_offer_count === 0 && (
-    authorizedCallOffer === null
-    || !solicitsACall(authorizedCallOffer, true)
-    || authorizedMessages.length !== 1
-    || authorizedMessages.some((message) => solicitsACall(message))
-  )) {
-    reasons.push('CALL_OFFER_MESSAGE_BOUNDARY_INVALID');
-  }
-  if (draftedCallOffer && (
+  // Call timing and message boundaries are sales guidance. They remain in the
+  // prompt and evaluation suite, but they never reject customer-facing copy.
+  // Only an eligible visible invitation advances the durable call ledger.
+  const callOfferCanAdvanceState = visibleCallOffer && !(
     !input.call_policy.may_offer_call
     || (selectedOffering === null && !citedCourseFamily)
     || state.call_offer_count >= 2
@@ -228,23 +205,17 @@ export function authorizeAgentTurnV2(input: {
     || state.call_offer_status === 'declined'
     || (state.call_offer_count >= 1 && (state.awaiting_reply === 'call_or_chat' || !moves.has('ask_course_information')))
     || proposal.move.vetoes.includes('call')
-  )) {
-    reasons.push('CALL_OFFER_NOT_AUTHORIZED');
-  }
+  );
 
   const channelChoice = moves.has('continue_by_chat') || moves.has('decline_call');
-  if ((channelChoice || proposal.move.vetoes.includes('call')) && !supportsChatPreferenceV1(currentText, state.awaiting_reply === 'call_or_chat')) {
-    reasons.push('CHANNEL_PREFERENCE_NOT_SUPPORTED');
-  }
-  if (proposal.move.vetoes.includes('call') && !channelChoice) reasons.push('CHANNEL_PREFERENCE_NOT_SUPPORTED');
-  if (channelChoice && draftedCallOffer) reasons.push('CHANNEL_PREFERENCE_NOT_SUPPORTED');
+  const supportedChannelChoice = channelChoice && supportsChatPreferenceV1(
+    currentText,
+    state.awaiting_reply === 'call_or_chat',
+  );
   if ((moves.has('request_call') || proposal.proposed_action.type === 'request_call_now')
       && !requestedCallNow) reasons.push('ACTION_NOT_AUTHORIZED');
-  const needsInitialCall = ((changesCourse && selectedOffering !== null) || citedCourseFamily)
-    && input.call_policy.may_offer_call && state.call_offer_count === 0
-    && state.call_preference === 'unknown' && state.call_offer_status === 'not_offered'
-    && !channelChoice && !requestedCallNow;
-  if (needsInitialCall && !visibleCallOffer) reasons.push('CALL_OFFER_REQUIRED');
+  // Whether the model remembered the recommended first invitation is measured
+  // as conversational quality; it is not transaction authority.
 
   let action: AgentAProposedActionV1 = { type: 'none' };
   const currentPaymentDeferral = hasTemporalPaymentDeferral(
@@ -261,11 +232,8 @@ export function authorizeAgentTurnV2(input: {
       || proposal.move.vetoes.includes('purchase')
     )
   );
-  const missingIntake = missingContactIntakeFieldsV1(input.contact_intake);
-  if (state.awaiting_reply === 'contact_details' && missingIntake.length > 0 && !paymentDeferred
-      && !mentionsMissingIntakeField(authorizedMessages, missingIntake)) {
-    reasons.push('MISSING_INTAKE');
-  }
+  // Asking for the next missing field is also prompt guidance. Missing intake
+  // remains a hard boundary only for the payment side effect below.
   const paymentLinkRequested = !paymentDeferred && (moves.has('request_payment_link')
     || (moves.has('provide_contact_details') && !selectionChanged
       && state.awaiting_reply === 'contact_details'));
@@ -355,12 +323,12 @@ export function authorizeAgentTurnV2(input: {
     stage = 'plan_selected';
     awaitingReply = 'contact_details';
   }
-  if (moves.has('continue_by_chat') || moves.has('decline_call')) {
+  if (supportedChannelChoice) {
     callPreference = moves.has('decline_call') ? 'declined' : 'chat';
     callOfferStatus = 'declined';
     if (awaitingReply === 'call_or_chat') awaitingReply = 'none';
   }
-  if (visibleCallOffer) {
+  if (callOfferCanAdvanceState && !supportedChannelChoice) {
     callOfferCount = Math.min(2, state.call_offer_count + 1) as 1 | 2;
     callOfferStatus = 'offered';
     if (awaitingReply !== 'contact_details') awaitingReply = 'call_or_chat';

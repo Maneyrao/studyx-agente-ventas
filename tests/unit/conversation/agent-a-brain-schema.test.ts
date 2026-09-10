@@ -34,15 +34,15 @@ describe('AgentATurnProposalV1Schema', () => {
     }
   });
 
-  it('rejects zero or four customer-facing messages', () => {
+  it('rejects an empty answer but accepts extra bubbles as a quality concern', () => {
     expect(AgentATurnProposalV1Schema.safeParse(proposal({ response: { messages: [] } })).success).toBe(false);
-    expect(AgentATurnProposalV1Schema.safeParse(proposal({ response: { messages: ['1', '2', '3', '4'] } })).success).toBe(false);
+    expect(AgentATurnProposalV1Schema.safeParse(proposal({ response: { messages: ['1', '2', '3', '4'] } })).success).toBe(true);
   });
 
-  it('requires exactly one information message when the offer has its own bubble', () => {
+  it('accepts a separate call offer without making message count a validity rule', () => {
     const call_offer = 'Si querés, podemos coordinar una llamada.';
     expect(AgentATurnProposalV1Schema.safeParse(proposal({ response: { messages: ['Información.'], call_offer } })).success).toBe(true);
-    expect(AgentATurnProposalV1Schema.safeParse(proposal({ response: { messages: ['Información.', 'Más información.'], call_offer } })).success).toBe(false);
+    expect(AgentATurnProposalV1Schema.safeParse(proposal({ response: { messages: ['Información.', 'Más información.'], call_offer } })).success).toBe(true);
   });
 
   it('rejects URLs from any proposed response message', () => {

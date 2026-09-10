@@ -80,8 +80,8 @@ const completeIntake = async () => ({
 });
 
 describe('prepareAgentTurnV2', () => {
-  it('does not authorize a call invitation before the first name is known', async () => {
-    await expect(prepareAgentTurnV2({
+  it('keeps a premature call invitation visible without advancing the call ledger', async () => {
+    const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
       workspace_slug: 'studyx', business_context: business, catalog_index: index,
       proposal: proposal({
@@ -99,8 +99,10 @@ describe('prepareAgentTurnV2', () => {
       state_store: store(state()),
       contact_intake: async () => ({ nombre: null, apellido: null, correo: null, telefono: null }),
       now: () => Date.parse(index.as_of),
-    })).rejects.toMatchObject({
-      code: 'AGENT_TURN_V2_REJECTED', reasons: ['CALL_OFFER_NOT_AUTHORIZED'],
+    });
+    expect(prepared).toMatchObject({
+      decision: { kind: 'reply' },
+      transition: { call_offer_count: 0, call_offer_status: 'not_offered' },
     });
   });
 

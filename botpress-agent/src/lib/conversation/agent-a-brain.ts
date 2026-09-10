@@ -486,7 +486,7 @@ function naturalnessRepairDirectiveV1(context: AgentAContextV1): string {
   if (makesExplicitChatChoiceV1(context)) {
     return 'Acknowledge the chat choice in exactly one response.messages item and keep call_offer null.';
   }
-  return `When call_offer is non-null, response.messages must contain ${context.commercial_state.call_offer_count === 1 ? 'one or two items' : 'exactly one item with no diagnostic question'} and call_offer must be declarative without a question mark.`;
+  return `When call_offer is non-null, response.messages should contain ${context.commercial_state.call_offer_count === 1 ? 'one or two items' : 'one concise informational item'} and call_offer should stay separate, short and natural. A question is allowed.`;
 }
 
 function closedObject(properties: Record<string, unknown>) {
@@ -495,19 +495,6 @@ function closedObject(properties: Record<string, unknown>) {
 
 function proposalJsonSchema(context: AgentAContextV1): unknown {
   const nullableString = { anyOf: [{ type: 'string' }, { type: 'null' }] };
-  const secondCallWindow = context.commercial_state.call_offer_count === 1;
-  const initialCallWindow = isInitialCallWindowV1(context);
-  const detailedCourseExplanation = requestsDetailedCourseExplanationV1(context)
-    && !initialCallWindow;
-  const secondCallReminderRequired = isSecondCallReminderWindowV1(context);
-  const shortDirectAnswer = asksDirectDurationV1(context) || asksDirectNextStepV1(context);
-  const shortBeginnerReply = customerStatesStartingFromZeroV1(context);
-  const pureChatChoice = makesExplicitChatChoiceV1(context);
-  const exactMessageCount = detailedCourseExplanation
-    ? 2
-    : initialCallWindow || shortDirectAnswer || shortBeginnerReply || pureChatChoice
-      ? 1
-      : null;
   const move = closedObject({
     schema_version: { type: 'integer', enum: [1] },
     move: { type: 'string', enum: [...MOVE_KINDS], description: MOVE_SEMANTICS },
@@ -551,26 +538,13 @@ function proposalJsonSchema(context: AgentAContextV1): unknown {
     response: closedObject({
       messages: {
         type: 'array',
-        minItems: exactMessageCount ?? 1,
-        maxItems: exactMessageCount ?? 3,
-        items: { type: 'string', maxLength: shortDirectAnswer || shortBeginnerReply ? 180 : 350 },
-        description: detailedCourseExplanation
-          ? 'Return exactly two short informational messages for this detailed course explanation. When required by the current call policy, the separate second reminder follows in call_offer.'
-          : shortDirectAnswer
-            ? 'Answer this direct request without restating prior information, in exactly one message of at most 180 characters.'
-            : shortBeginnerReply
-              ? 'Acknowledge briefly and continue with one useful diagnostic question, without repeating course facts or inferring beginner suitability. Use exactly one message of at most 180 characters.'
-            : pureChatChoice
-              ? 'Acknowledge this explicit chat choice in exactly one short message.'
-              : secondCallWindow
-                ? 'Use one or two short messages normally; never exceed three physical messages total including a separate call_offer.'
-                : 'Use one or two short messages normally; when call_offer is non-null, return exactly one response message so the initial course guidance and its separate call invitation stay within two physical messages.',
+        minItems: 1,
+        items: { type: 'string', maxLength: 2_000 },
+        description: 'Use the conversational style guidance in the instructions. Message count and length are preferences, never reasons to discard an otherwise safe answer.',
       },
       call_offer: {
-        ...(secondCallReminderRequired
-          ? { type: 'string', minLength: 1, maxLength: 350, pattern: '^[^?¿]*$' }
-          : { anyOf: [{ type: 'string', maxLength: 350, pattern: '^[^?¿]*$' }, { type: 'null' }] }),
-        description: 'Brief declarative invitation to a phone call, required when the call policy in the instructions applies and the capability allows it; otherwise null. It must not contain a question.',
+        anyOf: [{ type: 'string', maxLength: 2_000 }, { type: 'null' }],
+        description: 'Optional short and natural call invitation. Follow the call policy in the instructions; a natural question is allowed.',
       },
     }),
     proposed_action: proposedAction,
@@ -840,9 +814,17 @@ function normalizeStrictProposal(value: unknown, context: AgentAContextV1): unkn
         || referenceKey(offering.display_name) === key
       ));
     if (matches.length !== 1) {
-      throw new AgentABrainError('BRAIN_UNKNOWN_COURSE_REFERENCE');
+      // A non-canonical reference cannot mutate catalog state, but it is not
+      // a reason to lose the model's useful conversational answer.
+      delete normalizedMove.course_reference;
+      if (normalizedMove.move === 'select_course') normalizedMove.move = 'unknown';
+      if (Array.isArray(normalizedMove.secondary_moves)) {
+        normalizedMove.secondary_moves = normalizedMove.secondary_moves
+          .filter((kind) => kind !== 'select_course');
+      }
+    } else {
+      normalizedMove.course_reference = matches[0].code;
     }
-    normalizedMove.course_reference = matches[0].code;
   }
   if (![...moveKinds].some((kind) => AREA_REFERENCE_MOVES.has(kind))) {
     delete normalizedMove.area_reference;
@@ -850,110 +832,10 @@ function normalizeStrictProposal(value: unknown, context: AgentAContextV1): unkn
   if (![...moveKinds].some((kind) => PAYMENT_PLAN_MOVES.has(kind))) {
     delete normalizedMove.payment_plan;
   }
-  const normalized: Record<string, unknown> = { ...normalizedProposal, move: normalizedMove };
-  const normalizedResponse = normalized.response;
-  if (normalizedResponse && typeof normalizedResponse === 'object' && !Array.isArray(normalizedResponse)) {
-    const response = normalizedResponse as AgentATurnProposalV1['response'];
-    if (Array.isArray(response.messages) && response.messages.every((message) => typeof message === 'string')) {
-      const action = normalized.proposed_action as { type?: string } | undefined;
-      // The capability validator decides whether this request is supported;
-      // its acknowledgement must never be normalized as a new invitation.
-      if (action?.type !== 'request_call_now') {
-        let normalizedCallResponse = normalizeCallOfferResponseV1(
-          response,
-          false,
-          context.commercial_state.call_offer_count === 1 ? 2 : 1,
-        );
-        if (
-          requestsDetailedCourseExplanationV1(context)
-          && !isInitialCallWindowV1(context)
-          && normalizedCallResponse.messages.length === 1
-        ) {
-          const split = splitDetailedMessageAtSentenceBoundaryV1(
-            normalizedCallResponse.messages[0],
-          );
-          if (split) normalizedCallResponse = { ...normalizedCallResponse, messages: split };
-        }
-        normalized.response = normalizedCallResponse;
-      }
-    }
-  }
-  return normalized;
-}
-
-/** Only move sentence-bounded invitations; never infer that the last sentence is disposable. */
-export function normalizeCallOfferResponseV1(
-  response: AgentATurnProposalV1['response'],
-  suppressOffer = false,
-  maxInformationalMessages = 1,
-): AgentATurnProposalV1['response'] {
-  if (!Array.isArray(response.messages) || !response.messages.every((message) => typeof message === 'string')) return response;
-  if (response.call_offer != null && typeof response.call_offer !== 'string') return response;
-  const invitations: string[] = [];
-  const retainInformation = (message: string): string => {
-    const parts = message.split(/(?<=[.!?])\s+|\n\s*\n/u);
-    const retained = parts.filter((part) => {
-      // A sentence that merely mentions a call, confirms one, or mixes facts
-      // with an invitation is not safe to discard. Let validation/repair decide.
-      const optionalInvitation = /^(?:[¿¡]\s*)?(?:si\s+(?:quer[eé]s|prefer[ií]s|gust[aá]s)|(?:te\s+)?(?:gustar[ií]a|parece|sirve)|prefer[ií]s|podemos|puedo|quer[eé]s|record[aá]\s+que\s+puedo)\b/iu.test(part.trim());
-      const invitationBody = part.replace(/^\s*si\s+(?:quer[eé]s|prefer[ií]s|gust[aá]s)\s*,?\s*/iu, '');
-      const invitationCore = invitationBody.replace(
-        /,\s*si\s+(?:quer[eé]s|prefer[ií]s|gust[aá]s)\s*[.!]?\s*$/iu,
-        '',
-      );
-      const mixedClause = /[,;:]|\b(?:pero|adem[aá]s|porque)\b/iu.test(invitationCore)
-        || /\by\b(?!\s+(?:aclararte|explicarte|contarte|resolver|repasar|conversar|orientarte)\b)/iu
-          .test(invitationCore);
-      if (!optionalInvitation || !solicitsACallV1(part, true)
-        || mixedClause || extractProtectedFacts(part).length > 0) return true;
-      invitations.push(part.trim());
-      return false;
-    });
-    return retained.length === parts.length ? message : retained.join(' ').trim();
-  };
-  const messages = response.messages.map(retainInformation).filter((message) => message.length > 0);
-  if (suppressOffer && response.call_offer) {
-    const retainedOfferInformation = retainInformation(response.call_offer);
-    // A mixed/unknown invitation cannot be suppressed without losing its
-    // information. Preserve the proposal so validation requests model repair.
-    if (solicitsACallV1(retainedOfferInformation, true)) return response;
-    if (retainedOfferInformation.length > 0) {
-      const last = messages.length - 1;
-      if (last >= 0) messages[last] += `\n\n${retainedOfferInformation}`;
-      else messages.push(retainedOfferInformation);
-    }
-  }
-  // Without a declared offer, distinct invitations are ambiguous: do not
-  // silently select one of several model-authored intentions.
-  if (!suppressOffer && !response.call_offer && new Set(invitations).size > 1) return response;
-  const callOffer = suppressOffer ? null : response.call_offer ?? invitations[0] ?? null;
-  const merged = callOffer && messages.length > maxInformationalMessages
-    ? [
-      ...messages.slice(0, Math.max(0, maxInformationalMessages - 1)),
-      messages.slice(Math.max(0, maxInformationalMessages - 1)).join('\n\n'),
-    ]
-    : messages;
-  if (invitations.length === 0 && merged.length === response.messages.length
-    && callOffer === (response.call_offer ?? null)) return response;
-  return { messages: merged as AgentATurnProposalV1['response']['messages'], call_offer: callOffer };
-}
-
-function splitDetailedMessageAtSentenceBoundaryV1(
-  message: string,
-): [string, string] | null {
-  const sentences = message.match(/[^.!?]+(?:[.!?]+|$)/gu)
-    ?.map((sentence) => sentence.trim())
-    .filter(Boolean) ?? [];
-  if (sentences.length < 2) return null;
-
-  const candidates = Array.from({ length: sentences.length - 1 }, (_, index) => {
-    const splitAt = index + 1;
-    const left = sentences.slice(0, splitAt).join(' ');
-    const right = sentences.slice(splitAt).join(' ');
-    return { left, right, imbalance: Math.abs(left.length - right.length) };
-  }).filter(({ left, right }) => left.length <= 350 && right.length <= 350);
-  const best = candidates.sort((left, right) => left.imbalance - right.imbalance)[0];
-  return best ? [best.left, best.right] : null;
+  // Preserve the model-authored response verbatim. Conversation shape,
+  // phrasing and bubble boundaries are guidance for the model and evaluation,
+  // never a reason for application code to rewrite an otherwise safe reply.
+  return { ...normalizedProposal, move: normalizedMove };
 }
 
 function authorizedFactIds(context: AgentAContextV1): Set<string> {
@@ -1021,88 +903,17 @@ export function parseAgentATurnProposalV1(raw: unknown, context: AgentAContextV1
     );
   }
   const facts = authorizedFactIds(context);
-  if (parsed.data.used_fact_ids.some((id) => !facts.has(id))) {
-    throw new AgentABrainError('BRAIN_UNKNOWN_FACT_ID');
-  }
   const memories = new Set(context.customer.memories.map((memory) => memory.id));
-  if (parsed.data.used_memory_ids.some((id) => !memories.has(id))) {
-    throw new AgentABrainError('BRAIN_UNKNOWN_MEMORY_ID');
-  }
-  const parsedMoveKinds = new Set([
-    parsed.data.move.move,
-    ...parsed.data.move.secondary_moves,
-  ]);
+  const usedFactIds = parsed.data.used_fact_ids.filter((id) => facts.has(id));
+  const usedMemoryIds = parsed.data.used_memory_ids.filter((id) => memories.has(id));
   if (
-    makesExplicitChatChoiceV1(context)
-    && ['continue_by_chat', 'decline_call'].some((move) => parsedMoveKinds.has(move as typeof MOVE_KINDS[number]))
-    && (parsed.data.response.messages.length !== 1 || parsed.data.response.call_offer)
-  ) {
-    throw new AgentABrainError(
-      'BRAIN_INVALID_SCHEMA',
-      null,
-      'response.messages:chat_preference_single_message',
-    );
-  }
-  if (
-    requestsDetailedCourseExplanationV1(context)
-    && !isInitialCallWindowV1(context)
-    && parsed.data.response.messages.length !== 2
-  ) {
-    throw new AgentABrainError(
-      'BRAIN_INVALID_SCHEMA',
-      null,
-      'response.messages:detailed_course_two_messages',
-    );
-  }
-  if (isSecondCallReminderWindowV1(context) && !parsed.data.response.call_offer) {
-    throw new AgentABrainError(
-      'BRAIN_INVALID_SCHEMA',
-      null,
-      'response.call_offer:second_reminder_required',
-    );
-  }
-  if (
-    (asksDirectDurationV1(context) || asksDirectNextStepV1(context))
-    && (parsed.data.response.messages.length !== 1 || parsed.data.response.messages[0].length > 180)
-  ) {
-    throw new AgentABrainError(
-      'BRAIN_INVALID_SCHEMA',
-      null,
-      'response.messages:direct_answer_single_short_message',
-    );
-  }
-  if (
-    customerStatesStartingFromZeroV1(context)
-    && (parsed.data.response.messages.length !== 1 || parsed.data.response.messages[0].length > 180)
-  ) {
-    throw new AgentABrainError(
-      'BRAIN_INVALID_SCHEMA',
-      null,
-      'response.messages:beginner_reply_single_short_message',
-    );
-  }
-  if (
-    context.commercial_state.call_offer_count === 0
-    && parsed.data.response.call_offer
-    && parsed.data.response.messages.some((message) => /[?¿]/u.test(message))
-  ) {
-    throw new AgentABrainError(
-      'BRAIN_INVALID_SCHEMA',
-      null,
-      'response.messages:initial_call_turn_must_not_diagnose',
-    );
-  }
-  if (
-    parsedMoveKinds.has('ask_payment_options')
-    && (parsed.data.response.messages.length !== 1 || parsed.data.response.call_offer)
-  ) {
-    throw new AgentABrainError(
-      'BRAIN_INVALID_SCHEMA',
-      null,
-      'response.messages:payment_options_single_message',
-    );
-  }
-  return parsed.data;
+    usedFactIds.length === parsed.data.used_fact_ids.length
+    && usedMemoryIds.length === parsed.data.used_memory_ids.length
+  ) return parsed.data;
+  // Invalid audit references cannot grant authority, so discard the reference
+  // while retaining the answer. Commercial values and effects are still
+  // independently checked by the ADK and backend.
+  return { ...parsed.data, used_fact_ids: usedFactIds, used_memory_ids: usedMemoryIds };
 }
 
 function commercialValuesByFactId(context: AgentAContextV1): ReadonlyMap<string, string> {
@@ -1337,7 +1148,7 @@ function safeContextualOpening(
 ): string {
   switch (responseGoal) {
     case 'greet_and_discover':
-      return 'Contame qué te gustaría aprender y te ayudo a encontrar una opción.';
+      return '¿Ya tenés un curso en mente o querés que veamos opciones por área?';
     case 'guide_area_choice':
       return 'Contame qué área te interesa y te ayudo a ordenar las opciones.';
     case 'guide_course_choice':

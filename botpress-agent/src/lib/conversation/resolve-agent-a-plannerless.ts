@@ -1,13 +1,9 @@
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import { AgentATurnProposalV1Schema, type AgentAContextV1, type AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
-import { supportsCallRequestV1 } from './channel-preference-evidence'
 import {
   AgentABrainError,
   removeUnsupportedCourseLogisticsAssertionsV1,
   removeUnsupportedPrerequisiteAssertionsV1,
-  removeRepeatedAgentOpeningMessagesV1,
-  removeRepeatedAgentQuestionMessagesV1,
-  normalizeCallOfferResponseV1,
   validateAgentATurnProposalV1,
 } from './agent-a-brain'
 import type {
@@ -126,52 +122,6 @@ function claimsImmediatePaymentLinkDelivery(proposal: AgentATurnProposalV1): boo
   ))
 }
 
-function pruneRepeatedAgentContent<T extends AgentAProposalEnvelopeV1>(input: {
-  readonly initial: T
-  readonly rejection: TurnRejectionV1
-  readonly context: AgentAContextV1
-  readonly authorized_fact_ids: readonly string[]
-}): T | null {
-  if (!input.rejection.rejections.every((reason) => reason.code === 'REPEATED_AGENT_REPLY')) {
-    return null
-  }
-  const previous = [...input.context.turn.recent_turns]
-    .reverse()
-    .find((turn) => turn.direction === 'outbound')?.content
-  if (!previous) return null
-  const currentCustomerText = input.context.turn.batch_messages.map((message) => message.text).join(' ')
-  const withoutOpening = removeRepeatedAgentOpeningMessagesV1(
-    input.initial.proposal.response.messages,
-  )
-  const messages = removeRepeatedAgentQuestionMessagesV1(
-    withoutOpening,
-    previous,
-    currentCustomerText,
-  )
-  const originalMessages = input.initial.proposal.response.messages
-  const unchanged = messages.length === originalMessages.length
-    && messages.every((message, index) => message === originalMessages[index])
-  if (messages.length === 0 || unchanged) {
-    return null
-  }
-  const candidate = {
-    ...input.initial,
-    proposal: {
-      ...input.initial.proposal,
-      response: {
-        ...input.initial.proposal.response,
-        messages: messages as AgentATurnProposalV1['response']['messages'],
-      },
-    },
-  } as T
-  return validatePlannerless({
-    proposal: candidate.proposal,
-    context: input.context,
-    rejection_id: input.rejection.rejection_id,
-    authorized_fact_ids: input.authorized_fact_ids,
-  }) === null ? candidate : null
-}
-
 /**
  * Denying a side effect does not require a second author to replace safe
  * customer-facing copy. When the only defect is an early payment action, the
@@ -205,75 +155,9 @@ function demoteUnauthorizedPaymentAction<T extends AgentAProposalEnvelopeV1>(inp
     rejection_id: input.rejection.rejection_id,
     authorized_fact_ids: input.authorized_fact_ids,
   })
-  return candidateRejection === null ? candidate : null
-}
-
-/**
- * A call offer is an optional action owned by the model, but it is only
- * executable after one canonical course is resolved. If that separate field
- * is the proposal's only defect, the boundary can deny it without discarding
- * the model-authored catalog answer or spending a second generation.
- */
-function demoteUnresolvedCallOffer<T extends AgentAProposalEnvelopeV1>(input: {
-  readonly initial: T
-  readonly rejection: TurnRejectionV1
-  readonly context: AgentAContextV1
-  readonly authorized_fact_ids: readonly string[]
-}): T | null {
-  if (input.initial.proposal.response.call_offer === null) return null
-  if (!input.rejection.rejections.every((reason) => (
-    reason.code === 'COURSE_NOT_RESOLVED' && reason.subject === 'call_offer'
-  ))) return null
-
-  const candidate = {
-    ...input.initial,
-    proposal: {
-      ...input.initial.proposal,
-      response: normalizeCallOfferResponseV1(input.initial.proposal.response, true),
-    },
-  }
-  const candidateRejection = validatePlannerless({
-    proposal: candidate.proposal,
-    context: input.context,
-    rejection_id: input.rejection.rejection_id,
-    authorized_fact_ids: input.authorized_fact_ids,
-  })
-  return candidateRejection === null ? candidate : null
-}
-
-/**
- * Normalize only message boundaries already authored by the model. A supported
- * call confirmation is not a fresh offer and must keep its acknowledgement.
- */
-function normalizePlannerlessBoundary<T extends AgentAProposalEnvelopeV1>(
-  initial: T,
-  context: AgentAContextV1,
-): T {
-  const proposal = initial.proposal
-  if (!proposal.response || !proposal.move) return initial
-  const moves = new Set([proposal.move.move, ...(proposal.move.secondary_moves ?? [])])
-  const confirmedCall = moves.has('request_call')
-    && proposal.proposed_action?.type === 'request_call_now'
-    && context.capabilities.may_request_call_now
-    && !proposal.move.vetoes?.includes('call')
-    && supportsCallRequestV1(
-      context.turn.batch_messages.map((message) => message.text).join(' '),
-      context.commercial_state.awaiting_reply === 'call_or_chat',
-    )
-  if (confirmedCall) return initial
-  const suppressOffer = context.commercial_state.call_offer_count >= 1
-    && (context.commercial_state.awaiting_reply === 'call_or_chat'
-      || !moves.has('ask_course_information'))
-  const maxInformationalMessages = context.commercial_state.call_offer_count === 1
-    && moves.has('ask_course_information') ? 2 : 1
-  const response = normalizeCallOfferResponseV1(
-    proposal.response,
-    suppressOffer,
-    maxInformationalMessages,
-  )
-  return response === proposal.response ? initial : {
-    ...initial, proposal: { ...proposal, response },
-  }
+  return candidateRejection === null || hasOnlyNonBlockingGuidance(candidate.proposal, candidateRejection)
+    ? candidate
+    : null
 }
 
 /** Both the initial proposal and its one repair use this exact pipeline. */
@@ -288,13 +172,16 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
     authorized_fact_ids: input.authorized_fact_ids, rejection_id: input.rejection_id,
   })
   const originalRejection = validate(input.initial)
-  const effective = normalizePlannerlessBoundary(input.initial, input.context)
+  const effective = input.initial
   const rejection = validate(effective)
   if (rejection === null) return { effective, rejection, originalRejection }
   // Each demotion/prune revalidates its result, including the full schema.
-  for (const transform of [pruneRepeatedAgentContent, demoteUnresolvedCallOffer, demoteUnauthorizedPaymentAction]) {
+  for (const transform of [demoteUnauthorizedPaymentAction]) {
     const candidate = transform({ ...input, initial: effective, rejection })
     if (candidate !== null) return { effective: candidate, rejection: null, originalRejection }
+  }
+  if (hasOnlyNonBlockingGuidance(effective.proposal, rejection)) {
+    return { effective, rejection: null, originalRejection }
   }
   return { effective, rejection, originalRejection }
 }
@@ -308,7 +195,21 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
 const BACKEND_ENFORCEABLE_CODES = new Set([
   'FACT_VALUE_MISMATCH',
   'FACT_NOT_AUTHORIZED',
+])
+
+/**
+ * These codes describe conversational quality, not unsafe side effects.
+ * They remain observable for evaluation, but must never discard a useful
+ * model-authored reply or trigger a second paid generation.
+ */
+const NON_BLOCKING_GUIDANCE_CODES = new Set([
   'REPEATED_AGENT_REPLY',
+  'CALL_BUDGET_EXHAUSTED',
+  'CALL_OFFER_REQUIRED',
+  'CALL_OFFER_MESSAGE_BOUNDARY_INVALID',
+  'CHANNEL_PREFERENCE_NOT_SUPPORTED',
+  'COURSE_NOT_RESOLVED',
+  'MISSING_INTAKE',
 ])
 
 const NON_DEGRADABLE_FACT_SUBJECTS = new Set([
@@ -328,7 +229,18 @@ function mayDegradeToBackendBoundary(
     reason.code === 'FACT_VALUE_MISMATCH'
     && NON_DEGRADABLE_FACT_SUBJECTS.has(reason.subject)
   ))) return false
-  return rejection.rejections.every((reason) => BACKEND_ENFORCEABLE_CODES.has(reason.code))
+  return rejection.rejections.every((reason) => (
+    BACKEND_ENFORCEABLE_CODES.has(reason.code)
+    || NON_BLOCKING_GUIDANCE_CODES.has(reason.code)
+  ))
+}
+
+function hasOnlyNonBlockingGuidance(
+  proposal: AgentATurnProposalV1,
+  rejection: TurnRejectionV1,
+): boolean {
+  return !claimsImmediatePaymentLinkDelivery(proposal)
+    && rejection.rejections.every((reason) => NON_BLOCKING_GUIDANCE_CODES.has(reason.code))
 }
 
 function plannerlessRejectionError(rejection: TurnRejectionV1): Error {
@@ -392,12 +304,7 @@ export async function resolveAgentAPlannerlessProposalV2<
     },
     rejection: terminalRejection,
   })
-  const requiresMandatoryCatalogRepair = rejection.rejections.some((reason) => (
-    reason.code === 'CALL_OFFER_REQUIRED'
-    || reason.code === 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
-    || reason.code === 'COURSE_NOT_RESOLVED'
-  ))
-  const mayRepair = (input.repair_enabled || requiresMandatoryCatalogRepair)
+  const mayRepair = input.repair_enabled
     && initial.proposal.repair_of === null
   if (!mayRepair) {
     if (mayDegradeToBackendBoundary(initial.proposal, rejection)) return degraded(false)
