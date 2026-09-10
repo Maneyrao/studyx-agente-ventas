@@ -347,13 +347,13 @@ describe('Agent A Brain V1', () => {
 
   it('requires a separate initial call offer after any canonical catalog recommendation', () => {
     expect(buildAgentABrainInstructionsV1(context())).toContain(
-      'When you name one or more canonical courses while browsing the catalog',
+      'una vez conocido el nombre y reconocido un curso o interés real',
     );
   });
 
   it('does not renew a call invitation merely because the customer changes course', () => {
     expect(buildAgentABrainInstructionsV1(context())).toContain(
-      'A course switch by itself does not renew a previous call invitation',
+      'El cambio de curso por sí solo no renueva una invitación de llamada anterior',
     );
   });
 
@@ -492,12 +492,12 @@ describe('Agent A Brain V1', () => {
         },
       },
     });
-    const repairDirective = 'FACT_VALUE_MISMATCH means the VALUE you stated does not match the canonical record';
+    const repairDirective = 'FACT_VALUE_MISMATCH: correct the value using authorized_alternatives.fact_ids';
 
     expect(instructions).toContain(repairDirective);
     expect(instructions.lastIndexOf(repairDirective))
       .toBeGreaterThan(instructions.lastIndexOf('</authorized_context>'));
-    expect(instructions).toContain('Correct it to a\nvalue present in authorized_alternatives.fact_ids');
+    expect(instructions).toContain('or omit the claim');
   });
 
   it('reports only the safe schema path and issue code for a root contract failure', () => {
@@ -1234,27 +1234,13 @@ describe('Agent A Brain V1', () => {
     expect(moveProperties.course_reference.description).toContain(
       'required whenever move or secondary_moves includes select_course',
     );
-    expect(body.instructions).toContain(
-      'The customer may select the canonical plan and explicitly request its link in',
-    );
-    expect(body.instructions).toContain(
-      'When turn_rejection is present',
-    );
-    expect(body.instructions).toContain(
-      'A diagnostic question is asked at most once per course selection',
-    );
-    expect(body.instructions).toContain(
-      'answer the current question instead of repeating the diagnostic',
-    );
-    expect(body.instructions).toContain(
-      'ask one of the fields still present in capabilities.intake_missing',
-    );
-    expect(body.instructions).toContain(
-      'Normally use one or two physical messages and at most one question in the whole turn',
-    );
-    expect(body.instructions).toContain(
-      'Product logistics mentioned in behavioral examples are not authorized facts',
-    );
+    expect(body.instructions).toContain('Elegirlo no equivale por sí solo a pedir el link');
+    expect(body.instructions).toContain('When turn_rejection exists');
+    expect(body.instructions).toContain('Hacé como máximo una pregunta útil por turno');
+    expect(body.instructions).toContain('Respondé primero el pedido, la pregunta o la intención actual');
+    expect(body.instructions).toContain('Pedí exclusivamente los que figuren en `capabilities.intake_missing`');
+    expect(body.instructions).toContain('Normalmente usá uno o dos mensajes breves');
+    expect(body.instructions).toContain('sólo pueden salir de los hechos visibles en `authorized_context`');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('greeting');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('unknown');
     expect(moveProperties.vetoes.description).toContain('current customer message explicitly refuses');
