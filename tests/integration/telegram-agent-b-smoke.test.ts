@@ -63,8 +63,8 @@ async function seedRequestedCall(input: { callId: string; userId: string; chatId
   `;
   const context = { call_id: input.callId, nombre_lead: 'Ana', curso_interes: 'Python', pais: 'AR', email_lead: '', resumen_whatsapp: 'Pidió llamada inmediata.', prompt_version: 'agent-b-v1' };
   await db!`
-    INSERT INTO call_sessions (id, source_turn_id, contact_id, conversation_id, provider, request_idempotency_key, status, consent_source_message_id, context_snapshot, context_hash, prompt_version)
-    VALUES (${input.callId}::uuid, ${messages[0].id}::uuid, ${contacts[0].id}::uuid, ${conversations[0].id}::uuid, 'telegram_sandbox', ${`voice-call:${input.callId}`}, 'requested', ${messages[0].id}::uuid, ${db!.json(context)}, decode(${hashCallContext(context)}, 'hex'), 'agent-b-v1')
+    INSERT INTO call_sessions (id, source_turn_id, contact_id, conversation_id, workspace_id, provider, request_idempotency_key, status, consent_source_message_id, context_snapshot, context_hash, prompt_version)
+    VALUES (${input.callId}::uuid, ${messages[0].id}::uuid, ${contacts[0].id}::uuid, ${conversations[0].id}::uuid, ${workspaces[0].id}::uuid, 'telegram_sandbox', ${`voice-call:${input.callId}`}, 'requested', ${messages[0].id}::uuid, ${db!.json(context)}, decode(${hashCallContext(context)}, 'hex'), 'agent-b-v1')
   `;
   const receipts = new PostgresContextReceiptStore(db!, { expectedChatId: input.chatId, expectedUserId: input.userId });
   await receipts.registerBinding({ chatId: input.chatId, userId: input.userId, startedAt: '2026-08-16T11:59:00.000Z' });

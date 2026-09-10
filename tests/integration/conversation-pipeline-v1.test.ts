@@ -209,6 +209,11 @@ run('conversation pipeline V1 vertical', () => {
     const input = envelope(text);
     const ingested = await processInboundMessage(input);
     await db!`
+      INSERT INTO workspace_contacts (workspace_id, contact_id, lifecycle_status, source_channel)
+      VALUES (${workspaceId}::uuid, ${ingested.contact.id}::uuid, 'active', 'telegram')
+      ON CONFLICT (workspace_id, contact_id) DO NOTHING
+    `;
+    await db!`
       UPDATE inbound_batches SET due_at = now() - interval '1 second'
       WHERE id = ${ingested.batch.id}::uuid
     `;

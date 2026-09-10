@@ -422,7 +422,7 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
         const rows = await store.listPendingFollowups(input);
         listReturned();
         await resumed;
-        return rows;
+        return rows.filter((call) => call.call_id === fixture.callId);
       },
       revalidateFollowup: store.revalidateFollowup.bind(store),
       hasVerifiedPayment: store.hasVerifiedPayment.bind(store),

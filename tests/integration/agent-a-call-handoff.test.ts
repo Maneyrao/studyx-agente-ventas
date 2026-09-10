@@ -66,6 +66,24 @@ function envelope(identity: Identity, text: string): InboundEnvelope {
 
 async function seedTurn(identity: Identity, text: string): Promise<string> {
   const context = await processInboundMessage(envelope(identity, text));
+  const [workspace] = await sql<Array<{ id: string }>>`
+    SELECT id FROM workspaces WHERE slug = 'studyx' AND status = 'active' LIMIT 1
+  `;
+  if (!workspace) throw new Error('CALL_HANDOFF_WORKSPACE_MISSING');
+  await sql`
+    INSERT INTO workspace_contacts (workspace_id, contact_id, lifecycle_status, source_channel)
+    VALUES (${workspace.id}::uuid, ${context.contact.id}::uuid, 'active', 'emulator')
+    ON CONFLICT (workspace_id, contact_id) DO NOTHING
+  `;
+  await sql`
+    INSERT INTO sales_context_states (
+      workspace_id, contact_id, conversation_id, stage
+    ) VALUES (
+      ${workspace.id}::uuid, ${context.contact.id}::uuid,
+      ${context.conversation_id}::uuid, 'exploring'
+    )
+    ON CONFLICT (workspace_id, contact_id) DO NOTHING
+  `;
   return context.turn_id;
 }
 

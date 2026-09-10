@@ -1207,7 +1207,19 @@ run('Agent Loop preparation materialization', () => {
       (call) => call.spreadsheetId === spreadsheetId && call.rowNumber === ourRowNumber,
     );
     const workerId = `test-flush-${randomUUID()}`;
-    await flushSheetProjections({ worker_id: workerId }, { sql, provider: fake });
+    // The disposable database is shared across integration files and may have
+    // older pending rows ahead of this freshly-created row. Drain bounded
+    // batches until this row is reached; the assertion below still proves that
+    // this row itself was written exactly once.
+    let projectionState = 'pending';
+    for (let attempt = 0; attempt < 32 && projectionState !== 'projected'; attempt += 1) {
+      await flushSheetProjections({ worker_id: workerId }, { sql, provider: fake });
+      const [row] = await sql<Array<{ state: string }>>`
+        SELECT state FROM sheet_projection_rows
+        WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
+      `;
+      projectionState = row?.state ?? 'missing';
+    }
     expect(ourCalls()).toHaveLength(1);
     await expect(sql<Array<{ state: string }>>`
       SELECT state FROM sheet_projection_rows
