@@ -34,17 +34,22 @@ Se agregaron regresiones en `tests/unit/calls/retell-post-call-analysis.test.ts`
 - `supabase/migrations/20260909000003_retell_orchestration_requests.sql`
 - `tests/unit/calls/retell-post-call-analysis.test.ts`
 - `tests/unit/calls/retell-final-review-regressions.test.ts`
+- `tests/integration/post-call-followup.test.ts` (fixture E2E ahora siembra el offering activo canónico `Python`)
 
 ## Verificación
 
 - `DATABASE_URL=postgresql://postgres@127.0.0.1:55435/studyx_test npm test -- --run tests/unit/calls tests/unit/payments/payment-config.test.ts tests/unit/projection/projection-idempotency.test.ts` → **241 passed, 14 skipped; 22 files passed, 1 skipped**.
+- `TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55435/studyx_test npm run test:integration -- --run tests/integration/post-call-followup.test.ts` → **13 passed**.
+- `TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55435/studyx_test npm run test:integration -- --run tests/integration/post-call-followup.test.ts tests/integration/retell-tools.test.ts tests/integration/retell-five-tools-postgres.test.ts` → **30 passed**.
+- Final-review unit focal (7 files) → **124 passed**.
 - `npm run typecheck` → **pass**.
 - `npm run lint` → **pass**.
 - `git diff --check` → **pass**.
 
-La suite de integración PostgreSQL no se ejecutó porque `TEST_DATABASE_URL` no está configurada en este entorno; debe repetirla el coordinador. La suite unitaria sin `DATABASE_URL` también deja un test de importación dependiente de configuración; con la URL local aprobada de pruebas todos los tests focales pasaron.
+La suite completa no se repitió; los focos PostgreSQL relevantes sí pasaron con la instancia local aprobada. La suite unitaria sin `DATABASE_URL` deja un test de importación dependiente de configuración; con la URL local aprobada de pruebas todos los tests focales pasaron.
 
 ## Concerns
 
 - `stripe_live` continúa deshabilitado por el guard de configuración existente; por tanto el wiring Retell live permanece deliberadamente cerrado hasta una habilitación/revisión posterior.
 - La prueba de aislamiento cruzado y la convergencia completa de I6 requieren la suite PostgreSQL focal del coordinador para validar triggers, leases y concurrencia real.
+- El E2E que proyecta `Python` ahora representa correctamente un lead canónico: sin el `offering` activo la producción debe conservar el análisis pero no mutar email ni Sheet.

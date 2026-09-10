@@ -753,6 +753,18 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
       INSERT INTO conversation_sales_context_states_v1 (workspace_id, conversation_id, contact_id)
       VALUES (${e2eWorkspace[0].id}::uuid, ${inbound.conversation_id}::uuid, ${inbound.contact.id}::uuid)
     `;
+    // This E2E asserts a commercial lead projection for the course captured by
+    // Retell below. Seed the canonical active offering explicitly: bounded
+    // provider text alone must not satisfy the production projection gate.
+    await sql`
+      INSERT INTO offerings (
+        workspace_id, code, display_name, offering_type, status, description,
+        price_type, price_amount, currency, billing_interval
+      ) VALUES (
+        ${e2eWorkspace[0].id}::uuid, 'Python', 'Python', 'course', 'active',
+        'Canonical E2E course', 'fixed', 360, 'USD', 'one_time'
+      )
+    `;
     const workspaceRows = await sql<Array<{ workspace_id: string }>>`
       WITH candidates AS (
         SELECT state.workspace_id
