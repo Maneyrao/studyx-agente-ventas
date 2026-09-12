@@ -1,4 +1,5 @@
 import {
+  supportsCallDeclineV1,
   supportsCallRequestV1,
   supportsChatPreferenceV1,
 } from './channel-preference-evidence';
@@ -143,7 +144,6 @@ export function authorizeAgentTurnV2(input: {
   const selectedPlan = resumesDurablePlan
     ? state.selected_payment_plan
     : proposal.move.payment_plan ?? (courseChanged ? null : state.selected_payment_plan);
-  const selectionChanged = courseChanged || selectedPlan !== state.selected_payment_plan;
   const plannedPaymentReported = moves.has('report_payment') || state.payment_reported_at !== null;
   const stateFacts = materializeStateFactsV1({
     intake: input.contact_intake,
@@ -203,7 +203,6 @@ export function authorizeAgentTurnV2(input: {
     || state.call_offer_count >= 2
     || state.call_offer_status === 'accepted'
     || state.call_offer_status === 'declined'
-    || (state.call_offer_count >= 1 && (state.awaiting_reply === 'call_or_chat' || !moves.has('ask_course_information')))
     || proposal.move.vetoes.includes('call')
   );
 
@@ -234,9 +233,7 @@ export function authorizeAgentTurnV2(input: {
   );
   // Asking for the next missing field is also prompt guidance. Missing intake
   // remains a hard boundary only for the payment side effect below.
-  const paymentLinkRequested = !paymentDeferred && (moves.has('request_payment_link')
-    || (moves.has('provide_contact_details') && !selectionChanged
-      && state.awaiting_reply === 'contact_details'));
+  const paymentLinkRequested = !paymentDeferred && moves.has('request_payment_link');
   if (proposal.proposed_action.type === 'request_call_now') {
     if (!requestedCallNow || proposal.move.vetoes.includes('call')) reasons.push('ACTION_NOT_AUTHORIZED');
     else action = proposal.proposed_action;
@@ -324,8 +321,12 @@ export function authorizeAgentTurnV2(input: {
     awaitingReply = 'contact_details';
   }
   if (supportedChannelChoice) {
-    callPreference = moves.has('decline_call') ? 'declined' : 'chat';
-    callOfferStatus = 'declined';
+    const hardDecline = moves.has('decline_call') || supportsCallDeclineV1(
+      currentText,
+      state.awaiting_reply === 'call_or_chat',
+    );
+    callPreference = hardDecline ? 'declined' : 'chat';
+    if (hardDecline) callOfferStatus = 'declined';
     if (awaitingReply === 'call_or_chat') awaitingReply = 'none';
   }
   if (callOfferCanAdvanceState && !supportedChannelChoice) {

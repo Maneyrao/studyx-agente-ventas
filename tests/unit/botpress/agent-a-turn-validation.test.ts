@@ -138,7 +138,7 @@ describe('validación de la propuesta del turno', () => {
     });
   });
 
-  it('rechaza dos mensajes informativos antes de la primera oferta separada de llamada', () => {
+  it('acepta varios mensajes informativos antes de la primera oferta separada de llamada', () => {
     const rejection = validateAgentATurnProposalV1({
       proposal: proposal({
         response: {
@@ -152,9 +152,7 @@ describe('validación de la propuesta del turno', () => {
       planned_fact_ids: ['offering:redes-informaticas:name:v1'],
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
-    expect(rejection?.rejections).toContainEqual({
-      code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID', subject: 'call_offer',
-    });
+    expect(rejection).toBeNull();
   });
 
   // V2
@@ -911,6 +909,26 @@ describe('V8 respuesta repetida', () => {
       code: 'FACT_VALUE_MISMATCH',
       subject: 'prerequisites',
     });
+  });
+
+  it('permite orientar desde cero cuando la descripción canónica lo respalda', () => {
+    const current = context();
+    current.catalog.selected_offering!.facts.push({
+      id: 'offering:fotografia-profesional:description:v1',
+      kind: 'offering_description',
+      value: 'Este curso está apuntado a todo aquel que quiera conocer desde cero el proceso fotográfico actual.',
+    });
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        response: { messages: ['Está pensado para quien quiere conocer fotografía desde cero.'], call_offer: null },
+        used_fact_ids: ['offering:fotografia-profesional:description:v1'],
+      }),
+      context: current,
+      planned_fact_ids: ['offering:fotografia-profesional:description:v1'],
+      rejection_id: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(rejection).toBeNull();
   });
 
   it('acepta reconocer que los requisitos no están confirmados', () => {

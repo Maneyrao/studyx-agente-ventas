@@ -244,6 +244,34 @@ describe('prepareAgentTurnV2', () => {
     });
   });
 
+  it('carries a current explicit plan selected as a secondary move while intake is still incomplete', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Sí, quiero avanzar: envíame el enlace para pagar en seis cuotas.'],
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_payment_link', secondary_moves: ['select_payment_plan'],
+          vetoes: [], payment_plan: 'monthly_6', confidence: 0.99,
+        },
+        response: { messages: ['Para avanzar me faltan tu apellido, correo y teléfono.'] },
+      }),
+    }, {
+      state_store: store(state({
+        selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected', awaiting_reply: 'payment_confirmation',
+      })),
+      contact_intake: async () => ({ nombre: 'Camila', apellido: null, correo: null, telefono: null }),
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.authorized_payment_plan).toBe('monthly_6');
+    expect(prepared.decision.business_action).toBeNull();
+    expect(prepared.transition).toMatchObject({
+      selected_payment_plan: 'monthly_6', stage: 'plan_selected', awaiting_reply: 'contact_details',
+    });
+  });
+
   it('rejects a response citing a fact from outside the selected course', async () => {
     await expect(prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },

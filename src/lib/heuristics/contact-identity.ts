@@ -25,6 +25,8 @@ const EMAIL_PATTERN = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/u;
 
 const NAME_TOKEN = "[A-ZÁÉÍÓÚÜÑ][\\p{L}'’-]*";
 const NAME_SEQUENCE = `${NAME_TOKEN}(?:\\s+${NAME_TOKEN}){0,3}`;
+const CONTEXTUAL_NAME_TOKEN = "[\\p{L}][\\p{L}'’-]*";
+const CONTEXTUAL_NAME_SEQUENCE = `${CONTEXTUAL_NAME_TOKEN}(?:\\s+${CONTEXTUAL_NAME_TOKEN}){0,3}`;
 
 const INTRODUCED_NAME_PATTERN = new RegExp(
   `(?:^|[\\s,;.!¡¿?])(?:soy|me\\s+llamo|mi\\s+nombre\\s+es)\\s+(${NAME_SEQUENCE})(?=\\s*(?:[,;.:!?]|$))`,
@@ -68,6 +70,19 @@ function isPlausibleName(candidate: string): boolean {
   const tokens = candidate.trim().split(/\s+/u);
   if (tokens.length === 0 || tokens.length > 4) return false;
   return tokens.every((token) => /^[A-ZÁÉÍÓÚÜÑ]/u.test(token));
+}
+
+function normalizeContextualName(candidate: string): string {
+  return candidate.trim().split(/\s+/u).map((token) => {
+    const [first = '', ...rest] = [...token];
+    return `${first.toLocaleUpperCase('es')}${rest.join('').toLocaleLowerCase('es')}`;
+  }).join(' ');
+}
+
+function isPlausibleContextualName(candidate: string): boolean {
+  const tokens = candidate.trim().split(/\s+/u);
+  return tokens.length > 0 && tokens.length <= 4
+    && tokens.every((token) => new RegExp(`^${CONTEXTUAL_NAME_TOKEN}$`, 'u').test(token));
 }
 
 function ownsPersonalContactBlock(headerSource: string): boolean {
@@ -203,26 +218,28 @@ export function extractContactNameAnswer(
   // A second possible identity is ambiguous. The only permitted continuation
   // is the accompanying contact field or an explicit question, as in Telegram.
   if (remainder && !new RegExp(`^(?:${EMAIL_PATTERN.source}|${DECLARED_PHONE_PATTERN.source}|¿|(?:[Yy]\\s+)?(?:[Cc]u[aá]nto|[Cc][oó]mo|[Qq]u[eé]|[Dd][oó]nde)\\b)`, 'u').test(remainder)) return null;
-  const strictName = new RegExp(`^${NAME_SEQUENCE}$`, 'u');
-  if (!strictName.test(candidate) || !isPlausibleName(candidate)
+  const contextualName = new RegExp(`^${CONTEXTUAL_NAME_SEQUENCE}$`, 'u');
+  if (!contextualName.test(candidate) || !isPlausibleContextualName(candidate)
     || /\b(?:o|y|si|sí|hola|gracias|dale|bueno|perfecto|quiero|curso|plan|pago|excel|marketing|digital|nombre|apellido)\b/iu.test(candidate)) return null;
+
+  const normalizedCandidate = normalizeContextualName(candidate);
 
   let firstName = previous.firstName;
   let surname = previous.surname;
   if (asksFirstName && asksSurname) {
-    const parts = splitFullName(candidate);
+    const parts = splitFullName(normalizedCandidate);
     if (parts.apellido) {
       firstName = parts.nombre;
       surname = parts.apellido;
     } else if (!firstName) {
-      firstName = candidate;
+      firstName = normalizedCandidate;
     } else if (!surname) {
-      surname = candidate;
+      surname = normalizedCandidate;
     } else {
       return null;
     }
-  } else if (asksFirstName) firstName = candidate;
-  else surname = candidate;
+  } else if (asksFirstName) firstName = normalizedCandidate;
+  else surname = normalizedCandidate;
 
   // contacts.name is split at its first token by the commercial contract.
   // A compound first name alone must remain partial, or its second token would

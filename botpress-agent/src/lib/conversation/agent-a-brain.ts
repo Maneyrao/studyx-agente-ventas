@@ -726,6 +726,54 @@ export async function generateOpenAIAgentATurnProposalV1(input: {
   }
 }
 
+const NEUTRAL_SPANISH_FORMS = new Map<string, string>([
+  ['querés', 'quieres'],
+  ['tenés', 'tienes'],
+  ['podés', 'puedes'],
+  ['preferís', 'prefieres'],
+  ['hacés', 'haces'],
+  ['decís', 'dices'],
+  ['elegís', 'eliges'],
+  ['seguís', 'sigues'],
+  ['buscás', 'buscas'],
+  ['obtenés', 'obtienes'],
+  ['sabés', 'sabes'],
+  ['necesitás', 'necesitas'],
+  ['estudiás', 'estudias'],
+  ['pagás', 'pagas'],
+  ['avanzás', 'avanzas'],
+  ['aprendés', 'aprendes'],
+  ['pensás', 'piensas'],
+  ['sentís', 'sientes'],
+  ['decidís', 'decides'],
+  ['contame', 'cuéntame'],
+  ['decime', 'dime'],
+  ['pasame', 'pásame'],
+  ['mandame', 'mándame'],
+  ['avisame', 'avísame'],
+  ['confirmame', 'confírmame'],
+  ['enviame', 'envíame'],
+]);
+
+/**
+ * Normaliza sólo marcas inequívocas de registro rioplatense. No agrega copy,
+ * no altera hechos ni decide el recorrido comercial: DeepSeek conserva la
+ * autoría del mensaje y esta frontera mantiene el español neutro solicitado.
+ */
+export function normalizeCustomerFacingSpanishV1(value: string): string {
+  const withoutOpeningMarks = value.replace(/[¿¡]/gu, '');
+  return withoutOpeningMarks.replace(
+    /(^|[^\p{L}])(querés|tenés|podés|preferís|hacés|decís|elegís|seguís|buscás|obtenés|sabés|necesitás|estudiás|pagás|avanzás|aprendés|pensás|sentís|decidís|contame|decime|pasame|mandame|avisame|confirmame|enviame)(?=$|[^\p{L}])/giu,
+    (match, prefix: string, form: string) => {
+      const neutral = NEUTRAL_SPANISH_FORMS.get(form.toLocaleLowerCase('es')) ?? form;
+      const adjusted = /^\p{Lu}/u.test(form)
+        ? `${neutral.charAt(0).toLocaleUpperCase('es')}${neutral.slice(1)}`
+        : neutral;
+      return `${prefix}${adjusted}`;
+    },
+  );
+}
+
 function normalizeStrictProposal(value: unknown, context: AgentAContextV1): unknown {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const proposal = value as Record<string, unknown>;
@@ -738,7 +786,7 @@ function normalizeStrictProposal(value: unknown, context: AgentAContextV1): unkn
         typeof message === 'string'
         && !/https?:\/\//iu.test(message)
         && !/\{\{[^}]+\}\}/u.test(message)
-      ));
+      )).map((message) => normalizeCustomerFacingSpanishV1(message as string));
       const rawMove = typeof proposal.move === 'string'
         ? proposal.move
         : proposal.move && typeof proposal.move === 'object' && !Array.isArray(proposal.move)
@@ -755,12 +803,14 @@ function normalizeStrictProposal(value: unknown, context: AgentAContextV1): unkn
         && (rawMove === 'request_payment_link' || actionType === 'send_payment_link')
         ? ['Perfecto, te comparto el enlace autorizado para continuar.']
         : safeMessages;
-      if (normalizedMessages.length > 0 && safeMessages.length !== messages.length) {
-        normalizedProposal.response = {
-          ...(response as Record<string, unknown>),
-          messages: normalizedMessages,
-        };
-      }
+      const rawCallOffer = (response as Record<string, unknown>).call_offer;
+      normalizedProposal.response = {
+        ...(response as Record<string, unknown>),
+        messages: normalizedMessages,
+        ...(typeof rawCallOffer === 'string'
+          ? { call_offer: normalizeCustomerFacingSpanishV1(rawCallOffer) }
+          : {}),
+      };
     }
   }
   let move = proposal.move;
@@ -832,9 +882,8 @@ function normalizeStrictProposal(value: unknown, context: AgentAContextV1): unkn
   if (![...moveKinds].some((kind) => PAYMENT_PLAN_MOVES.has(kind))) {
     delete normalizedMove.payment_plan;
   }
-  // Preserve the model-authored response verbatim. Conversation shape,
-  // phrasing and bubble boundaries are guidance for the model and evaluation,
-  // never a reason for application code to rewrite an otherwise safe reply.
+  // Preserve the model-authored content and bubble boundaries. The only copy
+  // normalization above is the configured neutral-Spanish register.
   return { ...normalizedProposal, move: normalizedMove };
 }
 
@@ -939,6 +988,9 @@ function canonicalPrerequisiteStatement(
     }
     if (/\b(?:diseñad[oa]|disenad[oa]) para empezar desde cero\b/iu.test(fact.value)) {
       return { factId, message: 'Está diseñado para empezar desde cero.' };
+    }
+    if (/\b(?:apuntad[oa]|pensad[oa]|dise[nñ]ad[oa])\b[^.!?]{0,80}\b(?:conocer|aprender|empezar|arrancar)\b[^.!?]{0,32}\bdesde cero\b/iu.test(fact.value)) {
+      return { factId, message: 'Está pensado para aprender desde cero.' };
     }
   }
   return null;
@@ -1744,7 +1796,7 @@ export function validateAgentATurnProposalV1(input: {
   const state = input.context.commercial_state;
   const validInitialCallOfferBoundary = typeof declaredCallOffer === 'string'
     && solicitsACallV1(declaredCallOffer, true)
-    && input.proposal.response.messages.length === 1
+    && input.proposal.response.messages.length >= 1
     && !input.proposal.response.messages.some((message) => solicitsACallV1(message));
   if (offersACall && state.call_offer_count === 0 && !validInitialCallOfferBoundary) {
     rejections.push({ code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID', subject: 'call_offer' });

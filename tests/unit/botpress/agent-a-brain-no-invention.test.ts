@@ -101,7 +101,7 @@ describe('preserving model copy never becomes a route for invention', () => {
     ]);
 
     expect(JSON.stringify(composition)).not.toContain('USD 50');
-    expect(composition.narrative.opening).toBe('Contame cómo preferís avanzar.');
+    expect(composition.narrative.opening).toBe('Cuéntame cómo prefieres avanzar.');
   });
 
   it('drops an invented payment method from a preserved deferral narrative', () => {

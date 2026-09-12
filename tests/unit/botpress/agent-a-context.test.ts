@@ -178,6 +178,15 @@ function claimedTurn(): ClaimedTurn {
 }
 
 describe('buildAgentAContextV1', () => {
+  it('exposes the canonical intake values needed for a single confirmation step', () => {
+    const claimed = claimedTurn();
+    claimed.contact_intake = {
+      nombre: 'Juan', apellido: 'Perez', correo: 'juan@example.com', telefono: '+5491112345678',
+    };
+
+    expect(buildAgentAContextV1(claimed)?.customer.contact_intake).toEqual(claimed.contact_intake);
+  });
+
   it('does not authorize a second payment-link action after the canonical link was sent', () => {
     const claimed = claimedTurn();
     claimed.catalog_resolution = { kind: 'no_catalog_intent' };

@@ -543,10 +543,16 @@ export const ClaimedTurnSchema = z.object({
   turn_id: z.string().uuid(),
   policy: PolicySchema,
   contact: ContactContextSchema.extend({ opted_in_at: z.string() }),
-  // Qué falta del intake de cuatro campos. Nombres, nunca valores.
+  // Qué falta del intake de cuatro campos.
   contact_intake_missing: z
     .array(z.enum(['nombre', 'apellido', 'correo', 'telefono']))
     .default([]),
+  contact_intake: z.object({
+    nombre: z.string().nullable(),
+    apellido: z.string().nullable(),
+    correo: z.string().nullable(),
+    telefono: z.string().nullable(),
+  }).strict().optional(),
   context: z.object({
     batch_messages: z.array(BatchMessageSchema),
     recent_turns: z.array(RecentTurnSchema),

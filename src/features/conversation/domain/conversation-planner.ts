@@ -501,8 +501,9 @@ function planSingle(
     };
   }
   if (kind === 'provide_contact_details') {
-    // Supplying data is only ever the answer to a question we asked. If it
-    // was, the link the customer already requested resumes on its own.
+    // Supplying data completes the intake, but is not consent to send a link.
+    // The customer first sees the canonical summary and confirms it; only a
+    // later request_payment_link may authorize the payment side effect.
     if (state.awaiting_reply !== 'contact_details') {
       return unchangedPlan(state, 'clarify_current_step');
     }
@@ -513,7 +514,7 @@ function planSingle(
     const paymentPlan = state.selected_payment_plan;
     if (!offeringCode) return unchangedPlan(state, 'guide_course_choice', ['course_selection']);
     if (!paymentPlan) return unchangedPlan(state, 'present_payment_options', ['payment_plan']);
-    return paymentLinkPlan(state, offeringCode, paymentPlan);
+    return unchangedPlan(state, 'confirm_current_state');
   }
   if (kind === 'request_payment_link') {
     if (vetoes.has('payment_link') || vetoes.has('purchase')) {

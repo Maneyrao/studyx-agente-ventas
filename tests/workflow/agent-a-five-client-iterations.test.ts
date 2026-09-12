@@ -81,7 +81,8 @@ it('client 1: learns the name before the first call invitation and never offers 
 
   result = await conversation.send('Me llamo Valentina.');
   expect(result.db.contact?.name).toBe('Valentina');
-  expect(result.db.state?.callOfferCount).toBe(0);
+  expect(result.db.state?.callOfferCount).toBe(1);
+  expect(normalize(result.text)).toMatch(/llamad|llamar|llame|telefono|telefonic/u);
   const technologyOptions = [
     'armado y reparacion de pc', 'redes informaticas', 'reparacion de celulares',
     'instalacion de camaras de seguridad', 'instalacion de aires acondicionados',
@@ -91,7 +92,6 @@ it('client 1: learns the name before the first call invitation and never offers 
   result = await conversation.send('Me interesa Redes Informáticas para conseguir trabajo.');
   expect(result.db.state?.selectedOfferingCode).toBe('redes_informaticas');
   expect(result.db.state?.callOfferCount).toBe(1);
-  expect(normalize(result.text)).toMatch(/llamad|llamar|llame|telefono|telefonic/u);
 
   result = await conversation.send('Contame por acá de qué se trata.');
   expect(result.db.state?.callOfferCount).toBe(2);
@@ -165,6 +165,15 @@ it('client 4: completes intake and receives exactly one canonical payment link',
   expect(result.db.contact?.name).toMatch(/Mat[ií]as Damonte/u);
   expect(result.db.contact?.email).toBe('matidamonte@inventado.com');
   expect(result.db.contact?.declaredPhone).toBe('+5491123456789');
+  expect(result.db.state?.stage).toBe('plan_selected');
+  expect(result.db.deliveredLinks).toHaveLength(0);
+  const confirmation = normalize(result.text);
+  expect(confirmation).toContain('matias damonte');
+  expect(confirmation).toContain('matidamonte@inventado.com');
+  expect(confirmation).toContain('fotografia profesional');
+  expect(confirmation).toMatch(/correct|confirm/u);
+
+  result = await conversation.send('Sí, los datos están correctos. Envíame el link para pagar.');
   expect(result.db.state?.stage).toBe('payment_link_sent');
   expect(result.db.deliveredLinks).toEqual(['https://example.invalid/eval/contado']);
   expect(result.db.decisions.filter((decision) => decision.businessActionType === 'send_payment_link')).toHaveLength(1);

@@ -670,8 +670,8 @@ describe('Agent A conversation runner', () => {
         ...proposal,
         response: {
           messages: [
-            'Te cuento lo más importante y vemos qué necesitás.',
-            'Si querés, puedo ofrecerte una llamada para asesorarte mejor.',
+            'Te cuento lo más importante y vemos qué necesitas.',
+            'Si quieres, puedo ofrecerte una llamada para asesorarte mejor.',
           ],
           call_offer: null,
         },

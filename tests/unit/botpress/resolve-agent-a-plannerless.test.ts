@@ -108,7 +108,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       call_offer: 'Si querés, puedo llamarte para orientarte.',
     });
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['CALL_OFFER_MESSAGE_BOUNDARY_INVALID'],
+      rejection_codes: [],
       repair_attempted: false,
       repaired: false,
     });
@@ -408,7 +408,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
-  it('keeps the model copy when it duplicates an invitation across fields', async () => {
+  it('keeps one separate call invitation when the model duplicates it across fields', async () => {
     const current = context();
     current.commercial_state.call_preference = 'unknown';
     current.commercial_state.call_offer_status = 'not_offered';
@@ -416,7 +416,10 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     const result = await resolveAgentAPlannerlessProposalV2({
       initial: generated(proposal({
         response: {
-          messages: ['Maquillaje Profesional tiene 38 clases. Si querés, podemos coordinar una llamada breve.'],
+          messages: [
+            'Maquillaje Profesional tiene 38 clases.',
+            'Si querés, podemos coordinar una llamada breve.',
+          ],
           call_offer: 'Si querés, puedo llamarte para orientarte.',
         },
       })),
@@ -427,7 +430,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
 
     expect(result.effective.proposal.response).toEqual({
-      messages: ['Maquillaje Profesional tiene 38 clases. Si querés, podemos coordinar una llamada breve.'],
+      messages: ['Maquillaje Profesional tiene 38 clases.'],
       call_offer: 'Si querés, puedo llamarte para orientarte.',
     });
   });

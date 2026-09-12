@@ -87,7 +87,7 @@ describe('six-field contact intake', () => {
     });
   });
 
-  it('resumes the link the customer already asked for once the data arrives', () => {
+  it('confirms completed data before resuming the link the customer asked for', () => {
     const awaitingData = { ...planChosen, awaiting_reply: 'contact_details' as const };
     const result = planConversationTurn({
       move: move('provide_contact_details'),
@@ -96,11 +96,9 @@ describe('six-field contact intake', () => {
       contact_intake: complete,
     });
 
-    expect(result.allowed_business_action).toEqual({
-      type: 'send_payment_link',
-      offering_code: 'redes-informaticas',
-      payment_plan: 'one_time',
-    });
+    expect(result.allowed_business_action).toEqual({ type: 'none' });
+    expect(result.response_goal).toBe('confirm_current_state');
+    expect(result.next_awaiting_reply).toBe('contact_details');
   });
 
   it('keeps asking while data is still missing and never asks for a seventh field', () => {

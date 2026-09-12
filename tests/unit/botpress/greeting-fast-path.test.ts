@@ -117,7 +117,7 @@ describe('matchDeterministicGreeting', () => {
   it('stays brand-neutral when business context is unavailable', () => {
     const decision = matchDeterministicGreeting(claimedTurn({ texts: ['hola'], route: 'greeting' }));
     expect(decision!.response).not.toMatch(/StudyX|Aburridont/);
-    expect(decision!.response).toContain('asesora virtual');
+    expect(decision!.response).toContain('asistente virtual');
   });
 
   it('uses only the first name, once, when the contact name is known', () => {
@@ -127,7 +127,7 @@ describe('matchDeterministicGreeting', () => {
       contactName: 'Sofía Ramírez',
     }));
 
-    expect(decision!.response).toContain('¡Hola, Sofía!');
+    expect(decision!.response).toContain('Hola, Sofía 😊');
     expect(decision!.response).not.toContain('Ramírez');
     expect(decision!.response!.match(/Sofía/gu)).toHaveLength(1);
   });
@@ -186,6 +186,6 @@ describe('matchDeterministicGreeting', () => {
   });
 
   it('exposes a stable versioned model identifier for the commit metadata', () => {
-    expect(GREETING_FAST_PATH_MODEL).toBe('deterministic:greeting-fast-path-v2');
+    expect(GREETING_FAST_PATH_MODEL).toBe('deterministic:greeting-fast-path-v3');
   });
 });

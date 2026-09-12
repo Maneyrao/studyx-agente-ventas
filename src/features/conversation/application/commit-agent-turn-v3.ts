@@ -507,7 +507,7 @@ function callPolicy(
   readonly request_allowed: boolean;
 } {
   const offerAllowed = context.call_offer_count < 2
-    && context.call_preference === 'unknown'
+    && (context.call_preference === 'unknown' || context.call_preference === 'chat')
     && context.call_offer_status !== 'accepted'
     && context.call_offer_status !== 'declined';
   const proposedOffering = decision.state_patch.set.selected_offering_code;

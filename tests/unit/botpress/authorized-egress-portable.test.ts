@@ -91,6 +91,17 @@ describe('portable authorized egress verifier', () => {
     });
   });
 
+  it('does not confuse the dotted local part of an email with a bare hostname', async () => {
+    const content = 'Correo confirmado: camila.duarte@example.test';
+    const manifest = buildAuthorizedEgress({
+      content,
+      authorized_urls: [],
+      protected_facts: [],
+    });
+
+    await expect(verifyAuthorizedEgressPortable({ content, manifest })).resolves.toEqual({ ok: true });
+  });
+
   it.each([
     'Cuesta trescientos sesenta dólares.',
     'La cursada dura doce meses.',

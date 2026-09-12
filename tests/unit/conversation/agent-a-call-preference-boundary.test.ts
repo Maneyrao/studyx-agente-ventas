@@ -20,10 +20,19 @@ describe('call preference requires current customer evidence',()=>{
   expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'unknown'}});
   expect(adk(x)?.rejections).toContainEqual({code:'CHANNEL_PREFERENCE_NOT_SUPPORTED',subject:'call_preference'});
  });
- it.each(['Prefiero seguir por chat','No quiero una llamada','Mejor seguimos por acá','Por escrito, por favor','Por chat, por favor','Contame por acá, por favor','No me llames'])('accepts an explicit preference: %s',text=>{
+ it.each(['Prefiero seguir por chat','Mejor seguimos por acá','Por escrito, por favor','Por chat, por favor','Contame por acá, por favor'])('accepts a soft preference without cancelling the later situational reminder: %s',text=>{
   const x=setup(text,'continue_by_chat');
-  expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'chat',call_offer_status:'declined'}});
+  expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'chat',call_offer_status:'not_offered'}});
   expect(adk(x)).toBeNull();
+ });
+ it.each(['No quiero una llamada','No me llames'])('persists an explicit call rejection: %s',text=>{
+  const x=setup(text,'decline_call');
+  expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'declined',call_offer_status:'declined'}});
+  expect(adk(x)).toBeNull();
+ });
+ it('persists a hard rejection even when the model labels it as continue by chat',()=>{
+  const x=setup('No quiero una llamada, prefiero que sigamos por chat.','continue_by_chat');
+  expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'declined',call_offer_status:'declined'}});
  });
  it.each(['¿Por chat o por teléfono?', '¿Podemos seguir por chat o tiene que ser llamada?'])('does not treat a channel question as a choice: %s',text=>{
   const x=setup(text,'continue_by_chat');
@@ -44,7 +53,7 @@ describe('call preference requires current customer evidence',()=>{
  it('records chat preference without blocking contradictory model copy',()=>{
   const x=setup('Prefiero seguir por chat','continue_by_chat');
   x.proposal.response.call_offer='Si querés, podemos coordinar una llamada.';
-  expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'chat',call_offer_status:'declined'}});
+  expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'chat',call_offer_status:'not_offered'}});
   expect(adk(x)?.rejections).toContainEqual({code:'CHANNEL_PREFERENCE_NOT_SUPPORTED',subject:'call_offer'});
  });
  it('uses the latest message in a batch as the channel decision',()=>{

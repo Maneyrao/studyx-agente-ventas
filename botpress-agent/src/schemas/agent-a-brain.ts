@@ -49,6 +49,12 @@ export const AgentAContextV1Schema = z.object({
   }).strict(),
   customer: z.object({
     display_name: z.string().trim().min(1).max(200).nullable(),
+    contact_intake: z.object({
+      nombre: z.string().trim().min(1).max(120).nullable(),
+      apellido: z.string().trim().min(1).max(160).nullable(),
+      correo: z.string().trim().min(1).max(320).nullable(),
+      telefono: z.string().trim().min(1).max(40).nullable(),
+    }).strict().nullable().optional(),
     memories: z.array(AgentAMemorySchema).max(5),
   }).strict(),
   /**
@@ -136,9 +142,8 @@ export const AgentAContextV1Schema = z.object({
     may_present_payment_options: z.boolean(),
     may_send_payment_link: z.boolean(),
     authorized_payment_plan: PaymentPlanSchema.nullable(),
-    // Nombres de campo, nunca valores. El modelo necesita saber qué
-    // falta para poder pedirlo; no necesita el nombre, el correo ni el
-    // teléfono del cliente, y no los recibe.
+    // Lista canónica de campos que todavía faltan. Los valores confirmables
+    // están en customer.contact_intake y no alteran este permiso.
     /**
      * Si la autoridad respondió qué falta, o si nadie preguntó.
      * `unknown` nunca puede leerse como completitud: el gate del link no se

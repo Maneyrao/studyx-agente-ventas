@@ -36,6 +36,12 @@ export interface AgentAContextV1 {
   };
   readonly customer: {
     readonly display_name: string | null;
+    readonly contact_intake?: {
+      readonly nombre: string | null;
+      readonly apellido: string | null;
+      readonly correo: string | null;
+      readonly telefono: string | null;
+    } | null;
     readonly memories: ReadonlyArray<{
       readonly id: string;
       readonly type: AgentAMemoryTypeV1;

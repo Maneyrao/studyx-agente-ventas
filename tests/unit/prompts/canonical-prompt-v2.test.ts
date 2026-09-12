@@ -13,23 +13,22 @@ const source = readFileSync(
   'utf8',
 );
 
-describe('prompt canónico comercial v15', () => {
+describe('prompt canónico comercial v16', () => {
   it('coincide con la fuente y declara la versión desplegable', () => {
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v15');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v16');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toBe(source);
   });
 
   it('atiende leads de Meta sin fijar un curso fuera del catálogo dinámico', () => {
     expect(source).toMatch(/leads c[áa]lidos[\s\S]{0,100}Meta/iu);
     expect(source).toContain('Cualquier curso activo de `catalog.available_offerings`');
-    expect(source).toMatch(/contexto del anuncio[\s\S]{0,100}si est[áa] disponible/iu);
-    expect(source).toMatch(/ese contexto no est[áa] disponible[\s\S]{0,160}mensaje actual/iu);
+    expect(source).toMatch(/anuncio o el mensaje[\s\S]{0,100}curso activo/iu);
   });
 
   it('usa las fases como mapa flexible y deja la redacción en manos del modelo', () => {
-    expect(source).toMatch(/Las fases son un mapa[\s\S]{0,100}no un guion r[íi]gido ni un bloqueo/iu);
-    expect(source).toMatch(/Respond[ée] su intenci[óo]n actual/iu);
-    expect(source).toMatch(/Vos conduc[íi]s y redact[áa]s la conversaci[óo]n/iu);
+    expect(source).toMatch(/Las fases orientan la venta[\s\S]{0,100}no son un guion/iu);
+    expect(source).toMatch(/Atiende la intenci[óo]n actual/iu);
+    expect(source).toMatch(/Tú conduces y redactas/iu);
     expect(source).not.toMatch(/primera fase incompleta|nunca la saltees|Nunca des el precio antes/iu);
   });
 
@@ -46,16 +45,13 @@ describe('prompt canónico comercial v15', () => {
     expect(source).toContain('12 pagos mensuales de USD 30 (`monthly_12`)');
     expect(source).toContain('6 pagos mensuales de USD 60 (`monthly_6`)');
     expect(source).toContain('1 pago único de USD 360 (`one_time`)');
-    expect(source).toMatch(/m[áa]ximo dos invitaciones/iu);
-    expect(source).toMatch(/Si rechaza[\s\S]{0,180}no vuelvas a ofrecer una llamada ni insistas/iu);
+    expect(source).toMatch(/M[áa]ximo dos ofrecimientos/iu);
+    expect(source).toMatch(/rechazo expl[íi]cito[\s\S]{0,100}cancela/iu);
   });
 
   it('mantiene Stripe y los resultados operativos bajo autoridad verificable', () => {
-    expect(source).toMatch(/Nunca escribas una URL[\s\S]{0,140}backend agrega el link de Stripe/iu);
-    expect(source).toContain(
-      'Registré tus datos y tu aviso de pago. El equipo va a verificar la acreditación '
-      + 'y, cuando esté confirmada, gestionará tu inscripción y acceso.',
-    );
+    expect(source).toMatch(/Nunca escribas una URL[\s\S]{0,140}backend agrega el link canónico de Stripe/iu);
+    expect(source).toMatch(/equipo verificar[áa] la acreditaci[óo]n[\s\S]{0,100}gestionar[áa] la inscripci[óo]n y el acceso/iu);
     expect(source).not.toMatch(/preinscripci[óo]n cargada|alta acad[ée]mica y genero|credenciales de acceso/iu);
   });
 

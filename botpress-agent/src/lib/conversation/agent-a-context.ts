@@ -546,6 +546,7 @@ export function buildAgentAContextV1(
     },
     customer: {
       display_name: claimed.contact.name,
+      contact_intake: claimed.contact_intake ?? null,
       memories: (suppressContactMemories ? [] : [...claimed.context.selected_memories])
         .sort((left, right) => right.similarity - left.similarity)
         .filter((memory) => MEMORY_TYPES.has(memory.type))
@@ -630,7 +631,9 @@ export function buildAgentAContextV1(
       may_offer_call: claimed.policy.may_respond
         && intakeStatus === 'known'
         && firstNameKnownNow
-        && state.call_preference === 'unknown'
+        && (state.call_preference === 'unknown' || state.call_preference === 'chat')
+        && state.call_offer_status !== 'accepted'
+        && state.call_offer_status !== 'declined'
         && callOfferCount < 2,
       may_request_call_now: claimed.policy.may_respond
         && !claimed.contact.blocked

@@ -653,7 +653,7 @@ describe('processInboundTurn hot path', () => {
       conversation_pipeline_v1: null,
       decision: {
         kind: 'reply',
-        response: 'Se me trabó la respuesta. ¿Me lo mandás otra vez en un ratito?',
+        response: 'Hubo un problema al preparar la respuesta. Envíame el mensaje otra vez en un momento.',
         response_type: 'commercial_reply',
         reason_code: 'MODEL_UNAVAILABLE',
         business_action: null,
@@ -728,7 +728,7 @@ describe('processInboundTurn hot path', () => {
       conversation_pipeline_v1: null,
       decision: {
         kind: 'reply',
-        response: 'Se me trabó la respuesta. ¿Me lo mandás otra vez en un ratito?',
+        response: 'Hubo un problema al preparar la respuesta. Envíame el mensaje otra vez en un momento.',
         reason_code: 'MODEL_UNAVAILABLE',
       },
     });
@@ -869,7 +869,7 @@ describe('processInboundTurn hot path', () => {
       conversation_pipeline_v1: null,
       decision: {
         kind: 'reply',
-        response: 'Se me trabó la respuesta. ¿Me lo mandás otra vez en un ratito?',
+        response: 'Hubo un problema al preparar la respuesta. Envíame el mensaje otra vez en un momento.',
         reason_code: 'MODEL_UNAVAILABLE',
       },
     });
@@ -1085,7 +1085,7 @@ describe('processInboundTurn hot path', () => {
       agent_turn_v2: null,
       decision: {
         kind: 'reply',
-        response: 'Se me trabó la respuesta. ¿Me lo mandás otra vez en un ratito?',
+        response: 'Hubo un problema al preparar la respuesta. Envíame el mensaje otra vez en un momento.',
         reason_code: 'MODEL_UNAVAILABLE',
       },
     });
@@ -1281,7 +1281,7 @@ describe('processInboundTurn hot path', () => {
       conversation_pipeline_v1: null,
       decision: {
         kind: 'reply',
-        response: 'Se me trabó la respuesta. ¿Me lo mandás otra vez en un ratito?',
+        response: 'Hubo un problema al preparar la respuesta. Envíame el mensaje otra vez en un momento.',
         reason_code: 'MODEL_UNAVAILABLE',
       },
     });
@@ -2184,7 +2184,7 @@ describe('processInboundTurn hot path', () => {
       conversation_pipeline_v1: null,
       decision: {
         kind: 'reply',
-        response: 'Se me trabó la respuesta. ¿Me lo mandás otra vez en un ratito?',
+        response: 'Hubo un problema al preparar la respuesta. Envíame el mensaje otra vez en un momento.',
         business_action: null,
         reason_code: 'MODEL_UNAVAILABLE',
       },

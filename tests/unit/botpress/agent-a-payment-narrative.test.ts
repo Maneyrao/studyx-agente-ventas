@@ -103,7 +103,10 @@ describe('payment narrative keeps the model as author', () => {
 
     const composition = compose('present_payment_options', [written], [LABEL_12, LABEL_6, LABEL_ONCE]);
 
-    expect(composition.narrative.opening).toBe(written);
+    expect(composition.narrative.opening).toBe(
+      'La de menor cuota es la de 12 pagos mensuales de USD 30. '
+      + 'También tienes 6 pagos de USD 60 o un pago único de USD 360.',
+    );
   });
 
   it('produces different text for two differently worded price answers', () => {
@@ -120,7 +123,7 @@ describe('payment narrative keeps the model as author', () => {
       ['Te puedo hacer 4 cuotas de USD 50.', 'Contame qué preferís.'], [LABEL_12]);
 
     expect(JSON.stringify(composition)).not.toContain('USD 50');
-    expect(composition.narrative.opening).toBe('Contame qué preferís.');
+    expect(composition.narrative.opening).toBe('Cuéntame qué prefieres.');
   });
 
   it('still drops a canonical value the model did not cite', () => {
@@ -128,7 +131,7 @@ describe('payment narrative keeps the model as author', () => {
       ['Tenés un pago único de USD 360.', 'Decime cómo seguimos.'], [LABEL_12]);
 
     expect(JSON.stringify(composition)).not.toContain('un pago único de USD 360');
-    expect(composition.narrative.opening).toBe('Decime cómo seguimos.');
+    expect(composition.narrative.opening).toBe('Dime cómo seguimos.');
   });
 
   it('still drops a model-authored URL', () => {

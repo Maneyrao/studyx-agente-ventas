@@ -16,7 +16,7 @@ import type { ClaimedTurn, Decision } from '../schemas/contracts'
  * send. The fast path changes who authors the decision, never the pipeline.
  */
 
-export const GREETING_FAST_PATH_MODEL = 'deterministic:greeting-fast-path-v2'
+export const GREETING_FAST_PATH_MODEL = 'deterministic:greeting-fast-path-v3'
 
 /**
  * The identity in the greeting is the configured workspace's display name —
@@ -26,14 +26,14 @@ export const GREETING_FAST_PATH_MODEL = 'deterministic:greeting-fast-path-v2'
 function buildGreetingResponse(claimed: ClaimedTurn): string {
   const businessName = claimed.business_context?.workspace.display_name ?? null
   const identity = businessName
-    ? `Soy la asesora virtual de ${businessName}.`
-    : 'Soy la asesora virtual del equipo.'
+    ? `Soy el asistente virtual de ${businessName}.`
+    : 'Soy el asistente virtual del equipo.'
   const firstName = claimed.contact.name?.trim().split(/\s+/u)[0] || null
-  const salutation = firstName ? `¡Hola, ${firstName}!` : '¡Hola!'
+  const salutation = firstName ? `Hola, ${firstName} 😊` : 'Hola 😊'
   const nextStep = firstName
-    ? '¿Ya tenés un curso en mente o querés que veamos opciones?'
-    : '¿Cómo te llamás?'
-  return `${salutation} 😊 ${identity} ${nextStep}`
+    ? 'Ya tienes un curso en mente o quieres que veamos opciones?'
+    : 'Cómo te llamas?'
+  return `${salutation} ${identity} ${nextStep}`
 }
 
 export function matchDeterministicGreeting(claimed: ClaimedTurn): Decision | null {

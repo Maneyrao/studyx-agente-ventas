@@ -1,4 +1,4 @@
-type ChannelPreferenceEvidenceV1 = 'call' | 'chat' | null;
+type ChannelPreferenceEvidenceV1 = 'call' | 'chat' | 'declined' | null;
 
 /** A model label is not consent. Resolve only the customer's latest explicit
  * choice, including the last message of a batched delivery. */
@@ -28,7 +28,8 @@ function channelPreferenceEvidenceV1(
       || /\b(?:contame|cuentame|explicame|decime|dime)(?:\s+todo)?\s+por\s+(?:aca|aqui|chat|escrito)\b/u.test(clause)
       || /^(?:chat|por chat(?:\s+por favor)?|por aca|por aqui|por escrito(?:\s+por favor)?|por mensajes?)$/u.test(clause)
     );
-    if (refusesCall || writtenChoice) return 'chat';
+    if (refusesCall) return 'declined';
+    if (writtenChoice) return 'chat';
     const choosesCall = /\b(?:mejor\s+llamame|prefiero\s+(?:una\s+)?llamada|prefiero\s+(?:hablar\s+)?por\s+telefono|quiero\s+(?:una\s+)?llamada|(?:podes|puedes)\s+llamarme|(?:hablemos|hablamos|podemos\s+(?:hablar|conversar)|podriamos\s+(?:hablar|conversar))\s+por\s+telefono|llamame)\b/u.test(clause);
     if (choosesCall) return 'call';
   }
@@ -36,7 +37,27 @@ function channelPreferenceEvidenceV1(
 }
 
 export function supportsChatPreferenceV1(text: string, pendingCallOffer: boolean): boolean {
-  return channelPreferenceEvidenceV1(text, pendingCallOffer) === 'chat';
+  const evidence = channelPreferenceEvidenceV1(text, pendingCallOffer);
+  return evidence === 'chat' || evidence === 'declined';
+}
+
+export function supportsCallDeclineV1(text: string, pendingCallOffer: boolean): boolean {
+  const value = text.normalize('NFD').replace(/[\u0300-\u036f]/gu, '').toLowerCase().trim();
+  if (pendingCallOffer && /^(?:no(?:\s+gracias)?|ahora\s+no|por\s+ahora\s+no|prefiero\s+que\s+no)[,.!\s]*$/u.test(value)) {
+    return true;
+  }
+  const clauses = value.split(/[\n,;.!?…¿¡]|\b(?:pero|aunque|sin\s+embargo)\b/gu)
+    .map((clause) => clause.trim()).filter(Boolean);
+  let latestRefusal = -1;
+  let latestCallChoice = -1;
+  for (const [index, clause] of clauses.entries()) {
+    if (/\b(?:no\s+(?:(?:quiero|puedo|deseo|me\s+interesa)\s+)?(?:(?:una\s+|la\s+|me\s+|que\s+me\s+)?llam\w*|(?:quiero\s+)?hablar\s+por\s+telefono)|sin\s+llam\w*|prefiero\s+que\s+no\s+me\s+llam\w*)\b/u.test(clause)) {
+      latestRefusal = index;
+      continue;
+    }
+    if (/\b(?:mejor\s+llamame|prefiero\s+(?:una\s+)?llamada|prefiero\s+(?:hablar\s+)?por\s+telefono|quiero\s+(?:una\s+)?llamada|(?:podes|puedes)\s+llamarme|(?:hablemos|hablamos|podemos\s+(?:hablar|conversar)|podriamos\s+(?:hablar|conversar))\s+por\s+telefono|llamame)\b/u.test(clause)) latestCallChoice = index;
+  }
+  return latestRefusal >= 0 && latestRefusal > latestCallChoice;
 }
 
 export function supportsCallRequestV1(text: string, pendingCallOffer: boolean): boolean {

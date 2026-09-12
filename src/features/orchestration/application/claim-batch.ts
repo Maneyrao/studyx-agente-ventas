@@ -177,11 +177,11 @@ export interface ClaimedTurn {
   };
   readonly turn_id: string;
   readonly policy: TurnPolicy;
-  /**
-   * Qué falta del intake de cuatro campos. Viajan NOMBRES, nunca valores:
-   * el modelo necesita saber qué pedir, no quién es el cliente.
-   */
+  /** Qué falta del intake de cuatro campos. */
   readonly contact_intake_missing: readonly ContactIntakeFieldV1[];
+  /** Valores canónicos necesarios para que el agente confirme los datos sin
+   * reconstruirlos desde texto viejo ni volver a pedirlos. */
+  readonly contact_intake: ContactIntakeV1;
   readonly contact: {
     readonly id: string;
     readonly status: 'prospecto' | 'cliente' | 'inactivo';
@@ -1007,16 +1007,15 @@ export async function claimBatch(
     catalog_resolution: catalog_resolution.kind,
   });
 
-  // Se computa en el backend y sólo cruza la lista de nombres. Calcularlo
-  // del lado del modelo exigiría mandarle el correo y el teléfono, que es
-  // exactamente la PII que no debe entrar al prompt.
+  // Se computa en el backend. Los valores canónicos viajan en un bloque
+  // separado porque el producto exige confirmarlos antes de enviar el link;
+  // nunca se reconstruyen desde texto histórico ni se usan como autoridad.
   // Import perezoso: el repositorio construye el cliente de base al cargarse,
   // y este módulo tiene tests unitarios que no deben necesitar una conexión.
   const readIntake = deps.contactIntake
     ?? (await import('@/lib/repositories/contact-intake.repository')).loadContactIntakeV1;
-  const contactIntakeMissing = missingContactIntakeFieldsV1(
-    await readIntake(facts.contact.id),
-  );
+  const contactIntake = await readIntake(facts.contact.id);
+  const contactIntakeMissing = missingContactIntakeFieldsV1(contactIntake);
 
   return {
     outcome: 'claimed',
@@ -1034,6 +1033,7 @@ export async function claimBatch(
     turn_id: facts.representative_turn_id,
     policy,
     contact_intake_missing: contactIntakeMissing,
+    contact_intake: contactIntake,
     contact: {
       id: facts.contact.id,
       status: facts.contact.status,

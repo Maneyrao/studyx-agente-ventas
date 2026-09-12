@@ -10,6 +10,7 @@ import {
   generateDeepSeekAgentATurnProposalV1,
   generateAgentATurnProposalV1,
   generateOpenAIAgentATurnProposalV1,
+  normalizeCustomerFacingSpanishV1,
   parseAgentATurnProposalV1,
   solicitsACallV1,
   validateAgentATurnProposalV1,
@@ -92,6 +93,17 @@ afterEach(() => {
 });
 
 describe('Agent A Brain V1', () => {
+  it('normalizes only opening punctuation and unmistakable voseo in customer-facing copy', () => {
+    expect(normalizeCustomerFacingSpanishV1(
+      '¡Buenísimo! ¿Querés que te llame? Si preferís, contame qué tenés en mente.',
+    )).toBe(
+      'Buenísimo! Quieres que te llame? Si prefieres, cuéntame qué tienes en mente.',
+    );
+    expect(normalizeCustomerFacingSpanishV1(
+      'Redes Informáticas tiene 16 clases y cuesta USD 360.',
+    )).toBe('Redes Informáticas tiene 16 clases y cuesta USD 360.');
+  });
+
   it('recognizes the natural call invitation emitted by the sales prompt', () => {
     expect(solicitsACallV1(
       'Si querés, puedo llamarte y explicarte todo con más detalle.',
@@ -107,7 +119,7 @@ describe('Agent A Brain V1', () => {
     }), context());
     expect(result.response).toEqual({
       messages: ['Te cuento sobre Redes Informáticas.', 'Podemos ver qué temas te interesan.'],
-      call_offer: 'Si querés, podemos coordinar una llamada.',
+      call_offer: 'Si quieres, podemos coordinar una llamada.',
     });
     expect(BackendAgentATurnProposalV1Schema.safeParse(result).success).toBe(true);
   });
@@ -118,13 +130,13 @@ describe('Agent A Brain V1', () => {
     current.commercial_state.call_offer_status = 'offered';
     const result = parseAgentATurnProposalV1(proposal({
       response: {
-        messages: ['Primero, qué vas a aprender.', 'Después, cómo se cursa y qué obtenés.'],
+        messages: ['Primero, qué vas a aprender.', 'Después, cómo se cursa y qué obtienes.'],
         call_offer: 'Si te sirve, también puedo explicártelo con más detalle por llamada.',
       },
     }), current);
 
     expect(result.response).toEqual({
-      messages: ['Primero, qué vas a aprender.', 'Después, cómo se cursa y qué obtenés.'],
+      messages: ['Primero, qué vas a aprender.', 'Después, cómo se cursa y qué obtienes.'],
       call_offer: 'Si te sirve, también puedo explicártelo con más detalle por llamada.',
     });
     expect(BackendAgentATurnProposalV1Schema.safeParse(result).success).toBe(true);
@@ -180,8 +192,8 @@ describe('Agent A Brain V1', () => {
     }), current);
 
     expect(parsed.response.messages).toEqual([
-      'Buenas, ¿de qué curso querés info?',
-      'Si todavía no elegiste uno, ¿qué te interesa aprender?',
+      'Buenas, de qué curso quieres info?',
+      'Si todavía no elegiste uno, qué te interesa aprender?',
     ]);
     expect(BackendAgentATurnProposalV1Schema.safeParse(parsed).success).toBe(true);
   });
@@ -194,7 +206,7 @@ describe('Agent A Brain V1', () => {
       },
     }), context());
 
-    expect(parsed.response.call_offer).toBe('¿Preferís que te llame y te lo explique mejor?');
+    expect(parsed.response.call_offer).toBe('Prefieres que te llame y te lo explique mejor?');
     expect(BackendAgentATurnProposalV1Schema.safeParse(parsed).success).toBe(true);
   });
 
@@ -347,13 +359,13 @@ describe('Agent A Brain V1', () => {
 
   it('requires a separate initial call offer after any canonical catalog recommendation', () => {
     expect(buildAgentABrainInstructionsV1(context())).toContain(
-      'una vez conocido el nombre y reconocido un curso o interés real',
+      'en cuanto conozcas el primer nombre y entiendas qué curso, área u objetivo real busca',
     );
   });
 
   it('does not renew a call invitation merely because the customer changes course', () => {
     expect(buildAgentABrainInstructionsV1(context())).toContain(
-      'El cambio de curso por sí solo no renueva una invitación de llamada anterior',
+      'Un cambio de curso por sí solo no justifica el segundo ofrecimiento',
     );
   });
 
@@ -598,7 +610,10 @@ describe('Agent A Brain V1', () => {
       used_fact_ids: [],
     }), ctx);
 
-    expect(parsed.response.messages).toEqual(proposal().response.messages);
+    expect(parsed.response.messages).toEqual([
+      'Te cuento sobre el curso.',
+      'Lo buscas para trabajar o para formación personal?',
+    ]);
     expect(parsed.move.move).toBe('unknown');
     expect(parsed.move.course_reference).toBeUndefined();
   });
@@ -637,10 +652,10 @@ describe('Agent A Brain V1', () => {
   });
 
   it('preserves natural sales prose when every commercial value cites an authorized fact', () => {
-    const natural = 'Podés estudiar Redes Informáticas con nosotros. Te acompaño a ver si encaja con lo que buscás.';
+    const natural = 'Puedes estudiar Redes Informáticas con nosotros. Te acompaño a ver si encaja con lo que buscas.';
     const composition = buildSafeAgentABrainCompositionV1({
       proposal: parseAgentATurnProposalV1(proposal({
-        response: { messages: [natural, '¿Querés que te cuente cómo se cursa?'] },
+        response: { messages: [natural, 'Quieres que te cuente cómo se cursa?'] },
         used_fact_ids: ['offering:redes-informaticas:name:v1'],
       }), context()),
       context: context(),
@@ -650,7 +665,7 @@ describe('Agent A Brain V1', () => {
 
     expect(composition.narrative).toEqual({
       opening: natural,
-      explanation: '¿Querés que te cuente cómo se cursa?',
+      explanation: 'Quieres que te cuente cómo se cursa?',
       next_question: null,
     });
     expect(composition.used_fact_ids).toEqual(['offering:redes-informaticas:name:v1']);
@@ -1234,13 +1249,13 @@ describe('Agent A Brain V1', () => {
     expect(moveProperties.course_reference.description).toContain(
       'required whenever move or secondary_moves includes select_course',
     );
-    expect(body.instructions).toContain('Elegirlo no equivale por sí solo a pedir el link');
+    expect(body.instructions).toContain('Elegir un plan se refleja en `move.payment_plan`, pero no autoriza por sí solo el link');
     expect(body.instructions).toContain('When turn_rejection exists');
-    expect(body.instructions).toContain('Hacé como máximo una pregunta útil por turno');
-    expect(body.instructions).toContain('Respondé primero el pedido, la pregunta o la intención actual');
-    expect(body.instructions).toContain('Pedí exclusivamente los que figuren en `capabilities.intake_missing`');
-    expect(body.instructions).toContain('Normalmente usá uno o dos mensajes breves');
-    expect(body.instructions).toContain('sólo pueden salir de los hechos visibles en `authorized_context`');
+    expect(body.instructions).toContain('Haz como máximo una pregunta útil por turno');
+    expect(body.instructions).toContain('Responde primero a lo que la persona dijo');
+    expect(body.instructions).toContain('Pide sólo los campos que figuren en `capabilities.intake_missing`');
+    expect(body.instructions).toContain('Normalmente envía uno o dos mensajes breves');
+    expect(body.instructions).toContain('salen sólo de hechos visibles en `authorized_context`');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('greeting');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('unknown');
     expect(moveProperties.vetoes.description).toContain('current customer message explicitly refuses');
@@ -1510,7 +1525,10 @@ describe('Agent A Brain V1', () => {
 
     expect(result.provider).toBe('google-ai-direct');
     expect(result.model).toBe('gemini-2.5-flash');
-    expect(result.proposal.response.messages).toEqual(proposal().response.messages);
+    expect(result.proposal.response.messages).toEqual([
+      'Te cuento sobre el curso.',
+      'Lo buscas para trabajar o para formación personal?',
+    ]);
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(String(url)).toContain('/models/gemini-2.5-flash:generateContent');
     const body = JSON.parse(String(init?.body));

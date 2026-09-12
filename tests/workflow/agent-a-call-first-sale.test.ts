@@ -55,7 +55,7 @@ it('offers a call first, continues by chat, retains the plan and delivers the au
     return { evidence, db, text: evidence.authorizedMessages.join('\n') };
   }
 
-  let result = await send('Hola, me interesa el curso de Redes Informáticas.');
+  let result = await send('Hola, soy Camila. Me interesa el curso de Redes Informáticas.');
   expect(result.db.state?.selectedOfferingCode).toBe('redes_informaticas');
   expect(result.db.state?.callOfferCount, 'a real initial offer is mandatory').toBe(1);
   expect(result.db.state?.awaitingReply).toBe('call_or_chat');
@@ -81,6 +81,12 @@ it('offers a call first, continues by chat, retains the plan and delivers the au
   expect(result.db.contact?.email).toBe('camila.duarte@example.test');
   expect(result.db.contact?.declaredPhone).toBe('+13055550168');
   expect(result.db.contact?.phone).toBe(identity.phoneE164);
+  expect(result.db.state?.stage).toBe('plan_selected');
+  expect(result.db.deliveredLinks).toEqual([]);
+  expect(result.text).toMatch(/Camila Duarte/iu);
+  expect(result.text).toMatch(/correct|confirm/iu);
+
+  result = await send('Sí, están correctos. Envíame el link.');
   expect(result.db.state?.stage).toBe('payment_link_sent');
   expect(result.db.deliveredLinks).toEqual(['https://example.invalid/eval/6m']);
   expect(result.db.decisions.filter(d => d.businessActionType === 'send_payment_link')).toHaveLength(1);

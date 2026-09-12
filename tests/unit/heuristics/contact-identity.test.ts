@@ -160,6 +160,13 @@ describe('splitFullName', () => {
 
 
 describe('extractContactNameAnswer', () => {
+  it('captures and normalizes a lowercase surname after a delivered full-name request', () => {
+    expect(extractContactNameAnswer(
+      'Juan perez',
+      'Para continuar necesito tu nombre y apellido.',
+    )).toEqual({ firstName: 'Juan', surname: 'Perez', name: 'Juan Perez' });
+  });
+
   it('captures the production surname-first correction after a delivered full-name request', () => {
     expect(extractContactNameAnswer(
       'Paredes, Luciana es mi nombre ya lo sabes',
@@ -220,7 +227,7 @@ describe('extractContactNameAnswer', () => {
   it.each([
     'No soy Lucía Ríos', 'Lucía Ríos, pero son los datos de mi hermana',
     'Lucía Ríos o Ana Pérez', 'Lucía O María', 'No Gracias', 'Sí Dale',
-    'Excel Integral', 'Marketing Digital', 'Quiero Excel', 'lucía ríos',
+    'Excel Integral', 'Marketing Digital', 'Quiero Excel',
     'Lucía Ríos, Ana Pérez', 'Lucía Ríos\nAna Pérez',
   ])('rejects negation, third-party identity, ambiguity and non-name answers: %s', text => {
     expect(extractContactNameAnswer(text, fullRequest)).toBeNull();

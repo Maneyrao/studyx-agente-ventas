@@ -1388,7 +1388,7 @@ describe('routeCommercialTurn', () => {
     });
 
     expectDecisionRoute(route);
-    expect(route.decision.response).toMatch(/^¡Hola!/u);
+    expect(route.decision.response).toMatch(/^Hola/u);
   });
 
   it('is referentially transparent for the same claimed snapshot', () => {

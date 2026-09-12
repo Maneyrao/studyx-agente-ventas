@@ -43,7 +43,7 @@ export function technicalFallback(
     schema_version: 3,
     intent: 'unknown',
     kind: 'reply',
-    response: 'Se me trabó la respuesta. ¿Me lo mandás otra vez en un ratito?',
+    response: 'Hubo un problema al preparar la respuesta. Envíame el mensaje otra vez en un momento.',
     response_type: responseType,
     business_action: null,
     memory_candidates: [],
@@ -105,28 +105,28 @@ export function modelUnavailableFallback(
   )
   const businessName = claimed.business_context?.workspace.display_name?.trim() || 'StudyX'
   const socialResponse = /^hola+$/u.test(latest)
-    ? `¡Hola! 😊 Soy la asesora virtual de ${businessName}. ¿Qué te gustaría aprender?`
+    ? `Hola! 😊 Soy la asesora virtual de ${businessName}. Qué te gustaría aprender?`
     : /\b(?:quien sos|quienes son|con quien hablo|de donde me hablas)\b/u.test(latest)
-      ? `Soy la asesora virtual de ${businessName}. Estoy para orientarte y ayudarte a elegir una formación. ¿Qué te gustaría aprender?`
+      ? `Soy la asesora virtual de ${businessName}. Estoy para orientarte y ayudarte a elegir una formación. Qué te gustaría aprender?`
       : /\b(?:como estas|todo bien|como va)\b/u.test(latest)
-        ? `¡Bien, gracias! 😊 ¿Qué te gustaría aprender o consultar?`
+        ? `Bien, gracias! 😊 Qué te gustaría aprender o consultar?`
         : null
   const genericInformationRequest = /^(?:(?:quiero|necesito|busco|dame|pasame)\s+)?(?:toda\s+la\s+)?(?:informacion|info|detalles?)$/u.test(currentBatch)
   const response = socialResponse
     ?? (genericInformationRequest
-      ? '¿Consultás por un curso puntual o querés ver opciones por área?'
+      ? 'Consultas por un curso puntual o quieres ver opciones por área?'
       : guidance?.response)
     ?? (/\b(?:prefiero|quiero|sigamos|seguir|continuar)\b.{0,32}\b(?:chat|texto|sin llamada|no quiero llamada)\b/u.test(latest)
-      ? 'Seguimos por chat, sin problema. ¿Con qué parte de la compra querés avanzar?'
+      ? 'Seguimos por chat, sin problema. Con qué parte de la compra quieres avanzar?'
       : /\b(?:cuanto\s+(?:sale|cuesta)|precio|costo|valor)\b/u.test(latest)
         ? course
-          ? `Sigo con ${course}. ¿Querés que confirme el precio y los planes disponibles?`
-          : 'Puedo confirmar el precio canónico. ¿De qué curso querés saberlo?'
+          ? `Sigo con ${course}. Quieres que confirme el precio y los planes disponibles?`
+          : 'Puedo confirmar el precio canónico. De qué curso quieres saberlo?'
       : /\b(?:caro|cara|presupuesto|conviene)\b/u.test(latest)
-        ? 'Puedo ayudarte a ordenar la consulta según tu presupuesto. ¿Qué te preocupa del precio?'
+        ? 'Puedo ayudarte a ordenar la consulta según tu presupuesto. Qué te preocupa del precio?'
         : course
-          ? `Sigo con ${course}. ¿Qué aspecto querés confirmar?`
-          : 'Puedo seguir ayudándote por acá. ¿Podés contarme la consulta en una frase?')
+          ? `Sigo con ${course}. Qué aspecto quieres confirmar?`
+          : 'Puedo seguir ayudándote por aquí. Puedes contarme la consulta en una frase?')
   return {
     schema_version: 4,
     intent: 'commercial',
@@ -159,7 +159,7 @@ function allowedTextFallback(claimed: ClaimedTurn, reasonCode: string): Decision
     schema_version: 3,
     intent: 'unknown',
     kind: 'reply',
-    response: 'Se me trabó la respuesta. ¿Me lo mandás otra vez en un ratito?',
+    response: 'Hubo un problema al preparar la respuesta. Envíame el mensaje otra vez en un momento.',
     response_type: responseType,
     business_action: null,
     memory_candidates: [],

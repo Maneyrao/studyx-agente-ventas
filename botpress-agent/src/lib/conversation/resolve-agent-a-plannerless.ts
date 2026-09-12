@@ -4,6 +4,7 @@ import {
   AgentABrainError,
   removeUnsupportedCourseLogisticsAssertionsV1,
   removeUnsupportedPrerequisiteAssertionsV1,
+  solicitsACallV1,
   validateAgentATurnProposalV1,
 } from './agent-a-brain'
 import type {
@@ -160,6 +161,36 @@ function demoteUnauthorizedPaymentAction<T extends AgentAProposalEnvelopeV1>(inp
     : null
 }
 
+function pruneDuplicateCallInvitation<T extends AgentAProposalEnvelopeV1>(input: {
+  readonly initial: T
+  readonly rejection: TurnRejectionV1
+  readonly context: AgentAContextV1
+  readonly authorized_fact_ids: readonly string[]
+}): T | null {
+  if (typeof input.initial.proposal.response.call_offer !== 'string') return null
+  if (!input.rejection.rejections.some((reason) => (
+    reason.code === 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
+  ))) return null
+  const messages = input.initial.proposal.response.messages.filter((message) => !solicitsACallV1(message))
+  if (messages.length === input.initial.proposal.response.messages.length || messages.length === 0) return null
+  const candidate = {
+    ...input.initial,
+    proposal: {
+      ...input.initial.proposal,
+      response: { ...input.initial.proposal.response, messages },
+    },
+  }
+  const candidateRejection = validatePlannerless({
+    proposal: candidate.proposal,
+    context: input.context,
+    rejection_id: input.rejection.rejection_id,
+    authorized_fact_ids: input.authorized_fact_ids,
+  })
+  return candidateRejection === null || hasOnlyNonBlockingGuidance(candidate.proposal, candidateRejection)
+    ? candidate
+    : null
+}
+
 /** Both the initial proposal and its one repair use this exact pipeline. */
 function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   readonly initial: T
@@ -176,7 +207,7 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   const rejection = validate(effective)
   if (rejection === null) return { effective, rejection, originalRejection }
   // Each demotion/prune revalidates its result, including the full schema.
-  for (const transform of [demoteUnauthorizedPaymentAction]) {
+  for (const transform of [demoteUnauthorizedPaymentAction, pruneDuplicateCallInvitation]) {
     const candidate = transform({ ...input, initial: effective, rejection })
     if (candidate !== null) return { effective: candidate, rejection: null, originalRejection }
   }

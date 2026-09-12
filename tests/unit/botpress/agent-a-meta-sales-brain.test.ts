@@ -84,11 +84,10 @@ describe('Agent A Meta sales brain', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
     const behavior = instructions.split('<authorized_context>')[0];
 
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v44');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v45');
     expect(behavior).toMatch(/lead (?:tibio|c[áa]lido).{0,60}(?:Meta|Instagram|Facebook)/iu);
     expect(behavior).toMatch(/cualquier curso activo[\s\S]{0,120}catalog\.available_offerings/iu);
-    expect(behavior).toMatch(/contexto (?:del )?anuncio[\s\S]{0,140}si est[áa] disponible/iu);
-    expect(behavior).toMatch(/si (?:el contexto del anuncio|ese contexto) no[\s\S]{0,180}(?:mensaje actual|pregunta breve)/iu);
+    expect(behavior).toMatch(/anuncio o el mensaje[\s\S]{0,100}curso activo/iu);
     expect(behavior).not.toMatch(/desde Telegram o desde un formulario/iu);
   });
 
@@ -96,9 +95,9 @@ describe('Agent A Meta sales brain', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
     const behavior = instructions.split('<authorized_context>')[0];
 
-    expect(behavior).toMatch(/respond[ée] primero[\s\S]{0,120}(?:pedido|intenci[óo]n|pregunta) actual/iu);
-    expect(behavior).toMatch(/las fases[\s\S]{0,140}(?:mapa|gu[íi]a)[\s\S]{0,100}no[\s\S]{0,80}(?:bloqueo|guion)/iu);
-    expect(behavior).toMatch(/conduc[íi][\s\S]{0,180}(?:pago|avanzar)/iu);
+    expect(behavior).toMatch(/responde primero a lo que la persona dijo[\s\S]{0,100}pr[oó]ximo paso concreto/iu);
+    expect(behavior).toMatch(/las fases orientan la venta[\s\S]{0,80}no son un guion/iu);
+    expect(behavior).toMatch(/conduc(?:e|ir)[\s\S]{0,180}(?:llamada|compra|pago|avanzar)/iu);
     expect(behavior).not.toContain('choose the earliest incomplete phase');
     expect(behavior).not.toContain('Follow the six canonical sales phases in order');
     expect(behavior).not.toMatch(/exactly (?:one|two) informational messages/iu);
@@ -108,10 +107,10 @@ describe('Agent A Meta sales brain', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
     const behavior = instructions.split('<authorized_context>')[0];
 
-    expect(behavior).toMatch(/m[áa]ximo (?:de )?dos[\s\S]{0,80}(?:llamada|invitaciones)/iu);
-    expect(behavior).toMatch(/primera[\s\S]{0,180}(?:curso|inter[ée]s)[\s\S]{0,180}mensaje (?:aparte|separado)/iu);
-    expect(behavior).toMatch(/segunda[\s\S]{0,180}(?:recordatorio|m[áa]s informaci[óo]n)/iu);
-    expect(behavior).toMatch(/rechaz[\s\S]{0,120}no[\s\S]{0,100}(?:ofrezcas|insistas)/iu);
+    expect(behavior).toMatch(/m[áa]ximo (?:de )?dos ofrecimientos/iu);
+    expect(behavior).toMatch(/primera invitaci[óo]n obligatoria[\s\S]{0,240}mensaje separado/iu);
+    expect(behavior).toMatch(/segundo y [uú]ltimo ofrecimiento[\s\S]{0,100}recordarlo/iu);
+    expect(behavior).toMatch(/rechazo expl[íi]cito[\s\S]{0,100}cancela/iu);
     expect(behavior).toContain('12 pagos mensuales de USD 30');
     expect(behavior).toContain('6 pagos mensuales de USD 60');
     expect(behavior).toContain('1 pago único de USD 360');

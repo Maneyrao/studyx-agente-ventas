@@ -86,7 +86,7 @@ function authorize(input: {
 }
 
 describe('plannerless Agent A authority', () => {
-  it('keeps an unsolicited invitation visible without advancing the call ledger', () => {
+  it('counts a useful later invitation as the second and final call offer', () => {
     const result = authorize({
       customerText: 'Contame cuánto dura.',
       state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected',
@@ -99,7 +99,7 @@ describe('plannerless Agent A authority', () => {
     });
     expect(result).toMatchObject({
       ok: true,
-      transition: { call_offer_count: 1, call_offer_status: 'offered', awaiting_reply: 'call_or_chat' },
+      transition: { call_offer_count: 2, call_offer_status: 'offered', awaiting_reply: 'call_or_chat' },
     });
   });
   it('does not count a confirmed call acknowledgement as another optional offer', () => {
@@ -316,7 +316,7 @@ describe('plannerless Agent A authority', () => {
     });
   });
 
-  it('materializes the pending link when the final contact detail completed durable intake', () => {
+  it('waits for customer confirmation after the final contact detail completes durable intake', () => {
     const result = authorize({
       state: state({
         selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6',
@@ -335,8 +335,8 @@ describe('plannerless Agent A authority', () => {
 
     expect(result).toMatchObject({
       ok: true,
-      action: { type: 'send_payment_link', payment_plan: 'monthly_6' },
-      transition: { stage: 'payment_link_sent', awaiting_reply: 'none' },
+      action: { type: 'none' },
+      transition: { stage: 'plan_selected', awaiting_reply: 'contact_details' },
     });
   });
 
@@ -381,7 +381,7 @@ describe('plannerless Agent A authority', () => {
     });
   });
 
-  it('accepts the link action when contact details complete a pending intake', () => {
+  it('rejects a link action attached only to contact details, before customer confirmation', () => {
     const result = authorize({
       state: state({
         selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6',
@@ -400,10 +400,60 @@ describe('plannerless Agent A authority', () => {
       }),
     });
 
+    expect(result).toEqual({ ok: false, reasons: ['ACTION_NOT_AUTHORIZED'] });
+  });
+
+  it('allows one final call reminder after a soft preference to continue by chat', () => {
+    const result = authorize({
+      customerText: 'Me parece caro y no sé cuál plan elegir.',
+      state: state({
+        selected_offering_code: 'redes_informaticas', stage: 'course_selected',
+        call_preference: 'chat', call_offer_count: 1, call_offer_status: 'offered',
+        awaiting_reply: 'none',
+      }),
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'ask_payment_options', secondary_moves: [], vetoes: [], confidence: 1,
+        },
+        response: {
+          messages: ['Por lo que me cuentas, el plan de menor cuota puede resultarte más cómodo.'],
+          call_offer: 'Si quieres, también puedo llamarte y ayudarte a decidirlo.',
+        },
+      }),
+    });
+
     expect(result).toMatchObject({
       ok: true,
-      action: { type: 'send_payment_link' },
-      transition: { stage: 'payment_link_sent', awaiting_reply: 'none' },
+      transition: {
+        call_preference: 'chat', call_offer_count: 2,
+        call_offer_status: 'offered', awaiting_reply: 'call_or_chat',
+      },
+    });
+  });
+
+  it('keeps a hard call refusal terminal for proactive call reminders', () => {
+    const result = authorize({
+      customerText: '¿Cuál plan me conviene?',
+      state: state({
+        selected_offering_code: 'redes_informaticas', stage: 'course_selected',
+        call_preference: 'declined', call_offer_count: 1, call_offer_status: 'declined',
+      }),
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'ask_payment_options', secondary_moves: [], vetoes: [], confidence: 1,
+        },
+        response: {
+          messages: ['Te recomiendo empezar por la opción de menor cuota.'],
+          call_offer: 'Si quieres, puedo llamarte y explicarte los planes.',
+        },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      transition: {
+        call_preference: 'declined', call_offer_count: 1, call_offer_status: 'declined',
+      },
     });
   });
 

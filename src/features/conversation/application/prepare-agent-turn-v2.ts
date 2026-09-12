@@ -212,7 +212,7 @@ export async function prepareAgentTurnV2(input: {
     authorized_offering_code: authority.transition.selected_offering_code,
     authorized_payment_plan: authority.action.type === 'send_payment_link'
       ? authority.action.payment_plan
-      : input.proposal.move.move === 'select_payment_plan'
+      : [input.proposal.move.move, ...input.proposal.move.secondary_moves].includes('select_payment_plan')
         ? authority.transition.selected_payment_plan
         : null,
     authorized_protected_facts: uniqueProtectedFacts([
