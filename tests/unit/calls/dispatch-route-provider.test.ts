@@ -4,7 +4,6 @@ import { TelegramSimVoiceProvider } from '@/features/calls/adapters/telegram-sim
 import { XendraVoiceProvider } from '@/features/calls/adapters/xendra-voice.provider';
 import type { VoiceDispatchConfig } from '@/lib/config';
 import { buildDispatchVoiceProvider } from '@/app/api/agent/calls/[call_id]/dispatch/route-dependencies';
-import * as routeModule from '@/app/api/agent/calls/[call_id]/dispatch/route';
 
 const db = (() => undefined) as never;
 
@@ -58,7 +57,10 @@ describe('dispatch route provider selection', () => {
     })).toBeInstanceOf(XendraVoiceProvider);
   });
 
-  it('keeps the Next route module limited to supported exports', () => {
+  it('keeps the Next route module limited to supported exports', async () => {
+    vi.stubEnv('DATABASE_URL', 'postgresql://postgres@127.0.0.1:55432/studyx_test');
+    const routeModule = await import('@/app/api/agent/calls/[call_id]/dispatch/route');
     expect(Object.keys(routeModule).sort()).toEqual(['POST', 'runtime']);
+    vi.unstubAllEnvs();
   });
 });
