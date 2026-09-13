@@ -1521,10 +1521,10 @@ describe('processInboundTurn hot path', () => {
     });
 
     await runCommittedOutbound({
-      content: 'Ok, ya te llamo en breve.',
+      content: 'Perfecto. Registré la llamada; nuestra asesora virtual intenta comunicarse ahora.',
       authorized_egress: {
         schema_version: 1,
-        content_hash: '576e9b064dfca61adf4e0639a8b58d5bb4f4e6e87373ade94d4884ea5b0d6039',
+        content_hash: '305f1762b8455e6e893f353c779db410e3a2cd070d8b493f28f82f1fadd0bc9e',
         authorized_urls: [],
         protected_facts: [],
       },
@@ -1542,10 +1542,10 @@ describe('processInboundTurn hot path', () => {
 
   it('does not dispatch the reserved call when the Agent A acknowledgement cannot be submitted', async () => {
     await runCommittedOutbound({
-      content: 'Ok, ya te llamo en breve.',
+      content: 'Perfecto. Registré la llamada; nuestra asesora virtual intenta comunicarse ahora.',
       authorized_egress: {
         schema_version: 1,
-        content_hash: '576e9b064dfca61adf4e0639a8b58d5bb4f4e6e87373ade94d4884ea5b0d6039',
+        content_hash: '305f1762b8455e6e893f353c779db410e3a2cd070d8b493f28f82f1fadd0bc9e',
         authorized_urls: [],
         protected_facts: [],
       },

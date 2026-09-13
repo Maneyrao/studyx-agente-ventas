@@ -114,7 +114,9 @@ describe('matchCallHandoffFastPath', () => {
       }),
     );
 
-    expect(decision?.response).toBe('Ok, ya te llamo en breve.');
+    expect(decision?.response).toBe(
+      'Perfecto. Registré la llamada; nuestra asesora virtual intenta comunicarse ahora.',
+    );
   });
 
   it('a direct request without policy permission falls through to the model', () => {
