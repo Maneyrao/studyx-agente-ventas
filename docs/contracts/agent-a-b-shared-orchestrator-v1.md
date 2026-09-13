@@ -1,7 +1,7 @@
 # Contrato A ↔ B sobre un único orquestador
 
-Estado: arquitectura implementada y verificada localmente. Activación real de
-Retell pendiente de credenciales y configuración externa.
+Estado: arquitectura A→Xendra→B→A implementada y verificada con Xendra fake.
+La llamada real queda pendiente de configuración de Lucas y autorización supervisada.
 
 ## Autoridad única
 
@@ -16,8 +16,8 @@ Retell pendiente de credenciales y configuración externa.
 ## Secuencia
 
 1. A ofrece la llamada en el chat.
-2. Ante aceptación, A envía exactamente `Ok, ya te llamo en breve.`
-3. Sólo después de confirmarse ese envío, el orquestador despacha la llamada.
+2. Ante aceptación, A envía su confirmación visible actual, sin alterar su prompt.
+3. Sólo después de confirmarse ese envío, el orquestador despacha la llamada por Xendra.
 4. B recibe los datos ya conocidos y `campos_faltantes`; no debe volver a pedir
    un dato presente.
 5. `guardar_datos_contacto` converge nombre, apellido/mail sobre el mismo
@@ -34,22 +34,24 @@ Retell pendiente de credenciales y configuración externa.
    `plan_code` sólo admite `monthly_12`, `monthly_6` u `one_time`. El backend
    valida el curso congelado en la llamada, resuelve la URL fija desde entorno
    y envía un único mensaje atribuido a A en la conversación original.
-7. Al terminar B, el worker post-llamada reanuda el chat en el mismo
-   `conversation_id`. Un pedido de no contacto revoca permiso antes de todo
-   outbound; una venta sólo se afirma con pago verificado en el backend.
+7. `registrar_resultado` conserva la autoridad sobre el desenlace operativo.
+   `call_analyzed` enriquece el CRM sin reemplazarlo; el opt-out es monotónico.
+8. Al terminar B, A puede reanudar el chat en el mismo `conversation_id`. Un
+   pedido de no contacto revoca permiso antes de todo outbound; una venta sólo
+   se afirma con pago verificado en PostgreSQL.
 
-## Configuración pendiente para activación
+## Configuración del deployment
 
-Retell:
+Orquestador:
 
-- `VOICE_PROVIDER=retell`
-- `RETELL_API_KEY`
-- `RETELL_FROM_NUMBER`
-- `RETELL_AGENT_ID` y `RETELL_AGENT_VERSION`
-- `RETELL_LLM_ID` y `RETELL_LLM_VERSION`
-- `RETELL_ADVISOR_NAME`
+- `VOICE_PROVIDER=xendra`
+- `XENDRA_CALL_URL=https://xendrapro-admin.vercel.app/api/studyx/llamar`
+- `XENDRA_ORCHESTRATOR_SECRET`
 - `RETELL_TOOLS_SECRET`
-- URL pública del orquestador en el webhook y las custom functions de Retell
+- opcionales: `XENDRA_ADVISOR_NAME`, `XENDRA_CLOSER_NUMBER`
+
+El camino Xendra no necesita `RETELL_API_KEY`, `RETELL_FROM_NUMBER` ni una API
+key privada de Retell.
 
 Canal y proyecciones:
 
@@ -59,6 +61,37 @@ Canal y proyecciones:
 - `PAYMENT_LINK_12M`, `PAYMENT_LINK_6M`, `PAYMENT_LINK_CONTADO`
 - `CRON_SECRET`
 
-La activación requiere actualizar en Retell la definición de
-`enviar_link_pago` al contrato anterior. El export viejo que acepta
-`cursos/plan/email/canal` debe considerarse incompatible y no publicarse.
+## Handoff para Lucas
+
+Con `BASE_URL` igual al dominio Vercel desplegado, configurar el relay de eventos:
+
+- `POST BASE_URL/retell/eventos`
+- headers: `x-studyx-orchestrator-secret`, `x-studyx-event`
+
+Configurar las nueve herramientas con `POST` y el header obligatorio
+`x-studyx-tools-secret`:
+
+- `BASE_URL/retell/tools/consultar-curso`
+- `BASE_URL/retell/tools/consultar-oferta`
+- `BASE_URL/retell/tools/guardar-datos-contacto`
+- `BASE_URL/retell/tools/enviar-link-pago`
+- `BASE_URL/retell/tools/verificar-pago`
+- `BASE_URL/retell/tools/enviar-material`
+- `BASE_URL/retell/tools/derivar-humano`
+- `BASE_URL/retell/tools/agendar-seguimiento`
+- `BASE_URL/retell/tools/registrar-resultado`
+
+Cambio recomendado en el contrato de pago de Agent B:
+
+```json
+{ "curso": "codigo_canonico", "plan_code": "monthly_12" }
+```
+
+`plan_code` admite `monthly_12`, `monthly_6` y `one_time`. El formato de Lucas
+`{ "cursos": ["..."], "plan": "contado" | "cuotas" }` sigue aceptado para
+compatibilidad: `contado` se traduce a `one_time`, mientras `cuotas` responde
+`PLAN_SELECTION_REQUIRED` salvo que ya exista una selección durable de 6 o 12.
+El backend ignora `email`/`canal` del modelo y deriva identidad y chat original.
+
+No configurar una URL directa de Retell hacia StudyX en este modo: Xendra
+conserva el webhook de Retell y reenvía los eventos autenticados.
