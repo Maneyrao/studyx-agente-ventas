@@ -22,6 +22,7 @@ import { recordDeliveryReport } from '@/lib/services/decision.service';
 import { flushSheetProjections } from '@/lib/services/projection.service';
 import { FakeSheetsProvider } from '@/lib/providers/sheets/fake-sheets-provider';
 import { sql } from '@/lib/db/orchestrator';
+import { processInboundMessage, type InboundEnvelope } from '@/lib/services/ingestion.service';
 import { seedConversationForAgentTurn, type SeededAgentTurn } from '../helpers/agent-turn-fixtures';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
@@ -37,6 +38,7 @@ function commit(
     readonly text?: string;
     readonly response_type?: string;
     readonly state_patch?: Record<string, unknown>;
+    readonly state_version?: number;
     readonly artifact_ids?: readonly string[];
   },
 ) {
@@ -60,7 +62,7 @@ function commit(
       commit_preparations: input.preparation_ids,
       used_memory_ids: [],
       state_patch: {
-        expected_state_version: seeded.state_version,
+        expected_state_version: input.state_version ?? seeded.state_version,
         set: input.state_patch ?? {},
       },
       response_type: input.response_type ?? 'commercial_reply',
@@ -831,22 +833,18 @@ run('Agent Loop preparation materialization', () => {
   // exactly one claimable row, flushed exactly once), and one for the
   // negative path (delivery reported failed -> never claimable).
   it('defers the lead projection until delivery is confirmed: no claimable row and no Sheets contact before a delivery report', async () => {
-    const seeded = await seedConversationForAgentTurn({ intake_complete: true });
+    const seeded = await seedConversationForAgentTurn({
+      intake_complete: true,
+      selected_offering_code: 'entrenamiento_funcional',
+    });
     // Unique per test run: lets a flush assertion below distinguish "nothing
     // was ever written for THIS lead" from "the shared disposable database
     // happens to have unrelated pending rows from other tests/prior runs".
     const spreadsheetId = `agent-loop-${randomUUID()}`;
     process.env.GOOGLE_SHEETS_SPREADSHEET_ID = spreadsheetId;
     process.env.GOOGLE_SHEETS_TAB_NAME = 'Leads';
-    const prepared = await prepareLeadProjectionToolV1({
-      db: sql,
-      turn_id: seeded.turn_id,
-      conversation_id: seeded.conversation_id,
-    });
-    expect(prepared.success).toBe(true);
-
-    const first = await commit(seeded, { preparation_ids: [prepared.preparation_id!] });
-    const replay = await commit(seeded, { preparation_ids: [prepared.preparation_id!] });
+    const first = await commit(seeded, { preparation_ids: [] });
+    const replay = await commit(seeded, { preparation_ids: [] });
     expect(replay).toEqual(first);
 
     // The outbound is still sitting `leased` (no delivery report was ever
@@ -876,18 +874,285 @@ run('Agent Loop preparation materialization', () => {
     expect(fake.calls.some((call) => call.spreadsheetId === spreadsheetId)).toBe(false);
   });
 
-  it('promotes the deferred lead to a claimable Sheets row once delivery is accepted, and flushes it exactly once', async () => {
-    const seeded = await seedConversationForAgentTurn({ intake_complete: true });
-    const spreadsheetId = `agent-loop-${randomUUID()}`;
+  it('projects a complete lead after accepted delivery without a payment or lead-projection preparation', async () => {
+    const seeded = await seedConversationForAgentTurn({
+      intake_complete: true,
+      selected_offering_code: 'entrenamiento_funcional',
+    });
+    const spreadsheetId = `complete-lead-${randomUUID()}`;
     process.env.GOOGLE_SHEETS_SPREADSHEET_ID = spreadsheetId;
     process.env.GOOGLE_SHEETS_TAB_NAME = 'Leads';
-    const prepared = await prepareLeadProjectionToolV1({
+
+    const committed = await commit(seeded, { preparation_ids: [] });
+
+    await expect(sql<Array<{ id: string }>>`
+      SELECT id FROM sheet_projection_rows
+      WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
+    `).resolves.toHaveLength(0);
+
+    await recordDeliveryReport({
+      outbound_id: committed.outbound_id!,
+      trace_id: randomUUID(),
+      status: 'submitted_to_botpress',
+      botpress_message_id: `bp-${seeded.turn_id}`,
+      replayed: false,
+      error_code: null,
+      delivery_attempt: 1,
+    });
+
+    await expect(sql<Array<{ payload: Record<string, string> }>>`
+      SELECT payload FROM sheet_projection_rows
+      WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
+    `).resolves.toEqual([{
+      payload: {
+        nombre: 'Ana',
+        apellido: 'Pérez',
+        mail: expect.stringMatching(/^ana\..+@example\.test$/u),
+        tipo_de_curso: 'entrenamiento_funcional',
+      },
+    }]);
+
+    await expect(sql<Array<{ projections: number; payment_jobs: number }>>`
+      SELECT
+        (SELECT count(*)::int FROM sheet_projection_rows
+          WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}) AS projections,
+        (SELECT count(*)::int FROM payment_projection_jobs
+          WHERE decision_id = ${committed.decision_id}::uuid) AS payment_jobs
+    `).resolves.toEqual([{ projections: 1, payment_jobs: 0 }]);
+  });
+
+  it('projects once after contact details arrive across accepted turns in arbitrary order', async () => {
+    const seeded = await seedConversationForAgentTurn({ call_offer_count: 2 });
+    const spreadsheetId = `captured-lead-${randomUUID()}`;
+    process.env.GOOGLE_SHEETS_SPREADSHEET_ID = spreadsheetId;
+    process.env.GOOGLE_SHEETS_TAB_NAME = 'Leads';
+
+    const firstNameFirst = await prepareContactDetailsToolV1({
       db: sql,
       turn_id: seeded.turn_id,
       conversation_id: seeded.conversation_id,
+      contact_id: seeded.contact_id,
+    }, { first_name: 'Ana' });
+    expect(firstNameFirst.success).toBe(true);
+    const first = await commit(seeded, { preparation_ids: [firstNameFirst.preparation_id!] });
+    await recordDeliveryReport({
+      outbound_id: first.outbound_id!,
+      trace_id: randomUUID(),
+      status: 'submitted_to_botpress',
+      botpress_message_id: `bp-first-name-${seeded.turn_id}`,
+      replayed: false,
+      error_code: null,
+      delivery_attempt: 1,
     });
-    expect(prepared.success).toBe(true);
-    const committed = await commit(seeded, { preparation_ids: [prepared.preparation_id!] });
+    await expect(sql<Array<{ id: string }>>`
+      SELECT id FROM sheet_projection_rows
+      WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
+    `).resolves.toHaveLength(0);
+
+    const courseSecond = await commit(seeded, {
+      turn_id: seeded.second_turn_id,
+      preparation_ids: [],
+      state_patch: { selected_offering_code: 'entrenamiento_funcional' },
+    });
+    await recordDeliveryReport({
+      outbound_id: courseSecond.outbound_id!,
+      trace_id: randomUUID(),
+      status: 'submitted_to_botpress',
+      botpress_message_id: `bp-course-${seeded.second_turn_id}`,
+      replayed: false,
+      error_code: null,
+      delivery_attempt: 1,
+    });
+    await expect(sql<Array<{ id: string }>>`
+      SELECT id FROM sheet_projection_rows
+      WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
+    `).resolves.toHaveLength(0);
+
+    const [channel] = await sql<Array<{
+      provider: string;
+      integration_id: string;
+      external_conversation_id: string;
+      phone: string;
+    }>>`
+      SELECT thread.provider, thread.integration_id, thread.external_conversation_id, contact.phone
+      FROM conversations AS conversation
+      JOIN channel_threads AS thread ON thread.id = conversation.channel_thread_id
+      JOIN contacts AS contact ON contact.id = conversation.contact_id
+      WHERE conversation.id = ${seeded.conversation_id}::uuid
+    `;
+    if (!channel) throw new Error('TEST_CHANNEL_CONTEXT_MISSING');
+    const thirdInbound: InboundEnvelope = {
+      schema_version: 1,
+      source: 'botpress',
+      channel: 'emulator',
+      integration_id: channel.integration_id,
+      external_message_id: `agent-turn-fixture-third-${randomUUID()}`,
+      external_conversation_id: channel.external_conversation_id,
+      external_user_id: `agent-turn-fixture-third-user-${randomUUID()}`,
+      phone_e164: channel.phone,
+      trace_id: randomUUID(),
+      message: {
+        type: 'text',
+        text: 'Mi correo es ana.garcia@example.test',
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    };
+    const thirdInboundResult = await processInboundMessage(thirdInbound);
+    const emailThird = await prepareContactDetailsToolV1({
+      db: sql,
+      turn_id: thirdInboundResult.turn_id,
+      conversation_id: seeded.conversation_id,
+      contact_id: seeded.contact_id,
+    }, { email: 'ana.garcia@example.test' });
+    expect(emailThird.success).toBe(true);
+    const [state] = await sql<Array<{ version: number }>>`
+      SELECT version
+      FROM conversation_sales_context_states_v1
+      WHERE workspace_id = ${seeded.workspace_id}::uuid
+        AND conversation_id = ${seeded.conversation_id}::uuid
+        AND contact_id = ${seeded.contact_id}::uuid
+    `;
+    if (!state) throw new Error('TEST_CONVERSATION_STATE_MISSING');
+    const third = await commit(seeded, {
+      turn_id: thirdInboundResult.turn_id,
+      state_version: Number(state.version),
+      preparation_ids: [emailThird.preparation_id!],
+    });
+    await recordDeliveryReport({
+      outbound_id: third.outbound_id!,
+      trace_id: randomUUID(),
+      status: 'submitted_to_botpress',
+      botpress_message_id: `bp-email-${thirdInboundResult.turn_id}`,
+      replayed: false,
+      error_code: null,
+      delivery_attempt: 1,
+    });
+    await expect(sql<Array<{ id: string }>>`
+      SELECT id FROM sheet_projection_rows
+      WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
+    `).resolves.toHaveLength(0);
+
+    const fourthInboundResult = await processInboundMessage({
+      ...thirdInbound,
+      external_message_id: `agent-turn-fixture-fourth-${randomUUID()}`,
+      external_user_id: `agent-turn-fixture-fourth-user-${randomUUID()}`,
+      trace_id: randomUUID(),
+      message: {
+        type: 'text',
+        text: 'Mi apellido es García',
+        occurred_at: new Date().toISOString(),
+        reply_to_external_message_id: null,
+      },
+    });
+    const surnameFourth = await prepareContactDetailsToolV1({
+      db: sql,
+      turn_id: fourthInboundResult.turn_id,
+      conversation_id: seeded.conversation_id,
+      contact_id: seeded.contact_id,
+    }, { last_name: 'García' });
+    expect(surnameFourth.success).toBe(true);
+    const [latestState] = await sql<Array<{ version: number }>>`
+      SELECT version
+      FROM conversation_sales_context_states_v1
+      WHERE workspace_id = ${seeded.workspace_id}::uuid
+        AND conversation_id = ${seeded.conversation_id}::uuid
+        AND contact_id = ${seeded.contact_id}::uuid
+    `;
+    if (!latestState) throw new Error('TEST_CONVERSATION_STATE_MISSING');
+    const fourth = await commit(seeded, {
+      turn_id: fourthInboundResult.turn_id,
+      state_version: Number(latestState.version),
+      preparation_ids: [surnameFourth.preparation_id!],
+    });
+    await recordDeliveryReport({
+      outbound_id: fourth.outbound_id!,
+      trace_id: randomUUID(),
+      status: 'submitted_to_botpress',
+      botpress_message_id: `bp-surname-${fourthInboundResult.turn_id}`,
+      replayed: false,
+      error_code: null,
+      delivery_attempt: 1,
+    });
+
+    await expect(sql<Array<{ payload: Record<string, string>; source_order: string }>>`
+      SELECT payload, source_order FROM sheet_projection_rows
+      WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
+    `).resolves.toEqual([{
+      source_order: '8',
+      payload: {
+        nombre: 'Ana',
+        apellido: 'García',
+        mail: 'ana.garcia@example.test',
+        tipo_de_curso: 'entrenamiento_funcional',
+      },
+    }]);
+  });
+
+  it('does not let an older accepted outbound overwrite a newer complete-lead correction', async () => {
+    const seeded = await seedConversationForAgentTurn({
+      intake_complete: true,
+      selected_offering_code: 'entrenamiento_funcional',
+    });
+    const spreadsheetId = `ordered-lead-${randomUUID()}`;
+    process.env.GOOGLE_SHEETS_SPREADSHEET_ID = spreadsheetId;
+    process.env.GOOGLE_SHEETS_TAB_NAME = 'Leads';
+
+    const older = await commit(seeded, { preparation_ids: [] });
+    const correction = await prepareContactDetailsToolV1({
+      db: sql,
+      turn_id: seeded.second_turn_id,
+      conversation_id: seeded.conversation_id,
+      contact_id: seeded.contact_id,
+    }, { last_name: 'García' });
+    expect(correction.success).toBe(true);
+    const newer = await commit(seeded, {
+      turn_id: seeded.second_turn_id,
+      preparation_ids: [correction.preparation_id!],
+    });
+
+    await recordDeliveryReport({
+      outbound_id: newer.outbound_id!,
+      trace_id: randomUUID(),
+      status: 'submitted_to_botpress',
+      botpress_message_id: `bp-newer-${seeded.second_turn_id}`,
+      replayed: false,
+      error_code: null,
+      delivery_attempt: 1,
+    });
+    await recordDeliveryReport({
+      outbound_id: older.outbound_id!,
+      trace_id: randomUUID(),
+      status: 'submitted_to_botpress',
+      botpress_message_id: `bp-older-${seeded.turn_id}`,
+      replayed: false,
+      error_code: null,
+      delivery_attempt: 1,
+    });
+
+    await expect(sql<Array<{ payload: Record<string, string>; source_order: string }>>`
+      SELECT payload, source_order FROM sheet_projection_rows
+      WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
+    `).resolves.toEqual([{
+      source_order: '4',
+      payload: {
+        nombre: 'Ana',
+        apellido: 'García',
+        mail: expect.stringMatching(/^ana\..+@example\.test$/u),
+        tipo_de_curso: 'entrenamiento_funcional',
+      },
+    }]);
+  });
+
+  it('promotes the deferred lead to a claimable Sheets row once delivery is accepted, and flushes it exactly once', async () => {
+    const seeded = await seedConversationForAgentTurn({
+      intake_complete: true,
+      selected_offering_code: 'entrenamiento_funcional',
+    });
+    const spreadsheetId = `agent-loop-${randomUUID()}`;
+    process.env.GOOGLE_SHEETS_SPREADSHEET_ID = spreadsheetId;
+    process.env.GOOGLE_SHEETS_TAB_NAME = 'Leads';
+    const committed = await commit(seeded, { preparation_ids: [] });
 
     // Before delivery: nothing claimable yet (same guarantee as the previous test).
     await expect(sql<Array<{ id: string }>>`
@@ -897,8 +1162,7 @@ run('Agent Loop preparation materialization', () => {
 
     // `submitted_to_botpress` means the channel ACCEPTED the message, not that
     // the customer has seen it — the strongest proof available for the
-    // Telegram sandbox, which emits no delivery receipt. That is the bar this
-    // gate uses, and the row is honest about it (`ultima_senal` below).
+    // Telegram sandbox, which emits no delivery receipt.
     await recordDeliveryReport({
       outbound_id: committed.outbound_id!,
       trace_id: randomUUID(),
@@ -926,7 +1190,12 @@ run('Agent Loop preparation materialization', () => {
       projection_key: `lead:${seeded.workspace_id}:${seeded.contact_id}`,
       state: 'pending',
       attempt_count: 0,
-      payload: { contact_id: seeded.contact_id, ultima_senal: 'agent_loop_lead_committed' },
+      payload: {
+        nombre: 'Ana',
+        apellido: 'Pérez',
+        mail: expect.stringMatching(/^ana\..+@example\.test$/u),
+        tipo_de_curso: 'entrenamiento_funcional',
+      },
     });
     const ourRowNumber = rows[0]!.row_number;
 
@@ -938,7 +1207,19 @@ run('Agent Loop preparation materialization', () => {
       (call) => call.spreadsheetId === spreadsheetId && call.rowNumber === ourRowNumber,
     );
     const workerId = `test-flush-${randomUUID()}`;
-    await flushSheetProjections({ worker_id: workerId }, { sql, provider: fake });
+    // The disposable database is shared across integration files and may have
+    // older pending rows ahead of this freshly-created row. Drain bounded
+    // batches until this row is reached; the assertion below still proves that
+    // this row itself was written exactly once.
+    let projectionState = 'pending';
+    for (let attempt = 0; attempt < 32 && projectionState !== 'projected'; attempt += 1) {
+      await flushSheetProjections({ worker_id: workerId }, { sql, provider: fake });
+      const [row] = await sql<Array<{ state: string }>>`
+        SELECT state FROM sheet_projection_rows
+        WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
+      `;
+      projectionState = row?.state ?? 'missing';
+    }
     expect(ourCalls()).toHaveLength(1);
     await expect(sql<Array<{ state: string }>>`
       SELECT state FROM sheet_projection_rows
@@ -967,17 +1248,14 @@ run('Agent Loop preparation materialization', () => {
   });
 
   it('never makes the lead claimable when the channel reports delivery failed', async () => {
-    const seeded = await seedConversationForAgentTurn({ intake_complete: true });
+    const seeded = await seedConversationForAgentTurn({
+      intake_complete: true,
+      selected_offering_code: 'entrenamiento_funcional',
+    });
     const spreadsheetId = `agent-loop-${randomUUID()}`;
     process.env.GOOGLE_SHEETS_SPREADSHEET_ID = spreadsheetId;
     process.env.GOOGLE_SHEETS_TAB_NAME = 'Leads';
-    const prepared = await prepareLeadProjectionToolV1({
-      db: sql,
-      turn_id: seeded.turn_id,
-      conversation_id: seeded.conversation_id,
-    });
-    expect(prepared.success).toBe(true);
-    const committed = await commit(seeded, { preparation_ids: [prepared.preparation_id!] });
+    const committed = await commit(seeded, { preparation_ids: [] });
 
     await recordDeliveryReport({
       outbound_id: committed.outbound_id!,

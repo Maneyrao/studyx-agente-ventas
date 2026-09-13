@@ -2,11 +2,42 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { runPostCallFollowup } from '@/features/calls/application/post-call-followup';
 import { PostgresPostCallFollowupStore } from '@/features/calls/adapters/postgres-post-call-followup-store';
+import { sendOutboundMessage } from '@/features/messaging/application/send-outbound-message';
+import { PostgresChannelIdentityStore } from '@/features/messaging/adapters/postgres-channel-identity-store';
+import { AuthorizedEgressContentAuthorizer } from '@/features/messaging/adapters/authorized-egress-content-authorizer';
+import { WhatsAppCloudChannel } from '@/features/messaging/adapters/whatsapp-cloud.channel';
+import { loadMessagingChannelsConfig } from '@/lib/config';
 import { sql } from '@/lib/db/orchestrator';
 import { counter } from '@/lib/observability/counters';
 import { logger } from '@/lib/observability/structured-log';
 
 const store = new PostgresPostCallFollowupStore(sql);
+
+function createOutboundSender() {
+  const messaging = loadMessagingChannelsConfig();
+  const whatsapp = messaging.whatsapp
+    ? new WhatsAppCloudChannel({
+      ...messaging.whatsapp,
+      timeoutMs: messaging.whatsapp.requestTimeoutMs,
+    })
+    : null;
+  const channels = whatsapp ? { whatsapp } : {};
+  const identities = new PostgresChannelIdentityStore(sql);
+
+  return (input: Parameters<typeof sendOutboundMessage>[0]) => sendOutboundMessage(input, {
+    identities,
+    channels,
+    preferenceOrder: ['whatsapp'],
+    contentAuthorizer: new AuthorizedEgressContentAuthorizer(),
+    // The cron bearer is the operator authorization for this scheduled
+    // workflow; contact consent, tenant membership, and sandbox locks remain
+    // enforced inside sendOutboundMessage before a provider is contacted.
+    sideEffectAuthorizer: {
+      authorize: async () => ({ allowed: true as const, reason: null }),
+    },
+    db: sql,
+  });
+}
 
 /**
  * GET /api/cron/post-call-followup
@@ -33,6 +64,7 @@ export async function GET(request: NextRequest) {
       { trace_id: traceId },
       {
         store,
+        sendOutbound: createOutboundSender(),
         log: (event, fields) => logger.info({ event, ...fields }),
       }
     );

@@ -12,10 +12,14 @@ export interface TerminalCallForFollowup {
   readonly call_id: string;
   readonly contact_id: string;
   readonly conversation_id: string;
+  /** NULL is retained for ambiguous/orphan legacy calls; only DNC may act on it. */
+  readonly workspace_id: string | null;
+  readonly provider: 'telegram_sandbox' | 'retell';
   readonly status: CallStatus;
   readonly result: CallResult | null;
   readonly analysis_status: 'pending' | 'completed' | 'failed';
   readonly prompt_version: string;
+  readonly do_not_contact?: boolean;
 }
 
 export interface PostCallFollowupStore {
@@ -29,8 +33,19 @@ export interface PostCallFollowupStore {
     readonly grace_seconds: number;
   }): Promise<TerminalCallForFollowup[]>;
 
-  /** True if the contact has a payment with status 'paid' for any offering. */
-  hasVerifiedPayment(contactId: string): Promise<boolean>;
+  /**
+   * Re-read the durable call/consent state after listing and before any
+   * provider send.  A DNC found here is revoked and completed atomically by
+   * the adapter, so a late analysis cannot race a stale list snapshot into an
+   * outbound branch.
+   */
+  revalidateFollowup?(input: {
+    readonly call_id: string;
+    readonly trace_id: string;
+  }): Promise<{ readonly do_not_contact: boolean }>;
+
+  /** True if the contact has a payment with status 'paid' in this workspace. */
+  hasVerifiedPayment(contactId: string, workspaceId: string, callId: string, provider: 'telegram_sandbox' | 'retell'): Promise<boolean>;
 
   /** True if the contact is currently blocked/opted-out on whatsapp. */
   isContactBlocked(contactId: string): Promise<boolean>;
@@ -38,6 +53,14 @@ export interface PostCallFollowupStore {
   revokeContact(input: {
     readonly contact_id: string;
     readonly call_id: string;
+    readonly trace_id: string;
+  }): Promise<void>;
+
+  /** Durable completion marker written only after a provider accepts the message. */
+  markFollowupCompleted(input: {
+    readonly call_id: string;
+    readonly contact_id: string;
+    readonly conversation_id: string;
     readonly trace_id: string;
   }): Promise<void>;
 }

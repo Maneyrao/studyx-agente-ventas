@@ -332,7 +332,7 @@ function isStripePaymentLink(value: unknown): value is string {
  * a fourth one, an altered amount, or a non-Stripe URL is worse than showing
  * no payment choices. The agent then asks to confirm payment options.
  */
-function readStudyxPaymentOptions(metadata: Record<string, unknown>): PaymentOptionView[] {
+export function readStudyxPaymentOptions(metadata: Record<string, unknown>): PaymentOptionView[] {
   const raw = metadata.payment_options;
   if (!Array.isArray(raw) || raw.length !== STUDYX_PAYMENT_PLAN_ORDER.length) return [];
 

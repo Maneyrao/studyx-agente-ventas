@@ -25,6 +25,8 @@ export const CallResultSchema = z.enum([
   'no_contactar',
   'ya_es_alumno',
   'no_calificado',
+  'buzon_de_voz',
+  'corto_la_llamada',
 ])
 
 export const CallRequestedPayloadSchema = z.object({

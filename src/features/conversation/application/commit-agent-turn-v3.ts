@@ -25,7 +25,11 @@ import {
   splitFullName,
 } from '@/lib/heuristics/contact-identity';
 import { reserveCallForDecision } from '@/features/calls/application/request-call';
-import { enqueueLeadProjection, type LeadProjectionInput } from '@/lib/services/projection.service';
+import {
+  agentALeadProjectionSourceOrder,
+  enqueueLeadProjection,
+  type LeadProjectionInput,
+} from '@/lib/services/projection.service';
 import { loadSheetsProjectionConfig } from '@/lib/config';
 import {
   PAYMENT_PLAN_CODES,
@@ -53,6 +57,7 @@ interface ExistingDecisionRowV3 {
 
 interface TurnContextRowV3 {
   readonly turn_id: string;
+  readonly source_order: number;
   readonly conversation_id: string;
   readonly turn_content: string;
   readonly batch_id: string | null;
@@ -395,6 +400,7 @@ async function loadTurnContext(db: DbClient, turnId: string): Promise<TurnContex
   const rows = await db<TurnContextRowV3[]>`
     SELECT
       turn.id AS turn_id,
+      COALESCE(turn.conversation_seq, 0) AS source_order,
       turn.conversation_id,
       turn.contact_id,
       turn.content AS turn_content,
@@ -436,7 +442,11 @@ async function loadTurnContext(db: DbClient, turnId: string): Promise<TurnContex
     FOR UPDATE OF turn, contact, state
   `;
   if (!rows[0]) throw new Error('AGENT_TURN_V3_CONTEXT_NOT_FOUND');
-  return { ...rows[0], version: Number(rows[0].version) };
+  return {
+    ...rows[0],
+    version: Number(rows[0].version),
+    source_order: Number(rows[0].source_order),
+  };
 }
 
 async function loadOpenPreparations(
@@ -1112,6 +1122,7 @@ export async function commitAgentTurnV3(
         contact_id: context.contact_id,
         conversation_id: context.conversation_id,
         contact_name: projectedContact.name,
+        contact_email: projectedContact.email,
         phone: projectedContact.declared_phone ?? context.destination,
         consent_messages: consentMessages,
         course_of_interest: input.decision.state_patch.set.selected_offering_code
@@ -1177,28 +1188,37 @@ export async function commitAgentTurnV3(
     // delivered (decision.service.ts) — the existing "gate on delivery"
     // mechanism, not a new parallel scheduler.
     let pendingLeadProjection: LeadProjectionInput | null = null;
-    if (committedLeads.length > 0) {
+    const names = projectedContact.name ? splitFullName(projectedContact.name) : null;
+    const selectedCourse = input.decision.state_patch.set.selected_offering_code
+      ?? context.selected_offering_code;
+    if (
+      names?.nombre?.trim()
+      && names.apellido?.trim()
+      && projectedContact.email?.trim()
+      && selectedCourse?.trim()
+    ) {
       const sheets = loadSheetsProjectionConfig();
-      if (!sheets) throw new Error('AGENT_TURN_V3_LEAD_PROJECTION_CONFIG_MISSING');
-      const names = projectedContact.name ? splitFullName(projectedContact.name) : null;
-      pendingLeadProjection = {
-        workspaceId: context.workspace_id,
-        contactId: context.contact_id,
-        spreadsheetId: sheets.spreadsheetId,
-        tabName: sheets.tabName,
-        telefono: projectedContact.declared_phone ?? context.destination,
-        nombre: names?.nombre,
-        apellido: names?.apellido,
-        email: projectedContact.email ?? undefined,
-        etapaComercial: input.decision.state_patch.set.stage ?? context.stage,
-        cursoInteres: input.decision.state_patch.set.selected_offering_code
-          ?? context.selected_offering_code ?? undefined,
-        plan: input.decision.state_patch.set.selected_payment_plan
-          ?? context.selected_payment_plan ?? undefined,
-        callId: committedCallId ?? undefined,
-        ultimaSenal: 'agent_loop_lead_committed',
-        traceId: input.trace_id,
-      };
+      if (sheets) {
+        pendingLeadProjection = {
+          workspaceId: context.workspace_id,
+          contactId: context.contact_id,
+          spreadsheetId: sheets.spreadsheetId,
+          tabName: sheets.tabName,
+          sourceOrder: agentALeadProjectionSourceOrder(context.source_order),
+          sourceKey: `agent-a-turn:${context.turn_id}`,
+          telefono: projectedContact.declared_phone ?? context.destination,
+          nombre: names.nombre,
+          apellido: names.apellido,
+          email: projectedContact.email,
+          etapaComercial: input.decision.state_patch.set.stage ?? context.stage,
+          cursoInteres: selectedCourse,
+          plan: input.decision.state_patch.set.selected_payment_plan
+            ?? context.selected_payment_plan ?? undefined,
+          callId: committedCallId ?? undefined,
+          ultimaSenal: 'agent_loop_lead_committed',
+          traceId: input.trace_id,
+        };
+      }
     }
 
     const authorizedUrls = committedPayment.map((artifact) => artifact.url);

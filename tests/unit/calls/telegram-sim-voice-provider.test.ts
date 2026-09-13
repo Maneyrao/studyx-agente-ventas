@@ -62,7 +62,7 @@ describe('TelegramSimVoiceProvider', () => {
   it('persists technical load evidence before one deterministic Telegram receipt', async () => {
     const input = context();
     const { provider, store, telegram, getRecord } = harness();
-    await expect(provider.placeCall({ callId: input.call_id, phoneE164: '+999000000001', context: input, idempotencyKey: `voice-call:${input.call_id}` }))
+    await expect(provider.placeCall({ callId: input.call_id, contactId: randomUUID(), conversationId: randomUUID(), phoneE164: '+999000000001', context: input, idempotencyKey: `voice-call:${input.call_id}` }))
       .resolves.toMatchObject({ providerCallId: telegramProviderCallId('chat-1', '77') });
     expect(store.reserve).toHaveBeenCalledWith(expect.objectContaining({
       callId: input.call_id, contextHash: hashCallContext(input), ack: expect.objectContaining({ status: 'accepted' }),
@@ -75,7 +75,7 @@ describe('TelegramSimVoiceProvider', () => {
   it('returns the accepted provider id on replay without sending twice', async () => {
     const input = context();
     const { provider, telegram } = harness();
-    const request = { callId: input.call_id, phoneE164: '+999000000001', context: input, idempotencyKey: `voice-call:${input.call_id}` };
+    const request = { callId: input.call_id, contactId: randomUUID(), conversationId: randomUUID(), phoneE164: '+999000000001', context: input, idempotencyKey: `voice-call:${input.call_id}` };
     expect(await provider.placeCall(request)).toEqual(await provider.placeCall(request));
     expect(telegram.sendMessage).toHaveBeenCalledTimes(1);
   });
@@ -83,7 +83,7 @@ describe('TelegramSimVoiceProvider', () => {
   it('pauses an ambiguous timeout and never blindly sends again', async () => {
     const input = context();
     const { provider, telegram, store } = harness(new TelegramAmbiguousError());
-    const request = { callId: input.call_id, phoneE164: '+999000000001', context: input, idempotencyKey: `voice-call:${input.call_id}` };
+    const request = { callId: input.call_id, contactId: randomUUID(), conversationId: randomUUID(), phoneE164: '+999000000001', context: input, idempotencyKey: `voice-call:${input.call_id}` };
     await expect(provider.placeCall(request)).rejects.toBeInstanceOf(AmbiguousVoiceProviderError);
     await expect(provider.placeCall(request)).rejects.toBeInstanceOf(AmbiguousVoiceProviderError);
     expect(store.markAmbiguous).toHaveBeenCalledTimes(1);
@@ -94,7 +94,7 @@ describe('TelegramSimVoiceProvider', () => {
     const input = context();
     const { provider, telegram, store } = harness(undefined, new Error('database unavailable'));
     await expect(provider.placeCall({
-      callId: input.call_id, phoneE164: '+999000000001', context: input, idempotencyKey: `voice-call:${input.call_id}`,
+      callId: input.call_id, contactId: randomUUID(), conversationId: randomUUID(), phoneE164: '+999000000001', context: input, idempotencyKey: `voice-call:${input.call_id}`,
     })).rejects.toBeInstanceOf(AmbiguousVoiceProviderError);
     expect(telegram.sendMessage).toHaveBeenCalledOnce();
     expect(store.markAmbiguous).toHaveBeenCalledOnce();
@@ -107,8 +107,8 @@ describe('TelegramSimVoiceProvider', () => {
     const firstHarness = harness();
     const secondHarness = harness();
     await Promise.all([
-      firstHarness.provider.placeCall({ callId: first.call_id, phoneE164: '+999000000001', context: first, idempotencyKey: `voice-call:${first.call_id}` }),
-      secondHarness.provider.placeCall({ callId: second.call_id, phoneE164: '+999000000002', context: second, idempotencyKey: `voice-call:${second.call_id}` }),
+      firstHarness.provider.placeCall({ callId: first.call_id, contactId: randomUUID(), conversationId: randomUUID(), phoneE164: '+999000000001', context: first, idempotencyKey: `voice-call:${first.call_id}` }),
+      secondHarness.provider.placeCall({ callId: second.call_id, contactId: randomUUID(), conversationId: randomUUID(), phoneE164: '+999000000002', context: second, idempotencyKey: `voice-call:${second.call_id}` }),
     ]);
     expect(firstHarness.telegram.sendMessage.mock.calls[0][0].text).toContain('Nombre: Ana');
     expect(secondHarness.telegram.sendMessage.mock.calls[0][0].text).toContain('Nombre: Bea');

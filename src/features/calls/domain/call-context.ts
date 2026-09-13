@@ -11,6 +11,8 @@ export const CALL_CONTEXT_FIELDS = [
   'prompt_version',
 ] as const;
 
+export const SHARED_LEAD_FIELDS = ['nombre', 'apellido', 'mail', 'tipo_de_curso'] as const;
+
 export const CallContextV1Schema = z.object({
   call_id: z.string().uuid(),
   nombre_lead: z.string().max(128),
@@ -19,6 +21,8 @@ export const CallContextV1Schema = z.object({
   email_lead: z.string().max(254),
   resumen_whatsapp: z.string().max(1_200),
   prompt_version: z.string().min(1).max(128),
+  apellido_lead: z.string().max(128).optional(),
+  campos_faltantes: z.array(z.enum(SHARED_LEAD_FIELDS)).max(SHARED_LEAD_FIELDS.length).optional(),
 }).strict();
 
 export type CallContextV1 = z.infer<typeof CallContextV1Schema>;
@@ -37,6 +41,8 @@ export function canonicalizeCallContext(value: unknown): string {
     email_lead: context.email_lead,
     resumen_whatsapp: context.resumen_whatsapp,
     prompt_version: context.prompt_version,
+    ...(context.apellido_lead === undefined ? {} : { apellido_lead: context.apellido_lead }),
+    ...(context.campos_faltantes === undefined ? {} : { campos_faltantes: context.campos_faltantes }),
   };
   return JSON.stringify(canonical);
 }
@@ -62,5 +68,11 @@ export function sanitizeContextForReceipt(context: CallContextV1): CallContextV1
     email_lead: sanitizeDisplayValue(context.email_lead),
     resumen_whatsapp: sanitizeDisplayValue(context.resumen_whatsapp),
     prompt_version: sanitizeDisplayValue(context.prompt_version),
+    ...(context.apellido_lead === undefined
+      ? {}
+      : { apellido_lead: sanitizeDisplayValue(context.apellido_lead) }),
+    ...(context.campos_faltantes === undefined
+      ? {}
+      : { campos_faltantes: context.campos_faltantes }),
   };
 }

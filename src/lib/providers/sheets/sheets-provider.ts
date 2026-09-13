@@ -10,22 +10,12 @@
  * supabase/migrations/20260817040001_sheet_projection_rows.sql).
  */
 
+/** The complete-lead operator view. This is the entire visible Sheet row. */
 export const SHEET_COLUMN_ORDER = [
-  'fecha_alta',
-  'contact_id',
   'nombre',
   'apellido',
-  'email',
-  'telefono',
-  'etapa_comercial',
-  'curso_interes',
-  'plan',
-  'estado_pago',
-  'fecha_pago',
-  'estado_alta',
-  'call_id',
-  'ultima_senal',
-  'trace_id',
+  'mail',
+  'tipo_de_curso',
 ] as const;
 
 export type SheetColumn = (typeof SHEET_COLUMN_ORDER)[number];
@@ -36,7 +26,7 @@ export interface UpdateRowParams {
   spreadsheetId: string;
   tabName: string;
   rowNumber: number;
-  /** Used only for the sandbox real-side-effect check; never written to a cell directly beyond the `contact_id` column already present in `values`. */
+  /** Used only for the sandbox real-side-effect check; never written to a cell. */
   contactId: string;
   values: SheetRowValues;
 }

@@ -274,8 +274,116 @@ export type TelegramAgentBConfig = {
   voiceProvider: 'telegram_sandbox' | 'retell';
 };
 
+export const RETELL_AGENT_ID = 'agent_d2c1a4ac7900ae95a47727156b' as const;
+export const RETELL_AGENT_VERSION = 0 as const;
+export const RETELL_LLM_ID = 'llm_eea8f670b6569b44689e9394b150' as const;
+export const RETELL_LLM_VERSION = 0 as const;
+
+export const RETELL_REQUIRED_ENVIRONMENT = [
+  'RETELL_API_KEY',
+  'RETELL_FROM_NUMBER',
+  'RETELL_API_BASE_URL',
+  'RETELL_AGENT_ID',
+  'RETELL_AGENT_VERSION',
+  'RETELL_LLM_ID',
+  'RETELL_LLM_VERSION',
+  'RETELL_ADVISOR_NAME',
+  'RETELL_TOOLS_SECRET',
+] as const;
+
+export type RetellVoiceConfig = {
+  voiceProvider: 'retell';
+  apiKey: string;
+  fromNumber: string;
+  apiBaseUrl: string;
+  agentId: string;
+  agentVersion: number;
+  llmId: string;
+  llmVersion: number;
+  advisorName: string;
+  toolsSecret: string;
+  requestTimeoutMs: number;
+};
+
+export type VoiceDispatchConfig =
+  | (Omit<TelegramAgentBConfig, 'voiceProvider'> & { voiceProvider: 'telegram_sandbox' })
+  | RetellVoiceConfig;
+
+function retellInteger(
+  environment: Readonly<Record<string, string | undefined>>,
+  name: 'RETELL_AGENT_VERSION' | 'RETELL_LLM_VERSION',
+): number {
+  const value = environment[name]!.trim();
+  if (!/^\d+$/u.test(value)) throw new Error(`INVALID_RETELL_CONFIG:${name}`);
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) throw new Error(`INVALID_RETELL_CONFIG:${name}`);
+  return parsed;
+}
+
+export function loadRetellVoiceConfig(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): RetellVoiceConfig {
+  for (const key of RETELL_REQUIRED_ENVIRONMENT) {
+    if (!environment[key]?.trim()) throw new Error(`MISSING_RETELL_CONFIG:${key}`);
+  }
+
+  const fromNumber = environment.RETELL_FROM_NUMBER!.trim();
+  if (!/^\+[1-9]\d{6,14}$/u.test(fromNumber)) {
+    throw new Error('INVALID_RETELL_CONFIG:RETELL_FROM_NUMBER');
+  }
+
+  let apiUrl: URL;
+  try {
+    apiUrl = new URL(environment.RETELL_API_BASE_URL!.trim());
+  } catch {
+    throw new Error('INVALID_RETELL_CONFIG:RETELL_API_BASE_URL');
+  }
+  if (
+    apiUrl.protocol !== 'https:'
+    || apiUrl.username
+    || apiUrl.password
+    || apiUrl.search
+    || apiUrl.hash
+    || (apiUrl.pathname !== '/' && apiUrl.pathname !== '')
+  ) {
+    throw new Error('INVALID_RETELL_CONFIG:RETELL_API_BASE_URL');
+  }
+
+  const agentId = environment.RETELL_AGENT_ID!.trim();
+  if (!/^agent_[A-Za-z0-9]+$/u.test(agentId)) {
+    throw new Error('INVALID_RETELL_CONFIG:RETELL_AGENT_ID');
+  }
+  const llmId = environment.RETELL_LLM_ID!.trim();
+  if (!/^llm_[A-Za-z0-9]+$/u.test(llmId)) {
+    throw new Error('INVALID_RETELL_CONFIG:RETELL_LLM_ID');
+  }
+
+  return {
+    voiceProvider: 'retell',
+    apiKey: environment.RETELL_API_KEY!.trim(),
+    fromNumber,
+    apiBaseUrl: apiUrl.origin,
+    agentId,
+    agentVersion: retellInteger(environment, 'RETELL_AGENT_VERSION'),
+    llmId,
+    llmVersion: retellInteger(environment, 'RETELL_LLM_VERSION'),
+    advisorName: environment.RETELL_ADVISOR_NAME!.trim(),
+    toolsSecret: environment.RETELL_TOOLS_SECRET!.trim(),
+    requestTimeoutMs: parsePositiveInt(environment.RETELL_REQUEST_TIMEOUT_MS, 5_000),
+  };
+}
+
+export function loadVoiceDispatchConfig(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): VoiceDispatchConfig {
+  const voiceProvider = environment.VOICE_PROVIDER?.trim() ?? 'telegram_sandbox';
+  if (voiceProvider === 'retell') return loadRetellVoiceConfig(environment);
+  const telegram = loadTelegramAgentBConfig(environment);
+  return { ...telegram, voiceProvider: 'telegram_sandbox' };
+}
+
 export function loadTelegramAgentBConfig(
-  environment: NodeJS.ProcessEnv = process.env,
+  environment: Readonly<Record<string, string | undefined>> = process.env,
 ): TelegramAgentBConfig {
   const required = [
     'TELEGRAM_AGENT_B_BOT_TOKEN',
@@ -286,7 +394,7 @@ export function loadTelegramAgentBConfig(
   for (const key of required) {
     if (!environment[key]?.trim()) throw new Error(`MISSING_AGENT_B_CONFIG:${key}`);
   }
-  const voiceProvider = environment.VOICE_PROVIDER ?? 'telegram_sandbox';
+  const voiceProvider = environment.VOICE_PROVIDER?.trim() ?? 'telegram_sandbox';
   if (voiceProvider !== 'telegram_sandbox' && voiceProvider !== 'retell') {
     throw new Error('INVALID_AGENT_B_CONFIG:VOICE_PROVIDER');
   }

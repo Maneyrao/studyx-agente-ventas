@@ -41,6 +41,29 @@ describe('CallContextV1', () => {
     expect(parsed.email_lead).toBe('');
   });
 
+  it('carries the shared intake state so Agent B asks only for data Agent A still lacks', () => {
+    const parsed = CallContextV1Schema.parse(context({
+      apellido_lead: 'Pérez',
+      campos_faltantes: ['mail'],
+    }));
+    expect(parsed.apellido_lead).toBe('Pérez');
+    expect(parsed.campos_faltantes).toEqual(['mail']);
+    expect(canonicalizeCallContext(parsed)).toContain('"campos_faltantes":["mail"]');
+  });
+
+  it('keeps legacy context hashes stable when the additive intake fields are absent', () => {
+    const legacy = context();
+    expect(canonicalizeCallContext(legacy)).toBe(JSON.stringify({
+      call_id: legacy.call_id,
+      nombre_lead: legacy.nombre_lead,
+      curso_interes: legacy.curso_interes,
+      pais: legacy.pais,
+      email_lead: legacy.email_lead,
+      resumen_whatsapp: legacy.resumen_whatsapp,
+      prompt_version: legacy.prompt_version,
+    }));
+  });
+
   it('accepts exactly 1,200 summary characters and rejects 1,201', () => {
     expect(() => CallContextV1Schema.parse(context({ resumen_whatsapp: 'a'.repeat(1_200) }))).not.toThrow();
     expect(() => CallContextV1Schema.parse(context({ resumen_whatsapp: 'a'.repeat(1_201) }))).toThrow();

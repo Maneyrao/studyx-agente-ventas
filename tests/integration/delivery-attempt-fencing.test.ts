@@ -590,12 +590,11 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
 
     const rows = await projectionRows(turn.contact_id);
     expect(rows).toHaveLength(1);
-    expect(rows[0].payload).toMatchObject({
-      etapa_comercial: 'payment_reported',
-      estado_pago: 'reportado_por_cliente',
-      estado_alta: 'pendiente_operador',
-      plan: 'monthly_12',
-      ultima_senal: 'payment_reported',
+    expect(rows[0].payload).toEqual({
+      nombre: 'Ariana',
+      apellido: 'Paz',
+      mail: 'ariana.paz@example.test',
+      tipo_de_curso: 'Curso Fencing',
     });
   });
 
@@ -675,8 +674,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       payment_actions: number;
       link_messages: number;
       sheet_rows: number;
-      sheet_plan: string;
-      sheet_course: string;
+      sheet_payload: Record<string, unknown>;
     }>>`
       SELECT
         count(DISTINCT ad.id) FILTER (
@@ -686,8 +684,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
           WHERE outbound.content LIKE '%https://buy.stripe.com/test_6m_fence%'
         )::integer AS link_messages,
         count(DISTINCT spr.id)::integer AS sheet_rows,
-        max(spr.payload ->> 'plan') AS sheet_plan,
-        max(spr.payload ->> 'curso_interes') AS sheet_course
+        (array_agg(spr.payload ORDER BY spr.id))[1] AS sheet_payload
       FROM messages AS inbound
       LEFT JOIN agent_decisions AS ad ON ad.turn_id = inbound.id
       LEFT JOIN messages AS outbound ON outbound.id = ad.outbound_message_id
@@ -700,8 +697,12 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       payment_actions: 1,
       link_messages: 1,
       sheet_rows: 1,
-      sheet_plan: 'monthly_6',
-      sheet_course: 'Decoración de Interiores',
+      sheet_payload: {
+        nombre: 'Ariana',
+        apellido: 'Paz',
+        mail: 'ariana.paz@example.test',
+        tipo_de_curso: 'Decoración de Interiores',
+      },
     });
   });
 
@@ -1056,9 +1057,11 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
         WHERE projection_key = ${leadProjectionKey(paymentWorkspaceId, firstContext.contact.id)}
       `;
       expect(rows).toHaveLength(1);
-      expect(rows[0].payload).toMatchObject({
-        plan: 'monthly_6',
-        curso_interes: 'Decoración de Interiores',
+      expect(rows[0].payload).toEqual({
+        nombre: 'Ariana',
+        apellido: 'Paz',
+        mail: 'ariana.paz@example.test',
+        tipo_de_curso: 'Decoración de Interiores',
       });
       return rows[0];
     };

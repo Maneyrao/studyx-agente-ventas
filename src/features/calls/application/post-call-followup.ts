@@ -1,8 +1,7 @@
-import { withSerializableTransaction } from '@/lib/db/transaction';
-import { commitAgentDecision } from '@/lib/services/decision.service';
-import { decidePostCallFollowup, POST_CALL_FOLLOWUP_PROMPT_VERSION } from '../domain/post-call-followup';
-import { synthesizeCallResultTurn } from './synthesize-call-result-turn';
+import { decidePostCallFollowup } from '../domain/post-call-followup';
 import type { PostCallFollowupStore } from '../ports/post-call-followup-store';
+import type { SendOutboundMessageInput, SendOutboundMessageResult } from '@/features/messaging/application/send-outbound-message';
+import { buildAuthorizedEgress } from '@/features/orchestration/domain/egress-guard';
 
 /**
  * Spec 007 — el sweep que cierra el loop B→A: una llamada en estado terminal
@@ -39,6 +38,7 @@ export interface PostCallFollowupResult {
 
 export interface PostCallFollowupDependencies {
   readonly store: PostCallFollowupStore;
+  readonly sendOutbound: (input: SendOutboundMessageInput) => Promise<SendOutboundMessageResult>;
   readonly log?: (event: string, fields: Record<string, unknown>) => void;
 }
 
@@ -62,6 +62,42 @@ export async function runPostCallFollowup(
 
   for (const call of pending) {
     try {
+      // `pending` is intentionally a snapshot. A registrar_resultado or
+      // webhook can commit DNC after listPendingFollowups returns, so the
+      // adapter re-reads under the call lock immediately before this row can
+      // enter any outbound path. When it finds DNC, the adapter also performs
+      // the canonical revocation and completion marker in that same durable
+      // operation; no provider call is made here.
+      const revalidated = await deps.store.revalidateFollowup?.({
+        call_id: call.call_id,
+        trace_id: input.trace_id,
+      });
+      if (revalidated?.do_not_contact) {
+        findings.push({ call_id: call.call_id, action: 'revoke_contact', reason: 'DO_NOT_CONTACT' });
+        revoked += 1;
+        continue;
+      }
+
+      // DNC is a contact/channel fact. Decide it before workspace resolution,
+      // blocking checks, or payment lookup so a legacy NULL-tenant call still
+      // revokes and can never enter an outbound branch.
+      if (call.do_not_contact) {
+        await deps.store.revokeContact({
+          contact_id: call.contact_id,
+          call_id: call.call_id,
+          trace_id: input.trace_id,
+        });
+        await deps.store.markFollowupCompleted({
+          call_id: call.call_id,
+          contact_id: call.contact_id,
+          conversation_id: call.conversation_id,
+          trace_id: input.trace_id,
+        });
+        findings.push({ call_id: call.call_id, action: 'revoke_contact', reason: 'DO_NOT_CONTACT' });
+        revoked += 1;
+        continue;
+      }
+
       // Un contacto ya bloqueado por cualquier otro motivo no recibe outbound
       // comercial — mismo guardrail que rige cualquier otro mensaje saliente.
       if (await deps.store.isContactBlocked(call.contact_id)) {
@@ -70,12 +106,24 @@ export async function runPostCallFollowup(
         continue;
       }
 
-      const paymentVerified = await deps.store.hasVerifiedPayment(call.contact_id);
+      if (!call.workspace_id) {
+        findings.push({ call_id: call.call_id, action: 'skip', reason: 'WORKSPACE_UNRESOLVED' });
+        skipped += 1;
+        continue;
+      }
+
+      const paymentVerified = await deps.store.hasVerifiedPayment(
+        call.contact_id,
+        call.workspace_id,
+        call.call_id,
+        call.provider,
+      );
       const verdict = decidePostCallFollowup({
         status: call.status,
         result: call.result,
         analysisStatus: call.analysis_status,
         paymentVerified,
+        doNotContact: call.do_not_contact,
       });
 
       if (verdict.action === 'skip') {
@@ -85,23 +133,18 @@ export async function runPostCallFollowup(
       }
 
       if (verdict.action === 'revoke_contact') {
-        // El turno de sistema se sintetiza igual, aunque no vaya a generar
-        // una decisión: es la evidencia (channel_events) que ancla la
-        // revocación y le da idempotencia sobre reintentos del cron.
-        await withSerializableTransaction(async (db) => {
-          await synthesizeCallResultTurn(
-            {
-              call_id: call.call_id,
-              contact_id: call.contact_id,
-              conversation_id: call.conversation_id,
-              trace_id: input.trace_id,
-            },
-            db
-          );
-        });
+        // Revoke first, then persist the system-call-result marker. If the
+        // process crashes between them, the next sweep repeats the idempotent
+        // permission event instead of hiding an incomplete revocation.
         await deps.store.revokeContact({
           contact_id: call.contact_id,
           call_id: call.call_id,
+          trace_id: input.trace_id,
+        });
+        await deps.store.markFollowupCompleted({
+          call_id: call.call_id,
+          contact_id: call.contact_id,
+          conversation_id: call.conversation_id,
           trace_id: input.trace_id,
         });
         findings.push({ call_id: call.call_id, action: 'revoke_contact', reason: verdict.reason });
@@ -110,45 +153,55 @@ export async function runPostCallFollowup(
       }
 
       // verdict.action === 'send'
-      const turn = await withSerializableTransaction((db) =>
-        synthesizeCallResultTurn(
-          {
-            call_id: call.call_id,
-            contact_id: call.contact_id,
-            conversation_id: call.conversation_id,
-            trace_id: input.trace_id,
-          },
-          db
-        )
-      );
-
-      const commit = await commitAgentDecision({
-        turn_id: turn.message.id,
+      // Revalidate at the actual outbound boundary too. The first check
+      // protects the snapshot, while this one closes the gap introduced by
+      // blocked/payment/verdict reads before provider contact.
+      const outboundRevalidated = await deps.store.revalidateFollowup?.({
+        call_id: call.call_id,
         trace_id: input.trace_id,
-        decision: {
-          schema_version: 2,
-          intent: 'commercial',
-          kind: 'reply',
-          response: verdict.content,
-          response_type: 'commercial_reply',
-          confidence: 1,
-          reason_code: verdict.reason,
-          business_action: null,
-          memory_candidates: [],
-          missing_information: [],
-          next_state: 'waiting_user',
-        },
-        model: {
-          provider: 'botpress',
-          model: 'system:post-call-reconciler',
-          prompt_version: `${POST_CALL_FOLLOWUP_PROMPT_VERSION}:${call.prompt_version}`,
-        },
+      });
+      if (outboundRevalidated?.do_not_contact) {
+        findings.push({ call_id: call.call_id, action: 'revoke_contact', reason: 'DO_NOT_CONTACT' });
+        revoked += 1;
+        continue;
+      }
+
+      const delivery = await deps.sendOutbound({
+        workspaceId: call.workspace_id,
+        contactId: call.contact_id,
+        conversationId: call.conversation_id,
+        text: verdict.content,
+        authorizedEgress: buildAuthorizedEgress({
+          content: verdict.content,
+          authorized_urls: [],
+          protected_facts: [],
+        }),
+        idempotencyKey: `post-call:${call.call_id}`,
+        preferredChannel: 'whatsapp',
+        purpose: 'conversational',
+      });
+
+      if (delivery.outcome !== 'sent') {
+        failed += 1;
+        findings.push({
+          call_id: call.call_id,
+          action: 'error',
+          reason: delivery.reason ?? `OUTBOUND_${delivery.outcome.toUpperCase()}`,
+        });
+        continue;
+      }
+
+      await deps.store.markFollowupCompleted({
+        call_id: call.call_id,
+        contact_id: call.contact_id,
+        conversation_id: call.conversation_id,
+        trace_id: input.trace_id,
       });
 
       findings.push({
         call_id: call.call_id,
         action: 'send',
-        reason: commit.status === 'duplicate' ? `${verdict.reason}_REPLAYED` : verdict.reason,
+        reason: verdict.reason,
       });
       sent += 1;
     } catch (error) {

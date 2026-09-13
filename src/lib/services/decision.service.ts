@@ -215,6 +215,7 @@ export class DecisionTurnNotFoundError extends Error {
 interface TurnPolicyRow extends Message {
   contact_status: 'prospecto' | 'cliente' | 'inactivo';
   contact_name: string | null;
+  contact_email: string | null;
   lifecycle_status: 'active' | 'blocked' | 'deleted' | null;
   deleted_at: string | null;
   phone: string;
@@ -332,6 +333,7 @@ async function loadTurnPolicy(turnId: string, db: DbClient): Promise<TurnPolicyR
       m.*,
       c.status AS contact_status,
       c.name AS contact_name,
+      c.email AS contact_email,
       c.lifecycle_status,
       c.deleted_at,
       c.phone,
@@ -1287,6 +1289,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           contact_id: turn.contact_id,
           conversation_id: turn.conversation_id,
           contact_name: turn.contact_name,
+          contact_email: turn.contact_email,
           phone: turn.phone,
           consent_messages: consentMessages,
           ...(preparedPipeline || preparedAgentTurn
@@ -2220,6 +2223,7 @@ async function enqueuePaymentLinkSentProjection(
     callId: '',
     traceId: signal.traceId,
   }, { sql: db });
+  if (!projection) return 'skipped';
   return projection.changed ? 'repaired' : 'unchanged';
 }
 

@@ -24,7 +24,7 @@ import type { ClaimedTurn, Decision } from '../schemas/contracts'
 export const CALL_HANDOFF_FAST_PATH_MODEL = 'deterministic:call-handoff-fast-path-v1'
 
 export const CALL_CONFIRMATION_RESPONSE =
-  'Perfecto. Registré la llamada; nuestra asesora virtual intenta comunicarse ahora.'
+  'Ok, ya te llamo en breve.'
 
 const CALL_CLARIFICATION_RESPONSE =
   '¿Me confirmás a qué te referís? Contame qué curso o información estás buscando.'

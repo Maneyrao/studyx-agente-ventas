@@ -28,7 +28,7 @@ function saleFollowup(): string {
 }
 
 function paymentPendingFollowup(): string {
-  return 'Te dejé el link de pago en la llamada — cuando puedas completarlo avisame así seguimos. Sin apuro, cualquier duda me escribís.';
+  return 'Te compartí el link de pago por acá. Cuando puedas completarlo, avisame así seguimos. Sin apuro, cualquier duda me escribís.';
 }
 
 function scheduledFollowup(): string {
@@ -55,8 +55,13 @@ export function decidePostCallFollowup(input: {
   readonly result: CallResult | null;
   readonly analysisStatus: 'pending' | 'completed' | 'failed';
   readonly paymentVerified: boolean;
+  readonly doNotContact?: boolean;
 }): PostCallFollowupVerdict {
-  const { status, result, analysisStatus, paymentVerified } = input;
+  const { status, result, analysisStatus, paymentVerified, doNotContact = false } = input;
+
+  if (doNotContact) {
+    return { action: 'revoke_contact', reason: 'DO_NOT_CONTACT' };
+  }
 
   if (status === 'cancelled') {
     return { action: 'skip', reason: 'CALL_CANCELLED' };
@@ -97,6 +102,10 @@ export function decidePostCallFollowup(input: {
     case 'no_calificado':
     case 'no_es_buen_momento':
       return { action: 'send', content: neutralNoClaimFollowup(), reason: `NEUTRAL_${result.toUpperCase()}` };
+    case 'buzon_de_voz':
+      return { action: 'send', content: RETRY_OFFER, reason: 'VOICEMAIL_OUTCOME' };
+    case 'corto_la_llamada':
+      return { action: 'send', content: neutralNoClaimFollowup(), reason: 'CALL_ENDED_BY_CONTACT' };
     default:
       return { action: 'send', content: NEUTRAL_CONTINUITY, reason: 'UNKNOWN_RESULT' };
   }

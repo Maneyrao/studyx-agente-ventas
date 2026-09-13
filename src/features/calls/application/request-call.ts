@@ -4,6 +4,7 @@ import { jsonbParam } from '@/lib/db/json';
 import { CallEventSchema } from '@/lib/contracts/call-event';
 import { evaluateAuthorizedVoiceConsent, evaluateVoiceConsent } from '../domain/call-consent';
 import { hashCallContext, parseCallContext } from '../domain/call-context';
+import { splitFullName } from '@/lib/heuristics/contact-identity';
 
 /**
  * Reserves exactly one call from a validated Decision v4 with
@@ -42,6 +43,7 @@ export interface ReserveCallInput {
   contact_id: string;
   conversation_id: string;
   contact_name: string | null;
+  contact_email?: string | null;
   phone: string | null;
   /**
    * Every inbound message of the batch being decided, oldest first (a single
@@ -66,6 +68,24 @@ export interface ReserveCallInput {
 export interface ReservedCallRequest {
   call_id: string;
   status: 'requested';
+}
+
+export function deriveSharedLeadContext(input: {
+  readonly contactName: string | null;
+  readonly contactEmail: string | null;
+  readonly courseOfInterest: string | null;
+}) {
+  const nombreLead = input.contactName?.trim() ?? '';
+  const identity = nombreLead ? splitFullName(nombreLead) : null;
+  const apellidoLead = identity?.apellido.trim() ?? '';
+  const emailLead = input.contactEmail?.trim() ?? '';
+  const courseOfInterest = input.courseOfInterest?.trim() ?? '';
+  const missingFields: Array<'nombre' | 'apellido' | 'mail' | 'tipo_de_curso'> = [];
+  if (!identity?.nombre.trim()) missingFields.push('nombre');
+  if (!apellidoLead) missingFields.push('apellido');
+  if (!emailLead) missingFields.push('mail');
+  if (!courseOfInterest) missingFields.push('tipo_de_curso');
+  return { nombreLead, apellidoLead, emailLead, courseOfInterest, missingFields };
 }
 
 function resolveVoiceProvider(): 'telegram_sandbox' | 'retell' {
@@ -148,16 +168,54 @@ export async function reserveCallForDecision(
     throw new CallRequestRejectedError('ACTIVE_CALL_IN_PROGRESS');
   }
 
+  const workspaces = await db<Array<{ workspace_id: string }>>`
+    WITH candidates AS (
+      SELECT state.workspace_id
+      FROM conversation_sales_context_states_v1 AS state
+      JOIN workspaces AS workspace
+        ON workspace.id = state.workspace_id AND workspace.status = 'active'
+      JOIN workspace_contacts AS membership
+        ON membership.workspace_id = state.workspace_id
+       AND membership.contact_id = ${input.contact_id}::uuid
+       AND membership.lifecycle_status = 'active'
+      WHERE state.conversation_id = ${input.conversation_id}::uuid
+        AND state.contact_id = ${input.contact_id}::uuid
+      UNION
+      SELECT state.workspace_id
+      FROM sales_context_states AS state
+      JOIN workspaces AS workspace
+        ON workspace.id = state.workspace_id AND workspace.status = 'active'
+      JOIN workspace_contacts AS membership
+        ON membership.workspace_id = state.workspace_id
+       AND membership.contact_id = ${input.contact_id}::uuid
+       AND membership.lifecycle_status = 'active'
+      WHERE state.conversation_id = ${input.conversation_id}::uuid
+        AND state.contact_id = ${input.contact_id}::uuid
+    )
+    SELECT (array_agg(workspace_id ORDER BY workspace_id))[1] AS workspace_id
+    FROM candidates
+    HAVING count(DISTINCT workspace_id) = 1
+  `;
+  const workspaceId = workspaces[0]?.workspace_id;
+  if (!workspaceId) throw new CallRequestRejectedError('CALL_WORKSPACE_UNRESOLVED');
+
   const provider = resolveVoiceProvider();
   const callId = input.reserved_call_id ?? randomUUID();
+  const sharedLead = deriveSharedLeadContext({
+    contactName: input.contact_name,
+    contactEmail: input.contact_email ?? null,
+    courseOfInterest: input.course_of_interest,
+  });
   const context = parseCallContext({
     call_id: callId,
-    nombre_lead: input.contact_name ?? '',
-    curso_interes: input.course_of_interest ?? '',
+    nombre_lead: sharedLead.nombreLead,
+    apellido_lead: sharedLead.apellidoLead,
+    curso_interes: sharedLead.courseOfInterest,
     pais: '',
-    email_lead: '',
+    email_lead: sharedLead.emailLead,
     resumen_whatsapp: '',
     prompt_version: input.prompt_version,
+    campos_faltantes: sharedLead.missingFields,
   });
   const contextHashHex = hashCallContext(context);
 
@@ -169,6 +227,7 @@ export async function reserveCallForDecision(
       offered_by_decision_id,
       contact_id,
       conversation_id,
+      workspace_id,
       provider,
       request_idempotency_key,
       status,
@@ -184,6 +243,7 @@ export async function reserveCallForDecision(
       ${verdict.offeredByDecisionId}::uuid,
       ${input.contact_id}::uuid,
       ${input.conversation_id}::uuid,
+      ${workspaceId}::uuid,
       ${provider},
       ${`voice-call:turn:${input.turn_id}`},
       'requested',

@@ -209,6 +209,11 @@ run('conversation pipeline V1 vertical', () => {
     const input = envelope(text);
     const ingested = await processInboundMessage(input);
     await db!`
+      INSERT INTO workspace_contacts (workspace_id, contact_id, lifecycle_status, source_channel)
+      VALUES (${workspaceId}::uuid, ${ingested.contact.id}::uuid, 'active', 'telegram')
+      ON CONFLICT (workspace_id, contact_id) DO NOTHING
+    `;
+    await db!`
       UPDATE inbound_batches SET due_at = now() - interval '1 second'
       WHERE id = ${ingested.batch.id}::uuid
     `;
@@ -339,12 +344,18 @@ run('conversation pipeline V1 vertical', () => {
     );
     expect(withheld.committed.outbound?.content).not.toContain(paymentLinks.monthly_12);
 
-    // Supplying the missing identity resumes the link the customer already
-    // asked for; that is the turn that emits it, so it is the turn that must
-    // survive being committed twice at once.
-    const payment = await prepareTurn(
+    // Supplying identity completes intake but is not fresh consent to send a
+    // payment link. Agent A keeps that conversational choice; the next explicit
+    // request is the effect-authorizing turn and must survive concurrent replay.
+    const identity = await commitTurn(
       'Soy Ariana Paz, ariana.paz@example.test',
       move('provide_contact_details'),
+    );
+    expect(identity.committed.outbound?.content).not.toContain(paymentLinks.monthly_12);
+
+    const payment = await prepareTurn(
+      'Ya te pasé mis datos; ahora sí, mandame el link',
+      move('request_payment_link'),
     );
     const concurrent = await Promise.all([
       commitClaimedDecision(payment.commitInput, { store: orchestrationStore }),
@@ -419,17 +430,12 @@ run('conversation pipeline V1 vertical', () => {
       WHERE projection_key = ${leadProjectionKey(workspaceId, payment.claimed.batch.contact_id)}
     `;
     expect(afterReport).toHaveLength(1);
-    expect(afterReport[0].payload).toMatchObject({
+    expect(afterReport[0].payload).toEqual({
       nombre: 'Ariana',
       apellido: 'Paz',
-      email: 'ariana.paz@example.test',
-      curso_interes: 'Redes Informáticas',
-      plan: 'monthly_12',
-      estado_pago: 'reportado_por_cliente',
-      estado_alta: 'pendiente_operador',
-      ultima_senal: 'payment_reported',
+      mail: 'ariana.paz@example.test',
+      tipo_de_curso: 'Redes Informáticas',
     });
-    expect(afterReport[0].payload.telefono).toBe(phone);
 
     const finalState = await stateStore.load(
       workspaceSlug,

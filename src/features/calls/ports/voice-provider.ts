@@ -2,6 +2,8 @@ import type { CallContextV1 } from '../domain/call-context';
 
 export interface PlaceVoiceCallInput {
   callId: string;
+  contactId: string;
+  conversationId: string;
   phoneE164: string;
   context: CallContextV1;
   idempotencyKey: string;

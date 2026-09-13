@@ -24,6 +24,15 @@ afterAll(async () => db?.end());
 async function seedRequestedCall(input: { callId: string; userId: string; chatId: string }) {
   const phone = `+999${Math.floor(10_000_000 + Math.random() * 89_999_999).toString().padStart(10, '0')}`;
   const contacts = await db!<Array<{ id: string }>>`INSERT INTO contacts (phone, channel_origin) VALUES (${phone}, 'whatsapp') RETURNING id`;
+  const workspaces = await db!<Array<{ id: string }>>`
+    INSERT INTO workspaces (slug, display_name, environment, status)
+    VALUES (${`telegram-smoke-${randomUUID()}`}, 'Telegram smoke', 'sandbox', 'active')
+    RETURNING id
+  `;
+  await db!`
+    INSERT INTO workspace_contacts (workspace_id, contact_id, lifecycle_status)
+    VALUES (${workspaces[0].id}::uuid, ${contacts[0].id}::uuid, 'active')
+  `;
   await db!`INSERT INTO sandbox_identities (provider, external_user_id, contact_id, synthetic_phone) VALUES ('telegram_sandbox', ${input.userId}, ${contacts[0].id}::uuid, ${phone})`;
   // `synthesize-call-result-turn.ts` exige un `channel_threads` resuelto
   // (provider + integration_id) para escribir el `channel_events` de cierre;
@@ -38,6 +47,10 @@ async function seedRequestedCall(input: { callId: string; userId: string; chatId
   const conversations = await db!<Array<{ id: string }>>`
     INSERT INTO conversations (contact_id, channel, channel_thread_id) VALUES (${contacts[0].id}::uuid, 'whatsapp', ${threads[0].id}::uuid) RETURNING id
   `;
+  await db!`
+    INSERT INTO conversation_sales_context_states_v1 (workspace_id, conversation_id, contact_id)
+    VALUES (${workspaces[0].id}::uuid, ${conversations[0].id}::uuid, ${contacts[0].id}::uuid)
+  `;
   const messages = await db!<Array<{ id: string }>>`INSERT INTO messages (conversation_id, contact_id, direction, content) VALUES (${conversations[0].id}::uuid, ${contacts[0].id}::uuid, 'inbound', 'Llamame') RETURNING id`;
   // El cron post-llamada exige consentimiento de WhatsApp explícito (fail
   // closed sobre NULL, ver `isContactBlocked`); el fixture manual no pasa por
@@ -50,8 +63,8 @@ async function seedRequestedCall(input: { callId: string; userId: string; chatId
   `;
   const context = { call_id: input.callId, nombre_lead: 'Ana', curso_interes: 'Python', pais: 'AR', email_lead: '', resumen_whatsapp: 'Pidió llamada inmediata.', prompt_version: 'agent-b-v1' };
   await db!`
-    INSERT INTO call_sessions (id, source_turn_id, contact_id, conversation_id, provider, request_idempotency_key, status, consent_source_message_id, context_snapshot, context_hash, prompt_version)
-    VALUES (${input.callId}::uuid, ${messages[0].id}::uuid, ${contacts[0].id}::uuid, ${conversations[0].id}::uuid, 'telegram_sandbox', ${`voice-call:${input.callId}`}, 'requested', ${messages[0].id}::uuid, ${db!.json(context)}, decode(${hashCallContext(context)}, 'hex'), 'agent-b-v1')
+    INSERT INTO call_sessions (id, source_turn_id, contact_id, conversation_id, workspace_id, provider, request_idempotency_key, status, consent_source_message_id, context_snapshot, context_hash, prompt_version)
+    VALUES (${input.callId}::uuid, ${messages[0].id}::uuid, ${contacts[0].id}::uuid, ${conversations[0].id}::uuid, ${workspaces[0].id}::uuid, 'telegram_sandbox', ${`voice-call:${input.callId}`}, 'requested', ${messages[0].id}::uuid, ${db!.json(context)}, decode(${hashCallContext(context)}, 'hex'), 'agent-b-v1')
   `;
   const receipts = new PostgresContextReceiptStore(db!, { expectedChatId: input.chatId, expectedUserId: input.userId });
   await receipts.registerBinding({ chatId: input.chatId, userId: input.userId, startedAt: '2026-08-16T11:59:00.000Z' });
@@ -176,15 +189,29 @@ run('Agent B Telegram smoke vertical slice', () => {
     // no se puede adelantar el reloj a mano: se usa `grace_seconds: 0` para
     // que la ventana de gracia del cron no dependa de esperar en el test.
     const followupStore = new PostgresPostCallFollowupStore(db!);
-    const sweep = await runPostCallFollowup({ trace_id: randomUUID(), grace_seconds: 0, limit: 500 }, { store: followupStore });
-    expect(sweep.findings.find((finding) => finding.call_id === callId)).toMatchObject({ action: 'send' });
+    const sweep = await runPostCallFollowup(
+      { trace_id: randomUUID(), grace_seconds: 0, limit: 500 },
+      {
+        store: followupStore,
+        // This fixture is deliberately sandbox-locked. The production
+        // physical consumer therefore refuses it before any provider call.
+        sendOutbound: async () => ({
+          outcome: 'unreachable' as const,
+          channel: null,
+          providerMessageId: null,
+          deliveryId: null,
+          reason: 'SANDBOX_LOCKED',
+        }),
+      },
+    );
+    expect(sweep.findings.find((finding) => finding.call_id === callId)).toMatchObject({ action: 'error' });
 
     const outbound = await db!<Array<{ count: string }>>`
       SELECT count(*)::text AS count
       FROM outbound_deliveries od JOIN messages m ON m.id = od.message_id
       WHERE m.conversation_id = ${conversationId}::uuid
     `;
-    expect(Number(outbound[0].count)).toBeGreaterThan(0);
+    expect(Number(outbound[0].count)).toBe(0);
   });
 
   /**

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CallEventAnySchema, CallEventSchema, CallEventV2Schema } from '@/lib/contracts/call-event';
+import { CallEventAnySchema, CallEventSchema, CallEventV2Schema, CallResultSchema } from '@/lib/contracts/call-event';
 
 const FIXTURE_DIR = join(process.cwd(), 'tests/fixtures/call-events');
 
@@ -28,6 +28,12 @@ describe('call event schema — accept fixtures', () => {
   it.each(valid)('accepts %s', (name) => {
     const parsed = CallEventAnySchema.safeParse(loadFixture(name));
     expect(parsed.success).toBe(true);
+  });
+});
+
+describe('call result schema — Retell compatibility', () => {
+  it.each(['buzon_de_voz', 'corto_la_llamada'])('accepts the supplied Retell terminal result %s', (result) => {
+    expect(CallResultSchema.safeParse(result).success).toBe(true);
   });
 });
 
@@ -96,7 +102,7 @@ describe('call event schema — invariants', () => {
     }
   });
 
-  it('rejects an analysis result outside the 9 allowed values', () => {
+  it('rejects an analysis result outside the allowed values', () => {
     const parsed = CallEventSchema.safeParse(loadFixture('invalid-analysis-bad-result.json'));
     expect(parsed.success).toBe(false);
   });

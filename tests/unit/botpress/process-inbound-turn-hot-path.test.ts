@@ -1444,6 +1444,7 @@ describe('processInboundTurn hot path', () => {
     options: {
       outbounds?: Array<Record<string, unknown>>;
       createMessage?: ReturnType<typeof vi.fn>;
+      callRequest?: { call_id: string; status: 'requested' } | null;
     } = {},
   ) {
     actionSpies.commit.mockResolvedValue({
@@ -1461,7 +1462,7 @@ describe('processInboundTurn hot path', () => {
         ...outbound,
       },
       outbounds: options.outbounds ?? [],
-      call_request: null,
+      call_request: options.callRequest ?? null,
     });
     const createMessage = options.createMessage
       ?? vi.fn(async () => ({ message: { id: 'bp-message-1' } }));
@@ -1503,6 +1504,58 @@ describe('processInboundTurn hot path', () => {
 
     return { createMessage, result };
   }
+
+  it('submits and records the Agent A acknowledgement before dispatching the reserved call', async () => {
+    const order: string[] = [];
+    const createMessage = vi.fn(async () => {
+      order.push('agent-a-ack-submitted');
+      return { message: { id: 'bp-call-ack' } };
+    });
+    actionSpies.delivery.mockImplementationOnce(async () => {
+      order.push('agent-a-ack-recorded');
+      return { status: 'recorded' };
+    });
+    actionSpies.dispatch.mockImplementationOnce(async () => {
+      order.push('retell-dispatched');
+      return { status: 'provider_accepted', provider_call_id: 'retell-call-1' };
+    });
+
+    await runCommittedOutbound({
+      content: 'Ok, ya te llamo en breve.',
+      authorized_egress: {
+        schema_version: 1,
+        content_hash: '576e9b064dfca61adf4e0639a8b58d5bb4f4e6e87373ade94d4884ea5b0d6039',
+        authorized_urls: [],
+        protected_facts: [],
+      },
+    }, {}, {
+      createMessage,
+      callRequest: { call_id: UUID, status: 'requested' },
+    });
+
+    expect(order).toEqual([
+      'agent-a-ack-submitted',
+      'agent-a-ack-recorded',
+      'retell-dispatched',
+    ]);
+  });
+
+  it('does not dispatch the reserved call when the Agent A acknowledgement cannot be submitted', async () => {
+    await runCommittedOutbound({
+      content: 'Ok, ya te llamo en breve.',
+      authorized_egress: {
+        schema_version: 1,
+        content_hash: '576e9b064dfca61adf4e0639a8b58d5bb4f4e6e87373ade94d4884ea5b0d6039',
+        authorized_urls: [],
+        protected_facts: [],
+      },
+    }, {}, {
+      createMessage: vi.fn(async () => { throw new Error('CHANNEL_UNAVAILABLE'); }),
+      callRequest: { call_id: UUID, status: 'requested' },
+    });
+
+    expect(actionSpies.dispatch).not.toHaveBeenCalled();
+  });
 
   it('delivers two durable outbound parts in order and reports each part', async () => {
     const createMessage = vi.fn()
