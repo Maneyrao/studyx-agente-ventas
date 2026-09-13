@@ -5,7 +5,6 @@ import {
 import {
   loadBusinessWorkspaceConfig,
   loadMessagingChannelsConfig,
-  loadPaymentProviderConfig,
   loadSheetsProjectionConfig,
 } from '@/lib/config';
 import {
@@ -14,12 +13,6 @@ import {
 } from '@/features/calls/adapters/postgres-retell-orchestration-store';
 import { AuthorizedEgressContentAuthorizer } from '@/features/messaging/adapters/authorized-egress-content-authorizer';
 import { WhatsAppCloudChannel } from '@/features/messaging/adapters/whatsapp-cloud.channel';
-import { FakePaymentProvider } from '@/features/payments/adapters/fake-payment-provider';
-import { StripeCheckoutProvider } from '@/features/payments/adapters/stripe-checkout-provider';
-import Stripe from 'stripe';
-import { retellPaymentProviderCanWireLiveOutbound } from '@/features/calls/domain/retell-final-review-policy';
-
-export { retellPaymentProviderCanWireLiveOutbound } from '@/features/calls/domain/retell-final-review-policy';
 
 function misconfigured(): Response {
   return Response.json(
@@ -53,31 +46,6 @@ export async function handleRetellToolRoute(
     const { sendOutboundMessage } = await import('@/features/messaging/application/send-outbound-message');
     const { PostgresChannelIdentityStore } = await import('@/features/messaging/adapters/postgres-channel-identity-store');
     const callStore = new calls.PostgresCallStore(database.sql);
-    let paymentProvider;
-    try {
-      const payment = loadPaymentProviderConfig();
-      // Retell live wiring must never pair real WhatsApp with a fake/test
-      // checkout URL. Fake providers remain explicit test dependencies only.
-      if (!retellPaymentProviderCanWireLiveOutbound(payment.provider)) {
-        throw new Error('RETELL_PAYMENT_PROVIDER_NOT_LIVE');
-      }
-      paymentProvider = payment.provider === 'fake'
-        ? new FakePaymentProvider()
-        : new StripeCheckoutProvider({
-          stripe: new Stripe(payment.secretKey),
-          environment: 'test',
-          successUrl: payment.successUrl,
-          cancelUrl: payment.cancelUrl,
-          findSandboxProvider: async (contactId) => {
-            const rows = await database.sql<Array<{ provider: string }>>`
-              SELECT provider FROM sandbox_identities WHERE contact_id = ${contactId}::uuid LIMIT 1
-            `;
-            return rows[0]?.provider ?? null;
-          },
-        });
-    } catch {
-      paymentProvider = undefined;
-    }
     let sendOutbound: RetellOutboundSender | undefined;
     try {
       const messaging = loadMessagingChannelsConfig();
@@ -106,7 +74,7 @@ export async function handleRetellToolRoute(
       business: new business.PostgresBusinessContextStore(database.sql),
       contacts: new contacts.PostgresRetellContactToolStore(database.sql),
       sheets: loadSheetsProjectionConfig(),
-      orchestration: new PostgresRetellOrchestrationStore(database.sql, { paymentProvider, sendOutbound }),
+      orchestration: new PostgresRetellOrchestrationStore(database.sql, { sendOutbound }),
     });
   } catch {
     return Response.json(

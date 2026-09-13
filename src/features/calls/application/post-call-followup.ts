@@ -169,6 +169,7 @@ export async function runPostCallFollowup(
       const delivery = await deps.sendOutbound({
         workspaceId: call.workspace_id,
         contactId: call.contact_id,
+        conversationId: call.conversation_id,
         text: verdict.content,
         authorizedEgress: buildAuthorizedEgress({
           content: verdict.content,

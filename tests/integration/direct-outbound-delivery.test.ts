@@ -57,6 +57,7 @@ interface Fixture {
   workspaceId: string;
   contactId: string;
   phone: string;
+  conversationIds: Partial<Record<'telegram' | 'whatsapp', string>>;
 }
 
 async function seedContact(options: {
@@ -70,6 +71,7 @@ async function seedContact(options: {
   const database = db!;
   const suffix = randomUUID().replace(/\D/g, '').slice(0, 9).padEnd(9, '1');
   const phone = `+5491${suffix}`;
+  const conversationIds: Partial<Record<'telegram' | 'whatsapp', string>> = {};
 
   const [workspace] = await database<Array<{ id: string }>>`
     INSERT INTO workspaces (slug, display_name, environment, status)
@@ -113,10 +115,12 @@ async function seedContact(options: {
       )
       RETURNING id
     `;
-    await database`
+    const [conversation] = await database<Array<{ id: string }>>`
       INSERT INTO conversations (contact_id, channel, status, channel_thread_id)
       VALUES (${contact.id}::uuid, ${channel}, 'open', ${thread.id}::uuid)
+      RETURNING id
     `;
+    conversationIds[channel] = conversation.id;
 
     const window = channel === 'whatsapp'
       ? (options.whatsappWindow === 'expired'
@@ -129,7 +133,7 @@ async function seedContact(options: {
     `;
   }
 
-  return { workspaceId: workspace.id, contactId: contact.id, phone };
+  return { workspaceId: workspace.id, contactId: contact.id, phone, conversationIds };
 }
 
 const request = (
@@ -212,6 +216,29 @@ run('direct outbound delivery', () => {
 
     expect(result.outcome).toBe('sent');
     expect(whatsapp.sends).toEqual([fixture.phone]);
+  });
+
+  it('pins an Agent B requested message to the exact conversation where Agent A offered the call', async () => {
+    const fixture = await seedContact({ whatsapp: true, whatsappWindow: 'open' });
+    const originalConversationId = fixture.conversationIds.whatsapp!;
+    await db!`
+      INSERT INTO conversations (contact_id, channel, status, last_turn_at)
+      VALUES (${fixture.contactId}::uuid, 'whatsapp', 'closed', now() + interval '1 minute')
+    `;
+    const whatsapp = recordingChannel('whatsapp');
+
+    const result = await sendOutboundMessage(
+      request(fixture, { conversationId: originalConversationId }),
+      deps({ whatsapp }),
+    );
+
+    expect(result.outcome).toBe('sent');
+    const [message] = await db!<Array<{ conversation_id: string }>>`
+      SELECT conversation_id FROM messages WHERE id = (
+        SELECT message_id FROM outbound_deliveries WHERE id = ${result.deliveryId!}::uuid
+      )
+    `;
+    expect(message.conversation_id).toBe(originalConversationId);
   });
 
   // Scenario 1 — the MVP promise.

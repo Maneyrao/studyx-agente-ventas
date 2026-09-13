@@ -14,6 +14,7 @@ import {
 import { sanitizeRetrievedText } from '@/features/orchestration/domain/retrieved-context';
 import { verifyRetellSignature } from '../adapters/retell-lifecycle';
 import { recordCallEvent } from './record-call-event';
+import type { PaymentPlanCode } from '@/features/payments/domain/payment-link';
 
 export type RetellP0ToolName =
   | 'consultar_curso'
@@ -31,14 +32,13 @@ export type RetellOrchestrationToolName =
 export type RetellToolName = RetellP0ToolName | RetellOrchestrationToolName;
 
 export interface RetellOrchestrationStore {
-  createPaymentLink(input: {
+  requestAgentAPaymentLink(input: {
     readonly callId: string;
     readonly contactId: string;
+    readonly conversationId: string;
     readonly workspaceSlug: string;
-    readonly courses: readonly string[];
-    readonly plan: 'contado' | 'cuotas';
-    readonly email: string;
-    readonly channel: 'whatsapp' | 'sms' | 'email';
+    readonly course: string;
+    readonly planCode: PaymentPlanCode;
   }): Promise<{ readonly sent: boolean; readonly reference: string | null; readonly reason?: string }>;
   verifyPayment(input: {
     readonly callId: string;
@@ -86,6 +86,7 @@ export interface RetellContactToolStore {
     readonly callId: string;
     readonly workspaceSlug: string;
     readonly nombre?: string;
+    readonly apellido?: string;
     readonly email?: string;
     readonly telefonoAlternativo?: string;
     readonly sheets: { readonly spreadsheetId: string; readonly tabName: string } | null;
@@ -141,10 +142,12 @@ const ToolArgsSchemas = {
   }).strict(),
   guardar_datos_contacto: z.object({
     nombre: SafeNameSchema.optional(),
+    apellido: SafeNameSchema.optional(),
     telefono_alternativo: SafePhoneSchema.optional(),
     email: SafeEmailSchema.optional(),
   }).strict().refine(
     (value) => value.nombre !== undefined
+      || value.apellido !== undefined
       || value.telefono_alternativo !== undefined
       || value.email !== undefined,
   ),
@@ -206,10 +209,8 @@ const ToolArgsSchemas = {
       }
     }),
   enviar_link_pago: z.object({
-    cursos: z.array(CourseTextSchema).min(1).max(8),
-    plan: z.enum(['contado', 'cuotas']),
-    email: SafeEmailSchema,
-    canal: z.enum(['whatsapp', 'sms', 'email']).optional(),
+    curso: CourseTextSchema,
+    plan_code: z.enum(['monthly_12', 'monthly_6', 'one_time']),
   }).strict(),
   verificar_pago: z.object({
     referencia_pago: z.string().trim().max(255).optional().transform((value) => value || undefined),
@@ -533,12 +534,11 @@ async function runOrchestrationTool(
   };
   if (envelope.name === 'enviar_link_pago') {
     const args = envelope.args as z.infer<typeof ToolArgsSchemas.enviar_link_pago>;
-    const result = await store.createPaymentLink({
+    const result = await store.requestAgentAPaymentLink({
       ...common,
-      courses: args.cursos,
-      plan: args.plan,
-      email: args.email,
-      channel: args.canal ?? 'whatsapp',
+      conversationId: envelope.call.metadata.conversation_id,
+      course: args.curso,
+      planCode: args.plan_code,
     });
     return result.sent
       ? Response.json({ ok: true, pago: { enviado: true, referencia: result.reference } })
@@ -675,6 +675,7 @@ export async function handleRetellToolRequest(
         callId,
         workspaceSlug: dependencies.workspaceSlug,
         ...(args.nombre === undefined ? {} : { nombre: args.nombre }),
+        ...(args.apellido === undefined ? {} : { apellido: args.apellido }),
         ...(args.email === undefined ? {} : { email: args.email }),
         ...(args.telefono_alternativo === undefined
           ? {}

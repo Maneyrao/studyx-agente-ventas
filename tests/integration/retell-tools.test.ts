@@ -352,6 +352,15 @@ run('Retell P0 tools with PostgreSQL', () => {
     });
   });
 
+  it('merges a surname captured by Agent B into the same full-name field Agent A reads', async () => {
+    const ids = await fixture({ name: 'Ana', email: 'ana@example.test' });
+    const result = await callTool(ids, 'guardar_datos_contacto', { apellido: 'Pérez' });
+    expect(result.body).toEqual({ ok: true, saved: true, projected: true });
+    await expect(db!<Array<{ name: string; email: string }>>`
+      SELECT name, email FROM contacts WHERE id = ${ids.contactId}::uuid
+    `).resolves.toEqual([{ name: 'Ana Pérez', email: 'ana@example.test' }]);
+  });
+
   it.each(['dispatching', 'dispatch_ambiguous'] as const)(
     'does not mutate an unbound foreign-workspace %s call before authorization',
     async (status) => {

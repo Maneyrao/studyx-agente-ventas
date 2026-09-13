@@ -4,6 +4,7 @@ import { jsonbParam } from '@/lib/db/json';
 import { CallEventSchema } from '@/lib/contracts/call-event';
 import { evaluateAuthorizedVoiceConsent, evaluateVoiceConsent } from '../domain/call-consent';
 import { hashCallContext, parseCallContext } from '../domain/call-context';
+import { splitFullName } from '@/lib/heuristics/contact-identity';
 
 /**
  * Reserves exactly one call from a validated Decision v4 with
@@ -42,6 +43,7 @@ export interface ReserveCallInput {
   contact_id: string;
   conversation_id: string;
   contact_name: string | null;
+  contact_email?: string | null;
   phone: string | null;
   /**
    * Every inbound message of the batch being decided, oldest first (a single
@@ -66,6 +68,24 @@ export interface ReserveCallInput {
 export interface ReservedCallRequest {
   call_id: string;
   status: 'requested';
+}
+
+export function deriveSharedLeadContext(input: {
+  readonly contactName: string | null;
+  readonly contactEmail: string | null;
+  readonly courseOfInterest: string | null;
+}) {
+  const nombreLead = input.contactName?.trim() ?? '';
+  const identity = nombreLead ? splitFullName(nombreLead) : null;
+  const apellidoLead = identity?.apellido.trim() ?? '';
+  const emailLead = input.contactEmail?.trim() ?? '';
+  const courseOfInterest = input.courseOfInterest?.trim() ?? '';
+  const missingFields: Array<'nombre' | 'apellido' | 'mail' | 'tipo_de_curso'> = [];
+  if (!identity?.nombre.trim()) missingFields.push('nombre');
+  if (!apellidoLead) missingFields.push('apellido');
+  if (!emailLead) missingFields.push('mail');
+  if (!courseOfInterest) missingFields.push('tipo_de_curso');
+  return { nombreLead, apellidoLead, emailLead, courseOfInterest, missingFields };
 }
 
 function resolveVoiceProvider(): 'telegram_sandbox' | 'retell' {
@@ -181,14 +201,21 @@ export async function reserveCallForDecision(
 
   const provider = resolveVoiceProvider();
   const callId = input.reserved_call_id ?? randomUUID();
+  const sharedLead = deriveSharedLeadContext({
+    contactName: input.contact_name,
+    contactEmail: input.contact_email ?? null,
+    courseOfInterest: input.course_of_interest,
+  });
   const context = parseCallContext({
     call_id: callId,
-    nombre_lead: input.contact_name ?? '',
-    curso_interes: input.course_of_interest ?? '',
+    nombre_lead: sharedLead.nombreLead,
+    apellido_lead: sharedLead.apellidoLead,
+    curso_interes: sharedLead.courseOfInterest,
     pais: '',
-    email_lead: '',
+    email_lead: sharedLead.emailLead,
     resumen_whatsapp: '',
     prompt_version: input.prompt_version,
+    campos_faltantes: sharedLead.missingFields,
   });
   const contextHashHex = hashCallContext(context);
 

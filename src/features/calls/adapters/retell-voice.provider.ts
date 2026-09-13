@@ -63,10 +63,12 @@ export class RetellVoiceProvider implements VoiceProvider {
       },
       retell_llm_dynamic_variables: {
         nombre_lead: context.nombre_lead,
+        apellido_lead: context.apellido_lead ?? '',
         curso_interes: context.curso_interes,
         pais: context.pais,
         email_lead: context.email_lead,
         resumen_whatsapp: context.resumen_whatsapp,
+        campos_faltantes: (context.campos_faltantes ?? []).join(', '),
         nombre_asesor: this.config.advisorName,
       },
     };

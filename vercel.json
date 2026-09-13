@@ -21,6 +21,10 @@
     {
       "path": "/api/cron/flush-projections",
       "schedule": "40 3 * * *"
+    },
+    {
+      "path": "/api/cron/post-call-followup",
+      "schedule": "50 3 * * *"
     }
   ]
 }

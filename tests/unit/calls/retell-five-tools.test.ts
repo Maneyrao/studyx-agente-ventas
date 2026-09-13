@@ -63,7 +63,7 @@ function dependencies(overrides: Partial<RetellOrchestrationStore> = {}) {
     resolveRetellToolCall: vi.fn(async () => ({ callId: internalCallId })),
   } satisfies CallStore & RetellToolCallCorrelationStore;
   const orchestration: RetellOrchestrationStore = {
-    createPaymentLink: vi.fn(async () => ({ sent: true, reference: 'pay_1' })),
+    requestAgentAPaymentLink: vi.fn(async () => ({ sent: true, reference: 'delivery_1' })),
     verifyPayment: vi.fn(async () => ({ found: true as const, state: 'paid' })),
     sendMaterial: vi.fn(async () => ({ sent: true, reference: 'delivery_1' })),
     requestHumanHandoff: vi.fn(async () => ({ requestId: 'handoff_1', available: null })),
@@ -167,15 +167,27 @@ describe('remaining Retell orchestration tools', () => {
     expect(deps.orchestration.verifyPayment).not.toHaveBeenCalled();
   });
 
-  it('creates one canonical payment link result and preserves pago.enviado/referencia', async () => {
+  it('lets Agent B request one of the three fixed plans and routes delivery through Agent A', async () => {
+    const result = await invoke('enviar_link_pago', {
+      curso: 'reparacion_celulares', plan_code: 'monthly_12',
+    });
+    expect(result.body).toEqual({ ok: true, pago: { enviado: true, referencia: 'delivery_1' } });
+    expect(result.deps.orchestration.requestAgentAPaymentLink).toHaveBeenCalledWith({
+      callId: internalCallId,
+      contactId,
+      conversationId,
+      workspaceSlug: 'studyx',
+      course: 'reparacion_celulares',
+      planCode: 'monthly_12',
+    });
+  });
+
+  it('rejects the old direct-payment shape so Agent B cannot supply email, channel, or arbitrary checkout inputs', async () => {
     const result = await invoke('enviar_link_pago', {
       cursos: ['reparacion_celulares'], plan: 'contado', email: 'lead@example.com', canal: 'whatsapp',
     });
-    expect(result.body).toEqual({ ok: true, pago: { enviado: true, referencia: 'pay_1' } });
-    expect(result.deps.orchestration.createPaymentLink).toHaveBeenCalledWith(expect.objectContaining({
-      callId: internalCallId, contactId, workspaceSlug: 'studyx',
-      courses: ['reparacion_celulares'], plan: 'contado', email: 'lead@example.com', channel: 'whatsapp',
-    }));
+    expect(result.body).toEqual({ ok: false, error: { code: 'INVALID_TOOL_REQUEST' } });
+    expect(result.deps.orchestration.requestAgentAPaymentLink).not.toHaveBeenCalled();
   });
 
   it('returns canonical payment state and never accepts a model assertion as state', async () => {
@@ -253,7 +265,7 @@ describe('remaining Retell orchestration tools', () => {
   });
 
   it('returns structured authenticated validation failures with HTTP 200', async () => {
-    const result = await invoke('enviar_link_pago', { cursos: [], plan: 'contado', email: 'bad' });
+    const result = await invoke('enviar_link_pago', { curso: '', plan_code: 'monthly_24' });
     expect(result.response.status).toBe(200);
     expect(result.body).toEqual({ ok: false, error: { code: 'INVALID_TOOL_REQUEST' } });
   });

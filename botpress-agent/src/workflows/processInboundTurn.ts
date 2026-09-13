@@ -1239,17 +1239,23 @@ export const processInboundTurn = new Workflow({
       return resultFromState(state, input.trace_id)
     }
 
-    // ---- Dispatch inmediato de la llamada reservada ----------------------
-    // Corre DESPUÉS del commit canónico y es idempotente por call_id. Un
-    // timeout o resultado ambiguo queda como dispatch_ambiguous del lado
-    // backend y lo reconcilia otro proceso: acá jamás se rediscca ni se
-    // reintenta, y el turno sigue su curso normal (el mensaje al cliente ya
-    // dice "intenta comunicarse", nunca que la llamada está conectada).
-    if (committed.call_request) {
+    if (committed.status === 'rejected' || !committed.outbound) {
+      state.phase = committed.next_state
+      emitTimings()
+      return resultFromState(state, input.trace_id)
+    }
+
+    // A reserved call is a deferred side effect. Agent A must first submit
+    // its visible acknowledgement and durably record that submission. Only
+    // then may this edge ask the voice provider to call. A channel failure or
+    // an ambiguous delivery report returns before this function is reached,
+    // so the customer can never receive an unexplained call.
+    const dispatchAcknowledgedCall = async (): Promise<void> => {
+      if (!committed.call_request) return
       const dispatchStartedAt = Date.now()
       try {
         const dispatched = await step(
-          'dispatch-voice-call',
+          'dispatch-voice-call-after-agent-a-ack',
           () =>
             dispatchCall.execute({
               client,
@@ -1276,12 +1282,6 @@ export const processInboundTurn = new Workflow({
           error_code: errorCode(error),
         })
       }
-    }
-
-    if (committed.status === 'rejected' || !committed.outbound) {
-      state.phase = committed.next_state
-      emitTimings()
-      return resultFromState(state, input.trace_id)
     }
 
     // New backend capability: each model-authored part has its own durable
@@ -1463,6 +1463,7 @@ export const processInboundTurn = new Workflow({
           timings.event_to_visible_outbound_ms >= 10_000 ? 1 : 0
       }
       state.deliveryStatus = 'submitted_to_botpress'
+      await dispatchAcknowledgedCall()
       try {
         await step(
           'flush-lead-projection-multi',
@@ -1673,6 +1674,8 @@ export const processInboundTurn = new Workflow({
       emitTimings()
       return resultFromState(state, input.trace_id)
     }
+
+    await dispatchAcknowledgedCall()
 
     // ---- Opcional: adelantar el flush de Sheets ---------------------------
     // El backend ya encoló la proyección `payment_link_sent` (si corresponde)

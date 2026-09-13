@@ -53,6 +53,16 @@ describe('post-call followup verdicts (spec 007)', () => {
     expect(verified.action).toBe('send');
   });
 
+  it('reminds that Agent A sent the payment link in chat, never claims it was sent inside the call', () => {
+    const verdict = decidePostCallFollowup({
+      status: 'completed', result: 'link_enviado_sin_pago', ...base,
+    });
+    expect(verdict.action).toBe('send');
+    if (verdict.action !== 'send') return;
+    expect(verdict.content).toContain('por acá');
+    expect(verdict.content).not.toContain('en la llamada');
+  });
+
   it('routes no_contactar to revocation, not a message', () => {
     const verdict = decidePostCallFollowup({
       status: 'completed', result: 'no_contactar', ...base,
@@ -130,13 +140,16 @@ describe('post-call followup delivery boundary', () => {
 
   it('uses one stable key and marks completion only after provider acceptance', async () => {
     const store = storeFor({});
-    const attempts: string[] = [];
+    const attempts: Array<{ idempotencyKey: string; conversationId: string | undefined }> = [];
     const result = await runPostCallFollowup(
       { trace_id: '00000000-0000-4000-8000-000000000005' },
       {
         store,
         sendOutbound: async (input) => {
-          attempts.push(input.idempotencyKey);
+          attempts.push({
+            idempotencyKey: input.idempotencyKey,
+            conversationId: input.conversationId,
+          });
           return { outcome: 'sent', channel: 'whatsapp', providerMessageId: 'wamid.1', deliveryId: 'delivery-1', reason: null };
         },
       },
@@ -147,7 +160,10 @@ describe('post-call followup delivery boundary', () => {
       action: 'send',
       reason: 'FOLLOWUP_SCHEDULED',
     }]);
-    expect(attempts).toEqual(['post-call:00000000-0000-4000-8000-000000000001']);
+    expect(attempts).toEqual([{
+      idempotencyKey: 'post-call:00000000-0000-4000-8000-000000000001',
+      conversationId: '00000000-0000-4000-8000-000000000003',
+    }]);
     expect(store.completed).toEqual(['00000000-0000-4000-8000-000000000001']);
   });
 

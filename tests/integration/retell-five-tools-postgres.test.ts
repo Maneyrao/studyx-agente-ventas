@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
-import { FakePaymentProvider } from '@/features/payments/adapters/fake-payment-provider';
 import { PostgresRetellOrchestrationStore } from '@/features/calls/adapters/postgres-retell-orchestration-store';
 import { hashCallContext } from '@/features/calls/domain/call-context';
 import { openLocalTestDatabase } from '../helpers/db';
@@ -59,17 +58,19 @@ async function fixture(input: { readonly planMode?: 'payment' | 'subscription'; 
 
 function sender() {
   const calls: Array<Record<string, unknown>> = [];
-  const settledKeys = new Set<string>();
+  const settledKeys = new Map<string, string>();
   return {
     calls,
     send: async (input: Record<string, unknown>) => {
       const key = String(input.idempotencyKey);
-      if (settledKeys.has(key)) {
-        return { outcome: 'sent' as const, channel: 'whatsapp' as const, providerMessageId: 'wamid.test', deliveryId: `delivery-replay-${key}`, reason: null };
+      const settledDeliveryId = settledKeys.get(key);
+      if (settledDeliveryId) {
+        return { outcome: 'sent' as const, channel: 'whatsapp' as const, providerMessageId: 'wamid.test', deliveryId: settledDeliveryId, reason: null };
       }
-      settledKeys.add(key);
       calls.push(input);
-      return { outcome: 'sent' as const, channel: 'whatsapp' as const, providerMessageId: 'wamid.test', deliveryId: `delivery-${calls.length}`, reason: null };
+      const deliveryId = `delivery-${calls.length}`;
+      settledKeys.set(key, deliveryId);
+      return { outcome: 'sent' as const, channel: 'whatsapp' as const, providerMessageId: 'wamid.test', deliveryId, reason: null };
     },
   };
 }
@@ -90,7 +91,7 @@ async function callFixture(input: { readonly planMode?: 'payment' | 'subscriptio
   `;
   const callId = randomUUID();
   const context = {
-    call_id: callId, nombre_lead: '', curso_interes: '', pais: '', email_lead: '',
+    call_id: callId, nombre_lead: '', curso_interes: 'retell_course', pais: '', email_lead: '',
     resumen_whatsapp: '', prompt_version: 'test',
   };
   await db!`
@@ -104,32 +105,45 @@ async function callFixture(input: { readonly planMode?: 'payment' | 'subscriptio
       ${messages[0].id}::uuid, ${db!.json(context)}, decode(${hashCallContext(context)}, 'hex'), 'test'
     )
   `;
-  return { ...ids, callId };
+  return { ...ids, callId, conversationId };
 }
 
 run('Retell five tools PostgreSQL adapter', () => {
-  it('enforces canonical plan authority and makes payment/send replay idempotent', async () => {
+  it('routes one fixed payment option through Agent A in the exact originating conversation', async () => {
     const ids = await callFixture();
-    const provider = new FakePaymentProvider();
     const outbound = sender();
-    const store = new PostgresRetellOrchestrationStore(db!, { paymentProvider: provider, sendOutbound: outbound.send });
-    await expect(store.createPaymentLink({
-      callId: ids.callId, contactId: ids.contactId, workspaceSlug: ids.workspaceSlug,
-      courses: ['retell_course'], plan: 'cuotas', email: 'lead@example.test', channel: 'whatsapp',
-    })).resolves.toMatchObject({ sent: false, reason: 'PAYMENT_PLAN_CHOICE_REQUIRED' });
+    const paymentLinkResolver = { resolve: () => 'https://buy.stripe.com/test-fixed-link' };
+    const store = new PostgresRetellOrchestrationStore(db!, {
+      paymentLinkResolver,
+      sendOutbound: outbound.send,
+    });
     const callId = ids.callId;
-    const first = await store.createPaymentLink({ callId, contactId: ids.contactId, workspaceSlug: ids.workspaceSlug, courses: ['retell_course'], plan: 'contado', email: 'lead@example.test', channel: 'whatsapp' });
-    const replay = await store.createPaymentLink({ callId, contactId: ids.contactId, workspaceSlug: ids.workspaceSlug, courses: ['retell_course'], plan: 'contado', email: 'lead@example.test', channel: 'whatsapp' });
+    const request = {
+      callId,
+      contactId: ids.contactId,
+      conversationId: ids.conversationId,
+      workspaceSlug: ids.workspaceSlug,
+      course: 'retell_course',
+      planCode: 'one_time' as const,
+    };
+    const first = await store.requestAgentAPaymentLink(request);
+    const replay = await store.requestAgentAPaymentLink(request);
     expect(first).toMatchObject({ sent: true });
     expect(replay).toEqual(first);
-    expect(provider.calls).toHaveLength(1);
     expect(outbound.calls).toHaveLength(1);
-    await expect(db!<{ count: string }[]>`SELECT count(*) FROM payments WHERE workspace_id = ${ids.workspaceId}::uuid`).resolves.toEqual([{ count: '1' }]);
-    const withoutOneTime = await callFixture({ omitOneTime: true });
-    await expect(store.createPaymentLink({
-      callId: withoutOneTime.callId, contactId: withoutOneTime.contactId, workspaceSlug: withoutOneTime.workspaceSlug,
-      courses: ['retell_course'], plan: 'contado', email: 'lead@example.test', channel: 'whatsapp',
-    })).resolves.toMatchObject({ sent: false, reason: 'PAYMENT_PLAN_UNAVAILABLE' });
+    expect(outbound.calls[0]).toMatchObject({
+      contactId: ids.contactId,
+      conversationId: ids.conversationId,
+      preferredChannel: 'whatsapp',
+      purpose: 'transactional',
+    });
+    expect(String(outbound.calls[0]?.text)).toContain('https://buy.stripe.com/test-fixed-link');
+    await expect(db!<{ count: string }[]>`SELECT count(*) FROM payments WHERE workspace_id = ${ids.workspaceId}::uuid`).resolves.toEqual([{ count: '0' }]);
+
+    await expect(store.requestAgentAPaymentLink({ ...request, conversationId: randomUUID() }))
+      .resolves.toMatchObject({ sent: false, reason: 'CONVERSATION_MISMATCH' });
+    await expect(store.requestAgentAPaymentLink({ ...request, course: 'otro_curso' }))
+      .resolves.toMatchObject({ sent: false, reason: 'COURSE_UNAVAILABLE' });
   });
 
   it('scopes payment references to the correlated workspace/contact and returns missing proof as failure', async () => {
@@ -145,6 +159,22 @@ run('Retell five tools PostgreSQL adapter', () => {
       .resolves.toEqual({ found: false, reason: 'PAYMENT_NOT_FOUND' });
     await expect(store.verifyPayment({ callId: one.callId, contactId: one.contactId, workspaceSlug: one.workspaceSlug }))
       .resolves.toEqual({ found: false, reason: 'PAYMENT_NOT_FOUND' });
+
+    const ownPayment = await db!<Array<{ id: string }>>`
+      INSERT INTO payments (
+        workspace_id, contact_id, offering_id, amount, currency, status,
+        provider, environment, checkout_mode, idempotency_key, paid_at
+      ) VALUES (
+        ${one.workspaceId}::uuid, ${one.contactId}::uuid, ${one.offeringId}::uuid,
+        360, 'USD', 'paid', 'fake', 'test', 'payment', ${`fixed-link:${randomUUID()}`}, now()
+      ) RETURNING id
+    `;
+    await expect(store.verifyPayment({
+      callId: one.callId,
+      contactId: one.contactId,
+      workspaceSlug: one.workspaceSlug,
+      reference: ownPayment[0].id,
+    })).resolves.toEqual({ found: true, state: 'paid' });
   });
 
   it('sends approved material only when exact canonical URL/fact authorization passes', async () => {

@@ -104,6 +104,19 @@ describe('matchCallHandoffFastPath', () => {
     expect(decision!.response).not.toMatch(/conectad|en línea|sonando/i);
   });
 
+  it('acknowledges the accepted call before any provider dispatch can happen', () => {
+    const decision = matchCallHandoffFastPath(
+      claimed({
+        texts: ['Sí, llamame'],
+        allowedActions: ['request_call_now'],
+        acceptedOffer: true,
+        route: 'call_accepted_offer',
+      }),
+    );
+
+    expect(decision?.response).toBe('Ok, ya te llamo en breve.');
+  });
+
   it('a direct request without policy permission falls through to the model', () => {
     expect(
       matchCallHandoffFastPath(claimed({

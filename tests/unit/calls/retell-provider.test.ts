@@ -33,11 +33,13 @@ function input(): PlaceVoiceCallInput {
     context: {
       call_id: callId,
       nombre_lead: 'Ana Pérez',
+      apellido_lead: 'Pérez',
       curso_interes: 'Python',
       pais: 'Argentina',
       email_lead: 'ana@example.test',
       resumen_whatsapp: 'Pidió detalles y aceptó una llamada.',
       prompt_version: 'agent-b-v1',
+      campos_faltantes: [],
     },
   };
 }
@@ -98,10 +100,12 @@ describe('RetellVoiceProvider.placeCall', () => {
       },
       retell_llm_dynamic_variables: {
         nombre_lead: 'Ana Pérez',
+        apellido_lead: 'Pérez',
         curso_interes: 'Python',
         pais: 'Argentina',
         email_lead: 'ana@example.test',
         resumen_whatsapp: 'Pidió detalles y aceptó una llamada.',
+        campos_faltantes: '',
         nombre_asesor: 'Sofía',
       },
     });

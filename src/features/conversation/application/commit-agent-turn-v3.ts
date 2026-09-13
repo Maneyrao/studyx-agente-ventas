@@ -1122,6 +1122,7 @@ export async function commitAgentTurnV3(
         contact_id: context.contact_id,
         conversation_id: context.conversation_id,
         contact_name: projectedContact.name,
+        contact_email: projectedContact.email,
         phone: projectedContact.declared_phone ?? context.destination,
         consent_messages: consentMessages,
         course_of_interest: input.decision.state_patch.set.selected_offering_code

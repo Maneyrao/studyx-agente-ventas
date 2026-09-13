@@ -392,6 +392,20 @@ describe('Retell P0 tool boundary', () => {
     expect(result.body).toEqual({ ok: false, error: { code: 'INVALID_TOOL_REQUEST' } });
   });
 
+  it('forwards a surname captured by Agent B to the same canonical contact writer', async () => {
+    const deps = dependencies();
+    const result = await invoke(
+      'guardar_datos_contacto',
+      envelope('guardar_datos_contacto', { apellido: 'Pérez' }),
+      deps,
+    );
+    expect(result.body).toEqual({ ok: true, saved: true, projected: true });
+    expect(deps.contacts.saveCorrelatedContact).toHaveBeenCalledWith(expect.objectContaining({
+      callId: internalCallId,
+      apellido: 'Pérez',
+    }));
+  });
+
   it('maps nulo to canonical null and records the shared analyzed event without direct effects', async () => {
     const deps = dependencies();
     const result = await invoke('registrar_resultado', envelope('registrar_resultado', {

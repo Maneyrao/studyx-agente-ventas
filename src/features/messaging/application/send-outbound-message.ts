@@ -29,6 +29,8 @@ import {
 export const SendOutboundMessageInputSchema = z.object({
   workspaceId: z.string().uuid(),
   contactId: z.string().uuid(),
+  /** Pins voice-triggered actions to the chat where Agent A offered the call. */
+  conversationId: z.string().uuid().optional(),
   // 4096 is the shared ceiling of both providers.
   text: z.string().trim().min(1).max(4096),
   authorizedEgress: z.unknown().refine((value) => value !== undefined, {
@@ -154,7 +156,12 @@ export async function sendOutboundMessage(
     let deliveryId = existing?.id ?? null;
 
     if (!deliveryId) {
-      const conversationId = await resolveConversationId(db, input.contactId, identity.channel);
+      const conversationId = await resolveConversationId(
+        db,
+        input.contactId,
+        identity.channel,
+        input.conversationId,
+      );
       if (!conversationId) {
         lastResult = { outcome: 'unreachable', channel: identity.channel, providerMessageId: null, deliveryId: null, reason: 'NO_CONVERSATION' };
         continue;
@@ -293,13 +300,22 @@ async function resolveConversationId(
   db: DbClient,
   contactId: string,
   channel: MessagingChannelName,
+  requestedConversationId?: string,
 ): Promise<string | null> {
-  const rows = await db<Array<{ id: string }>>`
-    SELECT id FROM conversations
-    WHERE contact_id = ${contactId}::uuid AND channel = ${channel}
-    ORDER BY last_turn_at DESC
-    LIMIT 1
-  `;
+  const rows = requestedConversationId
+    ? await db<Array<{ id: string }>>`
+        SELECT id FROM conversations
+        WHERE id = ${requestedConversationId}::uuid
+          AND contact_id = ${contactId}::uuid
+          AND channel = ${channel}
+        LIMIT 1
+      `
+    : await db<Array<{ id: string }>>`
+        SELECT id FROM conversations
+        WHERE contact_id = ${contactId}::uuid AND channel = ${channel}
+        ORDER BY last_turn_at DESC
+        LIMIT 1
+      `;
   return rows[0]?.id ?? null;
 }
 

@@ -28,7 +28,7 @@ function saleFollowup(): string {
 }
 
 function paymentPendingFollowup(): string {
-  return 'Te dejé el link de pago en la llamada — cuando puedas completarlo avisame así seguimos. Sin apuro, cualquier duda me escribís.';
+  return 'Te compartí el link de pago por acá. Cuando puedas completarlo, avisame así seguimos. Sin apuro, cualquier duda me escribís.';
 }
 
 function scheduledFollowup(): string {

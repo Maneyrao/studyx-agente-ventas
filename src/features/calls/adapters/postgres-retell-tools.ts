@@ -17,11 +17,23 @@ interface CorrelatedContactRow {
   readonly selected_offering_name: string | null;
 }
 
-function normalizedName(input: string, existing: string | null): string {
-  const value = input.trim().replace(/\s+/gu, ' ');
-  if (/\s/u.test(value)) return value;
+function mergedName(input: {
+  readonly nombre?: string;
+  readonly apellido?: string;
+}, existing: string | null): string | null {
   const existingParts = existing ? splitFullName(existing) : null;
-  return existingParts?.apellido ? `${value} ${existingParts.apellido}` : value;
+  let nombre = existingParts?.nombre.trim() ?? '';
+  let apellido = existingParts?.apellido.trim() ?? '';
+  if (input.nombre !== undefined) {
+    const supplied = splitFullName(input.nombre.trim().replace(/\s+/gu, ' '));
+    nombre = supplied.nombre.trim();
+    if (supplied.apellido.trim()) apellido = supplied.apellido.trim();
+  }
+  if (input.apellido !== undefined) {
+    apellido = input.apellido.trim().replace(/\s+/gu, ' ');
+  }
+  if (!nombre) return existing;
+  return apellido ? `${nombre} ${apellido}` : nombre;
 }
 
 export class PostgresRetellContactToolStore implements RetellContactToolStore {
@@ -31,6 +43,7 @@ export class PostgresRetellContactToolStore implements RetellContactToolStore {
     readonly callId: string;
     readonly workspaceSlug: string;
     readonly nombre?: string;
+    readonly apellido?: string;
     readonly email?: string;
     readonly telefonoAlternativo?: string;
     readonly sheets: { readonly spreadsheetId: string; readonly tabName: string } | null;
@@ -78,9 +91,12 @@ export class PostgresRetellContactToolStore implements RetellContactToolStore {
       if (rows.length !== 1) throw new Error('CALL_TOOL_CONTEXT_INVALID');
       const row = rows[0];
 
-      const nextName = input.nombre === undefined
+      const nextName = input.nombre === undefined && input.apellido === undefined
         ? row.name
-        : normalizedName(input.nombre, row.name);
+        : mergedName({
+            ...(input.nombre === undefined ? {} : { nombre: input.nombre }),
+            ...(input.apellido === undefined ? {} : { apellido: input.apellido }),
+          }, row.name);
       const nextEmail = input.email ?? row.email;
       const nextDeclaredPhone = input.telefonoAlternativo ?? row.declared_phone;
       const updated = nextName !== row.name
