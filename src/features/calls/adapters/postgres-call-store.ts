@@ -631,11 +631,17 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
     `;
     if (existing[0]) return;
 
-    const rows = await db<Array<{ contact_id: string }>>`
-      SELECT contact_id FROM call_sessions WHERE id = ${callId}::uuid
+    const rows = await db<Array<{ contact_id: string; channel: string }>>`
+      SELECT session.contact_id, conversation.channel
+      FROM call_sessions AS session
+      JOIN conversations AS conversation
+        ON conversation.id = session.conversation_id
+       AND conversation.contact_id = session.contact_id
+      WHERE session.id = ${callId}::uuid
     `;
     const contactId = rows[0]?.contact_id;
-    if (!contactId) throw new Error('CALL_CONTACT_NOT_FOUND');
+    const channel = rows[0]?.channel;
+    if (!contactId || !channel) throw new Error('CALL_CONTACT_NOT_FOUND');
 
     // No system_call_result exists yet during analysis ingestion. Keeping the
     // source event NULL is intentional; later revocation reuses this existing
@@ -644,7 +650,7 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
       SELECT * FROM record_contact_permission_event(
         ${`call:${callId}:no_contactar`},
         ${contactId}::uuid,
-        'whatsapp',
+        ${channel},
         'revoked',
         'call_analysis_no_contactar',
         NULL::uuid,

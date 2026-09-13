@@ -9,6 +9,7 @@ import type { CallStore } from '@/features/calls/ports/call-store';
 import type { RetellToolCallCorrelationStore } from '@/features/calls/ports/retell-call-correlation-store';
 import {
   buildRetellMaterialAuthorization,
+  resolveRetellPaymentPlanRequest,
   resolveRetellFollowupTimestamp,
   resolveRetellPaymentPlan,
   retellPaymentPlanIsSupported,
@@ -63,7 +64,11 @@ function dependencies(overrides: Partial<RetellOrchestrationStore> = {}) {
     resolveRetellToolCall: vi.fn(async () => ({ callId: internalCallId })),
   } satisfies CallStore & RetellToolCallCorrelationStore;
   const orchestration: RetellOrchestrationStore = {
-    requestAgentAPaymentLink: vi.fn(async () => ({ sent: true, reference: 'delivery_1' })),
+    requestAgentAPaymentLink: vi.fn(async () => ({
+      sent: true,
+      reference: 'delivery_1',
+      channel: 'telegram' as const,
+    })),
     verifyPayment: vi.fn(async () => ({ found: true as const, state: 'paid' })),
     sendMaterial: vi.fn(async () => ({ sent: true, reference: 'delivery_1' })),
     requestHumanHandoff: vi.fn(async () => ({ requestId: 'handoff_1', available: null })),
@@ -110,7 +115,7 @@ describe('remaining Retell orchestration tools', () => {
     expect(retellPaymentPlanIsSupported('cuotas', 'subscription', 'one_time')).toBe(false);
   });
 
-  it('uses the owner-configured StudyX payment options for custom billing', () => {
+  it('never resolves coarse cuotas without a durable six-or-twelve selection', () => {
     const options = [
       { code: 'monthly_12' as const },
       { code: 'monthly_6' as const },
@@ -122,11 +127,11 @@ describe('remaining Retell orchestration tools', () => {
     });
     expect(resolveRetellPaymentPlan('cuotas', 'payment', 'custom', options)).toEqual({
       ok: false,
-      reason: 'PAYMENT_PLAN_CHOICE_REQUIRED',
+      reason: 'PLAN_SELECTION_REQUIRED',
     });
     expect(resolveRetellPaymentPlan('cuotas', 'payment', 'custom', [{ code: 'monthly_12' }])).toEqual({
-      ok: true,
-      planCode: 'monthly_12',
+      ok: false,
+      reason: 'PLAN_SELECTION_REQUIRED',
     });
     expect(resolveRetellPaymentPlan('contado', 'payment', 'custom', [
       { code: 'monthly_12' },
@@ -138,6 +143,18 @@ describe('remaining Retell orchestration tools', () => {
     expect(resolveRetellPaymentPlan('contado', 'subscription', 'custom', options)).toEqual({
       ok: false,
       reason: 'PAYMENT_PLAN_UNAVAILABLE',
+    });
+    expect(resolveRetellPaymentPlanRequest('cuotas', null)).toEqual({
+      ok: false,
+      reason: 'PLAN_SELECTION_REQUIRED',
+    });
+    expect(resolveRetellPaymentPlanRequest('cuotas', 'monthly_6')).toEqual({
+      ok: true,
+      planCode: 'monthly_6',
+    });
+    expect(resolveRetellPaymentPlanRequest('monthly_12', null)).toEqual({
+      ok: true,
+      planCode: 'monthly_12',
     });
   });
 
@@ -171,23 +188,53 @@ describe('remaining Retell orchestration tools', () => {
     const result = await invoke('enviar_link_pago', {
       curso: 'reparacion_celulares', plan_code: 'monthly_12',
     });
-    expect(result.body).toEqual({ ok: true, pago: { enviado: true, referencia: 'delivery_1' } });
+    expect(result.body).toEqual({
+      ok: true,
+      pago: { enviado: true, canal: 'telegram', referencia: 'delivery_1' },
+    });
     expect(result.deps.orchestration.requestAgentAPaymentLink).toHaveBeenCalledWith({
       callId: internalCallId,
       contactId,
       conversationId,
       workspaceSlug: 'studyx',
       course: 'reparacion_celulares',
-      planCode: 'monthly_12',
+      paymentPlan: 'monthly_12',
     });
   });
 
-  it('rejects the old direct-payment shape so Agent B cannot supply email, channel, or arbitrary checkout inputs', async () => {
+  it('translates Lucas\'s contado shape but derives identity and delivery channel in the backend', async () => {
     const result = await invoke('enviar_link_pago', {
       cursos: ['reparacion_celulares'], plan: 'contado', email: 'lead@example.com', canal: 'whatsapp',
     });
-    expect(result.body).toEqual({ ok: false, error: { code: 'INVALID_TOOL_REQUEST' } });
-    expect(result.deps.orchestration.requestAgentAPaymentLink).not.toHaveBeenCalled();
+    expect(result.body).toEqual({
+      ok: true,
+      pago: { enviado: true, canal: 'telegram', referencia: 'delivery_1' },
+    });
+    expect(result.deps.orchestration.requestAgentAPaymentLink).toHaveBeenCalledWith({
+      callId: internalCallId,
+      contactId,
+      conversationId,
+      workspaceSlug: 'studyx',
+      course: 'reparacion_celulares',
+      paymentPlan: 'one_time',
+    });
+  });
+
+  it('passes ambiguous cuotas through for durable backend resolution without guessing 6 or 12', async () => {
+    const deps = dependencies({
+      requestAgentAPaymentLink: vi.fn(async () => ({
+        sent: false,
+        reference: null,
+        reason: 'PLAN_SELECTION_REQUIRED',
+      })),
+    });
+    const result = await invoke('enviar_link_pago', {
+      cursos: ['reparacion_celulares'], plan: 'cuotas', canal: 'whatsapp',
+    }, deps);
+    expect(result.body).toEqual({ ok: false, error: { code: 'PLAN_SELECTION_REQUIRED' } });
+    expect(result.deps.orchestration.requestAgentAPaymentLink).toHaveBeenCalledWith(
+      expect.objectContaining({ paymentPlan: 'cuotas' }),
+    );
   });
 
   it('returns canonical payment state and never accepts a model assertion as state', async () => {

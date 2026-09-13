@@ -19,15 +19,16 @@ async function fixture(input: {
   provider?: 'retell' | 'telegram_sandbox';
   providerCallId?: string | null;
   status?: CallStatus;
+  channel?: 'whatsapp' | 'telegram';
 } = {}) {
   const callId = randomUUID();
   const phone = `+999${Math.floor(10_000_000 + Math.random() * 89_999_999).toString().padStart(10, '0')}`;
   const contacts = await db!<Array<{ id: string }>>`
-    INSERT INTO contacts (phone, channel_origin) VALUES (${phone}, 'whatsapp') RETURNING id
+    INSERT INTO contacts (phone, channel_origin) VALUES (${phone}, ${input.channel ?? 'whatsapp'}) RETURNING id
   `;
   const conversations = await db!<Array<{ id: string }>>`
     INSERT INTO conversations (contact_id, channel)
-    VALUES (${contacts[0].id}::uuid, 'whatsapp') RETURNING id
+    VALUES (${contacts[0].id}::uuid, ${input.channel ?? 'whatsapp'}) RETURNING id
   `;
   const workspaces = await db!<Array<{ id: string }>>`
     INSERT INTO workspaces (slug, display_name, environment, status)
@@ -256,6 +257,37 @@ run('Retell call lifecycle persistence', () => {
     })).rejects.toEqual(expect.objectContaining<Partial<RetellCallCorrelationError>>({
       code: 'CALL_CORRELATION_MISMATCH',
     }));
+  });
+
+  it('revokes the original Telegram channel when registrar_resultado says no_contactar', async () => {
+    const providerCallId = `retell:${randomUUID()}`;
+    const ids = await fixture({ providerCallId, status: 'in_progress', channel: 'telegram' });
+    const store = new PostgresCallStore(db!);
+    await store.appendEvent({
+      schema_version: 1,
+      event_id: `retell:tool:call_analyzed:${providerCallId}`,
+      call_id: ids.callId,
+      event_type: 'analyzed',
+      sequence: 3,
+      occurred_at: new Date().toISOString(),
+      provider: 'retell',
+      payload: {
+        event_type: 'analyzed',
+        analysis: {
+          result: 'no_contactar',
+          nivel_interes: null,
+          objecion: null,
+          notas: 'Pidió no recibir más mensajes.',
+        },
+      },
+    });
+
+    await expect(db!<Array<{ channel: string; consent_status: string }>>`
+      SELECT channel, consent_status
+      FROM contact_channel_permissions
+      WHERE contact_id = ${ids.contactId}::uuid
+      ORDER BY channel
+    `).resolves.toEqual([{ channel: 'telegram', consent_status: 'revoked' }]);
   });
 
   it('attaches a provider call found while reconciling an ambiguous dispatch', async () => {

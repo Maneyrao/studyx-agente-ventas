@@ -48,7 +48,7 @@
 ### Task 3: Make the two essential Agent B tools gateway-safe
 
 **Files:**
-- Modify: `src/app/retell/tools/_shared/route-handler.ts`
+- Modify: `src/app/retell/tools/route-handler.ts`
 - Modify: `src/features/calls/application/retell-tools.ts`
 - Modify: `src/features/calls/adapters/postgres-retell-orchestration.store.ts`
 - Modify: `src/features/calls/adapters/postgres-call.store.ts`
@@ -56,11 +56,11 @@
 - Test: `tests/integration/retell-five-tools-postgres.test.ts`
 - Test: `tests/integration/post-call-followup.test.ts`
 
-- [ ] Write failing tests showing the Xendra path needs only `x-studyx-tools-secret`, bad auth returns 401, and authenticated failures return HTTP 200 with an enunciable structured result.
-- [ ] Support canonical `monthly_12`, `monthly_6`, and `one_time`; translate `contado`; require a durable selection for `cuotas` or return `PLAN_SELECTION_REQUIRED`.
-- [ ] Route a payment link once through the original Telegram or WhatsApp conversation, including replay and concurrency, without hardcoding WhatsApp.
-- [ ] Persist the operational result, opt-out, objections, course, and next step; reject a declared sale unless backend payment is verified.
-- [ ] Run the focal unit and PostgreSQL tests and commit the minimum A→B→A bridge.
+- [x] Write failing tests showing the Xendra path needs only `x-studyx-tools-secret`, bad auth returns 401, and authenticated failures return HTTP 200 with an enunciable structured result.
+- [x] Support canonical `monthly_12`, `monthly_6`, and `one_time`; translate `contado`; require a durable selection for `cuotas` or return `PLAN_SELECTION_REQUIRED`.
+- [x] Route a payment link once through the original Telegram or WhatsApp conversation, including replay and concurrency, without hardcoding WhatsApp.
+- [x] Persist the operational result, opt-out, objections, course, and next step; reject a declared sale unless backend payment is verified.
+- [x] Run the focal unit and PostgreSQL tests and commit the minimum A→B→A bridge.
 
 ### Task 4: Verify the remaining seven existing tools
 

@@ -75,7 +75,11 @@ function sender() {
   };
 }
 
-async function callFixture(input: { readonly planMode?: 'payment' | 'subscription'; readonly omitOneTime?: boolean } = {}) {
+async function callFixture(input: {
+  readonly planMode?: 'payment' | 'subscription';
+  readonly omitOneTime?: boolean;
+  readonly selectedPaymentPlan?: 'monthly_12' | 'monthly_6' | 'one_time' | null;
+} = {}) {
   const ids = await fixture(input);
   const conversations = await db!<Array<{ id: string }>>`
     INSERT INTO conversations (contact_id, channel) VALUES (${ids.contactId}::uuid, 'whatsapp') RETURNING id
@@ -86,8 +90,13 @@ async function callFixture(input: { readonly planMode?: 'payment' | 'subscriptio
     VALUES (${conversationId}::uuid, ${ids.contactId}::uuid, 'inbound', 'Llamame', 1) RETURNING id
   `;
   await db!`
-    INSERT INTO conversation_sales_context_states_v1 (workspace_id, conversation_id, contact_id)
-    VALUES (${ids.workspaceId}::uuid, ${conversationId}::uuid, ${ids.contactId}::uuid)
+    INSERT INTO conversation_sales_context_states_v1 (
+      workspace_id, conversation_id, contact_id, selected_offering_code, selected_payment_plan
+    )
+    VALUES (
+      ${ids.workspaceId}::uuid, ${conversationId}::uuid, ${ids.contactId}::uuid,
+      'retell_course', ${input.selectedPaymentPlan ?? null}
+    )
   `;
   const callId = randomUUID();
   const context = {
@@ -124,19 +133,19 @@ run('Retell five tools PostgreSQL adapter', () => {
       conversationId: ids.conversationId,
       workspaceSlug: ids.workspaceSlug,
       course: 'retell_course',
-      planCode: 'one_time' as const,
+      paymentPlan: 'one_time' as const,
     };
     const first = await store.requestAgentAPaymentLink(request);
     const replay = await store.requestAgentAPaymentLink(request);
-    expect(first).toMatchObject({ sent: true });
+    expect(first).toMatchObject({ sent: true, channel: 'whatsapp' });
     expect(replay).toEqual(first);
     expect(outbound.calls).toHaveLength(1);
     expect(outbound.calls[0]).toMatchObject({
       contactId: ids.contactId,
       conversationId: ids.conversationId,
-      preferredChannel: 'whatsapp',
       purpose: 'transactional',
     });
+    expect(outbound.calls[0]).not.toHaveProperty('preferredChannel');
     expect(String(outbound.calls[0]?.text)).toContain('https://buy.stripe.com/test-fixed-link');
     await expect(db!<{ count: string }[]>`SELECT count(*) FROM payments WHERE workspace_id = ${ids.workspaceId}::uuid`).resolves.toEqual([{ count: '0' }]);
 
@@ -144,6 +153,67 @@ run('Retell five tools PostgreSQL adapter', () => {
       .resolves.toMatchObject({ sent: false, reason: 'CONVERSATION_MISMATCH' });
     await expect(store.requestAgentAPaymentLink({ ...request, course: 'otro_curso' }))
       .resolves.toMatchObject({ sent: false, reason: 'COURSE_UNAVAILABLE' });
+  });
+
+  it('requires a durable installment selection and never infers six or twelve cuotas', async () => {
+    const unresolved = await callFixture();
+    const unresolvedOutbound = sender();
+    const resolver = { resolve: (plan: string) => `https://buy.stripe.com/${plan}` };
+    const unresolvedStore = new PostgresRetellOrchestrationStore(db!, {
+      paymentLinkResolver: resolver,
+      sendOutbound: unresolvedOutbound.send,
+    });
+    const common = {
+      callId: unresolved.callId,
+      contactId: unresolved.contactId,
+      conversationId: unresolved.conversationId,
+      workspaceSlug: unresolved.workspaceSlug,
+      course: 'retell_course',
+    };
+    await expect(unresolvedStore.requestAgentAPaymentLink({ ...common, paymentPlan: 'cuotas' }))
+      .resolves.toEqual({ sent: false, reference: null, reason: 'PLAN_SELECTION_REQUIRED' });
+    expect(unresolvedOutbound.calls).toHaveLength(0);
+
+    const selected = await callFixture({ selectedPaymentPlan: 'monthly_12' });
+    const selectedOutbound = sender();
+    const selectedStore = new PostgresRetellOrchestrationStore(db!, {
+      paymentLinkResolver: resolver,
+      sendOutbound: selectedOutbound.send,
+    });
+    await expect(selectedStore.requestAgentAPaymentLink({
+      callId: selected.callId,
+      contactId: selected.contactId,
+      conversationId: selected.conversationId,
+      workspaceSlug: selected.workspaceSlug,
+      course: 'retell_course',
+      paymentPlan: 'cuotas',
+    })).resolves.toMatchObject({ sent: true });
+    expect(String(selectedOutbound.calls[0]?.text)).toContain('/monthly_12');
+  });
+
+  it('uses one call-level idempotency key even if a replay changes the requested plan', async () => {
+    const ids = await callFixture();
+    const outbound = sender();
+    const store = new PostgresRetellOrchestrationStore(db!, {
+      paymentLinkResolver: { resolve: (plan) => `https://buy.stripe.com/${plan}` },
+      sendOutbound: outbound.send,
+    });
+    const common = {
+      callId: ids.callId,
+      contactId: ids.contactId,
+      conversationId: ids.conversationId,
+      workspaceSlug: ids.workspaceSlug,
+      course: 'retell_course',
+    };
+    await Promise.all([
+      store.requestAgentAPaymentLink({ ...common, paymentPlan: 'one_time' }),
+      store.requestAgentAPaymentLink({ ...common, paymentPlan: 'monthly_12' }),
+    ]);
+
+    expect(outbound.calls).toHaveLength(1);
+    expect(outbound.calls[0]).toMatchObject({
+      idempotencyKey: `agent-a:retell-payment-link:${ids.callId}`,
+    });
   });
 
   it('scopes payment references to the correlated workspace/contact and returns missing proof as failure', async () => {

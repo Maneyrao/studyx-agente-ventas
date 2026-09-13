@@ -18,6 +18,7 @@ import {
 } from '@/features/payments/adapters/config-payment-link.resolver';
 import { PAYMENT_PLAN_PRESENTATIONS } from '@/features/payments/domain/payment-link';
 import type { RetellOrchestrationStore } from '../application/retell-tools';
+import type { RetellPaymentPlanRequest } from '../application/retell-tools';
 
 export type RetellOutboundSender = (
   input: Parameters<typeof sendOutboundMessage>[0],
@@ -49,6 +50,13 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     if (workspace.course_code !== input.course) {
       return { sent: false, reference: null, reason: 'COURSE_UNAVAILABLE' };
     }
+    const paymentPlan = resolveRetellPaymentPlanRequest(
+      input.paymentPlan,
+      workspace.selected_payment_plan,
+    );
+    if (!paymentPlan.ok) {
+      return { sent: false, reference: null, reason: paymentPlan.reason };
+    }
     const offerings = await this.db<Array<{ code: string; display_name: string }>>`
       SELECT o.code, o.display_name
       FROM offerings AS o
@@ -59,9 +67,9 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     const offering = offerings[0];
     if (!offering) return { sent: false, reference: null, reason: 'COURSE_UNAVAILABLE' };
     const paymentLinkResolver = this.options.paymentLinkResolver ?? createConfigPaymentLinkResolver();
-    const url = paymentLinkResolver.resolve(input.planCode);
+    const url = paymentLinkResolver.resolve(paymentPlan.planCode);
     if (!url) return { sent: false, reference: null, reason: 'PAYMENT_LINK_NOT_CONFIGURED' };
-    const presentation = PAYMENT_PLAN_PRESENTATIONS[input.planCode];
+    const presentation = PAYMENT_PLAN_PRESENTATIONS[paymentPlan.planCode];
     const text = `Te dejo el link para inscribirte en ${offering.display_name} con la opción de ${presentation.label}: ${url}\n\nCuando completes el pago, avisame por acá.`;
     const sent = await this.options.sendOutbound({
       workspaceId: workspace.id,
@@ -73,13 +81,17 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
         authorized_urls: [url],
         protected_facts: protectedFactsInContentV1(text),
       }),
-      idempotencyKey: `agent-a:retell-payment-link:${input.callId}:${input.planCode}`,
-      preferredChannel: 'whatsapp',
+      idempotencyKey: `agent-a:retell-payment-link:${input.callId}`,
       purpose: 'transactional',
     });
     return sent.outcome === 'sent'
-      ? { sent: true, reference: sent.deliveryId }
-      : { sent: false, reference: sent.deliveryId, reason: sent.reason ?? 'OUTBOUND_UNAVAILABLE' };
+      ? { sent: true, reference: sent.deliveryId, channel: sent.channel }
+      : {
+          sent: false,
+          reference: sent.deliveryId,
+          channel: sent.channel,
+          reason: sent.reason ?? 'OUTBOUND_UNAVAILABLE',
+        };
   }
 
   async verifyPayment(input: Parameters<RetellOrchestrationStore['verifyPayment']>[0]) {
@@ -209,8 +221,10 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
       metadata: Record<string, unknown> | null;
       conversation_id: string;
       course_code: string;
+      selected_payment_plan: PaymentPlanCode | null;
     }>>`
       SELECT w.id, w.slug, w.metadata, cs.conversation_id,
+             state.selected_payment_plan,
              COALESCE(NULLIF(btrim(cs.context_snapshot ->> 'curso_interes'), ''), '') AS course_code
       FROM call_sessions AS cs
       JOIN workspaces AS w ON w.id = cs.workspace_id
@@ -218,6 +232,10 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
         ON wc.workspace_id = cs.workspace_id
        AND wc.contact_id = cs.contact_id
        AND wc.lifecycle_status = 'active'
+      JOIN conversation_sales_context_states_v1 AS state
+        ON state.workspace_id = cs.workspace_id
+       AND state.conversation_id = cs.conversation_id
+       AND state.contact_id = cs.contact_id
       WHERE cs.id = ${callId}::uuid
         AND cs.provider = 'retell'
         AND w.slug = ${workspaceSlug}
@@ -227,6 +245,20 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     `;
     return rows[0] ?? null;
   }
+}
+
+type RetellPaymentPlanRequestResolution =
+  | { readonly ok: true; readonly planCode: PaymentPlanCode }
+  | { readonly ok: false; readonly reason: 'PLAN_SELECTION_REQUIRED' };
+
+export function resolveRetellPaymentPlanRequest(
+  requested: RetellPaymentPlanRequest,
+  durableSelection: PaymentPlanCode | null,
+): RetellPaymentPlanRequestResolution {
+  if (requested !== 'cuotas') return { ok: true, planCode: requested };
+  return durableSelection === 'monthly_12' || durableSelection === 'monthly_6'
+    ? { ok: true, planCode: durableSelection }
+    : { ok: false, reason: 'PLAN_SELECTION_REQUIRED' };
 }
 
 /** ISO timestamps with an explicit offset are deterministic; local/free text is not. */
@@ -252,7 +284,7 @@ export function retellPaymentPlanIsSupported(
 
 type RetellPaymentPlanResolution =
   | { readonly ok: true; readonly planCode: PaymentPlanCode }
-  | { readonly ok: false; readonly reason: 'PAYMENT_PLAN_UNAVAILABLE' | 'PAYMENT_PLAN_CHOICE_REQUIRED' };
+  | { readonly ok: false; readonly reason: 'PAYMENT_PLAN_UNAVAILABLE' | 'PLAN_SELECTION_REQUIRED' };
 
 /**
  * Resolves Retell's coarse enum against the owner-approved canonical options.
@@ -273,18 +305,19 @@ export function resolveRetellPaymentPlan(
         ? { ok: true, planCode: 'one_time' }
         : { ok: false, reason: 'PAYMENT_PLAN_UNAVAILABLE' };
     }
-    const installmentOptions = configuredOptions.filter((option) => (
+    return configuredOptions.some((option) => (
       option.code === 'monthly_12' || option.code === 'monthly_6'
-    ));
-    if (installmentOptions.length === 1) return { ok: true, planCode: installmentOptions[0].code };
-    if (installmentOptions.length > 1) return { ok: false, reason: 'PAYMENT_PLAN_CHOICE_REQUIRED' };
-    return { ok: false, reason: 'PAYMENT_PLAN_UNAVAILABLE' };
+    ))
+      ? { ok: false, reason: 'PLAN_SELECTION_REQUIRED' }
+      : { ok: false, reason: 'PAYMENT_PLAN_UNAVAILABLE' };
   }
 
   if (!retellPaymentPlanIsSupported(plan, checkoutMode, billingInterval)) {
     return { ok: false, reason: 'PAYMENT_PLAN_UNAVAILABLE' };
   }
-  return { ok: true, planCode: plan === 'contado' ? 'one_time' : 'monthly_12' };
+  return plan === 'contado'
+    ? { ok: true, planCode: 'one_time' }
+    : { ok: false, reason: 'PLAN_SELECTION_REQUIRED' };
 }
 
 const MATERIAL_FACT_KINDS = new Set<ProtectedFactRef['kind']>([

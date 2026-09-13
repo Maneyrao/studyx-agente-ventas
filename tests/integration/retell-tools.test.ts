@@ -203,6 +203,66 @@ function lifecycleAnalysis(
 }
 
 run('Retell P0 tools with PostgreSQL', () => {
+  it('authorizes a Xendra-relayed tool by shared secret and correlated provider/lead/conversation', async () => {
+    const ids = await fixture({ name: 'Ana López' });
+    const body = envelope(ids, 'consultar_curso', { curso: 'reparacion_celulares' });
+    body.call.metadata = {
+      lead_id: ids.contactId,
+      conversation_id: ids.conversationId,
+    } as never;
+    const response = await handleRetellToolRequest(new Request('http://localhost/retell/tools/consultar-curso', {
+      method: 'POST',
+      headers: { 'x-studyx-tools-secret': toolsSecret },
+      body: JSON.stringify(body),
+    }), 'consultar_curso', {
+      ...dependencies(ids),
+      apiKey: '',
+      requireRetellSignature: false,
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      curso: { codigo: 'reparacion_celulares' },
+    });
+  });
+
+  it('does not confirm a declared sale until PostgreSQL has verified payment', async () => {
+    const ids = await fixture({ name: 'Ana López' });
+    const args = {
+      resultado: 'venta_confirmada',
+      resumen: 'La persona declaró que completó el pago.',
+    };
+
+    const unverified = await callTool(ids, 'registrar_resultado', args);
+    expect(unverified.response.status).toBe(200);
+    expect(unverified.body).toEqual({ ok: false, error: { code: 'PAYMENT_NOT_VERIFIED' } });
+    await expect(db!<Array<{ result: string | null }>>`
+      SELECT result FROM call_sessions WHERE id = ${ids.callId}::uuid
+    `).resolves.toEqual([{ result: null }]);
+
+    const offering = await db!<Array<{ id: string }>>`
+      SELECT id FROM offerings
+      WHERE workspace_id = ${ids.workspaceId}::uuid AND code = 'reparacion_celulares'
+    `;
+    await db!`
+      INSERT INTO payments (
+        workspace_id, contact_id, offering_id, amount, currency, status,
+        provider, environment, checkout_mode, idempotency_key, paid_at
+      ) VALUES (
+        ${ids.workspaceId}::uuid, ${ids.contactId}::uuid, ${offering[0].id}::uuid,
+        360, 'USD', 'paid', 'fake', 'test', 'payment',
+        ${`retell:payment:${ids.callId}:verified`}, now()
+      )
+    `;
+
+    const verifiedReplay = await callTool(ids, 'registrar_resultado', args);
+    expect(verifiedReplay.body).toEqual({ ok: true, recorded: true });
+    await expect(db!<Array<{ result: string | null }>>`
+      SELECT result FROM call_sessions WHERE id = ${ids.callId}::uuid
+    `).resolves.toEqual([{ result: 'venta_confirmada' }]);
+  });
+
   it('merges the correlated contact and converges one exact four-field outbox row', async () => {
     const ids = await fixture({ name: 'Ana López', email: null, sourceOrder: 4 });
     await db!`

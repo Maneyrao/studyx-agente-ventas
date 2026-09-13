@@ -166,6 +166,28 @@ async function invoke(name: Parameters<typeof handleRetellToolRequest>[1], body:
 }
 
 describe('Retell P0 tool boundary', () => {
+  it('accepts the Xendra tool path with only the shared secret and relayed identity', async () => {
+    const deps = dependencies();
+    const body = envelope('consultar_curso', { curso: offering.display_name });
+    body.call.metadata = {
+      lead_id: contactId,
+      conversation_id: conversationId,
+    } as never;
+    const response = await handleRetellToolRequest(
+      request(body, { signatureHeader: null }),
+      'consultar_curso',
+      { ...deps, apiKey: '', requireRetellSignature: false },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true });
+    expect(deps.calls.resolveRetellToolCall).toHaveBeenCalledWith({
+      providerCallId,
+      metadata: { contactId, conversationId },
+      workspaceSlug: 'studyx',
+    });
+  });
+
   it('requires both the untouched Retell signature and the constant-time shared secret', async () => {
     const deps = dependencies();
     const body = envelope('consultar_curso', { curso: offering.display_name });
@@ -409,8 +431,8 @@ describe('Retell P0 tool boundary', () => {
   it('maps nulo to canonical null and records the shared analyzed event without direct effects', async () => {
     const deps = dependencies();
     const result = await invoke('registrar_resultado', envelope('registrar_resultado', {
-      resultado: 'venta_confirmada',
-      resumen: 'La persona informó que completó la compra.',
+      resultado: 'no_interesado',
+      resumen: 'La persona decidió no avanzar.',
       objeciones: ['precio', 'tiempo'],
       proximo_paso: 'Confirmar acceso al campus.',
       nivel_interes: 'nulo',
@@ -425,12 +447,28 @@ describe('Retell P0 tool boundary', () => {
       payload: {
         event_type: 'analyzed',
         analysis: {
-          result: 'venta_confirmada',
+          result: 'no_interesado',
           nivel_interes: null,
           objecion: 'precio, tiempo',
-          notas: 'La persona informó que completó la compra.\nPróximo paso: Confirmar acceso al campus.\nCurso: Reparación de Celulares',
+          notas: 'La persona decidió no avanzar.\nPróximo paso: Confirmar acceso al campus.\nCurso: Reparación de Celulares',
         },
       },
     }));
+  });
+
+  it('returns an enunciable HTTP 200 failure for a declared sale without verified payment', async () => {
+    const deps = dependencies();
+    deps.calls.recomputeProjection.mockResolvedValue({
+      status: 'in_progress',
+      analysisStatus: 'completed',
+      result: null,
+    } as never);
+    const result = await invoke('registrar_resultado', envelope('registrar_resultado', {
+      resultado: 'venta_confirmada',
+      resumen: 'La persona declaró que pagó.',
+    }), deps);
+
+    expect(result.response.status).toBe(200);
+    expect(result.body).toEqual({ ok: false, error: { code: 'PAYMENT_NOT_VERIFIED' } });
   });
 });

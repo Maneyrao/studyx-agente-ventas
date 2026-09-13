@@ -1,4 +1,3 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import type { CallStore } from '../ports/call-store';
 import {
@@ -15,6 +14,9 @@ import { sanitizeRetrievedText } from '@/features/orchestration/domain/retrieved
 import { verifyRetellSignature } from '../adapters/retell-lifecycle';
 import { recordCallEvent } from './record-call-event';
 import type { PaymentPlanCode } from '@/features/payments/domain/payment-link';
+import { constantTimeSecretEqual } from '@/lib/security/shared-secret';
+
+export type RetellPaymentPlanRequest = PaymentPlanCode | 'cuotas';
 
 export type RetellP0ToolName =
   | 'consultar_curso'
@@ -38,8 +40,13 @@ export interface RetellOrchestrationStore {
     readonly conversationId: string;
     readonly workspaceSlug: string;
     readonly course: string;
-    readonly planCode: PaymentPlanCode;
-  }): Promise<{ readonly sent: boolean; readonly reference: string | null; readonly reason?: string }>;
+    readonly paymentPlan: RetellPaymentPlanRequest;
+  }): Promise<{
+    readonly sent: boolean;
+    readonly reference: string | null;
+    readonly channel?: 'telegram' | 'whatsapp' | null;
+    readonly reason?: string;
+  }>;
   verifyPayment(input: {
     readonly callId: string;
     readonly contactId: string;
@@ -95,6 +102,8 @@ export interface RetellContactToolStore {
 
 export interface RetellToolDependencies {
   readonly apiKey: string;
+  /** Direct Retell calls require its signature; Xendra-relayed tools do not. */
+  readonly requireRetellSignature?: boolean;
   readonly toolsSecret: string;
   readonly workspaceSlug: string;
   readonly calls: CallStore & RetellToolCallCorrelationStore;
@@ -108,10 +117,18 @@ export interface RetellToolDependencies {
 export const RETELL_TOOL_MAX_BODY_BYTES = 32 * 1_024;
 
 const ToolMetadataSchema = z.object({
-  internal_call_id: z.string().uuid(),
-  contact_id: z.string().uuid(),
+  internal_call_id: z.string().uuid().optional(),
+  contact_id: z.string().uuid().optional(),
+  lead_id: z.string().uuid().optional(),
   conversation_id: z.string().uuid(),
-}).strict();
+}).strict().superRefine((metadata, context) => {
+  if (!metadata.contact_id && !metadata.lead_id) {
+    context.addIssue({ code: 'custom', message: 'TOOL_CONTACT_ID_REQUIRED' });
+  }
+  if (metadata.contact_id && metadata.lead_id && metadata.contact_id !== metadata.lead_id) {
+    context.addIssue({ code: 'custom', message: 'TOOL_CONTACT_ID_CONFLICT' });
+  }
+});
 
 const ToolCallSchema = z.object({
   call_id: z.string().trim().min(1).max(512),
@@ -208,10 +225,18 @@ const ToolArgsSchemas = {
         }
       }
     }),
-  enviar_link_pago: z.object({
-    curso: CourseTextSchema,
-    plan_code: z.enum(['monthly_12', 'monthly_6', 'one_time']),
-  }).strict(),
+  enviar_link_pago: z.union([
+    z.object({
+      curso: CourseTextSchema,
+      plan_code: z.enum(['monthly_12', 'monthly_6', 'one_time']),
+    }).strict(),
+    z.object({
+      cursos: z.array(CourseTextSchema).length(1),
+      plan: z.enum(['contado', 'cuotas']),
+      email: SafeEmailSchema.optional(),
+      canal: z.enum(['telegram', 'whatsapp']).optional(),
+    }).strict(),
+  ]),
   verificar_pago: z.object({
     referencia_pago: z.string().trim().max(255).optional().transform((value) => value || undefined),
   }).strict(),
@@ -239,13 +264,6 @@ type ParsedEnvelope<Name extends RetellToolName> = {
 
 function resultError(code: string, status = 200): Response {
   return Response.json({ ok: false, error: { code } }, { status });
-}
-
-function constantTimeSecretMatches(actual: string | null, expected: string): boolean {
-  if (!actual || expected.length === 0) return false;
-  const actualHash = createHash('sha256').update(actual, 'utf8').digest();
-  const expectedHash = createHash('sha256').update(expected, 'utf8').digest();
-  return timingSafeEqual(actualHash, expectedHash);
 }
 
 async function readBoundedBody(request: Request): Promise<Uint8Array | null> {
@@ -478,7 +496,7 @@ async function recordResult(
     args.curso ? `Curso: ${args.curso}` : null,
   ].filter((value): value is string => value !== null).join('\n');
   const extended = hasRetellExtendedResultFields(args as Record<string, unknown>);
-  await recordCallEvent({
+  const recorded = await recordCallEvent({
     schema_version: 1,
     event_id: `retell:tool:call_analyzed:${envelope.call.call_id}`,
     call_id: callId,
@@ -512,6 +530,9 @@ async function recordResult(
       },
     },
   }, { store: dependencies.calls });
+  if (args.resultado === 'venta_confirmada' && recorded.projection.result !== 'venta_confirmada') {
+    return resultError('PAYMENT_NOT_VERIFIED');
+  }
   return Response.json({ ok: true, recorded: true });
 }
 
@@ -523,25 +544,32 @@ function orchestrationError(dependencies: RetellToolDependencies): Response {
 async function runOrchestrationTool(
   envelope: ParsedEnvelope<RetellOrchestrationToolName>,
   callId: string,
+  identity: { readonly contactId: string; readonly conversationId: string },
   dependencies: RetellToolDependencies,
 ): Promise<Response> {
   const store = dependencies.orchestration;
   if (!store) return orchestrationError(dependencies);
   const common = {
     callId,
-    contactId: envelope.call.metadata.contact_id,
+    contactId: identity.contactId,
     workspaceSlug: dependencies.workspaceSlug,
   };
   if (envelope.name === 'enviar_link_pago') {
     const args = envelope.args as z.infer<typeof ToolArgsSchemas.enviar_link_pago>;
+    const canonical = 'plan_code' in args;
     const result = await store.requestAgentAPaymentLink({
       ...common,
-      conversationId: envelope.call.metadata.conversation_id,
-      course: args.curso,
-      planCode: args.plan_code,
+      conversationId: identity.conversationId,
+      course: canonical ? args.curso : args.cursos[0],
+      paymentPlan: canonical
+        ? args.plan_code
+        : args.plan === 'contado' ? 'one_time' : 'cuotas',
     });
     return result.sent
-      ? Response.json({ ok: true, pago: { enviado: true, referencia: result.reference } })
+      ? Response.json({
+          ok: true,
+          pago: { enviado: true, canal: result.channel, referencia: result.reference },
+        })
       : resultError(result.reason ?? 'PAYMENT_UNAVAILABLE');
   }
   if (envelope.name === 'verificar_pago') {
@@ -603,32 +631,38 @@ export async function handleRetellToolRequest(
   expectedName: RetellToolName,
   dependencies: RetellToolDependencies,
 ): Promise<Response> {
-  if (!constantTimeSecretMatches(
+  if (!constantTimeSecretEqual(
     request.headers.get('x-studyx-tools-secret'),
     dependencies.toolsSecret,
   )) return resultError('UNAUTHORIZED', 401);
 
+  const requireRetellSignature = dependencies.requireRetellSignature ?? true;
   const nowMs = (dependencies.now?.() ?? new Date()).getTime();
   const signature = request.headers.get('x-retell-signature');
-  const signatureMatch = signature
-    ? /^v=(\d+),d=([0-9a-f]{64})$/u.exec(signature)
-    : null;
-  const signatureTimestamp = signatureMatch ? Number(signatureMatch[1]) : Number.NaN;
-  if (
-    dependencies.apiKey.length === 0
-    || !signatureMatch
-    || !Number.isSafeInteger(signatureTimestamp)
-    || Math.abs(nowMs - signatureTimestamp) > 300_000
-  ) return resultError('UNAUTHORIZED', 401);
+  if (requireRetellSignature) {
+    const signatureMatch = signature
+      ? /^v=(\d+),d=([0-9a-f]{64})$/u.exec(signature)
+      : null;
+    const signatureTimestamp = signatureMatch ? Number(signatureMatch[1]) : Number.NaN;
+    if (
+      dependencies.apiKey.length === 0
+      || !signatureMatch
+      || !Number.isSafeInteger(signatureTimestamp)
+      || Math.abs(nowMs - signatureTimestamp) > 300_000
+    ) return resultError('UNAUTHORIZED', 401);
+  }
 
   const body = await readBoundedBody(request);
   if (!body) return resultError('PAYLOAD_TOO_LARGE', 413);
-  if (!verifyRetellSignature({
-    rawBody: body,
-    signature,
-    apiKey: dependencies.apiKey,
-    nowMs,
-  })) return resultError('UNAUTHORIZED', 401);
+  if (
+    requireRetellSignature
+    && !verifyRetellSignature({
+      rawBody: body,
+      signature,
+      apiKey: dependencies.apiKey,
+      nowMs,
+    })
+  ) return resultError('UNAUTHORIZED', 401);
 
   let raw: unknown;
   try {
@@ -638,15 +672,19 @@ export async function handleRetellToolRequest(
   }
   const envelope = parseEnvelope(raw, expectedName);
   if (!envelope) return resultError('INVALID_TOOL_REQUEST');
+  const contactId = envelope.call.metadata.contact_id ?? envelope.call.metadata.lead_id!;
+  const conversationId = envelope.call.metadata.conversation_id;
 
   let callId: string;
   try {
     const correlation = await dependencies.calls.resolveRetellToolCall({
       providerCallId: envelope.call.call_id,
       metadata: {
-        internalCallId: envelope.call.metadata.internal_call_id,
-        contactId: envelope.call.metadata.contact_id,
-        conversationId: envelope.call.metadata.conversation_id,
+        ...(envelope.call.metadata.internal_call_id
+          ? { internalCallId: envelope.call.metadata.internal_call_id }
+          : {}),
+        contactId,
+        conversationId,
       },
       workspaceSlug: dependencies.workspaceSlug,
     });
@@ -689,6 +727,7 @@ export async function handleRetellToolRequest(
       return await runOrchestrationTool(
         envelope as ParsedEnvelope<RetellOrchestrationToolName>,
         callId,
+        { contactId, conversationId },
         dependencies,
       );
     }
