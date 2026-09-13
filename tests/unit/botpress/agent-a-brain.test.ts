@@ -260,6 +260,130 @@ describe('Agent A Brain V1', () => {
     expect(() => parseAgentATurnProposalV1(missingReminder, current)).not.toThrow();
   });
 
+  it.each([
+    ['price objection', 'Me parece caro y se me va del presupuesto.'],
+    ['several questions', 'Cuanto dura? Que incluye? Se cursa online?'],
+    ['indecision', 'No se si elegir Redes Informaticas o Reparacion de PC.'],
+    ['details request', 'Contame en detalle que incluye el curso.'],
+    ['pre-payment friction', 'Antes de pagar necesito pensarlo un poco mas.'],
+  ])('requires the second and final separate call offer for %s', (_reason, customerText) => {
+    const current = context();
+    current.customer.display_name = 'Lucia';
+    current.turn.batch_messages[0].text = customerText;
+    current.commercial_state.call_offer_count = 1;
+    current.commercial_state.call_offer_status = 'offered';
+    current.commercial_state.awaiting_reply = 'none';
+    const missingReminder = parseAgentATurnProposalV1(proposal({
+      response: { messages: ['Respondo la consulta y seguimos desde ahi.'], call_offer: null },
+    }), current);
+
+    expect(validateAgentATurnProposalV1({
+      proposal: missingReminder,
+      context: current,
+      planned_fact_ids: missingReminder.used_fact_ids,
+      rejection_id: '00000000-0000-4000-8000-000000000009',
+    })?.rejections ?? []).toContainEqual({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
+  });
+
+  it('requires the second offer before asking for the final missing contact data', () => {
+    const current = context();
+    current.customer.display_name = 'Lucia';
+    current.commercial_state.call_offer_count = 1;
+    current.commercial_state.call_offer_status = 'offered';
+    current.commercial_state.selected_payment_plan = 'monthly_6';
+    current.commercial_state.stage = 'plan_selected';
+    current.commercial_state.awaiting_reply = 'payment_confirmation';
+    current.capabilities.intake_missing = ['apellido', 'correo', 'telefono'];
+    current.turn.batch_messages[0].text = 'El plan de seis cuotas me sirve.';
+    const asksForFinalData = parseAgentATurnProposalV1(proposal({
+      response: {
+        messages: ['Para dejarlo listo necesito tu apellido, correo y telefono.'],
+        call_offer: null,
+      },
+    }), current);
+
+    expect(validateAgentATurnProposalV1({
+      proposal: asksForFinalData,
+      context: current,
+      planned_fact_ids: asksForFinalData.used_fact_ids,
+      rejection_id: '00000000-0000-4000-8000-000000000010',
+    })?.rejections ?? []).toContainEqual({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
+  });
+
+  it('keeps a soft persisted chat preference eligible for the situational second reminder', () => {
+    const current = context();
+    current.customer.display_name = 'Lucia';
+    current.turn.batch_messages[0].text = 'Ahora tengo varias dudas sobre el contenido y la modalidad.';
+    current.commercial_state.call_offer_count = 1;
+    current.commercial_state.call_offer_status = 'offered';
+    current.commercial_state.call_preference = 'chat';
+    current.commercial_state.awaiting_reply = 'none';
+    const missingReminder = parseAgentATurnProposalV1(proposal({
+      response: { messages: ['Te aclaro las dudas por aqui.'], call_offer: null },
+    }), current);
+
+    expect(validateAgentATurnProposalV1({
+      proposal: missingReminder,
+      context: current,
+      planned_fact_ids: missingReminder.used_fact_ids,
+      rejection_id: '00000000-0000-4000-8000-000000000011',
+    })?.rejections ?? []).toContainEqual({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
+  });
+
+  it.each([
+    ['accepted offer', { call_offer_status: 'accepted' as const, call_preference: 'call' as const, stage: 'handoff' as const }, true, 'Tengo otra duda.'],
+    ['explicit rejection', { call_offer_status: 'declined' as const, call_preference: 'declined' as const }, false, 'No me llames, tengo otra duda.'],
+    ['opt-out', { call_offer_status: 'offered' as const }, false, 'No quiero recibir mas mensajes.'],
+    ['handoff', { call_offer_status: 'offered' as const, stage: 'handoff' as const }, true, 'Tengo otra duda.'],
+    ['direct purchase', { call_offer_status: 'offered' as const }, true, 'Quiero comprar ahora, mandame el link de pago.'],
+    ['two offers already made', { call_offer_status: 'offered' as const, call_offer_count: 2 as const }, true, 'Tengo varias dudas.'],
+  ])('does not require another call offer after %s', (_label, stateOverride, mayOfferCall, customerText) => {
+    const current = context();
+    current.customer.display_name = 'Lucia';
+    current.turn.batch_messages[0].text = customerText;
+    Object.assign(current.commercial_state, {
+      call_offer_count: 1,
+      awaiting_reply: 'none',
+      ...stateOverride,
+    });
+    current.capabilities.may_offer_call = mayOfferCall;
+    const noReminder = parseAgentATurnProposalV1(proposal({
+      response: { messages: ['Seguimos con lo que necesitas.'], call_offer: null },
+    }), current);
+
+    expect(validateAgentATurnProposalV1({
+      proposal: noReminder,
+      context: current,
+      planned_fact_ids: noReminder.used_fact_ids,
+      rejection_id: '00000000-0000-4000-8000-000000000012',
+    })?.rejections ?? []).not.toContainEqual({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
+  });
+
+  it('rejects a second call invitation embedded in narrative instead of a separate outbound', () => {
+    const current = context();
+    current.customer.display_name = 'Lucia';
+    current.turn.batch_messages[0].text = 'Contame en detalle que incluye.';
+    current.commercial_state.call_offer_count = 1;
+    current.commercial_state.call_offer_status = 'offered';
+    current.commercial_state.awaiting_reply = 'none';
+    const embeddedReminder = parseAgentATurnProposalV1(proposal({
+      response: {
+        messages: ['Te explico el contenido. Si quieres, tambien podemos verlo en una llamada.'],
+        call_offer: null,
+      },
+    }), current);
+
+    expect(validateAgentATurnProposalV1({
+      proposal: embeddedReminder,
+      context: current,
+      planned_fact_ids: embeddedReminder.used_fact_ids,
+      rejection_id: '00000000-0000-4000-8000-000000000013',
+    })?.rejections ?? []).toContainEqual({
+      code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID',
+      subject: 'call_offer',
+    });
+  });
+
   it('does not extract or rewrite a natural reminder authored inside the messages', () => {
     const current = context();
     current.turn.batch_messages[0].text = 'Contame en detalle qué voy a aprender y cómo se cursa.';

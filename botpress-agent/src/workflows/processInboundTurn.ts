@@ -58,6 +58,7 @@ import {
 } from '../lib/conversation/agent-a-brain'
 import { resolveAgentAProposalV1 } from '../lib/conversation/resolve-agent-a-proposal'
 import { resolveAgentAPlannerlessProposalV2 } from '../lib/conversation/resolve-agent-a-plannerless'
+import { evaluateCallOfferTurnPolicyV1 } from '../lib/conversation/call-offer-turn-policy'
 import type { AgentATurnProposalV1 } from '../schemas/agent-a-brain'
 import type { AgentATurnCommitV2 } from '../schemas/agent-turn-v2'
 import {
@@ -613,6 +614,15 @@ export const processInboundTurn = new Workflow({
     let pipelineDecisionModel = 'conversation-pipeline-v1'
     let pipelinePromptVersion = `${CONVERSATION_INTERPRETER_PROMPT_VERSION}+${CONVERSATION_COMPOSER_PROMPT_VERSION}+${STUDYX_SALES_BEHAVIOR_VERSION}`
     let pipelineMemoryCandidates: Decision['memory_candidates'] = []
+    let callOfferAudit: {
+      readonly call_offer_count_before: 0 | 1 | 2
+      readonly call_offer_count_after: 0 | 1 | 2
+      readonly offered_call: boolean
+      readonly reason: string
+      readonly call_accepted: boolean
+      readonly call_rejected: boolean
+      readonly chat_preference: boolean
+    } | null = null
     // R1: conducta nueva, apagada por defecto. Apagada, un rechazo no podable
     // cae a N3 y nunca a silencio (R2).
     const repairEnabled = owned.features?.agent_a_repair_enabled === true
@@ -632,6 +642,20 @@ export const processInboundTurn = new Workflow({
       && (brainAuthoritative || brainShadow)
       && (owned.deterministic_route === null || brainAuthoritative)
       && agentABrainContext !== null
+
+    if (agentABrainContext !== null) {
+      const policy = evaluateCallOfferTurnPolicyV1({ context: agentABrainContext })
+      const count = agentABrainContext.commercial_state.call_offer_count
+      callOfferAudit = {
+        call_offer_count_before: count,
+        call_offer_count_after: count,
+        offered_call: false,
+        reason: policy.reason,
+        call_accepted: policy.customer_signal === 'acceptance',
+        call_rejected: policy.customer_signal === 'rejection',
+        chat_preference: policy.customer_signal === 'chat_preference',
+      }
+    }
 
     if (brainEligible) {
       try {
@@ -717,6 +741,26 @@ export const processInboundTurn = new Workflow({
             })
             const effectiveGenerated = resolved.effective
             generated = effectiveGenerated
+            const policy = evaluateCallOfferTurnPolicyV1({
+              context: agentABrainContext,
+              response_messages: effectiveGenerated.proposal.response.messages,
+              proposed_course_reference: effectiveGenerated.proposal.move.course_reference,
+            })
+            const offeredCall = typeof effectiveGenerated.proposal.response.call_offer === 'string'
+              && effectiveGenerated.proposal.response.call_offer.trim().length > 0
+            const beforeCount = agentABrainContext.commercial_state.call_offer_count
+            callOfferAudit = {
+              call_offer_count_before: beforeCount,
+              call_offer_count_after: offeredCall
+                ? Math.min(2, beforeCount + 1) as 1 | 2
+                : beforeCount,
+              offered_call: offeredCall,
+              reason: policy.reason,
+              call_accepted: policy.customer_signal === 'acceptance'
+                || effectiveGenerated.proposal.proposed_action.type === 'request_call_now',
+              call_rejected: policy.customer_signal === 'rejection',
+              chat_preference: policy.customer_signal === 'chat_preference',
+            }
             agentTurnV2Commit = {
               schema_version: 2,
               proposal: effectiveGenerated.proposal,
@@ -1194,7 +1238,13 @@ export const processInboundTurn = new Workflow({
               authorized_offering_code: authorizedOfferingCode,
               // A deterministic current-batch selection only. The backend
               // re-derives it before persisting plan_selected.
-              authorized_payment_plan: authorizedPaymentPlan,
+              // Plannerless is the complete conversational authority. A
+              // deterministic legacy route may have noticed a plan token, but
+              // leaking that parallel interpretation into this commit can
+              // reject a valid objection turn with PAYMENT_PLAN_MISMATCH.
+              authorized_payment_plan: agentTurnV2Commit === null
+                ? authorizedPaymentPlan
+                : null,
               conversation_pipeline_v1: pipelineCommit,
               agent_turn_v2: agentTurnV2Commit,
               supports_multi_outbound: true,
@@ -1230,6 +1280,32 @@ export const processInboundTurn = new Workflow({
         batch_id: owned.batch.id,
         batch_completion: committed.batch_completion ?? null,
       })
+      if (callOfferAudit !== null) {
+        const committedAudit = committed.status === 'committed' || committed.status === 'duplicate'
+        const committedOutbounds = Array.isArray(committed.outbounds)
+          ? committed.outbounds
+          : null
+        const declaredCallOffer = agentTurnV2Commit?.proposal.response.call_offer?.trim() ?? null
+        const physicalCallOffer = committedAudit && declaredCallOffer !== null && (
+          committedOutbounds === null
+            ? callOfferAudit.offered_call
+            : committedOutbounds.some((outbound) => outbound.content.trim() === declaredCallOffer)
+        )
+        safeLog('studyx.turn.call_offer_policy_v1', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          call_offer_count_before: callOfferAudit.call_offer_count_before,
+          call_offer_count_after: physicalCallOffer
+            ? Math.min(2, callOfferAudit.call_offer_count_before + 1)
+            : callOfferAudit.call_offer_count_before,
+          offered_call: physicalCallOffer,
+          reason: callOfferAudit.reason,
+          call_accepted: callOfferAudit.call_accepted,
+          call_rejected: callOfferAudit.call_rejected,
+          chat_preference: callOfferAudit.chat_preference,
+          commit_status: committed.status,
+        })
+      }
     } catch (error) {
       timings.commit_ms = Date.now() - commitStartedAt
       state.phase = 'paused_error'

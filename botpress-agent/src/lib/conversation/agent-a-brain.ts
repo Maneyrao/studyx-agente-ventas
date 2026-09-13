@@ -2,6 +2,7 @@ import {
   supportsCallRequestV1,
   supportsChatPreferenceV1,
 } from './channel-preference-evidence';
+import { evaluateCallOfferTurnPolicyV1 } from './call-offer-turn-policy';
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import {
   AgentATurnProposalV1Schema,
@@ -462,13 +463,8 @@ function isInitialCallWindowV1(context: AgentAContextV1): boolean {
 }
 
 function isSecondCallReminderWindowV1(context: AgentAContextV1): boolean {
-  return requestsDetailedCourseExplanationV1(context)
-    && context.catalog.selected_offering !== null
-    && context.capabilities.may_offer_call
-    && context.commercial_state.call_offer_count === 1
-    && context.commercial_state.call_offer_status === 'offered'
-    && context.commercial_state.call_preference === 'unknown'
-    && context.commercial_state.awaiting_reply !== 'call_or_chat';
+  return context.commercial_state.call_offer_count === 1
+    && evaluateCallOfferTurnPolicyV1({ context }).offer_required;
 }
 
 function naturalnessRepairDirectiveV1(context: AgentAContextV1): string {
@@ -1536,6 +1532,21 @@ const COMMON_INFERRED_COURSE_DETAILS = [
   ['people_management', /\bgestion de personas\b/u],
 ] as const;
 
+const EMPLOYMENT_OUTCOME_CLAIMS = [
+  [
+    'work_during_first_stage',
+    /\b(?:trabaj\w*|resolver\s+trabajos?)\b[^.!?\n]{0,80}\b(?:desde\s+el\s+primer|primer\s+tramo)\b/u,
+  ],
+  [
+    'fast_income',
+    /\bgenerar\s+ingresos?\b[^.!?\n]{0,32}\b(?:rapido|rapidamente|cuanto\s+antes)\b/u,
+  ],
+  [
+    'job_experience_requirement',
+    /\b(?:suele(?:n)?\s+)?(?:pedirse|pedir|requerirse|requerir|exigirse|exigir)\b[^.!?\n]{0,48}\bexperiencia\s+previa\b/u,
+  ],
+] as const;
+
 function inferredCourseDetailsInV1(value: string): Set<string> {
   const normalized = value
     .normalize('NFD')
@@ -1545,6 +1556,73 @@ function inferredCourseDetailsInV1(value: string): Set<string> {
   return new Set(COMMON_INFERRED_COURSE_DETAILS
     .filter(([, pattern]) => pattern.test(normalized))
     .map(([key]) => key));
+}
+
+function employmentOutcomeClaimsInV1(value: string): Set<string> {
+  const normalized = value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLowerCase()
+    .replace(/\s+/gu, ' ');
+  return new Set(EMPLOYMENT_OUTCOME_CLAIMS
+    .filter(([, pattern]) => pattern.test(normalized))
+    .map(([key]) => key));
+}
+
+function assertsUnverifiedCandidateCourseDetailV1(
+  messages: readonly string[],
+  context: AgentAContextV1,
+): boolean {
+  if (
+    context.catalog.selected_offering !== null
+    || context.catalog.candidate_offerings.length < 2
+  ) return false;
+  const candidateNames = context.catalog.candidate_offerings.map((offering) => offering.display_name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLowerCase());
+  const descriptivePredicate = /\b(?:es|son|va|van|apunta\w*|orienta\w*|encaja\w*|sirve\w*|permite\w*|pued\w*|incluye\w*|abarca\w*|tiene\w*|ofrece\w*|recomiend\w*|elegir\w*|iria)\b/u;
+  const comparativeReferent = /\b(?:ambos?|los\s+dos|las\s+dos|uno|una|otro|otra)\b/u;
+  return messages
+    .flatMap((message) => message.split(/(?<=[.!?\n])/u))
+    .filter((sentence) => !sentence.includes('?'))
+    .map((sentence) => sentence
+      .normalize('NFD')
+    .replace(/[\u0300-\u036f]/gu, '')
+      .toLowerCase())
+    .some((sentence) => (
+      (candidateNames.some((name) => sentence.includes(name))
+        || comparativeReferent.test(sentence))
+      && descriptivePredicate.test(sentence)
+    ));
+}
+
+function omitsCustomerNamedCandidateV1(
+  messages: readonly string[],
+  context: AgentAContextV1,
+): boolean {
+  if (
+    context.catalog.selected_offering !== null
+    || context.catalog.candidate_offerings.length < 2
+  ) return false;
+  const normalizeCandidateText = (value: string) => value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLowerCase();
+  const currentCustomerText = normalizeCandidateText(
+    context.turn.batch_messages.map((message) => message.text).join('\n'),
+  );
+  const customerNamedCandidates = context.catalog.candidate_offerings
+    .map((offering) => normalizeCandidateText(offering.display_name))
+    .filter((name) => currentCustomerText.includes(name));
+  if (customerNamedCandidates.length < 2) return false;
+  const priorAssistantText = normalizeCandidateText(context.turn.recent_turns
+    .filter((turn) => turn.direction === 'outbound')
+    .map((turn) => turn.content)
+    .join('\n'));
+  if (customerNamedCandidates.every((name) => priorAssistantText.includes(name))) return false;
+  const currentAssistantText = normalizeCandidateText(messages.join('\n'));
+  return customerNamedCandidates.some((name) => !currentAssistantText.includes(name));
 }
 
 function comparableProtectedFact(fact: ReturnType<typeof extractProtectedFacts>[number]): string {
@@ -1656,6 +1734,21 @@ export function validateAgentATurnProposalV1(input: {
   if (authoredNarrative.flatMap((message) => [...inferredCourseDetailsInV1(message)])
     .some((detail) => !authorizedCourseDetails.has(detail))) {
     rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'inferred_course_detail' });
+  }
+  const authorizedEmploymentOutcomes = new Set(
+    [...commercialValuesByFactId(input.context)]
+      .filter(([factId]) => planned.has(factId))
+      .flatMap(([, value]) => [...employmentOutcomeClaimsInV1(value)]),
+  );
+  if (authoredNarrative.flatMap((message) => [...employmentOutcomeClaimsInV1(message)])
+    .some((claim) => !authorizedEmploymentOutcomes.has(claim))) {
+    rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'employment_outcome' });
+  }
+  if (assertsUnverifiedCandidateCourseDetailV1(input.proposal.response.messages, input.context)) {
+    rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'candidate_course_detail' });
+  }
+  if (omitsCustomerNamedCandidateV1(input.proposal.response.messages, input.context)) {
+    rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'candidate_course_names' });
   }
   // Dinero y promesa siguen siendo frontera acá: el error es caro y conviene
   // abrir la reparación antes del commit. El resto de los sustantivos
@@ -1773,10 +1866,15 @@ export function validateAgentATurnProposalV1(input: {
   const offersACall = !unsupportedDeclaredOffer && typeof declaredCallOffer === 'string'
     && solicitsACallV1(declaredCallOffer, true)
     || !requestedCallNow && input.proposal.response.messages.some((message) => solicitsACallV1(message))
-  const renewsPendingOffer = input.context.commercial_state.call_offer_count >= 1
-    && (input.context.commercial_state.awaiting_reply === 'call_or_chat'
-      || !moves.has('ask_course_information'));
-  if (offersACall && (!input.context.capabilities.may_offer_call || renewsPendingOffer)) {
+  const callOfferPolicy = evaluateCallOfferTurnPolicyV1({
+    context: input.context,
+    response_messages: input.proposal.response.messages,
+    proposed_course_reference: input.proposal.move.course_reference,
+  });
+  const offerAllowedThisTurn = input.context.commercial_state.call_offer_count === 0
+    ? input.context.capabilities.may_offer_call
+    : callOfferPolicy.offer_allowed;
+  if (offersACall && (!input.context.capabilities.may_offer_call || !offerAllowedThisTurn)) {
     rejections.push({ code: 'CALL_BUDGET_EXHAUSTED', subject: 'call_offer' })
   }
 
@@ -1794,11 +1892,11 @@ export function validateAgentATurnProposalV1(input: {
     rejections.push({ code: 'ACTION_NOT_AUTHORIZED', subject: 'request_call_now' });
   }
   const state = input.context.commercial_state;
-  const validInitialCallOfferBoundary = typeof declaredCallOffer === 'string'
+  const validCallOfferBoundary = typeof declaredCallOffer === 'string'
     && solicitsACallV1(declaredCallOffer, true)
     && input.proposal.response.messages.length >= 1
     && !input.proposal.response.messages.some((message) => solicitsACallV1(message));
-  if (offersACall && state.call_offer_count === 0 && !validInitialCallOfferBoundary) {
+  if (offersACall && !validCallOfferBoundary) {
     rejections.push({ code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID', subject: 'call_offer' });
   }
   const hasCanonicalCourse = state.selected_offering_code !== null
@@ -1828,12 +1926,17 @@ export function validateAgentATurnProposalV1(input: {
       rejections.push({ code: 'COURSE_NOT_RESOLVED', subject: 'course_name' });
     }
   }
-  if (((moves.has('select_course') || moves.has('ask_course_information')) && hasCanonicalCourse
+  const initialCallOfferRequired = ((moves.has('select_course') || moves.has('ask_course_information')) && hasCanonicalCourse
       || hasResolvedCourseFamily)
     && input.context.capabilities.may_offer_call
     && state.call_offer_count === 0 && state.call_preference === 'unknown'
     && state.call_offer_status === 'not_offered' && !channelChoice
-    && !requestedCallNow && !offersACall) {
+    && !requestedCallNow;
+  const secondCallOfferRequired = state.call_offer_count === 1
+    && callOfferPolicy.offer_required
+    && !channelChoice
+    && !requestedCallNow;
+  if ((initialCallOfferRequired || secondCallOfferRequired) && !offersACall) {
     rejections.push({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
   }
   // V7 — ninguna URL escrita por el modelo. El link lo inserta el backend.
@@ -1873,7 +1976,7 @@ function authorizedActionsV1(context: AgentAContextV1): string[] {
  */
 const CALL_SOLICITATION_V1 = /\b(?:te\s+llamo|te\s+llamamos|(?:puedo|podemos)\s+llamar(?:te|los?|las?|le|les|nos)?|una\s+llamada|coordinamos\s+una\s+llamada|prefer[íi]s\s+que\s+te\s+llame)\b/iu
 const NOT_AN_OFFER_V1 = /\b(?:ya\s+(?:qued|registr|solicit)|no\s+te\s+llam|sin\s+llamada)/iu
-const DECLARED_CALL_CHANNEL_V1 = /\b(?:llam|videollam)|tel[eé]fon|telef[oó]n|\bvoz\b|\bcontact(?:arte|emos)\b/iu
+const DECLARED_CALL_CHANNEL_V1 = /\b(?:llam|videollam)|\btel[eé]fono\b|\btelef[oó]nic(?:a|o|as|os)\b|\bvoz\b|\bcontact(?:arte|emos)\b/iu
 
 export function solicitsACallV1(message: string, declaredOffer = false): boolean {
   if (declaredOffer) {

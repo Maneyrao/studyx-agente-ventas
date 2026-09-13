@@ -128,7 +128,7 @@ const CATALOG_RETRIEVAL_NONE = {
 } as const
 
 const CATALOG_INTENT_PATTERN =
-  /(?:\b(?:cursos|diplomados|capacitaciones|formaciones|programas|catalogo|oferta academica|academia|inscribirme|inscribime|anotarme|anotame)\b|\bestudiar\b(?!\s+para\b)|\b(?:curso|diplomado|capacitacion|formacion|programa)\s+de\s+[a-z0-9]|\b(?:tienen|ofrecen|hay)\b.{0,24}\b(?:curso|diplomado|capacitacion|formacion|programa)\b)/u
+  /(?:\b(?:cursos|diplomados|capacitaciones|formaciones|programas|catalogo|oferta academica|academia|inscribirme|inscribime|anotarme|anotame)\b|\b(?:estudiar|aprender)\b(?!\s+para\b)|\bbusco\s+(?!(?:para|trabajo|empleo|ayuda|informacion|info|datos|detalles|algo|un?\s+opcion)\b)[\p{L}\p{N}]{3,}|\b(?:curso|diplomado|capacitacion|formacion|programa)\s+de\s+[a-z0-9]|\b(?:tienen|ofrecen|hay)\b.{0,24}\b(?:curso|diplomado|capacitacion|formacion|programa)\b)/u
 
 const BARE_COURSE_SELECTION_PATTERN =
   // Clitic forms (pagarlo, abonarla…) must stay payment cues, not course

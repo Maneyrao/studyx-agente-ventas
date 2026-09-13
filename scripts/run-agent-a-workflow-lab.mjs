@@ -24,6 +24,18 @@ PAYMENT_LINK_6M:'https://example.invalid/eval/6m',PAYMENT_LINK_CONTADO:'https://
 AGENT_A_BRAIN_V1_ENABLED:'true',AGENT_A_BRAIN_V1_SHADOW:'false',AGENT_A_REPAIR_ENABLED:'true',
 AGENT_A_CONTEXT_SCOPING:'false',AGENT_A_STATE_ASSERTIONS:'true',AGENT_A_SINGLE_ROUTE:'true',
 CONVERSATION_PIPELINE_V1_ENABLED:'false',NEXT_TELEMETRY_DISABLED:'1'};
+// Evidence selectors are inert local paths/ids. Keep this allowlist explicit:
+// no ambient integration credential crosses into the isolated workflow run.
+for (const name of [
+  'STUDYX_CALL_OFFER_CASE_FILE',
+  'STUDYX_CALL_OFFER_CASE_FILES',
+  'STUDYX_CALL_OFFER_CASE_IDS',
+  'STUDYX_WORKFLOW_REPORT_DIR',
+  'STUDYX_LAB_ROOT',
+]) {
+  const value = process.env[name]?.trim();
+  if (value) env[name] = value;
+}
 if (paid) {
   const key = parseEnv(readFileSync('.eval/.env.local', 'utf8')).DEEPSEEK_API_KEY?.trim();
   if (!key) throw new Error('DEEPSEEK_API_KEY_MISSING');

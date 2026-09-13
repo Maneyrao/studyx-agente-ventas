@@ -966,6 +966,46 @@ describe('buildAgentAContextV1', () => {
     expect(buildAgentAContextV1(claimed)).toBeNull();
   });
 
+  it('keeps the most recent explicit candidate set on an indecision follow-up', () => {
+    const claimed = claimedTurn();
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'Sigo sin decidirme: cuál me conviene?',
+    };
+    claimed.context.recent_turns = [{
+      direction: 'outbound',
+      content: 'Estás entre Marketing Digital y Community Manager.',
+      created_at: NOW,
+    }];
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      selected_offering_code: null,
+      selected_payment_plan: null,
+      stage: 'exploring',
+      call_preference: 'unknown',
+      call_offer_status: 'offered',
+      call_offer_count: 1,
+      awaiting_reply: 'call_or_chat',
+    };
+    claimed.sales_context.offering_code = null;
+    claimed.sales_context.course_of_interest = null;
+    claimed.catalog_index = {
+      as_of: NOW,
+      offerings_total: 4,
+      offerings: [
+        { code: 'aires', display_name: 'Aires Acondicionados', academy: 'Oficios', aliases: [] },
+        { code: 'marketing_digital', display_name: 'Marketing Digital', academy: 'Marketing', aliases: [] },
+        { code: 'community_manager', display_name: 'Community Manager', academy: 'Marketing', aliases: [] },
+        { code: 'excel', display_name: 'Excel Integral', academy: 'Negocios', aliases: [] },
+      ],
+      injection_suspected_count: 0,
+    };
+
+    expect(buildAgentAContextV1(claimed)?.catalog.candidate_offerings.map((offering) => offering.code))
+      .toEqual(['marketing_digital', 'community_manager']);
+  });
+
   it('exposes the complete sorted active catalog as compact identities while no course is selected', () => {
     const claimed = claimedTurn();
     claimed.catalog_resolution = { kind: 'no_catalog_intent' };

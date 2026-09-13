@@ -458,6 +458,7 @@ describe('processInboundTurn hot path', () => {
     };
     claimed.business_context = paymentBusinessContext();
     claimed.business_context_available = true;
+    claimed.contact.name = 'Lucia';
     actionSpies.claim.mockResolvedValue(claimed);
     configuration.agentAPlannerlessV2Enabled = true;
     secrets.DEEPSEEK_API_KEY = 'deepseek-local-test-only';
@@ -468,7 +469,10 @@ describe('processInboundTurn hot path', () => {
           schema_version: 1, move: 'select_course', secondary_moves: [], vetoes: [],
           course_reference: 'redes', confidence: 0.98,
         },
-        response: { messages: ['Buenísimo, Redes puede ser una opción muy práctica para vos.'] },
+        response: {
+          messages: ['Buenísimo, Redes puede ser una opción muy práctica para vos.'],
+          call_offer: 'Si quieres, podemos coordinar una llamada para orientarte.',
+        },
         proposed_action: { type: 'none' },
         used_fact_ids: ['offering:redes-informaticas:name:v1'],
         used_memory_ids: [], memory_candidates: [], repair_of: null,
@@ -482,6 +486,10 @@ describe('processInboundTurn hot path', () => {
     const handler = (processInboundTurn as unknown as {
       definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
     }).definition.handler;
+    actionSpies.commit.mockResolvedValueOnce({
+      status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
+      decision_id: UUID, next_state: 'completed', outbound: null, call_request: null,
+    });
 
     await handler({
       input: workflowInput(), state: processingState(), step,
@@ -496,10 +504,26 @@ describe('processInboundTurn hot path', () => {
         schema_version: 2,
         proposal: {
           move: { move: 'select_course', course_reference: 'redes' },
-          response: { messages: ['Buenísimo, Redes puede ser una opción muy práctica para vos.'] },
+          response: {
+            messages: ['Buenísimo, Redes puede ser una opción muy práctica para vos.'],
+            call_offer: 'Si quieres, podemos coordinar una llamada para orientarte.',
+          },
         },
       },
       model: { provider: 'deepseek-direct', prompt_version: AGENT_A_BRAIN_PROMPT_VERSION },
+    });
+    const callOfferLog = vi.mocked(console.info).mock.calls
+      .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
+      .find((entry) => entry.event === 'studyx.turn.call_offer_policy_v1');
+    expect(callOfferLog).toMatchObject({
+      call_offer_count_before: 0,
+      call_offer_count_after: 1,
+      offered_call: true,
+      reason: 'FIRST_OFFER_DUE',
+      call_accepted: false,
+      call_rejected: false,
+      chat_preference: false,
+      commit_status: 'committed',
     });
   });
 

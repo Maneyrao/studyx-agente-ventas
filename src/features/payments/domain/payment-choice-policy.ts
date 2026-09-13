@@ -89,6 +89,7 @@ function hasExplicitOneTimeAmountSelection(normalized: string): boolean {
 
 const TEMPORAL_PAYMENT_DEFERRAL_PATTERNS: readonly RegExp[] = [
   /\bno\s+me\s+(?:mandes|envies|pases|compartas)\s+(?:el\s+)?(?:link|enlace)\b/,
+  /\bantes\s+de\s+(?:pagar|abonar|comprar|inscribirme|anotarme|matricularme)\b[^.!?\n]{0,64}\b(?:pensarlo|esperar|decidirlo|confirmarlo|consultarlo)\b/,
   /\b(?:todavia\s+no|despues|mas\s+adelante|por\s+ahora\s+no)\b[^.!?\n]{0,64}\b(?:pagar|pago|pagos|cuotas?|meses?|abonar|comprar|compra|inscribir(?:me)?|anotar(?:me)?|matricular(?:me)?|link|enlace)\b/,
   /\b(?:pagar|pago|pagos|cuotas?|meses?|abonar|comprar|compra|inscribir(?:me)?|anotar(?:me)?|matricular(?:me)?|link|enlace)\b[^.!?\n]{0,64}\b(?:todavia\s+no|despues|mas\s+adelante|por\s+ahora\s+no)\b/,
   /\b(?:mandamelo|enviamelo|pasamelo|compartimelo)\b[^.!?\n]{0,32}\b(?:todavia\s+no|despues|mas\s+adelante|por\s+ahora\s+no)\b/,

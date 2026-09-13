@@ -24,6 +24,7 @@ function channelPreferenceEvidenceV1(
     const rejectsWritten = /\bno\s+(?:quiero\s+|prefiero\s+)?(?:seguir\s+|continuar\s+)?(?:por\s+)?(?:chat|escrito|mensajes?)\b/u.test(clause);
     const writtenChoice = !rejectsWritten && (
       /\bprefiero\s+(?:mantener|seguir|continuar)[^.!?]{0,40}\bpor\s+(?:chat|escrito|mensajes?)\b/u.test(clause)
+      || /\bme\s+resulta\s+(?:mas\s+)?(?:comodo|facil)\s+(?:seguir|continuar|escribir|conversar|resolver(?:lo)?|manejar(?:lo)?)[^.!?]{0,24}\b(?:chat|escrito|mensajes?|aca|aqui)\b/u.test(clause)
       || /\b(?:(?:prefiero|sigamos|seguimos|continuemos|continuar|mejor)\s+(?:(?:seguir|continuar)\s+)?(?:por\s+)?(?:chat|escrito|mensajes?)|(?:sigamos|seguimos|continuemos|prefiero\s+seguir|mejor\s+seguimos)\s+(?:por\s+)?(?:aca|aqui))\b/u.test(clause)
       || /\b(?:contame|cuentame|explicame|decime|dime)(?:\s+todo)?\s+por\s+(?:aca|aqui|chat|escrito)\b/u.test(clause)
       || /^(?:chat|por chat(?:\s+por favor)?|por aca|por aqui|por escrito(?:\s+por favor)?|por mensajes?)$/u.test(clause)

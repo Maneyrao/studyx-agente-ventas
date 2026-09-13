@@ -445,6 +445,21 @@ describe('resolveCatalogRequest', () => {
     });
   });
 
+  it('keeps a concrete fallback course after an unavailable first choice', () => {
+    expect(resolveCatalogRequest(
+      'tenes medicina? sino excel',
+      snapshot([
+        offering('excel_integral', 'Excel Integral', 'Academia de Negocios'),
+        MARKETING,
+      ]),
+    )).toEqual({
+      kind: 'ambiguous',
+      requestedText: 'tenes medicina? sino excel',
+      candidateCodes: ['excel_integral'],
+      clarification: 'choose_offering',
+    });
+  });
+
   it('treats a bare explicit unknown-course selection as catalog intent', () => {
     expect(resolveCatalogRequest('Quiero Python', snapshot([MARKETING, COMMUNITY]))).toEqual({
       kind: 'not_found',

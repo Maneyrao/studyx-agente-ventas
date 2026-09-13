@@ -366,6 +366,30 @@ function candidateCodes(claimed: ClaimedTurn, selectedCode: string | null): stri
   if (claimed.catalog_resolution.kind === 'not_found') {
     return claimed.catalog_resolution.alternativeCodes.slice(0, 3);
   }
+  if (claimed.catalog_resolution.kind === 'no_catalog_intent' && selectedCode === null) {
+    const index = claimed.catalog_index?.offerings ?? [];
+    for (let turnIndex = claimed.context.recent_turns.length - 1; turnIndex >= 0; turnIndex -= 1) {
+      const normalizedTurn = ` ${claimed.context.recent_turns[turnIndex]!.content
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/gu, '')
+        .toLocaleLowerCase('es')
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .trim()} `;
+      const mentioned = index
+        .map((offering) => {
+          const normalizedName = offering.display_name
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/gu, '')
+            .toLocaleLowerCase('es')
+            .replace(/[^\p{L}\p{N}]+/gu, ' ')
+            .trim();
+          return { code: offering.code, position: normalizedTurn.indexOf(` ${normalizedName} `) };
+        })
+        .filter((match) => match.position >= 0)
+        .sort((left, right) => left.position - right.position);
+      if (mentioned.length >= 2) return mentioned.slice(0, 3).map((match) => match.code);
+    }
+  }
   return (claimed.catalog_index?.offerings ?? [])
     .filter((offering) => offering.code !== selectedCode)
     .slice(0, 3)

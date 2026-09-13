@@ -84,7 +84,7 @@ describe('Agent A Meta sales brain', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
     const behavior = instructions.split('<authorized_context>')[0];
 
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v45');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v47');
     expect(behavior).toMatch(/lead (?:tibio|c[áa]lido).{0,60}(?:Meta|Instagram|Facebook)/iu);
     expect(behavior).toMatch(/cualquier curso activo[\s\S]{0,120}catalog\.available_offerings/iu);
     expect(behavior).toMatch(/anuncio o el mensaje[\s\S]{0,100}curso activo/iu);

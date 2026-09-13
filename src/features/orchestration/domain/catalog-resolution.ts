@@ -77,7 +77,7 @@ const METHOD_PRIORITY: Readonly<Record<LiteralMatchMethod, number>> = {
 };
 
 const CATALOG_INTENT_PATTERN =
-  /(?:\b(?:cursos|diplomados|capacitaciones|formaciones|programas|catalogo|oferta academica|academia|inscribirme|inscribime|anotarme|anotame)\b|\bestudiar\b(?!\s+para\b)|\b(?:curso|diplomado|capacitacion|formacion|programa)\s+de\s+[\p{L}\p{N}]|\b(?:tienen|ofrecen|hay)\b.{0,24}\b(?:curso|diplomado|capacitacion|formacion|programa)\b)/u;
+  /(?:\b(?:cursos|diplomados|capacitaciones|formaciones|programas|catalogo|oferta academica|academia|inscribirme|inscribime|anotarme|anotame)\b|\b(?:estudiar|aprender)\b(?!\s+para\b)|\bbusco\s+(?!(?:para|trabajo|empleo|ayuda|informacion|info|datos|detalles|algo|un?\s+opcion)\b)[\p{L}\p{N}]{3,}|\b(?:curso|diplomado|capacitacion|formacion|programa)\s+de\s+[\p{L}\p{N}]|\b(?:tienen|ofrecen|hay)\b.{0,24}\b(?:curso|diplomado|capacitacion|formacion|programa)\b)/u;
 
 const SELECTION_CUE_PATTERN =
   /\b(?:prefiero|elijo|elegi|selecciono|me quedo con|voy con|quiero|mejor|cambio a)\b/gu;
@@ -93,6 +93,9 @@ const CATALOG_REJECTION_PATTERN =
 
 const CATALOG_REPLACEMENT_AFTER_REJECTION_PATTERN =
   /\b(?:ninguno|ninguna)\b\s+(?:mejor\s+)?(?:el|la|uno|una)\s+de\s+([\p{L}\p{N}].*)$/u;
+
+const CATALOG_FALLBACK_SUBJECT_PATTERN =
+  /^(?:si\s+no|sino)\s+(?:(?:el|la|un|una)\s+)?([\p{L}\p{N}].*)$/u;
 
 const NEUTRAL_CATALOG_TRAILING_FRAGMENT_PATTERN =
   /^(?:(?:muchas\s+)?gracias(?:\s+(?:igual|por\s+(?:la\s+)?(?:info|informacion|ayuda)))?|dale|ok|okay|perfecto|listo)$/u;
@@ -185,7 +188,10 @@ function explicitCatalogReplacementSubject(text: string | readonly string[]): st
   ));
   if (!latest) return null;
 
-  const subject = CATALOG_REPLACEMENT_AFTER_REJECTION_PATTERN.exec(latest)?.[1]?.trim() ?? null;
+  const subject = (
+    CATALOG_REPLACEMENT_AFTER_REJECTION_PATTERN.exec(latest)?.[1]
+    ?? CATALOG_FALLBACK_SUBJECT_PATTERN.exec(latest)?.[1]
+  )?.trim() ?? null;
   if (!subject || /\bno\b/u.test(subject) || CATALOG_REJECTION_PATTERN.test(subject)) return null;
   return subject;
 }

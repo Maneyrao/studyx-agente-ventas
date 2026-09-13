@@ -5,8 +5,9 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { lastAgentReplyV1 } from '../lib/conversation/conversation-composer';
+import { evaluateCallOfferTurnPolicyV1 } from '../lib/conversation/call-offer-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v45' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v47' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -93,6 +94,28 @@ Never repeat the rejected draft and never expose this validation to the customer
 </mandatory_repair>`;
 }
 
+function callOfferPolicyDirectiveV1(context: AgentAContextV1): string {
+  const policy = evaluateCallOfferTurnPolicyV1({ context });
+  const required = policy.offer_required ? 'true' : 'false';
+  const allowed = policy.offer_allowed ? 'true' : 'false';
+  const instruction = policy.offer_required
+    ? 'After answering the current intent, include exactly one short invitation in response.call_offer. Keep every call invitation out of response.messages.'
+    : 'Keep response.call_offer null on this turn. Continue the sale naturally in response.messages.';
+  return `\n\n<call_offer_policy required="${required}" allowed="${allowed}" reason="${policy.reason}" customer_signal="${policy.customer_signal}">\n${instruction}\n</call_offer_policy>`;
+}
+
+function candidateCatalogGroundingDirectiveV1(context: AgentAContextV1): string {
+  if (
+    context.catalog.selected_offering !== null
+    || context.catalog.candidate_offerings.length < 2
+  ) return '';
+  return `
+
+<candidate_catalog_grounding names_only="true">
+Only the canonical candidate names are authorized. Do not describe, compare, rank or recommend either candidate because their course details are not present. Acknowledge the choice briefly and ask one short question about the customer's goal so the next turn can resolve one course.
+</candidate_catalog_grounding>`;
+}
+
 export function buildAgentABrainInstructionsV1(context: AgentAContextV1): string {
   const canonicalPrompt = context.identity === null
     ? STUDYX_AGENT_A_CANONICAL_PROMPT
@@ -105,7 +128,7 @@ export function buildAgentABrainInstructionsV1(context: AgentAContextV1): string
   return `${EXECUTION_PREAMBLE}
 
 <canonical_sales_behavior version="${STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION}">
-${canonicalPrompt}</canonical_sales_behavior>${continuity}
+${canonicalPrompt}</canonical_sales_behavior>${continuity}${candidateCatalogGroundingDirectiveV1(context)}${callOfferPolicyDirectiveV1(context)}
 
 <authorized_context>
 ${inertJson(context)}

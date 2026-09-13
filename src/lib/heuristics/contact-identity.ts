@@ -29,7 +29,8 @@ const CONTEXTUAL_NAME_TOKEN = "[\\p{L}][\\p{L}'’-]*";
 const CONTEXTUAL_NAME_SEQUENCE = `${CONTEXTUAL_NAME_TOKEN}(?:\\s+${CONTEXTUAL_NAME_TOKEN}){0,3}`;
 
 const INTRODUCED_NAME_PATTERN = new RegExp(
-  `(?:^|[\\s,;.!¡¿?])(?:soy|me\\s+llamo|mi\\s+nombre\\s+es)\\s+(${NAME_SEQUENCE})(?=\\s*(?:[,;.:!?]|$))`,
+  `(?:^|[\\s,;.!¡¿?])(?:soy|me\\s+llamo|mi\\s+nombre\\s+es)\\s+(${NAME_TOKEN}(?:\\s+${NAME_TOKEN}){0,3}?)`
+  + `(?=\\s*(?:[,;.:!?]|$|y\\b))`,
   'iu',
 );
 

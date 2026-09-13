@@ -155,7 +155,7 @@ const NOT_AN_OFFER = new RegExp(
 const FIRST_PERSON_CALL_QUESTION = /(?:hablamos|coordinamos|agendamos|organizamos|te\s+llam(?:o|amos))/iu;
 // El campo dedicado ya declara intención de ofrecer: basta una referencia
 // al canal de voz, sin exigir una fórmula de pregunta o conjugación concreta.
-const DECLARED_CALL_CHANNEL = /\b(?:llam|videollam)|tel[eé]fon|telef[oó]n|\bvoz\b|\bcontact(?:arte|emos)\b/iu;
+const DECLARED_CALL_CHANNEL = /\b(?:llam|videollam)|\btel[eé]fono\b|\btelef[oó]nic(?:a|o|as|os)\b|\bvoz\b|\bcontact(?:arte|emos)\b/iu;
 
 function callClauses(text: string): string[] {
   return text

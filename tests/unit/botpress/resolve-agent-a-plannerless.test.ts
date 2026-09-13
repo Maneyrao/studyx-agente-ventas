@@ -198,6 +198,71 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:PROPOSAL_SCHEMA_INVALID:response.messages');
   });
 
+  it('falls back to candidate names and a neutral question when the only repair is malformed', async () => {
+    const current = context();
+    current.customer.display_name = 'Julia';
+    current.turn.batch_messages = [{ id: 'm2', text: 'Sigo sin decidirme: cuál me conviene para conseguir clientes?' }];
+    current.turn.recent_turns = [{
+      id: 'prior-agent',
+      direction: 'outbound',
+      content: 'Estás entre Marketing Digital y Community Manager.',
+    }];
+    current.commercial_state.selected_offering_code = null;
+    current.commercial_state.stage = 'exploring';
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_count = 1;
+    current.commercial_state.call_offer_status = 'offered';
+    current.catalog.selected_offering = null;
+    current.catalog.candidate_offerings = [
+      {
+        code: 'marketing_digital',
+        fact_id: 'offering:marketing_digital:name:v1',
+        display_name: 'Marketing Digital',
+        area_code: 'marketing',
+      },
+      {
+        code: 'community_manager',
+        fact_id: 'offering:community_manager:name:v1',
+        display_name: 'Community Manager',
+        area_code: 'marketing',
+      },
+    ];
+    current.capabilities.may_offer_call = true;
+    const callOffer = 'Si prefieres, lo vemos en una llamada breve y te ayudo a decidir.';
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({
+        move: {
+          schema_version: 1,
+          move: 'ask_course_information',
+          secondary_moves: [],
+          vetoes: [],
+          confidence: 0.72,
+        },
+        response: {
+          messages: ['Los dos sirven, pero uno apunta a campañas y el otro a manejar una comunidad.'],
+          call_offer: callOffer,
+        },
+        used_fact_ids: [
+          'offering:marketing_digital:name:v1',
+          'offering:community_manager:name:v1',
+        ],
+      })),
+      context: current,
+      repair_enabled: true,
+      repair: async () => {
+        throw new AgentABrainError('BRAIN_INVALID_SCHEMA', null, 'move:invalid_type');
+      },
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(result.effective.proposal.response.messages.join(' ')).toContain('Marketing Digital');
+    expect(result.effective.proposal.response.messages.join(' ')).toContain('Community Manager');
+    expect(result.effective.proposal.response.messages.join(' ')).not.toMatch(/campañas|comunidad/u);
+    expect(result.effective.proposal.response.call_offer).toBe(callOffer);
+    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: false });
+  });
+
   it('preserves a confirmed call action and its model-authored acknowledgement after an offer', async () => {
     const current = context();
     current.turn.batch_messages = [{ id: 'm1', text: 'Sí, llamame ahora.' }];

@@ -171,14 +171,6 @@ export function authorizeAgentTurnV2(input: {
     else reasons.push('FACT_NOT_AUTHORIZED');
   }
 
-  // A broad canonical family (for example Inglés 1/2/3) intentionally has no
-  // selected SKU yet.  A cited navigation fact proves that the model is
-  // presenting backend-confirmed alternatives, so its first optional call
-  // invitation may be recorded without guessing which course was chosen.
-  const citedCourseFamily = selectedOffering === null
-    && moves.has('browse_catalog')
-    && authorizedFactIds.some((factId) => factsById.get(factId)?.kind === 'offering_name');
-
   const authoredMessages = [...proposal.response.messages];
   const currentText = (input.current_customer_messages ?? []).join('\n');
   const callRequestSupported = supportsCallRequestV1(currentText, state.awaiting_reply === 'call_or_chat');
@@ -199,7 +191,6 @@ export function authorizeAgentTurnV2(input: {
   // Only an eligible visible invitation advances the durable call ledger.
   const callOfferCanAdvanceState = visibleCallOffer && !(
     !input.call_policy.may_offer_call
-    || (selectedOffering === null && !citedCourseFamily)
     || state.call_offer_count >= 2
     || state.call_offer_status === 'accepted'
     || state.call_offer_status === 'declined'

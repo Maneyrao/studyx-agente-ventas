@@ -40,6 +40,7 @@ describe('métricas del workflow con errores incluidos', () => {
     const metrics = summarizeWorkflowMetricsV1([observed('fast'), failed]);
     expect(metrics).toMatchObject({ eligible_model_turns: 2, http_attempts: 3, http_failed_attempts: 1,
       usage_missing_attempts: 1, known_input_tokens: 200, known_cached_input_tokens: 80, known_output_tokens: 40,
+      known_cost_usd: 0.00010672,
       repair_attempted_turns: 1, repair_successful_turns: 0, repair_success_rate: 0, repair_rate: 0.5,
       latency_sample_count: 2, p50_ms: 1_000, p95_ms: 9_000, availability_failed_turns: 1,
       technical_fallback_turns: 1, technical_fallback_rate: 0.5 });
@@ -91,6 +92,23 @@ describe('métricas del workflow con errores incluidos', () => {
     const one = observed('one');
     const report = { conversations: [{ turns: [{ evidence: one.evidence }], db: one.db }], cases: { copy: { turns: [{ evidence: one.evidence }], db: one.db } } };
     expect(summarizeWorkflowReportV1(report)).toMatchObject({ observed_turns: 1, duplicate_traces_ignored: 1, eligible_model_turns: 1, availability_unknown_turns: 0 });
+  });
+
+  it('agrega uso y latencia cuando el resumen serializa cases como array', () => {
+    const one = observed('array-case');
+    const report = { cases: [{ turns: [{ evidence: one.evidence }], db: one.db }] };
+
+    expect(summarizeWorkflowReportV1(report)).toMatchObject({
+      observed_turns: 1,
+      eligible_model_turns: 1,
+      http_attempts: 1,
+      known_input_tokens: 100,
+      known_cached_input_tokens: 40,
+      known_output_tokens: 20,
+      known_cost_usd: 0.00005336,
+      latency_sample_count: 1,
+      p50_ms: 1_000,
+    });
   });
 
   it('una muestra vacía tiene percentiles y gates desconocidos, nunca ceros favorables', () => {

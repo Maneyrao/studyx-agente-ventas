@@ -491,7 +491,7 @@ describe('validación de la propuesta del turno', () => {
     })).toBeNull();
   });
 
-  it('rechaza una recomendación de catálogo que termina sin siguiente paso útil', () => {
+  it('no convierte la ausencia de siguiente paso en un rechazo de seguridad', () => {
     const discovery = context({
       commercial_state: {
         ...context().commercial_state,
@@ -528,10 +528,7 @@ describe('validación de la propuesta del turno', () => {
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 
-    expect(rejection?.rejections).toContainEqual({
-      code: 'COURSE_NOT_RESOLVED',
-      subject: 'next_step',
-    });
+    expect(rejection).toBeNull();
   });
 
   it('rechaza logística de cursada que no aparece en los hechos autorizados', () => {
@@ -911,6 +908,140 @@ describe('V8 respuesta repetida', () => {
     });
   });
 
+  it('rechaza ventajas laborales comparativas que el catálogo no respalda', () => {
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'browse_catalog',
+          secondary_moves: [],
+          vetoes: [],
+          confidence: 0.72,
+        },
+        response: {
+          messages: [
+            'Con Armado y Reparación de PC puedes resolver trabajos desde el primer tramo; en puestos de Excel suele pedirse experiencia previa.',
+            'Si tu prioridad es generar ingresos rápido, yo iría por Armado y Reparación de PC.',
+          ],
+          call_offer: null,
+        },
+        used_fact_ids: [
+          'offering:armado_reparacion_pc:name:v1',
+          'offering:excel_integral:name:v1',
+        ],
+      }),
+      context: context({
+        turn: {
+          batch_messages: [{ id: 'm2', text: 'No sé cuál elegir para trabajar antes.' }],
+          recent_turns: [],
+        },
+        commercial_state: {
+          ...context().commercial_state,
+          selected_offering_code: null,
+        },
+        catalog: {
+          ...context().catalog,
+          selected_offering: null,
+          candidate_offerings: [
+            {
+              code: 'armado_reparacion_pc',
+              fact_id: 'offering:armado_reparacion_pc:name:v1',
+              display_name: 'Armado y Reparación de PC',
+              area_code: 'tecnologia',
+            },
+            {
+              code: 'excel_integral',
+              fact_id: 'offering:excel_integral:name:v1',
+              display_name: 'Excel Integral',
+              area_code: 'negocios',
+            },
+          ],
+        },
+      }),
+      planned_fact_ids: [
+        'offering:armado_reparacion_pc:name:v1',
+        'offering:excel_integral:name:v1',
+      ],
+      rejection_id: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(rejection?.rejections).toContainEqual({
+      code: 'FACT_VALUE_MISMATCH',
+      subject: 'employment_outcome',
+    });
+    expect(rejection?.rejections).toContainEqual({
+      code: 'FACT_VALUE_MISMATCH',
+      subject: 'candidate_course_detail',
+    });
+  });
+
+  it('rechaza comparaciones por pronombres y la omisión de candidatos nombrados por el cliente', () => {
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'browse_catalog',
+          secondary_moves: [],
+          vetoes: [],
+          confidence: 0.76,
+        },
+        response: {
+          messages: [
+            'Los dos van bien, pero uno apunta a estrategia y campañas y el otro al manejo de comunidades y contenido.',
+            'Cuéntame qué te gustaría lograr?',
+          ],
+          call_offer: null,
+        },
+        used_fact_ids: [
+          'offering:marketing_digital:name:v1',
+          'offering:community_manager:name:v1',
+        ],
+      }),
+      context: context({
+        turn: {
+          batch_messages: [{ id: 'm2', text: 'Estoy entre Marketing Digital y Community Manager.' }],
+          recent_turns: [],
+        },
+        commercial_state: {
+          ...context().commercial_state,
+          selected_offering_code: null,
+        },
+        catalog: {
+          ...context().catalog,
+          selected_offering: null,
+          candidate_offerings: [
+            {
+              code: 'marketing_digital',
+              fact_id: 'offering:marketing_digital:name:v1',
+              display_name: 'Marketing Digital',
+              area_code: 'marketing',
+            },
+            {
+              code: 'community_manager',
+              fact_id: 'offering:community_manager:name:v1',
+              display_name: 'Community Manager',
+              area_code: 'marketing',
+            },
+          ],
+        },
+      }),
+      planned_fact_ids: [
+        'offering:marketing_digital:name:v1',
+        'offering:community_manager:name:v1',
+      ],
+      rejection_id: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(rejection?.rejections).toContainEqual({
+      code: 'FACT_VALUE_MISMATCH',
+      subject: 'candidate_course_detail',
+    });
+    expect(rejection?.rejections).toContainEqual({
+      code: 'FACT_VALUE_MISMATCH',
+      subject: 'candidate_course_names',
+    });
+  });
+
   it('permite orientar desde cero cuando la descripción canónica lo respalda', () => {
     const current = context();
     current.catalog.selected_offering!.facts.push({
@@ -1162,7 +1293,7 @@ describe('frontera léxica del ADK acotada a dinero y promesas', () => {
   }
 
   it('no rechaza mencionar la modalidad sin citar un id de hecho', () => {
-    expect(validate(['Es 100% online, así que lo hacés a tu ritmo.'])).toBeNull();
+    expect(validate(['Es 100% online.'])).toBeNull();
   });
 
   it('no rechaza mencionar la certificación sin citar un id de hecho', () => {

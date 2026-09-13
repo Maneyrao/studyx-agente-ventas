@@ -74,6 +74,28 @@ export interface WorkflowTurnEvidenceV1 {
   readonly elapsedMs: number;
 }
 
+export interface WorkflowBurstEvidenceV1 extends WorkflowTurnEvidenceV1 {
+  readonly burst: {
+    readonly source_message_count: number;
+    readonly source_invocation_count: number;
+    readonly claimed_message_count: number | null;
+    readonly model_attempt_count: number;
+    readonly invocation_results: readonly {
+      readonly trace_id: string;
+      readonly external_message_id: string;
+      readonly status: string | null;
+      readonly error_code: string | null;
+      readonly became_batch_owner: boolean;
+      readonly delivered_message_count: number;
+    }[];
+  };
+}
+
+interface SharedWorkflowObservationV1 {
+  readonly httpExchanges: WorkflowHttpExchangeV1[];
+  readonly workflowEvents: WorkflowEventV1[];
+}
+
 /**
  * Estado del workflow con los defaults del esquema.
  *
@@ -99,18 +121,20 @@ function freshWorkflowState(): Record<string, unknown> {
  * que el cerebro autoritativo la toque sería un hallazgo, no un detalle del
  * arnés. Lo mismo vale para `adk.zai` en el runtime.
  */
-export async function runWorkflowTurnV1(
+async function executeWorkflowTurnV1(
   turn: WorkflowTurnInputV1,
+  shared?: SharedWorkflowObservationV1,
+  fixedTraceId?: string,
 ): Promise<WorkflowTurnEvidenceV1> {
-  resetRecordedActionInvocationsV1();
+  if (!shared) resetRecordedActionInvocationsV1();
   const steps: string[] = [];
   const authorizedMessages: string[] = [];
   const adapterCaptures: WorkflowAdapterCaptureV1[] = [];
-  const httpExchanges: WorkflowHttpExchangeV1[] = [];
-  const workflowEvents: WorkflowEventV1[] = [];
+  const httpExchanges = shared?.httpExchanges ?? [];
+  const workflowEvents = shared?.workflowEvents ?? [];
   const state = freshWorkflowState();
   const startedAt = Date.now();
-  const traceId = randomUUID();
+  const traceId = fixedTraceId ?? randomUUID();
   const externalMessageId = turn.externalMessageId ?? randomUUID();
   const occurredAt = turn.occurredAt ?? new Date().toISOString();
 
@@ -122,9 +146,11 @@ export async function runWorkflowTurnV1(
   if (!turn.phoneE164.startsWith('+999')) throw new Error('REFUSING_NON_SYNTHETIC_WORKFLOW_CONTACT');
   // Suites secuenciales: sólo se observan las fronteras del turno actual.
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = observeWorkflowFetchV1(originalFetch, httpExchanges, apiUrl.origin);
   const originalConsoleInfo = console.info;
-  console.info = observeWorkflowConsoleInfoV1(originalConsoleInfo, traceId, workflowEvents);
+  if (!shared) {
+    globalThis.fetch = observeWorkflowFetchV1(originalFetch, httpExchanges, apiUrl.origin);
+    console.info = observeWorkflowConsoleInfoV1(originalConsoleInfo, traceId, workflowEvents);
+  }
 
   const handler = (processInboundTurn as unknown as {
     definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
@@ -213,8 +239,10 @@ export async function runWorkflowTurnV1(
     status = 'threw';
     state.errorCode = error instanceof Error ? error.message.slice(0, 128) : 'UNKNOWN';
   } finally {
-    globalThis.fetch = originalFetch;
-    console.info = originalConsoleInfo;
+    if (!shared) {
+      globalThis.fetch = originalFetch;
+      console.info = originalConsoleInfo;
+    }
   }
 
   const actions = recordedActionInvocationsV1();
@@ -246,8 +274,117 @@ export async function runWorkflowTurnV1(
     errorCode: (state.errorCode as string | null) ?? null,
     elapsedMs: Date.now() - startedAt,
   };
-  writeWorkflowReportV1('workflow-turn', { conversation_id: turn.conversationId, customer: turn.text, evidence });
+  if (!shared) {
+    writeWorkflowReportV1('workflow-turn', { conversation_id: turn.conversationId, customer: turn.text, evidence });
+  }
   return evidence;
+}
+
+export async function runWorkflowTurnV1(
+  turn: WorkflowTurnInputV1,
+): Promise<WorkflowTurnEvidenceV1> {
+  return executeWorkflowTurnV1(turn);
+}
+
+/**
+ * Runs every source event through the production workflow concurrently.
+ * Only the workflow that wins the sliding batch claim may call the model and
+ * deliver; the other invocations must terminate as absorbed/completed.
+ */
+export async function runWorkflowBurstV1(input: {
+  readonly conversationId: string;
+  readonly userId: string;
+  readonly phoneE164: string;
+  readonly messages: readonly { readonly text: string; readonly delayMs: number }[];
+  readonly providerMode?: 'live' | 'fixture';
+}): Promise<WorkflowBurstEvidenceV1> {
+  if (input.messages.length < 2 || input.messages.some((message) => (
+    !message.text.trim() || !Number.isSafeInteger(message.delayMs) || message.delayMs < 0
+  ))) throw new Error('INVALID_WORKFLOW_BURST');
+
+  const apiUrl = new URL(configuration.apiBaseUrl);
+  const shared: SharedWorkflowObservationV1 = { httpExchanges: [], workflowEvents: [] };
+  const traceIds = input.messages.map(() => randomUUID());
+  const originalFetch = globalThis.fetch;
+  const originalConsoleInfo = console.info;
+  resetRecordedActionInvocationsV1();
+  globalThis.fetch = observeWorkflowFetchV1(originalFetch, shared.httpExchanges, apiUrl.origin);
+  // Nesting the existing observer once per trace keeps its exact filtering
+  // behavior while allowing all concurrent workflow logs into one capture.
+  console.info = traceIds.reduce<Console['info']>(
+    (observer, traceId) => observeWorkflowConsoleInfoV1(observer, traceId, shared.workflowEvents),
+    originalConsoleInfo,
+  );
+  const startedAt = Date.now();
+  let invocations: WorkflowTurnEvidenceV1[];
+  try {
+    invocations = await Promise.all(input.messages.map(async (message, index) => {
+      if (message.delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, message.delayMs));
+      }
+      return executeWorkflowTurnV1({
+        conversationId: input.conversationId,
+        userId: input.userId,
+        phoneE164: input.phoneE164,
+        text: message.text,
+        providerMode: input.providerMode,
+      }, shared, traceIds[index]);
+    }));
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.info = originalConsoleInfo;
+  }
+
+  const actions = recordedActionInvocationsV1();
+  const owner = invocations.find((invocation) => invocation.authorizedMessages.length > 0)
+    ?? invocations.find((invocation) => shared.workflowEvents.some((event) => (
+      event.trace_id === invocation.traceId && event.event === 'studyx.turn.claimed'
+    )))
+    ?? invocations.at(-1);
+  if (!owner) throw new Error('WORKFLOW_BURST_EMPTY');
+  const claimedEvent = shared.workflowEvents.find((event) => (
+    event.trace_id === owner.traceId && event.event === 'studyx.turn.claimed'
+  ));
+  const modelAttempts = shared.httpExchanges.filter((exchange) => exchange.boundary === 'deepseek').length;
+  const combined: WorkflowBurstEvidenceV1 = {
+    ...owner,
+    legacyPlanRequests: actions.filter((action) => action.name === 'planConversation').length,
+    commitSucceeded: workflowCommitSucceededV1(
+      actions.some((action) => action.name === 'commitDecision' && action.ok),
+      owner.turnId,
+      shared.httpExchanges,
+    ),
+    adapterCaptures: invocations.flatMap((invocation) => invocation.adapterCaptures),
+    httpExchanges: shared.httpExchanges,
+    workflowEvents: shared.workflowEvents,
+    authorizedMessages: invocations.flatMap((invocation) => invocation.authorizedMessages),
+    steps: invocations.flatMap((invocation) => invocation.steps),
+    actions,
+    elapsedMs: Date.now() - startedAt,
+    burst: {
+      source_message_count: input.messages.length,
+      source_invocation_count: invocations.length,
+      claimed_message_count: typeof claimedEvent?.message_count === 'number'
+        ? claimedEvent.message_count : null,
+      model_attempt_count: modelAttempts,
+      invocation_results: invocations.map((invocation) => ({
+        trace_id: invocation.traceId,
+        external_message_id: invocation.externalMessageId,
+        status: invocation.status,
+        error_code: invocation.errorCode,
+        became_batch_owner: shared.workflowEvents.some((event) => (
+          event.trace_id === invocation.traceId && event.event === 'studyx.turn.claimed'
+        )),
+        delivered_message_count: invocation.authorizedMessages.length,
+      })),
+    },
+  };
+  writeWorkflowReportV1('workflow-burst', {
+    conversation_id: input.conversationId,
+    customer_messages: input.messages,
+    evidence: combined,
+  });
+  return combined;
 }
 
 export interface WorkflowConversationEvidenceV1 {

@@ -30,6 +30,10 @@ export interface WorkflowMetricsV1 {
   readonly known_input_tokens: number | null;
   readonly known_cached_input_tokens: number | null;
   readonly known_output_tokens: number | null;
+  /** Observable provider usage priced with the pinned lab rates. */
+  readonly known_cost_usd: number | null;
+  readonly cost_missing_attempts: number;
+  readonly cost_pricing: 'deepseek-v4-flash-2026-09-04';
   readonly repair_attempted_turns: number;
   readonly repair_successful_turns: number;
   readonly repair_outcome_unknown_turns: number;
@@ -57,6 +61,10 @@ export interface WorkflowMetricsV1 {
   readonly limitations: readonly string[];
 }
 
+const INPUT_RATE_USD = 0.44 / 1_000_000;
+const CACHED_INPUT_RATE_USD = 0.014 / 1_000_000;
+const OUTPUT_RATE_USD = 1.32 / 1_000_000;
+
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
@@ -68,6 +76,10 @@ function numericToken(value: unknown): number | null {
 function sumKnown(values: readonly (number | null)[]): number | null {
   const known = values.filter((value): value is number => value !== null);
   return known.length ? known.reduce((sum, value) => sum + value, 0) : null;
+}
+
+function roundedUsd(value: number | null): number | null {
+  return value === null ? null : Number(value.toFixed(12));
 }
 
 function percentile(values: readonly number[], fraction: number): number | null {
@@ -147,8 +159,13 @@ export function summarizeWorkflowMetricsV1(observations: readonly WorkflowMetric
   const calls = eligible.flatMap((turn) => turn.calls);
   const usage = calls.map((call) => {
     const usage = record(record(call.responseBody)?.usage);
-    return { input: numericToken(usage?.input_tokens), output: numericToken(usage?.output_tokens),
-      cached: numericToken(record(usage?.input_tokens_details)?.cached_tokens) };
+    const input = numericToken(usage?.input_tokens);
+    const output = numericToken(usage?.output_tokens);
+    const cached = numericToken(record(usage?.input_tokens_details)?.cached_tokens);
+    const cost = input !== null && output !== null && cached !== null && cached <= input
+      ? (input - cached) * INPUT_RATE_USD + cached * CACHED_INPUT_RATE_USD + output * OUTPUT_RATE_USD
+      : null;
+    return { input, output, cached, cost };
   });
   const attempted = eligible.filter((turn) => turn.attempted);
   const successes = attempted.filter((turn) => turn.repaired === true).length;
@@ -190,7 +207,9 @@ export function summarizeWorkflowMetricsV1(observations: readonly WorkflowMetric
     http_attempts: calls.length, http_failed_attempts: calls.filter((call) => call.error || call.status === null || call.status >= 400).length,
     usage_missing_attempts: missingUsage, cached_usage_missing_attempts: usage.filter((item) => item.cached === null).length,
     known_input_tokens: sumKnown(usage.map((item) => item.input)), known_cached_input_tokens: sumKnown(usage.map((item) => item.cached)),
-    known_output_tokens: sumKnown(usage.map((item) => item.output)),
+    known_output_tokens: sumKnown(usage.map((item) => item.output)), known_cost_usd: roundedUsd(sumKnown(usage.map((item) => item.cost))),
+    cost_missing_attempts: usage.filter((item) => item.cost === null).length,
+    cost_pricing: 'deepseek-v4-flash-2026-09-04',
     repair_attempted_turns: attempted.length, repair_successful_turns: successes, repair_outcome_unknown_turns: unknownRepair,
     repair_rate: repairRate, repair_success_rate: repairSuccessRate, technical_fallback_turns: fallbackCount, technical_fallback_rate: fallbackRate,
     availability_failed_turns: availabilityFailed, availability_unknown_turns: availabilityUnknown,
@@ -218,8 +237,12 @@ export function summarizeWorkflowReportV1(report: Record<string, unknown>): Work
     for (const key of ['turns', 'conversations']) {
       if (Array.isArray(item[key])) for (const child of item[key]) visit(child, db, provider);
     }
-    const cases = record(item.cases);
-    if (cases) for (const child of Object.values(cases)) visit(child, db, provider);
+    if (Array.isArray(item.cases)) {
+      for (const child of item.cases) visit(child, db, provider);
+    } else {
+      const cases = record(item.cases);
+      if (cases) for (const child of Object.values(cases)) visit(child, db, provider);
+    }
   }
   visit(report);
   return summarizeWorkflowMetricsV1(observations);

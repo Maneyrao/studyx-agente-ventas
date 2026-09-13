@@ -70,8 +70,8 @@ describe('Agent A Brain prompt', () => {
   it('ships one complete canonical behavior behind a compact runtime contract', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v16');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v45');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v17');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v47');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('You lead the\nconversation; the backend does not write your narrative');
     expect(instructions).toContain('The sales\nphases are a map, not a blocking script');
@@ -89,6 +89,31 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).toContain('Cualquier curso activo de `catalog.available_offerings`');
   });
 
+  it('forbids ranking ambiguous candidates when only their names are authorized', () => {
+    const current = context();
+    current.commercial_state.selected_offering_code = null;
+    current.catalog.selected_offering = null;
+    current.catalog.candidate_offerings = [
+      {
+        code: 'excel_integral',
+        fact_id: 'offering:excel_integral:name:v1',
+        display_name: 'Excel Integral',
+        area_code: 'negocios',
+      },
+      {
+        code: 'armado_reparacion_pc',
+        fact_id: 'offering:armado_reparacion_pc:name:v1',
+        display_name: 'Armado y Reparación de PC',
+        area_code: 'tecnologia',
+      },
+    ];
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+
+    expect(instructions).toContain('<candidate_catalog_grounding names_only="true">');
+    expect(instructions).toContain('Do not describe, compare, rank or recommend either candidate');
+  });
+
   it('keeps the call policy, intake authority and payment link ownership explicit', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
@@ -96,6 +121,43 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).toContain('como mensaje separado');
     expect(instructions).toContain('Pide sólo los campos que figuren en `capabilities.intake_missing`');
     expect(instructions).toContain('el backend agrega el link canónico de Stripe');
+    expect(instructions).toContain('como máximo antes de solicitar los datos finales');
+    expect(instructions).toContain('aceptación de la primera invitación');
+    expect(instructions).toContain('compra directa cancelan el segundo ofrecimiento');
+  });
+
+  it('binds the situational second-offer reason into the live turn instructions', () => {
+    const current = context();
+    current.customer.display_name = 'Lucia';
+    current.turn.batch_messages[0].text = 'Me parece caro y se me va del presupuesto.';
+    current.commercial_state.call_offer_count = 1;
+    current.commercial_state.call_offer_status = 'offered';
+    current.commercial_state.awaiting_reply = 'none';
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+
+    expect(instructions).toContain('<call_offer_policy required="true"');
+    expect(instructions).toContain('reason="SECOND_PRICE_OBJECTION"');
+    expect(instructions).toContain('response.call_offer');
+  });
+
+  it('requires the first offer when the name is known and the current need is an ambiguous course family', () => {
+    const current = context();
+    current.customer.display_name = null;
+    current.turn.batch_messages[0].text = 'Soy Lucia. Quiero estudiar ingles pero no se que nivel.';
+    current.commercial_state.selected_offering_code = null;
+    current.commercial_state.stage = 'exploring';
+    current.catalog.selected_offering = null;
+    current.catalog.resolution = 'ambiguous';
+    current.catalog.candidate_offerings = [
+      { code: 'ingles_1', fact_id: 'offering:ingles_1:name:v1', display_name: 'Inglés 1', area_code: 'idiomas' },
+      { code: 'ingles_2', fact_id: 'offering:ingles_2:name:v1', display_name: 'Inglés 2', area_code: 'idiomas' },
+    ];
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+
+    expect(instructions).toContain('<call_offer_policy required="true"');
+    expect(instructions).toContain('reason="FIRST_OFFER_DUE"');
   });
 
   it('adds the last outbound as explicit continuity context', () => {
