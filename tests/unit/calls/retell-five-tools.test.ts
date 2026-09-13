@@ -70,7 +70,11 @@ function dependencies(overrides: Partial<RetellOrchestrationStore> = {}) {
       channel: 'telegram' as const,
     })),
     verifyPayment: vi.fn(async () => ({ found: true as const, state: 'paid' })),
-    sendMaterial: vi.fn(async () => ({ sent: true, reference: 'delivery_1' })),
+    sendMaterial: vi.fn(async () => ({
+      sent: true,
+      reference: 'delivery_1',
+      channel: 'telegram' as const,
+    })),
     requestHumanHandoff: vi.fn(async () => ({ requestId: 'handoff_1', available: null })),
     scheduleFollowup: vi.fn(async () => ({
       requestId: 'followup_1', scheduledAt: null, needsResolution: true,
@@ -231,7 +235,7 @@ describe('remaining Retell orchestration tools', () => {
     const result = await invoke('enviar_link_pago', {
       cursos: ['reparacion_celulares'], plan: 'cuotas', canal: 'whatsapp',
     }, deps);
-    expect(result.body).toEqual({ ok: false, error: { code: 'PLAN_SELECTION_REQUIRED' } });
+    expect(result.body).toMatchObject({ ok: false, error: { code: 'PLAN_SELECTION_REQUIRED' } });
     expect(result.deps.orchestration.requestAgentAPaymentLink).toHaveBeenCalledWith(
       expect.objectContaining({ paymentPlan: 'cuotas' }),
     );
@@ -239,7 +243,10 @@ describe('remaining Retell orchestration tools', () => {
 
   it('returns canonical payment state and never accepts a model assertion as state', async () => {
     const result = await invoke('verificar_pago', { referencia_pago: 'arbitrary-reference' });
-    expect(result.body).toEqual({ ok: true, pago: { estado: 'paid' } });
+    expect(result.body).toEqual({
+      ok: true,
+      pago: { estado: 'pagado', estado_backend: 'paid' },
+    });
     expect(result.deps.orchestration.verifyPayment).toHaveBeenCalledWith(expect.objectContaining({
       callId: internalCallId, contactId, reference: 'arbitrary-reference',
     }));
@@ -249,12 +256,15 @@ describe('remaining Retell orchestration tools', () => {
     const deps = dependencies({ verifyPayment: vi.fn(async () => ({ found: false as const, reason: 'PAYMENT_NOT_FOUND' })) });
     const result = await invoke('verificar_pago', {}, deps);
     expect(result.response.status).toBe(200);
-    expect(result.body).toEqual({ ok: false, error: { code: 'PAYMENT_NOT_FOUND' } });
+    expect(result.body).toMatchObject({ ok: false, error: { code: 'PAYMENT_NOT_FOUND' } });
   });
 
   it('accepts the export-compatible empty payment reference and resolves by correlated contact', async () => {
     const result = await invoke('verificar_pago', { referencia_pago: '' });
-    expect(result.body).toEqual({ ok: true, pago: { estado: 'paid' } });
+    expect(result.body).toEqual({
+      ok: true,
+      pago: { estado: 'pagado', estado_backend: 'paid' },
+    });
     expect(result.deps.orchestration.verifyPayment).toHaveBeenCalledWith(expect.objectContaining({
       callId: internalCallId,
     }));
@@ -265,7 +275,38 @@ describe('remaining Retell orchestration tools', () => {
       sendMaterial: vi.fn(async () => ({ sent: false, reference: null, reason: 'MATERIAL_UNAVAILABLE' })),
     });
     const result = await invoke('enviar_material', { tipo: 'temario', curso: 'desconocido' }, deps);
-    expect(result.body).toEqual({ ok: false, error: { code: 'MATERIAL_UNAVAILABLE' } });
+    expect(result.body).toMatchObject({ ok: false, error: { code: 'MATERIAL_UNAVAILABLE' } });
+  });
+
+  it('returns the actual material channel and pins delivery to the original conversation', async () => {
+    const result = await invoke('enviar_material', { tipo: 'temario', curso: 'reparacion_celulares' });
+    expect(result.body).toEqual({
+      ok: true,
+      enviado: true,
+      canal: 'telegram',
+      referencia: 'delivery_1',
+      material: { enviado: true, canal: 'telegram', referencia: 'delivery_1' },
+    });
+    expect(result.deps.orchestration.sendMaterial).toHaveBeenCalledWith({
+      callId: internalCallId,
+      contactId,
+      conversationId,
+      workspaceSlug: 'studyx',
+      type: 'temario',
+      course: 'reparacion_celulares',
+    });
+  });
+
+  it('gives Agent B an enunciable reason for an authenticated operational failure', async () => {
+    const deps = dependencies({
+      verifyPayment: vi.fn(async () => ({ found: false as const, reason: 'PAYMENT_NOT_FOUND' })),
+    });
+    const result = await invoke('verificar_pago', {}, deps);
+    expect(result.body).toMatchObject({
+      ok: false,
+      motivo: expect.stringContaining('pago'),
+      error: { code: 'PAYMENT_NOT_FOUND' },
+    });
   });
 
   it('returns durable handoff identity and does not claim unknown availability', async () => {
@@ -273,7 +314,10 @@ describe('remaining Retell orchestration tools', () => {
       motivo: 'pedido_explicito', detalle: 'Quiere hablar con una persona.', urgencia: 'normal',
     });
     expect(result.body).toEqual({
-      ok: true, derivacion: { creada: true, referencia: 'handoff_1', disponible: null },
+      ok: true,
+      disponible: null,
+      referencia: 'handoff_1',
+      derivacion: { creada: true, referencia: 'handoff_1', disponible: null },
     });
   });
 
@@ -284,7 +328,7 @@ describe('remaining Retell orchestration tools', () => {
     expect(result.body).toEqual({
       ok: true,
       seguimiento: {
-        agendado: false, referencia: 'followup_1', cuando: 'el lunes por la mañana',
+        agendado: false, confirmado: false, referencia: 'followup_1', cuando: 'el lunes por la mañana',
         canal: 'whatsapp', motivo: 'Lo habla con su pareja', needs_resolution: true,
       },
     });
@@ -314,6 +358,6 @@ describe('remaining Retell orchestration tools', () => {
   it('returns structured authenticated validation failures with HTTP 200', async () => {
     const result = await invoke('enviar_link_pago', { curso: '', plan_code: 'monthly_24' });
     expect(result.response.status).toBe(200);
-    expect(result.body).toEqual({ ok: false, error: { code: 'INVALID_TOOL_REQUEST' } });
+    expect(result.body).toMatchObject({ ok: false, error: { code: 'INVALID_TOOL_REQUEST' } });
   });
 });

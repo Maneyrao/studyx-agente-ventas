@@ -220,7 +220,7 @@ describe('Retell P0 tool boundary', () => {
     );
 
     expect(response.status).toBe(413);
-    expect(await response.json()).toEqual({ ok: false, error: { code: 'PAYLOAD_TOO_LARGE' } });
+    expect(await response.json()).toMatchObject({ ok: false, error: { code: 'PAYLOAD_TOO_LARGE' } });
     expect(deps.calls.resolveRetellToolCall).not.toHaveBeenCalled();
   });
 
@@ -271,7 +271,7 @@ describe('Retell P0 tool boundary', () => {
   ])('fails closed for %s with the strict authenticated result envelope', async (_case, body) => {
     const result = await invoke('consultar_curso', body);
     expect(result.response.status).toBe(200);
-    expect(result.body).toEqual({ ok: false, error: { code: 'INVALID_TOOL_REQUEST' } });
+    expect(result.body).toMatchObject({ ok: false, error: { code: 'INVALID_TOOL_REQUEST' } });
   });
 
   it('resolves one canonical course by owner alias and returns only bounded canonical detail', async () => {
@@ -288,6 +288,7 @@ describe('Retell P0 tool boundary', () => {
         nombre: 'Reparación de Celulares',
         academia: 'Academia de Oficios',
         descripcion: 'Diagnóstico y reparación de celulares.',
+        resumen_hablado: 'Diagnóstico y reparación de celulares.',
         modalidad: 'online',
         clases: 20,
         modulos: 5,
@@ -304,7 +305,7 @@ describe('Retell P0 tool boundary', () => {
     ['unique typo', { curso: 'Reparación de Celulare' }],
   ])('requires an entire exact canonical identity and academy: %s', async (_case, args) => {
     const result = await invoke('consultar_curso', envelope('consultar_curso', args));
-    expect(result.body).toEqual({ ok: false, error: { code: 'COURSE_UNAVAILABLE' } });
+    expect(result.body).toMatchObject({ ok: false, error: { code: 'COURSE_UNAVAILABLE' } });
   });
 
   it('uses an exact academy filter to disambiguate canonical homonyms', async () => {
@@ -365,7 +366,7 @@ describe('Retell P0 tool boundary', () => {
       curso: 'arreglo de celulares',
     }), deps);
 
-    expect(result.body).toEqual({ ok: false, error: { code: 'COURSE_UNAVAILABLE' } });
+    expect(result.body).toMatchObject({ ok: false, error: { code: 'COURSE_UNAVAILABLE' } });
   });
 
   it('returns the coherent canonical price and owner-authored payment labels without a discount calculation', async () => {
@@ -385,6 +386,18 @@ describe('Retell P0 tool boundary', () => {
     });
   });
 
+  it('accepts Lucas\'s ISO country context without deriving or converting the canonical offer', async () => {
+    const result = await invoke('consultar_oferta', envelope('consultar_oferta', {
+      cursos: ['reparacion_celulares'],
+      pais: 'AR',
+    }));
+
+    expect(result.body).toMatchObject({
+      ok: true,
+      oferta: { moneda: 'USD', precio_final: '360.00' },
+    });
+  });
+
   it('refuses an offer whose raw canonical identity is unsafe', async () => {
     const deps = dependencies();
     deps.business.loadBusinessContext.mockResolvedValue(rawContext({
@@ -395,15 +408,13 @@ describe('Retell P0 tool boundary', () => {
       cursos: ['arreglo de celulares'],
     }), deps);
 
-    expect(result.body).toEqual({ ok: false, error: { code: 'OFFER_UNAVAILABLE' } });
+    expect(result.body).toMatchObject({ ok: false, error: { code: 'OFFER_UNAVAILABLE' } });
   });
 
-  it.each([
-    { cursos: ['reparacion_celulares', 'otro'] },
-    { cursos: ['reparacion_celulares'], pais: 'Argentina' },
-  ])('refuses unsupported combo/country pricing instead of calculating it', async (args) => {
+  it('refuses unsupported combo pricing instead of calculating it', async () => {
+    const args = { cursos: ['reparacion_celulares', 'otro'] };
     const result = await invoke('consultar_oferta', envelope('consultar_oferta', args));
-    expect(result.body).toEqual({ ok: false, error: { code: 'OFFER_UNAVAILABLE' } });
+    expect(result.body).toMatchObject({ ok: false, error: { code: 'OFFER_UNAVAILABLE' } });
   });
 
   it('requires at least one contact field', async () => {
@@ -411,7 +422,7 @@ describe('Retell P0 tool boundary', () => {
       'guardar_datos_contacto',
       envelope('guardar_datos_contacto', {}),
     );
-    expect(result.body).toEqual({ ok: false, error: { code: 'INVALID_TOOL_REQUEST' } });
+    expect(result.body).toMatchObject({ ok: false, error: { code: 'INVALID_TOOL_REQUEST' } });
   });
 
   it('forwards a surname captured by Agent B to the same canonical contact writer', async () => {
@@ -469,6 +480,6 @@ describe('Retell P0 tool boundary', () => {
     }), deps);
 
     expect(result.response.status).toBe(200);
-    expect(result.body).toEqual({ ok: false, error: { code: 'PAYMENT_NOT_VERIFIED' } });
+    expect(result.body).toMatchObject({ ok: false, error: { code: 'PAYMENT_NOT_VERIFIED' } });
   });
 });

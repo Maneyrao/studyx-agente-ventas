@@ -236,7 +236,7 @@ run('Retell P0 tools with PostgreSQL', () => {
 
     const unverified = await callTool(ids, 'registrar_resultado', args);
     expect(unverified.response.status).toBe(200);
-    expect(unverified.body).toEqual({ ok: false, error: { code: 'PAYMENT_NOT_VERIFIED' } });
+    expect(unverified.body).toMatchObject({ ok: false, error: { code: 'PAYMENT_NOT_VERIFIED' } });
     await expect(db!<Array<{ result: string | null }>>`
       SELECT result FROM call_sessions WHERE id = ${ids.callId}::uuid
     `).resolves.toEqual([{ result: null }]);
@@ -393,7 +393,7 @@ run('Retell P0 tools with PostgreSQL', () => {
       'guardar_datos_contacto',
       dependencies(ids),
     );
-    expect(await response.json()).toEqual({
+    expect(await response.json()).toMatchObject({
       ok: false,
       error: { code: 'CALL_CORRELATION_MISMATCH' },
     });
@@ -406,7 +406,7 @@ run('Retell P0 tools with PostgreSQL', () => {
       'consultar_curso',
       dependencies(ids),
     );
-    expect(await crossWorkspace.json()).toEqual({
+    expect(await crossWorkspace.json()).toMatchObject({
       ok: false,
       error: { code: 'CALL_CORRELATION_MISMATCH' },
     });
@@ -451,7 +451,7 @@ run('Retell P0 tools with PostgreSQL', () => {
       );
 
       expect(response.status).toBe(200);
-      expect(await response.json()).toEqual({
+      expect(await response.json()).toMatchObject({
         ok: false,
         error: { code: 'CALL_CORRELATION_MISMATCH' },
       });

@@ -70,10 +70,10 @@
 - Test: `tests/unit/retell-tools.test.ts`
 - Test: `tests/integration/retell-five-tools-postgres.test.ts`
 
-- [ ] Add or extend table-driven tests for course, offer, lead data, payment verification, material, human handoff, and follow-up scheduling.
-- [ ] Preserve existing stores and strict effect schemas while returning a useful Agent B response for every authenticated error.
-- [ ] Verify all nine public tool routes without adding tables, routes, or migrations.
-- [ ] Commit only contract adaptations demonstrated by a failing test.
+- [x] Add or extend table-driven tests for course, offer, lead data, payment verification, material, human handoff, and follow-up scheduling.
+- [x] Preserve existing stores and strict effect schemas while returning a useful Agent B response for every authenticated error.
+- [x] Verify all nine public tool routes without adding tables, routes, or migrations.
+- [x] Commit only contract adaptations demonstrated by a failing test.
 
 ### Task 5: Prove the local A→B→A journey
 

@@ -59,10 +59,16 @@ export interface RetellOrchestrationStore {
   sendMaterial(input: {
     readonly callId: string;
     readonly contactId: string;
+    readonly conversationId: string;
     readonly workspaceSlug: string;
     readonly type: 'temario' | 'testimonios' | 'acceso_campus' | 'comprobante';
     readonly course?: string;
-  }): Promise<{ readonly sent: boolean; readonly reference: string | null; readonly reason?: string }>;
+  }): Promise<{
+    readonly sent: boolean;
+    readonly reference: string | null;
+    readonly channel?: 'telegram' | 'whatsapp' | null;
+    readonly reason?: string;
+  }>;
   requestHumanHandoff(input: {
     readonly callId: string;
     readonly contactId: string;
@@ -155,7 +161,9 @@ const ToolArgsSchemas = {
   }).strict(),
   consultar_oferta: z.object({
     cursos: z.array(CourseTextSchema).min(1).max(4),
-    pais: z.string().trim().min(1).max(64).optional(),
+    // Country is correlation context only. Prices still come unchanged from
+    // the canonical workspace snapshot; no conversion or localization occurs.
+    pais: z.string().trim().regex(/^[A-Z]{2}$/u).optional(),
   }).strict(),
   guardar_datos_contacto: z.object({
     nombre: SafeNameSchema.optional(),
@@ -262,8 +270,36 @@ type ParsedEnvelope<Name extends RetellToolName> = {
   readonly args: z.infer<(typeof ToolArgsSchemas)[Name]>;
 };
 
+const RETELL_TOOL_FAILURE_MESSAGES: Readonly<Record<string, string>> = {
+  INVALID_TOOL_REQUEST: 'Necesito corregir o completar los datos antes de continuar.',
+  PAYLOAD_TOO_LARGE: 'La solicitud es demasiado grande para procesarla.',
+  COURSE_UNAVAILABLE: 'No pude confirmar ese curso con la información disponible.',
+  OFFER_UNAVAILABLE: 'No pude confirmar una oferta vigente para esa selección.',
+  PLAN_SELECTION_REQUIRED: 'Necesito saber si prefiere 6 o 12 cuotas antes de enviar el link.',
+  PAYMENT_PLAN_UNAVAILABLE: 'Esa forma de pago no está disponible para esta oferta.',
+  PAYMENT_LINK_NOT_CONFIGURED: 'El link de pago todavía no está configurado.',
+  PAYMENT_UNAVAILABLE: 'No pude preparar el link de pago en este momento.',
+  PAYMENT_NOT_FOUND: 'El pago todavía no figura en el sistema.',
+  PAYMENT_NOT_VERIFIED: 'El pago todavía no figura verificado en el sistema.',
+  MATERIAL_UNAVAILABLE: 'No pude encontrar o enviar ese material en este momento.',
+  OUTBOUND_UNAVAILABLE: 'No pude entregar el mensaje al canal original.',
+  CONTACT_UNAVAILABLE: 'No pude confirmar el contacto asociado a esta llamada.',
+  CONVERSATION_MISMATCH: 'No pude confirmar el chat original asociado a esta llamada.',
+  CALL_CORRELATION_NOT_FOUND: 'No pude confirmar esta llamada en el sistema.',
+  CALL_CORRELATION_MISMATCH: 'No pude confirmar que esta llamada corresponda al contacto y chat originales.',
+  CALL_PROVIDER_ID_CONFLICT: 'No pude confirmar esta llamada en el sistema.',
+  CALL_CORRELATION_STATE_INVALID: 'La llamada todavía no está lista para esa acción.',
+  TOOL_UNAVAILABLE: 'No pude completar esa acción en este momento.',
+};
+
 function resultError(code: string, status = 200): Response {
-  return Response.json({ ok: false, error: { code } }, { status });
+  const motivo = RETELL_TOOL_FAILURE_MESSAGES[code]
+    ?? (status === 200 ? 'No pude completar esa acción en este momento.' : undefined);
+  return Response.json({
+    ok: false,
+    ...(motivo === undefined ? {} : { motivo }),
+    error: { code },
+  }, { status });
 }
 
 async function readBoundedBody(request: Request): Promise<Uint8Array | null> {
@@ -442,6 +478,7 @@ async function consultCourse(
       nombre: course.display_name,
       academia: course.academy,
       descripcion: course.description,
+      resumen_hablado: course.description,
       modalidad: course.modality,
       clases: course.classes,
       modulos: course.modules,
@@ -455,7 +492,7 @@ async function consultOffer(
   args: z.infer<typeof ToolArgsSchemas.consultar_oferta>,
   dependencies: RetellToolDependencies,
 ): Promise<Response> {
-  if (args.cursos.length !== 1 || args.pais !== undefined) return resultError('OFFER_UNAVAILABLE');
+  if (args.cursos.length !== 1) return resultError('OFFER_UNAVAILABLE');
   const raw = await dependencies.business.loadBusinessContext(dependencies.workspaceSlug);
   if (!raw || !rawCatalogIdentitiesAreSafe(raw)) return resultError('OFFER_UNAVAILABLE');
   const snapshot = buildBusinessContextView(raw);
@@ -579,17 +616,30 @@ async function runOrchestrationTool(
       ...(args.referencia_pago === undefined ? {} : { reference: args.referencia_pago }),
     });
     if (!result.found) return resultError(result.reason ?? 'PAYMENT_NOT_FOUND');
-    return Response.json({ ok: true, pago: { estado: result.state } });
+    return Response.json({
+      ok: true,
+      pago: {
+        estado: paymentStateForAgentB(result.state),
+        estado_backend: result.state,
+      },
+    });
   }
   if (envelope.name === 'enviar_material') {
     const args = envelope.args as z.infer<typeof ToolArgsSchemas.enviar_material>;
     const result = await store.sendMaterial({
       ...common,
+      conversationId: identity.conversationId,
       type: args.tipo,
       ...(args.curso === undefined ? {} : { course: args.curso }),
     });
     return result.sent
-      ? Response.json({ ok: true, material: { enviado: true, referencia: result.reference } })
+      ? Response.json({
+          ok: true,
+          enviado: true,
+          canal: result.channel,
+          referencia: result.reference,
+          material: { enviado: true, canal: result.channel, referencia: result.reference },
+        })
       : resultError(result.reason ?? 'MATERIAL_UNAVAILABLE');
   }
   if (envelope.name === 'derivar_a_asesor_humano') {
@@ -602,6 +652,8 @@ async function runOrchestrationTool(
     });
     return Response.json({
       ok: true,
+      disponible: result.available,
+      referencia: result.requestId,
       derivacion: { creada: true, referencia: result.requestId, disponible: result.available },
     });
   }
@@ -616,14 +668,24 @@ async function runOrchestrationTool(
     ok: true,
     seguimiento: {
       agendado: result.scheduledAt !== null && !result.needsResolution,
+      confirmado: result.scheduledAt !== null && !result.needsResolution,
       referencia: result.requestId,
       cuando: result.whenText,
       canal: result.channel,
       motivo: result.reason,
       needs_resolution: result.needsResolution,
       ...(result.scheduledAt === null ? {} : { programado_para: result.scheduledAt }),
+      ...(result.scheduledAt === null ? {} : { fecha_hora_legible: result.scheduledAt }),
     },
   });
+}
+
+function paymentStateForAgentB(state: string): string {
+  if (state === 'paid') return 'pagado';
+  if (state === 'failed') return 'fallido';
+  if (state === 'expired') return 'expirado';
+  if (state === 'refunded') return 'reembolsado';
+  return 'pendiente';
 }
 
 export async function handleRetellToolRequest(

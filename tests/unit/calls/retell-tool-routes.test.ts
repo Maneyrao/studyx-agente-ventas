@@ -52,6 +52,10 @@ describe('Retell tool route authentication', () => {
       body: '{}',
     }), 'consultar_curso');
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: false, error: { code: 'TOOL_MISCONFIGURED' } });
+    expect(await response.json()).toEqual({
+      ok: false,
+      motivo: 'La herramienta no está configurada en este momento.',
+      error: { code: 'TOOL_MISCONFIGURED' },
+    });
   });
 });

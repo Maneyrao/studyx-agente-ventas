@@ -130,6 +130,9 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     if (!this.options.sendOutbound) return { sent: false, reference: null, reason: 'OUTBOUND_UNAVAILABLE' };
     const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId, input.callId);
     if (!workspace) return { sent: false, reference: null, reason: 'CONTACT_UNAVAILABLE' };
+    if (workspace.conversation_id !== input.conversationId) {
+      return { sent: false, reference: null, reason: 'CONVERSATION_MISMATCH' };
+    }
     const rows = await this.db<Array<{ id: string; content: string; metadata: Record<string, unknown> }>>`
       SELECT ks.id, ks.content, ks.metadata
       FROM knowledge_sources AS ks
@@ -147,15 +150,20 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     const sent = await this.options.sendOutbound({
       workspaceId: workspace.id,
       contactId: input.contactId,
+      conversationId: input.conversationId,
       text: authorized.content,
       authorizedEgress: authorized.manifest,
       idempotencyKey: `retell:material:${input.callId}:${asset.id}`,
-      preferredChannel: 'whatsapp',
       purpose: 'support',
     });
     return sent.outcome === 'sent'
-      ? { sent: true, reference: sent.deliveryId }
-      : { sent: false, reference: sent.deliveryId, reason: sent.reason ?? 'OUTBOUND_UNAVAILABLE' };
+      ? { sent: true, reference: sent.deliveryId, channel: sent.channel }
+      : {
+          sent: false,
+          reference: sent.deliveryId,
+          channel: sent.channel,
+          reason: sent.reason ?? 'OUTBOUND_UNAVAILABLE',
+        };
   }
 
   async requestHumanHandoff(input: Parameters<RetellOrchestrationStore['requestHumanHandoff']>[0]) {

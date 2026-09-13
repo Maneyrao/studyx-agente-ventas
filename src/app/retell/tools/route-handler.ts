@@ -20,7 +20,13 @@ import { constantTimeSecretEqual } from '@/lib/security/shared-secret';
 
 function misconfigured(status = 500): Response {
   return Response.json(
-    { ok: false, error: { code: 'TOOL_MISCONFIGURED' } },
+    {
+      ok: false,
+      ...(status === 200
+        ? { motivo: 'La herramienta no está configurada en este momento.' }
+        : {}),
+      error: { code: 'TOOL_MISCONFIGURED' },
+    },
     { status },
   );
 }
@@ -103,7 +109,11 @@ export async function handleRetellToolRoute(
     });
   } catch {
     return Response.json(
-      { ok: false, error: { code: 'TOOL_UNAVAILABLE' } },
+      {
+        ok: false,
+        motivo: 'No pude completar esa acción en este momento.',
+        error: { code: 'TOOL_UNAVAILABLE' },
+      },
       { status: 200 },
     );
   }

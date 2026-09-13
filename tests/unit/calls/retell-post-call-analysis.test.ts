@@ -378,7 +378,7 @@ describe('bounded Retell post-call analysis', () => {
         email_capturado: 'lead@example.test',
       },
     }), 'registrar_resultado', deps);
-    expect(await response.json()).toEqual({ ok: false, error: { code: 'INVALID_TOOL_REQUEST' } });
+    expect(await response.json()).toMatchObject({ ok: false, error: { code: 'INVALID_TOOL_REQUEST' } });
   });
 
   it('rejects call_summary-only registrar_resultado as a partial extended analysis', async () => {
@@ -394,7 +394,7 @@ describe('bounded Retell post-call analysis', () => {
         call_summary: 'Resumen externo.',
       },
     }), 'registrar_resultado', deps);
-    expect(await response.json()).toEqual({ ok: false, error: { code: 'INVALID_TOOL_REQUEST' } });
+    expect(await response.json()).toMatchObject({ ok: false, error: { code: 'INVALID_TOOL_REQUEST' } });
   });
 
   it('gives webhook authority over the shared legacy analyzed identity without lexical ordering', () => {

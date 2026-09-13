@@ -257,10 +257,15 @@ run('Retell five tools PostgreSQL adapter', () => {
       RETURNING id
     `;
     const store = new PostgresRetellOrchestrationStore(db!, { sendOutbound: outbound.send });
-    await expect(store.sendMaterial({ callId: ids.callId, contactId: ids.contactId, workspaceSlug: ids.workspaceSlug, type: 'temario', course: 'retell_course' })).resolves.toMatchObject({ sent: true });
+    await expect(store.sendMaterial({ callId: ids.callId, contactId: ids.contactId, conversationId: ids.conversationId, workspaceSlug: ids.workspaceSlug, type: 'temario', course: 'retell_course' })).resolves.toMatchObject({ sent: true });
     expect(outbound.calls).toHaveLength(1);
+    expect(outbound.calls[0]).toMatchObject({
+      conversationId: ids.conversationId,
+      purpose: 'support',
+    });
+    expect(outbound.calls[0]).not.toHaveProperty('preferredChannel');
     await db!`UPDATE knowledge_sources SET content = 'Temario https://foreign.example/nope' WHERE id = ${sources[0].id}::uuid`;
-    await expect(store.sendMaterial({ callId: ids.callId, contactId: ids.contactId, workspaceSlug: ids.workspaceSlug, type: 'temario', course: 'retell_course' })).resolves.toMatchObject({ sent: false, reason: 'MATERIAL_UNAVAILABLE' });
+    await expect(store.sendMaterial({ callId: ids.callId, contactId: ids.contactId, conversationId: ids.conversationId, workspaceSlug: ids.workspaceSlug, type: 'temario', course: 'retell_course' })).resolves.toMatchObject({ sent: false, reason: 'MATERIAL_UNAVAILABLE' });
   });
 
   it('keeps follow-up/handoff replay stable and rejects cross-tenant request inserts', async () => {
