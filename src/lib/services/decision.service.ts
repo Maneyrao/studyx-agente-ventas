@@ -216,6 +216,7 @@ interface TurnPolicyRow extends Message {
   contact_status: 'prospecto' | 'cliente' | 'inactivo';
   contact_name: string | null;
   contact_email: string | null;
+  contact_summary: string | null;
   lifecycle_status: 'active' | 'blocked' | 'deleted' | null;
   deleted_at: string | null;
   phone: string;
@@ -334,6 +335,7 @@ async function loadTurnPolicy(turnId: string, db: DbClient): Promise<TurnPolicyR
       c.status AS contact_status,
       c.name AS contact_name,
       c.email AS contact_email,
+      c.summary AS contact_summary,
       c.lifecycle_status,
       c.deleted_at,
       c.phone,
@@ -1290,6 +1292,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           conversation_id: turn.conversation_id,
           contact_name: turn.contact_name,
           contact_email: turn.contact_email,
+          persisted_summary: turn.contact_summary,
           phone: turn.phone,
           consent_messages: consentMessages,
           ...(preparedPipeline || preparedAgentTurn

@@ -305,9 +305,19 @@ export type RetellVoiceConfig = {
   requestTimeoutMs: number;
 };
 
+export type XendraVoiceConfig = {
+  voiceProvider: 'xendra';
+  callUrl: string;
+  orchestratorSecret: string;
+  advisorName: string;
+  closerNumber: string;
+  requestTimeoutMs: number;
+};
+
 export type VoiceDispatchConfig =
   | (Omit<TelegramAgentBConfig, 'voiceProvider'> & { voiceProvider: 'telegram_sandbox' })
-  | RetellVoiceConfig;
+  | RetellVoiceConfig
+  | XendraVoiceConfig;
 
 function retellInteger(
   environment: Readonly<Record<string, string | undefined>>,
@@ -373,10 +383,53 @@ export function loadRetellVoiceConfig(
   };
 }
 
+export function loadXendraVoiceConfig(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): XendraVoiceConfig {
+  for (const key of ['XENDRA_CALL_URL', 'XENDRA_ORCHESTRATOR_SECRET'] as const) {
+    if (!environment[key]?.trim()) throw new Error(`MISSING_XENDRA_CONFIG:${key}`);
+  }
+
+  let callUrl: URL;
+  try {
+    callUrl = new URL(environment.XENDRA_CALL_URL!.trim());
+  } catch {
+    throw new Error('INVALID_XENDRA_CONFIG:XENDRA_CALL_URL');
+  }
+  const loopback = callUrl.hostname === 'localhost'
+    || callUrl.hostname === '127.0.0.1'
+    || callUrl.hostname === '[::1]';
+  if (
+    (callUrl.protocol !== 'https:' && !(callUrl.protocol === 'http:' && loopback))
+    || callUrl.username
+    || callUrl.password
+    || callUrl.search
+    || callUrl.hash
+    || callUrl.pathname === '/'
+  ) {
+    throw new Error('INVALID_XENDRA_CONFIG:XENDRA_CALL_URL');
+  }
+
+  const closerNumber = environment.XENDRA_CLOSER_NUMBER?.trim() ?? '';
+  if (closerNumber && !/^\+[1-9]\d{6,14}$/u.test(closerNumber)) {
+    throw new Error('INVALID_XENDRA_CONFIG:XENDRA_CLOSER_NUMBER');
+  }
+
+  return {
+    voiceProvider: 'xendra',
+    callUrl: callUrl.toString(),
+    orchestratorSecret: environment.XENDRA_ORCHESTRATOR_SECRET!.trim(),
+    advisorName: environment.XENDRA_ADVISOR_NAME?.trim() ?? '',
+    closerNumber,
+    requestTimeoutMs: parsePositiveInt(environment.XENDRA_REQUEST_TIMEOUT_MS, 5_000),
+  };
+}
+
 export function loadVoiceDispatchConfig(
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): VoiceDispatchConfig {
   const voiceProvider = environment.VOICE_PROVIDER?.trim() ?? 'telegram_sandbox';
+  if (voiceProvider === 'xendra') return loadXendraVoiceConfig(environment);
   if (voiceProvider === 'retell') return loadRetellVoiceConfig(environment);
   const telegram = loadTelegramAgentBConfig(environment);
   return { ...telegram, voiceProvider: 'telegram_sandbox' };

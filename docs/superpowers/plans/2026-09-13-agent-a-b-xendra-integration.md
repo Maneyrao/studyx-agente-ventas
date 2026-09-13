@@ -24,11 +24,11 @@
 - Test: `tests/unit/xendra-voice-provider.test.ts`
 - Test: `tests/unit/call-request.test.ts`
 
-- [ ] Write failing tests for the exact payload, returned `call_id`, 409 reconciliation, confirmed 400/401/503 failures, and ambiguous 502/timeout/network behavior.
-- [ ] Implement `XendraVoiceProvider` with `x-studyx-orchestrator-secret`, no automatic retry, and no unsupported lookup/redial.
-- [ ] Accept `VOICE_PROVIDER=xendra` while persisting `retell` as the voice provider of record.
-- [ ] Build a bounded five-to-six-sentence `resumen_whatsapp` from persisted conversation context and pass every required Xendra variable.
-- [ ] Run the two focal unit files and commit the boundary.
+- [x] Write failing tests for the exact payload, returned `call_id`, 409 reconciliation, confirmed 400/401/503 failures, and ambiguous 502/timeout/network behavior.
+- [x] Implement `XendraVoiceProvider` with `x-studyx-orchestrator-secret`, no automatic retry, and no unsupported lookup/redial.
+- [x] Accept `VOICE_PROVIDER=xendra` while persisting `retell` as the voice provider of record.
+- [x] Build a bounded five-to-six-sentence `resumen_whatsapp` from persisted conversation context and pass every required Xendra variable.
+- [x] Run the two focal unit files and commit the boundary.
 
 ### Task 2: Accept Xendra-relayed Retell events
 

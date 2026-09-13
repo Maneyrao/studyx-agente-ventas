@@ -44,6 +44,8 @@ export interface ReserveCallInput {
   conversation_id: string;
   contact_name: string | null;
   contact_email?: string | null;
+  /** Durable contact summary produced from prior conversation turns. */
+  persisted_summary?: string | null;
   phone: string | null;
   /**
    * Every inbound message of the batch being decided, oldest first (a single
@@ -88,8 +90,49 @@ export function deriveSharedLeadContext(input: {
   return { nombreLead, apellidoLead, emailLead, courseOfInterest, missingFields };
 }
 
-function resolveVoiceProvider(): 'telegram_sandbox' | 'retell' {
-  const configured = process.env.VOICE_PROVIDER ?? 'telegram_sandbox';
+function summarySentences(value: string | null | undefined): string[] {
+  if (!value) return [];
+  const normalized = value
+    .replace(/[\u0000-\u001f\u007f]/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  return normalized.match(/[^.!?]+[.!?]+|[^.!?]+$/gu)?.map((sentence) => sentence.trim()) ?? [];
+}
+
+/**
+ * Xendra receives only a short durable handoff, never a raw transcript. The
+ * existing contact summary leads, followed by the current consent burst in
+ * the lead's own words. Duplicate sentences, sentence seven onward, and bytes
+ * beyond the transport limit are discarded deterministically.
+ */
+export function buildPersistedWhatsappSummary(input: {
+  readonly persistedSummary: string | null | undefined;
+  readonly consentMessages: ReadonlyArray<{ id: string; content: string }>;
+}): string {
+  const unique = new Set<string>();
+  const selected: string[] = [];
+  const sources = [input.persistedSummary, ...input.consentMessages.map((message) => message.content)];
+  for (const source of sources) {
+    for (const sentence of summarySentences(source)) {
+      const key = sentence.toLocaleLowerCase('es').replace(/[.!?]+$/u, '').trim();
+      if (!key || unique.has(key)) continue;
+      unique.add(key);
+      selected.push(sentence);
+      if (selected.length === 6) break;
+    }
+    if (selected.length === 6) break;
+  }
+
+  const summary = selected.join(' ');
+  if (summary.length <= 1_200) return summary;
+  const bounded = summary.slice(0, 1_199).replace(/\s+\S*$/u, '').trimEnd();
+  return `${bounded || summary.slice(0, 1_199)}…`;
+}
+
+export function resolveStoredVoiceProvider(
+  configured: string = process.env.VOICE_PROVIDER ?? 'telegram_sandbox',
+): 'telegram_sandbox' | 'retell' {
+  if (configured === 'xendra') return 'retell';
   if (configured !== 'telegram_sandbox' && configured !== 'retell') {
     throw new CallRequestRejectedError('VOICE_PROVIDER_INVALID');
   }
@@ -199,12 +242,16 @@ export async function reserveCallForDecision(
   const workspaceId = workspaces[0]?.workspace_id;
   if (!workspaceId) throw new CallRequestRejectedError('CALL_WORKSPACE_UNRESOLVED');
 
-  const provider = resolveVoiceProvider();
+  const provider = resolveStoredVoiceProvider();
   const callId = input.reserved_call_id ?? randomUUID();
   const sharedLead = deriveSharedLeadContext({
     contactName: input.contact_name,
     contactEmail: input.contact_email ?? null,
     courseOfInterest: input.course_of_interest,
+  });
+  const resumenWhatsapp = buildPersistedWhatsappSummary({
+    persistedSummary: input.persisted_summary,
+    consentMessages: input.consent_messages,
   });
   const context = parseCallContext({
     call_id: callId,
@@ -213,7 +260,7 @@ export async function reserveCallForDecision(
     curso_interes: sharedLead.courseOfInterest,
     pais: '',
     email_lead: sharedLead.emailLead,
-    resumen_whatsapp: '',
+    resumen_whatsapp: resumenWhatsapp,
     prompt_version: input.prompt_version,
     campos_faltantes: sharedLead.missingFields,
   });
@@ -272,7 +319,7 @@ export async function reserveCallForDecision(
       conversation_id: input.conversation_id,
       reason: verdict.mode,
       course_of_interest: input.course_of_interest,
-      previous_summary: null,
+      previous_summary: resumenWhatsapp || null,
     },
   });
   const payloadHashHex = createHash('sha256')

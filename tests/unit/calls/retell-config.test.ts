@@ -3,6 +3,7 @@ import {
   RETELL_REQUIRED_ENVIRONMENT,
   loadRetellVoiceConfig,
   loadVoiceDispatchConfig,
+  loadXendraVoiceConfig,
 } from '@/lib/config';
 
 const complete = {
@@ -71,5 +72,67 @@ describe('loadRetellVoiceConfig', () => {
 
   it('selects Retell without requiring Telegram sandbox credentials', () => {
     expect(loadVoiceDispatchConfig(complete).voiceProvider).toBe('retell');
+  });
+});
+
+describe('loadXendraVoiceConfig', () => {
+  const xendra = {
+    VOICE_PROVIDER: 'xendra',
+    XENDRA_CALL_URL: 'https://xendrapro-admin.vercel.app/api/studyx/llamar',
+    XENDRA_ORCHESTRATOR_SECRET: 'orchestrator-secret',
+    XENDRA_ADVISOR_NAME: 'Sofía',
+    XENDRA_CLOSER_NUMBER: '+5491144445555',
+    XENDRA_REQUEST_TIMEOUT_MS: '3500',
+  } satisfies Readonly<Record<string, string | undefined>>;
+
+  it('selects Xendra without requiring Telegram or Retell credentials', () => {
+    expect(loadVoiceDispatchConfig(xendra)).toEqual({
+      voiceProvider: 'xendra',
+      callUrl: 'https://xendrapro-admin.vercel.app/api/studyx/llamar',
+      orchestratorSecret: 'orchestrator-secret',
+      advisorName: 'Sofía',
+      closerNumber: '+5491144445555',
+      requestTimeoutMs: 3500,
+    });
+  });
+
+  it('requires only the dispatch URL and shared secret; optional variables default empty', () => {
+    expect(loadXendraVoiceConfig({
+      VOICE_PROVIDER: 'xendra',
+      XENDRA_CALL_URL: xendra.XENDRA_CALL_URL,
+      XENDRA_ORCHESTRATOR_SECRET: xendra.XENDRA_ORCHESTRATOR_SECRET,
+    })).toEqual({
+      voiceProvider: 'xendra',
+      callUrl: xendra.XENDRA_CALL_URL,
+      orchestratorSecret: xendra.XENDRA_ORCHESTRATOR_SECRET,
+      advisorName: '',
+      closerNumber: '',
+      requestTimeoutMs: 5000,
+    });
+  });
+
+  it.each(['XENDRA_CALL_URL', 'XENDRA_ORCHESTRATOR_SECRET'])(
+    'fails by variable name when %s is absent',
+    (missing) => {
+      expect(() => loadXendraVoiceConfig({ ...xendra, [missing]: '  ' }))
+        .toThrow(`MISSING_XENDRA_CONFIG:${missing}`);
+    },
+  );
+
+  it.each([
+    'http://xendra.example/api/studyx/llamar',
+    'https://user:password@xendra.example/api/studyx/llamar',
+    'https://xendra.example/api/studyx/llamar?secret=value',
+    'https://xendra.example/api/studyx/llamar#fragment',
+  ])('rejects unsafe external Xendra URL %s without echoing it', (url) => {
+    expect(() => loadXendraVoiceConfig({ ...xendra, XENDRA_CALL_URL: url }))
+      .toThrow('INVALID_XENDRA_CONFIG:XENDRA_CALL_URL');
+  });
+
+  it('allows an HTTP loopback URL for the no-call local fake', () => {
+    expect(loadXendraVoiceConfig({
+      ...xendra,
+      XENDRA_CALL_URL: 'http://127.0.0.1:43123/api/studyx/llamar',
+    }).callUrl).toBe('http://127.0.0.1:43123/api/studyx/llamar');
   });
 });

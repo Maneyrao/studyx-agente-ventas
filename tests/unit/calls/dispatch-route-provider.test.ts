@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { RetellVoiceProvider } from '@/features/calls/adapters/retell-voice.provider';
 import { TelegramSimVoiceProvider } from '@/features/calls/adapters/telegram-sim-voice.provider';
+import { XendraVoiceProvider } from '@/features/calls/adapters/xendra-voice.provider';
 import type { VoiceDispatchConfig } from '@/lib/config';
 import { buildDispatchVoiceProvider } from '@/app/api/agent/calls/[call_id]/dispatch/route-dependencies';
 import * as routeModule from '@/app/api/agent/calls/[call_id]/dispatch/route';
@@ -40,6 +41,21 @@ describe('dispatch route provider selection', () => {
     expect(buildDispatchVoiceProvider(settings, db, {
       nonce: () => 'nonce',
     })).toBeInstanceOf(TelegramSimVoiceProvider);
+  });
+
+  it('builds the Xendra gateway without Retell account credentials', () => {
+    const settings: VoiceDispatchConfig = {
+      voiceProvider: 'xendra',
+      callUrl: 'https://xendra.test/api/studyx/llamar',
+      orchestratorSecret: 'test-secret',
+      advisorName: '',
+      closerNumber: '',
+      requestTimeoutMs: 1000,
+    };
+    expect(buildDispatchVoiceProvider(settings, db, {
+      fetch: vi.fn<typeof fetch>(),
+      sandboxLookup: { findSandboxProvider: vi.fn(async () => null) },
+    })).toBeInstanceOf(XendraVoiceProvider);
   });
 
   it('keeps the Next route module limited to supported exports', () => {

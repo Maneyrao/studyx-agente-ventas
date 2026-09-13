@@ -70,6 +70,7 @@ interface TurnContextRowV3 {
   readonly destination: string;
   readonly contact_name: string | null;
   readonly contact_email: string | null;
+  readonly contact_summary: string | null;
   readonly declared_phone: string | null;
   readonly selected_offering_code: string | null;
   readonly selected_payment_plan: 'monthly_12' | 'monthly_6' | 'one_time' | null;
@@ -414,6 +415,7 @@ async function loadTurnContext(db: DbClient, turnId: string): Promise<TurnContex
       contact.phone,
       contact.name AS contact_name,
       contact.email AS contact_email,
+      contact.summary AS contact_summary,
       contact.declared_phone,
       state.selected_offering_code,
       state.selected_payment_plan,
@@ -1123,6 +1125,7 @@ export async function commitAgentTurnV3(
         conversation_id: context.conversation_id,
         contact_name: projectedContact.name,
         contact_email: projectedContact.email,
+        persisted_summary: context.contact_summary,
         phone: projectedContact.declared_phone ?? context.destination,
         consent_messages: consentMessages,
         course_of_interest: input.decision.state_patch.set.selected_offering_code

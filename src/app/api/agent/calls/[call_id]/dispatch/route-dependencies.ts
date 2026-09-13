@@ -4,6 +4,7 @@ import { PostgresContextReceiptStore } from '@/features/calls/adapters/postgres-
 import { RetellVoiceProvider } from '@/features/calls/adapters/retell-voice.provider';
 import { TelegramBotApiClient } from '@/features/calls/adapters/telegram-bot-api.client';
 import { TelegramSimVoiceProvider } from '@/features/calls/adapters/telegram-sim-voice.provider';
+import { XendraVoiceProvider } from '@/features/calls/adapters/xendra-voice.provider';
 import type { VoiceProvider } from '@/features/calls/ports/voice-provider';
 import type { VoiceDispatchConfig } from '@/lib/config';
 import { createSandboxLookup } from '@/lib/repositories/sandbox-identity.repository';
@@ -21,6 +22,14 @@ export function buildDispatchVoiceProvider(
 ): VoiceProvider {
   if (settings.voiceProvider === 'retell') {
     return new RetellVoiceProvider(settings, {
+      fetch: dependencies.fetch,
+      now: dependencies.now,
+      sandboxLookup: dependencies.sandboxLookup ?? createSandboxLookup(db),
+    });
+  }
+
+  if (settings.voiceProvider === 'xendra') {
+    return new XendraVoiceProvider(settings, {
       fetch: dependencies.fetch,
       now: dependencies.now,
       sandboxLookup: dependencies.sandboxLookup ?? createSandboxLookup(db),
