@@ -309,8 +309,9 @@ describe('bounded Retell post-call analysis', () => {
     })).toEqual({ action: 'revoke_contact', reason: 'DO_NOT_CONTACT' });
   });
 
-  it('keeps webhook and tool analyses as separate durable sources and gives webhook fields precedence', () => {
+  it('keeps registrar_resultado primary while the webhook enriches CRM fields', () => {
     const tool = mapRetellLifecycleEvent(completeWebhook({
+      resultado: 'seguimiento_agendado',
       email_capturado: 'tool@example.test',
       pidio_no_contactar: false,
     }), callId);
@@ -318,12 +319,20 @@ describe('bounded Retell post-call analysis', () => {
     const toolAnalysis = (tool.payload as Extract<typeof tool.payload, { event_type: 'analyzed' }>).analysis;
     const webhook = { ...tool, event_id: `retell:webhook:call_analyzed:${providerCallId}`, payload: {
       event_type: 'analyzed' as const,
-      analysis: { ...toolAnalysis, email_capturado: 'webhook@example.test', pidio_no_contactar: true },
+      analysis: {
+        ...toolAnalysis,
+        result: 'no_interesado' as const,
+        resultado: 'no_interesado' as const,
+        email_capturado: 'webhook@example.test',
+        pidio_no_contactar: true,
+      },
     } };
     const mergedForward = mergeCallAnalyses([toolSource, webhook]);
     const mergedReverse = mergeCallAnalyses([webhook, toolSource]);
     expect(mergedForward).toEqual(mergedReverse);
     expect(mergedForward).toMatchObject({
+      result: 'seguimiento_agendado',
+      resultado: 'seguimiento_agendado',
       email_capturado: 'webhook@example.test',
       pidio_no_contactar: true,
     });

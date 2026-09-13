@@ -731,10 +731,10 @@ run('Retell P0 tools with PostgreSQL', () => {
     `).resolves.toHaveLength(2);
     await expect(db!<Array<{ result: string }>>`
       SELECT result FROM call_sessions WHERE id = ${toolFirst.callId}::uuid
-    `).resolves.toEqual([{ result: 'seguimiento_agendado' }]);
+    `).resolves.toEqual([{ result: 'no_interesado' }]);
     await expect(db!<Array<{ result: string }>>`
       SELECT result FROM call_sessions WHERE id = ${webhookFirst.callId}::uuid
-    `).resolves.toEqual([{ result: 'seguimiento_agendado' }]);
+    `).resolves.toEqual([{ result: 'no_interesado' }]);
   });
 
   it('does not grant first-writer-wins to an analyzed event with only the canonical prefix', async () => {
@@ -844,7 +844,7 @@ run('Retell P0 tools with PostgreSQL', () => {
     expect(JSON.stringify(analysisRows[0].payload)).not.toContain('discarded');
   });
 
-  it('keeps both durable sources and merges webhook email/DNC over tool-first analysis', async () => {
+  it('keeps both sources: webhook enriches email/DNC without replacing the tool result', async () => {
     const ids = await fixture({ name: 'Ana López', email: 'old@example.test', sourceOrder: 7 });
     expect((await callTool(ids, 'guardar_datos_contacto', { email: 'old@example.test' })).body)
       .toEqual({ ok: true, saved: false, projected: true });
@@ -905,7 +905,7 @@ run('Retell P0 tools with PostgreSQL', () => {
     `).resolves.toEqual([{ email: 'webhook@example.test' }]);
     await expect(db!<Array<{ result: string | null }>>`
       SELECT result FROM call_sessions WHERE id = ${ids.callId}::uuid
-    `).resolves.toEqual([{ result: 'no_contactar' }]);
+    `).resolves.toEqual([{ result: 'seguimiento_agendado' }]);
   });
 
   it('does not let a stale analysis email cross the newer Agent A Sheet fence', async () => {

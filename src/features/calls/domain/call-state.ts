@@ -21,24 +21,14 @@ export interface CallProjection {
 }
 
 /**
- * Retell can report the same call through the tool and the webhook.  Those
- * are two durable facts, not competing last-writer updates.  Webhook data is
- * the authoritative source when both sources provide a field; the tool fills
- * only fields the webhook did not provide.  Sorting by source identity makes
- * this merge independent of delivery/replay order.
+ * Retell can report the same call through the tool and the webhook. Those are
+ * two durable facts, not competing last-writer updates. `registrar_resultado`
+ * is the operational authority for the outcome because it arrives during the
+ * call; the later webhook enriches CRM fields. Sorting by source identity
+ * makes the merge independent of delivery/replay order.
  */
 export function mergeCallAnalyses(events: readonly CallEvent[]): CallAnalysis {
-  const analyzed = events
-    .filter((event) => event.event_type === 'analyzed')
-    .sort((left, right) => {
-      const sourceRank = (event: CallEvent): number => {
-        if (event.event_id.startsWith('retell:webhook:')) return 0;
-        if (event.event_id.startsWith('retell:call_analyzed:')) return 1;
-        if (event.event_id.startsWith('retell:tool:')) return 2;
-        return 2;
-      };
-      return sourceRank(left) - sourceRank(right);
-    });
+  const analyzed = events.filter((event) => event.event_type === 'analyzed');
   if (analyzed.length === 0) {
     throw new Error('CALL_ANALYSIS_MISSING');
   }
@@ -50,9 +40,28 @@ export function mergeCallAnalyses(events: readonly CallEvent[]): CallAnalysis {
     'email_capturado', 'link_pago_enviado', 'pago_confirmado', 'pidio_humano',
     'pidio_no_contactar', 'pregunto_si_es_ia', 'compromiso_pendiente',
   ];
-  for (const event of analyzed) {
-    const analysis = event.payload as Extract<CallEvent['payload'], { event_type: 'analyzed' }>;
-    for (const key of keys) {
+  const enrichmentOrder = [...analyzed].sort((left, right) => {
+    const sourceRank = (event: CallEvent): number => {
+      if (event.event_id.startsWith('retell:webhook:')) return 0;
+      if (event.event_id.startsWith('retell:call_analyzed:')) return 1;
+      return 2;
+    };
+    return sourceRank(left) - sourceRank(right);
+  });
+  const operationalOrder = [...analyzed].sort((left, right) => {
+    const sourceRank = (event: CallEvent): number => {
+      if (event.event_id.startsWith('retell:tool:')) return 0;
+      if (event.event_id.startsWith('retell:webhook:')) return 1;
+      return 2;
+    };
+    return sourceRank(left) - sourceRank(right);
+  });
+  for (const key of keys) {
+    const ordered = key === 'result' || key === 'resultado'
+      ? operationalOrder
+      : enrichmentOrder;
+    for (const event of ordered) {
+      const analysis = event.payload as Extract<CallEvent['payload'], { event_type: 'analyzed' }>;
       const value = analysis.analysis[key];
       // Nullable legacy fields use null as "not supplied".  A concrete value
       // from the higher-precedence source must survive a replay regardless of

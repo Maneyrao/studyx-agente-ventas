@@ -81,11 +81,11 @@
 - Create: `tests/integration/agent-a-xendra-agent-b-e2e.test.ts`
 - Create: `tests/fixtures/fake-xendra-server.ts`
 
-- [ ] Drive Agent A through offer, consent, visible confirmation, and exactly one dispatch to a local fake Xendra server.
-- [ ] Relay `call_started`, send the canonical 12-installment link once to the original chat, record the operational result, relay final and analysis events, and resume Agent A.
-- [ ] Replay every effect and prove no duplicate call, link, outbound message, or projection.
-- [ ] Cover invalid secrets, 409, ambiguous timeout, ambiguous `cuotas`, crossed identity, opt-out, and an unverified declared sale.
-- [ ] Run the complete local smoke against disposable PostgreSQL and commit the evidence.
+- [x] Drive Agent A through offer, consent, visible confirmation, and exactly one dispatch to a local fake Xendra server.
+- [x] Relay `call_started`, send the canonical 12-installment link once to the original chat, record the operational result, relay final and analysis events, and resume Agent A.
+- [x] Replay every effect and prove no duplicate call, link, outbound message, or projection.
+- [x] Cover invalid secrets, 409, ambiguous timeout, ambiguous `cuotas`, crossed identity, opt-out, and an unverified declared sale.
+- [x] Run the complete local smoke against disposable PostgreSQL and commit the evidence.
 
 ### Task 6: Complete gates, deploy, and hand off to Lucas
 
