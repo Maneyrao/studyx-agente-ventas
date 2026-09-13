@@ -224,6 +224,40 @@ run('Retell call lifecycle persistence', () => {
     }));
   });
 
+  it('correlates Xendra metadata by provider call, lead, and conversation without an internal id', async () => {
+    const ids = await fixture({ status: 'dispatch_ambiguous' });
+    const providerCallId = `retell:${randomUUID()}`;
+    const store = new PostgresCallStore(db!);
+
+    await expect(store.resolveRetellCall({
+      providerCallId,
+      metadata: {
+        contactId: ids.contactId,
+        conversationId: ids.conversationId,
+      },
+    })).resolves.toEqual({ callId: ids.callId });
+
+    await expect(db!<Array<{ provider_call_id: string; status: string }>>`
+      SELECT provider_call_id, status FROM call_sessions WHERE id = ${ids.callId}::uuid
+    `).resolves.toEqual([{ provider_call_id: providerCallId, status: 'provider_accepted' }]);
+  });
+
+  it('rejects crossed Xendra identity when the provider call is already bound', async () => {
+    const providerCallId = `retell:${randomUUID()}`;
+    const ids = await fixture({ providerCallId, status: 'provider_accepted' });
+    const store = new PostgresCallStore(db!);
+
+    await expect(store.resolveRetellCall({
+      providerCallId,
+      metadata: {
+        contactId: randomUUID(),
+        conversationId: ids.conversationId,
+      },
+    })).rejects.toEqual(expect.objectContaining<Partial<RetellCallCorrelationError>>({
+      code: 'CALL_CORRELATION_MISMATCH',
+    }));
+  });
+
   it('attaches a provider call found while reconciling an ambiguous dispatch', async () => {
     const ids = await fixture({ status: 'dispatch_ambiguous' });
     const providerCallId = `retell:${randomUUID()}`;

@@ -40,10 +40,10 @@
 - Test: `tests/unit/retell-webhook.test.ts`
 - Test: `tests/integration/retell-call-lifecycle.test.ts`
 
-- [ ] Write failing tests for constant-time shared-secret auth, required/matching `x-studyx-event`, invalid identity correlation, and absent analysis booleans becoming `false`.
-- [ ] Preserve the direct Retell signature handler and add a separate Xendra relay handler that performs only bounded parsing and PostgreSQL persistence before responding.
-- [ ] Confirm that transcripts and recordings are never persisted and that replayed lifecycle events remain idempotent.
-- [ ] Run the focal unit and PostgreSQL lifecycle tests and commit the relay.
+- [x] Write failing tests for constant-time shared-secret auth, required/matching `x-studyx-event`, invalid identity correlation, and absent analysis booleans becoming `false`.
+- [x] Preserve the direct Retell signature handler and add a separate Xendra relay handler that performs only bounded parsing and PostgreSQL persistence before responding.
+- [x] Confirm that transcripts and recordings are never persisted and that replayed lifecycle events remain idempotent.
+- [x] Run the focal unit and PostgreSQL lifecycle tests and commit the relay.
 
 ### Task 3: Make the two essential Agent B tools gateway-safe
 

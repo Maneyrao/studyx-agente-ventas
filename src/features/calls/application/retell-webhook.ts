@@ -11,11 +11,17 @@ import {
   verifyRetellSignature,
 } from '../adapters/retell-lifecycle';
 import { recordCallEvent } from './record-call-event';
+import { constantTimeSecretEqual } from '@/lib/security/shared-secret';
 
 type RetellWebhookDependencies = {
   readonly apiKey: string;
   readonly calls: CallStore & RetellCallCorrelationStore;
   readonly now?: () => Date;
+};
+
+type XendraRelayDependencies = {
+  readonly orchestratorSecret: string;
+  readonly calls: CallStore & RetellCallCorrelationStore;
 };
 
 /**
@@ -76,6 +82,33 @@ function errorResponse(code: string, status: number): Response {
   return Response.json({ error: code }, { status });
 }
 
+async function persistLifecycleEvent(
+  raw: unknown,
+  calls: CallStore & RetellCallCorrelationStore,
+): Promise<Response> {
+  const parsed = RetellLifecycleWebhookSchema.safeParse(raw);
+  if (!parsed.success) return errorResponse('INVALID_RETELL_EVENT', 400);
+
+  try {
+    const correlation = await calls.resolveRetellCall({
+      providerCallId: parsed.data.call.call_id,
+      metadata: retellCorrelationMetadata(parsed.data),
+    });
+    const event = mapRetellLifecycleEvent(parsed.data, correlation.callId);
+    await recordCallEvent(event, { store: calls });
+    return new Response(null, { status: 204 });
+  } catch (error) {
+    if (error instanceof RetellCallCorrelationError) {
+      return errorResponse(error.code, error.code === 'CALL_CORRELATION_NOT_FOUND' ? 404 : 409);
+    }
+    if (error instanceof ZodError) return errorResponse('INVALID_RETELL_EVENT', 400);
+    if (error instanceof Error && error.message === 'CALL_EVENT_REPLAY_CONFLICT') {
+      return errorResponse('CALL_EVENT_REPLAY_CONFLICT', 409);
+    }
+    return errorResponse('RETELL_EVENT_PERSISTENCE_FAILED', 500);
+  }
+}
+
 export async function handleRetellWebhook(
   request: Request,
   dependencies: RetellWebhookDependencies,
@@ -100,25 +133,44 @@ export async function handleRetellWebhook(
   } catch {
     return errorResponse('INVALID_JSON', 400);
   }
-  const parsed = RetellLifecycleWebhookSchema.safeParse(raw);
-  if (!parsed.success) return errorResponse('INVALID_RETELL_EVENT', 400);
+  return persistLifecycleEvent(raw, dependencies.calls);
+}
 
-  try {
-    const correlation = await dependencies.calls.resolveRetellCall({
-      providerCallId: parsed.data.call.call_id,
-      metadata: retellCorrelationMetadata(parsed.data),
-    });
-    const event = mapRetellLifecycleEvent(parsed.data, correlation.callId);
-    await recordCallEvent(event, { store: dependencies.calls });
-    return new Response(null, { status: 204 });
-  } catch (error) {
-    if (error instanceof RetellCallCorrelationError) {
-      return errorResponse(error.code, error.code === 'CALL_CORRELATION_NOT_FOUND' ? 404 : 409);
-    }
-    if (error instanceof ZodError) return errorResponse('INVALID_RETELL_EVENT', 400);
-    if (error instanceof Error && error.message === 'CALL_EVENT_REPLAY_CONFLICT') {
-      return errorResponse('CALL_EVENT_REPLAY_CONFLICT', 409);
-    }
-    return errorResponse('RETELL_EVENT_PERSISTENCE_FAILED', 500);
+export async function handleXendraRelayedRetellWebhook(
+  request: Request,
+  dependencies: XendraRelayDependencies,
+): Promise<Response> {
+  if (!constantTimeSecretEqual(
+    request.headers.get('x-studyx-orchestrator-secret'),
+    dependencies.orchestratorSecret,
+  )) {
+    return errorResponse('UNAUTHORIZED', 401);
   }
+
+  const expectedEvent = request.headers.get('x-studyx-event');
+  if (!expectedEvent || !['call_started', 'call_ended', 'call_analyzed'].includes(expectedEvent)) {
+    return errorResponse('INVALID_XENDRA_EVENT_HEADER', 400);
+  }
+
+  const body = await readBoundedBody(request);
+  if (body.status === 'too_large') return errorResponse('PAYLOAD_TOO_LARGE', 413);
+  if (body.status === 'read_failed') return errorResponse('INVALID_BODY', 400);
+
+  let raw: unknown;
+  try {
+    const rawBody = new TextDecoder('utf-8', { fatal: true }).decode(body.bytes);
+    raw = JSON.parse(rawBody) as unknown;
+  } catch {
+    return errorResponse('INVALID_JSON', 400);
+  }
+  if (
+    typeof raw !== 'object'
+    || raw === null
+    || !('event' in raw)
+    || (raw as { event?: unknown }).event !== expectedEvent
+  ) {
+    return errorResponse('XENDRA_EVENT_MISMATCH', 400);
+  }
+
+  return persistLifecycleEvent(raw, dependencies.calls);
 }

@@ -1,5 +1,5 @@
 export type RetellCorrelationMetadata = {
-  readonly internalCallId: string;
+  readonly internalCallId?: string;
   readonly contactId: string;
   readonly conversationId: string;
 };

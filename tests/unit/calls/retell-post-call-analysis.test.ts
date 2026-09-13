@@ -111,7 +111,7 @@ function toolDependencies() {
 }
 
 describe('bounded Retell post-call analysis', () => {
-  it('rejects a partially extended webhook export instead of treating it as complete', () => {
+  it('treats omitted Retell booleans as false in a partially extended webhook export', () => {
     const partial = completeWebhook();
     const custom = (partial.call as { call_analysis: { custom_analysis_data: Record<string, unknown> } })
       .call_analysis.custom_analysis_data;
@@ -119,7 +119,16 @@ describe('bounded Retell post-call analysis', () => {
     delete custom.pidio_humano;
     delete custom.pidio_no_contactar;
     delete custom.pregunto_si_es_ia;
-    expect(() => mapRetellLifecycleEvent(partial, callId)).toThrow();
+    expect(mapRetellLifecycleEvent(partial, callId).payload).toMatchObject({
+      event_type: 'analyzed',
+      analysis: {
+        link_pago_enviado: true,
+        pago_confirmado: false,
+        pidio_humano: false,
+        pidio_no_contactar: false,
+        pregunto_si_es_ia: false,
+      },
+    });
   });
 
   it('maps the complete 14-field analysis while discarding transcript and recording data', () => {

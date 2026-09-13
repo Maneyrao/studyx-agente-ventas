@@ -203,25 +203,49 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
     metadata: RetellCorrelationMetadata | null;
   }): Promise<{ callId: string }> {
     return this.db.begin(async (tx) => {
-      const rows = input.metadata
-        ? await tx<Array<RetellCorrelationRow>>`
+      const internalCallId = input.metadata?.internalCallId;
+      let rows: RetellCorrelationRow[];
+      if (input.metadata && internalCallId) {
+        rows = await tx<Array<RetellCorrelationRow>>`
             SELECT id, contact_id, conversation_id, provider_call_id, status, workspace_id
             FROM call_sessions
             WHERE provider = 'retell'
-              AND (provider_call_id = ${input.providerCallId} OR id = ${input.metadata.internalCallId}::uuid)
+              AND (provider_call_id = ${input.providerCallId} OR id = ${internalCallId}::uuid)
             ORDER BY id
             FOR UPDATE
-          `
-        : await tx<Array<RetellCorrelationRow>>`
+          `;
+      } else if (input.metadata) {
+        rows = await tx<Array<RetellCorrelationRow>>`
+            SELECT id, contact_id, conversation_id, provider_call_id, status, workspace_id
+            FROM call_sessions
+            WHERE provider = 'retell'
+              AND (
+                provider_call_id = ${input.providerCallId}
+                OR (
+                  provider_call_id IS NULL
+                  AND contact_id = ${input.metadata.contactId}::uuid
+                  AND conversation_id = ${input.metadata.conversationId}::uuid
+                  AND status IN ('dispatching', 'dispatch_ambiguous')
+                )
+              )
+            ORDER BY id
+            FOR UPDATE
+          `;
+      } else {
+        rows = await tx<Array<RetellCorrelationRow>>`
             SELECT id, contact_id, conversation_id, provider_call_id, status, workspace_id
             FROM call_sessions
             WHERE provider = 'retell' AND provider_call_id = ${input.providerCallId}
             FOR UPDATE
           `;
+      }
 
       const byProvider = rows.find((row) => row.provider_call_id === input.providerCallId);
       const byMetadata = input.metadata
-        ? rows.find((row) => row.id === input.metadata!.internalCallId)
+        ? rows.find((row) => internalCallId
+            ? row.id === internalCallId
+            : row.contact_id === input.metadata!.contactId
+              && row.conversation_id === input.metadata!.conversationId)
         : undefined;
 
       if (input.metadata && !byMetadata) {
@@ -270,7 +294,9 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
     workspaceSlug: string;
   }): Promise<{ callId: string }> {
     return this.db.begin(async (tx) => {
-      const rows = await tx<RetellToolCorrelationRow[]>`
+      const internalCallId = input.metadata.internalCallId;
+      const rows = internalCallId
+        ? await tx<RetellToolCorrelationRow[]>`
         SELECT
           cs.id,
           cs.contact_id,
@@ -298,13 +324,56 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
           ) AS workspace_authorized
         FROM call_sessions AS cs
         WHERE cs.provider = 'retell'
-          AND (cs.provider_call_id = ${input.providerCallId} OR cs.id = ${input.metadata.internalCallId}::uuid)
+          AND (cs.provider_call_id = ${input.providerCallId} OR cs.id = ${internalCallId}::uuid)
+        ORDER BY cs.id
+        FOR UPDATE OF cs
+      `
+        : await tx<RetellToolCorrelationRow[]>`
+        SELECT
+          cs.id,
+          cs.contact_id,
+          cs.conversation_id,
+          cs.provider_call_id,
+          cs.status,
+          cs.workspace_id,
+          EXISTS (
+            SELECT 1
+            FROM conversation_sales_context_states_v1 AS state
+            JOIN workspaces AS workspace
+              ON workspace.id = state.workspace_id
+             AND workspace.status = 'active'
+             AND workspace.slug = ${input.workspaceSlug}
+            JOIN workspace_contacts AS membership
+              ON membership.workspace_id = workspace.id
+             AND membership.contact_id = cs.contact_id
+             AND membership.lifecycle_status = 'active'
+            JOIN contacts AS contact
+              ON contact.id = cs.contact_id
+             AND contact.deleted_at IS NULL
+            WHERE (cs.workspace_id IS NULL OR state.workspace_id = cs.workspace_id)
+              AND state.conversation_id = cs.conversation_id
+              AND state.contact_id = cs.contact_id
+          ) AS workspace_authorized
+        FROM call_sessions AS cs
+        WHERE cs.provider = 'retell'
+          AND (
+            cs.provider_call_id = ${input.providerCallId}
+            OR (
+              cs.provider_call_id IS NULL
+              AND cs.contact_id = ${input.metadata.contactId}::uuid
+              AND cs.conversation_id = ${input.metadata.conversationId}::uuid
+              AND cs.status IN ('dispatching', 'dispatch_ambiguous')
+            )
+          )
         ORDER BY cs.id
         FOR UPDATE OF cs
       `;
 
       const byProvider = rows.find((row) => row.provider_call_id === input.providerCallId);
-      const byMetadata = rows.find((row) => row.id === input.metadata.internalCallId);
+      const byMetadata = rows.find((row) => internalCallId
+        ? row.id === internalCallId
+        : row.contact_id === input.metadata.contactId
+          && row.conversation_id === input.metadata.conversationId);
       if (!byMetadata) {
         throw new RetellCallCorrelationError(byProvider
           ? 'CALL_CORRELATION_MISMATCH'

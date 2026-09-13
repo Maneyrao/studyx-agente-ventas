@@ -17,11 +17,18 @@ const RetellSentimentSchema = z.enum([
 const RetellMetadataSchema = z.object({
   internal_call_id: z.string().uuid().optional(),
   contact_id: z.string().uuid().optional(),
+  lead_id: z.string().uuid().optional(),
   conversation_id: z.string().uuid().optional(),
 }).passthrough().superRefine((metadata, context) => {
-  const present = [metadata.internal_call_id, metadata.contact_id, metadata.conversation_id]
-    .filter((value) => value !== undefined).length;
-  if (present !== 0 && present !== 3) {
+  if (metadata.contact_id && metadata.lead_id && metadata.contact_id !== metadata.lead_id) {
+    context.addIssue({ code: 'custom', message: 'CONFLICTING_RETELL_CONTACT_METADATA' });
+    return;
+  }
+  const hasAny = metadata.internal_call_id !== undefined
+    || metadata.contact_id !== undefined
+    || metadata.lead_id !== undefined
+    || metadata.conversation_id !== undefined;
+  if (hasAny && (!(metadata.contact_id ?? metadata.lead_id) || !metadata.conversation_id)) {
     context.addIssue({ code: 'custom', message: 'INCOMPLETE_RETELL_CORRELATION_METADATA' });
   }
 });
@@ -67,10 +74,7 @@ const RetellAnalysisDataSchema = z.object({
   const legacyKeys = new Set(['resultado', 'nivel_interes', 'objecion_principal']);
   const hasExtendedField = Object.keys(analysis).some((key) => !legacyKeys.has(key));
   if (!hasExtendedField) return;
-  for (const key of [
-    'objecion_principal', 'nivel_interes', 'link_pago_enviado', 'pago_confirmado',
-    'pidio_humano', 'pidio_no_contactar', 'pregunto_si_es_ia',
-  ] as const) {
+  for (const key of ['objecion_principal', 'nivel_interes'] as const) {
     if (!(key in analysis) || analysis[key] === null) {
       context.addIssue({ code: 'custom', message: `COMPLETE_ANALYSIS_FIELD_REQUIRED:${key}`, path: [key] });
     }
@@ -126,10 +130,11 @@ export function retellCorrelationMetadata(
   webhook: RetellLifecycleWebhook,
 ): RetellCorrelationMetadata | null {
   const metadata = webhook.call.metadata;
-  if (!metadata?.internal_call_id || !metadata.contact_id || !metadata.conversation_id) return null;
+  const contactId = metadata?.contact_id ?? metadata?.lead_id;
+  if (!contactId || !metadata?.conversation_id) return null;
   return {
-    internalCallId: metadata.internal_call_id,
-    contactId: metadata.contact_id,
+    ...(metadata.internal_call_id ? { internalCallId: metadata.internal_call_id } : {}),
+    contactId,
     conversationId: metadata.conversation_id,
   };
 }
@@ -241,11 +246,11 @@ export function mapRetellLifecycleEvent(raw: unknown, internalCallId: string): C
         ? {} : { nivel_interes: custom.nivel_interes }),
       ...(custom.email_capturado === undefined || custom.email_capturado === null
         ? {} : { email_capturado: custom.email_capturado }),
-      ...(custom.link_pago_enviado === undefined ? {} : { link_pago_enviado: custom.link_pago_enviado }),
-      ...(custom.pago_confirmado === undefined ? {} : { pago_confirmado: custom.pago_confirmado }),
-      ...(custom.pidio_humano === undefined ? {} : { pidio_humano: custom.pidio_humano }),
-      ...(custom.pidio_no_contactar === undefined ? {} : { pidio_no_contactar: custom.pidio_no_contactar }),
-      ...(custom.pregunto_si_es_ia === undefined ? {} : { pregunto_si_es_ia: custom.pregunto_si_es_ia }),
+      link_pago_enviado: custom.link_pago_enviado ?? false,
+      pago_confirmado: custom.pago_confirmado ?? false,
+      pidio_humano: custom.pidio_humano ?? false,
+      pidio_no_contactar: custom.pidio_no_contactar ?? false,
+      pregunto_si_es_ia: custom.pregunto_si_es_ia ?? false,
       ...(custom.compromiso_pendiente === undefined || custom.compromiso_pendiente === null
         ? {} : { compromiso_pendiente: custom.compromiso_pendiente }),
     } : {}),

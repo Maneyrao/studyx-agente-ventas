@@ -1,6 +1,9 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
-import { handleRetellWebhook } from '@/features/calls/application/retell-webhook';
+import {
+  handleRetellWebhook,
+  handleXendraRelayedRetellWebhook,
+} from '@/features/calls/application/retell-webhook';
 import {
   mapRetellLifecycleEvent,
   verifyRetellSignature,
@@ -8,6 +11,7 @@ import {
 import { RetellCallCorrelationError } from '@/features/calls/ports/retell-call-correlation-store';
 import type { CallStore } from '@/features/calls/ports/call-store';
 import type { RetellCallCorrelationStore } from '@/features/calls/ports/retell-call-correlation-store';
+import { constantTimeSecretEqual } from '@/lib/security/shared-secret';
 
 const apiKey = 'retell-webhook-test-key';
 const nowMs = 1_788_966_000_000;
@@ -16,6 +20,7 @@ const contactId = randomUUID();
 const conversationId = randomUUID();
 const providerCallId = 'call_retell_fixture_1';
 const expectedBodyLimit = 256 * 1_024;
+const orchestratorSecret = 'xendra-relay-test-secret';
 
 function wrapper(event: 'call_started' | 'call_ended' | 'call_analyzed') {
   const common = {
@@ -60,6 +65,23 @@ function request(rawBody: string, header = signature(rawBody)): Request {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-retell-signature': header },
     body: rawBody,
+  });
+}
+
+function xendraRequest(
+  body: unknown,
+  event: string | null,
+  secret = orchestratorSecret,
+): Request {
+  const headers = new Headers({
+    'content-type': 'application/json',
+    'x-studyx-orchestrator-secret': secret,
+  });
+  if (event !== null) headers.set('x-studyx-event', event);
+  return new Request('http://localhost/retell/eventos', {
+    method: 'POST',
+    headers,
+    body: typeof body === 'string' ? body : JSON.stringify(body),
   });
 }
 
@@ -119,6 +141,15 @@ describe('Retell signature verification', () => {
     expect(verifyRetellSignature({ rawBody, signature: signature(rawBody, nowMs + 300_001), apiKey, nowMs })).toBe(false);
     expect(verifyRetellSignature({ rawBody, signature: `d=${'0'.repeat(64)},v=${nowMs}`, apiKey, nowMs })).toBe(false);
     expect(verifyRetellSignature({ rawBody, signature: `v=${nowMs},d=${'A'.repeat(64)}`, apiKey, nowMs })).toBe(false);
+  });
+});
+
+describe('shared-secret verification', () => {
+  it('accepts exact equality and rejects missing, changed, and different-length values', () => {
+    expect(constantTimeSecretEqual('same-secret', 'same-secret')).toBe(true);
+    expect(constantTimeSecretEqual(null, 'same-secret')).toBe(false);
+    expect(constantTimeSecretEqual('changed-secret', 'same-secret')).toBe(false);
+    expect(constantTimeSecretEqual('short', 'same-secret')).toBe(false);
   });
 });
 
@@ -315,5 +346,70 @@ describe('Retell webhook application boundary', () => {
     const rawBody = JSON.stringify(wrapper('call_analyzed'));
     expect((await handleRetellWebhook(request(rawBody), conflict)).status).toBe(409);
     expect((await handleRetellWebhook(request(rawBody), failed)).status).toBe(500);
+  });
+});
+
+describe('Xendra-relayed Retell webhook boundary', () => {
+  function relayed(event: 'call_started' | 'call_ended' | 'call_analyzed') {
+    const payload = wrapper(event) as unknown as {
+      event: typeof event;
+      call: { metadata: Record<string, unknown> };
+    };
+    payload.call.metadata = { lead_id: contactId, conversation_id: conversationId };
+    return payload;
+  }
+
+  it('rejects an invalid secret before parsing or persistence', async () => {
+    const deps = dependencies();
+    const response = await handleXendraRelayedRetellWebhook(
+      xendraRequest('{invalid-json', 'call_started', 'wrong-secret'),
+      { orchestratorSecret, calls: deps.calls },
+    );
+    expect(response.status).toBe(401);
+    expect(deps.calls.resolveRetellCall).not.toHaveBeenCalled();
+    expect(deps.calls.appendEvent).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [null, 'call_started'],
+    ['unknown_event', 'call_started'],
+    ['call_ended', 'call_started'],
+  ])('rejects missing, unknown, or mismatched x-studyx-event %s', async (header, bodyEvent) => {
+    const deps = dependencies();
+    const response = await handleXendraRelayedRetellWebhook(
+      xendraRequest(relayed(bodyEvent as 'call_started'), header),
+      { orchestratorSecret, calls: deps.calls },
+    );
+    expect(response.status).toBe(400);
+    expect(deps.calls.resolveRetellCall).not.toHaveBeenCalled();
+  });
+
+  it.each(['call_started', 'call_ended', 'call_analyzed'] as const)(
+    'accepts %s without a Retell API key and verifies provider/contact/conversation identity',
+    async (event) => {
+      const deps = dependencies();
+      const response = await handleXendraRelayedRetellWebhook(
+        xendraRequest(relayed(event), event),
+        { orchestratorSecret, calls: deps.calls },
+      );
+      expect(response.status).toBe(204);
+      expect(deps.calls.resolveRetellCall).toHaveBeenCalledWith({
+        providerCallId,
+        metadata: { contactId, conversationId },
+      });
+      expect(deps.calls.appendEvent).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('rejects incomplete relayed identity instead of trusting provider_call_id alone', async () => {
+    const deps = dependencies();
+    const payload = relayed('call_started');
+    payload.call.metadata = { conversation_id: conversationId };
+    const response = await handleXendraRelayedRetellWebhook(
+      xendraRequest(payload, 'call_started'),
+      { orchestratorSecret, calls: deps.calls },
+    );
+    expect(response.status).toBe(400);
+    expect(deps.calls.resolveRetellCall).not.toHaveBeenCalled();
   });
 });
