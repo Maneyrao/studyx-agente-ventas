@@ -84,7 +84,7 @@ describe('Agent A Meta sales brain', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
     const behavior = instructions.split('<authorized_context>')[0];
 
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v47');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v50');
     expect(behavior).toMatch(/lead (?:tibio|c[áa]lido).{0,60}(?:Meta|Instagram|Facebook)/iu);
     expect(behavior).toMatch(/cualquier curso activo[\s\S]{0,120}catalog\.available_offerings/iu);
     expect(behavior).toMatch(/anuncio o el mensaje[\s\S]{0,100}curso activo/iu);
@@ -110,7 +110,7 @@ describe('Agent A Meta sales brain', () => {
     expect(behavior).toMatch(/m[áa]ximo (?:de )?dos ofrecimientos/iu);
     expect(behavior).toMatch(/primera invitaci[óo]n obligatoria[\s\S]{0,240}mensaje separado/iu);
     expect(behavior).toMatch(/segundo y [uú]ltimo ofrecimiento[\s\S]{0,100}recordarlo/iu);
-    expect(behavior).toMatch(/rechazo expl[íi]cito[\s\S]{0,100}cancela/iu);
+    expect(behavior).toMatch(/rechazo a la invitaci[óo]n actual[\s\S]{0,180}segundo recordatorio/iu);
     expect(behavior).toContain('12 pagos mensuales de USD 30');
     expect(behavior).toContain('6 pagos mensuales de USD 60');
     expect(behavior).toContain('1 pago único de USD 360');

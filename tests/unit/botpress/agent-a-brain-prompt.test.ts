@@ -70,10 +70,10 @@ describe('Agent A Brain prompt', () => {
   it('ships one complete canonical behavior behind a compact runtime contract', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v17');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v47');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v21');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v50');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
-    expect(instructions).toContain('You lead the\nconversation; the backend does not write your narrative');
+    expect(instructions).toContain('You lead the\nconversation; the backend does not write or rewrite your narrative');
     expect(instructions).toContain('The sales\nphases are a map, not a blocking script');
     expect(instructions).toContain('response.call_offer contains a separate call invitation');
     expect(instructions).toContain('<authorized_context>');
@@ -122,8 +122,8 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).toContain('Pide sólo los campos que figuren en `capabilities.intake_missing`');
     expect(instructions).toContain('el backend agrega el link canónico de Stripe');
     expect(instructions).toContain('como máximo antes de solicitar los datos finales');
-    expect(instructions).toContain('aceptación de la primera invitación');
-    expect(instructions).toContain('compra directa cancelan el segundo ofrecimiento');
+    expect(instructions).toContain('aceptación de la llamada');
+    expect(instructions).toContain('compra directa sí cancelan el segundo ofrecimiento');
   });
 
   it('binds the situational second-offer reason into the live turn instructions', () => {
@@ -183,6 +183,32 @@ describe('Agent A Brain prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(current);
 
     expect(instructions).toMatch(/all turn\.batch_messages in order as one combined turn/iu);
+  });
+
+  it('uses neutral Spanish, asks the initial name and never turns it into a reply blocker', () => {
+    const current = context();
+    current.customer.display_name = null;
+    current.capabilities.may_offer_call = false;
+    current.capabilities.intake_missing = ['nombre', 'apellido', 'correo', 'telefono'];
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+
+    expect(instructions).toMatch(/español neutro/iu);
+    expect(instructions).toMatch(/primera respuesta[\s\S]*pregunta[\s\S]*primer nombre/iu);
+    expect(instructions).toMatch(/nombre[\s\S]*nunca[\s\S]*(?:bloquea|condiciona)[\s\S]*(?:respuesta|información|asesoramiento)/iu);
+    expect(instructions).toMatch(/No uses voseo ni regionalismos/iu);
+    expect(instructions).toMatch(/No abras frases con `¿` o `¡`/iu);
+  });
+
+  it('keeps decision-bearing references explicit and the physical call offer exclusive', () => {
+    const instructions = buildAgentABrainInstructionsV1(context());
+
+    expect(instructions).toMatch(
+      /compar(?:a|es|ar)[\s\S]*(?:nombra|menciona)[\s\S]*(?:cada curso|cada opción)/iu,
+    );
+    expect(instructions).toMatch(
+      /response\.call_offer[\s\S]*(?:exclusiv|únic)[\s\S]*(?:llamada|invitación)[\s\S]*response\.messages/iu,
+    );
   });
 
   it('resolves stable identity without filling behavioral facts', () => {

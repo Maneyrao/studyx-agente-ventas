@@ -16,6 +16,7 @@ const {
   enqueueLeadProjection,
   flushSheetProjections,
   leadProjectionKey,
+  upsertInboundLeadProjection,
 } = await import('@/lib/services/projection.service');
 type LeadProjectionInput = Parameters<typeof enqueueLeadProjection>[0];
 const { FakeSheetsProvider } = await import('@/lib/providers/sheets/fake-sheets-provider');
@@ -117,6 +118,38 @@ async function drainPending() {
 }
 
 run('sheet projection idempotency', () => {
+  it('creates one lead row on first contact and enriches that same row as identity arrives', async () => {
+    const slug = `test-inbound-lead-${randomUUID()}`;
+    const workspaceRows = await db!<Array<{ id: string }>>`
+      INSERT INTO workspaces (slug, display_name) VALUES (${slug}, 'Inbound Lead Test') RETURNING id
+    `;
+    const workspaceId = workspaceRows[0].id;
+    const spreadsheetId = randomUUID();
+    const contactId = await contactFixture();
+    const loadSheetsConfig = () => ({
+      clientEmail: 'test@example.com', privateKey: 'test-key', spreadsheetId, tabName: TAB_NAME,
+    });
+    const loadWorkspaceConfig = () => ({ workspaceSlug: slug });
+
+    expect(await upsertInboundLeadProjection({
+      contactId, phone: '+5491111111111', traceId: randomUUID(),
+    }, { sql: db!, loadSheetsConfig, loadWorkspaceConfig })).toBe('created_or_updated');
+
+    expect(await upsertInboundLeadProjection({
+      contactId, phone: '+5491122222222', nombre: 'Ana', apellido: 'Pérez',
+      email: 'ana@example.com', traceId: randomUUID(),
+    }, { sql: db!, loadSheetsConfig, loadWorkspaceConfig })).toBe('created_or_updated');
+
+    const rows = await outboxRowsFor(spreadsheetId, TAB_NAME);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].projection_key).toBe(leadProjectionKey(workspaceId, contactId));
+    expect(rows[0].payload).toMatchObject({
+      nombre: 'Ana', apellido: 'Pérez', email: 'ana@example.com',
+      telefono: '+5491122222222', etapa_comercial: 'new_lead',
+      ultima_senal: 'inbound_lead_updated',
+    });
+  });
+
   it('replaying enqueue 10x for the same lead keeps a single outbox row and a single sheet row', async () => {
     // A prior run of this same suite against the same disposable DB can
     // leave enqueue-only tests' rows pending (e.g. "two different contact_ids

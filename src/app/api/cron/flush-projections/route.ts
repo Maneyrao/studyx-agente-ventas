@@ -5,11 +5,11 @@ import { logger } from '@/lib/observability/structured-log';
 
 /**
  * Drains `sheet_projection_rows`: the outbox that `enqueueLeadProjection`
- * fills after a lead-affecting signal is delivered on the customer channel
- * (docs/contracts/agent-a-operational-mvp.md §5). This is the ONLY runtime
- * entry point of the Sheets projection worker — it is never called inline
- * from a request path, and a Google failure here only leaves the row
- * pending/retryable; it never reverts the canonical message or decision.
+ * fills as the lead progresses (docs/contracts/agent-a-operational-mvp.md §5).
+ * Successful customer-path mutations also schedule a bounded drain with
+ * Next.js `after()`; this cron is the recovery sweep for anything left
+ * pending/retryable. A Google failure never reverts a canonical message or
+ * decision.
  *
  * Vercel Cron injects Authorization: Bearer <CRON_SECRET> automatically in
  * production. Set CRON_SECRET manually in .env.local for local development.

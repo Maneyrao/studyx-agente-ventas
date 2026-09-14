@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import {
   recordDeliveryReport,
   DeliveryReportConflictError,
   OutboundNotFoundError,
 } from '@/lib/services/decision.service';
+import { flushSheetProjectionsAfterMutation } from '@/lib/services/sheet-projection-trigger';
 
 const schema = z.object({
   outbound_id: z.string().uuid(),
@@ -42,7 +43,14 @@ export async function POST(
   }
 
   try {
-    return NextResponse.json(await recordDeliveryReport(parsed.data), { status: 200 });
+    const recorded = await recordDeliveryReport(parsed.data);
+    if (!recorded.replayed) {
+      after(() => flushSheetProjectionsAfterMutation({
+        traceId: parsed.data.trace_id,
+        source: 'delivery',
+      }));
+    }
+    return NextResponse.json(recorded, { status: 200 });
   } catch (error) {
     if (error instanceof OutboundNotFoundError) {
       return NextResponse.json({ error: error.code }, { status: 404 });
@@ -54,4 +62,3 @@ export async function POST(
     return NextResponse.json({ error: 'INTERNAL_ERROR' }, { status: 500 });
   }
 }
-

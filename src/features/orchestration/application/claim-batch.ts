@@ -520,6 +520,32 @@ function deriveCourseSelection(input: {
   return { course_of_interest: null, offering_code: null };
 }
 
+/**
+ * Recent turns are short-term dialogue, not durable memory. Keep only the
+ * contiguous suffix that belongs to the current session; summaries, selected
+ * memories and commercial state remain available through their own fields.
+ */
+function activeSessionRecentTurns(
+  recentTurns: readonly RecentTurn[],
+  batchMessages: readonly BatchMessage[],
+  sessionIdleMs: number,
+): RecentTurn[] {
+  const batchStartMs = Math.min(...batchMessages.map((message) => Date.parse(message.created_at)));
+  if (!Number.isFinite(batchStartMs)) return [...recentTurns];
+
+  const active: RecentTurn[] = [];
+  let nextMessageMs = batchStartMs;
+  for (let index = recentTurns.length - 1; index >= 0; index -= 1) {
+    const turn = recentTurns[index]!;
+    const turnMs = Date.parse(turn.created_at);
+    if (!Number.isFinite(turnMs) || turnMs > nextMessageMs) continue;
+    if (nextMessageMs - turnMs > sessionIdleMs) break;
+    active.unshift(turn);
+    nextMessageMs = turnMs;
+  }
+  return active;
+}
+
 export async function claimBatch(
   input: ClaimBatchInput,
   deps: ClaimBatchDependencies
@@ -580,6 +606,11 @@ export async function claimBatch(
 
   if (!core) throw new BatchFactsMissingError(claim.batch_id);
   const { facts, batch_messages: batchMessages, call_facts: callFacts } = core;
+  const recentTurns = activeSessionRecentTurns(
+    facts.recent_turns,
+    batchMessages,
+    loadConversationSessionConfig().sessionIdleMs,
+  );
 
   const explicitOptOut = batchMessages.some(
     (message) => (
@@ -900,7 +931,7 @@ export async function claimBatch(
     currentMessageTexts: batchMessages
       .filter((message) => message.message_type === 'text')
       .map((message) => message.content),
-    recentTurns: facts.recent_turns,
+    recentTurns,
     catalogIndex: catalog_index,
   });
   // Assigned in the joined commercial-context task; make that async boundary
@@ -1045,7 +1076,7 @@ export async function claimBatch(
     },
     context: {
       batch_messages: batchMessages,
-      recent_turns: facts.recent_turns,
+      recent_turns: recentTurns,
       summary: facts.summary,
       selected_memories,
       long_term_memory_available,

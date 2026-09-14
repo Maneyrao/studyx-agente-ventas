@@ -356,7 +356,7 @@ describe('checkAgentTurnIntegrityV3', () => {
     expect(result).toEqual({ ok: true });
   });
 
-  it('rejects omitting a call offer when the authoritative policy requires it', () => {
+  it('does not let the backend reject safe copy solely because the model omitted a recommended call offer', () => {
     const result = checkAgentTurnIntegrityV3({
       ...base,
       context: {
@@ -368,12 +368,7 @@ describe('checkAgentTurnIntegrityV3', () => {
         },
       },
     });
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.rejection.violations).toContainEqual({
-      code: 'CALL_OFFER_REQUIRED',
-      subject: 'response_type',
-    });
+    expect(result).toEqual({ ok: true });
   });
 
   it('rejects committing a call request forbidden by policy', () => {

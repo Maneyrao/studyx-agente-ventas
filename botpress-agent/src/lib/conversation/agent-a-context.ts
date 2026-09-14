@@ -655,9 +655,8 @@ export function buildAgentAContextV1(
       may_offer_call: claimed.policy.may_respond
         && intakeStatus === 'known'
         && firstNameKnownNow
-        && (state.call_preference === 'unknown' || state.call_preference === 'chat')
+        && state.call_preference !== 'call'
         && state.call_offer_status !== 'accepted'
-        && state.call_offer_status !== 'declined'
         && callOfferCount < 2,
       may_request_call_now: claimed.policy.may_respond
         && !claimed.contact.blocked

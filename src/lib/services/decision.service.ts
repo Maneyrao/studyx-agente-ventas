@@ -6,10 +6,11 @@ import { logger } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
 import { getPostgresError, type DbClient } from '@/lib/db/types';
 import { sha256Hex } from '@/lib/idempotency/canonical-json';
+import { physicalOutboundTexts } from '@/features/orchestration/domain/physical-outbound-texts';
 import { isExplicitOptOut } from '@/lib/heuristics/opt-out';
 import { splitFullName } from '@/lib/heuristics/contact-identity';
 import { registerMessage, type Message } from './message.service';
-import { enqueueLeadProjection } from './projection.service';
+import { enqueueLeadProjection, upsertCommittedLeadStateProjection } from './projection.service';
 import { loadContactIntakeV1 } from '@/lib/repositories/contact-intake.repository';
 import {
   paymentReportProjectionPayloadV1,
@@ -478,32 +479,6 @@ function paymentPlanProtectedFacts(
   // model never supplies either side of this authorization.
   const amount = presentation.installment_amount.replace(/\.00$/u, '');
   return [{ kind: 'price', value: `${presentation.currency} ${amount}` }];
-}
-
-/**
- * Preserve the model-authored message boundaries only when the final text is
- * still an exact composition of those messages. Guards may replace or prune a
- * response; in that case falling back to one part is safer than inventing new
- * boundaries. A canonical payment block is attached as the last part without
- * exceeding the model contract of three customer-visible messages.
- */
-function physicalOutboundTexts(input: {
-  readonly final_response: string;
-  readonly authored_messages: readonly string[] | null;
-  readonly enabled: boolean;
-}): string[] {
-  if (!input.enabled || !input.authored_messages?.length) return [input.final_response];
-  const authored = input.authored_messages.map((message) => message.trim()).filter(Boolean);
-  if (authored.length === 0) return [input.final_response];
-  const joined = authored.join('\n\n');
-  if (input.final_response === joined) return authored.slice(0, 3);
-  const prefix = `${joined}\n\n`;
-  if (!input.final_response.startsWith(prefix)) return [input.final_response];
-
-  const suffix = input.final_response.slice(prefix.length).trim();
-  if (!suffix) return authored.slice(0, 3);
-  if (authored.length < 3) return [...authored, suffix];
-  return [...authored.slice(0, 2), `${authored[2]}\n\n${suffix}`];
 }
 
 async function duplicateDecisionResult(
@@ -1634,6 +1609,16 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
 
   const result = await commit();
 
+  // Keep the single operator-facing lead row synchronized with durable
+  // commercial progress (course, plan and stage). This is fail-soft and
+  // idempotent; Google itself is still reached only by the outbox worker.
+  if (result.status === 'committed' && !result.replayed) {
+    await upsertCommittedLeadStateProjection({
+      messageId: validatedInput.turn_id,
+      traceId: validatedInput.trace_id,
+    });
+  }
+
   // A reported payment is durable the moment it commits; unlike a link, it
   // needs no physical delivery of our own reply to become true. Best-effort:
   // the scheduled reconciler converges the row if this attempt fails.
@@ -1944,6 +1929,10 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
   });
 
   if (result.delivery_status === 'submitted_to_botpress') {
+    await upsertCommittedLeadStateProjection({
+      messageId: input.outbound_id,
+      traceId: input.trace_id,
+    });
     // Physical provider evidence is already committed above and may never be
     // rolled back by a derived projection. This eager attempt is best-effort;
     // the scheduled reconciler reconstructs any missing row without sending.

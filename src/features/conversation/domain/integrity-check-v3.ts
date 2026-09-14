@@ -135,9 +135,9 @@ export function checkAgentTurnIntegrityV3(input: {
   if ((offersCall || narrativeOffersCall) && !input.context.call_policy.offer_allowed) {
     violations.push({ code: 'CALL_OFFER_NOT_AUTHORIZED', subject: 'response_type' });
   }
-  if (input.context.call_policy.offer_required && !(offersCall && narrativeOffersCall)) {
-    violations.push({ code: 'CALL_OFFER_REQUIRED', subject: 'response_type' });
-  }
+  // `offer_required` is conversational guidance for Agent A, not transaction
+  // authority. Omitting a recommended invitation is measured in evaluation;
+  // it must never make an otherwise safe customer response disappear.
   const callRequestCommits = [...committedPreparations].filter((preparationId) => (
     input.context.preparation_tools[preparationId] === 'prepare_call_request'
   ));

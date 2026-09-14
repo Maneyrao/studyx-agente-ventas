@@ -64,6 +64,18 @@ describe('plazo del pago separado de la duración del curso', () => {
 });
 
 describe('lenguaje natural liberado', () => {
+  it('quita una posible oferta no canónica y conserva la pregunta útil', () => {
+    const content = 'También tenemos Idiomas para ayudarte a empezar desde cero. ¿Qué te gustaría aprender?';
+    const canonical = { ...CANONICAL, offering_names: ['Inglés 1', 'Inglés 2', 'Inglés 3'] };
+
+    const verdict = enforce(content, canonical);
+
+    expect(verdict.content).toBe('¿Qué te gustaría aprender?');
+    expect(verdict.removed).toEqual(['También tenemos Idiomas para ayudarte a empezar desde cero.']);
+    expect(verdict.violations.map((violation) => violation.code))
+      .toContain('OFFERING_NOT_CANONICAL');
+  });
+
   it.each([
     'Tenemos 12 pagos mensuales de USD 30, 6 pagos de USD 60 o un pago de USD 360.',
     'Contamos con chat directo con profesores.',
@@ -177,10 +189,12 @@ describe('lenguaje natural liberado', () => {
     expect(enforce(content).content).toBe(content);
   });
 
-  it('conserva el salto entre los párrafos que sobreviven', () => {
-    const verdict = enforce('Es 100% online.\n\nTe sale USD 999.\n\n¿Arrancamos?');
+  it('conserva el salto entre los párrafos seguros', () => {
+    const content = 'Es 100% online.\n\nTe sale USD 999.\n\n¿Arrancamos?';
+    const verdict = enforce(content);
 
     expect(verdict.content).toBe('Es 100% online.\n\n¿Arrancamos?');
+    expect(verdict.violations.map((violation) => violation.code)).toContain('PRICE_NOT_CANONICAL');
   });
 
   it('deja hablar de certificación cuando el registro canónico no la especifica', () => {
@@ -190,15 +204,17 @@ describe('lenguaje natural liberado', () => {
   });
 });
 
-describe('restricciones que siguen firmes', () => {
+describe('restricciones comerciales firmes', () => {
   it.each([
     'StudyX ofrece una beca garantizada.',
     'Te damos un descuento especial para anotarte.',
     'Tenés una beca disponible para este curso.',
-  ])('veta beneficios comerciales no autorizados: %s', (claim) => {
-    const verdict = enforce(`${claim} ¿Qué te gustaría aprender?`);
+  ])('veta beneficios comerciales no autorizados y conserva la pregunta: %s', (claim) => {
+    const content = `${claim} ¿Qué te gustaría aprender?`;
+    const verdict = enforce(content);
 
     expect(verdict.content).toBe('¿Qué te gustaría aprender?');
+    expect(verdict.removed).toContain(claim);
     expect(verdict.violations.map((violation) => violation.code)).toContain('FORBIDDEN_PROMISE');
   });
 
@@ -210,41 +226,48 @@ describe('restricciones que siguen firmes', () => {
   it.each([
     'No tenemos descuentos, pero te damos una beca.',
     'No ofrecemos becas y te damos un descuento.',
-  ])('no extiende una negación a otra oferta afirmativa: %s', (content) => {
-    expect(enforce(content).content).toBeNull();
+  ])('no extiende la negación a una oferta afirmativa posterior: %s', (content) => {
+    const verdict = enforce(content);
+    expect(verdict.content).toBeNull();
+    expect(verdict.violations.map((violation) => violation.code)).toContain('FORBIDDEN_PROMISE');
   });
 
-  it('veta sólo la oración con un precio inventado y entrega el resto', () => {
-    const verdict = enforce('Es 100% online. Te sale USD 999. ¿Arrancamos?');
+  it('veta sólo la oración con un precio no canónico', () => {
+    const content = 'Es 100% online. Te sale USD 999. ¿Arrancamos?';
+    const verdict = enforce(content);
 
     expect(verdict.content).toBe('Es 100% online. ¿Arrancamos?');
     expect(verdict.removed).toEqual(['Te sale USD 999.']);
     expect(verdict.violations.map((violation) => violation.code)).toContain('PRICE_NOT_CANONICAL');
   });
 
-  it('veta una duración que no existe en el registro canónico', () => {
-    const verdict = enforce('Dura 3 meses. Es 100% online.');
+  it('veta una duración que no existe', () => {
+    const content = 'Dura 3 meses. Es 100% online.';
+    const verdict = enforce(content);
 
     expect(verdict.content).toBe('Es 100% online.');
     expect(verdict.violations.map((violation) => violation.code)).toContain('DURATION_NOT_CANONICAL');
   });
 
-  it('veta una modalidad que contradice el registro canónico', () => {
-    const verdict = enforce('Las clases son presenciales en nuestra sede. Te espero.');
+  it('veta una modalidad contradictoria', () => {
+    const content = 'Las clases son presenciales en nuestra sede. Te espero.';
+    const verdict = enforce(content);
 
     expect(verdict.content).toBe('Te espero.');
     expect(verdict.violations.map((violation) => violation.code)).toContain('MODALITY_CONTRADICTS_CANONICAL');
   });
 
-  it('veta afirmar certificado cuando el registro canónico dice que no hay', () => {
-    const verdict = enforce('El curso entrega certificado oficial. Es 100% online.', NO_CERTIFICATION);
+  it('veta una afirmación de certificado contradictoria', () => {
+    const content = 'El curso entrega certificado oficial. Es 100% online.';
+    const verdict = enforce(content, NO_CERTIFICATION);
 
     expect(verdict.content).toBe('Es 100% online.');
     expect(verdict.violations.map((violation) => violation.code)).toContain('CERTIFICATION_CONTRADICTS_CANONICAL');
   });
 
-  it('veta una promesa de empleo garantizado', () => {
-    const verdict = enforce('Es 100% online. Te aseguramos empleo al terminar.');
+  it('veta una promesa de empleo', () => {
+    const content = 'Es 100% online. Te aseguramos empleo al terminar.';
+    const verdict = enforce(content);
 
     expect(verdict.content).toBe('Es 100% online.');
     expect(verdict.violations.map((violation) => violation.code)).toContain('FORBIDDEN_PROMISE');
@@ -265,11 +288,15 @@ describe('restricciones que siguen firmes', () => {
     expect(verdict.content).toBe(content);
   });
 
-  it('devuelve null cuando ninguna oración sobrevive, para que el llamador decida', () => {
-    const verdict = enforce('Te sale USD 999. Te aseguramos empleo.');
+  it('devuelve null cuando ninguna oración segura sobrevive', () => {
+    const content = 'Te sale USD 999. Te aseguramos empleo.';
+    const verdict = enforce(content);
 
     expect(verdict.content).toBeNull();
     expect(verdict.removed).toHaveLength(2);
+    expect(verdict.violations.map((violation) => violation.code)).toEqual(
+      expect.arrayContaining(['PRICE_NOT_CANONICAL', 'FORBIDDEN_PROMISE']),
+    );
   });
 });
 
@@ -357,6 +384,8 @@ describe('registro canónico desde el catálogo', () => {
     expect(set.prices).toEqual([]);
     expect(set.durations).toEqual([]);
     expect(enforce('El precio es USD 360.', set).content).toBeNull();
+    expect(enforce('El precio es USD 360.', set).violations.map((violation) => violation.code))
+      .toContain('PRICE_NOT_CANONICAL');
   });
 
   it.each([
@@ -378,6 +407,8 @@ describe('registro canónico desde el catálogo', () => {
     expect(set.prices).not.toContain('USD 60');
     expect(set.payment_terms).toEqual([]);
     expect(enforce('El precio es USD 360.', set).content).toBeNull();
+    expect(enforce('El precio es USD 360.', set).violations.map((violation) => violation.code))
+      .toContain('PRICE_NOT_CANONICAL');
   });
 
   it.each([
@@ -390,6 +421,8 @@ describe('registro canónico desde el catálogo', () => {
     });
 
     expect(enforce(content, canonical).content).toBeNull();
+    expect(enforce(content, canonical).violations.map((violation) => violation.code))
+      .toContain('OFFERING_NOT_CANONICAL');
   });
 
   it.each([

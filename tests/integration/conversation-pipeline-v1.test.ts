@@ -339,12 +339,19 @@ run('conversation pipeline V1 vertical', () => {
     );
     expect(withheld.committed.outbound?.content).not.toContain(paymentLinks.monthly_12);
 
-    // Supplying the missing identity resumes the link the customer already
-    // asked for; that is the turn that emits it, so it is the turn that must
-    // survive being committed twice at once.
-    const payment = await prepareTurn(
+    // Supplying the missing identity must first produce the canonical data
+    // confirmation. Data entry alone is never consent to send a payment link.
+    const identityConfirmation = await commitTurn(
       'Soy Ariana Paz, ariana.paz@example.test',
       move('provide_contact_details'),
+    );
+    expect(identityConfirmation.committed.outbound?.content).not.toContain(paymentLinks.monthly_12);
+
+    // Only a later, explicit confirmation may emit the link. That is the turn
+    // that must survive being committed twice at once.
+    const payment = await prepareTurn(
+      'Sí, los datos son correctos. Ahora compartime el link',
+      move('request_payment_link'),
     );
     const concurrent = await Promise.all([
       commitClaimedDecision(payment.commitInput, { store: orchestrationStore }),
@@ -403,12 +410,15 @@ run('conversation pipeline V1 vertical', () => {
       state_events_for_payment: 1,
     });
 
-    // A delivered link is not a sale. Nothing operator-facing exists yet.
+    // A delivered link is not a sale. The lead already exists from first
+    // contact, but no payment may appear as reported or verified yet.
     const beforeReport = await db!<Array<{ payload: Record<string, string> }>>`
       SELECT payload FROM sheet_projection_rows
       WHERE projection_key = ${leadProjectionKey(workspaceId, payment.claimed.batch.contact_id)}
     `;
-    expect(beforeReport).toHaveLength(0);
+    expect(beforeReport).toHaveLength(1);
+    expect(beforeReport[0].payload.estado_pago).toBe('');
+    expect(beforeReport[0].payload.estado_alta).toBe('pendiente_operador');
 
     // The customer says they paid. Repeating it must not repeat the row.
     for (const text of ['Ya hice el pago', 'Te confirmo que ya lo pagué']) {

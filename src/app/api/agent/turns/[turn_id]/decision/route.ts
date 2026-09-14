@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import {
   DECISION_INTENTS,
@@ -25,6 +25,7 @@ import { commitClaimedDecision } from '@/features/orchestration/application/comm
 import { orchestrationStore } from '@/features/orchestration/adapters/postgres-orchestration-store';
 import { ConversationPipelineCommitV1Schema } from '@/features/conversation/adapters/conversation-pipeline-schema';
 import { AgentATurnCommitV2Schema } from '@/features/conversation/adapters/agent-turn-v2-schema';
+import { flushSheetProjectionsAfterMutation } from '@/lib/services/sheet-projection-trigger';
 
 /**
  * POST /api/agent/turns/:turn_id/decision
@@ -202,6 +203,12 @@ export async function POST(
         { store: orchestrationStore }
       )
     );
+    if (committed.status === 'committed' && !committed.replayed) {
+      after(() => flushSheetProjectionsAfterMutation({
+        traceId: parsed.data.trace_id,
+        source: 'decision',
+      }));
+    }
     return NextResponse.json(committed, { status: 200 });
   } catch (error) {
     if (error instanceof DecisionTurnNotFoundError) {

@@ -4,6 +4,7 @@ import { jsonbParam } from '@/lib/db/json';
 import { getPostgresError, type DbClient } from '@/lib/db/types';
 import { sha256Hex } from '@/lib/idempotency/canonical-json';
 import { logger } from '@/lib/observability/structured-log';
+import { splitFullName } from '@/lib/heuristics/contact-identity';
 import { createSandboxLookup } from '@/lib/repositories/sandbox-identity.repository';
 import { GoogleSheetsProvider } from '@/lib/providers/sheets/google-sheets-provider';
 import type { SheetRowValues, SheetsProvider } from '@/lib/providers/sheets/sheets-provider';
@@ -25,10 +26,9 @@ export { leadProjectionKey };
  * `spreadsheets.values.update` per row; a Google failure leaves the row
  * pending/retryable and never throws into the caller.
  *
- * Timing: this module only exposes the primitives. Task 4 (send_payment_link,
- * mark_hot_lead, log_objection) decides WHEN to call `enqueueLeadProjection`
- * — always after channel delivery is confirmed, never inside the canonical
- * transaction.
+ * Timing: first contact and identity enrichment enqueue the stable lead row;
+ * later commercial and payment signals merge into it. Google network I/O is
+ * always performed by the leased worker, never inside a canonical transaction.
  */
 
 const DEFAULT_ESTADO_ALTA = 'pendiente_operador';
@@ -123,6 +123,12 @@ export async function enqueueLeadProjection(
     `;
     const existing = existingRows[0];
 
+    // A later generic commercial/identity refresh must never downgrade the
+    // stronger fact that the customer already reported payment. Only another
+    // explicit payment event may replace that operator-facing state.
+    const preserveReportedPayment = existing?.payload.estado_pago === 'reportado_por_cliente'
+      && input.estadoPago === undefined;
+
     const values: SheetRowValues = {
       fecha_alta: existing?.payload.fecha_alta ?? new Date().toISOString().slice(0, 10),
       contact_id: input.contactId,
@@ -133,14 +139,18 @@ export async function enqueueLeadProjection(
       apellido: input.apellido ?? existing?.payload.apellido ?? '',
       email: input.email ?? existing?.payload.email ?? '',
       telefono: input.telefono,
-      etapa_comercial: input.etapaComercial ?? existing?.payload.etapa_comercial ?? '',
+      etapa_comercial: preserveReportedPayment
+        ? existing?.payload.etapa_comercial ?? ''
+        : input.etapaComercial ?? existing?.payload.etapa_comercial ?? '',
       curso_interes: input.cursoInteres ?? existing?.payload.curso_interes ?? '',
       plan: input.plan ?? existing?.payload.plan ?? '',
       estado_pago: input.estadoPago ?? existing?.payload.estado_pago ?? '',
       fecha_pago: input.fechaPago ?? existing?.payload.fecha_pago ?? '',
       estado_alta: existing?.payload.estado_alta ?? DEFAULT_ESTADO_ALTA,
       call_id: input.callId ?? existing?.payload.call_id ?? '',
-      ultima_senal: input.ultimaSenal,
+      ultima_senal: preserveReportedPayment
+        ? existing?.payload.ultima_senal ?? input.ultimaSenal
+        : input.ultimaSenal,
       trace_id: input.traceId,
     };
     const payloadHash = sha256Hex(values);
@@ -194,7 +204,7 @@ export async function enqueueLeadProjection(
   throw new Error('ENQUEUE_LEAD_PROJECTION_RETRY_EXHAUSTED');
 }
 
-export interface LeadIdentityRefreshInput {
+export interface InboundLeadProjectionInput {
   contactId: string;
   phone: string;
   nombre?: string;
@@ -203,25 +213,25 @@ export interface LeadIdentityRefreshInput {
   traceId: string;
 }
 
+export interface CommittedLeadStateProjectionInput {
+  messageId: string;
+  traceId: string;
+}
+
 /**
- * Refreshes the identity columns of an ALREADY projected lead row after the
- * customer volunteered their name/email (typically after the payment link
- * event created the row with an empty identity).
- *
- * Identity-only by design: when no `sheet_projection_rows` row exists for
- * the contact this is a no-op — a customer who merely stated their name
- * never becomes a Sheets lead by that fact alone; only a commercial signal
- * (e.g. `payment_link_sent`) creates rows. Fails soft (logged, never thrown)
- * because it runs adjacent to ingestion and must never break the turn.
+ * Creates the operator-facing lead row at first inbound contact and enriches
+ * that same stable row as identity arrives. PostgreSQL remains the source of
+ * truth; the Google call is still performed by the outbox worker after the
+ * customer-facing turn, never in the ingest transaction.
  */
-export async function refreshLeadIdentityProjection(
-  input: LeadIdentityRefreshInput,
+export async function upsertInboundLeadProjection(
+  input: InboundLeadProjectionInput,
   deps: {
     sql?: DbClient;
     loadSheetsConfig?: typeof loadSheetsProjectionConfig;
     loadWorkspaceConfig?: typeof loadBusinessWorkspaceConfig;
   } = {},
-): Promise<'refreshed' | 'skipped'> {
+): Promise<'created_or_updated' | 'skipped'> {
   const db = deps.sql ?? orchestratorSql;
   try {
     const sheets = (deps.loadSheetsConfig ?? loadSheetsProjectionConfig)();
@@ -237,7 +247,7 @@ export async function refreshLeadIdentityProjection(
     const existingRows = await db<Array<{ id: string }>>`
       SELECT id FROM sheet_projection_rows WHERE projection_key = ${projectionKey} LIMIT 1
     `;
-    if (existingRows.length === 0) return 'skipped';
+    const firstContact = existingRows.length === 0;
 
     await enqueueLeadProjection(
       {
@@ -249,17 +259,125 @@ export async function refreshLeadIdentityProjection(
         nombre: input.nombre,
         apellido: input.apellido,
         email: input.email,
-        ultimaSenal: 'contact_identity_captured',
+        ...(firstContact ? { etapaComercial: 'new_lead' } : {}),
+        ultimaSenal: firstContact ? 'inbound_lead_created' : 'inbound_lead_updated',
         traceId: input.traceId,
       },
       { sql: db },
     );
-    return 'refreshed';
+    return 'created_or_updated';
   } catch (error) {
     logger.warn({
-      event: 'projection.lead_identity_refresh_failed',
+      event: 'projection.inbound_lead_upsert_failed',
       trace_id: input.traceId,
       contact_id: input.contactId,
+      error: String(error),
+    });
+    return 'skipped';
+  }
+}
+
+/**
+ * Enriches the stable CRM row from commercial state that is already durable.
+ * This deliberately runs after the decision transaction commits: the Sheet
+ * must never show a course, plan or stage that PostgreSQL later rolled back.
+ */
+export async function upsertCommittedLeadStateProjection(
+  input: CommittedLeadStateProjectionInput,
+  deps: {
+    sql?: DbClient;
+    loadSheetsConfig?: typeof loadSheetsProjectionConfig;
+    loadWorkspaceConfig?: typeof loadBusinessWorkspaceConfig;
+  } = {},
+): Promise<'created_or_updated' | 'skipped'> {
+  const db = deps.sql ?? orchestratorSql;
+  try {
+    const sheets = (deps.loadSheetsConfig ?? loadSheetsProjectionConfig)();
+    if (!sheets) return 'skipped';
+    const workspaceSlug = (deps.loadWorkspaceConfig ?? loadBusinessWorkspaceConfig)().workspaceSlug;
+    const rows = await db<Array<{
+      workspace_id: string;
+      contact_id: string;
+      phone: string;
+      declared_phone: string | null;
+      name: string | null;
+      email: string | null;
+      stage: string;
+      selected_offering_code: string | null;
+      selected_payment_plan: string | null;
+      offering_name: string | null;
+      delivery_state: string | null;
+      has_deferred_lead_projection: boolean;
+    }>>`
+      SELECT
+        state.workspace_id,
+        state.contact_id,
+        contact.phone,
+        contact.declared_phone,
+        contact.name,
+        contact.email,
+        state.stage,
+        state.selected_offering_code,
+        state.selected_payment_plan,
+        offering.display_name AS offering_name,
+        delivery.state AS delivery_state,
+        (delivery.deferred_lead_projection IS NOT NULL) AS has_deferred_lead_projection
+      FROM messages AS message
+      JOIN conversation_sales_context_states_v1 AS state
+        ON state.conversation_id = message.conversation_id
+       AND state.contact_id = message.contact_id
+      JOIN workspaces AS workspace
+        ON workspace.id = state.workspace_id
+       AND workspace.slug = ${workspaceSlug}
+       AND workspace.status = 'active'
+      JOIN contacts AS contact ON contact.id = state.contact_id
+      LEFT JOIN offerings AS offering
+        ON offering.workspace_id = state.workspace_id
+       AND offering.code = state.selected_offering_code
+      LEFT JOIN agent_decisions AS decision
+        ON decision.turn_id = CASE
+          WHEN message.direction = 'inbound' THEN message.id
+          ELSE message.in_reply_to
+        END
+      LEFT JOIN outbound_deliveries AS delivery
+        ON delivery.message_id = decision.outbound_message_id
+      WHERE message.id = ${input.messageId}::uuid
+        AND contact.deleted_at IS NULL
+        AND COALESCE(contact.lifecycle_status, 'active') = 'active'
+      LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) return 'skipped';
+    // Agent Turn V3 owns a richer, delivery-fenced projection payload. Its
+    // deferred projection is applied after the provider accepts the outbound;
+    // a generic refresh here would immediately overwrite that stronger signal.
+    if (row.has_deferred_lead_projection) return 'skipped';
+    const identity = row.name ? splitFullName(row.name) : null;
+    const delivered = row.delivery_state === 'submitted' || row.delivery_state === 'delivered';
+    const projectedStage = row.stage === 'payment_link_sent' && !delivered
+      ? 'plan_selected'
+      : row.stage;
+    await enqueueLeadProjection({
+      workspaceId: row.workspace_id,
+      contactId: row.contact_id,
+      spreadsheetId: sheets.spreadsheetId,
+      tabName: sheets.tabName,
+      telefono: row.declared_phone ?? row.phone,
+      nombre: identity?.nombre,
+      apellido: identity?.apellido,
+      email: row.email ?? undefined,
+      etapaComercial: projectedStage,
+      cursoInteres: row.offering_name ?? row.selected_offering_code ?? undefined,
+      plan: row.selected_payment_plan ?? undefined,
+      ultimaSenal: 'commercial_state_updated',
+      traceId: input.traceId,
+    }, { sql: db });
+    return 'created_or_updated';
+  } catch (error) {
+    logger.warn({
+      event: 'projection.committed_lead_state_upsert_failed',
+      trace_id: input.traceId,
+      message_id: input.messageId,
       error: String(error),
     });
     return 'skipped';

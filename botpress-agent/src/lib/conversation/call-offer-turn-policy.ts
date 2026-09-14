@@ -140,9 +140,7 @@ export function evaluateCallOfferTurnPolicyV1(input: {
   if (customerSignal === 'opt_out') {
     return { offer_required: false, offer_allowed: false, reason: 'OPTED_OUT', customer_signal: customerSignal };
   }
-  if (customerSignal === 'rejection'
-      || context.commercial_state.call_offer_status === 'declined'
-      || context.commercial_state.call_preference === 'declined') {
+  if (customerSignal === 'rejection') {
     return { offer_required: false, offer_allowed: false, reason: 'CALL_REJECTED', customer_signal: customerSignal };
   }
   if (customerSignal === 'acceptance'
@@ -150,7 +148,10 @@ export function evaluateCallOfferTurnPolicyV1(input: {
       || context.commercial_state.call_preference === 'call') {
     return { offer_required: false, offer_allowed: false, reason: 'CALL_ACCEPTED', customer_signal: customerSignal };
   }
-  if (context.commercial_state.stage === 'handoff' || context.commercial_state.stage === 'closed') {
+  if (context.commercial_state.stage === 'handoff'
+      || context.commercial_state.stage === 'closed'
+      || context.commercial_state.stage === 'payment_link_sent'
+      || context.commercial_state.payment_reported) {
     return { offer_required: false, offer_allowed: false, reason: 'HANDOFF_OR_CLOSED', customer_signal: customerSignal };
   }
   if (context.commercial_state.call_offer_count >= 2) {
