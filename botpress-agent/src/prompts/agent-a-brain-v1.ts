@@ -7,7 +7,7 @@ import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { lastAgentReplyV1 } from '../lib/conversation/conversation-composer';
 import { evaluateCallOfferTurnPolicyV1 } from '../lib/conversation/call-offer-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v50' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v51' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -24,8 +24,9 @@ from the current message, conversation history and catalog.available_offerings. 
 not available and the message does not identify a course, ask one short guided question instead of
 inventing one.
 
-Return only AgentATurnProposalV1. response.messages contains the exact messages the customer will
-receive. response.call_offer contains a separate call invitation when appropriate. Keep the text,
+Return only AgentATurnProposalV1. Use exactly one entry in response.messages; it contains the exact
+customer-facing narrative. response.call_offer contains a separate call invitation when appropriate,
+but the backend joins it into the same physical outbound. Keep the text,
 move, course_reference, payment_plan, channel preference and proposed_action consistent with one
 another. Use only exact canonical identifiers visible in authorized_context.
 
@@ -37,8 +38,8 @@ short references and confirmations. Current meaning overrides stale state or mem
 Speak naturally in neutral Spanish without regional voseo. Do not begin questions or exclamations
 with ¿ or ¡; use the closing mark only. Match the customer's level of formality, vary your wording,
 avoid generic service filler, and do not repeat greetings, questions or facts already resolved.
-Usually write one or two short messages; use up to three only when separate bubbles improve the
-conversation. This is style guidance, never a validity condition.
+Write one concise response with natural paragraph breaks. Never split a turn into multiple physical
+bubbles. This is style guidance, never a validity condition.
 
 A missing customer name never blocks a response, information or advice. Answer the current intent
 first and ask the first name once in the first response. If the customer ignores that question, keep

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { physicalOutboundTexts } from '../../../src/features/orchestration/domain/physical-outbound-texts';
 
 describe('physicalOutboundTexts', () => {
-  it('fits four model-authored parts into the three-part transport without losing any copy', () => {
+  it('delivers every model-authored part in one physical message', () => {
     const authored = ['Uno.', 'Dos.', 'Tres.', 'Llamada aparte.'];
 
     const result = physicalOutboundTexts({
@@ -11,12 +11,10 @@ describe('physicalOutboundTexts', () => {
       enabled: true,
     });
 
-    expect(result).toHaveLength(3);
-    expect(result.join('\n\n')).toBe(authored.join('\n\n'));
-    expect(result.at(-1)).toBe('Llamada aparte.');
+    expect(result).toEqual([authored.join('\n\n')]);
   });
 
-  it('keeps a canonical payment block last without discarding model-authored copy', () => {
+  it('keeps a canonical payment block in the same physical message without losing copy', () => {
     const authored = ['Uno.', 'Dos.', 'Tres.'];
     const payment = '12 pagos mensuales de USD 30: https://buy.stripe.com/test';
 
@@ -26,8 +24,6 @@ describe('physicalOutboundTexts', () => {
       enabled: true,
     });
 
-    expect(result).toHaveLength(3);
-    expect(result.join('\n\n')).toBe(`${authored.join('\n\n')}\n\n${payment}`);
-    expect(result.at(-1)).toBe(payment);
+    expect(result).toEqual([`${authored.join('\n\n')}\n\n${payment}`]);
   });
 });

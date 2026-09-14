@@ -70,12 +70,13 @@ describe('Agent A Brain prompt', () => {
   it('ships one complete canonical behavior behind a compact runtime contract', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v21');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v50');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v22');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v51');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('You lead the\nconversation; the backend does not write or rewrite your narrative');
     expect(instructions).toContain('The sales\nphases are a map, not a blocking script');
     expect(instructions).toContain('response.call_offer contains a separate call invitation');
+    expect(instructions).toContain('exactly one entry in response.messages');
     expect(instructions).toContain('<authorized_context>');
     expect(instructions).toContain('"memory-1"');
   });
@@ -118,7 +119,7 @@ describe('Agent A Brain prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
     expect(instructions).toContain('Llamada: una invitación inicial y un posible recordatorio');
-    expect(instructions).toContain('como mensaje separado');
+    expect(instructions).toContain('misma respuesta física');
     expect(instructions).toContain('Pide sólo los campos que figuren en `capabilities.intake_missing`');
     expect(instructions).toContain('el backend agrega el link canónico de Stripe');
     expect(instructions).toContain('como máximo antes de solicitar los datos finales');
