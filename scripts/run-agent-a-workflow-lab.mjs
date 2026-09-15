@@ -21,6 +21,7 @@ BUSINESS_WORKSPACE_SLUG:'studyx',ORCHESTRATOR_API_KEY:'eval-orchestrator-key',
 ORCHESTRATOR_KEY_ID:'botpress-eval',STUDYX_SIGNING_SECRET:'eval-signing-secret',CRON_SECRET:'local-eval-cron',
 PAYMENT_PROVIDER:'fake',PAYMENT_LINK_12M:'https://example.invalid/eval/12m',
 PAYMENT_LINK_6M:'https://example.invalid/eval/6m',PAYMENT_LINK_CONTADO:'https://example.invalid/eval/contado',
+GOOGLE_SHEETS_SPREADSHEET_ID:'local-eval-sheet',GOOGLE_SHEETS_TAB_NAME:'Leads',
 AGENT_A_BRAIN_V1_ENABLED:'true',AGENT_A_BRAIN_V1_SHADOW:'false',AGENT_A_REPAIR_ENABLED:'true',
 AGENT_A_CONTEXT_SCOPING:'false',AGENT_A_STATE_ASSERTIONS:'true',AGENT_A_SINGLE_ROUTE:'true',
 CONVERSATION_PIPELINE_V1_ENABLED:'false',NEXT_TELEMETRY_DISABLED:'1'};
@@ -32,6 +33,7 @@ for (const name of [
   'STUDYX_CALL_OFFER_CASE_IDS',
   'STUDYX_WORKFLOW_REPORT_DIR',
   'STUDYX_LAB_ROOT',
+  'STUDYX_AGENT_A_BUDGET_LIMIT_USD',
 ]) {
   const value = process.env[name]?.trim();
   if (value) env[name] = value;

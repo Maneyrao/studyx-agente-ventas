@@ -4,8 +4,9 @@ import {
   STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION,
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
+import { evaluateCallOfferTurnPolicyV1 } from '../lib/conversation/call-offer-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v56' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v61' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -42,6 +43,30 @@ function inertJson(value: unknown): string {
     .replaceAll('&', '\\u0026');
 }
 
+function currentTurnGuidanceV1(context: AgentAContextV1): string {
+  const currentText = context.turn.batch_messages.map((message) => message.text).join('\n');
+  const nameAppearsNow = /\b(?:soy|me llamo|mi nombre es)\s+[\p{L}]{2,}/iu.test(currentText);
+  const askFirstNameNow = context.continuity?.assistant_has_spoken === false
+    && context.continuity.first_name_status === 'missing'
+    && !nameAppearsNow;
+  const callPolicy = evaluateCallOfferTurnPolicyV1({ context });
+
+  return `<current_turn_guidance>
+${inertJson({
+    ask_first_name_now: askFirstNameNow,
+    call_offer: {
+      recommended: callPolicy.offer_required,
+      reason: callPolicy.reason,
+    },
+  })}
+</current_turn_guidance>
+This is a compact reminder of the canonical behavior, never customer copy. Answer the customer's
+current request before advancing. If ask_first_name_now is true, ask the first name as the only
+question in response.messages. If call_offer.recommended is true, write your own natural invitation
+in response.call_offer. Never copy a reason code into the reply and never override a veto or a false
+capability.`;
+}
+
 function mandatoryRepairDirectiveV1(context: AgentAContextV1): string {
   const rejection = context.turn_rejection;
   if (!rejection) return '';
@@ -52,6 +77,10 @@ This is the only rewrite. Set repair_of to this rejection_id and attempt 1. Keep
 customer's current intent and change only what the rejection identifies.
 
 - FACT_VALUE_MISMATCH: correct the value using authorized_alternatives.fact_ids or omit the claim.
+  When the rejected subject is candidate_course_detail, state only the visible candidate names and
+  ask a diagnostic question unless current_turn_guidance asks for the first name; in that case ask
+  the first name instead. Do not infer differences, outcomes, prerequisites or what a call can
+  determine.
 - REPEATED_AGENT_REPLY: do not repeat the previous greeting, question, answer or call wording; answer
   what the customer said now and advance naturally. The authorized facts remain available.
 - ACTION_NOT_AUTHORIZED or MISSING_INTAKE for send_payment_link: use proposed_action none, never imply
@@ -59,8 +88,9 @@ customer's current intent and change only what the rejection identifies.
   that list is not empty. Contact data alone is not consent to send a link.
 - CALL_OFFER_REQUIRED: put one optional voice-call invitation in response.call_offer after useful
   course information. If it is the second offer, make it a brief reminder with different wording.
-- CALL_OFFER_MESSAGE_BOUNDARY_INVALID: remove call language from response.messages and keep the
-  invitation only in response.call_offer.
+- CALL_OFFER_MESSAGE_BOUNDARY_INVALID: remove only call language from response.messages, preserve
+  every course name and useful detail from the rejected answer, and keep the invitation only in
+  response.call_offer.
 - CHANNEL_PREFERENCE_NOT_SUPPORTED: interpret the message itself; do not invent a chat or call choice.
 - UNSUPPORTED_OPERATIONAL_CLAIM: remove the unsupported claim. Never claim incomplete data was fully
   registered, a payment was verified, or access was granted.
@@ -68,7 +98,10 @@ customer's current intent and change only what the rejection identifies.
   candidates and ask one guided clarification. Do not request payment data or offer a call until a
   real course or interest is resolved.
 
-Never repeat the rejected draft and never expose this validation to the customer.
+Preserve every applicable current_turn_guidance item during this rewrite. Never repeat the rejected
+draft and never expose this validation to the customer. When
+current_turn_guidance.ask_first_name_now is true, the rewrite must ask the first name and no other
+question in response.messages, even when the original rejection identified a different defect.
 </mandatory_repair>`;
 }
 
@@ -84,5 +117,7 @@ ${canonicalPrompt}</canonical_sales_behavior>
 
 <authorized_context>
 ${inertJson(context)}
-</authorized_context>${mandatoryRepairDirectiveV1(context)}`;
+</authorized_context>
+
+${currentTurnGuidanceV1(context)}${mandatoryRepairDirectiveV1(context)}`;
 }

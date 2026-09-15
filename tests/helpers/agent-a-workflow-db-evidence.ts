@@ -53,6 +53,8 @@ export interface WorkflowDbEvidenceV1 {
   readonly recordedLinks: readonly string[];
   /** Captura local correlacionada con submission durable. NO acuse de Telegram. */
   readonly deliveredLinks: readonly string[];
+  /** Stable local outbox row used to update one Google Sheets lead row. */
+  readonly sheetProjectionKeys: readonly string[];
   readonly deliveryScope: 'local_adapter';
 }
 
@@ -92,7 +94,8 @@ export async function readWorkflowDbEvidenceV1(input: {
     if (!row) {
       return {
         contact: null, permission: null, state: null, decisions: [], outbound: [],
-        outboundCount: 0, deliveryStates: [], recordedLinks: [], deliveredLinks: [], deliveryScope: 'local_adapter',
+        outboundCount: 0, deliveryStates: [], recordedLinks: [], deliveredLinks: [],
+        sheetProjectionKeys: [], deliveryScope: 'local_adapter',
       };
     }
 
@@ -158,6 +161,16 @@ export async function readWorkflowDbEvidenceV1(input: {
       deliveryState: message.state, providerMessageId: message.provider_message_id,
     }));
     const permission = permissions[0];
+    const sheetRows = await db<Array<{ projection_key: string }>>`
+      SELECT projection.projection_key
+      FROM sheet_projection_rows AS projection
+      JOIN workspace_contacts AS workspace_contact
+        ON projection.projection_key = (
+          'lead:' || workspace_contact.workspace_id::text || ':' || workspace_contact.contact_id::text
+        )
+      WHERE workspace_contact.contact_id = ${row.contact_id}::uuid
+      ORDER BY projection.created_at ASC
+    `;
 
     const state = states[0];
     return {
@@ -206,6 +219,7 @@ export async function readWorkflowDbEvidenceV1(input: {
       deliveryStates: outbound.flatMap((message) => message.deliveryState ? [message.deliveryState] : []),
       recordedLinks: outbound.flatMap((message) => message.content.match(/https?:\/\/\S+/gu) ?? []),
       deliveredLinks: workflowDeliveredLinksV1({ outbound, adapterCaptures: input.adapterCaptures ?? [] }),
+      sheetProjectionKeys: sheetRows.map((sheetRow) => sheetRow.projection_key),
       deliveryScope: 'local_adapter',
     };
   } finally {

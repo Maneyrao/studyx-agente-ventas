@@ -1040,6 +1040,69 @@ describe('V8 respuesta repetida', () => {
     });
   });
 
+  it('permite nombrar candidatos y prometer una recomendación posterior sin inventar diferencias', () => {
+    const current = context({
+      turn: {
+        batch_messages: [{ id: 'm2', text: 'Quiero inglés pero no sé qué nivel tengo.' }],
+        recent_turns: [],
+      },
+      commercial_state: {
+        ...context().commercial_state,
+        selected_offering_code: null,
+      },
+      catalog: {
+        ...context().catalog,
+        selected_offering: null,
+        candidate_offerings: [
+          {
+            code: 'ingles_1',
+            fact_id: 'offering:ingles_1:name:v1',
+            display_name: 'Inglés 1',
+            area_code: 'idiomas',
+          },
+          {
+            code: 'ingles_2',
+            fact_id: 'offering:ingles_2:name:v1',
+            display_name: 'Inglés 2',
+            area_code: 'idiomas',
+          },
+          {
+            code: 'ingles_3',
+            fact_id: 'offering:ingles_3:name:v1',
+            display_name: 'Inglés 3',
+            area_code: 'idiomas',
+          },
+        ],
+      },
+    });
+    const factIds = current.catalog.candidate_offerings.map((candidate) => candidate.fact_id);
+
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'browse_catalog',
+          secondary_moves: [],
+          vetoes: [],
+          confidence: 0.9,
+        },
+        response: {
+          messages: [
+            'Tenemos Inglés 1, Inglés 2 e Inglés 3.',
+            'Cuéntame si ya estudiaste antes; según eso te recomiendo por cuál empezar.',
+          ],
+          call_offer: null,
+        },
+        used_fact_ids: factIds,
+      }),
+      context: current,
+      planned_fact_ids: factIds,
+      rejection_id: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(rejection).toBeNull();
+  });
+
   it('permite orientar desde cero cuando la descripción canónica lo respalda', () => {
     const current = context();
     current.catalog.selected_offering!.facts.push({

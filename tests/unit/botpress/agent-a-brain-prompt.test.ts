@@ -75,8 +75,8 @@ describe('Agent A Brain prompt', () => {
   it('ships one complete canonical behavior behind a compact runtime contract', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v27');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v56');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v28');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v61');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('You lead the\nconversation; the backend does not write or rewrite your narrative');
     expect(instructions).not.toContain('The sales\nphases are a map, not a blocking script');
@@ -151,7 +151,7 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).toContain('compra directa sí cancelan el segundo ofrecimiento');
   });
 
-  it('keeps call timing in the canonical behavior instead of injecting a per-turn command', () => {
+  it('surfaces a second-call advisory without authoring customer copy', () => {
     const current = context();
     current.customer.display_name = 'Lucia';
     current.turn.batch_messages[0].text = 'Me parece caro y se me va del presupuesto.';
@@ -161,11 +161,13 @@ describe('Agent A Brain prompt', () => {
 
     const instructions = buildAgentABrainInstructionsV1(current);
 
-    expect(instructions).not.toContain('<call_offer_policy');
+    expect(instructions).toContain('<current_turn_guidance>');
+    expect(instructions).toContain('"call_offer":{"recommended":true,"reason":"SECOND_PRICE_OBJECTION"}');
+    expect(instructions).not.toContain('Te llamamos');
     expect(instructions).toContain('Segundo y último ofrecimiento');
   });
 
-  it('describes the first offer as behavior without injecting a mandatory turn decision', () => {
+  it('surfaces the first-call advisory from durable context without fixed wording', () => {
     const current = context();
     current.customer.display_name = null;
     current.turn.batch_messages[0].text = 'Soy Lucia. Quiero estudiar ingles pero no se que nivel.';
@@ -180,8 +182,31 @@ describe('Agent A Brain prompt', () => {
 
     const instructions = buildAgentABrainInstructionsV1(current);
 
-    expect(instructions).not.toContain('<call_offer_policy');
+    expect(instructions).toContain('"call_offer":{"recommended":true,"reason":"FIRST_OFFER_DUE"}');
+    expect(instructions).not.toContain('Te llamamos');
     expect(instructions).toContain('Primera invitación obligatoria');
+  });
+
+  it('makes the initial first-name instruction salient without turning it into a reply blocker', () => {
+    const current = context();
+    current.customer.display_name = null;
+    current.customer.contact_intake = {
+      nombre: null, apellido: null, correo: null, telefono: null,
+    };
+    current.continuity = {
+      assistant_has_spoken: false,
+      first_name_status: 'missing',
+      last_agent_reply: null,
+    };
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+
+    expect(instructions).toContain('"ask_first_name_now":true');
+    expect(instructions).toMatch(/<current_turn_guidance>[\s\S]*ask_first_name_now[\s\S]*only\s+question/iu);
+    expect(instructions).toMatch(/answer the customer[\s\S]{0,180}ask/iu);
+    expect(instructions.indexOf('<current_turn_guidance>')).toBeGreaterThan(
+      instructions.indexOf('</authorized_context>'),
+    );
   });
 
   it('uses structured continuity without duplicating the last outbound outside authorized context', () => {
@@ -305,6 +330,9 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).toContain('ACTION_NOT_AUTHORIZED or MISSING_INTAKE');
     expect(instructions).toContain('use proposed_action none');
     expect(instructions).toContain('preserve the\ncustomer\'s current intent');
+    expect(instructions).toMatch(
+      /ask_first_name_now is true[\s\S]*first name[\s\S]*no other\s+question/iu,
+    );
   });
 
   it('repairs unresolved courses by browsing visible candidates', () => {
