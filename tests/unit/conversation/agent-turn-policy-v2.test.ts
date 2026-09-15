@@ -198,12 +198,13 @@ describe('plannerless Agent A authority', () => {
     expect(result).toEqual({ ok: false, reasons: ['UNSUPPORTED_STATE_ASSERTION'] });
   });
 
-  it('authorizes a payment link only from canonical state and complete intake', () => {
+  it('authorizes a payment link only after a separate durable data-confirmation step', () => {
     const result = authorize({
       state: state({
         selected_offering_code: 'redes_informaticas',
         selected_payment_plan: 'monthly_6',
         stage: 'plan_selected',
+        awaiting_reply: 'payment_confirmation',
       }),
       intake: completeIntake,
       proposal: proposal({
@@ -259,7 +260,7 @@ describe('plannerless Agent A authority', () => {
     });
   });
 
-  it('accepts an explicit current plan change even if request_payment_link is the primary move', () => {
+  it('persists an explicit plan change but waits for confirmation before sending its link', () => {
     const result = authorize({
       customerText: 'Mejor 6 cuotas, pasame el link.',
       state: state({
@@ -275,22 +276,21 @@ describe('plannerless Agent A authority', () => {
           payment_plan: 'monthly_6', confidence: 0.99,
         },
         response: { messages: ['Te comparto el enlace seguro de las 6 cuotas.'] },
-        proposed_action: {
-          type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
-        },
+        proposed_action: { type: 'none' },
       }),
     });
 
     expect(result).toMatchObject({
       ok: true,
-      action: {
-        type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+      action: { type: 'none' },
+      transition: {
+        stage: 'plan_selected', selected_payment_plan: 'monthly_6',
+        awaiting_reply: 'payment_confirmation',
       },
-      transition: { stage: 'payment_link_sent', selected_payment_plan: 'monthly_6' },
     });
   });
 
-  it('materializes a requested link from the authorized move when the model omits the side effect', () => {
+  it('does not materialize a link in the same turn that selects the plan', () => {
     const result = authorize({
       state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected' }),
       intake: completeIntake,
@@ -307,12 +307,38 @@ describe('plannerless Agent A authority', () => {
 
     expect(result).toMatchObject({
       ok: true,
-      action: {
-        type: 'send_payment_link',
-        offering_code: 'redes_informaticas',
-        payment_plan: 'monthly_6',
-      },
-      transition: { stage: 'payment_link_sent' },
+      action: { type: 'none' },
+      transition: { stage: 'plan_selected', awaiting_reply: 'payment_confirmation' },
+    });
+  });
+
+  it('records a payment report without sending another link or offering another call', () => {
+    const result = authorize({
+      customerText: 'Listo, ya pagué.',
+      state: state({
+        selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_12',
+        stage: 'payment_link_sent', call_offer_count: 1, call_offer_status: 'offered',
+      }),
+      intake: completeIntake,
+      proposal: proposal({
+        move: { schema_version: 1, move: 'report_payment', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: {
+          messages: ['Gracias por avisar. El equipo verificará la acreditación y, si se confirma, gestionará tu inscripción y acceso.'],
+          call_offer: null,
+        },
+        proposed_action: { type: 'none' },
+        used_fact_ids: [
+          'state:payment_reported:v1',
+          'process:human_verification:v1',
+          'process:access_after_verification:v1',
+        ],
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: { type: 'none' },
+      transition: { stage: 'payment_link_sent', payment_reported: true, call_offer_count: 1 },
     });
   });
 
@@ -336,7 +362,7 @@ describe('plannerless Agent A authority', () => {
     expect(result).toMatchObject({
       ok: true,
       action: { type: 'none' },
-      transition: { stage: 'plan_selected', awaiting_reply: 'contact_details' },
+      transition: { stage: 'plan_selected', awaiting_reply: 'payment_confirmation' },
     });
   });
 
@@ -431,7 +457,7 @@ describe('plannerless Agent A authority', () => {
     });
   });
 
-  it('keeps a hard call refusal terminal for proactive call reminders', () => {
+  it('allows one later reminder after a prior call refusal', () => {
     const result = authorize({
       customerText: '¿Cuál plan me conviene?',
       state: state({
@@ -451,8 +477,12 @@ describe('plannerless Agent A authority', () => {
 
     expect(result).toMatchObject({
       ok: true,
+      response_messages: [
+        'Te recomiendo empezar por la opción de menor cuota.',
+        'Si quieres, puedo llamarte y explicarte los planes.',
+      ],
       transition: {
-        call_preference: 'declined', call_offer_count: 1, call_offer_status: 'declined',
+        call_preference: 'chat', call_offer_count: 2, call_offer_status: 'offered',
       },
     });
   });
@@ -552,7 +582,7 @@ describe('plannerless Agent A authority', () => {
     if (result.ok) expect(result.response).toContain(text);
   });
 
-  it.each(['¿Querés que coordinemos una llamada?', '¿Hablamos por teléfono?', '¿Quieres que te llame para explicarte el curso?', 'Ya registré tus datos. ¿Hablamos por teléfono?', 'Ya registré tus datos, ¿Hablamos por teléfono?', 'Entendido, seguimos sin llamada. ¿Quieres que te llame para explicarte el curso?'])('keeps a third proactive call offer as copy without advancing its ledger: %s', (offer) => {
+  it.each(['¿Querés que coordinemos una llamada?', '¿Hablamos por teléfono?', '¿Quieres que te llame para explicarte el curso?', 'Ya registré tus datos. ¿Hablamos por teléfono?', 'Ya registré tus datos, ¿Hablamos por teléfono?', 'Entendido, seguimos sin llamada. ¿Quieres que te llame para explicarte el curso?'])('omits a third proactive call bubble while preserving the useful message: %s', (offer) => {
     const result = authorize({
       state: state({
         selected_offering_code: 'redes_informaticas', stage: 'course_selected',
@@ -569,6 +599,7 @@ describe('plannerless Agent A authority', () => {
 
     expect(result).toMatchObject({
       ok: true,
+      response_messages: ['Seguimos por chat.'],
       transition: { call_offer_count: 2, call_offer_status: 'offered' },
     });
   });
@@ -603,8 +634,8 @@ describe('plannerless Agent A authority', () => {
         selected_offering_code: 'redes_informaticas',
         selected_payment_plan: 'one_time',
         stage: 'plan_selected',
-        call_preference: 'declined',
-        call_offer_status: 'declined',
+        call_preference: 'chat',
+        call_offer_status: 'offered',
         call_offer_count: 1,
         awaiting_reply: 'payment_confirmation',
       },

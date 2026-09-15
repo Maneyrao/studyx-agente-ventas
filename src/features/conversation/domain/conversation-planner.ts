@@ -524,7 +524,7 @@ function planSingle(
     const paymentPlan = move.payment_plan ?? state.selected_payment_plan;
     if (!offeringCode) return unchangedPlan(state, 'guide_course_choice', ['course_selection']);
     if (!paymentPlan) return unchangedPlan(state, 'present_payment_options', ['payment_plan']);
-    // The six data points are what a human needs to process the sale. A link
+    // The four contact fields are what a human needs to process the sale. A link
     // sent without them produces a payment nobody can attribute.
     if (missingContactIntakeFieldsV1(input.contact_intake).length > 0) {
       return {

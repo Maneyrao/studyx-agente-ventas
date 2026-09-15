@@ -336,6 +336,48 @@ describe('claimBatch', () => {
     expect(result.context.recent_turns).toHaveLength(1);
   });
 
+  it('keeps durable customer context without treating an idle session as immediate dialogue', async () => {
+    const result = await claimBatch(input, buildDeps({
+      now: () => '2026-09-13T16:53:10.000Z',
+      messagesResult: [
+        {
+          id: 'm1', conversation_seq: 90, content: 'Buenas tardes',
+          created_at: '2026-09-13T16:53:08.000Z', message_type: 'text',
+        },
+        {
+          id: 'm2', conversation_seq: 91, content: 'Información',
+          created_at: '2026-09-13T16:53:10.000Z', message_type: 'text',
+        },
+      ],
+      factsResult: facts({
+        summary: {
+          text: 'La persona había consultado por cursos de idiomas.',
+          version: 5,
+          updated_at: '2026-09-10T21:08:00.000Z',
+        },
+        recent_turns: [
+          {
+            direction: 'inbound',
+            content: 'Quiero información de Inglés 1, Inglés 2 e Inglés 3.',
+            created_at: '2026-09-10T21:07:46.000Z',
+          },
+          {
+            direction: 'outbound',
+            content: '¿Cuál es tu objetivo con el idioma?',
+            created_at: '2026-09-10T21:08:00.000Z',
+          },
+        ],
+      }),
+    }));
+
+    expect(result.outcome).toBe('claimed');
+    if (result.outcome !== 'claimed') return;
+
+    expect(result.contact.name).toBe('Ana');
+    expect(result.context.summary.text).toBe('La persona había consultado por cursos de idiomas.');
+    expect(result.context.recent_turns).toEqual([]);
+  });
+
   it('projects conversation-scoped V1 state only when the rollout flag is enabled', async () => {
     const load = vi.fn().mockResolvedValue({
       workspace_id: 'workspace-1', conversation_id: 'conversation-1', contact_id: 'contact-1',

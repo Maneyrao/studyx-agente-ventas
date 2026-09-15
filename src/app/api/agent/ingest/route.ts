@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
@@ -11,6 +11,7 @@ import {
 import { ContactValidationError } from '@/lib/services/contact.service';
 import { isRetryableTransactionError } from '@/lib/db/transaction';
 import { timedStage } from '@/lib/observability/structured-log';
+import { flushSheetProjectionsAfterMutation } from '@/lib/services/sheet-projection-trigger';
 
 // Kept inline for legacy request compatibility. The canonical schema — with
 // audio_reference + metadata + sandbox_provider — lives at
@@ -112,6 +113,12 @@ export async function POST(request: NextRequest) {
     const context = await timedStage('ingest.process', { trace_id: envelope.trace_id }, () =>
       processInboundMessage(envelope)
     );
+    if (!context.replayed && !context.contact.blocked) {
+      after(() => flushSheetProjectionsAfterMutation({
+        traceId: envelope.trace_id,
+        source: 'ingest',
+      }));
+    }
     return NextResponse.json(context, { status: 200 });
   } catch (err) {
     if (err instanceof ContactValidationError && err.code === 'INVALID_PHONE') {

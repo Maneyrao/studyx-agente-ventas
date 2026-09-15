@@ -27,6 +27,12 @@ const NAME_TOKEN = "[A-ZÁÉÍÓÚÜÑ][\\p{L}'’-]*";
 const NAME_SEQUENCE = `${NAME_TOKEN}(?:\\s+${NAME_TOKEN}){0,3}`;
 const CONTEXTUAL_NAME_TOKEN = "[\\p{L}][\\p{L}'’-]*";
 const CONTEXTUAL_NAME_SEQUENCE = `${CONTEXTUAL_NAME_TOKEN}(?:\\s+${CONTEXTUAL_NAME_TOKEN}){0,3}`;
+const CONTEXTUAL_NON_NAME_TOKENS = new Set([
+  'bueno', 'curso', 'cursos', 'dale', 'detalle', 'detalles', 'duracion', 'fotografia',
+  'gracias', 'hola', 'horario', 'horarios',
+  'info', 'informacion', 'ingles', 'laboral', 'modalidad', 'opcion', 'opciones', 'pago', 'pagos',
+  'precio', 'precios', 'salida', 'tecnologia',
+]);
 
 const INTRODUCED_NAME_PATTERN = new RegExp(
   `(?:^|[\\s,;.!¡¿?])(?:soy|me\\s+llamo|mi\\s+nombre\\s+es)\\s+(${NAME_TOKEN}(?:\\s+${NAME_TOKEN}){0,3}?)`
@@ -37,6 +43,15 @@ const INTRODUCED_NAME_PATTERN = new RegExp(
 const LEADING_NAME_BEFORE_EMAIL_PATTERN = new RegExp(
   `^[\\s¡¿]*(${NAME_TOKEN}(?:\\s+${NAME_TOKEN}){1,3})\\s*[,;:]?\\s*(?=${EMAIL_PATTERN.source})`,
   'u',
+);
+
+// A natural answer often supplies the requested first name and immediately
+// continues with the study goal: "Thiago. Busco algo de tecnología". The
+// single-token boundary and goal verb keep arbitrary course prose out of the
+// durable contact name without depending on the immediately previous bubble.
+const LEADING_FIRST_NAME_BEFORE_GOAL_PATTERN = new RegExp(
+  `^[\\s¡¿]*(${NAME_TOKEN})\\s*[,;.!?]\\s*(?:busco|me\\s+interesa|quiero|necesito|para)\\b`,
+  'iu',
 );
 
 const STRUCTURED_NAME_BEFORE_EMAIL_PATTERN = new RegExp(
@@ -86,6 +101,15 @@ function isPlausibleContextualName(candidate: string): boolean {
     && tokens.every((token) => new RegExp(`^${CONTEXTUAL_NAME_TOKEN}$`, 'u').test(token));
 }
 
+function containsContextualNonNameToken(candidate: string): boolean {
+  return candidate
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLocaleLowerCase('es')
+    .split(/\s+/u)
+    .some((token) => CONTEXTUAL_NON_NAME_TOKENS.has(token));
+}
+
 function ownsPersonalContactBlock(headerSource: string): boolean {
   const header = headerSource.split(/[.;!?…\n]/u).at(-1)?.trim() ?? '';
   return !NEGATED_CONTACT_HEADER.test(header)
@@ -130,7 +154,14 @@ export function extractContactIdentity(
   const introductionPrefix = introduced ? text.slice(0, introduced.index).split(/[.;!?\n]/u).at(-1) ?? '' : '';
   if (introduced && !UNSAFE_NAME_OWNER.test(introductionPrefix) && isPlausibleName(introduced[1])) {
     name = introduced[1].trim();
-  } else if (email) {
+  } else {
+    const leadingGoal = LEADING_FIRST_NAME_BEFORE_GOAL_PATTERN.exec(text);
+    if (leadingGoal && isPlausibleName(leadingGoal[1])
+      && !containsContextualNonNameToken(leadingGoal[1])) {
+      name = leadingGoal[1].trim();
+    }
+  }
+  if (name === null && email) {
     const leading = LEADING_NAME_BEFORE_EMAIL_PATTERN.exec(text);
     if (leading && isPlausibleName(leading[1])) {
       name = leading[1].trim();
@@ -216,11 +247,20 @@ export function extractContactNameAnswer(
   const boundary = plain.search(new RegExp(`${EMAIL_PATTERN.source}|${DECLARED_PHONE_PATTERN.source}|[\\n,;.!?¿]`, 'u'));
   const candidate = (boundary < 0 ? plain : plain.slice(0, boundary)).trim();
   const remainder = boundary < 0 ? '' : plain.slice(boundary).replace(/^[\s,;.!]+/u, '');
-  // A second possible identity is ambiguous. The only permitted continuation
-  // is the accompanying contact field or an explicit question, as in Telegram.
-  if (remainder && !new RegExp(`^(?:${EMAIL_PATTERN.source}|${DECLARED_PHONE_PATTERN.source}|¿|(?:[Yy]\\s+)?(?:[Cc]u[aá]nto|[Cc][oó]mo|[Qq]u[eé]|[Dd][oó]nde)\\b)`, 'u').test(remainder)) return null;
+  // A second possible identity is ambiguous. The permitted continuation is a
+  // contact field, a question, or the study-goal answer requested alongside
+  // one leading first-name token. Arbitrary prose never becomes a full name.
+  const knownContinuation = new RegExp(
+    `^(?:${EMAIL_PATTERN.source}|${DECLARED_PHONE_PATTERN.source}|¿|(?:[Yy]\\s+)?(?:[Cc]u[aá]nto|[Cc][oó]mo|[Qq]u[eé]|[Dd][oó]nde)\\b)`,
+    'u',
+  ).test(remainder);
+  const requestedGoalContinuation = asksFirstName
+    && !/\s/u.test(candidate)
+    && /^(?:busco|me\s+interesa|quiero|necesito|para)\b/iu.test(remainder);
+  if (remainder && !knownContinuation && !requestedGoalContinuation) return null;
   const contextualName = new RegExp(`^${CONTEXTUAL_NAME_SEQUENCE}$`, 'u');
   if (!contextualName.test(candidate) || !isPlausibleContextualName(candidate)
+    || containsContextualNonNameToken(candidate)
     || /\b(?:o|y|si|sí|hola|gracias|dale|bueno|perfecto|quiero|curso|plan|pago|excel|marketing|digital|nombre|apellido)\b/iu.test(candidate)) return null;
 
   const normalizedCandidate = normalizeContextualName(candidate);

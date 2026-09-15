@@ -25,14 +25,14 @@ describe('call preference requires current customer evidence',()=>{
   expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'chat',call_offer_status:'not_offered'}});
   expect(adk(x)).toBeNull();
  });
- it.each(['No quiero una llamada','No me llames'])('persists an explicit call rejection: %s',text=>{
+ it.each(['No quiero una llamada','No me llames'])('rejects the current call without cancelling one later reminder: %s',text=>{
   const x=setup(text,'decline_call');
-  expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'declined',call_offer_status:'declined'}});
+  expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'chat',call_offer_status:'not_offered'}});
   expect(adk(x)).toBeNull();
  });
- it('persists a hard rejection even when the model labels it as continue by chat',()=>{
+ it('persists an explicit refusal as chat preference even when the model labels it as continue by chat',()=>{
   const x=setup('No quiero una llamada, prefiero que sigamos por chat.','continue_by_chat');
-  expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'declined',call_offer_status:'declined'}});
+  expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'chat',call_offer_status:'not_offered'}});
  });
  it.each(['¿Por chat o por teléfono?', '¿Podemos seguir por chat o tiene que ser llamada?'])('does not treat a channel question as a choice: %s',text=>{
   const x=setup(text,'continue_by_chat');
@@ -106,10 +106,10 @@ describe('call preference requires current customer evidence',()=>{
   x.state.awaiting_reply='call_or_chat';x.context.commercial_state.awaiting_reply='call_or_chat';
   expect(backend(x).ok).toBe(true);expect(adk(x)).toBeNull();
  });
- it('reports a missing first call offer as guidance without blocking the reply',()=>{
+ it('leaves a missing first call offer to prompt guidance without rejecting the reply',()=>{
   const x=setup('Contame sobre Fotografía Profesional','ask_course_information');
   expect(backend(x)).toMatchObject({ok:true,transition:{call_offer_count:0}});
-  expect(adk(x)?.rejections).toContainEqual({code:'CALL_OFFER_REQUIRED',subject:'call_offer'});
+  expect(adk(x)).toBeNull();
  });
  it('removes an unsupported call sentence while preserving safe copy',()=>{
   const x=setup('Contame sobre Fotografía Profesional','ask_course_information');

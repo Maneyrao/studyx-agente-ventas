@@ -59,22 +59,6 @@ export default new Conversation({
       }
     }
 
-    // Supabase is the canonical transcript and memory store for StudyX. Keep
-    // Botpress' managed transcript empty so its quota-gated summarizer cannot
-    // delay or fail an otherwise valid inbound turn.
-    if (chat) {
-      try {
-        await chat.clearTranscript()
-        await chat.saveTranscript()
-      } catch (error) {
-        logEvent('studyx.router.transcript_reset_failed', {
-          adapter,
-          trace_id: traceId,
-          error_code: error instanceof Error ? error.name : 'UNKNOWN_ERROR',
-        })
-      }
-    }
-
     const workflowKey = `turn:botpress:${input.integration_id}:${input.external_message_id}`
 
     try {
@@ -96,6 +80,24 @@ export default new Conversation({
         ...(adapter === 'whatsapp' ? {} : { external_message_id: input.external_message_id }),
         error_code: error instanceof Error ? error.name : 'UNKNOWN_ERROR',
       })
+    }
+
+    // Supabase is the canonical transcript and memory store for StudyX. Start
+    // the durable workflow first so transcript housekeeping cannot delay the
+    // persistence of a newer customer fragment and let a stale reply escape.
+    // Botpress' managed transcript still stays empty so its quota-gated
+    // summarizer cannot interfere with subsequent turns.
+    if (chat) {
+      try {
+        await chat.clearTranscript()
+        await chat.saveTranscript()
+      } catch (error) {
+        logEvent('studyx.router.transcript_reset_failed', {
+          adapter,
+          trace_id: traceId,
+          error_code: error instanceof Error ? error.name : 'UNKNOWN_ERROR',
+        })
+      }
     }
   },
 })

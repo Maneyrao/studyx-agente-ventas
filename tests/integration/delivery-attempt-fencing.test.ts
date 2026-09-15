@@ -540,7 +540,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
     `;
   }
 
-  it('a failed delivery report never marks the link sent or enqueues a projection', async () => {
+  it('a failed delivery leaves the first-contact lead row unmarked as link sent or paid', async () => {
     const turn = await seedPaymentTurn('Quiero pagar en 12 cuotas, opción fallida');
     await recordDeliveryReport({
       outbound_id: turn.outbound!.id,
@@ -552,10 +552,16 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       delivery_attempt: turn.attempt,
     });
 
-    expect(await projectionRows(turn.contact_id)).toHaveLength(0);
+    expect(await projectionRows(turn.contact_id)).toEqual([{
+      payload: expect.objectContaining({
+        etapa_comercial: 'new_lead',
+        estado_pago: '',
+        ultima_senal: 'inbound_lead_created',
+      }),
+    }]);
   });
 
-  it('a confirmed delivery alone enqueues nothing: a link is not a sale', async () => {
+  it('a confirmed legacy link delivery still leaves the lead unmarked as a sale', async () => {
     const turn = await seedPaymentTurn('Quiero pagar en 12 cuotas, sin reportar el pago');
     await recordDeliveryReport({
       outbound_id: turn.outbound!.id,
@@ -567,7 +573,13 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       delivery_attempt: turn.attempt,
     });
 
-    expect(await projectionRows(turn.contact_id)).toHaveLength(0);
+    expect(await projectionRows(turn.contact_id)).toEqual([{
+      payload: expect.objectContaining({
+        etapa_comercial: 'new_lead',
+        estado_pago: '',
+        ultima_senal: 'inbound_lead_created',
+      }),
+    }]);
   });
 
   it('enqueues exactly one reported-payment row once the evidence exists, even under replay', async () => {
@@ -873,7 +885,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
         WHERE od.message_id = ${turn.outbound!.id}::uuid
         GROUP BY od.state
       `;
-      expect(afterFailure[0]).toEqual({ state: 'submitted', reports: 1, rows: 0 });
+      expect(afterFailure[0]).toEqual({ state: 'submitted', reports: 1, rows: 1 });
     } finally {
       await sql.unsafe(`
         DROP TRIGGER IF EXISTS ${triggerName} ON sheet_projection_rows;

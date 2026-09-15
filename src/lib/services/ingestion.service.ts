@@ -16,7 +16,7 @@ import { sha256Hex } from '@/lib/idempotency/canonical-json';
 import { isExplicitOptOut } from '@/lib/heuristics/opt-out';
 import { couldBeContactNameAnswer, extractContactIdentity, extractContactNameAnswer, splitFullName, type ContactNameParts } from '@/lib/heuristics/contact-identity';
 import { registerSandboxIdentity } from '@/lib/repositories/sandbox-identity.repository';
-import { refreshLeadIdentityProjection } from './projection.service';
+import { upsertInboundLeadProjection } from './projection.service';
 import type { DbClient } from '@/lib/db/types';
 import type { DecisionResponseType } from '@/features/orchestration/domain/decision';
 import { evaluateTurnPolicy, type TurnPolicyReason } from '@/features/orchestration/domain/turn-policy';
@@ -161,7 +161,11 @@ interface InboundCore {
   consent_status: 'unknown' | 'granted' | 'revoked';
   batch: BatchMembership;
   /** Identity the customer volunteered in THIS message, already persisted. */
-  captured_identity?: { name: string | null; email: string | null };
+  captured_identity?: {
+    name: string | null;
+    email: string | null;
+    declaredPhone: string | null;
+  };
 }
 
 function optOutAckEligibleFromMetadata(metadata: unknown): boolean {
@@ -496,6 +500,7 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
       `;
       contact.name = capturedIdentity.name ?? contact.name;
       contact.email = capturedIdentity.email ?? contact.email;
+      contact.declared_phone = capturedIdentity.declaredPhone ?? contact.declared_phone;
     }
     mark('identity');
 
@@ -643,20 +648,21 @@ export async function processInboundMessage(envelope: InboundEnvelope): Promise<
     captured_identity,
   } = await persistInbound(envelope);
 
-  // Identidad recién capturada: si este contacto ya tiene una fila de lead en
-  // el outbox de Sheets (creada por un payment_link_sent anterior), se
-  // refresca nombre/apellido/email en esa fila. Nunca crea filas nuevas y
-  // falla en silencio registrado: jamás bloquea el turno.
-  if (!replayed && (captured_identity?.name || captured_identity?.email)) {
-    const { nombre, apellido } = captured_identity.name
-      ? splitFullName(captured_identity.name)
+  // Todo primer contacto es un lead, aun antes de conocer su nombre. Se crea
+  // una única fila estable por contact_id y cada mensaje posterior la enriquece
+  // con la identidad disponible. Un opt-out se conserva en PostgreSQL para
+  // cumplimiento, pero nunca se exporta como oportunidad comercial a Sheets.
+  if (!replayed && !explicit_opt_out) {
+    const effectiveName = captured_identity?.name ?? contact.name;
+    const { nombre, apellido } = effectiveName
+      ? splitFullName(effectiveName)
       : { nombre: undefined, apellido: undefined };
-    await refreshLeadIdentityProjection({
+    await upsertInboundLeadProjection({
       contactId: contact.id,
-      phone: contact.phone,
+      phone: captured_identity?.declaredPhone ?? contact.declared_phone ?? contact.phone,
       nombre,
       apellido,
-      email: captured_identity.email ?? undefined,
+      email: captured_identity?.email ?? contact.email ?? undefined,
       traceId: envelope.trace_id,
     });
   }

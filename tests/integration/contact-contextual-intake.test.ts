@@ -46,6 +46,15 @@ async function outbound(initial: InboundEnvelope, context: IngestContext, conten
 const fullRequest = 'Para dejarlo registrado necesito tu nombre, apellido y teléfono. ¿Me los pasás?';
 
 run('contact identity from delivered conversational requests', () => {
+  it('persists a leading first name when the same turn continues with the study goal', async () => {
+    const first = envelope();
+    first.message.text = 'Thiago. Busco algo de tecnología para conseguir trabajo';
+    const accepted = await processInboundMessage(first);
+    expect(accepted.contact.name).toBe('Thiago');
+    expect(await db!`SELECT name FROM contacts WHERE id = ${accepted.contact.id}::uuid`)
+      .toEqual([{ name: 'Thiago' }]);
+  });
+
   it('persists a full name and Markdown phone from the answer, independent of awaiting_reply and email', async () => {
     const first = envelope();
     const opened = await processInboundMessage(first);

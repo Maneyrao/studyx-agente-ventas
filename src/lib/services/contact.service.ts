@@ -10,6 +10,7 @@ const E164_REGEX = /^\+[1-9]\d{7,14}$/;
 export interface Contact {
   id: string;
   phone: string;
+  declared_phone: string | null;
   status: 'prospecto' | 'cliente' | 'inactivo';
   channel_origin: 'whatsapp' | 'voice' | 'telegram';
   opted_in_at: string;

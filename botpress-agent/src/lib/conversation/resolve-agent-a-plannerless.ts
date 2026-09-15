@@ -191,26 +191,6 @@ function pruneDuplicateCallInvitation<T extends AgentAProposalEnvelopeV1>(input:
     : null
 }
 
-/**
- * The physical protocol carries at most three bubbles. A dedicated call offer
- * owns the final bubble, so preserve the first two model-authored narrative
- * parts and never let transport truncation silently discard the invitation.
- */
-function reservePhysicalCallOfferBoundary<T extends AgentAProposalEnvelopeV1>(initial: T): T {
-  if (typeof initial.proposal.response.call_offer !== 'string'
-    || initial.proposal.response.messages.length <= 2) return initial
-  return {
-    ...initial,
-    proposal: {
-      ...initial.proposal,
-      response: {
-        ...initial.proposal.response,
-        messages: initial.proposal.response.messages.slice(0, 2),
-      },
-    },
-  }
-}
-
 /** Both the initial proposal and its one repair use this exact pipeline. */
 function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   readonly initial: T
@@ -223,7 +203,7 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
     authorized_fact_ids: input.authorized_fact_ids, rejection_id: input.rejection_id,
   })
   const originalRejection = validate(input.initial)
-  const effective = reservePhysicalCallOfferBoundary(input.initial)
+  const effective = input.initial
   const rejection = validate(effective)
   if (rejection === null) return { effective, rejection, originalRejection }
   // Each demotion/prune revalidates its result, including the full schema.
@@ -266,8 +246,6 @@ const NON_BLOCKING_GUIDANCE_CODES = new Set([
 const NON_DEGRADABLE_FACT_SUBJECTS = new Set([
   'course_logistics',
   'inferred_course_detail',
-  'candidate_course_detail',
-  'candidate_course_names',
   'prerequisites',
 ])
 
@@ -402,7 +380,6 @@ export async function resolveAgentAPlannerlessProposalV2<
     }
   }
   for (const prune of [
-    recoverAmbiguousCandidateGuidanceV1,
     pruneUnsupportedPrerequisiteClaimV1,
     pruneUnsupportedCourseLogisticsClaimV1,
     pruneFalseLinkDeliveryClaimV1,
@@ -423,70 +400,6 @@ export async function resolveAgentAPlannerlessProposalV2<
   }
   if (mayDegradeToBackendBoundary(initial.proposal, rejection)) return degraded(true)
   throw plannerlessRejectionError(terminalRejection)
-}
-
-function joinedCandidateNamesV1(names: readonly string[]): string {
-  if (names.length <= 1) return names[0] ?? ''
-  return `${names.slice(0, -1).join(', ')} y ${names.at(-1)}`
-}
-
-/**
- * A malformed single repair must not turn a safe ambiguous-course question
- * into a technical fallback. Candidate names are signed catalog facts; when
- * those are the only available course facts, recover with those names and one
- * neutral goal question while preserving a valid, separate call invitation.
- */
-function recoverAmbiguousCandidateGuidanceV1<T extends AgentAProposalEnvelopeV1>(input: {
-  readonly initial: T
-  readonly rejection: TurnRejectionV1
-  readonly context: AgentAContextV1
-  readonly authorized_fact_ids: readonly string[]
-}): T | null {
-  const candidateSubjects = new Set(['candidate_course_detail', 'candidate_course_names'])
-  if (input.context.catalog.selected_offering !== null
-    || input.context.catalog.candidate_offerings.length < 2
-    || !input.rejection.rejections.some((reason) => candidateSubjects.has(reason.subject))
-    || !input.rejection.rejections.every((reason) => (
-      reason.code === 'FACT_VALUE_MISMATCH' && candidateSubjects.has(reason.subject)
-      || NON_BLOCKING_GUIDANCE_CODES.has(reason.code)
-    ))) return null
-
-  const candidates = input.context.catalog.candidate_offerings.slice(0, 3)
-  const names = joinedCandidateNamesV1(candidates.map((offering) => offering.display_name))
-  const {
-    course_reference: _courseReference,
-    area_reference: _areaReference,
-    payment_plan: _paymentPlan,
-    ...neutralMove
-  } = input.initial.proposal.move
-  const candidate = {
-    ...input.initial,
-    proposal: {
-      ...input.initial.proposal,
-      move: {
-        ...neutralMove,
-        move: 'browse_catalog' as const,
-        secondary_moves: [],
-      },
-      response: {
-        messages: [`Para orientarte entre ${names}, qué objetivo concreto quieres lograr?`],
-        call_offer: input.initial.proposal.response.call_offer,
-      },
-      proposed_action: { type: 'none' as const },
-      used_fact_ids: candidates.map((offering) => offering.fact_id),
-      used_memory_ids: [],
-      memory_candidates: [],
-    },
-  } as T
-  const candidateRejection = validatePlannerless({
-    proposal: candidate.proposal,
-    context: input.context,
-    rejection_id: input.rejection.rejection_id,
-    authorized_fact_ids: input.authorized_fact_ids,
-  })
-  return candidateRejection === null || hasOnlyNonBlockingGuidance(candidate.proposal, candidateRejection)
-    ? candidate
-    : null
 }
 
 /**

@@ -344,17 +344,18 @@ run('conversation pipeline V1 vertical', () => {
     );
     expect(withheld.committed.outbound?.content).not.toContain(paymentLinks.monthly_12);
 
-    // Supplying identity completes intake but is not fresh consent to send a
-    // payment link. Agent A keeps that conversational choice; the next explicit
-    // request is the effect-authorizing turn and must survive concurrent replay.
-    const identity = await commitTurn(
+    // Supplying the missing identity must first produce the canonical data
+    // confirmation. Data entry alone is never consent to send a payment link.
+    const identityConfirmation = await commitTurn(
       'Soy Ariana Paz, ariana.paz@example.test',
       move('provide_contact_details'),
     );
-    expect(identity.committed.outbound?.content).not.toContain(paymentLinks.monthly_12);
+    expect(identityConfirmation.committed.outbound?.content).not.toContain(paymentLinks.monthly_12);
 
+    // Only a later, explicit confirmation may emit the link. That is the turn
+    // that must survive being committed twice at once.
     const payment = await prepareTurn(
-      'Ya te pasé mis datos; ahora sí, mandame el link',
+      'Sí, los datos son correctos. Ahora compartime el link',
       move('request_payment_link'),
     );
     const concurrent = await Promise.all([
@@ -414,12 +415,20 @@ run('conversation pipeline V1 vertical', () => {
       state_events_for_payment: 1,
     });
 
-    // A delivered link is not a sale. Nothing operator-facing exists yet.
+    // A delivered link creates one complete operator-facing lead row. Payment
+    // state remains canonical in PostgreSQL and is deliberately not duplicated
+    // into the four visible Sheet columns.
     const beforeReport = await db!<Array<{ payload: Record<string, string> }>>`
       SELECT payload FROM sheet_projection_rows
       WHERE projection_key = ${leadProjectionKey(workspaceId, payment.claimed.batch.contact_id)}
     `;
-    expect(beforeReport).toHaveLength(0);
+    expect(beforeReport).toHaveLength(1);
+    expect(beforeReport[0].payload).toEqual({
+      nombre: 'Ariana',
+      apellido: 'Paz',
+      mail: 'ariana.paz@example.test',
+      tipo_de_curso: 'Redes Informáticas',
+    });
 
     // The customer says they paid. Repeating it must not repeat the row.
     for (const text of ['Ya hice el pago', 'Te confirmo que ya lo pagué']) {

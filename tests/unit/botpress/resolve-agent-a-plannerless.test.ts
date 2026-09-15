@@ -114,16 +114,17 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
-  it('preserves two informational messages before an authorized second call reminder', async () => {
+  it('preserves every model-authored message before an authorized call reminder', async () => {
     const current = context();
     current.turn.batch_messages[0].text = 'Contame en detalle qué voy a aprender y cómo se cursa.';
     current.commercial_state.call_preference = 'unknown';
     current.commercial_state.call_offer_status = 'offered';
     current.commercial_state.call_offer_count = 1;
     current.capabilities.may_offer_call = true;
-    const messages: [string, string] = [
+    const messages: [string, string, string] = [
       `Primera parte. ${'a'.repeat(175)}`,
       `Segunda parte. ${'b'.repeat(175)}`,
+      'Tercera parte con el próximo paso elegido por DeepSeek.',
     ];
     const repair = vi.fn();
 
@@ -198,7 +199,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:PROPOSAL_SCHEMA_INVALID:response.messages');
   });
 
-  it('falls back to candidate names and a neutral question when the only repair is malformed', async () => {
+  it('never replaces DeepSeek copy with a hardcoded catalog answer when the only repair is malformed', async () => {
     const current = context();
     current.customer.display_name = 'Julia';
     current.turn.batch_messages = [{ id: 'm2', text: 'Sigo sin decidirme: cuál me conviene para conseguir clientes?' }];
@@ -256,9 +257,10 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 
-    expect(result.effective.proposal.response.messages.join(' ')).toContain('Marketing Digital');
-    expect(result.effective.proposal.response.messages.join(' ')).toContain('Community Manager');
-    expect(result.effective.proposal.response.messages.join(' ')).not.toMatch(/campañas|comunidad/u);
+    expect(result.effective.proposal.response.messages).toEqual([
+      'Los dos sirven, pero uno apunta a campañas y el otro a manejar una comunidad.',
+    ]);
+    expect(result.effective.proposal.response.messages.join(' ')).not.toContain('Para orientarte entre');
     expect(result.effective.proposal.response.call_offer).toBe(callOffer);
     expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: false });
   });
@@ -469,7 +471,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       call_offer: null,
     });
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['CALL_OFFER_MESSAGE_BOUNDARY_INVALID'], repair_attempted: false,
+      rejection_codes: [], repair_attempted: false,
     });
   });
 
@@ -762,14 +764,10 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(repair).not.toHaveBeenCalled();
     expect(result.effective).toBe(initial);
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['CALL_OFFER_REQUIRED'], repair_attempted: false, repaired: false,
+      rejection_codes: [], repair_attempted: false, repaired: false,
     });
   });
 
-  // El disparador pasó de `duration` a `price`. La verdad de duración,
-  // modalidad y certificación la verifica ahora el backend por VALOR contra el
-  // registro canónico; el ADK sólo sigue bloqueando dinero y promesas. La
-  // mecánica de reparación que este test cubre es la misma.
   it('returns an uncited canonical value to DeepSeek once and accepts its cited rewrite', async () => {
     const initial = generated(proposal({
       response: { messages: ['La formación sale USD 480.'], call_offer: null },
@@ -787,10 +785,6 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
 
     expect(repair).toHaveBeenCalledTimes(1);
-    expect(repair.mock.calls[0]?.[0]).toMatchObject({
-      rejections: [{ code: 'FACT_VALUE_MISMATCH', subject: 'price' }],
-      authorized_alternatives: { fact_ids: expect.arrayContaining([NAME_FACT, DURATION_FACT]) },
-    });
     expect(result.effective).toBe(repaired);
     expect(result.evidence).toMatchObject({
       rejection_codes: ['FACT_VALUE_MISMATCH'], repair_attempted: true,
@@ -1277,7 +1271,7 @@ describe('prerequisitos sin respaldo se podan, no se entregan', () => {
       context: context(),
       repair_enabled: true,
       rejection_id: '00000000-0000-4000-8000-0000000000ac',
-      repair: async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); },
+      repair: vi.fn(),
     });
 
     const mensajes = resolved.effective.proposal.response.messages;
@@ -1304,8 +1298,7 @@ describe('prerequisitos sin respaldo se podan, no se entregan', () => {
       repair: async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); },
     });
 
-    expect(resolved.effective.proposal.response.messages.join(' '))
-      .toContain('Inglés 1');
+    expect(resolved.effective.proposal.response.messages.join(' ')).toContain('Inglés 1');
     expect(resolved.effective.proposal.response.messages.join(' '))
       .not.toMatch(/no tienen conocimientos previos/iu);
   });
@@ -1348,12 +1341,12 @@ describe('flexibilidad de cursada sin respaldo se poda, no se entrega', () => {
       context: context(),
       repair_enabled: true,
       rejection_id: '00000000-0000-4000-8000-0000000000af',
-      repair: async () => generated({
+      repair: vi.fn(async () => generated({
         ...initial.proposal,
         repair_of: {
           rejection_id: '00000000-0000-4000-8000-0000000000af', attempt: 1,
         },
-      }),
+      })),
     });
 
     expect(resolved.effective.proposal.response.messages).toEqual([

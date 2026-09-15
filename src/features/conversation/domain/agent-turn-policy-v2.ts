@@ -1,5 +1,4 @@
 import {
-  supportsCallDeclineV1,
   supportsCallRequestV1,
   supportsChatPreferenceV1,
 } from './channel-preference-evidence';
@@ -178,9 +177,24 @@ export function authorizeAgentTurnV2(input: {
     && input.call_policy.may_request_call_now && callRequestSupported
     && !proposal.move.vetoes.includes('call');
   const authoredCallOffer = proposal.response.call_offer?.trim() || null;
-  const authorizedCallOffer = authoredCallOffer === null
+  const sanitizedCallOffer = authoredCallOffer === null
     ? null
     : dropUnsupportedStateAssertionsV1(authoredCallOffer, stateFacts).trim() || null;
+  const mayDeliverCallOffer = input.call_policy.may_offer_call
+    && state.call_offer_count < 2
+    && state.call_offer_status !== 'accepted'
+    && state.stage !== 'handoff'
+    && state.stage !== 'closed'
+    && state.stage !== 'payment_link_sent'
+    && !plannedPaymentReported
+    && !proposal.move.vetoes.includes('call');
+  // The model owns the invitation's wording and timing; the backend owns only
+  // the durable ceiling and consent boundary. A third/post-sale/rejected-call
+  // bubble is omitted while the useful narrative remains deliverable.
+  const authorizedCallOffer = sanitizedCallOffer !== null
+    && (!solicitsACall(sanitizedCallOffer, true) || mayDeliverCallOffer)
+    ? sanitizedCallOffer
+    : null;
   const authorizedMessages = authoredMessages
     .map((message) => dropUnsupportedStateAssertionsV1(message, stateFacts).trim())
     .filter((message) => message.length > 0);
@@ -189,13 +203,7 @@ export function authorizeAgentTurnV2(input: {
   // Call timing and message boundaries are sales guidance. They remain in the
   // prompt and evaluation suite, but they never reject customer-facing copy.
   // Only an eligible visible invitation advances the durable call ledger.
-  const callOfferCanAdvanceState = visibleCallOffer && !(
-    !input.call_policy.may_offer_call
-    || state.call_offer_count >= 2
-    || state.call_offer_status === 'accepted'
-    || state.call_offer_status === 'declined'
-    || proposal.move.vetoes.includes('call')
-  );
+  const callOfferCanAdvanceState = visibleCallOffer && mayDeliverCallOffer;
 
   const channelChoice = moves.has('continue_by_chat') || moves.has('decline_call');
   const supportedChannelChoice = channelChoice && supportsChatPreferenceV1(
@@ -222,6 +230,12 @@ export function authorizeAgentTurnV2(input: {
       || proposal.move.vetoes.includes('purchase')
     )
   );
+  const intakeCompletedBeforeThisTurn = state.awaiting_reply === 'payment_confirmation'
+    && !selectsPaymentPlanNow
+    && !moves.has('provide_contact_details');
+  const paymentLinkAuthorized = !plannedPaymentReported
+    && intakeCompletedBeforeThisTurn
+    && stateFacts.has('state:intake_recorded:v1');
   // Asking for the next missing field is also prompt guidance. Missing intake
   // remains a hard boundary only for the payment side effect below.
   const paymentLinkRequested = !paymentDeferred && moves.has('request_payment_link');
@@ -240,6 +254,8 @@ export function authorizeAgentTurnV2(input: {
       reasons.push('ACTION_NOT_AUTHORIZED');
     } else if (!stateFacts.has('state:intake_recorded:v1')) {
       reasons.push('MISSING_INTAKE');
+    } else if (!paymentLinkAuthorized) {
+      reasons.push('ACTION_NOT_AUTHORIZED');
     } else {
       action = resumesDurablePlan
         ? {
@@ -257,7 +273,7 @@ export function authorizeAgentTurnV2(input: {
     && selectedPlan !== null
     && !proposal.move.vetoes.includes('payment_link')
     && !proposal.move.vetoes.includes('purchase')
-    && stateFacts.has('state:intake_recorded:v1')
+    && paymentLinkAuthorized
   ) {
     // The model owns the conversational move; the backend owns side effects.
     // Materializing the action encoded by an authorized request is not a
@@ -311,17 +327,38 @@ export function authorizeAgentTurnV2(input: {
     stage = 'plan_selected';
     awaitingReply = 'contact_details';
   }
+  if (
+    moves.has('request_payment_link') && !paymentDeferred
+    && selectedOffering !== null
+    && selectedPlan !== null
+    && stateFacts.has('state:intake_recorded:v1')
+    && !paymentLinkAuthorized
+  ) {
+    nextOffering = selectedOffering;
+    nextPlan = selectedPlan;
+    stage = 'plan_selected';
+    awaitingReply = 'payment_confirmation';
+  }
+  if (
+    moves.has('provide_contact_details')
+    && selectedOffering !== null
+    && selectedPlan !== null
+    && stateFacts.has('state:intake_recorded:v1')
+  ) {
+    stage = 'plan_selected';
+    awaitingReply = 'payment_confirmation';
+  }
   if (supportedChannelChoice) {
-    const hardDecline = moves.has('decline_call') || supportsCallDeclineV1(
-      currentText,
-      state.awaiting_reply === 'call_or_chat',
-    );
-    callPreference = hardDecline ? 'declined' : 'chat';
-    if (hardDecline) callOfferStatus = 'declined';
+    // A refusal rejects the current invitation; it is not a global opt-out.
+    // Keep the customer on chat and preserve the offer ledger so one different,
+    // situational reminder may still happen later. Explicit opt-out is handled
+    // by the channel consent boundary before this policy runs.
+    callPreference = 'chat';
     if (awaitingReply === 'call_or_chat') awaitingReply = 'none';
   }
   if (callOfferCanAdvanceState && !supportedChannelChoice) {
     callOfferCount = Math.min(2, state.call_offer_count + 1) as 1 | 2;
+    if (callPreference === 'declined') callPreference = 'chat';
     callOfferStatus = 'offered';
     if (awaitingReply !== 'contact_details') awaitingReply = 'call_or_chat';
   }

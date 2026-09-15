@@ -58,7 +58,8 @@ La decisión v4 admite una acción nueva:
 3. Obtiene la URL desde configuración; nunca de la respuesta del modelo.
 4. Agrega al texto del modelo un bloque fijo con etiqueta y link.
 5. Commita decisión, outbound y delivery por el pipeline existente.
-6. Sólo después de entrega confirmada encola/actualiza la proyección de Sheets.
+6. Actualiza el estado comercial durable; la entrega confirmada habilita a
+   mostrar `payment_link_sent`, pero nunca equivale a un pago.
 
 Un `suppress`, contacto bloqueado, consentimiento revocado, plan inválido o configuración incompleta no puede ejecutar esta acción.
 
@@ -79,10 +80,19 @@ curso_interes | plan | estado_pago | fecha_pago | estado_alta | call_id | ultima
 
 Reglas:
 
-- Link confirmado: `etapa_comercial=proposal`, `estado_pago=pendiente`, `plan=<plan_code>`, `ultima_senal=payment_link_sent`.
+- Primer inbound: crea la fila como `etapa_comercial=new_lead`, aun sin nombre;
+  usa el teléfono real del canal cuando existe.
+- Identidad, curso, plan y etapa enriquecen esa misma fila a medida que quedan
+  persistidos; nunca crean otra fila para el mismo contacto.
+- Link confirmado: puede mostrar `etapa_comercial=payment_link_sent` y el plan,
+  pero deja `estado_pago` vacío hasta que el cliente informe el pago.
+- Pago informado: `estado_pago=reportado_por_cliente` y
+  `ultima_senal=payment_reported`; sigue pendiente de verificación humana.
 - `mark_hot_lead` y `log_objection` también actualizan la misma fila.
 - `estado_alta` nace `pendiente_operador`; el software preserva `hecha_por_operador` si una persona la modificó.
-- La escritura ocurre después del envío y no aumenta la latencia percibida por el usuario.
+- PostgreSQL se actualiza en el camino canónico. Google se drena en segundo
+  plano con `after()` tras ingesta/decisión/entrega y el cron diario recupera
+  cualquier intento pendiente; no aumenta la latencia percibida por el usuario.
 - Un fallo de Google deja el outbox pendiente/reintentable; no revierte mensaje ni decisión.
 
 ## 6. Memoria

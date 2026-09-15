@@ -16,6 +16,11 @@ function context(memoryValue = 'busca salida laboral'): AgentAContextV1 {
       batch_messages: [{ id: 'message-1', text: 'Quiero conocer Redes Informáticas' }],
       recent_turns: [],
     },
+    continuity: {
+      assistant_has_spoken: false,
+      first_name_status: 'missing',
+      last_agent_reply: null,
+    },
     customer: {
       display_name: null,
       memories: [{
@@ -70,26 +75,46 @@ describe('Agent A Brain prompt', () => {
   it('ships one complete canonical behavior behind a compact runtime contract', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v17');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v47');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v27');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v56');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
-    expect(instructions).toContain('You lead the\nconversation; the backend does not write your narrative');
-    expect(instructions).toContain('The sales\nphases are a map, not a blocking script');
-    expect(instructions).toContain('response.call_offer contains a separate call invitation');
+    expect(instructions).toContain('You lead the\nconversation; the backend does not write or rewrite your narrative');
+    expect(instructions).not.toContain('The sales\nphases are a map, not a blocking script');
+    expect(instructions).toContain('call invitation in response.call_offer');
+    expect(instructions).not.toContain('exactly one entry in response.messages');
+    expect(instructions).not.toMatch(/ambiguous general inquiry[\s\S]*one response\.messages item/iu);
     expect(instructions).toContain('<authorized_context>');
     expect(instructions).toContain('"memory-1"');
+  });
+
+  it('keeps the Thursday conversational principles in one canonical source', () => {
+    const instructions = buildAgentABrainInstructionsV1(context());
+
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
+      /Responde primero el pedido, la pregunta o la intención actual/iu,
+    );
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
+      /Normalmente usa uno o dos mensajes breves/iu,
+    );
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
+      /No (?:empieces|comiences) todos los turnos con/iu,
+    );
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
+      /fases son un mapa[\s\S]{0,100}no un guion rígido/iu,
+    );
+    expect(instructions.match(/CAMINO COMERCIAL/gu)).toHaveLength(1);
   });
 
   it('keeps catalog resolution dynamic and Meta-aware without inventing ad context', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(instructions).toContain('lead cálido from a Meta ad');
+    expect(instructions).toMatch(/leads c[áa]lidos[\s\S]{0,100}Meta/iu);
     expect(instructions).toContain('catalog.available_offerings is the complete active catalog');
-    expect(instructions).toContain('If the ad context is\nnot available');
+    expect(instructions).toMatch(/si no hay curso ni contexto del anuncio/iu);
     expect(instructions).toContain('Cualquier curso activo de `catalog.available_offerings`');
   });
 
-  it('forbids ranking ambiguous candidates when only their names are authorized', () => {
+  it('lets the canonical behavior guide ambiguous candidates without an injected mini-planner', () => {
     const current = context();
     current.commercial_state.selected_offering_code = null;
     current.catalog.selected_offering = null;
@@ -110,23 +135,23 @@ describe('Agent A Brain prompt', () => {
 
     const instructions = buildAgentABrainInstructionsV1(current);
 
-    expect(instructions).toContain('<candidate_catalog_grounding names_only="true">');
-    expect(instructions).toContain('Do not describe, compare, rank or recommend either candidate');
+    expect(instructions).not.toContain('<candidate_catalog_grounding');
+    expect(instructions).toContain('Si hay varias coincidencias reales');
   });
 
   it('keeps the call policy, intake authority and payment link ownership explicit', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
     expect(instructions).toContain('Llamada: una invitación inicial y un posible recordatorio');
-    expect(instructions).toContain('como mensaje separado');
+    expect(instructions).toContain('mensaje breve separado');
     expect(instructions).toContain('Pide sólo los campos que figuren en `capabilities.intake_missing`');
     expect(instructions).toContain('el backend agrega el link canónico de Stripe');
     expect(instructions).toContain('como máximo antes de solicitar los datos finales');
-    expect(instructions).toContain('aceptación de la primera invitación');
-    expect(instructions).toContain('compra directa cancelan el segundo ofrecimiento');
+    expect(instructions).toContain('aceptación de la llamada');
+    expect(instructions).toContain('compra directa sí cancelan el segundo ofrecimiento');
   });
 
-  it('binds the situational second-offer reason into the live turn instructions', () => {
+  it('keeps call timing in the canonical behavior instead of injecting a per-turn command', () => {
     const current = context();
     current.customer.display_name = 'Lucia';
     current.turn.batch_messages[0].text = 'Me parece caro y se me va del presupuesto.';
@@ -136,12 +161,11 @@ describe('Agent A Brain prompt', () => {
 
     const instructions = buildAgentABrainInstructionsV1(current);
 
-    expect(instructions).toContain('<call_offer_policy required="true"');
-    expect(instructions).toContain('reason="SECOND_PRICE_OBJECTION"');
-    expect(instructions).toContain('response.call_offer');
+    expect(instructions).not.toContain('<call_offer_policy');
+    expect(instructions).toContain('Segundo y último ofrecimiento');
   });
 
-  it('requires the first offer when the name is known and the current need is an ambiguous course family', () => {
+  it('describes the first offer as behavior without injecting a mandatory turn decision', () => {
     const current = context();
     current.customer.display_name = null;
     current.turn.batch_messages[0].text = 'Soy Lucia. Quiero estudiar ingles pero no se que nivel.';
@@ -156,21 +180,30 @@ describe('Agent A Brain prompt', () => {
 
     const instructions = buildAgentABrainInstructionsV1(current);
 
-    expect(instructions).toContain('<call_offer_policy required="true"');
-    expect(instructions).toContain('reason="FIRST_OFFER_DUE"');
+    expect(instructions).not.toContain('<call_offer_policy');
+    expect(instructions).toContain('Primera invitación obligatoria');
   });
 
-  it('adds the last outbound as explicit continuity context', () => {
+  it('uses structured continuity without duplicating the last outbound outside authorized context', () => {
     const current = context();
     current.turn.recent_turns = [
       { id: 'recent:1', direction: 'inbound', content: '¿Cuánto sale?' },
       { id: 'recent:2', direction: 'outbound', content: 'El total es USD 360.' },
     ];
+    current.continuity = {
+      assistant_has_spoken: true,
+      first_name_status: 'requested',
+      last_agent_reply: 'El total es USD 360.',
+    };
 
     const instructions = buildAgentABrainInstructionsV1(current);
 
-    expect(instructions).toContain('<last_agent_reply>\nEl total es USD 360.\n</last_agent_reply>');
-    expect(instructions).toMatch(/do not repeat greetings, questions or facts already resolved/iu);
+    expect(instructions).not.toContain('<last_agent_reply>');
+    expect(instructions).toContain('"assistant_has_spoken":true');
+    expect(instructions).toContain('"first_name_status":"requested"');
+    expect(instructions).toContain('"last_agent_reply":"El total es USD 360."');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(/first_name_status[^\n]*requested[^\n]*no vuelvas/iu);
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(/assistant_has_spoken[^\n]*verdadero[^\n]*no vuelvas/iu);
   });
 
   it('treats every message fragment as part of one customer turn', () => {
@@ -182,7 +215,53 @@ describe('Agent A Brain prompt', () => {
 
     const instructions = buildAgentABrainInstructionsV1(current);
 
-    expect(instructions).toMatch(/all turn\.batch_messages in order as one combined turn/iu);
+    expect(instructions).toMatch(/turn\.batch_messages[\s\S]*(?:una sola intervenci[oó]n|one combined turn)/iu);
+    expect(instructions).toMatch(/(?:intervenci[oó]n coherente|combined meaning)[\s\S]*(?:conjunto|fragments|fragmento)/iu);
+  });
+
+  it('defaults to a short proactive answer instead of repeating a generic intake question', () => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'info';
+    current.commercial_state.selected_offering_code = null;
+    current.catalog.selected_offering = null;
+    current.catalog.candidate_offerings = [];
+    current.continuity = {
+      assistant_has_spoken: true,
+      first_name_status: 'requested',
+      last_agent_reply: 'Soy el asistente virtual de StudyX. Cómo te llamas y qué te interesa aprender?',
+    };
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+
+    expect(instructions).toMatch(/mant[ée]n cada mensaje breve y conversacional/iu);
+    expect(instructions).toMatch(/(?:consulta general|mensaje general|“info”)[\s\S]{0,240}(?:tres áreas|tres opciones)/iu);
+    expect(instructions).toMatch(/first_name_status.*requested[\s\S]{0,220}(?:no vuelvas|do not ask)/iu);
+  });
+
+  it('uses neutral Spanish, asks the initial name and never turns it into a reply blocker', () => {
+    const current = context();
+    current.customer.display_name = null;
+    current.capabilities.may_offer_call = false;
+    current.capabilities.intake_missing = ['nombre', 'apellido', 'correo', 'telefono'];
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+
+    expect(instructions).toMatch(/español neutro/iu);
+    expect(instructions).toMatch(/primera respuesta[\s\S]*pregunta[\s\S]*primer nombre/iu);
+    expect(instructions).toMatch(/nombre[\s\S]*nunca[\s\S]*(?:bloquea|condiciona)[\s\S]*(?:respuesta|información|asesoramiento)/iu);
+    expect(instructions).toMatch(/No uses voseo ni regionalismos/iu);
+    expect(instructions).toMatch(/No abras frases con `¿` o `¡`/iu);
+  });
+
+  it('keeps decision-bearing references explicit and the physical call offer exclusive', () => {
+    const instructions = buildAgentABrainInstructionsV1(context());
+
+    expect(instructions).toMatch(
+      /compar(?:a|es|ar)[\s\S]*(?:nombra|menciona)[\s\S]*(?:cada curso|cada opción)/iu,
+    );
+    expect(instructions).toMatch(
+      /response\.call_offer[\s\S]*(?:exclusiv|únic)[\s\S]*(?:llamada|invitación)[\s\S]*response\.messages/iu,
+    );
   });
 
   it('resolves stable identity without filling behavioral facts', () => {

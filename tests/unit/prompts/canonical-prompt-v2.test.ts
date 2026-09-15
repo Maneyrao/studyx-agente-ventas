@@ -13,9 +13,9 @@ const source = readFileSync(
   'utf8',
 );
 
-describe('prompt canónico comercial v17', () => {
+describe('prompt canónico comercial v27', () => {
   it('coincide con la fuente y declara la versión desplegable', () => {
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v17');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v27');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toBe(source);
   });
 
@@ -26,10 +26,25 @@ describe('prompt canónico comercial v17', () => {
   });
 
   it('usa las fases como mapa flexible y deja la redacción en manos del modelo', () => {
-    expect(source).toMatch(/Las fases orientan la venta[\s\S]{0,100}no son un guion/iu);
+    expect(source).toMatch(/Las fases son un mapa[\s\S]{0,100}no un guion rígido/iu);
     expect(source).toMatch(/Atiende la intenci[óo]n actual/iu);
     expect(source).toMatch(/Tú conduces y redactas/iu);
     expect(source).not.toMatch(/primera fase incompleta|nunca la saltees|Nunca des el precio antes/iu);
+  });
+
+  it('fija español neutro sin signos de apertura y captura el nombre desde el inicio sin bloquear', () => {
+    expect(source).toMatch(/español neutro/iu);
+    expect(source).toMatch(/No uses voseo ni regionalismos/iu);
+    expect(source).toMatch(/No abras frases con `¿` o `¡`/iu);
+    expect(source).toMatch(/primera respuesta[\s\S]{0,160}pregunta el primer nombre/iu);
+    expect(source).toMatch(/falta del nombre[\s\S]{0,160}nunca bloquea/iu);
+    expect(source).toMatch(/primera respuesta[\s\S]{0,220}StudyX[\s\S]{0,220}cercan/iu);
+    expect(source).toMatch(/Normalmente usa uno o dos mensajes breves/iu);
+    expect(source).toMatch(/Puedes usar tres[\s\S]{0,120}idea diferente/iu);
+    expect(source).toMatch(/nunca respondas s[óo]lo con una confirmaci[óo]n vac[íi]a/iu);
+    expect(source).toMatch(/puedes cerrar preguntas y exclamaciones con `\?` o `!`/iu);
+    expect(source).not.toMatch(/consulta general ambigua[\s\S]{0,160}un [úu]nico mensaje/iu);
+    expect(source).not.toMatch(/s[óo]lo el [úu]ltimo mensaje[\s\S]{0,120}pregunta o invitaci[óo]n/iu);
   });
 
   it('mantiene exactamente los cuatro datos de contacto permitidos', () => {
@@ -46,13 +61,20 @@ describe('prompt canónico comercial v17', () => {
     expect(source).toContain('6 pagos mensuales de USD 60 (`monthly_6`)');
     expect(source).toContain('1 pago único de USD 360 (`one_time`)');
     expect(source).toMatch(/M[áa]ximo dos ofrecimientos/iu);
-    expect(source).toMatch(/rechazo expl[íi]cito[\s\S]{0,100}cancela/iu);
+    expect(source).toMatch(/rechazo a la invitaci[óo]n actual[\s\S]{0,180}no impide un segundo recordatorio/iu);
   });
 
   it('mantiene Stripe y los resultados operativos bajo autoridad verificable', () => {
     expect(source).toMatch(/Nunca escribas una URL[\s\S]{0,140}backend agrega el link canónico de Stripe/iu);
     expect(source).toMatch(/equipo verificar[áa] la acreditaci[óo]n[\s\S]{0,100}gestionar[áa] la inscripci[óo]n y el acceso/iu);
     expect(source).not.toMatch(/preinscripci[óo]n cargada|alta acad[ée]mica y genero|credenciales de acceso/iu);
+  });
+
+  it('confirma los seis datos comerciales antes del link y distingue pago informado de pago verificado', () => {
+    expect(source).toMatch(/nombre y apellido, correo, teléfono, curso y plan[\s\S]{0,180}correctos/iu);
+    expect(source).toMatch(/no envíes todavía el link en el mismo turno/iu);
+    expect(source).toMatch(/Si informa que pagó[\s\S]{0,220}equipo verificará la acreditación/iu);
+    expect(source).toMatch(/Nunca afirmes que el pago ya fue verificado/iu);
   });
 
   it('no ordena afirmaciones que el guard operativo rechazaría', () => {

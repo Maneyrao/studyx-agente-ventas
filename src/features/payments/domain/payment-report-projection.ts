@@ -19,12 +19,13 @@ export interface PaymentReportProjectionSubjectV1 {
 }
 
 /**
- * The single condition that opens the operator row.
+ * The condition that promotes an existing lead row to payment-reported work.
  *
  * Sending a payment link is not a sale and never was: it says only that a
  * customer was given a way to pay. What an operator needs to act on is a
- * customer who says they paid AND enough identity to find them. Either half
- * alone produces a row nobody can work, so both are required.
+ * customer who says they paid AND enough identity to find them. The lead row
+ * may already exist from first contact, but it is not marked as a reported
+ * payment until both halves are present.
  */
 export function shouldProjectPaymentReportV1(
   subject: PaymentReportProjectionSubjectV1,

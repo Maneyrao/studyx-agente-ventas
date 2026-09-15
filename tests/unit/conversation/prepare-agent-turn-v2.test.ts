@@ -199,6 +199,7 @@ describe('prepareAgentTurnV2', () => {
     }, {
       state_store: store(state({
         selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6', stage: 'plan_selected',
+        awaiting_reply: 'payment_confirmation',
       })),
       contact_intake: completeIntake,
       now: () => Date.parse(index.as_of),
@@ -229,7 +230,7 @@ describe('prepareAgentTurnV2', () => {
     }, {
       state_store: store(state({
         selected_offering_code: 'redes_informaticas', selected_payment_plan: 'one_time',
-        stage: 'plan_selected', awaiting_reply: 'contact_details',
+        stage: 'plan_selected', awaiting_reply: 'payment_confirmation',
       })),
       contact_intake: completeIntake,
       now: () => Date.parse(index.as_of),

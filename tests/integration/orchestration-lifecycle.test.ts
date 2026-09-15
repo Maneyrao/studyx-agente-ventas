@@ -30,6 +30,7 @@ import {
 import { EMBEDDING_DIMENSIONS } from '@/lib/embeddings/gemini';
 import { projectAgentAMemories } from '@/features/memory/application/project-agent-a-memories';
 import { auditLog } from '@/lib/audit/logger';
+import { upsertCommittedLeadStateProjection } from '@/lib/services/projection.service';
 
 const databaseInspection = process.env.TEST_DATABASE_URL;
 const run = databaseInspection ? describe : describe.skip;
@@ -84,6 +85,89 @@ afterAll(async () => {
 });
 
 run('canonical orchestration lifecycle', () => {
+  it('projects one complete four-column lead after identity and course are durable', async () => {
+    const spreadsheetId = randomUUID();
+    const previousSpreadsheet = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+    const previousTab = process.env.GOOGLE_SHEETS_TAB_NAME;
+    process.env.GOOGLE_SHEETS_SPREADSHEET_ID = spreadsheetId;
+    process.env.GOOGLE_SHEETS_TAB_NAME = 'Leads';
+    try {
+      const firstEnvelope = envelope({
+        message: {
+          type: 'text', text: 'Hola, quiero información', occurred_at: new Date().toISOString(),
+          reply_to_external_message_id: null,
+        },
+      });
+      const first = await processInboundMessage(firstEnvelope);
+      const firstRows = await db!<Array<{ projection_key: string; payload: Record<string, string> }>>`
+        SELECT projection_key, payload FROM sheet_projection_rows
+        WHERE spreadsheet_id = ${spreadsheetId} AND tab_name = 'Leads'
+      `;
+      expect(firstRows).toHaveLength(0);
+
+      const enriched = await processInboundMessage({
+        ...firstEnvelope,
+        external_message_id: `message-${randomUUID()}`,
+        trace_id: randomUUID(),
+        message: {
+          ...firstEnvelope.message,
+          text: 'Soy Ana Pérez, mi correo es ana@example.com',
+          occurred_at: new Date(Date.now() + 1_000).toISOString(),
+        },
+      });
+      const updatedRows = await db!<Array<{ projection_key: string; payload: Record<string, string> }>>`
+        SELECT projection_key, payload FROM sheet_projection_rows
+        WHERE spreadsheet_id = ${spreadsheetId} AND tab_name = 'Leads'
+      `;
+      expect(updatedRows).toHaveLength(0);
+
+      await db!`
+        INSERT INTO conversation_sales_context_states_v1 (
+          workspace_id, conversation_id, contact_id, selected_offering_code,
+          selected_payment_plan, stage, source_turn_id
+        ) VALUES (
+          'b0000000-0000-4000-8000-000000000001'::uuid,
+          ${enriched.conversation_id}::uuid,
+          ${enriched.contact.id}::uuid,
+          'redes_informaticas', 'monthly_12', 'plan_selected', ${enriched.turn_id}::uuid
+        )
+        ON CONFLICT (workspace_id, conversation_id) DO UPDATE SET
+          selected_offering_code = EXCLUDED.selected_offering_code,
+          selected_payment_plan = EXCLUDED.selected_payment_plan,
+          stage = EXCLUDED.stage,
+          source_turn_id = EXCLUDED.source_turn_id
+      `;
+      expect(await upsertCommittedLeadStateProjection({
+        messageId: enriched.turn_id,
+        traceId: randomUUID(),
+      }, {
+        sql: db!,
+        loadSheetsConfig: () => ({
+          clientEmail: 'test@example.com', privateKey: 'test-key', spreadsheetId, tabName: 'Leads',
+        }),
+        loadWorkspaceConfig: () => ({ workspaceSlug: 'studyx' }),
+      })).toBe('created_or_updated');
+
+      const commercialRows = await db!<Array<{ payload: Record<string, string> }>>`
+        SELECT payload FROM sheet_projection_rows
+        WHERE spreadsheet_id = ${spreadsheetId} AND tab_name = 'Leads'
+      `;
+      expect(commercialRows).toHaveLength(1);
+      expect(commercialRows[0].payload).toEqual({
+        nombre: 'Ana',
+        apellido: 'Pérez',
+        mail: 'ana@example.com',
+        tipo_de_curso: 'Redes Informáticas',
+      });
+      expect(first.status).toBe('accepted');
+    } finally {
+      if (previousSpreadsheet === undefined) delete process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+      else process.env.GOOGLE_SHEETS_SPREADSHEET_ID = previousSpreadsheet;
+      if (previousTab === undefined) delete process.env.GOOGLE_SHEETS_TAB_NAME;
+      else process.env.GOOGLE_SHEETS_TAB_NAME = previousTab;
+    }
+  });
+
   it('deduplicates inbound, decision and delivery without changing canonical IDs', async () => {
     const inbound = envelope();
     const first = await processInboundMessage(inbound);

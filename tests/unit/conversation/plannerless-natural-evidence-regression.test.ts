@@ -38,6 +38,33 @@ const proposal: AgentATurnProposalV1 = {
 };
 
 describe('plannerless natural evidence regression', () => {
+  it('does not offer calls after a payment link was sent or payment was reported', () => {
+    const current = {
+      schema_version: 1,
+      turn: { batch_messages: [{ id: 'post-sale', text: 'Ya pagué' }], recent_turns: [] },
+      customer: { display_name: 'Ana', memories: [] },
+      identity: null,
+      commercial_state: {
+        selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_12' as const,
+        stage: 'payment_link_sent' as const, call_preference: 'unknown' as const,
+        call_offer_status: 'offered' as const, call_offer_count: 1 as const,
+        awaiting_reply: 'none' as const, payment_reported: true,
+      },
+      catalog: { selected_offering: null, available_offerings: [], areas: [], candidate_offerings: [], payment_plans: [] },
+      capabilities: {
+        may_reply: true, may_offer_call: true, may_request_call_now: false,
+        may_present_payment_options: true, may_send_payment_link: false,
+        authorized_payment_plan: null, intake_status: 'known' as const, intake_missing: [],
+      },
+    } satisfies AgentAContextV1;
+
+    expect(evaluateCallOfferTurnPolicyV1({ context: current })).toMatchObject({
+      offer_required: false,
+      offer_allowed: false,
+      reason: 'HANDOFF_OR_CLOSED',
+    });
+  });
+
   it('keeps natural turn evidence, the second-offer ledger and its physical boundary aligned', async () => {
     expect.soft(extractContactIdentity(
       'Me llamo Camila y quiero estudiar Marketing Digital.',
@@ -133,7 +160,7 @@ describe('plannerless natural evidence regression', () => {
       rejection_id: '44444444-4444-4444-8444-444444444444',
     });
     expect.soft(resolved.effective.proposal.response).toEqual({
-      messages: ['Comparación principal.', 'Diferencia práctica.'],
+      messages: ['Comparación principal.', 'Diferencia práctica.', 'Pregunta de cierre.'],
       call_offer: 'Si te sirve, lo vemos en una llamada breve.',
     });
   });

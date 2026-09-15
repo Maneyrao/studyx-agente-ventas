@@ -266,7 +266,7 @@ describe('Agent A Brain V1', () => {
     ['indecision', 'No se si elegir Redes Informaticas o Reparacion de PC.'],
     ['details request', 'Contame en detalle que incluye el curso.'],
     ['pre-payment friction', 'Antes de pagar necesito pensarlo un poco mas.'],
-  ])('requires the second and final separate call offer for %s', (_reason, customerText) => {
+  ])('keeps the second call offer as model guidance rather than rejecting useful copy for %s', (_reason, customerText) => {
     const current = context();
     current.customer.display_name = 'Lucia';
     current.turn.batch_messages[0].text = customerText;
@@ -282,10 +282,10 @@ describe('Agent A Brain V1', () => {
       context: current,
       planned_fact_ids: missingReminder.used_fact_ids,
       rejection_id: '00000000-0000-4000-8000-000000000009',
-    })?.rejections ?? []).toContainEqual({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
+    })).toBeNull();
   });
 
-  it('requires the second offer before asking for the final missing contact data', () => {
+  it('does not block intake copy when the model omits the recommended second offer', () => {
     const current = context();
     current.customer.display_name = 'Lucia';
     current.commercial_state.call_offer_count = 1;
@@ -307,10 +307,10 @@ describe('Agent A Brain V1', () => {
       context: current,
       planned_fact_ids: asksForFinalData.used_fact_ids,
       rejection_id: '00000000-0000-4000-8000-000000000010',
-    })?.rejections ?? []).toContainEqual({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
+    })).toBeNull();
   });
 
-  it('keeps a soft persisted chat preference eligible for the situational second reminder', () => {
+  it('keeps a soft persisted chat preference conversational when no reminder is authored', () => {
     const current = context();
     current.customer.display_name = 'Lucia';
     current.turn.batch_messages[0].text = 'Ahora tengo varias dudas sobre el contenido y la modalidad.';
@@ -327,7 +327,7 @@ describe('Agent A Brain V1', () => {
       context: current,
       planned_fact_ids: missingReminder.used_fact_ids,
       rejection_id: '00000000-0000-4000-8000-000000000011',
-    })?.rejections ?? []).toContainEqual({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
+    })).toBeNull();
   });
 
   it.each([
@@ -359,7 +359,7 @@ describe('Agent A Brain V1', () => {
     })?.rejections ?? []).not.toContainEqual({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
   });
 
-  it('rejects a second call invitation embedded in narrative instead of a separate outbound', () => {
+  it('allows a model-authored invitation embedded in the narrative when it is not duplicated', () => {
     const current = context();
     current.customer.display_name = 'Lucia';
     current.turn.batch_messages[0].text = 'Contame en detalle que incluye.';
@@ -378,10 +378,7 @@ describe('Agent A Brain V1', () => {
       context: current,
       planned_fact_ids: embeddedReminder.used_fact_ids,
       rejection_id: '00000000-0000-4000-8000-000000000013',
-    })?.rejections ?? []).toContainEqual({
-      code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID',
-      subject: 'call_offer',
-    });
+    })).toBeNull();
   });
 
   it('does not extract or rewrite a natural reminder authored inside the messages', () => {
@@ -828,6 +825,57 @@ describe('Agent A Brain V1', () => {
     });
 
     expect(composition.narrative.opening).toBe(natural);
+  });
+
+  it.each([
+    {
+      label: 'one concise recommendation',
+      messages: ['Por lo que me contaste, te recomiendo Redes Informáticas. Avancemos con esa opción.'],
+      usedFactIds: ['offering:redes-informaticas:name:v1'],
+      callOffer: null,
+    },
+    {
+      label: 'two distinct conversational ideas',
+      messages: [
+        'Redes Informáticas encaja bien con tu objetivo de buscar trabajo.',
+        'Te acompaño a revisar lo importante para que puedas decidir con tranquilidad.',
+      ],
+      usedFactIds: ['offering:redes-informaticas:name:v1'],
+      callOffer: null,
+    },
+    {
+      label: 'three useful messages for a price objection',
+      messages: [
+        'Entiendo que el precio pesa.',
+        'La alternativa disponible es 12 pagos mensuales de USD 30.',
+        'Podemos avanzar con esa opción y mantener una cuota más cómoda.',
+      ],
+      usedFactIds: ['payment:redes-informaticas:monthly_12:label:v1'],
+      callOffer: null,
+    },
+    {
+      label: 'natural model-authored call invitation',
+      messages: ['Te cuento lo principal de Redes Informáticas y resolvemos tus dudas.'],
+      usedFactIds: ['offering:redes-informaticas:name:v1'],
+      callOffer: 'Si te resulta más cómodo, puedo llamarte y explicártelo con más detalle.',
+    },
+  ])('accepts safe free-form sales prose without stylistic veto: $label', ({
+    messages,
+    usedFactIds,
+    callOffer,
+  }) => {
+    const current = context();
+    const parsed = parseAgentATurnProposalV1(proposal({
+      response: { messages, call_offer: callOffer },
+      used_fact_ids: usedFactIds,
+    }), current);
+
+    expect(validateAgentATurnProposalV1({
+      proposal: parsed,
+      context: current,
+      planned_fact_ids: usedFactIds,
+      rejection_id: '00000000-0000-4000-8000-000000000097',
+    })).toBeNull();
   });
 
   // Antes se exigía rechazar esta frase. El backend, en cambio, ya la
@@ -1376,9 +1424,11 @@ describe('Agent A Brain V1', () => {
     expect(body.instructions).toContain('Elegir un plan se refleja en `move.payment_plan`, pero no autoriza por sí solo el link');
     expect(body.instructions).toContain('When turn_rejection exists');
     expect(body.instructions).toContain('Haz como máximo una pregunta útil por turno');
-    expect(body.instructions).toContain('Responde primero a lo que la persona dijo');
+    expect(body.instructions).toContain('Respond to their combined meaning');
+    expect(body.instructions).toContain('Responde primero el pedido, la pregunta o la intención actual');
     expect(body.instructions).toContain('Pide sólo los campos que figuren en `capabilities.intake_missing`');
-    expect(body.instructions).toContain('Normalmente envía uno o dos mensajes breves');
+    expect(body.instructions).toContain('Normalmente usa uno o dos mensajes breves');
+    expect(body.instructions).not.toContain('control voice, rhythm and the choice of');
     expect(body.instructions).toContain('salen sólo de hechos visibles en `authorized_context`');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('greeting');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('unknown');
