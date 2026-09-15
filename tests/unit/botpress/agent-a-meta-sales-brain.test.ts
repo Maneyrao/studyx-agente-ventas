@@ -12,6 +12,11 @@ function context(): AgentAContextV1 {
       batch_messages: [{ id: 'message-1', text: 'Vi el anuncio y quiero info de fotografía' }],
       recent_turns: [],
     },
+    continuity: {
+      assistant_has_spoken: false,
+      first_name_status: 'missing',
+      last_agent_reply: null,
+    },
     customer: { display_name: null, memories: [] },
     identity: {
       advisor_name: 'Asistente virtual',
@@ -84,7 +89,7 @@ describe('Agent A Meta sales brain', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
     const behavior = instructions.split('<authorized_context>')[0];
 
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v51');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v52');
     expect(behavior).toMatch(/lead (?:tibio|c[áa]lido).{0,60}(?:Meta|Instagram|Facebook)/iu);
     expect(behavior).toMatch(/cualquier curso activo[\s\S]{0,120}catalog\.available_offerings/iu);
     expect(behavior).toMatch(/anuncio o el mensaje[\s\S]{0,100}curso activo/iu);
@@ -122,6 +127,6 @@ describe('Agent A Meta sales brain', () => {
     const staticInstructions = instructions.split('<authorized_context>')[0];
     const words = staticInstructions.trim().split(/\s+/u).length;
 
-    expect(words).toBeLessThan(3_000);
+    expect(words).toBeLessThan(2_500);
   });
 });

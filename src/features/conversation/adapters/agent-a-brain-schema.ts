@@ -42,6 +42,11 @@ export const AgentAContextV1Schema = z.object({
       content: z.string().trim().min(1).max(4_096),
     }).strict()).max(8),
   }).strict(),
+  continuity: z.object({
+    assistant_has_spoken: z.boolean(),
+    first_name_status: z.enum(['missing', 'requested', 'known']),
+    last_agent_reply: z.string().trim().min(1).max(4_096).nullable(),
+  }).strict().optional(),
   customer: z.object({
     display_name: z.string().trim().min(1).max(200).nullable(),
     memories: z.array(AgentAMemorySchema).max(5),

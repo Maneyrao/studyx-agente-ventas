@@ -26,6 +26,13 @@ describe('extractContactIdentity', () => {
     expect(extractContactIdentity('mi nombre es Diego Farías, gracias').name).toBe('Diego Farías');
   });
 
+  it('captures a leading first name when the same turn continues with a personal study goal', () => {
+    expect(extractContactIdentity('Thiago. Busco algo de tecnología para conseguir trabajo').name)
+      .toBe('Thiago');
+    expect(extractContactIdentity('Lucía, me interesa fotografía para trabajar').name)
+      .toBe('Lucía');
+  });
+
   it('captures a bare "Nombre Apellido, email" turn without an introduction verb', () => {
     expect(extractContactIdentity('Ivan Roldan, ivan.real11_10+run@example.com')).toEqual({
       name: 'Ivan Roldan',
@@ -203,6 +210,13 @@ describe('extractContactNameAnswer', () => {
     )).toEqual({ firstName: 'Lucía', surname: 'Ríos', name: 'Lucía Ríos' });
   });
 
+  it('captures a leading first name before the customer answers the requested study goal', () => {
+    expect(extractContactNameAnswer(
+      'Thiago. Busco algo de tecnología para conseguir trabajo',
+      'Cuál es tu primer nombre y qué te gustaría aprender o mejorar?',
+    )).toEqual({ firstName: 'Thiago', surname: null, name: 'Thiago' });
+  });
+
   it('combines separate requested fields in either order without treating a surname as a first name', () => {
     const surname = extractContactNameAnswer('Ríos', 'Me falta tu apellido. ¿Me lo pasás?');
     expect(surname).toEqual({ firstName: null, surname: 'Ríos', name: null });
@@ -228,6 +242,8 @@ describe('extractContactNameAnswer', () => {
     'No soy Lucía Ríos', 'Lucía Ríos, pero son los datos de mi hermana',
     'Lucía Ríos o Ana Pérez', 'Lucía O María', 'No Gracias', 'Sí Dale',
     'Excel Integral', 'Marketing Digital', 'Quiero Excel',
+    'info', 'información', 'cursos', 'inglés', 'fotografía', 'tecnología',
+    'precio', 'modalidad', 'salida laboral',
     'Lucía Ríos, Ana Pérez', 'Lucía Ríos\nAna Pérez',
   ])('rejects negation, third-party identity, ambiguity and non-name answers: %s', text => {
     expect(extractContactNameAnswer(text, fullRequest)).toBeNull();

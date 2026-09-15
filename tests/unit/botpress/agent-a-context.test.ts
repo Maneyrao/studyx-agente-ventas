@@ -178,6 +178,57 @@ function claimedTurn(): ClaimedTurn {
 }
 
 describe('buildAgentAContextV1', () => {
+  it('makes prior introduction and a previously requested name explicit for the next reply', () => {
+    const claimed = claimedTurn();
+    claimed.contact.name = null;
+    claimed.contact_intake_missing = ['nombre', 'apellido', 'correo', 'telefono'];
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'info',
+    };
+    claimed.context.recent_turns = [
+      { direction: 'inbound', content: 'Buenas', created_at: '2026-08-28T11:00:00.000Z' },
+      {
+        direction: 'outbound',
+        content: 'Hola, soy el asistente virtual de StudyX. Cuéntame qué te interesa y tu primer nombre.',
+        created_at: '2026-08-28T11:00:04.000Z',
+      },
+    ];
+
+    expect(buildAgentAContextV1(claimed)?.continuity).toEqual({
+      assistant_has_spoken: true,
+      first_name_status: 'requested',
+      last_agent_reply: 'Hola, soy el asistente virtual de StudyX. Cuéntame qué te interesa y tu primer nombre.',
+    });
+  });
+
+  it('marks the name known after a fragmented follow-up without losing the previous question', () => {
+    const claimed = claimedTurn();
+    claimed.contact.name = 'Thiago';
+    claimed.contact_intake_missing = ['apellido', 'correo', 'telefono'];
+    claimed.context.batch_messages = [
+      { ...claimed.context.batch_messages[0]!, id: `${UUID}-1`, content: 'Thiago' },
+      { ...claimed.context.batch_messages[0]!, id: `${UUID}-2`, content: 'y me interesa algo de tecnología' },
+    ];
+    claimed.context.recent_turns = [{
+      direction: 'outbound',
+      content: 'Qué te gustaría aprender y cómo te llamas?',
+      created_at: '2026-08-28T11:00:04.000Z',
+    }];
+
+    const context = buildAgentAContextV1(claimed);
+
+    expect(context?.turn.batch_messages.map((message) => message.text)).toEqual([
+      'Thiago',
+      'y me interesa algo de tecnología',
+    ]);
+    expect(context?.continuity).toEqual({
+      assistant_has_spoken: true,
+      first_name_status: 'known',
+      last_agent_reply: 'Qué te gustaría aprender y cómo te llamas?',
+    });
+  });
+
   it('exposes the canonical intake values needed for a single confirmation step', () => {
     const claimed = claimedTurn();
     claimed.contact_intake = {

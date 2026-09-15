@@ -16,6 +16,11 @@ function context(memoryValue = 'busca salida laboral'): AgentAContextV1 {
       batch_messages: [{ id: 'message-1', text: 'Quiero conocer Redes Informáticas' }],
       recent_turns: [],
     },
+    continuity: {
+      assistant_has_spoken: false,
+      first_name_status: 'missing',
+      last_agent_reply: null,
+    },
     customer: {
       display_name: null,
       memories: [{
@@ -70,12 +75,12 @@ describe('Agent A Brain prompt', () => {
   it('ships one complete canonical behavior behind a compact runtime contract', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v22');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v51');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v23');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v52');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('You lead the\nconversation; the backend does not write or rewrite your narrative');
     expect(instructions).toContain('The sales\nphases are a map, not a blocking script');
-    expect(instructions).toContain('response.call_offer contains a separate call invitation');
+    expect(instructions).toContain('separate call\ninvitation in response.call_offer');
     expect(instructions).toContain('exactly one entry in response.messages');
     expect(instructions).toContain('<authorized_context>');
     expect(instructions).toContain('"memory-1"');
@@ -161,17 +166,26 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).toContain('reason="FIRST_OFFER_DUE"');
   });
 
-  it('adds the last outbound as explicit continuity context', () => {
+  it('uses structured continuity without duplicating the last outbound outside authorized context', () => {
     const current = context();
     current.turn.recent_turns = [
       { id: 'recent:1', direction: 'inbound', content: '¿Cuánto sale?' },
       { id: 'recent:2', direction: 'outbound', content: 'El total es USD 360.' },
     ];
+    current.continuity = {
+      assistant_has_spoken: true,
+      first_name_status: 'requested',
+      last_agent_reply: 'El total es USD 360.',
+    };
 
     const instructions = buildAgentABrainInstructionsV1(current);
 
-    expect(instructions).toContain('<last_agent_reply>\nEl total es USD 360.\n</last_agent_reply>');
-    expect(instructions).toMatch(/do not repeat greetings, questions or facts already resolved/iu);
+    expect(instructions).not.toContain('<last_agent_reply>');
+    expect(instructions).toContain('"assistant_has_spoken":true');
+    expect(instructions).toContain('"first_name_status":"requested"');
+    expect(instructions).toContain('"last_agent_reply":"El total es USD 360."');
+    expect(instructions).toMatch(/first_name_status.*requested[\s\S]*(?:no vuelvas|do not ask)/iu);
+    expect(instructions).toMatch(/assistant_has_spoken.*true[\s\S]*(?:no vuelvas|do not reintroduce)/iu);
   });
 
   it('treats every message fragment as part of one customer turn', () => {
@@ -183,7 +197,27 @@ describe('Agent A Brain prompt', () => {
 
     const instructions = buildAgentABrainInstructionsV1(current);
 
-    expect(instructions).toMatch(/all turn\.batch_messages in order as one combined turn/iu);
+    expect(instructions).toMatch(/turn\.batch_messages[\s\S]*(?:una sola intervenci[oó]n|one combined turn)/iu);
+    expect(instructions).toMatch(/(?:una sola respuesta|reply once)[\s\S]*(?:conjunto|combined)/iu);
+  });
+
+  it('defaults to a short proactive answer instead of repeating a generic intake question', () => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'info';
+    current.commercial_state.selected_offering_code = null;
+    current.catalog.selected_offering = null;
+    current.catalog.candidate_offerings = [];
+    current.continuity = {
+      assistant_has_spoken: true,
+      first_name_status: 'requested',
+      last_agent_reply: 'Soy el asistente virtual de StudyX. Cómo te llamas y qué te interesa aprender?',
+    };
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+
+    expect(instructions).toMatch(/1 a 3 oraciones/iu);
+    expect(instructions).toMatch(/(?:consulta general|mensaje general|“info”)[\s\S]{0,240}(?:tres áreas|tres opciones)/iu);
+    expect(instructions).toMatch(/first_name_status.*requested[\s\S]{0,220}(?:no vuelvas|do not ask)/iu);
   });
 
   it('uses neutral Spanish, asks the initial name and never turns it into a reply blocker', () => {

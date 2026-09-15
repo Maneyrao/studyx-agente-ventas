@@ -34,6 +34,11 @@ export interface AgentAContextV1 {
       readonly content: string;
     }>;
   };
+  readonly continuity?: {
+    readonly assistant_has_spoken: boolean;
+    readonly first_name_status: 'missing' | 'requested' | 'known';
+    readonly last_agent_reply: string | null;
+  };
   readonly customer: {
     readonly display_name: string | null;
     readonly contact_intake?: {

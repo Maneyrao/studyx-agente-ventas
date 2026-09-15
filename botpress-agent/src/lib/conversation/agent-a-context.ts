@@ -48,6 +48,23 @@ function currentBatchSuppliesFirstName(claimed: ClaimedTurn): boolean {
   ));
 }
 
+function previousAgentRepliesV1(claimed: ClaimedTurn): readonly string[] {
+  return claimed.context.recent_turns
+    .filter((turn) => turn.direction === 'outbound' && turn.content.trim().length > 0)
+    .map((turn) => turn.content.trim());
+}
+
+function requestedFirstNameBeforeV1(replies: readonly string[]): boolean {
+  return replies.some((reply) => {
+    const normalized = reply
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/gu, '')
+      .toLocaleLowerCase('es');
+    return /\b(?:primer nombre|tu nombre|como te llamas|me dices el nombre|me decis el nombre)\b/u
+      .test(normalized);
+  });
+}
+
 function currentTurnIsUnderspecifiedV1(claimed: ClaimedTurn): boolean {
   const normalized = claimed.context.batch_messages
     .filter((message) => message.message_type === 'text')
@@ -535,6 +552,13 @@ export function buildAgentAContextV1(
   const intakeStatus: 'known' | 'unknown' = intakeAnswered ? 'known' : 'unknown';
   const firstNameKnownNow = !intakeMissing.includes('nombre')
     || currentBatchSuppliesFirstName(claimed);
+  const previousAgentReplies = previousAgentRepliesV1(claimed);
+  const lastAgentReply = previousAgentReplies.at(-1) ?? null;
+  const firstNameStatus = firstNameKnownNow
+    ? 'known' as const
+    : requestedFirstNameBeforeV1(previousAgentReplies)
+      ? 'requested' as const
+      : 'missing' as const;
   // Desconocido no abre el gate. La única lectura segura de una respuesta que
   // nadie dio es que todavía falta algo.
   const maySendPaymentLink = claimed.policy.may_respond
@@ -567,6 +591,11 @@ export function buildAgentAContextV1(
         direction: turn.direction,
         content: turn.content,
       })),
+    },
+    continuity: {
+      assistant_has_spoken: previousAgentReplies.length > 0,
+      first_name_status: firstNameStatus,
+      last_agent_reply: lastAgentReply,
     },
     customer: {
       display_name: claimed.contact.name,
