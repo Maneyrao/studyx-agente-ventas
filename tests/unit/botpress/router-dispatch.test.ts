@@ -67,13 +67,17 @@ describe('router registration', () => {
 });
 
 describe('router dispatch for production Telegram events', () => {
-  it('clears the managed Botpress transcript before starting StudyX', async () => {
+  it('starts the durable workflow before nonessential transcript cleanup', async () => {
+    let releaseTranscriptReset!: () => void;
+    const transcriptReset = new Promise<void>((resolve) => {
+      releaseTranscriptReset = resolve;
+    });
     const chat = {
-      clearTranscript: vi.fn(async () => undefined),
+      clearTranscript: vi.fn(() => transcriptReset),
       saveTranscript: vi.fn(async () => undefined),
     };
 
-    await definition.handler({
+    const pending = definition.handler({
       type: 'message',
       channel: 'telegram.channel',
       message: telegramInbound,
@@ -81,10 +85,17 @@ describe('router dispatch for production Telegram events', () => {
       chat,
     });
 
+    await Promise.resolve();
+    await Promise.resolve();
+    const workflowStartedWhileCleanupWasPending = getOrCreate.mock.calls.length;
+    releaseTranscriptReset();
+    await pending;
+
     expect(chat.clearTranscript).toHaveBeenCalledTimes(1);
     expect(chat.saveTranscript).toHaveBeenCalledTimes(1);
-    expect(chat.clearTranscript.mock.invocationCallOrder[0]).toBeLessThan(
-      getOrCreate.mock.invocationCallOrder[0]!,
+    expect(workflowStartedWhileCleanupWasPending).toBe(1);
+    expect(getOrCreate.mock.invocationCallOrder[0]).toBeLessThan(
+      chat.clearTranscript.mock.invocationCallOrder[0]!,
     );
   });
 
