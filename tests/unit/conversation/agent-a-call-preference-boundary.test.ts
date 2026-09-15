@@ -106,10 +106,10 @@ describe('call preference requires current customer evidence',()=>{
   x.state.awaiting_reply='call_or_chat';x.context.commercial_state.awaiting_reply='call_or_chat';
   expect(backend(x).ok).toBe(true);expect(adk(x)).toBeNull();
  });
- it('reports a missing first call offer as guidance without blocking the reply',()=>{
+ it('leaves a missing first call offer to prompt guidance without rejecting the reply',()=>{
   const x=setup('Contame sobre Fotografía Profesional','ask_course_information');
   expect(backend(x)).toMatchObject({ok:true,transition:{call_offer_count:0}});
-  expect(adk(x)?.rejections).toContainEqual({code:'CALL_OFFER_REQUIRED',subject:'call_offer'});
+  expect(adk(x)).toBeNull();
  });
  it('removes an unsupported call sentence while preserving safe copy',()=>{
   const x=setup('Contame sobre Fotografía Profesional','ask_course_information');

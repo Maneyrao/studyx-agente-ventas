@@ -119,7 +119,7 @@ describe('validación de la propuesta del turno', () => {
     })).toBeNull();
   });
 
-  it('rechaza una oferta inicial de llamada embebida para que el modelo la reescriba separada', () => {
+  it('no rechaza una respuesta útil por la ubicación conversacional de la invitación', () => {
     const rejection = validateAgentATurnProposalV1({
       proposal: proposal({
         response: {
@@ -133,9 +133,7 @@ describe('validación de la propuesta del turno', () => {
       planned_fact_ids: ['offering:redes-informaticas:name:v1'],
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
-    expect(rejection?.rejections).toContainEqual({
-      code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID', subject: 'call_offer',
-    });
+    expect(rejection).toBeNull();
   });
 
   it('acepta varios mensajes informativos antes de la primera oferta separada de llamada', () => {

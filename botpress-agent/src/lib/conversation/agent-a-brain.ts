@@ -2,7 +2,6 @@ import {
   supportsCallRequestV1,
   supportsChatPreferenceV1,
 } from './channel-preference-evidence';
-import { evaluateCallOfferTurnPolicyV1 } from './call-offer-turn-policy';
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import {
   AgentATurnProposalV1Schema,
@@ -429,60 +428,8 @@ function normalizedCurrentCustomerTextV1(context: AgentAContextV1): string {
     .trim();
 }
 
-function requestsDetailedCourseExplanationV1(context: AgentAContextV1): boolean {
-  return /\b(?:en detalle|detalladamente|que incluye el curso)\b/u
-    .test(normalizedCurrentCustomerTextV1(context));
-}
-
-function asksDirectDurationV1(context: AgentAContextV1): boolean {
-  return /\b(?:cuanto dura|que duracion)\b/u.test(normalizedCurrentCustomerTextV1(context));
-}
-
-function asksDirectNextStepV1(context: AgentAContextV1): boolean {
-  return /\b(?:cual seria el siguiente paso|siguiente paso|como sigo|como avanzo)\b/u
-    .test(normalizedCurrentCustomerTextV1(context));
-}
-
-function makesExplicitChatChoiceV1(context: AgentAContextV1): boolean {
-  return supportsChatPreferenceV1(
-    context.turn.batch_messages.at(-1)?.text ?? '',
-    context.commercial_state.awaiting_reply === 'call_or_chat',
-  );
-}
-
-function customerStatesStartingFromZeroV1(context: AgentAContextV1): boolean {
-  const text = normalizedCurrentCustomerTextV1(context);
-  return !/[?¿]/u.test(text)
-    && /\b(?:empiezo|arranco|parto)\s+desde\s+cero\b/u.test(text);
-}
-
-function isInitialCallWindowV1(context: AgentAContextV1): boolean {
-  return context.catalog.selected_offering !== null
-    && context.capabilities.may_offer_call
-    && context.commercial_state.call_offer_count === 0;
-}
-
-function isSecondCallReminderWindowV1(context: AgentAContextV1): boolean {
-  return context.commercial_state.call_offer_count === 1
-    && evaluateCallOfferTurnPolicyV1({ context }).offer_required;
-}
-
-function naturalnessRepairDirectiveV1(context: AgentAContextV1): string {
-  if (requestsDetailedCourseExplanationV1(context) && !isInitialCallWindowV1(context)) {
-    return isSecondCallReminderWindowV1(context)
-      ? 'Use exactly two response.messages items for the detailed explanation and include the required separate, subtle call_offer reminder. Use only course details explicitly present in authorized_context.'
-      : 'Use exactly two response.messages items for the detailed explanation; call_offer stays separate when authorized. Use only course details explicitly present in authorized_context.';
-  }
-  if (asksDirectDurationV1(context) || asksDirectNextStepV1(context)) {
-    return 'Use exactly one response.messages item of at most 180 characters that answers the direct request without restating prior information.';
-  }
-  if (customerStatesStartingFromZeroV1(context)) {
-    return 'Use exactly one response.messages item of at most 180 characters. Acknowledge briefly and continue with one useful diagnostic question; do not repeat course facts or infer beginner suitability.';
-  }
-  if (makesExplicitChatChoiceV1(context)) {
-    return 'Acknowledge the chat choice in exactly one response.messages item and keep call_offer null.';
-  }
-  return `When call_offer is non-null, response.messages should contain ${context.commercial_state.call_offer_count === 1 ? 'one or two items' : 'one concise informational item'} and call_offer should stay separate, short and natural. A question is allowed.`;
+function naturalnessRepairDirectiveV1(_context: AgentAContextV1): string {
+  return 'Preserve the customer intent and the natural rhythm of the original answer. Use one to three short messages as needed, change only the rejected fact or action, and do not add unsupported claims.';
 }
 
 function closedObject(properties: Record<string, unknown>) {
@@ -1866,15 +1813,7 @@ export function validateAgentATurnProposalV1(input: {
   const offersACall = !unsupportedDeclaredOffer && typeof declaredCallOffer === 'string'
     && solicitsACallV1(declaredCallOffer, true)
     || !requestedCallNow && input.proposal.response.messages.some((message) => solicitsACallV1(message))
-  const callOfferPolicy = evaluateCallOfferTurnPolicyV1({
-    context: input.context,
-    response_messages: input.proposal.response.messages,
-    proposed_course_reference: input.proposal.move.course_reference,
-  });
-  const offerAllowedThisTurn = input.context.commercial_state.call_offer_count === 0
-    ? input.context.capabilities.may_offer_call
-    : callOfferPolicy.offer_allowed;
-  if (offersACall && (!input.context.capabilities.may_offer_call || !offerAllowedThisTurn)) {
+  if (offersACall && !input.context.capabilities.may_offer_call) {
     rejections.push({ code: 'CALL_BUDGET_EXHAUSTED', subject: 'call_offer' })
   }
 
@@ -1892,11 +1831,14 @@ export function validateAgentATurnProposalV1(input: {
     rejections.push({ code: 'ACTION_NOT_AUTHORIZED', subject: 'request_call_now' });
   }
   const state = input.context.commercial_state;
-  const validCallOfferBoundary = typeof declaredCallOffer === 'string'
+  const duplicatesDeclaredCallOffer = typeof declaredCallOffer === 'string'
     && solicitsACallV1(declaredCallOffer, true)
-    && input.proposal.response.messages.length >= 1
-    && !input.proposal.response.messages.some((message) => solicitsACallV1(message));
-  if (offersACall && !validCallOfferBoundary) {
+    && input.proposal.response.messages.some((message) => solicitsACallV1(message));
+  if (duplicatesDeclaredCallOffer) {
+    // This is transport deduplication, not conversational planning: preserve
+    // the dedicated invitation and remove only a second invitation authored
+    // in response.messages. An embedded invitation without call_offer remains
+    // valid model-owned copy.
     rejections.push({ code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID', subject: 'call_offer' });
   }
   const hasCanonicalCourse = state.selected_offering_code !== null
@@ -1925,19 +1867,6 @@ export function validateAgentATurnProposalV1(input: {
     if (!visibleModelText.includes(selectedCourseName.toLocaleLowerCase('es'))) {
       rejections.push({ code: 'COURSE_NOT_RESOLVED', subject: 'course_name' });
     }
-  }
-  const initialCallOfferRequired = ((moves.has('select_course') || moves.has('ask_course_information')) && hasCanonicalCourse
-      || hasResolvedCourseFamily)
-    && input.context.capabilities.may_offer_call
-    && state.call_offer_count === 0 && state.call_preference === 'unknown'
-    && state.call_offer_status === 'not_offered' && !channelChoice
-    && !requestedCallNow;
-  const secondCallOfferRequired = state.call_offer_count === 1
-    && callOfferPolicy.offer_required
-    && !channelChoice
-    && !requestedCallNow;
-  if ((initialCallOfferRequired || secondCallOfferRequired) && !offersACall) {
-    rejections.push({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
   }
   // V7 — ninguna URL escrita por el modelo. El link lo inserta el backend.
   for (const message of input.proposal.response.messages) {

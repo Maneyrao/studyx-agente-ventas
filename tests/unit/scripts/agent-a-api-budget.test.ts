@@ -51,7 +51,10 @@ describe('cumulative Agent A paid-call budget', () => {
   });
   it('refuses a request before sending when its reservation exceeds the remaining campaign cap', async () => {
     let sent = 0;
-    const budgeted = withAgentAApiBudget(async () => { sent++; return new Response('{}'); }, ledger(1.079));
+    const budgeted = withAgentAApiBudget(
+      async () => { sent++; return new Response('{}'); },
+      ledger(resolveAuthorizedLimitUsd({}) - 0.001),
+    );
     await expect(budgeted('https://api.deepseek.com/responses', request)).rejects.toThrow('AGENT_A_BUDGET_EXHAUSTED');
     expect(sent).toBe(0);
   });
@@ -135,8 +138,8 @@ describe('max output tokens ceiling resolution', () => {
 });
 
 describe('authorized limit resolution', () => {
-  it('defaults to 1.08 when the environment does not set a limit', () => {
-    expect(resolveAuthorizedLimitUsd({})).toBe(1.08);
+  it('defaults to the currently authorized 1.14 limit when the environment does not set one', () => {
+    expect(resolveAuthorizedLimitUsd({})).toBe(1.14);
   });
 
   it('takes the limit from configuration when present', () => {

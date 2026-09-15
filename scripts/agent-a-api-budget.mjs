@@ -6,7 +6,7 @@ import { closeSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSyn
 const INPUT_RATE = 0.44 / 1_000_000;
 const CACHED_RATE = 0.014 / 1_000_000;
 const OUTPUT_RATE = 1.32 / 1_000_000;
-const DEFAULT_AUTHORIZED_LIMIT_USD = 1.08;
+const DEFAULT_AUTHORIZED_LIMIT_USD = 1.14;
 const DEFAULT_MAX_OUTPUT_TOKENS_CEILING = 1600;
 
 /** @param {Readonly<Record<string, string | undefined>>} [environment] */

@@ -89,7 +89,7 @@ describe('Agent A Meta sales brain', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
     const behavior = instructions.split('<authorized_context>')[0];
 
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v52');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v53');
     expect(behavior).toMatch(/lead (?:tibio|c[áa]lido).{0,60}(?:Meta|Instagram|Facebook)/iu);
     expect(behavior).toMatch(/cualquier curso activo[\s\S]{0,120}catalog\.available_offerings/iu);
     expect(behavior).toMatch(/anuncio o el mensaje[\s\S]{0,100}curso activo/iu);
@@ -114,7 +114,7 @@ describe('Agent A Meta sales brain', () => {
 
     expect(behavior).toMatch(/m[áa]ximo (?:de )?dos ofrecimientos/iu);
     expect(behavior).toMatch(/primera invitaci[óo]n obligatoria[\s\S]{0,240}response\.call_offer/iu);
-    expect(behavior).toMatch(/misma respuesta física/iu);
+    expect(behavior).toMatch(/mensaje breve separado/iu);
     expect(behavior).toMatch(/segundo y [uú]ltimo ofrecimiento[\s\S]{0,100}recordarlo/iu);
     expect(behavior).toMatch(/rechazo a la invitaci[óo]n actual[\s\S]{0,180}segundo recordatorio/iu);
     expect(behavior).toContain('12 pagos mensuales de USD 30');

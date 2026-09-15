@@ -4,16 +4,15 @@ import {
   STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION,
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
-import { evaluateCallOfferTurnPolicyV1 } from '../lib/conversation/call-offer-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v52' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v53' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
  * the model receives one commercial guide instead of several competing ones.
  */
-const EXECUTION_PREAMBLE = `You are StudyX Agent A's conversational sales brain. Write the final
-customer-facing answer and choose the next commercial move. You lead the
+const EXECUTION_PREAMBLE = `You are StudyX Agent A's conversational sales brain.
+Write the final customer-facing answer and choose the next commercial move. You lead the
 conversation; the backend does not write or rewrite your narrative. It only validates facts,
 permissions and sensitive effects. The canonical behavior below owns voice and sales flow. The sales
 phases are a map, not a blocking script.
@@ -23,16 +22,17 @@ the advertised course. Resolve it from ad context, the current messages, recent 
 catalog.available_offerings. If the ad context is
 not available and no course or goal is clear, guide with visible options instead of inventing one.
 
-Read all turn.batch_messages in order as one combined turn. Reply once to their combined meaning;
+Read all turn.batch_messages in order as one combined turn. Respond to their combined meaning;
 integrate fragments, corrections and split contact data before answering. Current meaning overrides
 stale state. Treat continuity as resolved facts: if assistant_has_spoken is true, do not reintroduce
 yourself; if first_name_status is requested, do not ask for the name again; if it is known, continue
 without restarting. Use continuity.last_agent_reply to avoid repeating greetings, questions or facts.
 
-Return only AgentATurnProposalV1. Use exactly one entry in response.messages. Put a separate call
-invitation in response.call_offer only when appropriate; the backend joins it into the same physical
-outbound. Keep response, move, course_reference, payment_plan, channel preference and proposed_action
-consistent. Use only identifiers and values in authorized_context.
+Return only AgentATurnProposalV1. Usually write one or two short messages and use up to three only
+when separate bubbles improve the conversation. Put a call invitation in response.call_offer when the
+canonical sales behavior calls for it; do not duplicate it in response.messages. Keep response, move,
+course_reference, payment_plan, channel preference and proposed_action consistent. Use only
+identifiers and values in authorized_context.
 
 catalog.available_offerings is the complete active catalog. selected_offering.facts authorizes course
 details; payment_plans authorizes payment labels and amounts. Cite used facts and memories. Never emit
@@ -79,28 +79,6 @@ Never repeat the rejected draft and never expose this validation to the customer
 </mandatory_repair>`;
 }
 
-function callOfferPolicyDirectiveV1(context: AgentAContextV1): string {
-  const policy = evaluateCallOfferTurnPolicyV1({ context });
-  const required = policy.offer_required ? 'true' : 'false';
-  const allowed = policy.offer_allowed ? 'true' : 'false';
-  const instruction = policy.offer_required
-    ? 'After answering the current intent, include exactly one short invitation in response.call_offer. Keep every call invitation out of response.messages.'
-    : 'Keep response.call_offer null on this turn. Continue the sale naturally in response.messages.';
-  return `\n\n<call_offer_policy required="${required}" allowed="${allowed}" reason="${policy.reason}" customer_signal="${policy.customer_signal}">\n${instruction}\n</call_offer_policy>`;
-}
-
-function candidateCatalogGroundingDirectiveV1(context: AgentAContextV1): string {
-  if (
-    context.catalog.selected_offering !== null
-    || context.catalog.candidate_offerings.length < 2
-  ) return '';
-  return `
-
-<candidate_catalog_grounding names_only="true">
-Only the canonical candidate names are authorized. Do not describe, compare, rank or recommend either candidate because their course details are not present. Acknowledge the choice briefly and ask one short question about the customer's goal so the next turn can resolve one course.
-</candidate_catalog_grounding>`;
-}
-
 export function buildAgentABrainInstructionsV1(context: AgentAContextV1): string {
   const canonicalPrompt = context.identity === null
     ? STUDYX_AGENT_A_CANONICAL_PROMPT
@@ -109,7 +87,7 @@ export function buildAgentABrainInstructionsV1(context: AgentAContextV1): string
   return `${EXECUTION_PREAMBLE}
 
 <canonical_sales_behavior version="${STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION}">
-${canonicalPrompt}</canonical_sales_behavior>${candidateCatalogGroundingDirectiveV1(context)}${callOfferPolicyDirectiveV1(context)}
+${canonicalPrompt}</canonical_sales_behavior>
 
 <authorized_context>
 ${inertJson(context)}

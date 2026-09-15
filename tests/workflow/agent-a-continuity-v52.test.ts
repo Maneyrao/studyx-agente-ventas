@@ -31,7 +31,7 @@ beforeAll(async () => {
   expect(response.ok, 'LABORATORIO_NO_DISPONIBLE').toBe(true);
 });
 
-describe('Agent A v52 continuity through the production workflow', () => {
+describe('Agent A v53 continuity through the production workflow', () => {
   it('does not restart after greeting, generic info and a later name answer', async () => {
     const identity = {
       conversationId: `continuity-v52-${randomUUID()}`,
@@ -51,7 +51,8 @@ describe('Agent A v52 continuity through the production workflow', () => {
       expect.soft(turn.errorCode).toBeNull();
       expect.soft(turn.commitSucceeded).toBe(true);
       expect.soft(turn.legacyPlanRequests).toBe(0);
-      expect.soft(turn.authorizedMessages).toHaveLength(1);
+      expect.soft(turn.authorizedMessages.length).toBeGreaterThanOrEqual(1);
+      expect.soft(turn.authorizedMessages.length).toBeLessThanOrEqual(3);
       expect.soft(visibleText(turn.authorizedMessages).length).toBeLessThan(600);
     }
 
@@ -64,7 +65,7 @@ describe('Agent A v52 continuity through the production workflow', () => {
     expect.soft(restartsIdentity(goalText)).toBe(false);
     expect.soft(asksFirstName(goalText)).toBe(false);
     expect.soft(goalText).toMatch(/tecnolog|redes|pc|celular|excel/iu);
-    expect.soft(goalText).toMatch(/llamad|llamar|tel[eé]fono/iu);
+    expect.soft(goalText).toMatch(/llamad|llamar|llamo|tel[eé]fono/iu);
     expect.soft(goalText).not.toMatch(/[¿¡]/u);
 
     const db = await readWorkflowDbEvidenceV1({
@@ -74,10 +75,11 @@ describe('Agent A v52 continuity through the production workflow', () => {
     });
     expect.soft(db.contact?.name).toBe('Thiago');
     expect.soft(db.state?.callOfferCount).toBe(1);
-    expect.soft(db.outboundCount).toBe(3);
+    expect.soft(db.outboundCount).toBeGreaterThanOrEqual(3);
+    expect.soft(db.outboundCount).toBeLessThanOrEqual(9);
   }, 150_000);
 
-  it('combines three rapid fragments into one model turn and one visible answer', async () => {
+  it('combines three rapid fragments into one model turn and one coherent intervention', async () => {
     const evidence = await runWorkflowBurstV1({
       conversationId: `burst-v52-${randomUUID()}`,
       userId: `burst-v52-user-${randomUUID()}`,
@@ -97,7 +99,8 @@ describe('Agent A v52 continuity through the production workflow', () => {
     expect.soft(evidence.burst.claimed_message_count).toBe(3);
     expect.soft(evidence.burst.model_attempt_count).toBeGreaterThanOrEqual(1);
     expect.soft(evidence.burst.model_attempt_count).toBeLessThanOrEqual(2);
-    expect.soft(evidence.authorizedMessages).toHaveLength(1);
+    expect.soft(evidence.authorizedMessages.length).toBeGreaterThanOrEqual(1);
+    expect.soft(evidence.authorizedMessages.length).toBeLessThanOrEqual(3);
     expect.soft(text).toMatch(/ingl[eé]s/iu);
     expect.soft(text).not.toMatch(/[¿¡]/u);
   }, 150_000);

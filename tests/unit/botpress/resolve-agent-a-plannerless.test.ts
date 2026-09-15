@@ -471,7 +471,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       call_offer: null,
     });
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['CALL_OFFER_MESSAGE_BOUNDARY_INVALID'], repair_attempted: false,
+      rejection_codes: [], repair_attempted: false,
     });
   });
 
@@ -764,7 +764,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(repair).not.toHaveBeenCalled();
     expect(result.effective).toBe(initial);
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['CALL_OFFER_REQUIRED'], repair_attempted: false, repaired: false,
+      rejection_codes: [], repair_attempted: false, repaired: false,
     });
   });
 

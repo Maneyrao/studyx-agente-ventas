@@ -6,6 +6,10 @@ readonly MASK_DIR="$(mktemp -d /private/tmp/studyx-next-env-mask-XXXXXX)"
 declare -a MASKED=()
 
 restore_env_files() {
+  if [[ ${#MASKED[@]} -eq 0 ]]; then
+    rmdir "${MASK_DIR}" 2>/dev/null || true
+    return
+  fi
   for filename in "${MASKED[@]}"; do
     if [[ -e "${MASK_DIR}/${filename}" && ! -e "${ROOT}/${filename}" ]]; then
       mv "${MASK_DIR}/${filename}" "${ROOT}/${filename}"

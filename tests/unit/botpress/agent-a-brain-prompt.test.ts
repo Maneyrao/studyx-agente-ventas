@@ -75,13 +75,14 @@ describe('Agent A Brain prompt', () => {
   it('ships one complete canonical behavior behind a compact runtime contract', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v23');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v52');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v24');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v53');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('You lead the\nconversation; the backend does not write or rewrite your narrative');
     expect(instructions).toContain('The sales\nphases are a map, not a blocking script');
-    expect(instructions).toContain('separate call\ninvitation in response.call_offer');
-    expect(instructions).toContain('exactly one entry in response.messages');
+    expect(instructions).toContain('call invitation in response.call_offer');
+    expect(instructions).not.toContain('exactly one entry in response.messages');
+    expect(instructions).toMatch(/one or two short messages[\s\S]*up to three/iu);
     expect(instructions).toContain('<authorized_context>');
     expect(instructions).toContain('"memory-1"');
   });
@@ -95,7 +96,7 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).toContain('Cualquier curso activo de `catalog.available_offerings`');
   });
 
-  it('forbids ranking ambiguous candidates when only their names are authorized', () => {
+  it('lets the canonical behavior guide ambiguous candidates without an injected mini-planner', () => {
     const current = context();
     current.commercial_state.selected_offering_code = null;
     current.catalog.selected_offering = null;
@@ -116,15 +117,15 @@ describe('Agent A Brain prompt', () => {
 
     const instructions = buildAgentABrainInstructionsV1(current);
 
-    expect(instructions).toContain('<candidate_catalog_grounding names_only="true">');
-    expect(instructions).toContain('Do not describe, compare, rank or recommend either candidate');
+    expect(instructions).not.toContain('<candidate_catalog_grounding');
+    expect(instructions).toContain('Si hay varias coincidencias reales');
   });
 
   it('keeps the call policy, intake authority and payment link ownership explicit', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
     expect(instructions).toContain('Llamada: una invitación inicial y un posible recordatorio');
-    expect(instructions).toContain('misma respuesta física');
+    expect(instructions).toContain('mensaje breve separado');
     expect(instructions).toContain('Pide sólo los campos que figuren en `capabilities.intake_missing`');
     expect(instructions).toContain('el backend agrega el link canónico de Stripe');
     expect(instructions).toContain('como máximo antes de solicitar los datos finales');
@@ -132,7 +133,7 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).toContain('compra directa sí cancelan el segundo ofrecimiento');
   });
 
-  it('binds the situational second-offer reason into the live turn instructions', () => {
+  it('keeps call timing in the canonical behavior instead of injecting a per-turn command', () => {
     const current = context();
     current.customer.display_name = 'Lucia';
     current.turn.batch_messages[0].text = 'Me parece caro y se me va del presupuesto.';
@@ -142,12 +143,11 @@ describe('Agent A Brain prompt', () => {
 
     const instructions = buildAgentABrainInstructionsV1(current);
 
-    expect(instructions).toContain('<call_offer_policy required="true"');
-    expect(instructions).toContain('reason="SECOND_PRICE_OBJECTION"');
-    expect(instructions).toContain('response.call_offer');
+    expect(instructions).not.toContain('<call_offer_policy');
+    expect(instructions).toContain('Segundo y último ofrecimiento');
   });
 
-  it('requires the first offer when the name is known and the current need is an ambiguous course family', () => {
+  it('describes the first offer as behavior without injecting a mandatory turn decision', () => {
     const current = context();
     current.customer.display_name = null;
     current.turn.batch_messages[0].text = 'Soy Lucia. Quiero estudiar ingles pero no se que nivel.';
@@ -162,8 +162,8 @@ describe('Agent A Brain prompt', () => {
 
     const instructions = buildAgentABrainInstructionsV1(current);
 
-    expect(instructions).toContain('<call_offer_policy required="true"');
-    expect(instructions).toContain('reason="FIRST_OFFER_DUE"');
+    expect(instructions).not.toContain('<call_offer_policy');
+    expect(instructions).toContain('Primera invitación obligatoria');
   });
 
   it('uses structured continuity without duplicating the last outbound outside authorized context', () => {
@@ -198,7 +198,7 @@ describe('Agent A Brain prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(current);
 
     expect(instructions).toMatch(/turn\.batch_messages[\s\S]*(?:una sola intervenci[oó]n|one combined turn)/iu);
-    expect(instructions).toMatch(/(?:una sola respuesta|reply once)[\s\S]*(?:conjunto|combined)/iu);
+    expect(instructions).toMatch(/(?:intervenci[oó]n coherente|combined meaning)[\s\S]*(?:conjunto|fragments|fragmento)/iu);
   });
 
   it('defaults to a short proactive answer instead of repeating a generic intake question', () => {

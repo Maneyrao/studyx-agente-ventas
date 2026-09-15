@@ -266,7 +266,7 @@ describe('Agent A Brain V1', () => {
     ['indecision', 'No se si elegir Redes Informaticas o Reparacion de PC.'],
     ['details request', 'Contame en detalle que incluye el curso.'],
     ['pre-payment friction', 'Antes de pagar necesito pensarlo un poco mas.'],
-  ])('requires the second and final separate call offer for %s', (_reason, customerText) => {
+  ])('keeps the second call offer as model guidance rather than rejecting useful copy for %s', (_reason, customerText) => {
     const current = context();
     current.customer.display_name = 'Lucia';
     current.turn.batch_messages[0].text = customerText;
@@ -282,10 +282,10 @@ describe('Agent A Brain V1', () => {
       context: current,
       planned_fact_ids: missingReminder.used_fact_ids,
       rejection_id: '00000000-0000-4000-8000-000000000009',
-    })?.rejections ?? []).toContainEqual({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
+    })).toBeNull();
   });
 
-  it('requires the second offer before asking for the final missing contact data', () => {
+  it('does not block intake copy when the model omits the recommended second offer', () => {
     const current = context();
     current.customer.display_name = 'Lucia';
     current.commercial_state.call_offer_count = 1;
@@ -307,10 +307,10 @@ describe('Agent A Brain V1', () => {
       context: current,
       planned_fact_ids: asksForFinalData.used_fact_ids,
       rejection_id: '00000000-0000-4000-8000-000000000010',
-    })?.rejections ?? []).toContainEqual({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
+    })).toBeNull();
   });
 
-  it('keeps a soft persisted chat preference eligible for the situational second reminder', () => {
+  it('keeps a soft persisted chat preference conversational when no reminder is authored', () => {
     const current = context();
     current.customer.display_name = 'Lucia';
     current.turn.batch_messages[0].text = 'Ahora tengo varias dudas sobre el contenido y la modalidad.';
@@ -327,7 +327,7 @@ describe('Agent A Brain V1', () => {
       context: current,
       planned_fact_ids: missingReminder.used_fact_ids,
       rejection_id: '00000000-0000-4000-8000-000000000011',
-    })?.rejections ?? []).toContainEqual({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
+    })).toBeNull();
   });
 
   it.each([
@@ -359,7 +359,7 @@ describe('Agent A Brain V1', () => {
     })?.rejections ?? []).not.toContainEqual({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
   });
 
-  it('rejects a second call invitation embedded in narrative instead of a separate outbound', () => {
+  it('allows a model-authored invitation embedded in the narrative when it is not duplicated', () => {
     const current = context();
     current.customer.display_name = 'Lucia';
     current.turn.batch_messages[0].text = 'Contame en detalle que incluye.';
@@ -378,10 +378,7 @@ describe('Agent A Brain V1', () => {
       context: current,
       planned_fact_ids: embeddedReminder.used_fact_ids,
       rejection_id: '00000000-0000-4000-8000-000000000013',
-    })?.rejections ?? []).toContainEqual({
-      code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID',
-      subject: 'call_offer',
-    });
+    })).toBeNull();
   });
 
   it('does not extract or rewrite a natural reminder authored inside the messages', () => {
@@ -1378,7 +1375,7 @@ describe('Agent A Brain V1', () => {
     expect(body.instructions).toContain('Haz como máximo una pregunta útil por turno');
     expect(body.instructions).toContain('Responde primero a lo que la persona dijo');
     expect(body.instructions).toContain('Pide sólo los campos que figuren en `capabilities.intake_missing`');
-    expect(body.instructions).toContain('Use exactly one entry in response.messages');
+    expect(body.instructions).toMatch(/one or two short messages[\s\S]*up to three/iu);
     expect(body.instructions).toContain('salen sólo de hechos visibles en `authorized_context`');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('greeting');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('unknown');

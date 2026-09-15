@@ -215,12 +215,13 @@ run('plannerless Agent A vertical', () => {
     );
     expect(selected.committed.outbound?.content).toContain('Buenísimo, veamos si Redes encaja');
     expect(selected.committed.outbound?.content).not.toContain('siguiente paso autorizado');
-    expect(selected.committed.outbounds).toHaveLength(1);
+    expect(selected.committed.outbounds).toHaveLength(2);
     expect(selected.committed.outbounds.map((outbound) => outbound.content)).toEqual([
-      'Buenísimo, veamos si Redes encaja con lo que querés lograr.\n\nSi te resulta más cómodo, también podemos conversarlo en una llamada.',
+      'Buenísimo, veamos si Redes encaja con lo que querés lograr.',
+      'Si te resulta más cómodo, también podemos conversarlo en una llamada.',
     ]);
-    expect(selected.committed.outbounds.map((outbound) => outbound.part_index)).toEqual([0]);
-    expect(selected.committed.outbounds.every((outbound) => outbound.part_count === 1)).toBe(true);
+    expect(selected.committed.outbounds.map((outbound) => outbound.part_index)).toEqual([0, 1]);
+    expect(selected.committed.outbounds.every((outbound) => outbound.part_count === 2)).toBe(true);
 
     const selectedReplay = await commitClaimedDecision(
       selected.commitInput,
