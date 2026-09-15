@@ -827,6 +827,57 @@ describe('Agent A Brain V1', () => {
     expect(composition.narrative.opening).toBe(natural);
   });
 
+  it.each([
+    {
+      label: 'one concise recommendation',
+      messages: ['Por lo que me contaste, te recomiendo Redes Informáticas. Avancemos con esa opción.'],
+      usedFactIds: ['offering:redes-informaticas:name:v1'],
+      callOffer: null,
+    },
+    {
+      label: 'two distinct conversational ideas',
+      messages: [
+        'Redes Informáticas encaja bien con tu objetivo de buscar trabajo.',
+        'Te acompaño a revisar lo importante para que puedas decidir con tranquilidad.',
+      ],
+      usedFactIds: ['offering:redes-informaticas:name:v1'],
+      callOffer: null,
+    },
+    {
+      label: 'three useful messages for a price objection',
+      messages: [
+        'Entiendo que el precio pesa.',
+        'La alternativa disponible es 12 pagos mensuales de USD 30.',
+        'Podemos avanzar con esa opción y mantener una cuota más cómoda.',
+      ],
+      usedFactIds: ['payment:redes-informaticas:monthly_12:label:v1'],
+      callOffer: null,
+    },
+    {
+      label: 'natural model-authored call invitation',
+      messages: ['Te cuento lo principal de Redes Informáticas y resolvemos tus dudas.'],
+      usedFactIds: ['offering:redes-informaticas:name:v1'],
+      callOffer: 'Si te resulta más cómodo, puedo llamarte y explicártelo con más detalle.',
+    },
+  ])('accepts safe free-form sales prose without stylistic veto: $label', ({
+    messages,
+    usedFactIds,
+    callOffer,
+  }) => {
+    const current = context();
+    const parsed = parseAgentATurnProposalV1(proposal({
+      response: { messages, call_offer: callOffer },
+      used_fact_ids: usedFactIds,
+    }), current);
+
+    expect(validateAgentATurnProposalV1({
+      proposal: parsed,
+      context: current,
+      planned_fact_ids: usedFactIds,
+      rejection_id: '00000000-0000-4000-8000-000000000097',
+    })).toBeNull();
+  });
+
   // Antes se exigía rechazar esta frase. El backend, en cambio, ya la
   // autorizaba como guía genérica de catálogo: el ADK era MÁS estricto que la
   // frontera autoritativa y mataba lenguaje de venta corriente. Con la verdad
@@ -1373,9 +1424,11 @@ describe('Agent A Brain V1', () => {
     expect(body.instructions).toContain('Elegir un plan se refleja en `move.payment_plan`, pero no autoriza por sí solo el link');
     expect(body.instructions).toContain('When turn_rejection exists');
     expect(body.instructions).toContain('Haz como máximo una pregunta útil por turno');
-    expect(body.instructions).toContain('responde a lo que la persona quiso decir');
+    expect(body.instructions).toContain('Respond to their combined meaning');
+    expect(body.instructions).toContain('Responde primero el pedido, la pregunta o la intención actual');
     expect(body.instructions).toContain('Pide sólo los campos que figuren en `capabilities.intake_missing`');
-    expect(body.instructions).toMatch(/control voice, rhythm and the choice of[\s\S]*one to three customer-facing messages/iu);
+    expect(body.instructions).toContain('Normalmente usa uno o dos mensajes breves');
+    expect(body.instructions).not.toContain('control voice, rhythm and the choice of');
     expect(body.instructions).toContain('salen sólo de hechos visibles en `authorized_context`');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('greeting');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('unknown');
