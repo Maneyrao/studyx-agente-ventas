@@ -1373,9 +1373,9 @@ describe('Agent A Brain V1', () => {
     expect(body.instructions).toContain('Elegir un plan se refleja en `move.payment_plan`, pero no autoriza por sí solo el link');
     expect(body.instructions).toContain('When turn_rejection exists');
     expect(body.instructions).toContain('Haz como máximo una pregunta útil por turno');
-    expect(body.instructions).toContain('Responde primero a lo que la persona dijo');
+    expect(body.instructions).toContain('responde a lo que la persona quiso decir');
     expect(body.instructions).toContain('Pide sólo los campos que figuren en `capabilities.intake_missing`');
-    expect(body.instructions).toMatch(/one short message[\s\S]*distinct conversational job/iu);
+    expect(body.instructions).toMatch(/control voice, rhythm and the choice of[\s\S]*one to three customer-facing messages/iu);
     expect(body.instructions).toContain('salen sólo de hechos visibles en `authorized_context`');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('greeting');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('unknown');

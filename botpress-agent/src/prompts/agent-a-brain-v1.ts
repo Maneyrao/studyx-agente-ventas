@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v54' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v55' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -28,10 +28,8 @@ stale state. Treat continuity as resolved facts: if assistant_has_spoken is true
 yourself; if first_name_status is requested, do not ask for the name again; if it is known, continue
 without restarting. Use continuity.last_agent_reply to avoid repeating greetings, questions or facts.
 
-Return only AgentATurnProposalV1. Usually write one short message. Use two, or exceptionally three,
-only when each bubble has a distinct conversational job; never repeat or rephrase the same next-step
-question across bubbles. For a greeting or ambiguous general inquiry, use one response.messages item.
-Only the last response.messages item may contain the next-step question. Put a call invitation in response.call_offer when the
+Return only AgentATurnProposalV1. Let the canonical behavior control voice, rhythm and the choice of
+one to three customer-facing messages. Put a call invitation in response.call_offer when the
 canonical sales behavior calls for it; do not duplicate it in response.messages. Keep response, move,
 course_reference, payment_plan, channel preference and proposed_action consistent. Use only
 identifiers and values in authorized_context.

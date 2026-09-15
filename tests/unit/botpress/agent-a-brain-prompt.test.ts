@@ -75,15 +75,14 @@ describe('Agent A Brain prompt', () => {
   it('ships one complete canonical behavior behind a compact runtime contract', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v25');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v54');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v26');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v55');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('You lead the\nconversation; the backend does not write or rewrite your narrative');
     expect(instructions).toContain('The sales\nphases are a map, not a blocking script');
     expect(instructions).toContain('call invitation in response.call_offer');
     expect(instructions).not.toContain('exactly one entry in response.messages');
-    expect(instructions).toMatch(/one short message[\s\S]*distinct conversational job/iu);
-    expect(instructions).toMatch(/ambiguous general inquiry[\s\S]*one response\.messages item/iu);
+    expect(instructions).not.toMatch(/ambiguous general inquiry[\s\S]*one response\.messages item/iu);
     expect(instructions).toContain('<authorized_context>');
     expect(instructions).toContain('"memory-1"');
   });
@@ -216,7 +215,7 @@ describe('Agent A Brain prompt', () => {
 
     const instructions = buildAgentABrainInstructionsV1(current);
 
-    expect(instructions).toMatch(/1 a 3 oraciones/iu);
+    expect(instructions).toMatch(/mant[ée]n cada mensaje breve y conversacional/iu);
     expect(instructions).toMatch(/(?:consulta general|mensaje general|“info”)[\s\S]{0,240}(?:tres áreas|tres opciones)/iu);
     expect(instructions).toMatch(/first_name_status.*requested[\s\S]{0,220}(?:no vuelvas|do not ask)/iu);
   });
