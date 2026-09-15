@@ -1528,7 +1528,7 @@ function assertsUnverifiedCandidateCourseDetailV1(
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/gu, '')
     .toLowerCase());
-  const descriptivePredicate = /\b(?:es|son|va|van|apunta\w*|orienta\w*|encaja\w*|sirve\w*|permite\w*|pued\w*|incluye\w*|abarca\w*|tiene\w*|ofrece\w*|recomiend\w*|elegir\w*|iria)\b/u;
+  const descriptivePredicate = /\b(?:es|son|va|van|apunta\w*|orienta\w*|encaja\w*|sirve\w*|permite\w*|pued\w*|incluye\w*|abarca\w*|tiene\w*|ofrece\w*|iria)\b/u;
   const comparativeReferent = /\b(?:ambos?|los\s+dos|las\s+dos|uno|una|otro|otra)\b/u;
   return messages
     .flatMap((message) => message.split(/(?<=[.!?\n])/u))

@@ -187,5 +187,6 @@ export const configuration: Record<string, unknown> & {
 export const secrets: Record<string, string> = {
   STUDYX_ORCHESTRATOR_KEY: process.env.ORCHESTRATOR_API_KEY ?? 'eval-orchestrator-key',
   STUDYX_SIGNING_SECRET: process.env.STUDYX_SIGNING_SECRET ?? 'eval-signing-secret',
+  CRON_SECRET: process.env.CRON_SECRET ?? 'local-eval-cron',
   ...(process.env.DEEPSEEK_API_KEY ? { DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY } : {}),
 };

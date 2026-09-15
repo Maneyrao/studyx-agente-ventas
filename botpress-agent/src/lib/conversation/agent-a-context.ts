@@ -48,6 +48,15 @@ function currentBatchSuppliesFirstName(claimed: ClaimedTurn): boolean {
   ));
 }
 
+function currentBatchSuppliesContactDetails(claimed: ClaimedTurn): boolean {
+  return claimed.context.batch_messages.some((message) => {
+    const text = message.content;
+    return /\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b/iu.test(text)
+      || /(?:^|\D)\+?\d[\d\s().-]{7,}\d(?:\D|$)/u.test(text)
+      || /\b(?:me llamo|mi nombre es|mi apellido es|soy)\s+[\p{L}]{2,}/iu.test(text);
+  });
+}
+
 function previousAgentRepliesV1(claimed: ClaimedTurn): readonly string[] {
   return claimed.context.recent_turns
     .filter((turn) => turn.direction === 'outbound' && turn.content.trim().length > 0)
@@ -565,6 +574,11 @@ export function buildAgentAContextV1(
     && selectedCode !== null
     && selectedPlan !== null
     && state.stage !== 'payment_link_sent'
+    // Completing intake prepares a confirmation turn; it is not permission
+    // to send the link in that same turn. Mirror the backend's durable action
+    // precondition so the brain never sees a capability the commit will deny.
+    && state.awaiting_reply === 'payment_confirmation'
+    && !currentBatchSuppliesContactDetails(claimed)
     && intakeStatus === 'known'
     && intakeMissing.length === 0;
   const obligations = options.rigidObligations !== true ? null : salesObligationsV1({

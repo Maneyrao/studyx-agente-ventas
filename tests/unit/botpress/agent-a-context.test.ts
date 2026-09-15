@@ -253,6 +253,48 @@ describe('buildAgentAContextV1', () => {
     expect(context?.capabilities.may_send_payment_link).toBe(false);
   });
 
+  it('does not authorize the payment link in the same turn that completes contact intake', () => {
+    const claimed = claimedTurn();
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0]!,
+      content: 'Mi apellido es Damonte, mi correo es matias@example.com y mi teléfono es +5491112345678',
+    };
+    claimed.contact_intake = {
+      nombre: 'Matías', apellido: 'Damonte', correo: 'matias@example.com', telefono: '+5491112345678',
+    };
+    claimed.contact_intake_missing = [];
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      selected_payment_plan: 'monthly_12',
+      stage: 'plan_selected',
+      awaiting_reply: 'payment_confirmation',
+    };
+
+    const context = buildAgentAContextV1(claimed);
+
+    expect(context?.capabilities.may_send_payment_link).toBe(false);
+    expect(context?.customer.contact_intake).toEqual(claimed.contact_intake);
+  });
+
+  it('authorizes the payment link only after contact confirmation is pending', () => {
+    const claimed = claimedTurn();
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0]!,
+      content: 'Sí, los datos están correctos. Envíame el link.',
+    };
+    claimed.contact_intake_missing = [];
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      selected_payment_plan: 'monthly_12',
+      stage: 'plan_selected',
+      awaiting_reply: 'payment_confirmation',
+    };
+
+    expect(buildAgentAContextV1(claimed)?.capabilities.may_send_payment_link).toBe(true);
+  });
+
   it('keeps the call invitation unavailable until the first name is known', () => {
     const claimed = claimedTurn();
     claimed.contact.name = null;

@@ -199,7 +199,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:PROPOSAL_SCHEMA_INVALID:response.messages');
   });
 
-  it('never replaces DeepSeek copy with a hardcoded catalog answer when the only repair is malformed', async () => {
+  it('does not degrade to invented candidate differences when the only repair is malformed', async () => {
     const current = context();
     current.customer.display_name = 'Julia';
     current.turn.batch_messages = [{ id: 'm2', text: 'Sigo sin decidirme: cuál me conviene para conseguir clientes?' }];
@@ -231,7 +231,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     current.capabilities.may_offer_call = true;
     const callOffer = 'Si prefieres, lo vemos en una llamada breve y te ayudo a decidir.';
 
-    const result = await resolveAgentAPlannerlessProposalV2({
+    await expect(resolveAgentAPlannerlessProposalV2({
       initial: generated(proposal({
         move: {
           schema_version: 1,
@@ -255,14 +255,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
         throw new AgentABrainError('BRAIN_INVALID_SCHEMA', null, 'move:invalid_type');
       },
       rejection_id: '00000000-0000-4000-8000-000000000001',
-    });
-
-    expect(result.effective.proposal.response.messages).toEqual([
-      'Los dos sirven, pero uno apunta a campañas y el otro a manejar una comunidad.',
-    ]);
-    expect(result.effective.proposal.response.messages.join(' ')).not.toContain('Para orientarte entre');
-    expect(result.effective.proposal.response.call_offer).toBe(callOffer);
-    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: false });
+    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:PROPOSAL_SCHEMA_INVALID:move');
   });
 
   it('preserves a confirmed call action and its model-authored acknowledgement after an offer', async () => {
@@ -475,13 +468,12 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
-  it('keeps one separate call invitation when the model duplicates it across fields', async () => {
+  it('repairs a duplicated call invitation without dropping useful course information', async () => {
     const current = context();
     current.commercial_state.call_preference = 'unknown';
     current.commercial_state.call_offer_status = 'not_offered';
     current.capabilities.may_offer_call = true;
-    const result = await resolveAgentAPlannerlessProposalV2({
-      initial: generated(proposal({
+    const initial = generated(proposal({
         response: {
           messages: [
             'Maquillaje Profesional tiene 38 clases.',
@@ -489,17 +481,31 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
           ],
           call_offer: 'Si querés, puedo llamarte para orientarte.',
         },
-      })),
+      }));
+    const repair = vi.fn().mockResolvedValue(generated(proposal({
+      response: {
+        messages: ['Maquillaje Profesional tiene 38 clases.'],
+        call_offer: 'Si querés, puedo llamarte para orientarte.',
+      },
+      repair_of: {
+        rejection_id: '00000000-0000-4000-8000-000000000001',
+        attempt: 1,
+      },
+    })));
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial,
       context: current,
       repair_enabled: true,
-      repair: async () => { throw new Error('REPAIR_MUST_NOT_RUN'); },
+      repair,
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 
+    expect(repair).toHaveBeenCalledOnce();
     expect(result.effective.proposal.response).toEqual({
       messages: ['Maquillaje Profesional tiene 38 clases.'],
       call_offer: 'Si querés, puedo llamarte para orientarte.',
     });
+    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
   });
 
   it('keeps an unsolicited follow-up offer as model-owned copy', async () => {

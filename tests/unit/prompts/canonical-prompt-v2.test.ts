@@ -13,9 +13,9 @@ const source = readFileSync(
   'utf8',
 );
 
-describe('prompt canónico comercial v27', () => {
+describe('prompt canónico comercial v28', () => {
   it('coincide con la fuente y declara la versión desplegable', () => {
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v27');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v28');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toBe(source);
   });
 
@@ -37,6 +37,7 @@ describe('prompt canónico comercial v27', () => {
     expect(source).toMatch(/No uses voseo ni regionalismos/iu);
     expect(source).toMatch(/No abras frases con `¿` o `¡`/iu);
     expect(source).toMatch(/primera respuesta[\s\S]{0,160}pregunta el primer nombre/iu);
+    expect(source).toMatch(/primer nombre[\s\S]{0,220}[úu]nica pregunta/iu);
     expect(source).toMatch(/falta del nombre[\s\S]{0,160}nunca bloquea/iu);
     expect(source).toMatch(/primera respuesta[\s\S]{0,220}StudyX[\s\S]{0,220}cercan/iu);
     expect(source).toMatch(/Normalmente usa uno o dos mensajes breves/iu);
@@ -62,6 +63,12 @@ describe('prompt canónico comercial v27', () => {
     expect(source).toContain('1 pago único de USD 360 (`one_time`)');
     expect(source).toMatch(/M[áa]ximo dos ofrecimientos/iu);
     expect(source).toMatch(/rechazo a la invitaci[óo]n actual[\s\S]{0,180}no impide un segundo recordatorio/iu);
+    expect(source).toMatch(/call_offer_count[^\n]*1[\s\S]{0,240}response\.call_offer/iu);
+  });
+
+  it('conserva las opciones ambiguas fuera de cualquier texto de llamada', () => {
+    expect(source).toMatch(/varias coincidencias reales[\s\S]{0,200}nombra[^\n]*cada opci[óo]n/iu);
+    expect(source).toMatch(/informaci[óo]n de las opciones[\s\S]{0,180}response\.messages/iu);
   });
 
   it('mantiene Stripe y los resultados operativos bajo autoridad verificable', () => {
