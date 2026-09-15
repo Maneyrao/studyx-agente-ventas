@@ -1375,7 +1375,7 @@ describe('Agent A Brain V1', () => {
     expect(body.instructions).toContain('Haz como máximo una pregunta útil por turno');
     expect(body.instructions).toContain('Responde primero a lo que la persona dijo');
     expect(body.instructions).toContain('Pide sólo los campos que figuren en `capabilities.intake_missing`');
-    expect(body.instructions).toMatch(/one or two short messages[\s\S]*up to three/iu);
+    expect(body.instructions).toMatch(/one short message[\s\S]*distinct conversational job/iu);
     expect(body.instructions).toContain('salen sólo de hechos visibles en `authorized_context`');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('greeting');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('unknown');

@@ -13,9 +13,9 @@ const source = readFileSync(
   'utf8',
 );
 
-describe('prompt canónico comercial v24', () => {
+describe('prompt canónico comercial v25', () => {
   it('coincide con la fuente y declara la versión desplegable', () => {
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v24');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v25');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toBe(source);
   });
 
@@ -39,7 +39,9 @@ describe('prompt canónico comercial v24', () => {
     expect(source).toMatch(/primera respuesta[\s\S]{0,160}pregunta el primer nombre/iu);
     expect(source).toMatch(/falta del nombre[\s\S]{0,160}nunca bloquea/iu);
     expect(source).toMatch(/primera respuesta[\s\S]{0,220}StudyX[\s\S]{0,220}cercan/iu);
-    expect(source).toMatch(/uno o dos mensajes breves[\s\S]{0,100}hasta tres/iu);
+    expect(source).toMatch(/un solo mensaje breve[\s\S]{0,300}funci[óo]n distinta/iu);
+    expect(source).toMatch(/consulta general ambigua[\s\S]{0,160}un [úu]nico mensaje/iu);
+    expect(source).toMatch(/s[óo]lo el [úu]ltimo mensaje[\s\S]{0,120}pregunta o invitaci[óo]n/iu);
   });
 
   it('mantiene exactamente los cuatro datos de contacto permitidos', () => {

@@ -31,7 +31,7 @@ beforeAll(async () => {
   expect(response.ok, 'LABORATORIO_NO_DISPONIBLE').toBe(true);
 });
 
-describe('Agent A v53 continuity through the production workflow', () => {
+describe('Agent A v54 continuity through the production workflow', () => {
   it('does not restart after greeting, generic info and a later name answer', async () => {
     const identity = {
       conversationId: `continuity-v52-${randomUUID()}`,
