@@ -89,8 +89,8 @@ describe('Agent A Meta sales brain', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
     const behavior = instructions.split('<authorized_context>')[0];
 
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v55');
-    expect(behavior).toMatch(/lead (?:tibio|c[áa]lido).{0,60}(?:Meta|Instagram|Facebook)/iu);
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v56');
+    expect(behavior).toMatch(/leads? (?:tibios?|c[áa]lidos?).{0,80}(?:Meta|Instagram|Facebook)/iu);
     expect(behavior).toMatch(/cualquier curso activo[\s\S]{0,120}catalog\.available_offerings/iu);
     expect(behavior).toMatch(/anuncio o el mensaje[\s\S]{0,100}curso activo/iu);
     expect(behavior).not.toMatch(/desde Telegram o desde un formulario/iu);
@@ -100,8 +100,8 @@ describe('Agent A Meta sales brain', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
     const behavior = instructions.split('<authorized_context>')[0];
 
-    expect(behavior).toMatch(/responde a lo que la persona quiso decir[\s\S]{0,120}pr[oó]ximo paso [úu]til/iu);
-    expect(behavior).toMatch(/las fases orientan la venta[\s\S]{0,80}no son un guion/iu);
+    expect(behavior).toMatch(/Responde primero el pedido, la pregunta o la intención actual[\s\S]{0,120}pr[oó]ximo paso [úu]til/iu);
+    expect(behavior).toMatch(/las fases son un mapa[\s\S]{0,100}no un guion rígido/iu);
     expect(behavior).toMatch(/conduc(?:e|ir)[\s\S]{0,180}(?:llamada|compra|pago|avanzar)/iu);
     expect(behavior).not.toContain('choose the earliest incomplete phase');
     expect(behavior).not.toContain('Follow the six canonical sales phases in order');

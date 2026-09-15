@@ -75,11 +75,11 @@ describe('Agent A Brain prompt', () => {
   it('ships one complete canonical behavior behind a compact runtime contract', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v26');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v55');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v27');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v56');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('You lead the\nconversation; the backend does not write or rewrite your narrative');
-    expect(instructions).toContain('The sales\nphases are a map, not a blocking script');
+    expect(instructions).not.toContain('The sales\nphases are a map, not a blocking script');
     expect(instructions).toContain('call invitation in response.call_offer');
     expect(instructions).not.toContain('exactly one entry in response.messages');
     expect(instructions).not.toMatch(/ambiguous general inquiry[\s\S]*one response\.messages item/iu);
@@ -87,12 +87,30 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).toContain('"memory-1"');
   });
 
+  it('keeps the Thursday conversational principles in one canonical source', () => {
+    const instructions = buildAgentABrainInstructionsV1(context());
+
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
+      /Responde primero el pedido, la pregunta o la intención actual/iu,
+    );
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
+      /Normalmente usa uno o dos mensajes breves/iu,
+    );
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
+      /No (?:empieces|comiences) todos los turnos con/iu,
+    );
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
+      /fases son un mapa[\s\S]{0,100}no un guion rígido/iu,
+    );
+    expect(instructions.match(/CAMINO COMERCIAL/gu)).toHaveLength(1);
+  });
+
   it('keeps catalog resolution dynamic and Meta-aware without inventing ad context', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(instructions).toContain('lead cálido from a Meta ad');
+    expect(instructions).toMatch(/leads c[áa]lidos[\s\S]{0,100}Meta/iu);
     expect(instructions).toContain('catalog.available_offerings is the complete active catalog');
-    expect(instructions).toContain('If the ad context is\nnot available');
+    expect(instructions).toMatch(/si no hay curso ni contexto del anuncio/iu);
     expect(instructions).toContain('Cualquier curso activo de `catalog.available_offerings`');
   });
 
@@ -184,8 +202,8 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).toContain('"assistant_has_spoken":true');
     expect(instructions).toContain('"first_name_status":"requested"');
     expect(instructions).toContain('"last_agent_reply":"El total es USD 360."');
-    expect(instructions).toMatch(/first_name_status.*requested[\s\S]*(?:no vuelvas|do not ask)/iu);
-    expect(instructions).toMatch(/assistant_has_spoken.*true[\s\S]*(?:no vuelvas|do not reintroduce)/iu);
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(/first_name_status[^\n]*requested[^\n]*no vuelvas/iu);
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(/assistant_has_spoken[^\n]*verdadero[^\n]*no vuelvas/iu);
   });
 
   it('treats every message fragment as part of one customer turn', () => {

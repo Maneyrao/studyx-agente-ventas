@@ -13,9 +13,9 @@ const source = readFileSync(
   'utf8',
 );
 
-describe('prompt canónico comercial v26', () => {
+describe('prompt canónico comercial v27', () => {
   it('coincide con la fuente y declara la versión desplegable', () => {
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v26');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v27');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toBe(source);
   });
 
@@ -26,7 +26,7 @@ describe('prompt canónico comercial v26', () => {
   });
 
   it('usa las fases como mapa flexible y deja la redacción en manos del modelo', () => {
-    expect(source).toMatch(/Las fases orientan la venta[\s\S]{0,100}no son un guion/iu);
+    expect(source).toMatch(/Las fases son un mapa[\s\S]{0,100}no un guion rígido/iu);
     expect(source).toMatch(/Atiende la intenci[óo]n actual/iu);
     expect(source).toMatch(/Tú conduces y redactas/iu);
     expect(source).not.toMatch(/primera fase incompleta|nunca la saltees|Nunca des el precio antes/iu);
@@ -39,7 +39,8 @@ describe('prompt canónico comercial v26', () => {
     expect(source).toMatch(/primera respuesta[\s\S]{0,160}pregunta el primer nombre/iu);
     expect(source).toMatch(/falta del nombre[\s\S]{0,160}nunca bloquea/iu);
     expect(source).toMatch(/primera respuesta[\s\S]{0,220}StudyX[\s\S]{0,220}cercan/iu);
-    expect(source).toMatch(/elige con libertad entre uno y tres mensajes/iu);
+    expect(source).toMatch(/Normalmente usa uno o dos mensajes breves/iu);
+    expect(source).toMatch(/Puedes usar tres[\s\S]{0,120}idea diferente/iu);
     expect(source).toMatch(/nunca respondas s[óo]lo con una confirmaci[óo]n vac[íi]a/iu);
     expect(source).toMatch(/puedes cerrar preguntas y exclamaciones con `\?` o `!`/iu);
     expect(source).not.toMatch(/consulta general ambigua[\s\S]{0,160}un [úu]nico mensaje/iu);
