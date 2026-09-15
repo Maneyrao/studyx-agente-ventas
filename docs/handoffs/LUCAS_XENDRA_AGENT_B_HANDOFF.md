@@ -1,7 +1,9 @@
 # Handoff de integración — StudyX Agente A ↔ Xendra ↔ Agente B
 
 Fecha: 15 de septiembre de 2026
-Estado: configuración preparada; despliegue productivo del orquestador todavía pendiente.
+Estado: orquestador y Agente A desplegados; listo para que Lucas configure Xendra/Retell y luego coordinar una prueba supervisada.
+
+Release productiva de StudyX: `00dd2630419d21b3c2fecaeef3c4330b16cd743b`.
 
 ## Objetivo
 
@@ -171,11 +173,13 @@ si son seis o doce y debe pedir una aclaración.
 
 ## Tareas de StudyX / Thiago
 
-1. Fusionar la rama de integración del Agente B con la versión vigente del Agente A.
-2. Desplegar el backend actualizado en Vercel.
-3. Verificar que `/retell/eventos` y las nueve rutas `/retell/tools/*` ya no respondan `404`.
-4. Confirmar a Lucas el momento en que las URLs estén operativas.
-5. Ejecutar una única prueba supervisada punta a punta.
+1. ~~Fusionar la rama de integración del Agente B con la versión vigente del Agente A.~~ Completado.
+2. ~~Desplegar el backend actualizado en Vercel.~~ Completado.
+3. ~~Verificar que `/retell/eventos` y las nueve rutas `/retell/tools/*` ya no respondan `404`.~~ Completado: todas rechazan sin credenciales con `401`.
+4. Confirmar a Lucas que las URLs ya están operativas y enviarle `RETELL_TOOLS_SECRET` por un canal privado.
+5. Cuando Lucas confirme su configuración, ejecutar una única prueba supervisada punta a punta.
+
+La integración se realizó en una rama de release separada mientras el Agente A se modificaba en paralelo. El checkpoint estable de A fue incorporado después de finalizar sus pruebas, evitando escribir sobre el worktree activo.
 
 ## Criterio de aceptación
 

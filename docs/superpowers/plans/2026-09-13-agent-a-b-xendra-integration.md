@@ -92,9 +92,9 @@
 **Files:**
 - Modify: `.env.example` and deployment documentation only for variable names and public contracts.
 
-- [ ] Run calls/Xendra/tools tests, the local A→B→A smoke, all unit tests, all PostgreSQL integration tests, typecheck, lint, Next.js build, `git diff --check`, and a tracked-file secret/PII scan.
-- [ ] Skip the migration loop because this branch does not modify migration files; apply only the already-integrated Agent B migrations that production is missing.
-- [ ] Push `codex/agent-a-b-xendra`, configure Vercel secrets without printing values, and deploy the verified SHA.
-- [ ] Skip Botpress deployment unless `botpress-agent` has a real source diff from the validated Agent A base.
-- [ ] Probe `/retell/eventos` and all nine `/retell/tools/*` production routes without causing effects, then prepare Lucas's URLs, headers, and canonical payment-contract changes.
-- [ ] Stop at `READY_FOR_SUPERVISED_CALL`; obtain explicit authorization before any billed call.
+- [x] Run calls/Xendra/tools tests, the local A→B→A smoke, all unit tests, all PostgreSQL integration tests, typecheck, lint, Next.js build, `git diff --check`, and a tracked-file secret/PII scan.
+- [x] Confirm the already-integrated Agent B migrations are present in production; no new migration was introduced by the release merge.
+- [x] Push `codex/agent-a-b-release`, configure Vercel secrets without printing values, and deploy verified SHA `00dd2630419d21b3c2fecaeef3c4330b16cd743b`.
+- [x] Deploy Botpress because the reconciled Agent A branch contains real source changes; publish its production secrets without storing them in Git.
+- [x] Probe `/retell/eventos` and all nine `/retell/tools/*` production routes without causing effects, then prepare Lucas's URLs, headers, and canonical payment-contract changes.
+- [x] Stop at `READY_FOR_SUPERVISED_CALL`; obtain explicit authorization before any billed call.
