@@ -72,6 +72,49 @@ function generated(value: AgentATurnProposalV1) {
 }
 
 describe('resolveAgentAPlannerlessProposalV2', () => {
+  it('keeps a grounded English-level follow-up instead of showing a technical fallback', async () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm2', text: 'Contame' }];
+    current.turn.recent_turns = [{ id: 'previous', direction: 'outbound', content: 'Tenemos Inglés 1 e Inglés 2. Cuéntame qué nivel buscas.' }];
+    current.commercial_state.selected_offering_code = null;
+    current.commercial_state.stage = 'exploring';
+    current.catalog.selected_offering = null;
+    current.catalog.candidate_offerings = [
+      {
+        code: 'ingles-1', fact_id: ENGLISH_1_NAME_FACT, display_name: 'Inglés 1', area_code: 'idiomas',
+        facts: [
+          { id: ENGLISH_1_NAME_FACT, kind: 'offering_name', value: 'Inglés 1' },
+          { id: 'offering:ingles-1:description:v1', kind: 'offering_description', value: 'Lectura de materiales teóricos aplicados en la práctica.' },
+        ],
+      },
+      {
+        code: 'ingles-2', fact_id: ENGLISH_2_NAME_FACT, display_name: 'Inglés 2', area_code: 'idiomas',
+        facts: [
+          { id: ENGLISH_2_NAME_FACT, kind: 'offering_name', value: 'Inglés 2' },
+          { id: 'offering:ingles-2:description:v1', kind: 'offering_description', value: 'Aprenderás cómo entablar una conversación en inglés.' },
+        ],
+      },
+    ];
+    const response = [
+      'Dale. En Inglés 1 se trabaja lectura y práctica; Inglés 2 aborda cómo entablar una conversación.',
+      'Qué te gustaría poder hacer en inglés?',
+    ];
+    const repair = vi.fn();
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({
+        move: { schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 0.9 },
+        response: { messages: response, call_offer: null },
+        used_fact_ids: [ENGLISH_1_NAME_FACT, ENGLISH_2_NAME_FACT, 'offering:ingles-1:description:v1', 'offering:ingles-2:description:v1'],
+      })),
+      context: current,
+      repair_enabled: true,
+      repair,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.response.messages).toEqual(response);
+  });
+
   it('does not count an omitted optional call_offer as another call solicitation', async () => {
     const result = await resolveAgentAPlannerlessProposalV2({
       initial: generated(proposal({ response: { messages: ['¿Querés que te prepare el enlace para avanzar?'] } })),

@@ -1059,6 +1059,39 @@ describe('buildAgentAContextV1', () => {
     expect(buildAgentAContextV1(claimed)).toBeNull();
   });
 
+  it('includes canonical details for ambiguous candidates so a follow-up can answer naturally', () => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = {
+      kind: 'ambiguous', requestedText: 'inglés',
+      candidateCodes: ['ingles-1', 'ingles-2'], clarification: 'choose_offering',
+    };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      selected_offering_code: null,
+      stage: 'exploring',
+    };
+    claimed.catalog_index = {
+      as_of: NOW,
+      offerings_total: 2,
+      offerings: [
+        { code: 'ingles-1', display_name: 'Inglés 1', academy: 'Idiomas', aliases: [] },
+        { code: 'ingles-2', display_name: 'Inglés 2', academy: 'Idiomas', aliases: [] },
+      ],
+      injection_suspected_count: 0,
+    };
+    claimed.business_context!.offerings = [
+      { ...claimed.business_context!.offerings[0]!, code: 'ingles-1', display_name: 'Inglés 1', description: 'Inglés para empezar desde cero.', classes: 12 },
+      { ...claimed.business_context!.offerings[0]!, code: 'ingles-2', display_name: 'Inglés 2', description: 'Inglés para continuar tus estudios.', classes: 12 },
+    ];
+
+    const candidates = buildAgentAContextV1(claimed)?.catalog.candidate_offerings;
+    expect(candidates).toHaveLength(2);
+    expect(candidates?.[0]?.facts).toEqual(expect.arrayContaining([
+      { id: 'offering:ingles-1:description:v1', kind: 'offering_description', value: 'Inglés para empezar desde cero.' },
+      { id: 'offering:ingles-1:duration:v1', kind: 'offering_duration', value: '12 clases' },
+    ]));
+  });
+
   it('keeps the most recent explicit candidate set on an indecision follow-up', () => {
     const claimed = claimedTurn();
     claimed.context.batch_messages[0] = {

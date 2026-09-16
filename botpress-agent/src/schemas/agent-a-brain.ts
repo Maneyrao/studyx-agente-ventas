@@ -122,6 +122,7 @@ export const AgentAContextV1Schema = z.object({
       fact_id: IdentifierSchema,
       display_name: z.string().trim().min(1).max(240),
       area_code: IdentifierSchema.nullable(),
+      facts: z.array(AgentAFactSchema).max(4).optional(),
     }).strict()).max(3),
     // Resolver output is evidence, not a conversational instruction. It lets
     // the brain distinguish a confirmed absence from an open-ended browse.

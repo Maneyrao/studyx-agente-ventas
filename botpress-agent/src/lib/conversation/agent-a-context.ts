@@ -548,6 +548,12 @@ export function buildAgentAContextV1(
       fact_id: `offering:${offering.code}:name:v1`,
       display_name: offering.display_name,
       area_code: areaCode(offering.academy),
+      // Keep candidate detail bounded to the three visible courses. Payment
+      // facts remain scoped to an explicitly selected course.
+      facts: (selectedOfferingFacts(claimed, offering.code)?.facts ?? [])
+        .filter((fact) => fact.kind === 'offering_description'
+          || fact.kind === 'offering_duration'
+          || fact.kind === 'offering_modality'),
     }));
   const callOfferCount = state.call_offer_count ?? (state.call_offer_status === 'not_offered' ? 0 : 1);
   const selectedPlan = currentCourseChanged ? null : state.selected_payment_plan;

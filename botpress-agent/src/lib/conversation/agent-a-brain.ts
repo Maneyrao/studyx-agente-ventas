@@ -836,6 +836,7 @@ function authorizedFactIds(context: AgentAContextV1): Set<string> {
   for (const offering of context.catalog.available_offerings) ids.add(offering.fact_id);
   for (const offering of context.catalog.candidate_offerings) {
     ids.add(offering.fact_id);
+    for (const fact of offering.facts ?? []) ids.add(fact.id);
   }
   for (const plan of context.catalog.payment_plans) ids.add(plan.fact_id);
   return ids;
@@ -915,7 +916,10 @@ function commercialValuesByFactId(context: AgentAContextV1): ReadonlyMap<string,
   for (const offering of context.catalog.available_offerings) {
     values.set(offering.fact_id, offering.display_name);
   }
-  for (const offering of context.catalog.candidate_offerings) values.set(offering.fact_id, offering.display_name);
+  for (const offering of context.catalog.candidate_offerings) {
+    values.set(offering.fact_id, offering.display_name);
+    for (const fact of offering.facts ?? []) values.set(fact.id, fact.value);
+  }
   for (const plan of context.catalog.payment_plans) values.set(plan.fact_id, plan.label);
   return values;
 }
@@ -1519,11 +1523,18 @@ function employmentOutcomeClaimsInV1(value: string): Set<string> {
 function assertsUnverifiedCandidateCourseDetailV1(
   messages: readonly string[],
   context: AgentAContextV1,
+  plannedFactIds: ReadonlySet<string>,
 ): boolean {
   if (
     context.catalog.selected_offering !== null
     || context.catalog.candidate_offerings.length < 2
   ) return false;
+  // A comparison backed by every candidate's cited canonical description is
+  // not an inference from names alone. The specific protected claims below
+  // (prerequisites, logistics, outcomes, money) remain independently checked.
+  if (context.catalog.candidate_offerings.every((offering) =>
+    offering.facts?.some((fact) =>
+      fact.kind === 'offering_description' && plannedFactIds.has(fact.id)))) return false;
   const candidateNames = context.catalog.candidate_offerings.map((offering) => offering.display_name
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/gu, '')
@@ -1656,7 +1667,10 @@ export function validateAgentATurnProposalV1(input: {
     ...(input.proposal.response.call_offer ? [input.proposal.response.call_offer] : []),
   ];
   const selectedFactsById = new Map(
-    input.context.catalog.selected_offering?.facts.map((fact) => [fact.id, fact]) ?? [],
+    [
+      ...(input.context.catalog.selected_offering?.facts ?? []),
+      ...input.context.catalog.candidate_offerings.flatMap((offering) => offering.facts ?? []),
+    ].map((fact) => [fact.id, fact]),
   );
   if (
     canonicalPrerequisiteStatement(selectedFactsById, planned) === null
@@ -1691,7 +1705,7 @@ export function validateAgentATurnProposalV1(input: {
     .some((claim) => !authorizedEmploymentOutcomes.has(claim))) {
     rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'employment_outcome' });
   }
-  if (assertsUnverifiedCandidateCourseDetailV1(input.proposal.response.messages, input.context)) {
+  if (assertsUnverifiedCandidateCourseDetailV1(input.proposal.response.messages, input.context, planned)) {
     rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'candidate_course_detail' });
   }
   if (omitsCustomerNamedCandidateV1(input.proposal.response.messages, input.context)) {
