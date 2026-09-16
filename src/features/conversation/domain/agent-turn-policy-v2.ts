@@ -163,10 +163,15 @@ export function authorizeAgentTurnV2(input: {
     }
     const fact = factsById.get(factId);
     const navigationFact = fact?.kind === 'area_name' || fact?.kind === 'offering_name';
+    const browsingCourseDetail = selectedOffering === null && fact !== undefined
+      && (fact.kind === 'offering_description'
+        || fact.kind === 'offering_duration'
+        || fact.kind === 'offering_modality')
+      && input.offerings.some((offering) => offering.code === fact.offering_code);
     const selectedOfferingFact = fact !== undefined
       && fact.kind !== 'payment_link'
       && fact.offering_code === selectedOffering;
-    if (fact && (navigationFact || selectedOfferingFact)) authorizedFactIds.push(factId);
+    if (fact && (navigationFact || browsingCourseDetail || selectedOfferingFact)) authorizedFactIds.push(factId);
     else reasons.push('FACT_NOT_AUTHORIZED');
   }
 

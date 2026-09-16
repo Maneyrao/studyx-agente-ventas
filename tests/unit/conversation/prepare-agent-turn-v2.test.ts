@@ -273,6 +273,47 @@ describe('prepareAgentTurnV2', () => {
     });
   });
 
+  it('accepts cited details of active English levels while the customer is still choosing', async () => {
+    const englishIndex: CatalogIndexView = {
+      ...index,
+      offerings_total: 2,
+      offerings: [
+        { code: 'ingles_1', display_name: 'Inglés 1', academy: 'Academia Cultural', aliases: [] },
+        { code: 'ingles_2', display_name: 'Inglés 2', academy: 'Academia Cultural', aliases: [] },
+      ],
+    };
+    const englishBusiness: BusinessContextView = {
+      ...business,
+      offerings: [
+        { ...business.offerings[0], code: 'ingles_1', display_name: 'Inglés 1', description: 'Lectura y práctica del idioma.', classes: 12 },
+        { ...business.offerings[0], code: 'ingles_2', display_name: 'Inglés 2', description: 'Aprender a entablar una conversación.', classes: 12 },
+      ],
+    };
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx',
+      current_customer_messages: ['Buenas contame info d ingles'],
+      business_context: englishBusiness,
+      catalog_index: englishIndex,
+      proposal: proposal({
+        move: { schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 0.9 },
+        response: { messages: ['Inglés 1 tiene 12 clases y trabaja lectura; Inglés 2 ayuda a entablar una conversación.'] },
+        used_fact_ids: [
+          'offering:ingles_1:name:v1',
+          'offering:ingles_1:description:v1',
+          'offering:ingles_1:duration:v1',
+          'offering:ingles_2:name:v1',
+          'offering:ingles_2:description:v1',
+        ],
+      }),
+    }, { state_store: store(state()), now: () => Date.parse(index.as_of) });
+
+    expect(prepared.decision.response).toContain('Inglés 1 tiene 12 clases');
+    expect(prepared.transition.selected_offering_code).toBeNull();
+    expect(prepared.decision.business_action).toBeNull();
+    expect(prepared.authorized_protected_facts).toContainEqual({ kind: 'duration', value: '12 clases' });
+  });
+
   it('rejects a response citing a fact from outside the selected course', async () => {
     await expect(prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
