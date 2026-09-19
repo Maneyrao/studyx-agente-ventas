@@ -47,9 +47,6 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     if (workspace.conversation_id !== input.conversationId) {
       return { sent: false, reference: null, reason: 'CONVERSATION_MISMATCH' };
     }
-    if (workspace.course_code !== input.course) {
-      return { sent: false, reference: null, reason: 'COURSE_UNAVAILABLE' };
-    }
     const paymentPlan = resolveRetellPaymentPlanRequest(
       input.paymentPlan,
       workspace.selected_payment_plan,
@@ -84,14 +81,44 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
       idempotencyKey: `agent-a:retell-payment-link:${input.callId}`,
       purpose: 'transactional',
     });
-    return sent.outcome === 'sent'
-      ? { sent: true, reference: sent.deliveryId, channel: sent.channel }
-      : {
+    if (sent.outcome !== 'sent') {
+      return {
+        sent: false,
+        reference: sent.deliveryId,
+        channel: sent.channel,
+        reason: sent.reason ?? 'OUTBOUND_UNAVAILABLE',
+      };
+    }
+
+    // The delivery key is call-scoped. If Retell replays the tool with a
+    // different course/plan, sendOutbound returns the original delivery; do
+    // not rewrite commercial state to describe a link that was never sent.
+    if (sent.deliveryId) {
+      const delivered = await this.db<Array<{ content: string }>>`
+        SELECT message.content
+        FROM outbound_deliveries AS delivery
+        JOIN messages AS message ON message.id = delivery.message_id
+        WHERE delivery.id = ${sent.deliveryId}::uuid
+        LIMIT 1
+      `;
+      if (delivered[0] && delivered[0].content !== text) {
+        return {
           sent: false,
           reference: sent.deliveryId,
           channel: sent.channel,
-          reason: sent.reason ?? 'OUTBOUND_UNAVAILABLE',
+          reason: 'PAYMENT_LINK_ALREADY_SENT',
         };
+      }
+    }
+
+    await this.recordPaymentLinkSelection({
+      workspaceId: workspace.id,
+      conversationId: input.conversationId,
+      contactId: input.contactId,
+      course: input.course,
+      plan: paymentPlan.planCode,
+    });
+    return { sent: true, reference: sent.deliveryId, channel: sent.channel };
   }
 
   async verifyPayment(input: Parameters<RetellOrchestrationStore['verifyPayment']>[0]) {
@@ -233,7 +260,11 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     }>>`
       SELECT w.id, w.slug, w.metadata, cs.conversation_id,
              state.selected_payment_plan,
-             COALESCE(NULLIF(btrim(cs.context_snapshot ->> 'curso_interes'), ''), '') AS course_code
+             COALESCE(
+               NULLIF(btrim(state.selected_offering_code), ''),
+               NULLIF(btrim(cs.context_snapshot ->> 'curso_interes'), ''),
+               ''
+             ) AS course_code
       FROM call_sessions AS cs
       JOIN workspaces AS w ON w.id = cs.workspace_id
       JOIN workspace_contacts AS wc
@@ -252,6 +283,49 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
       LIMIT 1
     `;
     return rows[0] ?? null;
+  }
+
+  private async recordPaymentLinkSelection(input: {
+    readonly workspaceId: string;
+    readonly conversationId: string;
+    readonly contactId: string;
+    readonly course: string;
+    readonly plan: PaymentPlanCode;
+  }): Promise<void> {
+    await this.db`
+      WITH updated AS (
+        UPDATE conversation_sales_context_states_v1 AS state
+        SET selected_offering_code = ${input.course},
+            selected_payment_plan = ${input.plan},
+            stage = 'payment_link_sent',
+            awaiting_reply = 'payment_confirmation',
+            version = state.version + 1,
+            updated_at = now()
+        WHERE state.workspace_id = ${input.workspaceId}::uuid
+          AND state.conversation_id = ${input.conversationId}::uuid
+          AND state.contact_id = ${input.contactId}::uuid
+          AND (
+            state.selected_offering_code IS DISTINCT FROM ${input.course}
+            OR state.selected_payment_plan IS DISTINCT FROM ${input.plan}
+            OR state.stage IS DISTINCT FROM 'payment_link_sent'
+            OR state.awaiting_reply IS DISTINCT FROM 'payment_confirmation'
+          )
+        RETURNING state.*
+      )
+      INSERT INTO conversation_sales_context_state_events_v1 (
+        workspace_id, conversation_id, contact_id, state_version, source_turn_id,
+        selected_offering_code, selected_payment_plan, stage,
+        call_preference, call_offer_status, call_offer_count, awaiting_reply,
+        payment_reported_at, human_review_requested_at, consecutive_technical_fallbacks
+      )
+      SELECT
+        workspace_id, conversation_id, contact_id, version, NULL,
+        selected_offering_code, selected_payment_plan, stage,
+        call_preference, call_offer_status, call_offer_count, awaiting_reply,
+        payment_reported_at, human_review_requested_at, consecutive_technical_fallbacks
+      FROM updated
+      ON CONFLICT DO NOTHING
+    `;
   }
 }
 

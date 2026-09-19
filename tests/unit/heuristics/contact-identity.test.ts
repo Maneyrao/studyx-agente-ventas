@@ -217,6 +217,21 @@ describe('extractContactNameAnswer', () => {
     )).toEqual({ firstName: 'Thiago', surname: null, name: 'Thiago' });
   });
 
+  it('captures the real Telegram first-name answer written with neutral Spanish and a payment continuation', () => {
+    expect(extractContactNameAnswer(
+      'Thiago, queria saber como se paga el curso',
+      'Para orientarte mejor, si me dices tu primer nombre puedo ayudarte. ¿Qué te gustaría estudiar?',
+    )).toEqual({ firstName: 'Thiago', surname: null, name: 'Thiago' });
+  });
+
+  it('combines the later Telegram surname with the previously captured first name', () => {
+    expect(extractContactNameAnswer(
+      'Maneyro, [1169004497](tel:1169004497) [tmaneyro@gmail.com](mailto:tmaneyro@gmail.com)',
+      'Para enviarte el link necesito tu apellido, correo y teléfono.',
+      { firstName: 'Thiago', surname: null },
+    )).toEqual({ firstName: 'Thiago', surname: 'Maneyro', name: 'Thiago Maneyro' });
+  });
+
   it('combines separate requested fields in either order without treating a surname as a first name', () => {
     const surname = extractContactNameAnswer('Ríos', 'Me falta tu apellido. ¿Me lo pasás?');
     expect(surname).toEqual({ firstName: null, surname: 'Ríos', name: null });

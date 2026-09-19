@@ -9,6 +9,10 @@ export const runtime = 'nodejs';
 export async function POST(request: Request): Promise<Response> {
   const isXendraRelay = request.headers.has('x-studyx-orchestrator-secret')
     || request.headers.has('x-studyx-event');
+  const isDirectRetell = request.headers.has('x-retell-signature');
+  if (!isXendraRelay && !isDirectRetell) {
+    return Response.json({ error: 'UNAUTHORIZED' }, { status: 401 });
+  }
   const orchestratorSecret = process.env.XENDRA_ORCHESTRATOR_SECRET?.trim();
   const apiKey = process.env.RETELL_API_KEY?.trim();
   if (isXendraRelay && !orchestratorSecret) {

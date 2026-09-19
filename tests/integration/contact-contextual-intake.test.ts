@@ -55,6 +55,28 @@ run('contact identity from delivered conversational requests', () => {
       .toEqual([{ name: 'Thiago' }]);
   });
 
+  it('persists the exact Telegram identity sequence before the commercial call offer', async () => {
+    const first = envelope();
+    const opened = await processInboundMessage(first);
+    await outbound(
+      first,
+      opened,
+      'Para orientarte mejor, si me dices tu primer nombre puedo ayudarte. ¿Qué te gustaría estudiar?',
+    );
+    const named = await processInboundMessage(answer(first, 'Thiago, queria saber como se paga el curso'));
+    expect(named.contact.name).toBe('Thiago');
+
+    await outbound(first, named, 'Para enviarte el link necesito tu apellido, correo y teléfono.');
+    const completed = await processInboundMessage(answer(
+      first,
+      'Maneyro, [1169004497](tel:1169004497) [tmaneyro@gmail.com](mailto:tmaneyro@gmail.com)',
+    ));
+    expect(completed.contact.name).toBe('Thiago Maneyro');
+    expect(await db!`
+      SELECT name, email, declared_phone FROM contacts WHERE id = ${completed.contact.id}::uuid
+    `).toEqual([{ name: 'Thiago Maneyro', email: 'tmaneyro@gmail.com', declared_phone: '1169004497' }]);
+  });
+
   it('persists a full name and Markdown phone from the answer, independent of awaiting_reply and email', async () => {
     const first = envelope();
     const opened = await processInboundMessage(first);

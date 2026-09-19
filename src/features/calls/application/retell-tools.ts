@@ -244,6 +244,12 @@ const ToolArgsSchemas = {
       email: SafeEmailSchema.optional(),
       canal: z.enum(['telegram', 'whatsapp']).optional(),
     }).strict(),
+    z.object({
+      cursos: z.array(CourseTextSchema).length(1),
+      plan_code: z.enum(['monthly_12', 'monthly_6', 'one_time']),
+      email: SafeEmailSchema.optional(),
+      canal: z.enum(['telegram', 'whatsapp']).optional(),
+    }).strict(),
   ]),
   verificar_pago: z.object({
     referencia_pago: z.string().trim().max(255).optional().transform((value) => value || undefined),
@@ -593,12 +599,12 @@ async function runOrchestrationTool(
   };
   if (envelope.name === 'enviar_link_pago') {
     const args = envelope.args as z.infer<typeof ToolArgsSchemas.enviar_link_pago>;
-    const canonical = 'plan_code' in args;
+    const canonicalCourse = 'curso' in args ? args.curso : args.cursos[0];
     const result = await store.requestAgentAPaymentLink({
       ...common,
       conversationId: identity.conversationId,
-      course: canonical ? args.curso : args.cursos[0],
-      paymentPlan: canonical
+      course: canonicalCourse,
+      paymentPlan: 'plan_code' in args
         ? args.plan_code
         : args.plan === 'contado' ? 'one_time' : 'cuotas',
     });

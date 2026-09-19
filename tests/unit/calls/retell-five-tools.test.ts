@@ -224,6 +224,27 @@ describe('remaining Retell orchestration tools', () => {
     });
   });
 
+  it('accepts Lucas\'s plan_code shape with exactly one course', async () => {
+    const result = await invoke('enviar_link_pago', {
+      cursos: ['reparacion_celulares'],
+      plan_code: 'monthly_12',
+      email: 'lead@example.com',
+      canal: 'whatsapp',
+    });
+    expect(result.body).toEqual({
+      ok: true,
+      pago: { enviado: true, canal: 'telegram', referencia: 'delivery_1' },
+    });
+    expect(result.deps.orchestration.requestAgentAPaymentLink).toHaveBeenCalledWith({
+      callId: internalCallId,
+      contactId,
+      conversationId,
+      workspaceSlug: 'studyx',
+      course: 'reparacion_celulares',
+      paymentPlan: 'monthly_12',
+    });
+  });
+
   it('passes ambiguous cuotas through for durable backend resolution without guessing 6 or 12', async () => {
     const deps = dependencies({
       requestAgentAPaymentLink: vi.fn(async () => ({

@@ -25,17 +25,29 @@ La llamada real queda pendiente de configuración de Lucas y autorización super
    fila de Sheets usada por A. Su contrato aditivo es
    `{ nombre?, apellido?, email?, telefono_alternativo? }`; si B pide sólo el
    apellido porque ya conoce el nombre, no reemplaza el nombre existente.
-6. Si el cliente elige pagar, B llama `enviar_link_pago` con:
+6. Si el cliente elige pagar, B llama `enviar_link_pago`. El formato preferido es:
 
    ```json
    { "curso": "codigo_canonico", "plan_code": "monthly_12" }
    ```
 
-   `plan_code` sólo admite `monthly_12`, `monthly_6` u `one_time`. El backend
-   valida el curso congelado en la llamada, resuelve la URL fija desde entorno
-   y envía un único mensaje atribuido a A en la conversación original.
-7. `registrar_resultado` conserva la autoridad sobre el desenlace operativo.
-   `call_analyzed` enriquece el CRM sin reemplazarlo; el opt-out es monotónico.
+   El formato ya configurado por Xendra también está admitido, con un solo
+   curso y el mismo `plan_code`:
+
+   ```json
+   { "cursos": ["codigo_canonico"], "plan_code": "monthly_12", "email": "...", "canal": "whatsapp" }
+   ```
+
+   `consultar_curso` acepta nombre o alias y devuelve el código en
+   `curso.codigo`; B reutiliza ese valor al pedir el link. `plan_code` sólo
+   admite `monthly_12`, `monthly_6` u `one_time`. Si la llamada empezó antes
+   de elegir curso, el backend valida el curso activo, persiste curso y plan en
+   el estado de la conversación y envía un único mensaje atribuido a A en el
+   chat original. Los combos de varios cursos quedan fuera de V0 y se rechazan.
+7. `registrar_resultado` llega durante la llamada y conserva la autoridad sobre
+   el desenlace operativo; habilita retomar el hilo escrito sin esperar el
+   análisis tardío. `call_analyzed` llega después y enriquece el CRM sin
+   reemplazarlo; el opt-out es monotónico.
 8. Al terminar B, A puede reanudar el chat en el mismo `conversation_id`. Un
    pedido de no contacto revoca permiso antes de todo outbound; una venta sólo
    se afirma con pago verificado en PostgreSQL.
@@ -88,10 +100,12 @@ Cambio recomendado en el contrato de pago de Agent B:
 ```
 
 `plan_code` admite `monthly_12`, `monthly_6` y `one_time`. El formato de Lucas
-`{ "cursos": ["..."], "plan": "contado" | "cuotas" }` sigue aceptado para
-compatibilidad: `contado` se traduce a `one_time`, mientras `cuotas` responde
-`PLAN_SELECTION_REQUIRED` salvo que ya exista una selección durable de 6 o 12.
-El backend ignora `email`/`canal` del modelo y deriva identidad y chat original.
+`{ "cursos": ["codigo_canonico"], "plan_code": "monthly_12", "email": "...", "canal": "whatsapp" }`
+está aceptado cuando contiene exactamente un curso. El formato anterior con
+`plan: "contado" | "cuotas"` continúa por compatibilidad: `contado` se traduce
+a `one_time`, mientras `cuotas` responde `PLAN_SELECTION_REQUIRED` salvo que ya
+exista una selección durable de 6 o 12. El backend ignora `email`/`canal` del
+modelo y deriva identidad y chat original.
 
 No configurar una URL directa de Retell hacia StudyX en este modo: Xendra
 conserva el webhook de Retell y reenvía los eventos autenticados.

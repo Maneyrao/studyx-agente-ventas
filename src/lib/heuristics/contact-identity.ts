@@ -214,7 +214,7 @@ export function extractContactNameAnswer(
 ): (ContactNameParts & { readonly name: string | null }) | null {
   const clauses = deliveredRequest.split(/[.!?\n]/u).filter(clause =>
     !UNSAFE_NAME_OWNER.test(clause)
-    && /\b(?:necesito|necesitamos|falta[ns]?|pas[aá](?:s|me|rme)|compart[ií](?:s|me|rme)|dec[ií](?:s|me|rme)|indic[aá](?:s|me|rme)|confirm[aá](?:s|me|rme)|cu[aá]l\s+es)\b/iu.test(clause));
+    && /\b(?:necesito|necesitamos|falta[ns]?|pas[aá](?:s|me|rme)|compart[ií](?:s|me|rme)|dec[ií](?:s|me|rme)|d[ií](?:ces|me)|indic[aá](?:s|me|rme)|confirm[aá](?:s|me|rme)|cu[aá]l\s+es)\b/iu.test(clause));
   const request = clauses.join(' ');
   const asksFirstName = /\bnombre\b/iu.test(request);
   const asksSurname = /\bapellido\b|\bnombre\s+completo\b/iu.test(request);
@@ -256,7 +256,7 @@ export function extractContactNameAnswer(
   ).test(remainder);
   const requestedGoalContinuation = asksFirstName
     && !/\s/u.test(candidate)
-    && /^(?:busco|me\s+interesa|quiero|necesito|para)\b/iu.test(remainder);
+    && /^(?:busco|me\s+interesa|quiero|quer[ií]a|necesito|para)\b/iu.test(remainder);
   if (remainder && !knownContinuation && !requestedGoalContinuation) return null;
   const contextualName = new RegExp(`^${CONTEXTUAL_NAME_SEQUENCE}$`, 'u');
   if (!contextualName.test(candidate) || !isPlausibleContextualName(candidate)

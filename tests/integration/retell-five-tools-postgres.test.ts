@@ -68,7 +68,7 @@ function sender() {
         return { outcome: 'sent' as const, channel: 'whatsapp' as const, providerMessageId: 'wamid.test', deliveryId: settledDeliveryId, reason: null };
       }
       calls.push(input);
-      const deliveryId = `delivery-${calls.length}`;
+      const deliveryId = randomUUID();
       settledKeys.set(key, deliveryId);
       return { outcome: 'sent' as const, channel: 'whatsapp' as const, providerMessageId: 'wamid.test', deliveryId, reason: null };
     },
@@ -79,6 +79,8 @@ async function callFixture(input: {
   readonly planMode?: 'payment' | 'subscription';
   readonly omitOneTime?: boolean;
   readonly selectedPaymentPlan?: 'monthly_12' | 'monthly_6' | 'one_time' | null;
+  readonly courseInCallSnapshot?: string;
+  readonly selectedOfferingCode?: string | null;
 } = {}) {
   const ids = await fixture(input);
   const conversations = await db!<Array<{ id: string }>>`
@@ -95,12 +97,12 @@ async function callFixture(input: {
     )
     VALUES (
       ${ids.workspaceId}::uuid, ${conversationId}::uuid, ${ids.contactId}::uuid,
-      'retell_course', ${input.selectedPaymentPlan ?? null}
+      ${input.selectedOfferingCode === undefined ? 'retell_course' : input.selectedOfferingCode}, ${input.selectedPaymentPlan ?? null}
     )
   `;
   const callId = randomUUID();
   const context = {
-    call_id: callId, nombre_lead: '', curso_interes: 'retell_course', pais: '', email_lead: '',
+    call_id: callId, nombre_lead: '', curso_interes: input.courseInCallSnapshot ?? 'retell_course', pais: '', email_lead: '',
     resumen_whatsapp: '', prompt_version: 'test',
   };
   await db!`
@@ -153,6 +155,43 @@ run('Retell five tools PostgreSQL adapter', () => {
       .resolves.toMatchObject({ sent: false, reason: 'CONVERSATION_MISMATCH' });
     await expect(store.requestAgentAPaymentLink({ ...request, course: 'otro_curso' }))
       .resolves.toMatchObject({ sent: false, reason: 'COURSE_UNAVAILABLE' });
+  });
+
+  it('lets Agent B select a canonical course during an early call and persists the sale before sending the link', async () => {
+    const ids = await callFixture({ courseInCallSnapshot: '', selectedOfferingCode: null });
+    const outbound = sender();
+    const store = new PostgresRetellOrchestrationStore(db!, {
+      paymentLinkResolver: { resolve: () => 'https://buy.stripe.com/early-call-link' },
+      sendOutbound: outbound.send,
+    });
+
+    await expect(store.requestAgentAPaymentLink({
+      callId: ids.callId,
+      contactId: ids.contactId,
+      conversationId: ids.conversationId,
+      workspaceSlug: ids.workspaceSlug,
+      course: 'retell_course',
+      paymentPlan: 'monthly_12',
+    })).resolves.toMatchObject({ sent: true });
+
+    const states = await db!<Array<{
+      selected_offering_code: string | null;
+      selected_payment_plan: string | null;
+      stage: string;
+      awaiting_reply: string;
+    }>>`
+      SELECT selected_offering_code, selected_payment_plan, stage, awaiting_reply
+      FROM conversation_sales_context_states_v1
+      WHERE workspace_id = ${ids.workspaceId}::uuid
+        AND conversation_id = ${ids.conversationId}::uuid
+    `;
+    expect(states[0]).toEqual({
+      selected_offering_code: 'retell_course',
+      selected_payment_plan: 'monthly_12',
+      stage: 'payment_link_sent',
+      awaiting_reply: 'payment_confirmation',
+    });
+    expect(outbound.calls).toHaveLength(1);
   });
 
   it('requires a durable installment selection and never infers six or twelve cuotas', async () => {

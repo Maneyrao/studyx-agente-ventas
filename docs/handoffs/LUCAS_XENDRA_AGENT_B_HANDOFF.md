@@ -151,6 +151,21 @@ Para `enviar-link-pago`, utilizar preferentemente:
 }
 ```
 
+También está aceptado el formato ya configurado por Xendra:
+
+```json
+{
+  "cursos": ["codigo_canonico"],
+  "plan_code": "monthly_12",
+  "email": "lead@example.com",
+  "canal": "whatsapp"
+}
+```
+
+Debe contener exactamente un curso. `consultar_curso` acepta el nombre hablado
+y devuelve el valor reutilizable en `curso.codigo`. Los combos de dos cursos no
+forman parte de V0 y el endpoint los rechaza en vez de inventar un precio.
+
 Valores admitidos:
 
 - `monthly_12`: doce pagos mensuales.
