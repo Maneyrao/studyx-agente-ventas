@@ -38,6 +38,53 @@ const proposal: AgentATurnProposalV1 = {
 };
 
 describe('plannerless natural evidence regression', () => {
+  it('treats a prior refusal as turn-local and requires the final reminder on a later detail request', () => {
+    const current = {
+      schema_version: 1,
+      turn: {
+        batch_messages: [{ id: 'detail-after-refusal', text: 'Quiero ver el temario y todos los detalles.' }],
+        recent_turns: [],
+      },
+      customer: {
+        display_name: 'Ana', memories: [],
+        contact_intake: { nombre: 'Ana', apellido: null, correo: null, telefono: '+5491112345678' },
+      },
+      identity: null,
+      commercial_state: {
+        selected_offering_code: 'redes_informaticas', selected_payment_plan: null,
+        stage: 'course_selected' as const, call_preference: 'chat' as const,
+        call_offer_status: 'declined' as const, call_offer_count: 1 as const,
+        awaiting_reply: 'none' as const, payment_reported: false,
+      },
+      catalog: {
+        selected_offering: null, available_offerings: [], areas: [],
+        candidate_offerings: [], resolution: 'exact' as const, payment_plans: [],
+      },
+      capabilities: {
+        may_reply: true, may_offer_call: true, may_request_call_now: false,
+        may_present_payment_options: true, may_send_payment_link: false,
+        authorized_payment_plan: null, intake_status: 'known' as const,
+        intake_missing: ['apellido', 'correo'] as const,
+      },
+    } satisfies AgentAContextV1;
+
+    expect(evaluateCallOfferTurnPolicyV1({ context: current })).toMatchObject({
+      offer_required: true,
+      offer_allowed: true,
+      reason: 'SECOND_DETAILS_REQUEST',
+    });
+
+    const sameTurnRefusal: AgentAContextV1 = {
+      ...current,
+      turn: { ...current.turn, batch_messages: [{ id: 'refusal', text: 'No me llames, sigamos por chat.' }] },
+    };
+    expect(evaluateCallOfferTurnPolicyV1({ context: sameTurnRefusal })).toMatchObject({
+      offer_required: false,
+      offer_allowed: false,
+      reason: 'CALL_REJECTED',
+    });
+  });
+
   it('does not offer calls after a payment link was sent or payment was reported', () => {
     const current = {
       schema_version: 1,

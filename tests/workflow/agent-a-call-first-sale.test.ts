@@ -21,7 +21,6 @@ it('offers a call first, continues by chat, retains the plan and delivers the au
   };
   const turns: { customer: string; evidence: WorkflowTurnEvidenceV1 }[] = [];
   let paymentAuthorized = false;
-  let callDeclined = false;
   async function send(customer: string) {
     const evidence = await runWorkflowTurnV1({ ...identity, text: customer, providerMode: 'live' });
     turns.push({ customer, evidence });
@@ -48,10 +47,6 @@ it('offers a call first, continues by chat, retains the plan and delivers the au
       expect(db.deliveredLinks).toEqual([]);
       expect(db.decisions.some(d => d.businessActionType === 'send_payment_link')).toBe(false);
     }
-    if (callDeclined) {
-      expect(db.state?.callOfferStatus).toBe('declined');
-      expect(db.state?.callOfferCount, 'no new invitation after declining').toBe(1);
-    }
     return { evidence, db, text: evidence.authorizedMessages.join('\n') };
   }
 
@@ -61,9 +56,13 @@ it('offers a call first, continues by chat, retains the plan and delivers the au
   expect(result.db.state?.awaitingReply).toBe('call_or_chat');
   expect(result.text).toMatch(/llamad|llamar|tel[eé]fono|telef[oó]nic/iu);
 
-  callDeclined = true;
-  await send('No quiero una llamada, prefiero que sigamos por chat.');
-  await send('Quiero aprender para trabajar con redes en mi negocio; todavía estoy averiguando. ¿Cómo se cursa?');
+  result = await send('No quiero una llamada, prefiero que sigamos por chat.');
+  expect(result.db.state?.callOfferCount, 'no se repite en el turno del rechazo').toBe(1);
+  expect(result.text).not.toMatch(/te llamo|llamarte|una llamada|llamada telef/iu);
+
+  result = await send('Quiero aprender para trabajar con redes en mi negocio; todavía estoy averiguando. ¿Cómo se cursa?');
+  expect(result.db.state?.callOfferCount, 'una duda posterior activa el último recordatorio').toBe(2);
+  expect(result.text).toMatch(/llamad|llamar|tel[eé]fono|telef[oó]nic/iu);
   await send('¿Cuál es el precio y qué opciones de pago tienen?');
   result = await send('Elijo el plan de seis cuotas.');
   expect(result.db.state?.selectedPaymentPlan).toBe('monthly_6');

@@ -91,7 +91,7 @@ describe('resultados persistidos del Agente A', () => {
     expect(new Set(db.decisions.map((d) => d.promptVersion)).size).toBe(1);
   }, 600_000);
 
-  it('rechazo de llamada: queda registrado y no se vuelve a ofrecer', async () => {
+  it('rechazo de llamada: se respeta y sólo admite un recordatorio contextual posterior', async () => {
     requireBackend();
     const { conversacion, db } = await correr('llamada_rechazada', [
       'Me interesa Maquillaje Profesional',
@@ -102,11 +102,13 @@ describe('resultados persistidos del Agente A', () => {
 
     expect(db.state?.callPreference).toBe('chat');
     expect(db.state?.callOfferCount).toBeLessThanOrEqual(2);
-    // Ninguna oferta de llamada después del turno del rechazo.
+    // Un recordatorio posterior, disparado por la consulta de modalidad o
+    // precio; nunca una repetición inmediata ni una tercera invitación.
     const posteriores = conversacion.turns.slice(2)
       .flatMap((turn) => turn.evidence.authorizedMessages)
       .filter((text) => /te llamo|llamarte|una llamada|llamada telef/iu.test(text));
-    expect(posteriores, `reofreció: ${JSON.stringify(posteriores)}`).toHaveLength(0);
+    expect(posteriores, `recordatorios: ${JSON.stringify(posteriores)}`).toHaveLength(1);
+    expect(db.state?.callOfferCount).toBe(2);
     expect(conversacion.silentTurns).toBe(0);
   }, 600_000);
 

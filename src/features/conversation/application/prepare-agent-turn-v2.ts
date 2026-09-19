@@ -182,7 +182,10 @@ export async function prepareAgentTurnV2(input: {
     contact_intake: contactIntake,
     current_customer_messages: input.current_customer_messages,
     call_policy: {
-      may_offer_call: firstNameKnown && noActiveCall && callFacts?.last_decline_at == null,
+      // A refusal closes the invitation in that turn, not the whole sales
+      // conversation. The per-turn authority below still blocks an immediate
+      // repeat; the durable counter keeps the lifetime ceiling at two.
+      may_offer_call: firstNameKnown && noActiveCall,
       // A direct customer request remains valid after an earlier decline.
       may_request_call_now: noActiveCall,
     },

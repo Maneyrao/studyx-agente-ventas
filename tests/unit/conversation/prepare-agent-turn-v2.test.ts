@@ -131,6 +131,79 @@ describe('prepareAgentTurnV2', () => {
     expect(prepared.transition).toMatchObject({ call_offer_count: 1, call_offer_status: 'offered' });
   });
 
+  it('authorizes one later reminder after a prior call refusal when the new turn needs more detail', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['¿Qué incluye el curso? Quiero ver el temario completo.'],
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
+          course_reference: 'redes', confidence: 0.98,
+        },
+        response: {
+          messages: ['Te explico los contenidos principales de Redes Informáticas.'],
+          call_offer: 'Recuerda que también puedo llamarte para orientarte con más detalle.',
+        },
+        used_fact_ids: ['offering:redes_informaticas:name:v1'],
+      }),
+    }, {
+      state_store: store(state({
+        selected_offering_code: 'redes_informaticas', stage: 'course_selected',
+        call_preference: 'chat', call_offer_status: 'declined', call_offer_count: 1,
+      })),
+      call_facts: {
+        async loadClaimedCallFacts() {
+          return {
+            open_offer: null, active_call: null, last_call_result: null,
+            last_decline_at: '2026-09-02T15:55:00.000Z',
+          };
+        },
+      },
+      contact_intake: completeIntake,
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.response_messages).toEqual([
+      'Te explico los contenidos principales de Redes Informáticas.',
+      'Recuerda que también puedo llamarte para orientarte con más detalle.',
+    ]);
+    expect(prepared.transition).toMatchObject({
+      call_preference: 'chat', call_offer_count: 2, call_offer_status: 'offered',
+    });
+  });
+
+  it('does not repeat an invitation in the same turn where the customer refuses the call', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['No me llames, prefiero seguir por chat.'],
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'decline_call', secondary_moves: [], vetoes: [], confidence: 0.99,
+        },
+        response: {
+          messages: ['Seguimos por chat y te ayudo por aquí.'],
+          call_offer: 'Si quieres, también puedo llamarte para orientarte.',
+        },
+      }),
+    }, {
+      state_store: store(state({
+        selected_offering_code: 'redes_informaticas', stage: 'course_selected',
+        call_preference: 'unknown', call_offer_status: 'offered', call_offer_count: 1,
+        awaiting_reply: 'call_or_chat',
+      })),
+      contact_intake: completeIntake,
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.response_messages).toEqual(['Seguimos por chat y te ayudo por aquí.']);
+    expect(prepared.transition).toMatchObject({
+      call_preference: 'chat', call_offer_count: 1, call_offer_status: 'offered',
+      awaiting_reply: 'none',
+    });
+  });
+
   it('turns the model-owned response into a decision without creating a TurnPlan', async () => {
     const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },

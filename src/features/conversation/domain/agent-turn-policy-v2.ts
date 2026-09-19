@@ -178,6 +178,10 @@ export function authorizeAgentTurnV2(input: {
   const authoredMessages = [...proposal.response.messages];
   const currentText = (input.current_customer_messages ?? []).join('\n');
   const callRequestSupported = supportsCallRequestV1(currentText, state.awaiting_reply === 'call_or_chat');
+  const currentTurnRejectsCallOffer = supportsChatPreferenceV1(
+    currentText,
+    state.awaiting_reply === 'call_or_chat',
+  );
   const requestedCallNow = moves.has('request_call') && proposal.proposed_action.type === 'request_call_now'
     && input.call_policy.may_request_call_now && callRequestSupported
     && !proposal.move.vetoes.includes('call');
@@ -192,10 +196,11 @@ export function authorizeAgentTurnV2(input: {
     && state.stage !== 'closed'
     && state.stage !== 'payment_link_sent'
     && !plannedPaymentReported
+    && !currentTurnRejectsCallOffer
     && !proposal.move.vetoes.includes('call');
   // The model owns the invitation's wording and timing; the backend owns only
-  // the durable ceiling and consent boundary. A third/post-sale/rejected-call
-  // bubble is omitted while the useful narrative remains deliverable.
+  // the durable ceiling and consent boundary. A third, post-sale or same-turn
+  // rejected-call bubble is omitted while the useful narrative remains deliverable.
   const authorizedCallOffer = sanitizedCallOffer !== null
     && (!solicitsACall(sanitizedCallOffer, true) || mayDeliverCallOffer)
     ? sanitizedCallOffer
@@ -211,10 +216,7 @@ export function authorizeAgentTurnV2(input: {
   const callOfferCanAdvanceState = visibleCallOffer && mayDeliverCallOffer;
 
   const channelChoice = moves.has('continue_by_chat') || moves.has('decline_call');
-  const supportedChannelChoice = channelChoice && supportsChatPreferenceV1(
-    currentText,
-    state.awaiting_reply === 'call_or_chat',
-  );
+  const supportedChannelChoice = channelChoice && currentTurnRejectsCallOffer;
   if ((moves.has('request_call') || proposal.proposed_action.type === 'request_call_now')
       && !requestedCallNow) reasons.push('ACTION_NOT_AUTHORIZED');
   // Whether the model remembered the recommended first invitation is measured

@@ -132,7 +132,7 @@ describe('conversaciones completas por processInboundTurn', () => {
     });
   }, 600_000);
 
-  it('un rechazo explícito de llamada no vuelve a ofrecerla', async () => {
+  it('un rechazo explícito se respeta en ese turno y permite un único recordatorio contextual posterior', async () => {
     expect(backendUp, 'LABORATORIO_NO_DISPONIBLE').toBe(true);
 
     const evidencia = await runWorkflowConversationV1({
@@ -154,11 +154,12 @@ describe('conversaciones completas por processInboundTurn', () => {
       .flatMap((turn) => turn.evidence.authorizedMessages)
       .filter((text) => /llamada|llamarte|te llamo|telefónica/iu.test(text));
 
-    expect(ofrecimientos, `ofreció llamada tras el rechazo: ${JSON.stringify(ofrecimientos)}`)
-      .toHaveLength(0);
+    expect(ofrecimientos, `recordatorios posteriores: ${JSON.stringify(ofrecimientos)}`)
+      .toHaveLength(1);
     expect(evidencia.silentTurns).toBe(0);
     expect(countWorkflowAvailabilityFailuresV1({ turns: evidencia.turns, db })).toBe(0);
     expect(db.state?.callPreference).toBe('chat');
+    expect(db.state?.callOfferCount).toBe(2);
     expect(db.decisions.some((decision) => decision.businessActionType === 'request_call_now')).toBe(false);
   }, 600_000);
 });
