@@ -1427,7 +1427,7 @@ describe('Agent A Brain V1', () => {
     expect(body.instructions).toContain('Respond to their combined meaning');
     expect(body.instructions).toContain('Responde primero el pedido, la pregunta o la intención actual');
     expect(body.instructions).toContain('Pide sólo los campos que figuren en `capabilities.intake_missing`');
-    expect(body.instructions).toContain('entrega dos mensajes breves y naturales');
+    expect(body.instructions).toContain('Elige uno o dos mensajes breves y naturales');
     expect(body.instructions).not.toContain('control voice, rhythm and the choice of');
     expect(body.instructions).toContain('salen sólo de hechos visibles en `authorized_context`');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('greeting');

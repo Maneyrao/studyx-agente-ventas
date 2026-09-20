@@ -797,6 +797,9 @@ describe('claimBatch', () => {
         created_at: '2026-08-11T12:00:00.000Z',
         message_type: 'text',
       })),
+      contactIntake: async () => ({
+        nombre: 'Ariana', apellido: 'Paz', correo: 'a@example.test', telefono: '+5491112345678',
+      }),
     });
 
     const result = await claimBatch(input, deps);
@@ -807,6 +810,22 @@ describe('claimBatch', () => {
     expect(embedding.embed).not.toHaveBeenCalled();
     expect(memory.search).not.toHaveBeenCalled();
     expect(knowledge.search).not.toHaveBeenCalled();
+  });
+
+  it('leaves a direct call request to the brain when the stored phone is not internationally callable', async () => {
+    const result = await claimBatch(input, buildDeps({
+      messagesResult: [{
+        id: 'm-call-local', conversation_seq: 1, content: 'llamame ahora',
+        created_at: '2026-08-11T12:00:00.000Z', message_type: 'text',
+      }],
+      contactIntake: async () => ({
+        nombre: 'Thiago', apellido: 'Maneyro', correo: 't@example.test', telefono: null,
+      }),
+    }));
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.contact_intake_missing).toContain('telefono');
+    expect(result.deterministic_route).toBeNull();
   });
 
   it('classifies a burst made only of greetings before embedding or model work', async () => {
@@ -1779,6 +1798,9 @@ describe('claimBatch sales_context', () => {
         open_offer: { decision_id: 'decision-offer-1', offered_at: '2026-08-11T11:58:00.000Z' },
       }),
       now: () => '2026-08-11T12:00:00.000Z',
+      contactIntake: async () => ({
+        nombre: 'Ariana', apellido: 'Paz', correo: 'a@example.test', telefono: '+5491112345678',
+      }),
     });
 
     const result = await claimBatch(input, deps);
@@ -1833,6 +1855,9 @@ describe('claimBatch sales_context', () => {
         },
       }),
       now: () => '2026-08-11T12:00:00.000Z',
+      contactIntake: async () => ({
+        nombre: 'Ariana', apellido: 'Paz', correo: 'a@example.test', telefono: '+5491112345678',
+      }),
     });
 
     const result = await claimBatch(

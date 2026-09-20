@@ -78,6 +78,17 @@ describe('teléfono declarado', () => {
     expect(intake.telefono).toBe('+13055551234');
   });
 
+  it('un número local sin código de país sigue incompleto para pago y llamada', () => {
+    const intake = commercialIntakeFromContactRowV1({
+      phone: mintSyntheticPhone(123456789),
+      declared_phone: '1169004497',
+      name: 'Thiago Maneyro',
+      email: 'tmaneyro@example.test',
+    });
+
+    expect(intake.telefono).toBeNull();
+  });
+
   it('sin declararlo, un canal con teléfono real sigue alcanzando', () => {
     const intake = commercialIntakeFromContactRowV1({
       phone: '+13055551234', declared_phone: null, name: 'Ariana Paz', email: 'a@example.test',

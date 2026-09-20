@@ -643,7 +643,7 @@ export async function claimBatch(
     blocked: policy.blocked,
     now: (deps.now ?? (() => new Date().toISOString()))(),
   });
-  const deterministic_route = deterministicRoute({
+  let deterministic_route = deterministicRoute({
     batchMessages,
     policy,
     salesContext: initialSalesContext,
@@ -1047,6 +1047,17 @@ export async function claimBatch(
     ?? (await import('@/lib/repositories/contact-intake.repository')).loadContactIntakeV1;
   const contactIntake = await readIntake(facts.contact.id);
   const contactIntakeMissing = missingContactIntakeFieldsV1(contactIntake);
+  // A call fast path has no conversational recovery. If the provider cannot
+  // dial the stored number, let Agent A ask naturally for an international
+  // number instead of committing an action that reserveCallForDecision will
+  // reject after the customer has already been promised a call.
+  if (
+    contactIntakeMissing.includes('telefono')
+    && (deterministic_route === 'call_direct_request'
+      || deterministic_route === 'call_accepted_offer')
+  ) {
+    deterministic_route = null;
+  }
 
   return {
     outcome: 'claimed',

@@ -69,12 +69,12 @@ run('contact identity from delivered conversational requests', () => {
     await outbound(first, named, 'Para enviarte el link necesito tu apellido, correo y teléfono.');
     const completed = await processInboundMessage(answer(
       first,
-      'Maneyro, [1169004497](tel:1169004497) [tmaneyro@gmail.com](mailto:tmaneyro@gmail.com)',
+      'Maneyro\n[Tmaneyro@gmail.com](mailto:Tmaneyro@gmail.com)\n[1169004497](tel:1169004497)',
     ));
     expect(completed.contact.name).toBe('Thiago Maneyro');
     expect(await db!`
       SELECT name, email, declared_phone FROM contacts WHERE id = ${completed.contact.id}::uuid
-    `).toEqual([{ name: 'Thiago Maneyro', email: 'tmaneyro@gmail.com', declared_phone: '1169004497' }]);
+    `).toEqual([{ name: 'Thiago Maneyro', email: 'Tmaneyro@gmail.com', declared_phone: '1169004497' }]);
   });
 
   it('persists a full name and Markdown phone from the answer, independent of awaiting_reply and email', async () => {

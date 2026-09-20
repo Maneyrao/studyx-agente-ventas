@@ -241,9 +241,12 @@ export function extractContactNameAnswer(
     }
   }
 
-  // A phone link is transport formatting, not part of the written name. Only
-  // the leading identity segment is eligible; no scanning arbitrary prose.
-  const plain = text.replace(/\[([^\]]+)\]\(tel:[^)]+\)/gu, '$1').trim();
+  // Telegram renders phones and emails as Markdown links. Their labels are
+  // contact data, while the transport markup must not make a valid leading
+  // name/surname look like it is followed by arbitrary prose.
+  const plain = text
+    .replace(/\[([^\]]+)\]\((?:tel:|mailto:)[^)]+\)/giu, '$1')
+    .trim();
   const boundary = plain.search(new RegExp(`${EMAIL_PATTERN.source}|${DECLARED_PHONE_PATTERN.source}|[\\n,;.!?¿]`, 'u'));
   const candidate = (boundary < 0 ? plain : plain.slice(0, boundary)).trim();
   const remainder = boundary < 0 ? '' : plain.slice(boundary).replace(/^[\s,;.!]+/u, '');
@@ -325,6 +328,13 @@ export function isSyntheticChannelPhoneV1(phone: string | null | undefined): boo
   return (phone ?? '').startsWith(SYNTHETIC_CHANNEL_PHONE_PREFIX_V1);
 }
 
+/** A number that can safely cross the call-provider boundary. */
+export function isCallablePhoneE164V1(phone: string | null | undefined): boolean {
+  const normalized = (phone ?? '').trim();
+  return /^\+[1-9]\d{7,14}$/u.test(normalized)
+    && !isSyntheticChannelPhoneV1(normalized);
+}
+
 export interface ContactIntakeRowV1 {
   /** Identidad del canal. Puede ser sintética; nunca se pisa. */
   readonly phone: string | null;
@@ -356,11 +366,11 @@ export function commercialIntakeFromContactRowV1(row: ContactIntakeRowV1 | null)
   // sea real: WhatsApp entrega un número de verdad y no tiene sentido volver a
   // pedirlo. Un `+999…` no acredita nada y queda como faltante.
   const declared = (row.declared_phone ?? '').trim();
-  const channelPhone = isSyntheticChannelPhoneV1(row.phone) ? null : row.phone;
+  const channelPhone = isCallablePhoneE164V1(row.phone) ? row.phone : null;
   return {
     nombre: identity?.nombre || null,
     apellido: identity?.apellido || null,
     correo: row.email,
-    telefono: declared.length > 0 ? declared : channelPhone,
+    telefono: isCallablePhoneE164V1(declared) ? declared : channelPhone,
   };
 }
