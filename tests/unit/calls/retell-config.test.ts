@@ -92,6 +92,7 @@ describe('loadXendraVoiceConfig', () => {
       orchestratorSecret: 'orchestrator-secret',
       advisorName: 'Sofía',
       closerNumber: '+5491144445555',
+      telegramCanaryContactId: null,
       requestTimeoutMs: 3500,
     });
   });
@@ -107,8 +108,21 @@ describe('loadXendraVoiceConfig', () => {
       orchestratorSecret: xendra.XENDRA_ORCHESTRATOR_SECRET,
       advisorName: '',
       closerNumber: '',
+      telegramCanaryContactId: null,
       requestTimeoutMs: 5000,
     });
+  });
+
+  it('accepts one exact Telegram canary contact id and rejects malformed values', () => {
+    const contactId = '55c26c0f-90e1-4d5f-8298-da62e77f5b38';
+    expect(loadXendraVoiceConfig({
+      ...xendra,
+      XENDRA_TELEGRAM_CANARY_CONTACT_ID: contactId,
+    }).telegramCanaryContactId).toBe(contactId);
+    expect(() => loadXendraVoiceConfig({
+      ...xendra,
+      XENDRA_TELEGRAM_CANARY_CONTACT_ID: 'all',
+    })).toThrow('INVALID_XENDRA_CONFIG:XENDRA_TELEGRAM_CANARY_CONTACT_ID');
   });
 
   it.each(['XENDRA_CALL_URL', 'XENDRA_ORCHESTRATOR_SECRET'])(

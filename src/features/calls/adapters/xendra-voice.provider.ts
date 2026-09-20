@@ -42,16 +42,18 @@ export class XendraVoiceProvider implements VoiceProvider {
       throw new ConfirmedVoiceProviderError('CALL_CONTEXT_ID_MISMATCH');
     }
 
-    try {
-      await assertRealSideEffectAllowed(this.dependencies.sandboxLookup, {
-        contactId: input.contactId,
-        effect: 'xendra.create_phone_call',
-      });
-    } catch (error) {
-      if (error instanceof RealSideEffectRejectedError) {
-        throw new ConfirmedVoiceProviderError(error.code);
+    if (input.contactId !== this.config.telegramCanaryContactId) {
+      try {
+        await assertRealSideEffectAllowed(this.dependencies.sandboxLookup, {
+          contactId: input.contactId,
+          effect: 'xendra.create_phone_call',
+        });
+      } catch (error) {
+        if (error instanceof RealSideEffectRejectedError) {
+          throw new ConfirmedVoiceProviderError(error.code);
+        }
+        throw error;
       }
-      throw error;
     }
 
     const body = {

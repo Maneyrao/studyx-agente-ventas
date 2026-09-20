@@ -49,6 +49,7 @@ describe('dispatch route provider selection', () => {
       orchestratorSecret: 'test-secret',
       advisorName: '',
       closerNumber: '',
+      telegramCanaryContactId: null,
       requestTimeoutMs: 1000,
     };
     expect(buildDispatchVoiceProvider(settings, db, {

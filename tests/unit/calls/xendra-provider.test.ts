@@ -14,6 +14,7 @@ const config: XendraVoiceConfig = {
   orchestratorSecret: 'test-orchestrator-secret',
   advisorName: 'Sofía',
   closerNumber: '+5491144445555',
+  telegramCanaryContactId: null,
   requestTimeoutMs: 1_000,
 };
 
@@ -135,6 +136,22 @@ describe('XendraVoiceProvider.placeCall', () => {
     await expect(provider(fetchImpl, 'telegram_sandbox').placeCall(input()))
       .rejects.toMatchObject({ code: 'CONTACT_IS_SANDBOX', kind: 'confirmed' });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('allows only the explicitly configured Telegram canary contact to dispatch', async () => {
+    const request = input();
+    const fetchImpl = vi.fn<typeof fetch>(async () => json({ ok: true, call_id: 'call_canary_1' }));
+    const canary = new XendraVoiceProvider({
+      ...config,
+      telegramCanaryContactId: request.contactId,
+    }, {
+      fetch: fetchImpl,
+      now: () => new Date('2026-09-13T12:00:00.000Z'),
+      sandboxLookup: { findSandboxProvider: vi.fn(async () => 'telegram_sandbox') },
+    });
+
+    await expect(canary.placeCall(request)).resolves.toMatchObject({ providerCallId: 'call_canary_1' });
+    expect(fetchImpl).toHaveBeenCalledOnce();
   });
 
   it('never looks up or cancels through an unsupported Xendra endpoint', async () => {
