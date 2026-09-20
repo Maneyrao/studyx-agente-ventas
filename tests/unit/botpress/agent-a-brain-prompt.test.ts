@@ -76,7 +76,7 @@ describe('Agent A Brain prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v33');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v68');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v69');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('You lead the\nconversation; the backend does not write or rewrite your narrative');
     expect(instructions).not.toContain('The sales\nphases are a map, not a blocking script');
@@ -195,6 +195,31 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).toContain('"call_offer":{"recommended":true,"reason":"FIRST_OFFER_DUE"}');
     expect(instructions).not.toContain('Te llamamos');
     expect(instructions).toContain('Primera invitación obligatoria');
+  });
+
+  it('treats a named catalog family as enough interest for the first call offer', () => {
+    const current = context();
+    current.customer.display_name = 'Thiago';
+    current.continuity = {
+      assistant_has_spoken: true,
+      first_name_status: 'known',
+      last_agent_reply: 'Qué te gustaría aprender?',
+    };
+    current.turn.batch_messages[0].text = 'Me interesa saber de algo vinculado con ingles';
+    current.commercial_state.selected_offering_code = null;
+    current.commercial_state.stage = 'exploring';
+    current.catalog.selected_offering = null;
+    current.catalog.resolution = 'no_catalog_intent';
+    current.catalog.candidate_offerings = [];
+    current.catalog.available_offerings = [
+      { code: 'ingles_1', fact_id: 'offering:ingles_1:name:v1', display_name: 'Inglés 1', area_code: 'idiomas' },
+      { code: 'ingles_2', fact_id: 'offering:ingles_2:name:v1', display_name: 'Inglés 2', area_code: 'idiomas' },
+      { code: 'ingles_3', fact_id: 'offering:ingles_3:name:v1', display_name: 'Inglés 3', area_code: 'idiomas' },
+    ];
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+
+    expect(instructions).toContain('"call_offer":{"recommended":true,"reason":"FIRST_OFFER_DUE"}');
   });
 
   it('makes the initial first-name instruction salient without turning it into a reply blocker', () => {

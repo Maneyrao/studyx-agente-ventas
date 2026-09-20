@@ -695,6 +695,66 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
+  it('retries one transient DeepSeek timeout before using the technical fallback', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off',
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.conversation_state_v1 = {
+      selected_offering_code: 'ingles_1', selected_payment_plan: null,
+      stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 2,
+    };
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 1,
+      offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas', aliases: ['ingles'] }],
+      injection_suspected_count: 0,
+    };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    claimed.contact.name = 'Thiago';
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+    actionSpies.agentABrainDeepSeek
+      .mockRejectedValueOnce(Object.assign(new Error('timeout'), { code: 'BRAIN_DEEPSEEK_TIMEOUT' }));
+
+    const stepNames: string[] = [];
+    const step = Object.assign(
+      async (name: string, run: () => Promise<unknown>) => {
+        stepNames.push(name);
+        return run();
+      },
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
+    expect(stepNames).toContain('retry-agent-a-turn-proposal-v1-deepseek');
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      agent_turn_v2: {
+        proposal: {
+          response: { messages: ['Perfecto, seguimos por chat.', '¿Qué aspecto querés revisar?'] },
+        },
+      },
+      model: { provider: 'deepseek-direct', model: 'deepseek-v4-flash' },
+    });
+    const retryLog = vi.mocked(console.info).mock.calls
+      .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
+      .find((entry) => entry.event === 'studyx.turn.agent_a_brain_retry');
+    expect(retryLog).toMatchObject({ reason: 'BRAIN_DEEPSEEK_TIMEOUT', attempt: 2 });
+  });
+
   it('does not use Botpress managed extraction when DeepSeek fails', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {

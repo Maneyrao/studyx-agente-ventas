@@ -51,6 +51,31 @@ function suppliesFirstName(text: string): boolean {
   return /\b(?:soy|me llamo|mi nombre es)\s+[\p{L}]{2,}/iu.test(text);
 }
 
+const GENERIC_CATALOG_WORDS = new Set([
+  'academia', 'curso', 'cursos', 'online', 'virtual', 'integral', 'especialista',
+]);
+
+/**
+ * A family such as "inglés" or an area such as "tecnología" is already a
+ * concrete customer need even when it intentionally resolves to several
+ * courses. This only decides whether to remind the model about the first call
+ * offer; it never selects a course or writes customer copy.
+ */
+function mentionsCatalogInterest(context: AgentAContextV1, text: string): boolean {
+  const customerTokens = new Set(
+    normalized(text).split(/[^a-z0-9]+/u).filter((token) => token.length >= 4),
+  );
+  const catalogLabels = [
+    ...context.catalog.available_offerings.map((offering) => offering.display_name),
+    ...context.catalog.areas.map((area) => area.display_name),
+  ];
+  return catalogLabels.some((label) => normalized(label)
+    .split(/[^a-z0-9]+/u)
+    .some((token) => token.length >= 4
+      && !GENERIC_CATALOG_WORDS.has(token)
+      && customerTokens.has(token)));
+}
+
 function directPurchase(text: string): boolean {
   const value = normalized(text);
   return /\b(?:mandame|enviame|pasame|compartime)\s+(?:el\s+)?(?:link|enlace)\b/u.test(value)
@@ -169,6 +194,7 @@ export function evaluateCallOfferTurnPolicyV1(input: {
       || context.commercial_state.selected_offering_code !== null
       || (context.catalog.resolution === 'ambiguous'
         && context.catalog.candidate_offerings.length > 0)
+      || mentionsCatalogInterest(context, text)
       || Boolean(input.proposed_course_reference?.trim());
     return nameKnown && needKnown
       ? { offer_required: true, offer_allowed: true, reason: 'FIRST_OFFER_DUE', customer_signal: customerSignal }

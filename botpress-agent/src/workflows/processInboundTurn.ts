@@ -285,6 +285,12 @@ function errorCode(error: unknown): string {
   return 'UNKNOWN_ERROR'
 }
 
+function isTransientDeepSeekFailure(code: string): boolean {
+  return code === 'BRAIN_DEEPSEEK_TIMEOUT'
+    || code === 'BRAIN_DEEPSEEK_NETWORK_ERROR'
+    || /^BRAIN_DEEPSEEK_HTTP_5\d\d$/u.test(code)
+}
+
 function resultFromState(state: z.infer<typeof workflowStateSchema>, traceId: string): WorkflowResult {
   return {
     status: state.phase,
@@ -668,19 +674,39 @@ export const processInboundTurn = new Workflow({
         if (typeof deepSeekApiKey !== 'string' || deepSeekApiKey.length === 0) {
           throw new StudyxHttpError('DEEPSEEK_API_KEY_MISSING', false)
         }
-        let generated = await step(
-          'generate-agent-a-turn-proposal-v1-deepseek',
-          () => generateDeepSeekAgentATurnProposalV1({
+        const generateDeepSeekProposal = () => generateDeepSeekAgentATurnProposalV1({
             context: agentABrainContext,
             apiKey: deepSeekApiKey,
             signal,
             model: typeof configuration.agentABrainDeepSeekModel === 'string'
               ? configuration.agentABrainDeepSeekModel
               : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
-          }),
-          { maxAttempts: 1 },
-        )
-        timings.agent_a_brain_ms = generated.latency_ms
+            timeout_ms: 8_000,
+          })
+        const brainStartedAt = Date.now()
+        let generated
+        try {
+          generated = await step(
+            'generate-agent-a-turn-proposal-v1-deepseek',
+            generateDeepSeekProposal,
+            { maxAttempts: 1 },
+          )
+        } catch (firstError) {
+          const firstFailureCode = errorCode(firstError)
+          if (!isTransientDeepSeekFailure(firstFailureCode)) throw firstError
+          safeLog('studyx.turn.agent_a_brain_retry', {
+            trace_id: input.trace_id,
+            turn_id: owned.turn_id,
+            reason: firstFailureCode,
+            attempt: 2,
+          })
+          generated = await step(
+            'retry-agent-a-turn-proposal-v1-deepseek',
+            generateDeepSeekProposal,
+            { maxAttempts: 1 },
+          )
+        }
+        timings.agent_a_brain_ms = Date.now() - brainStartedAt
 
         if (brainShadow) {
           const currentCount = agentABrainContext.commercial_state.call_offer_count
