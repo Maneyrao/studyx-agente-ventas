@@ -1088,9 +1088,41 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           ? null
           : preparedAgentTurn !== null ? 'agent_turn_v2' : 'conversation_pipeline_v1';
 
-      if (verdict.content !== null && !partialVetoOnPreparedTurn) {
+      const canRetainSafeContent = verdict.content !== null
+        && (!partialVetoOnPreparedTurn || !initialOfferLostInformation);
+      if (canRetainSafeContent) {
         finalResponse = verdict.content;
-        if (preparedAgentTurn !== null && verdict.removed.length > 0) {
+        if (partialVetoOnPreparedTurn) {
+          // La transición se calculó sobre texto que ya no se entregará, por
+          // eso no puede persistirse. Pero el texto restante ya atravesó el
+          // mismo guard comercial y sí es seguro: conservarlo evita convertir
+          // una objeción válida en "hubo un problema". El backend no redacta
+          // nada ni altera la voz del agente; únicamente descarta el efecto
+          // que perdió su evidencia visible.
+          counter.increment('egress_partial_veto_transition_dropped', 1);
+          logger.warn({
+            event: 'orchestration.egress.partial_veto_transition_dropped',
+            trace_id: validatedInput.trace_id,
+            turn_id: turn.id,
+            reason: verdict.violations[0]?.code ?? 'COMMERCIAL_TRUTH_VIOLATION',
+            ...(partialVetoRefusedAuthority ? { refused_authority: partialVetoRefusedAuthority } : {}),
+          });
+          decision = parseDecisionAnyVersion({
+            ...decision,
+            response: finalResponse,
+            response_type: 'commercial_reply',
+            business_action: null,
+            memory_candidates: [],
+            missing_information: [],
+            next_state: 'completed',
+          });
+          committedBusinessAction = null;
+          preparedPipeline = null;
+          preparedAgentTurn = null;
+          authorizedUrls = [];
+          authorizedProtectedFacts = [];
+          effectiveAuthorizedOfferingCode = null;
+        } else if (preparedAgentTurn !== null && verdict.removed.length > 0) {
           const retainedParts = preparedAgentTurn.response_messages
             .map((content) => inspectCommercialText(content).content)
             .filter((content): content is string => content !== null && content.trim().length > 0);

@@ -1757,7 +1757,8 @@ export function validateAgentATurnProposalV1(input: {
   }
 
   // V4 — la acción y sus precondiciones.
-  const claimsIncompleteIntakeAsRecorded = (input.context.capabilities.intake_missing ?? []).length > 0
+  const missingIntakeFields = new Set<string>(input.context.capabilities.intake_missing ?? []);
+  const claimsIncompleteIntakeAsRecorded = missingIntakeFields.size > 0
     && input.proposal.response.messages.some((message) => {
       const normalized = message.normalize('NFD')
         .replace(/[\u0300-\u036f]/gu, '')
@@ -1773,7 +1774,21 @@ export function validateAgentATurnProposalV1(input: {
         );
         const claim = /\b(?:quedo|registre|registro|registrado|registrada|guarde|guardo|guardado|guardada|tengo|tenemos)\w*\b[^.!?]{0,60}\b(?:datos|nombre|apellido|correo|email|telefono)\b/u;
         const negatedClaim = /\b(?:no|aun\s+no|todavia\s+no)\b[^.!?]{0,24}\b(?:quedo|registre|registro|registrado|registrada|guarde|guardo|guardado|guardada|tengo|tenemos)\w*\b/u;
-        return claim.test(assertiveClause) && !negatedClaim.test(assertiveClause);
+        if (!claim.test(assertiveClause) || negatedClaim.test(assertiveClause)) return false;
+
+        // Validar por campo, no como un bloque todo-o-nada. Si nombre y
+        // teléfono ya son durables, el agente puede confirmarlos aunque aún
+        // falte el correo. "Tus datos" sí afirma completitud y conserva el
+        // cierre estricto mientras exista cualquier campo faltante.
+        if (/\b(?:todos?\s+(?:tus?\s+)?datos|tus?\s+datos|los\s+datos)\b/u.test(assertiveClause)) {
+          return true;
+        }
+        const assertedFields = new Set<string>();
+        if (/\bnombre\b/u.test(assertiveClause)) assertedFields.add('nombre');
+        if (/\bapellido\b/u.test(assertiveClause)) assertedFields.add('apellido');
+        if (/\b(?:correo|email)\b/u.test(assertiveClause)) assertedFields.add('correo');
+        if (/\btelefono\b/u.test(assertiveClause)) assertedFields.add('telefono');
+        return [...assertedFields].some((field) => missingIntakeFields.has(field));
       });
     });
   if (claimsIncompleteIntakeAsRecorded) {

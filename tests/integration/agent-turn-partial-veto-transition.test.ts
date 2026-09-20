@@ -52,6 +52,8 @@ run('partial commercial-truth veto', () => {
       decision: seeded.placeholderDecision as never, model: seeded.model as never,
     });
     expect(committed.status).toBe('committed');
+    expect(committed.outbound?.content).toBe('Tenemos Entrenamiento Funcional.');
+    expect(committed.conversation_effects).toBeUndefined();
     expect(committed.outbound?.content).not.toContain('USD 47');
     const state = await new PostgresConversationStateStoreV1(sql).load(
       'studyx', seeded.conversation_id, seeded.contact_id,

@@ -747,7 +747,7 @@ describe('validación de la propuesta del turno', () => {
  * exactamente el mecanismo que ya existe para un borrador inaceptable.
  */
 describe('intake parcial observable', () => {
-  it('rechaza afirmar que un dato quedó registrado mientras faltan campos', () => {
+  it('permite confirmar un campo realmente persistido aunque todavía falten otros', () => {
     const current = context({
       commercial_state: { ...context().commercial_state, awaiting_reply: 'contact_details' },
       capabilities: { ...context().capabilities, may_offer_call: false, intake_missing: ['apellido', 'correo'] },
@@ -756,6 +756,25 @@ describe('intake parcial observable', () => {
       proposal: proposal({
         move: { schema_version: 1, move: 'provide_contact_details', secondary_moves: [], vetoes: [], confidence: 1 },
         response: { messages: ['Quedó registrado tu nombre. ¿Me pasás tu apellido y correo?'], call_offer: null },
+        used_fact_ids: [],
+      }), context: current, planned_fact_ids: [],
+      rejection_id: '11111111-1111-4111-8111-111111111111',
+    });
+    expect(rejection?.rejections ?? []).not.toContainEqual({ code: 'UNSUPPORTED_OPERATIONAL_CLAIM', subject: 'contact_details' });
+  });
+
+  it.each([
+    'Ya registré todos tus datos. ¿Avanzamos?',
+    'Ya tengo tu apellido y correo registrados.',
+  ])('rechaza afirmar datos que todavía faltan: %s', (message) => {
+    const current = context({
+      commercial_state: { ...context().commercial_state, awaiting_reply: 'contact_details' },
+      capabilities: { ...context().capabilities, may_offer_call: false, intake_missing: ['apellido', 'correo'] },
+    });
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: { schema_version: 1, move: 'provide_contact_details', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: [message], call_offer: null },
         used_fact_ids: [],
       }), context: current, planned_fact_ids: [],
       rejection_id: '11111111-1111-4111-8111-111111111111',

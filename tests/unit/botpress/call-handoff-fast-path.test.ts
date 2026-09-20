@@ -18,6 +18,7 @@ function claimed(overrides: {
   acceptedOffer?: boolean;
   course?: string | null;
   route?: ClaimedTurn['deterministic_route'];
+  awaitingReply?: NonNullable<ClaimedTurn['conversation_state_v1']>['awaiting_reply'];
 }): ClaimedTurn {
   const texts = overrides.texts ?? ['Llamame'];
   return {
@@ -78,6 +79,17 @@ function claimed(overrides: {
       last_call_result: null,
     },
     deterministic_route: overrides.route ?? null,
+    conversation_state_v1: {
+      selected_offering_code: null,
+      selected_payment_plan: null,
+      stage: 'exploring',
+      call_preference: 'unknown',
+      call_offer_status: overrides.acceptedOffer ? 'offered' : 'not_offered',
+      call_offer_count: overrides.acceptedOffer ? 1 : 0,
+      awaiting_reply: overrides.awaitingReply ?? (overrides.acceptedOffer ? 'call_or_chat' : 'none'),
+      payment_reported: false,
+      version: 1,
+    },
     existing_result: null,
   } as unknown as ClaimedTurn;
 }
@@ -142,6 +154,16 @@ describe('matchCallHandoffFastPath', () => {
       response_type: 'call_confirmation',
       business_action: { type: 'request_call_now', reason: 'accepted_offer' },
     });
+  });
+
+  it('does not reinterpret a payment-data confirmation as acceptance of an older call offer', () => {
+    expect(matchCallHandoffFastPath(claimed({
+      texts: ['Sí'],
+      allowedActions: ['request_call_now'],
+      acceptedOffer: true,
+      awaitingReply: 'payment_confirmation',
+      route: 'call_accepted_offer',
+    }))).toBeNull();
   });
 
   it('a bare acceptance without an offer asks one clarification and never calls', () => {

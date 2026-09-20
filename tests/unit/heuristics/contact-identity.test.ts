@@ -26,6 +26,13 @@ describe('extractContactIdentity', () => {
     expect(extractContactIdentity('mi nombre es Diego Farías, gracias').name).toBe('Diego Farías');
   });
 
+  it('changes only the first name when a customer corrects it without retracting the stored surname', () => {
+    expect(extractContactIdentity(
+      'Mentira, me confundí con mi nombre. Mi nombre es Luke',
+      'Lucas Pierella',
+    ).name).toBe('Luke Pierella');
+  });
+
   it('captures a leading first name when the same turn continues with a personal study goal', () => {
     expect(extractContactIdentity('Thiago. Busco algo de tecnología para conseguir trabajo').name)
       .toBe('Thiago');
@@ -237,6 +244,14 @@ describe('extractContactNameAnswer', () => {
       'Para enviarte el link necesito tu apellido, correo y teléfono.',
       { firstName: 'Thiago', surname: null },
     )).toEqual({ firstName: 'Thiago', surname: 'Maneyro', name: 'Thiago Maneyro' });
+  });
+
+  it('accepts a naturally repeated full name after a delivered confirmation request', () => {
+    expect(extractContactNameAnswer(
+      'Luke Pierella, ya te dije',
+      'Me confirmas tu nombre y apellido?',
+      { firstName: 'Luke', surname: null },
+    )).toEqual({ firstName: 'Luke', surname: 'Pierella', name: 'Luke Pierella' });
   });
 
   it('captures the Telegram surname when mail and phone links arrive on following lines', () => {

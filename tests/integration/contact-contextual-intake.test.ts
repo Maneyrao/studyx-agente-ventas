@@ -46,6 +46,33 @@ async function outbound(initial: InboundEnvelope, context: IngestContext, conten
 const fullRequest = 'Para dejarlo registrado necesito tu nombre, apellido y teléfono. ¿Me los pasás?';
 
 run('contact identity from delivered conversational requests', () => {
+  it('preserves the durable surname when the customer corrects only the first name', async () => {
+    const first = envelope();
+    first.message.text = 'Me llamo Lucas Pierella';
+    const opened = await processInboundMessage(first);
+    expect(opened.contact.name).toBe('Lucas Pierella');
+
+    const corrected = await processInboundMessage(answer(
+      first,
+      'Mentira, me confundí con mi nombre. Mi nombre es Luke',
+    ));
+    expect(corrected.contact.name).toBe('Luke Pierella');
+    expect(await db!`SELECT name FROM contacts WHERE id = ${opened.contact.id}::uuid`)
+      .toEqual([{ name: 'Luke Pierella' }]);
+  });
+
+  it('persists a repeated natural full-name answer instead of asking for the surname again', async () => {
+    const first = envelope();
+    first.message.text = 'Me llamo Luke';
+    const opened = await processInboundMessage(first);
+    await outbound(first, opened, 'Me confirmas tu nombre y apellido?');
+
+    const completed = await processInboundMessage(answer(first, 'Luke Pierella, ya te dije'));
+    expect(completed.contact.name).toBe('Luke Pierella');
+    expect(await db!`SELECT name FROM contacts WHERE id = ${opened.contact.id}::uuid`)
+      .toEqual([{ name: 'Luke Pierella' }]);
+  });
+
   it('persists a leading first name when the same turn continues with the study goal', async () => {
     const first = envelope();
     first.message.text = 'Thiago. Busco algo de tecnología para conseguir trabajo';

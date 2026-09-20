@@ -82,6 +82,11 @@ export function matchCallHandoffFastPath(claimed: ClaimedTurn): Decision | null 
   }
 
   if (claimed.deterministic_route === 'call_accepted_offer') {
+    // Un "sí" responde a la pregunta conversacional vigente, no a cualquier
+    // oferta de llamada que todavía siga abierta en el ledger. Durante la
+    // confirmación de datos o pago debe continuar por el modelo.
+    const awaitingReply = claimed.conversation_state_v1?.awaiting_reply
+    if (awaitingReply !== undefined && awaitingReply !== 'call_or_chat') return null
     if (!allowed.includes('request_call_now') || !claimed.sales_context.accepted_call_offer) return null
     return callConfirmation('accepted_offer', course)
   }

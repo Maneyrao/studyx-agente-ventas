@@ -197,6 +197,16 @@ export function extractContactIdentity(
     }
   }
 
+  // Una corrección explícita de nombre no retracta el apellido ya durable.
+  // `contacts.name` guarda ambos valores en un único string; reemplazar
+  // "Lucas Pierella" por "Luke" convertía el apellido en un dato faltante y
+  // bloqueaba luego el link de pago. Un nombre completo nuevo sí reemplaza
+  // ambos componentes, mientras que un único token conserva el apellido.
+  if (name !== null && existingName && !/\s/u.test(name.trim())) {
+    const previous = splitFullName(existingName);
+    if (previous.apellido) name = `${name.trim()} ${previous.apellido}`;
+  }
+
   return { name, email, declaredPhone };
 }
 
@@ -246,6 +256,7 @@ export function extractContactNameAnswer(
   // name/surname look like it is followed by arbitrary prose.
   const plain = text
     .replace(/\[([^\]]+)\]\((?:tel:|mailto:)[^)]+\)/giu, '$1')
+    .replace(/(?:[,;.!?…]\s*)?(?:ya\s+te\s+(?:lo\s+)?dije|te\s+lo\s+dije)\s*[.!?…]*$/iu, '')
     .trim();
   const boundary = plain.search(new RegExp(`${EMAIL_PATTERN.source}|${DECLARED_PHONE_PATTERN.source}|[\\n,;.!?¿]`, 'u'));
   const candidate = (boundary < 0 ? plain : plain.slice(0, boundary)).trim();
