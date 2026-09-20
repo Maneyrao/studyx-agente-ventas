@@ -649,9 +649,17 @@ export const processInboundTurn = new Workflow({
       conversationPipelineEnabled: owned.features?.conversation_pipeline_v1_enabled === true,
       singleRoute: owned.features?.agent_a_single_route === true,
     })
+    const deterministicCallHandoff = commercialRoute.kind === 'deterministic'
+      && commercialRoute.origin === 'call_handoff'
+      && commercialRoute.decision.business_action?.type === 'request_call_now'
     const brainEligible = conversationalBaseEligible
       && (brainAuthoritative || brainShadow)
       && (owned.deterministic_route === null || brainAuthoritative)
+      // An explicit, already-authorized call request is an action boundary,
+      // not a second conversational interpretation. Waiting for DeepSeek here
+      // can strand the claimed batch before commit and leave the customer in
+      // silence even though the requested action is unambiguous.
+      && !deterministicCallHandoff
       && agentABrainContext !== null
 
     if (agentABrainContext !== null) {
@@ -961,6 +969,7 @@ export const processInboundTurn = new Workflow({
 
     const deterministicPipelineMove = conversationalBaseEligible
       && (legacyPipelineEligible || brainAuthoritative)
+      && !deterministicCallHandoff
       && (owned.deterministic_route === 'call_direct_request'
         || owned.deterministic_route === 'call_accepted_offer')
       ? {

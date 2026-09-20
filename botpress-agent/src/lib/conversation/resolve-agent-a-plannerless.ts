@@ -127,6 +127,43 @@ function claimsImmediatePaymentLinkDelivery(proposal: AgentATurnProposalV1): boo
 }
 
 /**
+ * `move` and `proposed_action` are two views of the same model decision. When
+ * the model explicitly requests the payment link but omits the redundant
+ * action field, materialize only the action that durable capabilities already
+ * authorize. This does not infer intent or write customer-facing copy.
+ */
+function materializeAuthorizedPaymentAction<T extends AgentAProposalEnvelopeV1>(input: {
+  readonly initial: T
+  readonly context: AgentAContextV1
+}): T {
+  if (input.initial.proposal.proposed_action.type !== 'none') return input.initial
+  const moves = new Set([
+    input.initial.proposal.move.move,
+    ...input.initial.proposal.move.secondary_moves,
+  ])
+  if (!moves.has('request_payment_link')) return input.initial
+  if (input.initial.proposal.move.vetoes.includes('payment_link')
+    || input.initial.proposal.move.vetoes.includes('purchase')) return input.initial
+  if (!input.context.capabilities.may_send_payment_link
+    || (input.context.capabilities.intake_missing ?? []).length > 0) return input.initial
+  const offeringCode = input.context.commercial_state.selected_offering_code
+  const paymentPlan = input.initial.proposal.move.payment_plan
+    ?? input.context.commercial_state.selected_payment_plan
+  if (offeringCode === null || paymentPlan === null) return input.initial
+  return {
+    ...input.initial,
+    proposal: {
+      ...input.initial.proposal,
+      proposed_action: {
+        type: 'send_payment_link',
+        offering_code: offeringCode,
+        payment_plan: paymentPlan,
+      },
+    },
+  }
+}
+
+/**
  * Denying a side effect does not require a second author to replace safe
  * customer-facing copy. When the only defect is an early payment action, the
  * boundary can remove that capability while preserving DeepSeek's wording.
@@ -314,8 +351,12 @@ export async function resolveAgentAPlannerlessProposalV2<
   readonly rejection: TurnRejectionV1 | null
 }> {
   const factIds = authorizedFactIds(input.context)
+  const boundInitial = materializeAuthorizedPaymentAction({
+    initial: input.initial,
+    context: input.context,
+  })
   const prepared = preparePlannerlessProposal({
-    initial: input.initial, context: input.context, authorized_fact_ids: factIds,
+    initial: boundInitial, context: input.context, authorized_fact_ids: factIds,
     rejection_id: input.rejection_id,
   })
   const rejection = prepared.rejection

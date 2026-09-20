@@ -625,6 +625,37 @@ describe('buildAgentAContextV1', () => {
     });
   });
 
+  it('vincula una confirmación explícita del link con el pago pendiente ya completo', () => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'Está correcto, pásame el link',
+    };
+    claimed.contact_intake_missing = [];
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      selected_offering_code: 'redes-informaticas',
+      selected_payment_plan: 'monthly_6',
+      stage: 'plan_selected',
+      awaiting_reply: 'contact_details',
+    };
+
+    expect(bindCurrentConversationalIntentToMoveV1({
+      schema_version: 1,
+      move: 'provide_contact_details',
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 0.91,
+    }, claimed)).toEqual({
+      schema_version: 1,
+      move: 'request_payment_link',
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 1,
+    });
+  });
+
   it('conserva una postergación de pago que el mensaje actual sí expresa', () => {
     const claimed = claimedTurn();
     claimed.catalog_resolution = { kind: 'no_catalog_intent' };

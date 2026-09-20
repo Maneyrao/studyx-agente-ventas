@@ -2275,7 +2275,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('does not execute a canned call route when the authoritative brain is unavailable', async () => {
+  it('executes an authorized direct call without waiting for the authoritative brain', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -2283,30 +2283,19 @@ describe('processInboundTurn hot path', () => {
       agent_a_brain_v1_enabled: true,
       agent_a_brain_v1_shadow: false,
     };
-    claimed.deterministic_route = 'call_accepted_offer';
+    claimed.deterministic_route = 'call_direct_request';
     claimed.conversation_state_v1 = {
-      selected_offering_code: 'redes-informaticas', selected_payment_plan: null,
-      stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'offered',
+      selected_offering_code: null, selected_payment_plan: null,
+      stage: 'exploring', call_preference: 'unknown', call_offer_status: 'offered',
       call_offer_count: 1, awaiting_reply: 'call_or_chat', version: 2,
     };
-    claimed.context.batch_messages[0].content = 'Sí, llamame';
+    claimed.context.batch_messages[0].content = 'Llamame';
+    claimed.sales_context.allowed_actions = ['request_call_now'];
     claimed.catalog_index = { as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0 };
     actionSpies.claim.mockResolvedValue(claimed);
     secrets.DEEPSEEK_API_KEY = 'deepseek-local-test-only';
     actionSpies.agentABrainDeepSeek.mockRejectedValueOnce(new Error('DEEPSEEK_UNAVAILABLE'));
     actionSpies.agentABrain.mockRejectedValueOnce(new Error('GROQ_UNAVAILABLE'));
-    actionSpies.plan.mockResolvedValueOnce({
-      plan: {
-        schema_version: 1, next_stage: 'handoff', response_goal: 'confirm_call_request',
-        canonical_fact_requests: [],
-        allowed_business_action: { type: 'request_call_now', reason: 'accepted_offer' },
-        missing_information: [], should_offer_call: false,
-        next_call_preference: 'call', next_call_offer_status: 'accepted', next_call_offer_count: 1,
-        next_awaiting_reply: 'none', payment_reported: false, selected_offering_code: 'redes-informaticas',
-        selected_payment_plan: null,
-      },
-      fact_refs: [], state_version: 3, plan_hash: 'b'.repeat(64),
-    });
     const step = Object.assign(
       async (_name: string, run: () => Promise<unknown>) => run(),
       { sleep: vi.fn(async () => undefined) },
@@ -2322,13 +2311,14 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(actionSpies.plan).not.toHaveBeenCalled();
+    expect(actionSpies.agentABrainDeepSeek).not.toHaveBeenCalled();
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       conversation_pipeline_v1: null,
       decision: {
         kind: 'reply',
-        response: 'Hubo un problema al preparar la respuesta. Envíame el mensaje otra vez en un momento.',
-        business_action: null,
-        reason_code: 'MODEL_UNAVAILABLE',
+        response_type: 'call_confirmation',
+        business_action: { type: 'request_call_now', reason: 'direct_request' },
+        reason_code: 'CALL_DIRECT_REQUEST',
       },
     });
   });

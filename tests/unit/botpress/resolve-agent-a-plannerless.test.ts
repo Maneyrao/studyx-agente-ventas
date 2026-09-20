@@ -1102,6 +1102,37 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.rejection).toBeNull();
   });
 
+  it('materializes the authorized payment action when the model requests the link but omits the redundant action field', async () => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'Está correcto, pásame el link';
+    current.commercial_state.selected_payment_plan = 'monthly_6';
+    current.commercial_state.awaiting_reply = 'contact_details';
+    current.capabilities.may_send_payment_link = true;
+    current.capabilities.intake_missing = [];
+    const initial = generated(proposal({
+      move: {
+        schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+        confidence: 1,
+      },
+      response: { messages: ['De acuerdo, te comparto el enlace seguro.'], call_offer: null },
+      proposed_action: { type: 'none' },
+      used_fact_ids: [],
+    }));
+    const repair = vi.fn();
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: true, repair,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.proposed_action).toEqual({
+      type: 'send_payment_link',
+      offering_code: 'maquillaje-profesional',
+      payment_plan: 'monthly_6',
+    });
+  });
+
   it('demotes an unsolicited payment action while preserving safe model-owned acknowledgement', async () => {
     const current = context();
     current.turn.batch_messages[0].text = 'Soy Tomás Quiroga, tomas@example.test';

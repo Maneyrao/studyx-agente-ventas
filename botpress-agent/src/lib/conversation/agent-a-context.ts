@@ -226,6 +226,28 @@ export function bindCurrentConversationalIntentToMoveV1(
       )),
     };
   }
+  const selectedOfferingCode = claimed.conversation_state_v1?.selected_offering_code ?? null;
+  const selectedPaymentPlan = claimed.conversation_state_v1?.selected_payment_plan ?? null;
+  const intakeComplete = claimed.contact_intake_missing.length === 0;
+  if (
+    (explicitLinkRequest || resumesDeferredLink)
+    && awaitingPaymentReply
+    && selectedOfferingCode !== null
+    && selectedPaymentPlan !== null
+    && intakeComplete
+    && !move.vetoes.includes('payment_link')
+    && !move.vetoes.includes('purchase')
+  ) {
+    const { payment_plan: _ignoredPaymentPlan, ...withoutPlan } = move;
+    return {
+      ...withoutPlan,
+      move: 'request_payment_link',
+      secondary_moves: withoutPlan.secondary_moves
+        .filter((kind) => kind !== 'request_payment_link')
+        .slice(0, 2),
+      confidence: 1,
+    };
+  }
   if (move.move === 'select_payment_plan' && currentPaymentIntent.kind === 'none') {
     if (contextualPaymentPlan !== null) {
       return { ...move, payment_plan: contextualPaymentPlan };
