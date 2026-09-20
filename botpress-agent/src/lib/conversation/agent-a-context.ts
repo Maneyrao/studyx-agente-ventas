@@ -598,6 +598,18 @@ export function buildAgentAContextV1(
     intakeMissing,
     maySendPaymentLink,
   });
+  const nonBlankOrNull = (value: string | null | undefined): string | null => {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : null;
+  };
+  const canonicalContactIntake = claimed.contact_intake
+    ? {
+        nombre: nonBlankOrNull(claimed.contact_intake.nombre),
+        apellido: nonBlankOrNull(claimed.contact_intake.apellido),
+        correo: nonBlankOrNull(claimed.contact_intake.correo),
+        telefono: nonBlankOrNull(claimed.contact_intake.telefono),
+      }
+    : null;
 
   return AgentAContextV1Schema.parse({
     schema_version: 1,
@@ -618,8 +630,8 @@ export function buildAgentAContextV1(
       last_agent_reply: lastAgentReply,
     },
     customer: {
-      display_name: claimed.contact.name,
-      contact_intake: claimed.contact_intake ?? null,
+      display_name: nonBlankOrNull(claimed.contact.name),
+      contact_intake: canonicalContactIntake,
       memories: (suppressContactMemories ? [] : [...claimed.context.selected_memories])
         .sort((left, right) => right.similarity - left.similarity)
         .filter((memory) => MEMORY_TYPES.has(memory.type))
@@ -702,8 +714,6 @@ export function buildAgentAContextV1(
     capabilities: {
       may_reply: claimed.policy.may_respond,
       may_offer_call: claimed.policy.may_respond
-        && intakeStatus === 'known'
-        && firstNameKnownNow
         && state.call_preference !== 'call'
         && state.call_offer_status !== 'accepted'
         && callOfferCount < 2,

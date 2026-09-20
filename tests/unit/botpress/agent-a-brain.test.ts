@@ -480,7 +480,7 @@ describe('Agent A Brain V1', () => {
 
   it('requires a separate initial call offer after any canonical catalog recommendation', () => {
     expect(buildAgentABrainInstructionsV1(context())).toContain(
-      'en cuanto conozcas el primer nombre y entiendas qué curso, área u objetivo real busca',
+      'hazla siempre en tu segunda intervención de la conversación',
     );
   });
 

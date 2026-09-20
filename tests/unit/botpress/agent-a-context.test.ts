@@ -249,6 +249,22 @@ describe('buildAgentAContextV1', () => {
     expect(buildAgentAContextV1(claimed)?.customer.contact_intake).toEqual(claimed.contact_intake);
   });
 
+  it('normalizes blank persisted contact values instead of crashing the workflow', () => {
+    const claimed = claimedTurn();
+    claimed.contact.name = '';
+    claimed.contact_intake = {
+      nombre: '', apellido: '   ', correo: '', telefono: null,
+    };
+    claimed.contact_intake_missing = ['nombre', 'apellido', 'correo', 'telefono'];
+
+    const context = buildAgentAContextV1(claimed);
+
+    expect(context?.customer.display_name).toBeNull();
+    expect(context?.customer.contact_intake).toEqual({
+      nombre: null, apellido: null, correo: null, telefono: null,
+    });
+  });
+
   it('does not authorize a second payment-link action after the canonical link was sent', () => {
     const claimed = claimedTurn();
     claimed.catalog_resolution = { kind: 'no_catalog_intent' };
@@ -306,7 +322,7 @@ describe('buildAgentAContextV1', () => {
     expect(buildAgentAContextV1(claimed)?.capabilities.may_send_payment_link).toBe(true);
   });
 
-  it('keeps the call invitation unavailable until the first name is known', () => {
+  it('does not use a missing first name as a backend veto for a conversational call offer', () => {
     const claimed = claimedTurn();
     claimed.contact.name = null;
     claimed.contact_intake_missing = ['nombre', 'apellido', 'correo', 'telefono'];
@@ -319,7 +335,7 @@ describe('buildAgentAContextV1', () => {
 
     const context = buildAgentAContextV1(claimed);
 
-    expect(context?.capabilities.may_offer_call).toBe(false);
+    expect(context?.capabilities.may_offer_call).toBe(true);
   });
 
   it('takes the academy from the canonical snapshot and the advisor from configuration', () => {

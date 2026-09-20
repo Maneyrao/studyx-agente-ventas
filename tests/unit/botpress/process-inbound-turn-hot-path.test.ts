@@ -459,6 +459,11 @@ describe('processInboundTurn hot path', () => {
     claimed.business_context = paymentBusinessContext();
     claimed.business_context_available = true;
     claimed.contact.name = 'Lucia';
+    claimed.context.recent_turns = [{
+      direction: 'outbound',
+      content: 'Hola, soy el asistente virtual de StudyX. Cómo te llamas?',
+      created_at: '2026-08-21T11:59:55.000Z',
+    }];
     actionSpies.claim.mockResolvedValue(claimed);
     configuration.agentAPlannerlessV2Enabled = true;
     secrets.DEEPSEEK_API_KEY = 'deepseek-local-test-only';

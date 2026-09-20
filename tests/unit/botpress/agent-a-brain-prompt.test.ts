@@ -75,8 +75,8 @@ describe('Agent A Brain prompt', () => {
   it('ships one complete canonical behavior behind a compact runtime contract', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v33');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v69');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v34');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v70');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('You lead the\nconversation; the backend does not write or rewrite your narrative');
     expect(instructions).not.toContain('The sales\nphases are a map, not a blocking script');
@@ -179,8 +179,13 @@ describe('Agent A Brain prompt', () => {
 
   it('surfaces the first-call advisory from durable context without fixed wording', () => {
     const current = context();
-    current.customer.display_name = null;
-    current.turn.batch_messages[0].text = 'Soy Lucia. Quiero estudiar ingles pero no se que nivel.';
+    current.customer.display_name = 'Lucia';
+    current.continuity = {
+      assistant_has_spoken: true,
+      first_name_status: 'known',
+      last_agent_reply: 'Hola, soy el asistente virtual de StudyX. Cómo te llamas?',
+    };
+    current.turn.batch_messages[0].text = 'Quiero estudiar ingles pero no se que nivel.';
     current.commercial_state.selected_offering_code = null;
     current.commercial_state.stage = 'exploring';
     current.catalog.selected_offering = null;
@@ -195,6 +200,20 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).toContain('"call_offer":{"recommended":true,"reason":"FIRST_OFFER_DUE"}');
     expect(instructions).not.toContain('Te llamamos');
     expect(instructions).toContain('Primera invitación obligatoria');
+  });
+
+  it('does not advance the first call offer into the initial agent introduction', () => {
+    const current = context();
+    current.customer.display_name = 'Lucia';
+    current.continuity = {
+      assistant_has_spoken: false,
+      first_name_status: 'known',
+      last_agent_reply: null,
+    };
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+
+    expect(instructions).toContain('"call_offer":{"recommended":false,"reason":"FIRST_NAME_OR_NEED_MISSING"}');
   });
 
   it('treats a named catalog family as enough interest for the first call offer', () => {
