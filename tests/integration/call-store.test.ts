@@ -8,10 +8,14 @@ const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
 afterAll(async () => db?.end());
 
-async function fixture() {
+async function fixture(input: { declaredPhone?: string } = {}) {
   const callId = randomUUID();
   const phone = `+999${Math.floor(10_000_000 + Math.random() * 89_999_999).toString().padStart(10, '0')}`;
-  const contacts = await db!<Array<{ id: string }>>`INSERT INTO contacts (phone, channel_origin) VALUES (${phone}, 'whatsapp') RETURNING id`;
+  const contacts = await db!<Array<{ id: string }>>`
+    INSERT INTO contacts (phone, declared_phone, channel_origin)
+    VALUES (${phone}, ${input.declaredPhone ?? null}, 'whatsapp')
+    RETURNING id
+  `;
   const conversations = await db!<Array<{ id: string }>>`INSERT INTO conversations (contact_id, channel) VALUES (${contacts[0].id}::uuid, 'whatsapp') RETURNING id`;
   const messages = await db!<Array<{ id: string }>>`INSERT INTO messages (conversation_id, contact_id, direction, content) VALUES (${conversations[0].id}::uuid, ${contacts[0].id}::uuid, 'inbound', 'Llamame') RETURNING id`;
   const context = { call_id: callId, nombre_lead: '', curso_interes: 'Python', pais: '', email_lead: '', resumen_whatsapp: 'Llamada preautorizada.', prompt_version: 'agent-b-v1' };
@@ -29,6 +33,17 @@ async function fixture() {
 }
 
 run('PostgresCallStore', () => {
+  it('dispatches to the declared callable phone instead of the synthetic channel identity', async () => {
+    const declaredPhone = '+5491112345678';
+    const { callId } = await fixture({ declaredPhone });
+
+    const claim = await new PostgresCallStore(db!).claimDispatch(callId, 'worker-declared-phone');
+
+    expect(claim.outcome).toBe('claimed');
+    if (claim.outcome !== 'claimed') throw new Error('EXPECTED_CLAIMED_CALL');
+    expect(claim.call.phoneE164).toBe(declaredPhone);
+  });
+
   it('fences concurrent dispatch claims and returns the accepted replay', async () => {
     const { callId } = await fixture();
     const clients = openIndependentLocalTestDatabases(2);

@@ -110,7 +110,8 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
   async claimDispatch(callId: string, workerId: string): Promise<DispatchClaim> {
     return this.db.begin(async (tx) => {
       const rows = await tx<Array<CallRow>>`
-        SELECT cs.id, cs.contact_id, cs.conversation_id, c.phone AS phone_e164,
+        SELECT cs.id, cs.contact_id, cs.conversation_id,
+               COALESCE(NULLIF(btrim(c.declared_phone), ''), c.phone) AS phone_e164,
                cs.status, cs.provider_call_id,
                cs.request_idempotency_key, cs.context_snapshot,
                encode(cs.context_hash, 'hex') AS context_hash_hex,
