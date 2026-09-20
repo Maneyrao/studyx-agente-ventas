@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { evaluateCallOfferTurnPolicyV1 } from '../lib/conversation/call-offer-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v71' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v72' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -59,14 +59,14 @@ function currentTurnGuidanceV1(context: AgentAContextV1): string {
 ${inertJson({
     ask_first_name_now: askFirstNameNow,
     call_offer: {
-      recommended: callPolicy.offer_required,
+      required: callPolicy.offer_required,
       reason: callPolicy.reason,
     },
   })}
 </current_turn_guidance>
 This is a compact reminder of the canonical behavior, never customer copy. Answer the customer's
 current request before advancing. If ask_first_name_now is true, ask the first name as the only
-question in response.messages. If call_offer.recommended is true, write your own natural invitation
+question in response.messages. If call_offer.required is true, you must write your own natural invitation
 in response.call_offer. Never copy a reason code into the reply and never override a veto or a false
 capability.`;
 }

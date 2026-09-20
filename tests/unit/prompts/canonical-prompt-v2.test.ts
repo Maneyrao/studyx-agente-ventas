@@ -13,9 +13,9 @@ const source = readFileSync(
   'utf8',
 );
 
-describe('prompt canónico comercial v35', () => {
+describe('prompt canónico comercial v36', () => {
   it('coincide con la fuente y declara la versión desplegable', () => {
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v35');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v36');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toBe(source);
   });
 
@@ -45,7 +45,8 @@ describe('prompt canónico comercial v35', () => {
     expect(source).toMatch(/tercero[\s\S]{0,120}response\.call_offer/iu);
     expect(source).toMatch(/no cortes una oración por la mitad/iu);
     expect(source).toMatch(/ni repitas la misma idea/iu);
-    expect(source).toMatch(/45 a 60 palabras en total/iu);
+    expect(source).toMatch(/20 a 40 palabras en total/iu);
+    expect(source).toMatch(/dos o m[áa]s cursos, planes u opciones[\s\S]{0,120}lista compacta/iu);
     expect(source).toMatch(/opci[oó]n principal[\s\S]{0,120}dos hechos can[oó]nicos/iu);
     expect(source).toMatch(/Ampl[íi]a [úu]nicamente si la persona pide detalles/iu);
     expect(source).not.toMatch(/Por defecto[^\n]*dos mensajes breves|Prioriza una respuesta compacta|Mant[eé]n cada mensaje breve/iu);
@@ -84,7 +85,7 @@ describe('prompt canónico comercial v35', () => {
   });
 
   it('conserva las opciones ambiguas fuera de cualquier texto de llamada', () => {
-    expect(source).toMatch(/varias coincidencias reales[\s\S]{0,200}nombra[^\n]*cada opci[óo]n/iu);
+    expect(source).toMatch(/varias coincidencias reales[\s\S]{0,200}cada opci[óo]n visible[\s\S]{0,100}lista compacta/iu);
     expect(source).toMatch(/informaci[óo]n de las opciones[\s\S]{0,180}response\.messages/iu);
   });
 

@@ -2,6 +2,7 @@ import {
   supportsCallRequestV1,
   supportsChatPreferenceV1,
 } from './channel-preference-evidence';
+import { evaluateCallOfferTurnPolicyV1 } from './call-offer-turn-policy';
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import {
   AgentATurnProposalV1Schema,
@@ -1560,6 +1561,26 @@ function assertsUnverifiedCandidateCourseDetailV1(
     ));
 }
 
+/**
+ * Removes only ungrounded descriptive assertions about unresolved candidates.
+ * Names, bullet lists and diagnostic questions survive, so a useful catalog
+ * answer is not replaced by a technical fallback when one comparison was too
+ * speculative.
+ */
+export function removeUnverifiedCandidateCourseDetailAssertionsV1(
+  messages: readonly string[],
+  context: AgentAContextV1,
+  plannedFactIds: ReadonlySet<string>,
+): string[] {
+  return messages
+    .flatMap((message) => message.split(/(?<=[.!?\n])/u))
+    .filter((sentence) => !assertsUnverifiedCandidateCourseDetailV1(
+      [sentence], context, plannedFactIds,
+    ))
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
+}
+
 function omitsCustomerNamedCandidateV1(
   messages: readonly string[],
   context: AgentAContextV1,
@@ -1832,6 +1853,17 @@ export function validateAgentATurnProposalV1(input: {
   const offersACall = !unsupportedDeclaredOffer && typeof declaredCallOffer === 'string'
     && solicitsACallV1(declaredCallOffer, true)
     || !requestedCallNow && input.proposal.response.messages.some((message) => solicitsACallV1(message))
+  const callOfferPolicy = evaluateCallOfferTurnPolicyV1({
+    context: input.context,
+    response_messages: input.proposal.response.messages,
+    proposed_course_reference: input.proposal.move.course_reference,
+  });
+  if (callOfferPolicy.offer_required && !offersACall && !requestedCallNow) {
+    // The model remains the sole author. This rejection opens its one allowed
+    // rewrite; if that rewrite fails, the original useful answer still
+    // degrades through NON_BLOCKING_GUIDANCE instead of becoming a fallback.
+    rejections.push({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
+  }
   if (offersACall && !input.context.capabilities.may_offer_call) {
     rejections.push({ code: 'CALL_BUDGET_EXHAUSTED', subject: 'call_offer' })
   }

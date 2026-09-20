@@ -4,6 +4,7 @@ import {
   AgentABrainError,
   removeUnsupportedCourseLogisticsAssertionsV1,
   removeUnsupportedPrerequisiteAssertionsV1,
+  removeUnverifiedCandidateCourseDetailAssertionsV1,
   solicitsACallV1,
   validateAgentATurnProposalV1,
 } from './agent-a-brain'
@@ -216,7 +217,10 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
     const candidate = transform({ ...input, initial: effective, rejection })
     if (candidate !== null) return { effective: candidate, rejection: null, originalRejection }
   }
-  if (hasOnlyNonBlockingGuidance(effective.proposal, rejection)) {
+  const owesRequiredCallOffer = rejection.rejections.some((reason) => (
+    reason.code === 'CALL_OFFER_REQUIRED'
+  ));
+  if (!owesRequiredCallOffer && hasOnlyNonBlockingGuidance(effective.proposal, rejection)) {
     return { effective, rejection: null, originalRejection }
   }
   return { effective, rejection, originalRejection }
@@ -386,8 +390,7 @@ export async function resolveAgentAPlannerlessProposalV2<
     }
   }
   for (const prune of [
-    pruneUnsupportedPrerequisiteClaimV1,
-    pruneUnsupportedCourseLogisticsClaimV1,
+    pruneKnownUnsupportedFactClaimsV1,
     pruneFalseLinkDeliveryClaimV1,
   ]) {
     const candidate = prune({
@@ -406,6 +409,63 @@ export async function resolveAgentAPlannerlessProposalV2<
   }
   if (mayDegradeToBackendBoundary(initial.proposal, rejection)) return degraded(true)
   throw plannerlessRejectionError(terminalRejection)
+}
+
+/**
+ * A single draft can contain more than one removable unsupported assertion.
+ * Applying each pruner independently to the original draft meant none could
+ * make a combined defect valid. Sanitize every known fact class cumulatively,
+ * then validate the resulting model-authored remainder once.
+ */
+function pruneKnownUnsupportedFactClaimsV1<T extends AgentAProposalEnvelopeV1>(input: {
+  readonly initial: T
+  readonly rejection: TurnRejectionV1
+  readonly context: AgentAContextV1
+  readonly authorized_fact_ids: readonly string[]
+}): T | null {
+  const subjects = new Set(input.rejection.rejections
+    .filter((reason) => reason.code === 'FACT_VALUE_MISMATCH')
+    .map((reason) => reason.subject));
+  const supported = ['prerequisites', 'course_logistics', 'candidate_course_detail']
+    .some((subject) => subjects.has(subject));
+  if (!supported) return null;
+
+  let safeMessages = [...input.initial.proposal.response.messages];
+  if (subjects.has('prerequisites')) {
+    safeMessages = safeMessages.flatMap(removeUnsupportedPrerequisiteAssertionsV1);
+  }
+  if (subjects.has('course_logistics')) {
+    const authorizedIds = new Set(input.authorized_fact_ids);
+    const authorizedValues = input.context.catalog.selected_offering?.facts
+      .filter((fact) => authorizedIds.has(fact.id))
+      .map((fact) => fact.value) ?? [];
+    safeMessages = safeMessages.flatMap((message) => (
+      removeUnsupportedCourseLogisticsAssertionsV1(message, authorizedValues)
+    ));
+  }
+  if (subjects.has('candidate_course_detail')) {
+    safeMessages = removeUnverifiedCandidateCourseDetailAssertionsV1(
+      safeMessages,
+      input.context,
+      new Set(input.authorized_fact_ids),
+    );
+  }
+  if (safeMessages.length === 0) return null;
+
+  const candidate = {
+    ...input.initial,
+    proposal: {
+      ...input.initial.proposal,
+      response: { ...input.initial.proposal.response, messages: safeMessages },
+    },
+  } as T;
+  const candidateRejection = validatePlannerless({
+    proposal: candidate.proposal,
+    context: input.context,
+    rejection_id: input.rejection.rejection_id,
+    authorized_fact_ids: input.authorized_fact_ids,
+  });
+  return candidateRejection === null ? candidate : null;
 }
 
 /**
@@ -458,85 +518,3 @@ function pruneFalseLinkDeliveryClaimV1<T extends AgentAProposalEnvelopeV1>(input
 }
 
 export type PlannerlessAgentATurnProposalV2 = AgentATurnProposalV1
-
-/**
- * Poda de la afirmación de prerequisitos que el catálogo no respalda.
- *
- * `FACT_VALUE_MISMATCH` degrada a la frontera del backend, y para los hechos
- * que el egress puede vetar por valor eso está bien. Pero esta afirmación no
- * es un valor: es una oración entera que asegura algo del producto que nadie
- * confirmó, y degradar la dejaba llegar al cliente intacta. El guard quedaba
- * decorativo.
- *
- * Se quitó también del prompt canónico (v4), donde la biblioteca de objeciones
- * la ordenaba, pero el modelo la sigue produciendo por su cuenta.
- *
- * Sólo se podan afirmaciones: el normalizador ya saltea las interrogativas, así
- * que la pregunta de diagnóstico que el canónico prescribe pasa intacta.
- */
-function pruneUnsupportedPrerequisiteClaimV1<T extends AgentAProposalEnvelopeV1>(input: {
-  readonly initial: T
-  readonly rejection: TurnRejectionV1
-  readonly context: AgentAContextV1
-  readonly authorized_fact_ids: readonly string[]
-}): T | null {
-  if (!input.rejection.rejections.some((reason) => (
-    reason.code === 'FACT_VALUE_MISMATCH' && reason.subject === 'prerequisites'
-  ))) return null
-
-  const safeMessages = input.initial.proposal.response.messages
-    .flatMap(removeUnsupportedPrerequisiteAssertionsV1)
-  if (safeMessages.length === 0) return null
-
-  const candidate = {
-    ...input.initial,
-    proposal: {
-      ...input.initial.proposal,
-      response: { ...input.initial.proposal.response, messages: safeMessages },
-    },
-  } as T
-  const candidateRejection = validatePlannerless({
-    proposal: candidate.proposal,
-    context: input.context,
-    rejection_id: input.rejection.rejection_id,
-    authorized_fact_ids: input.authorized_fact_ids,
-  })
-  return candidateRejection === null ? candidate : null
-}
-
-function pruneUnsupportedCourseLogisticsClaimV1<T extends AgentAProposalEnvelopeV1>(input: {
-  readonly initial: T
-  readonly rejection: TurnRejectionV1
-  readonly context: AgentAContextV1
-  readonly authorized_fact_ids: readonly string[]
-}): T | null {
-  if (!input.rejection.rejections.some((reason) => (
-    reason.code === 'FACT_VALUE_MISMATCH' && reason.subject === 'course_logistics'
-  ))) return null
-
-  const authorizedIds = new Set(input.authorized_fact_ids)
-  const authorizedValues = input.context.catalog.selected_offering?.facts
-    .filter((fact) => authorizedIds.has(fact.id))
-    .map((fact) => fact.value) ?? []
-  const safeMessages = input.initial.proposal.response.messages
-    .flatMap((message) => removeUnsupportedCourseLogisticsAssertionsV1(
-      message,
-      authorizedValues,
-    ))
-  if (safeMessages.length === 0) return null
-
-  const candidate = {
-    ...input.initial,
-    proposal: {
-      ...input.initial.proposal,
-      response: { ...input.initial.proposal.response, messages: safeMessages },
-    },
-  } as T
-  const candidateRejection = validatePlannerless({
-    proposal: candidate.proposal,
-    context: input.context,
-    rejection_id: input.rejection.rejection_id,
-    authorized_fact_ids: input.authorized_fact_ids,
-  })
-  return candidateRejection === null ? candidate : null
-}

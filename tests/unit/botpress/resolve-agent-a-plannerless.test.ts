@@ -72,6 +72,41 @@ function generated(value: AgentATurnProposalV1) {
 }
 
 describe('resolveAgentAPlannerlessProposalV2', () => {
+  it('asks DeepSeek once to add the required first call offer and keeps model-owned wording', async () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm2', text: 'Mmm no lo sé' }];
+    current.turn.recent_turns = [{
+      id: 'prior-agent', direction: 'outbound',
+      content: 'Hola, soy el asistente virtual de StudyX. Qué te gustaría aprender?',
+    }];
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_status = 'not_offered';
+    current.commercial_state.call_offer_count = 0;
+    current.capabilities.may_offer_call = true;
+    const initial = generated(proposal({
+      response: { messages: ['Puedo mostrarte algunas opciones para que elijas.'], call_offer: null },
+    }));
+    const repaired = generated(proposal({
+      response: {
+        messages: ['Puedo mostrarte algunas opciones para que elijas.'],
+        call_offer: 'Si prefieres, puedo llamarte y orientarte por teléfono 🙂',
+      },
+      repair_of: { rejection_id: '00000000-0000-4000-8000-0000000000b1', attempt: 1 },
+    }));
+    const repair = vi.fn().mockResolvedValue(repaired);
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: true, repair,
+      rejection_id: '00000000-0000-4000-8000-0000000000b1',
+    });
+
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.effective.proposal.response.call_offer).toBe(
+      'Si prefieres, puedo llamarte y orientarte por teléfono 🙂',
+    );
+    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
+  });
+
   it('keeps a grounded English-level follow-up instead of showing a technical fallback', async () => {
     const current = context();
     current.turn.batch_messages = [{ id: 'm2', text: 'Contame' }];
@@ -1327,6 +1362,57 @@ describe('afirmar un link no autorizado no puede terminar en silencio', () => {
  * link no autorizado.
  */
 describe('prerequisitos sin respaldo se podan, no se entregan', () => {
+  it('combines safe pruning when one draft contains unsupported prerequisites and candidate advice', async () => {
+    const current = context();
+    current.turn.batch_messages = [
+      { id: 'm2', text: 'Me gustaría Photoshop, pero no estoy seguro' },
+    ];
+    current.catalog.selected_offering = null;
+    current.commercial_state.selected_offering_code = null;
+    current.commercial_state.stage = 'exploring';
+    current.catalog.candidate_offerings = [
+      {
+        code: 'photoshop', fact_id: 'offering:photoshop:name:v1',
+        display_name: 'Diseño Gráfico con Photoshop', area_code: 'diseno',
+      },
+      {
+        code: 'illustrator', fact_id: 'offering:illustrator:name:v1',
+        display_name: 'Diseño Gráfico con Illustrator', area_code: 'diseno',
+      },
+    ];
+    const initial = generated(proposal({
+      move: {
+        schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 0.9,
+      },
+      response: {
+        messages: [
+          'Diseño Gráfico con Photoshop es ideal para empezar desde cero y editar imágenes.',
+          'Te puedo ofrecer:\n- Diseño Gráfico con Photoshop\n- Diseño Gráfico con Illustrator',
+          'Cuál te interesa más?',
+        ],
+        call_offer: null,
+      },
+      used_fact_ids: [
+        'offering:photoshop:name:v1',
+        'offering:illustrator:name:v1',
+      ],
+    }));
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial,
+      context: current,
+      repair_enabled: true,
+      rejection_id: '00000000-0000-4000-8000-0000000000b2',
+      repair: async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); },
+    });
+
+    const visible = result.effective.proposal.response.messages.join('\n');
+    expect(visible).not.toMatch(/ideal para empezar desde cero|editar im[aá]genes/iu);
+    expect(visible).toContain('- Diseño Gráfico con Photoshop');
+    expect(visible).toContain('- Diseño Gráfico con Illustrator');
+    expect(visible).toContain('Cuál te interesa más?');
+  });
+
   it('quita la oración y conserva el resto del turno', async () => {
     const initial = generated(proposal({
       response: {

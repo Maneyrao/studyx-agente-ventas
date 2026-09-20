@@ -290,7 +290,7 @@ describe('Agent A Brain V1', () => {
     ['indecision', 'No se si elegir Redes Informaticas o Reparacion de PC.'],
     ['details request', 'Contame en detalle que incluye el curso.'],
     ['pre-payment friction', 'Antes de pagar necesito pensarlo un poco mas.'],
-  ])('keeps the second call offer as model guidance rather than rejecting useful copy for %s', (_reason, customerText) => {
+  ])('requests one model rewrite when the required second call offer is missing for %s', (_reason, customerText) => {
     const current = context();
     current.customer.display_name = 'Lucia';
     current.turn.batch_messages[0].text = customerText;
@@ -306,10 +306,10 @@ describe('Agent A Brain V1', () => {
       context: current,
       planned_fact_ids: missingReminder.used_fact_ids,
       rejection_id: '00000000-0000-4000-8000-000000000009',
-    })).toBeNull();
+    })?.rejections).toContainEqual({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
   });
 
-  it('does not block intake copy when the model omits the recommended second offer', () => {
+  it('requests one model rewrite before final intake when the second offer is still owed', () => {
     const current = context();
     current.customer.display_name = 'Lucia';
     current.commercial_state.call_offer_count = 1;
@@ -331,10 +331,10 @@ describe('Agent A Brain V1', () => {
       context: current,
       planned_fact_ids: asksForFinalData.used_fact_ids,
       rejection_id: '00000000-0000-4000-8000-000000000010',
-    })).toBeNull();
+    })?.rejections).toContainEqual({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
   });
 
-  it('keeps a soft persisted chat preference conversational when no reminder is authored', () => {
+  it('requests the later reminder after a prior soft chat preference when doubt appears', () => {
     const current = context();
     current.customer.display_name = 'Lucia';
     current.turn.batch_messages[0].text = 'Ahora tengo varias dudas sobre el contenido y la modalidad.';
@@ -351,7 +351,7 @@ describe('Agent A Brain V1', () => {
       context: current,
       planned_fact_ids: missingReminder.used_fact_ids,
       rejection_id: '00000000-0000-4000-8000-000000000011',
-    })).toBeNull();
+    })?.rejections).toContainEqual({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
   });
 
   it.each([
