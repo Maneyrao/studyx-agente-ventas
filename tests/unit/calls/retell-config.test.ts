@@ -92,7 +92,7 @@ describe('loadXendraVoiceConfig', () => {
       orchestratorSecret: 'orchestrator-secret',
       advisorName: 'Sofía',
       closerNumber: '+5491144445555',
-      telegramCanaryContactId: null,
+      telegramCanaryContactIds: [],
       requestTimeoutMs: 3500,
     });
   });
@@ -108,21 +108,22 @@ describe('loadXendraVoiceConfig', () => {
       orchestratorSecret: xendra.XENDRA_ORCHESTRATOR_SECRET,
       advisorName: '',
       closerNumber: '',
-      telegramCanaryContactId: null,
+      telegramCanaryContactIds: [],
       requestTimeoutMs: 5000,
     });
   });
 
-  it('accepts one exact Telegram canary contact id and rejects malformed values', () => {
-    const contactId = '55c26c0f-90e1-4d5f-8298-da62e77f5b38';
+  it('accepts an exact list of Telegram canary contacts and rejects malformed values', () => {
+    const lucas = '55c26c0f-90e1-4d5f-8298-da62e77f5b38';
+    const thiago = '2cfa8868-eac2-4985-951f-37b2b2dee739';
     expect(loadXendraVoiceConfig({
       ...xendra,
-      XENDRA_TELEGRAM_CANARY_CONTACT_ID: contactId,
-    }).telegramCanaryContactId).toBe(contactId);
+      XENDRA_TELEGRAM_CANARY_CONTACT_IDS: `${lucas}, ${thiago}`,
+    }).telegramCanaryContactIds).toEqual([lucas, thiago]);
     expect(() => loadXendraVoiceConfig({
       ...xendra,
-      XENDRA_TELEGRAM_CANARY_CONTACT_ID: 'all',
-    })).toThrow('INVALID_XENDRA_CONFIG:XENDRA_TELEGRAM_CANARY_CONTACT_ID');
+      XENDRA_TELEGRAM_CANARY_CONTACT_IDS: `${lucas},all`,
+    })).toThrow('INVALID_XENDRA_CONFIG:XENDRA_TELEGRAM_CANARY_CONTACT_IDS');
   });
 
   it.each(['XENDRA_CALL_URL', 'XENDRA_ORCHESTRATOR_SECRET'])(

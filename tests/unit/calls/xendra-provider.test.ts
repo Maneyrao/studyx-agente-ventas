@@ -14,7 +14,7 @@ const config: XendraVoiceConfig = {
   orchestratorSecret: 'test-orchestrator-secret',
   advisorName: 'Sofía',
   closerNumber: '+5491144445555',
-  telegramCanaryContactId: null,
+  telegramCanaryContactIds: [],
   requestTimeoutMs: 1_000,
 };
 
@@ -143,7 +143,7 @@ describe('XendraVoiceProvider.placeCall', () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => json({ ok: true, call_id: 'call_canary_1' }));
     const canary = new XendraVoiceProvider({
       ...config,
-      telegramCanaryContactId: request.contactId,
+      telegramCanaryContactIds: [request.contactId],
     }, {
       fetch: fetchImpl,
       now: () => new Date('2026-09-13T12:00:00.000Z'),

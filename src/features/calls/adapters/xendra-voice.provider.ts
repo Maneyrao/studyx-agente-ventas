@@ -42,7 +42,7 @@ export class XendraVoiceProvider implements VoiceProvider {
       throw new ConfirmedVoiceProviderError('CALL_CONTEXT_ID_MISMATCH');
     }
 
-    if (input.contactId !== this.config.telegramCanaryContactId) {
+    if (!this.config.telegramCanaryContactIds.includes(input.contactId)) {
       try {
         await assertRealSideEffectAllowed(this.dependencies.sandboxLookup, {
           contactId: input.contactId,

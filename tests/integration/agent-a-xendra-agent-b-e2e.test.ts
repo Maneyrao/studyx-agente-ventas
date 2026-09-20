@@ -262,7 +262,7 @@ function xendraProvider(server: FakeXendraServer, timeoutMs = 1_000) {
     orchestratorSecret,
     advisorName: 'Sofía',
     closerNumber: '+5491144445555',
-    telegramCanaryContactId: null,
+    telegramCanaryContactIds: [],
     requestTimeoutMs: timeoutMs,
   }, {
     now: () => fixedNow,

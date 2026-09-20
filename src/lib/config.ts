@@ -311,7 +311,7 @@ export type XendraVoiceConfig = {
   orchestratorSecret: string;
   advisorName: string;
   closerNumber: string;
-  telegramCanaryContactId: string | null;
+  telegramCanaryContactIds: readonly string[];
   requestTimeoutMs: number;
 };
 
@@ -415,13 +415,16 @@ export function loadXendraVoiceConfig(
   if (closerNumber && !/^\+[1-9]\d{6,14}$/u.test(closerNumber)) {
     throw new Error('INVALID_XENDRA_CONFIG:XENDRA_CLOSER_NUMBER');
   }
-  const telegramCanaryContactId = environment.XENDRA_TELEGRAM_CANARY_CONTACT_ID?.trim() || null;
-  if (
-    telegramCanaryContactId
-    && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
-      .test(telegramCanaryContactId)
-  ) {
-    throw new Error('INVALID_XENDRA_CONFIG:XENDRA_TELEGRAM_CANARY_CONTACT_ID');
+  const rawCanaryContacts = environment.XENDRA_TELEGRAM_CANARY_CONTACT_IDS?.trim()
+    || environment.XENDRA_TELEGRAM_CANARY_CONTACT_ID?.trim()
+    || '';
+  const telegramCanaryContactIds = [...new Set(
+    rawCanaryContacts.split(',').map((value) => value.trim()).filter(Boolean),
+  )];
+  if (telegramCanaryContactIds.some((contactId) =>
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(contactId)
+  )) {
+    throw new Error('INVALID_XENDRA_CONFIG:XENDRA_TELEGRAM_CANARY_CONTACT_IDS');
   }
 
   return {
@@ -430,7 +433,7 @@ export function loadXendraVoiceConfig(
     orchestratorSecret: environment.XENDRA_ORCHESTRATOR_SECRET!.trim(),
     advisorName: environment.XENDRA_ADVISOR_NAME?.trim() ?? '',
     closerNumber,
-    telegramCanaryContactId,
+    telegramCanaryContactIds,
     requestTimeoutMs: parsePositiveInt(environment.XENDRA_REQUEST_TIMEOUT_MS, 5_000),
   };
 }
