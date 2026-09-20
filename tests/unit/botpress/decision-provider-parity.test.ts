@@ -4,6 +4,7 @@ import {
   classifyBrainFailureReason,
   constrainModelToAdvisory,
   modelUnavailableFallback,
+  policyRejectedStateFallback,
 } from '../../../botpress-agent/src/utils/decision-policy';
 import type { ClaimedTurn, Decision } from '../../../botpress-agent/src/schemas/contracts';
 
@@ -329,6 +330,35 @@ describe('applyDecisionPolicy — provider parity', () => {
       expect(fallback.response).toMatch(/dejamos ingl[eé]s de lado/iu);
       expect(fallback.response).not.toMatch(/Inglés Inicial/u);
       expect(fallback.response?.match(/\?/gu) ?? []).toHaveLength(1);
+    });
+  });
+
+  describe('policy rejection fallback', () => {
+    it('answers a contact-data status question from canonical missing fields', () => {
+      const claimed = claimedTurn({
+        batch_message_content: 'Tenes mis datos?',
+      }) as ClaimedTurn;
+      claimed.contact_intake_missing = ['apellido', 'telefono'];
+      claimed.contact_intake = {
+        nombre: 'Thiago',
+        apellido: null,
+        correo: 'thiago@example.com',
+        telefono: null,
+      };
+
+      const fallback = policyRejectedStateFallback(claimed);
+
+      expect(fallback).not.toBeNull();
+      expect(fallback?.response).toContain('apellido');
+      expect(fallback?.response).toContain('teléfono');
+      expect(fallback?.response).not.toContain('problema');
+      expect(fallback?.reason_code).toBe('BRAIN_FALLBACK_POLICY_REJECTED_CURRENT_STATE');
+    });
+
+    it('does not replace unrelated policy failures with canned sales copy', () => {
+      expect(policyRejectedStateFallback(claimedTurn({
+        batch_message_content: 'Quiero información de Inglés 1',
+      }))).toBeNull();
     });
   });
 

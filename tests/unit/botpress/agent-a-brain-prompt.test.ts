@@ -76,7 +76,7 @@ describe('Agent A Brain prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v33');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v67');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v68');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('You lead the\nconversation; the backend does not write or rewrite your narrative');
     expect(instructions).not.toContain('The sales\nphases are a map, not a blocking script');
@@ -84,6 +84,7 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).not.toContain('exactly one entry in response.messages');
     expect(instructions).not.toMatch(/ambiguous general inquiry[\s\S]*one response\.messages item/iu);
     expect(instructions).toContain('<authorized_context>');
+    expect(instructions).toContain('state only the missing fields');
     expect(instructions).toContain('"memory-1"');
   });
 

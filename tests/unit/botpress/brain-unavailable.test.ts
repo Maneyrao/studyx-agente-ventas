@@ -17,12 +17,12 @@ const workflowSource = readFileSync(
  * for the same event is the defect; these tests pin them together.
  */
 describe('brain unavailable is one behaviour, not two', () => {
-  it('resolves both brain-failure routes with the same technical acknowledgement', () => {
-    const acknowledgements = workflowSource.match(
-      /pipelineFailureDecision = technicalFallback\(/gu,
-    );
+  it('gives both model-owned routes the same narrow state fallback before the technical acknowledgement', () => {
+    const stateFallbacks = workflowSource.match(/policyRejectedStateFallback\(owned\)/gu);
+    const technicalAcknowledgements = workflowSource.match(/\? stateFallback\n\s*: technicalFallback\(/gu);
 
-    expect(acknowledgements).toHaveLength(2);
+    expect(stateFallbacks).toHaveLength(2);
+    expect(technicalAcknowledgements).toHaveLength(2);
   });
 
   it('never routes a brain failure into the lexical fallback engine', () => {

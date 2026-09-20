@@ -33,6 +33,7 @@ import {
   suppress,
   technicalFallback,
   modelUnavailableFallback,
+  policyRejectedStateFallback,
 } from '../utils/decision-policy'
 import { routeCommercialTurn } from '../utils/commercial-router'
 import { verifyAuthorizedEgressPortable } from '../utils/authorized-egress'
@@ -276,6 +277,10 @@ function errorCode(error: unknown): string {
     && typeof error.code === 'string'
     && error.code.startsWith('BRAIN_')
   ) return error.code.slice(0, 128)
+  if (
+    error instanceof Error
+    && error.message.startsWith('PLANNERLESS_PROPOSAL_REJECTED:')
+  ) return error.message.slice(0, 256)
   if (error instanceof Error && error.name) return error.name.slice(0, 128)
   return 'UNKNOWN_ERROR'
 }
@@ -914,11 +919,16 @@ export const processInboundTurn = new Workflow({
         // unavailable, return an honest technical acknowledgement rather than
         // inventing sales copy or leaving the customer in silence.
         if (brainAuthoritative) {
-          pipelineFailureDecision = technicalFallback(
-            owned.policy.allowed_response_types.includes('technical_fallback')
-              ? 'technical_fallback'
-              : 'commercial_reply',
-          )
+          const stateFallback = brainFailureReason === 'policy_rejected'
+            ? policyRejectedStateFallback(owned)
+            : null
+          pipelineFailureDecision = stateFallback
+            ? stateFallback
+            : technicalFallback(
+                owned.policy.allowed_response_types.includes('technical_fallback')
+                  ? 'technical_fallback'
+                  : 'commercial_reply',
+              )
         }
       }
     }
@@ -1048,12 +1058,18 @@ export const processInboundTurn = new Workflow({
           brain_source: 'fallback',
           brain_failure_reason: brainFailureReason,
         })
-        // No lexical sales substitute: only an explicit technical acknowledgement.
-        pipelineFailureDecision = technicalFallback(
-          owned.policy.allowed_response_types.includes('technical_fallback')
-            ? 'technical_fallback'
-            : 'commercial_reply',
-        )
+        // No lexical sales substitute. A factual intake-status question may
+        // use the canonical claim; every other failure stays technical.
+        const stateFallback = brainFailureReason === 'policy_rejected'
+          ? policyRejectedStateFallback(owned)
+          : null
+        pipelineFailureDecision = stateFallback
+          ? stateFallback
+          : technicalFallback(
+              owned.policy.allowed_response_types.includes('technical_fallback')
+                ? 'technical_fallback'
+                : 'commercial_reply',
+            )
       }
     }
 

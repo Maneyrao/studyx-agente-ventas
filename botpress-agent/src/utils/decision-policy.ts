@@ -89,6 +89,54 @@ export function classifyBrainFailureReason(
   return 'policy_rejected'
 }
 
+/**
+ * A state question has one canonical answer even when both model drafts were
+ * rejected. Keep this deliberately narrow: it is not a second sales writer,
+ * only a truthful rendering of the intake fields already present in the
+ * claim. Every unrelated policy rejection still uses the technical floor.
+ */
+export function policyRejectedStateFallback(claimed: ClaimedTurn): Decision | null {
+  if (!claimed.policy.allowed_response_types.includes('commercial_reply')) return null
+  const currentBatch = normalizeCatalogGuidanceText(
+    claimed.context.batch_messages.map((message) => message.content).join(' '),
+  )
+  const asksContactState = (
+    /\b(?:tenes|tienes|guardaste|anotaste|registraste)\b.{0,24}\b(?:mis|los)\s+datos\b/u.test(currentBatch)
+    || /\b(?:que|cuales)\s+datos\b.{0,24}\b(?:tenes|tienes|guardaste|anotaste|registraste)\b/u.test(currentBatch)
+  )
+  if (!asksContactState) return null
+
+  const missing = claimed.contact_intake_missing ?? []
+  const labels: Record<(typeof missing)[number], string> = {
+    nombre: 'tu nombre',
+    apellido: 'tu apellido',
+    correo: 'tu correo',
+    telefono: 'un teléfono completo con código de país y área',
+  }
+  const named = missing.map((field) => labels[field])
+  const missingText = named.length <= 1
+    ? named[0] ?? ''
+    : `${named.slice(0, -1).join(', ')} y ${named.at(-1)}`
+  const response = missing.length === 0
+    ? 'Sí, los cuatro datos necesarios están completos. Seguimos con el próximo paso?'
+    : `Todavía me ${missing.length === 1 ? 'falta' : 'faltan'} ${missingText}. Me ${missing.length === 1 ? 'lo' : 'los'} compartes?`
+
+  return {
+    schema_version: 4,
+    intent: 'commercial',
+    kind: 'reply',
+    response,
+    response_type: 'commercial_reply',
+    business_action: null,
+    memory_candidates: [],
+    missing_information: [...missing],
+    next_state: 'waiting_user',
+    reason_code: 'BRAIN_FALLBACK_POLICY_REJECTED_CURRENT_STATE',
+    confidence: 1,
+    retrieval_used: null,
+  }
+}
+
 export function modelUnavailableFallback(
   claimed: ClaimedTurn,
   brainFailureReason?: BrainFailureReason,
