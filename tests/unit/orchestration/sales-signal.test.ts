@@ -45,6 +45,7 @@ describe('classifyDeterministicSalesSignal', () => {
 
   it.each([
     'Quiero que me llamen',
+    'Quiero que me llames',
     '¿Pueden llamarme?',
     '¿Me llamás?',
     'Quiero una llamada',
@@ -57,6 +58,9 @@ describe('classifyDeterministicSalesSignal', () => {
 
   it('lets a call negation win over a request token', () => {
     expect(classifyDeterministicSalesSignal('No quiero que me llamen')).toEqual({
+      type: 'call_decline',
+    });
+    expect(classifyDeterministicSalesSignal('No quiero que me llames')).toEqual({
       type: 'call_decline',
     });
   });

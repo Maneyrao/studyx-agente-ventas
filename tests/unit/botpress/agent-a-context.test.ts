@@ -560,6 +560,30 @@ describe('buildAgentAContextV1', () => {
     });
   });
 
+  it('retains a direct-call intent while the declared phone is still missing', () => {
+    const claimed = claimedTurn();
+    claimed.deterministic_route = 'call_phone_required';
+    claimed.contact_intake_missing = ['telefono'];
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'Dale, llamame',
+    };
+
+    expect(bindCurrentConversationalIntentToMoveV1({
+      schema_version: 1,
+      move: 'provide_contact_details',
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 0.91,
+    }, claimed)).toEqual({
+      schema_version: 1,
+      move: 'request_call',
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 1,
+    });
+  });
+
   it('no reescribe la intención del modelo ante una pregunta de precio', () => {
     const claimed = claimedTurn();
     claimed.context.batch_messages[0] = {

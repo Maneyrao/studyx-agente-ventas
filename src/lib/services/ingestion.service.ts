@@ -23,6 +23,7 @@ import { evaluateTurnPolicy, type TurnPolicyReason } from '@/features/orchestrat
 import { PostgresOrchestrationStore } from '@/features/orchestration/adapters/postgres-orchestration-store';
 import type { BatchMembership } from '@/features/orchestration/ports/orchestration-store';
 import { DEFAULT_BATCH_WINDOW_POLICY } from '@/features/orchestration/domain/batch-window';
+import { loadBusinessWorkspaceConfig } from '@/lib/config';
 
 export class TurnNotFoundError extends Error {
   readonly code = 'TURN_NOT_FOUND';
@@ -302,6 +303,7 @@ async function captureDeliveredContactNameAnswer(db: DbClient, input: {
 
 async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
   const channel = resolveLogicalChannel(envelope);
+  const { workspaceSlug } = loadBusinessWorkspaceConfig();
   // sandbox_provider (e.g. 'telegram_sandbox') wins over the default derivation so
   // the sandbox lives on its own row in channel_events / channel_threads (their
   // UNIQUE constraints include `provider`) and never collides with production.
@@ -376,6 +378,37 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
       },
     });
     await db`SELECT id FROM contacts WHERE id = ${contact.id}::uuid FOR UPDATE`;
+
+    // A channel contact becomes a lead of the configured business workspace
+    // at first ingest. Call reservation, commercial state and every later
+    // side effect rely on this tenant proof. Payment used to create it much
+    // later, so a lead asking for a call before paying failed with
+    // CALL_WORKSPACE_UNRESOLVED. Never reactivate an explicitly inactive or
+    // archived membership: ON CONFLICT deliberately keeps that lifecycle.
+    const workspaceMembership = await db<Array<{ workspace_id: string }>>`
+      INSERT INTO workspace_contacts (
+        workspace_id, contact_id, lifecycle_status, source_channel
+      )
+      SELECT id, ${contact.id}::uuid, 'active', ${channel}
+      FROM workspaces
+      WHERE slug = ${workspaceSlug} AND status = 'active'
+      ON CONFLICT (workspace_id, contact_id) DO NOTHING
+      RETURNING workspace_id
+    `;
+    if (workspaceMembership.length === 0) {
+      const existingMembership = await db<Array<{ workspace_id: string }>>`
+        SELECT membership.workspace_id
+        FROM workspace_contacts AS membership
+        JOIN workspaces AS workspace ON workspace.id = membership.workspace_id
+        WHERE membership.contact_id = ${contact.id}::uuid
+          AND workspace.slug = ${workspaceSlug}
+          AND workspace.status = 'active'
+        LIMIT 1
+      `;
+      if (existingMembership.length === 0) {
+        throw new Error('BUSINESS_WORKSPACE_NOT_FOUND');
+      }
+    }
 
     if (envelope.sandbox_provider === 'telegram_sandbox') {
       await registerSandboxIdentity(db, {

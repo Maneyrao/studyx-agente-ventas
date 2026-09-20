@@ -137,6 +137,26 @@ export function bindCurrentConversationalIntentToMoveV1(
   move: ConversationMoveV1,
   claimed: ClaimedTurn,
 ): ConversationMoveV1 {
+  // The backend already established unambiguous call consent, but the call
+  // cannot run until Telegram supplies a real destination phone. Preserve
+  // that intent as structured state while Agent A naturally asks for the
+  // missing number; otherwise the next turn forgets why the phone was asked.
+  if (claimed.deterministic_route === 'call_phone_required') {
+    const {
+      payment_plan: _ignoredPaymentPlan,
+      area_reference: _ignoredAreaReference,
+      ...compatible
+    } = move;
+    return {
+      ...compatible,
+      move: 'request_call',
+      secondary_moves: compatible.secondary_moves
+        .filter((kind) => kind !== 'request_call' && kind !== 'decline_call')
+        .slice(0, 2),
+      vetoes: compatible.vetoes.filter((veto) => veto !== 'call'),
+      confidence: 1,
+    };
+  }
   const currentBatchMessages = claimed.context.batch_messages
     .filter((message) => message.message_type === 'text')
     .map((message) => ({ content: message.content }));

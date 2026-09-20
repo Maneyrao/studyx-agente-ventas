@@ -39,7 +39,7 @@ function normalize(text: string): string {
 const CALL_DECLINE_PATTERNS: RegExp[] = [
   /\bno\s+(?:me\s+)?llam(?:es|en)?\b/,
   /\bno\s+quiero\s+(?:una\s+|la\s+)?llamadas?\b/,
-  /\bno\s+quiero\s+que\s+me\s+llamen\b/,
+  /\bno\s+quiero\s+que\s+me\s+llam(?:es|en)\b/,
   /\bsin\s+llamadas?\b/,
   /\bno\s+por\s+telefono\b/,
   /\bprefiero\s+(?:whatsapp|chat|texto)\b/,
@@ -52,7 +52,7 @@ const DIRECT_CALL_REQUEST_PATTERNS: RegExp[] = [
   /\bllamame\b/,
   /\bllamenme\b/,
   /\bpodes llamarme\b/,
-  /\b(?:quiero|necesito)\s+que\s+me\s+llamen\b/,
+  /\b(?:quiero|necesito)\s+que\s+me\s+llam(?:es|en)\b/,
   /\b(?:pueden|podrian|podes)\s+llamarme\b/,
   /\bme\s+llamas\b/,
   /\b(?:quiero|necesito)\s+una\s+llamada\b/,
