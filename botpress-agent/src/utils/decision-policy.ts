@@ -55,6 +55,37 @@ export function technicalFallback(
   }
 }
 
+/**
+ * The call intent is already known; only the callable destination is missing.
+ * This is an action-boundary recovery, not a replacement sales script: the
+ * model still owns the normal response whenever it is available.
+ */
+export function callPhoneRequiredFallback(claimed: ClaimedTurn): Decision {
+  const allowed = claimed.policy.allowed_response_types
+  const responseType = allowed.includes('commercial_reply')
+    ? 'commercial_reply'
+    : allowed.includes('clarification')
+      ? 'clarification'
+      : null
+
+  if (!responseType) return suppress('CALL_PHONE_REQUIRED')
+
+  return {
+    schema_version: 3,
+    intent: 'commercial',
+    kind: 'reply',
+    response: 'De acuerdo. Pásame el número completo con código de país y área, por ejemplo +54 9 11…, para poder llamarte 🙂',
+    response_type: responseType,
+    business_action: null,
+    memory_candidates: [],
+    missing_information: ['telefono'],
+    next_state: 'waiting_user',
+    reason_code: 'CALL_PHONE_REQUIRED',
+    confidence: 1,
+    retrieval_used: null,
+  }
+}
+
 export type BrainFailureReason =
   | 'timeout'
   | 'rate_limited'
@@ -141,6 +172,9 @@ export function modelUnavailableFallback(
   claimed: ClaimedTurn,
   brainFailureReason?: BrainFailureReason,
 ): Decision {
+  if (claimed.deterministic_route === 'call_phone_required') {
+    return callPhoneRequiredFallback(claimed)
+  }
   const allowed = claimed.policy.allowed_response_types
   if (!allowed.includes('commercial_reply')) return technicalFallback()
   const guidance = catalogGuidanceForTurn(claimed)

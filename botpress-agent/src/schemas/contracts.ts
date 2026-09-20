@@ -605,6 +605,7 @@ export const ClaimedTurnSchema = z.object({
     'greeting',
     'call_direct_request',
     'call_accepted_offer',
+    'call_phone_required',
     'call_acceptance_clarification',
   ]).nullable().default(null),
   diagnostics: z.object({

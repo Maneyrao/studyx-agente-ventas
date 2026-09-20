@@ -812,7 +812,7 @@ describe('claimBatch', () => {
     expect(knowledge.search).not.toHaveBeenCalled();
   });
 
-  it('leaves a direct call request to the brain when the stored phone is not internationally callable', async () => {
+  it('marks a direct call request as needing a phone without losing the call intent', async () => {
     const result = await claimBatch(input, buildDeps({
       messagesResult: [{
         id: 'm-call-local', conversation_seq: 1, content: 'llamame ahora',
@@ -825,7 +825,7 @@ describe('claimBatch', () => {
 
     if (result.outcome !== 'claimed') throw new Error('expected a claim');
     expect(result.contact_intake_missing).toContain('telefono');
-    expect(result.deterministic_route).toBeNull();
+    expect(result.deterministic_route).toBe('call_phone_required');
   });
 
   it('classifies a burst made only of greetings before embedding or model work', async () => {

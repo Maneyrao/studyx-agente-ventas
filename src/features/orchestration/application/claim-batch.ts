@@ -235,6 +235,7 @@ export interface ClaimedTurn {
     | 'greeting'
     | 'call_direct_request'
     | 'call_accepted_offer'
+    | 'call_phone_required'
     | 'call_acceptance_clarification'
     | null;
   readonly diagnostics: {
@@ -1047,16 +1048,16 @@ export async function claimBatch(
     ?? (await import('@/lib/repositories/contact-intake.repository')).loadContactIntakeV1;
   const contactIntake = await readIntake(facts.contact.id);
   const contactIntakeMissing = missingContactIntakeFieldsV1(contactIntake);
-  // A call fast path has no conversational recovery. If the provider cannot
-  // dial the stored number, let Agent A ask naturally for an international
-  // number instead of committing an action that reserveCallForDecision will
-  // reject after the customer has already been promised a call.
+  // A call fast path has no conversational recovery. Preserve the customer's
+  // call intent as structured context while Agent A asks naturally for an
+  // internationally callable number. This also gives provider-failure
+  // recovery enough information to avoid a generic technical error.
   if (
     contactIntakeMissing.includes('telefono')
     && (deterministic_route === 'call_direct_request'
       || deterministic_route === 'call_accepted_offer')
   ) {
-    deterministic_route = null;
+    deterministic_route = 'call_phone_required';
   }
 
   return {

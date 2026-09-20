@@ -29,6 +29,7 @@ import { StudyxHttpError } from '../utils/http'
 import {
   applyDecisionPolicy,
   classifyBrainFailureReason,
+  callPhoneRequiredFallback,
   constrainModelToAdvisory,
   suppress,
   technicalFallback,
@@ -214,6 +215,31 @@ function pipelinePlaceholder(memoryCandidates: Decision['memory_candidates'] = [
     missing_information: [],
     next_state: 'waiting_user',
     retrieval_used: null,
+  }
+}
+
+function callPhoneRequiredAgentTurn(): AgentATurnCommitV2 {
+  return {
+    schema_version: 2,
+    proposal: {
+      schema_version: 1,
+      move: {
+        schema_version: 1,
+        move: 'request_call',
+        secondary_moves: [],
+        vetoes: [],
+        confidence: 1,
+      },
+      response: {
+        messages: ['De acuerdo. Pásame el número completo con código de país y área, por ejemplo +54 9 11…, para poder llamarte 🙂'],
+        call_offer: null,
+      },
+      proposed_action: { type: 'none' },
+      used_fact_ids: [],
+      used_memory_ids: [],
+      memory_candidates: [],
+      repair_of: null,
+    },
   }
 }
 
@@ -953,16 +979,25 @@ export const processInboundTurn = new Workflow({
         // unavailable, return an honest technical acknowledgement rather than
         // inventing sales copy or leaving the customer in silence.
         if (brainAuthoritative) {
+          const callPhoneFallback = owned.deterministic_route === 'call_phone_required'
+          if (callPhoneFallback) {
+            agentTurnV2Commit = callPhoneRequiredAgentTurn()
+            pipelineDecisionProvider = 'botpress'
+            pipelineDecisionModel = 'policy:call-phone-required'
+            pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
+          }
           const stateFallback = brainFailureReason === 'policy_rejected'
             ? policyRejectedStateFallback(owned)
             : null
-          pipelineFailureDecision = stateFallback
-            ? stateFallback
-            : technicalFallback(
-                owned.policy.allowed_response_types.includes('technical_fallback')
-                  ? 'technical_fallback'
-                  : 'commercial_reply',
-              )
+          if (!callPhoneFallback) {
+            pipelineFailureDecision = stateFallback
+              ? stateFallback
+              : technicalFallback(
+                  owned.policy.allowed_response_types.includes('technical_fallback')
+                    ? 'technical_fallback'
+                    : 'commercial_reply',
+                )
+          }
         }
       }
     }
@@ -1095,10 +1130,15 @@ export const processInboundTurn = new Workflow({
         })
         // No lexical sales substitute. A factual intake-status question may
         // use the canonical claim; every other failure stays technical.
+        const callPhoneFallback = owned.deterministic_route === 'call_phone_required'
+          ? callPhoneRequiredFallback(owned)
+          : null
         const stateFallback = brainFailureReason === 'policy_rejected'
           ? policyRejectedStateFallback(owned)
           : null
-        pipelineFailureDecision = stateFallback
+        pipelineFailureDecision = callPhoneFallback
+          ? callPhoneFallback
+          : stateFallback
           ? stateFallback
           : technicalFallback(
               owned.policy.allowed_response_types.includes('technical_fallback')

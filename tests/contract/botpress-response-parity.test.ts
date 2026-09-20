@@ -264,6 +264,7 @@ describe('claim response parity', () => {
       'greeting',
       'call_direct_request',
       'call_accepted_offer',
+      'call_phone_required',
       'call_acceptance_clarification',
     ]) {
       expect(claimedBlock, `deterministic_route must allow ${route}`).toContain(`'${route}'`);

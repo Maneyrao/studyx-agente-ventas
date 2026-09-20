@@ -94,9 +94,33 @@ describe('call preference requires current customer evidence',()=>{
  });
  it('keeps natural call copy when the phone is missing and no side effect is proposed',()=>{
   const x=setup('¿Te puedo llamar?','request_call');
-  x.proposal.response.messages=['Claro. Pásame el número al que quieres que te llamemos.'];
-  x.context.capabilities.intake_missing=['telefono'];
-  expect(backend(x)).toMatchObject({ok:true,action:{type:'none'},response:'Claro. Pásame el número al que quieres que te llamemos.'});
+ x.proposal.response.messages=['Claro. Pásame el número al que quieres que te llamemos.'];
+ x.context.capabilities.intake_missing=['telefono'];
+  expect(backend(x)).toMatchObject({
+   ok:true,
+   action:{type:'none'},
+   response:'Claro. Pásame el número al que quieres que te llamemos.',
+   transition:{call_preference:'call',call_offer_status:'accepted'},
+  });
+  expect(adk(x)).toBeNull();
+ });
+ it('resumes an accepted call after the requested phone was captured',()=>{
+  const x=setup('+54 9 11 2740 5406','request_call');
+  x.state.call_preference='call';x.state.call_offer_status='accepted';
+  x.context.commercial_state.call_preference='call';x.context.commercial_state.call_offer_status='accepted';
+  x.proposal.proposed_action={type:'request_call_now',reason:'direct_request'};
+  x.context.capabilities.may_request_call_now=true;
+  const result=authorizeAgentTurnV2({
+   proposal:x.proposal,state:x.state,
+   offerings:[{code:'fotografia_profesional',display_name:'Fotografía Profesional'}],
+   facts:[],current_customer_messages:[x.text],
+   call_policy:{may_offer_call:true,may_request_call_now:true},
+  });
+  expect(result).toMatchObject({
+   ok:true,
+   action:{type:'request_call_now'},
+   transition:{call_preference:'call',call_offer_status:'accepted',stage:'handoff'},
+  });
   expect(adk(x)).toBeNull();
  });
  it('keeps a valid preference when a later batch message only adds a question',()=>{

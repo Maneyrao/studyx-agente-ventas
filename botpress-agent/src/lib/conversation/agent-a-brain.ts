@@ -1851,10 +1851,12 @@ export function validateAgentATurnProposalV1(input: {
   // V6 — ofertas visibles <= ledger, tope dos. Una oferta que el modelo
   // escribe dentro de su propia narrativa cuenta igual que la del campo.
   const declaredCallOffer = input.proposal.response.call_offer;
+  const resumesAcceptedCall = input.context.commercial_state.call_preference === 'call'
+    && input.context.commercial_state.call_offer_status === 'accepted';
   const callRequestSupported = supportsCallRequestV1(
     currentCustomerText,
     input.context.commercial_state.awaiting_reply === 'call_or_chat',
-  );
+  ) || resumesAcceptedCall;
   const requestedCallNow = moves.has('request_call') && input.proposal.proposed_action.type === 'request_call_now'
     && input.context.capabilities.may_request_call_now && callRequestSupported
     && !input.proposal.move.vetoes.includes('call');

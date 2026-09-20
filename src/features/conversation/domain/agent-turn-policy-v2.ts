@@ -177,7 +177,10 @@ export function authorizeAgentTurnV2(input: {
 
   const authoredMessages = [...proposal.response.messages];
   const currentText = (input.current_customer_messages ?? []).join('\n');
-  const callRequestSupported = supportsCallRequestV1(currentText, state.awaiting_reply === 'call_or_chat');
+  const resumesAcceptedCall = state.call_preference === 'call'
+    && state.call_offer_status === 'accepted';
+  const callRequestSupported = supportsCallRequestV1(currentText, state.awaiting_reply === 'call_or_chat')
+    || resumesAcceptedCall;
   const currentTurnRejectsCallOffer = supportsChatPreferenceV1(
     currentText,
     state.awaiting_reply === 'call_or_chat',
@@ -375,6 +378,16 @@ export function authorizeAgentTurnV2(input: {
     callOfferStatus = 'accepted';
     awaitingReply = 'none';
     stage = 'handoff';
+  } else if (
+    moves.has('request_call')
+    && supportsCallRequestV1(currentText, state.awaiting_reply === 'call_or_chat')
+    && !input.call_policy.may_request_call_now
+  ) {
+    // The customer already chose the call. Persist that choice while the
+    // assistant requests the missing callable number, so the next turn can
+    // resume instead of forcing the customer to ask twice.
+    callPreference = 'call';
+    callOfferStatus = 'accepted';
   }
   if (action.type === 'send_payment_link') {
     nextOffering = action.offering_code;
