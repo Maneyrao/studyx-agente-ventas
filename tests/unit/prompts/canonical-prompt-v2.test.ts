@@ -13,9 +13,9 @@ const source = readFileSync(
   'utf8',
 );
 
-describe('prompt canónico comercial v30', () => {
+describe('prompt canónico comercial v31', () => {
   it('coincide con la fuente y declara la versión desplegable', () => {
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v30');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v31');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toBe(source);
   });
 
@@ -40,10 +40,11 @@ describe('prompt canónico comercial v30', () => {
     expect(source).toMatch(/primer nombre[\s\S]{0,220}[úu]nica pregunta/iu);
     expect(source).toMatch(/falta del nombre[\s\S]{0,160}nunca bloquea/iu);
     expect(source).toMatch(/primera respuesta[\s\S]{0,220}StudyX[\s\S]{0,220}cercan/iu);
-    expect(source).toMatch(/Normalmente usa uno o dos mensajes breves/iu);
-    expect(source).toMatch(/Puedes usar tres[\s\S]{0,120}idea diferente/iu);
-    expect(source).toMatch(/prioriza una respuesta compacta de una a tres frases/iu);
-    expect(source).toMatch(/cada mensaje adicional debe aportar una idea distinta/iu);
+    expect(source).toMatch(/Por defecto entrega s[oó]lo lo necesario para avanzar este turno/iu);
+    expect(source).toMatch(/35 a 60 palabras[\s\S]{0,120}uno o dos mensajes/iu);
+    expect(source).toMatch(/opci[oó]n principal[\s\S]{0,120}dos hechos can[oó]nicos/iu);
+    expect(source).toMatch(/Ampl[íi]a [úu]nicamente si la persona pide detalles/iu);
+    expect(source).not.toMatch(/Normalmente usa uno o dos mensajes breves|Prioriza una respuesta compacta|Mant[eé]n cada mensaje breve/iu);
     expect(source).toMatch(/nunca respondas s[óo]lo con una confirmaci[óo]n vac[íi]a/iu);
     expect(source).toMatch(/puedes cerrar preguntas y exclamaciones con `\?` o `!`/iu);
     expect(source).not.toMatch(/consulta general ambigua[\s\S]{0,160}un [úu]nico mensaje/iu);
@@ -66,6 +67,16 @@ describe('prompt canónico comercial v30', () => {
     expect(source).toMatch(/M[áa]ximo dos ofrecimientos/iu);
     expect(source).toMatch(/rechazo a la invitaci[óo]n actual[\s\S]{0,180}no impide un segundo recordatorio/iu);
     expect(source).toMatch(/call_offer_count[^\n]*1[\s\S]{0,240}response\.call_offer/iu);
+  });
+
+  it('persuade sin inventar resultados laborales ni ampliar el alcance de la llamada', () => {
+    expect(source).toMatch(
+      /no puedes inventar[\s\S]{0,180}demanda laboral[\s\S]{0,180}ingresos[\s\S]{0,180}conseguir clientes/iu,
+    );
+    expect(source).toMatch(
+      /La llamada sirve para orientar sobre cursos, modalidades, contenidos, precios e inscripci[oó]n/iu,
+    );
+    expect(source).toMatch(/no para ense[nñ]ar a conseguir clientes ni garantizar resultados/iu);
   });
 
   it('conserva las opciones ambiguas fuera de cualquier texto de llamada', () => {
