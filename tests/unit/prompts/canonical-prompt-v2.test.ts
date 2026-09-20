@@ -13,9 +13,9 @@ const source = readFileSync(
   'utf8',
 );
 
-describe('prompt canónico comercial v31', () => {
+describe('prompt canónico comercial v32', () => {
   it('coincide con la fuente y declara la versión desplegable', () => {
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v31');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v32');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toBe(source);
   });
 
@@ -40,8 +40,11 @@ describe('prompt canónico comercial v31', () => {
     expect(source).toMatch(/primer nombre[\s\S]{0,220}[úu]nica pregunta/iu);
     expect(source).toMatch(/falta del nombre[\s\S]{0,160}nunca bloquea/iu);
     expect(source).toMatch(/primera respuesta[\s\S]{0,220}StudyX[\s\S]{0,220}cercan/iu);
-    expect(source).toMatch(/Por defecto entrega s[oó]lo lo necesario para avanzar este turno/iu);
-    expect(source).toMatch(/35 a 60 palabras[\s\S]{0,120}uno o dos mensajes/iu);
+    expect(source).toMatch(/Por defecto[^\n]*turno comercial sustantivo/iu);
+    expect(source).toMatch(/dos mensajes breves[\s\S]{0,360}tercero[\s\S]{0,120}response\.call_offer/iu);
+    expect(source).toMatch(/cada mensaje[\s\S]{0,120}funci[oó]n distinta/iu);
+    expect(source).toMatch(/no dividas[\s\S]{0,140}texto largo/iu);
+    expect(source).toMatch(/45 a 60 palabras en total/iu);
     expect(source).toMatch(/opci[oó]n principal[\s\S]{0,120}dos hechos can[oó]nicos/iu);
     expect(source).toMatch(/Ampl[íi]a [úu]nicamente si la persona pide detalles/iu);
     expect(source).not.toMatch(/Normalmente usa uno o dos mensajes breves|Prioriza una respuesta compacta|Mant[eé]n cada mensaje breve/iu);
