@@ -152,6 +152,17 @@ describe('extractContactIdentity', () => {
     });
   });
 
+  it('adds a surname stated before its label even when the turn also selects a payment plan', () => {
+    expect(extractContactIdentity(
+      '1 pago\n\nPierella mi apellido',
+      'Luke',
+    )).toEqual({
+      name: 'Luke Pierella',
+      email: null,
+      declaredPhone: null,
+    });
+  });
+
   it('does not manufacture a full name from a surname correction without an existing identity', () => {
     expect(extractContactIdentity('Me equivoqué: es Suárez con tilde.', null)).toEqual({
       name: null,

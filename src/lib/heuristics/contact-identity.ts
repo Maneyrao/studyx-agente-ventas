@@ -83,6 +83,11 @@ const STATED_SURNAME_PATTERN = new RegExp(
   'iu',
 );
 
+const POSTPOSED_SURNAME_PATTERN = new RegExp(
+  `\\b(${NAME_TOKEN})\\s+(?:es\\s+)?mi\\s+apellido\\b`,
+  'iu',
+);
+
 function isPlausibleName(candidate: string): boolean {
   const tokens = candidate.trim().split(/\s+/u);
   if (tokens.length === 0 || tokens.length > 4) return false;
@@ -191,6 +196,7 @@ export function extractContactIdentity(
   if (name === null && existingName) {
     const statedSurname = STATED_SURNAME_PATTERN.exec(text)?.[1]
       ?? CORRECTED_SURNAME_PATTERN.exec(text)?.[1]
+      ?? POSTPOSED_SURNAME_PATTERN.exec(text)?.[1]
       ?? null;
     if (statedSurname && isPlausibleName(statedSurname)) {
       const existingTokens = existingName.trim().split(/\s+/u);

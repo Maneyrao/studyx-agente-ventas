@@ -61,6 +61,21 @@ run('contact identity from delivered conversational requests', () => {
       .toEqual([{ name: 'Luke Pierella' }]);
   });
 
+  it('persists a surname stated after a payment-plan selection in the same Telegram turn', async () => {
+    const first = envelope();
+    first.message.text = 'Me llamo Luke';
+    const opened = await processInboundMessage(first);
+
+    const completed = await processInboundMessage(answer(
+      first,
+      '1 pago\n\nPierella mi apellido',
+    ));
+
+    expect(completed.contact.name).toBe('Luke Pierella');
+    expect(await db!`SELECT name FROM contacts WHERE id = ${opened.contact.id}::uuid`)
+      .toEqual([{ name: 'Luke Pierella' }]);
+  });
+
   it('persists a repeated natural full-name answer instead of asking for the surname again', async () => {
     const first = envelope();
     first.message.text = 'Me llamo Luke';
