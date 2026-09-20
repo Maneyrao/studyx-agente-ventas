@@ -102,6 +102,10 @@ describe('classifyBatchSalesSignal', () => {
     expect(classifyBatchSalesSignal(['dale', 'perfecto'])).toEqual({ type: 'call_acceptance' });
   });
 
+  it('accepts a natural discourse marker before dale', () => {
+    expect(classifyDeterministicSalesSignal('Bueno dale')).toEqual({ type: 'call_acceptance' });
+  });
+
   it('returns model_required when no message is decisive', () => {
     expect(classifyBatchSalesSignal(['hola', 'cuánto sale el curso?'])).toEqual({ type: 'model_required' });
     expect(classifyBatchSalesSignal([])).toEqual({ type: 'model_required' });

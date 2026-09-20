@@ -71,6 +71,7 @@ const EXPLICIT_SELF_CONTACT_HEADER = /\b(?:mis\s+datos(?:\s+(?:personales|de\s+c
 const NEGATED_CONTACT_HEADER = /\b(?:no|ni|sin|nunca|tampoco)\b/iu;
 const STANDALONE_CONTACT_FIELD_HEADER = /^(?:nombre(?:\s+(?:completo|y\s+apellido))?|datos\s+personales)\s*$/iu;
 const UNSAFE_NAME_OWNER = /\b(?:no|ni|sin|nunca|tampoco|herman[oa]|amig[oa]|madre|padre|hij[oa]|tercero|otra\s+persona)\b/iu;
+const UNSAFE_NAME_REQUEST = /\b(?:herman[oa]|amig[oa]|madre|padre|hij[oa]|tercero|otra\s+persona)\b|\b(?:no|ni|nunca|tampoco)\s+(?:necesito|necesitamos|me\s+falta|nos\s+falta|hace\s+falta)\b|\bsin\s+(?:nombre|apellido|necesidad\s+de)\b/iu;
 
 const CORRECTED_SURNAME_PATTERN = new RegExp(
   `(?:mi\\s+apellido(?:\\s+correcto)?\\s+es|me\\s+equivoqu[eé].{0,48}?\\bes)\\s+(${NAME_TOKEN})(?=\\s*(?:con\\s+tilde|[,;.:!?]|$))`,
@@ -223,7 +224,7 @@ export function extractContactNameAnswer(
   previous: ContactNameParts = { firstName: null, surname: null },
 ): (ContactNameParts & { readonly name: string | null }) | null {
   const clauses = deliveredRequest.split(/[.!?\n]/u).filter(clause =>
-    !UNSAFE_NAME_OWNER.test(clause)
+    !UNSAFE_NAME_REQUEST.test(clause)
     && /\b(?:necesito|necesitamos|falta[ns]?|pas[aá](?:s|me|rme)|compart[ií](?:s|me|rme)|dec[ií](?:s|me|rme)|d[ií](?:ces|me)|indic[aá](?:s|me|rme)|confirm[aá](?:s|me|rme)|cu[aá]l\s+es|c[oó]mo\s+te\s+llam[aá]s)\b/iu.test(clause));
   const request = clauses.join(' ');
   const asksFirstName = /\bnombre\b|\bc[oó]mo\s+te\s+llam[aá]s\b/iu.test(request);

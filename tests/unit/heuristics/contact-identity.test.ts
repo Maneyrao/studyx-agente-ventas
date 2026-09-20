@@ -246,6 +246,14 @@ describe('extractContactNameAnswer', () => {
     )).toEqual({ firstName: 'Thiago', surname: 'Maneyro', name: 'Thiago Maneyro' });
   });
 
+  it('captures the surname after a delivered payment reply that says the link was not sent yet', () => {
+    expect(extractContactNameAnswer(
+      'pierella',
+      'Todavía no se envió, Luke: para generarlo falta tu apellido. Pásamelo y lo preparo enseguida.',
+      { firstName: 'Luke', surname: null },
+    )).toEqual({ firstName: 'Luke', surname: 'Pierella', name: 'Luke Pierella' });
+  });
+
   it('accepts a naturally repeated full name after a delivered confirmation request', () => {
     expect(extractContactNameAnswer(
       'Luke Pierella, ya te dije',

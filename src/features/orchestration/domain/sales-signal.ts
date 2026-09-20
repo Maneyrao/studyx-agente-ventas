@@ -82,7 +82,9 @@ export function classifyDeterministicSalesSignal(text: string): DeterministicSal
     return { type: 'direct_call_request' };
   }
 
-  const bareReply = normalized.replace(/^[¿¡!.,;: ]+|[¿¡!.,;: ]+$/g, '');
+  const bareReply = normalized
+    .replace(/^[¿¡!.,;: ]+|[¿¡!.,;: ]+$/g, '')
+    .replace(/^bueno,?\s+/u, '');
   if (SHORT_ACCEPTANCE_REPLIES.has(bareReply)) {
     return { type: 'call_acceptance' };
   }
