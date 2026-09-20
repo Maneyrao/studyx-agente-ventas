@@ -229,6 +229,17 @@ describe('buildAgentAContextV1', () => {
     });
   });
 
+  it('does not authorize a real call while Telegram still lacks a declared phone', () => {
+    const claimed = claimedTurn();
+    claimed.contact_intake_missing = ['telefono'];
+    claimed.sales_context.allowed_actions = ['request_call_now'];
+
+    const context = buildAgentAContextV1(claimed);
+
+    expect(context?.capabilities.may_request_call_now).toBe(false);
+    expect(context?.capabilities.intake_missing).toContain('telefono');
+  });
+
   it('exposes the canonical intake values needed for a single confirmation step', () => {
     const claimed = claimedTurn();
     claimed.contact_intake = {

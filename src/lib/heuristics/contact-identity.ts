@@ -214,9 +214,9 @@ export function extractContactNameAnswer(
 ): (ContactNameParts & { readonly name: string | null }) | null {
   const clauses = deliveredRequest.split(/[.!?\n]/u).filter(clause =>
     !UNSAFE_NAME_OWNER.test(clause)
-    && /\b(?:necesito|necesitamos|falta[ns]?|pas[aá](?:s|me|rme)|compart[ií](?:s|me|rme)|dec[ií](?:s|me|rme)|d[ií](?:ces|me)|indic[aá](?:s|me|rme)|confirm[aá](?:s|me|rme)|cu[aá]l\s+es)\b/iu.test(clause));
+    && /\b(?:necesito|necesitamos|falta[ns]?|pas[aá](?:s|me|rme)|compart[ií](?:s|me|rme)|dec[ií](?:s|me|rme)|d[ií](?:ces|me)|indic[aá](?:s|me|rme)|confirm[aá](?:s|me|rme)|cu[aá]l\s+es|c[oó]mo\s+te\s+llam[aá]s)\b/iu.test(clause));
   const request = clauses.join(' ');
-  const asksFirstName = /\bnombre\b/iu.test(request);
+  const asksFirstName = /\bnombre\b|\bc[oó]mo\s+te\s+llam[aá]s\b/iu.test(request);
   const asksSurname = /\bapellido\b|\bnombre\s+completo\b/iu.test(request);
   if ((!asksFirstName && !asksSurname) || UNSAFE_NAME_OWNER.test(text)) return null;
 

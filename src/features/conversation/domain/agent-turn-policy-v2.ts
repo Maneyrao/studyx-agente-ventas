@@ -217,8 +217,9 @@ export function authorizeAgentTurnV2(input: {
 
   const channelChoice = moves.has('continue_by_chat') || moves.has('decline_call');
   const supportedChannelChoice = channelChoice && currentTurnRejectsCallOffer;
-  if ((moves.has('request_call') || proposal.proposed_action.type === 'request_call_now')
-      && !requestedCallNow) reasons.push('ACTION_NOT_AUTHORIZED');
+  if ((proposal.proposed_action.type === 'request_call_now' || (
+    moves.has('request_call') && !callRequestSupported
+  )) && !requestedCallNow) reasons.push('ACTION_NOT_AUTHORIZED');
   // Whether the model remembered the recommended first invitation is measured
   // as conversational quality; it is not transaction authority.
 

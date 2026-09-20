@@ -1839,8 +1839,9 @@ export function validateAgentATurnProposalV1(input: {
   }
   if (input.proposal.move.vetoes.includes('call') && !channelChoice) rejections.push({ code: 'CHANNEL_PREFERENCE_NOT_SUPPORTED', subject: 'call_preference' });
   if (channelChoice && offersACall) rejections.push({ code: 'CHANNEL_PREFERENCE_NOT_SUPPORTED', subject: 'call_offer' });
-  if ((moves.has('request_call') || input.proposal.proposed_action.type === 'request_call_now')
-      && !requestedCallNow
+  if ((input.proposal.proposed_action.type === 'request_call_now' || (
+    moves.has('request_call') && !callRequestSupported
+  )) && !requestedCallNow
       && !rejections.some((reason) => reason.code === 'ACTION_NOT_AUTHORIZED' && reason.subject === 'request_call_now')) {
     rejections.push({ code: 'ACTION_NOT_AUTHORIZED', subject: 'request_call_now' });
   }

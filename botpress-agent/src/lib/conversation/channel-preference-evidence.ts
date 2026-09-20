@@ -14,7 +14,7 @@ function channelPreferenceEvidenceV1(
     && /^(?:si(?:\s+por\s+favor)?|dale|bueno|ok|okay|llamame)[,.!\s]*$/u.test(value);
   if (acceptsPending) return 'call';
   // A bare channel question supplies no preference.
-  if (/[?¿]/u.test(value) && !/\b(?:prefiero|sigamos|seguimos|continuemos|mejor|no\s+quiero|llamame|llamarme|llamada|telefono|hablemos)\b/u.test(value)) {
+  if (/[?¿]/u.test(value) && !/\b(?:prefiero|sigamos|seguimos|continuemos|mejor|no\s+quiero|llamame|llamar(?:te|me)?|llamada|telefono|hablemos)\b/u.test(value)) {
     return null;
   }
   const clauses = value.split(/[\n,;.!?…¿¡]|\b(?:pero|aunque|sin\s+embargo)\b/gu)
@@ -31,7 +31,7 @@ function channelPreferenceEvidenceV1(
     );
     if (refusesCall) return 'declined';
     if (writtenChoice) return 'chat';
-    const choosesCall = /\b(?:mejor\s+llamame|prefiero\s+(?:una\s+)?llamada|prefiero\s+(?:hablar\s+)?por\s+telefono|quiero\s+(?:una\s+)?llamada|(?:podes|puedes)\s+llamarme|(?:hablemos|hablamos|podemos\s+(?:hablar|conversar)|podriamos\s+(?:hablar|conversar))\s+por\s+telefono|llamame)\b/u.test(clause);
+    const choosesCall = /\b(?:mejor\s+llamame|prefiero\s+(?:una\s+)?llamada|prefiero\s+(?:hablar\s+)?por\s+telefono|quiero\s+(?:una\s+)?llamada|(?:podes|puedes)\s+llamarme|(?:te\s+)?(?:puedo|podria)\s+llamar(?:te)?|(?:hablemos|hablamos|podemos\s+(?:hablar|conversar)|podriamos\s+(?:hablar|conversar))\s+por\s+telefono|llamame)\b/u.test(clause);
     if (choosesCall) return 'call';
   }
   return null;
@@ -56,7 +56,7 @@ export function supportsCallDeclineV1(text: string, pendingCallOffer: boolean): 
       latestRefusal = index;
       continue;
     }
-    if (/\b(?:mejor\s+llamame|prefiero\s+(?:una\s+)?llamada|prefiero\s+(?:hablar\s+)?por\s+telefono|quiero\s+(?:una\s+)?llamada|(?:podes|puedes)\s+llamarme|(?:hablemos|hablamos|podemos\s+(?:hablar|conversar)|podriamos\s+(?:hablar|conversar))\s+por\s+telefono|llamame)\b/u.test(clause)) latestCallChoice = index;
+    if (/\b(?:mejor\s+llamame|prefiero\s+(?:una\s+)?llamada|prefiero\s+(?:hablar\s+)?por\s+telefono|quiero\s+(?:una\s+)?llamada|(?:podes|puedes)\s+llamarme|(?:te\s+)?(?:puedo|podria)\s+llamar(?:te)?|(?:hablemos|hablamos|podemos\s+(?:hablar|conversar)|podriamos\s+(?:hablar|conversar))\s+por\s+telefono|llamame)\b/u.test(clause)) latestCallChoice = index;
   }
   return latestRefusal >= 0 && latestRefusal > latestCallChoice;
 }

@@ -709,7 +709,8 @@ export function buildAgentAContextV1(
         && callOfferCount < 2,
       may_request_call_now: claimed.policy.may_respond
         && !claimed.contact.blocked
-        && claimed.sales_context.allowed_actions.includes('request_call_now'),
+        && claimed.sales_context.allowed_actions.includes('request_call_now')
+        && !intakeMissing.includes('telefono'),
       may_present_payment_options: claimed.policy.may_respond
         && selectedCode !== null
         && (claimed.business_context?.workspace.payment_options.length ?? 0) > 0,

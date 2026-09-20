@@ -167,6 +167,13 @@ describe('splitFullName', () => {
 
 
 describe('extractContactNameAnswer', () => {
+  it('captures a one-word name after the natural greeting used in production', () => {
+    expect(extractContactNameAnswer(
+      'Ludmila',
+      'Para orientarte con el curso que mejor te sirva, cómo te llamas?',
+    )).toEqual({ firstName: 'Ludmila', surname: null, name: 'Ludmila' });
+  });
+
   it('captures and normalizes a lowercase surname after a delivered full-name request', () => {
     expect(extractContactNameAnswer(
       'Juan perez',

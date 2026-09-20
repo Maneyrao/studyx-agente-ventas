@@ -322,6 +322,29 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.effective.proposal.proposed_action).toEqual({ type: 'request_call_now', reason: 'accepted_offer' });
   });
 
+  it('keeps the natural phone request and removes only an unauthorized call side effect', async () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm1', text: 'te puedo llamar?' }];
+    current.capabilities.may_request_call_now = false;
+    current.capabilities.intake_missing = ['telefono'];
+    const response = ['Claro. Pásame el número donde quieres recibir la llamada y te contacto.'];
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: response, call_offer: null },
+        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+      })),
+      context: current,
+      repair_enabled: false,
+      repair: async () => { throw new Error('Unexpected repair'); },
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(result.effective.proposal.response.messages).toEqual(response);
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+  });
+
   it('preserves requested information embedded with an unsolicited pending-call reminder', async () => {
     const current = context();
     current.commercial_state.call_offer_count = 1;

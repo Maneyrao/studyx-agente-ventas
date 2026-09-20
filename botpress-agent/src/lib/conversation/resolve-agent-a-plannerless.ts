@@ -163,6 +163,39 @@ function demoteUnauthorizedPaymentAction<T extends AgentAProposalEnvelopeV1>(inp
     : null
 }
 
+/**
+ * A missing phone denies only the call side effect. DeepSeek's useful reply
+ * (normally a natural request for that number) remains customer-facing.
+ */
+function demoteUnauthorizedCallAction<T extends AgentAProposalEnvelopeV1>(input: {
+  readonly initial: T
+  readonly rejection: TurnRejectionV1
+  readonly context: AgentAContextV1
+  readonly authorized_fact_ids: readonly string[]
+}): T | null {
+  if (input.initial.proposal.proposed_action.type !== 'request_call_now') return null
+  if (!input.rejection.rejections.some((reason) => (
+    reason.code === 'ACTION_NOT_AUTHORIZED' && reason.subject === 'request_call_now'
+  ))) return null
+  if (!input.rejection.rejections.every((reason) => (
+    reason.code === 'ACTION_NOT_AUTHORIZED' && reason.subject === 'request_call_now'
+  ))) return null
+
+  const candidate = {
+    ...input.initial,
+    proposal: { ...input.initial.proposal, proposed_action: { type: 'none' as const } },
+  }
+  const candidateRejection = validatePlannerless({
+    proposal: candidate.proposal,
+    context: input.context,
+    rejection_id: input.rejection.rejection_id,
+    authorized_fact_ids: input.authorized_fact_ids,
+  })
+  return candidateRejection === null || hasOnlyNonBlockingGuidance(candidate.proposal, candidateRejection)
+    ? candidate
+    : null
+}
+
 /** Both the initial proposal and its one repair use this exact pipeline. */
 function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   readonly initial: T
@@ -179,7 +212,7 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   const rejection = validate(effective)
   if (rejection === null) return { effective, rejection, originalRejection }
   // Each demotion/prune revalidates its result, including the full schema.
-  for (const transform of [demoteUnauthorizedPaymentAction]) {
+  for (const transform of [demoteUnauthorizedPaymentAction, demoteUnauthorizedCallAction]) {
     const candidate = transform({ ...input, initial: effective, rejection })
     if (candidate !== null) return { effective: candidate, rejection: null, originalRejection }
   }
