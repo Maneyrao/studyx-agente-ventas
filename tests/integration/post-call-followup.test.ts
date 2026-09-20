@@ -837,6 +837,9 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
       providerCallId: `retell-e2e-${callRows[0].id}`,
       workspaceId: workspaceRows[0].workspace_id,
     };
+    const [contactIdentity] = await sql<Array<{ phone: string }>>`
+      SELECT phone FROM contacts WHERE id = ${fixture.contactId}::uuid
+    `;
 
     const dispatch = await dispatchCall(
       { callId: fixture.callId, workerId: `e2e-${fixture.callId}` },
@@ -863,6 +866,7 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
       nombre: 'Ariana',
       apellido: 'Paz',
       email: 'ariana.paz@example.test',
+      telefono: contactIdentity.phone,
       cursoInteres: 'Curso E2E',
       ultimaSenal: 'complete_lead',
       traceId: randomUUID(),
@@ -992,7 +996,9 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
         nombre: 'Ariana',
         apellido: 'Paz',
         mail: 'e2e@example.test',
+        telefono: contactIdentity.phone,
         tipo_de_curso: 'Python',
+        plan: '',
       },
     }]);
     await expect(sql<Array<{ count: string }>>`

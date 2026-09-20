@@ -263,7 +263,7 @@ run('Retell P0 tools with PostgreSQL', () => {
     `).resolves.toEqual([{ result: 'venta_confirmada' }]);
   });
 
-  it('merges the correlated contact and converges one exact four-field outbox row', async () => {
+  it('merges the correlated contact and converges one exact six-field outbox row', async () => {
     const ids = await fixture({ name: 'Ana López', email: null, sourceOrder: 4 });
     await db!`
       INSERT INTO offerings (
@@ -342,7 +342,9 @@ run('Retell P0 tools with PostgreSQL', () => {
         nombre: 'Mariana',
         apellido: 'López',
         mail: 'mariana@example.test',
+        telefono: '+5491199999999',
         tipo_de_curso: 'Reparación de Celulares',
+        plan: '',
       },
     }]);
 
@@ -827,7 +829,9 @@ run('Retell P0 tools with PostgreSQL', () => {
         nombre: 'Ana',
         apellido: 'López',
         mail: 'new@example.test',
+        telefono: expect.stringMatching(/^\+54911\d{8}$/u),
         tipo_de_curso: 'Reparación de Celulares',
+        plan: '',
       },
     }]);
     await expect(db!<Array<{ event_type: string; payload: Record<string, unknown> }>>`
@@ -920,6 +924,7 @@ run('Retell P0 tools with PostgreSQL', () => {
       nombre: 'Ana',
       apellido: 'López',
       email: 'agent@example.test',
+      telefono: ids.phone,
       cursoInteres: 'Reparación de Celulares',
       ultimaSenal: 'agent_a_newer_identity',
       traceId: ids.callId,
@@ -949,7 +954,9 @@ run('Retell P0 tools with PostgreSQL', () => {
         nombre: 'Ana',
         apellido: 'López',
         mail: 'agent@example.test',
+        telefono: expect.stringMatching(/^\+54911\d{8}$/u),
         tipo_de_curso: 'Reparación de Celulares',
+        plan: '',
       },
     }]);
   });

@@ -13,9 +13,9 @@ const source = readFileSync(
   'utf8',
 );
 
-describe('prompt canónico comercial v29', () => {
+describe('prompt canónico comercial v30', () => {
   it('coincide con la fuente y declara la versión desplegable', () => {
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v29');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v30');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toBe(source);
   });
 
@@ -42,6 +42,8 @@ describe('prompt canónico comercial v29', () => {
     expect(source).toMatch(/primera respuesta[\s\S]{0,220}StudyX[\s\S]{0,220}cercan/iu);
     expect(source).toMatch(/Normalmente usa uno o dos mensajes breves/iu);
     expect(source).toMatch(/Puedes usar tres[\s\S]{0,120}idea diferente/iu);
+    expect(source).toMatch(/prioriza una respuesta compacta de una a tres frases/iu);
+    expect(source).toMatch(/cada mensaje adicional debe aportar una idea distinta/iu);
     expect(source).toMatch(/nunca respondas s[óo]lo con una confirmaci[óo]n vac[íi]a/iu);
     expect(source).toMatch(/puedes cerrar preguntas y exclamaciones con `\?` o `!`/iu);
     expect(source).not.toMatch(/consulta general ambigua[\s\S]{0,160}un [úu]nico mensaje/iu);

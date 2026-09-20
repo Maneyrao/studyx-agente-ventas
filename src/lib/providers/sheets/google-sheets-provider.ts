@@ -1,5 +1,9 @@
 import { google } from 'googleapis';
-import { assertRealSideEffectAllowed, type SandboxLookup } from '@/lib/services/sandbox.service';
+import {
+  assertRealSideEffectAllowed,
+  isSandboxSheetWriteAllowlisted,
+  type SandboxLookup,
+} from '@/lib/services/sandbox.service';
 import { SHEET_COLUMN_ORDER, type SheetsProvider, type UpdateRowParams } from './sheets-provider';
 
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
@@ -58,10 +62,12 @@ export class GoogleSheetsProvider implements SheetsProvider {
   }
 
   async updateRow(params: UpdateRowParams): Promise<void> {
-    await assertRealSideEffectAllowed(
-      { findSandboxProvider: this.findSandboxProvider },
-      { contactId: params.contactId, effect: 'google_sheets.update_row' },
-    );
+    if (!isSandboxSheetWriteAllowlisted(params.contactId)) {
+      await assertRealSideEffectAllowed(
+        { findSandboxProvider: this.findSandboxProvider },
+        { contactId: params.contactId, effect: 'google_sheets.update_row' },
+      );
+    }
 
     if (!this.client) {
       this.client = google.sheets({ version: 'v4', auth: buildAuth() as never });

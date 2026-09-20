@@ -50,7 +50,7 @@ export interface LeadProjectionInput {
   sourceOrder?: number;
   /** Stable trusted producer identity; never part of the visible row. */
   sourceKey?: string;
-  /** Retained for existing call sites; not part of the visible Sheet row. */
+  /** Channel-derived or customer-declared phone shown in the operator row. */
   telefono?: string;
   /**
    * Canonical application names remain compatible with the existing callers.
@@ -59,10 +59,7 @@ export interface LeadProjectionInput {
   nombre?: string;
   apellido?: string;
   email?: string;
-  /**
-   * `cursoInteres` is persisted as visible `tipo_de_curso`. The remaining
-   * fields are retained for existing callers but are never written to Sheets.
-   */
+  /** `cursoInteres` is persisted as visible `tipo_de_curso`. */
   etapaComercial?: string;
   cursoInteres?: string;
   plan?: string;
@@ -87,7 +84,7 @@ interface ExistingRow {
   source_order: string | number;
   source_key: string | null;
   payload: Partial<SheetRowValues> & {
-    /** Read only so an existing row converges to the A:D contract on correction. */
+    /** Legacy aliases read only so an existing row converges to the six-column contract. */
     email?: string;
     curso_interes?: string;
   };
@@ -97,8 +94,8 @@ function backoffSeconds(attemptCount: number): number {
   return Math.min(MAX_BACKOFF_SECONDS, 30 * 2 ** Math.max(0, attemptCount - 1));
 }
 
-function isCompleteLead(values: SheetRowValues): boolean {
-  return Object.values(values).every((value) => value.trim().length > 0);
+function hasStableLeadIdentity(values: SheetRowValues): boolean {
+  return values.telefono.trim().length > 0;
 }
 
 function sourceOrder(input: LeadProjectionInput): number | null {
@@ -144,7 +141,7 @@ export function agentBLeadProjectionSourceOrder(callSourceOrder: number): number
 /**
  * Idempotent upsert of the single outbox row for one lead.
  *
- * The persisted payload is deliberately the four visible A:D values only.
+ * The persisted payload is deliberately the six visible A:F values only.
  * Optional canonical input values merge with the existing row so a later
  * correction updates the same row without erasing another captured value.
  *
@@ -192,12 +189,14 @@ async function enqueueLeadProjectionInTransaction(
       nombre: input.nombre ?? existing?.payload.nombre ?? '',
       apellido: input.apellido ?? existing?.payload.apellido ?? '',
       mail: input.email ?? existing?.payload.mail ?? existing?.payload.email ?? '',
+      telefono: input.telefono ?? existing?.payload.telefono ?? '',
       tipo_de_curso: input.cursoInteres
         ?? existing?.payload.tipo_de_curso
         ?? existing?.payload.curso_interes
         ?? '',
+      plan: input.plan ?? existing?.payload.plan ?? '',
     };
-    if (!isCompleteLead(values)) return null;
+    if (!hasStableLeadIdentity(values)) return null;
     const payloadHash = sha256Hex(values);
 
     if (existing) {
@@ -230,7 +229,12 @@ async function enqueueLeadProjectionInTransaction(
             source_key = CASE WHEN ${hasOrderingProof}
               THEN ${inputSourceKey}::text ELSE source_key END,
             state = 'pending',
-            available_at = now()
+            available_at = now(),
+            attempt_count = 0,
+            lease_until = NULL,
+            leased_by = NULL,
+            error_code = NULL,
+            projected_at = NULL
         WHERE id = ${existing.id}
           AND (
             (${hasOrderingProof} AND (
@@ -302,9 +306,9 @@ export interface CommittedLeadStateProjectionInput {
 }
 
 /**
- * Attempts to enrich the operator-facing lead row from inbound identity.
- * The four-column contract intentionally creates no outbox row until name,
- * surname, email and course are all known. PostgreSQL remains authoritative.
+ * Creates the operator-facing lead row as soon as the channel phone is known,
+ * then enriches that same stable row as identity and commercial facts arrive.
+ * PostgreSQL remains authoritative.
  */
 export async function upsertInboundLeadProjection(
   input: InboundLeadProjectionInput,

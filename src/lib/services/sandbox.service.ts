@@ -45,6 +45,19 @@ export type RealSideEffectAttempt = {
 };
 
 /**
+ * A single explicitly selected Telegram tester may exercise the Sheets mirror
+ * without weakening the sandbox lock for calls, payments or outbound sends.
+ * The default remains closed and an exact contact id match is required.
+ */
+export function isSandboxSheetWriteAllowlisted(
+  contactId: string,
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): boolean {
+  const allowlistedContactId = environment.GOOGLE_SHEETS_SANDBOX_CONTACT_ID?.trim();
+  return Boolean(allowlistedContactId) && allowlistedContactId === contactId;
+}
+
+/**
  * Throws `RealSideEffectRejectedError` when the contact is sandbox. Returns
  * silently otherwise. Callers should await this immediately before invoking
  * the external provider.

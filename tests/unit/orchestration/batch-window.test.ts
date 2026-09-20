@@ -139,12 +139,9 @@ describe('planBatchWait', () => {
 });
 
 describe('DEFAULT_BATCH_WINDOW_POLICY', () => {
-  it('keeps a natural two-part customer message inside the same rolling window', () => {
-    // Producción observó "quiero info" + "qué necesitás" separados por
-    // 1.87 s. Con una ventana de 1 s el primer mensaje se procesa y luego se
-    // suprime, aunque para la persona ambos forman una sola intervención.
-    expect(policy.windowMs).toBeGreaterThanOrEqual(2_500);
-    expect(policy.hardDeadlineMs).toBeGreaterThanOrEqual(6_000);
+  it('waits five seconds after the latest customer bubble and caps the burst at fifteen seconds', () => {
+    expect(policy.windowMs).toBe(5_000);
+    expect(policy.hardDeadlineMs).toBe(15_000);
   });
 
   it('keeps the hard deadline at or beyond the rolling window', () => {
@@ -159,7 +156,7 @@ describe('DEFAULT_BATCH_WINDOW_POLICY (latency contract)', () => {
   });
 
   it('keeps a finite hard deadline: a message stream cannot postpone the turn forever', () => {
-    expect(policy.hardDeadlineMs).toBe(6_000);
+    expect(policy.hardDeadlineMs).toBe(15_000);
     expect(policy.hardDeadlineMs).toBeGreaterThan(policy.windowMs);
   });
 
@@ -179,8 +176,8 @@ describe('DEFAULT_BATCH_WINDOW_POLICY (latency contract)', () => {
     // Messages keep arriving inside the rolling window: due_at slides but the
     // hard deadline remains the absolute ceiling.
     const plan = planBatchWait({
-      now: at(5_500),
-      dueAt: at(8_000), // backend would clamp this; the planner clamps too
+      now: at(14_500),
+      dueAt: at(18_000), // backend would clamp this; the planner clamps too
       hardDeadlineAt: at(policy.hardDeadlineMs),
       attempt: 2,
       policy,

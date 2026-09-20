@@ -497,7 +497,7 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
   /**
    * Retell analysis is a bounded fact envelope, not a second contact system.
    * Only the call's canonical workspace membership can authorize the email
-   * update; the stable four-column projection is then refreshed from that
+   * update; the stable six-column projection is then refreshed from that
    * same membership. Replays intentionally run this idempotent convergence
    * again so a delivery interrupted after the event insert can heal.
    */
@@ -511,6 +511,9 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
       source_order: string | number | null;
       name: string | null;
       email: string | null;
+      phone: string;
+      declared_phone: string | null;
+      selected_payment_plan: string | null;
       course_name: string | null;
       course_code: string | null;
     }>>`
@@ -521,6 +524,9 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
         source.conversation_seq AS source_order,
         contact.name,
         contact.email,
+        contact.phone,
+        contact.declared_phone,
+        state.selected_payment_plan,
         offering.display_name AS course_name,
         NULLIF(btrim(cs.context_snapshot ->> 'curso_interes'), '') AS course_code
       FROM call_sessions AS cs
@@ -539,6 +545,10 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
         ON canonical_membership.workspace_id = cs.workspace_id
        AND canonical_membership.contact_id = cs.contact_id
        AND canonical_membership.lifecycle_status = 'active'
+      LEFT JOIN conversation_sales_context_states_v1 AS state
+        ON state.workspace_id = cs.workspace_id
+       AND state.conversation_id = cs.conversation_id
+       AND state.contact_id = cs.contact_id
       LEFT JOIN offerings AS offering
         ON offering.workspace_id = canonical_workspace.id
        AND offering.code = NULLIF(btrim(cs.context_snapshot ->> 'curso_interes'), '')
@@ -594,7 +604,9 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
       nombre: identity.nombre,
       apellido: identity.apellido,
       email,
+      telefono: row.declared_phone ?? row.phone,
       cursoInteres: course,
+      plan: row.selected_payment_plan ?? undefined,
       ultimaSenal: 'retell_post_call_analysis_email_captured',
       traceId: callId,
     }, { sql: db });

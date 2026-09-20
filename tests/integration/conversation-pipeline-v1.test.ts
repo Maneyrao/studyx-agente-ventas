@@ -415,9 +415,8 @@ run('conversation pipeline V1 vertical', () => {
       state_events_for_payment: 1,
     });
 
-    // A delivered link creates one complete operator-facing lead row. Payment
-    // state remains canonical in PostgreSQL and is deliberately not duplicated
-    // into the four visible Sheet columns.
+    // A delivered link enriches the one operator-facing lead row with the
+    // canonical course and plan while PostgreSQL remains authoritative.
     const beforeReport = await db!<Array<{ payload: Record<string, string> }>>`
       SELECT payload FROM sheet_projection_rows
       WHERE projection_key = ${leadProjectionKey(workspaceId, payment.claimed.batch.contact_id)}
@@ -427,7 +426,9 @@ run('conversation pipeline V1 vertical', () => {
       nombre: 'Ariana',
       apellido: 'Paz',
       mail: 'ariana.paz@example.test',
+      telefono: expect.stringMatching(/^\+54911\d{8}$/u),
       tipo_de_curso: 'Redes Informáticas',
+      plan: 'monthly_12',
     });
 
     // The customer says they paid. Repeating it must not repeat the row.
@@ -443,7 +444,9 @@ run('conversation pipeline V1 vertical', () => {
       nombre: 'Ariana',
       apellido: 'Paz',
       mail: 'ariana.paz@example.test',
+      telefono: expect.stringMatching(/^\+54911\d{8}$/u),
       tipo_de_curso: 'Redes Informáticas',
+      plan: 'monthly_12',
     });
 
     const finalState = await stateStore.load(

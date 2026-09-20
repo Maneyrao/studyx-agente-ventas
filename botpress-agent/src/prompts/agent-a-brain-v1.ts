@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { evaluateCallOfferTurnPolicyV1 } from '../lib/conversation/call-offer-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v63' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v64' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so

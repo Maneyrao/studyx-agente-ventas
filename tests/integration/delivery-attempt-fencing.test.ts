@@ -540,7 +540,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
     `;
   }
 
-  it('a failed delivery does not create an incomplete operator-facing lead row', async () => {
+  it('keeps the progressive phone lead when a later delivery fails', async () => {
     const turn = await seedPaymentTurn('Quiero pagar en 12 cuotas, opción fallida');
     await recordDeliveryReport({
       outbound_id: turn.outbound!.id,
@@ -552,10 +552,15 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       delivery_attempt: turn.attempt,
     });
 
-    expect(await projectionRows(turn.contact_id)).toEqual([]);
+    expect(await projectionRows(turn.contact_id)).toEqual([{
+      payload: {
+        nombre: '', apellido: '', mail: '', telefono: expect.stringMatching(/^\+54911\d{8}$/u),
+        tipo_de_curso: '', plan: '',
+      },
+    }]);
   });
 
-  it('a confirmed legacy link delivery still does not create an incomplete lead row', async () => {
+  it('keeps one progressive phone lead after a confirmed legacy link delivery', async () => {
     const turn = await seedPaymentTurn('Quiero pagar en 12 cuotas, sin reportar el pago');
     await recordDeliveryReport({
       outbound_id: turn.outbound!.id,
@@ -567,7 +572,12 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       delivery_attempt: turn.attempt,
     });
 
-    expect(await projectionRows(turn.contact_id)).toEqual([]);
+    expect(await projectionRows(turn.contact_id)).toEqual([{
+      payload: {
+        nombre: '', apellido: '', mail: '', telefono: expect.stringMatching(/^\+54911\d{8}$/u),
+        tipo_de_curso: '', plan: '',
+      },
+    }]);
   });
 
   it('enqueues exactly one reported-payment row once the evidence exists, even under replay', async () => {
@@ -594,7 +604,9 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       nombre: 'Ariana',
       apellido: 'Paz',
       mail: 'ariana.paz@example.test',
+      telefono: expect.stringMatching(/^\+54911\d{8}$/u),
       tipo_de_curso: 'Curso Fencing',
+      plan: 'monthly_12',
     });
   });
 
@@ -701,7 +713,9 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
         nombre: 'Ariana',
         apellido: 'Paz',
         mail: 'ariana.paz@example.test',
+        telefono: expect.stringMatching(/^\+54911\d{8}$/u),
         tipo_de_curso: 'Decoración de Interiores',
+        plan: 'monthly_6',
       },
     });
   });
@@ -873,7 +887,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
         WHERE od.message_id = ${turn.outbound!.id}::uuid
         GROUP BY od.state
       `;
-      expect(afterFailure[0]).toEqual({ state: 'submitted', reports: 1, rows: 0 });
+      expect(afterFailure[0]).toEqual({ state: 'submitted', reports: 1, rows: 1 });
     } finally {
       await sql.unsafe(`
         DROP TRIGGER IF EXISTS ${triggerName} ON sheet_projection_rows;
@@ -1061,7 +1075,9 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
         nombre: 'Ariana',
         apellido: 'Paz',
         mail: 'ariana.paz@example.test',
+        telefono: expect.stringMatching(/^\+54911\d{8}$/u),
         tipo_de_curso: 'Decoración de Interiores',
+        plan: 'monthly_6',
       });
       return rows[0];
     };

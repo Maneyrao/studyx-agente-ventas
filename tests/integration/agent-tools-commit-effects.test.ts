@@ -908,7 +908,9 @@ run('Agent Loop preparation materialization', () => {
         nombre: 'Ana',
         apellido: 'Pérez',
         mail: expect.stringMatching(/^ana\..+@example\.test$/u),
+        telefono: expect.stringMatching(/^\+54911\d{8}$/u),
         tipo_de_curso: 'entrenamiento_funcional',
+        plan: '',
       },
     }]);
 
@@ -947,7 +949,7 @@ run('Agent Loop preparation materialization', () => {
     await expect(sql<Array<{ id: string }>>`
       SELECT id FROM sheet_projection_rows
       WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
-    `).resolves.toHaveLength(0);
+    `).resolves.toHaveLength(1);
 
     const courseSecond = await commit(seeded, {
       turn_id: seeded.second_turn_id,
@@ -966,7 +968,7 @@ run('Agent Loop preparation materialization', () => {
     await expect(sql<Array<{ id: string }>>`
       SELECT id FROM sheet_projection_rows
       WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
-    `).resolves.toHaveLength(0);
+    `).resolves.toHaveLength(1);
 
     const [channel] = await sql<Array<{
       provider: string;
@@ -1031,7 +1033,7 @@ run('Agent Loop preparation materialization', () => {
     await expect(sql<Array<{ id: string }>>`
       SELECT id FROM sheet_projection_rows
       WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
-    `).resolves.toHaveLength(0);
+    `).resolves.toHaveLength(1);
 
     const fourthInboundResult = await processInboundMessage({
       ...thirdInbound,
@@ -1084,7 +1086,9 @@ run('Agent Loop preparation materialization', () => {
         nombre: 'Ana',
         apellido: 'García',
         mail: 'ana.garcia@example.test',
+        telefono: expect.stringMatching(/^\+54911\d{8}$/u),
         tipo_de_curso: 'entrenamiento_funcional',
+        plan: '',
       },
     }]);
   });
@@ -1139,7 +1143,9 @@ run('Agent Loop preparation materialization', () => {
         nombre: 'Ana',
         apellido: 'García',
         mail: expect.stringMatching(/^ana\..+@example\.test$/u),
+        telefono: expect.stringMatching(/^\+54911\d{8}$/u),
         tipo_de_curso: 'entrenamiento_funcional',
+        plan: '',
       },
     }]);
   });
@@ -1194,7 +1200,9 @@ run('Agent Loop preparation materialization', () => {
         nombre: 'Ana',
         apellido: 'Pérez',
         mail: expect.stringMatching(/^ana\..+@example\.test$/u),
+        telefono: expect.stringMatching(/^\+54911\d{8}$/u),
         tipo_de_curso: 'entrenamiento_funcional',
+        plan: '',
       },
     });
     const ourRowNumber = rows[0]!.row_number;

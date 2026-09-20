@@ -15,7 +15,9 @@ export const SHEET_COLUMN_ORDER = [
   'nombre',
   'apellido',
   'mail',
+  'telefono',
   'tipo_de_curso',
+  'plan',
 ] as const;
 
 export type SheetColumn = (typeof SHEET_COLUMN_ORDER)[number];

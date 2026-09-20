@@ -39,12 +39,11 @@ export interface BatchWindowPolicy {
 }
 
 export const DEFAULT_BATCH_WINDOW_POLICY: BatchWindowPolicy = {
-  // Telegram users commonly split one thought into two or three bubbles. A
-  // production trace showed a 1.87s pause being split into independent turns,
-  // which made the first response obsolete and the second lose its subject.
-  // Keep that natural pause together while retaining a finite upper bound.
-  windowMs: 2_500,
-  hardDeadlineMs: 6_000,
+  // Chat users commonly split one thought into several bubbles. Wait five
+  // seconds after the latest fragment, but never hold the complete turn for
+  // more than fifteen seconds from the first message.
+  windowMs: 5_000,
+  hardDeadlineMs: 15_000,
   maxClaimAttempts: 4,
   minSleepMs: 250,
   maxSleepMs: 5_000,

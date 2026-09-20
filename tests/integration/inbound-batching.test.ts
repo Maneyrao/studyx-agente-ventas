@@ -206,7 +206,7 @@ run('durable inbound batching', () => {
     expect(claim.outcome).toBe('waiting');
     expect(claim.claim_token).toBeNull();
     expect(claim.retry_after_ms).toBeGreaterThan(0);
-    expect(claim.retry_after_ms).toBeLessThanOrEqual(4000);
+    expect(claim.retry_after_ms).toBeLessThanOrEqual(5000);
   });
 
   it('lets a later claimer steal an expired lease instead of stranding the batch', async () => {

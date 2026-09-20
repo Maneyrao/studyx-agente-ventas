@@ -12,7 +12,9 @@ interface CorrelatedContactRow {
   readonly call_source_order: string | number;
   readonly name: string | null;
   readonly email: string | null;
+  readonly phone: string;
   readonly declared_phone: string | null;
+  readonly selected_payment_plan: string | null;
   readonly frozen_offering_code: string | null;
   readonly selected_offering_name: string | null;
 }
@@ -56,7 +58,9 @@ export class PostgresRetellContactToolStore implements RetellContactToolStore {
           source.conversation_seq AS call_source_order,
           contact.name,
           contact.email,
+          contact.phone,
           contact.declared_phone,
+          state.selected_payment_plan,
           NULLIF(btrim(cs.context_snapshot ->> 'curso_interes'), '') AS frozen_offering_code,
           offering.display_name AS selected_offering_name
         FROM call_sessions AS cs
@@ -131,7 +135,9 @@ export class PostgresRetellContactToolStore implements RetellContactToolStore {
         nombre: identity!.nombre,
         apellido: identity!.apellido,
         email: nextEmail!,
+        telefono: nextDeclaredPhone ?? row.phone,
         cursoInteres: row.selected_offering_name!,
+        plan: row.selected_payment_plan ?? undefined,
         ultimaSenal: 'retell_contact_identity_captured',
         traceId: input.callId,
       }, { sql: tx });

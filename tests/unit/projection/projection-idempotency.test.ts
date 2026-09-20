@@ -93,9 +93,13 @@ async function outboxRowsFor(spreadsheetId: string, tabName: string) {
     row_number: number;
     state: string;
     attempt_count: number;
+    max_attempts: number;
+    error_code: string | null;
+    projected_at: Date | null;
     payload: Record<string, string>;
   }>>`
-    SELECT id, projection_key, row_number, state, attempt_count, payload
+    SELECT id, projection_key, row_number, state, attempt_count, max_attempts,
+           error_code, projected_at, payload
     FROM sheet_projection_rows
     WHERE spreadsheet_id = ${spreadsheetId} AND tab_name = ${tabName}
     ORDER BY row_number
@@ -136,20 +140,23 @@ run('sheet projection idempotency', () => {
     );
   });
 
-  it('does not create an outbox row until all four visible lead values are complete', async () => {
+  it('creates the stable lead row as soon as the channel phone is known', async () => {
     const workspaceId = await workspaceFixture();
     const spreadsheetId = randomUUID();
     const contactId = await contactFixture();
 
-    await enqueueLeadProjection(
-      leadInput(workspaceId, contactId, spreadsheetId, { apellido: '' }),
+    const result = await enqueueLeadProjection(
+      leadInput(workspaceId, contactId, spreadsheetId, {
+        nombre: '', apellido: '', email: '', cursoInteres: '', plan: '',
+      }),
       { sql: db! },
     );
 
-    await expect(outboxRowsFor(spreadsheetId, TAB_NAME)).resolves.toHaveLength(0);
+    expect(result).not.toBeNull();
+    await expect(outboxRowsFor(spreadsheetId, TAB_NAME)).resolves.toHaveLength(1);
   });
 
-  it('stores only the four visible complete-lead values in the exact Sheets order', async () => {
+  it('stores the six operator fields in the exact Sheets order', async () => {
     const workspaceId = await workspaceFixture();
     const spreadsheetId = randomUUID();
     const contactId = await contactFixture();
@@ -170,11 +177,13 @@ run('sheet projection idempotency', () => {
       nombre: 'Ada',
       apellido: 'Lovelace',
       mail: 'ada@example.com',
+      telefono: '+5491100000000',
       tipo_de_curso: 'programacion',
+      plan: 'monthly_12',
     });
   });
 
-  it('keeps an inbound lead out of Sheets until all four visible values are complete', async () => {
+  it('creates an inbound lead from its phone and enriches the same row later', async () => {
     const slug = `test-inbound-lead-${randomUUID()}`;
     const workspaceRows = await db!<Array<{ id: string }>>`
       INSERT INTO workspaces (slug, display_name) VALUES (${slug}, 'Inbound Lead Test') RETURNING id
@@ -189,18 +198,19 @@ run('sheet projection idempotency', () => {
 
     expect(await upsertInboundLeadProjection({
       contactId, phone: '+5491111111111', traceId: randomUUID(),
-    }, { sql: db!, loadSheetsConfig, loadWorkspaceConfig })).toBe('skipped');
+    }, { sql: db!, loadSheetsConfig, loadWorkspaceConfig })).toBe('created_or_updated');
 
     expect(await upsertInboundLeadProjection({
       contactId, phone: '+5491122222222', nombre: 'Ana', apellido: 'Pérez',
       email: 'ana@example.com', traceId: randomUUID(),
-    }, { sql: db!, loadSheetsConfig, loadWorkspaceConfig })).toBe('skipped');
+    }, { sql: db!, loadSheetsConfig, loadWorkspaceConfig })).toBe('created_or_updated');
 
     await enqueueLeadProjection({
       ...leadInput(workspaceId, contactId, spreadsheetId),
       nombre: 'Ana',
       apellido: 'Pérez',
       email: 'ana@example.com',
+      telefono: undefined,
       cursoInteres: 'Redes Informáticas',
     }, { sql: db! });
 
@@ -209,7 +219,9 @@ run('sheet projection idempotency', () => {
     expect(rows[0].projection_key).toBe(leadProjectionKey(workspaceId, contactId));
     expect(rows[0].payload).toEqual({
       nombre: 'Ana', apellido: 'Pérez', mail: 'ana@example.com',
+      telefono: '+5491122222222',
       tipo_de_curso: 'Redes Informáticas',
+      plan: 'monthly_12',
     });
   });
 
@@ -279,7 +291,9 @@ run('sheet projection idempotency', () => {
       nombre: 'Ada',
       apellido: 'Byron',
       mail: 'ada@example.com',
+      telefono: '+5491100000000',
       tipo_de_curso: 'matematicas',
+      plan: 'monthly_12',
     });
   });
 
@@ -347,7 +361,9 @@ run('sheet projection idempotency', () => {
         nombre: 'Ada',
         apellido: 'García',
         mail: 'ordered@example.com',
+        telefono: '+5491100000000',
         tipo_de_curso: 'reparacion-celulares',
+        plan: 'monthly_12',
       },
     }]);
   });
@@ -423,7 +439,40 @@ run('sheet projection idempotency', () => {
     expect(provider.writtenRowCount).toBe(0);
   });
 
-  it('projects nombre, apellido, mail and tipo_de_curso into A:D order', async () => {
+  it('reopens an exhausted stable row when newer lead data arrives', async () => {
+    await drainPending();
+
+    const workspaceId = await workspaceFixture();
+    const spreadsheetId = randomUUID();
+    const contactId = await contactFixture();
+    const enqueued = await enqueueLeadProjection(leadInput(workspaceId, contactId, spreadsheetId), { sql: db! });
+    await db!`
+      UPDATE sheet_projection_rows
+      SET state = 'dead_letter', attempt_count = max_attempts,
+          error_code = 'MAX_ATTEMPTS_EXHAUSTED', projected_at = now()
+      WHERE id = ${enqueued!.id}
+    `;
+
+    await enqueueLeadProjection(leadInput(workspaceId, contactId, spreadsheetId, {
+      sourceOrder: 2,
+      plan: 'monthly_6',
+    }), { sql: db! });
+
+    const [row] = await outboxRowsFor(spreadsheetId, TAB_NAME);
+    expect(row).toMatchObject({
+      state: 'pending',
+      attempt_count: 0,
+      error_code: null,
+      projected_at: null,
+    });
+    const provider = new FakeSheetsProvider();
+    await expect(flushSheetProjections(
+      { worker_id: 'revived-row', limit: 1 },
+      { sql: db!, provider },
+    )).resolves.toMatchObject({ completed: 1, failed: 0 });
+  });
+
+  it('projects nombre, apellido, mail, telefono, tipo_de_curso and plan into A:F order', async () => {
     // Isolate this flush from any pending row another test in this file left
     // behind (claim_sheet_projection_rows claims globally, not per-spreadsheet).
     await drainPending();
@@ -448,10 +497,14 @@ run('sheet projection idempotency', () => {
     const written = provider.rowAt(spreadsheetId, TAB_NAME, rows[0].row_number);
     expect(written).toBeDefined();
 
-    expect(SHEET_COLUMN_ORDER).toEqual(['nombre', 'apellido', 'mail', 'tipo_de_curso']);
+    expect(SHEET_COLUMN_ORDER).toEqual([
+      'nombre', 'apellido', 'mail', 'telefono', 'tipo_de_curso', 'plan',
+    ]);
 
     const rowArray = SHEET_COLUMN_ORDER.map((column) => written!.values[column]);
-    expect(rowArray).toEqual(['Ada', 'Lovelace', 'ada@example.com', 'reparacion-celulares']);
+    expect(rowArray).toEqual([
+      'Ada', 'Lovelace', 'ada@example.com', '+5491100000000', 'reparacion-celulares', 'monthly_12',
+    ]);
   });
 
   it('mixed events (replays plus a later identity-less payment update) stay on one row and never erase a previously projected identity', async () => {
@@ -492,7 +545,7 @@ run('sheet projection idempotency', () => {
     expect(rows[0].payload.mail).toBe('ada@example.com');
     expect(rows[0].payload.tipo_de_curso).toBe('reparacion-celulares');
     expect(Object.keys(rows[0].payload).sort()).toEqual([
-      'apellido', 'mail', 'nombre', 'tipo_de_curso',
+      'apellido', 'mail', 'nombre', 'plan', 'telefono', 'tipo_de_curso',
     ]);
 
     const provider = new FakeSheetsProvider();

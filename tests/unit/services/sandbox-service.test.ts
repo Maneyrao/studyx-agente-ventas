@@ -3,8 +3,22 @@ import {
   RealSideEffectRejectedError,
   assertRealSideEffectAllowed,
   isSandboxContact,
+  isSandboxSheetWriteAllowlisted,
   type SandboxLookup,
 } from '@/lib/services/sandbox.service';
+
+describe('isSandboxSheetWriteAllowlisted', () => {
+  it('defaults closed and allows only the exact explicitly configured test contact', () => {
+    const contactId = '2cfa8868-eac2-4985-951f-37b2b2dee739';
+    expect(isSandboxSheetWriteAllowlisted(contactId, {})).toBe(false);
+    expect(isSandboxSheetWriteAllowlisted(contactId, {
+      GOOGLE_SHEETS_SANDBOX_CONTACT_ID: 'another-contact',
+    })).toBe(false);
+    expect(isSandboxSheetWriteAllowlisted(contactId, {
+      GOOGLE_SHEETS_SANDBOX_CONTACT_ID: `  ${contactId}  `,
+    })).toBe(true);
+  });
+});
 
 function fakeLookup(map: Record<string, string | null>): SandboxLookup {
   return {

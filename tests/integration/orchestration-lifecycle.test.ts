@@ -85,7 +85,7 @@ afterAll(async () => {
 });
 
 run('canonical orchestration lifecycle', () => {
-  it('projects one complete four-column lead after identity and course are durable', async () => {
+  it('creates one progressive six-column lead and enriches it as facts become durable', async () => {
     const spreadsheetId = randomUUID();
     const previousSpreadsheet = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
     const previousTab = process.env.GOOGLE_SHEETS_TAB_NAME;
@@ -103,7 +103,11 @@ run('canonical orchestration lifecycle', () => {
         SELECT projection_key, payload FROM sheet_projection_rows
         WHERE spreadsheet_id = ${spreadsheetId} AND tab_name = 'Leads'
       `;
-      expect(firstRows).toHaveLength(0);
+      expect(firstRows).toHaveLength(1);
+      expect(firstRows[0].payload).toEqual({
+        nombre: '', apellido: '', mail: '', telefono: firstEnvelope.phone_e164,
+        tipo_de_curso: '', plan: '',
+      });
 
       const enriched = await processInboundMessage({
         ...firstEnvelope,
@@ -119,7 +123,7 @@ run('canonical orchestration lifecycle', () => {
         SELECT projection_key, payload FROM sheet_projection_rows
         WHERE spreadsheet_id = ${spreadsheetId} AND tab_name = 'Leads'
       `;
-      expect(updatedRows).toHaveLength(0);
+      expect(updatedRows).toHaveLength(1);
 
       await db!`
         INSERT INTO conversation_sales_context_states_v1 (
@@ -157,7 +161,9 @@ run('canonical orchestration lifecycle', () => {
         nombre: 'Ana',
         apellido: 'Pérez',
         mail: 'ana@example.com',
+        telefono: firstEnvelope.phone_e164,
         tipo_de_curso: 'Redes Informáticas',
+        plan: 'monthly_12',
       });
       expect(first.status).toBe('accepted');
     } finally {
