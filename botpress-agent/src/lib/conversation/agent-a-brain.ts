@@ -773,7 +773,12 @@ function normalizeStrictProposal(value: unknown, context: AgentAContextV1): unkn
   }
   if (Array.isArray(normalizedMove.secondary_moves)) {
     normalizedMove.secondary_moves = [...new Set(normalizedMove.secondary_moves)]
-      .filter((kind) => kind !== normalizedMove.move);
+      .filter((kind) => (
+        typeof kind === 'string'
+        && (SECONDARY_MOVE_KINDS as readonly string[]).includes(kind)
+        && kind !== normalizedMove.move
+      ))
+      .slice(0, 2);
   }
   if (Array.isArray(normalizedMove.vetoes)) {
     normalizedMove.vetoes = [...new Set(normalizedMove.vetoes)];

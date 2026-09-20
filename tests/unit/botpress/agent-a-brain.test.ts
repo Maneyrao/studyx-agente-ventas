@@ -142,6 +142,30 @@ describe('Agent A Brain V1', () => {
     expect(BackendAgentATurnProposalV1Schema.safeParse(result).success).toBe(true);
   });
 
+  it('keeps the reply when DeepSeek returns more secondary moves than the contract stores', () => {
+    const result = parseAgentATurnProposalV1(proposal({
+      move: {
+        schema_version: 1,
+        move: 'select_payment_plan',
+        secondary_moves: ['ask_payment_options', 'defer_payment', 'request_payment_link'],
+        vetoes: [],
+        course_reference: 'redes-informaticas',
+        payment_plan: 'one_time',
+        confidence: 0.96,
+      },
+      response: {
+        messages: ['El pago único es de USD 360.', 'No hay un descuento confirmado para ese plan.'],
+        call_offer: null,
+      },
+    }), context());
+
+    expect(result.move.secondary_moves).toEqual(['ask_payment_options', 'defer_payment']);
+    expect(result.response.messages).toEqual([
+      'El pago único es de USD 360.',
+      'No hay un descuento confirmado para ese plan.',
+    ]);
+  });
+
   it('treats bubble length and line count as writing guidance in both schema mirrors', () => {
     const longer = proposal({ response: { messages: ['x'.repeat(351)], call_offer: null } });
     const multiline = proposal({
@@ -1427,7 +1451,7 @@ describe('Agent A Brain V1', () => {
     expect(body.instructions).toContain('Respond to their combined meaning');
     expect(body.instructions).toContain('Responde primero el pedido, la pregunta o la intención actual');
     expect(body.instructions).toContain('Pide sólo los campos que figuren en `capabilities.intake_missing`');
-    expect(body.instructions).toContain('Elige uno o dos mensajes breves y naturales');
+    expect(body.instructions).toContain('Cuando la respuesta combine información y un avance comercial, usa dos mensajes breves');
     expect(body.instructions).not.toContain('control voice, rhythm and the choice of');
     expect(body.instructions).toContain('salen sólo de hechos visibles en `authorized_context`');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('greeting');

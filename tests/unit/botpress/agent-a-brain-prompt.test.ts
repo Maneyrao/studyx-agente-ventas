@@ -75,8 +75,8 @@ describe('Agent A Brain prompt', () => {
   it('ships one complete canonical behavior behind a compact runtime contract', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v34');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v70');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v35');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v71');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('You lead the\nconversation; the backend does not write or rewrite your narrative');
     expect(instructions).not.toContain('The sales\nphases are a map, not a blocking script');
@@ -95,7 +95,7 @@ describe('Agent A Brain prompt', () => {
       /Responde primero el pedido, la pregunta o la intención actual/iu,
     );
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
-      /Elige uno o dos mensajes breves y naturales/iu,
+      /Cuando la respuesta combine información y un avance comercial, usa dos mensajes breves/iu,
     );
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
       /No (?:empieces|comiences) todos los turnos con/iu,
@@ -312,7 +312,7 @@ describe('Agent A Brain prompt', () => {
 
     const instructions = buildAgentABrainInstructionsV1(current);
 
-    expect(instructions).toMatch(/Elige uno o dos mensajes breves y naturales/iu);
+    expect(instructions).toMatch(/información y un avance comercial[\s\S]{0,40}dos mensajes breves/iu);
     expect(instructions).toMatch(/(?:consulta general|mensaje general|“info”)[\s\S]{0,240}(?:tres áreas|tres opciones)/iu);
     expect(instructions).toMatch(/first_name_status.*requested[\s\S]{0,220}(?:no vuelvas|do not ask)/iu);
   });
