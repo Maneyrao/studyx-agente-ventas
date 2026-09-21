@@ -1275,6 +1275,49 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.effective).toBe(repaired);
     expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
   });
+
+  it('asks the model to choose a plan instead of authorizing a link from an invented same-turn plan', async () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm2', text: 'Buenas, me pasas el link de pago?' }];
+    current.commercial_state.selected_payment_plan = null;
+    current.commercial_state.awaiting_reply = 'call_or_chat';
+    current.capabilities.may_send_payment_link = false;
+    current.capabilities.authorized_payment_plan = null;
+    current.capabilities.intake_missing = [];
+    const initial = generated(proposal({
+      move: {
+        schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+        payment_plan: 'one_time', confidence: 1,
+      },
+      response: { messages: ['Perfecto, te comparto el link de pago único.'], call_offer: null },
+      proposed_action: {
+        type: 'send_payment_link', offering_code: 'maquillaje-profesional',
+        payment_plan: 'one_time',
+      },
+      used_fact_ids: [],
+    }));
+    const repaired = generated(proposal({
+      move: {
+        schema_version: 1, move: 'ask_payment_options', secondary_moves: [], vetoes: [],
+        confidence: 1,
+      },
+      response: { messages: ['Claro. Cuál de los tres planes prefieres?'], call_offer: null },
+      proposed_action: { type: 'none' },
+      used_fact_ids: [],
+      repair_of: { rejection_id: '00000000-0000-4000-8000-0000000000f1', attempt: 1 },
+    }));
+    const repair = vi.fn().mockResolvedValue(repaired);
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: true, repair,
+      rejection_id: '00000000-0000-4000-8000-0000000000f1',
+    });
+
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.effective).toBe(repaired);
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
+  });
 });
 
 /**

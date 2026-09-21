@@ -69,6 +69,7 @@ function validatePlannerless(input: {
       && input.context.commercial_state.awaiting_reply === 'contact_details'))
   const action = input.proposal.proposed_action
   const paymentTransitionAuthorized = action.type === 'send_payment_link'
+    && input.context.capabilities.may_send_payment_link
     && paymentActionRequested
     && !input.proposal.move.vetoes.includes('payment_link')
     && !input.proposal.move.vetoes.includes('purchase')
