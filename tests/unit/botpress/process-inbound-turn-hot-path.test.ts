@@ -67,6 +67,9 @@ vi.mock('../../../botpress-agent/src/lib/conversation/agent-a-brain', () => ({
   generateOpenAIAgentATurnProposalV1: actionSpies.agentABrainOpenAI,
   generateGeminiAgentATurnProposalV1: actionSpies.agentABrainGemini,
   parseAgentATurnProposalV1: (raw: unknown) => raw,
+  solicitsACallV1: (message: string, declaredOffer = false) => declaredOffer
+    ? /llam|tel[eé]fono|voz/iu.test(message)
+    : /(?:te llamo|te llamamos|una llamada|llamarte)/iu.test(message),
   DEFAULT_AGENT_A_BRAIN_MODEL: 'openai/gpt-oss-120b',
   DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL: 'deepseek-v4-flash',
   DEFAULT_AGENT_A_BRAIN_OPENAI_MODEL: 'gpt-5.6-terra',
@@ -633,7 +636,7 @@ describe('processInboundTurn hot path', () => {
     },
   );
 
-  it('returns an honest technical reply instead of silence when the authoritative brain is unavailable', async () => {
+  it('returns a canonical course fact instead of a technical reply when the authoritative brain is unavailable', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -682,9 +685,9 @@ describe('processInboundTurn hot path', () => {
       conversation_pipeline_v1: null,
       decision: {
         kind: 'reply',
-        response: 'Hubo un problema al preparar la respuesta. Envíame el mensaje otra vez en un momento.',
+        response: 'El precio de Redes Informáticas es USD 360. ¿Preferís 12 cuotas, 6 cuotas o un pago único?',
         response_type: 'commercial_reply',
-        reason_code: 'MODEL_UNAVAILABLE',
+        reason_code: 'DETERMINISTIC_COURSE_FACTS',
         business_action: null,
       },
     });
@@ -698,6 +701,76 @@ describe('processInboundTurn hot path', () => {
       failure_code: 'BRAIN_RATE_LIMITED',
       authorized_action_type: 'none',
     });
+  });
+
+  it('keeps a canonical course choice moving when DeepSeek rejects the turn', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off',
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.context.batch_messages[0].content = 'Quizas comunity manager';
+    claimed.catalog_resolution = {
+      kind: 'exact', offeringCode: 'community-manager', displayName: 'Community Manager',
+      academy: 'Marketing', match: 'unique_typo',
+    };
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 1,
+      offerings: [{
+        code: 'community-manager', display_name: 'Community Manager', academy: 'Marketing', aliases: ['comunity manager'],
+      }],
+      injection_suspected_count: 0,
+    };
+    const business = paymentBusinessContext();
+    business.offerings[0] = {
+      ...business.offerings[0],
+      code: 'community-manager',
+      display_name: 'Community Manager',
+      academy: 'Marketing',
+      classes: 16,
+    };
+    claimed.business_context = business;
+    claimed.business_context_available = true;
+    claimed.contact.name = 'Agustina';
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null, selected_payment_plan: null,
+      stage: 'exploring', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'course_choice', version: 4,
+    };
+    actionSpies.claim.mockResolvedValue(claimed);
+    actionSpies.agentABrainDeepSeek.mockRejectedValue(
+      Object.assign(new Error('invalid proposal'), { code: 'BRAIN_INVALID_SCHEMA' }),
+    );
+
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      authorized_offering_code: 'community-manager',
+      decision: {
+        kind: 'reply',
+        response_type: 'call_offer',
+        reason_code: 'DETERMINISTIC_COURSE_DISCOVERY',
+        business_action: null,
+      },
+    });
+    const response = String(actionSpies.commit.mock.calls[0]?.[0]?.input?.decision?.response);
+    expect(response).toContain('Community Manager');
+    expect(response).toMatch(/llamada|llamar/iu);
+    expect(response).not.toContain('Hubo un problema');
   });
 
   it('retries one transient DeepSeek timeout before using the technical fallback', async () => {
@@ -1103,7 +1176,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('fails closed without invoking a second model when DeepSeek is unavailable', async () => {
+  it('keeps canonical catalog navigation without invoking a second model when DeepSeek is unavailable', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -1174,8 +1247,8 @@ describe('processInboundTurn hot path', () => {
       agent_turn_v2: null,
       decision: {
         kind: 'reply',
-        response: 'Hubo un problema al preparar la respuesta. Envíame el mensaje otra vez en un momento.',
-        reason_code: 'MODEL_UNAVAILABLE',
+        response: 'Podemos orientarte por estas áreas: Tecnología. ¿Cuál te interesa?',
+        reason_code: 'DETERMINISTIC_CATALOG_NAVIGATION',
       },
     });
   });

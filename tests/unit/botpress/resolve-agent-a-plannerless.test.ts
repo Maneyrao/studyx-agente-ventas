@@ -100,11 +100,11 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       rejection_id: '00000000-0000-4000-8000-0000000000b1',
     });
 
-    expect(repair).toHaveBeenCalledTimes(1);
+    expect(repair).not.toHaveBeenCalled();
     expect(result.effective.proposal.response.call_offer).toBe(
-      'Si prefieres, puedo llamarte y orientarte por teléfono 🙂',
+      'Si te sirve, puedo llamarte y ayudarte a elegir con más claridad 🙂 Quieres que te llame?',
     );
-    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
+    expect(result.evidence).toMatchObject({ repair_attempted: false, repaired: false });
   });
 
   it('keeps a grounded English-level follow-up instead of showing a technical fallback', async () => {
@@ -244,6 +244,41 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
     expect(result.effective.proposal.response).toEqual(proposal().response);
     expect(result.evidence).toMatchObject({ repair_attempted: false, repaired: false });
+  });
+
+  it('rehomes a non-call CTA and guarantees the due invitation without another model call', async () => {
+    const current = context();
+    current.turn.recent_turns = [{
+      id: 'prior-agent', direction: 'outbound',
+      content: 'Hola, soy la asesora virtual de StudyX. Qué te gustaría aprender?',
+    }];
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_status = 'not_offered';
+    current.commercial_state.call_offer_count = 0;
+    current.capabilities.may_offer_call = true;
+    const repair = vi.fn();
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({
+        response: {
+          messages: ['Tenemos cursos de oficios, marketing y diseño.'],
+          call_offer: 'Cuéntame qué te gustaría aprender y te recomiendo una opción.',
+        },
+      })),
+      context: current,
+      repair_enabled: false,
+      repair,
+      rejection_id: '00000000-0000-4000-8000-0000000000b3',
+    });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.response.messages).toEqual([
+      'Tenemos cursos de oficios, marketing y diseño.',
+      'Cuéntame qué te gustaría aprender y te recomiendo una opción.',
+    ]);
+    expect(result.effective.proposal.response.call_offer).toBe(
+      'Si te sirve, puedo llamarte y ayudarte a elegir con más claridad 🙂 Quieres que te llame?',
+    );
   });
 
   it('reports the terminal repair schema rejection instead of only the initial missing call', async () => {

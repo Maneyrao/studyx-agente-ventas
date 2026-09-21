@@ -75,7 +75,8 @@ function responseType(input: {
   readonly response: string;
 }): DecisionV4['response_type'] {
   if (input.proposal.proposed_action.type === 'request_call_now') return 'call_confirmation';
-  if (input.proposal.response.call_offer || solicitsACall(input.response)) return 'call_offer';
+  const declaredOffer = input.proposal.response.call_offer;
+  if ((declaredOffer && solicitsACall(declaredOffer, true)) || solicitsACall(input.response)) return 'call_offer';
   if (input.proposal.move.move === 'greeting') return 'social_reply';
   return 'commercial_reply';
 }

@@ -193,7 +193,7 @@ function deterministicRoute(
   decision: Decision,
   authorizedOfferingCode?: string,
   authorizedPaymentPlan?: PaymentPlanCode,
-): CommercialRouteResult {
+): Extract<CommercialRouteResult, { readonly kind: 'deterministic' }> {
   return {
     kind: 'deterministic',
     origin,
@@ -516,6 +516,27 @@ function catalogBrainRoute(claimed: ClaimedTurn): CommercialRouteResult | null {
       ? 'AMBIGUOUS_CATALOG_REQUIRES_BRAIN'
       : 'CATALOG_RESOLUTION_REQUIRES_BRAIN',
   }
+}
+
+/**
+ * Narrow recovery for a failed sales-brain turn. Catalog identity is already
+ * canonical in the claim, so this can keep an exact choice or clarification
+ * moving without inventing copy or exposing a technical error.
+ */
+export function routeCanonicalCatalogFailureFallback(
+  claimed: ClaimedTurn,
+): Extract<CommercialRouteResult, { readonly kind: 'deterministic' }> | null {
+  const catalogRoute = routeCatalogResolution(claimed)
+  if (catalogRoute?.kind === 'deterministic') return catalogRoute
+  const discovery = matchCourseDiscoveryFastPathMatch(claimed)
+  return discovery
+    ? deterministicRoute(
+        'course_discovery',
+        COURSE_DISCOVERY_FAST_PATH_MODEL,
+        discovery.decision,
+        discovery.offeringCode,
+      )
+    : null
 }
 
 /**

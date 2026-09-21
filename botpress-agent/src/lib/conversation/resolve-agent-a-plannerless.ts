@@ -12,6 +12,9 @@ import type {
   AgentAProposalCycleEvidenceV1,
   AgentAProposalEnvelopeV1,
 } from './resolve-agent-a-proposal'
+import { evaluateCallOfferTurnPolicyV1 } from './call-offer-turn-policy'
+
+const REQUIRED_CALL_OFFER = 'Si te sirve, puedo llamarte y ayudarte a elegir con más claridad 🙂 Quieres que te llame?'
 
 function authorizedFactIds(context: AgentAContextV1): string[] {
   return [
@@ -164,6 +167,46 @@ function materializeAuthorizedPaymentAction<T extends AgentAProposalEnvelopeV1>(
 }
 
 /**
+ * Keep an ordinary CTA visible, but never let it masquerade as the dedicated
+ * call invitation. If the shared turn policy says the invitation is due, add
+ * one short safety-net sentence without another model round trip.
+ */
+function normalizeCallOfferBoundary<T extends AgentAProposalEnvelopeV1>(input: {
+  readonly initial: T
+  readonly context: AgentAContextV1
+}): T {
+  const declared = input.initial.proposal.response.call_offer?.trim() || null
+  const declaredOffersCall = declared !== null && solicitsACallV1(declared, true)
+  const narrativeOffersCall = input.initial.proposal.response.messages.some((message) => (
+    solicitsACallV1(message)
+  ))
+  const policy = evaluateCallOfferTurnPolicyV1({
+    context: input.context,
+    response_messages: input.initial.proposal.response.messages,
+    proposed_course_reference: input.initial.proposal.move.course_reference,
+  })
+  const messages = declared !== null && !declaredOffersCall
+    && !input.initial.proposal.response.messages.includes(declared)
+    ? [...input.initial.proposal.response.messages, declared]
+    : input.initial.proposal.response.messages
+  const callOffer = declaredOffersCall
+    ? declared
+    : policy.offer_required && !narrativeOffersCall
+      ? REQUIRED_CALL_OFFER
+      : null
+
+  if (messages === input.initial.proposal.response.messages
+    && callOffer === (input.initial.proposal.response.call_offer ?? null)) return input.initial
+  return {
+    ...input.initial,
+    proposal: {
+      ...input.initial.proposal,
+      response: { messages, call_offer: callOffer },
+    },
+  }
+}
+
+/**
  * Denying a side effect does not require a second author to replace safe
  * customer-facing copy. When the only defect is an early payment action, the
  * boundary can remove that capability while preserving DeepSeek's wording.
@@ -246,7 +289,13 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
     authorized_fact_ids: input.authorized_fact_ids, rejection_id: input.rejection_id,
   })
   const originalRejection = validate(input.initial)
-  const effective = input.initial
+  if (originalRejection?.rejections.some((reason) => reason.code === 'PROPOSAL_SCHEMA_INVALID')) {
+    return { effective: input.initial, rejection: originalRejection, originalRejection }
+  }
+  const effective = normalizeCallOfferBoundary({
+    initial: input.initial,
+    context: input.context,
+  })
   const rejection = validate(effective)
   if (rejection === null) return { effective, rejection, originalRejection }
   // Each demotion/prune revalidates its result, including the full schema.

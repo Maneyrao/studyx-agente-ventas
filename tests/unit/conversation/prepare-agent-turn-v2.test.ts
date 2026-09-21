@@ -80,6 +80,26 @@ const completeIntake = async () => ({
 });
 
 describe('prepareAgentTurnV2', () => {
+  it('does not label an ordinary CTA stored in call_offer as a call invitation', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      proposal: proposal({
+        response: {
+          messages: ['Tenemos varias opciones para aprender.'],
+          call_offer: 'Cuéntame qué te interesa y te recomiendo una.',
+        },
+      }),
+    }, {
+      state_store: store(state()),
+      contact_intake: completeIntake,
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.decision.response_type).toBe('commercial_reply');
+    expect(prepared.transition).toMatchObject({ call_offer_count: 0, call_offer_status: 'not_offered' });
+  });
+
   it('keeps a premature call invitation visible without advancing the call ledger', async () => {
     const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },

@@ -36,7 +36,10 @@ import {
   modelUnavailableFallback,
   policyRejectedStateFallback,
 } from '../utils/decision-policy'
-import { routeCommercialTurn } from '../utils/commercial-router'
+import {
+  routeCanonicalCatalogFailureFallback,
+  routeCommercialTurn,
+} from '../utils/commercial-router'
 import { verifyAuthorizedEgressPortable } from '../utils/authorized-egress'
 import { generateGeminiDecision, MAX_GEMINI_DECISION_TIMEOUT_MS } from '../lib/decision/gemini-direct'
 import { generateGroqDecision } from '../lib/decision/groq-direct'
@@ -630,7 +633,7 @@ export const processInboundTurn = new Workflow({
       automationEnabled: configuration.automationEnabled,
       claimed: owned,
     })
-    const authorizedOfferingCode = commercialRoute.kind === 'deterministic'
+    let authorizedOfferingCode = commercialRoute.kind === 'deterministic'
       ? commercialRoute.authorizedOfferingCode ?? owned.sales_context.offering_code
       : owned.sales_context.offering_code
     const authorizedPaymentPlan = commercialRoute.kind === 'deterministic'
@@ -975,11 +978,15 @@ export const processInboundTurn = new Workflow({
           proposed_action_type: 'none',
           authorized_action_type: 'none',
         })
-        // Keep the brain as the sole commercial author. If it is genuinely
-        // unavailable, return an honest technical acknowledgement rather than
-        // inventing sales copy or leaving the customer in silence.
+        // Keep the brain as the normal commercial author. On failure, reuse
+        // only a canonical deterministic route already proven by the claim;
+        // otherwise return the narrow state/technical recovery below.
         if (brainAuthoritative) {
           const callPhoneFallback = owned.deterministic_route === 'call_phone_required'
+          const deterministicCommercialFallback = commercialRoute.kind === 'deterministic'
+            && commercialRoute.decision.business_action === null
+            ? commercialRoute
+            : routeCanonicalCatalogFailureFallback(owned)
           if (callPhoneFallback) {
             agentTurnV2Commit = callPhoneRequiredAgentTurn()
             pipelineDecisionProvider = 'botpress'
@@ -990,13 +997,19 @@ export const processInboundTurn = new Workflow({
             ? policyRejectedStateFallback(owned)
             : null
           if (!callPhoneFallback) {
-            pipelineFailureDecision = stateFallback
-              ? stateFallback
-              : technicalFallback(
+            pipelineFailureDecision = deterministicCommercialFallback?.decision
+              ?? stateFallback
+              ?? technicalFallback(
                   owned.policy.allowed_response_types.includes('technical_fallback')
                     ? 'technical_fallback'
                     : 'commercial_reply',
                 )
+            if (deterministicCommercialFallback) {
+              pipelineDecisionProvider = 'botpress'
+              pipelineDecisionModel = `fallback:${deterministicCommercialFallback.model}`
+              authorizedOfferingCode = deterministicCommercialFallback.authorizedOfferingCode
+                ?? authorizedOfferingCode
+            }
           }
         }
       }
