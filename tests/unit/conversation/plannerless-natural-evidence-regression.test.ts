@@ -3,10 +3,16 @@ import { authorizeAgentTurnV2 } from '@/features/conversation/domain/agent-turn-
 import { createDefaultConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
 import { hasTemporalPaymentDeferral as backendDeferral } from '@/features/payments/domain/payment-choice-policy';
 import { extractContactIdentity } from '@/lib/heuristics/contact-identity';
-import { supportsChatPreferenceV1 } from '@/features/conversation/domain/channel-preference-evidence';
+import {
+  supportsCallRequestV1,
+  supportsChatPreferenceV1,
+} from '@/features/conversation/domain/channel-preference-evidence';
 import { solicitsACallV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
 import { evaluateCallOfferTurnPolicyV1 } from '../../../botpress-agent/src/lib/conversation/call-offer-turn-policy';
-import { supportsChatPreferenceV1 as workflowChatPreference } from '../../../botpress-agent/src/lib/conversation/channel-preference-evidence';
+import {
+  supportsCallRequestV1 as workflowCallRequest,
+  supportsChatPreferenceV1 as workflowChatPreference,
+} from '../../../botpress-agent/src/lib/conversation/channel-preference-evidence';
 import { resolveAgentAPlannerlessProposalV2 } from '../../../botpress-agent/src/lib/conversation/resolve-agent-a-plannerless';
 import type { AgentAContextV1, AgentATurnProposalV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
 import { hasTemporalPaymentDeferral as workflowDeferral } from '../../../botpress-agent/src/utils/payment-choice';
@@ -38,6 +44,15 @@ const proposal: AgentATurnProposalV1 = {
 };
 
 describe('plannerless natural evidence regression', () => {
+  it.each([
+    '¿Pueden llamarme ahora?',
+    'Me gustaría una llamada',
+    'Quisiera que me contacten por teléfono',
+  ])('keeps backend and workflow call evidence aligned for natural requests: %s', (text) => {
+    expect(supportsCallRequestV1(text, false)).toBe(true);
+    expect(workflowCallRequest(text, false)).toBe(true);
+  });
+
   it('treats a prior refusal as turn-local and requires the final reminder on a later detail request', () => {
     const current = {
       schema_version: 1,

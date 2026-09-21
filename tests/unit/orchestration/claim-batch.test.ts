@@ -812,10 +812,14 @@ describe('claimBatch', () => {
     expect(knowledge.search).not.toHaveBeenCalled();
   });
 
-  it('marks a direct call request as needing a phone without losing the call intent', async () => {
+  it.each([
+    'llamame ahora',
+    '¿Pueden llamarme ahora?',
+    'Me gustaría una llamada',
+  ])('marks a direct call request as needing a phone without losing the call intent: %s', async (content) => {
     const result = await claimBatch(input, buildDeps({
       messagesResult: [{
-        id: 'm-call-local', conversation_seq: 1, content: 'llamame ahora',
+        id: 'm-call-local', conversation_seq: 1, content,
         created_at: '2026-08-11T12:00:00.000Z', message_type: 'text',
       }],
       contactIntake: async () => ({

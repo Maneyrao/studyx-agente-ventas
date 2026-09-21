@@ -75,8 +75,8 @@ describe('Agent A Brain prompt', () => {
   it('ships one complete canonical behavior behind a compact runtime contract', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v36');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v72');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v37');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v73');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('You lead the\nconversation; the backend does not write or rewrite your narrative');
     expect(instructions).not.toContain('The sales\nphases are a map, not a blocking script');
@@ -111,7 +111,7 @@ describe('Agent A Brain prompt', () => {
       /si acepta o solicita una llamada[\s\S]*tel[eé]fono[\s\S]*intake_missing/iu,
     );
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
-      /no vuelvas a pedirlo/iu,
+      /no vuelvas a pedir un tel[eé]fono registrado/iu,
     );
   });
 

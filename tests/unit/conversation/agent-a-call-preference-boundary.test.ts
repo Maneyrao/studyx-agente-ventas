@@ -78,11 +78,11 @@ describe('call preference requires current customer evidence',()=>{
   expect(authorizeAgentTurnV2({proposal:x.proposal,state:x.state,offerings:[{code:'fotografia_profesional',display_name:'Fotografía Profesional'}],facts:[],current_customer_messages:['Prefiero chat','Llamame'],call_policy:{may_offer_call:true,may_request_call_now:true}})).toMatchObject({ok:true,action:{type:'request_call_now'},transition:{call_preference:'call',stage:'handoff'}});
   expect(adk(x)).toBeNull();
  });
- it('never authorizes a call action against an explicit call refusal',()=>{
-  const x=setup('No quiero una llamada','request_call');
+ it.each(['No quiero una llamada','No me gustaría una llamada'])('never authorizes a call action against an explicit call refusal: %s',text=>{
+  const x=setup(text,'request_call');
   x.proposal.proposed_action={type:'request_call_now',reason:'direct_request'};
   x.context.capabilities.may_request_call_now=true;
-  expect(authorizeAgentTurnV2({proposal:x.proposal,state:x.state,offerings:[{code:'fotografia_profesional',display_name:'Fotografía Profesional'}],facts:[],current_customer_messages:['No quiero una llamada'],call_policy:{may_offer_call:true,may_request_call_now:true}})).toMatchObject({ok:false,reasons:['ACTION_NOT_AUTHORIZED']});
+  expect(authorizeAgentTurnV2({proposal:x.proposal,state:x.state,offerings:[{code:'fotografia_profesional',display_name:'Fotografía Profesional'}],facts:[],current_customer_messages:[text],call_policy:{may_offer_call:true,may_request_call_now:true}})).toMatchObject({ok:false,reasons:['ACTION_NOT_AUTHORIZED']});
   expect(adk(x)?.rejections).toContainEqual({code:'ACTION_NOT_AUTHORIZED',subject:'request_call_now'});
  });
  it.each(['¿Hablamos por teléfono?','¿Podemos hablar por teléfono?','¿Te puedo llamar?','Te puedo llamar'])('authorizes a direct natural call request: %s',text=>{
@@ -92,10 +92,15 @@ describe('call preference requires current customer evidence',()=>{
   expect(authorizeAgentTurnV2({proposal:x.proposal,state:x.state,offerings:[{code:'fotografia_profesional',display_name:'Fotografía Profesional'}],facts:[],current_customer_messages:[text],call_policy:{may_offer_call:true,may_request_call_now:true}})).toMatchObject({ok:true,action:{type:'request_call_now'},transition:{call_preference:'call',stage:'handoff'}});
   expect(adk(x)).toBeNull();
  });
- it('keeps natural call copy when the phone is missing and no side effect is proposed',()=>{
-  const x=setup('¿Te puedo llamar?','request_call');
- x.proposal.response.messages=['Claro. Pásame el número al que quieres que te llamemos.'];
- x.context.capabilities.intake_missing=['telefono'];
+ it.each([
+  '¿Te puedo llamar?',
+  '¿Pueden llamarme ahora?',
+  'Me gustaría una llamada',
+  'Quisiera que me contacten por teléfono',
+ ])('keeps natural call intent while asking for a missing phone: %s',text=>{
+  const x=setup(text,'request_call');
+  x.proposal.response.messages=['Claro. Pásame el número al que quieres que te llamemos.'];
+  x.context.capabilities.intake_missing=['telefono'];
   expect(backend(x)).toMatchObject({
    ok:true,
    action:{type:'none'},

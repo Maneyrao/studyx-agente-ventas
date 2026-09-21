@@ -47,6 +47,9 @@ describe('classifyDeterministicSalesSignal', () => {
     'Quiero que me llamen',
     'Quiero que me llames',
     '¿Pueden llamarme?',
+    'Me gustaría una llamada',
+    'Quisiera que me contacten por teléfono',
+    '¿Podrían llamarme un momento?',
     '¿Me llamás?',
     'Quiero una llamada',
     'Que me llame un asesor',
@@ -61,6 +64,12 @@ describe('classifyDeterministicSalesSignal', () => {
       type: 'call_decline',
     });
     expect(classifyDeterministicSalesSignal('No quiero que me llames')).toEqual({
+      type: 'call_decline',
+    });
+    expect(classifyDeterministicSalesSignal('No me gustaría una llamada')).toEqual({
+      type: 'call_decline',
+    });
+    expect(classifyDeterministicSalesSignal('No me gustaría que me contacten por teléfono')).toEqual({
       type: 'call_decline',
     });
   });

@@ -39,6 +39,7 @@ function normalize(text: string): string {
 const CALL_DECLINE_PATTERNS: RegExp[] = [
   /\bno\s+(?:me\s+)?llam(?:es|en)?\b/,
   /\bno\s+quiero\s+(?:una\s+|la\s+)?llamadas?\b/,
+  /\bno\s+(?:quisiera|me\s+gustaria)\s+(?:(?:una\s+)?llamada|que\s+me\s+(?:llam\w*|contact\w*)(?:\s+por\s+telefono)?)\b/,
   /\bno\s+quiero\s+que\s+me\s+llam(?:es|en)\b/,
   /\bsin\s+llamadas?\b/,
   /\bno\s+por\s+telefono\b/,
@@ -56,6 +57,7 @@ const DIRECT_CALL_REQUEST_PATTERNS: RegExp[] = [
   /\b(?:pueden|podrian|podes)\s+llamarme\b/,
   /\bme\s+llamas\b/,
   /\b(?:quiero|necesito)\s+una\s+llamada\b/,
+  /\b(?:quisiera|desearia|me\s+gustaria)\s+(?:(?:una\s+)?llamada|(?:que\s+me\s+)?(?:llam\w*|contact\w*)(?:\s+por\s+telefono)?|(?:hablar|conversar)\s+por\s+telefono)\b/,
   /\bque\s+me\s+llame\s+(?:un|una)\s+asesor(?:a)?\b/,
   /\bnecesito\s+hablar\s+por\s+telefono\b/,
   /\bcomuniquense\s+conmigo\b/,

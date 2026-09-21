@@ -156,7 +156,7 @@ function technicalFallbackEffects(evidence: WorkflowTurnEvidenceV1): readonly st
 beforeAll(async () => {
   expect(heldoutCases).toHaveLength(6);
   expect(new Set(heldoutCases.map((item) => item.cluster)).size).toBe(6);
-  expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v72');
+  expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v73');
   expect(secrets.DEEPSEEK_API_KEY?.trim(), 'DEEPSEEK_API_KEY_MISSING').toBeTruthy();
   expect(process.env.STUDYX_AGENT_A_BUDGET_FILE, 'CUMULATIVE_BUDGET_REQUIRED').toBeTruthy();
   const backend = new URL(apiBaseUrl);

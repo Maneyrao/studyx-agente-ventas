@@ -15,7 +15,7 @@ const source = readFileSync(
 
 describe('prompt canónico comercial v36', () => {
   it('coincide con la fuente y declara la versión desplegable', () => {
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v36');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v37');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toBe(source);
   });
 
