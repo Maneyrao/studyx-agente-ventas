@@ -395,7 +395,15 @@ async function tool(
     },
     body: JSON.stringify({
       name,
-      call: { call_id: providerCallId, metadata: metadata(call) },
+      // Retell includes the conversation accumulated so far in every tool
+      // call. Production crossed 32 KiB during a real sales call, so this
+      // fixture must exercise the same shape while proving that only bounded
+      // structured args reach the orchestration layer.
+      call: {
+        call_id: providerCallId,
+        metadata: metadata(call),
+        transcript: 'x'.repeat(96 * 1_024),
+      },
       args,
     }),
   });

@@ -120,7 +120,15 @@ export interface RetellToolDependencies {
   readonly now?: () => Date;
 }
 
-export const RETELL_TOOL_MAX_BODY_BYTES = 32 * 1_024;
+/**
+ * Retell sends the accumulated call transcript alongside every in-call tool
+ * invocation. A real StudyX call crossed 32 KiB before payment, which made
+ * contact capture and payment-link delivery fail with HTTP 413. Keep the
+ * boundary finite and aligned with the lifecycle webhook: the strict tool
+ * schema still authorizes only the small `args` object and none of the
+ * transcript is persisted or returned.
+ */
+export const RETELL_TOOL_MAX_BODY_BYTES = 256 * 1_024;
 
 const ToolMetadataSchema = z.object({
   internal_call_id: z.string().uuid().optional(),

@@ -224,6 +224,23 @@ describe('Retell P0 tool boundary', () => {
     expect(deps.calls.resolveRetellToolCall).not.toHaveBeenCalled();
   });
 
+  it('accepts a realistic in-call tool payload with a growing transcript and discards it', async () => {
+    const deps = dependencies();
+    const body = envelope('consultar_curso', { curso: offering.display_name });
+    body.call.transcript = 'x'.repeat(96 * 1_024);
+
+    const response = await handleRetellToolRequest(
+      request(body),
+      'consultar_curso',
+      deps,
+    );
+    const result = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(result).toMatchObject({ ok: true, curso: { codigo: offering.code } });
+    expect(JSON.stringify(result)).not.toContain(body.call.transcript);
+  });
+
   it('returns 401 for clearly invalid auth before consuming an oversized body', async () => {
     const deps = dependencies();
     const body = envelope('consultar_curso', { curso: offering.display_name });
