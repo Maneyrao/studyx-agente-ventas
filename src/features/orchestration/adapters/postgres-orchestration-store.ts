@@ -308,6 +308,13 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
           WHERE offer_message.contact_id = b.contact_id
             AND offer_message.conversation_id = b.conversation_id
             AND offer.response_type = 'call_offer'
+            AND NOT EXISTS (
+              SELECT 1
+              FROM call_sessions AS consumed_call
+              WHERE consumed_call.contact_id = offer_message.contact_id
+                AND consumed_call.conversation_id = offer_message.conversation_id
+                AND consumed_call.requested_at >= offer.created_at
+            )
           ORDER BY offer.created_at DESC
           LIMIT 1
         ) AS open_offer,
@@ -569,6 +576,13 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
       WHERE m.contact_id = ${input.contact_id}::uuid
         AND m.conversation_id = ${input.conversation_id}::uuid
         AND ad.response_type = 'call_offer'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM call_sessions AS consumed_call
+          WHERE consumed_call.contact_id = m.contact_id
+            AND consumed_call.conversation_id = m.conversation_id
+            AND consumed_call.requested_at >= ad.created_at
+        )
       ORDER BY ad.created_at DESC
       LIMIT 1
     `;

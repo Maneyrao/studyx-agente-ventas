@@ -271,6 +271,60 @@ describe('contratos por workflow real con proveedor determinístico sin costo', 
     expect(db.state?.awaitingReply).toBe('none');
   }, 120_000);
 
+  it('compone la poda de un detalle no respaldado con la llamada sin teléfono y conserva la respuesta útil', async () => {
+    const id = identity();
+    let next = proposal(
+      'browse_catalog',
+      'Marketing Digital apunta a estrategia y campañas, mientras Community Manager se enfoca en comunidades y contenido.',
+      {
+        secondary_moves: ['request_call'],
+      },
+      { type: 'request_call_now', reason: 'direct_request' },
+    );
+    next = {
+      ...next,
+      response: {
+        messages: [
+          ...next.response.messages,
+          'Pásame un número con código de país y coordinamos la llamada.',
+        ],
+        call_offer: null,
+      },
+      used_fact_ids: [
+        'offering:marketing_digital:name:v1',
+        'offering:community_manager:name:v1',
+      ],
+    };
+    fixture = next;
+
+    const evidence = await runWorkflowTurnV1({
+      ...id,
+      text: 'Estoy entre Marketing Digital y Community Manager. Quiero que me llamen.',
+    });
+    const db = await readWorkflowDbEvidenceV1({
+      databaseUrl,
+      externalConversationId: id.conversationId,
+      adapterCaptures: evidence.adapterCaptures,
+    });
+    const delivered = evidence.authorizedMessages.join('\n');
+
+    writeWorkflowReportV1('workflow-double-rejection-call-recovery', {
+      provider: 'fixture',
+      api_cost_usd: 0,
+      scenario_role: 'failure_regression',
+      ...id,
+      evidence,
+      db,
+    });
+
+    expect(evidence.errorCode, JSON.stringify(evidence)).toBeNull();
+    expect(evidence.commitSucceeded).toBe(true);
+    expect(delivered).toMatch(/n[uú]mero[\s\S]*c[oó]digo de pa[ií]s/iu);
+    expect(delivered).not.toMatch(/estrategia y campa[nñ]as|comunidades y contenido/iu);
+    expect(evidence.actions.some((action) => action.name === 'dispatchCall')).toBe(false);
+    expect(evidence.httpExchanges.filter((item) => item.boundary === 'deepseek')).toHaveLength(1);
+  }, 120_000);
+
   it('persiste curso/plan/teléfono, requiere autorización, respeta postergación, entrega una vez, registra pago y bloquea opt-out', async () => {
     const id = identity();
     const turns: { customer: string; evidence: WorkflowTurnEvidenceV1 }[] = [];

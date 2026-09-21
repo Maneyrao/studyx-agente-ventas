@@ -311,19 +311,47 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
             OR state.awaiting_reply IS DISTINCT FROM 'payment_confirmation'
           )
         RETURNING state.*
+      ), conversation_event AS (
+        INSERT INTO conversation_sales_context_state_events_v1 (
+          workspace_id, conversation_id, contact_id, state_version, source_turn_id,
+          selected_offering_code, selected_payment_plan, stage,
+          call_preference, call_offer_status, call_offer_count, awaiting_reply,
+          payment_reported_at, human_review_requested_at, consecutive_technical_fallbacks
+        )
+        SELECT
+          workspace_id, conversation_id, contact_id, version, NULL,
+          selected_offering_code, selected_payment_plan, stage,
+          call_preference, call_offer_status, call_offer_count, awaiting_reply,
+          payment_reported_at, human_review_requested_at, consecutive_technical_fallbacks
+        FROM updated
+        ON CONFLICT DO NOTHING
+        RETURNING 1
+      ), updated_sales AS (
+        UPDATE sales_context_states AS state
+        SET conversation_id = ${input.conversationId}::uuid,
+            selected_offering_code = ${input.course},
+            selected_payment_plan = ${input.plan},
+            stage = 'payment_link_sent',
+            version = state.version + 1,
+            updated_at = now()
+        WHERE state.workspace_id = ${input.workspaceId}::uuid
+          AND state.contact_id = ${input.contactId}::uuid
+          AND (
+            state.conversation_id IS DISTINCT FROM ${input.conversationId}::uuid
+            OR state.selected_offering_code IS DISTINCT FROM ${input.course}
+            OR state.selected_payment_plan IS DISTINCT FROM ${input.plan}
+            OR state.stage IS DISTINCT FROM 'payment_link_sent'
+          )
+        RETURNING state.*
       )
-      INSERT INTO conversation_sales_context_state_events_v1 (
-        workspace_id, conversation_id, contact_id, state_version, source_turn_id,
-        selected_offering_code, selected_payment_plan, stage,
-        call_preference, call_offer_status, call_offer_count, awaiting_reply,
-        payment_reported_at, human_review_requested_at, consecutive_technical_fallbacks
+      INSERT INTO sales_context_state_events (
+        workspace_id, contact_id, state_version, source_turn_id,
+        selected_offering_code, selected_payment_plan, stage
       )
       SELECT
-        workspace_id, conversation_id, contact_id, version, NULL,
-        selected_offering_code, selected_payment_plan, stage,
-        call_preference, call_offer_status, call_offer_count, awaiting_reply,
-        payment_reported_at, human_review_requested_at, consecutive_technical_fallbacks
-      FROM updated
+        workspace_id, contact_id, version, source_turn_id,
+        selected_offering_code, selected_payment_plan, stage
+      FROM updated_sales
       ON CONFLICT DO NOTHING
     `;
   }

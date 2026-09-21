@@ -277,6 +277,44 @@ function demoteUnauthorizedCallAction<T extends AgentAProposalEnvelopeV1>(input:
     : null
 }
 
+/**
+ * Safe corrections must compose. A draft can contain both an unsupported
+ * course comparison and a call side effect that is not available yet. Each
+ * correction is independently lossless: remove only the unsupported claim
+ * and only the unavailable capability, then validate their combined result
+ * once. Treating them as mutually exclusive made the whole useful reply fail.
+ */
+function recoverCumulativeFactAndCallRejectionsV1<T extends AgentAProposalEnvelopeV1>(input: {
+  readonly initial: T
+  readonly rejection: TurnRejectionV1
+  readonly context: AgentAContextV1
+  readonly authorized_fact_ids: readonly string[]
+}): T | null {
+  const pruned = pruneKnownUnsupportedFactClaimsWithoutValidationV1(input)
+  if (pruned === null) return null
+
+  const deniesCall = input.rejection.rejections.some((reason) => (
+    reason.code === 'ACTION_NOT_AUTHORIZED' && reason.subject === 'request_call_now'
+  ))
+  if (!deniesCall || pruned.proposal.proposed_action.type !== 'request_call_now') return null
+
+  const candidate = {
+    ...pruned,
+    proposal: { ...pruned.proposal, proposed_action: { type: 'none' as const } },
+  } as T
+  const candidateRejection = validatePlannerless({
+    proposal: candidate.proposal,
+    context: input.context,
+    rejection_id: input.rejection.rejection_id,
+    authorized_fact_ids: input.authorized_fact_ids,
+  })
+  return candidateRejection === null
+    || hasOnlyNonBlockingGuidance(candidate.proposal, candidateRejection)
+    || mayDegradeToBackendBoundary(candidate.proposal, candidateRejection)
+    ? candidate
+    : null
+}
+
 /** Both the initial proposal and its one repair use this exact pipeline. */
 function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   readonly initial: T
@@ -298,6 +336,14 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   })
   const rejection = validate(effective)
   if (rejection === null) return { effective, rejection, originalRejection }
+  const cumulative = recoverCumulativeFactAndCallRejectionsV1({
+    ...input,
+    initial: effective,
+    rejection,
+  })
+  if (cumulative !== null) {
+    return { effective: cumulative, rejection: null, originalRejection }
+  }
   // Each demotion/prune revalidates its result, including the full schema.
   for (const transform of [demoteUnauthorizedPaymentAction, demoteUnauthorizedCallAction]) {
     const candidate = transform({ ...input, initial: effective, rejection })
@@ -513,6 +559,25 @@ function pruneKnownUnsupportedFactClaimsV1<T extends AgentAProposalEnvelopeV1>(i
   readonly context: AgentAContextV1
   readonly authorized_fact_ids: readonly string[]
 }): T | null {
+  const candidate = pruneKnownUnsupportedFactClaimsWithoutValidationV1(input)
+  if (candidate === null) return null
+  const candidateRejection = validatePlannerless({
+    proposal: candidate.proposal,
+    context: input.context,
+    rejection_id: input.rejection.rejection_id,
+    authorized_fact_ids: input.authorized_fact_ids,
+  })
+  return candidateRejection === null ? candidate : null
+}
+
+function pruneKnownUnsupportedFactClaimsWithoutValidationV1<
+  T extends AgentAProposalEnvelopeV1,
+>(input: {
+  readonly initial: T
+  readonly rejection: TurnRejectionV1
+  readonly context: AgentAContextV1
+  readonly authorized_fact_ids: readonly string[]
+}): T | null {
   const subjects = new Set(input.rejection.rejections
     .filter((reason) => reason.code === 'FACT_VALUE_MISMATCH')
     .map((reason) => reason.subject));
@@ -520,14 +585,15 @@ function pruneKnownUnsupportedFactClaimsV1<T extends AgentAProposalEnvelopeV1>(i
     .some((subject) => subjects.has(subject));
   if (!supported) return null;
 
+  const availableIds = new Set(input.authorized_fact_ids)
+  const citedIds = new Set(input.initial.proposal.used_fact_ids.filter((id) => availableIds.has(id)))
   let safeMessages = [...input.initial.proposal.response.messages];
   if (subjects.has('prerequisites')) {
     safeMessages = safeMessages.flatMap(removeUnsupportedPrerequisiteAssertionsV1);
   }
   if (subjects.has('course_logistics')) {
-    const authorizedIds = new Set(input.authorized_fact_ids);
     const authorizedValues = input.context.catalog.selected_offering?.facts
-      .filter((fact) => authorizedIds.has(fact.id))
+      .filter((fact) => citedIds.has(fact.id))
       .map((fact) => fact.value) ?? [];
     safeMessages = safeMessages.flatMap((message) => (
       removeUnsupportedCourseLogisticsAssertionsV1(message, authorizedValues)
@@ -537,7 +603,7 @@ function pruneKnownUnsupportedFactClaimsV1<T extends AgentAProposalEnvelopeV1>(i
     safeMessages = removeUnverifiedCandidateCourseDetailAssertionsV1(
       safeMessages,
       input.context,
-      new Set(input.authorized_fact_ids),
+      citedIds,
       input.initial.proposal.move.course_reference ?? null,
     );
   }
@@ -550,13 +616,7 @@ function pruneKnownUnsupportedFactClaimsV1<T extends AgentAProposalEnvelopeV1>(i
       response: { ...input.initial.proposal.response, messages: safeMessages },
     },
   } as T;
-  const candidateRejection = validatePlannerless({
-    proposal: candidate.proposal,
-    context: input.context,
-    rejection_id: input.rejection.rejection_id,
-    authorized_fact_ids: input.authorized_fact_ids,
-  });
-  return candidateRejection === null ? candidate : null;
+  return candidate;
 }
 
 /**

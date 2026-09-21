@@ -12,6 +12,21 @@ import {
 } from '@/features/calls/application/retell-tools';
 import { handleXendraRelayedRetellWebhook } from '@/features/calls/application/retell-webhook';
 import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
+import { PostgresConversationStateStoreV1 } from '@/features/conversation/adapters/postgres-conversation-state-store';
+import { PostgresSalesContextStore } from '@/features/sales/adapters/postgres-sales-context-store';
+import { PostgresOrchestrationStore } from '@/features/orchestration/adapters/postgres-orchestration-store';
+import {
+  PostgresKnowledgeRetriever,
+  PostgresMemoryRetriever,
+} from '@/features/orchestration/adapters/postgres-retrievers';
+import {
+  claimBatch,
+  DEFAULT_CONTEXT_LIMITS,
+} from '@/features/orchestration/application/claim-batch';
+import {
+  buildBusinessContextView,
+  buildCatalogIndexView,
+} from '@/features/orchestration/domain/business-context';
 import { AuthorizedEgressContentAuthorizer } from '@/features/messaging/adapters/authorized-egress-content-authorizer';
 import { PostgresChannelIdentityStore } from '@/features/messaging/adapters/postgres-channel-identity-store';
 import { sendOutboundMessage } from '@/features/messaging/application/send-outbound-message';
@@ -23,6 +38,8 @@ import {
   type CommitDecisionResult,
 } from '@/lib/services/decision.service';
 import { processInboundMessage, type InboundEnvelope } from '@/lib/services/ingestion.service';
+import { loadContactIntakeV1 } from '@/lib/repositories/contact-intake.repository';
+import { EMBEDDING_DIMENSIONS } from '@/lib/embeddings/gemini';
 import { sql } from '@/lib/db/orchestrator';
 import { openLocalTestDatabase } from '../helpers/db';
 import { startFakeXendraServer, type FakeXendraServer } from '../fixtures/fake-xendra-server';
@@ -32,7 +49,10 @@ const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
 const orchestratorSecret = 'e2e-xendra-orchestrator-secret';
 const toolsSecret = 'e2e-xendra-tools-secret';
 const paymentUrl = 'https://buy.stripe.com/test-e2e-monthly-12';
-const fixedNow = new Date('2026-09-13T18:00:00.000Z');
+// Keep provider timestamps in the same wall-clock window as rows written by
+// PostgreSQL. A historical fixture would make an already-consumed call offer
+// look newer than the completed call when the post-call context is claimed.
+const fixedNow = new Date();
 
 const previousEnvironment = {
   voiceProvider: process.env.VOICE_PROVIDER,
@@ -157,6 +177,71 @@ async function markVisible(committed: CommitDecisionResult, providerMessageId: s
   expect(report.delivery_status).toBe('submitted_to_botpress');
 }
 
+async function completeSyntheticBatch(batchId: string): Promise<void> {
+  await db!`
+    UPDATE inbound_batches
+    SET state = 'completed', completed_at = now(), updated_at = now()
+    WHERE id = ${batchId}::uuid
+  `;
+}
+
+async function forceDue(batchId: string): Promise<void> {
+  await db!`UPDATE inbound_batches SET due_at = now() - interval '1 second' WHERE id = ${batchId}::uuid`;
+}
+
+function productionClaimDependencies(workspaceSlug: string) {
+  const business = new PostgresBusinessContextStore(db!);
+  const conversationState = new PostgresConversationStateStoreV1(db!);
+  const sales = new PostgresSalesContextStore(db!);
+  return {
+    store: new PostgresOrchestrationStore(db!),
+    embedding: {
+      embed: async () => Array.from(
+        { length: EMBEDDING_DIMENSIONS },
+        (_, index) => index === 0 ? 1 : 0,
+      ),
+    },
+    memory: new PostgresMemoryRetriever(db!),
+    knowledge: new PostgresKnowledgeRetriever(db!, async () => {
+      const rows = await db!<Array<{ id: string }>>`
+        SELECT id FROM workspaces WHERE slug = ${workspaceSlug} AND status = 'active' LIMIT 1
+      `;
+      if (!rows[0]) throw new Error('E2E_STUDYX_WORKSPACE_MISSING');
+      return rows[0].id;
+    }),
+    limits: DEFAULT_CONTEXT_LIMITS,
+    business: {
+      async load() {
+        const raw = await business.loadBusinessContext(workspaceSlug);
+        return raw ? buildBusinessContextView(raw) : null;
+      },
+      async loadCompleteIndex() {
+        const raw = await business.loadCompleteIndex(workspaceSlug);
+        return raw ? buildCatalogIndexView(raw) : null;
+      },
+      async loadByCode(code: string) {
+        const raw = await business.loadByCode(workspaceSlug, code);
+        return raw ? buildBusinessContextView(raw) : null;
+      },
+    },
+    sales: { load: (contactId: string) => sales.load(workspaceSlug, contactId) },
+    conversationState: {
+      load: (conversationId: string, contactId: string) => conversationState.load(
+        workspaceSlug,
+        conversationId,
+        contactId,
+      ),
+    },
+    conversationPipelineEnabled: true,
+    agentABrainEnabled: true,
+    agentAContextScoping: true,
+    agentARepairEnabled: true,
+    agentAStateAssertions: true,
+    agentASingleRoute: true,
+    contactIntake: (contactId: string) => loadContactIntakeV1(contactId, db!),
+  };
+}
+
 async function bindStudyxContext(input: {
   readonly contactId: string;
   readonly conversationId: string;
@@ -221,6 +306,7 @@ async function createAgentACall(input: {
   });
 
   let confirmationTurnId = first.turn_id;
+  let confirmationBatchId = first.batch.id;
   if (input.acceptedOffer) {
     const offer = await commitTurn(first.turn_id, decision(
       '¿Querés que te llamemos a este número para verlo juntos?',
@@ -229,8 +315,10 @@ async function createAgentACall(input: {
     ));
     expect(offer.call_request).toBeNull();
     await markVisible(offer, `bp-offer-${offer.decision_id}`);
+    await completeSyntheticBatch(first.batch.id);
     const accepted = await processInboundMessage(inbound(identity, 'Sí, llamame'));
     confirmationTurnId = accepted.turn_id;
+    confirmationBatchId = accepted.batch.id;
   }
 
   const confirmation = await commitTurn(confirmationTurnId, decision(
@@ -244,6 +332,7 @@ async function createAgentACall(input: {
   ));
   expect(confirmation.call_request?.call_id).toBeDefined();
   await markVisible(confirmation, `bp-confirmation-${confirmation.decision_id}`);
+  await completeSyntheticBatch(confirmationBatchId);
 
   return {
     callId: confirmation.call_request!.call_id,
@@ -449,6 +538,21 @@ run('Agent A → Xendra → Agent B → Agent A local smoke', () => {
       expect(await relay(call, providerCallId, 'call_started')).toMatchObject({ status: 204 });
 
       const outbound = outboundHarness(call);
+      const contact = await tool(call, providerCallId, 'guardar_datos_contacto', {
+        nombre: 'Ana',
+        apellido: 'Pérez',
+        email: 'ana.perez@example.test',
+        telefono_alternativo: call.identity.phone,
+      }, outbound.dependencies);
+      const contactReplay = await tool(call, providerCallId, 'guardar_datos_contacto', {
+        nombre: 'Ana',
+        apellido: 'Pérez',
+        email: 'ana.perez@example.test',
+        telefono_alternativo: call.identity.phone,
+      }, outbound.dependencies);
+      expect(contact.body).toEqual({ ok: true, saved: true, projected: true });
+      expect(contactReplay.body).toEqual({ ok: true, saved: false, projected: false });
+
       const payment = await tool(call, providerCallId, 'enviar_link_pago', {
         curso: 'fotografia_profesional',
         plan_code: 'monthly_12',
@@ -502,7 +606,45 @@ run('Agent A → Xendra → Agent B → Agent A local smoke', () => {
         call.identity,
         'Gracias, sigo por acá después de la llamada.',
       ));
-      const resumed = await commitTurn(resumedInbound.turn_id, decision(
+      await forceDue(resumedInbound.batch.id);
+      const claimed = await claimBatch(
+        {
+          batch_id: resumedInbound.batch.id,
+          claimed_by: 'xendra-e2e-resume',
+          trace_id: randomUUID(),
+        },
+        productionClaimDependencies(call.workspaceSlug),
+      );
+      expect(claimed.outcome).toBe('claimed');
+      if (claimed.outcome !== 'claimed') throw new Error('E2E_RESUME_NOT_CLAIMED');
+      expect(claimed.batch).toMatchObject({
+        conversation_id: call.conversationId,
+        contact_id: call.contactId,
+      });
+      expect(claimed.contact_intake_missing).toEqual([]);
+      expect(claimed.contact_intake).toEqual({
+        nombre: 'Ana',
+        apellido: 'Pérez',
+        correo: 'ana.perez@example.test',
+        telefono: call.identity.phone,
+      });
+      expect(claimed.sales_context).toMatchObject({
+        mode: 'post_call',
+        course_of_interest: 'Fotografía Profesional',
+        offering_code: 'fotografia_profesional',
+        selected_payment_plan: 'monthly_12',
+        last_call_result: {
+          call_id: call.callId,
+          result: 'seguimiento_agendado',
+        },
+      });
+      expect(claimed.conversation_state_v1).toMatchObject({
+        selected_offering_code: 'fotografia_profesional',
+        selected_payment_plan: 'monthly_12',
+        stage: 'payment_link_sent',
+      });
+
+      const resumed = await commitTurn(claimed.turn_id, decision(
         'Claro, seguimos por este mismo chat.',
         'commercial_reply',
         null,
