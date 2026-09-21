@@ -538,6 +538,7 @@ function pruneKnownUnsupportedFactClaimsV1<T extends AgentAProposalEnvelopeV1>(i
       safeMessages,
       input.context,
       new Set(input.authorized_fact_ids),
+      input.initial.proposal.move.course_reference ?? null,
     );
   }
   if (safeMessages.length === 0) return null;

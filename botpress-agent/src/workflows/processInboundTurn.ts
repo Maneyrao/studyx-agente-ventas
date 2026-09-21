@@ -246,6 +246,14 @@ function callPhoneRequiredAgentTurn(): AgentATurnCommitV2 {
   }
 }
 
+function needsCallPhoneRecovery(claimed: ClaimedTurn, failureCode: string): boolean {
+  return claimed.deterministic_route === 'call_phone_required'
+    || (
+      claimed.contact_intake_missing.includes('telefono')
+      && failureCode.includes('ACTION_NOT_AUTHORIZED:request_call_now')
+    )
+}
+
 /**
  * Preserve the model-owned conversation when the authoritative planner cannot
  * authorize its move. This is deliberately a presentation-only decision:
@@ -982,7 +990,7 @@ export const processInboundTurn = new Workflow({
         // only a canonical deterministic route already proven by the claim;
         // otherwise return the narrow state/technical recovery below.
         if (brainAuthoritative) {
-          const callPhoneFallback = owned.deterministic_route === 'call_phone_required'
+          const callPhoneFallback = needsCallPhoneRecovery(owned, failureCode)
           const deterministicCommercialFallback = commercialRoute.kind === 'deterministic'
             && commercialRoute.decision.business_action === null
             ? commercialRoute
@@ -1143,7 +1151,7 @@ export const processInboundTurn = new Workflow({
         })
         // No lexical sales substitute. A factual intake-status question may
         // use the canonical claim; every other failure stays technical.
-        const callPhoneFallback = owned.deterministic_route === 'call_phone_required'
+        const callPhoneFallback = needsCallPhoneRecovery(owned, failureCode)
           ? callPhoneRequiredFallback(owned)
           : null
         const stateFallback = brainFailureReason === 'policy_rejected'

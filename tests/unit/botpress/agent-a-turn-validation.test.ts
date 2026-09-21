@@ -1059,6 +1059,75 @@ describe('V8 respuesta repetida', () => {
     });
   });
 
+  it('permite explicar el candidato que el turno actual acaba de resolver', () => {
+    const descriptionFact = 'offering:community_manager:description:v1';
+    const current = context({
+      turn: {
+        batch_messages: [{ id: 'm2', text: 'Quizás Community Manager.' }],
+        recent_turns: [],
+      },
+      commercial_state: {
+        ...context().commercial_state,
+        selected_offering_code: null,
+      },
+      catalog: {
+        ...context().catalog,
+        selected_offering: null,
+        candidate_offerings: [
+          {
+            code: 'marketing_digital',
+            fact_id: 'offering:marketing_digital:name:v1',
+            display_name: 'Marketing Digital',
+            area_code: 'marketing',
+          },
+          {
+            code: 'community_manager',
+            fact_id: 'offering:community_manager:name:v1',
+            display_name: 'Community Manager',
+            area_code: 'marketing',
+            facts: [{
+              id: descriptionFact,
+              kind: 'offering_description',
+              value: 'Gestión profesional de comunidades y contenido para redes sociales.',
+            }],
+          },
+        ],
+      },
+    });
+
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'select_course',
+          secondary_moves: [],
+          vetoes: [],
+          course_reference: 'community_manager',
+          confidence: 0.96,
+        },
+        response: {
+          messages: ['Community Manager sirve para gestionar comunidades y crear contenido para redes sociales.'],
+          call_offer: null,
+        },
+        used_fact_ids: [
+          'offering:community_manager:name:v1',
+          descriptionFact,
+        ],
+      }),
+      context: current,
+      planned_fact_ids: [
+        'offering:community_manager:name:v1',
+        descriptionFact,
+      ],
+      rejection_id: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(rejection?.rejections ?? []).not.toContainEqual({
+      code: 'FACT_VALUE_MISMATCH',
+      subject: 'candidate_course_detail',
+    });
+  });
+
   it('permite nombrar candidatos y prometer una recomendación posterior sin inventar diferencias', () => {
     const current = context({
       turn: {

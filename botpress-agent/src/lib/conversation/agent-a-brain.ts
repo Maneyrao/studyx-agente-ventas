@@ -1530,11 +1530,24 @@ function assertsUnverifiedCandidateCourseDetailV1(
   messages: readonly string[],
   context: AgentAContextV1,
   plannedFactIds: ReadonlySet<string>,
+  proposedCourseReference: string | null = null,
 ): boolean {
   if (
     context.catalog.selected_offering !== null
     || context.catalog.candidate_offerings.length < 2
   ) return false;
+  // The snapshot describes the state before this turn. When the current move
+  // resolves exactly one of those candidates, its cited description is no
+  // longer an unsupported comparison: it is the canonical fact that justifies
+  // the model's explanation of the newly selected course.
+  const newlyResolvedCandidate = proposedCourseReference === null
+    ? null
+    : context.catalog.candidate_offerings.find((offering) => (
+        offering.code === proposedCourseReference
+      )) ?? null;
+  if (newlyResolvedCandidate?.facts?.some((fact) => (
+    fact.kind === 'offering_description' && plannedFactIds.has(fact.id)
+  ))) return false;
   // A comparison backed by every candidate's cited canonical description is
   // not an inference from names alone. The specific protected claims below
   // (prerequisites, logistics, outcomes, money) remain independently checked.
@@ -1571,11 +1584,12 @@ export function removeUnverifiedCandidateCourseDetailAssertionsV1(
   messages: readonly string[],
   context: AgentAContextV1,
   plannedFactIds: ReadonlySet<string>,
+  proposedCourseReference: string | null = null,
 ): string[] {
   return messages
     .flatMap((message) => message.split(/(?<=[.!?\n])/u))
     .filter((sentence) => !assertsUnverifiedCandidateCourseDetailV1(
-      [sentence], context, plannedFactIds,
+      [sentence], context, plannedFactIds, proposedCourseReference,
     ))
     .map((sentence) => sentence.trim())
     .filter((sentence) => sentence.length > 0);
@@ -1731,7 +1745,12 @@ export function validateAgentATurnProposalV1(input: {
     .some((claim) => !authorizedEmploymentOutcomes.has(claim))) {
     rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'employment_outcome' });
   }
-  if (assertsUnverifiedCandidateCourseDetailV1(input.proposal.response.messages, input.context, planned)) {
+  if (assertsUnverifiedCandidateCourseDetailV1(
+    input.proposal.response.messages,
+    input.context,
+    planned,
+    input.proposal.move.course_reference ?? null,
+  )) {
     rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'candidate_course_detail' });
   }
   if (omitsCustomerNamedCandidateV1(input.proposal.response.messages, input.context)) {
