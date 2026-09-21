@@ -5,6 +5,7 @@ import { CallEventSchema } from '@/lib/contracts/call-event';
 import { evaluateAuthorizedVoiceConsent, evaluateVoiceConsent } from '../domain/call-consent';
 import { hashCallContext, parseCallContext } from '../domain/call-context';
 import { splitFullName } from '@/lib/heuristics/contact-identity';
+import { CALL_START_TIMEOUT_SECONDS } from '../domain/call-timeouts';
 
 /**
  * Reserves exactly one call from a validated Decision v4 with
@@ -200,6 +201,26 @@ export async function reserveCallForDecision(
     throw new CallRequestRejectedError('CALL_CONSENT_MODE_MISMATCH');
   }
   const consentSourceMessageId = input.consent_messages[verdict.sourceIndex].id;
+
+  // Xendra can acknowledge creation without ever delivering a lifecycle
+  // event. Such a call must not hold the one-active-call fence forever.
+  await db`
+    UPDATE call_sessions AS stale
+    SET status = 'timed_out',
+        completed_at = COALESCE(stale.completed_at, ${nowIso}::timestamptz),
+        error_code = COALESCE(stale.error_code, 'CALL_START_TIMEOUT')
+    WHERE stale.contact_id = ${input.contact_id}::uuid
+      AND stale.status = 'provider_accepted'
+      AND stale.provider_accepted_at IS NOT NULL
+      AND stale.provider_accepted_at <= ${nowIso}::timestamptz
+        - make_interval(secs => ${CALL_START_TIMEOUT_SECONDS})
+      AND NOT EXISTS (
+        SELECT 1
+        FROM call_events AS event
+        WHERE event.call_id = stale.id
+          AND event.event_type IN ('started', 'ended', 'analyzed')
+      )
+  `;
 
   const active = await db<Array<{ id: string }>>`
     SELECT id FROM call_sessions

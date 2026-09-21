@@ -9,6 +9,7 @@ import { openLocalTestDatabase } from '../helpers/db';
 import { processInboundMessage, type InboundEnvelope } from '@/lib/services/ingestion.service';
 import { commitAgentDecision, DecisionPolicyError } from '@/lib/services/decision.service';
 import { reserveCallForDecision } from '@/features/calls/application/request-call';
+import { PostgresOrchestrationStore } from '@/features/orchestration/adapters/postgres-orchestration-store';
 import { sql } from '@/lib/db/orchestrator';
 
 /**
@@ -346,6 +347,45 @@ run('agent a call handoff — refusals reserve nothing', () => {
 
     const secondTurn = await seedTurn(identity, 'Llamame ya');
     await expectRejected(secondTurn, callConfirmation('direct_request'), 'ACTIVE_CALL_IN_PROGRESS');
+  });
+
+  it('expires a provider-accepted call that never started and permits a fresh request', async () => {
+    const identity = newIdentity();
+    const firstTurn = await seedTurn(identity, 'Llamame ahora');
+    const first = await commit(firstTurn, callConfirmation('direct_request'));
+    const staleCallId = first.call_request!.call_id;
+
+    await db!`
+      UPDATE call_sessions
+      SET status = 'provider_accepted',
+          provider_call_id = ${`stale:${staleCallId}`},
+          provider_accepted_at = now() - interval '16 minutes'
+      WHERE id = ${staleCallId}::uuid
+    `;
+
+    const identityRows = await db!<Array<{ contact_id: string; conversation_id: string }>>`
+      SELECT contact_id, conversation_id
+      FROM messages
+      WHERE id = ${firstTurn}::uuid
+    `;
+    const facts = await new PostgresOrchestrationStore(db!).loadClaimedCallFacts(identityRows[0]);
+    expect(facts.active_call).toBeNull();
+
+    const secondTurn = await seedTurn(identity, 'Quiero que me llames');
+    const second = await commit(secondTurn, callConfirmation('direct_request'));
+    expect(second.call_request?.call_id).toBeDefined();
+    expect(second.call_request?.call_id).not.toBe(staleCallId);
+
+    const rows = await db!<Array<{ id: string; status: string; error_code: string | null }>>`
+      SELECT id, status, error_code
+      FROM call_sessions
+      WHERE id IN (${staleCallId}::uuid, ${second.call_request!.call_id}::uuid)
+      ORDER BY created_at
+    `;
+    expect(rows).toEqual([
+      { id: staleCallId, status: 'timed_out', error_code: 'CALL_START_TIMEOUT' },
+      { id: second.call_request!.call_id, status: 'requested', error_code: null },
+    ]);
   });
 });
 

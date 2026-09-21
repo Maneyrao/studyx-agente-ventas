@@ -14,6 +14,7 @@ import type {
   OrchestrationStore,
   StaleClaim,
 } from '../ports/orchestration-store';
+import { CALL_START_TIMEOUT_SECONDS } from '@/features/calls/domain/call-timeouts';
 
 /**
  * PostgreSQL adapter for the orchestration store.
@@ -319,6 +320,11 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
               'requested', 'dispatching', 'provider_accepted',
               'dispatch_ambiguous', 'in_progress'
             )
+            AND (
+              active.status <> 'provider_accepted'
+              OR active.provider_accepted_at IS NULL
+              OR active.provider_accepted_at > now() - make_interval(secs => ${CALL_START_TIMEOUT_SECONDS})
+            )
           ORDER BY active.created_at DESC
           LIMIT 1
         ) AS active_call,
@@ -573,6 +579,11 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
       WHERE contact_id = ${input.contact_id}::uuid
         AND conversation_id = ${input.conversation_id}::uuid
         AND status IN ('requested', 'dispatching', 'provider_accepted', 'dispatch_ambiguous', 'in_progress')
+        AND (
+          status <> 'provider_accepted'
+          OR provider_accepted_at IS NULL
+          OR provider_accepted_at > now() - make_interval(secs => ${CALL_START_TIMEOUT_SECONDS})
+        )
       ORDER BY created_at DESC
       LIMIT 1
     `;
