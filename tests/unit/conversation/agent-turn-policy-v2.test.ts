@@ -887,4 +887,37 @@ describe('payment link consent across intake', () => {
       transition: { awaiting_reply: 'payment_confirmation' },
     });
   });
+
+  it('persists an explicit current plan even when the model omits the redundant structured selection', () => {
+    const result = authorize({
+      customerText: '1 pago de 360',
+      state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected' }),
+      intake: completeIntake,
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'unknown',
+          secondary_moves: [],
+          vetoes: [],
+          confidence: 0.99,
+        },
+        response: {
+          messages: [
+            'Pago único de USD 360.',
+            'Tus datos están completos. Confirmas que son correctos para enviarte el link?',
+          ],
+        },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: { type: 'none' },
+      transition: {
+        selected_payment_plan: 'one_time',
+        stage: 'plan_selected',
+        awaiting_reply: 'payment_confirmation',
+      },
+    });
+  });
 });

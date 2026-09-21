@@ -179,7 +179,10 @@ describe('derivePaymentChoiceFromBatch', () => {
 
   it('derives one_time from the production wording "un pago de 360"', () => {
     expect(derivePaymentPlanSelectionFromBatch([msg('un pago de 360')])).toBe('one_time');
+    expect(derivePaymentPlanSelectionFromBatch([msg('1 pago de 360')])).toBe('one_time');
     expect(classifyCurrentPaymentIntent([msg('un pago de 360')]))
+      .toEqual({ kind: 'direct', planCode: 'one_time' });
+    expect(classifyCurrentPaymentIntent([msg('1 pago de 360')]))
       .toEqual({ kind: 'direct', planCode: 'one_time' });
   });
 

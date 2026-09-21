@@ -21,6 +21,7 @@ import {
 } from './state-fact-registry';
 import type { ContactIntakeV1 } from './conversation-planner';
 import {
+  classifyCurrentPaymentIntent,
   derivePaymentPlanSelectionFromBatch,
   hasExplicitPurchaseDecline,
   hasTemporalPaymentDeferral,
@@ -130,9 +131,17 @@ export function authorizeAgentTurnV2(input: {
   const currentPaymentMessages = (input.current_customer_messages ?? [])
     .map((content) => ({ content }));
   const explicitCurrentPlan = derivePaymentPlanSelectionFromBatch(currentPaymentMessages);
-  const selectsPaymentPlanNow = proposal.move.payment_plan !== undefined && (
-    proposal.move.move === 'select_payment_plan'
-    || proposal.move.payment_plan === explicitCurrentPlan
+  const currentPaymentIntent = classifyCurrentPaymentIntent(currentPaymentMessages);
+  const committedCurrentPlan = currentPaymentIntent.kind === 'direct'
+    ? currentPaymentIntent.planCode
+    : null;
+  // The customer's explicit current-turn choice outranks a mismatching model
+  // field. The model still owns the reply; this boundary only chooses which
+  // canonical plan may be persisted or materialized as a payment action.
+  const selectedCurrentPlan = committedCurrentPlan ?? proposal.move.payment_plan;
+  const selectsPaymentPlanNow = selectedCurrentPlan !== null && (
+    moves.has('select_payment_plan')
+    || selectedCurrentPlan === explicitCurrentPlan
   );
   const resumesDurablePlan = moves.has('request_payment_link')
     && state.selected_payment_plan !== null
@@ -142,7 +151,7 @@ export function authorizeAgentTurnV2(input: {
   // the backend prevents an incidental model field from replacing that plan.
   const selectedPlan = resumesDurablePlan
     ? state.selected_payment_plan
-    : proposal.move.payment_plan ?? (courseChanged ? null : state.selected_payment_plan);
+    : selectedCurrentPlan ?? (courseChanged ? null : state.selected_payment_plan);
   const plannedPaymentReported = moves.has('report_payment') || state.payment_reported_at !== null;
   const stateFacts = materializeStateFactsV1({
     intake: input.contact_intake,
@@ -319,9 +328,9 @@ export function authorizeAgentTurnV2(input: {
     nextOffering = requestedOffering;
     stage = 'course_selected';
   }
-  if (moves.has('select_payment_plan') && proposal.move.payment_plan && selectedOffering) {
+  if (selectsPaymentPlanNow && selectedPlan && selectedOffering) {
     nextOffering = selectedOffering;
-    nextPlan = proposal.move.payment_plan;
+    nextPlan = selectedPlan;
     stage = 'plan_selected';
     // A saved plan is not permission to deliver its link. Only the explicit
     // request below can carry that permission through a pending intake.

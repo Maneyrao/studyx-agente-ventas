@@ -51,11 +51,11 @@ const EXPLICIT_ONE_TIME_WITHOUT_CONTADO_PATTERN =
   /\b(?:pago\s+unico|todo\s+junto|un\s+solo\s+pago|pago\s+total|(?:un\s+)?unico\s+pago)\b/
 
 const ONE_TIME_AMOUNT_PATTERN =
-  /\bun\s+pago\s+de\s+(?:usd\s*)?360(?:\s*(?:usd|dolares?))?\b/
+  /\b(?:un|1)\s+pago\s+de\s+(?:usd\s*)?360(?:\s*(?:usd|dolares?))?\b/
 const SHORT_ONE_TIME_AMOUNT_SELECTION_PATTERN =
-  /^(?:un\s+pago\s+de\s+(?:usd\s*)?360(?:\s*(?:usd|dolares?))?)(?:\s+(?:por\s+favor|porfa|me\s+sirve|esta\s+bien))?$/u
+  /^(?:(?:un|1)\s+pago\s+de\s+(?:usd\s*)?360(?:\s*(?:usd|dolares?))?)(?:\s+(?:por\s+favor|porfa|me\s+sirve|esta\s+bien))?$/u
 const COMMITTED_ONE_TIME_AMOUNT_SELECTION_PATTERN =
-  /\b(?:confirmo|prefiero|elijo|elegi|me\s+quedo\s+con|voy\s+con|quiero(?:\s+pagar)?)\b[^.!?;,\n]{0,48}\bun\s+pago\s+de\s+(?:usd\s*)?360(?:\s*(?:usd|dolares?))?\b/u
+  /\b(?:confirmo|prefiero|elijo|elegi|me\s+quedo\s+con|voy\s+con|quiero(?:\s+pagar)?)\b[^.!?;,\n]{0,48}\b(?:un|1)\s+pago\s+de\s+(?:usd\s*)?360(?:\s*(?:usd|dolares?))?\b/u
 const NEGATED_ONE_TIME_AMOUNT_PATTERN = /\b(?:no|nunca|ni|tampoco)\b/u
 const SHORT_PAYMENT_SELECTION_REVOCATION_PATTERN =
   /^(?:no|no\s+mejor\s+no|mejor\s+no|dejalo|dejala|cancelo)(?:\s+gracias)?$/u

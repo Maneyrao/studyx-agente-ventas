@@ -39,6 +39,7 @@ const CORPUS = [
   'prefiero un solo pago',
   'quiero hacer el pago total',
   'un pago de 360',
+  '1 pago de 360',
   'Quiero pagar los 360 dólares en un único pago',
   'prefiero único pago',
   'hola, quiero info del curso',
