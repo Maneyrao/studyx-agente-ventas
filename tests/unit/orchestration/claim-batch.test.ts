@@ -1944,6 +1944,37 @@ describe('claimBatch sales_context', () => {
     if (result.outcome !== 'claimed') throw new Error('expected a claim');
 
     expect(result.sales_context.allowed_actions).toEqual(['request_call_now']);
+    expect(result.deterministic_route).toBe('call_phone_required');
+  });
+
+  it('routes a call request plus a phone message without waiting for a model', async () => {
+    const embedding = { embed: vi.fn().mockResolvedValue([0.1, 0.2]) };
+    const deps = buildDeps({
+      embedding,
+      messagesResult: [
+        {
+          id: 'm-call', conversation_seq: 1, content: 'Llamame dale',
+          created_at: '2026-09-21T13:38:37.105Z', message_type: 'text',
+        },
+        {
+          id: 'm-phone', conversation_seq: 2,
+          content: '[+5491100000000](tel:5491100000000)',
+          created_at: '2026-09-21T13:38:37.867Z', message_type: 'text',
+        },
+      ],
+      contactIntake: async () => ({
+        nombre: 'Luke', apellido: 'Pierella', correo: 'luke@example.test',
+        telefono: '+5491100000000',
+      }),
+    });
+
+    const result = await claimBatch(input, deps);
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+    expect(result.deterministic_route).toBe('call_direct_request');
+    expect(result.sales_context.allowed_actions).toEqual(['request_call_now']);
+    expect(result.diagnostics.counters.embedding_calls).toBe(0);
+    expect(embedding.embed).not.toHaveBeenCalled();
   });
 
   it('withholds offer_call while a persisted decline is inside the 30-minute cooldown', async () => {
