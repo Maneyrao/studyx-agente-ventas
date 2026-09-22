@@ -193,6 +193,8 @@ export interface ClaimedTurn {
     /** The messages this decision must answer, in stable order. */
     readonly batch_messages: BatchMessage[];
     readonly recent_turns: RecentTurn[];
+    /** Complete interventions dedicated to the conversational brain. */
+    readonly logical_recent_turns?: RecentTurn[];
     readonly summary: { text: string | null; version: number; updated_at: string | null };
     readonly selected_memories: RetrievedMemory[];
     readonly long_term_memory_available: boolean;
@@ -611,6 +613,11 @@ export async function claimBatch(
   const { facts, batch_messages: batchMessages, call_facts: callFacts } = core;
   const recentTurns = activeSessionRecentTurns(
     facts.recent_turns,
+    batchMessages,
+    loadConversationSessionConfig().sessionIdleMs,
+  );
+  const logicalRecentTurns = activeSessionRecentTurns(
+    core.logical_recent_turns ?? recentTurns,
     batchMessages,
     loadConversationSessionConfig().sessionIdleMs,
   );
@@ -1091,6 +1098,7 @@ export async function claimBatch(
     context: {
       batch_messages: batchMessages,
       recent_turns: recentTurns,
+      logical_recent_turns: logicalRecentTurns,
       summary: facts.summary,
       selected_memories,
       long_term_memory_available,

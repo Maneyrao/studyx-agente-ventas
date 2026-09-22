@@ -123,4 +123,95 @@ run('Agent A logical-history metadata', () => {
       }),
     ]);
   });
+
+  it('projects the latest six complete interventions even when ten physical rows cut the oldest reply', async () => {
+    const base = envelope();
+
+    for (let turnIndex = 1; turnIndex <= 3; turnIndex += 1) {
+      const inbound = await processInboundMessage({
+        ...base,
+        external_message_id: `message-${randomUUID()}`,
+        trace_id: randomUUID(),
+        message: {
+          ...base.message,
+          text: `Turno histórico ${turnIndex}`,
+          occurred_at: new Date(Date.now() + turnIndex * 10_000).toISOString(),
+        },
+      });
+      await db!`UPDATE inbound_batches SET due_at = now() - interval '1 second' WHERE id = ${inbound.batch.id}::uuid`;
+      const claimed = await orchestrationStore.claimBatch({
+        batch_id: inbound.batch.id,
+        claimed_by: `logical-history-${turnIndex}`,
+      });
+      expect(claimed.outcome).toBe('claimed');
+      if (claimed.claim_token === null) throw new Error('expected historical claim token');
+      await orchestrationStore.completeBatch({
+        batch_id: inbound.batch.id,
+        claim_token: claimed.claim_token,
+      });
+
+      const [{ conversation_id: conversationId }] = await db!<Array<{ conversation_id: string }>>`
+        SELECT conversation_id FROM messages WHERE id = ${inbound.turn_id}::uuid
+      `;
+      if (!conversationId) throw new Error('expected historical conversation');
+
+      for (let partIndex = 0; partIndex < 3; partIndex += 1) {
+        await registerMessage({
+          conversation_id: conversationId,
+          direction: 'outbound',
+          content: `Respuesta ${turnIndex}.${partIndex + 1}`,
+          in_reply_to: inbound.turn_id,
+          part_index: partIndex,
+          metadata: { source: 'logical-history-boundary-test' },
+        }, { db: db!, embedding: 'skip' });
+      }
+    }
+
+    const current = await processInboundMessage({
+      ...base,
+      external_message_id: `message-${randomUUID()}`,
+      trace_id: randomUUID(),
+      message: {
+        ...base.message,
+        text: '¿Qué fue lo último que me dijiste?',
+        occurred_at: new Date(Date.now() + 40_000).toISOString(),
+      },
+    });
+    await db!`UPDATE inbound_batches SET due_at = now() - interval '1 second' WHERE id = ${current.batch.id}::uuid`;
+    const currentClaim = await orchestrationStore.claimBatch({
+      batch_id: current.batch.id,
+      claimed_by: 'logical-history-boundary-current',
+    });
+    expect(currentClaim.outcome).toBe('claimed');
+
+    const context = await new PostgresOrchestrationStore(db!).loadClaimedBatchContext({
+      batch_id: current.batch.id,
+      recent_turns_limit: 10,
+    });
+    const logical = (context as unknown as {
+      logical_recent_turns?: Array<{ direction: string; content: string }>;
+    } | null)?.logical_recent_turns;
+
+    expect(context?.facts.recent_turns).toHaveLength(10);
+    expect(logical).toEqual([
+      { direction: 'inbound', content: 'Turno histórico 1', created_at: expect.any(String) },
+      {
+        direction: 'outbound',
+        content: 'Respuesta 1.1\nRespuesta 1.2\nRespuesta 1.3',
+        created_at: expect.any(String),
+      },
+      { direction: 'inbound', content: 'Turno histórico 2', created_at: expect.any(String) },
+      {
+        direction: 'outbound',
+        content: 'Respuesta 2.1\nRespuesta 2.2\nRespuesta 2.3',
+        created_at: expect.any(String),
+      },
+      { direction: 'inbound', content: 'Turno histórico 3', created_at: expect.any(String) },
+      {
+        direction: 'outbound',
+        content: 'Respuesta 3.1\nRespuesta 3.2\nRespuesta 3.3',
+        created_at: expect.any(String),
+      },
+    ]);
+  });
 });

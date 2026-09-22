@@ -187,6 +187,12 @@ export interface ClaimedBatchContext {
   readonly facts: ClaimedTurnFacts;
   readonly batch_messages: BatchMessage[];
   readonly call_facts: ClaimedCallFacts;
+  /**
+   * Complete customer/agent interventions for the brain. This projection is
+   * additive: legacy policies keep reading `facts.recent_turns` as physical
+   * rows, so changing conversational memory cannot change their decisions.
+   */
+  readonly logical_recent_turns?: RecentTurn[];
 }
 
 export interface OrchestrationStore {

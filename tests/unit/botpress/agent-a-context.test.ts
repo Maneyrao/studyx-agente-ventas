@@ -252,6 +252,49 @@ describe('buildAgentAContextV1', () => {
     ].join('\n'));
   });
 
+  it('prefers the complete backend logical projection over a physically truncated window', () => {
+    const claimed = claimedTurn();
+    claimed.context.recent_turns = [
+      causallyLinkedRecentTurn({
+        direction: 'outbound',
+        content: 'Segunda burbuja.',
+        created_at: '2026-08-28T11:00:02.000Z',
+        batch_id: null,
+        in_reply_to: '22222222-2222-4222-8222-222222222222',
+      }),
+      causallyLinkedRecentTurn({
+        direction: 'outbound',
+        content: 'Tercera burbuja.',
+        created_at: '2026-08-28T11:00:03.000Z',
+        batch_id: null,
+        in_reply_to: '22222222-2222-4222-8222-222222222222',
+      }),
+    ];
+    (claimed.context as unknown as {
+      logical_recent_turns: Array<{
+        direction: 'inbound' | 'outbound';
+        content: string;
+        created_at: string;
+      }>;
+    }).logical_recent_turns = [{
+      direction: 'outbound',
+      content: 'Primera burbuja.\nSegunda burbuja.\nTercera burbuja.',
+      created_at: '2026-08-28T11:00:03.000Z',
+    }];
+
+    const context = buildAgentAContextV1(claimed);
+
+    expect(context?.turn.recent_turns).toEqual([
+      expect.objectContaining({
+        direction: 'outbound',
+        content: 'Primera burbuja.\nSegunda burbuja.\nTercera burbuja.',
+      }),
+    ]);
+    expect(context?.continuity?.last_agent_reply).toBe(
+      'Primera burbuja.\nSegunda burbuja.\nTercera burbuja.',
+    );
+  });
+
   it('keeps the latest six complete interventions instead of the latest physical rows', () => {
     const claimed = claimedTurn();
     const histories = [

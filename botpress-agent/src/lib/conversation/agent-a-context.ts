@@ -73,6 +73,17 @@ type LogicalHistoryTurnV1 = {
  * so unrelated legacy rows are never guessed into the same intervention.
  */
 function projectLogicalHistoryV1(claimed: ClaimedTurn): readonly LogicalHistoryTurnV1[] {
+  const completeLogicalTurns = claimed.context.logical_recent_turns ?? [];
+  if (completeLogicalTurns.length > 0) {
+    return completeLogicalTurns
+      .filter((turn) => turn.content.trim().length > 0)
+      .map((turn, index) => ({
+        id: `logical:${turn.created_at}:${index}`,
+        direction: turn.direction,
+        content: turn.content,
+      }));
+  }
+
   const projected: Array<{
     id: string;
     direction: 'inbound' | 'outbound';

@@ -194,6 +194,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
     recent_turns_limit: number;
   }): Promise<ClaimedBatchContext | null> {
     const limit = Math.min(Math.max(input.recent_turns_limit, 1), 20);
+    const logicalLimit = Math.min(limit, 6);
     type JsonBatchMessage = {
       id: string;
       conversation_seq: string | number;
@@ -231,6 +232,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
       next_state: 'completed' | 'waiting_user' | null;
       batch_messages: JsonBatchMessage[];
       recent_turns: JsonRecentTurn[];
+      logical_recent_turns: JsonRecentTurn[];
       open_offer: { decision_id: string; offered_at: Date | string } | null;
       active_call: { call_id: string; status: string } | null;
       last_call_result: {
@@ -306,6 +308,51 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
             LIMIT ${limit}
           ) AS recent
         ), '[]'::jsonb) AS recent_turns,
+        COALESCE((
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'direction', logical.direction,
+              'content', logical.content,
+              'created_at', logical.created_at,
+              'batch_id', NULL,
+              'in_reply_to', NULL,
+              'part_index', 0
+            ) ORDER BY logical.last_created_at
+          )
+          FROM (
+            SELECT
+              grouped.direction,
+              string_agg(
+                grouped.content,
+                E'\n' ORDER BY grouped.created_at, grouped.part_index, grouped.id
+              ) AS content,
+              max(grouped.created_at) AS created_at,
+              max(grouped.created_at) AS last_created_at
+            FROM (
+              SELECT
+                rm.id,
+                rm.direction,
+                rm.content,
+                rm.created_at,
+                rm.conversation_seq,
+                rm.part_index,
+                CASE
+                  WHEN rm.direction = 'inbound' AND rm.batch_id IS NOT NULL
+                    THEN 'inbound:' || rm.batch_id::text
+                  WHEN rm.direction = 'outbound' AND rm.in_reply_to IS NOT NULL
+                    THEN 'outbound:' || rm.in_reply_to::text
+                  ELSE 'physical:' || rm.id::text
+                END AS logical_turn_id
+              FROM messages AS rm
+              WHERE rm.conversation_id = b.conversation_id
+                AND rm.contact_id = b.contact_id
+                AND rm.batch_id IS DISTINCT FROM b.id
+            ) AS grouped
+            GROUP BY grouped.logical_turn_id, grouped.direction
+            ORDER BY max(grouped.created_at) DESC
+            LIMIT ${logicalLimit}
+          ) AS logical
+        ), '[]'::jsonb) AS logical_recent_turns,
         (
           SELECT jsonb_build_object(
             'decision_id', offer.id,
@@ -445,6 +492,11 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
           : null,
         last_decline_at: jsonIso(row.last_decline_at),
       },
+      logical_recent_turns: (row.logical_recent_turns ?? []).map((turn) => ({
+        direction: turn.direction,
+        content: turn.content,
+        created_at: jsonIso(turn.created_at)!,
+      })),
     };
   }
 

@@ -561,6 +561,9 @@ export const ClaimedTurnSchema = z.object({
   context: z.object({
     batch_messages: z.array(BatchMessageSchema),
     recent_turns: z.array(RecentTurnSchema),
+    // Added independently from the legacy physical history so an older
+    // backend remains compatible during rollout.
+      logical_recent_turns: z.array(RecentTurnSchema).optional(),
     summary: z.object({
       text: z.string().nullable().default(null),
       version: z.number().int(),
