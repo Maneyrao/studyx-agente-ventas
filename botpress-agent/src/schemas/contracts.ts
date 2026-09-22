@@ -254,6 +254,11 @@ export const RecentTurnSchema = z.object({
   direction: z.enum(['inbound', 'outbound']),
   content: z.string(),
   created_at: z.string(),
+  // Causal links are projection metadata only. They let the brain collapse
+  // physical rows into customer/agent interventions without changing storage
+  // or the message-delivery contract.
+  batch_id: z.string().uuid().nullable().optional(),
+  in_reply_to: z.string().uuid().nullable().optional(),
 })
 
 export const MemoryItemSchema = z.object({

@@ -44,13 +44,16 @@ export const AgentAContextV1Schema = z.object({
     recent_turns: z.array(z.object({
       id: IdentifierSchema,
       direction: z.enum(['inbound', 'outbound']),
-      content: z.string().trim().min(1).max(4_096),
+      // A customer intervention can contain all twenty model-bounded batch
+      // messages; an agent intervention can contain three visible bubbles.
+      // Keep the complete causal turn in context rather than truncating one.
+      content: z.string().trim().min(1).max(40_019),
     }).strict()).max(8),
   }).strict(),
   continuity: z.object({
     assistant_has_spoken: z.boolean(),
     first_name_status: z.enum(['missing', 'requested', 'known']),
-    last_agent_reply: z.string().trim().min(1).max(4_096).nullable(),
+    last_agent_reply: z.string().trim().min(1).max(6_002).nullable(),
   }).strict().optional(),
   customer: z.object({
     display_name: z.string().trim().min(1).max(200).nullable(),

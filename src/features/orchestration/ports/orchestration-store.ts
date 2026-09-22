@@ -97,6 +97,10 @@ export interface RecentTurn {
   readonly direction: 'inbound' | 'outbound';
   readonly content: string;
   readonly created_at: string;
+  /** Shared only with the context projector; never controls a decision. */
+  readonly batch_id?: string | null;
+  /** The inbound turn that caused an agent response, when it has one. */
+  readonly in_reply_to?: string | null;
 }
 
 /**

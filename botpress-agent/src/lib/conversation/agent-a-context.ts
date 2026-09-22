@@ -57,10 +57,60 @@ function currentBatchSuppliesContactDetails(claimed: ClaimedTurn): boolean {
   });
 }
 
+const LOGICAL_HISTORY_LIMIT = 6;
+
+type LogicalHistoryTurnV1 = {
+  readonly id: string;
+  readonly direction: 'inbound' | 'outbound';
+  readonly content: string;
+};
+
+/**
+ * The database records physical messages, while the brain needs the customer
+ * and agent interventions those rows make up. `batch_id` is the durable
+ * customer-turn link; `in_reply_to` is the durable causal link shared by all
+ * outbound bubbles from one agent turn. Rows without either link stay separate
+ * so unrelated legacy rows are never guessed into the same intervention.
+ */
+function projectLogicalHistoryV1(claimed: ClaimedTurn): readonly LogicalHistoryTurnV1[] {
+  const projected: Array<{
+    id: string;
+    direction: 'inbound' | 'outbound';
+    contents: string[];
+  }> = [];
+  const indexes = new Map<string, number>();
+
+  for (const [index, turn] of claimed.context.recent_turns.entries()) {
+    const content = turn.content;
+    if (!content.trim()) continue;
+    const relation = turn.direction === 'inbound' ? turn.batch_id : turn.in_reply_to;
+    const key = relation === null || relation === undefined
+      ? `physical:${index}`
+      : `${turn.direction}:${relation}`;
+    const existingIndex = indexes.get(key);
+    if (existingIndex !== undefined) {
+      projected[existingIndex]!.contents.push(content);
+      continue;
+    }
+    indexes.set(key, projected.length);
+    projected.push({
+      id: `recent:${key}`,
+      direction: turn.direction,
+      contents: [content],
+    });
+  }
+
+  return projected.map((turn) => ({
+    id: turn.id,
+    direction: turn.direction,
+    content: turn.contents.join('\n'),
+  }));
+}
+
 function previousAgentRepliesV1(claimed: ClaimedTurn): readonly string[] {
-  return claimed.context.recent_turns
-    .filter((turn) => turn.direction === 'outbound' && turn.content.trim().length > 0)
-    .map((turn) => turn.content.trim());
+  return projectLogicalHistoryV1(claimed)
+    .filter((turn) => turn.direction === 'outbound')
+    .map((turn) => turn.content);
 }
 
 function requestedFirstNameBeforeV1(replies: readonly string[]): boolean {
@@ -609,6 +659,7 @@ export function buildAgentAContextV1(
   const intakeStatus: 'known' | 'unknown' = intakeAnswered ? 'known' : 'unknown';
   const firstNameKnownNow = !intakeMissing.includes('nombre')
     || currentBatchSuppliesFirstName(claimed);
+  const logicalHistory = projectLogicalHistoryV1(claimed);
   const previousAgentReplies = previousAgentRepliesV1(claimed);
   const lastAgentReply = previousAgentReplies.at(-1) ?? null;
   const firstNameStatus = firstNameKnownNow
@@ -660,8 +711,8 @@ export function buildAgentAContextV1(
         id: message.id,
         text: message.content,
       })),
-      recent_turns: claimed.context.recent_turns.slice(-8).map((turn, index) => ({
-        id: `recent:${turn.created_at}:${index}`,
+      recent_turns: logicalHistory.slice(-LOGICAL_HISTORY_LIMIT).map((turn) => ({
+        id: turn.id,
         direction: turn.direction,
         content: turn.content,
       })),

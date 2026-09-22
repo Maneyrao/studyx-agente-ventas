@@ -207,6 +207,9 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
       direction: 'inbound' | 'outbound';
       content: string;
       created_at: Date | string;
+      batch_id: string | null;
+      in_reply_to: string | null;
+      part_index: number;
     };
     type SnapshotRow = {
       contact_id: string;
@@ -285,16 +288,21 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
             jsonb_build_object(
               'direction', recent.direction,
               'content', recent.content,
-              'created_at', recent.created_at
-            ) ORDER BY recent.created_at, recent.id
+              'created_at', recent.created_at,
+              'batch_id', recent.batch_id,
+              'in_reply_to', recent.in_reply_to,
+              'part_index', recent.part_index
+            ) ORDER BY recent.created_at, recent.part_index, recent.id
           )
           FROM (
-            SELECT rm.id, rm.direction, rm.content, rm.created_at
+            SELECT
+              rm.id, rm.direction, rm.content, rm.created_at, rm.batch_id, rm.in_reply_to,
+              rm.part_index
             FROM messages AS rm
             WHERE rm.conversation_id = b.conversation_id
               AND rm.contact_id = b.contact_id
               AND rm.batch_id IS DISTINCT FROM b.id
-            ORDER BY rm.created_at DESC, rm.id DESC
+            ORDER BY rm.created_at DESC, rm.part_index DESC, rm.id DESC
             LIMIT ${limit}
           ) AS recent
         ), '[]'::jsonb) AS recent_turns,
@@ -395,6 +403,8 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
           direction: turn.direction,
           content: turn.content,
           created_at: jsonIso(turn.created_at)!,
+          batch_id: turn.batch_id,
+          in_reply_to: turn.in_reply_to,
         })),
         representative_turn_id: row.representative_turn_id,
         unsupported_message: row.unsupported_message,

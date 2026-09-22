@@ -10,6 +10,17 @@ import type { ConversationMoveV1 } from '../../../botpress-agent/src/schemas/con
 const UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
 const NOW = '2026-08-28T12:00:00.000Z';
 
+function causallyLinkedRecentTurn(input: {
+  readonly direction: 'inbound' | 'outbound';
+  readonly content: string;
+  readonly created_at: string;
+  readonly batch_id: string | null;
+  readonly in_reply_to: string | null;
+}): ClaimedTurn['context']['recent_turns'][number] {
+  // The causal links are claim metadata used only by the brain-context projection.
+  return input as unknown as ClaimedTurn['context']['recent_turns'][number];
+}
+
 function claimedTurn(): ClaimedTurn {
   return {
     outcome: 'claimed',
@@ -178,6 +189,174 @@ function claimedTurn(): ClaimedTurn {
 }
 
 describe('buildAgentAContextV1', () => {
+  it('projects a fragmented customer batch and its three reply bubbles as two complete interactions', () => {
+    const claimed = claimedTurn();
+    claimed.context.recent_turns = [
+      causallyLinkedRecentTurn({
+        direction: 'inbound',
+        content: 'Quiero información de Marketing Digital.',
+        created_at: '2026-08-28T11:00:00.000Z',
+        batch_id: '11111111-1111-4111-8111-111111111111',
+        in_reply_to: null,
+      }),
+      causallyLinkedRecentTurn({
+        direction: 'inbound',
+        content: 'Me interesa para trabajar en redes.',
+        created_at: '2026-08-28T11:00:01.000Z',
+        batch_id: '11111111-1111-4111-8111-111111111111',
+        in_reply_to: null,
+      }),
+      causallyLinkedRecentTurn({
+        direction: 'outbound',
+        content: 'Marketing Digital tiene 16 clases.',
+        created_at: '2026-08-28T11:00:02.000Z',
+        batch_id: null,
+        in_reply_to: '22222222-2222-4222-8222-222222222222',
+      }),
+      causallyLinkedRecentTurn({
+        direction: 'outbound',
+        content: 'Vas a ver contenidos para gestionar redes.',
+        created_at: '2026-08-28T11:00:03.000Z',
+        batch_id: null,
+        in_reply_to: '22222222-2222-4222-8222-222222222222',
+      }),
+      causallyLinkedRecentTurn({
+        direction: 'outbound',
+        content: '¿Querés que te cuente la modalidad?',
+        created_at: '2026-08-28T11:00:04.000Z',
+        batch_id: null,
+        in_reply_to: '22222222-2222-4222-8222-222222222222',
+      }),
+    ];
+
+    const context = buildAgentAContextV1(claimed);
+
+    expect(context?.turn.recent_turns).toEqual([
+      expect.objectContaining({
+        direction: 'inbound',
+        content: 'Quiero información de Marketing Digital.\nMe interesa para trabajar en redes.',
+      }),
+      expect.objectContaining({
+        direction: 'outbound',
+        content: [
+          'Marketing Digital tiene 16 clases.',
+          'Vas a ver contenidos para gestionar redes.',
+          '¿Querés que te cuente la modalidad?',
+        ].join('\n'),
+      }),
+    ]);
+    expect(context?.continuity?.last_agent_reply).toBe([
+      'Marketing Digital tiene 16 clases.',
+      'Vas a ver contenidos para gestionar redes.',
+      '¿Querés que te cuente la modalidad?',
+    ].join('\n'));
+  });
+
+  it('keeps the latest six complete interventions instead of the latest physical rows', () => {
+    const claimed = claimedTurn();
+    const histories = [
+      ['Cliente 1', 'Agente 1'],
+      ['Cliente 2', 'Agente 2'],
+      ['Cliente 3', 'Agente 3'],
+      ['Cliente 4', 'Agente 4'],
+    ] as const;
+    const batchIds = [
+      '31111111-1111-4111-8111-111111111111',
+      '32222222-2222-4222-8222-222222222222',
+      '33333333-3333-4333-8333-333333333333',
+      '34444444-4444-4444-8444-444444444444',
+    ] as const;
+    const replyIds = [
+      '41111111-1111-4111-8111-111111111111',
+      '42222222-2222-4222-8222-222222222222',
+      '43333333-3333-4333-8333-333333333333',
+      '44444444-4444-4444-8444-444444444444',
+    ] as const;
+
+    claimed.context.recent_turns = histories.flatMap(([customer, agent], index) => [
+      causallyLinkedRecentTurn({
+        direction: 'inbound',
+        content: customer,
+        created_at: `2026-08-28T11:0${index * 2}:00.000Z`,
+        batch_id: batchIds[index]!,
+        in_reply_to: null,
+      }),
+      ...(index === 1
+        ? [
+            'Agente 2, primera burbuja.',
+            'Agente 2, segunda burbuja.',
+            'Agente 2, tercera burbuja.',
+          ].map((content, bubble) => causallyLinkedRecentTurn({
+            direction: 'outbound',
+            content,
+            created_at: `2026-08-28T11:0${index * 2 + 1}:0${bubble}.000Z`,
+            batch_id: null,
+            in_reply_to: replyIds[index]!,
+          }))
+        : [causallyLinkedRecentTurn({
+            direction: 'outbound',
+            content: agent,
+            created_at: `2026-08-28T11:0${index * 2 + 1}:00.000Z`,
+            batch_id: null,
+            in_reply_to: replyIds[index]!,
+          })]),
+    ]);
+
+    const context = buildAgentAContextV1(claimed);
+
+    expect(context?.turn.recent_turns.map((turn) => turn.content)).toEqual([
+      'Cliente 2',
+      'Agente 2, primera burbuja.\nAgente 2, segunda burbuja.\nAgente 2, tercera burbuja.',
+      'Cliente 3',
+      'Agente 3',
+      'Cliente 4',
+      'Agente 4',
+    ]);
+  });
+
+  it('keeps the complete preceding agent intervention visible for short references', () => {
+    for (const shortReference of ['Ese', 'Eso', 'Mandámelo']) {
+      const claimed = claimedTurn();
+      claimed.context.batch_messages[0] = {
+        ...claimed.context.batch_messages[0]!,
+        content: shortReference,
+      };
+      claimed.context.recent_turns = [
+        causallyLinkedRecentTurn({
+          direction: 'inbound',
+          content: '¿Qué incluye Marketing Digital?',
+          created_at: '2026-08-28T11:00:00.000Z',
+          batch_id: '51111111-1111-4111-8111-111111111111',
+          in_reply_to: null,
+        }),
+        causallyLinkedRecentTurn({
+          direction: 'outbound',
+          content: 'Marketing Digital tiene 16 clases.',
+          created_at: '2026-08-28T11:00:01.000Z',
+          batch_id: null,
+          in_reply_to: '52222222-2222-4222-8222-222222222222',
+        }),
+        causallyLinkedRecentTurn({
+          direction: 'outbound',
+          content: 'La modalidad es 100% online.',
+          created_at: '2026-08-28T11:00:02.000Z',
+          batch_id: null,
+          in_reply_to: '52222222-2222-4222-8222-222222222222',
+        }),
+      ];
+
+      const context = buildAgentAContextV1(claimed);
+      const fullPreviousReply = 'Marketing Digital tiene 16 clases.\nLa modalidad es 100% online.';
+
+      expect(context?.turn.batch_messages[0]?.text).toBe(shortReference);
+      expect(context?.turn.recent_turns.at(-1)).toMatchObject({
+        direction: 'outbound',
+        content: fullPreviousReply,
+      });
+      expect(context?.continuity?.last_agent_reply).toBe(fullPreviousReply);
+    }
+  });
+
   it('makes prior introduction and a previously requested name explicit for the next reply', () => {
     const claimed = claimedTurn();
     claimed.contact.name = null;
@@ -1048,9 +1227,9 @@ describe('buildAgentAContextV1', () => {
   it('connects bounded recent turns, selected memories and canonical catalog without secrets', () => {
     const context = buildAgentAContextV1(claimedTurn());
     expect(context).not.toBeNull();
-    expect(context!.turn.recent_turns).toHaveLength(8);
+    expect(context!.turn.recent_turns).toHaveLength(6);
     expect(context!.turn.recent_turns.map((turn) => turn.content)).toEqual([
-      'turno-3', 'turno-4', 'turno-5', 'turno-6', 'turno-7', 'turno-8', 'turno-9', 'turno-10',
+      'turno-5', 'turno-6', 'turno-7', 'turno-8', 'turno-9', 'turno-10',
     ]);
     expect(context!.customer.memories.map((memory) => memory.id)).toEqual([
       'memory-relevant', 'memory-2', 'memory-3', 'memory-4', 'memory-5',
