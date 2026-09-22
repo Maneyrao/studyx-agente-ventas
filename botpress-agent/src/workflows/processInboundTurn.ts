@@ -688,7 +688,6 @@ export const processInboundTurn = new Workflow({
     })
     const deterministicCallHandoff = commercialRoute.kind === 'deterministic'
       && commercialRoute.origin === 'call_handoff'
-      && commercialRoute.decision.business_action?.type === 'request_call_now'
     const brainEligible = conversationalBaseEligible
       && (brainAuthoritative || brainShadow)
       && (owned.deterministic_route === null || brainAuthoritative)

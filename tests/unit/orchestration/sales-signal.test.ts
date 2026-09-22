@@ -36,7 +36,14 @@ describe('classifyDeterministicSalesSignal', () => {
     expect(classifyDeterministicSalesSignal(text)).toEqual({ type: 'call_decline' });
   });
 
-  it.each(['Llamame', 'Llámame por favor', 'Podes llamarme'])(
+  it.each([
+    'Llamame',
+    'Llámame por favor',
+    'Podes llamarme',
+    'Me podes llamar?',
+    'Noo, por llamada',
+    'Llamar',
+  ])(
     'recognizes variants of a direct call request (%s)',
     (text) => {
       expect(classifyDeterministicSalesSignal(text)).toEqual({ type: 'direct_call_request' });
@@ -103,6 +110,12 @@ describe('classifyDeterministicSalesSignal', () => {
 describe('classifyBatchSalesSignal', () => {
   it('finds a direct call request buried under trailing small talk', () => {
     expect(classifyBatchSalesSignal(['llamame', 'gracias'])).toEqual({ type: 'direct_call_request' });
+  });
+
+  it('recognizes the exact production burst as a direct call request', () => {
+    expect(classifyBatchSalesSignal(['noo, por llamada', 'Me podes llamar?'])).toEqual({
+      type: 'direct_call_request',
+    });
   });
 
   it('lets the newest decisive message override an earlier request', () => {

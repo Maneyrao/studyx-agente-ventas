@@ -237,6 +237,7 @@ export interface ClaimedTurn {
     | 'call_direct_request'
     | 'call_accepted_offer'
     | 'call_phone_required'
+    | 'call_already_active'
     | 'call_acceptance_clarification'
     | null;
   readonly diagnostics: {
@@ -353,6 +354,12 @@ function deterministicRoute(input: {
   const signal = classifyBatchSalesSignal(
     input.batchMessages.map((message) => message.content),
   );
+  if (
+    signal.type === 'direct_call_request'
+    && (input.salesContext.mode === 'call_pending' || input.salesContext.mode === 'in_call')
+  ) {
+    return 'call_already_active';
+  }
   if (
     signal.type === 'direct_call_request'
     && input.salesContext.allowed_actions.includes('request_call_now')

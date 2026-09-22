@@ -686,6 +686,9 @@ export function routeCommercialTurn(input: CommercialRouterInput): CommercialRou
   if (callHandoff?.business_action?.type === 'request_call_now') {
     return deterministicRoute('call_handoff', CALL_HANDOFF_FAST_PATH_MODEL, callHandoff)
   }
+  if (callHandoff?.reason_code === 'CALL_ALREADY_ACTIVE') {
+    return deterministicRoute('call_handoff', CALL_HANDOFF_FAST_PATH_MODEL, callHandoff)
+  }
 
   // A current explicit cancellation/deferral outranks a prior call/payment
   // signal. It is still a normal WhatsApp conversation, never a silence.

@@ -85,7 +85,15 @@ describe('call preference requires current customer evidence',()=>{
   expect(authorizeAgentTurnV2({proposal:x.proposal,state:x.state,offerings:[{code:'fotografia_profesional',display_name:'Fotografía Profesional'}],facts:[],current_customer_messages:[text],call_policy:{may_offer_call:true,may_request_call_now:true}})).toMatchObject({ok:false,reasons:['ACTION_NOT_AUTHORIZED']});
   expect(adk(x)?.rejections).toContainEqual({code:'ACTION_NOT_AUTHORIZED',subject:'request_call_now'});
  });
- it.each(['¿Hablamos por teléfono?','¿Podemos hablar por teléfono?','¿Te puedo llamar?','Te puedo llamar'])('authorizes a direct natural call request: %s',text=>{
+ it.each([
+  '¿Hablamos por teléfono?',
+  '¿Podemos hablar por teléfono?',
+  '¿Te puedo llamar?',
+  'Te puedo llamar',
+  'Me podes llamar?',
+  'Noo, por llamada',
+  'Llamar',
+ ])('authorizes a direct natural call request: %s',text=>{
   const x=setup(text,'request_call');
   x.proposal.proposed_action={type:'request_call_now',reason:'direct_request'};
   x.context.capabilities.may_request_call_now=true;

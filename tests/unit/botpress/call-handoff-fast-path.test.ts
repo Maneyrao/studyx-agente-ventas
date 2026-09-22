@@ -141,6 +141,24 @@ describe('matchCallHandoffFastPath', () => {
     ).toBeNull();
   });
 
+  it('reports an already active call without creating another call action', () => {
+    const active = claimed({
+      texts: ['Me podes llamar?'],
+      allowedActions: [],
+      route: 'call_already_active' as ClaimedTurn['deterministic_route'],
+    }) as ClaimedTurn;
+    active.sales_context.mode = 'in_call';
+    active.sales_context.active_call = { call_id: UUID, status: 'in_progress' };
+
+    expect(matchCallHandoffFastPath(active)).toMatchObject({
+      kind: 'reply',
+      response_type: 'commercial_reply',
+      business_action: null,
+      reason_code: 'CALL_ALREADY_ACTIVE',
+      response: expect.stringMatching(/ya est[aá] en proceso/i),
+    });
+  });
+
   it('an exact acceptance over an open offer becomes an accepted_offer request', () => {
     const decision = matchCallHandoffFastPath(
       claimed({

@@ -20,6 +20,27 @@ describe('post-call followup verdicts (spec 007)', () => {
     }
   });
 
+  it('asks what happened after no answer and offers retry or chat', () => {
+    const verdict = decidePostCallFollowup({ status: 'no_answer', result: null, ...base });
+    expect(verdict.action).toBe('send');
+    if (verdict.action !== 'send') return;
+    expect(verdict.content).toMatch(/ocurri[oó] algo/i);
+    expect(verdict.content).toMatch(/intentarlo de nuevo|reintentar/i);
+    expect(verdict.content).toMatch(/chat|por aqu[ií]|por ac[aá]/i);
+  });
+
+  it.each(['timed_out', 'failed'] as const)(
+    'explains temporary operator unavailability and keeps chat available for %s',
+    (status) => {
+      const verdict = decidePostCallFollowup({ status, result: null, ...base });
+      expect(verdict.action).toBe('send');
+      if (verdict.action !== 'send') return;
+      expect(verdict.content).toMatch(/operadores.*ocupados/i);
+      expect(verdict.content).toMatch(/intentarlo de nuevo|m[aá]s tarde/i);
+      expect(verdict.content).toMatch(/chat|por aqu[ií]|por ac[aá]/i);
+    },
+  );
+
   it('does not act on a call that has not reached a terminal state', () => {
     for (const status of ['requested', 'dispatching', 'provider_accepted', 'dispatch_ambiguous', 'in_progress'] as const) {
       expect(decidePostCallFollowup({ status, result: null, ...base })).toEqual({

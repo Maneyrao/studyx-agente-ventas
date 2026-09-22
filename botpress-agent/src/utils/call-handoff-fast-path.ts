@@ -29,6 +29,9 @@ export const CALL_CONFIRMATION_RESPONSE =
 const CALL_CLARIFICATION_RESPONSE =
   '¿Me confirmás a qué te referís? Contame qué curso o información estás buscando.'
 
+const CALL_ALREADY_ACTIVE_RESPONSE =
+  'La llamada ya está en proceso. Atendé el teléfono y seguimos por ahí.'
+
 const RETRIEVAL_NONE = { kb: false, long_term_memory: false, summary_version: null }
 
 function callConfirmation(
@@ -75,6 +78,23 @@ function ambiguousAcceptanceClarification(): Decision {
 export function matchCallHandoffFastPath(claimed: ClaimedTurn): Decision | null {
   const allowed = claimed.sales_context.allowed_actions
   const course = claimed.sales_context.course_of_interest
+
+  if (claimed.deterministic_route === 'call_already_active') {
+    return {
+      schema_version: 4,
+      intent: 'commercial',
+      kind: 'reply',
+      response: CALL_ALREADY_ACTIVE_RESPONSE,
+      response_type: 'commercial_reply',
+      confidence: 1,
+      reason_code: 'CALL_ALREADY_ACTIVE',
+      business_action: null,
+      memory_candidates: [],
+      missing_information: [],
+      next_state: 'completed',
+      retrieval_used: RETRIEVAL_NONE,
+    }
+  }
 
   if (claimed.deterministic_route === 'call_direct_request') {
     if (!allowed.includes('request_call_now')) return null

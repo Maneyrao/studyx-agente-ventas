@@ -2014,6 +2014,23 @@ describe('claimBatch sales_context', () => {
     expect(result.sales_context.allowed_actions).toEqual([]);
   });
 
+  it('routes a repeated direct request to the active-call status instead of the model', async () => {
+    const messages = [
+      { id: 'm1', conversation_seq: 1, content: 'Me podes llamar?', created_at: '2026-08-11T12:00:00.000Z', message_type: 'text' },
+    ];
+    const deps = buildDeps({
+      messagesResult: messages,
+      callFactsResult: callFacts({ active_call: { call_id: 'call-1', status: 'in_progress' } }),
+    });
+
+    const result = await claimBatch(input, deps);
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+    expect(result.sales_context.mode).toBe('in_call');
+    expect(result.deterministic_route).toBe('call_already_active');
+    expect(result.sales_context.allowed_actions).toEqual([]);
+  });
+
   it('reports call_pending for a call still being set up', async () => {
     const deps = buildDeps({
       callFactsResult: callFacts({ active_call: { call_id: 'call-1', status: 'dispatching' } }),

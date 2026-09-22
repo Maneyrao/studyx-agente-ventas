@@ -43,6 +43,7 @@ const CALL_DECLINE_PATTERNS: RegExp[] = [
   /\bno\s+quiero\s+que\s+me\s+llam(?:es|en)\b/,
   /\bsin\s+llamadas?\b/,
   /\bno\s+por\s+telefono\b/,
+  /\bno\s+por\s+llamada\b/,
   /\bprefiero\s+(?:whatsapp|chat|texto)\b/,
   /\bsolo\s+(?:whatsapp|chat|texto)\b/,
   /\bno\s+puedo\s+atender\s+llamadas?\b/,
@@ -55,12 +56,15 @@ const DIRECT_CALL_REQUEST_PATTERNS: RegExp[] = [
   /\bpodes llamarme\b/,
   /\b(?:quiero|necesito)\s+que\s+me\s+llam(?:es|en)\b/,
   /\b(?:pueden|podrian|podes)\s+llamarme\b/,
+  /\bme\s+(?:pueden|podrian|podes|puedes)\s+llamar\b/,
   /\bme\s+llamas\b/,
   /\b(?:quiero|necesito)\s+una\s+llamada\b/,
   /\b(?:quisiera|desearia|me\s+gustaria)\s+(?:(?:una\s+)?llamada|(?:que\s+me\s+)?(?:llam\w*|contact\w*)(?:\s+por\s+telefono)?|(?:hablar|conversar)\s+por\s+telefono)\b/,
   /\bque\s+me\s+llame\s+(?:un|una)\s+asesor(?:a)?\b/,
   /\bnecesito\s+hablar\s+por\s+telefono\b/,
   /\bcomuniquense\s+conmigo\b/,
+  /\bpor\s+llamada\b/,
+  /^(?:llamar|llamada)$/,
 ];
 
 // Only an exact short reply counts — the moment the customer adds words

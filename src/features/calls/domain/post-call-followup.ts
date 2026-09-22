@@ -10,15 +10,18 @@ import type { CallStatus } from './call-state';
  * no errores (cancelled, no_contactar, sin turno de WhatsApp resoluble).
  */
 
-export const POST_CALL_FOLLOWUP_PROMPT_VERSION = 'post-call-followup-v1';
+export const POST_CALL_FOLLOWUP_PROMPT_VERSION = 'post-call-followup-v2';
 
 export type PostCallFollowupVerdict =
   | { readonly action: 'send'; readonly content: string; readonly reason: string }
   | { readonly action: 'revoke_contact'; readonly reason: string }
   | { readonly action: 'skip'; readonly reason: string };
 
-const RETRY_OFFER =
-  'Che, recién intentamos llamarte pero no pudimos comunicarnos. ¿Querés que lo intentemos de nuevo en otro horario, o preferís que sigamos por acá?';
+const NO_ANSWER_RETRY_OFFER =
+  'Intentamos llamarte pero no pudimos comunicarnos. Ocurrió algo? Si quieres, podemos intentarlo de nuevo; si no, seguimos por aquí.';
+
+const TEMPORARY_UNAVAILABLE_OFFER =
+  'Perdón, en este momento todos nuestros operadores están ocupados. Si quieres, podemos intentarlo de nuevo más tarde o seguimos por aquí.';
 
 const NEUTRAL_CONTINUITY =
   'Hola, ¿cómo quedaste después de la llamada? Contame si te sirvió o si te quedó alguna duda.';
@@ -67,8 +70,12 @@ export function decidePostCallFollowup(input: {
     return { action: 'skip', reason: 'CALL_CANCELLED' };
   }
 
-  if (status === 'no_answer' || status === 'timed_out' || status === 'failed') {
-    return { action: 'send', content: RETRY_OFFER, reason: `CALL_${status.toUpperCase()}` };
+  if (status === 'no_answer') {
+    return { action: 'send', content: NO_ANSWER_RETRY_OFFER, reason: 'CALL_NO_ANSWER' };
+  }
+
+  if (status === 'timed_out' || status === 'failed') {
+    return { action: 'send', content: TEMPORARY_UNAVAILABLE_OFFER, reason: `CALL_${status.toUpperCase()}` };
   }
 
   if (status !== 'completed') {
@@ -103,7 +110,7 @@ export function decidePostCallFollowup(input: {
     case 'no_es_buen_momento':
       return { action: 'send', content: neutralNoClaimFollowup(), reason: `NEUTRAL_${result.toUpperCase()}` };
     case 'buzon_de_voz':
-      return { action: 'send', content: RETRY_OFFER, reason: 'VOICEMAIL_OUTCOME' };
+      return { action: 'send', content: NO_ANSWER_RETRY_OFFER, reason: 'VOICEMAIL_OUTCOME' };
     case 'corto_la_llamada':
       return { action: 'send', content: neutralNoClaimFollowup(), reason: 'CALL_ENDED_BY_CONTACT' };
     default:
