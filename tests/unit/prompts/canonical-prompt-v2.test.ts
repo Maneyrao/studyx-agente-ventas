@@ -13,22 +13,22 @@ const source = readFileSync(
   'utf8',
 );
 
-describe('prompt canónico comercial v36', () => {
+describe('prompt canónico comercial v40', () => {
   it('coincide con la fuente y declara la versión desplegable', () => {
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v38');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v40');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toBe(source);
   });
 
   it('atiende leads de Meta sin fijar un curso fuera del catálogo dinámico', () => {
-    expect(source).toMatch(/leads c[áa]lidos[\s\S]{0,100}Meta/iu);
+    expect(source).toMatch(/leads[\s\S]{0,120}Meta/iu);
     expect(source).toContain('Cualquier curso activo de `catalog.available_offerings`');
     expect(source).toMatch(/anuncio o el mensaje[\s\S]{0,100}curso activo/iu);
   });
 
   it('usa las fases como mapa flexible y deja la redacción en manos del modelo', () => {
-    expect(source).toMatch(/Las fases son un mapa[\s\S]{0,100}no un guion rígido/iu);
+    expect(source).toMatch(/Las fases orientan la venta[\s\S]{0,120}no son un cuestionario ni un recorrido obligatorio/iu);
     expect(source).toMatch(/Atiende la intenci[óo]n actual/iu);
-    expect(source).toMatch(/Tú conduces y redactas/iu);
+    expect(source).toMatch(/Tú interpretas, conduces y redactas/iu);
     expect(source).not.toMatch(/primera fase incompleta|nunca la saltees|Nunca des el precio antes/iu);
   });
 
@@ -38,20 +38,20 @@ describe('prompt canónico comercial v36', () => {
     expect(source).toMatch(/No abras frases con `¿` o `¡`/iu);
     expect(source).toMatch(/primera respuesta[\s\S]{0,160}pregunta el primer nombre/iu);
     expect(source).toMatch(/primer nombre[\s\S]{0,220}[úu]nica pregunta/iu);
-    expect(source).toMatch(/falta del nombre[\s\S]{0,160}nunca bloquea/iu);
-    expect(source).toMatch(/primera respuesta[\s\S]{0,220}StudyX[\s\S]{0,220}cercan/iu);
-    expect(source).toMatch(/información y un avance comercial[\s\S]{0,60}dos mensajes breves/iu);
-    expect(source).toMatch(/primero responde[\s\S]{0,80}segundo orienta el siguiente paso/iu);
-    expect(source).toMatch(/tercero[\s\S]{0,120}response\.call_offer/iu);
+    expect(source).toMatch(/ausencia no bloquea el asesoramiento/iu);
+    expect(source).toMatch(/primera respuesta[\s\S]{0,220}StudyX/iu);
+    expect(source).toMatch(/entre uno y tres mensajes breves/iu);
+    expect(source).toMatch(/primero responde[\s\S]{0,120}luego recomienda[\s\S]{0,120}finalmente propone/iu);
+    expect(source).toMatch(/response\.call_offer[\s\S]{0,120}no la dupliques/iu);
     expect(source).toMatch(/no cortes una oración por la mitad/iu);
-    expect(source).toMatch(/ni repitas la misma idea/iu);
-    expect(source).toMatch(/20 a 40 palabras en total/iu);
-    expect(source).toMatch(/dos o m[áa]s cursos, planes u opciones[\s\S]{0,120}lista compacta/iu);
-    expect(source).toMatch(/opci[oó]n principal[\s\S]{0,120}dos hechos can[oó]nicos/iu);
-    expect(source).toMatch(/Ampl[íi]a [úu]nicamente si la persona pide detalles/iu);
+    expect(source).toMatch(/ni repitas la misma información en otra burbuja/iu);
+    expect(source).not.toMatch(/20 a 40 palabras en total/iu);
+    expect(source).toMatch(/cursos, planes u opciones[\s\S]{0,80}lista compacta/iu);
+    expect(source).toMatch(/recomienda una principal con un motivo concreto/iu);
+    expect(source).toMatch(/guarda los detalles secundarios para cuando los pida/iu);
     expect(source).not.toMatch(/Por defecto[^\n]*dos mensajes breves|Prioriza una respuesta compacta|Mant[eé]n cada mensaje breve/iu);
-    expect(source).toMatch(/nunca respondas s[óo]lo con una confirmaci[óo]n vac[íi]a/iu);
-    expect(source).toMatch(/puedes cerrar preguntas y exclamaciones con `\?` o `!`/iu);
+    expect(source).toMatch(/No contestes con una confirmaci[óo]n vac[íi]a/iu);
+    expect(source).toMatch(/puedes cerrarlas con `\?` o `!`/iu);
     expect(source).not.toMatch(/consulta general ambigua[\s\S]{0,160}un [úu]nico mensaje/iu);
     expect(source).not.toMatch(/s[óo]lo el [úu]ltimo mensaje[\s\S]{0,120}pregunta o invitaci[óo]n/iu);
   });
@@ -70,36 +70,37 @@ describe('prompt canónico comercial v36', () => {
     expect(source).toContain('6 pagos mensuales de USD 60 (`monthly_6`)');
     expect(source).toContain('1 pago único de USD 360 (`one_time`)');
     expect(source).toMatch(/M[áa]ximo dos ofrecimientos/iu);
-    expect(source).toMatch(/rechazo a la invitaci[óo]n actual[\s\S]{0,180}no impide un segundo recordatorio/iu);
-    expect(source).toMatch(/call_offer_count[^\n]*1[\s\S]{0,240}response\.call_offer/iu);
+    expect(source).toMatch(/Rechazar la primera invitaci[óo]n[\s\S]{0,180}no impide el segundo/iu);
+    expect(source).toMatch(/segundo y [uú]ltimo ofrecimiento/iu);
+    expect(source).toMatch(/response\.call_offer/iu);
   });
 
   it('persuade sin inventar resultados laborales ni ampliar el alcance de la llamada', () => {
     expect(source).toMatch(
-      /no puedes inventar[\s\S]{0,180}demanda laboral[\s\S]{0,180}ingresos[\s\S]{0,180}conseguir clientes/iu,
+      /no inventes resultados[\s\S]{0,180}demanda laboral[\s\S]{0,180}ingresos[\s\S]{0,180}conseguir clientes/iu,
     );
     expect(source).toMatch(
       /La llamada sirve para orientar sobre cursos, modalidades, contenidos, precios e inscripci[oó]n/iu,
     );
-    expect(source).toMatch(/no para ense[nñ]ar a conseguir clientes ni garantizar resultados/iu);
+    expect(source).toMatch(/No la presentes como una clase ni prometas enseñar a conseguir clientes/iu);
   });
 
   it('conserva las opciones ambiguas fuera de cualquier texto de llamada', () => {
-    expect(source).toMatch(/varias coincidencias reales[\s\S]{0,200}cada opci[óo]n visible[\s\S]{0,100}lista compacta/iu);
-    expect(source).toMatch(/informaci[óo]n de las opciones[\s\S]{0,180}response\.messages/iu);
+    expect(source).toMatch(/varias coincidencias[\s\S]{0,160}muestra las opciones relevantes/iu);
+    expect(source).toMatch(/presenta hasta tres áreas u opciones reales/iu);
   });
 
   it('mantiene Stripe y los resultados operativos bajo autoridad verificable', () => {
-    expect(source).toMatch(/Nunca escribas una URL[\s\S]{0,140}backend agrega el link canónico de Stripe/iu);
+    expect(source).toMatch(/Nunca escribas una URL[\s\S]{0,140}orquestador agrega el link canónico/iu);
     expect(source).toMatch(/equipo verificar[áa] la acreditaci[óo]n[\s\S]{0,100}gestionar[áa] la inscripci[óo]n y el acceso/iu);
     expect(source).not.toMatch(/preinscripci[óo]n cargada|alta acad[ée]mica y genero|credenciales de acceso/iu);
   });
 
   it('confirma los seis datos comerciales antes del link y distingue pago informado de pago verificado', () => {
     expect(source).toMatch(/nombre y apellido, correo, teléfono, curso y plan[\s\S]{0,180}correctos/iu);
-    expect(source).toMatch(/no envíes todavía el link en el mismo turno/iu);
+    expect(source).toMatch(/no solicites el link en el mismo turno/iu);
     expect(source).toMatch(/Si informa que pagó[\s\S]{0,220}equipo verificará la acreditación/iu);
-    expect(source).toMatch(/Nunca afirmes que el pago ya fue verificado/iu);
+    expect(source).toMatch(/Nunca afirmes que el pago est[áa] verificado/iu);
   });
 
   it('no ordena afirmaciones que el guard operativo rechazaría', () => {

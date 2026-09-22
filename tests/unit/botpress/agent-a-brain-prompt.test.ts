@@ -75,7 +75,7 @@ describe('Agent A Brain prompt', () => {
   it('ships one complete canonical behavior behind a compact runtime contract', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v38');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v40');
     expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v74');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('You lead the\nconversation; the backend does not write or rewrite your narrative');
@@ -92,35 +92,44 @@ describe('Agent A Brain prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
-      /Responde primero el pedido, la pregunta o la intención actual/iu,
+      /Responde primero lo que la persona acaba de decir/iu,
     );
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
-      /Cuando la respuesta combine información y un avance comercial, usa dos mensajes breves/iu,
+      /Usa normalmente entre uno y tres mensajes breves/iu,
     );
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
-      /No (?:empieces|comiences) todos los turnos con/iu,
+      /Evita muletillas de chatbot/iu,
     );
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
-      /fases son un mapa[\s\S]{0,100}no un guion rígido/iu,
+      /evita reutilizar la misma apertura, cierre, pregunta o estructura/iu,
+    );
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
+      /Reconoce el freno concreto[\s\S]{0,180}un hecho confirmado[\s\S]{0,180}una alternativa/iu,
+    );
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
+      /no repitas todas las opciones si no ayudan/iu,
+    );
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
+      /Las fases orientan la venta[\s\S]{0,120}no son un cuestionario ni un recorrido obligatorio/iu,
     );
     expect(instructions.match(/CAMINO COMERCIAL/gu)).toHaveLength(1);
   });
 
   it('asks for a phone only when an accepted call cannot use a real channel phone', () => {
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
-      /si acepta o solicita una llamada[\s\S]*tel[eé]fono[\s\S]*intake_missing/iu,
+      /Si la persona acepta[\s\S]{0,220}Si falta tel[eé]fono[\s\S]{0,160}pide [úu]nicamente el n[úu]mero/iu,
     );
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
-      /no vuelvas a pedir un tel[eé]fono registrado/iu,
+      /no vuelvas a solicitar un dato guardado/iu,
     );
   });
 
   it('keeps catalog resolution dynamic and Meta-aware without inventing ad context', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(instructions).toMatch(/leads c[áa]lidos[\s\S]{0,100}Meta/iu);
+    expect(instructions).toMatch(/leads?[\s\S]{0,120}Meta/iu);
     expect(instructions).toContain('catalog.available_offerings is the complete active catalog');
-    expect(instructions).toMatch(/si no hay curso ni contexto del anuncio/iu);
+    expect(instructions).toMatch(/Si la consulta es general[\s\S]{0,180}hasta tres áreas u opciones reales/iu);
     expect(instructions).toContain('Cualquier curso activo de `catalog.available_offerings`');
   });
 
@@ -146,19 +155,19 @@ describe('Agent A Brain prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(current);
 
     expect(instructions).not.toContain('<candidate_catalog_grounding');
-    expect(instructions).toContain('Si hay varias coincidencias reales');
+    expect(instructions).toContain('Si hay varias coincidencias');
   });
 
   it('keeps the call policy, intake authority and payment link ownership explicit', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(instructions).toContain('Llamada: una invitación inicial y un posible recordatorio');
-    expect(instructions).toContain('mensaje breve separado');
-    expect(instructions).toContain('Pide sólo los campos que figuren en `capabilities.intake_missing`');
-    expect(instructions).toContain('el backend agrega el link canónico de Stripe');
+    expect(instructions).toContain('Primera invitación');
+    expect(instructions).toContain('en `response.call_offer`');
+    expect(instructions).toContain('Pide solamente los datos que figuren en `capabilities.intake_missing`');
+    expect(instructions).toContain('el orquestador agrega el link canónico');
     expect(instructions).toContain('como máximo antes de solicitar los datos finales');
-    expect(instructions).toContain('aceptación de la llamada');
-    expect(instructions).toContain('compra directa sí cancelan el segundo ofrecimiento');
+    expect(instructions).toContain('Rechazar la primera invitación cancela esa llamada');
+    expect(instructions).toContain('Un rechazo explícito a recibir llamadas en general');
   });
 
   it('surfaces a second-call advisory without authoring customer copy', () => {
@@ -199,7 +208,7 @@ describe('Agent A Brain prompt', () => {
 
     expect(instructions).toContain('"call_offer":{"required":true,"reason":"FIRST_OFFER_DUE"}');
     expect(instructions).not.toContain('Te llamamos');
-    expect(instructions).toContain('Primera invitación obligatoria');
+    expect(instructions).toContain('Primera invitación');
   });
 
   it('does not advance the first call offer into the initial agent introduction', () => {
@@ -282,7 +291,7 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).toContain('"first_name_status":"requested"');
     expect(instructions).toContain('"last_agent_reply":"El total es USD 360."');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(/first_name_status[^\n]*requested[^\n]*no vuelvas/iu);
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(/assistant_has_spoken[^\n]*verdadero[^\n]*no vuelvas/iu);
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(/assistant_has_spoken[^\n]*verdadero[^\n]*no repitas/iu);
   });
 
   it('treats every message fragment as part of one customer turn', () => {
@@ -312,8 +321,8 @@ describe('Agent A Brain prompt', () => {
 
     const instructions = buildAgentABrainInstructionsV1(current);
 
-    expect(instructions).toMatch(/información y un avance comercial[\s\S]{0,40}dos mensajes breves/iu);
-    expect(instructions).toMatch(/(?:consulta general|mensaje general|“info”)[\s\S]{0,240}(?:tres áreas|tres opciones)/iu);
+    expect(instructions).toMatch(/entre uno y tres mensajes breves/iu);
+    expect(instructions).toMatch(/consulta (?:es )?general[\s\S]{0,180}tres áreas u opciones/iu);
     expect(instructions).toMatch(/first_name_status.*requested[\s\S]{0,220}(?:no vuelvas|do not ask)/iu);
   });
 
@@ -336,7 +345,7 @@ describe('Agent A Brain prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
     expect(instructions).toMatch(
-      /compar(?:a|es|ar)[\s\S]*(?:nombra|menciona)[\s\S]*(?:cada curso|cada opción)/iu,
+      /Si comparas opciones[\s\S]{0,160}recomienda una principal/iu,
     );
     expect(instructions).toMatch(
       /response\.call_offer[\s\S]*(?:exclusiv|únic)[\s\S]*(?:llamada|invitación)[\s\S]*response\.messages/iu,
