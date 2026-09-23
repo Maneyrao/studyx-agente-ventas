@@ -42,12 +42,6 @@ const LOW_INFORMATION_TOKENS = new Set([
   'saber', 'sos', 'tarde', 'tenes', 'tienen', 'toda', 'todas', 'todos', 'vos',
 ]);
 
-function currentBatchSuppliesFirstName(claimed: ClaimedTurn): boolean {
-  return claimed.context.batch_messages.some((message) => (
-    /\b(?:soy|me llamo|mi nombre es)\s+[\p{L}]{2,}/iu.test(message.content)
-  ));
-}
-
 function currentBatchSuppliesContactDetails(claimed: ClaimedTurn): boolean {
   return claimed.context.batch_messages.some((message) => {
     const text = message.content;
@@ -668,8 +662,8 @@ export function buildAgentAContextV1(
   const intakeAnswered = Array.isArray(claimed.contact_intake_missing);
   const intakeMissing = intakeAnswered ? claimed.contact_intake_missing! : [];
   const intakeStatus: 'known' | 'unknown' = intakeAnswered ? 'known' : 'unknown';
-  const firstNameKnownNow = !intakeMissing.includes('nombre')
-    || currentBatchSuppliesFirstName(claimed);
+  const firstNameKnownNow = Boolean(claimed.contact.name?.trim())
+    || (intakeAnswered && !intakeMissing.includes('nombre'));
   const logicalHistory = projectLogicalHistoryV1(claimed);
   const previousAgentReplies = previousAgentRepliesV1(claimed);
   const lastAgentReply = previousAgentReplies.at(-1) ?? null;

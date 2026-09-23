@@ -26,6 +26,12 @@ describe('extractContactIdentity', () => {
     expect(extractContactIdentity('mi nombre es Diego Farías, gracias').name).toBe('Diego Farías');
   });
 
+  it('captures an explicit inverted first-name introduction without treating ordinary prose as identity', () => {
+    expect(extractContactIdentity('Thiago me llamo').name).toBe('Thiago');
+    expect(extractContactIdentity('Fotografía me interesa').name).toBeNull();
+    expect(extractContactIdentity('Thiago me llamó ayer').name).toBeNull();
+  });
+
   it('changes only the first name when a customer corrects it without retracting the stored surname', () => {
     expect(extractContactIdentity(
       'Mentira, me confundí con mi nombre. Mi nombre es Luke',

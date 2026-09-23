@@ -40,6 +40,11 @@ const INTRODUCED_NAME_PATTERN = new RegExp(
   'iu',
 );
 
+const INVERTED_INTRODUCED_NAME_PATTERN = new RegExp(
+  `^[\\s¡¿]*(${NAME_SEQUENCE})\\s+me\\s+llamo\\s*[,.!¡¿?]*$`,
+  'iu',
+);
+
 const LEADING_NAME_BEFORE_EMAIL_PATTERN = new RegExp(
   `^[\\s¡¿]*(${NAME_TOKEN}(?:\\s+${NAME_TOKEN}){1,3})\\s*[,;:]?\\s*(?=${EMAIL_PATTERN.source})`,
   'u',
@@ -161,10 +166,16 @@ export function extractContactIdentity(
   if (introduced && !UNSAFE_NAME_OWNER.test(introductionPrefix) && isPlausibleName(introduced[1])) {
     name = introduced[1].trim();
   } else {
-    const leadingGoal = LEADING_FIRST_NAME_BEFORE_GOAL_PATTERN.exec(text);
-    if (leadingGoal && isPlausibleName(leadingGoal[1])
-      && !containsContextualNonNameToken(leadingGoal[1])) {
-      name = leadingGoal[1].trim();
+    const inverted = INVERTED_INTRODUCED_NAME_PATTERN.exec(text);
+    if (inverted && isPlausibleName(inverted[1])
+      && !containsContextualNonNameToken(inverted[1])) {
+      name = inverted[1].trim();
+    } else {
+      const leadingGoal = LEADING_FIRST_NAME_BEFORE_GOAL_PATTERN.exec(text);
+      if (leadingGoal && isPlausibleName(leadingGoal[1])
+        && !containsContextualNonNameToken(leadingGoal[1])) {
+        name = leadingGoal[1].trim();
+      }
     }
   }
   if (name === null && email) {
