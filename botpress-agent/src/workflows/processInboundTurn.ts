@@ -11,6 +11,7 @@ import { transcribeAudio } from '../actions/transcribeAudio'
 import {
   ClaimedTurnSchema,
   DecisionSchema,
+  InboundEnvelopeSchema,
   ProcessingStateSchema,
   WorkflowInputSchema,
   WorkflowResultSchema,
@@ -426,9 +427,12 @@ export const processInboundTurn = new Workflow({
     let ingest: IngestResponse
     const ingestStartedAt = Date.now()
     try {
-      ingest = await step(
+      ingest = input.preingested ?? await step(
         'ingest-canonical-turn',
-        () => ingestTurn.execute({ input, client }),
+        () => ingestTurn.execute({
+          input: InboundEnvelopeSchema.parse(input),
+          client,
+        }),
         { maxAttempts: 1 }
       )
       timings.ingest_ms = Date.now() - ingestStartedAt

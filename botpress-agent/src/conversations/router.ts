@@ -2,6 +2,7 @@ import { Conversation, configuration, secrets } from '@botpress/runtime'
 import { dispatch, logEvent } from '../channels'
 import { evaluateWhatsAppCanarySend } from '../channels/whatsapp.channel'
 import { processInboundTurn } from '../workflows/processInboundTurn'
+import { ingestCanonicalTurnV1 } from '../lib/inbound/ingest-canonical-turn'
 
 /**
  * SINGLE Botpress Conversation handler for every channel.
@@ -62,9 +63,12 @@ export default new Conversation({
     const workflowKey = `turn:botpress:${input.integration_id}:${input.external_message_id}`
 
     try {
+      const preingested = input.message.type === 'text'
+        ? await ingestCanonicalTurnV1(input)
+        : null
       const workflow = await processInboundTurn.getOrCreate({
         key: workflowKey,
-        input,
+        input: { ...input, preingested },
       })
 
       logEvent('studyx.router.workflow_started', {
@@ -80,6 +84,7 @@ export default new Conversation({
         ...(adapter === 'whatsapp' ? {} : { external_message_id: input.external_message_id }),
         error_code: error instanceof Error ? error.name : 'UNKNOWN_ERROR',
       })
+      throw error
     }
 
     // Supabase is the canonical transcript and memory store for StudyX. Start

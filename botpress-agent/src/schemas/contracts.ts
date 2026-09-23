@@ -834,6 +834,7 @@ export const DeliveryReportResponseSchema = z.object({
 export const WorkflowInputSchema = InboundEnvelopeSchema.extend({
   botpress_conversation_id: z.string().min(1).max(512),
   botpress_user_id: z.string().min(1).max(512),
+  preingested: IngestResponseSchema.nullable().default(null),
 })
 
 export const ProcessingStateSchema = z.enum([

@@ -6,7 +6,7 @@ export { E164_PATTERN, DEFAULT_DEVELOPMENT_EMULATOR_PHONE_E164 } from './emulato
 export { normalizeWhatsAppPhone } from './whatsapp-envelope'
 export type { WhatsAppEnvelopeInput } from './whatsapp-envelope'
 
-export type CanonicalWorkflowInput = z.infer<typeof WorkflowInputSchema>
+export type CanonicalWorkflowInput = z.input<typeof WorkflowInputSchema>
 
 /**
  * Context passed to a channel adapter for one Botpress message event.

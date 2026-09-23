@@ -8,10 +8,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * `@botpress/runtime` and the workflow module are mocked so the test exercises
  * the real router + adapters without the ADK execution context.
  */
-const { getOrCreate } = vi.hoisted(() => ({ getOrCreate: vi.fn() }));
+const { getOrCreate, ingestCanonicalTurnV1 } = vi.hoisted(() => ({
+  getOrCreate: vi.fn(),
+  ingestCanonicalTurnV1: vi.fn(),
+}));
 
 vi.mock('../../../botpress-agent/src/workflows/processInboundTurn', () => ({
   processInboundTurn: { getOrCreate },
+}));
+vi.mock('../../../botpress-agent/src/lib/inbound/ingest-canonical-turn', () => ({
+  ingestCanonicalTurnV1,
 }));
 
 // The router's `@botpress/runtime` import resolves to this stub via the vitest
@@ -54,9 +60,37 @@ const telegramInbound = {
   tags: { 'telegram:id': '60', 'telegram:chatId': PROD_TELEGRAM_USER_ID },
 };
 
+const preingested = {
+  status: 'accepted',
+  replayed: false,
+  trace_id: '18a823e8-27c2-4279-9956-058f45f33cd5',
+  turn_id: '18a823e8-27c2-4279-9956-058f45f33cd5',
+  conversation_id: '18a823e8-27c2-4279-9956-058f45f33cd5',
+  batch: {
+    id: '18a823e8-27c2-4279-9956-058f45f33cd5',
+    state: 'waiting',
+    joined_existing: false,
+    due_at: '2026-09-23T12:00:02.000Z',
+    hard_deadline_at: '2026-09-23T12:00:10.000Z',
+    conversation_seq: 1,
+    message_count: 1,
+  },
+  policy: { may_respond: true, allowed_response_types: ['commercial_reply'], reason: null },
+  contact: {
+    id: '18a823e8-27c2-4279-9956-058f45f33cd5',
+    status: 'prospecto',
+    name: null,
+    blocked: false,
+    consent_status: 'allowed',
+  },
+  existing_result: null,
+};
+
 beforeEach(() => {
   getOrCreate.mockReset();
   getOrCreate.mockResolvedValue({ id: 'wrkflow_test_1' });
+  ingestCanonicalTurnV1.mockReset();
+  ingestCanonicalTurnV1.mockResolvedValue(preingested);
 });
 
 describe('router registration', () => {
@@ -130,7 +164,12 @@ describe('router dispatch for production Telegram events', () => {
 
     expect(getOrCreate).toHaveBeenCalledTimes(1);
     const call = getOrCreate.mock.calls[0][0];
+    expect(ingestCanonicalTurnV1).toHaveBeenCalledTimes(1);
+    expect(ingestCanonicalTurnV1.mock.invocationCallOrder[0]).toBeLessThan(
+      getOrCreate.mock.invocationCallOrder[0]!,
+    );
     expect(call.key).toBe(`turn:botpress:telegram:${telegramInbound.id}`);
+    expect(call.input.preingested).toEqual(preingested);
     expect(call.input.phone_e164).toBe('+9998464326323');
     expect(call.input.sandbox_provider).toBe('telegram_sandbox');
   });
@@ -169,7 +208,7 @@ describe('router dispatch for production Telegram events', () => {
     expect(getOrCreate).not.toHaveBeenCalled();
   });
 
-  it('survives a workflow start failure without throwing (degradación segura)', async () => {
+  it('rethrows a workflow start failure so the channel can retry safely', async () => {
     getOrCreate.mockRejectedValueOnce(new Error('boom'));
     await expect(
       definition.handler({
@@ -178,7 +217,20 @@ describe('router dispatch for production Telegram events', () => {
         message: telegramInbound,
         conversation: telegramConversation,
       }),
-    ).resolves.toBeUndefined();
+    ).rejects.toThrow('boom');
+  });
+
+  it('rethrows a canonical ingest failure without scheduling an empty workflow', async () => {
+    ingestCanonicalTurnV1.mockRejectedValueOnce(new Error('backend unavailable'));
+    await expect(
+      definition.handler({
+        type: 'message',
+        channel: 'telegram.channel',
+        message: telegramInbound,
+        conversation: telegramConversation,
+      }),
+    ).rejects.toThrow('backend unavailable');
+    expect(getOrCreate).not.toHaveBeenCalled();
   });
 });
 

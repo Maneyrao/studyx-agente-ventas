@@ -1,6 +1,6 @@
 import { Action } from '@botpress/runtime'
 import { InboundEnvelopeSchema, IngestResponseSchema } from '../schemas/contracts'
-import { requestStudyxJson } from '../utils/http'
+import { ingestCanonicalTurnV1 } from '../lib/inbound/ingest-canonical-turn'
 
 // ADK 2.0.5 currently resolves two internal ZUI copies at this primitive
 // boundary. Runtime validation still uses these schemas; the `any` parameters
@@ -14,13 +14,6 @@ export const ingestTurn = new Action<any, any>({
   output: IngestResponseSchema as any,
   cached: false,
   async handler({ input }: { input: unknown }) {
-    const validated = InboundEnvelopeSchema.parse(input)
-    return requestStudyxJson({
-      path: '/api/agent/ingest',
-      body: validated,
-      idempotencyKey: `inbound:${validated.source}:${validated.integration_id}:${validated.external_message_id}`,
-      traceId: validated.trace_id,
-      responseSchema: IngestResponseSchema,
-    })
+    return ingestCanonicalTurnV1(input)
   },
 })

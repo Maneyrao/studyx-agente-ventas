@@ -1,10 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configuration, secrets } from '@botpress/runtime';
 
-const { getOrCreate } = vi.hoisted(() => ({ getOrCreate: vi.fn() }));
+const { getOrCreate, ingestCanonicalTurnV1 } = vi.hoisted(() => ({
+  getOrCreate: vi.fn(),
+  ingestCanonicalTurnV1: vi.fn(),
+}));
 
 vi.mock('../../../botpress-agent/src/workflows/processInboundTurn', () => ({
   processInboundTurn: { getOrCreate },
+}));
+vi.mock('../../../botpress-agent/src/lib/inbound/ingest-canonical-turn', () => ({
+  ingestCanonicalTurnV1,
 }));
 
 import router from '../../../botpress-agent/src/conversations/router';
@@ -62,6 +68,24 @@ function expectSecretsAbsent(records: Array<Record<string, unknown>>, secrets: s
 beforeEach(() => {
   getOrCreate.mockReset();
   getOrCreate.mockResolvedValue({ id: 'workflow-safe-reference' });
+  ingestCanonicalTurnV1.mockReset();
+  ingestCanonicalTurnV1.mockResolvedValue({
+    status: 'accepted', replayed: false,
+    trace_id: '18a823e8-27c2-4279-9956-058f45f33cd5',
+    turn_id: '18a823e8-27c2-4279-9956-058f45f33cd5',
+    conversation_id: '18a823e8-27c2-4279-9956-058f45f33cd5',
+    batch: {
+      id: '18a823e8-27c2-4279-9956-058f45f33cd5', state: 'waiting',
+      joined_existing: false, due_at: '2026-09-23T12:00:02.000Z',
+      hard_deadline_at: '2026-09-23T12:00:10.000Z', conversation_seq: 1, message_count: 1,
+    },
+    policy: { may_respond: true, allowed_response_types: ['commercial_reply'], reason: null },
+    contact: {
+      id: '18a823e8-27c2-4279-9956-058f45f33cd5', status: 'prospecto', name: null,
+      blocked: false, consent_status: 'allowed',
+    },
+    existing_result: null,
+  });
   configuration.automationEnabled = true;
   configuration.whatsappCanaryEnabled = true;
   secrets.WHATSAPP_CANARY_PHONE_E164S = `+${successSecrets.phone}`;
@@ -142,12 +166,12 @@ describe('WhatsApp router log boundary', () => {
     getOrCreate.mockRejectedValueOnce(new Error('safe failure'));
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
 
-    await handler({
+    await expect(handler({
       type: 'message',
       channel: 'whatsapp.channel',
       message: successMessage,
       conversation: successConversation,
-    });
+    })).rejects.toThrow('safe failure');
 
     const records = capturedRecords(info);
     expect(records).toEqual([
