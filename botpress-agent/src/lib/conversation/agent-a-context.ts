@@ -812,12 +812,17 @@ export function buildAgentAContextV1(
     capabilities: {
       may_reply: claimed.policy.may_respond,
       may_offer_call: claimed.policy.may_respond
+        && !claimed.contact.blocked
+        && claimed.sales_context.active_call === null
         && state.call_preference !== 'call'
         && state.call_offer_status !== 'accepted'
+        && !['handoff', 'closed', 'payment_link_sent'].includes(state.stage)
+        && state.payment_reported !== true
         && callOfferCount < 2,
       may_request_call_now: claimed.policy.may_respond
         && !claimed.contact.blocked
         && claimed.sales_context.active_call === null
+        && intakeStatus === 'known'
         && !intakeMissing.includes('telefono'),
       may_present_payment_options: claimed.policy.may_respond
         && selectedCode !== null

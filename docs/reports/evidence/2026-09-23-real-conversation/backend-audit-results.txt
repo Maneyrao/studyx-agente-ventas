@@ -1,0 +1,36 @@
+Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/workflow/agent-a-backend-audit.local.test.ts > audit: honors the model chat choice after accepted call intent
+AssertionError: expected 'call' to be 'chat' // Object.is equality
+
+Expected: "chat"
+Received: "call"
+
+ ❯ tests/workflow/agent-a-backend-audit.local.test.ts:173:51
+    171|   await c.send('Dale, llamame', () => proposal('request_call', 'A qué …
+    172|   const changed = await c.send('seguir por aca', () => proposal('conti…
+    173|   expect(changed.persisted.state?.callPreference).toBe('chat');
+       |                                                   ^
+    174| }, 60_000);
+    175| it.only('audit: a call offer allowed by the model context survives aut…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/workflow/agent-a-backend-audit.local.test.ts > audit: a call offer allowed by the model context survives authoritative commit
+AssertionError: expected [ 'Qué te gustaría aprender?' ] to include 'Si te sirve, puedo llamarte para orie…'
+ ❯ tests/workflow/agent-a-backend-audit.local.test.ts:181:46
+    179|   }));
+    180|   expect(result.context.capabilities.may_offer_call).toBe(true);
+    181|   expect(result.evidence.authorizedMessages).toContain('Si te sirve, p…
+       |                                              ^
+    182| }, 60_000);
+    183|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 3 skipped (5)
+   Start at  12:48:21
+   Duration  15.93s (transform 191ms, setup 0ms, import 286ms, tests 15.48s, environment 0ms)
+

@@ -164,3 +164,70 @@ it('persists a delivered phone confirmation, preserves the full name and sends e
   });
   expect(last.persisted.deliveredLinks).toEqual(['https://example.invalid/eval/12m']);
 }, 120_000);
+
+it('cancels pending call intent when the model interprets the choice to continue here', async () => {
+  const c = conversation();
+  await c.send('Dale, llamame', () => proposal('request_call', 'A qué número con código de país y área puedo llamarte?'));
+  const changed = await c.send('seguir por aca', () => proposal('continue_by_chat', 'Seguimos por aquí. Qué te gustaría saber?'));
+  expect(changed.persisted.state).toMatchObject({ callPreference: 'chat', callOfferStatus: 'declined' });
+  const phone = await c.send('Mi teléfono es +54 9 11 5555 0101', () => proposal('provide_contact_details', 'Qué te gustaría aprender?'));
+  expect(phone.persisted.state?.callPreference).toBe('chat');
+  expect(phone.calls).toHaveLength(0);
+}, 120_000);
+
+it('delivers and counts an invitation allowed by context without requiring a name', async () => {
+  const c = conversation();
+  const result = await c.send('Info', () => proposal('browse_catalog', 'Qué te gustaría aprender?', {
+    response: { messages: ['Qué te gustaría aprender?'], call_offer: 'Si te sirve, puedo llamarte para orientarte.' },
+  }));
+  expect(result.context.capabilities.may_offer_call).toBe(true);
+  expect(result.evidence.authorizedMessages).toContain('Si te sirve, puedo llamarte para orientarte.');
+  expect(result.persisted.state?.callOfferCount).toBe(1);
+}, 60_000);
+
+it('keeps two rejected invitations across idle time and honors a later customer request exactly once', async () => {
+  const c = conversation();
+  const first = await c.send('Info', () => proposal('browse_catalog', 'Qué te gustaría aprender?', {
+    response: { messages: ['Qué te gustaría aprender?'], call_offer: 'Si te sirve, puedo llamarte para orientarte.' },
+  }));
+  expect(first.persisted.state?.callOfferCount).toBe(1);
+  await c.retryLast();
+  const refused = await c.send('No, seguimos por chat', () => proposal('decline_call', 'Qué objetivo tienes con la formación?'));
+  expect(refused.persisted.state).toMatchObject({ callPreference: 'chat', callOfferStatus: 'declined', callOfferCount: 1 });
+  const second = await c.send('Quiero cambiar de trabajo pero no sé qué elegir', () => proposal('browse_catalog', 'Podemos partir de lo que te gusta hacer.', {
+    response: { messages: ['Podemos partir de lo que te gusta hacer.'], call_offer: 'Si te sirve, podemos hablar por teléfono para ayudarte a elegir.' },
+  }));
+  expect(second.persisted.state?.callOfferCount).toBe(2);
+  const declined = await c.send('No gracias, por aquí', () => proposal('continue_by_chat', 'Qué temas te interesan?'));
+  expect(declined.persisted.state).toMatchObject({ callOfferCount: 2, callOfferStatus: 'declined' });
+  // Exercise the real claim/commit expiry, not an in-memory state double.
+  await db`UPDATE conversation_sales_context_states_v1 SET updated_at=now()-interval '3 days'
+    WHERE conversation_id IN (SELECT c.id FROM conversations c JOIN channel_threads ct ON ct.id=c.channel_thread_id
+      WHERE ct.external_conversation_id=${c.id.conversationId})`;
+  const third = await c.send('Me interesa aprender algo creativo', context => {
+    expect(context.commercial_state.call_offer_count).toBe(2);
+    expect(context.capabilities.may_offer_call).toBe(false);
+    return context.turn_rejection
+      ? proposal('browse_catalog', 'Prefieres crear contenido visual o trabajar con las manos?')
+      : proposal('browse_catalog', 'Si quieres, puedo llamarte para orientarte.');
+  });
+  expect(third.context.turn_rejection?.rejections.map(r => r.code)).toContain('CALL_BUDGET_EXHAUSTED');
+  expect(third.evidence.authorizedMessages).toEqual(['Prefieres crear contenido visual o trabajar con las manos?']);
+  expect(third.persisted.state?.callOfferCount).toBe(2);
+  const requested = await c.send('Dale, ahora llamame', () => proposal('request_call', 'A qué número con código de país y área puedo llamarte?'));
+  expect(requested.persisted.state).toMatchObject({ callPreference: 'call', callOfferStatus: 'accepted', callOfferCount: 2 });
+  expect(requested.calls).toHaveLength(0);
+  const phone = await c.send('Mi teléfono es +54 9 11 5555 0101', context => {
+    expect(context.capabilities.may_offer_call).toBe(false);
+    expect(context.capabilities.may_request_call_now).toBe(true);
+    return proposal('request_call', 'Solicito la llamada al número que me pasaste.', {
+      proposed_action: { type: 'request_call_now', reason: 'accepted_offer' },
+    });
+  });
+  expect(phone.persisted.state?.callOfferCount).toBe(2);
+  expect(phone.calls).toHaveLength(1);
+  expect(phone.persisted.decisions.filter(d => d.businessActionType === 'request_call_now')).toHaveLength(1);
+  const replay = await c.retryLast();
+  expect(replay.decisions).toHaveLength(phone.persisted.decisions.length);
+  expect(replay.outboundCount).toBe(phone.persisted.outboundCount);
+}, 180_000);

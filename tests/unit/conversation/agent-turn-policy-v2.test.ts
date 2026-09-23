@@ -582,7 +582,7 @@ describe('plannerless Agent A authority', () => {
     if (result.ok) expect(result.response).toContain(text);
   });
 
-  it.each(['¿Querés que coordinemos una llamada?', '¿Hablamos por teléfono?', '¿Quieres que te llame para explicarte el curso?', 'Ya registré tus datos. ¿Hablamos por teléfono?', 'Ya registré tus datos, ¿Hablamos por teléfono?', 'Entendido, seguimos sin llamada. ¿Quieres que te llame para explicarte el curso?'])('omits a third proactive call bubble while preserving the useful message: %s', (offer) => {
+  it.each(['¿Querés que coordinemos una llamada?', '¿Hablamos por teléfono?', '¿Quieres que te llame para explicarte el curso?', 'Ya registré tus datos. ¿Hablamos por teléfono?', 'Ya registré tus datos, ¿Hablamos por teléfono?', 'Entendido, seguimos sin llamada. ¿Quieres que te llame para explicarte el curso?'])('rejects a third proactive call bubble for model repair: %s', (offer) => {
     const result = authorize({
       state: state({
         selected_offering_code: 'redes_informaticas', stage: 'course_selected',
@@ -598,9 +598,8 @@ describe('plannerless Agent A authority', () => {
     });
 
     expect(result).toMatchObject({
-      ok: true,
-      response_messages: ['Seguimos por chat.'],
-      transition: { call_offer_count: 2, call_offer_status: 'offered' },
+      ok: false,
+      reasons: expect.arrayContaining(['CALL_OFFER_NOT_AUTHORIZED']),
     });
   });
 
@@ -635,7 +634,7 @@ describe('plannerless Agent A authority', () => {
         selected_payment_plan: 'one_time',
         stage: 'plan_selected',
         call_preference: 'chat',
-        call_offer_status: 'offered',
+        call_offer_status: 'declined',
         call_offer_count: 1,
         awaiting_reply: 'payment_confirmation',
       },
@@ -919,5 +918,40 @@ describe('payment link consent across intake', () => {
         awaiting_reply: 'payment_confirmation',
       },
     });
+  });
+});
+
+
+describe('durable call invitation limit', () => {
+  it.each(['seguir por aca', 'lo vemos por este medio'])('persists the model channel choice without a second lexical classification: %s', text => {
+    const result = authorize({ customerText: text, mayRequestCall: false,
+      state: state({ call_preference: 'call', call_offer_status: 'accepted', call_offer_count: 1 }),
+      proposal: proposal({ move: { schema_version: 1, move: 'continue_by_chat', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Seguimos por aquí.'] } }),
+    });
+    expect(result).toMatchObject({ ok: true, transition: { call_preference: 'chat', call_offer_status: 'declined', call_offer_count: 1 } });
+  });
+
+  it.each(['narrative', 'dedicated'] as const)('rejects a third proactive invitation in %s for the model to repair', location => {
+    const offer = location === 'dedicated' ? 'Quieres que te llame para orientarte?'
+      : 'Si quieres, puedo llamarte para orientarte.';
+    const result = authorize({ customerText: 'Tengo una duda', mayOfferCall: false,
+      state: state({ call_preference: 'chat', call_offer_status: 'declined', call_offer_count: 2 }),
+      proposal: proposal({ response: location === 'narrative'
+        ? { messages: ['Podemos resolverla. '+offer] }
+        : { messages: ['Podemos resolverla.'], call_offer: offer } }),
+    });
+    expect(result).toMatchObject({ ok: false, reasons: expect.arrayContaining(['CALL_OFFER_NOT_AUTHORIZED']) });
+  });
+
+  it('accepts a customer-initiated call after both invitations were declined without resetting the counter', () => {
+    const result = authorize({ customerText: 'Ahora sí, llamame',
+      state: state({ call_preference: 'chat', call_offer_status: 'declined', call_offer_count: 2 }),
+      proposal: proposal({ move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Solicito la llamada al número que me pasaste.'] },
+        proposed_action: { type: 'request_call_now', reason: 'direct_request' } }),
+    });
+    expect(result).toMatchObject({ ok: true, action: { type: 'request_call_now' },
+      transition: { call_preference: 'call', call_offer_status: 'accepted', call_offer_count: 2 } });
   });
 });

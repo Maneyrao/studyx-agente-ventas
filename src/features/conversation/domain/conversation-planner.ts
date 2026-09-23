@@ -109,6 +109,9 @@ export function effectiveConversationStateV1(
   if (idleMs > CONVERSATION_STATE_MAX_IDLE_MS) {
     return {
       ...createDefaultConversationStateV1(state),
+      // Idle expiry clears conversational expectations, never the invitation
+      // budget for this sale. A new conversation starts with its own ledger.
+      call_offer_count: state.call_offer_count,
       version: state.version,
       created_at: state.created_at,
       updated_at: state.updated_at,

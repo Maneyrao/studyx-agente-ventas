@@ -185,7 +185,8 @@ export function authorizeAgentTurnV2(input: {
   const currentText = (input.current_customer_messages ?? []).join('\n');
   const resumesAcceptedCall = state.call_preference === 'call'
     && state.call_offer_status === 'accepted';
-  const currentTurnRejectsCallOffer = supportsChatPreferenceV1(
+  const channelChoice = moves.has('continue_by_chat') || moves.has('decline_call');
+  const currentTurnRejectsCallOffer = channelChoice || supportsChatPreferenceV1(
     currentText,
     state.awaiting_reply === 'call_or_chat',
   );
@@ -201,6 +202,7 @@ export function authorizeAgentTurnV2(input: {
     : dropUnsupportedStateAssertionsV1(authoredCallOffer, stateFacts).trim() || null;
   const mayDeliverCallOffer = input.call_policy.may_offer_call
     && state.call_offer_count < 2
+    && state.call_preference !== 'call'
     && state.call_offer_status !== 'accepted'
     && state.stage !== 'handoff'
     && state.stage !== 'closed'
@@ -208,9 +210,16 @@ export function authorizeAgentTurnV2(input: {
     && !plannedPaymentReported
     && !currentTurnRejectsCallOffer
     && !proposal.move.vetoes.includes('call');
-  // The model owns the invitation's wording and timing; the backend owns only
-  // the durable ceiling and consent boundary. A third, post-sale or same-turn
-  // rejected-call bubble is omitted while the useful narrative remains deliverable.
+  // The invitation ceiling is a durable permission, including invitations
+  // embedded in prose. Return it to the model for repair instead of silently
+  // editing its response. A customer-initiated request never spends this budget.
+  const proactiveCallOffer = !callRequestSupported && (
+    (authoredCallOffer !== null && solicitsACall(authoredCallOffer, true))
+    || authoredMessages.some((message) => solicitsACall(message))
+  );
+  if (proactiveCallOffer && state.call_offer_count >= 2) {
+    reasons.push('CALL_OFFER_NOT_AUTHORIZED');
+  }
   const authorizedCallOffer = sanitizedCallOffer !== null
     && (!solicitsACall(sanitizedCallOffer, true) || mayDeliverCallOffer)
     ? sanitizedCallOffer
@@ -223,10 +232,9 @@ export function authorizeAgentTurnV2(input: {
   // Call timing and message boundaries are sales guidance. They remain in the
   // prompt and evaluation suite, but they never reject customer-facing copy.
   // Only an eligible visible invitation advances the durable call ledger.
-  const callOfferCanAdvanceState = visibleCallOffer && mayDeliverCallOffer;
+  const callOfferCanAdvanceState = visibleCallOffer && mayDeliverCallOffer && !callRequestSupported;
 
-  const channelChoice = moves.has('continue_by_chat') || moves.has('decline_call');
-  const supportedChannelChoice = channelChoice && currentTurnRejectsCallOffer;
+  const supportedChannelChoice = channelChoice;
   if ((proposal.proposed_action.type === 'request_call_now' || (
     moves.has('request_call') && !callRequestSupported
   )) && !requestedCallNow) reasons.push('ACTION_NOT_AUTHORIZED');
@@ -372,6 +380,7 @@ export function authorizeAgentTurnV2(input: {
     // situational reminder may still happen later. Explicit opt-out is handled
     // by the channel consent boundary before this policy runs.
     callPreference = 'chat';
+    if (callOfferStatus !== 'not_offered') callOfferStatus = 'declined';
     if (awaitingReply === 'call_or_chat') awaitingReply = 'none';
   }
   if (callOfferCanAdvanceState && !supportedChannelChoice) {

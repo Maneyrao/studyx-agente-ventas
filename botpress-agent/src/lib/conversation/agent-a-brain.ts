@@ -1871,7 +1871,8 @@ export function validateAgentATurnProposalV1(input: {
   const declaredCallOffer = input.proposal.response.call_offer;
   const resumesAcceptedCall = input.context.commercial_state.call_preference === 'call'
     && input.context.commercial_state.call_offer_status === 'accepted';
-  const currentTurnRejectsCall = supportsChatPreferenceV1(
+  const channelChoice = moves.has('continue_by_chat') || moves.has('decline_call');
+  const currentTurnRejectsCall = channelChoice || supportsChatPreferenceV1(
     currentCustomerText,
     input.context.commercial_state.awaiting_reply === 'call_or_chat',
   );
@@ -1902,16 +1903,11 @@ export function validateAgentATurnProposalV1(input: {
     // degrades through NON_BLOCKING_GUIDANCE instead of becoming a fallback.
     rejections.push({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
   }
-  if (offersACall && !input.context.capabilities.may_offer_call) {
+  if (offersACall && !callRequestSupported && (!input.context.capabilities.may_offer_call
+    || input.context.commercial_state.call_offer_count >= 2)) {
     rejections.push({ code: 'CALL_BUDGET_EXHAUSTED', subject: 'call_offer' })
   }
 
-  const channelChoice = moves.has('continue_by_chat') || moves.has('decline_call');
-  if ((channelChoice || input.proposal.move.vetoes.includes('call')) && !supportsChatPreferenceV1(
-    currentCustomerText, input.context.commercial_state.awaiting_reply === 'call_or_chat',
-  )) {
-    rejections.push({ code: 'CHANNEL_PREFERENCE_NOT_SUPPORTED', subject: 'call_preference' });
-  }
   if (input.proposal.move.vetoes.includes('call') && !channelChoice) rejections.push({ code: 'CHANNEL_PREFERENCE_NOT_SUPPORTED', subject: 'call_preference' });
   if (channelChoice && offersACall) rejections.push({ code: 'CHANNEL_PREFERENCE_NOT_SUPPORTED', subject: 'call_offer' });
   if ((input.proposal.proposed_action.type === 'request_call_now' || (

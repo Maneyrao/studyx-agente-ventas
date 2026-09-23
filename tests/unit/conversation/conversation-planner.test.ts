@@ -87,7 +87,7 @@ describe('planConversationTurn', () => {
         stage: 'exploring',
         call_preference: 'unknown',
         call_offer_status: 'not_offered',
-        call_offer_count: 0,
+        call_offer_count: 2,
         awaiting_reply: 'none',
         version: 9,
       });
@@ -449,4 +449,10 @@ describe('enviar el link autoriza nombrar el plan que se envía', () => {
       { kind: 'payment_options', offering_code: 'redes-informaticas' },
     ]));
   });
+});
+
+
+it('keeps the invitation budget across idle expiry within the same sale', () => {
+  const previous = state({ call_offer_count: 2, updated_at: '2026-08-01T00:00:00.000Z' });
+  expect(effectiveConversationStateV1(previous, Date.parse('2026-08-03T00:00:00.000Z')).call_offer_count).toBe(2);
 });

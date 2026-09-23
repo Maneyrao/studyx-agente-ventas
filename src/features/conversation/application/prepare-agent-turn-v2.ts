@@ -15,7 +15,6 @@ import type {
 import {
   createDefaultConversationStateV1,
   effectiveConversationStateV1,
-  missingContactIntakeFieldsV1,
   type ContactIntakeV1,
 } from '../domain/conversation-planner';
 import { solicitsACall } from '../domain/operational-promise-guard';
@@ -63,12 +62,6 @@ function protectedFactsFromCitations(input: {
 
 function uniqueProtectedFacts(facts: readonly ProtectedFactRef[]): ProtectedFactRef[] {
   return [...new Map(facts.map((fact) => [`${fact.kind}\u0000${fact.value}`, fact])).values()];
-}
-
-function suppliesFirstNameInCurrentTurn(messages: readonly string[] | undefined): boolean {
-  return (messages ?? []).some((message) => (
-    /\b(?:soy|me llamo|mi nombre es)\s+[\p{L}]{2,}/iu.test(message)
-  ));
 }
 
 function responseType(input: {
@@ -174,8 +167,6 @@ export async function prepareAgentTurnV2(input: {
     }),
   );
   const noActiveCall = callFacts?.active_call == null;
-  const firstNameKnown = !missingContactIntakeFieldsV1(contactIntake).includes('nombre')
-    || suppliesFirstNameInCurrentTurn(input.current_customer_messages);
   const authority = authorizeAgentTurnV2({
     proposal: input.proposal,
     state,
@@ -187,7 +178,7 @@ export async function prepareAgentTurnV2(input: {
       // A refusal closes the invitation in that turn, not the whole sales
       // conversation. The per-turn authority below still blocks an immediate
       // repeat; the durable counter keeps the lifetime ceiling at two.
-      may_offer_call: firstNameKnown && noActiveCall,
+      may_offer_call: noActiveCall,
       // A direct customer request remains valid after an earlier decline.
       may_request_call_now: noActiveCall && isCallablePhoneE164V1(contactIntake?.telefono ?? ''),
     },

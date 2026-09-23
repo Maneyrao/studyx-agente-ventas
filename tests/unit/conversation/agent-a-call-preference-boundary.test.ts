@@ -14,11 +14,11 @@ function setup(text:string,kind:AgentATurnProposalV1['move']['move']){
 function backend(x:ReturnType<typeof setup>){return authorizeAgentTurnV2({proposal:x.proposal,state:x.state,offerings:[{code:'fotografia_profesional',display_name:'Fotografía Profesional'}],facts:[],current_customer_messages:[x.text],call_policy:{may_offer_call:true,may_request_call_now:false}});}
 function adk(x:ReturnType<typeof setup>){return validateAgentATurnProposalV1({proposal:x.proposal,context:x.context,planned_fact_ids:[],rejection_id:'44444444-4444-4444-8444-444444444444'});}
 
-describe('call preference requires current customer evidence',()=>{
- it.each(['Quizás personal','Para mi trabajo','Me interesa como hobby'])('does not persist a chat refusal from a study purpose: %s',text=>{
-  const x=setup(text,'continue_by_chat');
+describe('model-owned channel choices and backend call consent',()=>{
+ it.each(['Quizás personal','Para mi trabajo','Me interesa como hobby'])('does not infer a chat refusal from a study purpose: %s',text=>{
+  const x=setup(text,'unknown');
   expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'unknown'}});
-  expect(adk(x)?.rejections).toContainEqual({code:'CHANNEL_PREFERENCE_NOT_SUPPORTED',subject:'call_preference'});
+  expect(adk(x)).toBeNull();
  });
  it.each(['Prefiero seguir por chat','Mejor seguimos por acá','Por escrito, por favor','Por chat, por favor','Contame por acá, por favor'])('accepts a soft preference without cancelling the later situational reminder: %s',text=>{
   const x=setup(text,'continue_by_chat');
@@ -35,9 +35,9 @@ describe('call preference requires current customer evidence',()=>{
   expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'chat',call_offer_status:'not_offered'}});
  });
  it.each(['¿Por chat o por teléfono?', '¿Podemos seguir por chat o tiene que ser llamada?'])('does not treat a channel question as a choice: %s',text=>{
-  const x=setup(text,'continue_by_chat');
+  const x=setup(text,'unknown');
   expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'unknown'}});
-  expect(adk(x)?.rejections).toContainEqual({code:'CHANNEL_PREFERENCE_NOT_SUPPORTED',subject:'call_preference'});
+  expect(adk(x)).toBeNull();
  });
  it('does not allow an unsupported call veto to suppress the first invitation',()=>{
   const x=setup('Contame sobre Fotografía Profesional','ask_course_information');
@@ -61,10 +61,10 @@ describe('call preference requires current customer evidence',()=>{
   expect(adk(x)?.rejections).toContainEqual({code:'CHANNEL_PREFERENCE_NOT_SUPPORTED',subject:'call_offer'});
  });
  it('uses the latest message in a batch as the channel decision',()=>{
-  const x=setup('mejor llamame','continue_by_chat');
-  expect(authorizeAgentTurnV2({proposal:x.proposal,state:x.state,offerings:[{code:'fotografia_profesional',display_name:'Fotografía Profesional'}],facts:[],current_customer_messages:['Prefiero chat','mejor llamame'],call_policy:{may_offer_call:true,may_request_call_now:false}})).toMatchObject({ok:true,transition:{call_preference:'unknown'}});
+  const x=setup('mejor llamame','request_call');
+  expect(authorizeAgentTurnV2({proposal:x.proposal,state:x.state,offerings:[{code:'fotografia_profesional',display_name:'Fotografía Profesional'}],facts:[],current_customer_messages:['Prefiero chat','mejor llamame'],call_policy:{may_offer_call:true,may_request_call_now:false}})).toMatchObject({ok:true,transition:{call_preference:'call',call_offer_status:'accepted'}});
   x.context.turn.batch_messages=[{id:'m1',text:'Prefiero chat'},{id:'m2',text:'mejor llamame'}];
-  expect(adk(x)).not.toBeNull();
+  expect(adk(x)).toBeNull();
  });
  it('rejects a call action when the latest batched choice is chat',()=>{
   const x=setup('Prefiero chat','request_call');
@@ -157,12 +157,12 @@ describe('call preference requires current customer evidence',()=>{
   expect(authorizeAgentTurnV2({proposal:x.proposal,state:x.state,offerings:[{code:'fotografia_profesional',display_name:'Fotografía Profesional'}],facts:[],current_customer_messages:['Prefiero chat','y contame el precio'],call_policy:{may_offer_call:true,may_request_call_now:false}}).ok).toBe(true);
  });
  it('uses the last decisive choice inside one message',()=>{
-  const x=setup('Prefiero chat, aunque mejor llamame','continue_by_chat');
-  expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'unknown'}});expect(adk(x)).not.toBeNull();
+  const x=setup('Prefiero chat, aunque mejor llamame','request_call');
+  expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'call'}});expect(adk(x)).toBeNull();
  });
- it('accepts a short refusal only in response to a pending call offer',()=>{
+ it('persists the model interpretation of a short refusal without requiring a lexical match',()=>{
   const x=setup('No gracias','decline_call');
-  expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'unknown'}});expect(adk(x)).not.toBeNull();
+  expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'chat'}});expect(adk(x)).toBeNull();
   x.state.awaiting_reply='call_or_chat';x.context.commercial_state.awaiting_reply='call_or_chat';
   expect(backend(x).ok).toBe(true);expect(adk(x)).toBeNull();
  });

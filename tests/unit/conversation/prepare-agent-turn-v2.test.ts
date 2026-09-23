@@ -100,7 +100,7 @@ describe('prepareAgentTurnV2', () => {
     expect(prepared.transition).toMatchObject({ call_offer_count: 0, call_offer_status: 'not_offered' });
   });
 
-  it('keeps a premature call invitation visible without advancing the call ledger', async () => {
+  it('delivers and counts a permitted invitation even before the first name', async () => {
     const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
       workspace_slug: 'studyx', business_context: business, catalog_index: index,
@@ -122,7 +122,7 @@ describe('prepareAgentTurnV2', () => {
     });
     expect(prepared).toMatchObject({
       decision: { kind: 'reply' },
-      transition: { call_offer_count: 0, call_offer_status: 'not_offered' },
+      transition: { call_offer_count: 1, call_offer_status: 'offered' },
     });
   });
 
@@ -219,7 +219,7 @@ describe('prepareAgentTurnV2', () => {
 
     expect(prepared.response_messages).toEqual(['Seguimos por chat y te ayudo por aquí.']);
     expect(prepared.transition).toMatchObject({
-      call_preference: 'chat', call_offer_count: 1, call_offer_status: 'offered',
+      call_preference: 'chat', call_offer_count: 1, call_offer_status: 'declined',
       awaiting_reply: 'none',
     });
   });

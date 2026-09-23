@@ -41,7 +41,7 @@ function context(): AgentAContextV1 {
       areas: [], candidate_offerings: [], payment_plans: [],
     },
     capabilities: {
-      may_reply: true, may_offer_call: false, may_request_call_now: true,
+      may_reply: true, may_offer_call: true, may_request_call_now: true,
       may_present_payment_options: true, may_send_payment_link: false,
       authorized_payment_plan: null, intake_status: 'known' as const, intake_missing: [],
     },
@@ -958,6 +958,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
 
   it('records a repeated prior question without rewriting the model response', async () => {
     const current = context();
+    current.capabilities.may_offer_call = false;
     current.turn.batch_messages[0].text = 'Prefiero seguir por chat';
     current.turn.recent_turns = [{
       id: 'prior-agent',
@@ -996,6 +997,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
 
   it('records a repeated greeting without blocking or rewriting the response', async () => {
     const current = context();
+    current.capabilities.may_offer_call = false;
     current.customer.display_name = 'Thiago';
     current.turn.batch_messages[0].text = 'Thiago me llamo';
     current.turn.recent_turns = [{
@@ -1619,4 +1621,36 @@ describe('flexibilidad de cursada sin respaldo se poda, no se entrega', () => {
     expect(resolved.effective.proposal.response.messages.join(' '))
       .not.toMatch(/a tu ritmo|desde donde est[eé]s/iu);
   });
+});
+
+it.each(['narrative', 'dedicated'] as const)('repairs a third invitation in %s without backend-authored copy', async location => {
+  const current = context();
+  current.commercial_state.call_offer_count = 2;
+  current.capabilities.may_offer_call = false;
+  const invitation = 'Si quieres, puedo llamarte para orientarte.';
+  const initial = generated(proposal({ response: location === 'narrative'
+    ? { messages: ['La formación tiene 38 clases. '+invitation] }
+    : { messages: ['La formación tiene 38 clases.'], call_offer: invitation } }));
+  const repair = vi.fn(async rejection => generated(proposal({
+    response: { messages: ['La formación tiene 38 clases.'] },
+    repair_of: { rejection_id: rejection.rejection_id, attempt: 1 },
+  })));
+  const result = await resolveAgentAPlannerlessProposalV2({ initial, context: current,
+    repair_enabled: true, repair, rejection_id: '00000000-0000-4000-8000-000000000001' });
+  expect(repair).toHaveBeenCalledOnce();
+  expect(result.effective.proposal.response.messages).toEqual(['La formación tiene 38 clases.']);
+  expect(result.evidence.rejection_codes).toContain('CALL_BUDGET_EXHAUSTED');
+});
+
+it('does not downgrade an unrepaired third invitation into advisory guidance', async () => {
+  const current = context();
+  current.commercial_state.call_offer_count = 2;
+  current.capabilities.may_offer_call = false;
+  const value = proposal({ response: { messages: ['La formación tiene 38 clases.'],
+    call_offer: 'Si quieres, puedo llamarte para orientarte.' } });
+  await expect(resolveAgentAPlannerlessProposalV2({ initial: generated(value), context: current,
+    repair_enabled: true,
+    repair: async rejection => generated({ ...value, repair_of: { rejection_id: rejection.rejection_id, attempt: 1 } }),
+    rejection_id: '00000000-0000-4000-8000-000000000001',
+  })).rejects.toThrow('CALL_BUDGET_EXHAUSTED');
 });

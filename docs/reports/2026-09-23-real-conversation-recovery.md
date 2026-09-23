@@ -1,6 +1,6 @@
 # Agente A: recuperación de la conversación real del 23 de septiembre
 
-Estado: **correcciones determinísticas verificadas; evaluación real y despliegue pendientes por autenticación de DeepSeek**. Este informe no declara corregida la conversación comercial ni certifica producción.
+Estado actualizado: **correcciones determinísticas verificadas; evaluación con DeepSeek real y publicación pendientes**. Se corrigieron las dos inconsistencias de la revisión ampliada y el límite de invitaciones. La nueva regresión cubre seis conversaciones, 19 turnos y reintentos contra el build de producción local. Ver [comparación y límite de llamadas](2026-09-23-backend-comparison.md). Los resultados iniciales se conservan abajo como evidencia de la primera corrección.
 
 Worktree: `agent-a-logical-turn-recovery`. Rama: `codex/agent-a-logical-turn-recovery`. Fuente productiva investigada: `4f96b74bbfb572507fed809d71e60097745a93c4`; conversación `3fd53b66-b72a-4932-8a98-6684391d81ce`.
 

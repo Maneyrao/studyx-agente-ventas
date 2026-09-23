@@ -1815,3 +1815,25 @@ describe('el contexto no confunde persistencia con fase de venta', () => {
     expect(context!.capabilities.may_send_payment_link).toBe(false);
   });
 });
+
+it('keeps the exhausted call budget authoritative despite a retrieved preference for calls', () => {
+  const claimed = claimedTurn();
+  claimed.conversation_state_v1!.call_offer_count = 2;
+  claimed.conversation_state_v1!.call_preference = 'chat';
+  claimed.conversation_state_v1!.call_offer_status = 'declined';
+  claimed.context.selected_memories = [{ memory_id: 'old-call-preference', type: 'preference',
+    key: 'contact_preference', value: 'Prefiere llamadas', source_quote: 'Prefiero llamadas',
+    similarity: 1, recorded_at: NOW }];
+  const context = buildAgentAContextV1(claimed)!;
+  expect(context.commercial_state).toMatchObject({ call_offer_count: 2, call_preference: 'chat' });
+  expect(context.capabilities.may_offer_call).toBe(false);
+  expect(context.capabilities.may_request_call_now).toBe(true);
+});
+
+it('does not authorize an immediate call when contact intake was not loaded', () => {
+  const claimed = claimedTurn();
+  delete claimed.contact_intake_missing;
+  const context = buildAgentAContextV1(claimed)!;
+  expect(context.capabilities.intake_status).toBe('unknown');
+  expect(context.capabilities.may_request_call_now).toBe(false);
+});
