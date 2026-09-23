@@ -3,6 +3,7 @@ import { dispatch, logEvent } from '../channels'
 import { evaluateWhatsAppCanarySend } from '../channels/whatsapp.channel'
 import { processInboundTurn } from '../workflows/processInboundTurn'
 import { ingestCanonicalTurnV1 } from '../lib/inbound/ingest-canonical-turn'
+import { WorkflowInputSchema } from '../schemas/contracts'
 
 /**
  * SINGLE Botpress Conversation handler for every channel.
@@ -68,7 +69,7 @@ export default new Conversation({
         : null
       const workflow = await processInboundTurn.getOrCreate({
         key: workflowKey,
-        input: { ...input, preingested },
+        input: WorkflowInputSchema.parse({ ...input, preingested }),
       })
 
       logEvent('studyx.router.workflow_started', {

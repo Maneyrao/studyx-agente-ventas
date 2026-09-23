@@ -13,9 +13,9 @@ const source = readFileSync(
   'utf8',
 );
 
-describe('prompt canónico comercial v40', () => {
+describe('prompt canónico comercial v41', () => {
   it('coincide con la fuente y declara la versión desplegable', () => {
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v40');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v41');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toBe(source);
   });
 
@@ -40,16 +40,16 @@ describe('prompt canónico comercial v40', () => {
     expect(source).toMatch(/primer nombre[\s\S]{0,220}[úu]nica pregunta/iu);
     expect(source).toMatch(/ausencia no bloquea el asesoramiento/iu);
     expect(source).toMatch(/primera respuesta[\s\S]{0,220}StudyX/iu);
-    expect(source).toMatch(/entre uno y tres mensajes breves/iu);
-    expect(source).toMatch(/primero responde[\s\S]{0,120}luego recomienda[\s\S]{0,120}finalmente propone/iu);
+    expect(source).toMatch(/Elige uno o dos mensajes breves según el ritmo natural/iu);
+    expect(source).toMatch(/Usa tres sólo cuando presentes una lista real de opciones/iu);
+    expect(source).toMatch(/Responde primero el pedido, la pregunta o la intención actual[\s\S]{0,120}Después orienta/iu);
     expect(source).toMatch(/response\.call_offer[\s\S]{0,120}no la dupliques/iu);
-    expect(source).toMatch(/no cortes una oración por la mitad/iu);
-    expect(source).toMatch(/ni repitas la misma información en otra burbuja/iu);
+    expect(source).toMatch(/no repitas un dato, una pregunta o una invitación en otra burbuja/iu);
     expect(source).not.toMatch(/20 a 40 palabras en total/iu);
     expect(source).toMatch(/cursos, planes u opciones[\s\S]{0,80}lista compacta/iu);
     expect(source).toMatch(/recomienda una principal con un motivo concreto/iu);
     expect(source).toMatch(/guarda los detalles secundarios para cuando los pida/iu);
-    expect(source).not.toMatch(/Por defecto[^\n]*dos mensajes breves|Prioriza una respuesta compacta|Mant[eé]n cada mensaje breve/iu);
+    expect(source).not.toMatch(/Por defecto[^\n]*dos mensajes breves|Prioriza una respuesta compacta/iu);
     expect(source).toMatch(/No contestes con una confirmaci[óo]n vac[íi]a/iu);
     expect(source).toMatch(/puedes cerrarlas con `\?` o `!`/iu);
     expect(source).not.toMatch(/consulta general ambigua[\s\S]{0,160}un [úu]nico mensaje/iu);
