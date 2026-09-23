@@ -24,6 +24,7 @@ import { PostgresOrchestrationStore } from '@/features/orchestration/adapters/po
 import type { BatchMembership } from '@/features/orchestration/ports/orchestration-store';
 import { DEFAULT_BATCH_WINDOW_POLICY } from '@/features/orchestration/domain/batch-window';
 import { loadBusinessWorkspaceConfig } from '@/lib/config';
+import { resolveProviderOccurrenceV1 } from '@/lib/heuristics/provider-occurrence';
 
 export class TurnNotFoundError extends Error {
   readonly code = 'TURN_NOT_FOUND';
@@ -302,6 +303,11 @@ async function captureDeliveredContactNameAnswer(db: DbClient, input: {
 }
 
 async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
+  const receivedAt = new Date().toISOString();
+  const occurrence = resolveProviderOccurrenceV1({
+    providerOccurredAt: envelope.message.occurred_at,
+    receivedAt,
+  });
   const channel = resolveLogicalChannel(envelope);
   const { workspaceSlug } = loadBusinessWorkspaceConfig();
   // sandbox_provider (e.g. 'telegram_sandbox') wins over the default derivation so
@@ -511,7 +517,7 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
     const contextual = envelope.message.type === 'unsupported' || volunteeredIdentity.name !== null ? null
       : await captureDeliveredContactNameAnswer(db, {
         conversationId, contact, provider, integrationId: envelope.integration_id,
-        text: envelope.message.text, occurredAt: envelope.message.occurred_at,
+        text: envelope.message.text, occurredAt: occurrence.occurred_at,
       });
     const capturedIdentity = { ...volunteeredIdentity, name: volunteeredIdentity.name ?? contextual?.name ?? null };
     if (
@@ -561,7 +567,7 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
           ${'inbound_explicit_opt_out'},
           ${reservation.event_id}::uuid,
           ${jsonbParam(db, { text: envelope.message.text })},
-          ${envelope.message.occurred_at}::timestamptz
+          ${occurrence.occurred_at}::timestamptz
         )
       `;
       consentStatus = consentRows[0]?.current_status ?? 'unknown';
@@ -575,7 +581,7 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
           ${channel},
           'unknown',
           'inbound_message',
-          ${envelope.message.occurred_at}::timestamptz + interval '24 hours'
+          ${occurrence.occurred_at}::timestamptz + interval '24 hours'
         )
         ON CONFLICT (contact_id, channel) DO UPDATE
         SET reply_window_expires_at = GREATEST(
@@ -597,7 +603,9 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
         message_type: envelope.message.type,
         external_message_id: envelope.external_message_id,
         provider_message_id: envelope.provider_message_id ?? null,
-        occurred_at: envelope.message.occurred_at,
+        provider_occurred_at: occurrence.provider_occurred_at,
+        occurred_at: occurrence.occurred_at,
+        occurred_at_trusted: occurrence.occurred_at_trusted,
         reply_to_external_message_id: envelope.message.reply_to_external_message_id,
         opt_out_ack_eligible: optOutAckEligible,
         // Backend-owned provenance, never copied from envelope metadata. A

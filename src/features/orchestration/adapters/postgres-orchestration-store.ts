@@ -161,12 +161,18 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
       created_at: Date;
       message_type: string | null;
       opt_out_ack_eligible: boolean;
+      effective_occurred_at: Date;
     }>>`
       SELECT
         m.id,
         m.conversation_seq,
         m.content,
         m.created_at,
+        CASE
+          WHEN m.metadata ->> 'occurred_at_trusted' = 'true'
+            THEN (m.metadata ->> 'occurred_at')::timestamptz
+          ELSE m.created_at
+        END AS effective_occurred_at,
         COALESCE(m.metadata ->> 'message_type', 'text') AS message_type,
         COALESCE(m.metadata ->> 'opt_out_ack_eligible', 'false') = 'true'
           AS opt_out_ack_eligible
@@ -176,7 +182,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
        AND b.conversation_id = m.conversation_id
        AND b.contact_id = m.contact_id
       WHERE m.batch_id = ${batch_id}::uuid
-      ORDER BY m.conversation_seq ASC
+      ORDER BY effective_occurred_at ASC, m.conversation_seq ASC, m.id ASC
     `;
 
     return rows.map((row) => ({
@@ -184,6 +190,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
       conversation_seq: Number(row.conversation_seq),
       content: row.content,
       created_at: row.created_at.toISOString(),
+      occurred_at: row.effective_occurred_at.toISOString(),
       message_type: row.message_type ?? 'text',
       opt_out_ack_eligible: row.opt_out_ack_eligible,
     }));
@@ -278,7 +285,14 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
               'message_type', COALESCE(bm.metadata ->> 'message_type', 'text'),
               'opt_out_ack_eligible',
                 COALESCE(bm.metadata ->> 'opt_out_ack_eligible', 'false') = 'true'
-            ) ORDER BY bm.conversation_seq
+            ) ORDER BY
+              CASE
+                WHEN bm.metadata ->> 'occurred_at_trusted' = 'true'
+                  THEN (bm.metadata ->> 'occurred_at')::timestamptz
+                ELSE bm.created_at
+              END,
+              bm.conversation_seq,
+              bm.id
           )
           FROM messages AS bm
           WHERE bm.batch_id = b.id
