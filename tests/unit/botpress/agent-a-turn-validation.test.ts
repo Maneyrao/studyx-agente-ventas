@@ -84,6 +84,46 @@ describe('validación de la propuesta del turno', () => {
     })).toBeNull();
   });
 
+  it('requires the model to ask for the missing phone before acknowledging a requested call', () => {
+    const current = context({
+      turn: {
+        batch_messages: [{ id: 'm1', text: 'Prefiero que me llames' }],
+        recent_turns: [],
+      },
+      capabilities: {
+        ...context().capabilities,
+        may_offer_call: true,
+        may_request_call_now: false,
+        intake_missing: ['telefono'],
+      },
+    } as Partial<AgentAContextV1>);
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'request_call',
+          secondary_moves: [],
+          vetoes: [],
+          confidence: 1,
+        },
+        response: {
+          messages: ['Claro, te llamo y así te oriento con calma.'],
+          call_offer: null,
+        },
+        proposed_action: { type: 'none' },
+        used_fact_ids: [],
+      }),
+      context: current,
+      planned_fact_ids: [],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection?.rejections).toContainEqual({
+      code: 'MISSING_INTAKE',
+      subject: 'telefono',
+    });
+  });
+
   it('no confunde formato multilínea con un saludo repetido', () => {
     expect(validateAgentATurnProposalV1({
       proposal: proposal({

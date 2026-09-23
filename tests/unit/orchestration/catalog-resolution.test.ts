@@ -281,6 +281,14 @@ describe('resolveCatalogRequest', () => {
     expect(isCatalogRequestNeutral(text)).toBe(true);
   });
 
+  it('treats a split generic catalog enquiry as browsing, not as an unknown course', () => {
+    const text = ['Dame info', 'De los cursos'];
+    expect(resolveCatalogRequest(text, snapshot([
+      offering('ingles-1', 'Inglés 1', 'Idiomas'),
+      offering('redes', 'Redes Informáticas', 'Tecnología'),
+    ]))).toEqual({ kind: 'no_catalog_intent' });
+  });
+
   it.each([
     '¿Se puede hacer sin usar un programa de diseño?',
     'Nunca usé un programa de diseño, ¿igual puedo hacer el curso?',

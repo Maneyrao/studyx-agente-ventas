@@ -253,6 +253,16 @@ const NON_DEGRADABLE_FACT_SUBJECTS = new Set([
   'employment_outcome',
 ])
 
+function isMissingPhoneForRequestedCall(
+  proposal: AgentATurnProposalV1,
+  rejection: TurnRejectionV1,
+): boolean {
+  const moves = new Set([proposal.move.move, ...proposal.move.secondary_moves])
+  return moves.has('request_call') && rejection.rejections.some((reason) => (
+    reason.code === 'MISSING_INTAKE' && reason.subject === 'telefono'
+  ))
+}
+
 function mayDegradeToBackendBoundary(
   proposal: AgentATurnProposalV1,
   rejection: TurnRejectionV1,
@@ -260,6 +270,7 @@ function mayDegradeToBackendBoundary(
   // Afirmar un efecto que no ocurrió no es un hecho que el egress pueda podar:
   // la oración entera es la mentira. Eso sigue siendo un rechazo duro.
   if (claimsImmediatePaymentLinkDelivery(proposal)) return false
+  if (isMissingPhoneForRequestedCall(proposal, rejection)) return false
   if (proposal.proposed_action.type === 'send_payment_link' && rejection.rejections.some((reason) => (
     reason.code === 'ACTION_NOT_AUTHORIZED' || reason.code === 'MISSING_INTAKE'
   ))) return false
@@ -277,6 +288,7 @@ function hasOnlyNonBlockingGuidance(
   proposal: AgentATurnProposalV1,
   rejection: TurnRejectionV1,
 ): boolean {
+  if (isMissingPhoneForRequestedCall(proposal, rejection)) return false
   if (proposal.proposed_action.type === 'send_payment_link' && rejection.rejections.some((reason) => (
     reason.code === 'ACTION_NOT_AUTHORIZED' || reason.code === 'MISSING_INTAKE'
   ))) return false

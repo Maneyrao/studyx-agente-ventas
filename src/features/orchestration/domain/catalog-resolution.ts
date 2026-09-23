@@ -103,6 +103,14 @@ const NEUTRAL_CATALOG_TRAILING_FRAGMENT_PATTERN =
 const PAYMENT_OR_LINK_CONTEXT_PATTERN =
   /\b(?:pag(?:o|ar|arlo|arla|arlos|arlas)?|cuotas?|dolares?|usd|link|plan(?:es)?|mensual(?:es)?|mes(?:es)?|pensar(?:lo|la)?|decidir)\b/u;
 
+const GENERIC_CATALOG_WORDS = new Set([
+  'acerca', 'algo', 'catalogo', 'curso', 'cursos', 'dame', 'de', 'del',
+  'detalles', 'disponibles', 'el', 'en', 'formacion', 'formaciones', 'hay',
+  'info', 'informacion', 'la', 'las', 'los', 'me', 'necesito', 'oferta',
+  'ofrecen', 'pasame', 'programa', 'programas', 'que', 'quiero', 'sobre',
+  'tienen', 'todas', 'todos', 'ver', 'y',
+]);
+
 const EXPLICIT_COURSE_NOUN_PATTERN =
   /\b(?:curso|diplomado|capacitacion|formacion|programa)\b/u;
 
@@ -176,6 +184,15 @@ function toMessages(text: string | readonly string[]): string[] {
 function requestedText(text: string | readonly string[]): string {
   const values = typeof text === 'string' ? [text] : text;
   return values.map((value) => value.trim()).filter(Boolean).join('\n');
+}
+
+function isGenericCatalogBrowseRequest(messages: readonly string[]): boolean {
+  if (!hasCatalogIntent(messages)) return false;
+  const meaningfulWords = messages
+    .flatMap((message) => message.split(/\s+/u))
+    .filter(Boolean)
+    .filter((word) => !GENERIC_CATALOG_WORDS.has(word));
+  return meaningfulWords.length === 0;
 }
 
 function explicitCatalogReplacementSubject(text: string | readonly string[]): string | null {
@@ -700,6 +717,9 @@ export function resolveCatalogRequest(
   }
 
   const offerings = indexOfferings(snapshot);
+  if (isGenericCatalogBrowseRequest(messages)) {
+    return { kind: 'no_catalog_intent' };
+  }
   const resolutionMessages = replacementSubject === null ? messages : [replacementSubject];
   const hits = literalHits(resolutionMessages, offerings);
   const positiveHits = positiveLiteralHits(resolutionMessages, hits);

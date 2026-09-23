@@ -411,6 +411,38 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
   });
 
+  it('repairs a call acknowledgement that omitted the missing phone request', async () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm1', text: 'Prefiero que me llames' }];
+    current.capabilities.may_request_call_now = false;
+    current.capabilities.intake_missing = ['telefono'];
+    const initial = proposal({
+      move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+      response: { messages: ['Claro, te llamo y te oriento con calma.'], call_offer: null },
+      proposed_action: { type: 'none' },
+      used_fact_ids: [],
+    });
+    const repair = vi.fn(async rejection => generated({
+      ...initial,
+      response: { messages: ['Dale, pásame tu número completo con código de país y área 🙂'], call_offer: null },
+      repair_of: { rejection_id: rejection.rejection_id, attempt: 1 as const },
+    }));
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(initial),
+      context: current,
+      repair_enabled: true,
+      repair,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
+    expect(result.effective.proposal.response.messages).toEqual([
+      'Dale, pásame tu número completo con código de país y área 🙂',
+    ]);
+  });
+
   it('preserves requested information embedded with an unsolicited pending-call reminder', async () => {
     const current = context();
     current.commercial_state.call_offer_count = 1;

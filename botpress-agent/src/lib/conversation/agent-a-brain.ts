@@ -1469,7 +1469,7 @@ function mentionsMissingIntakeField(messages: readonly string[], missing: readon
     .toLocaleLowerCase('es');
   const requested = new Set<string>();
   for (const clause of text.split(/[.;!?]+/u)) {
-    const cue = clause.match(/\b(?:faltan?|necesito|necesitamos|pasame|decime|dime|indicame|confirmame|comparti(?:me)?|comparte|enviame|dame|me\s+(?:das|pasas|compartis|confirmas))\b|¿/u);
+    const cue = clause.match(/\b(?:faltan?|necesito|necesitamos|pasame|decime|dime|indicame|confirmame|comparti(?:me)?|comparte|enviame|dame|me\s+(?:das|pasas|compartis|confirmas)|cual|a\s+que)\b|¿/u);
     if (!cue) continue;
     // «Ya tengo tu nombre» no es una petición. Sólo los campos posteriores
     // al pedido deben coincidir con el intake pendiente de este turno.
@@ -1849,6 +1849,16 @@ export function validateAgentATurnProposalV1(input: {
     ...input.proposal.move.secondary_moves,
   ]);
   const missingIntake = input.context.capabilities.intake_missing ?? [];
+  const needsPhoneForRequestedCall = moves.has('request_call')
+    && missingIntakeFields.has('telefono')
+    && !input.context.capabilities.may_request_call_now
+    && input.proposal.proposed_action.type === 'none';
+  if (
+    needsPhoneForRequestedCall
+    && !mentionsMissingIntakeField(input.proposal.response.messages, ['telefono'])
+  ) {
+    rejections.push({ code: 'MISSING_INTAKE', subject: 'telefono' });
+  }
   const currentPaymentDeferral = hasTemporalPaymentDeferral(
     input.context.turn.batch_messages.map((message) => ({ content: message.text })),
     input.context.commercial_state.awaiting_reply === 'payment_confirmation'

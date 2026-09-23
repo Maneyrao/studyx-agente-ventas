@@ -251,7 +251,10 @@ function needsCallPhoneRecovery(claimed: ClaimedTurn, failureCode: string): bool
   return claimed.deterministic_route === 'call_phone_required'
     || (
       claimed.contact_intake_missing.includes('telefono')
-      && failureCode.includes('ACTION_NOT_AUTHORIZED:request_call_now')
+      && (
+        failureCode.includes('ACTION_NOT_AUTHORIZED:request_call_now')
+        || failureCode.includes('MISSING_INTAKE:telefono')
+      )
     )
 }
 
