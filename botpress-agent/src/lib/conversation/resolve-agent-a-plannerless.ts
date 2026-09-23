@@ -192,44 +192,6 @@ function normalizeCallOfferBoundary<T extends AgentAProposalEnvelopeV1>(input: {
   }
 }
 
-/**
- * Denying a side effect does not require a second author to replace safe
- * customer-facing copy. When the only defect is an early payment action, the
- * boundary can remove that capability while preserving DeepSeek's wording.
- * A sentence claiming the link was sent is not safe to preserve and must go
- * through the single model repair instead.
- */
-function demoteUnauthorizedPaymentAction<T extends AgentAProposalEnvelopeV1>(input: {
-  readonly initial: T
-  readonly rejection: TurnRejectionV1
-  readonly context: AgentAContextV1
-  readonly authorized_fact_ids: readonly string[]
-}): T | null {
-  if (input.initial.proposal.proposed_action.type !== 'send_payment_link') return null
-  if (claimsImmediatePaymentLinkDelivery(input.initial.proposal)) return null
-  if (!input.rejection.rejections.some((reason) => (
-    (reason.code === 'ACTION_NOT_AUTHORIZED' && reason.subject === 'send_payment_link')
-    || reason.code === 'MISSING_INTAKE'
-  ))) return null
-  if (!input.rejection.rejections.every((reason) => (
-    reason.code === 'ACTION_NOT_AUTHORIZED' || reason.code === 'MISSING_INTAKE'
-  ))) return null
-
-  const candidate = {
-    ...input.initial,
-    proposal: { ...input.initial.proposal, proposed_action: { type: 'none' as const } },
-  }
-  const candidateRejection = validatePlannerless({
-    proposal: candidate.proposal,
-    context: input.context,
-    rejection_id: input.rejection.rejection_id,
-    authorized_fact_ids: input.authorized_fact_ids,
-  })
-  return candidateRejection === null || hasOnlyNonBlockingGuidance(candidate.proposal, candidateRejection)
-    ? candidate
-    : null
-}
-
 /** Both the initial proposal and its one repair use this exact pipeline. */
 function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   readonly initial: T
@@ -251,8 +213,6 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   })
   const rejection = validate(effective)
   if (rejection === null) return { effective, rejection, originalRejection }
-  const paymentCandidate = demoteUnauthorizedPaymentAction({ ...input, initial: effective, rejection })
-  if (paymentCandidate !== null) return { effective: paymentCandidate, rejection: null, originalRejection }
   // An unavailable call needs the existing model repair: changing only the
   // action would publish an acknowledgement for a call that never occurred.
   if (hasOnlyNonBlockingGuidance(effective.proposal, rejection)) {
@@ -300,6 +260,9 @@ function mayDegradeToBackendBoundary(
   // Afirmar un efecto que no ocurrió no es un hecho que el egress pueda podar:
   // la oración entera es la mentira. Eso sigue siendo un rechazo duro.
   if (claimsImmediatePaymentLinkDelivery(proposal)) return false
+  if (proposal.proposed_action.type === 'send_payment_link' && rejection.rejections.some((reason) => (
+    reason.code === 'ACTION_NOT_AUTHORIZED' || reason.code === 'MISSING_INTAKE'
+  ))) return false
   if (rejection.rejections.some((reason) => (
     reason.code === 'FACT_VALUE_MISMATCH'
     && NON_DEGRADABLE_FACT_SUBJECTS.has(reason.subject)
@@ -311,9 +274,12 @@ function mayDegradeToBackendBoundary(
 }
 
 function hasOnlyNonBlockingGuidance(
-  _proposal: AgentATurnProposalV1,
+  proposal: AgentATurnProposalV1,
   rejection: TurnRejectionV1,
 ): boolean {
+  if (proposal.proposed_action.type === 'send_payment_link' && rejection.rejections.some((reason) => (
+    reason.code === 'ACTION_NOT_AUTHORIZED' || reason.code === 'MISSING_INTAKE'
+  ))) return false
   return rejection.rejections.every((reason) => NON_BLOCKING_GUIDANCE_CODES.has(reason.code))
 }
 

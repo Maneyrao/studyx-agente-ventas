@@ -601,6 +601,13 @@ export const ClaimedTurnSchema = z.object({
       'none', 'area_choice', 'course_choice', 'call_or_chat',
       'payment_plan', 'payment_confirmation', 'contact_details',
     ]),
+    payment_link_request: z.object({
+      status: z.enum(['pending', 'withdrawn', 'consumed']),
+      offering_code: z.string().min(1),
+      payment_plan: z.enum(['monthly_12', 'monthly_6', 'one_time']),
+      requested_by_turn_id: z.string().uuid().nullable(),
+      resolved_by_decision_id: z.string().uuid().nullable(),
+    }).strict().nullable().optional(),
     payment_reported: z.boolean().optional(),
     version: z.number().int().nonnegative(),
   }).strict().nullable().optional(),

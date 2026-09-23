@@ -87,6 +87,11 @@ export const AgentAContextV1Schema = z.object({
     call_offer_count: z.union([z.literal(0), z.literal(1), z.literal(2)]),
     awaiting_reply: z.enum(['none', 'area_choice', 'course_choice', 'call_or_chat', 'payment_plan', 'payment_confirmation', 'contact_details']),
     payment_reported: z.boolean(),
+    payment_link_request: z.object({
+      status: z.enum(['pending', 'withdrawn', 'consumed']),
+      offering_code: IdentifierSchema,
+      payment_plan: PaymentPlanSchema,
+    }).strict().nullable().optional(),
   }).strict(),
   /**
    * El eje que le faltaba al contexto. `capabilities` dice qué PUEDE hacer el

@@ -602,10 +602,11 @@ export function buildAgentAContextV1(
   const state = claimed.conversation_state_v1;
   if (!state) return null;
   const index = claimed.catalog_index?.offerings ?? [];
-  // Persisted conversation state remains authoritative across turns. Within
-  // the current turn, an exact backend catalog resolution is newer evidence:
-  // expose its facts to the brain and clear any plan belonging to another
-  // course. The planner will persist the transition atomically at commit.
+  // Persisted conversation state remains authoritative across turns. An exact
+  // catalog resolution says which course the customer is talking about now;
+  // it does not prove they replaced the course already chosen for the sale.
+  // Expose the referenced course as catalog focus while keeping the durable
+  // selection untouched until the model emits an authorized `select_course`.
   const currentCode = claimed.catalog_resolution.kind === 'exact'
     ? claimed.catalog_resolution.offeringCode
     : null;
@@ -628,16 +629,17 @@ export function buildAgentAContextV1(
     && state.selected_payment_plan === null
     && state.payment_reported !== true
     && currentTurnIsUnderspecifiedV1(claimed);
-  const selectedCode = currentCode ?? state.selected_offering_code;
-  const currentCourseChanged = currentCode !== null
-    && currentCode !== state.selected_offering_code;
-  const selectedOffering = selectedCode ? selectedOfferingFacts(claimed, selectedCode) : null;
+  const selectedCode = state.selected_offering_code;
+  const catalogFocusCode = currentCode ?? selectedCode;
+  const selectedOffering = catalogFocusCode
+    ? selectedOfferingFacts(claimed, catalogFocusCode)
+    : null;
   const areas = new Map<string, string>();
   for (const offering of index) {
     const code = areaCode(offering.academy);
     if (code && offering.academy) areas.set(code, offering.academy);
   }
-  const candidates = candidateCodes(claimed, selectedCode)
+  const candidates = candidateCodes(claimed, catalogFocusCode)
     .map((code) => index.find((offering) => offering.code === code))
     .filter((offering): offering is NonNullable<typeof offering> => offering !== undefined)
     .map((offering) => ({
@@ -653,7 +655,7 @@ export function buildAgentAContextV1(
           || fact.kind === 'offering_modality'),
     }));
   const callOfferCount = state.call_offer_count ?? (state.call_offer_status === 'not_offered' ? 0 : 1);
-  const selectedPlan = currentCourseChanged ? null : state.selected_payment_plan;
+  const selectedPlan = selectedCode === null ? null : state.selected_payment_plan;
   const suppressContactMemories = wanderingTurn;
   // El scoping gobierna qué memorias se muestran, nunca qué datos faltan.
   // Atarle el intake convertía «nadie consultó» en «no falta nada», y con el
@@ -674,20 +676,20 @@ export function buildAgentAContextV1(
       : 'missing' as const;
   // Desconocido no abre el gate. La única lectura segura de una respuesta que
   // nadie dio es que todavía falta algo.
+  const pendingPaymentLinkRequest = state.payment_link_request?.status === 'pending'
+    && state.payment_link_request.offering_code === selectedCode
+    && state.payment_link_request.payment_plan === selectedPlan;
   const maySendPaymentLink = claimed.policy.may_respond
     && selectedCode !== null
     && selectedPlan !== null
     && state.stage !== 'payment_link_sent'
-    // Completing intake prepares a confirmation turn; it is not permission
-    // to send the link in that same turn. Mirror the backend's durable action
-    // precondition so the brain never sees a capability the commit will deny.
-    && state.awaiting_reply === 'payment_confirmation'
-    && !currentBatchSuppliesContactDetails(claimed)
+    && (state.awaiting_reply === 'payment_confirmation' || pendingPaymentLinkRequest)
+    && (!currentBatchSuppliesContactDetails(claimed) || pendingPaymentLinkRequest)
     && intakeStatus === 'known'
     && intakeMissing.length === 0;
   const obligations = options.rigidObligations !== true ? null : salesObligationsV1({
     spokeBefore: claimed.context.recent_turns.some((turn) => turn.direction === 'outbound'),
-    courseChosenThisTurn: currentCourseChanged,
+    courseChosenThisTurn: false,
     selectedCode,
     selectedPlan,
     stage: state.stage,
@@ -746,24 +748,31 @@ export function buildAgentAContextV1(
     commercial_state: {
       selected_offering_code: selectedCode,
       selected_payment_plan: selectedPlan,
-      // Ocultar el curso y seguir diciendo `course_selected` describiría un
-      // estado que el modelo no puede ver: el turno vuelve a exploración.
-      stage: currentCourseChanged ? 'course_selected' : state.stage,
+      stage: state.stage,
       call_preference: state.call_preference,
       call_offer_status: state.call_offer_status,
       call_offer_count: callOfferCount,
-      awaiting_reply: currentCourseChanged ? 'none' : state.awaiting_reply,
+      awaiting_reply: state.awaiting_reply,
       // The customer already said they paid. The model must be able to see
       // that so it neither asks for the payment again nor claims it is
       // verified — this field is the claim, never a verification.
       payment_reported: state.payment_reported === true,
+      payment_link_request: state.payment_link_request === undefined
+        ? null
+        : state.payment_link_request === null
+          ? null
+          : {
+              status: state.payment_link_request.status,
+              offering_code: state.payment_link_request.offering_code,
+              payment_plan: state.payment_link_request.payment_plan,
+            },
     },
     // Ausente salvo en la variante rígida: `commercial_state` ya describe los
     // hechos persistidos y el preámbulo explica que eso no son fases de venta
     // cumplidas. Una deuda calculada encima volvía a imponer un recorrido.
     ...(obligations === null ? {} : {
       obligations: {
-        stage: currentCourseChanged ? 'course_selected' : state.stage,
+        stage: state.stage,
         owes: obligations.owes,
         not_yet: obligations.not_yet,
       },

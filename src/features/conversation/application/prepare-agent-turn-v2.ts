@@ -190,6 +190,13 @@ export async function prepareAgentTurnV2(input: {
     conversation_id: input.turn.conversation_id,
     contact_id: input.turn.contact_id,
     ...authority.transition,
+    payment_link_request: authority.transition.payment_link_request === null
+      ? null
+      : {
+          ...authority.transition.payment_link_request,
+          requested_by_turn_id: authority.transition.payment_link_request.requested_by_turn_id
+            ?? input.turn.id,
+        },
     source_turn_id: input.turn.id,
   };
   const decision = decisionFromAuthorizedTurn({

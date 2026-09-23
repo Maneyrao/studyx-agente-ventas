@@ -1072,7 +1072,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
-  it('demotes a payment action that the current conversational move did not request', async () => {
+  it('repairs a payment action that the current conversational move did not request', async () => {
     const current = context();
     current.turn.batch_messages[0].text = 'Soy Matía Damonte, matia@example.test';
     current.commercial_state.awaiting_reply = 'payment_confirmation';
@@ -1090,18 +1090,22 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       },
       used_fact_ids: [],
     }));
-    const repair = vi.fn();
+    const repaired = generated(proposal({
+      move: initial.proposal.move,
+      response: initial.proposal.response,
+      proposed_action: { type: 'none' },
+      repair_of: { rejection_id: '00000000-0000-4000-8000-000000000001', attempt: 1 },
+    }));
+    const repair = vi.fn().mockResolvedValue(repaired);
 
     const result = await resolveAgentAPlannerlessProposalV2({
       initial, context: current, repair_enabled: true, repair,
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 
-    expect(repair).not.toHaveBeenCalled();
-    expect(result.effective.proposal).toMatchObject({
-      response: initial.proposal.response,
-      proposed_action: { type: 'none' },
-    });
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.effective).toBe(repaired);
+    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
   });
 
   it('accepts a link action when the same explicit move selects its canonical plan', async () => {
@@ -1166,7 +1170,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
-  it('demotes an unsolicited payment action while preserving safe model-owned acknowledgement', async () => {
+  it('repairs an unsolicited payment action instead of silently deleting it', async () => {
     const current = context();
     current.turn.batch_messages[0].text = 'Soy Tomás Quiroga, tomas@example.test';
     current.commercial_state.awaiting_reply = 'payment_confirmation';
@@ -1188,23 +1192,28 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       },
       used_fact_ids: [],
     }));
-    const repair = vi.fn();
+    const repaired = generated(proposal({
+      move: initial.proposal.move,
+      response: initial.proposal.response,
+      proposed_action: { type: 'none' },
+      repair_of: { rejection_id: '00000000-0000-4000-8000-000000000001', attempt: 1 },
+    }));
+    const repair = vi.fn().mockResolvedValue(repaired);
 
     const result = await resolveAgentAPlannerlessProposalV2({
       initial, context: current, repair_enabled: true, repair,
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 
-    expect(repair).not.toHaveBeenCalled();
-    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
-    expect(result.effective.proposal.response.messages).toEqual(initial.proposal.response.messages);
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.effective).toBe(repaired);
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['ACTION_NOT_AUTHORIZED'], repair_attempted: false,
-      repaired: false, proposal_generation_calls: 1,
+      rejection_codes: ['ACTION_NOT_AUTHORIZED'], repair_attempted: true,
+      repaired: true, proposal_generation_calls: 2,
     });
   });
 
-  it('demotes a premature payment action while contact intake is still incomplete', async () => {
+  it('repairs a premature payment action while contact intake is still incomplete', async () => {
     const current = context();
     current.turn.batch_messages[0].text = 'Soy Nadia Ferrer';
     current.commercial_state.awaiting_reply = 'contact_details';
@@ -1223,18 +1232,24 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       },
       used_fact_ids: [],
     }));
-    const repair = vi.fn();
+    const repaired = generated(proposal({
+      move: initial.proposal.move,
+      response: initial.proposal.response,
+      proposed_action: { type: 'none' },
+      repair_of: { rejection_id: '00000000-0000-4000-8000-000000000001', attempt: 1 },
+    }));
+    const repair = vi.fn().mockResolvedValue(repaired);
 
     const result = await resolveAgentAPlannerlessProposalV2({
       initial, context: current, repair_enabled: true, repair,
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 
-    expect(repair).not.toHaveBeenCalled();
-    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.effective).toBe(repaired);
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['MISSING_INTAKE'], repair_attempted: false,
-      proposal_generation_calls: 1,
+      rejection_codes: ['MISSING_INTAKE'], repair_attempted: true,
+      repaired: true, proposal_generation_calls: 2,
     });
   });
 

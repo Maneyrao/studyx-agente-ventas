@@ -1093,6 +1093,10 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           ? null
           : preparedAgentTurn !== null ? 'agent_turn_v2' : 'conversation_pipeline_v1';
 
+      // The action was already authorized atomically above. This late guard
+      // may remove unsupported prose, but it must not reinterpret or erase a
+      // valid payment/call effect. Unauthorized payment actions are rejected
+      // at the repair boundary before they reach this commit path.
       const canRetainSafeContent = verdict.content !== null
         && (!partialVetoOnPreparedTurn || !initialOfferLostInformation);
       if (canRetainSafeContent) {
@@ -1583,7 +1587,15 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     // rechazar acá. Esta escritura sólo ve un turno cuya `transition`
     // describe exactamente el texto que se entregó.
     if (preparedAgentTurn) {
-      await new PostgresConversationStateStoreV1(db).transition(preparedAgentTurn.transition);
+      const paymentLinkRequest = preparedAgentTurn.transition.payment_link_request;
+      await new PostgresConversationStateStoreV1(db).transition({
+        ...preparedAgentTurn.transition,
+        payment_link_request: paymentLinkRequest === undefined || paymentLinkRequest === null
+          ? paymentLinkRequest
+          : paymentLinkRequest.status === 'pending'
+            ? paymentLinkRequest
+            : { ...paymentLinkRequest, resolved_by_decision_id: decisionId },
+      });
       if (preparedAgentTurn.transition.payment_reported) {
         reportedPaymentContactId = turn.contact_id;
       }

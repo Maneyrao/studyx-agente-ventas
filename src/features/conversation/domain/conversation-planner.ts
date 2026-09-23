@@ -88,6 +88,7 @@ export function createDefaultConversationStateV1(identity: StateIdentity): Conve
     call_offer_status: 'not_offered',
     call_offer_count: 0,
     awaiting_reply: 'none',
+    payment_link_request: null,
     payment_reported_at: null,
     human_review_requested_at: null,
     consecutive_technical_fallbacks: 0,

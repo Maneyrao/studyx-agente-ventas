@@ -260,7 +260,7 @@ describe('plannerless Agent A authority', () => {
     });
   });
 
-  it('persists an explicit plan change but waits for confirmation before sending its link', () => {
+  it('sends the link when the customer selects a plan and explicitly requests it with complete intake', () => {
     const result = authorize({
       customerText: 'Mejor 6 cuotas, pasame el link.',
       state: state({
@@ -282,15 +282,17 @@ describe('plannerless Agent A authority', () => {
 
     expect(result).toMatchObject({
       ok: true,
-      action: { type: 'none' },
+      action: {
+        type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+      },
       transition: {
-        stage: 'plan_selected', selected_payment_plan: 'monthly_6',
-        awaiting_reply: 'payment_confirmation',
+        stage: 'payment_link_sent', selected_payment_plan: 'monthly_6',
+        awaiting_reply: 'none',
       },
     });
   });
 
-  it('does not materialize a link in the same turn that selects the plan', () => {
+  it('materializes a link in the same turn that selects the plan and requests checkout', () => {
     const result = authorize({
       state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected' }),
       intake: completeIntake,
@@ -307,8 +309,100 @@ describe('plannerless Agent A authority', () => {
 
     expect(result).toMatchObject({
       ok: true,
-      action: { type: 'none' },
-      transition: { stage: 'plan_selected', awaiting_reply: 'payment_confirmation' },
+      action: {
+        type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+      },
+      transition: { stage: 'payment_link_sent', awaiting_reply: 'none' },
+    });
+  });
+
+  it('consumes a durable payment-link request when the final contact detail arrives', () => {
+    const result = authorize({
+      customerText: 'Mi teléfono es +54 9 11 1234 5678',
+      state: state({
+        selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected', awaiting_reply: 'contact_details',
+        payment_link_request: {
+          status: 'pending', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+          requested_by_turn_id: '44444444-4444-4444-8444-444444444444',
+          resolved_by_decision_id: null,
+        },
+      } as Partial<ConversationStateV1>),
+      intake: completeIntake,
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'provide_contact_details', secondary_moves: [], vetoes: [],
+          confidence: 0.99,
+        },
+        response: { messages: ['Listo, te comparto el link seguro.'] },
+        proposed_action: { type: 'none' },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: {
+        type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+      },
+      transition: {
+        stage: 'payment_link_sent', awaiting_reply: 'none',
+        payment_link_request: { status: 'consumed' },
+      },
+    });
+  });
+
+  it('does not replace the selected course when the customer only asks about another one', () => {
+    const result = authorize({
+      customerText: 'Y cuánto dura Excel?',
+      state: state({
+        selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected', awaiting_reply: 'payment_confirmation',
+      }),
+      intake: completeIntake,
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
+          course_reference: 'excel', confidence: 0.99,
+        },
+        response: { messages: ['Excel Integral tiene 12 clases.'] },
+        used_fact_ids: ['offering:excel_integral:duration:v1'],
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      transition: {
+        selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected', awaiting_reply: 'payment_confirmation',
+      },
+    });
+  });
+
+  it('does not regress a completed checkout when contact data is corrected afterwards', () => {
+    const result = authorize({
+      customerText: 'Corrijo mi correo: matia.nuevo@example.com',
+      state: state({
+        selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6',
+        stage: 'payment_link_sent', awaiting_reply: 'none',
+        payment_link_request: {
+          status: 'consumed', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+          requested_by_turn_id: '44444444-4444-4444-8444-444444444444',
+          resolved_by_decision_id: '55555555-5555-4555-8555-555555555555',
+        },
+      } as Partial<ConversationStateV1>),
+      intake: completeIntake,
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'provide_contact_details', secondary_moves: [], vetoes: [],
+          confidence: 0.99,
+        },
+        response: { messages: ['Actualicé el correo.'] },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      transition: { stage: 'payment_link_sent', awaiting_reply: 'none' },
     });
   });
 
@@ -722,7 +816,7 @@ describe('payment link consent across intake', () => {
     expect(details).toMatchObject({ ok: true, action: { type: 'none' } });
   });
 
-  it('keeps a fabricated payment deferral visible but preserves pending intake', () => {
+  it('persists the model-owned payment deferral without reclassifying its wording', () => {
     const result = authorize({
       customerText: 'Inés',
       state: state({
@@ -742,11 +836,11 @@ describe('payment link consent across intake', () => {
 
     expect(result).toMatchObject({
       ok: true,
-      transition: { stage: 'plan_selected', awaiting_reply: 'contact_details' },
+      transition: { stage: 'plan_selected', awaiting_reply: 'none' },
     });
   });
 
-  it('keeps a fabricated purchase decline visible but does not close the durable sale', () => {
+  it('persists the model-owned purchase decline without reclassifying its wording', () => {
     const result = authorize({
       customerText: 'Inés',
       state: state({
@@ -766,7 +860,7 @@ describe('payment link consent across intake', () => {
 
     expect(result).toMatchObject({
       ok: true,
-      transition: { stage: 'plan_selected', awaiting_reply: 'contact_details' },
+      transition: { stage: 'closed', awaiting_reply: 'none' },
     });
   });
 
@@ -809,8 +903,8 @@ describe('payment link consent across intake', () => {
       }),
       proposal: proposal({
         move: {
-          schema_version: 1, move: 'decline_purchase', secondary_moves: [],
-          vetoes: ['purchase'], confidence: 0.99,
+          schema_version: 1, move: 'defer_payment', secondary_moves: [],
+          vetoes: ['payment_link'], confidence: 0.99,
         },
         response: { messages: ['Entiendo, podemos retomarlo cuando te quede cómodo.'] },
       }),

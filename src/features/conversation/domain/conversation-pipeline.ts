@@ -75,6 +75,16 @@ export type AwaitingReplyV1 = typeof AWAITING_REPLIES_V1[number];
 export type ResponseGoalV1 = typeof RESPONSE_GOALS_V1[number];
 export type MissingInformationV1 = typeof MISSING_INFORMATION_V1[number];
 
+export interface PaymentLinkRequestV1 {
+  readonly status: 'pending' | 'withdrawn' | 'consumed';
+  readonly offering_code: string;
+  readonly payment_plan: SalesPaymentPlan;
+  /** Turno donde el cliente pidió el enlace. Lo completa el backend. */
+  readonly requested_by_turn_id: string | null;
+  /** Decisión que consumió o retiró el pedido. Lo completa el commit. */
+  readonly resolved_by_decision_id: string | null;
+}
+
 export interface ConversationMoveV1 {
   readonly schema_version: 1;
   readonly move: ConversationMoveKindV1;
@@ -97,6 +107,8 @@ export interface ConversationStateV1 {
   readonly call_offer_status: CallOfferStatusV1;
   readonly call_offer_count: 0 | 1 | 2;
   readonly awaiting_reply: AwaitingReplyV1;
+  /** Optional only for rolling compatibility with states created before v1. */
+  readonly payment_link_request?: PaymentLinkRequestV1 | null;
   /**
    * When the customer said they paid. A claim, never evidence: it authorizes
    * the operator-facing projection and nothing else. Verification is a
@@ -130,6 +142,8 @@ export interface ConversationStateTransitionV1 {
   readonly call_offer_count?: 0 | 1 | 2;
   readonly awaiting_reply: AwaitingReplyV1;
   readonly payment_reported: boolean;
+  /** Omitido por rutas legacy: en ese caso el store conserva el valor actual. */
+  readonly payment_link_request?: PaymentLinkRequestV1 | null;
   /**
    * Una transición normal ES un turno que salió bien, así que reinicia el
    * contador. Se deja opcional con default 0 a propósito: obligar a cada

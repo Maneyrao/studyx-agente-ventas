@@ -526,6 +526,34 @@ describe('buildAgentAContextV1', () => {
     expect(context?.customer.contact_intake).toEqual(claimed.contact_intake);
   });
 
+  it('authorizes the pending payment request when the same turn completes contact intake', () => {
+    const claimed = claimedTurn();
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0]!,
+      content: 'Mi teléfono es +5491112345678',
+    };
+    claimed.contact_intake = {
+      nombre: 'Matías', apellido: 'Damonte', correo: 'matias@example.com', telefono: '+5491112345678',
+    };
+    claimed.contact_intake_missing = [];
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      selected_payment_plan: 'monthly_12',
+      stage: 'plan_selected',
+      awaiting_reply: 'contact_details',
+      payment_link_request: {
+        status: 'pending', offering_code: 'redes-informaticas', payment_plan: 'monthly_12',
+        requested_by_turn_id: '44444444-4444-4444-8444-444444444444',
+        resolved_by_decision_id: null,
+      },
+    } as typeof claimed.conversation_state_v1;
+
+    const context = buildAgentAContextV1(claimed);
+
+    expect(context?.capabilities.may_send_payment_link).toBe(true);
+  });
+
   it('authorizes the payment link only after contact confirmation is pending', () => {
     const claimed = claimedTurn();
     claimed.context.batch_messages[0] = {
@@ -632,7 +660,7 @@ describe('buildAgentAContextV1', () => {
     expect(context?.capabilities.may_present_payment_options).toBe(false);
   });
 
-  it('projects an exact current course into the brain despite an older exploring state', () => {
+  it('exposes an exact current course without inventing a durable selection', () => {
     const claimed = claimedTurn();
     claimed.context.batch_messages[0] = {
       ...claimed.context.batch_messages[0],
@@ -659,9 +687,9 @@ describe('buildAgentAContextV1', () => {
     const context = buildAgentAContextV1(claimed);
 
     expect(context?.commercial_state).toMatchObject({
-      selected_offering_code: 'redes-informaticas',
+      selected_offering_code: null,
       selected_payment_plan: null,
-      stage: 'course_selected',
+      stage: 'exploring',
     });
     expect(context?.catalog.selected_offering?.facts.map((fact) => fact.kind)).toEqual([
       'offering_name', 'offering_description', 'offering_duration', 'offering_modality',
@@ -669,7 +697,7 @@ describe('buildAgentAContextV1', () => {
     ]);
     expect(context?.capabilities).toMatchObject({
       may_offer_call: true,
-      may_present_payment_options: true,
+      may_present_payment_options: false,
     });
   });
 
@@ -1590,6 +1618,47 @@ describe('alcance del turno actual', () => {
     expect(context?.commercial_state.selected_offering_code).toBe('redes-informaticas');
   });
 
+  it('expone otro curso consultado sin reemplazar la selección durable ni su plan', () => {
+    const turn = claimedTurn();
+    turn.context.batch_messages[0] = {
+      ...turn.context.batch_messages[0]!,
+      content: 'Y Community Manager de qué se trata?',
+    };
+    turn.conversation_state_v1 = {
+      ...turn.conversation_state_v1!,
+      selected_offering_code: 'redes-informaticas',
+      selected_payment_plan: 'monthly_6',
+      stage: 'plan_selected',
+      awaiting_reply: 'payment_confirmation',
+    };
+    turn.catalog_resolution = {
+      kind: 'exact', offeringCode: 'community_manager', displayName: 'Community Manager',
+      academy: 'Marketing', match: 'canonical',
+    };
+    turn.catalog_index = {
+      ...turn.catalog_index!,
+      offerings: [
+        ...turn.catalog_index!.offerings,
+        { code: 'community_manager', display_name: 'Community Manager', academy: 'Marketing', aliases: [] },
+      ],
+    };
+    turn.business_context!.offerings = [
+      ...turn.business_context!.offerings,
+      {
+        ...turn.business_context!.offerings[0]!,
+        code: 'community_manager',
+        display_name: 'Community Manager',
+        description: 'Gestión profesional de comunidades digitales.',
+      },
+    ];
+
+    const context = buildAgentAContextV1(turn, 'Camila');
+
+    expect(context?.commercial_state.selected_offering_code).toBe('redes-informaticas');
+    expect(context?.commercial_state.selected_payment_plan).toBe('monthly_6');
+    expect(context?.catalog.selected_offering?.code).toBe('community_manager');
+  });
+
   it('mantiene la fase durable: el turno vago no retrocede la venta', () => {
     const context = buildAgentAContextV1(vagueTurn('?'), 'Camila');
 
@@ -1630,7 +1699,7 @@ describe('obligaciones de fase (variante rígida, conservada para comparación)'
       .not.toContain('greeting');
   });
 
-  it('debe la pregunta de diagnóstico en el turno en que se elige el curso', () => {
+  it('no da por elegido un curso sólo porque la resolución actual es exacta', () => {
     const claimed = turnWith((turn) => {
       (turn as unknown as Record<string, unknown>).conversation_state_v1 = {
         ...turn.conversation_state_v1, selected_offering_code: null, stage: 'exploring',
@@ -1638,7 +1707,7 @@ describe('obligaciones de fase (variante rígida, conservada para comparación)'
     });
 
     expect(buildAgentAContextV1(claimed, 'Camila', { rigidObligations: true })?.obligations!.owes)
-      .toContain('diagnostic_question');
+      .not.toContain('diagnostic_question');
   });
 
   it('no puede dar precio mientras no haya un curso elegido', () => {

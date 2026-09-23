@@ -225,6 +225,7 @@ export interface ClaimedTurn {
     | 'call_offer_status'
     | 'call_offer_count'
     | 'awaiting_reply'
+    | 'payment_link_request'
     | 'version'
   > & { readonly payment_reported: boolean } | null;
   /** Current-batch catalog verdict from the complete compact identity index. */
@@ -1020,6 +1021,9 @@ export async function claimBatch(
           awaiting_reply: currentSelection.offering_code === null && !mayInheritPersistedSelection
             ? 'none' as const
             : persistedConversationState.awaiting_reply,
+          payment_link_request: currentSelection.offering_code === null && !mayInheritPersistedSelection
+            ? null
+            : persistedConversationState.payment_link_request,
           payment_reported: persistedConversationState.payment_reported_at !== null,
           version: persistedConversationState.version,
         }
@@ -1031,6 +1035,7 @@ export async function claimBatch(
           call_offer_status: salesContext.open_call_offer ? 'offered' as const : 'not_offered' as const,
           call_offer_count: salesContext.open_call_offer ? 1 as const : 0 as const,
           awaiting_reply: salesContext.open_call_offer ? 'call_or_chat' as const : 'none' as const,
+          payment_link_request: null,
           payment_reported: false,
           version: 0,
         }

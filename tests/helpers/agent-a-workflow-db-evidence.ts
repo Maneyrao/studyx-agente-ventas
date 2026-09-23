@@ -44,6 +44,7 @@ export interface WorkflowDbEvidenceV1 {
     readonly awaitingReply: string;
     readonly paymentReportedAt: string | null;
     readonly humanReviewRequestedAt: string | null;
+    readonly paymentLinkRequest: unknown;
   } | null;
   readonly permission: WorkflowBlockingEvidenceV1['permission'];
   readonly decisions: readonly WorkflowDecisionObservationV1[];
@@ -103,6 +104,7 @@ export async function readWorkflowDbEvidenceV1(input: {
       SELECT selected_offering_code, selected_payment_plan, stage, call_preference,
              call_offer_status, call_offer_count, awaiting_reply,
              payment_reported_at, human_review_requested_at
+             , payment_link_request
       FROM conversation_sales_context_states_v1
       WHERE conversation_id = ${row.conversation_id}::uuid
       LIMIT 1
@@ -200,6 +202,7 @@ export async function readWorkflowDbEvidenceV1(input: {
             awaitingReply: String(state.awaiting_reply ?? ''),
             paymentReportedAt: (state.payment_reported_at as string | null) ?? null,
             humanReviewRequestedAt: (state.human_review_requested_at as string | null) ?? null,
+            paymentLinkRequest: state.payment_link_request ?? null,
           }
         : null,
       decisions: decisions.map((decision) => ({

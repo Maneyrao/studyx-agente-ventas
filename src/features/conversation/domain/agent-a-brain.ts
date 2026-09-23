@@ -70,6 +70,11 @@ export interface AgentAContextV1 {
     readonly call_offer_status: 'not_offered' | 'offered' | 'accepted' | 'declined';
     readonly call_offer_count: 0 | 1 | 2;
     readonly awaiting_reply: 'none' | 'area_choice' | 'course_choice' | 'call_or_chat' | 'payment_plan' | 'payment_confirmation';
+    readonly payment_link_request?: {
+      readonly status: 'pending' | 'withdrawn' | 'consumed';
+      readonly offering_code: string;
+      readonly payment_plan: AgentAPaymentPlanV1;
+    } | null;
   };
   readonly catalog: {
     readonly selected_offering: {

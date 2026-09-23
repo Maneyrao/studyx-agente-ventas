@@ -444,7 +444,6 @@ describe('materializePaymentLinkAction', () => {
     expect(materializePaymentLinkAction({
       action: action({ plan_code: 'one_time' }),
       authorizedOfferingCode: CANONICAL_OFFERING_SKU,
-      backendAuthorizedPlanCode: 'one_time',
       selectedPlanCode: 'one_time',
       batchMessages: messages,
       businessSnapshot,
@@ -452,6 +451,22 @@ describe('materializePaymentLinkAction', () => {
       modelResponseText: 'Te comparto el link.',
       resolver,
     })).toEqual({ ok: false, reason: 'AMBIGUOUS_OR_ABSENT_CHOICE' });
+  });
+
+  it('trusts the structured final authorization when an earlier clause was corrected in the same batch', () => {
+    const result = materializePaymentLinkAction({
+      action: action({ plan_code: 'monthly_6' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
+      backendAuthorizedPlanCode: 'monthly_6',
+      selectedPlanCode: 'monthly_6',
+      batchMessages: [msg('No me mandes el link.'), msg('Cambio de idea: sí, enviame el link del plan de 6 cuotas.')],
+      businessSnapshot,
+      contact: allowedContact(),
+      modelResponseText: 'Te comparto el enlace seguro.',
+      resolver,
+    });
+
+    expect(result.ok).toBe(true);
   });
 
   it('accepts only the plan rederived by the backend V1 planner for semantic wording', () => {

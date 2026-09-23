@@ -6,6 +6,7 @@ import type {
   CallPreferenceV1,
   CanonicalFactV1,
   ConversationStateV1,
+  PaymentLinkRequestV1,
 } from './conversation-pipeline';
 import type { SalesContextStage, SalesPaymentPlan } from '@/features/sales/domain/sales-context';
 import {
@@ -20,8 +21,6 @@ import type { ContactIntakeV1 } from './conversation-planner';
 import {
   classifyCurrentPaymentIntent,
   derivePaymentPlanSelectionFromBatch,
-  hasExplicitPurchaseDecline,
-  hasTemporalPaymentDeferral,
 } from '@/features/payments/domain/payment-choice-policy';
 
 export interface PlannerlessOfferingV2 {
@@ -39,6 +38,7 @@ export interface AgentTurnStateTransitionV2 {
   readonly call_offer_count: 0 | 1 | 2;
   readonly awaiting_reply: AwaitingReplyV1;
   readonly payment_reported: boolean;
+  readonly payment_link_request: PaymentLinkRequestV1 | null;
 }
 
 export type AgentTurnRejectionReasonV2 =
@@ -122,8 +122,13 @@ export function authorizeAgentTurnV2(input: {
   const { proposal, state } = input;
   const moves = allMoves(proposal);
   const requestedOffering = resolveOffering(proposal.move.course_reference, input.offerings);
-  const changesCourse = moves.has('select_course') || moves.has('ask_course_information');
-  const selectedOffering = requestedOffering ?? state.selected_offering_code;
+  const changesCourse = moves.has('select_course');
+  const selectedOffering = changesCourse
+    ? requestedOffering ?? state.selected_offering_code
+    : state.selected_offering_code;
+  const factOffering = moves.has('ask_course_information') && requestedOffering !== null
+    ? requestedOffering
+    : selectedOffering;
   const courseChanged = selectedOffering !== state.selected_offering_code;
   const currentPaymentMessages = (input.current_customer_messages ?? [])
     .map((content) => ({ content }));
@@ -169,14 +174,14 @@ export function authorizeAgentTurnV2(input: {
     }
     const fact = factsById.get(factId);
     const navigationFact = fact?.kind === 'area_name' || fact?.kind === 'offering_name';
-    const browsingCourseDetail = selectedOffering === null && fact !== undefined
+    const browsingCourseDetail = factOffering === null && fact !== undefined
       && (fact.kind === 'offering_description'
         || fact.kind === 'offering_duration'
         || fact.kind === 'offering_modality')
       && input.offerings.some((offering) => offering.code === fact.offering_code);
     const selectedOfferingFact = fact !== undefined
       && fact.kind !== 'payment_link'
-      && fact.offering_code === selectedOffering;
+      && fact.offering_code === factOffering;
     if (fact && (navigationFact || browsingCourseDetail || selectedOfferingFact)) authorizedFactIds.push(factId);
     else reasons.push('FACT_NOT_AUTHORIZED');
   }
@@ -242,29 +247,28 @@ export function authorizeAgentTurnV2(input: {
   // as conversational quality; it is not transaction authority.
 
   let action: AgentAProposedActionV1 = { type: 'none' };
-  const currentPaymentDeferral = hasTemporalPaymentDeferral(
-    currentPaymentMessages,
-    state.awaiting_reply === 'payment_confirmation' || state.awaiting_reply === 'contact_details',
-  );
-  const currentPurchaseDecline = hasExplicitPurchaseDecline(
-    currentPaymentMessages,
-  );
-  const paymentDeferred = (moves.has('decline_purchase') && currentPurchaseDecline) || (
-    currentPaymentDeferral && (
-      moves.has('defer_payment')
-      || proposal.move.vetoes.includes('payment_link')
-      || proposal.move.vetoes.includes('purchase')
-    )
-  );
-  const intakeCompletedBeforeThisTurn = state.awaiting_reply === 'payment_confirmation'
-    && !selectsPaymentPlanNow
-    && !moves.has('provide_contact_details');
+  // DeepSeek owns the semantic move. Reclassifying that move a second time
+  // with text patterns made a correct deferral disappear when the customer
+  // used wording the regex did not know. The backend still owns the effect:
+  // these structured moves can only withdraw consent or close the sale; they
+  // can never authorize a payment link.
+  const paymentDeferred = moves.has('defer_payment');
+  const purchaseDeclined = moves.has('decline_purchase') && !paymentDeferred;
+  const paymentVetoed = proposal.move.vetoes.includes('payment_link')
+    || proposal.move.vetoes.includes('purchase');
+  const paymentRequestWithdrawn = paymentDeferred || purchaseDeclined || paymentVetoed;
+  const pendingPaymentRequest = state.payment_link_request?.status === 'pending'
+    && state.payment_link_request.offering_code === selectedOffering
+    && state.payment_link_request.payment_plan === selectedPlan
+    ? state.payment_link_request
+    : null;
   const paymentLinkAuthorized = !plannedPaymentReported
-    && intakeCompletedBeforeThisTurn
     && stateFacts.has('state:intake_recorded:v1');
   // Asking for the next missing field is also prompt guidance. Missing intake
   // remains a hard boundary only for the payment side effect below.
-  const paymentLinkRequested = !paymentDeferred && moves.has('request_payment_link');
+  const paymentLinkRequestedNow = !paymentRequestWithdrawn && moves.has('request_payment_link');
+  const paymentLinkRequested = paymentLinkRequestedNow
+    || (!paymentRequestWithdrawn && pendingPaymentRequest !== null && moves.has('provide_contact_details'));
   if (proposal.proposed_action.type === 'request_call_now') {
     if (!requestedCallNow || proposal.move.vetoes.includes('call')) reasons.push('ACTION_NOT_AUTHORIZED');
     else action = resumesAcceptedCall && state.stage !== 'handoff'
@@ -330,6 +334,25 @@ export function authorizeAgentTurnV2(input: {
   let callOfferStatus = state.call_offer_status;
   let callOfferCount = state.call_offer_count;
   let awaitingReply = state.awaiting_reply;
+  let paymentLinkRequest: PaymentLinkRequestV1 | null = state.payment_link_request ?? null;
+
+  if (paymentLinkRequestedNow && selectedOffering !== null && selectedPlan !== null) {
+    paymentLinkRequest = {
+      status: 'pending',
+      offering_code: selectedOffering,
+      payment_plan: selectedPlan,
+      requested_by_turn_id: null,
+      resolved_by_decision_id: null,
+    };
+  } else if (paymentRequestWithdrawn || (changesCourse && courseChanged) || (
+    selectsPaymentPlanNow && selectedPlan !== state.selected_payment_plan
+  )) {
+    paymentLinkRequest = paymentLinkRequest === null ? null : {
+      ...paymentLinkRequest,
+      status: 'withdrawn',
+      resolved_by_decision_id: null,
+    };
+  }
 
   if (changesCourse && requestedOffering) {
     if (courseChanged) {
@@ -348,7 +371,7 @@ export function authorizeAgentTurnV2(input: {
     awaitingReply = 'payment_confirmation';
   }
   if (
-    moves.has('request_payment_link') && !paymentDeferred
+    moves.has('request_payment_link') && !paymentRequestWithdrawn
     && selectedOffering !== null
     && selectedPlan !== null
     && !stateFacts.has('state:intake_recorded:v1')
@@ -359,7 +382,7 @@ export function authorizeAgentTurnV2(input: {
     awaitingReply = 'contact_details';
   }
   if (
-    moves.has('request_payment_link') && !paymentDeferred
+    moves.has('request_payment_link') && !paymentRequestWithdrawn
     && selectedOffering !== null
     && selectedPlan !== null
     && stateFacts.has('state:intake_recorded:v1')
@@ -375,6 +398,7 @@ export function authorizeAgentTurnV2(input: {
     && selectedOffering !== null
     && selectedPlan !== null
     && stateFacts.has('state:intake_recorded:v1')
+    && state.stage !== 'payment_link_sent'
   ) {
     stage = 'plan_selected';
     awaitingReply = 'payment_confirmation';
@@ -392,7 +416,9 @@ export function authorizeAgentTurnV2(input: {
     callOfferCount = Math.min(2, state.call_offer_count + 1) as 1 | 2;
     if (callPreference === 'declined') callPreference = 'chat';
     callOfferStatus = 'offered';
-    if (awaitingReply !== 'contact_details') awaitingReply = 'call_or_chat';
+    if (awaitingReply !== 'contact_details'
+      && awaitingReply !== 'payment_confirmation'
+      && paymentLinkRequest?.status !== 'pending') awaitingReply = 'call_or_chat';
   }
   if (action.type === 'request_call_now') {
     callPreference = 'call';
@@ -414,9 +440,16 @@ export function authorizeAgentTurnV2(input: {
     nextPlan = action.payment_plan;
     awaitingReply = 'none';
     stage = 'payment_link_sent';
+    paymentLinkRequest = {
+      status: 'consumed',
+      offering_code: action.offering_code,
+      payment_plan: action.payment_plan,
+      requested_by_turn_id: paymentLinkRequest?.requested_by_turn_id ?? null,
+      resolved_by_decision_id: null,
+    };
   }
-  if (paymentDeferred) awaitingReply = 'none';
-  if (moves.has('decline_purchase') && currentPurchaseDecline) {
+  if (paymentRequestWithdrawn) awaitingReply = 'none';
+  if (purchaseDeclined) {
     stage = 'closed';
     awaitingReply = 'none';
   }
@@ -437,6 +470,7 @@ export function authorizeAgentTurnV2(input: {
       call_offer_count: callOfferCount,
       awaiting_reply: awaitingReply,
       payment_reported: plannedPaymentReported,
+      payment_link_request: paymentLinkRequest,
     },
   };
 }

@@ -194,6 +194,42 @@ it('persists a delivered phone confirmation, preserves the full name and sends e
   expect(last.persisted.deliveredLinks).toEqual(['https://example.invalid/eval/12m']);
 }, 120_000);
 
+it('keeps an explicit link request while contact data arrives and consumes it exactly once', async () => {
+  const c = conversation();
+  const requested = await c.send(
+    'Quiero Community Manager, elijo 6 cuotas y quiero el link. Soy Ana Pérez, ana@example.test.',
+    () => proposal('select_course', 'Para Community Manager me falta tu teléfono completo para enviarte el link.', {
+      move: {
+        schema_version: 1, move: 'select_course',
+        secondary_moves: ['select_payment_plan', 'request_payment_link'], vetoes: [],
+        course_reference: 'community_manager', payment_plan: 'monthly_6', confidence: 1,
+      },
+    }),
+  );
+  expect(requested.persisted.deliveredLinks).toEqual([]);
+  expect(requested.persisted.state?.paymentLinkRequest).toMatchObject({
+    status: 'pending', offering_code: 'community_manager', payment_plan: 'monthly_6',
+  });
+
+  const paid = await c.send('Mi teléfono es +54 9 11 5555 0202', context => {
+    expect(context.commercial_state.payment_link_request).toMatchObject({
+      status: 'pending', offering_code: 'community_manager', payment_plan: 'monthly_6',
+    });
+    expect(context.capabilities.intake_missing).toEqual([]);
+    expect(context.capabilities.may_send_payment_link).toBe(true);
+    return proposal('provide_contact_details', 'Listo, te comparto el enlace seguro.');
+  });
+
+  expect(paid.persisted.deliveredLinks).toEqual(['https://example.invalid/eval/6m']);
+  expect(paid.persisted.decisions.filter(d => d.businessActionType === 'send_payment_link')).toHaveLength(1);
+  expect(paid.persisted.state?.paymentLinkRequest).toMatchObject({
+    status: 'consumed', offering_code: 'community_manager', payment_plan: 'monthly_6',
+  });
+  const replay = await c.retryLast();
+  expect(replay.recordedLinks).toEqual(['https://example.invalid/eval/6m']);
+  expect(replay.decisions.filter(d => d.businessActionType === 'send_payment_link')).toHaveLength(1);
+}, 120_000);
+
 it('cancels pending call intent when the model interprets the choice to continue here', async () => {
   const c = conversation();
   await c.send('Dale, llamame', () => proposal('request_call', 'A qué número con código de país y área puedo llamarte?'));

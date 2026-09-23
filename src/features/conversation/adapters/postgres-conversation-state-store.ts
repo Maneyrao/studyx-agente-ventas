@@ -1,8 +1,10 @@
 import type { DbClient } from '@/lib/db/types';
+import { jsonbParam } from '@/lib/db/json';
 import { sql } from '@/lib/db/orchestrator';
 import type {
   ConversationStateTransitionV1,
   ConversationStateV1,
+  PaymentLinkRequestV1,
   TechnicalFallbackRecordV1,
 } from '../domain/conversation-pipeline';
 import { parseConversationStateVersionV1 } from '../domain/state-version';
@@ -17,6 +19,13 @@ interface ConversationStateRowV1 extends Omit<
   payment_reported_at: Date | string | null;
   human_review_requested_at: Date | string | null;
   version: number | string;
+}
+
+function paymentLinkRequest(value: unknown): PaymentLinkRequestV1 | null {
+  if (value === null || value === undefined) return null;
+  const parsed = typeof value === 'string' ? JSON.parse(value) as unknown : value;
+  if (typeof parsed !== 'object' || parsed === null) throw new Error('PAYMENT_LINK_REQUEST_INVALID');
+  return parsed as PaymentLinkRequestV1;
 }
 
 function iso(value: Date | string): string {
@@ -41,6 +50,7 @@ function mapRow(row: ConversationStateRowV1): ConversationStateV1 {
     updated_at: iso(row.updated_at),
     payment_reported_at: isoOrNull(row.payment_reported_at),
     human_review_requested_at: isoOrNull(row.human_review_requested_at),
+    payment_link_request: paymentLinkRequest(row.payment_link_request),
   };
 }
 
@@ -69,6 +79,8 @@ export class PostgresConversationStateStoreV1 implements ConversationStateStoreV
   }
 
   async transition(input: ConversationStateTransitionV1): Promise<ConversationStateV1> {
+    const writesPaymentLinkRequest = input.payment_link_request !== undefined;
+    const serializedPaymentLinkRequest = jsonbParam(this.db, input.payment_link_request);
     const rows = await this.db<ConversationStateRowV1[]>`
       WITH eligible AS (
         SELECT workspace.id AS workspace_id
@@ -102,13 +114,15 @@ export class PostgresConversationStateStoreV1 implements ConversationStateStoreV
           workspace_id, conversation_id, contact_id,
           selected_offering_code, selected_payment_plan, stage,
           call_preference, call_offer_status, call_offer_count, awaiting_reply,
-          payment_reported_at, consecutive_technical_fallbacks, source_turn_id
+          payment_reported_at, payment_link_request,
+          consecutive_technical_fallbacks, source_turn_id
         )
         SELECT
           eligible.workspace_id, ${input.conversation_id}::uuid, ${input.contact_id}::uuid,
           ${input.selected_offering_code}, ${input.selected_payment_plan}, ${input.stage},
           ${input.call_preference}, ${input.call_offer_status}, ${input.call_offer_count ?? 0}, ${input.awaiting_reply},
           CASE WHEN ${input.payment_reported} THEN now() END,
+          ${serializedPaymentLinkRequest},
           ${input.consecutive_technical_fallbacks ?? 0},
           ${input.source_turn_id}::uuid
         FROM eligible
@@ -132,6 +146,10 @@ export class PostgresConversationStateStoreV1 implements ConversationStateStoreV
               conversation_sales_context_states_v1.payment_reported_at,
               EXCLUDED.payment_reported_at
             ),
+            payment_link_request = CASE
+              WHEN ${writesPaymentLinkRequest} THEN EXCLUDED.payment_link_request
+              ELSE conversation_sales_context_states_v1.payment_link_request
+            END,
             -- Una transición normal es un turno que salió bien: reinicia el
             -- contador. La marca de revisión NO se toca: es histórica.
             consecutive_technical_fallbacks = EXCLUDED.consecutive_technical_fallbacks,
@@ -146,13 +164,13 @@ export class PostgresConversationStateStoreV1 implements ConversationStateStoreV
           workspace_id, conversation_id, contact_id, state_version, source_turn_id,
           selected_offering_code, selected_payment_plan, stage,
           call_preference, call_offer_status, call_offer_count, awaiting_reply,
-          payment_reported_at
+          payment_reported_at, payment_link_request
         )
         SELECT
           workspace_id, conversation_id, contact_id, version, source_turn_id,
           selected_offering_code, selected_payment_plan, stage,
           call_preference, call_offer_status, call_offer_count, awaiting_reply,
-          payment_reported_at
+          payment_reported_at, payment_link_request
         FROM upserted
         ON CONFLICT DO NOTHING
       ), resolved AS (
