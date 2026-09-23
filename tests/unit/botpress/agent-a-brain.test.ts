@@ -93,6 +93,15 @@ afterEach(() => {
 });
 
 describe('Agent A Brain V1', () => {
+  it('canonicalizes phone separators without inferring or changing digits', () => {
+    const parsed = parseAgentATurnProposalV1(proposal({ confirmed_phone: '+54 11 5555 0101' }), context());
+    expect(parsed.confirmed_phone).toBe('+541155550101');
+    expect(BackendAgentATurnProposalV1Schema.safeParse(parsed).success).toBe(true);
+    for (const phone of ['11 5555 0101', '+54 extension 11', '+54 11 5555 0101 o +54 11 5555 0102']) {
+      expect(() => parseAgentATurnProposalV1(proposal({ confirmed_phone: phone }), context())).toThrow(AgentABrainError);
+    }
+  });
+
   it('normalizes only opening punctuation and unmistakable voseo in customer-facing copy', () => {
     expect(normalizeCustomerFacingSpanishV1(
       '¡Buenísimo! ¿Querés que te llame? Si preferís, contame qué tenés en mente.',

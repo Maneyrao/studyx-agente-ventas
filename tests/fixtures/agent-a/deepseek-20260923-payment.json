@@ -1,0 +1,150 @@
+[
+  {
+    "customer": "Quiero inscribirme en Community Manager y pagar en 12 cuotas. Me llamo Ludmi.",
+    "proposal": {
+      "schema_version": 1,
+      "move": {
+        "schema_version": 1,
+        "move": "select_course",
+        "secondary_moves": [
+          "select_payment_plan",
+          "provide_contact_details"
+        ],
+        "vetoes": [],
+        "course_reference": "community_manager",
+        "area_reference": null,
+        "payment_plan": "monthly_12",
+        "confidence": 0.95
+      },
+      "response": {
+        "messages": [
+          "Perfecto, Ludmi. Community Manager son 16 clases online, con estrategias de Social Media, campañas digitales, manejo de crisis y medición de resultados. El plan de 12 pagos mensuales de USD 30 queda registrado.",
+          "Para avanzar con la inscripción me faltan tu apellido, tu correo y tu teléfono con código de país y área."
+        ],
+        "call_offer": null
+      },
+      "proposed_action": {
+        "type": "none"
+      },
+      "confirmed_phone": null,
+      "repair_of": null,
+      "used_fact_ids": [
+        "offering:community_manager:name:v1",
+        "offering:community_manager:description:v1",
+        "offering:community_manager:duration:v1",
+        "offering:community_manager:modality:v1",
+        "payment:community_manager:monthly_12:label:v1",
+        "payment:community_manager:monthly_12:price:v1"
+      ],
+      "used_memory_ids": [],
+      "memory_candidates": [
+        {
+          "type": "preference",
+          "key": "payment_plan",
+          "value": "12 pagos mensuales de USD 30",
+          "source_quote": "pagar en 12 cuotas",
+          "confidence": 0.95
+        }
+      ]
+    }
+  },
+  {
+    "customer": "Ludmi Medina, ludmi@example.test. Soy de Argentina y mi celular es 11 5555 0101.",
+    "proposal": {
+      "schema_version": 1,
+      "move": {
+        "schema_version": 1,
+        "move": "provide_contact_details",
+        "secondary_moves": [],
+        "vetoes": [],
+        "course_reference": null,
+        "area_reference": null,
+        "payment_plan": null,
+        "confidence": 0.95
+      },
+      "response": {
+        "messages": [
+          "Gracias, Ludmi. Ya tengo tu apellido y tu correo. Para dejar el teléfono en formato internacional, ¿me confirmas que es +54 11 5555 0101?"
+        ],
+        "call_offer": null
+      },
+      "proposed_action": {
+        "type": "none"
+      },
+      "confirmed_phone": null,
+      "repair_of": null,
+      "used_fact_ids": [
+        "offering:community_manager:name:v1",
+        "payment:community_manager:monthly_12:label:v1"
+      ],
+      "used_memory_ids": [],
+      "memory_candidates": []
+    }
+  },
+  {
+    "customer": "Sí.",
+    "proposal": {
+      "schema_version": 1,
+      "move": {
+        "schema_version": 1,
+        "move": "provide_contact_details",
+        "secondary_moves": [],
+        "vetoes": [],
+        "course_reference": null,
+        "area_reference": null,
+        "payment_plan": null,
+        "confidence": 0.95
+      },
+      "response": {
+        "messages": [
+          "Gracias, Ludmi. Confirmo tus datos: Ludmi Medina, correo ludmi@example.test y teléfono +54 11 5555 0101, con el plan de 12 pagos mensuales de USD 30 para Community Manager. ¿Está todo correcto para enviarte el link de pago?"
+        ],
+        "call_offer": null
+      },
+      "proposed_action": {
+        "type": "none"
+      },
+      "confirmed_phone": "+54 11 5555 0101",
+      "repair_of": null,
+      "used_fact_ids": [
+        "offering:community_manager:name:v1",
+        "payment:community_manager:monthly_12:label:v1"
+      ],
+      "used_memory_ids": [],
+      "memory_candidates": []
+    }
+  },
+  {
+    "customer": "Sí.",
+    "proposal": {
+      "schema_version": 1,
+      "move": {
+        "schema_version": 1,
+        "move": "provide_contact_details",
+        "secondary_moves": [],
+        "vetoes": [],
+        "course_reference": null,
+        "area_reference": null,
+        "payment_plan": null,
+        "confidence": 0.9
+      },
+      "response": {
+        "messages": [
+          "Perfecto, Ludmi. Dejo registrado tu teléfono como +54 11 5555 0101. Ya tenemos tu nombre, tu correo y el plan de 12 pagos mensuales de USD 30 para Community Manager. ¿Confirmas que avanzamos con la inscripción?"
+        ],
+        "call_offer": null
+      },
+      "proposed_action": {
+        "type": "none"
+      },
+      "confirmed_phone": "+54 11 5555 0101",
+      "repair_of": null,
+      "used_fact_ids": [
+        "offering:community_manager:name:v1",
+        "payment:community_manager:monthly_12:label:v1"
+      ],
+      "used_memory_ids": [],
+      "memory_candidates": []
+    }
+  }
+]

@@ -1,6 +1,6 @@
 # Comparación del backend y límite de llamadas
 
-Producción investigada: `4f96b74`. Primera corrección: `dd49a2e`. La revisión de esa corrección encontró dos inconsistencias adicionales; ambas quedaron corregidas y verificadas en la ampliación posterior. **Los gates determinísticos pasan; el candidato todavía necesita evaluación con DeepSeek real antes del despliegue.** No se hicieron nuevas solicitudes pagas ni se modificó producción.
+Producción investigada: `4f96b74`. Las correcciones iniciales `dd49a2e` y `69af47e` se ampliaron después de probar DeepSeek real. **Las tres conversaciones reales completaron sus recorridos y las fallas nuevas quedaron cubiertas por regresiones exactas.** Ver [validación real y cierre](2026-09-23-live-validation.md) para el estado actual; los apartados siguientes conservan la revisión anterior.
 
 ## Qué mejoró
 
@@ -86,4 +86,4 @@ La conversación de pago `real-regression-167681eb-b4d2-4274-a570-f1b098033df1` 
 
 El contrato pide declarar las invitaciones en `response.call_offer`. Los detectores narrativos heredados no son una clasificación semántica exhaustiva: una invitación que el modelo omita de ese campo y redacte con una paráfrasis no reconocida puede escapar a la detección. No se afirma una garantía absoluta sobre texto libre ni se agregaron regex para perseguir variantes. La prueba real debe comprobar que el modelo respete el contrato además de redactar con naturalidad.
 
-El intento real anterior devolvió HTTP 401, sin propuesta. Siguen pendientes las tres conversaciones reales autorizadas, el despliegue de Vercel y Botpress desde un único SHA, health/readiness y el canary. La revisión automática rechazó buscar/validar credenciales en otros worktrees; esa autorización continúa pendiente. No se accedió a esas claves por otra vía.
+El acceso pendiente fue autorizado y las tres identidades se continuaron. La evaluación encontró cuatro fallos adicionales en confirmación telefónica y permisos de llamada, ya corregidos. Los resultados y límites actuales, incluida la redacción final v79/v45, están en [validación real y cierre](2026-09-23-live-validation.md).

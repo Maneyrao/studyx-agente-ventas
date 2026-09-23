@@ -267,7 +267,12 @@ export function authorizeAgentTurnV2(input: {
   const paymentLinkRequested = !paymentDeferred && moves.has('request_payment_link');
   if (proposal.proposed_action.type === 'request_call_now') {
     if (!requestedCallNow || proposal.move.vetoes.includes('call')) reasons.push('ACTION_NOT_AUTHORIZED');
-    else action = proposal.proposed_action;
+    else action = resumesAcceptedCall && state.stage !== 'handoff'
+      // This customer request was accepted before a callable number existed.
+      // Supplying the number resumes that permission; it does not accept a
+      // new agent offer. A fulfilled handoff cannot reuse this pending grant.
+      ? { type: 'request_call_now', reason: 'direct_request' }
+      : proposal.proposed_action;
   }
   if (proposal.proposed_action.type === 'send_payment_link') {
     const matchesState = selectedOffering !== null

@@ -1,0 +1,169 @@
+{
+  "opening": {
+    "identity": "real-20260923-opening-c9ec861c-1c60-47f6-94fd-d168e7678f07",
+    "turns": 5,
+    "contact": {
+      "phone": "+9990177033404",
+      "declaredPhone": null,
+      "name": null,
+      "email": null,
+      "lifecycleStatus": "active",
+      "blockedAt": null,
+      "phoneIsSynthetic": true
+    },
+    "state": {
+      "selectedOfferingCode": "instagram_emprendedores",
+      "selectedPaymentPlan": null,
+      "stage": "course_selected",
+      "callPreference": "chat",
+      "callOfferStatus": "declined",
+      "callOfferCount": 1,
+      "awaitingReply": "none",
+      "paymentReportedAt": null,
+      "humanReviewRequestedAt": null
+    },
+    "calls": [],
+    "links": [],
+    "failures_before_fixes": [
+      {
+        "turn": 1,
+        "failure": {
+          "event": "studyx.turn.agent_a_brain_v1",
+          "trace_id": "d6c21365-2499-4088-ab1c-435439f1c5dc",
+          "turn_id": "7defe9e8-8320-4c9c-ba98-1dcbae18bdc9",
+          "rollout_mode": "authoritative",
+          "brain_prompt_version": "studyx-agent-a-brain-v76",
+          "brain_model": "deepseek-v4-flash",
+          "brain_source": "fallback",
+          "brain_failure_reason": "policy_rejected",
+          "failure_code": "BRAIN_DEEPSEEK_HTTP_401",
+          "context_recent_turn_count": 0,
+          "context_memory_count": 0,
+          "used_memory_count": 0,
+          "call_offer_transition": "0->0",
+          "proposed_action_type": "none",
+          "authorized_action_type": "none"
+        }
+      }
+    ]
+  },
+  "call": {
+    "identity": "real-20260923-call-e43c29a7-563c-41ba-ad59-64351853ed5e",
+    "turns": 5,
+    "contact": {
+      "phone": "+9990180784130",
+      "declaredPhone": "+5491155550101",
+      "name": null,
+      "email": null,
+      "lifecycleStatus": "active",
+      "blockedAt": null,
+      "phoneIsSynthetic": true
+    },
+    "state": {
+      "selectedOfferingCode": null,
+      "selectedPaymentPlan": null,
+      "stage": "handoff",
+      "callPreference": "call",
+      "callOfferStatus": "accepted",
+      "callOfferCount": 0,
+      "awaitingReply": "none",
+      "paymentReportedAt": null,
+      "humanReviewRequestedAt": null
+    },
+    "calls": [
+      {
+        "id": "a35e77ea-399a-46a2-bd4c-2ac42a08312c",
+        "status": "requested",
+        "created_at": "2026-09-23T16:42:49.623Z"
+      }
+    ],
+    "links": [],
+    "failures_before_fixes": [
+      {
+        "turn": 2,
+        "failure": "DECISION_REJECTED"
+      },
+      {
+        "turn": 3,
+        "failure": "DECISION_REJECTED"
+      }
+    ]
+  },
+  "payment": {
+    "identity": "real-20260923-payment-0504a078-21ec-401c-97ae-f51838d2c62a",
+    "turns": 10,
+    "contact": {
+      "phone": "+9990181798008",
+      "declaredPhone": "+541155550101",
+      "name": "Ludmi Medina",
+      "email": "ludmi@example.test",
+      "lifecycleStatus": "active",
+      "blockedAt": null,
+      "phoneIsSynthetic": true
+    },
+    "state": {
+      "selectedOfferingCode": "community_manager",
+      "selectedPaymentPlan": "monthly_12",
+      "stage": "payment_link_sent",
+      "callPreference": "unknown",
+      "callOfferStatus": "not_offered",
+      "callOfferCount": 0,
+      "awaitingReply": "none",
+      "paymentReportedAt": null,
+      "humanReviewRequestedAt": null
+    },
+    "calls": [],
+    "links": [
+      "https://example.invalid/eval/12m"
+    ],
+    "failures_before_fixes": [
+      {
+        "turn": 3,
+        "failure": {
+          "event": "studyx.turn.agent_a_brain_v1",
+          "trace_id": "89b03190-faaa-4632-a456-726d51a6b780",
+          "turn_id": "57512e19-b489-481c-ac85-a2510f52466c",
+          "rollout_mode": "authoritative",
+          "brain_prompt_version": "studyx-agent-a-brain-v77",
+          "brain_model": "deepseek-v4-flash",
+          "brain_source": "fallback",
+          "brain_failure_reason": "invalid_schema",
+          "failure_code": "BRAIN_INVALID_SCHEMA",
+          "context_recent_turn_count": 4,
+          "context_memory_count": 0,
+          "used_memory_count": 0,
+          "call_offer_transition": "0->0",
+          "proposed_action_type": "none",
+          "authorized_action_type": "none"
+        }
+      },
+      {
+        "turn": 5,
+        "failure": {
+          "event": "studyx.turn.agent_a_brain_v1",
+          "trace_id": "ecc16a10-8029-48a6-b22a-2b670ad6b643",
+          "turn_id": "5ab8fbb5-bb50-49d0-a199-6fd197721063",
+          "rollout_mode": "authoritative",
+          "brain_prompt_version": "studyx-agent-a-brain-v77",
+          "brain_model": "deepseek-v4-flash",
+          "brain_source": "fallback",
+          "brain_failure_reason": "policy_rejected",
+          "failure_code": "PLANNERLESS_PROPOSAL_REJECTED:CALL_OFFER_MESSAGE_BOUNDARY_INVALID:call_offer",
+          "context_recent_turn_count": 6,
+          "context_memory_count": 0,
+          "used_memory_count": 0,
+          "call_offer_transition": "0->0",
+          "proposed_action_type": "none",
+          "authorized_action_type": "none"
+        }
+      }
+    ]
+  },
+  "deterministic": {
+    "conversations": 9,
+    "turns": 27
+  },
+  "provider_requests": 24,
+  "accounted_usd": 0.06949096,
+  "budget_note": "Conservative estimate; includes reservation for HTTP 401 without usage, not a billing receipt."
+}

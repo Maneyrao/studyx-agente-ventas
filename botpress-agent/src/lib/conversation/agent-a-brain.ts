@@ -721,6 +721,11 @@ function normalizeStrictProposal(value: unknown, context: AgentAContextV1): unkn
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const proposal = value as Record<string, unknown>;
   const normalizedProposal = { ...proposal };
+  if (typeof proposal.confirmed_phone === 'string') {
+    // Presentation separators do not change the asserted number. Preserve
+    // every digit and let the canonical schema reject local/ambiguous values.
+    normalizedProposal.confirmed_phone = proposal.confirmed_phone.replace(/[\s()-]/gu, '');
+  }
   const response = proposal.response;
   if (response && typeof response === 'object' && !Array.isArray(response)) {
     const messages = (response as Record<string, unknown>).messages;
@@ -1776,6 +1781,11 @@ export function validateAgentATurnProposalV1(input: {
 
   // V4 — la acción y sus precondiciones.
   const missingIntakeFields = new Set<string>(input.context.capabilities.intake_missing ?? []);
+  // The proposal may confirm the phone in this same transaction. Its receipt
+  // can be worded now: the backend proves delivery/provenance and persists the
+  // number before authorizing any outbound. This grants no call/payment action
+  // and does not cover other missing identity fields.
+  if (input.proposal.confirmed_phone) missingIntakeFields.delete('telefono');
   const claimsIncompleteIntakeAsRecorded = missingIntakeFields.size > 0
     && input.proposal.response.messages.some((message) => {
       const normalized = message.normalize('NFD')

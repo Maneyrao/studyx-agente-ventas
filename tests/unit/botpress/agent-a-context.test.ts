@@ -1832,7 +1832,7 @@ it('keeps the exhausted call budget authoritative despite a retrieved preference
 
 it('does not authorize an immediate call when contact intake was not loaded', () => {
   const claimed = claimedTurn();
-  delete claimed.contact_intake_missing;
+  delete (claimed as Partial<ClaimedTurn>).contact_intake_missing;
   const context = buildAgentAContextV1(claimed)!;
   expect(context.capabilities.intake_status).toBe('unknown');
   expect(context.capabilities.may_request_call_now).toBe(false);

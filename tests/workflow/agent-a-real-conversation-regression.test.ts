@@ -6,6 +6,8 @@ import { writeWorkflowReportV1 } from '../helpers/agent-a-workflow-report';
 import { openLocalTestDatabase } from '../helpers/db';
 import { configuration, secrets } from '../helpers/botpress-workflow-runtime';
 import type { AgentAContextV1, AgentATurnProposalV1 } from '../../botpress-agent/src/schemas/agent-a-brain';
+import recordedCall from '../fixtures/agent-a/deepseek-20260923-call.json';
+import recordedPayment from '../fixtures/agent-a/deepseek-20260923-payment.json';
 
 // Only the external model and physical delivery are fixtures. Context, validators,
 // signed HTTP, database, transitions and commit execute the production code.
@@ -50,6 +52,32 @@ beforeAll(async () => {
   });
 });
 afterAll(async () => { vi.unstubAllGlobals(); await db.end(); });
+
+it.each([2, 3])('persists the exact real-model confirmation %s with a formatted international phone', async index => {
+  const c = conversation();
+  for (const turn of recordedPayment.slice(0, 2)) await c.send(turn.customer, () => turn.proposal);
+  const confirmed = await c.send(recordedPayment[index].customer, () => recordedPayment[index].proposal);
+  expect(confirmed.evidence.workflowEvents.filter(e => e.brain_source === 'fallback')).toEqual([]);
+  expect(confirmed.persisted.contact).toMatchObject({ name: 'Ludmi Medina', email: 'ludmi@example.test', declaredPhone: '+541155550101' });
+  expect(confirmed.persisted.deliveredLinks).toHaveLength(0);
+  const replay = await c.retryLast();
+  expect(replay.decisions).toHaveLength(confirmed.persisted.decisions.length);
+  expect(replay.outboundCount).toBe(confirmed.persisted.outboundCount);
+}, 120_000);
+
+it('commits the exact real-model call proposals without a previous agent invitation', async () => {
+  const c = conversation();
+  const pending = await c.send(recordedCall[0].customer, () => recordedCall[0].proposal);
+  expect(pending.persisted.state).toMatchObject({ callPreference: 'call', callOfferStatus: 'accepted', callOfferCount: 0 });
+  expect(pending.calls).toHaveLength(0);
+  const requested = await c.send(recordedCall[1].customer, () => recordedCall[1].proposal);
+  expect(requested.persisted.state).toMatchObject({ stage: 'handoff', callOfferCount: 0 });
+  expect(requested.calls).toHaveLength(1);
+  expect(requested.persisted.decisions.filter(d => d.businessActionType === 'request_call_now')).toHaveLength(1);
+  const replay = await c.retryLast();
+  expect(replay.decisions).toHaveLength(requested.persisted.decisions.length);
+  expect(replay.outboundCount).toBe(requested.persisted.outboundCount);
+}, 120_000);
 
 function proposal(move: AgentATurnProposalV1['move']['move'], text: string,
   extra: Partial<AgentATurnProposalV1> = {}): AgentATurnProposalV1 {
@@ -116,6 +144,7 @@ it('retains call acceptance without a phone, repairs the impossible action and c
     expect(context.commercial_state.call_preference).toBe('call');
     expect(context.capabilities.may_request_call_now).toBe(true);
     return proposal('request_call', 'Solicito la llamada al número que me pasaste.', {
+      confirmed_phone: '+5491155550101',
       proposed_action: { type: 'request_call_now', reason: 'accepted_offer' },
     });
   });

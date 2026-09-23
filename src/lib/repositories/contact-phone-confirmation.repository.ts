@@ -9,6 +9,15 @@ export async function confirmDeliveredContactPhone(input: {
   phone: string;
 }, db: DbClient): Promise<boolean> {
   if (!isCallablePhoneE164V1(input.phone)) return false;
+  // Intake may already have captured the complete number from this inbound
+  // message. Repeating that durable fact is a no-op, not a new confirmation
+  // requiring a previous assistant suggestion. Never invent provenance.
+  const [recorded] = await db<Array<{ declared_phone: string | null }>>`
+    SELECT contact.declared_phone FROM messages current
+    JOIN contacts contact ON contact.id = current.contact_id
+    WHERE current.id = ${input.turnId}::uuid AND current.direction = 'inbound'
+  `;
+  if (recorded?.declared_phone === input.phone) return true;
   const rows = await db<Array<{ id: string; contact_id: string; declared_phone: string | null; content: string }>>`
     SELECT previous.id, current.contact_id, contact.declared_phone, previous.content
     FROM messages current

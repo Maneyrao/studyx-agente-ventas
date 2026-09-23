@@ -1,0 +1,81 @@
+[
+  {
+    "customer": "Dale, llamame",
+    "proposal": {
+      "schema_version": 1,
+      "move": {
+        "schema_version": 1,
+        "move": "request_call",
+        "secondary_moves": [],
+        "vetoes": [],
+        "course_reference": null,
+        "area_reference": null,
+        "payment_plan": null,
+        "confidence": 0.95
+      },
+      "response": {
+        "messages": [
+          "Con gusto, te llamamos. Para coordinar la llamada necesito tu número completo, con código de país y área."
+        ],
+        "call_offer": null
+      },
+      "proposed_action": {
+        "type": "none"
+      },
+      "confirmed_phone": null,
+      "repair_of": null,
+      "used_fact_ids": [],
+      "used_memory_ids": [],
+      "memory_candidates": [
+        {
+          "type": "contact_preference",
+          "key": "canal_preferido",
+          "value": "Prefiere que lo llamen",
+          "source_quote": "Dale, llamame",
+          "confidence": 0.9
+        }
+      ]
+    }
+  },
+  {
+    "customer": "Mi teléfono es +54 9 11 5555 0101",
+    "proposal": {
+      "schema_version": 1,
+      "move": {
+        "schema_version": 1,
+        "move": "request_call",
+        "secondary_moves": [
+          "provide_contact_details"
+        ],
+        "vetoes": [],
+        "course_reference": null,
+        "area_reference": null,
+        "payment_plan": null,
+        "confidence": 0.95
+      },
+      "response": {
+        "messages": [
+          "Perfecto, ya tengo tu número completo. Te llamamos en breve para orientarte con el curso que elijas."
+        ],
+        "call_offer": null
+      },
+      "proposed_action": {
+        "type": "request_call_now",
+        "reason": "accepted_offer"
+      },
+      "confirmed_phone": "+5491155550101",
+      "repair_of": null,
+      "used_fact_ids": [],
+      "used_memory_ids": [],
+      "memory_candidates": [
+        {
+          "type": "contact_preference",
+          "key": "call_preference",
+          "value": "call",
+          "source_quote": "Dale, llamame",
+          "confidence": 0.9
+        }
+      ]
+    }
+  }
+]

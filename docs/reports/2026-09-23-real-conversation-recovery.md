@@ -1,6 +1,6 @@
 # Agente A: recuperación de la conversación real del 23 de septiembre
 
-Estado actualizado: **correcciones determinísticas verificadas; evaluación con DeepSeek real y publicación pendientes**. Se corrigieron las dos inconsistencias de la revisión ampliada y el límite de invitaciones. La nueva regresión cubre seis conversaciones, 19 turnos y reintentos contra el build de producción local. Ver [comparación y límite de llamadas](2026-09-23-backend-comparison.md). Los resultados iniciales se conservan abajo como evidencia de la primera corrección.
+Estado actualizado: **tres conversaciones reales completadas; cuatro fallos adicionales corregidos y reproducidos con sus propuestas exactas**. Regresión final: nueve conversaciones determinísticas y 27 turnos más reintentos. La publicación y el canary se registran en [validación real y cierre](2026-09-23-live-validation.md). Los apartados históricos conservan sus resultados originales.
 
 Worktree: `agent-a-logical-turn-recovery`. Rama: `codex/agent-a-logical-turn-recovery`. Fuente productiva investigada: `4f96b74bbfb572507fed809d71e60097745a93c4`; conversación `3fd53b66-b72a-4932-8a98-6684391d81ce`.
 
@@ -54,12 +54,6 @@ Los registros incluyen por turno instrucciones y contexto enviados, propuesta in
 
 [Resultados y huellas de los gates](evidence/2026-09-23-real-conversation/gates.json). La primera corrida amplia reutilizó la base de investigación y la configuración de Sheets del laboratorio: cinco aserciones de proyección también fallaban sobre el SHA inicial y una aserción de memoria quedó detrás de trabajos pendientes. La ejecución en un cluster nuevo, sin inyectar Sheets antes de que lo configuren los tests, pasó completa. No se modificaron esas pruebas ni su implementación para ocultar fallos.
 
-## Evaluación real y publicación pendientes
+## Evaluación real y publicación
 
-Se preparó una evaluación de tres identidades durables: apertura, llamada sin teléfono y pago completo. La única solicitud efectuada devolvió **HTTP 401 de DeepSeek**, sin propuesta generada. El workflow publicó su fallback técnico; ese resultado **no valida** contenido ni naturalidad. Se conserva la evidencia privada y la identidad de apertura para continuar sin crear una cuarta conversación. No se ejecutó una campaña de veinte casos.
-
-La revisión automática rechazó consultar y validar claves de DeepSeek en los otros worktrees `agent-a-semantic-catalog`, `agent-a-eval-block1` y `agent-a-chanl-evals`: consideró esos archivos fuentes de credenciales no autorizadas. Se pidió autorización explícita para esos archivos. No se repitió el acceso rechazado ni se modificaron secretos remotos.
-
-Faltan las respuestas reales de DeepSeek y su evaluación de brevedad, repetición, naturalidad y efectos. Después corresponden el despliegue de Vercel y Botpress desde el mismo SHA, health/readiness y un único canary con conversación limpia. Vercel está autenticado y vinculado al equipo del proyecto; la configuración e integraciones de Botpress quedaron registradas para controlar preservación.
-
-**SHA desplegado durante esta tarea: ninguno.** La última fuente productiva indicada sigue siendo `4f96b74bbfb572507fed809d71e60097745a93c4`. No se presentan resultados locales como pruebas de producción.
+La autorización de credenciales fue concedida y resuelta. Ver [validación real y cierre](2026-09-23-live-validation.md) para las fallas adicionales, sus correcciones, las tres conversaciones reales, el estado de publicación y el canary.

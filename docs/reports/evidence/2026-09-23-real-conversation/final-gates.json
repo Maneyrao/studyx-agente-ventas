@@ -1,0 +1,346 @@
+{
+  "redundant-phone-red.log": {
+    "sha256": "c384996c59ab9d6d200ac53535f458537b17956fd4d83b98e99c652f8eda9391",
+    "result_tail": [
+      "+ false",
+      "",
+      " ❯ tests/integration/contact-contextual-intake.test.ts:233:107",
+      "    231|     first.message.text = 'Mi teléfono es +54 9 11 5555 0101';",
+      "    232|     const current = await processInboundMessage(first);",
+      "    233|     expect(await confirmDeliveredContactPhone({ turnId: current.turn_i…",
+      "       |                                                                                                           ^",
+      "    234|     expect((await db!`SELECT declared_phone FROM contacts WHERE id=${c…",
+      "    235|       .toBe('+5491155550101');",
+      "",
+      "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯",
+      "",
+      "",
+      " Test Files  1 failed (1)",
+      "      Tests  1 failed | 28 passed (29)",
+      "   Start at  13:29:19",
+      "   Duration  1.10s (transform 201ms, setup 25ms, import 640ms, tests 372ms, environment 0ms)",
+      ""
+    ]
+  },
+  "pending-call-red.log": {
+    "sha256": "ca1d0b5a419ffa125889ded042f2b505ad784a2608494a56ef45e19a3b444340",
+    "result_tail": [
+      "      \"call_offer_count\": 0,",
+      "",
+      " ❯ tests/unit/conversation/agent-turn-policy-v2.test.ts:970:18",
+      "    968|     }),",
+      "    969|   });",
+      "    970|   expect(result).toMatchObject({ ok: true, action: { type: 'request_ca…",
+      "       |                  ^",
+      "    971|     transition: { call_preference: 'call', call_offer_count: 0, stage:…",
+      "    972| });",
+      "",
+      "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯",
+      "",
+      "",
+      " Test Files  1 failed (1)",
+      "      Tests  1 failed | 51 passed (52)",
+      "   Start at  13:35:23",
+      "   Duration  136ms (transform 40ms, setup 9ms, import 43ms, tests 22ms, environment 0ms)",
+      ""
+    ]
+  },
+  "pending-call-vertical-red.log": {
+    "sha256": "1d5b865e0bb0193dc7342fe2a2bbcd77ac251454f2ca2373fab7f3c000552996",
+    "result_tail": [
+      "",
+      " ❯ Object.send tests/workflow/agent-a-real-conversation-regression.test.ts:92:102",
+      "     90|     writeWorkflowReportV1('real-conversation-regression', { id, turns,…",
+      "     91|       cost_usd: 0, provider: 'fixture', source_conversation: '3fd53b66…",
+      "     92|     expect(evidence.errorCode, JSON.stringify(evidence.httpExchanges.f…",
+      "       |                                                                                                      ^",
+      "     93|     expect(evidence.commitSucceeded).toBe(true);",
+      "     94|     expect(evidence.legacyPlanRequests).toBe(0);",
+      " ❯ tests/workflow/agent-a-real-conversation-regression.test.ts:60:21",
+      "",
+      "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯",
+      "",
+      "",
+      " Test Files  1 failed (1)",
+      "      Tests  1 failed | 6 skipped (7)",
+      "   Start at  13:36:42",
+      "   Duration  10.56s (transform 163ms, setup 0ms, import 235ms, tests 10.27s, environment 0ms)",
+      ""
+    ]
+  },
+  "pending-call-vertical-green.log": {
+    "sha256": "dbeaf3b9edc6958c62dd80db7b8096a4087d061ff14c015c87e9e8177a4e6831",
+    "result_tail": [
+      "{\"event\":\"studyx.turn.completed\",\"trace_id\":\"0471e1d4-962e-41fe-9dbf-5a57644e3952\",\"turn_id\":\"da20575d-0bf9-4a4a-b598-a92c485d54bb\",\"batch_id\":\"b397db6f-5647-45cb-b233-31608f654cdd\",\"outbound_ids\":[\"020089ed-7b77-4aba-93a3-b46e5ad92f63\"],\"botpress_message_id\":\"d3c64936-eef3-448b-b488-305ef7aba5ab\",\"botpress_message_replayed\":false}",
+      "{\"event\":\"studyx.turn.timings\",\"trace_id\":\"0471e1d4-962e-41fe-9dbf-5a57644e3952\",\"turn_id\":\"da20575d-0bf9-4a4a-b598-a92c485d54bb\",\"phase\":\"waiting_user\",\"telegram_to_router_ms\":0,\"ingest_ms\":13,\"batch_wait_ms\":4994,\"batch_wait_actual_ms\":4994,\"batch_wait_scheduled_ms\":4991,\"claim_ms\":37,\"claim_total_ms\":17,\"core_db_ms\":5,\"shared_embedding_ms\":1,\"memory_search_ms\":0,\"knowledge_search_ms\":0,\"business_snapshot_ms\":6,\"embedding_calls\":1,\"memory_search_calls\":0,\"knowledge_search_calls\":0,\"business_snapshot_calls\":1,\"catalog_calls\":1,\"agent_a_brain_ms\":1,\"planner_ms\":0,\"model_ms\":0,\"event_to_decision_ms\":5060,\"commit_ms\":42,\"send_ms\":9,\"event_to_visible_outbound_ms\":5111,\"event_to_visible_outbound_over_budget\":0,\"call_dispatch_ms\":628,\"total_workflow_ms\":5766,\"model\":\"deepseek-v4-flash\",\"fast_path\":false}",
+      "",
+      "stdout | tests/workflow/agent-a-real-conversation-regression.test.ts > commits the exact real-model call proposals without a previous agent invitation",
+      "{\"event\":\"studyx.http.attempt\",\"trace_id\":\"228a4712-5e01-47be-b38b-e12475ab1cc8\",\"path\":\"/api/agent/ingest\",\"method\":\"POST\",\"attempt\":1,\"status\":200,\"error_code\":null,\"duration_ms\":8}",
+      "",
+      "stdout | tests/workflow/agent-a-real-conversation-regression.test.ts > commits the exact real-model call proposals without a previous agent invitation",
+      "{\"event\":\"studyx.turn.replayed\",\"trace_id\":\"228a4712-5e01-47be-b38b-e12475ab1cc8\",\"turn_id\":\"da20575d-0bf9-4a4a-b598-a92c485d54bb\",\"processing_state\":\"waiting_user\"}",
+      "{\"event\":\"studyx.turn.timings\",\"trace_id\":\"228a4712-5e01-47be-b38b-e12475ab1cc8\",\"turn_id\":\"da20575d-0bf9-4a4a-b598-a92c485d54bb\",\"phase\":\"waiting_user\",\"telegram_to_router_ms\":5786,\"ingest_ms\":8,\"total_workflow_ms\":8}",
+      "",
+      " ✓ tests/workflow/agent-a-real-conversation-regression.test.ts (7 tests | 6 skipped) 11224ms",
+      "   ✓ commits the exact real-model call proposals without a previous agent invitation  11222ms",
+      "",
+      " Test Files  1 passed (1)",
+      "      Tests  1 passed | 6 skipped (7)",
+      "   Start at  13:42:10",
+      "   Duration  11.55s (transform 179ms, setup 0ms, import 260ms, tests 11.22s, environment 0ms)",
+      ""
+    ]
+  },
+  "phone-separators-red.log": {
+    "sha256": "ffe3b2efac59080ea392d78be775a54910d206219fc0ed463fa3f484e0a06b16",
+    "result_tail": [
+      "AgentABrainError: BRAIN_INVALID_SCHEMA",
+      " ❯ parseAgentATurnProposalV1 botpress-agent/src/lib/conversation/agent-a-brain.ts:897:11",
+      "    895|   if (!parsed.success) {",
+      "    896|     const first = parsed.error.issues[0];",
+      "    897|     throw new AgentABrainError(",
+      "       |           ^",
+      "    898|       'BRAIN_INVALID_SCHEMA',",
+      "    899|       null,",
+      " ❯ tests/unit/botpress/agent-a-brain.test.ts:97:20",
+      "",
+      "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯",
+      "",
+      "",
+      " Test Files  1 failed (1)",
+      "      Tests  1 failed | 98 skipped (99)",
+      "   Start at  13:45:34",
+      "   Duration  217ms (transform 87ms, setup 7ms, import 144ms, tests 6ms, environment 0ms)",
+      ""
+    ]
+  },
+  "phone-format-vertical-red.log": {
+    "sha256": "91a02a261504a1658ef338509839c75a78698f66d351be108776ef95d9c681c5",
+    "result_tail": [
+      "+ ]",
+      "",
+      " ❯ tests/workflow/agent-a-real-conversation-regression.test.ts:60:88",
+      "     58|   for (const turn of recordedPayment.slice(0, 2)) await c.send(turn.cu…",
+      "     59|   const confirmed = await c.send(recordedPayment[2].customer, () => re…",
+      "     60|   expect(confirmed.evidence.workflowEvents.filter(e => e.brain_source …",
+      "       |                                                                                        ^",
+      "     61|   expect(confirmed.persisted.contact).toMatchObject({ name: 'Ludmi Med…",
+      "     62|   expect(confirmed.persisted.deliveredLinks).toHaveLength(0);",
+      "",
+      "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯",
+      "",
+      "",
+      " Test Files  1 failed (1)",
+      "      Tests  1 failed | 7 skipped (8)",
+      "   Start at  13:46:11",
+      "   Duration  15.65s (transform 170ms, setup 0ms, import 247ms, tests 15.35s, environment 0ms)",
+      ""
+    ]
+  },
+  "phone-format-vertical-green.log": {
+    "sha256": "16cd551b8ddc2b6a46bd3f63bb9fbc44eff02a0d6fd1a86e892da2afc8b9804e",
+    "result_tail": [
+      "{\"event\":\"studyx.turn.completed\",\"trace_id\":\"7dd25c32-bc04-4829-9920-2501fb85b2ec\",\"turn_id\":\"12b3609b-cbb1-4dad-a286-4e401fa09d1b\",\"batch_id\":\"b8cfcee9-7396-4bad-986e-13134a2c9c5e\",\"outbound_ids\":[\"43d481bc-2b9f-4ebf-a7c4-71562d427b8e\"],\"botpress_message_id\":\"2b234e44-f8d6-4bce-8ad0-c6c81e48eef5\",\"botpress_message_replayed\":false}",
+      "{\"event\":\"studyx.turn.timings\",\"trace_id\":\"7dd25c32-bc04-4829-9920-2501fb85b2ec\",\"turn_id\":\"12b3609b-cbb1-4dad-a286-4e401fa09d1b\",\"phase\":\"waiting_user\",\"telegram_to_router_ms\":0,\"ingest_ms\":11,\"batch_wait_ms\":4995,\"batch_wait_actual_ms\":4995,\"batch_wait_scheduled_ms\":4992,\"claim_ms\":27,\"claim_total_ms\":12,\"core_db_ms\":3,\"shared_embedding_ms\":0,\"memory_search_ms\":0,\"knowledge_search_ms\":0,\"business_snapshot_ms\":2,\"embedding_calls\":0,\"memory_search_calls\":0,\"knowledge_search_calls\":0,\"business_snapshot_calls\":1,\"catalog_calls\":1,\"agent_a_brain_ms\":1,\"planner_ms\":0,\"model_ms\":0,\"event_to_decision_ms\":5037,\"commit_ms\":21,\"send_ms\":8,\"event_to_visible_outbound_ms\":5066,\"event_to_visible_outbound_over_budget\":0,\"total_workflow_ms\":5070,\"model\":\"deepseek-v4-flash\",\"fast_path\":true}",
+      "",
+      "stdout | tests/workflow/agent-a-real-conversation-regression.test.ts > persists the exact real-model confirmation with a formatted international phone",
+      "{\"event\":\"studyx.http.attempt\",\"trace_id\":\"4e01ed28-079b-4a84-bb7e-991dde9bf853\",\"path\":\"/api/agent/ingest\",\"method\":\"POST\",\"attempt\":1,\"status\":200,\"error_code\":null,\"duration_ms\":6}",
+      "",
+      "stdout | tests/workflow/agent-a-real-conversation-regression.test.ts > persists the exact real-model confirmation with a formatted international phone",
+      "{\"event\":\"studyx.turn.replayed\",\"trace_id\":\"4e01ed28-079b-4a84-bb7e-991dde9bf853\",\"turn_id\":\"12b3609b-cbb1-4dad-a286-4e401fa09d1b\",\"processing_state\":\"waiting_user\"}",
+      "{\"event\":\"studyx.turn.timings\",\"trace_id\":\"4e01ed28-079b-4a84-bb7e-991dde9bf853\",\"turn_id\":\"12b3609b-cbb1-4dad-a286-4e401fa09d1b\",\"phase\":\"waiting_user\",\"telegram_to_router_ms\":5086,\"ingest_ms\":6,\"total_workflow_ms\":6}",
+      "",
+      " ✓ tests/workflow/agent-a-real-conversation-regression.test.ts (8 tests | 7 skipped) 15767ms",
+      "   ✓ persists the exact real-model confirmation with a formatted international phone  15765ms",
+      "",
+      " Test Files  1 passed (1)",
+      "      Tests  1 passed | 7 skipped (8)",
+      "   Start at  13:46:51",
+      "   Duration  16.10s (transform 176ms, setup 0ms, import 251ms, tests 15.77s, environment 0ms)",
+      ""
+    ]
+  },
+  "phone-claim-vertical-red.log": {
+    "sha256": "b7586ebe5d6fa660678ed33948b2f71c4b5c58faad8c519d4291a494b4597557",
+    "result_tail": [
+      "+ ]",
+      "",
+      " ❯ tests/workflow/agent-a-real-conversation-regression.test.ts:60:88",
+      "     58|   for (const turn of recordedPayment.slice(0, 2)) await c.send(turn.cu…",
+      "     59|   const confirmed = await c.send(recordedPayment[index].customer, () =…",
+      "     60|   expect(confirmed.evidence.workflowEvents.filter(e => e.brain_source …",
+      "       |                                                                                        ^",
+      "     61|   expect(confirmed.persisted.contact).toMatchObject({ name: 'Ludmi Med…",
+      "     62|   expect(confirmed.persisted.deliveredLinks).toHaveLength(0);",
+      "",
+      "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯",
+      "",
+      "",
+      " Test Files  1 failed (1)",
+      "      Tests  1 failed | 8 skipped (9)",
+      "   Start at  13:49:59",
+      "   Duration  15.66s (transform 168ms, setup 0ms, import 247ms, tests 15.35s, environment 0ms)",
+      ""
+    ]
+  },
+  "phone-claim-vertical-green.log": {
+    "sha256": "58cd81fd754db2054cc63a3061152f5d70f8bf191a160c7e92180c108b1eb286",
+    "result_tail": [
+      "{\"event\":\"studyx.turn.timings\",\"trace_id\":\"94b8d50d-d593-43a7-8835-6f0419d143b6\",\"turn_id\":\"b1702129-3a34-45aa-a03d-65500bf20693\",\"phase\":\"waiting_user\",\"telegram_to_router_ms\":0,\"ingest_ms\":9,\"batch_wait_ms\":4997,\"batch_wait_actual_ms\":4997,\"batch_wait_scheduled_ms\":4994,\"claim_ms\":10,\"claim_total_ms\":7,\"core_db_ms\":2,\"shared_embedding_ms\":0,\"memory_search_ms\":0,\"knowledge_search_ms\":0,\"business_snapshot_ms\":2,\"embedding_calls\":0,\"memory_search_calls\":0,\"knowledge_search_calls\":0,\"business_snapshot_calls\":1,\"catalog_calls\":1,\"agent_a_brain_ms\":1,\"planner_ms\":0,\"model_ms\":0,\"event_to_decision_ms\":5032,\"commit_ms\":28,\"send_ms\":7,\"event_to_visible_outbound_ms\":5067,\"event_to_visible_outbound_over_budget\":0,\"total_workflow_ms\":5070,\"model\":\"deepseek-v4-flash\",\"fast_path\":true}",
+      "",
+      "stdout | tests/workflow/agent-a-real-conversation-regression.test.ts > persists the exact real-model confirmation 3 with a formatted international phone",
+      "{\"event\":\"studyx.http.attempt\",\"trace_id\":\"77781b0d-0a47-4cad-805d-caf205e9de17\",\"path\":\"/api/agent/ingest\",\"method\":\"POST\",\"attempt\":1,\"status\":200,\"error_code\":null,\"duration_ms\":4}",
+      "",
+      "stdout | tests/workflow/agent-a-real-conversation-regression.test.ts > persists the exact real-model confirmation 3 with a formatted international phone",
+      "{\"event\":\"studyx.turn.replayed\",\"trace_id\":\"77781b0d-0a47-4cad-805d-caf205e9de17\",\"turn_id\":\"b1702129-3a34-45aa-a03d-65500bf20693\",\"processing_state\":\"waiting_user\"}",
+      "{\"event\":\"studyx.turn.timings\",\"trace_id\":\"77781b0d-0a47-4cad-805d-caf205e9de17\",\"turn_id\":\"b1702129-3a34-45aa-a03d-65500bf20693\",\"phase\":\"waiting_user\",\"telegram_to_router_ms\":5082,\"ingest_ms\":4,\"total_workflow_ms\":4}",
+      "",
+      " ✓ tests/workflow/agent-a-real-conversation-regression.test.ts (9 tests | 7 skipped) 30845ms",
+      "   ✓ persists the exact real-model confirmation 2 with a formatted international phone  15548ms",
+      "   ✓ persists the exact real-model confirmation 3 with a formatted international phone  15295ms",
+      "",
+      " Test Files  1 passed (1)",
+      "      Tests  2 passed | 7 skipped (9)",
+      "   Start at  13:51:10",
+      "   Duration  31.15s (transform 166ms, setup 0ms, import 241ms, tests 30.85s, environment 0ms)",
+      ""
+    ]
+  },
+  "final-unit-v79.log": {
+    "sha256": "edb44dea067f3e9032733fb84f18d992ffd49750602c102609ba6be5b47827ab",
+    "result_tail": [
+      "",
+      "> studyx-agente-ventas@0.1.0 test:unit",
+      "> vitest run --config vitest.config.mts",
+      "",
+      "",
+      " RUN  v4.1.10 /Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/agent-a-logical-turn-recovery",
+      "",
+      "",
+      " Test Files  211 passed | 2 skipped (213)",
+      "      Tests  3483 passed | 16 skipped | 7 todo (3506)",
+      "   Start at  13:57:26",
+      "   Duration  9.66s (transform 3.86s, setup 1.29s, import 10.00s, tests 20.91s, environment 17ms)",
+      ""
+    ]
+  },
+  "live-fixes-integration.log": {
+    "sha256": "40b1d1623a8b4b9783bda4196f871affc41bdab1adfca5b01bf40a5b6f67e018",
+    "result_tail": [
+      "",
+      " ✓ tests/integration/health-readiness.test.ts (12 tests | 1 skipped) 30ms",
+      " ✓ tests/integration/call-ledger-invariants.test.ts (4 tests) 20ms",
+      " ✓ tests/integration/studyx-seed.test.ts (10 tests) 19ms",
+      " ✓ tests/integration/human-review-derivation.test.ts (5 tests) 20ms",
+      " ✓ tests/integration/pending-human-reviews.test.ts (4 tests) 18ms",
+      " ✓ tests/integration/business-context-store.test.ts (6 tests) 18ms",
+      " ✓ tests/integration/knowledge-search-isolation.test.ts (5 tests) 17ms",
+      " ✓ tests/integration/conversation-state-version.test.ts (1 test) 13ms",
+      " ✓ tests/integration/sales-context-state.test.ts (2 tests) 13ms",
+      " ✓ tests/integration/embedding-dimensions.test.ts (4 tests) 12ms",
+      " ✓ tests/integration/database-availability.test.ts (1 test) 8ms",
+      "",
+      " Test Files  67 passed (67)",
+      "      Tests  532 passed | 1 skipped (533)",
+      "   Start at  13:37:39",
+      "   Duration  24.12s (transform 753ms, setup 380ms, import 10.68s, tests 9.71s, environment 2ms)",
+      ""
+    ]
+  },
+  "final-complete-workflow.log": {
+    "sha256": "845cc15672e3c086bf8cf72785c091d2bef2d56227239c759d070c9d7e918ca6",
+    "result_tail": [
+      "{\"event\":\"studyx.turn.timings\",\"trace_id\":\"1c120916-d351-4402-a29c-8b3aa9c9741b\",\"turn_id\":\"f8132c45-87f1-4a8e-b23e-07f8f2301b91\",\"phase\":\"waiting_user\",\"telegram_to_router_ms\":5986,\"ingest_ms\":7,\"total_workflow_ms\":7}",
+      "",
+      " ✓ tests/workflow/agent-a-real-conversation-regression.test.ts (9 tests) 140718ms",
+      "   ✓ persists the exact real-model confirmation 2 with a formatted international phone  15400ms",
+      "   ✓ persists the exact real-model confirmation 3 with a formatted international phone  15285ms",
+      "   ✓ commits the exact real-model call proposals without a previous agent invitation  11697ms",
+      "   ✓ keeps a general opening unselected despite a course saved for a previous conversation  5084ms",
+      "   ✓ retains call acceptance without a phone, repairs the impossible action and creates one session after the phone  10810ms",
+      "   ✓ persists a delivered phone confirmation, preserves the full name and sends exactly one canonical link  25517ms",
+      "   ✓ cancels pending call intent when the model interprets the choice to continue here  15277ms",
+      "   ✓ delivers and counts an invitation allowed by context without requiring a name  5117ms",
+      "   ✓ keeps two rejected invitations across idle time and honors a later customer request exactly once  36528ms",
+      "",
+      " Test Files  1 passed (1)",
+      "      Tests  9 passed (9)",
+      "   Start at  13:52:54",
+      "   Duration  141.09s (transform 163ms, setup 0ms, import 248ms, tests 140.72s, environment 0ms)",
+      ""
+    ]
+  },
+  "final-lint-v79.log": {
+    "sha256": "58be5986f675e359bb75562f0fdc333a2164d337b11c4863ab9c053f09d33b10",
+    "result_tail": [
+      "",
+      "> studyx-agente-ventas@0.1.0 lint",
+      "> eslint . --max-warnings=0",
+      ""
+    ]
+  },
+  "final-typecheck-v79.log": {
+    "sha256": "96efe7fb66fd4d0be314274311b86918b947c19bb6f1bdf96952bc2f7304db38",
+    "result_tail": [
+      "",
+      "> studyx-agente-ventas@0.1.0 typecheck",
+      "> tsc --noEmit",
+      ""
+    ]
+  },
+  "final-botpress-typecheck-v79.log": {
+    "sha256": "4654f0fd167a1368306caa6c82480dcc07c319ae08b27bc7cec2cface373b62c",
+    "result_tail": [
+      "",
+      "> botpress-agent@1.0.0 typecheck",
+      "> tsc --noEmit",
+      ""
+    ]
+  },
+  "final-botpress-check-v79.log": {
+    "sha256": "336795e02a0d601c9cb969886c17fcd2c311f0db48db45fe865afc8feeae5e70",
+    "result_tail": [
+      "      at async <anonymous> (/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/botpress-agent/node_modules/@botpress/adk-cli/dist/chunk-kwmsaz7n.js:1667:31)",
+      "      at async retriable (/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/botpress-agent/node_modules/@botpress/adk-cli/dist/chunk-kwmsaz7n.js:892:27)",
+      "",
+      "1662 |     return await retriable(async () => {",
+      "1663 |       const ctrl = new AbortController;",
+      "1664 |       const timeoutMs = requestTimeout ?? this.requestTimeout;",
+      "1665 |       const timer = safeSetTimeout(() => ctrl.abort(), timeoutMs);",
+      "1666 |       let res = null;",
+      "1667 |         res = await this.fetch(url, {",
+      "                                     ^",
+      "error: Was there a typo in the url or port?",
+      "  path: \"https://us.i.posthog.com/batch/\",",
+      " errno: 0,",
+      "  code: \"FailedToOpenSocket\"",
+      "",
+      "      at async <anonymous> (/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/botpress-agent/node_modules/@botpress/adk-cli/dist/chunk-kwmsaz7n.js:1667:31)",
+      "      at async retriable (/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/botpress-agent/node_modules/@botpress/adk-cli/dist/chunk-kwmsaz7n.js:892:27)",
+      ""
+    ]
+  },
+  "live-fixes-build.log": {
+    "sha256": "e937b35919704e0d1d7758bf6cebb4c84fdf006263b4e439d7752ae75b8a4f74",
+    "result_tail": [
+      "├ ƒ /api/webhooks/voice/telegram",
+      "├ ƒ /retell/eventos",
+      "├ ƒ /retell/tools/agendar-seguimiento",
+      "├ ƒ /retell/tools/consultar-curso",
+      "├ ƒ /retell/tools/consultar-oferta",
+      "├ ƒ /retell/tools/derivar-humano",
+      "├ ƒ /retell/tools/enviar-link-pago",
+      "├ ƒ /retell/tools/enviar-material",
+      "├ ƒ /retell/tools/guardar-datos-contacto",
+      "├ ƒ /retell/tools/registrar-resultado",
+      "└ ƒ /retell/tools/verificar-pago",
+      "",
+      "",
+      "ƒ Proxy (Middleware)",
+      "",
+      "○  (Static)   prerendered as static content",
+      "ƒ  (Dynamic)  server-rendered on demand",
+      ""
+    ]
+  }
+}

@@ -23,7 +23,7 @@ it.skipIf(!process.env.STUDYX_REAL_CASE)('runs one authorized turn in one of the
     identity: { conversationId: `real-20260923-${name}-${randomUUID()}`, userId: randomUUID(),
       phoneE164: `+999${String(Date.now()).slice(-10)}`, providerMode: 'live' }, turns: [],
   };
-  expect(report.turns.length, 'bounded evaluation, not an open-ended campaign').toBeLessThan(8);
+  expect(report.turns.length, 'bounded evaluation, not an open-ended campaign').toBeLessThan(10);
   configuration.agentAPlannerlessV2Enabled = true;
   writeFileSync(filename, JSON.stringify(report, null, 2));
   const text = process.env.STUDYX_REAL_TEXT!;

@@ -955,3 +955,18 @@ describe('durable call invitation limit', () => {
       transition: { call_preference: 'call', call_offer_status: 'accepted', call_offer_count: 2 } });
   });
 });
+
+it('resumes durable customer call consent without requiring a new agent offer', () => {
+  const result = authorize({
+    customerText: 'Mi teléfono es +54 9 11 5555 0101',
+    state: state({ call_preference: 'call', call_offer_status: 'accepted', call_offer_count: 0 }),
+    mayRequestCall: true,
+    proposal: proposal({
+      move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+      response: { messages: ['Te llamamos para orientarte.'] },
+      proposed_action: { type: 'request_call_now', reason: 'accepted_offer' },
+    }),
+  });
+  expect(result).toMatchObject({ ok: true, action: { type: 'request_call_now', reason: 'direct_request' },
+    transition: { call_preference: 'call', call_offer_count: 0, stage: 'handoff' } });
+});

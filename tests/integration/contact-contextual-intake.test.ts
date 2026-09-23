@@ -226,6 +226,18 @@ run('contact identity from delivered conversational requests', () => {
 });
 
 run('confirmed phone delivery provenance', () => {
+  it('accepts an already recorded full number without fabricating a confirmation source', async () => {
+    const first = envelope();
+    first.message.text = 'Mi teléfono es +54 9 11 5555 0101';
+    const current = await processInboundMessage(first);
+    expect(await confirmDeliveredContactPhone({ turnId: current.turn_id, phone: '+5491155550101' }, db!)).toBe(true);
+    expect((await db!`SELECT declared_phone FROM contacts WHERE id=${current.contact.id}::uuid`)[0].declared_phone)
+      .toBe('+5491155550101');
+    expect((await db!`SELECT metadata->'confirmed_phone_v1' AS proof FROM messages WHERE id=${current.turn_id}::uuid`)[0].proof)
+      .toBeNull();
+    expect(await confirmDeliveredContactPhone({ turnId: current.turn_id, phone: '+5491155550102' }, db!)).toBe(false);
+  });
+
   it.each(['pending', 'missing', 'unproven', 'wrong-destination'] as const)(
     'rejects a phone suggestion with %s delivery', async delivery => {
       const first = envelope();
