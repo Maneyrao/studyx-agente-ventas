@@ -19,6 +19,7 @@ export default defineConfig([
     // The result was a `npm run lint` that could never exit clean, which is
     // how a real lint error would go unnoticed.
     '.worktrees/**',
+    '.local-evidence/**',
     'next-env.d.ts',
   ]),
 ]);

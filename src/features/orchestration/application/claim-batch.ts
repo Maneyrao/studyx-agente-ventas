@@ -953,7 +953,11 @@ export async function claimBatch(
   });
   // Assigned in the joined commercial-context task; make that async boundary
   // explicit to TypeScript without changing the runtime ordering.
-  const persistedState = persisted_sales_context as SalesContextState | null;
+  const loadedSalesState = persisted_sales_context as SalesContextState | null;
+  // This legacy projection is contact-scoped. A fresh conversation must not
+  // inherit a selection made in an older conversation on the same contact.
+  const persistedState = loadedSalesState?.conversation_id === claim.conversation_id
+    ? loadedSalesState : null;
   const persistedOffering = persistedState?.selected_offering_code ?? null;
   const resolvedCatalogIndex = catalog_index as CatalogIndexView | null;
   const persistedDisplayName = persistedOffering === null

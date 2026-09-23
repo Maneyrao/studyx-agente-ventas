@@ -2105,3 +2105,24 @@ describe('claimBatch sales_context', () => {
     expect(result.sales_context.allowed_actions).toEqual([]);
   });
 });
+
+it('does not bootstrap Info from a different conversation on the same contact', async () => {
+  const result = await claimBatch(input, {
+    ...buildDeps({ messagesResult: [{ id: 'm1', conversation_seq: 1, content: 'Info',
+      created_at: '2026-08-11T12:00:00.000Z', message_type: 'text' }] }),
+    conversationPipelineEnabled: true,
+    business: { load: vi.fn().mockResolvedValue(businessContextView({
+      offerings: [businessOffering('community_manager', 'Community Manager', 'Marketing')],
+    })) },
+    sales: { load: vi.fn().mockResolvedValue({
+      workspace_id: 'workspace-1', contact_id: 'contact-1', conversation_id: 'previous-conversation',
+      selected_offering_code: 'community_manager', selected_payment_plan: null,
+      stage: 'course_selected', source_turn_id: 'old-turn', version: 19,
+      updated_at: '2026-08-11T11:59:00.000Z',
+    }) },
+  });
+  expect(result).toMatchObject({ outcome: 'claimed',
+    sales_context: { offering_code: null },
+    conversation_state_v1: { selected_offering_code: null, stage: 'exploring' },
+  });
+});

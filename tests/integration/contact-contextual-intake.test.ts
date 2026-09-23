@@ -3,6 +3,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
 import { processInboundMessage, type InboundEnvelope, type IngestContext } from '@/lib/services/ingestion.service';
 import { registerMessage } from '@/lib/services/message.service';
+import { confirmDeliveredContactPhone } from '@/lib/repositories/contact-phone-confirmation.repository';
 import { sql } from '@/lib/db/orchestrator';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
@@ -221,5 +222,55 @@ run('contact identity from delivered conversational requests', () => {
     const opened = await processInboundMessage(first);
     await outbound(first, opened, '¿Me pasás tu nombre?');
     expect((await processInboundMessage(answer(first, 'Lucía'))).contact.name).toBe('Lucía');
+  });
+});
+
+run('confirmed phone delivery provenance', () => {
+  it.each(['pending', 'missing', 'unproven', 'wrong-destination'] as const)(
+    'rejects a phone suggestion with %s delivery', async delivery => {
+      const first = envelope();
+      first.message.text = 'Mi teléfono es 1155550101';
+      const opened = await processInboundMessage(first);
+      await outbound(first, opened, 'El número completo es +54 9 11 5555 0101?', delivery);
+      const current = await processInboundMessage(answer(first, 'Si'));
+      expect(await confirmDeliveredContactPhone({ turnId: current.turn_id, phone: '+5491155550101' }, db!)).toBe(false);
+      expect((await db!`SELECT declared_phone FROM contacts WHERE id=${opened.contact.id}::uuid`)[0].declared_phone).toBe('1155550101');
+    });
+
+  it.each(['different-number', 'stale-suggestion', 'foreign-conversation'] as const)(
+    'rejects %s instead of trusting the model value', async scenario => {
+      const first = envelope();
+      first.message.text = 'Mi teléfono es 1155550101';
+      const opened = await processInboundMessage(first);
+      if (scenario === 'foreign-conversation') {
+        const foreign = envelope();
+        const foreignContext = await processInboundMessage(foreign);
+        await outbound(foreign, foreignContext, 'El número completo es +54 9 11 5555 0101?');
+      } else {
+        await outbound(first, opened, scenario === 'different-number'
+          ? 'El número completo es +54 9 11 5555 0102?' : 'El número completo es +54 9 11 5555 0101?');
+      }
+      if (scenario === 'stale-suggestion') {
+        const intervening = await processInboundMessage(answer(first, 'Quiero otro curso'));
+        await outbound(first, intervening, 'Qué curso te interesa ahora?');
+      }
+      const current = await processInboundMessage(answer(first, 'Si'));
+      expect(await confirmDeliveredContactPhone({ turnId: current.turn_id,
+        phone: scenario === 'different-number' ? '+5491155550102' : '+5491155550101' }, db!)).toBe(false);
+    });
+
+  it('records the exact source and rolls back the contact update with its surrounding commit', async () => {
+    const first = envelope();
+    first.message.text = 'Mi teléfono es 1155550101';
+    const opened = await processInboundMessage(first);
+    const source = await outbound(first, opened, 'El número completo es +54 9 11 5555 0101?');
+    const current = await processInboundMessage(answer(first, 'Si'));
+    await expect(db!.begin(async tx => {
+      expect(await confirmDeliveredContactPhone({ turnId: current.turn_id, phone: '+5491155550101' }, tx)).toBe(true);
+      expect((await tx`SELECT metadata->'confirmed_phone_v1' AS proof FROM messages WHERE id=${current.turn_id}::uuid`)[0].proof)
+        .toEqual({ phone: '+5491155550101', source_message_id: source });
+      throw new Error('remaining proposal rejected');
+    })).rejects.toThrow('remaining proposal rejected');
+    expect((await db!`SELECT declared_phone FROM contacts WHERE id=${opened.contact.id}::uuid`)[0].declared_phone).toBe('1155550101');
   });
 });

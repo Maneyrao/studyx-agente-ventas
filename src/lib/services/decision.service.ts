@@ -12,6 +12,7 @@ import { splitFullName } from '@/lib/heuristics/contact-identity';
 import { registerMessage, type Message } from './message.service';
 import { enqueueLeadProjection, upsertCommittedLeadStateProjection } from './projection.service';
 import { loadContactIntakeV1 } from '@/lib/repositories/contact-intake.repository';
+import { confirmDeliveredContactPhone } from '@/lib/repositories/contact-phone-confirmation.repository';
 import {
   paymentReportProjectionPayloadV1,
   shouldProjectPaymentReportV1,
@@ -697,6 +698,10 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       });
       assertDecisionBusinessActionPermitted(decision);
     } else if (validatedInput.agent_turn_v2) {
+      const confirmedPhone = validatedInput.agent_turn_v2.proposal.confirmed_phone;
+      if (confirmedPhone && !await confirmDeliveredContactPhone({
+        turnId: turn.id, phone: confirmedPhone,
+      }, db)) throw new DecisionPolicyError('AGENT_TURN_V2_REJECTED:FACT_NOT_AUTHORIZED');
       pipelineStateBefore = await new PostgresConversationStateStoreV1(db).load(
         workspaceSlug, turn.conversation_id, turn.contact_id,
       );

@@ -1,0 +1,167 @@
+{
+  "unit-final.log": {
+    "sha256": "4a45b101b9cf557c8f32b1d2537389d7fb93c399798fb3cb1e46cee87c00776e",
+    "result_tail": [
+      "",
+      "> studyx-agente-ventas@0.1.0 test",
+      "> vitest run --config vitest.config.mts",
+      "",
+      "",
+      " RUN  v4.1.10 /Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/agent-a-logical-turn-recovery",
+      "",
+      "",
+      " Test Files  211 passed | 2 skipped (213)",
+      "      Tests  3470 passed | 16 skipped | 7 todo (3493)",
+      "   Start at  12:15:06",
+      "   Duration  13.82s (transform 6.83s, setup 1.65s, import 14.42s, tests 23.82s, environment 41ms)",
+      ""
+    ]
+  },
+  "integration-clean.log": {
+    "sha256": "393ea636c78113ed220d2c79416f08748cb8b6012909867ed091021b609d6b26",
+    "result_tail": [
+      " ✓ tests/integration/human-review-derivation.test.ts (5 tests) 20ms",
+      " ✓ tests/integration/studyx-seed.test.ts (10 tests) 18ms",
+      " ✓ tests/integration/business-context-store.test.ts (6 tests) 17ms",
+      " ✓ tests/integration/pending-human-reviews.test.ts (4 tests) 17ms",
+      " ✓ tests/integration/knowledge-search-isolation.test.ts (5 tests) 17ms",
+      " ✓ tests/integration/conversation-state-version.test.ts (1 test) 13ms",
+      " ✓ tests/integration/sales-context-state.test.ts (2 tests) 13ms",
+      " ✓ tests/integration/embedding-dimensions.test.ts (4 tests) 11ms",
+      " ✓ tests/integration/database-availability.test.ts (1 test) 8ms",
+      "",
+      " Test Files  67 passed (67)",
+      "      Tests  531 passed | 1 skipped (532)",
+      "   Start at  12:22:47",
+      "   Duration  22.67s (transform 625ms, setup 365ms, import 10.18s, tests 8.84s, environment 2ms)",
+      ""
+    ]
+  },
+  "vertical-production-build.log": {
+    "sha256": "bab007abed4dc5dd329bc974a402e1871e27993b03acf75c8472cb145d050799",
+    "result_tail": [
+      "",
+      "stdout | tests/workflow/agent-a-real-conversation-regression.test.ts > persists a delivered phone confirmation, preserves the full name and sends exactly one canonical link",
+      "{\"event\":\"studyx.turn.completed\",\"trace_id\":\"00b29a24-8d61-4aba-a1ee-83e8f1ac8311\",\"turn_id\":\"4f41996b-1082-4811-add9-305c516f03ea\",\"batch_id\":\"0ac671dd-0c81-4451-ad8d-068792fb3d18\",\"outbound_ids\":[\"01daa7a6-7405-4c4a-83ad-1c586422686d\"],\"botpress_message_id\":\"c1fc9819-3fbd-45dd-a852-eb3156b499ae\",\"botpress_message_replayed\":false}",
+      "{\"event\":\"studyx.turn.timings\",\"trace_id\":\"00b29a24-8d61-4aba-a1ee-83e8f1ac8311\",\"turn_id\":\"4f41996b-1082-4811-add9-305c516f03ea\",\"phase\":\"waiting_user\",\"telegram_to_router_ms\":0,\"ingest_ms\":10,\"batch_wait_ms\":4994,\"batch_wait_actual_ms\":4994,\"batch_wait_scheduled_ms\":4993,\"claim_ms\":27,\"claim_total_ms\":15,\"core_db_ms\":4,\"shared_embedding_ms\":0,\"memory_search_ms\":0,\"knowledge_search_ms\":0,\"business_snapshot_ms\":6,\"embedding_calls\":0,\"memory_search_calls\":0,\"knowledge_search_calls\":0,\"business_snapshot_calls\":1,\"catalog_calls\":1,\"agent_a_brain_ms\":1,\"planner_ms\":0,\"model_ms\":0,\"event_to_decision_ms\":5036,\"commit_ms\":30,\"send_ms\":11,\"event_to_visible_outbound_ms\":5077,\"event_to_visible_outbound_over_budget\":0,\"total_workflow_ms\":5103,\"model\":\"deepseek-v4-flash\",\"fast_path\":false}",
+      "",
+      " ✓ tests/workflow/agent-a-real-conversation-regression.test.ts (3 tests) 41900ms",
+      "   ✓ keeps a general opening unselected despite a course saved for a previous conversation  5212ms",
+      "   ✓ retains call acceptance without a phone, repairs the impossible action and creates one session after the phone  11074ms",
+      "   ✓ persists a delivered phone confirmation, preserves the full name and sends exactly one canonical link  25612ms",
+      "",
+      " Test Files  1 passed (1)",
+      "      Tests  3 passed (3)",
+      "   Start at  12:25:52",
+      "   Duration  42.21s (transform 168ms, setup 0ms, import 248ms, tests 41.90s, environment 0ms)",
+      ""
+    ]
+  },
+  "recorded-replay-2.log": {
+    "sha256": "fc8187a986365bf1ee9e1bf06d3965e802f198c2e9392d976527dd6f1380336a",
+    "result_tail": [
+      "stdout | tests/workflow/agent-a-recorded-production-replay.test.ts > replays all twelve production turns through their deployed workflow and commit",
+      "{\"event\":\"studyx.http.attempt\",\"trace_id\":\"ddf0c8ab-4c66-4325-b6d8-a2bdc6a714a5\",\"path\":\"/api/agent/batches/fad92972-f1c0-4a3e-8fdd-98458a1a57d1/claim\",\"method\":\"POST\",\"attempt\":1,\"status\":409,\"error_code\":null,\"duration_ms\":9}",
+      "",
+      "stdout | tests/workflow/agent-a-recorded-production-replay.test.ts > replays all twelve production turns through their deployed workflow and commit",
+      "{\"event\":\"studyx.turn.not_batch_owner\",\"trace_id\":\"ddf0c8ab-4c66-4325-b6d8-a2bdc6a714a5\",\"batch_id\":\"fad92972-f1c0-4a3e-8fdd-98458a1a57d1\",\"outcome\":\"completed\"}",
+      "{\"event\":\"studyx.turn.timings\",\"trace_id\":\"ddf0c8ab-4c66-4325-b6d8-a2bdc6a714a5\",\"turn_id\":\"bf2e8ac0-d6cc-464d-8f01-93cfbdeb4b01\",\"phase\":\"completed\",\"telegram_to_router_ms\":0,\"ingest_ms\":26,\"batch_wait_ms\":5232,\"batch_wait_actual_ms\":5232,\"batch_wait_scheduled_ms\":5232,\"claim_ms\":52,\"total_workflow_ms\":5310}",
+      "",
+      " ✓ tests/workflow/agent-a-recorded-production-replay.test.ts (1 test) 68126ms",
+      "   ✓ replays all twelve production turns through their deployed workflow and commit  68125ms",
+      "",
+      " Test Files  1 passed (1)",
+      "      Tests  1 passed (1)",
+      "   Start at  12:06:55",
+      "   Duration  68.51s (transform 207ms, setup 0ms, import 298ms, tests 68.13s, environment 0ms)",
+      ""
+    ]
+  },
+  "typecheck-final.log": {
+    "sha256": "96efe7fb66fd4d0be314274311b86918b947c19bb6f1bdf96952bc2f7304db38",
+    "result_tail": [
+      "",
+      "> studyx-agente-ventas@0.1.0 typecheck",
+      "> tsc --noEmit",
+      ""
+    ]
+  },
+  "lint-final.log": {
+    "sha256": "58be5986f675e359bb75562f0fdc333a2164d337b11c4863ab9c053f09d33b10",
+    "result_tail": [
+      "",
+      "> studyx-agente-ventas@0.1.0 lint",
+      "> eslint . --max-warnings=0",
+      ""
+    ]
+  },
+  "botpress-typecheck.log": {
+    "sha256": "4654f0fd167a1368306caa6c82480dcc07c319ae08b27bc7cec2cface373b62c",
+    "result_tail": [
+      "",
+      "> botpress-agent@1.0.0 typecheck",
+      "> tsc --noEmit",
+      ""
+    ]
+  },
+  "botpress-check.log": {
+    "sha256": "b09313df12b6e0cb2d254a517dae69feecd447193de26397e6c0514cc1129eea",
+    "result_tail": [
+      "  \"valid\": true,",
+      "  \"errors\": [],",
+      "  \"warnings\": [],",
+      "  \"info\": [],",
+      "  \"primitives\": {",
+      "    \"actions\": 8,",
+      "    \"workflows\": 3,",
+      "    \"conversations\": 1,",
+      "    \"triggers\": 0,",
+      "    \"tables\": 0",
+      "  },",
+      "  \"assetsOk\": true,",
+      "  \"typesOk\": true,",
+      "  \"dependencies\": []",
+      "}"
+    ]
+  },
+  "botpress-build.log": {
+    "sha256": "6413ce1faaa31432f5b3dfb345c94cd6933beaa0fc92dfc786db72abefc0c9a0",
+    "result_tail": [
+      "",
+      "🔨 Building ADK agent for production...",
+      "📦 Loaded project: STUDYX",
+      "📝 Generating assets types...",
+      "✅ Assets types generated",
+      "🔨 Generating Botpress bot project...",
+      "✅ Bot project generated",
+      "🏗️  Building agent...",
+      "",
+      "✅ Build completed successfully!",
+      "📦 Output directory: /Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/agent-a-logical-turn-recovery/botpress-agent/.adk/bot/.botpress/dist",
+      "",
+      "Next steps:",
+      "  - Run `adk deploy` to deploy your agent",
+      "  - Or run `cd .adk/bot && bp deploy` to deploy manually"
+    ]
+  },
+  "next-build.log": {
+    "sha256": "e7a1a212602d08f467e4efa025080491ee18128f97ea222326f1fa06d6864529",
+    "result_tail": [
+      "├ ƒ /retell/tools/consultar-curso",
+      "├ ƒ /retell/tools/consultar-oferta",
+      "├ ƒ /retell/tools/derivar-humano",
+      "├ ƒ /retell/tools/enviar-link-pago",
+      "├ ƒ /retell/tools/enviar-material",
+      "├ ƒ /retell/tools/guardar-datos-contacto",
+      "├ ƒ /retell/tools/registrar-resultado",
+      "└ ƒ /retell/tools/verificar-pago",
+      "",
+      "",
+      "ƒ Proxy (Middleware)",
+      "",
+      "○  (Static)   prerendered as static content",
+      "ƒ  (Dynamic)  server-rendered on demand",
+      ""
+    ]
+  }
+}

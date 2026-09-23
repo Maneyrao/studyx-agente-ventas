@@ -72,7 +72,7 @@ function generated(value: AgentATurnProposalV1) {
 }
 
 describe('resolveAgentAPlannerlessProposalV2', () => {
-  it('asks DeepSeek once to add the required first call offer and keeps model-owned wording', async () => {
+  it('keeps first-offer timing advisory and never inserts commercial copy', async () => {
     const current = context();
     current.turn.batch_messages = [{ id: 'm2', text: 'Mmm no lo sé' }];
     current.turn.recent_turns = [{
@@ -101,9 +101,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
 
     expect(repair).not.toHaveBeenCalled();
-    expect(result.effective.proposal.response.call_offer).toBe(
-      'Si te sirve, puedo llamarte y ayudarte a elegir con más claridad 🙂 Quieres que te llame?',
-    );
+    expect(result.effective.proposal.response.call_offer).toBeNull();
     expect(result.evidence).toMatchObject({ repair_attempted: false, repaired: false });
   });
 
@@ -246,7 +244,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.evidence).toMatchObject({ repair_attempted: false, repaired: false });
   });
 
-  it('rehomes a non-call CTA and guarantees the due invitation without another model call', async () => {
+  it('rehomes a model-authored CTA without adding an invitation', async () => {
     const current = context();
     current.turn.recent_turns = [{
       id: 'prior-agent', direction: 'outbound',
@@ -276,9 +274,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       'Tenemos cursos de oficios, marketing y diseño.',
       'Cuéntame qué te gustaría aprender y te recomiendo una opción.',
     ]);
-    expect(result.effective.proposal.response.call_offer).toBe(
-      'Si te sirve, puedo llamarte y ayudarte a elegir con más claridad 🙂 Quieres que te llame?',
-    );
+    expect(result.effective.proposal.response.call_offer).toBeNull();
   });
 
   it('reports the terminal repair schema rejection instead of only the initial missing call', async () => {
@@ -392,26 +388,26 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.effective.proposal.proposed_action).toEqual({ type: 'request_call_now', reason: 'accepted_offer' });
   });
 
-  it('keeps the natural phone request and removes only an unauthorized call side effect', async () => {
+  it('repairs an unavailable call once without replacing model-owned wording', async () => {
     const current = context();
-    current.turn.batch_messages = [{ id: 'm1', text: 'te puedo llamar?' }];
+    current.turn.batch_messages = [{ id: 'm1', text: 'Dsle llamame' }];
     current.capabilities.may_request_call_now = false;
     current.capabilities.intake_missing = ['telefono'];
-    const response = ['Claro. Pásame el número donde quieres recibir la llamada y te contacto.'];
-
-    const result = await resolveAgentAPlannerlessProposalV2({
-      initial: generated(proposal({
-        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
-        response: { messages: response, call_offer: null },
-        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
-      })),
-      context: current,
-      repair_enabled: false,
-      repair: async () => { throw new Error('Unexpected repair'); },
-      rejection_id: '00000000-0000-4000-8000-000000000001',
+    const initial = proposal({
+      move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+      response: { messages: ['Coordino la llamada.'], call_offer: null },
+      proposed_action: { type: 'request_call_now', reason: 'direct_request' },
     });
-
-    expect(result.effective.proposal.response.messages).toEqual(response);
+    const repair = vi.fn(async rejection => generated({ ...initial,
+      response: { messages: ['A qué número con código de país y área puedo llamarte?'] },
+      proposed_action: { type: 'none' as const },
+      repair_of: { rejection_id: rejection.rejection_id, attempt: 1 as const },
+    }));
+    const result = await resolveAgentAPlannerlessProposalV2({ initial: generated(initial), context: current,
+      repair_enabled: true, repair, rejection_id: '00000000-0000-4000-8000-000000000001' });
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.effective.proposal.response.messages).toEqual(['A qué número con código de país y área puedo llamarte?']);
+    expect(result.effective.proposal.move.move).toBe('request_call');
     expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
   });
 

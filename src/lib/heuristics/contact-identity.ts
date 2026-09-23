@@ -31,7 +31,7 @@ const CONTEXTUAL_NON_NAME_TOKENS = new Set([
   'bueno', 'curso', 'cursos', 'dale', 'detalle', 'detalles', 'duracion', 'fotografia',
   'gracias', 'hola', 'horario', 'horarios',
   'info', 'informacion', 'ingles', 'laboral', 'modalidad', 'opcion', 'opciones', 'pago', 'pagos',
-  'precio', 'precios', 'salida', 'tecnologia',
+  'precio', 'precios', 'salida', 'si', 'tecnologia',
 ]);
 
 const INTRODUCED_NAME_PATTERN = new RegExp(
@@ -143,13 +143,19 @@ function ownsPersonalContactBlock(headerSource: string): boolean {
  */
 const DECLARED_PHONE_PATTERN = /(\+?\d[\d\s().-]{6,18}\d)/u;
 
-export function extractDeclaredPhone(text: string): string | null {
+export function extractDeclaredPhones(text: string): string[] {
   const withoutEmails = text.replace(new RegExp(EMAIL_PATTERN.source, 'gu'), ' ');
-  const candidate = DECLARED_PHONE_PATTERN.exec(withoutEmails)?.[1];
-  if (!candidate) return null;
-  const digits = candidate.replace(/\D/gu, '');
-  if (digits.length < 8 || digits.length > 15) return null;
-  return candidate.trim().startsWith('+') ? `+${digits}` : digits;
+  return [...withoutEmails.matchAll(new RegExp(DECLARED_PHONE_PATTERN.source, 'gu'))]
+    .flatMap(match => {
+      const candidate = match[1]!;
+      const digits = candidate.replace(/\D/gu, '');
+      if (digits.length < 8 || digits.length > 15) return [];
+      return [candidate.trim().startsWith('+') ? `+${digits}` : digits];
+    });
+}
+
+export function extractDeclaredPhone(text: string): string | null {
+  return extractDeclaredPhones(text)[0] ?? null;
 }
 
 export function extractContactIdentity(
@@ -312,7 +318,14 @@ export function extractContactNameAnswer(
       return null;
     }
   } else if (asksFirstName) firstName = normalizedCandidate;
-  else surname = normalizedCandidate;
+  else {
+    // A customer may supply the full name when asked for the missing surname.
+    // Reuse the already known first name instead of storing it twice.
+    const parts = splitFullName(normalizedCandidate);
+    surname = firstName && parts.apellido
+      && parts.nombre.toLocaleLowerCase('es') === firstName.toLocaleLowerCase('es')
+      ? parts.apellido : normalizedCandidate;
+  }
 
   // contacts.name is split at its first token by the commercial contract.
   // A compound first name alone must remain partial, or its second token would

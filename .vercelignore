@@ -31,3 +31,5 @@ tsconfig.tsbuildinfo
 # Laboratorio: incluye credenciales y snapshots privados; nunca se despliega.
 .eval/
 .worktrees/
+
+.local-evidence/

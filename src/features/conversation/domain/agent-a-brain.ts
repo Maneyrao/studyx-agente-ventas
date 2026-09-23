@@ -128,6 +128,8 @@ export interface AgentATurnProposalV1 {
     readonly call_offer?: string | null;
   };
   readonly proposed_action: AgentAProposedActionV1;
+  /** Model interpretation of the customer confirming the last delivered phone. */
+  readonly confirmed_phone?: string | null;
   readonly used_fact_ids: readonly string[];
   readonly used_memory_ids: readonly string[];
   readonly stage_hypothesis?: 'exploring' | 'qualified' | 'course_selected' | 'plan_selected'

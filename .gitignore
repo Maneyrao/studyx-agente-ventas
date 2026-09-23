@@ -59,6 +59,9 @@ artifacts/runs/
 
 # Credenciales del evaluador aislado: sintéticas salvo la del modelo.
 /.eval/
+/.local-evidence/
 
 # Ledger temporal de smoke tests pagos: nunca versionado.
 /.smoke-budget.json*
+
+/botpress-agent/node_modules

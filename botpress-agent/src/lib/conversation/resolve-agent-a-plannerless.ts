@@ -12,9 +12,7 @@ import type {
   AgentAProposalCycleEvidenceV1,
   AgentAProposalEnvelopeV1,
 } from './resolve-agent-a-proposal'
-import { evaluateCallOfferTurnPolicyV1 } from './call-offer-turn-policy'
 
-const REQUIRED_CALL_OFFER = 'Si te sirve, puedo llamarte y ayudarte a elegir con más claridad 🙂 Quieres que te llame?'
 
 function authorizedFactIds(context: AgentAContextV1): string[] {
   return [
@@ -169,8 +167,7 @@ function materializeAuthorizedPaymentAction<T extends AgentAProposalEnvelopeV1>(
 
 /**
  * Keep an ordinary CTA visible, but never let it masquerade as the dedicated
- * call invitation. If the shared turn policy says the invitation is due, add
- * one short safety-net sentence without another model round trip.
+ * call invitation. All text stays model-authored; timing is prompt guidance.
  */
 function normalizeCallOfferBoundary<T extends AgentAProposalEnvelopeV1>(input: {
   readonly initial: T
@@ -178,23 +175,11 @@ function normalizeCallOfferBoundary<T extends AgentAProposalEnvelopeV1>(input: {
 }): T {
   const declared = input.initial.proposal.response.call_offer?.trim() || null
   const declaredOffersCall = declared !== null && solicitsACallV1(declared, true)
-  const narrativeOffersCall = input.initial.proposal.response.messages.some((message) => (
-    solicitsACallV1(message)
-  ))
-  const policy = evaluateCallOfferTurnPolicyV1({
-    context: input.context,
-    response_messages: input.initial.proposal.response.messages,
-    proposed_course_reference: input.initial.proposal.move.course_reference,
-  })
   const messages = declared !== null && !declaredOffersCall
     && !input.initial.proposal.response.messages.includes(declared)
     ? [...input.initial.proposal.response.messages, declared]
     : input.initial.proposal.response.messages
-  const callOffer = declaredOffersCall
-    ? declared
-    : policy.offer_required && !narrativeOffersCall
-      ? REQUIRED_CALL_OFFER
-      : null
+  const callOffer = declaredOffersCall ? declared : null
 
   if (messages === input.initial.proposal.response.messages
     && callOffer === (input.initial.proposal.response.call_offer ?? null)) return input.initial
@@ -245,77 +230,6 @@ function demoteUnauthorizedPaymentAction<T extends AgentAProposalEnvelopeV1>(inp
     : null
 }
 
-/**
- * A missing phone denies only the call side effect. DeepSeek's useful reply
- * (normally a natural request for that number) remains customer-facing.
- */
-function demoteUnauthorizedCallAction<T extends AgentAProposalEnvelopeV1>(input: {
-  readonly initial: T
-  readonly rejection: TurnRejectionV1
-  readonly context: AgentAContextV1
-  readonly authorized_fact_ids: readonly string[]
-}): T | null {
-  if (input.initial.proposal.proposed_action.type !== 'request_call_now') return null
-  if (!input.rejection.rejections.some((reason) => (
-    reason.code === 'ACTION_NOT_AUTHORIZED' && reason.subject === 'request_call_now'
-  ))) return null
-  if (!input.rejection.rejections.every((reason) => (
-    reason.code === 'ACTION_NOT_AUTHORIZED' && reason.subject === 'request_call_now'
-  ))) return null
-
-  const candidate = {
-    ...input.initial,
-    proposal: { ...input.initial.proposal, proposed_action: { type: 'none' as const } },
-  }
-  const candidateRejection = validatePlannerless({
-    proposal: candidate.proposal,
-    context: input.context,
-    rejection_id: input.rejection.rejection_id,
-    authorized_fact_ids: input.authorized_fact_ids,
-  })
-  return candidateRejection === null || hasOnlyNonBlockingGuidance(candidate.proposal, candidateRejection)
-    ? candidate
-    : null
-}
-
-/**
- * Safe corrections must compose. A draft can contain both an unsupported
- * course comparison and a call side effect that is not available yet. Each
- * correction is independently lossless: remove only the unsupported claim
- * and only the unavailable capability, then validate their combined result
- * once. Treating them as mutually exclusive made the whole useful reply fail.
- */
-function recoverCumulativeFactAndCallRejectionsV1<T extends AgentAProposalEnvelopeV1>(input: {
-  readonly initial: T
-  readonly rejection: TurnRejectionV1
-  readonly context: AgentAContextV1
-  readonly authorized_fact_ids: readonly string[]
-}): T | null {
-  const pruned = pruneKnownUnsupportedFactClaimsWithoutValidationV1(input)
-  if (pruned === null) return null
-
-  const deniesCall = input.rejection.rejections.some((reason) => (
-    reason.code === 'ACTION_NOT_AUTHORIZED' && reason.subject === 'request_call_now'
-  ))
-  if (!deniesCall || pruned.proposal.proposed_action.type !== 'request_call_now') return null
-
-  const candidate = {
-    ...pruned,
-    proposal: { ...pruned.proposal, proposed_action: { type: 'none' as const } },
-  } as T
-  const candidateRejection = validatePlannerless({
-    proposal: candidate.proposal,
-    context: input.context,
-    rejection_id: input.rejection.rejection_id,
-    authorized_fact_ids: input.authorized_fact_ids,
-  })
-  return candidateRejection === null
-    || hasOnlyNonBlockingGuidance(candidate.proposal, candidateRejection)
-    || mayDegradeToBackendBoundary(candidate.proposal, candidateRejection)
-    ? candidate
-    : null
-}
-
 /** Both the initial proposal and its one repair use this exact pipeline. */
 function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   readonly initial: T
@@ -337,23 +251,11 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   })
   const rejection = validate(effective)
   if (rejection === null) return { effective, rejection, originalRejection }
-  const cumulative = recoverCumulativeFactAndCallRejectionsV1({
-    ...input,
-    initial: effective,
-    rejection,
-  })
-  if (cumulative !== null) {
-    return { effective: cumulative, rejection: null, originalRejection }
-  }
-  // Each demotion/prune revalidates its result, including the full schema.
-  for (const transform of [demoteUnauthorizedPaymentAction, demoteUnauthorizedCallAction]) {
-    const candidate = transform({ ...input, initial: effective, rejection })
-    if (candidate !== null) return { effective: candidate, rejection: null, originalRejection }
-  }
-  const owesRequiredCallOffer = rejection.rejections.some((reason) => (
-    reason.code === 'CALL_OFFER_REQUIRED'
-  ));
-  if (!owesRequiredCallOffer && hasOnlyNonBlockingGuidance(effective.proposal, rejection)) {
+  const paymentCandidate = demoteUnauthorizedPaymentAction({ ...input, initial: effective, rejection })
+  if (paymentCandidate !== null) return { effective: paymentCandidate, rejection: null, originalRejection }
+  // An unavailable call needs the existing model repair: changing only the
+  // action would publish an acknowledgement for a call that never occurred.
+  if (hasOnlyNonBlockingGuidance(effective.proposal, rejection)) {
     return { effective, rejection: null, originalRejection }
   }
   return { effective, rejection, originalRejection }
@@ -410,11 +312,10 @@ function mayDegradeToBackendBoundary(
 }
 
 function hasOnlyNonBlockingGuidance(
-  proposal: AgentATurnProposalV1,
+  _proposal: AgentATurnProposalV1,
   rejection: TurnRejectionV1,
 ): boolean {
-  return !claimsImmediatePaymentLinkDelivery(proposal)
-    && rejection.rejections.every((reason) => NON_BLOCKING_GUIDANCE_CODES.has(reason.code))
+  return rejection.rejections.every((reason) => NON_BLOCKING_GUIDANCE_CODES.has(reason.code))
 }
 
 function plannerlessRejectionError(rejection: TurnRejectionV1): Error {

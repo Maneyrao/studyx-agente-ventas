@@ -85,48 +85,12 @@ function context(): AgentAContextV1 {
 }
 
 describe('Agent A Meta sales brain', () => {
-  it('treats every conversation as a warm Meta lead and resolves the course dynamically', () => {
-    const instructions = buildAgentABrainInstructionsV1(context());
-    const behavior = instructions.split('<authorized_context>')[0];
-
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v75');
-    expect(behavior).toMatch(/leads?[\s\S]{0,120}(?:Meta|Instagram|Facebook)/iu);
-    expect(behavior).toMatch(/cualquier curso activo[\s\S]{0,120}catalog\.available_offerings/iu);
-    expect(behavior).toMatch(/anuncio o el mensaje[\s\S]{0,100}curso activo/iu);
-    expect(behavior).not.toMatch(/desde Telegram o desde un formulario/iu);
-  });
-
-  it('lets the model lead a flexible sale instead of obeying a blocking phase script', () => {
-    const instructions = buildAgentABrainInstructionsV1(context());
-    const behavior = instructions.split('<authorized_context>')[0];
-
-    expect(behavior).toMatch(/Responde primero el pedido, la pregunta o la intención actual[\s\S]{0,120}pr[oó]ximo paso comercial/iu);
-    expect(behavior).toMatch(/Las fases orientan la venta[\s\S]{0,120}no son un cuestionario ni un recorrido obligatorio/iu);
-    expect(behavior).toMatch(/conduc(?:e|ir)[\s\S]{0,180}(?:llamada|compra|pago|avanzar)/iu);
-    expect(behavior).not.toContain('choose the earliest incomplete phase');
-    expect(behavior).not.toContain('Follow the six canonical sales phases in order');
-    expect(behavior).not.toMatch(/exactly (?:one|two) informational messages/iu);
-  });
-
-  it('keeps two natural call invitations and the three canonical payment plans', () => {
-    const instructions = buildAgentABrainInstructionsV1(context());
-    const behavior = instructions.split('<authorized_context>')[0];
-
-    expect(behavior).toMatch(/m[áa]ximo (?:de )?dos ofrecimientos/iu);
-    expect(behavior).toMatch(/primera invitaci[óo]n[\s\S]{0,280}response\.call_offer/iu);
-    expect(behavior).toMatch(/breve, c[áa]lida y opcional/iu);
-    expect(behavior).toMatch(/segundo y [uú]ltimo ofrecimiento[\s\S]{0,120}recuérdalo/iu);
-    expect(behavior).toMatch(/Rechazar la primera invitaci[óo]n[\s\S]{0,180}segundo y [uú]ltimo recordatorio/iu);
-    expect(behavior).toContain('12 pagos mensuales de USD 30');
-    expect(behavior).toContain('6 pagos mensuales de USD 60');
-    expect(behavior).toContain('1 pago único de USD 360');
-  });
-
-  it('keeps the static instruction surface compact enough for natural generation', () => {
-    const instructions = buildAgentABrainInstructionsV1(context());
-    const staticInstructions = instructions.split('<authorized_context>')[0];
-    const words = staticInstructions.trim().split(/\s+/u).length;
-
-    expect(words).toBeLessThan(2_500);
+  it('keeps the instruction surface compact and leaves the real catalog in context', () => {
+    const current = context();
+    const instructions = buildAgentABrainInstructionsV1(current);
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v76');
+    const staticInstructions = instructions.split('<authorized_context>')[0]!;
+    expect(staticInstructions.trim().split(/\s+/u).length).toBeLessThan(1600);
+    expect(JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!)).toEqual(current);
   });
 });

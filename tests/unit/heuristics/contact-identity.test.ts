@@ -329,3 +329,14 @@ describe('extractContactNameAnswer', () => {
     expect(extractContactIdentity('Ríos').name).toBeNull();
   });
 });
+
+describe('production contact regression 2026-09-23', () => {
+  it.each(['Si, necesito que me agendes', 'Sí, necesito que me agendes', 'Si', 'Sí'])('does not replace a name with affirmation: %s', text => {
+    expect(extractContactIdentity(text, 'Ludmi Maneyro').name).toBeNull();
+  });
+  it('recognizes a full name when only the surname was requested', () => {
+    expect(extractContactNameAnswer('Ludmi maneyro\n[ludmi@example.test](mailto:ludmi@example.test)\n[1169004497](tel:1169004497)',
+      'Me faltan tu apellido, tu correo y tu teléfono con código de país y área.',
+      { firstName: 'Ludmi', surname: null })?.name).toBe('Ludmi Maneyro');
+  });
+});

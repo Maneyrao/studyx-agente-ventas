@@ -85,6 +85,7 @@ const DEEPSEEK_PROPOSAL_ROOT_FIELDS = new Set([
   'confidence',
   'response',
   'proposed_action',
+  'confirmed_phone',
   'used_fact_ids',
   'used_memory_ids',
   'memory_candidates',
@@ -489,6 +490,7 @@ function proposalJsonSchema(context: AgentAContextV1): unknown {
       },
     }),
     proposed_action: proposedAction,
+    confirmed_phone: { ...nullableString, description: "The complete phone the customer confirms from the immediately previous assistant turn; otherwise null. Never infer a country code without customer confirmation." },
     // The single repair must echo its actual rejection. Omitting this field
     // from a closed provider schema made every conforming repair fail the
     // resolver's correlation check, even when its rewritten text was valid.

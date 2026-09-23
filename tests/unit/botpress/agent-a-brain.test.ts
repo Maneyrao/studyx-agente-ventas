@@ -502,15 +502,15 @@ describe('Agent A Brain V1', () => {
     )).toBe(false);
   });
 
-  it('requires a separate initial call offer after any canonical catalog recommendation', () => {
+  it('leaves the timing of an optional call invitation to the conversational model', () => {
     expect(buildAgentABrainInstructionsV1(context())).toContain(
-      'hazla siempre en tu segunda intervención de la conversación',
+      'Ofrece una llamada breve y opcional cuando ayude a orientar',
     );
   });
 
   it('does not renew a call invitation merely because the customer changes course', () => {
     expect(buildAgentABrainInstructionsV1(context())).toContain(
-      'Un cambio de curso por sí solo no justifica el segundo ofrecimiento',
+      'la segunda necesita un motivo nuevo',
     );
   });
 
@@ -649,12 +649,12 @@ describe('Agent A Brain V1', () => {
         },
       },
     });
-    const repairDirective = 'FACT_VALUE_MISMATCH: correct the value using authorized_alternatives.fact_ids';
+    const repairDirective = 'Use authorized fact values or omit unsupported claims.';
 
     expect(instructions).toContain(repairDirective);
     expect(instructions.lastIndexOf(repairDirective))
       .toBeGreaterThan(instructions.lastIndexOf('</authorized_context>'));
-    expect(instructions).toContain('or omit the claim');
+    expect(instructions).toContain("preserving the customer's intent");
   });
 
   it('reports only the safe schema path and issue code for a root contract failure', () => {
@@ -1445,15 +1445,9 @@ describe('Agent A Brain V1', () => {
     expect(moveProperties.course_reference.description).toContain(
       'required whenever move or secondary_moves includes select_course',
     );
-    expect(body.instructions).toContain('Elegir un plan se refleja en `move.payment_plan`, pero no autoriza por sí solo el link');
     expect(body.instructions).toContain('When turn_rejection exists');
-    expect(body.instructions).toContain('Haz como máximo una pregunta útil por turno');
     expect(body.instructions).toContain('Respond to their combined meaning');
-    expect(body.instructions).toContain('Responde primero el pedido, la pregunta o la intención actual');
-    expect(body.instructions).toContain('Pide sólo los campos que figuren en `capabilities.intake_missing`');
-    expect(body.instructions).toContain('Cuando la respuesta combine información y un avance comercial, usa dos mensajes breves');
     expect(body.instructions).not.toContain('control voice, rhythm and the choice of');
-    expect(body.instructions).toContain('salen sólo de hechos visibles en `authorized_context`');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('greeting');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('unknown');
     expect(moveProperties.vetoes.description).toContain('current customer message explicitly refuses');

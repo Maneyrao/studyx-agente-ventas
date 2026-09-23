@@ -423,3 +423,20 @@ describe('prepareAgentTurnV2', () => {
     });
   });
 });
+
+it('persists semantic call acceptance when the channel has no callable phone', async () => {
+  const prepared = await prepareAgentTurnV2({
+    turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+    workspace_slug: 'studyx', business_context: business, catalog_index: index,
+    current_customer_messages: ['Dsle llamame'],
+    proposal: proposal({
+      move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 0.95 },
+      response: { messages: ['A qué número con código de país y área puedo llamarte?'] },
+    }),
+  }, {
+    state_store: store(state()), now: () => Date.parse(index.as_of),
+    contact_intake: async () => ({ nombre: 'Ludmi', apellido: null, correo: null, telefono: null }),
+  });
+  expect(prepared.decision.business_action).toBeNull();
+  expect(prepared.transition).toMatchObject({ call_preference: 'call', call_offer_status: 'accepted' });
+});

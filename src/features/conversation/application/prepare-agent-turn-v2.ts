@@ -4,6 +4,7 @@ import type { ProtectedFactRef } from '@/features/orchestration/domain/egress-gu
 import { materializeCanonicalCatalogFacts } from '@/features/orchestration/domain/canonical-offering-egress';
 import type { OrchestrationStore } from '@/features/orchestration/ports/orchestration-store';
 import { loadConversationSessionConfig } from '@/lib/config';
+import { isCallablePhoneE164V1 } from '@/lib/heuristics/contact-identity';
 import type { AgentATurnProposalV1 } from '../domain/agent-a-brain';
 import { authorizeAgentTurnV2 } from '../domain/agent-turn-policy-v2';
 import { buildCanonicalFactRegistry } from '../domain/canonical-fact-registry';
@@ -188,7 +189,7 @@ export async function prepareAgentTurnV2(input: {
       // repeat; the durable counter keeps the lifetime ceiling at two.
       may_offer_call: firstNameKnown && noActiveCall,
       // A direct customer request remains valid after an earlier decline.
-      may_request_call_now: noActiveCall,
+      may_request_call_now: noActiveCall && isCallablePhoneE164V1(contactIntake?.telefono ?? ''),
     },
   });
   if (!authority.ok) throw new AgentTurnV2RejectedError(authority.reasons);

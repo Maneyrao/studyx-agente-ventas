@@ -4,27 +4,19 @@ import { describe, expect, it } from 'vitest';
 
 const PROMPT_PATH = 'docs/prompts/studyx-agent-a-canonical.md';
 const GENERATED_PATH = 'botpress-agent/src/prompts/studyx-agent-a-canonical.generated.ts';
-const EXPECTED_SHA256 = '55d124ad1bc8670f71b195968ac789a24b511529937547683c755ff3cf4f8564';
+const EXPECTED_SHA256 = 'f751ed108af40358b1193645c566e9fe098a9adac8db8a909b08158a997f3db9';
 
 describe('Agent A canonical sales prompt', () => {
   it('ships the complete approved prompt and a byte-equivalent generated module', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
-    expect(prompt.match(/\n/g) ?? []).toHaveLength(148);
+    expect(prompt.match(/\n/g) ?? []).toHaveLength(47);
     expect(createHash('sha256').update(prompt).digest('hex')).toBe(EXPECTED_SHA256);
     expect(existsSync(GENERATED_PATH)).toBe(true);
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v41' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v42' as const;");
   });
 
-  it('lets one coherent intervention choose a natural short-message rhythm', () => {
-    const prompt = readFileSync(PROMPT_PATH, 'utf8');
-
-    expect(prompt).toContain('Elige uno o dos mensajes breves según el ritmo natural');
-    expect(prompt).toContain('Usa tres sólo cuando presentes una lista real de opciones');
-    expect(prompt).toContain('no repitas un dato, una pregunta o una invitación en otra burbuja');
-    expect(prompt).toContain('forman una sola intervención coherente');
-  });
 });

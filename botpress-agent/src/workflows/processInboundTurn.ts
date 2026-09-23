@@ -699,7 +699,10 @@ export const processInboundTurn = new Workflow({
       // not a second conversational interpretation. Waiting for DeepSeek here
       // can strand the claimed batch before commit and leave the customer in
       // silence even though the requested action is unambiguous.
-      && !deterministicCallHandoff
+      // In the model-owned route, short confirmations (including a phone
+      // confirmation) must reach DeepSeek. The legacy call router cannot
+      // interpret every "sí" as call consent or substitute its canned reply.
+      && (!deterministicCallHandoff || plannerlessV2Enabled)
       && agentABrainContext !== null
 
     if (agentABrainContext !== null) {

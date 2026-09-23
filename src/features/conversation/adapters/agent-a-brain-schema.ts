@@ -162,6 +162,7 @@ export const AgentATurnProposalV1Schema = z.object({
     call_offer: CallOfferMessageSchema.nullable().optional(),
   }).strict(),
   proposed_action: ProposedActionSchema,
+  confirmed_phone: z.string().regex(/^\+[1-9]\d{7,14}$/u).nullable().optional(),
   used_fact_ids: z.array(IdentifierSchema).max(60),
   used_memory_ids: z.array(IdentifierSchema).max(5),
   // Asesor. No persiste y no autoriza nada (§ 09): el backend conserva
