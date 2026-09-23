@@ -1,7 +1,4 @@
-import {
-  supportsCallRequestV1,
-  supportsChatPreferenceV1,
-} from './channel-preference-evidence';
+import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import type { AgentAProposedActionV1, AgentATurnProposalV1 } from './agent-a-brain';
 import type {
   AwaitingReplyV1,
@@ -188,12 +185,13 @@ export function authorizeAgentTurnV2(input: {
   const currentText = (input.current_customer_messages ?? []).join('\n');
   const resumesAcceptedCall = state.call_preference === 'call'
     && state.call_offer_status === 'accepted';
-  const callRequestSupported = supportsCallRequestV1(currentText, state.awaiting_reply === 'call_or_chat')
-    || resumesAcceptedCall;
   const currentTurnRejectsCallOffer = supportsChatPreferenceV1(
     currentText,
     state.awaiting_reply === 'call_or_chat',
   );
+  const callRequestSupported = !currentTurnRejectsCallOffer
+    && !proposal.move.vetoes.includes('call')
+    && (moves.has('request_call') || resumesAcceptedCall);
   const requestedCallNow = moves.has('request_call') && proposal.proposed_action.type === 'request_call_now'
     && input.call_policy.may_request_call_now && callRequestSupported
     && !proposal.move.vetoes.includes('call');
@@ -388,8 +386,7 @@ export function authorizeAgentTurnV2(input: {
     awaitingReply = 'none';
     stage = 'handoff';
   } else if (
-    moves.has('request_call')
-    && supportsCallRequestV1(currentText, state.awaiting_reply === 'call_or_chat')
+    callRequestSupported
     && !input.call_policy.may_request_call_now
   ) {
     // The customer already chose the call. Persist that choice while the

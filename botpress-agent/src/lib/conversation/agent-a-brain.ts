@@ -1,7 +1,4 @@
-import {
-  supportsCallRequestV1,
-  supportsChatPreferenceV1,
-} from './channel-preference-evidence';
+import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import { evaluateCallOfferTurnPolicyV1 } from './call-offer-turn-policy';
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import {
@@ -1872,10 +1869,13 @@ export function validateAgentATurnProposalV1(input: {
   const declaredCallOffer = input.proposal.response.call_offer;
   const resumesAcceptedCall = input.context.commercial_state.call_preference === 'call'
     && input.context.commercial_state.call_offer_status === 'accepted';
-  const callRequestSupported = supportsCallRequestV1(
+  const currentTurnRejectsCall = supportsChatPreferenceV1(
     currentCustomerText,
     input.context.commercial_state.awaiting_reply === 'call_or_chat',
-  ) || resumesAcceptedCall;
+  );
+  const callRequestSupported = !currentTurnRejectsCall
+    && !input.proposal.move.vetoes.includes('call')
+    && (moves.has('request_call') || resumesAcceptedCall);
   const requestedCallNow = moves.has('request_call') && input.proposal.proposed_action.type === 'request_call_now'
     && input.context.capabilities.may_request_call_now && callRequestSupported
     && !input.proposal.move.vetoes.includes('call');

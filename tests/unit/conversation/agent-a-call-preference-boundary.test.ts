@@ -45,10 +45,14 @@ describe('call preference requires current customer evidence',()=>{
   expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'unknown'}});
   expect(adk(x)?.rejections).toContainEqual({code:'CHANNEL_PREFERENCE_NOT_SUPPORTED',subject:'call_preference'});
  });
- it('rejects a fabricated call request that has no call action',()=>{
+ it('keeps a structured call request pending when the call action is unavailable',()=>{
   const x=setup('Contame sobre Fotografía Profesional','request_call');
-  expect(backend(x)).toMatchObject({ok:false});
-  expect(adk(x)?.rejections).toContainEqual({code:'ACTION_NOT_AUTHORIZED',subject:'request_call_now'});
+  expect(backend(x)).toMatchObject({
+   ok:true,
+   action:{type:'none'},
+   transition:{call_preference:'call',call_offer_status:'accepted'},
+  });
+  expect(adk(x)).toBeNull();
  });
  it('records chat preference without blocking contradictory model copy',()=>{
   const x=setup('Prefiero seguir por chat','continue_by_chat');
@@ -98,6 +102,18 @@ describe('call preference requires current customer evidence',()=>{
   x.proposal.proposed_action={type:'request_call_now',reason:'direct_request'};
   x.context.capabilities.may_request_call_now=true;
   expect(authorizeAgentTurnV2({proposal:x.proposal,state:x.state,offerings:[{code:'fotografia_profesional',display_name:'Fotografía Profesional'}],facts:[],current_customer_messages:[text],call_policy:{may_offer_call:true,may_request_call_now:true}})).toMatchObject({ok:true,action:{type:'request_call_now'},transition:{call_preference:'call',stage:'handoff'}});
+  expect(adk(x)).toBeNull();
+ });
+ it('uses the model structured call move instead of requiring a literal phrase match',()=>{
+  const x=setup('Mejor hagamos la asesoría de viva voz','request_call');
+  x.proposal.proposed_action={type:'request_call_now',reason:'direct_request'};
+  x.context.capabilities.may_request_call_now=true;
+  expect(authorizeAgentTurnV2({
+   proposal:x.proposal,state:x.state,
+   offerings:[{code:'fotografia_profesional',display_name:'Fotografía Profesional'}],
+   facts:[],current_customer_messages:[x.text],
+   call_policy:{may_offer_call:true,may_request_call_now:true},
+  })).toMatchObject({ok:true,action:{type:'request_call_now'},transition:{call_preference:'call'}});
   expect(adk(x)).toBeNull();
  });
  it.each([
