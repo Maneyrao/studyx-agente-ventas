@@ -1413,6 +1413,8 @@ export const processInboundTurn = new Workflow({
           call_offer_count_after: physicalCallOffer
             ? Math.min(2, callOfferAudit.call_offer_count_before + 1)
             : callOfferAudit.call_offer_count_before,
+          proposed_call_offer: declaredCallOffer !== null,
+          visible_call_offer: physicalCallOffer,
           offered_call: physicalCallOffer,
           reason: callOfferAudit.reason,
           call_accepted: callOfferAudit.call_accepted,

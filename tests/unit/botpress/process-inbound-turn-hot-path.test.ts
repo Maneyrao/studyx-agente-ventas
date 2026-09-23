@@ -526,6 +526,8 @@ describe('processInboundTurn hot path', () => {
     expect(callOfferLog).toMatchObject({
       call_offer_count_before: 0,
       call_offer_count_after: 1,
+      proposed_call_offer: true,
+      visible_call_offer: true,
       offered_call: true,
       reason: 'FIRST_OFFER_DUE',
       call_accepted: false,

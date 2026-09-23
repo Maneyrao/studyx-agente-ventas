@@ -75,8 +75,8 @@ describe('Agent A Brain prompt', () => {
   it('ships one complete canonical behavior behind a compact runtime contract', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v40');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v74');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v41');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v75');
     expect(instructions.split(STUDYX_AGENT_A_CANONICAL_PROMPT)).toHaveLength(2);
     expect(instructions).toContain('You lead the\nconversation; the backend does not write or rewrite your narrative');
     expect(instructions).not.toContain('The sales\nphases are a map, not a blocking script');
@@ -92,10 +92,13 @@ describe('Agent A Brain prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
-      /Responde primero lo que la persona acaba de decir/iu,
+      /Responde primero el pedido, la pregunta o la intención actual/iu,
     );
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
-      /Usa normalmente entre uno y tres mensajes breves/iu,
+      /Elige uno o dos mensajes breves según el ritmo natural/iu,
+    );
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
+      /Usa tres sólo cuando presentes una lista real de opciones y cierres con un próximo paso/iu,
     );
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toMatch(
       /Evita muletillas de chatbot/iu,
@@ -163,7 +166,7 @@ describe('Agent A Brain prompt', () => {
 
     expect(instructions).toContain('Primera invitación');
     expect(instructions).toContain('en `response.call_offer`');
-    expect(instructions).toContain('Pide solamente los datos que figuren en `capabilities.intake_missing`');
+    expect(instructions).toContain('Pide sólo los campos que figuren en `capabilities.intake_missing`');
     expect(instructions).toContain('el orquestador agrega el link canónico');
     expect(instructions).toContain('como máximo antes de solicitar los datos finales');
     expect(instructions).toContain('Rechazar la primera invitación cancela esa llamada');
@@ -321,7 +324,7 @@ describe('Agent A Brain prompt', () => {
 
     const instructions = buildAgentABrainInstructionsV1(current);
 
-    expect(instructions).toMatch(/entre uno y tres mensajes breves/iu);
+    expect(instructions).toMatch(/uno o dos mensajes breves según el ritmo natural/iu);
     expect(instructions).toMatch(/consulta (?:es )?general[\s\S]{0,180}tres áreas u opciones/iu);
     expect(instructions).toMatch(/first_name_status.*requested[\s\S]{0,220}(?:no vuelvas|do not ask)/iu);
   });
