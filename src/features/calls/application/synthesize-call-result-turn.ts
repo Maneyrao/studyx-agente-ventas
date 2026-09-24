@@ -2,6 +2,7 @@ import type { DbClient } from '@/lib/db/types';
 import { jsonbParam } from '@/lib/db/json';
 import { sha256Hex } from '@/lib/idempotency/canonical-json';
 import { registerMessage, type Message } from '@/lib/services/message.service';
+import type { PostCallFollowupBriefV1 } from '../domain/post-call-followup';
 
 /**
  * Spec 007 — sintetiza el turno inbound que agent_decisions exige por FK,
@@ -29,6 +30,7 @@ export interface SynthesizeCallResultTurnInput {
   readonly contact_id: string;
   readonly conversation_id: string;
   readonly trace_id: string;
+  readonly followup?: PostCallFollowupBriefV1;
 }
 
 export interface SynthesizedCallResultTurn {
@@ -65,7 +67,11 @@ export async function synthesizeCallResultTurn(
     );
   }
 
-  const payload = { system: 'post_call_followup', call_id: input.call_id };
+  const payload = {
+    system: 'post_call_followup',
+    call_id: input.call_id,
+    followup: input.followup ?? null,
+  };
   const payloadHash = sha256Hex(payload);
 
   const inserted = await db<Array<{ id: string }>>`
@@ -117,7 +123,11 @@ export async function synthesizeCallResultTurn(
       direction: 'inbound',
       content: '[system:call_result]',
       source_event_id: eventId,
-      metadata: { system: 'post_call_followup', call_id: input.call_id },
+      metadata: {
+        system: 'post_call_followup',
+        call_id: input.call_id,
+        followup: input.followup ?? null,
+      },
     },
     {
       db,

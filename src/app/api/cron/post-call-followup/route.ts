@@ -44,8 +44,9 @@ function createOutboundSender() {
  *
  * Spec 007 — cierra el loop B→A: una llamada que terminó en estado terminal
  * inicia su propio mensaje de cierre por WhatsApp, sin esperar a que el
- * cliente escriba primero. El mensaje lo arma el backend con reglas fijas
- * (src/features/calls/domain/post-call-followup.ts), nunca el modelo.
+ * cliente escriba primero. El dominio autoriza un brief estructurado y el
+ * borde emite un estado operativo mínimo; el Agente A conserva la autoría de
+ * toda continuación conversacional con ese mismo contexto durable.
  *
  * Protegido por CRON_SECRET, igual que el resto de /api/cron/* — sin firma
  * HMAC de Botpress porque no hay turno de Botpress que lo dispare.

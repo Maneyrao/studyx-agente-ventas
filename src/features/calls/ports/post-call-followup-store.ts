@@ -1,5 +1,6 @@
 import type { CallResult } from '@/lib/contracts/call-event';
 import type { CallStatus } from '../domain/call-state';
+import type { PostCallFollowupBriefV1 } from '../domain/post-call-followup';
 
 /**
  * Port for the post-call followup sweep (spec 007). Narrow on purpose, same
@@ -62,5 +63,6 @@ export interface PostCallFollowupStore {
     readonly contact_id: string;
     readonly conversation_id: string;
     readonly trace_id: string;
+    readonly followup?: PostCallFollowupBriefV1;
   }): Promise<void>;
 }

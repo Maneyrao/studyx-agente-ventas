@@ -2,56 +2,111 @@ import type { CallResult } from '@/lib/contracts/call-event';
 import type { CallStatus } from './call-state';
 
 /**
- * Spec 007 — el mensaje de cierre lo arma el backend con reglas fijas, nunca
- * el modelo. Determinístico y auditable: mismo (status, result) siempre
- * produce el mismo texto versionado.
- *
- * `null` significa "no corresponde emitir mensaje" — son verdictos válidos,
- * no errores (cancelled, no_contactar, sin turno de WhatsApp resoluble).
+ * Spec 007 — the orchestrator decides whether a post-call turn is allowed and
+ * which verified situation it represents.  It does not decide the sales
+ * conversation.  The structured brief is persisted with the synthetic call
+ * result and can be rendered safely at the delivery boundary without turning
+ * call-state policy into an implicit conversational planner.
  */
 
-export const POST_CALL_FOLLOWUP_PROMPT_VERSION = 'post-call-followup-v2';
+export const POST_CALL_FOLLOWUP_PROMPT_VERSION = 'post-call-followup-v3';
+
+export type PostCallFollowupScenario =
+  | 'no_answer'
+  | 'voicemail'
+  | 'call_interrupted'
+  | 'temporarily_unavailable'
+  | 'analysis_unavailable'
+  | 'payment_verified'
+  | 'payment_pending'
+  | 'followup_scheduled'
+  | 'not_interested'
+  | 'human_handoff_unavailable'
+  | 'neutral_after_call';
+
+export type PostCallFollowupObjective =
+  | 'recover_call_or_continue_chat'
+  | 'continue_chat'
+  | 'continue_payment'
+  | 'confirm_verified_sale'
+  | 'honor_scheduled_followup'
+  | 'close_respectfully';
+
+export type PostCallFollowupNextStep =
+  | 'retry_call'
+  | 'retry_call_later'
+  | 'continue_chat'
+  | 'complete_payment'
+  | 'await_human_verification'
+  | 'await_team_access'
+  | 'honor_scheduled_followup'
+  | 'close_conversation';
+
+export interface PostCallFollowupBriefV1 {
+  readonly schema_version: 1;
+  readonly scenario: PostCallFollowupScenario;
+  readonly objective: PostCallFollowupObjective;
+  readonly payment_state: 'not_applicable' | 'reported_or_pending' | 'verified';
+  readonly allowed_next_steps: readonly PostCallFollowupNextStep[];
+}
 
 export type PostCallFollowupVerdict =
-  | { readonly action: 'send'; readonly content: string; readonly reason: string }
+  | { readonly action: 'send'; readonly brief: PostCallFollowupBriefV1; readonly reason: string }
   | { readonly action: 'revoke_contact'; readonly reason: string }
   | { readonly action: 'skip'; readonly reason: string };
 
-const NO_ANSWER_RETRY_OFFER =
-  'Intentamos llamarte pero no pudimos comunicarnos. Ocurrió algo? Si quieres, podemos intentarlo de nuevo; si no, seguimos por aquí.';
-
-const TEMPORARY_UNAVAILABLE_OFFER =
-  'Perdón, en este momento todos nuestros operadores están ocupados. Si quieres, podemos intentarlo de nuevo más tarde o seguimos por aquí.';
-
-const NEUTRAL_CONTINUITY =
-  'Hola, ¿cómo quedaste después de la llamada? Contame si te sirvió o si te quedó alguna duda.';
-
-function saleFollowup(): string {
-  return 'Buenísimo que hayamos podido cerrar en la llamada. Cualquier cosa que necesites de acá en más, escribime.';
-}
-
-function paymentPendingFollowup(): string {
-  return 'Te compartí el link de pago por acá. Cuando puedas completarlo, avisame así seguimos. Sin apuro, cualquier duda me escribís.';
-}
-
-function scheduledFollowup(): string {
-  return 'Quedamos así como charlamos en la llamada. Cualquier cosa antes de esa fecha, estoy por acá.';
-}
-
-function politeCloseFollowup(): string {
-  return 'Gracias por el tiempo en la llamada. Quedo por acá si en algún momento te interesa retomarlo.';
-}
-
-function neutralNoClaimFollowup(): string {
-  return 'Gracias por el tiempo en la llamada. Cualquier cosa que necesites, escribime por acá.';
+function brief(
+  scenario: PostCallFollowupScenario,
+  objective: PostCallFollowupObjective,
+  paymentState: PostCallFollowupBriefV1['payment_state'],
+  allowedNextSteps: readonly PostCallFollowupNextStep[],
+): PostCallFollowupBriefV1 {
+  return {
+    schema_version: 1,
+    scenario,
+    objective,
+    payment_state: paymentState,
+    allowed_next_steps: allowedNextSteps,
+  };
 }
 
 /**
- * `paymentVerified` llega del sistema de pagos (canonical), nunca del
- * análisis de la llamada — el resultado que reporta Retell/el simulador no es
- * evidencia de pago. Si `venta_confirmada` no tiene pago verificado todavía,
- * se degrada a group de seguimiento de pago, nunca se afirma una venta que el
- * sistema no puede probar.
+ * Minimal operational renderer for the proactive message emitted by the
+ * scheduled worker.  It may express only the facts and choices authorized by
+ * the brief.  Agent A owns every subsequent conversational turn with the same
+ * durable call context.
+ */
+export function renderPostCallFollowup(briefing: PostCallFollowupBriefV1): string {
+  switch (briefing.scenario) {
+    case 'no_answer':
+      return 'Intentamos llamarte pero no pudimos comunicarnos. Ocurrió algo? Si quieres, reintentamos o seguimos por aquí.';
+    case 'voicemail':
+      return 'La llamada llegó al buzón de voz. Si quieres, reintentamos o seguimos por aquí.';
+    case 'call_interrupted':
+      return 'Se cortó la llamada. Quieres que reintentemos o prefieres seguir por aquí?';
+    case 'temporarily_unavailable':
+      return 'No pudimos completar la llamada en este momento. Si quieres, reintentamos más tarde o seguimos por aquí.';
+    case 'analysis_unavailable':
+      return 'Ya terminó la llamada. Quedó alguna duda o quieres continuar por aquí?';
+    case 'payment_verified':
+      return 'El pago quedó verificado. El equipo continuará con tu inscripción y acceso.';
+    case 'payment_pending':
+      return 'El link quedó disponible en este chat. Cuando realices el pago, avísanos para que el equipo verifique la acreditación.';
+    case 'followup_scheduled':
+      return 'Quedó registrado el seguimiento acordado en la llamada. Si necesitas algo antes, puedes escribirnos por aquí.';
+    case 'not_interested':
+      return 'Gracias por tu tiempo. Si más adelante quieres retomarlo, puedes escribirnos por aquí.';
+    case 'human_handoff_unavailable':
+      return 'Por ahora podemos continuar la orientación por este chat. Dime qué necesitas resolver.';
+    case 'neutral_after_call':
+      return 'Gracias por tu tiempo en la llamada. Si quedó alguna duda, podemos continuar por aquí.';
+  }
+}
+
+/**
+ * `paymentVerified` is canonical payment evidence, never a claim extracted
+ * from the call.  A reported payment without verification therefore stays in
+ * the pending path.
  */
 export function decidePostCallFollowup(input: {
   readonly status: CallStatus;
@@ -62,58 +117,93 @@ export function decidePostCallFollowup(input: {
 }): PostCallFollowupVerdict {
   const { status, result, analysisStatus, paymentVerified, doNotContact = false } = input;
 
-  if (doNotContact) {
-    return { action: 'revoke_contact', reason: 'DO_NOT_CONTACT' };
-  }
-
-  if (status === 'cancelled') {
-    return { action: 'skip', reason: 'CALL_CANCELLED' };
-  }
+  if (doNotContact) return { action: 'revoke_contact', reason: 'DO_NOT_CONTACT' };
+  if (status === 'cancelled') return { action: 'skip', reason: 'CALL_CANCELLED' };
 
   if (status === 'no_answer') {
-    return { action: 'send', content: NO_ANSWER_RETRY_OFFER, reason: 'CALL_NO_ANSWER' };
+    return {
+      action: 'send',
+      brief: brief('no_answer', 'recover_call_or_continue_chat', 'not_applicable', ['retry_call', 'continue_chat']),
+      reason: 'CALL_NO_ANSWER',
+    };
   }
 
   if (status === 'timed_out' || status === 'failed') {
-    return { action: 'send', content: TEMPORARY_UNAVAILABLE_OFFER, reason: `CALL_${status.toUpperCase()}` };
+    return {
+      action: 'send',
+      brief: brief('temporarily_unavailable', 'recover_call_or_continue_chat', 'not_applicable', ['retry_call_later', 'continue_chat']),
+      reason: `CALL_${status.toUpperCase()}`,
+    };
   }
 
-  if (status !== 'completed') {
-    // in_progress, requested, dispatching, provider_accepted, dispatch_ambiguous:
-    // no es terminal, el reconciliador no debería haber seleccionado esta fila.
-    return { action: 'skip', reason: 'CALL_NOT_TERMINAL' };
-  }
+  if (status !== 'completed') return { action: 'skip', reason: 'CALL_NOT_TERMINAL' };
 
   if (analysisStatus !== 'completed' || result === null) {
-    return { action: 'send', content: NEUTRAL_CONTINUITY, reason: 'ANALYSIS_UNAVAILABLE' };
+    return {
+      action: 'send',
+      brief: brief('analysis_unavailable', 'continue_chat', 'not_applicable', ['continue_chat']),
+      reason: 'ANALYSIS_UNAVAILABLE',
+    };
   }
 
   switch (result) {
     case 'venta_confirmada':
       return paymentVerified
-        ? { action: 'send', content: saleFollowup(), reason: 'SALE_CONFIRMED_PAYMENT_VERIFIED' }
-        : { action: 'send', content: paymentPendingFollowup(), reason: 'SALE_CLAIMED_PAYMENT_UNVERIFIED' };
+        ? {
+          action: 'send',
+          brief: brief('payment_verified', 'confirm_verified_sale', 'verified', ['await_team_access']),
+          reason: 'SALE_CONFIRMED_PAYMENT_VERIFIED',
+        }
+        : {
+          action: 'send',
+          brief: brief('payment_pending', 'continue_payment', 'reported_or_pending', ['complete_payment', 'await_human_verification']),
+          reason: 'SALE_CLAIMED_PAYMENT_UNVERIFIED',
+        };
     case 'link_enviado_sin_pago':
-      return { action: 'send', content: paymentPendingFollowup(), reason: 'PAYMENT_LINK_SENT' };
+      return {
+        action: 'send',
+        brief: brief('payment_pending', 'continue_payment', 'reported_or_pending', ['complete_payment', 'await_human_verification']),
+        reason: 'PAYMENT_LINK_SENT',
+      };
     case 'seguimiento_agendado':
-      return { action: 'send', content: scheduledFollowup(), reason: 'FOLLOWUP_SCHEDULED' };
+      return {
+        action: 'send',
+        brief: brief('followup_scheduled', 'honor_scheduled_followup', 'not_applicable', ['honor_scheduled_followup', 'continue_chat']),
+        reason: 'FOLLOWUP_SCHEDULED',
+      };
     case 'no_interesado':
-      return { action: 'send', content: politeCloseFollowup(), reason: 'NOT_INTERESTED' };
+      return {
+        action: 'send',
+        brief: brief('not_interested', 'close_respectfully', 'not_applicable', ['close_conversation']),
+        reason: 'NOT_INTERESTED',
+      };
     case 'no_contactar':
       return { action: 'revoke_contact', reason: 'DO_NOT_CONTACT' };
     case 'derivado_humano':
-      // Spec 005: el handoff humano sigue apagado. El cierre es neutral y no
-      // promete una derivación que el sistema no puede cumplir hoy.
-      return { action: 'send', content: neutralNoClaimFollowup(), reason: 'HUMAN_HANDOFF_REQUESTED_DISABLED' };
+      return {
+        action: 'send',
+        brief: brief('human_handoff_unavailable', 'continue_chat', 'not_applicable', ['continue_chat']),
+        reason: 'HUMAN_HANDOFF_REQUESTED_DISABLED',
+      };
+    case 'buzon_de_voz':
+      return {
+        action: 'send',
+        brief: brief('voicemail', 'recover_call_or_continue_chat', 'not_applicable', ['retry_call', 'continue_chat']),
+        reason: 'VOICEMAIL_OUTCOME',
+      };
+    case 'corto_la_llamada':
+      return {
+        action: 'send',
+        brief: brief('call_interrupted', 'recover_call_or_continue_chat', 'not_applicable', ['retry_call', 'continue_chat']),
+        reason: 'CALL_ENDED_BY_CONTACT',
+      };
     case 'ya_es_alumno':
     case 'no_calificado':
     case 'no_es_buen_momento':
-      return { action: 'send', content: neutralNoClaimFollowup(), reason: `NEUTRAL_${result.toUpperCase()}` };
-    case 'buzon_de_voz':
-      return { action: 'send', content: NO_ANSWER_RETRY_OFFER, reason: 'VOICEMAIL_OUTCOME' };
-    case 'corto_la_llamada':
-      return { action: 'send', content: neutralNoClaimFollowup(), reason: 'CALL_ENDED_BY_CONTACT' };
-    default:
-      return { action: 'send', content: NEUTRAL_CONTINUITY, reason: 'UNKNOWN_RESULT' };
+      return {
+        action: 'send',
+        brief: brief('neutral_after_call', 'close_respectfully', 'not_applicable', ['continue_chat', 'close_conversation']),
+        reason: `NEUTRAL_${result.toUpperCase()}`,
+      };
   }
 }

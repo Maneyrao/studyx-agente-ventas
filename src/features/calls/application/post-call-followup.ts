@@ -1,4 +1,4 @@
-import { decidePostCallFollowup } from '../domain/post-call-followup';
+import { decidePostCallFollowup, renderPostCallFollowup } from '../domain/post-call-followup';
 import type { PostCallFollowupStore } from '../ports/post-call-followup-store';
 import type { SendOutboundMessageInput, SendOutboundMessageResult } from '@/features/messaging/application/send-outbound-message';
 import { buildAuthorizedEgress } from '@/features/orchestration/domain/egress-guard';
@@ -152,7 +152,9 @@ export async function runPostCallFollowup(
         continue;
       }
 
-      // verdict.action === 'send'
+      // verdict.action === 'send'. The domain authorizes a structured factual
+      // brief; this boundary renders the minimal proactive status. Agent A
+      // owns the conversational continuation on the next turn.
       // Revalidate at the actual outbound boundary too. The first check
       // protects the snapshot, while this one closes the gap introduced by
       // blocked/payment/verdict reads before provider contact.
@@ -166,13 +168,14 @@ export async function runPostCallFollowup(
         continue;
       }
 
+      const content = renderPostCallFollowup(verdict.brief);
       const delivery = await deps.sendOutbound({
         workspaceId: call.workspace_id,
         contactId: call.contact_id,
         conversationId: call.conversation_id,
-        text: verdict.content,
+        text: content,
         authorizedEgress: buildAuthorizedEgress({
-          content: verdict.content,
+          content,
           authorized_urls: [],
           protected_facts: [],
         }),
@@ -196,6 +199,7 @@ export async function runPostCallFollowup(
         contact_id: call.contact_id,
         conversation_id: call.conversation_id,
         trace_id: input.trace_id,
+        followup: verdict.brief,
       });
 
       findings.push({

@@ -1,11 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { decidePostCallFollowup } from '@/features/calls/domain/post-call-followup';
+import { decidePostCallFollowup, renderPostCallFollowup } from '@/features/calls/domain/post-call-followup';
 import { runPostCallFollowup } from '@/features/calls/application/post-call-followup';
 import type { PostCallFollowupStore } from '@/features/calls/ports/post-call-followup-store';
 
 const base = { analysisStatus: 'completed' as const, paymentVerified: false };
 
 describe('post-call followup verdicts (spec 007)', () => {
+  it('returns a structured brief instead of making backend copy the conversational authority', () => {
+    const verdict = decidePostCallFollowup({ status: 'no_answer', result: null, ...base });
+
+    expect(verdict).toEqual({
+      action: 'send',
+      reason: 'CALL_NO_ANSWER',
+      brief: {
+        schema_version: 1,
+        scenario: 'no_answer',
+        objective: 'recover_call_or_continue_chat',
+        payment_state: 'not_applicable',
+        allowed_next_steps: ['retry_call', 'continue_chat'],
+      },
+    });
+    expect(verdict).not.toHaveProperty('content');
+  });
+
   it('never emits a message for a cancelled call', () => {
     expect(decidePostCallFollowup({ status: 'cancelled', result: null, ...base })).toEqual({
       action: 'skip',
@@ -24,9 +41,10 @@ describe('post-call followup verdicts (spec 007)', () => {
     const verdict = decidePostCallFollowup({ status: 'no_answer', result: null, ...base });
     expect(verdict.action).toBe('send');
     if (verdict.action !== 'send') return;
-    expect(verdict.content).toMatch(/ocurri[oó] algo/i);
-    expect(verdict.content).toMatch(/intentarlo de nuevo|reintentar/i);
-    expect(verdict.content).toMatch(/chat|por aqu[ií]|por ac[aá]/i);
+    const content = renderPostCallFollowup(verdict.brief);
+    expect(content).toMatch(/ocurri[oó] algo/i);
+    expect(content).toMatch(/reintent/iu);
+    expect(content).toMatch(/chat|por aqu[ií]|por ac[aá]/i);
   });
 
   it.each(['timed_out', 'failed'] as const)(
@@ -35,9 +53,11 @@ describe('post-call followup verdicts (spec 007)', () => {
       const verdict = decidePostCallFollowup({ status, result: null, ...base });
       expect(verdict.action).toBe('send');
       if (verdict.action !== 'send') return;
-      expect(verdict.content).toMatch(/operadores.*ocupados/i);
-      expect(verdict.content).toMatch(/intentarlo de nuevo|m[aá]s tarde/i);
-      expect(verdict.content).toMatch(/chat|por aqu[ií]|por ac[aá]/i);
+      const content = renderPostCallFollowup(verdict.brief);
+      expect(verdict.brief.scenario).toBe('temporarily_unavailable');
+      expect(content).toMatch(/no pudimos completar/iu);
+      expect(content).toMatch(/reintent.*m[aá]s tarde/i);
+      expect(content).toMatch(/chat|por aqu[ií]|por ac[aá]/i);
     },
   );
 
@@ -57,8 +77,8 @@ describe('post-call followup verdicts (spec 007)', () => {
     const failed = decidePostCallFollowup({
       status: 'completed', result: null, analysisStatus: 'failed', paymentVerified: false,
     });
-    expect(pending).toEqual({ action: 'send', content: expect.any(String), reason: 'ANALYSIS_UNAVAILABLE' });
-    expect(failed).toEqual({ action: 'send', content: expect.any(String), reason: 'ANALYSIS_UNAVAILABLE' });
+    expect(pending).toMatchObject({ action: 'send', brief: { scenario: 'analysis_unavailable' }, reason: 'ANALYSIS_UNAVAILABLE' });
+    expect(failed).toMatchObject({ action: 'send', brief: { scenario: 'analysis_unavailable' }, reason: 'ANALYSIS_UNAVAILABLE' });
   });
 
   it('gates venta_confirmada on verified payment: no proof, no sale claim', () => {
@@ -72,6 +92,12 @@ describe('post-call followup verdicts (spec 007)', () => {
     expect(verified.reason).toBe('SALE_CONFIRMED_PAYMENT_VERIFIED');
     expect(unverified.action).toBe('send');
     expect(verified.action).toBe('send');
+    if (unverified.action === 'send' && verified.action === 'send') {
+      expect(unverified.brief.payment_state).toBe('reported_or_pending');
+      expect(renderPostCallFollowup(unverified.brief)).not.toMatch(/pago qued[oó] verificado/iu);
+      expect(verified.brief.payment_state).toBe('verified');
+      expect(renderPostCallFollowup(verified.brief)).toMatch(/pago qued[oó] verificado/iu);
+    }
   });
 
   it('reminds that Agent A sent the payment link in chat, never claims it was sent inside the call', () => {
@@ -80,8 +106,10 @@ describe('post-call followup verdicts (spec 007)', () => {
     });
     expect(verdict.action).toBe('send');
     if (verdict.action !== 'send') return;
-    expect(verdict.content).toContain('por acá');
-    expect(verdict.content).not.toContain('en la llamada');
+    const content = renderPostCallFollowup(verdict.brief);
+    expect(verdict.brief.payment_state).toBe('reported_or_pending');
+    expect(content).toContain('en este chat');
+    expect(content).not.toContain('en la llamada');
   });
 
   it('routes no_contactar to revocation, not a message', () => {
@@ -108,17 +136,17 @@ describe('post-call followup verdicts (spec 007)', () => {
   });
 
   it('offers a retry for voicemail without claiming a sale or payment', () => {
-    expect(decidePostCallFollowup({ status: 'completed', result: 'buzon_de_voz', ...base })).toEqual({
-      action: 'send',
-      content: expect.any(String),
-      reason: 'VOICEMAIL_OUTCOME',
-    });
+    expect(decidePostCallFollowup({ status: 'completed', result: 'buzon_de_voz', ...base }))
+      .toMatchObject({ action: 'send', brief: { scenario: 'voicemail' }, reason: 'VOICEMAIL_OUTCOME' });
   });
 
-  it('closes safely when the person ended the call without claiming a sale or payment', () => {
-    expect(decidePostCallFollowup({ status: 'completed', result: 'corto_la_llamada', ...base })).toEqual({
+  it('offers retry or chat when the person ended the call without claiming a sale or payment', () => {
+    expect(decidePostCallFollowup({ status: 'completed', result: 'corto_la_llamada', ...base })).toMatchObject({
       action: 'send',
-      content: expect.any(String),
+      brief: {
+        scenario: 'call_interrupted',
+        allowed_next_steps: ['retry_call', 'continue_chat'],
+      },
       reason: 'CALL_ENDED_BY_CONTACT',
     });
   });
@@ -135,10 +163,15 @@ describe('post-call followup delivery boundary', () => {
   function storeFor(call: {
     status?: 'completed' | 'failed' | 'cancelled';
     result?: 'seguimiento_agendado' | 'no_contactar' | null;
-  }): PostCallFollowupStore & { completed: string[] } {
+  }): PostCallFollowupStore & {
+    completed: string[];
+    followups: Array<Parameters<PostCallFollowupStore['markFollowupCompleted']>[0]['followup']>;
+  } {
     const completed: string[] = [];
+    const followups: Array<Parameters<PostCallFollowupStore['markFollowupCompleted']>[0]['followup']> = [];
     return {
       completed,
+      followups,
       async listPendingFollowups() {
         return [{
           call_id: '00000000-0000-4000-8000-000000000001',
@@ -155,7 +188,10 @@ describe('post-call followup delivery boundary', () => {
       async hasVerifiedPayment() { return false; },
       async isContactBlocked() { return false; },
       async revokeContact() {},
-      async markFollowupCompleted(input) { completed.push(input.call_id); },
+      async markFollowupCompleted(input) {
+        completed.push(input.call_id);
+        followups.push(input.followup);
+      },
     };
   }
 
@@ -186,6 +222,10 @@ describe('post-call followup delivery boundary', () => {
       conversationId: '00000000-0000-4000-8000-000000000003',
     }]);
     expect(store.completed).toEqual(['00000000-0000-4000-8000-000000000001']);
+    expect(store.followups).toEqual([expect.objectContaining({
+      schema_version: 1,
+      scenario: 'followup_scheduled',
+    })]);
   });
 
   it('leaves retryable delivery without a completion marker', async () => {
