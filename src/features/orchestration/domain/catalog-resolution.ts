@@ -13,6 +13,11 @@ export interface CatalogResolutionSnapshot {
   readonly offerings_truncated: number;
 }
 
+export interface CatalogResolutionContext {
+  /** The immediately preceding logical agent turn, used only to resolve references to named options. */
+  readonly contextualMessages?: readonly string[];
+}
+
 interface CanonicalCatalogOffering {
   readonly sku: string;
   readonly name: string;
@@ -466,6 +471,42 @@ function typoMatches(
   });
 }
 
+const INITIALISM_STOP_WORDS = new Set(['de', 'del', 'el', 'en', 'la', 'las', 'los', 'para', 'por', 'y']);
+
+function offeringInitialism(offering: IndexedOffering): string {
+  return offering.normalizedName
+    .split(' ')
+    .filter((word) => word.length > 0 && !INITIALISM_STOP_WORDS.has(word))
+    .map((word) => word[0])
+    .join('');
+}
+
+function contextualReferenceMatches(
+  messages: readonly string[],
+  contextualMessages: readonly string[],
+  offerings: readonly IndexedOffering[],
+): IndexedOffering[] {
+  if (contextualMessages.length === 0) return [];
+
+  const normalizedContext = toMessages(contextualMessages);
+  const mentioned = distinctLiteralMatches(
+    positiveLiteralHits(normalizedContext, literalHits(normalizedContext, offerings)),
+  ).map((match) => match.offering);
+  if (mentioned.length === 0) return [];
+
+  const fuzzy = new Set(typoMatches(messages, mentioned).map((offering) => offering.source.code));
+  for (const offering of mentioned) {
+    const initialism = offeringInitialism(offering);
+    if (
+      initialism.length >= 2
+      && messages.some((message) => termOccurrences(message, initialism).length > 0)
+    ) {
+      fuzzy.add(offering.source.code);
+    }
+  }
+  return mentioned.filter((offering) => fuzzy.has(offering.source.code));
+}
+
 function partialSubjectMatches(
   text: string | readonly string[],
   offerings: readonly IndexedOffering[],
@@ -699,6 +740,7 @@ function ambiguous(
 export function resolveCatalogRequest(
   text: string | readonly string[],
   snapshot: CatalogResolutionSnapshot | null,
+  context: CatalogResolutionContext = {},
 ): CatalogResolution {
   const request = requestedText(text);
   const messages = toMessages(text);
@@ -803,6 +845,14 @@ export function resolveCatalogRequest(
     }
     return ambiguous(request, hedgedMatches);
   }
+
+  const contextualMatches = contextualReferenceMatches(
+    resolutionMessages,
+    context.contextualMessages ?? [],
+    offerings,
+  );
+  if (contextualMatches.length === 1) return exact(contextualMatches[0], 'unique_typo');
+  if (contextualMatches.length > 1) return ambiguous(request, contextualMatches);
 
   // A nearby word is not enough to create commercial intent. Fuzzy matching
   // is only a spelling aid after the customer explicitly asked about catalog.

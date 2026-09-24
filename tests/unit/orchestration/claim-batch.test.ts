@@ -1314,6 +1314,49 @@ describe('claimBatch business context', () => {
     expect(result.sales_context.offering_code).toBeNull();
   });
 
+  it.each([
+    'Me coparia mas vender, para eso sirve cm?',
+    'Sirve comunity manager para eso?',
+  ])('resolves a contextual course reference from the preceding agent turn: %s', async (content) => {
+    const result = await claimBatch(input, {
+      ...buildDeps({
+        messagesResult: [{
+          id: 'm1',
+          conversation_seq: 1,
+          content,
+          created_at: '2026-08-11T12:00:00.000Z',
+          message_type: 'text',
+        }],
+        factsResult: facts({
+          recent_turns: [{
+            direction: 'outbound',
+            content: 'Dentro de marketing tienes tres opciones: Community Manager, Marketing Digital y Especialista en Ventas.',
+            created_at: '2026-08-11T11:59:00.000Z',
+          }],
+        }),
+      }),
+      business: {
+        load: vi.fn().mockResolvedValue(businessContextView({
+          offerings: [
+            businessOffering('community_manager', 'Community Manager', 'Marketing'),
+            businessOffering('marketing_digital', 'Marketing Digital', 'Marketing'),
+            businessOffering('especialista_ventas', 'Especialista en Ventas', 'Marketing'),
+          ],
+        })),
+      },
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.catalog_resolution).toMatchObject({
+      kind: 'exact',
+      offeringCode: 'community_manager',
+    });
+    expect(result.sales_context).toMatchObject({
+      offering_code: 'community_manager',
+      course_of_interest: 'Community Manager',
+    });
+  });
+
   it('derives the last canonical course for a plan-only follow-up without treating the plan as a catalog request', async () => {
     const messages = [{
       id: 'm1',

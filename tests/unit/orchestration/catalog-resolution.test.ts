@@ -49,6 +49,31 @@ const MOBILE_PHOTOGRAPHY = offering(
 const SOLAR = offering('energia_solar_fotovoltaica', 'Energía Solar Fotovoltaica', 'Oficios');
 
 describe('resolveCatalogRequest', () => {
+  it.each([
+    'Me coparia mas vender, para eso sirve cm?',
+    'Sirve comunity manager para eso?',
+  ])('resolves a shorthand or typo against courses named in the previous agent turn: %s', (text) => {
+    expect(resolveCatalogRequest(text, snapshot([
+      COMMUNITY,
+      MARKETING,
+      offering('especialista_ventas', 'Especialista en Ventas', 'Academia de Marketing'),
+    ]), {
+      contextualMessages: [
+        'Dentro de marketing tienes tres opciones: Community Manager, Marketing Digital y Especialista en Ventas.',
+      ],
+    })).toMatchObject({
+      kind: 'exact',
+      offeringCode: 'community_manager',
+    });
+  });
+
+  it('does not treat a bare acronym as a catalog reference without dialogue context', () => {
+    expect(resolveCatalogRequest('Para eso sirve cm?', snapshot([
+      COMMUNITY,
+      MARKETING,
+    ]))).toEqual({ kind: 'no_catalog_intent' });
+  });
+
   it('keeps an informal no-accent family request inside its canonical course family', () => {
     expect(resolveCatalogRequest('holaa, qiero info d ingles', snapshot([
       offering('ingles_1', 'Inglés 1', 'Idiomas'),

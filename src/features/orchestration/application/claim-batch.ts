@@ -462,6 +462,7 @@ function buildSalesContext(input: {
 function resolveCatalogFromSnapshot(
   messageTexts: readonly string[],
   catalogIndex: CatalogIndexView | null,
+  contextualMessages: readonly string[] = [],
 ): CatalogResolution {
   return resolveCatalogRequest(
     messageTexts,
@@ -471,7 +472,13 @@ function resolveCatalogFromSnapshot(
           offerings: catalogIndex.offerings,
           offerings_truncated: Math.max(0, catalogIndex.offerings_total - catalogIndex.offerings.length),
         },
+    { contextualMessages },
   );
+}
+
+function latestAgentTurnMessages(recentTurns: readonly RecentTurn[]): string[] {
+  const latest = recentTurns.at(-1);
+  return latest?.direction === 'outbound' ? [latest.content] : [];
 }
 
 /** Transitional mirror for old in-process doubles/older producer revisions. */
@@ -912,6 +919,7 @@ export async function claimBatch(
       .filter((message) => message.message_type === 'text')
       .map((message) => message.content),
     catalog_index,
+    latestAgentTurnMessages(logicalRecentTurns),
   );
 
   // The index identifies every real offering without bringing every detailed
