@@ -40,6 +40,12 @@ const INTRODUCED_NAME_PATTERN = new RegExp(
   'iu',
 );
 
+const NATURAL_INTRODUCED_NAME_PATTERN = new RegExp(
+  `(?:^|[\\s,;.!¡¿?])(?:soy|me\\s+llamo|mi\\s+nombre\\s+es)\\s+(${CONTEXTUAL_NAME_SEQUENCE}?)`
+  + `(?=\\s*(?:[,;.:!?]|$|y\\b|${EMAIL_PATTERN.source}))`,
+  'iu',
+);
+
 const INVERTED_INTRODUCED_NAME_PATTERN = new RegExp(
   `^[\\s¡¿]*(${NAME_SEQUENCE})\\s+me\\s+llamo\\s*[,.!¡¿?]*$`,
   'iu',
@@ -172,15 +178,26 @@ export function extractContactIdentity(
   if (introduced && !UNSAFE_NAME_OWNER.test(introductionPrefix) && isPlausibleName(introduced[1])) {
     name = introduced[1].trim();
   } else {
-    const inverted = INVERTED_INTRODUCED_NAME_PATTERN.exec(text);
-    if (inverted && isPlausibleName(inverted[1])
-      && !containsContextualNonNameToken(inverted[1])) {
-      name = inverted[1].trim();
+    const naturalIntroduced = NATURAL_INTRODUCED_NAME_PATTERN.exec(text);
+    const naturalPrefix = naturalIntroduced
+      ? text.slice(0, naturalIntroduced.index).split(/[.;!?\n]/u).at(-1) ?? ''
+      : '';
+    if (naturalIntroduced
+      && !UNSAFE_NAME_OWNER.test(naturalPrefix)
+      && isPlausibleContextualName(naturalIntroduced[1])
+      && !containsContextualNonNameToken(naturalIntroduced[1])) {
+      name = normalizeContextualName(naturalIntroduced[1]);
     } else {
-      const leadingGoal = LEADING_FIRST_NAME_BEFORE_GOAL_PATTERN.exec(text);
-      if (leadingGoal && isPlausibleName(leadingGoal[1])
-        && !containsContextualNonNameToken(leadingGoal[1])) {
-        name = leadingGoal[1].trim();
+      const inverted = INVERTED_INTRODUCED_NAME_PATTERN.exec(text);
+      if (inverted && isPlausibleName(inverted[1])
+        && !containsContextualNonNameToken(inverted[1])) {
+        name = inverted[1].trim();
+      } else {
+        const leadingGoal = LEADING_FIRST_NAME_BEFORE_GOAL_PATTERN.exec(text);
+        if (leadingGoal && isPlausibleName(leadingGoal[1])
+          && !containsContextualNonNameToken(leadingGoal[1])) {
+          name = leadingGoal[1].trim();
+        }
       }
     }
   }

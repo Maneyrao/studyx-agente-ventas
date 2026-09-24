@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const PROMPT_PATH = 'docs/prompts/studyx-agent-a-canonical.md';
 const GENERATED_PATH = 'botpress-agent/src/prompts/studyx-agent-a-canonical.generated.ts';
-const EXPECTED_SHA256 = 'b2bc9f09b566eeed449205d52b7e3f16a0e0cd25cdff479878b658b923fdbb4d';
+const EXPECTED_SHA256 = '3e7349f012289fcb21e11c10cdcbb57a1f8a37e8876d86cb5e478674d8491ebc';
 
 describe('Agent A canonical sales prompt', () => {
   it('ships the complete approved prompt and a byte-equivalent generated module', () => {
@@ -16,7 +16,7 @@ describe('Agent A canonical sales prompt', () => {
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v51' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v52' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
@@ -37,6 +37,14 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toMatch(/dos mensajes[\s\S]*respuesta concreta[\s\S]*siguiente paso/iu);
     expect(prompt).toMatch(/dos o m[aá]s (?:cursos|opciones)[\s\S]*lista/iu);
     expect(prompt).toMatch(/no conviertas cada elemento[\s\S]*mensaje separado/iu);
+  });
+
+  it('prioritizes only new information and does not force a closing question', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+
+    expect(prompt).toMatch(/responde s[oó]lo con informaci[oó]n nueva/iu);
+    expect(prompt).toMatch(/pregunta es opcional/iu);
+    expect(prompt).toMatch(/una opci[oó]n por l[ií]nea/iu);
   });
 
   it('makes the initial name request and first eligible call invitation explicit without canned copy', () => {

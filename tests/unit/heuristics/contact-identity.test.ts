@@ -26,6 +26,16 @@ describe('extractContactIdentity', () => {
     expect(extractContactIdentity('mi nombre es Diego Farías, gracias').name).toBe('Diego Farías');
   });
 
+  it('captures and normalizes a lowercase explicit identity inside a commercial reply', () => {
+    expect(extractContactIdentity(
+      'Quiero 1 pago de 360 y mi nombre es agustin pierella tmaneyro@gmail.com',
+    )).toEqual({
+      name: 'Agustin Pierella',
+      email: 'tmaneyro@gmail.com',
+      declaredPhone: null,
+    });
+  });
+
   it('captures an explicit inverted first-name introduction without treating ordinary prose as identity', () => {
     expect(extractContactIdentity('Thiago me llamo').name).toBe('Thiago');
     expect(extractContactIdentity('Fotografía me interesa').name).toBeNull();
