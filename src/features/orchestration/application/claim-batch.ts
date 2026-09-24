@@ -477,8 +477,8 @@ function resolveCatalogFromSnapshot(
 }
 
 function latestAgentTurnMessages(recentTurns: readonly RecentTurn[]): string[] {
-  const latest = recentTurns.at(-1);
-  return latest?.direction === 'outbound' ? [latest.content] : [];
+  const latest = recentTurns.findLast((turn) => turn.direction === 'outbound');
+  return latest ? [latest.content] : [];
 }
 
 /** Transitional mirror for old in-process doubles/older producer revisions. */

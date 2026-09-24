@@ -1328,11 +1328,18 @@ describe('claimBatch business context', () => {
           message_type: 'text',
         }],
         factsResult: facts({
-          recent_turns: [{
-            direction: 'outbound',
-            content: 'Dentro de marketing tienes tres opciones: Community Manager, Marketing Digital y Especialista en Ventas.',
-            created_at: '2026-08-11T11:59:00.000Z',
-          }],
+          recent_turns: [
+            {
+              direction: 'outbound',
+              content: 'Dentro de marketing tienes tres opciones: Community Manager, Marketing Digital y Especialista en Ventas.',
+              created_at: '2026-08-11T11:58:00.000Z',
+            },
+            {
+              direction: 'inbound',
+              content: 'El intento anterior quedó sin respuesta.',
+              created_at: '2026-08-11T11:59:00.000Z',
+            },
+          ],
         }),
       }),
       business: {
