@@ -481,6 +481,17 @@ function latestAgentTurnMessages(recentTurns: readonly RecentTurn[]): string[] {
   return latest ? [latest.content] : [];
 }
 
+function previousAgentTurnMessages(
+  recentTurns: readonly RecentTurn[],
+  beforeIndex: number,
+): string[] {
+  for (let index = beforeIndex - 1; index >= 0; index -= 1) {
+    const turn = recentTurns[index]!;
+    if (turn.direction === 'outbound') return [turn.content];
+  }
+  return [];
+}
+
 /** Transitional mirror for old in-process doubles/older producer revisions. */
 function indexFromBusinessContext(context: BusinessContextView): CatalogIndexView {
   return {
@@ -522,9 +533,14 @@ function deriveCourseSelection(input: {
     return { course_of_interest: null, offering_code: null };
   }
 
-  for (const turn of input.recentTurns.slice().reverse()) {
+  for (let index = input.recentTurns.length - 1; index >= 0; index -= 1) {
+    const turn = input.recentTurns[index]!;
     if (turn.direction !== 'inbound') continue;
-    const historical = resolveCatalogFromSnapshot([turn.content], input.catalogIndex);
+    const historical = resolveCatalogFromSnapshot(
+      [turn.content],
+      input.catalogIndex,
+      previousAgentTurnMessages(input.recentTurns, index),
+    );
     if (historical.kind === 'no_catalog_intent') {
       if (isCatalogRequestNeutral(turn.content)) continue;
       return { course_of_interest: null, offering_code: null };
@@ -957,7 +973,7 @@ export async function claimBatch(
     currentMessageTexts: batchMessages
       .filter((message) => message.message_type === 'text')
       .map((message) => message.content),
-    recentTurns,
+    recentTurns: logicalRecentTurns,
     catalogIndex: catalog_index,
   });
   // Assigned in the joined commercial-context task; make that async boundary
