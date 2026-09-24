@@ -25,6 +25,15 @@ export interface TerminalCallForFollowup {
 
 export interface PostCallFollowupStore {
   /**
+   * Converge provider-accepted calls that never emitted a start/lifecycle
+   * event. Optional so narrow test doubles written before this recovery keep
+   * their existing surface; the production PostgreSQL adapter implements it.
+   */
+  expireStaleAcceptedCalls?(input: {
+    readonly timeout_seconds: number;
+  }): Promise<number>;
+
+  /**
    * Terminal call_sessions rows with no matching system_call_result
    * channel_event yet. `grace_seconds` gives a pending `analyzed` event room
    * to arrive before the sweep resolves the call as analysis-unavailable.

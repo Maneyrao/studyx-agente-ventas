@@ -16,6 +16,28 @@ const TERMINAL_STATUSES: readonly CallStatus[] = [
 export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
   constructor(private readonly db: postgres.Sql) {}
 
+  async expireStaleAcceptedCalls(input: { timeout_seconds: number }): Promise<number> {
+    const rows = await this.db<Array<{ id: string }>>`
+      UPDATE call_sessions AS stale
+      SET
+        status = 'timed_out',
+        completed_at = COALESCE(stale.completed_at, now()),
+        error_code = COALESCE(stale.error_code, 'CALL_START_TIMEOUT')
+      WHERE stale.status = 'provider_accepted'
+        AND stale.provider_accepted_at IS NOT NULL
+        AND stale.provider_accepted_at
+          <= now() - make_interval(secs => ${input.timeout_seconds})
+        AND NOT EXISTS (
+          SELECT 1
+          FROM call_events AS lifecycle
+          WHERE lifecycle.call_id = stale.id
+            AND lifecycle.event_type IN ('started', 'ended', 'analyzed')
+        )
+      RETURNING stale.id
+    `;
+    return rows.length;
+  }
+
   async revalidateFollowup(input: {
     call_id: string;
     trace_id: string;
@@ -129,6 +151,7 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
         )
         AND (
           cs.provider <> 'retell'
+          OR cs.status = 'timed_out'
           OR EXISTS (
             SELECT 1 FROM call_events AS webhook_event
             WHERE webhook_event.call_id = cs.id

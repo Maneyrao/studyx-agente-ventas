@@ -248,6 +248,35 @@ async function consentStatus(contactId: string) {
 }
 
 run('post-call-followup cron (spec 007, B -> A)', () => {
+  it('expires an accepted call with no lifecycle event and follows up exactly once', async () => {
+    const fixture = await seedTerminalCall({
+      status: 'provider_accepted',
+      result: null,
+      analysis_status: 'pending',
+      provider: 'retell',
+      ageMinutes: 20,
+    });
+    await sql`
+      UPDATE call_sessions
+      SET provider_accepted_at = now() - interval '20 minutes', completed_at = NULL
+      WHERE id = ${fixture.callId}::uuid
+    `;
+
+    const first = await sweep(randomUUID(), 0);
+    expect(first.findings.find((finding) => finding.call_id === fixture.callId)).toMatchObject({
+      action: 'send',
+      reason: 'CALL_TIMED_OUT',
+    });
+    await expect(sql<Array<{ status: string; error_code: string | null }>>`
+      SELECT status, error_code FROM call_sessions WHERE id = ${fixture.callId}::uuid
+    `).resolves.toEqual([{ status: 'timed_out', error_code: 'CALL_START_TIMEOUT' }]);
+    expect(await postCallOutboundDeliveryCount(fixture.callId)).toBe(1);
+
+    const second = await sweep(randomUUID(), 0);
+    expect(second.findings.find((finding) => finding.call_id === fixture.callId)).toBeUndefined();
+    expect(await postCallOutboundDeliveryCount(fixture.callId)).toBe(1);
+  });
+
   it('FR-1: a second cron run over the same terminal call emits no second message (idempotent on channel_events UNIQUE)', async () => {
     const { callId, conversationId } = await seedTerminalCall({
       status: 'completed',

@@ -2,6 +2,7 @@ import { decidePostCallFollowup, renderPostCallFollowup } from '../domain/post-c
 import type { PostCallFollowupStore } from '../ports/post-call-followup-store';
 import type { SendOutboundMessageInput, SendOutboundMessageResult } from '@/features/messaging/application/send-outbound-message';
 import { buildAuthorizedEgress } from '@/features/orchestration/domain/egress-guard';
+import { CALL_START_TIMEOUT_SECONDS } from '../domain/call-timeouts';
 
 /**
  * Spec 007 — el sweep que cierra el loop B→A: una llamada en estado terminal
@@ -52,6 +53,10 @@ export async function runPostCallFollowup(
   const log = deps.log ?? (() => {});
   const limit = input.limit ?? DEFAULT_LIMIT;
   const graceSeconds = input.grace_seconds ?? DEFAULT_GRACE_SECONDS;
+
+  await deps.store.expireStaleAcceptedCalls?.({
+    timeout_seconds: CALL_START_TIMEOUT_SECONDS,
+  });
 
   const pending = await deps.store.listPendingFollowups({ limit, grace_seconds: graceSeconds });
   const findings: PostCallFollowupResult['findings'] = [];

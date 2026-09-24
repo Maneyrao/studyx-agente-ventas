@@ -1724,6 +1724,32 @@ describe('processInboundTurn hot path', () => {
     expect(result).toMatchObject({ status: 'completed', delivery_status: 'submitted_to_botpress' });
   });
 
+  it('paces model-authored bubbles without rewriting or delaying the first one', async () => {
+    const submittedAt: number[] = [];
+    const submittedTexts: string[] = [];
+    const createMessage = vi.fn(async (input: { payload: { text: string } }) => {
+      submittedTexts.push(input.payload.text);
+      submittedAt.push(Date.now());
+      return { message: { id: `bp-part-${submittedAt.length}` } };
+    });
+    const manifests = [
+      { schema_version: 1, content_hash: '67d02dfce5ef9a0aa49675a19b9f92983e52abb2cceb96e6e932c26f171e68aa', authorized_urls: [], protected_facts: [] },
+      { schema_version: 1, content_hash: '2f50e3d71e066e86ebb03e28f5bac2e90cd0de1982f34ecef3f0753b14b27897', authorized_urls: [], protected_facts: [] },
+    ];
+
+    await runCommittedOutbound({ authorized_egress: manifests[0] }, {}, {
+      createMessage,
+      outbounds: [
+        { id: UUID, content: 'Primero', status: 'pending', delivery_attempt: 1, authorized_egress: manifests[0], part_index: 0, part_count: 2 },
+        { id: '28a823e8-27c2-4279-9956-058f45f33cd6', content: 'Segundo', status: 'pending', delivery_attempt: 1, authorized_egress: manifests[1], part_index: 1, part_count: 2 },
+      ],
+    });
+
+    expect(submittedTexts).toEqual(['Primero', 'Segundo']);
+    expect(submittedAt[1] - submittedAt[0]).toBeGreaterThanOrEqual(650);
+    expect(submittedAt[1] - submittedAt[0]).toBeLessThanOrEqual(1_100);
+  });
+
   it('stops after a failed second part without resending the first', async () => {
     const createMessage = vi.fn()
       .mockResolvedValueOnce({ message: { id: 'bp-part-1' } })

@@ -134,6 +134,15 @@ const DECISION_ITERATIONS = 2
 /** Bounded: the window slides, but not forever. */
 const MAX_CLAIM_ATTEMPTS = 6
 
+const MIN_INTER_BUBBLE_DELAY_MS = 650
+const INTER_BUBBLE_DELAY_RANGE_MS = 251
+
+function interBubbleDelayMs(outboundId: string): number {
+  let hash = 0
+  for (const character of outboundId) hash = (hash * 31 + character.charCodeAt(0)) >>> 0
+  return MIN_INTER_BUBBLE_DELAY_MS + hash % INTER_BUBBLE_DELAY_RANGE_MS
+}
+
 const DecisionExit = new Autonomous.Exit({
   name: 'turn_decision',
   description: 'Return exactly one safe, structured decision for the current sales turn.',
@@ -1493,6 +1502,7 @@ export const processInboundTurn = new Workflow({
     if ((committed.outbounds?.length ?? 0) > 0) {
       const multiSendStartedAt = Date.now()
       let lastBotpressMessageId: string | null = null
+      let submittedPartsThisRun = 0
 
       for (const outboundPart of committed.outbounds) {
         // A replay may contain parts already acknowledged by Botpress. Their
@@ -1557,6 +1567,15 @@ export const processInboundTurn = new Workflow({
 
         let delivery: { message: { id: string } }
         try {
+          // Preserve the model-authored bubbles exactly, while avoiding the
+          // machine-like effect of submitting every part in the same instant.
+          // A replay resumes immediately from its first unfinished part: the
+          // previous visible bubble was already sent in an earlier workflow.
+          if (submittedPartsThisRun > 0) {
+            await new Promise<void>((resolve) => {
+              setTimeout(resolve, interBubbleDelayMs(outboundPart.id))
+            })
+          }
           delivery = await step(
             `submit-outbound-to-botpress-part-${outboundPart.part_index}`,
             () => {
@@ -1657,6 +1676,7 @@ export const processInboundTurn = new Workflow({
           return resultFromState(state, input.trace_id)
         }
         lastBotpressMessageId = delivery.message.id
+        submittedPartsThisRun += 1
       }
 
       timings.send_ms = Date.now() - multiSendStartedAt
