@@ -15,6 +15,7 @@ import { verifyRetellSignature } from '../adapters/retell-lifecycle';
 import { recordCallEvent } from './record-call-event';
 import type { PaymentPlanCode } from '@/features/payments/domain/payment-link';
 import { constantTimeSecretEqual } from '@/lib/security/shared-secret';
+import { logger } from '@/lib/observability/structured-log';
 
 export type RetellPaymentPlanRequest = PaymentPlanCode | 'cuotas';
 
@@ -284,6 +285,13 @@ type ParsedEnvelope<Name extends RetellToolName> = {
   readonly args: z.infer<(typeof ToolArgsSchemas)[Name]>;
 };
 
+type EnvelopeParseResult<Name extends RetellToolName> =
+  | { readonly success: true; readonly data: ParsedEnvelope<Name> }
+  | {
+      readonly success: false;
+      readonly issues: ReadonlyArray<{ readonly code: string; readonly path: string }>;
+    };
+
 const RETELL_TOOL_FAILURE_MESSAGES: Readonly<Record<string, string>> = {
   INVALID_TOOL_REQUEST: 'Necesito corregir o completar los datos antes de continuar.',
   PAYLOAD_TOO_LARGE: 'La solicitud es demasiado grande para procesarla.',
@@ -358,14 +366,23 @@ async function readBoundedBody(request: Request): Promise<Uint8Array | null> {
 function parseEnvelope<Name extends RetellToolName>(
   value: unknown,
   expectedName: Name,
-): ParsedEnvelope<Name> | null {
+): EnvelopeParseResult<Name> {
   const schema = z.object({
     name: z.literal(expectedName),
     call: ToolCallSchema,
     args: ToolArgsSchemas[expectedName],
   }).strict();
   const parsed = schema.safeParse(value);
-  return parsed.success ? parsed.data as ParsedEnvelope<Name> : null;
+  if (parsed.success) {
+    return { success: true, data: parsed.data as ParsedEnvelope<Name> };
+  }
+  return {
+    success: false,
+    issues: parsed.error.issues.map((issue) => ({
+      code: issue.code,
+      path: issue.path.map(String).join('.'),
+    })),
+  };
 }
 
 function inputIsUnsafe(value: string): boolean {
@@ -746,8 +763,16 @@ export async function handleRetellToolRequest(
   } catch {
     return resultError('INVALID_TOOL_REQUEST');
   }
-  const envelope = parseEnvelope(raw, expectedName);
-  if (!envelope) return resultError('INVALID_TOOL_REQUEST');
+  const parsedEnvelope = parseEnvelope(raw, expectedName);
+  if (!parsedEnvelope.success) {
+    logger.warn({
+      event: 'retell.tool.invalid_request',
+      expected_tool: expectedName,
+      issues: parsedEnvelope.issues,
+    });
+    return resultError('INVALID_TOOL_REQUEST');
+  }
+  const envelope = parsedEnvelope.data;
   const contactId = envelope.call.metadata.contact_id ?? envelope.call.metadata.lead_id!;
   const conversationId = envelope.call.metadata.conversation_id;
 

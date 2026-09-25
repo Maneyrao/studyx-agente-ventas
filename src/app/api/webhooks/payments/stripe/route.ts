@@ -1,7 +1,7 @@
 import Stripe from 'stripe';
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db/orchestrator';
-import { loadPaymentProviderConfig } from '@/lib/config';
+import { loadStripeWebhookConfig } from '@/lib/config';
 import { processStripeWebhook } from '@/features/payments/application/process-stripe-webhook';
 
 /**
@@ -13,14 +13,11 @@ import { processStripeWebhook } from '@/features/payments/application/process-st
  * and any enrollment run from their own queues, never from here.
  */
 export async function POST(request: NextRequest) {
-  let config: ReturnType<typeof loadPaymentProviderConfig>;
+  let config: ReturnType<typeof loadStripeWebhookConfig>;
   try {
-    config = loadPaymentProviderConfig();
+    config = loadStripeWebhookConfig();
   } catch (error) {
     return NextResponse.json({ error: 'PAYMENT_WEBHOOK_UNCONFIGURED', detail: String(error).slice(0, 80) }, { status: 503 });
-  }
-  if (config.provider !== 'stripe_test') {
-    return NextResponse.json({ error: 'PAYMENT_WEBHOOK_UNCONFIGURED' }, { status: 503 });
   }
 
   const rawBody = await request.text();

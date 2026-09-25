@@ -291,6 +291,28 @@ describe('Retell P0 tool boundary', () => {
     expect(result.body).toMatchObject({ ok: false, error: { code: 'INVALID_TOOL_REQUEST' } });
   });
 
+  it('logs only safe schema diagnostics when Xendra sends an invalid tool request', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const body = envelope('consultar_curso', {
+      curso: 'PII_SENTINEL',
+      secret_note: 'SECRET_SENTINEL',
+    });
+    delete (body.call.metadata as Partial<typeof body.call.metadata>).conversation_id;
+
+    const result = await invoke('consultar_curso', body);
+
+    expect(result.body).toMatchObject({ ok: false, error: { code: 'INVALID_TOOL_REQUEST' } });
+    const entries = log.mock.calls.map(([entry]) => String(entry));
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toContain('retell.tool.invalid_request');
+    expect(entries[0]).toContain('consultar_curso');
+    expect(entries[0]).toContain('call.metadata.conversation_id');
+    expect(entries[0]).toContain('args');
+    expect(entries[0]).not.toContain('PII_SENTINEL');
+    expect(entries[0]).not.toContain('SECRET_SENTINEL');
+    log.mockRestore();
+  });
+
   it('resolves one canonical course by owner alias and returns only bounded canonical detail', async () => {
     const result = await invoke('consultar_curso', envelope('consultar_curso', {
       curso: 'arreglo de celulares',

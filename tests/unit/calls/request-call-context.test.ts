@@ -2,8 +2,19 @@ import { describe, expect, it } from 'vitest';
 import {
   buildPersistedWhatsappSummary,
   deriveSharedLeadContext,
+  inferCallCountryFromPhoneE164,
   resolveStoredVoiceProvider,
 } from '@/features/calls/application/request-call';
+
+describe('inferCallCountryFromPhoneE164', () => {
+  it('materializes Argentina from the verified E.164 country calling code', () => {
+    expect(inferCallCountryFromPhoneE164('+5491112345678')).toBe('Argentina');
+  });
+
+  it('leaves an unknown calling code unresolved instead of inventing a country', () => {
+    expect(inferCallCountryFromPhoneE164('+12025550123')).toBe('');
+  });
+});
 
 describe('deriveSharedLeadContext', () => {
   it('hands Agent B the same known lead values and only the four missing shared fields', () => {

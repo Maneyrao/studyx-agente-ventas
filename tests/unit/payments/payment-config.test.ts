@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadPaymentProviderConfig } from '@/lib/config';
+import { loadPaymentProviderConfig, loadStripeWebhookConfig } from '@/lib/config';
 
 const env = (overrides: Record<string, string | undefined>) =>
   ({ ...overrides }) as NodeJS.ProcessEnv;
@@ -51,5 +51,34 @@ describe('loadPaymentProviderConfig', () => {
   it('rejects an unknown provider value', () => {
     expect(() => loadPaymentProviderConfig(env({ PAYMENT_PROVIDER: 'paypal' })))
       .toThrow(/INVALID_PAYMENT_CONFIG/);
+  });
+});
+
+describe('loadStripeWebhookConfig', () => {
+  it('accepts a restricted live key for signed inbound events without enabling live checkout', () => {
+    expect(loadStripeWebhookConfig(env({
+      STRIPE_SECRET_KEY: 'rk_live_restricted',
+      STRIPE_WEBHOOK_SECRET: 'whsec_live_endpoint',
+      PAYMENT_PROVIDER: 'fake',
+    }))).toEqual({
+      environment: 'live',
+      secretKey: 'rk_live_restricted',
+      webhookSecret: 'whsec_live_endpoint',
+    });
+  });
+
+  it('accepts test keys and rejects malformed key or signing-secret pairs', () => {
+    expect(loadStripeWebhookConfig(env({
+      STRIPE_SECRET_KEY: 'sk_test_fixture',
+      STRIPE_WEBHOOK_SECRET: 'whsec_test_endpoint',
+    })).environment).toBe('test');
+    expect(() => loadStripeWebhookConfig(env({
+      STRIPE_SECRET_KEY: 'not-a-stripe-key',
+      STRIPE_WEBHOOK_SECRET: 'whsec_endpoint',
+    }))).toThrow('INVALID_STRIPE_WEBHOOK_CONFIG:STRIPE_SECRET_KEY');
+    expect(() => loadStripeWebhookConfig(env({
+      STRIPE_SECRET_KEY: 'rk_live_restricted',
+      STRIPE_WEBHOOK_SECRET: 'wrong-secret',
+    }))).toThrow('INVALID_STRIPE_WEBHOOK_CONFIG:STRIPE_WEBHOOK_SECRET');
   });
 });

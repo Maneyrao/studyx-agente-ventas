@@ -22,6 +22,15 @@ import { CALL_START_TIMEOUT_SECONDS } from '../domain/call-timeouts';
 
 const E164 = /^\+[1-9]\d{6,14}$/;
 
+/**
+ * StudyX currently acquires Argentine phone leads. Materialize that verified
+ * country signal for Agent B; unknown calling codes remain unresolved so the
+ * voice agent can ask instead of receiving an invented country.
+ */
+export function inferCallCountryFromPhoneE164(phone: string): string {
+  return phone.startsWith('+54') ? 'Argentina' : '';
+}
+
 const ACTIVE_CALL_STATUSES = [
   'requested',
   'dispatching',
@@ -279,7 +288,7 @@ export async function reserveCallForDecision(
     nombre_lead: sharedLead.nombreLead,
     apellido_lead: sharedLead.apellidoLead,
     curso_interes: sharedLead.courseOfInterest,
-    pais: '',
+    pais: inferCallCountryFromPhoneE164(input.phone),
     email_lead: sharedLead.emailLead,
     resumen_whatsapp: resumenWhatsapp,
     prompt_version: input.prompt_version,

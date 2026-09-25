@@ -78,6 +78,7 @@ describe('XendraVoiceProvider.placeCall', () => {
       telefono: request.phoneE164,
       conversation_id: request.conversationId,
       lead_id: request.contactId,
+      internal_call_id: request.callId,
       variables: {
         nombre_lead: 'Ana Pérez',
         curso_interes: 'Python',

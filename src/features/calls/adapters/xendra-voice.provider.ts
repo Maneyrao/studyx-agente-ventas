@@ -60,6 +60,7 @@ export class XendraVoiceProvider implements VoiceProvider {
       telefono: input.phoneE164,
       conversation_id: input.conversationId,
       lead_id: input.contactId,
+      internal_call_id: input.callId,
       variables: {
         nombre_lead: context.nombre_lead,
         curso_interes: context.curso_interes,

@@ -523,9 +523,11 @@ run('Agent A → Xendra → Agent B → Agent A local smoke', () => {
         telefono: call.identity.phone,
         conversation_id: call.conversationId,
         lead_id: call.contactId,
+        internal_call_id: call.callId,
         variables: {
           nombre_lead: 'Ana Pérez',
           curso_interes: 'fotografia_profesional',
+          pais: 'Argentina',
           nombre_asesor: 'Sofía',
           numero_closer: '+5491144445555',
         },
