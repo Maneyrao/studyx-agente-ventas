@@ -26,7 +26,9 @@ export async function POST(request: NextRequest) {
     request.headers.get('stripe-signature'),
     {
       db: sql,
-      stripe: new Stripe(config.secretKey),
+      // constructEventAsync performs local HMAC verification and never calls
+      // Stripe's API; this non-secret placeholder cannot authorize payments.
+      stripe: new Stripe('sk_test_webhook_signature_verification_only'),
       webhookSecret: config.webhookSecret,
     }
   );

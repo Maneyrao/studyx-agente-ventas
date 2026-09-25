@@ -22,7 +22,7 @@ afterEach(() => {
 describe('Stripe webhook route', () => {
   it('reaches signature verification with live inbound credentials while checkout stays fake', async () => {
     process.env.PAYMENT_PROVIDER = 'fake';
-    process.env.STRIPE_SECRET_KEY = 'rk_live_restricted_fixture';
+    delete process.env.STRIPE_SECRET_KEY;
     process.env.STRIPE_WEBHOOK_SECRET = 'whsec_live_fixture';
     process.env.DATABASE_URL = 'postgresql://postgres@127.0.0.1:1/not-used';
     const { POST } = await import('@/app/api/webhooks/payments/stripe/route');

@@ -196,34 +196,23 @@ export type PaymentProviderConfig =
     };
 
 export type StripeWebhookConfig = {
-  environment: 'test' | 'live';
-  secretKey: string;
   webhookSecret: string;
 };
 
 /**
  * Inbound Stripe events are configured independently from checkout creation.
- * A live restricted key can verify a live endpoint while PAYMENT_PROVIDER
- * remains `fake`; this does not authorize the backend to create live charges.
+ * Signature verification is local and needs only the endpoint's `whsec_`;
+ * no live API key is exposed to this route and checkout permission remains
+ * governed separately by PAYMENT_PROVIDER.
  */
 export function loadStripeWebhookConfig(
   environment: NodeJS.ProcessEnv = process.env,
 ): StripeWebhookConfig {
-  const secretKey = environment.STRIPE_SECRET_KEY?.trim() ?? '';
   const webhookSecret = environment.STRIPE_WEBHOOK_SECRET?.trim() ?? '';
-  const live = secretKey.startsWith('sk_live_') || secretKey.startsWith('rk_live_');
-  const test = secretKey.startsWith('sk_test_') || secretKey.startsWith('rk_test_');
-  if (!live && !test) {
-    throw new Error('INVALID_STRIPE_WEBHOOK_CONFIG:STRIPE_SECRET_KEY');
-  }
   if (!webhookSecret.startsWith('whsec_') || webhookSecret.length <= 'whsec_'.length) {
     throw new Error('INVALID_STRIPE_WEBHOOK_CONFIG:STRIPE_WEBHOOK_SECRET');
   }
-  return {
-    environment: live ? 'live' : 'test',
-    secretKey,
-    webhookSecret,
-  };
+  return { webhookSecret };
 }
 
 /**
