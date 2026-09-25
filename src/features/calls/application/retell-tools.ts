@@ -136,7 +136,7 @@ const ToolMetadataSchema = z.object({
   contact_id: z.string().uuid().optional(),
   lead_id: z.string().uuid().optional(),
   conversation_id: z.string().uuid(),
-}).strict().superRefine((metadata, context) => {
+}).passthrough().superRefine((metadata, context) => {
   if (!metadata.contact_id && !metadata.lead_id) {
     context.addIssue({ code: 'custom', message: 'TOOL_CONTACT_ID_REQUIRED' });
   }

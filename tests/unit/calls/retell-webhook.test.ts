@@ -412,4 +412,34 @@ describe('Xendra-relayed Retell webhook boundary', () => {
     expect(response.status).toBe(400);
     expect(deps.calls.resolveRetellCall).not.toHaveBeenCalled();
   });
+
+  it('logs only safe schema diagnostics for an invalid relayed lifecycle payload', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const deps = dependencies();
+    const payload = relayed('call_started') as unknown as {
+      event: 'call_started';
+      call: Record<string, unknown>;
+    };
+    delete payload.call.start_timestamp;
+    payload.call.transcript = 'PII_TRANSCRIPT_SENTINEL';
+    payload.call.metadata = {
+      lead_id: contactId,
+      conversation_id: conversationId,
+      secret_note: 'SECRET_METADATA_SENTINEL',
+    };
+
+    const response = await handleXendraRelayedRetellWebhook(
+      xendraRequest(payload, 'call_started'),
+      { orchestratorSecret, calls: deps.calls },
+    );
+
+    expect(response.status).toBe(400);
+    const entries = log.mock.calls.map(([entry]) => String(entry));
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toContain('retell.lifecycle.invalid_request');
+    expect(entries[0]).toContain('call.start_timestamp');
+    expect(entries[0]).not.toContain('PII_TRANSCRIPT_SENTINEL');
+    expect(entries[0]).not.toContain('SECRET_METADATA_SENTINEL');
+    log.mockRestore();
+  });
 });

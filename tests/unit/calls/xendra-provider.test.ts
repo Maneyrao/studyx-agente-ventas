@@ -91,6 +91,20 @@ describe('XendraVoiceProvider.placeCall', () => {
     });
   });
 
+  it('derives the voice country from the actual dispatch phone when the reserved context is blank', async () => {
+    const request = input();
+    request.context = { ...request.context, pais: '' };
+    const fetchImpl = vi.fn<typeof fetch>(async () => json({ ok: true, call_id: 'call_xendra_country' }));
+
+    await provider(fetchImpl).placeCall(request);
+
+    const [, init] = fetchImpl.mock.calls[0];
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      telefono: '+5491112345678',
+      variables: { pais: 'Argentina' },
+    });
+  });
+
   it('treats a 409 call_id as the already-accepted provider call', async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => json({ ok: false, call_id: 'call_existing' }, 409));
     await expect(provider(fetchImpl).placeCall(input())).resolves.toEqual({

@@ -188,6 +188,30 @@ describe('Retell P0 tool boundary', () => {
     });
   });
 
+  it('accepts Xendra provider metadata beyond the required correlation identity', async () => {
+    const deps = dependencies();
+    const body = envelope('consultar_curso', { curso: offering.display_name });
+    Object.assign(body.call.metadata, {
+      agent_id: 'agent_published_fixture',
+      agent_version: 0,
+      direction: 'outbound',
+    });
+
+    const response = await handleRetellToolRequest(
+      request(body, { signatureHeader: null }),
+      'consultar_curso',
+      { ...deps, apiKey: '', requireRetellSignature: false },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true });
+    expect(deps.calls.resolveRetellToolCall).toHaveBeenCalledWith({
+      providerCallId,
+      metadata: { internalCallId, contactId, conversationId },
+      workspaceSlug: 'studyx',
+    });
+  });
+
   it('requires both the untouched Retell signature and the constant-time shared secret', async () => {
     const deps = dependencies();
     const body = envelope('consultar_curso', { curso: offering.display_name });

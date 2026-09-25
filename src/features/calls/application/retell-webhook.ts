@@ -12,6 +12,7 @@ import {
 } from '../adapters/retell-lifecycle';
 import { recordCallEvent } from './record-call-event';
 import { constantTimeSecretEqual } from '@/lib/security/shared-secret';
+import { logger } from '@/lib/observability/structured-log';
 
 type RetellWebhookDependencies = {
   readonly apiKey: string;
@@ -87,7 +88,16 @@ async function persistLifecycleEvent(
   calls: CallStore & RetellCallCorrelationStore,
 ): Promise<Response> {
   const parsed = RetellLifecycleWebhookSchema.safeParse(raw);
-  if (!parsed.success) return errorResponse('INVALID_RETELL_EVENT', 400);
+  if (!parsed.success) {
+    logger.warn({
+      event: 'retell.lifecycle.invalid_request',
+      issues: parsed.error.issues.map((issue) => ({
+        code: issue.code,
+        path: issue.path.map(String).join('.'),
+      })),
+    });
+    return errorResponse('INVALID_RETELL_EVENT', 400);
+  }
 
   try {
     const correlation = await calls.resolveRetellCall({

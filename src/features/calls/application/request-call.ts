@@ -3,7 +3,11 @@ import type { DbClient } from '@/lib/db/types';
 import { jsonbParam } from '@/lib/db/json';
 import { CallEventSchema } from '@/lib/contracts/call-event';
 import { evaluateAuthorizedVoiceConsent, evaluateVoiceConsent } from '../domain/call-consent';
-import { hashCallContext, parseCallContext } from '../domain/call-context';
+import {
+  hashCallContext,
+  inferCallCountryFromPhoneE164,
+  parseCallContext,
+} from '../domain/call-context';
 import { splitFullName } from '@/lib/heuristics/contact-identity';
 import { CALL_START_TIMEOUT_SECONDS } from '../domain/call-timeouts';
 
@@ -22,14 +26,7 @@ import { CALL_START_TIMEOUT_SECONDS } from '../domain/call-timeouts';
 
 const E164 = /^\+[1-9]\d{6,14}$/;
 
-/**
- * StudyX currently acquires Argentine phone leads. Materialize that verified
- * country signal for Agent B; unknown calling codes remain unresolved so the
- * voice agent can ask instead of receiving an invented country.
- */
-export function inferCallCountryFromPhoneE164(phone: string): string {
-  return phone.startsWith('+54') ? 'Argentina' : '';
-}
+export { inferCallCountryFromPhoneE164 } from '../domain/call-context';
 
 const ACTIVE_CALL_STATUSES = [
   'requested',

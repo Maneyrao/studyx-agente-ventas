@@ -27,6 +27,15 @@ export const CallContextV1Schema = z.object({
 
 export type CallContextV1 = z.infer<typeof CallContextV1Schema>;
 
+/**
+ * StudyX currently acquires Argentine phone leads. Unknown calling codes stay
+ * unresolved so the voice agent can ask instead of receiving an invented
+ * country.
+ */
+export function inferCallCountryFromPhoneE164(phone: string): string {
+  return phone.startsWith('+54') ? 'Argentina' : '';
+}
+
 export function parseCallContext(value: unknown): CallContextV1 {
   return CallContextV1Schema.parse(value);
 }

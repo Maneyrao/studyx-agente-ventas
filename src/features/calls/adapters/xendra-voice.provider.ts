@@ -4,7 +4,7 @@ import {
   assertRealSideEffectAllowed,
   type SandboxLookup,
 } from '@/lib/services/sandbox.service';
-import { parseCallContext } from '../domain/call-context';
+import { inferCallCountryFromPhoneE164, parseCallContext } from '../domain/call-context';
 import {
   AmbiguousVoiceProviderError,
   ConfirmedVoiceProviderError,
@@ -64,7 +64,7 @@ export class XendraVoiceProvider implements VoiceProvider {
       variables: {
         nombre_lead: context.nombre_lead,
         curso_interes: context.curso_interes,
-        pais: context.pais,
+        pais: context.pais || inferCallCountryFromPhoneE164(input.phoneE164),
         email_lead: context.email_lead,
         nombre_asesor: this.config.advisorName,
         numero_closer: this.config.closerNumber,
