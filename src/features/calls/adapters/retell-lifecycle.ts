@@ -19,11 +19,7 @@ const RetellMetadataSchema = z.object({
   contact_id: z.string().uuid().optional(),
   lead_id: z.string().uuid().optional(),
   conversation_id: z.string().uuid().optional(),
-}).passthrough().superRefine((metadata, context) => {
-  if (metadata.contact_id && metadata.lead_id && metadata.contact_id !== metadata.lead_id) {
-    context.addIssue({ code: 'custom', message: 'CONFLICTING_RETELL_CONTACT_METADATA' });
-  }
-});
+}).passthrough();
 
 const RetellCallBaseSchema = z.object({
   call_id: z.string().trim().min(1).max(512),
@@ -156,7 +152,9 @@ export function retellCorrelationMetadata(
 ): RetellCorrelationMetadata | null {
   const metadata = webhook.call.metadata;
   if (!metadata) return null;
-  const contactId = metadata.contact_id ?? metadata.lead_id;
+  // Xendra carries StudyX's contact as lead_id while Retell may add its own
+  // provider-scoped contact_id. Prefer the identity that StudyX dispatched.
+  const contactId = metadata.lead_id ?? metadata.contact_id;
   if (!metadata.internal_call_id && (!contactId || !metadata.conversation_id)) return null;
   return {
     ...(metadata.internal_call_id ? { internalCallId: metadata.internal_call_id } : {}),

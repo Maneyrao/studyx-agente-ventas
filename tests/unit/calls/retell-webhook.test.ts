@@ -490,6 +490,31 @@ describe('Xendra-relayed Retell webhook boundary', () => {
     }));
   });
 
+  it('uses StudyX lead_id when Retell relays its own different contact_id', async () => {
+    const deps = dependencies();
+    const payload = relayed('call_ended');
+    payload.call.metadata = {
+      internal_call_id: internalCallId,
+      contact_id: randomUUID(),
+      lead_id: contactId,
+      conversation_id: conversationId,
+    };
+
+    const response = await handleXendraRelayedRetellWebhook(
+      xendraRequest(payload, 'call_ended'),
+      { orchestratorSecret, calls: deps.calls },
+    );
+
+    expect(response.status).toBe(204);
+    expect(deps.calls.resolveRetellCall).toHaveBeenCalledWith({
+      providerCallId,
+      metadata: { internalCallId, contactId, conversationId },
+    });
+    expect(deps.calls.appendEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: 'ended',
+    }));
+  });
+
   it('acknowledges an empty no-answer analysis without inventing a commercial result', async () => {
     const deps = dependencies();
     const afterPersisted = vi.fn();

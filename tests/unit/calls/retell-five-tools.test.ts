@@ -210,6 +210,35 @@ describe('remaining Retell orchestration tools', () => {
     });
   });
 
+  it('uses StudyX lead_id when Retell also supplies its own different contact_id', async () => {
+    const deps = dependencies();
+    const body = envelope('enviar_link_pago', {
+      curso: 'reparacion_celulares', plan_code: 'monthly_12',
+    });
+    body.call.metadata = {
+      ...body.call.metadata,
+      contact_id: randomUUID(),
+      lead_id: contactId,
+    } as typeof body.call.metadata & { lead_id: string };
+
+    const response = await handleRetellToolRequest(
+      signedRequest(body),
+      'enviar_link_pago',
+      deps,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      ok: true,
+      pago: { enviado: true, canal: 'telegram', referencia: 'delivery_1' },
+    });
+    expect(deps.calls.resolveRetellToolCall).toHaveBeenCalledWith({
+      providerCallId,
+      metadata: { internalCallId, contactId, conversationId },
+      workspaceSlug: 'studyx',
+    });
+  });
+
   it('translates Lucas\'s contado shape but derives identity and delivery channel in the backend', async () => {
     const result = await invoke('enviar_link_pago', {
       cursos: ['reparacion_celulares'], plan: 'contado', email: 'lead@example.com', canal: 'whatsapp',

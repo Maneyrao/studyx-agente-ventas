@@ -137,12 +137,9 @@ const ToolMetadataSchema = z.object({
   lead_id: z.string().uuid().optional(),
   conversation_id: z.string().uuid().optional(),
 }).passthrough().superRefine((metadata, context) => {
-  const contactId = metadata.contact_id ?? metadata.lead_id;
+  const contactId = metadata.lead_id ?? metadata.contact_id;
   if (!metadata.internal_call_id && (!contactId || !metadata.conversation_id)) {
     context.addIssue({ code: 'custom', message: 'TOOL_CORRELATION_ID_REQUIRED' });
-  }
-  if (metadata.contact_id && metadata.lead_id && metadata.contact_id !== metadata.lead_id) {
-    context.addIssue({ code: 'custom', message: 'TOOL_CONTACT_ID_CONFLICT' });
   }
 });
 
@@ -784,8 +781,8 @@ export async function handleRetellToolRequest(
         ...(envelope.call.metadata.internal_call_id
           ? { internalCallId: envelope.call.metadata.internal_call_id }
           : {}),
-        ...(envelope.call.metadata.contact_id ?? envelope.call.metadata.lead_id
-          ? { contactId: envelope.call.metadata.contact_id ?? envelope.call.metadata.lead_id }
+        ...(envelope.call.metadata.lead_id ?? envelope.call.metadata.contact_id
+          ? { contactId: envelope.call.metadata.lead_id ?? envelope.call.metadata.contact_id }
           : {}),
         ...(envelope.call.metadata.conversation_id
           ? { conversationId: envelope.call.metadata.conversation_id }

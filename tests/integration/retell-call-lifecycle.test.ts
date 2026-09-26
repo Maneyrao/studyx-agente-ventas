@@ -116,7 +116,12 @@ run('Retell call lifecycle persistence', () => {
     const providerCallId = `retell:${randomUUID()}`;
     const ids = await fixture({ providerCallId, status: 'provider_accepted' });
     const payload = wrapper('call_ended', providerCallId, ids);
-    payload.call.metadata = { conversation_id: ids.conversationId } as typeof payload.call.metadata;
+    payload.call.metadata = {
+      internal_call_id: ids.callId,
+      contact_id: randomUUID(),
+      lead_id: ids.contactId,
+      conversation_id: ids.conversationId,
+    } as typeof payload.call.metadata;
     payload.call.disconnection_reason = 'user_declined';
     const orchestratorSecret = 'xendra-lifecycle-integration-secret';
 

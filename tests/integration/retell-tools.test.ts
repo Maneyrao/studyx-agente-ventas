@@ -207,6 +207,7 @@ run('Retell P0 tools with PostgreSQL', () => {
     const ids = await fixture({ name: 'Ana López' });
     const body = envelope(ids, 'consultar_curso', { curso: 'reparacion_celulares' });
     body.call.metadata = {
+      contact_id: randomUUID(),
       lead_id: ids.contactId,
       conversation_id: ids.conversationId,
     } as never;
