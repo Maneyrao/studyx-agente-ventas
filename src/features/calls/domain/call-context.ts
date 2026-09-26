@@ -22,6 +22,7 @@ export const CallContextV1Schema = z.object({
   resumen_whatsapp: z.string().max(1_200),
   prompt_version: z.string().min(1).max(128),
   apellido_lead: z.string().max(128).optional(),
+  plan_code: z.enum(['monthly_12', 'monthly_6', 'one_time']).optional(),
   campos_faltantes: z.array(z.enum(SHARED_LEAD_FIELDS)).max(SHARED_LEAD_FIELDS.length).optional(),
 }).strict();
 
@@ -51,6 +52,7 @@ export function canonicalizeCallContext(value: unknown): string {
     resumen_whatsapp: context.resumen_whatsapp,
     prompt_version: context.prompt_version,
     ...(context.apellido_lead === undefined ? {} : { apellido_lead: context.apellido_lead }),
+    ...(context.plan_code === undefined ? {} : { plan_code: context.plan_code }),
     ...(context.campos_faltantes === undefined ? {} : { campos_faltantes: context.campos_faltantes }),
   };
   return JSON.stringify(canonical);
@@ -80,6 +82,7 @@ export function sanitizeContextForReceipt(context: CallContextV1): CallContextV1
     ...(context.apellido_lead === undefined
       ? {}
       : { apellido_lead: sanitizeDisplayValue(context.apellido_lead) }),
+    ...(context.plan_code === undefined ? {} : { plan_code: context.plan_code }),
     ...(context.campos_faltantes === undefined
       ? {}
       : { campos_faltantes: context.campos_faltantes }),

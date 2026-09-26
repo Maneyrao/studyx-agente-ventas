@@ -9,7 +9,7 @@ describe('post-call deployment schedule', () => {
     };
     expect(config.crons).toContainEqual({
       path: '/api/cron/post-call-followup',
-      schedule: '50 3 * * *',
+      schedule: '*/5 * * * *',
     });
   });
 });

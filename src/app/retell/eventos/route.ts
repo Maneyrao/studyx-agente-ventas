@@ -36,7 +36,13 @@ export async function POST(request: Request): Promise<Response> {
     }) => {
       if (event.eventType === 'started') return;
       await runPostCallFollowup(
-        { trace_id: randomUUID(), call_id: event.callId, grace_seconds: 0 },
+        {
+          trace_id: randomUUID(),
+          call_id: event.callId,
+          // Analyzed events can close immediately. Ended events wait for the
+          // provider analysis; the periodic worker owns the technical fallback.
+          grace_seconds: event.eventType === 'analyzed' ? 0 : 120,
+        },
         {
           store: new PostgresPostCallFollowupStore(sql),
           sendOutbound: createPostCallOutboundSender(sql),

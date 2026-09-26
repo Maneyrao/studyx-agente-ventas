@@ -515,6 +515,54 @@ describe('Xendra-relayed Retell webhook boundary', () => {
     }));
   });
 
+  it('logs a rejected correlation using only the code and identifier presence', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const deps = dependencies({
+      resolveRetellCall: vi.fn(async () => {
+        throw new RetellCallCorrelationError('CALL_CORRELATION_MISMATCH', {
+          internalCallIdMatches: true,
+          contactIdMatches: false,
+          conversationIdMatches: true,
+          providerCallIdMatches: true,
+        });
+      }),
+    });
+    const payload = relayed('call_ended');
+    payload.call.metadata = {
+      internal_call_id: internalCallId,
+      lead_id: contactId,
+      conversation_id: conversationId,
+      secret_note: 'SECRET_METADATA_SENTINEL',
+    };
+    (payload.call as Record<string, unknown>).transcript = 'PII_TRANSCRIPT_SENTINEL';
+
+    const response = await handleXendraRelayedRetellWebhook(
+      xendraRequest(payload, 'call_ended'),
+      { orchestratorSecret, calls: deps.calls },
+    );
+
+    expect(response.status).toBe(409);
+    const entries = log.mock.calls.map(([entry]) => String(entry));
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toContain('retell.lifecycle.correlation_rejected');
+    expect(entries[0]).toContain('CALL_CORRELATION_MISMATCH');
+    expect(entries[0]).toContain('"internal_call_id_present":true');
+    expect(entries[0]).toContain('"lead_id_present":true');
+    expect(entries[0]).toContain('"conversation_id_present":true');
+    expect(entries[0]).toContain('"provider_call_id_present":true');
+    expect(entries[0]).toContain('"internal_call_id_match":true');
+    expect(entries[0]).toContain('"lead_id_match":false');
+    expect(entries[0]).toContain('"conversation_id_match":true');
+    expect(entries[0]).toContain('"provider_call_id_match":true');
+    expect(entries[0]).not.toContain(internalCallId);
+    expect(entries[0]).not.toContain(contactId);
+    expect(entries[0]).not.toContain(conversationId);
+    expect(entries[0]).not.toContain(providerCallId);
+    expect(entries[0]).not.toContain('PII_TRANSCRIPT_SENTINEL');
+    expect(entries[0]).not.toContain('SECRET_METADATA_SENTINEL');
+    log.mockRestore();
+  });
+
   it('acknowledges an empty no-answer analysis without inventing a commercial result', async () => {
     const deps = dependencies();
     const afterPersisted = vi.fn();

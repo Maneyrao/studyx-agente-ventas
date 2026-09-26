@@ -10,8 +10,18 @@ export type RetellCorrelationErrorCode =
   | 'CALL_PROVIDER_ID_CONFLICT'
   | 'CALL_CORRELATION_STATE_INVALID';
 
+export type RetellCorrelationDiagnostics = {
+  readonly internalCallIdMatches: boolean | null;
+  readonly contactIdMatches: boolean | null;
+  readonly conversationIdMatches: boolean | null;
+  readonly providerCallIdMatches: boolean;
+};
+
 export class RetellCallCorrelationError extends Error {
-  constructor(readonly code: RetellCorrelationErrorCode) {
+  constructor(
+    readonly code: RetellCorrelationErrorCode,
+    readonly diagnostics?: RetellCorrelationDiagnostics,
+  ) {
     super(code);
     this.name = 'RetellCallCorrelationError';
   }

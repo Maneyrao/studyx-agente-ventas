@@ -143,6 +143,25 @@ async function persistLifecycleEvent(
     return new Response(null, { status: 204 });
   } catch (error) {
     if (error instanceof RetellCallCorrelationError) {
+      const rawMetadata = parsed.data.call.metadata;
+      logger.warn({
+        event: 'retell.lifecycle.correlation_rejected',
+        code: error.code,
+        provider_call_id_present: parsed.data.call.call_id.trim().length > 0,
+        internal_call_id_present: Boolean(rawMetadata?.internal_call_id),
+        lead_id_present: Boolean(rawMetadata?.lead_id),
+        conversation_id_present: Boolean(rawMetadata?.conversation_id),
+        internal_call_id_match: rawMetadata?.internal_call_id
+          ? error.diagnostics?.internalCallIdMatches ?? null
+          : null,
+        lead_id_match: rawMetadata?.lead_id
+          ? error.diagnostics?.contactIdMatches ?? null
+          : null,
+        conversation_id_match: rawMetadata?.conversation_id
+          ? error.diagnostics?.conversationIdMatches ?? null
+          : null,
+        provider_call_id_match: error.diagnostics?.providerCallIdMatches ?? null,
+      });
       return errorResponse(error.code, error.code === 'CALL_CORRELATION_NOT_FOUND' ? 404 : 409);
     }
     if (error instanceof ZodError) return errorResponse('INVALID_RETELL_EVENT', 400);

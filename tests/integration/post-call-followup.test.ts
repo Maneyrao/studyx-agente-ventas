@@ -248,6 +248,47 @@ async function consentStatus(contactId: string) {
 }
 
 run('post-call-followup cron (spec 007, B -> A)', () => {
+  it('waits through the analysis grace window and then emits one technical fallback', async () => {
+    const fixture = await seedTerminalCall({
+      status: 'completed',
+      result: null,
+      analysis_status: 'pending',
+      provider: 'retell',
+      ageMinutes: 10,
+    });
+    await new PostgresCallStore(sql).appendEvent({
+      schema_version: 1,
+      event_id: `retell:call_ended:${fixture.providerCallId}`,
+      call_id: fixture.callId,
+      event_type: 'ended',
+      sequence: 2,
+      occurred_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+      provider: 'retell',
+      payload: {
+        event_type: 'ended',
+        ended_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+        duration_seconds: 20,
+        disconnection_reason: 'user_hangup',
+      },
+    });
+    await sql`
+      UPDATE call_sessions
+      SET completed_at = now() - interval '10 minutes', updated_at = now() - interval '10 minutes'
+      WHERE id = ${fixture.callId}::uuid
+    `;
+
+    const first = await sweep(randomUUID(), 120);
+    expect(first.findings.find((finding) => finding.call_id === fixture.callId)).toMatchObject({
+      action: 'send',
+      reason: 'ANALYSIS_UNAVAILABLE',
+    });
+    expect(await postCallOutboundDeliveryCount(fixture.callId)).toBe(1);
+
+    const replay = await sweep(randomUUID(), 120);
+    expect(replay.findings.find((finding) => finding.call_id === fixture.callId)).toBeUndefined();
+    expect(await postCallOutboundDeliveryCount(fixture.callId)).toBe(1);
+  });
+
   it('expires an accepted call with no lifecycle event and follows up exactly once', async () => {
     const fixture = await seedTerminalCall({
       status: 'provider_accepted',

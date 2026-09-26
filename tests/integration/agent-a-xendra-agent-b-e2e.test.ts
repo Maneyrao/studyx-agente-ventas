@@ -5,6 +5,8 @@ import { PostgresCallStore } from '@/features/calls/adapters/postgres-call-store
 import { PostgresRetellOrchestrationStore } from '@/features/calls/adapters/postgres-retell-orchestration-store';
 import { PostgresRetellContactToolStore } from '@/features/calls/adapters/postgres-retell-tools';
 import { dispatchCall } from '@/features/calls/application/dispatch-call';
+import { runPostCallFollowup } from '@/features/calls/application/post-call-followup';
+import { PostgresPostCallFollowupStore } from '@/features/calls/adapters/postgres-post-call-followup-store';
 import {
   handleRetellToolRequest,
   type RetellToolDependencies,
@@ -526,8 +528,10 @@ run('Agent A → Xendra → Agent B → Agent A local smoke', () => {
         internal_call_id: call.callId,
         variables: {
           nombre_lead: 'Ana Pérez',
+          apellido_lead: 'Pérez',
           curso_interes: 'fotografia_profesional',
           pais: 'Argentina',
+          plan_code: 'monthly_12',
           nombre_asesor: 'Sofía',
           numero_closer: '+5491144445555',
         },
@@ -575,8 +579,8 @@ run('Agent A → Xendra → Agent B → Agent A local smoke', () => {
       });
 
       const resultArgs = {
-        resultado: 'seguimiento_agendado',
-        call_summary: 'Le interesa Fotografía y revisará el link de 12 cuotas.',
+        resultado: 'corto_la_llamada',
+        call_summary: 'La persona pidió el link y la llamada se cortó abruptamente.',
         user_sentiment: 'positive',
         curso_ofrecido: 'Fotografía Profesional',
         precio_ofrecido: 'USD 360',
@@ -588,7 +592,7 @@ run('Agent A → Xendra → Agent B → Agent A local smoke', () => {
         pidio_humano: false,
         pidio_no_contactar: false,
         pregunto_si_es_ia: false,
-        compromiso_pendiente: 'Revisar el link en Telegram.',
+        compromiso_pendiente: 'Retomar por Telegram o reintentar la llamada.',
       };
       const recorded = await tool(
         call, providerCallId, 'registrar_resultado', resultArgs, outbound.dependencies,
@@ -603,6 +607,54 @@ run('Agent A → Xendra → Agent B → Agent A local smoke', () => {
         expect(await relay(call, providerCallId, event)).toMatchObject({ status: 204 });
         expect(await relay(call, providerCallId, event)).toMatchObject({ status: 204 });
       }
+
+      const followup = await runPostCallFollowup(
+        { trace_id: randomUUID(), call_id: call.callId, grace_seconds: 0 },
+        {
+          store: new PostgresPostCallFollowupStore(db!),
+          sendOutbound: outbound.dependencies.orchestration
+            ? (input) => sendOutboundMessage(input, {
+                identities: new PostgresChannelIdentityStore(db!),
+                channels: {
+                  telegram: {
+                    channel: 'telegram',
+                    provider: 'telegram',
+                    integrationId: 'telegram-xendra-e2e',
+                    maxTextLength: 4_096,
+                    async sendText(input) {
+                      outbound.sends.push(input);
+                      return {
+                        providerMessageId: `${input.destination}:post-call`,
+                        acceptedAt: fixedNow.toISOString(),
+                      };
+                    },
+                  },
+                },
+                preferenceOrder: ['telegram'],
+                contentAuthorizer: new AuthorizedEgressContentAuthorizer(),
+                sideEffectAuthorizer: { authorize: async () => ({ allowed: true as const, reason: null }) },
+                db: db!,
+                now: () => fixedNow,
+              })
+            : async () => { throw new Error('E2E_ORCHESTRATION_MISSING'); },
+        },
+      );
+      expect(followup.findings).toContainEqual({
+        call_id: call.callId,
+        action: 'send',
+        reason: 'CALL_ENDED_BY_CONTACT',
+      });
+      expect(outbound.sends).toHaveLength(2);
+      expect(outbound.sends[1].text).toMatch(/se cort[oó][\s\S]*reintent[\s\S]*seguir/iu);
+
+      const followupReplay = await runPostCallFollowup(
+        { trace_id: randomUUID(), call_id: call.callId, grace_seconds: 0 },
+        {
+          store: new PostgresPostCallFollowupStore(db!),
+          sendOutbound: async () => { throw new Error('DUPLICATE_POST_CALL_OUTBOUND'); },
+        },
+      );
+      expect(followupReplay.examined).toBe(0);
 
       const resumedInbound = await processInboundMessage(inbound(
         call.identity,
@@ -637,7 +689,7 @@ run('Agent A → Xendra → Agent B → Agent A local smoke', () => {
         selected_payment_plan: 'monthly_12',
         last_call_result: {
           call_id: call.callId,
-          result: 'seguimiento_agendado',
+          result: 'corto_la_llamada',
         },
       });
       expect(claimed.conversation_state_v1).toMatchObject({
@@ -688,7 +740,7 @@ run('Agent A → Xendra → Agent B → Agent A local smoke', () => {
       `;
       expect(finalState).toEqual([{
         status: 'completed',
-        result: 'seguimiento_agendado',
+        result: 'corto_la_llamada',
         provider_call_id: providerCallId,
       }]);
       const persistedPayload = await db!<Array<{ payload: string }>>`

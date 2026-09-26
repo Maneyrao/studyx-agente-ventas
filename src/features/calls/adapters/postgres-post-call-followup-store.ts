@@ -158,6 +158,15 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
         AND (
           cs.provider <> 'retell'
           OR cs.status IN ('timed_out', 'no_answer', 'failed')
+          OR (
+            cs.status = 'completed'
+            AND EXISTS (
+              SELECT 1 FROM call_events AS ended_event
+              WHERE ended_event.call_id = cs.id
+                AND ended_event.provider = 'retell'
+                AND ended_event.event_type = 'ended'
+            )
+          )
           OR EXISTS (
             SELECT 1 FROM call_events AS webhook_event
             WHERE webhook_event.call_id = cs.id

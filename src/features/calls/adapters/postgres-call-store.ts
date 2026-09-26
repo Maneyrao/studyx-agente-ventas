@@ -251,34 +251,50 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
               && row.contact_id === contactId
               && row.conversation_id === conversationId)
         : undefined;
+      const comparisonRow = byMetadata ?? byProvider;
+      const diagnostics = {
+        internalCallIdMatches: internalCallId === undefined
+          ? null
+          : rows.some((row) => row.id === internalCallId),
+        contactIdMatches: contactId === undefined
+          ? null
+          : comparisonRow?.contact_id === contactId,
+        conversationIdMatches: conversationId === undefined
+          ? null
+          : comparisonRow?.conversation_id === conversationId,
+        providerCallIdMatches: byProvider !== undefined,
+      } as const;
+      const rejected = (code: ConstructorParameters<typeof RetellCallCorrelationError>[0]) => (
+        new RetellCallCorrelationError(code, diagnostics)
+      );
 
       if (input.metadata && !byMetadata) {
-        throw new RetellCallCorrelationError(byProvider
+        throw rejected(byProvider
           ? 'CALL_CORRELATION_MISMATCH'
           : 'CALL_CORRELATION_NOT_FOUND');
       }
       if (byProvider && byMetadata && byProvider.id !== byMetadata.id) {
-        throw new RetellCallCorrelationError('CALL_CORRELATION_MISMATCH');
+        throw rejected('CALL_CORRELATION_MISMATCH');
       }
 
       const row = byProvider ?? byMetadata;
-      if (!row) throw new RetellCallCorrelationError('CALL_CORRELATION_NOT_FOUND');
+      if (!row) throw rejected('CALL_CORRELATION_NOT_FOUND');
       if (
         input.metadata
         && ((contactId !== undefined && row.contact_id !== contactId)
           || (conversationId !== undefined && row.conversation_id !== conversationId))
       ) {
-        throw new RetellCallCorrelationError('CALL_CORRELATION_MISMATCH');
+        throw rejected('CALL_CORRELATION_MISMATCH');
       }
       if (row.provider_call_id && row.provider_call_id !== input.providerCallId) {
-        throw new RetellCallCorrelationError('CALL_PROVIDER_ID_CONFLICT');
+        throw rejected('CALL_PROVIDER_ID_CONFLICT');
       }
 
       await bindLegacyWorkspace(tx, row);
 
       if (row.provider_call_id === null) {
         if (row.status !== 'dispatching' && row.status !== 'dispatch_ambiguous') {
-          throw new RetellCallCorrelationError('CALL_CORRELATION_STATE_INVALID');
+          throw rejected('CALL_CORRELATION_STATE_INVALID');
         }
         await tx`
           UPDATE call_sessions

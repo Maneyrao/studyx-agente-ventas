@@ -63,9 +63,11 @@ export class XendraVoiceProvider implements VoiceProvider {
       internal_call_id: input.callId,
       variables: {
         nombre_lead: context.nombre_lead,
+        apellido_lead: context.apellido_lead ?? '',
         curso_interes: context.curso_interes,
         pais: context.pais || inferCallCountryFromPhoneE164(input.phoneE164),
         email_lead: context.email_lead,
+        plan_code: context.plan_code ?? '',
         nombre_asesor: this.config.advisorName,
         numero_closer: this.config.closerNumber,
         resumen_whatsapp: context.resumen_whatsapp,

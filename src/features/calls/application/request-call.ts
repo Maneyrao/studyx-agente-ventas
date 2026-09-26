@@ -269,6 +269,18 @@ export async function reserveCallForDecision(
   const workspaceId = workspaces[0]?.workspace_id;
   if (!workspaceId) throw new CallRequestRejectedError('CALL_WORKSPACE_UNRESOLVED');
 
+  const durablePlans = await db<Array<{
+    selected_payment_plan: 'monthly_12' | 'monthly_6' | 'one_time' | null;
+  }>>`
+    SELECT selected_payment_plan
+    FROM conversation_sales_context_states_v1
+    WHERE workspace_id = ${workspaceId}::uuid
+      AND conversation_id = ${input.conversation_id}::uuid
+      AND contact_id = ${input.contact_id}::uuid
+    LIMIT 1
+  `;
+  const durablePlan = durablePlans[0]?.selected_payment_plan ?? null;
+
   const provider = resolveStoredVoiceProvider();
   const callId = input.reserved_call_id ?? randomUUID();
   const sharedLead = deriveSharedLeadContext({
@@ -287,6 +299,7 @@ export async function reserveCallForDecision(
     curso_interes: sharedLead.courseOfInterest,
     pais: inferCallCountryFromPhoneE164(input.phone),
     email_lead: sharedLead.emailLead,
+    ...(durablePlan === null ? {} : { plan_code: durablePlan }),
     resumen_whatsapp: resumenWhatsapp,
     prompt_version: input.prompt_version,
     campos_faltantes: sharedLead.missingFields,
