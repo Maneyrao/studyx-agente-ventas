@@ -8,8 +8,16 @@ import { PostgresPostCallFollowupStore } from '@/features/calls/adapters/postgre
 import { createPostCallOutboundSender } from '@/features/calls/adapters/post-call-outbound';
 import { logger } from '@/lib/observability/structured-log';
 import { randomUUID } from 'node:crypto';
+import { after } from 'next/server';
 
 export const runtime = 'nodejs';
+export const maxDuration = 180;
+
+const POST_CALL_ANALYSIS_GRACE_MS = 125_000;
+
+function waitForAnalysisGrace(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, POST_CALL_ANALYSIS_GRACE_MS));
+}
 
 export async function POST(request: Request): Promise<Response> {
   const isXendraRelay = request.headers.has('x-studyx-orchestrator-secret')
@@ -35,20 +43,27 @@ export async function POST(request: Request): Promise<Response> {
       eventType: 'started' | 'ended' | 'analyzed';
     }) => {
       if (event.eventType === 'started') return;
-      await runPostCallFollowup(
-        {
-          trace_id: randomUUID(),
-          call_id: event.callId,
-          // Analyzed events can close immediately. Ended events wait for the
-          // provider analysis; the periodic worker owns the technical fallback.
-          grace_seconds: event.eventType === 'analyzed' ? 0 : 120,
-        },
+      const followUp = async (graceSeconds: number) => runPostCallFollowup(
+        { trace_id: randomUUID(), call_id: event.callId, grace_seconds: graceSeconds },
         {
           store: new PostgresPostCallFollowupStore(sql),
           sendOutbound: createPostCallOutboundSender(sql),
           log: (name, fields) => logger.info({ event: name, ...fields }),
         },
       );
+
+      if (event.eventType === 'analyzed') {
+        await followUp(0);
+        return;
+      }
+
+      // Vercel Hobby only supports daily cron jobs. Keep the webhook fast and
+      // use the request-scoped background lifetime for the short analysis
+      // window; the daily cron remains the durable recovery sweep.
+      after(async () => {
+        await waitForAnalysisGrace();
+        await followUp(120);
+      });
     };
     if (isXendraRelay) {
       return await handleXendraRelayedRetellWebhook(request, {
