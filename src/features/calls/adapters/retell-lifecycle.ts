@@ -24,11 +24,11 @@ const RetellMetadataSchema = z.object({
     context.addIssue({ code: 'custom', message: 'CONFLICTING_RETELL_CONTACT_METADATA' });
     return;
   }
-  const hasAny = metadata.internal_call_id !== undefined
-    || metadata.contact_id !== undefined
+  const hasExternalIdentity = metadata.contact_id !== undefined
     || metadata.lead_id !== undefined
     || metadata.conversation_id !== undefined;
-  if (hasAny && (!(metadata.contact_id ?? metadata.lead_id) || !metadata.conversation_id)) {
+  if (!metadata.internal_call_id && hasExternalIdentity
+    && (!(metadata.contact_id ?? metadata.lead_id) || !metadata.conversation_id)) {
     context.addIssue({ code: 'custom', message: 'INCOMPLETE_RETELL_CORRELATION_METADATA' });
   }
 });
@@ -43,7 +43,7 @@ const RetellStartedWebhookSchema = z.object({
   call: RetellCallBaseSchema.extend({
     start_timestamp: ProviderTimestampSchema,
   }),
-}).strict();
+}).passthrough();
 
 const RetellEndedWebhookSchema = z.object({
   event: z.literal('call_ended'),
@@ -52,24 +52,38 @@ const RetellEndedWebhookSchema = z.object({
     end_timestamp: ProviderTimestampSchema,
     disconnection_reason: z.string().trim().min(1).max(128),
   }),
-}).strict();
+}).passthrough();
+
+function emptyStringToUndefined(value: unknown): unknown {
+  return typeof value === 'string' && value.trim() === '' ? undefined : value;
+}
+
+const OptionalBoundedTextSchema = (max: number) => z.preprocess(
+  emptyStringToUndefined,
+  z.string().trim().min(1).max(max).optional().nullable(),
+);
+
+const OptionalEmailSchema = z.preprocess(
+  emptyStringToUndefined,
+  z.string().trim().max(254).email().optional().nullable(),
+);
 
 const RetellAnalysisDataSchema = z.object({
   resultado: CallResultSchema,
   nivel_interes: z.enum(['alto', 'medio', 'bajo', 'nulo']).optional().nullable(),
-  curso_ofrecido: z.string().trim().min(1).max(256).optional().nullable(),
-  precio_ofrecido: z.string().trim().min(1).max(256).optional().nullable(),
+  curso_ofrecido: OptionalBoundedTextSchema(256),
+  precio_ofrecido: OptionalBoundedTextSchema(256),
   objecion_principal: z.enum([
     'precio', 'tiempo', 'confianza', 'capacidad_propia', 'consultar_con_tercero',
     'comparando_opciones', 'conectividad_o_dispositivo', 'timing', 'otra', 'ninguna',
   ]).optional().nullable(),
-  email_capturado: z.string().trim().max(254).email().optional().nullable(),
+  email_capturado: OptionalEmailSchema,
   link_pago_enviado: z.boolean().optional(),
   pago_confirmado: z.boolean().optional(),
   pidio_humano: z.boolean().optional(),
   pidio_no_contactar: z.boolean().optional(),
   pregunto_si_es_ia: z.boolean().optional(),
-  compromiso_pendiente: z.string().trim().min(1).max(1024).optional().nullable(),
+  compromiso_pendiente: OptionalBoundedTextSchema(1024),
 }).passthrough().superRefine((analysis, context) => {
   const legacyKeys = new Set(['resultado', 'nivel_interes', 'objecion_principal']);
   const hasExtendedField = Object.keys(analysis).some((key) => !legacyKeys.has(key));
@@ -93,7 +107,7 @@ const RetellAnalyzedWebhookSchema = z.object({
       custom_analysis_data: RetellAnalysisDataSchema,
     }).passthrough(),
   }),
-}).strict();
+}).passthrough();
 
 export const RetellLifecycleWebhookSchema = z.discriminatedUnion('event', [
   RetellStartedWebhookSchema,
@@ -130,12 +144,13 @@ export function retellCorrelationMetadata(
   webhook: RetellLifecycleWebhook,
 ): RetellCorrelationMetadata | null {
   const metadata = webhook.call.metadata;
-  const contactId = metadata?.contact_id ?? metadata?.lead_id;
-  if (!contactId || !metadata?.conversation_id) return null;
+  if (!metadata) return null;
+  const contactId = metadata.contact_id ?? metadata.lead_id;
+  if (!metadata.internal_call_id && (!contactId || !metadata.conversation_id)) return null;
   return {
     ...(metadata.internal_call_id ? { internalCallId: metadata.internal_call_id } : {}),
-    contactId,
-    conversationId: metadata.conversation_id,
+    ...(contactId ? { contactId } : {}),
+    ...(metadata.conversation_id ? { conversationId: metadata.conversation_id } : {}),
   };
 }
 

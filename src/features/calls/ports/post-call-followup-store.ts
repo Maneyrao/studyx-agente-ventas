@@ -5,7 +5,7 @@ import type { PostCallFollowupBriefV1 } from '../domain/post-call-followup';
 /**
  * Port for the post-call followup sweep (spec 007). Narrow on purpose, same
  * spirit as the orchestration reconciliation port: this is the only process
- * that initiates a WhatsApp message nobody asked for, so the surface it can
+ * that initiates a channel message nobody asked for, so the surface it can
  * touch is exactly what closing that loop requires.
  */
 
@@ -15,6 +15,7 @@ export interface TerminalCallForFollowup {
   readonly conversation_id: string;
   /** NULL is retained for ambiguous/orphan legacy calls; only DNC may act on it. */
   readonly workspace_id: string | null;
+  readonly channel: 'telegram' | 'whatsapp';
   readonly provider: 'telegram_sandbox' | 'retell';
   readonly status: CallStatus;
   readonly result: CallResult | null;
@@ -41,6 +42,7 @@ export interface PostCallFollowupStore {
   listPendingFollowups(input: {
     readonly limit: number;
     readonly grace_seconds: number;
+    readonly call_id?: string;
   }): Promise<TerminalCallForFollowup[]>;
 
   /**
@@ -57,8 +59,8 @@ export interface PostCallFollowupStore {
   /** True if the contact has a payment with status 'paid' in this workspace. */
   hasVerifiedPayment(contactId: string, workspaceId: string, callId: string, provider: 'telegram_sandbox' | 'retell'): Promise<boolean>;
 
-  /** True if the contact is currently blocked/opted-out on whatsapp. */
-  isContactBlocked(contactId: string): Promise<boolean>;
+  /** True if the contact is currently blocked/opted-out on the target channel. */
+  isContactBlocked(contactId: string, channel: 'telegram' | 'whatsapp'): Promise<boolean>;
 
   revokeContact(input: {
     readonly contact_id: string;

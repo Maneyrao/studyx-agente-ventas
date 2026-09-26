@@ -138,7 +138,11 @@ function dependencies() {
       result: 'no_interesado' as const,
     })),
     resolveRetellCall: vi.fn(async () => ({ callId: internalCallId })),
-    resolveRetellToolCall: vi.fn(async () => ({ callId: internalCallId })),
+    resolveRetellToolCall: vi.fn(async () => ({
+      callId: internalCallId,
+      contactId,
+      conversationId,
+    })),
   } satisfies CallStore & RetellToolCallCorrelationStore;
   const business = {
     loadCompleteIndex: vi.fn(async () => rawIndex()),
@@ -208,6 +212,29 @@ describe('Retell P0 tool boundary', () => {
     expect(deps.calls.resolveRetellToolCall).toHaveBeenCalledWith({
       providerCallId,
       metadata: { internalCallId, contactId, conversationId },
+      workspaceSlug: 'studyx',
+    });
+  });
+
+  it('resolves an Xendra tool call from the durable internal call id when relayed metadata omits duplicated lead fields', async () => {
+    const deps = dependencies();
+    const body = envelope('consultar_curso', { curso: offering.display_name });
+    body.call.metadata = {
+      internal_call_id: internalCallId,
+      agent_id: 'agent_published_fixture',
+    } as never;
+
+    const response = await handleRetellToolRequest(
+      request(body, { signatureHeader: null }),
+      'consultar_curso',
+      { ...deps, apiKey: '', requireRetellSignature: false },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true });
+    expect(deps.calls.resolveRetellToolCall).toHaveBeenCalledWith({
+      providerCallId,
+      metadata: { internalCallId },
       workspaceSlug: 'studyx',
     });
   });
@@ -322,6 +349,7 @@ describe('Retell P0 tool boundary', () => {
       secret_note: 'SECRET_SENTINEL',
     });
     delete (body.call.metadata as Partial<typeof body.call.metadata>).conversation_id;
+    delete (body.call.metadata as Partial<typeof body.call.metadata>).internal_call_id;
 
     const result = await invoke('consultar_curso', body);
 
@@ -330,7 +358,7 @@ describe('Retell P0 tool boundary', () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]).toContain('retell.tool.invalid_request');
     expect(entries[0]).toContain('consultar_curso');
-    expect(entries[0]).toContain('call.metadata.conversation_id');
+    expect(entries[0]).toContain('call.metadata');
     expect(entries[0]).toContain('args');
     expect(entries[0]).not.toContain('PII_SENTINEL');
     expect(entries[0]).not.toContain('SECRET_SENTINEL');

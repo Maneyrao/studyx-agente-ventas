@@ -92,7 +92,7 @@ function toolDependencies() {
       result: 'link_enviado_sin_pago' as const,
     })),
     resolveRetellCall: vi.fn(async () => ({ callId })),
-    resolveRetellToolCall: vi.fn(async () => ({ callId })),
+    resolveRetellToolCall: vi.fn(async () => ({ callId, contactId, conversationId })),
   } satisfies CallStore & RetellToolCallCorrelationStore;
   return {
     apiKey,

@@ -518,11 +518,13 @@ run('Retell P0 tools with PostgreSQL', () => {
       providerCallId,
       metadata: {
         internalCallId: callId,
-        contactId: contact[0].id,
-        conversationId: conversation[0].id,
       },
       workspaceSlug: configured.workspaceSlug,
-    })).resolves.toEqual({ callId });
+    })).resolves.toEqual({
+      callId,
+      contactId: contact[0].id,
+      conversationId: conversation[0].id,
+    });
     await expect(db!<Array<{ workspace_id: string | null }>>`
       SELECT workspace_id FROM call_sessions WHERE id = ${callId}::uuid
     `).resolves.toEqual([{ workspace_id: configured.workspaceId }]);

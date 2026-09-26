@@ -93,12 +93,14 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
   async listPendingFollowups(input: {
     limit: number;
     grace_seconds: number;
+    call_id?: string;
   }): Promise<TerminalCallForFollowup[]> {
     const rows = await this.db<Array<{
       id: string;
       contact_id: string;
       conversation_id: string;
       workspace_id: string | null;
+      channel: 'telegram' | 'whatsapp';
       status: CallStatus;
       provider: 'telegram_sandbox' | 'retell';
       result: CallResult | null;
@@ -107,7 +109,7 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
       do_not_contact: boolean;
     }>>`
       SELECT cs.id, cs.contact_id, cs.conversation_id, cs.status, cs.result, cs.provider,
-             cs.workspace_id, cs.analysis_status, cs.prompt_version,
+             cs.workspace_id, cs.analysis_status, cs.prompt_version, conversation.channel,
              EXISTS (
                SELECT 1 FROM call_events AS analysis_event
                WHERE analysis_event.call_id = cs.id
@@ -121,6 +123,9 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
              OR cs.result = 'no_contactar'
              OR EXISTS (SELECT 1 FROM consent_events WHERE event_key = 'call:' || cs.id::text || ':no_contactar') AS do_not_contact
       FROM call_sessions AS cs
+      JOIN conversations AS conversation
+        ON conversation.id = cs.conversation_id
+       AND conversation.contact_id = cs.contact_id
       LEFT JOIN workspaces AS workspace
         ON workspace.id = cs.workspace_id
        AND workspace.status = 'active'
@@ -129,6 +134,7 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
        AND wc.contact_id = cs.contact_id
        AND wc.lifecycle_status = 'active'
       WHERE cs.status = ANY(${TERMINAL_STATUSES})
+        AND (${input.call_id ?? null}::uuid IS NULL OR cs.id = ${input.call_id ?? null}::uuid)
         -- Recomputing analysis legitimately touches updated_at; grace is
         -- measured from terminal completion so an append+projection commit
         -- cannot hide an already-completed call from the next sweep.
@@ -151,7 +157,7 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
         )
         AND (
           cs.provider <> 'retell'
-          OR cs.status = 'timed_out'
+          OR cs.status IN ('timed_out', 'no_answer', 'failed')
           OR EXISTS (
             SELECT 1 FROM call_events AS webhook_event
             WHERE webhook_event.call_id = cs.id
@@ -184,6 +190,7 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
       contact_id: row.contact_id,
       conversation_id: row.conversation_id,
       workspace_id: row.workspace_id,
+      channel: row.channel,
       provider: row.provider,
       status: row.status,
       result: row.result,
@@ -207,7 +214,7 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
     return rows[0]?.exists ?? false;
   }
 
-  async isContactBlocked(contactId: string): Promise<boolean> {
+  async isContactBlocked(contactId: string, channel: 'telegram' | 'whatsapp'): Promise<boolean> {
     const rows = await this.db<Array<{ blocked: boolean }>>`
       SELECT (
         c.status = 'inactivo'
@@ -218,7 +225,7 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
       ) AS blocked
       FROM contacts AS c
       LEFT JOIN contact_channel_permissions AS ccp
-        ON ccp.contact_id = c.id AND ccp.channel = 'whatsapp'
+        ON ccp.contact_id = c.id AND ccp.channel = ${channel}
       WHERE c.id = ${contactId}::uuid
     `;
     return rows[0]?.blocked ?? true;

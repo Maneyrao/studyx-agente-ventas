@@ -1,7 +1,7 @@
 export type RetellCorrelationMetadata = {
   readonly internalCallId?: string;
-  readonly contactId: string;
-  readonly conversationId: string;
+  readonly contactId?: string;
+  readonly conversationId?: string;
 };
 
 export type RetellCorrelationErrorCode =
@@ -30,5 +30,9 @@ export interface RetellToolCallCorrelationStore extends RetellCallCorrelationSto
     readonly providerCallId: string;
     readonly metadata: RetellCorrelationMetadata;
     readonly workspaceSlug: string;
-  }): Promise<{ readonly callId: string }>;
+  }): Promise<{
+    readonly callId: string;
+    readonly contactId: string;
+    readonly conversationId: string;
+  }>;
 }

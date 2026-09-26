@@ -961,6 +961,28 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
         },
       },
     ];
+    const eventDrivenFindings: Array<{ call_id: string; action: string }> = [];
+    const afterPersisted = async (event: {
+      callId: string;
+      eventType: 'started' | 'ended' | 'analyzed';
+    }) => {
+      if (event.eventType === 'started') return;
+      const result = await runPostCallFollowup(
+        { trace_id: randomUUID(), call_id: event.callId, grace_seconds: 0 },
+        {
+          store,
+          sendOutbound: (input) => sendOutboundMessage(input, {
+            identities: new PostgresChannelIdentityStore(sql),
+            channels: { whatsapp: postCallChannel },
+            preferenceOrder: ['whatsapp'],
+            contentAuthorizer: new AuthorizedEgressContentAuthorizer(),
+            sideEffectAuthorizer: { authorize: async () => ({ allowed: true as const, reason: null }) },
+            db: sql,
+          }),
+        },
+      );
+      eventDrivenFindings.push(...result.findings);
+    };
     for (const raw of lifecycle) {
       if (raw.event === 'call_analyzed') {
         const analysis = raw.call.call_analysis;
@@ -994,18 +1016,28 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
       }
       const webhookResponse = await handleRetellWebhook(
         signedBoundaryRequest(raw, 'retell/eventos'),
-        { apiKey: boundaryApiKey, calls: callStore, now: () => new Date(1_788_966_000_000) },
+        {
+          apiKey: boundaryApiKey,
+          calls: callStore,
+          now: () => new Date(1_788_966_000_000),
+          afterPersisted,
+        },
       );
       expect(webhookResponse.status).toBe(204);
       const webhookReplay = await handleRetellWebhook(
         signedBoundaryRequest(raw, 'retell/eventos'),
-        { apiKey: boundaryApiKey, calls: callStore, now: () => new Date(1_788_966_000_000) },
+        {
+          apiKey: boundaryApiKey,
+          calls: callStore,
+          now: () => new Date(1_788_966_000_000),
+          afterPersisted,
+        },
       );
       expect(webhookReplay.status).toBe(204);
     }
 
-    const first = await sweep(randomUUID(), 0);
-    expect(first.findings.find((finding) => finding.call_id === fixture.callId)).toMatchObject({ action: 'send' });
+    expect(eventDrivenFindings.find((finding) => finding.call_id === fixture.callId))
+      .toMatchObject({ action: 'send' });
     const second = await sweep(randomUUID(), 0);
     expect(second.findings.find((finding) => finding.call_id === fixture.callId)).toBeUndefined();
 

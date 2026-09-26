@@ -401,6 +401,77 @@ describe('Xendra-relayed Retell webhook boundary', () => {
     },
   );
 
+  it('kicks the event-driven post-call processor only after the lifecycle event is durable', async () => {
+    const order: string[] = [];
+    const deps = dependencies({
+      appendEvent: vi.fn(async () => {
+        order.push('append');
+        return 'recorded' as const;
+      }),
+      recomputeProjection: vi.fn(async () => {
+        order.push('project');
+        return {
+          status: 'no_answer' as const,
+          analysisStatus: 'pending' as const,
+          result: null,
+        };
+      }),
+    });
+    const afterPersisted = vi.fn(async () => {
+      order.push('followup');
+    });
+
+    const response = await handleXendraRelayedRetellWebhook(
+      xendraRequest(relayed('call_ended'), 'call_ended'),
+      { orchestratorSecret, calls: deps.calls, afterPersisted },
+    );
+
+    expect(response.status).toBe(204);
+    expect(afterPersisted).toHaveBeenCalledWith({
+      callId: internalCallId,
+      eventType: 'ended',
+    });
+    expect(order).toEqual(['append', 'project', 'followup']);
+  });
+
+  it('accepts Lucas Xendra lifecycle payloads correlated only by internal_call_id', async () => {
+    const deps = dependencies();
+    const payload = relayed('call_started');
+    payload.call.metadata = {
+      internal_call_id: internalCallId,
+      agent_id: 'agent_published_fixture',
+    };
+
+    const response = await handleXendraRelayedRetellWebhook(
+      xendraRequest(payload, 'call_started'),
+      { orchestratorSecret, calls: deps.calls },
+    );
+
+    expect(response.status).toBe(204);
+    expect(deps.calls.resolveRetellCall).toHaveBeenCalledWith({
+      providerCallId,
+      metadata: { internalCallId },
+    });
+  });
+
+  it('normalizes empty optional analysis fields and ignores provider envelope additions', async () => {
+    const deps = dependencies();
+    const payload = relayed('call_analyzed') as ReturnType<typeof wrapper> & Record<string, unknown>;
+    payload.delivery_attempt = 1;
+    const custom = payload.call.call_analysis.custom_analysis_data as Record<string, unknown>;
+    custom.precio_ofrecido = '';
+    custom.email_capturado = '';
+    custom.compromiso_pendiente = '';
+
+    const response = await handleXendraRelayedRetellWebhook(
+      xendraRequest(payload, 'call_analyzed'),
+      { orchestratorSecret, calls: deps.calls },
+    );
+
+    expect(response.status).toBe(204);
+    expect(deps.calls.appendEvent).toHaveBeenCalledOnce();
+  });
+
   it('rejects incomplete relayed identity instead of trusting provider_call_id alone', async () => {
     const deps = dependencies();
     const payload = relayed('call_started');

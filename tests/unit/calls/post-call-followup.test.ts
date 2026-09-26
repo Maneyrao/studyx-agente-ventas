@@ -178,6 +178,7 @@ describe('post-call followup delivery boundary', () => {
           contact_id: '00000000-0000-4000-8000-000000000002',
           conversation_id: '00000000-0000-4000-8000-000000000003',
           workspace_id: '00000000-0000-4000-8000-000000000004',
+          channel: 'telegram' as const,
           provider: 'telegram_sandbox' as const,
           status: call.status ?? 'completed',
           result: call.result ?? 'seguimiento_agendado',
@@ -197,7 +198,16 @@ describe('post-call followup delivery boundary', () => {
 
   it('uses one stable key and marks completion only after provider acceptance', async () => {
     const store = storeFor({});
-    const attempts: Array<{ idempotencyKey: string; conversationId: string | undefined }> = [];
+    const blockedChecks: Array<{ contactId: string; channel: string }> = [];
+    store.isContactBlocked = async (contactId, channel) => {
+      blockedChecks.push({ contactId, channel });
+      return false;
+    };
+    const attempts: Array<{
+      idempotencyKey: string;
+      conversationId: string | undefined;
+      preferredChannel: string | undefined;
+    }> = [];
     const result = await runPostCallFollowup(
       { trace_id: '00000000-0000-4000-8000-000000000005' },
       {
@@ -206,6 +216,7 @@ describe('post-call followup delivery boundary', () => {
           attempts.push({
             idempotencyKey: input.idempotencyKey,
             conversationId: input.conversationId,
+            preferredChannel: input.preferredChannel,
           });
           return { outcome: 'sent', channel: 'whatsapp', providerMessageId: 'wamid.1', deliveryId: 'delivery-1', reason: null };
         },
@@ -220,12 +231,17 @@ describe('post-call followup delivery boundary', () => {
     expect(attempts).toEqual([{
       idempotencyKey: 'post-call:00000000-0000-4000-8000-000000000001',
       conversationId: '00000000-0000-4000-8000-000000000003',
+      preferredChannel: 'telegram',
     }]);
     expect(store.completed).toEqual(['00000000-0000-4000-8000-000000000001']);
     expect(store.followups).toEqual([expect.objectContaining({
       schema_version: 1,
       scenario: 'followup_scheduled',
     })]);
+    expect(blockedChecks).toEqual([{
+      contactId: '00000000-0000-4000-8000-000000000002',
+      channel: 'telegram',
+    }]);
   });
 
   it('leaves retryable delivery without a completion marker', async () => {
@@ -241,5 +257,34 @@ describe('post-call followup delivery boundary', () => {
     expect(result.sent).toBe(0);
     expect(result.failed).toBe(1);
     expect(store.completed).toEqual([]);
+  });
+
+  it('scopes an event-driven sweep to the call that emitted the lifecycle event', async () => {
+    const store = storeFor({});
+    let listedCallId: string | undefined;
+    const list = store.listPendingFollowups.bind(store);
+    store.listPendingFollowups = async (input) => {
+      listedCallId = input.call_id;
+      return list(input);
+    };
+
+    await runPostCallFollowup(
+      {
+        trace_id: '00000000-0000-4000-8000-000000000005',
+        call_id: '00000000-0000-4000-8000-000000000001',
+      },
+      {
+        store,
+        sendOutbound: async () => ({
+          outcome: 'sent',
+          channel: 'telegram',
+          providerMessageId: 'telegram:1',
+          deliveryId: 'delivery-1',
+          reason: null,
+        }),
+      },
+    );
+
+    expect(listedCallId).toBe('00000000-0000-4000-8000-000000000001');
   });
 });

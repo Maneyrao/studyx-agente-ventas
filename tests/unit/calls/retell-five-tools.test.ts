@@ -61,7 +61,11 @@ function dependencies(overrides: Partial<RetellOrchestrationStore> = {}) {
     appendEvent: vi.fn(async () => 'recorded' as const),
     recomputeProjection: vi.fn(),
     resolveRetellCall: vi.fn(),
-    resolveRetellToolCall: vi.fn(async () => ({ callId: internalCallId })),
+    resolveRetellToolCall: vi.fn(async () => ({
+      callId: internalCallId,
+      contactId,
+      conversationId,
+    })),
   } satisfies CallStore & RetellToolCallCorrelationStore;
   const orchestration: RetellOrchestrationStore = {
     requestAgentAPaymentLink: vi.fn(async () => ({

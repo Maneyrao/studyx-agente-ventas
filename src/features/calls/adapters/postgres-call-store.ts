@@ -205,6 +205,8 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
   }): Promise<{ callId: string }> {
     return this.db.begin(async (tx) => {
       const internalCallId = input.metadata?.internalCallId;
+      const contactId = input.metadata?.contactId;
+      const conversationId = input.metadata?.conversationId;
       let rows: RetellCorrelationRow[];
       if (input.metadata && internalCallId) {
         rows = await tx<Array<RetellCorrelationRow>>`
@@ -215,7 +217,7 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
             ORDER BY id
             FOR UPDATE
           `;
-      } else if (input.metadata) {
+      } else if (input.metadata && contactId && conversationId) {
         rows = await tx<Array<RetellCorrelationRow>>`
             SELECT id, contact_id, conversation_id, provider_call_id, status, workspace_id
             FROM call_sessions
@@ -224,8 +226,8 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
                 provider_call_id = ${input.providerCallId}
                 OR (
                   provider_call_id IS NULL
-                  AND contact_id = ${input.metadata.contactId}::uuid
-                  AND conversation_id = ${input.metadata.conversationId}::uuid
+                  AND contact_id = ${contactId}::uuid
+                  AND conversation_id = ${conversationId}::uuid
                   AND status IN ('dispatching', 'dispatch_ambiguous')
                 )
               )
@@ -245,8 +247,9 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
       const byMetadata = input.metadata
         ? rows.find((row) => internalCallId
             ? row.id === internalCallId
-            : row.contact_id === input.metadata!.contactId
-              && row.conversation_id === input.metadata!.conversationId)
+            : contactId !== undefined && conversationId !== undefined
+              && row.contact_id === contactId
+              && row.conversation_id === conversationId)
         : undefined;
 
       if (input.metadata && !byMetadata) {
@@ -262,7 +265,8 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
       if (!row) throw new RetellCallCorrelationError('CALL_CORRELATION_NOT_FOUND');
       if (
         input.metadata
-        && (row.contact_id !== input.metadata.contactId || row.conversation_id !== input.metadata.conversationId)
+        && ((contactId !== undefined && row.contact_id !== contactId)
+          || (conversationId !== undefined && row.conversation_id !== conversationId))
       ) {
         throw new RetellCallCorrelationError('CALL_CORRELATION_MISMATCH');
       }
@@ -293,9 +297,14 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
     providerCallId: string;
     metadata: RetellCorrelationMetadata;
     workspaceSlug: string;
-  }): Promise<{ callId: string }> {
+  }): Promise<{ callId: string; contactId: string; conversationId: string }> {
     return this.db.begin(async (tx) => {
       const internalCallId = input.metadata.internalCallId;
+      const contactId = input.metadata.contactId;
+      const conversationId = input.metadata.conversationId;
+      if (!internalCallId && (!contactId || !conversationId)) {
+        throw new RetellCallCorrelationError('CALL_CORRELATION_NOT_FOUND');
+      }
       const rows = internalCallId
         ? await tx<RetellToolCorrelationRow[]>`
         SELECT
@@ -361,8 +370,8 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
             cs.provider_call_id = ${input.providerCallId}
             OR (
               cs.provider_call_id IS NULL
-              AND cs.contact_id = ${input.metadata.contactId}::uuid
-              AND cs.conversation_id = ${input.metadata.conversationId}::uuid
+              AND cs.contact_id = ${contactId!}::uuid
+              AND cs.conversation_id = ${conversationId!}::uuid
               AND cs.status IN ('dispatching', 'dispatch_ambiguous')
             )
           )
@@ -373,8 +382,8 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
       const byProvider = rows.find((row) => row.provider_call_id === input.providerCallId);
       const byMetadata = rows.find((row) => internalCallId
         ? row.id === internalCallId
-        : row.contact_id === input.metadata.contactId
-          && row.conversation_id === input.metadata.conversationId);
+        : row.contact_id === contactId
+          && row.conversation_id === conversationId);
       if (!byMetadata) {
         throw new RetellCallCorrelationError(byProvider
           ? 'CALL_CORRELATION_MISMATCH'
@@ -386,8 +395,8 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
 
       const row = byProvider ?? byMetadata;
       if (
-        row.contact_id !== input.metadata.contactId
-        || row.conversation_id !== input.metadata.conversationId
+        (contactId !== undefined && row.contact_id !== contactId)
+        || (conversationId !== undefined && row.conversation_id !== conversationId)
       ) {
         throw new RetellCallCorrelationError('CALL_CORRELATION_MISMATCH');
       }
@@ -429,7 +438,11 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
         `;
       }
 
-      return { callId: row.id };
+      return {
+        callId: row.id,
+        contactId: row.contact_id,
+        conversationId: row.conversation_id,
+      };
     });
   }
 

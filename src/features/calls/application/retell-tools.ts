@@ -135,10 +135,11 @@ const ToolMetadataSchema = z.object({
   internal_call_id: z.string().uuid().optional(),
   contact_id: z.string().uuid().optional(),
   lead_id: z.string().uuid().optional(),
-  conversation_id: z.string().uuid(),
+  conversation_id: z.string().uuid().optional(),
 }).passthrough().superRefine((metadata, context) => {
-  if (!metadata.contact_id && !metadata.lead_id) {
-    context.addIssue({ code: 'custom', message: 'TOOL_CONTACT_ID_REQUIRED' });
+  const contactId = metadata.contact_id ?? metadata.lead_id;
+  if (!metadata.internal_call_id && (!contactId || !metadata.conversation_id)) {
+    context.addIssue({ code: 'custom', message: 'TOOL_CORRELATION_ID_REQUIRED' });
   }
   if (metadata.contact_id && metadata.lead_id && metadata.contact_id !== metadata.lead_id) {
     context.addIssue({ code: 'custom', message: 'TOOL_CONTACT_ID_CONFLICT' });
@@ -773,10 +774,9 @@ export async function handleRetellToolRequest(
     return resultError('INVALID_TOOL_REQUEST');
   }
   const envelope = parsedEnvelope.data;
-  const contactId = envelope.call.metadata.contact_id ?? envelope.call.metadata.lead_id!;
-  const conversationId = envelope.call.metadata.conversation_id;
-
   let callId: string;
+  let contactId: string;
+  let conversationId: string;
   try {
     const correlation = await dependencies.calls.resolveRetellToolCall({
       providerCallId: envelope.call.call_id,
@@ -784,12 +784,18 @@ export async function handleRetellToolRequest(
         ...(envelope.call.metadata.internal_call_id
           ? { internalCallId: envelope.call.metadata.internal_call_id }
           : {}),
-        contactId,
-        conversationId,
+        ...(envelope.call.metadata.contact_id ?? envelope.call.metadata.lead_id
+          ? { contactId: envelope.call.metadata.contact_id ?? envelope.call.metadata.lead_id }
+          : {}),
+        ...(envelope.call.metadata.conversation_id
+          ? { conversationId: envelope.call.metadata.conversation_id }
+          : {}),
       },
       workspaceSlug: dependencies.workspaceSlug,
     });
     callId = correlation.callId;
+    contactId = correlation.contactId;
+    conversationId = correlation.conversationId;
   } catch (error) {
     if (error instanceof RetellCallCorrelationError) return resultError(error.code);
     return resultError('TOOL_UNAVAILABLE');

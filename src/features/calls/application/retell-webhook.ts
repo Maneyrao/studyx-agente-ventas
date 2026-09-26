@@ -14,15 +14,22 @@ import { recordCallEvent } from './record-call-event';
 import { constantTimeSecretEqual } from '@/lib/security/shared-secret';
 import { logger } from '@/lib/observability/structured-log';
 
+type PersistedLifecycleEvent = {
+  readonly callId: string;
+  readonly eventType: 'started' | 'ended' | 'analyzed';
+};
+
 type RetellWebhookDependencies = {
   readonly apiKey: string;
   readonly calls: CallStore & RetellCallCorrelationStore;
   readonly now?: () => Date;
+  readonly afterPersisted?: (event: PersistedLifecycleEvent) => Promise<void>;
 };
 
 type XendraRelayDependencies = {
   readonly orchestratorSecret: string;
   readonly calls: CallStore & RetellCallCorrelationStore;
+  readonly afterPersisted?: (event: PersistedLifecycleEvent) => Promise<void>;
 };
 
 /**
@@ -86,6 +93,7 @@ function errorResponse(code: string, status: number): Response {
 async function persistLifecycleEvent(
   raw: unknown,
   calls: CallStore & RetellCallCorrelationStore,
+  afterPersisted?: (event: PersistedLifecycleEvent) => Promise<void>,
 ): Promise<Response> {
   const parsed = RetellLifecycleWebhookSchema.safeParse(raw);
   if (!parsed.success) {
@@ -105,7 +113,22 @@ async function persistLifecycleEvent(
       metadata: retellCorrelationMetadata(parsed.data),
     });
     const event = mapRetellLifecycleEvent(parsed.data, correlation.callId);
+    if (event.event_type === 'requested') {
+      throw new Error('RETELL_LIFECYCLE_REQUESTED_EVENT_INVALID');
+    }
     await recordCallEvent(event, { store: calls });
+    if (afterPersisted) {
+      try {
+        await afterPersisted({ callId: correlation.callId, eventType: event.event_type });
+      } catch (error) {
+        logger.error({
+          event: 'retell.lifecycle.followup_failed',
+          call_id: correlation.callId,
+          event_type: event.event_type,
+          error: String(error),
+        });
+      }
+    }
     return new Response(null, { status: 204 });
   } catch (error) {
     if (error instanceof RetellCallCorrelationError) {
@@ -143,7 +166,7 @@ export async function handleRetellWebhook(
   } catch {
     return errorResponse('INVALID_JSON', 400);
   }
-  return persistLifecycleEvent(raw, dependencies.calls);
+  return persistLifecycleEvent(raw, dependencies.calls, dependencies.afterPersisted);
 }
 
 export async function handleXendraRelayedRetellWebhook(
@@ -182,5 +205,5 @@ export async function handleXendraRelayedRetellWebhook(
     return errorResponse('XENDRA_EVENT_MISMATCH', 400);
   }
 
-  return persistLifecycleEvent(raw, dependencies.calls);
+  return persistLifecycleEvent(raw, dependencies.calls, dependencies.afterPersisted);
 }

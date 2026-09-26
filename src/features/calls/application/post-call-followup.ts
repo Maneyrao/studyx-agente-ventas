@@ -6,7 +6,7 @@ import { CALL_START_TIMEOUT_SECONDS } from '../domain/call-timeouts';
 
 /**
  * Spec 007 — el sweep que cierra el loop B→A: una llamada en estado terminal
- * sin seguimiento emitido produce, como máximo, un mensaje de WhatsApp
+ * sin seguimiento emitido produce, como máximo, un mensaje por el canal
  * iniciado por el sistema, o una revocación de contacto, nunca ambos y nunca
  * ninguno más de una vez.
  *
@@ -18,6 +18,7 @@ import { CALL_START_TIMEOUT_SECONDS } from '../domain/call-timeouts';
 
 export interface PostCallFollowupInput {
   readonly trace_id: string;
+  readonly call_id?: string;
   readonly limit?: number;
   readonly grace_seconds?: number;
   readonly now?: number;
@@ -58,7 +59,11 @@ export async function runPostCallFollowup(
     timeout_seconds: CALL_START_TIMEOUT_SECONDS,
   });
 
-  const pending = await deps.store.listPendingFollowups({ limit, grace_seconds: graceSeconds });
+  const pending = await deps.store.listPendingFollowups({
+    limit,
+    grace_seconds: graceSeconds,
+    ...(input.call_id ? { call_id: input.call_id } : {}),
+  });
   const findings: PostCallFollowupResult['findings'] = [];
   let sent = 0;
   let revoked = 0;
@@ -105,7 +110,7 @@ export async function runPostCallFollowup(
 
       // Un contacto ya bloqueado por cualquier otro motivo no recibe outbound
       // comercial — mismo guardrail que rige cualquier otro mensaje saliente.
-      if (await deps.store.isContactBlocked(call.contact_id)) {
+      if (await deps.store.isContactBlocked(call.contact_id, call.channel)) {
         findings.push({ call_id: call.call_id, action: 'skip', reason: 'CONTACT_BLOCKED' });
         skipped += 1;
         continue;
@@ -185,7 +190,7 @@ export async function runPostCallFollowup(
           protected_facts: [],
         }),
         idempotencyKey: `post-call:${call.call_id}`,
-        preferredChannel: 'whatsapp',
+        preferredChannel: call.channel,
         purpose: 'conversational',
       });
 
