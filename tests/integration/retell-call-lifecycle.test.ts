@@ -4,7 +4,10 @@ import { PostgresCallStore } from '@/features/calls/adapters/postgres-call-store
 import { mapRetellLifecycleEvent } from '@/features/calls/adapters/retell-lifecycle';
 import { recordCallEvent } from '@/features/calls/application/record-call-event';
 import { dispatchCall } from '@/features/calls/application/dispatch-call';
-import { handleRetellWebhook } from '@/features/calls/application/retell-webhook';
+import {
+  handleRetellWebhook,
+  handleXendraRelayedRetellWebhook,
+} from '@/features/calls/application/retell-webhook';
 import { hashCallContext } from '@/features/calls/domain/call-context';
 import type { CallStatus } from '@/features/calls/domain/call-state';
 import { RetellCallCorrelationError } from '@/features/calls/ports/retell-call-correlation-store';
@@ -109,6 +112,34 @@ function wrapper(
 }
 
 run('Retell call lifecycle persistence', () => {
+  it('persists a relayed no-answer event with partial metadata by provider call id', async () => {
+    const providerCallId = `retell:${randomUUID()}`;
+    const ids = await fixture({ providerCallId, status: 'provider_accepted' });
+    const payload = wrapper('call_ended', providerCallId, ids);
+    payload.call.metadata = { conversation_id: ids.conversationId } as typeof payload.call.metadata;
+    payload.call.disconnection_reason = 'user_declined';
+    const orchestratorSecret = 'xendra-lifecycle-integration-secret';
+
+    const response = await handleXendraRelayedRetellWebhook(
+      new Request('http://localhost/retell/eventos', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-studyx-event': 'call_ended',
+          'x-studyx-orchestrator-secret': orchestratorSecret,
+        },
+        body: JSON.stringify(payload),
+      }),
+      { orchestratorSecret, calls: new PostgresCallStore(db!) },
+    );
+
+    expect(response.status).toBe(204);
+    await expect(db!<Array<{ status: string }>>`
+      SELECT status
+      FROM call_sessions WHERE id = ${ids.callId}::uuid
+    `).resolves.toEqual([{ status: 'no_answer' }]);
+  });
+
   it.each([
     ['call_started', 'in_progress'],
     ['call_ended', 'completed'],

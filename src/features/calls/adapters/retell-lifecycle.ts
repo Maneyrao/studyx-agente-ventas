@@ -22,14 +22,6 @@ const RetellMetadataSchema = z.object({
 }).passthrough().superRefine((metadata, context) => {
   if (metadata.contact_id && metadata.lead_id && metadata.contact_id !== metadata.lead_id) {
     context.addIssue({ code: 'custom', message: 'CONFLICTING_RETELL_CONTACT_METADATA' });
-    return;
-  }
-  const hasExternalIdentity = metadata.contact_id !== undefined
-    || metadata.lead_id !== undefined
-    || metadata.conversation_id !== undefined;
-  if (!metadata.internal_call_id && hasExternalIdentity
-    && (!(metadata.contact_id ?? metadata.lead_id) || !metadata.conversation_id)) {
-    context.addIssue({ code: 'custom', message: 'INCOMPLETE_RETELL_CORRELATION_METADATA' });
   }
 });
 
@@ -68,8 +60,18 @@ const OptionalEmailSchema = z.preprocess(
   z.string().trim().max(254).email().optional().nullable(),
 );
 
+const OptionalSentimentSchema = z.preprocess(
+  emptyStringToUndefined,
+  RetellSentimentSchema.optional().nullable(),
+);
+
+const OptionalCallResultSchema = z.preprocess(
+  emptyStringToUndefined,
+  CallResultSchema.optional(),
+);
+
 const RetellAnalysisDataSchema = z.object({
-  resultado: CallResultSchema,
+  resultado: OptionalCallResultSchema,
   nivel_interes: z.enum(['alto', 'medio', 'bajo', 'nulo']).optional().nullable(),
   curso_ofrecido: OptionalBoundedTextSchema(256),
   precio_ofrecido: OptionalBoundedTextSchema(256),
@@ -85,8 +87,17 @@ const RetellAnalysisDataSchema = z.object({
   pregunto_si_es_ia: z.boolean().optional(),
   compromiso_pendiente: OptionalBoundedTextSchema(1024),
 }).passthrough().superRefine((analysis, context) => {
+  // Retell may emit an analysis envelope after a call that never connected.
+  // With no result there is no commercial analysis to validate or persist.
+  if (analysis.resultado === undefined) return;
   const legacyKeys = new Set(['resultado', 'nivel_interes', 'objecion_principal']);
-  const hasExtendedField = Object.keys(analysis).some((key) => !legacyKeys.has(key));
+  const hasExtendedField = Object.entries(analysis).some(([key, value]) => (
+    !legacyKeys.has(key)
+    && value !== undefined
+    && value !== null
+    && value !== ''
+    && value !== false
+  ));
   if (!hasExtendedField) return;
   for (const key of ['objecion_principal', 'nivel_interes'] as const) {
     if (!(key in analysis) || analysis[key] === null) {
@@ -100,10 +111,10 @@ const RetellAnalyzedWebhookSchema = z.object({
   call: RetellCallBaseSchema.extend({
     end_timestamp: ProviderTimestampSchema,
     call_analysis: z.object({
-      call_summary: z.string().trim().min(1).max(4096).optional().nullable(),
+      call_summary: OptionalBoundedTextSchema(4096),
       // Retell's system-presets export uses title case; normalize only this
       // provider spelling at the boundary and keep the internal enum stable.
-      user_sentiment: RetellSentimentSchema.optional().nullable(),
+      user_sentiment: OptionalSentimentSchema,
       custom_analysis_data: RetellAnalysisDataSchema,
     }).passthrough(),
   }),
@@ -235,6 +246,9 @@ export function mapRetellLifecycleEvent(raw: unknown, internalCallId: string): C
   }
 
   const custom = webhook.call.call_analysis.custom_analysis_data;
+  if (custom.resultado === undefined) {
+    throw new Error('RETELL_ANALYSIS_RESULT_MISSING');
+  }
   const occurredAt = providerIso(webhook.call.end_timestamp);
   const hasExtendedAnalysis = Object.keys(custom).some((key) => ![
     'resultado', 'nivel_interes', 'objecion_principal',

@@ -165,7 +165,6 @@ describe('bounded Retell post-call analysis', () => {
   });
 
   it.each([
-    ['call_summary', ''],
     ['call_summary', 'x'.repeat(4_097)],
     ['user_sentiment', 'joyful'],
     ['resultado', 'unknown_result'],

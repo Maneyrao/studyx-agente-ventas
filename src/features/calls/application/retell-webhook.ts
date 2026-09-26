@@ -112,6 +112,17 @@ async function persistLifecycleEvent(
       providerCallId: parsed.data.call.call_id,
       metadata: retellCorrelationMetadata(parsed.data),
     });
+    if (
+      parsed.data.event === 'call_analyzed'
+      && parsed.data.call.call_analysis.custom_analysis_data.resultado === undefined
+    ) {
+      logger.info({
+        event: 'retell.lifecycle.empty_analysis_ignored',
+        call_id: correlation.callId,
+        provider_call_id: parsed.data.call.call_id,
+      });
+      return new Response(null, { status: 204 });
+    }
     const event = mapRetellLifecycleEvent(parsed.data, correlation.callId);
     if (event.event_type === 'requested') {
       throw new Error('RETELL_LIFECYCLE_REQUESTED_EVENT_INVALID');

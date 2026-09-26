@@ -472,16 +472,47 @@ describe('Xendra-relayed Retell webhook boundary', () => {
     expect(deps.calls.appendEvent).toHaveBeenCalledOnce();
   });
 
-  it('rejects incomplete relayed identity instead of trusting provider_call_id alone', async () => {
+  it('correlates an authenticated lifecycle event by the unique provider call id when Xendra relays partial metadata', async () => {
     const deps = dependencies();
-    const payload = relayed('call_started');
+    const payload = relayed('call_ended');
     payload.call.metadata = { conversation_id: conversationId };
     const response = await handleXendraRelayedRetellWebhook(
-      xendraRequest(payload, 'call_started'),
+      xendraRequest(payload, 'call_ended'),
       { orchestratorSecret, calls: deps.calls },
     );
-    expect(response.status).toBe(400);
-    expect(deps.calls.resolveRetellCall).not.toHaveBeenCalled();
+    expect(response.status).toBe(204);
+    expect(deps.calls.resolveRetellCall).toHaveBeenCalledWith({
+      providerCallId,
+      metadata: null,
+    });
+    expect(deps.calls.appendEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: 'ended',
+    }));
+  });
+
+  it('acknowledges an empty no-answer analysis without inventing a commercial result', async () => {
+    const deps = dependencies();
+    const afterPersisted = vi.fn();
+    const payload = relayed('call_analyzed') as ReturnType<typeof wrapper>;
+    payload.call.metadata = { lead_id: contactId } as never;
+    payload.call.call_analysis.call_summary = '';
+    (payload.call.call_analysis as Record<string, unknown>).user_sentiment = '';
+    payload.call.call_analysis.custom_analysis_data.resultado = '' as never;
+    payload.call.call_analysis.custom_analysis_data.nivel_interes = null as never;
+    payload.call.call_analysis.custom_analysis_data.objecion_principal = null as never;
+
+    const response = await handleXendraRelayedRetellWebhook(
+      xendraRequest(payload, 'call_analyzed'),
+      { orchestratorSecret, calls: deps.calls, afterPersisted },
+    );
+
+    expect(response.status).toBe(204);
+    expect(deps.calls.resolveRetellCall).toHaveBeenCalledWith({
+      providerCallId,
+      metadata: null,
+    });
+    expect(deps.calls.appendEvent).not.toHaveBeenCalled();
+    expect(afterPersisted).not.toHaveBeenCalled();
   });
 
   it('logs only safe schema diagnostics for an invalid relayed lifecycle payload', async () => {
