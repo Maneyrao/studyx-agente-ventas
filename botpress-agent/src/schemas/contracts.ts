@@ -41,6 +41,8 @@ export const InboundEnvelopeSchema = z.object({
   external_user_id: z.string().min(1).max(512),
   phone_e164: z.string().min(8).max(16).optional(),
   trace_id: z.string().uuid(),
+  botpress_conversation_id: z.string().min(1).max(512).optional(),
+  botpress_user_id: z.string().min(1).max(512).optional(),
   message: MessageSchema,
   // When set, the backend treats this envelope as belonging to a sandbox provider
   // for idempotency (channel_events/channel_threads UNIQUE(provider, ...)) and for

@@ -29,6 +29,8 @@ const envelopeSchema = z.object({
   external_user_id: z.string().trim().min(1).max(512),
   phone_e164: z.string().trim().min(8).max(16).optional(),
   trace_id: z.string().uuid(),
+  botpress_conversation_id: z.string().trim().min(1).max(512).optional(),
+  botpress_user_id: z.string().trim().min(1).max(512).optional(),
   message: z.object({
     type: z.enum(['text', 'audio', 'image', 'unsupported']),
     text: z.string().min(1).max(4096),

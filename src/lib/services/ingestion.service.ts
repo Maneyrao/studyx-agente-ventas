@@ -104,6 +104,8 @@ export interface InboundEnvelope {
   external_user_id: string;
   phone_e164: string;
   trace_id: string;
+  botpress_conversation_id?: string;
+  botpress_user_id?: string;
   message: {
     type: 'text' | 'audio' | 'image' | 'unsupported';
     text: string;
@@ -447,10 +449,18 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
         ${envelope.integration_id},
         ${channel},
         ${envelope.external_conversation_id},
-        ${jsonbParam(db, { external_user_id: envelope.external_user_id })}
+        ${jsonbParam(db, {
+          external_user_id: envelope.external_user_id,
+          ...(envelope.botpress_conversation_id
+            ? { botpress_conversation_id: envelope.botpress_conversation_id }
+            : {}),
+          ...(envelope.botpress_user_id ? { botpress_user_id: envelope.botpress_user_id } : {}),
+        })}
       )
       ON CONFLICT (provider, integration_id, external_conversation_id)
-      DO UPDATE SET last_seen_at = now()
+      DO UPDATE SET
+        last_seen_at = now(),
+        metadata = channel_threads.metadata || EXCLUDED.metadata
       WHERE channel_threads.contact_id = EXCLUDED.contact_id
         AND channel_threads.channel = EXCLUDED.channel
       RETURNING id, contact_id

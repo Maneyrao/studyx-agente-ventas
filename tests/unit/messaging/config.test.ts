@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { loadMessagingChannelsConfig } from '@/lib/config';
+import {
+  loadBotpressManagedMessagingConfig,
+  loadMessagingChannelsConfig,
+} from '@/lib/config';
 
 const env = (overrides: Record<string, string | undefined>) =>
   ({ ...overrides }) as NodeJS.ProcessEnv;
@@ -76,5 +79,29 @@ describe('loadMessagingChannelsConfig', () => {
   it('rejects an unknown channel in the preference order', () => {
     expect(() => loadMessagingChannelsConfig(env({ MESSAGING_CHANNEL_PREFERENCE: 'telegram,sms' })))
       .toThrow(/INVALID_MESSAGING_CONFIG:MESSAGING_CHANNEL_PREFERENCE:sms/);
+  });
+});
+
+describe('loadBotpressManagedMessagingConfig', () => {
+  it('is absent unless the dedicated token is configured', () => {
+    expect(loadBotpressManagedMessagingConfig(env({}))).toBeNull();
+  });
+
+  it('requires the bot id when the managed egress token is present', () => {
+    expect(() => loadBotpressManagedMessagingConfig(env({
+      BOTPRESS_MANAGED_EGRESS_TOKEN: 'token',
+    }))).toThrow(/MISSING_MESSAGING_CONFIG:BOTPRESS_MANAGED_EGRESS_BOT_ID/);
+  });
+
+  it('builds the Botpress-managed egress configuration', () => {
+    expect(loadBotpressManagedMessagingConfig(env({
+      BOTPRESS_MANAGED_EGRESS_TOKEN: 'token',
+      BOTPRESS_MANAGED_EGRESS_BOT_ID: 'bot-studyx',
+    }))).toEqual({
+      apiUrl: 'https://api.botpress.cloud',
+      token: 'token',
+      botId: 'bot-studyx',
+      requestTimeoutMs: 5_000,
+    });
   });
 });

@@ -522,6 +522,47 @@ export type MessagingChannelsConfig = {
   channelPreference: MessagingChannelName[];
 };
 
+export type BotpressManagedMessagingConfig = {
+  apiUrl: string;
+  token: string;
+  botId: string;
+  requestTimeoutMs: number;
+};
+
+/**
+ * Optional egress through the same Botpress bot that owns the conversation.
+ * This is the preferred path for proactive A↔B continuations because OAuth
+ * channel credentials stay in Botpress instead of being duplicated in Vercel.
+ */
+export function loadBotpressManagedMessagingConfig(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): BotpressManagedMessagingConfig | null {
+  const token = environment.BOTPRESS_MANAGED_EGRESS_TOKEN?.trim();
+  if (!token) return null;
+  const botId = environment.BOTPRESS_MANAGED_EGRESS_BOT_ID?.trim();
+  if (!botId) throw new Error('MISSING_MESSAGING_CONFIG:BOTPRESS_MANAGED_EGRESS_BOT_ID');
+  const apiUrl = environment.BOTPRESS_MANAGED_EGRESS_API_URL?.trim()
+    || 'https://api.botpress.cloud';
+  let parsed: URL;
+  try {
+    parsed = new URL(apiUrl);
+  } catch {
+    throw new Error('INVALID_MESSAGING_CONFIG:BOTPRESS_MANAGED_EGRESS_API_URL');
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error('INVALID_MESSAGING_CONFIG:BOTPRESS_MANAGED_EGRESS_API_URL');
+  }
+  return {
+    apiUrl: parsed.toString().replace(/\/$/u, ''),
+    token,
+    botId,
+    requestTimeoutMs: parsePositiveInt(
+      environment.BOTPRESS_MANAGED_EGRESS_REQUEST_TIMEOUT_MS,
+      5_000,
+    ),
+  };
+}
+
 const GRAPH_API_VERSION_PATTERN = /^v[0-9]+\.[0-9]+$/;
 
 function parseChannelPreference(raw: string | undefined): MessagingChannelName[] {

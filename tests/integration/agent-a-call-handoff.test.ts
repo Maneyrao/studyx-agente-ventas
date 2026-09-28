@@ -301,6 +301,25 @@ run('agent a call handoff — refusals reserve nothing', () => {
     await expectRejected(acceptTurn, callConfirmation('accepted_offer'), 'CALL_OFFER_EXPIRED');
   });
 
+  it('an explicit direct request overrides a stale accepted-offer label', async () => {
+    const identity = newIdentity();
+    const offerTurn = await seedTurn(identity, 'Quiero saber precios');
+    const offered = await commit(offerTurn, callOffer());
+    await db!`
+      UPDATE agent_decisions
+      SET created_at = created_at - interval '16 minutes'
+      WHERE id = ${offered.decision_id}::uuid
+    `;
+
+    const directTurn = await seedTurn(identity, 'Llamame');
+    const committed = await commit(directTurn, callConfirmation('accepted_offer'));
+
+    expect(committed.call_request).not.toBeNull();
+    expect(await sessionsByTurn(directTurn)).toEqual([
+      expect.objectContaining({ offered_by_decision_id: null }),
+    ]);
+  });
+
   it('an absent or unparseable phone is refused fail-closed', async () => {
     // La base ya fuerza E.164 en contacts.phone, así que esta defensa del
     // dominio se prueba directamente: es la que corta si esa invariante

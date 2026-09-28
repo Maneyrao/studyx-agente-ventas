@@ -111,6 +111,17 @@ function toolDependencies() {
 }
 
 describe('bounded Retell post-call analysis', () => {
+  it('ignores an unknown provider sentiment without dropping the analyzed event', () => {
+    const parsed = RetellLifecycleWebhookSchema.parse(
+      completeWebhookWithField('user_sentiment', 'Unknown'),
+    );
+    const event = mapRetellLifecycleEvent(parsed, callId);
+    expect(event.event_type).toBe('analyzed');
+    if (!('analysis' in event.payload)) throw new Error('expected analyzed event');
+    expect(event.payload.analysis).not.toHaveProperty('user_sentiment');
+    expect(event.payload.analysis).toMatchObject({ result: 'link_enviado_sin_pago' });
+  });
+
   it('treats omitted Retell booleans as false in a partially extended webhook export', () => {
     const partial = completeWebhook();
     const custom = (partial.call as { call_analysis: { custom_analysis_data: Record<string, unknown> } })
@@ -166,7 +177,6 @@ describe('bounded Retell post-call analysis', () => {
 
   it.each([
     ['call_summary', 'x'.repeat(4_097)],
-    ['user_sentiment', 'joyful'],
     ['resultado', 'unknown_result'],
     ['curso_ofrecido', 'x'.repeat(257)],
     ['precio_ofrecido', 'x'.repeat(257)],

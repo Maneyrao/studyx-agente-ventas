@@ -47,18 +47,21 @@ function envelope(overrides: Partial<InboundEnvelope> = {}): InboundEnvelope {
   } as InboundEnvelope;
 }
 
-async function storedChannels(externalConversationId: string) {
-  const rows = await db!<Array<{ channel: string }>>`
-    SELECT channel FROM channel_threads WHERE external_conversation_id = ${externalConversationId}
+async function storedThreads(externalConversationId: string) {
+  const rows = await db!<Array<{
+    channel: string;
+    metadata: Record<string, unknown>;
+  }>>`
+    SELECT channel, metadata FROM channel_threads WHERE external_conversation_id = ${externalConversationId}
   `;
-  return rows.map((row) => row.channel);
+  return rows;
 }
 
 run('inbound channel derivation', () => {
   it('keeps filing a WhatsApp inbound as whatsapp', async () => {
     const inbound = envelope({ channel: 'whatsapp' });
     await processInboundMessage(inbound);
-    expect(await storedChannels(inbound.external_conversation_id)).toEqual(['whatsapp']);
+    expect((await storedThreads(inbound.external_conversation_id)).map((row) => row.channel)).toEqual(['whatsapp']);
   });
 
   // The emulator simulates a WhatsApp conversation. Giving it a channel of its
@@ -66,13 +69,13 @@ run('inbound channel derivation', () => {
   it('still maps the emulator to whatsapp, unchanged', async () => {
     const inbound = envelope({ channel: 'emulator' });
     await processInboundMessage(inbound);
-    expect(await storedChannels(inbound.external_conversation_id)).toEqual(['whatsapp']);
+    expect((await storedThreads(inbound.external_conversation_id)).map((row) => row.channel)).toEqual(['whatsapp']);
   });
 
   it('files a Telegram inbound as telegram, so it can be replied to there', async () => {
     const inbound = envelope({ channel: 'telegram' });
     await processInboundMessage(inbound);
-    expect(await storedChannels(inbound.external_conversation_id)).toEqual(['telegram']);
+    expect((await storedThreads(inbound.external_conversation_id)).map((row) => row.channel)).toEqual(['telegram']);
   });
 
   // FR-030: the identity link is idempotent by construction, via the existing
@@ -86,6 +89,32 @@ run('inbound channel derivation', () => {
       external_user_id: first.external_user_id,
       phone_e164: first.phone_e164,
     }));
-    expect(await storedChannels(first.external_conversation_id)).toHaveLength(1);
+    expect(await storedThreads(first.external_conversation_id)).toHaveLength(1);
+  });
+
+  it('persists and refreshes the Botpress routing identity needed by proactive follow-up', async () => {
+    const first = envelope({
+      botpress_conversation_id: 'bp-conversation-old',
+      botpress_user_id: 'bp-user-old',
+    });
+    await processInboundMessage(first);
+
+    await processInboundMessage(envelope({
+      external_conversation_id: first.external_conversation_id,
+      external_user_id: first.external_user_id,
+      phone_e164: first.phone_e164,
+      botpress_conversation_id: 'bp-conversation-current',
+      botpress_user_id: 'bp-user-current',
+    }));
+
+    expect(await storedThreads(first.external_conversation_id)).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          external_user_id: first.external_user_id,
+          botpress_conversation_id: 'bp-conversation-current',
+          botpress_user_id: 'bp-user-current',
+        }),
+      }),
+    ]);
   });
 });

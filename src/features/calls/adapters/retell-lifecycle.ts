@@ -10,9 +10,7 @@ import type { RetellCorrelationMetadata } from '../ports/retell-call-correlation
 
 const RETELL_SIGNATURE_TOLERANCE_MS = 5 * 60 * 1_000;
 const ProviderTimestampSchema = z.number().int().nonnegative().max(8_640_000_000_000_000);
-const RetellSentimentSchema = z.enum([
-  'Positive', 'Neutral', 'Negative', 'positive', 'neutral', 'negative',
-]).transform((value) => value.toLowerCase() as 'positive' | 'neutral' | 'negative');
+const RetellSentimentSchema = z.enum(['positive', 'neutral', 'negative']);
 
 const RetellMetadataSchema = z.object({
   internal_call_id: z.string().uuid().optional(),
@@ -56,10 +54,13 @@ const OptionalEmailSchema = z.preprocess(
   z.string().trim().max(254).email().optional().nullable(),
 );
 
-const OptionalSentimentSchema = z.preprocess(
-  emptyStringToUndefined,
-  RetellSentimentSchema.optional().nullable(),
-);
+const OptionalSentimentSchema = z.preprocess((value) => {
+  const normalized = emptyStringToUndefined(value);
+  if (normalized === undefined || normalized === null) return normalized;
+  if (typeof normalized !== 'string') return normalized;
+  const lower = normalized.trim().toLowerCase();
+  return ['positive', 'neutral', 'negative'].includes(lower) ? lower : undefined;
+}, RetellSentimentSchema.optional().nullable());
 
 const OptionalCallResultSchema = z.preprocess(
   emptyStringToUndefined,
