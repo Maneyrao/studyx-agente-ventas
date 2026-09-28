@@ -56,6 +56,10 @@ import {
   materializePaymentLinkAction,
 } from '@/features/payments/application/materialize-payment-link-action';
 import { createConfigPaymentLinkResolver } from '@/features/payments/adapters/config-payment-link.resolver';
+import {
+  PaymentLinkReservationError,
+  reservePaymentLink,
+} from '@/features/payments/application/reserve-payment-link';
 import { PAYMENT_PLAN_PRESENTATIONS } from '@/features/payments/domain/payment-link';
 import {
   classifyCurrentPaymentIntent,
@@ -898,7 +902,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         }
       }
 
-      const materialized = materializePaymentLinkAction({
+      let materialized = materializePaymentLinkAction({
         action,
         authorizedOfferingCode: effectiveAuthorizedOfferingCode ?? null,
         deferredPlanCode,
@@ -947,6 +951,47 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           AND ad.business_action ->> 'offering_sku' = ${action.offering_sku}
         LIMIT 1
       `;
+
+      if (priorPaymentLinks.length === 0) {
+        if (!canonicalWorkspaceId) {
+          throw new DecisionPolicyError('PAYMENT_WORKSPACE_NOT_FOUND');
+        }
+        const payableOfferings = await db<Array<{ id: string }>>`
+          SELECT id
+          FROM offerings
+          WHERE workspace_id = ${canonicalWorkspaceId}::uuid
+            AND code = ${action.offering_sku}
+            AND status = 'active'
+          LIMIT 1
+        `;
+        if (!payableOfferings[0]) {
+          throw new DecisionPolicyError('OFFERING_NOT_FOUND');
+        }
+        try {
+          const reserved = await reservePaymentLink(db, {
+            workspace_id: canonicalWorkspaceId,
+            contact_id: turn.contact_id,
+            offering_id: payableOfferings[0].id,
+            plan_code: action.plan_code,
+            idempotency_key: `agent-a-payment-link:${turn.id}`,
+            payment_link_url: materialized.block.url,
+          });
+          const configuredUrl = materialized.block.url;
+          materialized = {
+            ...materialized,
+            block: { ...materialized.block, url: reserved.url },
+            // The canonical assembler may already have placed the configured
+            // base link in its trusted text. Replace only that exact value so
+            // one correlated URL leaves the system, never base + correlated.
+            response_text: materialized.response_text.replaceAll(configuredUrl, reserved.url),
+          };
+        } catch (error) {
+          if (error instanceof PaymentLinkReservationError) {
+            throw new DecisionPolicyError(error.code);
+          }
+          throw error;
+        }
+      }
 
       if (priorPaymentLinks.length > 0) {
         // Cross-turn idempotency governs the ACTION, not the answer: no second

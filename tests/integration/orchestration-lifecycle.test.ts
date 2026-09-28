@@ -1412,10 +1412,14 @@ run('Fase 4 — pago y cierre de batch', () => {
     expect(content).not.toContain(rogueUrl);
     // Only the canonical URL survives — the model-authored one is gone, not
     // just deduplicated alongside it.
-    expect(content.match(/https?:\/\/\S+/g)).toEqual([PAYMENT_LINK_12M]);
+    const deliveredUrls = content.match(/https?:\/\/\S+/g) ?? [];
+    expect(deliveredUrls).toHaveLength(1);
+    expect(deliveredUrls[0]).toMatch(
+      new RegExp(`^${PAYMENT_LINK_12M.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}\\?client_reference_id=[0-9a-f-]{36}$`, 'u'),
+    );
     expect(committed.outbound!.authorized_egress).toMatchObject({
       schema_version: 1,
-      authorized_urls: [PAYMENT_LINK_12M],
+      authorized_urls: deliveredUrls,
       protected_facts: [{ kind: 'price', value: 'usd 30' }],
     });
     expect(verifyAuthorizedEgress({

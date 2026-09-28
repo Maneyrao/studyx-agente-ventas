@@ -6,6 +6,7 @@ import { reservePayment } from '@/features/payments/application/reserve-payment'
 import { createCheckout } from '@/features/payments/application/create-checkout';
 import { FakePaymentProvider } from '@/features/payments/adapters/fake-payment-provider';
 import { processStripeWebhook } from '@/features/payments/application/process-stripe-webhook';
+import { reservePaymentLink } from '@/features/payments/application/reserve-payment-link';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
@@ -70,6 +71,8 @@ function sessionEvent(input: {
   paymentStatus?: 'paid' | 'unpaid';
   amountTotalCents?: number;
   currency?: string;
+  useClientReference?: boolean;
+  mode?: 'payment' | 'subscription';
 }) {
   return JSON.stringify({
     id: input.eventId ?? `evt_${randomUUID().replaceAll('-', '')}`,
@@ -80,10 +83,12 @@ function sessionEvent(input: {
       object: {
         object: 'checkout.session',
         id: input.sessionId,
+        client_reference_id: input.useClientReference ? input.paymentId : null,
+        mode: input.mode,
         payment_status: input.paymentStatus ?? 'paid',
         amount_total: input.amountTotalCents ?? 15_000_000,
         currency: (input.currency ?? 'ars').toLowerCase(),
-        metadata: {
+        metadata: input.useClientReference ? {} : {
           payment_id: input.paymentId,
           workspace_id: input.workspaceId,
           offering_id: input.offeringId,
@@ -120,6 +125,36 @@ async function fulfillmentCount(paymentId: string) {
 }
 
 run('stripe payment webhook', () => {
+  it('correlates a shared Payment Link by client_reference_id and applies its first paid charge', async () => {
+    const fixture = await paymentFixture();
+    const reserved = await reservePaymentLink(db!, {
+      workspace_id: fixture.workspaceId,
+      contact_id: (await db!<Array<{ contact_id: string }>>`
+        SELECT contact_id FROM payments WHERE id = ${fixture.paymentId}::uuid
+      `)[0].contact_id,
+      offering_id: fixture.offeringId,
+      plan_code: 'one_time',
+      idempotency_key: `payment-link:${randomUUID()}`,
+      payment_link_url: 'https://buy.stripe.com/test-link',
+    });
+    const payload = sessionEvent({
+      type: 'checkout.session.completed',
+      sessionId: `cs_payment_link_${randomUUID().slice(0, 8)}`,
+      paymentId: reserved.payment_id,
+      workspaceId: fixture.workspaceId,
+      offeringId: fixture.offeringId,
+      amountTotalCents: 36_000,
+      currency: 'usd',
+      useClientReference: true,
+      mode: 'payment',
+    });
+
+    const result = await deliver(payload, signed(payload));
+    expect(result).toMatchObject({ status: 200, body: { outcome: 'applied', status: 'paid' } });
+    expect(await paymentStatus(reserved.payment_id)).toBe('paid');
+    expect(await fulfillmentCount(reserved.payment_id)).toBe(1);
+  });
+
   it('rejects a missing or invalid signature without touching the ledger', async () => {
     const fixture = await pendingPaymentFixture();
     const payload = sessionEvent({ type: 'checkout.session.completed', ...fixture });

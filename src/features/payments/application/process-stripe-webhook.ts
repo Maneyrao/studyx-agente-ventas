@@ -12,10 +12,9 @@ import type { PaymentStateEvent } from '../domain/payment-state';
  *      and the ledger is never touched.
  *   2. Only checkout.session.* events we understand act on the ledger; other
  *      event types are acknowledged untouched (200) so Stripe stops retrying.
- *   3. The payment is located by the session's OWN metadata.payment_id and
- *      must match the persisted provider_session_id (or attach to a payment
- *      whose creation was ambiguous and has no session yet). Any mismatch is
- *      recorded as an anomaly and applies nothing.
+ *   3. The payment is located by metadata.payment_id for API-created Checkout
+ *      Sessions or by client_reference_id for an approved shared Payment Link.
+ *      It must match the persisted provider_session_id (or attach once).
  *   4. `paid` requires payment_status === 'paid' AND the session's
  *      amount_total/currency to equal the canonical payment amount. A
  *      manipulated amount never marks paid.
@@ -28,6 +27,8 @@ import type { PaymentStateEvent } from '../domain/payment-state';
 
 interface StripeSessionPayload {
   id?: string;
+  client_reference_id?: string | null;
+  mode?: 'payment' | 'setup' | 'subscription';
   payment_status?: string;
   amount_total?: number | null;
   currency?: string | null;
@@ -51,6 +52,8 @@ const HANDLED_EVENTS = new Set([
   'checkout.session.async_payment_failed',
   'checkout.session.expired',
 ]);
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 function toCents(amount: string): number {
   return Math.round(Number(amount) * 100);
@@ -82,18 +85,19 @@ export async function processStripeWebhook(
   }
 
   const session = event.data.object as StripeSessionPayload;
-  const paymentId = session.metadata?.payment_id;
+  const paymentId = session.metadata?.payment_id ?? session.client_reference_id ?? undefined;
   const sessionId = session.id;
-  if (!paymentId || !sessionId) {
+  if (!paymentId || !UUID_PATTERN.test(paymentId) || !sessionId) {
     logger.warn({ event: 'payments.webhook.metadata_missing', event_id: event.id });
     return { status: 200, body: { outcome: 'metadata_missing' } };
   }
 
   const payments = await deps.db<Array<{
     id: string; status: string; amount: string; currency: string;
+    checkout_mode: 'payment' | 'subscription';
     provider_session_id: string | null;
   }>>`
-    SELECT id, status, amount::text AS amount, currency, provider_session_id
+    SELECT id, status, amount::text AS amount, currency, checkout_mode, provider_session_id
     FROM payments WHERE id = ${paymentId}::uuid
   `;
   const payment = payments[0];
@@ -116,8 +120,16 @@ export async function processStripeWebhook(
   }
 
   if (payment.provider_session_id === null) {
-    // Ambiguous creation resolved by Stripe itself: the session exists and
-    // names this payment. Attach it before applying the event.
+    // A shared Payment Link creates its Checkout Session at Stripe, after the
+    // canonical reservation. Replay the same two transitions as our API
+    // checkout path before applying the provider event.
+    await recordPaymentEvent(deps.db, {
+      payment_id: payment.id,
+      provider: 'internal',
+      provider_event_id: `internal:webhook_checkout_started:${sessionId}`,
+      event: { type: 'checkout_creation_started' },
+      payload: { session_id: sessionId, attached_by: event.id },
+    });
     await deps.db`
       UPDATE payments
       SET provider_session_id = ${sessionId}
@@ -130,6 +142,19 @@ export async function processStripeWebhook(
       event: { type: 'checkout_created' },
       payload: { session_id: sessionId, attached_by: event.id },
     });
+  }
+
+  const expectedMode = payment.checkout_mode === 'subscription' ? 'subscription' : 'payment';
+  if (session.mode && session.mode !== expectedMode) {
+    await recordPaymentEvent(deps.db, {
+      payment_id: payment.id,
+      provider: 'stripe',
+      provider_event_id: event.id,
+      event: { type: 'checkout_amount_mismatch' },
+      payload: { anomaly: 'MODE_MISMATCH', session_id: sessionId },
+    });
+    logger.warn({ event: 'payments.webhook.mode_mismatch', payment_id: payment.id, event_id: event.id });
+    return { status: 200, body: { outcome: 'mode_mismatch' } };
   }
 
   let stateEvent: PaymentStateEvent;

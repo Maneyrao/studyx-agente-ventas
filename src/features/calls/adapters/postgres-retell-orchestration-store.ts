@@ -17,6 +17,10 @@ import {
   type PaymentLinkResolver,
 } from '@/features/payments/adapters/config-payment-link.resolver';
 import { PAYMENT_PLAN_PRESENTATIONS } from '@/features/payments/domain/payment-link';
+import {
+  PaymentLinkReservationError,
+  reservePaymentLink,
+} from '@/features/payments/application/reserve-payment-link';
 import type { RetellOrchestrationStore } from '../application/retell-tools';
 import type { RetellPaymentPlanRequest } from '../application/retell-tools';
 
@@ -54,8 +58,8 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     if (!paymentPlan.ok) {
       return { sent: false, reference: null, reason: paymentPlan.reason };
     }
-    const offerings = await this.db<Array<{ code: string; display_name: string }>>`
-      SELECT o.code, o.display_name
+    const offerings = await this.db<Array<{ id: string; code: string; display_name: string }>>`
+      SELECT o.id, o.code, o.display_name
       FROM offerings AS o
       WHERE o.workspace_id = ${workspace.id}::uuid
         AND o.code = ${input.course}
@@ -64,8 +68,25 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     const offering = offerings[0];
     if (!offering) return { sent: false, reference: null, reason: 'COURSE_UNAVAILABLE' };
     const paymentLinkResolver = this.options.paymentLinkResolver ?? createConfigPaymentLinkResolver();
-    const url = paymentLinkResolver.resolve(paymentPlan.planCode);
-    if (!url) return { sent: false, reference: null, reason: 'PAYMENT_LINK_NOT_CONFIGURED' };
+    const configuredUrl = paymentLinkResolver.resolve(paymentPlan.planCode);
+    if (!configuredUrl) return { sent: false, reference: null, reason: 'PAYMENT_LINK_NOT_CONFIGURED' };
+    let payment: Awaited<ReturnType<typeof reservePaymentLink>>;
+    try {
+      payment = await reservePaymentLink(this.db, {
+        workspace_id: workspace.id,
+        contact_id: input.contactId,
+        offering_id: offering.id,
+        plan_code: paymentPlan.planCode,
+        idempotency_key: `retell-payment-link:${workspace.id}:${input.callId}`,
+        payment_link_url: configuredUrl,
+      });
+    } catch (error) {
+      if (error instanceof PaymentLinkReservationError) {
+        return { sent: false, reference: null, reason: error.code };
+      }
+      throw error;
+    }
+    const url = payment.url;
     const presentation = PAYMENT_PLAN_PRESENTATIONS[paymentPlan.planCode];
     const text = `Te dejo el link para inscribirte en ${offering.display_name} con la opción de ${presentation.label}: ${url}\n\nCuando completes el pago, avisame por acá.`;
     const sent = await this.options.sendOutbound({

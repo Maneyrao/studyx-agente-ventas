@@ -148,8 +148,13 @@ run('Retell five tools PostgreSQL adapter', () => {
       purpose: 'transactional',
     });
     expect(outbound.calls[0]).not.toHaveProperty('preferredChannel');
-    expect(String(outbound.calls[0]?.text)).toContain('https://buy.stripe.com/test-fixed-link');
-    await expect(db!<{ count: string }[]>`SELECT count(*) FROM payments WHERE workspace_id = ${ids.workspaceId}::uuid`).resolves.toEqual([{ count: '0' }]);
+    expect(String(outbound.calls[0]?.text)).toMatch(
+      /https:\/\/buy\.stripe\.com\/test-fixed-link\?client_reference_id=[0-9a-f-]{36}/u,
+    );
+    await expect(db!<Array<{ count: string; plan_code: string }>>`
+      SELECT count(*)::text AS count, max(plan_code) AS plan_code
+      FROM payments WHERE workspace_id = ${ids.workspaceId}::uuid
+    `).resolves.toEqual([{ count: '1', plan_code: 'one_time' }]);
 
     await expect(store.requestAgentAPaymentLink({ ...request, conversationId: randomUUID() }))
       .resolves.toMatchObject({ sent: false, reason: 'CONVERSATION_MISMATCH' });
