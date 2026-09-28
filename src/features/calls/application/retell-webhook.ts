@@ -13,10 +13,12 @@ import {
 import { recordCallEvent } from './record-call-event';
 import { constantTimeSecretEqual } from '@/lib/security/shared-secret';
 import { logger } from '@/lib/observability/structured-log';
+import type { CallStatus } from '../domain/call-state';
 
 type PersistedLifecycleEvent = {
   readonly callId: string;
   readonly eventType: 'started' | 'ended' | 'analyzed';
+  readonly callStatus: CallStatus;
 };
 
 type RetellWebhookDependencies = {
@@ -127,10 +129,14 @@ async function persistLifecycleEvent(
     if (event.event_type === 'requested') {
       throw new Error('RETELL_LIFECYCLE_REQUESTED_EVENT_INVALID');
     }
-    await recordCallEvent(event, { store: calls });
+    const { projection } = await recordCallEvent(event, { store: calls });
     if (afterPersisted) {
       try {
-        await afterPersisted({ callId: correlation.callId, eventType: event.event_type });
+        await afterPersisted({
+          callId: correlation.callId,
+          eventType: event.event_type,
+          callStatus: projection.status,
+        });
       } catch (error) {
         logger.error({
           event: 'retell.lifecycle.followup_failed',

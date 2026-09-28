@@ -430,6 +430,7 @@ describe('Xendra-relayed Retell webhook boundary', () => {
     expect(afterPersisted).toHaveBeenCalledWith({
       callId: internalCallId,
       eventType: 'ended',
+      callStatus: 'no_answer',
     });
     expect(order).toEqual(['append', 'project', 'followup']);
   });

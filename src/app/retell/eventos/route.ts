@@ -9,6 +9,7 @@ import { createPostCallOutboundSender } from '@/features/calls/adapters/post-cal
 import { logger } from '@/lib/observability/structured-log';
 import { randomUUID } from 'node:crypto';
 import { after } from 'next/server';
+import type { CallStatus } from '@/features/calls/domain/call-state';
 
 export const runtime = 'nodejs';
 export const maxDuration = 180;
@@ -41,6 +42,7 @@ export async function POST(request: Request): Promise<Response> {
     const afterPersisted = async (event: {
       callId: string;
       eventType: 'started' | 'ended' | 'analyzed';
+      callStatus: CallStatus;
     }) => {
       if (event.eventType === 'started') return;
       const followUp = async (graceSeconds: number) => runPostCallFollowup(
@@ -53,6 +55,15 @@ export async function POST(request: Request): Promise<Response> {
       );
 
       if (event.eventType === 'analyzed') {
+        await followUp(0);
+        return;
+      }
+
+      // These terminal outcomes are already conclusive at call_ended and do
+      // not receive useful call analysis. Process them now: sleeping inside
+      // request-scoped background work can be terminated by the host before
+      // the recovery message is emitted.
+      if (['no_answer', 'timed_out', 'failed'].includes(event.callStatus)) {
         await followUp(0);
         return;
       }
