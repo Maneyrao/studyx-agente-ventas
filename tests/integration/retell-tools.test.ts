@@ -2,6 +2,7 @@ import { createHmac, randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
 import { PostgresCallStore } from '@/features/calls/adapters/postgres-call-store';
 import { PostgresRetellContactToolStore } from '@/features/calls/adapters/postgres-retell-tools';
+import { PostgresRetellOrchestrationStore } from '@/features/calls/adapters/postgres-retell-orchestration-store';
 import { mapRetellLifecycleEvent } from '@/features/calls/adapters/retell-lifecycle';
 import { handleRetellToolRequest } from '@/features/calls/application/retell-tools';
 import { recordCallEvent } from '@/features/calls/application/record-call-event';
@@ -162,6 +163,7 @@ function dependencies(
     business: new PostgresBusinessContextStore(database),
     contacts: new PostgresRetellContactToolStore(database),
     sheets: { spreadsheetId: ids.spreadsheetId, tabName: 'Leads' },
+    orchestration: new PostgresRetellOrchestrationStore(database),
     now: () => new Date(nowMs),
   };
 }
@@ -264,6 +266,112 @@ run('Retell P0 tools with PostgreSQL', () => {
     `).resolves.toEqual([{ result: 'venta_confirmada' }]);
   });
 
+  it('persists a confirmed in-call course and plan once and projects them to the same Sheet lead', async () => {
+    const ids = await fixture({ name: 'Ana López', email: 'ana@example.test' });
+    await db!`
+      INSERT INTO offerings (
+        workspace_id, code, display_name, offering_type, status, description,
+        price_type, price_amount, currency
+      ) VALUES (
+        ${ids.workspaceId}::uuid, 'fotografia_profesional', 'Fotografía Profesional',
+        'course', 'active', 'Curso canónico.', 'fixed', '360.00', 'USD'
+      )
+    `;
+    const args = {
+      resultado: 'seguimiento_agendado',
+      resumen: 'La persona confirmó Fotografía Profesional y doce cuotas.',
+      curso_seleccionado: 'fotografia_profesional',
+      plan_code: 'monthly_12',
+    };
+
+    const first = await callTool(ids, 'registrar_resultado', args);
+    expect(first.body).toEqual({ ok: true, recorded: true });
+    const stateAfterFirst = await db!<Array<{
+      selected_offering_code: string | null;
+      selected_payment_plan: string | null;
+      stage: string;
+      version: string;
+    }>>`
+      SELECT selected_offering_code, selected_payment_plan, stage, version::text
+      FROM conversation_sales_context_states_v1
+      WHERE workspace_id = ${ids.workspaceId}::uuid
+        AND conversation_id = ${ids.conversationId}::uuid
+    `;
+    expect(stateAfterFirst).toHaveLength(1);
+    expect(stateAfterFirst[0]).toMatchObject({
+      selected_offering_code: 'fotografia_profesional',
+      selected_payment_plan: 'monthly_12',
+      stage: 'plan_selected',
+    });
+    expect(Number(stateAfterFirst[0].version)).toBeGreaterThan(0);
+    await expect(db!<Array<{ payload: Record<string, string> }>>`
+      SELECT payload FROM sheet_projection_rows
+      WHERE projection_key = ${`lead:${ids.workspaceId}:${ids.contactId}`}
+    `).resolves.toEqual([{ payload: {
+      nombre: 'Ana',
+      apellido: 'López',
+      mail: 'ana@example.test',
+      telefono: ids.phone,
+      tipo_de_curso: 'Fotografía Profesional',
+      plan: 'monthly_12',
+    } }]);
+
+    const replay = await callTool(ids, 'registrar_resultado', args);
+    expect(replay.body).toEqual(first.body);
+    await expect(db!<Array<{ version: string }>>`
+      SELECT version::text FROM conversation_sales_context_states_v1
+      WHERE workspace_id = ${ids.workspaceId}::uuid
+        AND conversation_id = ${ids.conversationId}::uuid
+    `).resolves.toEqual([{ version: stateAfterFirst[0].version }]);
+    await expect(db!<Array<{ count: string }>>`
+      SELECT count(*)::text AS count FROM sheet_projection_rows
+      WHERE projection_key = ${`lead:${ids.workspaceId}:${ids.contactId}`}
+    `).resolves.toEqual([{ count: '1' }]);
+  });
+
+  it('preserves the prior selection when registrar_resultado omits selection fields', async () => {
+    const ids = await fixture({ name: 'Ana López', email: 'ana@example.test' });
+    await db!`
+      UPDATE conversation_sales_context_states_v1
+      SET selected_payment_plan = 'monthly_6', stage = 'plan_selected'
+      WHERE workspace_id = ${ids.workspaceId}::uuid
+        AND conversation_id = ${ids.conversationId}::uuid
+    `;
+
+    const result = await callTool(ids, 'registrar_resultado', {
+      resultado: 'seguimiento_agendado',
+      resumen: 'La persona pidió continuar luego.',
+    });
+
+    expect(result.body).toEqual({ ok: true, recorded: true });
+    await expect(db!<Array<{ selected_offering_code: string; selected_payment_plan: string }>>`
+      SELECT selected_offering_code, selected_payment_plan
+      FROM conversation_sales_context_states_v1
+      WHERE workspace_id = ${ids.workspaceId}::uuid
+        AND conversation_id = ${ids.conversationId}::uuid
+    `).resolves.toEqual([{
+      selected_offering_code: 'reparacion_celulares',
+      selected_payment_plan: 'monthly_6',
+    }]);
+  });
+
+  it.each([
+    [{ curso_seleccionado: 'curso_inexistente' }, 'COURSE_UNAVAILABLE'],
+    [{ plan_code: 'weekly_99' }, 'PAYMENT_PLAN_UNAVAILABLE'],
+  ])('records the call result but returns a structured selection error for %j', async (selection, code) => {
+    const ids = await fixture({ name: 'Ana López', email: 'ana@example.test' });
+    const result = await callTool(ids, 'registrar_resultado', {
+      resultado: 'seguimiento_agendado',
+      resumen: 'El resultado de la llamada sigue siendo durable.',
+      ...selection,
+    });
+
+    expect(result.body).toMatchObject({ ok: false, error: { code } });
+    await expect(db!<Array<{ result: string | null }>>`
+      SELECT result FROM call_sessions WHERE id = ${ids.callId}::uuid
+    `).resolves.toEqual([{ result: 'seguimiento_agendado' }]);
+  });
+
   it('merges the correlated contact and converges one exact six-field outbox row', async () => {
     const ids = await fixture({ name: 'Ana López', email: null, sourceOrder: 4 });
     await db!`
@@ -344,7 +452,7 @@ run('Retell P0 tools with PostgreSQL', () => {
         apellido: 'López',
         mail: 'mariana@example.test',
         telefono: '+5491199999999',
-        tipo_de_curso: 'Reparación de Celulares',
+        tipo_de_curso: 'Curso Posterior',
         plan: '',
       },
     }]);

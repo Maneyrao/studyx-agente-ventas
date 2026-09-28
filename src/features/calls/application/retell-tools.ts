@@ -35,6 +35,17 @@ export type RetellOrchestrationToolName =
 export type RetellToolName = RetellP0ToolName | RetellOrchestrationToolName;
 
 export interface RetellOrchestrationStore {
+  recordConfirmedSelection(input: {
+    readonly callId: string;
+    readonly contactId: string;
+    readonly conversationId: string;
+    readonly workspaceSlug: string;
+    readonly course?: string;
+    readonly paymentPlan?: string;
+  }): Promise<{
+    readonly recorded: boolean;
+    readonly reason?: string;
+  }>;
   requestAgentAPaymentLink(input: {
     readonly callId: string;
     readonly contactId: string;
@@ -153,12 +164,13 @@ const SafeNameSchema = z.string().trim().min(1).max(128)
 const SafeEmailSchema = z.string().trim().max(254).email();
 const SafePhoneSchema = z.string().trim().regex(/^\+[1-9]\d{7,14}$/u);
 const CourseTextSchema = z.string().trim().min(1).max(128);
-const RETELL_LEGACY_RESULT_KEYS = new Set([
+const RETELL_NON_ANALYSIS_RESULT_KEYS = new Set([
   'resultado', 'resumen', 'objeciones', 'proximo_paso', 'nivel_interes', 'curso',
+  'curso_seleccionado', 'plan_code',
 ]);
 
 function hasRetellExtendedResultFields(value: Record<string, unknown>): boolean {
-  return Object.keys(value).some((key) => !RETELL_LEGACY_RESULT_KEYS.has(key));
+  return Object.keys(value).some((key) => !RETELL_NON_ANALYSIS_RESULT_KEYS.has(key));
 }
 
 const ToolArgsSchemas = {
@@ -227,6 +239,8 @@ const ToolArgsSchemas = {
     pidio_no_contactar: z.boolean().optional(),
     pregunto_si_es_ia: z.boolean().optional(),
     compromiso_pendiente: z.string().trim().min(1).max(1_024).optional(),
+    curso_seleccionado: CourseTextSchema.optional(),
+    plan_code: z.string().trim().min(1).max(64).optional(),
   }).strict().refine((value) => value.resumen !== undefined || value.call_summary !== undefined)
     .superRefine((value, context) => {
       const hasExtendedField = hasRetellExtendedResultFields(value);
@@ -552,6 +566,7 @@ async function consultOffer(
 async function recordResult(
   envelope: ParsedEnvelope<'registrar_resultado'>,
   callId: string,
+  identity: { readonly contactId: string; readonly conversationId: string },
   dependencies: RetellToolDependencies,
 ): Promise<Response> {
   const { args } = envelope;
@@ -598,6 +613,23 @@ async function recordResult(
   }, { store: dependencies.calls });
   if (args.resultado === 'venta_confirmada' && recorded.projection.result !== 'venta_confirmada') {
     return resultError('PAYMENT_NOT_VERIFIED');
+  }
+  if (args.curso_seleccionado !== undefined || args.plan_code !== undefined) {
+    if (!dependencies.orchestration) return resultError('TOOL_UNAVAILABLE');
+    const selection = await dependencies.orchestration.recordConfirmedSelection({
+      callId,
+      contactId: identity.contactId,
+      conversationId: identity.conversationId,
+      workspaceSlug: dependencies.workspaceSlug,
+      ...(args.curso_seleccionado === undefined ? {} : { course: args.curso_seleccionado }),
+      ...(args.plan_code === undefined ? {} : { paymentPlan: args.plan_code }),
+    });
+    if (!selection.recorded && selection.reason) return resultError(selection.reason);
+    await dependencies.contacts.saveCorrelatedContact({
+      callId,
+      workspaceSlug: dependencies.workspaceSlug,
+      sheets: dependencies.sheets,
+    });
   }
   return Response.json({ ok: true, recorded: true });
 }
@@ -838,6 +870,7 @@ export async function handleRetellToolRequest(
     return await recordResult(
       envelope as ParsedEnvelope<'registrar_resultado'>,
       callId,
+      { contactId, conversationId },
       dependencies,
     );
   } catch {

@@ -61,7 +61,10 @@ export class PostgresRetellContactToolStore implements RetellContactToolStore {
           contact.phone,
           contact.declared_phone,
           state.selected_payment_plan,
-          NULLIF(btrim(cs.context_snapshot ->> 'curso_interes'), '') AS frozen_offering_code,
+          COALESCE(
+            NULLIF(btrim(state.selected_offering_code), ''),
+            NULLIF(btrim(cs.context_snapshot ->> 'curso_interes'), '')
+          ) AS frozen_offering_code,
           offering.display_name AS selected_offering_name
         FROM call_sessions AS cs
         JOIN messages AS source
@@ -85,7 +88,10 @@ export class PostgresRetellContactToolStore implements RetellContactToolStore {
          AND membership.lifecycle_status = 'active'
         LEFT JOIN offerings AS offering
           ON offering.workspace_id = state.workspace_id
-         AND offering.code = NULLIF(btrim(cs.context_snapshot ->> 'curso_interes'), '')
+         AND offering.code = COALESCE(
+           NULLIF(btrim(state.selected_offering_code), ''),
+           NULLIF(btrim(cs.context_snapshot ->> 'curso_interes'), '')
+         )
          AND offering.status = 'active'
         WHERE cs.id = ${input.callId}::uuid
           AND cs.provider = 'retell'

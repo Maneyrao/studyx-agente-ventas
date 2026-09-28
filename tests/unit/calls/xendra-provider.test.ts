@@ -87,9 +87,41 @@ describe('XendraVoiceProvider.placeCall', () => {
         pais: 'Argentina',
         email_lead: 'ana@example.test',
         plan_code: 'monthly_12',
+        campos_faltantes: [],
         nombre_asesor: 'Sofía',
         numero_closer: '+5491144445555',
         resumen_whatsapp: 'Pidió detalles y aceptó una llamada.',
+      },
+    });
+  });
+
+  it('omits unknown optional lead values and tells Agent B which fields are missing', async () => {
+    const request = input();
+    request.context = {
+      ...request.context,
+      apellido_lead: undefined,
+      curso_interes: '',
+      email_lead: '',
+      plan_code: undefined,
+      campos_faltantes: ['apellido', 'mail', 'tipo_de_curso'],
+    };
+    const fetchImpl = vi.fn<typeof fetch>(async () => json({ ok: true, call_id: 'call_partial' }));
+
+    await provider(fetchImpl).placeCall(request);
+
+    const [, init] = fetchImpl.mock.calls[0];
+    expect(JSON.parse(String(init?.body))).toEqual({
+      telefono: request.phoneE164,
+      conversation_id: request.conversationId,
+      lead_id: request.contactId,
+      internal_call_id: request.callId,
+      variables: {
+        nombre_lead: 'Ana Pérez',
+        pais: 'Argentina',
+        nombre_asesor: 'Sofía',
+        numero_closer: '+5491144445555',
+        resumen_whatsapp: 'Pidió detalles y aceptó una llamada.',
+        campos_faltantes: ['apellido', 'mail', 'tipo_de_curso'],
       },
     });
   });

@@ -56,21 +56,23 @@ export class XendraVoiceProvider implements VoiceProvider {
       }
     }
 
+    const pais = context.pais || inferCallCountryFromPhoneE164(input.phoneE164);
     const body = {
       telefono: input.phoneE164,
       conversation_id: input.conversationId,
       lead_id: input.contactId,
       internal_call_id: input.callId,
       variables: {
-        nombre_lead: context.nombre_lead,
-        apellido_lead: context.apellido_lead ?? '',
-        curso_interes: context.curso_interes,
-        pais: context.pais || inferCallCountryFromPhoneE164(input.phoneE164),
-        email_lead: context.email_lead,
-        plan_code: context.plan_code ?? '',
-        nombre_asesor: this.config.advisorName,
-        numero_closer: this.config.closerNumber,
+        ...(context.nombre_lead ? { nombre_lead: context.nombre_lead } : {}),
+        ...(context.apellido_lead ? { apellido_lead: context.apellido_lead } : {}),
+        ...(context.curso_interes ? { curso_interes: context.curso_interes } : {}),
+        ...(pais ? { pais } : {}),
+        ...(context.email_lead ? { email_lead: context.email_lead } : {}),
+        ...(context.plan_code ? { plan_code: context.plan_code } : {}),
+        ...(this.config.advisorName ? { nombre_asesor: this.config.advisorName } : {}),
+        ...(this.config.closerNumber ? { numero_closer: this.config.closerNumber } : {}),
         resumen_whatsapp: context.resumen_whatsapp,
+        campos_faltantes: context.campos_faltantes ?? [],
       },
     };
 

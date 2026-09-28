@@ -44,6 +44,105 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     private readonly options: PostgresRetellOrchestrationStoreOptions = {},
   ) {}
 
+  async recordConfirmedSelection(input: Parameters<RetellOrchestrationStore['recordConfirmedSelection']>[0]) {
+    const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId, input.callId);
+    if (!workspace) return { recorded: false, reason: 'CONTACT_UNAVAILABLE' };
+    if (workspace.conversation_id !== input.conversationId) {
+      return { recorded: false, reason: 'CONVERSATION_MISMATCH' };
+    }
+    if (
+      input.paymentPlan !== undefined
+      && !(['monthly_12', 'monthly_6', 'one_time'] as const).includes(input.paymentPlan as PaymentPlanCode)
+    ) {
+      return { recorded: false, reason: 'PAYMENT_PLAN_UNAVAILABLE' };
+    }
+    if (input.course !== undefined) {
+      const offerings = await this.db<Array<{ code: string }>>`
+        SELECT code FROM offerings
+        WHERE workspace_id = ${workspace.id}::uuid
+          AND code = ${input.course}
+          AND status = 'active'
+        LIMIT 1
+      `;
+      if (!offerings[0]) return { recorded: false, reason: 'COURSE_UNAVAILABLE' };
+    }
+    const course = input.course ?? workspace.course_code;
+    if (input.paymentPlan !== undefined && !course) {
+      return { recorded: false, reason: 'COURSE_SELECTION_REQUIRED' };
+    }
+    const plan = input.paymentPlan as PaymentPlanCode | undefined;
+    const changed = await this.db<Array<{ changed: boolean }>>`
+      WITH updated AS (
+        UPDATE conversation_sales_context_states_v1 AS state
+        SET selected_offering_code = COALESCE(${course || null}::text, state.selected_offering_code),
+            selected_payment_plan = COALESCE(${plan ?? null}::text, state.selected_payment_plan),
+            stage = CASE
+              WHEN state.stage IN ('payment_link_sent', 'handoff', 'closed') THEN state.stage
+              WHEN ${plan ?? null}::text IS NOT NULL THEN 'plan_selected'
+              WHEN ${input.course ?? null}::text IS NOT NULL THEN 'course_selected'
+              ELSE state.stage
+            END,
+            version = state.version + 1,
+            updated_at = now()
+        WHERE state.workspace_id = ${workspace.id}::uuid
+          AND state.conversation_id = ${input.conversationId}::uuid
+          AND state.contact_id = ${input.contactId}::uuid
+          AND (
+            (${course || null}::text IS NOT NULL AND state.selected_offering_code IS DISTINCT FROM ${course || null}::text)
+            OR (${plan ?? null}::text IS NOT NULL AND state.selected_payment_plan IS DISTINCT FROM ${plan ?? null}::text)
+          )
+        RETURNING state.*
+      ), conversation_event AS (
+        INSERT INTO conversation_sales_context_state_events_v1 (
+          workspace_id, conversation_id, contact_id, state_version, source_turn_id,
+          selected_offering_code, selected_payment_plan, stage,
+          call_preference, call_offer_status, call_offer_count, awaiting_reply,
+          payment_reported_at, human_review_requested_at, consecutive_technical_fallbacks
+        )
+        SELECT
+          workspace_id, conversation_id, contact_id, version, NULL,
+          selected_offering_code, selected_payment_plan, stage,
+          call_preference, call_offer_status, call_offer_count, awaiting_reply,
+          payment_reported_at, human_review_requested_at, consecutive_technical_fallbacks
+        FROM updated
+        ON CONFLICT DO NOTHING
+      ), updated_sales AS (
+        UPDATE sales_context_states AS state
+        SET conversation_id = ${input.conversationId}::uuid,
+            selected_offering_code = COALESCE(${course || null}::text, state.selected_offering_code),
+            selected_payment_plan = COALESCE(${plan ?? null}::text, state.selected_payment_plan),
+            stage = CASE
+              WHEN state.stage IN ('payment_link_sent', 'handoff', 'closed') THEN state.stage
+              WHEN ${plan ?? null}::text IS NOT NULL THEN 'plan_selected'
+              WHEN ${input.course ?? null}::text IS NOT NULL THEN 'course_selected'
+              ELSE state.stage
+            END,
+            version = state.version + 1,
+            updated_at = now()
+        WHERE state.workspace_id = ${workspace.id}::uuid
+          AND state.contact_id = ${input.contactId}::uuid
+          AND (
+            state.conversation_id IS DISTINCT FROM ${input.conversationId}::uuid
+            OR (${course || null}::text IS NOT NULL AND state.selected_offering_code IS DISTINCT FROM ${course || null}::text)
+            OR (${plan ?? null}::text IS NOT NULL AND state.selected_payment_plan IS DISTINCT FROM ${plan ?? null}::text)
+          )
+        RETURNING state.*
+      ), sales_event AS (
+        INSERT INTO sales_context_state_events (
+          workspace_id, contact_id, state_version, source_turn_id,
+          selected_offering_code, selected_payment_plan, stage
+        )
+        SELECT
+          workspace_id, contact_id, version, source_turn_id,
+          selected_offering_code, selected_payment_plan, stage
+        FROM updated_sales
+        ON CONFLICT DO NOTHING
+      )
+      SELECT EXISTS(SELECT 1 FROM updated) AS changed
+    `;
+    return { recorded: changed[0]?.changed ?? false };
+  }
+
   async requestAgentAPaymentLink(input: Parameters<RetellOrchestrationStore['requestAgentAPaymentLink']>[0]) {
     if (!this.options.sendOutbound) return { sent: false, reference: null, reason: 'OUTBOUND_UNAVAILABLE' };
     const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId, input.callId);

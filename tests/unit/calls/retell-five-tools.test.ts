@@ -68,6 +68,7 @@ function dependencies(overrides: Partial<RetellOrchestrationStore> = {}) {
     })),
   } satisfies CallStore & RetellToolCallCorrelationStore;
   const orchestration: RetellOrchestrationStore = {
+    recordConfirmedSelection: vi.fn(async () => ({ recorded: true })),
     requestAgentAPaymentLink: vi.fn(async () => ({
       sent: true,
       reference: 'delivery_1',
