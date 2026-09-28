@@ -165,10 +165,31 @@ describe('evaluateWhatsAppCanarySend', () => {
   it('fails closed when the canary switch is disabled', () => {
     expect(evaluateWhatsAppCanarySend({
       automationEnabled: true,
+      whatsappPublicEnabled: false,
       whatsappCanaryEnabled: false,
       allowlist: tester,
       phoneE164: tester,
     })).toEqual({ allowed: false, reason: 'WHATSAPP_CANARY_DISABLED' });
+  });
+
+  it('allows every valid WhatsApp identity only in explicit public mode', () => {
+    expect(evaluateWhatsAppCanarySend({
+      automationEnabled: true,
+      whatsappPublicEnabled: true,
+      whatsappCanaryEnabled: false,
+      allowlist: undefined,
+      phoneE164: other,
+    })).toEqual({ allowed: true, reason: null });
+  });
+
+  it('fails closed when public and canary rollout modes are enabled together', () => {
+    expect(evaluateWhatsAppCanarySend({
+      automationEnabled: true,
+      whatsappPublicEnabled: true,
+      whatsappCanaryEnabled: true,
+      allowlist: tester,
+      phoneE164: tester,
+    })).toEqual({ allowed: false, reason: 'WHATSAPP_ROLLOUT_MODE_INVALID' });
   });
 
   it('never returns or logs the tested phone or allowlist value', () => {

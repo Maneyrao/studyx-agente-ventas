@@ -1582,6 +1582,7 @@ export const processInboundTurn = new Workflow({
               if (input.channel === 'whatsapp' && input.sandbox_provider !== 'telegram_sandbox') {
                 const canary = evaluateWhatsAppCanarySend({
                   automationEnabled: configuration.automationEnabled,
+                  whatsappPublicEnabled: configuration.whatsappPublicEnabled === true,
                   whatsappCanaryEnabled: configuration.whatsappCanaryEnabled === true,
                   allowlist: secrets.WHATSAPP_CANARY_PHONE_E164S,
                   phoneE164: input.phone_e164,
@@ -1780,6 +1781,7 @@ export const processInboundTurn = new Workflow({
           if (input.channel === 'whatsapp' && input.sandbox_provider !== 'telegram_sandbox') {
             const canary = evaluateWhatsAppCanarySend({
               automationEnabled: configuration.automationEnabled,
+              whatsappPublicEnabled: configuration.whatsappPublicEnabled === true,
               whatsappCanaryEnabled: configuration.whatsappCanaryEnabled === true,
               allowlist: secrets.WHATSAPP_CANARY_PHONE_E164S,
               phoneE164: input.phone_e164,

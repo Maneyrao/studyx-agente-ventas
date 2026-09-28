@@ -43,7 +43,7 @@ const LOW_INFORMATION_TOKENS = new Set([
 ]);
 
 function currentBatchSuppliesContactDetails(claimed: ClaimedTurn): boolean {
-  return claimed.context.batch_messages.some((message) => {
+  return currentLogicalMessagesV1(claimed).some((message) => {
     const text = message.content;
     return /\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b/iu.test(text)
       || /(?:^|\D)\+?\d[\d\s().-]{7,}\d(?:\D|$)/u.test(text)
@@ -56,6 +56,11 @@ const LOGICAL_HISTORY_LIMIT = 6;
 type LogicalHistoryTurnV1 = {
   readonly id: string;
   readonly direction: 'inbound' | 'outbound';
+  readonly content: string;
+};
+
+type CurrentLogicalMessageV1 = {
+  readonly id: string;
   readonly content: string;
 };
 
@@ -112,6 +117,33 @@ function projectLogicalHistoryV1(claimed: ClaimedTurn): readonly LogicalHistoryT
   }));
 }
 
+/**
+ * A model result can be superseded when another customer message arrives
+ * while it is still being generated. The stale reply must stay suppressed,
+ * but the customer's unanswered words are still part of the same logical
+ * intervention. Carry every inbound intervention after the last delivered
+ * outbound into the next claim so contact data, selections and questions are
+ * interpreted together instead of being silently lost.
+ */
+function currentLogicalMessagesV1(claimed: ClaimedTurn): readonly CurrentLogicalMessageV1[] {
+  const history = projectLogicalHistoryV1(claimed);
+  let lastOutboundIndex = -1;
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    if (history[index]?.direction === 'outbound') {
+      lastOutboundIndex = index;
+      break;
+    }
+  }
+  const unanswered = history
+    .slice(lastOutboundIndex + 1)
+    .filter((turn) => turn.direction === 'inbound')
+    .map((turn) => ({ id: `unanswered:${turn.id}`, content: turn.content }));
+  const current = claimed.context.batch_messages
+    .filter((message) => message.message_type === 'text')
+    .map((message) => ({ id: message.id, content: message.content }));
+  return [...unanswered, ...current].slice(-20);
+}
+
 function previousAgentRepliesV1(claimed: ClaimedTurn): readonly string[] {
   return projectLogicalHistoryV1(claimed)
     .filter((turn) => turn.direction === 'outbound')
@@ -130,8 +162,7 @@ function requestedFirstNameBeforeV1(replies: readonly string[]): boolean {
 }
 
 function currentTurnIsUnderspecifiedV1(claimed: ClaimedTurn): boolean {
-  const normalized = claimed.context.batch_messages
-    .filter((message) => message.message_type === 'text')
+  const normalized = currentLogicalMessagesV1(claimed)
     .map((message) => message.content)
     .join(' ')
     .normalize('NFD')
@@ -212,8 +243,7 @@ export function bindCurrentConversationalIntentToMoveV1(
       confidence: 1,
     };
   }
-  const currentBatchMessages = claimed.context.batch_messages
-    .filter((message) => message.message_type === 'text')
+  const currentBatchMessages = currentLogicalMessagesV1(claimed)
     .map((message) => ({ content: message.content }));
   const currentBatch = currentBatchMessages
     .map((message) => message.content)
@@ -667,6 +697,7 @@ export function buildAgentAContextV1(
   const firstNameKnownNow = Boolean(claimed.contact.name?.trim())
     || (intakeAnswered && !intakeMissing.includes('nombre'));
   const logicalHistory = projectLogicalHistoryV1(claimed);
+  const currentLogicalMessages = currentLogicalMessagesV1(claimed);
   const previousAgentReplies = previousAgentRepliesV1(claimed);
   const lastAgentReply = previousAgentReplies.at(-1) ?? null;
   const firstNameStatus = firstNameKnownNow
@@ -714,7 +745,7 @@ export function buildAgentAContextV1(
   return AgentAContextV1Schema.parse({
     schema_version: 1,
     turn: {
-      batch_messages: claimed.context.batch_messages.map((message) => ({
+      batch_messages: currentLogicalMessages.map((message) => ({
         id: message.id,
         text: message.content,
       })),

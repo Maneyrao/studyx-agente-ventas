@@ -10,12 +10,14 @@ const UNSUPPORTED_TYPE_MARKER = '[whatsapp_tipo_no_soportado]'
 
 export type WhatsAppCanaryBlockReason =
   | 'AUTOMATION_DISABLED'
+  | 'WHATSAPP_ROLLOUT_MODE_INVALID'
   | 'WHATSAPP_CANARY_DISABLED'
   | 'WHATSAPP_CANARY_ALLOWLIST_INVALID'
   | 'WHATSAPP_CANARY_PHONE_NOT_ALLOWED'
 
 type WhatsAppCanarySendInput = {
   automationEnabled: boolean
+  whatsappPublicEnabled?: boolean
   whatsappCanaryEnabled: boolean
   allowlist: string | undefined
   phoneE164: string | undefined
@@ -54,6 +56,10 @@ export function evaluateWhatsAppCanarySend(
   let decision: WhatsAppCanarySendDecision
   if (!input.automationEnabled) {
     decision = { allowed: false, reason: 'AUTOMATION_DISABLED' }
+  } else if (input.whatsappPublicEnabled && input.whatsappCanaryEnabled) {
+    decision = { allowed: false, reason: 'WHATSAPP_ROLLOUT_MODE_INVALID' }
+  } else if (input.whatsappPublicEnabled) {
+    decision = { allowed: true, reason: null }
   } else if (!input.whatsappCanaryEnabled) {
     decision = { allowed: false, reason: 'WHATSAPP_CANARY_DISABLED' }
   } else if (!attestWhatsAppCanaryAllowlist(input.allowlist).valid) {

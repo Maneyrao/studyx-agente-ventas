@@ -47,6 +47,7 @@ export default new Conversation({
     if (adapter === 'whatsapp') {
       const canary = evaluateWhatsAppCanarySend({
         automationEnabled: configuration.automationEnabled,
+        whatsappPublicEnabled: configuration.whatsappPublicEnabled === true,
         whatsappCanaryEnabled: configuration.whatsappCanaryEnabled === true,
         allowlist: secrets.WHATSAPP_CANARY_PHONE_E164S,
         phoneE164: input.phone_e164,

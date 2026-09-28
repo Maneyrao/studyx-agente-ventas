@@ -295,6 +295,77 @@ describe('buildAgentAContextV1', () => {
     );
   });
 
+  it('carries unanswered customer interventions into the current logical turn', () => {
+    const claimed = claimedTurn();
+    (claimed.context as unknown as {
+      logical_recent_turns: Array<{
+        direction: 'inbound' | 'outbound';
+        content: string;
+        created_at: string;
+      }>;
+    }).logical_recent_turns = [
+      {
+        direction: 'outbound',
+        content: 'Puedes elegir 12 pagos, 6 pagos o un pago único.',
+        created_at: '2026-08-28T11:58:00.000Z',
+      },
+      {
+        direction: 'inbound',
+        content: 'Prefiero seguir por chat, en un solo pago está bien, qué datos necesitas?',
+        created_at: '2026-08-28T11:59:00.000Z',
+      },
+    ];
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'El pago es seguro?',
+    };
+
+    const context = buildAgentAContextV1(claimed);
+
+    expect(context?.turn.batch_messages.map((message) => message.text)).toEqual([
+      'Prefiero seguir por chat, en un solo pago está bien, qué datos necesitas?',
+      'El pago es seguro?',
+    ]);
+  });
+
+  it('binds a payment plan selected in an unanswered customer intervention', () => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    (claimed.context as unknown as {
+      logical_recent_turns: Array<{
+        direction: 'inbound' | 'outbound';
+        content: string;
+        created_at: string;
+      }>;
+    }).logical_recent_turns = [
+      {
+        direction: 'outbound',
+        content: 'Puedes elegir 12 pagos, 6 pagos o un pago único.',
+        created_at: '2026-08-28T11:58:00.000Z',
+      },
+      {
+        direction: 'inbound',
+        content: 'Prefiero seguir por chat, en un solo pago está bien, qué datos necesitas?',
+        created_at: '2026-08-28T11:59:00.000Z',
+      },
+    ];
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0],
+      content: 'El pago es seguro?',
+    };
+
+    expect(bindCurrentConversationalIntentToMoveV1({
+      schema_version: 1,
+      move: 'select_payment_plan',
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 0.98,
+    }, claimed)).toMatchObject({
+      move: 'select_payment_plan',
+      payment_plan: 'one_time',
+    });
+  });
+
   it('keeps the latest six complete interventions instead of the latest physical rows', () => {
     const claimed = claimedTurn();
     const histories = [

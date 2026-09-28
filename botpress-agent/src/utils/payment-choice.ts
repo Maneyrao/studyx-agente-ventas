@@ -113,7 +113,7 @@ const NON_COMMITTAL_PAYMENT_PATTERNS: readonly RegExp[] = [
 const EXPLICIT_PAYMENT_RESUME_PATTERN = /\bahora\s+si\b/u
 
 const EXPLICIT_PAYMENT_COMMITMENT_PATTERN =
-  /\b(?:confirmo|quiero\s+pagar(?:l[oa]s?)?|lo\s+quiero\s+pagar|me\s+quedo\s+con|elijo|elegi|ya\s+(?:elegi|me\s+decidi)|me\s+decido|voy\s+con)\b/u
+  /\b(?:confirmo|prefiero|quiero\s+pagar(?:l[oa]s?)?|lo\s+quiero\s+pagar|me\s+quedo\s+con|elijo|elegi|ya\s+(?:elegi|me\s+decidi)|me\s+decido|voy\s+con)\b/u
 
 function plansMentionedIn(normalized: string): Set<PaymentPlanCode> {
   const matched = new Set<PaymentPlanCode>()
@@ -171,12 +171,12 @@ export function classifyCurrentPaymentIntent(
     for (const plan of plansMentionedIn(message)) matched.add(plan)
   }
   if (matched.size > 1) return { kind: 'none' }
-  const nonCommittal = normalizedMessages.some((message) => (
-    NON_COMMITTAL_PAYMENT_PATTERNS.some((pattern) => pattern.test(message))
-  ))
   const explicitlyCommitted = normalizedMessages.some((message) => (
     EXPLICIT_PAYMENT_COMMITMENT_PATTERN.test(message)
     || isExplicitPaymentLinkRequest([{ content: message }])
+  ))
+  const nonCommittal = !explicitlyCommitted && normalizedMessages.some((message) => (
+    NON_COMMITTAL_PAYMENT_PATTERNS.some((pattern) => pattern.test(message))
   ))
   if (nonCommittal) return { kind: 'none' }
   if (matched.size === 1) {

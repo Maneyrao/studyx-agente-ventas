@@ -22,6 +22,7 @@ export default defineConfig({
         .regex(E164_PATTERN, "emulatorPhoneE164 must be a strict E.164 identity")
         .default(DEFAULT_DEVELOPMENT_EMULATOR_PHONE_E164),
       automationEnabled: z.boolean().default(false),
+      whatsappPublicEnabled: z.boolean().default(false),
       whatsappCanaryEnabled: z.boolean().default(false),
       decisionProvider: z.enum(['botpress_managed', 'gemini_direct', 'groq_direct']).default('botpress_managed'),
       geminiDecisionModel: z.string().min(1).default('gemini-3.6-flash'),
