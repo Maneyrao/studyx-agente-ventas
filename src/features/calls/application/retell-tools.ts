@@ -182,7 +182,11 @@ const ToolArgsSchemas = {
     cursos: z.array(CourseTextSchema).min(1).max(4),
     // Country is correlation context only. Prices still come unchanged from
     // the canonical workspace snapshot; no conversion or localization occurs.
-    pais: z.string().trim().regex(/^[A-Z]{2}$/u).optional(),
+    // Retell can pass either the ISO code supplied by StudyX or the spoken
+    // country name captured during the call. Rejecting the latter used to
+    // abort an otherwise valid offer lookup even though this field has no
+    // authority over prices or payment plans.
+    pais: z.string().trim().min(1).max(128).optional(),
   }).strict(),
   guardar_datos_contacto: z.object({
     nombre: SafeNameSchema.optional(),

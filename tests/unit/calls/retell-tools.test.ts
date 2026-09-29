@@ -489,6 +489,18 @@ describe('Retell P0 tool boundary', () => {
     });
   });
 
+  it('accepts a spoken country name because country does not authorize or alter the canonical offer', async () => {
+    const result = await invoke('consultar_oferta', envelope('consultar_oferta', {
+      cursos: ['reparacion_celulares'],
+      pais: 'Argentina',
+    }));
+
+    expect(result.body).toMatchObject({
+      ok: true,
+      oferta: { moneda: 'USD', precio_final: '360.00' },
+    });
+  });
+
   it('refuses an offer whose raw canonical identity is unsafe', async () => {
     const deps = dependencies();
     deps.business.loadBusinessContext.mockResolvedValue(rawContext({
