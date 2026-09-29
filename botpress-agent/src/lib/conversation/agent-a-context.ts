@@ -862,6 +862,7 @@ export function buildAgentAContextV1(
       may_request_call_now: claimed.policy.may_respond
         && !claimed.contact.blocked
         && claimed.sales_context.active_call === null
+        && claimed.sales_context.allowed_actions.includes('request_call_now')
         && intakeStatus === 'known'
         && !intakeMissing.includes('telefono'),
       may_present_payment_options: claimed.policy.may_respond

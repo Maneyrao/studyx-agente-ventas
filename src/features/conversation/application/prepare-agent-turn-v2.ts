@@ -3,6 +3,8 @@ import type { DecisionV4 } from '@/features/orchestration/domain/decision-v4';
 import type { ProtectedFactRef } from '@/features/orchestration/domain/egress-guard';
 import { materializeCanonicalCatalogFacts } from '@/features/orchestration/domain/canonical-offering-egress';
 import type { OrchestrationStore } from '@/features/orchestration/ports/orchestration-store';
+import { evaluateCallOfferPolicy } from '@/features/orchestration/domain/call-offer-policy';
+import { classifyBatchSalesSignal } from '@/features/orchestration/domain/sales-signal';
 import { loadConversationSessionConfig } from '@/lib/config';
 import { isCallablePhoneE164V1 } from '@/lib/heuristics/contact-identity';
 import type { AgentATurnProposalV1 } from '../domain/agent-a-brain';
@@ -139,6 +141,7 @@ export async function prepareAgentTurnV2(input: {
   readonly authorized_payment_plan: 'monthly_12' | 'monthly_6' | 'one_time' | null;
   readonly authorized_protected_facts: readonly ProtectedFactRef[];
 }> {
+  const nowMs = deps.now?.() ?? Date.now();
   const [loaded, callFacts, contactIntake] = await Promise.all([
     deps.state_store.load(input.workspace_slug, input.turn.conversation_id, input.turn.contact_id),
     deps.call_facts?.loadClaimedCallFacts({
@@ -150,7 +153,7 @@ export async function prepareAgentTurnV2(input: {
   const state = loaded
     ? effectiveConversationStateV1(
         loaded,
-        deps.now?.() ?? Date.now(),
+        nowMs,
         loadConversationSessionConfig().sessionIdleMs,
       )
     : createDefaultConversationStateV1(input.turn);
@@ -167,6 +170,17 @@ export async function prepareAgentTurnV2(input: {
     }),
   );
   const noActiveCall = callFacts?.active_call == null;
+  const callAuthorization = evaluateCallOfferPolicy({
+    now: new Date(nowMs).toISOString(),
+    signal: classifyBatchSalesSignal(input.current_customer_messages ?? []),
+    openOffer: callFacts?.open_offer
+      ? { decisionId: callFacts.open_offer.decision_id, offeredAt: callFacts.open_offer.offered_at }
+      : null,
+    lastDeclineAt: callFacts?.last_decline_at ?? null,
+    optedOut: false,
+    blocked: false,
+    activeCall: !noActiveCall,
+  });
   const authority = authorizeAgentTurnV2({
     proposal: input.proposal,
     state,
@@ -180,7 +194,9 @@ export async function prepareAgentTurnV2(input: {
       // repeat; the durable counter keeps the lifetime ceiling at two.
       may_offer_call: noActiveCall,
       // A direct customer request remains valid after an earlier decline.
-      may_request_call_now: noActiveCall && isCallablePhoneE164V1(contactIntake?.telefono ?? ''),
+      may_request_call_now: noActiveCall
+        && callAuthorization.allowedActions.includes('request_call_now')
+        && isCallablePhoneE164V1(contactIntake?.telefono ?? ''),
     },
   });
   if (!authority.ok) throw new AgentTurnV2RejectedError(authority.reasons);

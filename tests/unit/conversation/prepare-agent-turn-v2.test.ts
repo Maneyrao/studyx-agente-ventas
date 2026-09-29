@@ -407,6 +407,41 @@ describe('prepareAgentTurnV2', () => {
     expect(prepared.authorized_protected_facts).toContainEqual({ kind: 'duration', value: '12 clases' });
   });
 
+  it('does not re-authorize acceptance of an expired call offer', async () => {
+    await expect(prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['sí'],
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 0.98,
+        },
+        response: { messages: ['Perfecto, te llamo ahora.'] },
+        proposed_action: { type: 'request_call_now', reason: 'accepted_offer' },
+      }),
+    }, {
+      state_store: store(state({ call_offer_status: 'offered', call_offer_count: 1, awaiting_reply: 'call_or_chat' })),
+      call_facts: {
+        async loadClaimedCallFacts() {
+          return {
+            open_offer: {
+              decision_id: '10000000-0000-4000-8000-000000000005',
+              offered_at: '2026-09-02T15:44:00.000Z',
+            },
+            active_call: null,
+            last_call_result: null,
+            last_decline_at: null,
+          };
+        },
+      },
+      contact_intake: completeIntake,
+      now: () => Date.parse(index.as_of),
+    })).rejects.toMatchObject({
+      code: 'AGENT_TURN_V2_REJECTED',
+      reasons: expect.arrayContaining(['ACTION_NOT_AUTHORIZED']),
+    });
+  });
+
   it('rejects a response citing a fact from outside the selected course', async () => {
     await expect(prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },

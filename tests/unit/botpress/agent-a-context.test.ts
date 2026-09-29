@@ -533,6 +533,21 @@ describe('buildAgentAContextV1', () => {
     expect(context?.capabilities.intake_missing).toContain('telefono');
   });
 
+  it('does not re-authorize a call that the claim policy rejected as stale', () => {
+    const claimed = claimedTurn();
+    claimed.contact_intake_missing = [];
+    claimed.contact_intake = {
+      nombre: 'Thiago', apellido: 'Test', correo: 'thiago@example.test', telefono: '+5491112345678',
+    };
+    claimed.sales_context.allowed_actions = [];
+    claimed.sales_context.open_call_offer = null;
+    claimed.sales_context.accepted_call_offer = null;
+
+    const context = buildAgentAContextV1(claimed);
+
+    expect(context?.capabilities.may_request_call_now).toBe(false);
+  });
+
   it('exposes the canonical intake values needed for a single confirmation step', () => {
     const claimed = claimedTurn();
     claimed.contact_intake = {
