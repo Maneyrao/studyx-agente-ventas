@@ -188,6 +188,7 @@ describe('authoritative conversation planner V1', () => {
         async loadClaimedCallFacts() {
           return {
             open_offer: null,
+            open_retry_prompt: null,
             active_call: { call_id: '00000000-0000-4000-8000-000000000004', status: 'in_progress' },
             last_call_result: null,
             last_decline_at: null,

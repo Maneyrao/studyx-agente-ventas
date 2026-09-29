@@ -159,6 +159,12 @@ export interface LastCallResultFact {
   readonly ended_at: string;
 }
 
+/** A post-call message was delivered and explicitly offered another attempt. */
+export interface CallRetryPromptFact {
+  readonly call_id: string;
+  readonly offered_at: string;
+}
+
 /**
  * Raw sales/call facts for a claimed batch's own contact and conversation.
  * Deliberately bounded: no phone, no provider credentials, no transcript, no
@@ -168,6 +174,7 @@ export interface LastCallResultFact {
  */
 export interface ClaimedCallFacts {
   readonly open_offer: CallOfferFact | null;
+  readonly open_retry_prompt: CallRetryPromptFact | null;
   readonly active_call: ActiveCallFact | null;
   readonly last_call_result: LastCallResultFact | null;
   /**

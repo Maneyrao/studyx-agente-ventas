@@ -374,6 +374,12 @@ function deterministicRoute(input: {
     ) {
       return 'call_accepted_offer';
     }
+    if (input.salesContext.allowed_actions.includes('request_call_now')) {
+      // A post-call retry prompt is durable state, but it is not an
+      // agent_decisions call_offer and therefore carries no offer decision FK.
+      // Treat the customer's explicit retry as a fresh direct request.
+      return 'call_direct_request';
+    }
     if (!input.salesContext.accepted_call_offer) return 'call_acceptance_clarification';
   }
   return null;
@@ -422,6 +428,12 @@ function buildSalesContext(input: {
     signal,
     openOffer: input.callFacts.open_offer
       ? { decisionId: input.callFacts.open_offer.decision_id, offeredAt: input.callFacts.open_offer.offered_at }
+      : null,
+    openRetry: input.callFacts.open_retry_prompt
+      ? {
+          callId: input.callFacts.open_retry_prompt.call_id,
+          offeredAt: input.callFacts.open_retry_prompt.offered_at,
+        }
       : null,
     // The durable decline marker (intent = 'commercial_decline') loaded with
     // the other call facts; drives the 30-minute cooldown across turns.

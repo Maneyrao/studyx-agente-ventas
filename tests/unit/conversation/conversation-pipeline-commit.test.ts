@@ -91,6 +91,7 @@ describe('prepareConversationPipelineCommitV1', () => {
         async loadClaimedCallFacts() {
           return {
             open_offer: { decision_id: ids.turn, offered_at: index.as_of },
+            open_retry_prompt: null,
             active_call: null,
             last_call_result: null,
             last_decline_at: null,

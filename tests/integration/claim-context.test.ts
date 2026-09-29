@@ -20,6 +20,7 @@ import { sql } from '@/lib/db/orchestrator';
 import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
 import { buildBusinessContextView } from '@/features/orchestration/domain/business-context';
 import type { DbClient } from '@/lib/db/types';
+import { synthesizeCallResultTurn } from '@/features/calls/application/synthesize-call-result-turn';
 
 /**
  * Fase 3 against a real database: the controlled context is assembled only
@@ -513,6 +514,53 @@ run('sales_context at claim time', () => {
       call_id: callId,
       result: 'seguimiento_agendado',
     });
+  });
+
+  it('projects a delivered post-call retry prompt into a fresh callable turn', async () => {
+    const firstEnvelope = envelope({ message: {
+      type: 'text', text: 'Llámame', occurred_at: new Date().toISOString(), reply_to_external_message_id: null,
+    } });
+    const seeded = await processInboundMessage(firstEnvelope);
+    const identity = await db!<Array<{ contact_id: string; conversation_id: string }>>`
+      SELECT contact_id, conversation_id FROM messages WHERE id = ${seeded.turn_id}::uuid
+    `;
+    const callId = await insertCallSession({
+      turnId: seeded.turn_id,
+      contactId: identity[0].contact_id,
+      conversationId: identity[0].conversation_id,
+      status: 'no_answer',
+      result: 'seguimiento_agendado',
+      completedAt: new Date().toISOString(),
+    });
+    await synthesizeCallResultTurn({
+      call_id: callId,
+      contact_id: identity[0].contact_id,
+      conversation_id: identity[0].conversation_id,
+      trace_id: randomUUID(),
+      followup: {
+        schema_version: 1,
+        scenario: 'no_answer',
+        objective: 'recover_call_or_continue_chat',
+        payment_state: 'not_applicable',
+        allowed_next_steps: ['retry_call', 'continue_chat'],
+      },
+    }, db!);
+
+    const retry = await processInboundMessage(followUp(firstEnvelope, 'Sí, intenta nuevamente'));
+    await forceDue(retry.batch.id);
+    const result = await claimBatch(
+      { batch_id: retry.batch.id, claimed_by: 'workflow-retry', trace_id: randomUUID() },
+      deps,
+    );
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.sales_context).toMatchObject({
+      mode: 'post_call',
+      accepted_call_offer: null,
+      allowed_actions: ['request_call_now'],
+      last_call_result: { call_id: callId },
+    });
+    expect(result.deterministic_route).toBe('call_direct_request');
   });
 
   it('enforces the 30-minute decline cooldown across turns from the durable decision log', async () => {

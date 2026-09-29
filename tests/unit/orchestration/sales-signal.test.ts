@@ -62,6 +62,8 @@ describe('classifyDeterministicSalesSignal', () => {
     'Que me llame un asesor',
     'Necesito hablar por teléfono',
     'Comuníquense conmigo',
+    'Perdón, ¿me volvés a llamar?',
+    'Volveme a llamar por favor',
   ])('recognizes an unambiguous direct-call paraphrase (%s)', (text) => {
     expect(classifyDeterministicSalesSignal(text)).toEqual({ type: 'direct_call_request' });
   });
@@ -92,6 +94,14 @@ describe('classifyDeterministicSalesSignal', () => {
     expect(classifyDeterministicSalesSignal('Sí, contame más')).toEqual({
       type: 'model_required',
     });
+  });
+
+  it.each([
+    'Sí, intenta nuevamente',
+    'Dale, probemos de nuevo',
+    'Intenten otra vez',
+  ])('recognizes an explicit retry acceptance that still needs durable retry context (%s)', (text) => {
+    expect(classifyDeterministicSalesSignal(text)).toEqual({ type: 'call_acceptance' });
   });
 
   it.each(['Dejen de escribirme', 'No me escribas más', 'Quiero darme de baja'])(

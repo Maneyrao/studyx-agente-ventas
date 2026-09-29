@@ -21,6 +21,7 @@ function facts(overrides: Partial<CallOfferPolicyFacts> = {}): CallOfferPolicyFa
     now,
     signal: { type: 'model_required' },
     openOffer: null,
+    openRetry: null,
     lastDeclineAt: null,
     optedOut: false,
     blocked: false,
@@ -65,6 +66,31 @@ describe('evaluateCallOfferPolicy', () => {
       expiresAt: minutesFromNow(1),
     });
     expect(result.reason).toBe('OFFER_ACCEPTED');
+  });
+
+  it('accepts an explicit retry against a durable post-call retry prompt', () => {
+    const result = evaluateCallOfferPolicy(
+      facts({
+        signal: acceptance,
+        openRetry: { callId: 'call-1', offeredAt: minutesAgo(4) },
+      }),
+    );
+
+    expect(result.allowedActions).toEqual(['request_call_now']);
+    expect(result.acceptedOffer).toBeNull();
+    expect(result.reason).toBe('RETRY_ACCEPTED');
+  });
+
+  it('does not accept a retry after its authorization window expired', () => {
+    const result = evaluateCallOfferPolicy(
+      facts({
+        signal: acceptance,
+        openRetry: { callId: 'call-1', offeredAt: minutesAgo(16) },
+      }),
+    );
+
+    expect(result.allowedActions).toEqual([]);
+    expect(result.reason).toBe('RETRY_EXPIRED');
   });
 
   it('rejects a short "sí" against a 16-minute-old offer, past the 15-minute lifetime', () => {

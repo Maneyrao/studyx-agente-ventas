@@ -35,6 +35,8 @@ export interface CallOfferPolicyFacts {
   readonly signal: DeterministicSalesSignal;
   /** The most recent unresolved call offer, if any. */
   readonly openOffer: { readonly decisionId: string; readonly offeredAt: string } | null;
+  /** A delivered post-call prompt that explicitly offered a retry. */
+  readonly openRetry: { readonly callId: string; readonly offeredAt: string } | null;
   /** When the customer last declined a call, if ever. */
   readonly lastDeclineAt: string | null;
   readonly optedOut: boolean;
@@ -67,6 +69,16 @@ function liveOpenOffer(
   return { decisionId: facts.openOffer.decisionId, expiresAt: new Date(expiresAtMs).toISOString() };
 }
 
+function liveOpenRetry(
+  facts: CallOfferPolicyFacts,
+  nowMs: number,
+): { callId: string; expiresAt: string } | null {
+  if (facts.openRetry === null) return null;
+  const expiresAtMs = Date.parse(facts.openRetry.offeredAt) + OFFER_LIFETIME_MS;
+  if (!(expiresAtMs > nowMs)) return null;
+  return { callId: facts.openRetry.callId, expiresAt: new Date(expiresAtMs).toISOString() };
+}
+
 /** When the current decline cooldown ends, or null if none is active. */
 function activeCooldownUntil(facts: CallOfferPolicyFacts, nowMs: number): string | null {
   if (facts.lastDeclineAt === null) return null;
@@ -83,6 +95,7 @@ export function evaluateCallOfferPolicy(facts: CallOfferPolicyFacts): CallOfferP
   if (facts.activeCall) return noSalesAction('ACTIVE_CALL_IN_PROGRESS');
 
   const openOffer = liveOpenOffer(facts, nowMs);
+  const openRetry = liveOpenRetry(facts, nowMs);
   const cooldownUntil = activeCooldownUntil(facts, nowMs);
 
   if (facts.signal.type === 'direct_call_request') {
@@ -107,6 +120,31 @@ export function evaluateCallOfferPolicy(facts: CallOfferPolicyFacts): CallOfferP
     };
   }
 
+  if (facts.signal.type === 'call_acceptance' && openRetry !== null) {
+    return {
+      allowedActions: ['request_call_now'],
+      openOffer: null,
+      acceptedOffer: null,
+      cooldownUntil,
+      reason: 'RETRY_ACCEPTED',
+    };
+  }
+
+  if (
+    facts.signal.type === 'call_acceptance'
+    && facts.openRetry !== null
+    && openRetry === null
+    && openOffer === null
+  ) {
+    return {
+      allowedActions: [],
+      openOffer: null,
+      acceptedOffer: null,
+      cooldownUntil,
+      reason: 'RETRY_EXPIRED',
+    };
+  }
+
   // A proactive offer stays disabled for the rest of this conversation.
   // An explicit direct request was handled above and always remains valid.
   if (facts.lastDeclineAt !== null) {
@@ -118,6 +156,16 @@ export function evaluateCallOfferPolicy(facts: CallOfferPolicyFacts): CallOfferP
       reason: cooldownUntil === null
         ? 'CALL_DECLINED_IN_CONVERSATION'
         : 'DECLINE_COOLDOWN_ACTIVE',
+    };
+  }
+
+  if (openRetry !== null) {
+    return {
+      allowedActions: [],
+      openOffer: null,
+      acceptedOffer: null,
+      cooldownUntil,
+      reason: 'RETRY_PENDING_RESPONSE',
     };
   }
 

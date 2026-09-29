@@ -73,6 +73,7 @@ function facts(overrides: Partial<ClaimedTurnFacts> = {}): ClaimedTurnFacts {
 function callFacts(overrides: Partial<ClaimedCallFacts> = {}): ClaimedCallFacts {
   return {
     open_offer: null,
+    open_retry_prompt: null,
     active_call: null,
     last_call_result: null,
     last_decline_at: null,
@@ -1997,6 +1998,45 @@ describe('claimBatch sales_context', () => {
       },
     });
     expect(decision?.business_action).not.toBeNull();
+  });
+
+  it('turns an explicit acceptance of the durable post-call retry prompt into a fresh direct request', async () => {
+    const messages = [{
+      id: '00000000-0000-4000-8000-000000000007',
+      conversation_seq: 4,
+      content: 'Sí, intenta nuevamente',
+      created_at: '2026-08-11T12:00:00.000Z',
+      message_type: 'text',
+    }];
+    const deps = buildDeps({
+      messagesResult: messages,
+      callFactsResult: callFacts({
+        open_retry_prompt: {
+          call_id: '00000000-0000-4000-8000-000000000009',
+          offered_at: '2026-08-11T11:58:00.000Z',
+        },
+        last_call_result: {
+          call_id: '00000000-0000-4000-8000-000000000009',
+          result: 'no_answer',
+          ended_at: '2026-08-11T11:57:30.000Z',
+        },
+      } as Partial<ClaimedCallFacts>),
+      now: () => '2026-08-11T12:00:00.000Z',
+      contactIntake: async () => ({
+        nombre: 'Ariana', apellido: 'Paz', correo: 'a@example.test', telefono: '+5491112345678',
+      }),
+    });
+
+    const result = await claimBatch(input, deps);
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+    expect(result.sales_context.allowed_actions).toEqual(['request_call_now']);
+    expect(result.sales_context.accepted_call_offer).toBeNull();
+    expect(result.deterministic_route).toBe('call_direct_request');
+    expect(matchCallHandoffFastPath(withWireUuids(result) as unknown as BotpressClaimedTurn)).toMatchObject({
+      response_type: 'call_confirmation',
+      business_action: { type: 'request_call_now', reason: 'direct_request' },
+    });
   });
 
   it('lets an expired offer fall back to advising and eligible for a new one', async () => {

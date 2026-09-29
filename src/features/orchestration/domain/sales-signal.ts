@@ -58,6 +58,8 @@ const DIRECT_CALL_REQUEST_PATTERNS: RegExp[] = [
   /\b(?:pueden|podrian|podes)\s+llamarme\b/,
   /\bme\s+(?:pueden|podrian|podes|puedes)\s+llamar\b/,
   /\bme\s+llamas\b/,
+  /\bme\s+volves\s+a\s+llamar\b/,
+  /\bvolveme\s+a\s+llamar\b/,
   /\b(?:quiero|necesito)\s+una\s+llamada\b/,
   /\b(?:quisiera|desearia|me\s+gustaria)\s+(?:(?:una\s+)?llamada|(?:que\s+me\s+)?(?:llam\w*|contact\w*)(?:\s+por\s+telefono)?|(?:hablar|conversar)\s+por\s+telefono)\b/,
   /\bque\s+me\s+llame\s+(?:un|una)\s+asesor(?:a)?\b/,
@@ -67,6 +69,14 @@ const DIRECT_CALL_REQUEST_PATTERNS: RegExp[] = [
   /^(?:llamar|llamada)$/,
 ];
 
+// These phrases are affirmative only in the presence of a durable retry
+// prompt produced after a failed/interrupted call. The classifier reports the
+// linguistic signal; the call-offer policy still refuses it without that
+// persisted context.
+const RETRY_ACCEPTANCE_PATTERNS: RegExp[] = [
+  /^(?:(?:si|dale)\s+)?(?:intenta|intenten|intentemos|proba|probe|probemos|prueba|prueben|reintenta|reintentemos)\s+(?:nuevamente|de\s+nuevo|otra\s+vez)$/,
+];
+
 // Only an exact short reply counts — the moment the customer adds words
 // ("sí, contame más") the affirmative is no longer unambiguous on its own,
 // so it falls through to `model_required`.
@@ -74,6 +84,10 @@ const SHORT_ACCEPTANCE_REPLIES = new Set(['si', 'dale', 'de una']);
 
 export function classifyDeterministicSalesSignal(text: string): DeterministicSalesSignal {
   const normalized = normalize(text);
+  const phrase = normalized
+    .replace(/[¿¡!.,;:]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
   // Negations run before affirmative patterns: "Sí, pero no me llames" must
   // classify as a decline even though it contains an affirmative "sí".
@@ -86,6 +100,10 @@ export function classifyDeterministicSalesSignal(text: string): DeterministicSal
 
   if (DIRECT_CALL_REQUEST_PATTERNS.some((pattern) => pattern.test(normalized))) {
     return { type: 'direct_call_request' };
+  }
+
+  if (RETRY_ACCEPTANCE_PATTERNS.some((pattern) => pattern.test(phrase))) {
+    return { type: 'call_acceptance' };
   }
 
   const bareReply = normalized

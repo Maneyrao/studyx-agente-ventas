@@ -176,6 +176,9 @@ export async function prepareAgentTurnV2(input: {
     openOffer: callFacts?.open_offer
       ? { decisionId: callFacts.open_offer.decision_id, offeredAt: callFacts.open_offer.offered_at }
       : null,
+    openRetry: callFacts?.open_retry_prompt
+      ? { callId: callFacts.open_retry_prompt.call_id, offeredAt: callFacts.open_retry_prompt.offered_at }
+      : null,
     lastDeclineAt: callFacts?.last_decline_at ?? null,
     optedOut: false,
     blocked: false,

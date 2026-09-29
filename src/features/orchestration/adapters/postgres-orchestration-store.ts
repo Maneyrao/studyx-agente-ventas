@@ -241,6 +241,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
       recent_turns: JsonRecentTurn[];
       logical_recent_turns: JsonRecentTurn[];
       open_offer: { decision_id: string; offered_at: Date | string } | null;
+      open_retry_prompt: { call_id: string; offered_at: Date | string } | null;
       active_call: { call_id: string; status: string } | null;
       last_call_result: {
         call_id: string;
@@ -388,6 +389,33 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
           LIMIT 1
         ) AS open_offer,
         (
+          SELECT jsonb_build_object(
+            'call_id', retry_call.id,
+            'offered_at', COALESCE(retry_event.processed_at, retry_event.received_at)
+          )
+          FROM channel_events AS retry_event
+          JOIN call_sessions AS retry_call
+            ON retry_event.external_event_id = 'system:call_result:' || retry_call.id::text
+          WHERE retry_event.event_kind = 'system_call_result'
+            AND retry_event.status = 'processed'
+            AND retry_event.contact_id = b.contact_id
+            AND retry_call.contact_id = b.contact_id
+            AND retry_call.conversation_id = b.conversation_id
+            AND (
+              COALESCE(retry_event.payload #> '{followup,allowed_next_steps}', '[]'::jsonb) ? 'retry_call'
+              OR COALESCE(retry_event.payload #> '{followup,allowed_next_steps}', '[]'::jsonb) ? 'retry_call_later'
+            )
+            AND NOT EXISTS (
+              SELECT 1
+              FROM call_sessions AS newer_call
+              WHERE newer_call.contact_id = retry_call.contact_id
+                AND newer_call.conversation_id = retry_call.conversation_id
+                AND newer_call.requested_at > retry_call.requested_at
+            )
+          ORDER BY COALESCE(retry_event.processed_at, retry_event.received_at) DESC
+          LIMIT 1
+        ) AS open_retry_prompt,
+        (
           SELECT jsonb_build_object('call_id', active.id, 'status', active.status)
           FROM call_sessions AS active
           WHERE active.contact_id = b.contact_id
@@ -494,6 +522,12 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
           ? {
               decision_id: row.open_offer.decision_id,
               offered_at: jsonIso(row.open_offer.offered_at)!,
+            }
+          : null,
+        open_retry_prompt: row.open_retry_prompt
+          ? {
+              call_id: row.open_retry_prompt.call_id,
+              offered_at: jsonIso(row.open_retry_prompt.offered_at)!,
             }
           : null,
         active_call: row.active_call,
@@ -678,6 +712,32 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
       LIMIT 1
     `;
 
+    const retryRows = await this.db<Array<{ call_id: string; offered_at: Date }>>`
+      SELECT retry_call.id AS call_id,
+             COALESCE(retry_event.processed_at, retry_event.received_at) AS offered_at
+      FROM channel_events AS retry_event
+      JOIN call_sessions AS retry_call
+        ON retry_event.external_event_id = 'system:call_result:' || retry_call.id::text
+      WHERE retry_event.event_kind = 'system_call_result'
+        AND retry_event.status = 'processed'
+        AND retry_event.contact_id = ${input.contact_id}::uuid
+        AND retry_call.contact_id = ${input.contact_id}::uuid
+        AND retry_call.conversation_id = ${input.conversation_id}::uuid
+        AND (
+          COALESCE(retry_event.payload #> '{followup,allowed_next_steps}', '[]'::jsonb) ? 'retry_call'
+          OR COALESCE(retry_event.payload #> '{followup,allowed_next_steps}', '[]'::jsonb) ? 'retry_call_later'
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM call_sessions AS newer_call
+          WHERE newer_call.contact_id = retry_call.contact_id
+            AND newer_call.conversation_id = retry_call.conversation_id
+            AND newer_call.requested_at > retry_call.requested_at
+        )
+      ORDER BY COALESCE(retry_event.processed_at, retry_event.received_at) DESC
+      LIMIT 1
+    `;
+
     const terminalRows = await this.db<Array<{ id: string; result: string | null; ended_at: Date }>>`
       SELECT id, result, COALESCE(completed_at, updated_at) AS ended_at
       FROM call_sessions
@@ -702,11 +762,15 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
     `;
 
     const offer = offerRows[0];
+    const retry = retryRows[0];
     const active = activeRows[0];
     const terminal = terminalRows[0];
 
     return {
       open_offer: offer ? { decision_id: offer.decision_id, offered_at: offer.offered_at.toISOString() } : null,
+      open_retry_prompt: retry
+        ? { call_id: retry.call_id, offered_at: retry.offered_at.toISOString() }
+        : null,
       active_call: active ? { call_id: active.id, status: active.status } : null,
       last_call_result: terminal
         ? { call_id: terminal.id, result: terminal.result, ended_at: terminal.ended_at.toISOString() }

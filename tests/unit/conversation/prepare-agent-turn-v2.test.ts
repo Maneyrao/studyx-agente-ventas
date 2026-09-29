@@ -175,7 +175,7 @@ describe('prepareAgentTurnV2', () => {
       call_facts: {
         async loadClaimedCallFacts() {
           return {
-            open_offer: null, active_call: null, last_call_result: null,
+            open_offer: null, open_retry_prompt: null, active_call: null, last_call_result: null,
             last_decline_at: '2026-09-02T15:55:00.000Z',
           };
         },
@@ -428,6 +428,7 @@ describe('prepareAgentTurnV2', () => {
               decision_id: '10000000-0000-4000-8000-000000000005',
               offered_at: '2026-09-02T15:44:00.000Z',
             },
+            open_retry_prompt: null,
             active_call: null,
             last_call_result: null,
             last_decline_at: null,
@@ -439,6 +440,48 @@ describe('prepareAgentTurnV2', () => {
     })).rejects.toMatchObject({
       code: 'AGENT_TURN_V2_REJECTED',
       reasons: expect.arrayContaining(['ACTION_NOT_AUTHORIZED']),
+    });
+  });
+
+  it('authorizes a retry requested against the delivered post-call recovery prompt', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Sí, intenta nuevamente'],
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 0.98,
+        },
+        response: { messages: ['Claro, volvemos a intentar la llamada ahora.'] },
+        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+      }),
+    }, {
+      state_store: store(state()),
+      call_facts: {
+        async loadClaimedCallFacts() {
+          return {
+            open_offer: null,
+            open_retry_prompt: {
+              call_id: '10000000-0000-4000-8000-000000000005',
+              offered_at: '2026-09-02T15:58:00.000Z',
+            },
+            active_call: null,
+            last_call_result: {
+              call_id: '10000000-0000-4000-8000-000000000005',
+              result: 'no_answer',
+              ended_at: '2026-09-02T15:57:30.000Z',
+            },
+            last_decline_at: null,
+          };
+        },
+      },
+      contact_intake: completeIntake,
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.decision.business_action).toEqual({
+      type: 'request_call_now',
+      reason: 'direct_request',
     });
   });
 
