@@ -280,7 +280,7 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
     const first = await sweep(randomUUID(), 120);
     expect(first.findings.find((finding) => finding.call_id === fixture.callId)).toMatchObject({
       action: 'send',
-      reason: 'ANALYSIS_UNAVAILABLE',
+      reason: 'CALL_ENDED_BY_CONTACT_WITHOUT_ANALYSIS',
     });
     expect(await postCallOutboundDeliveryCount(fixture.callId)).toBe(1);
 

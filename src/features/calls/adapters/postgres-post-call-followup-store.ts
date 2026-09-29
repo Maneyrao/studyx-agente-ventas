@@ -1,5 +1,5 @@
 import type postgres from 'postgres';
-import type { CallResult } from '@/lib/contracts/call-event';
+import type { CallEndReason, CallResult } from '@/lib/contracts/call-event';
 import type { CallStatus } from '../domain/call-state';
 import type { PostCallFollowupStore, TerminalCallForFollowup } from '../ports/post-call-followup-store';
 import { synthesizeCallResultTurn } from '../application/synthesize-call-result-turn';
@@ -106,10 +106,14 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
       result: CallResult | null;
       analysis_status: 'pending' | 'completed' | 'failed';
       prompt_version: string;
+      disconnection_reason: CallEndReason | null;
+      provider_disconnection_reason: string | null;
       do_not_contact: boolean;
     }>>`
       SELECT cs.id, cs.contact_id, cs.conversation_id, cs.status, cs.result, cs.provider,
              cs.workspace_id, cs.analysis_status, cs.prompt_version, conversation.channel,
+             ended.payload->>'disconnection_reason' AS disconnection_reason,
+             ended.payload->>'provider_disconnection_reason' AS provider_disconnection_reason,
              EXISTS (
                SELECT 1 FROM call_events AS analysis_event
                WHERE analysis_event.call_id = cs.id
@@ -126,6 +130,13 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
       JOIN conversations AS conversation
         ON conversation.id = cs.conversation_id
        AND conversation.contact_id = cs.contact_id
+      LEFT JOIN LATERAL (
+        SELECT event.payload
+        FROM call_events AS event
+        WHERE event.call_id = cs.id AND event.event_type = 'ended'
+        ORDER BY event.sequence DESC, event.occurred_at DESC, event.id DESC
+        LIMIT 1
+      ) AS ended ON TRUE
       LEFT JOIN workspaces AS workspace
         ON workspace.id = cs.workspace_id
        AND workspace.status = 'active'
@@ -205,6 +216,8 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
       result: row.result,
       analysis_status: row.analysis_status,
       prompt_version: row.prompt_version,
+      disconnection_reason: row.disconnection_reason,
+      provider_disconnection_reason: row.provider_disconnection_reason,
       do_not_contact: row.do_not_contact,
     }));
   }

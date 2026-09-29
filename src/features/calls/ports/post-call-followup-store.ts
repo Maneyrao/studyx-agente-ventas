@@ -1,4 +1,4 @@
-import type { CallResult } from '@/lib/contracts/call-event';
+import type { CallEndReason, CallResult } from '@/lib/contracts/call-event';
 import type { CallStatus } from '../domain/call-state';
 import type { PostCallFollowupBriefV1 } from '../domain/post-call-followup';
 
@@ -21,6 +21,8 @@ export interface TerminalCallForFollowup {
   readonly result: CallResult | null;
   readonly analysis_status: 'pending' | 'completed' | 'failed';
   readonly prompt_version: string;
+  readonly disconnection_reason: CallEndReason | null;
+  readonly provider_disconnection_reason: string | null;
   readonly do_not_contact?: boolean;
 }
 

@@ -143,6 +143,16 @@ run('Retell call lifecycle persistence', () => {
       SELECT status
       FROM call_sessions WHERE id = ${ids.callId}::uuid
     `).resolves.toEqual([{ status: 'no_answer' }]);
+    await expect(db!<Array<{ normalized: string; provider_raw: string }>>`
+      SELECT
+        payload->>'disconnection_reason' AS normalized,
+        payload->>'provider_disconnection_reason' AS provider_raw
+      FROM call_events
+      WHERE call_id = ${ids.callId}::uuid AND event_type = 'ended'
+    `).resolves.toEqual([{
+      normalized: 'no_answer',
+      provider_raw: 'user_declined',
+    }]);
   });
 
   it.each([

@@ -134,6 +134,7 @@ export async function runPostCallFollowup(
         analysisStatus: call.analysis_status,
         paymentVerified,
         doNotContact: call.do_not_contact,
+        endReason: call.disconnection_reason,
       });
 
       if (verdict.action === 'skip') {

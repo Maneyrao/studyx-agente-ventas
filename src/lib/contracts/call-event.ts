@@ -48,6 +48,8 @@ export const CallEndedPayloadSchema = z.object({
   ended_at: z.string().datetime({ offset: true }),
   duration_seconds: z.number().int().nonnegative(),
   disconnection_reason: CallEndReasonSchema,
+  /** Bounded provider value retained for diagnosis; never shown verbatim. */
+  provider_disconnection_reason: z.string().trim().min(1).max(128).optional(),
 }).strict();
 
 export const CallAnalysisSchema = z.object({

@@ -240,6 +240,7 @@ export function mapRetellLifecycleEvent(raw: unknown, internalCallId: string): C
         ended_at: occurredAt,
         duration_seconds: durationSeconds,
         disconnection_reason: mapRetellDisconnectionReason(webhook.call.disconnection_reason),
+        provider_disconnection_reason: webhook.call.disconnection_reason,
       },
     });
   }

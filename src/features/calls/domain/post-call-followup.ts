@@ -1,4 +1,4 @@
-import type { CallResult } from '@/lib/contracts/call-event';
+import type { CallEndReason, CallResult } from '@/lib/contracts/call-event';
 import type { CallStatus } from './call-state';
 
 /**
@@ -114,8 +114,12 @@ export function decidePostCallFollowup(input: {
   readonly analysisStatus: 'pending' | 'completed' | 'failed';
   readonly paymentVerified: boolean;
   readonly doNotContact?: boolean;
+  readonly endReason?: CallEndReason | null;
 }): PostCallFollowupVerdict {
-  const { status, result, analysisStatus, paymentVerified, doNotContact = false } = input;
+  const {
+    status, result, analysisStatus, paymentVerified, doNotContact = false,
+    endReason = null,
+  } = input;
 
   if (doNotContact) return { action: 'revoke_contact', reason: 'DO_NOT_CONTACT' };
   if (status === 'cancelled') return { action: 'skip', reason: 'CALL_CANCELLED' };
@@ -128,7 +132,15 @@ export function decidePostCallFollowup(input: {
     };
   }
 
-  if (status === 'timed_out' || status === 'failed') {
+  if (status === 'timed_out') {
+    return {
+      action: 'send',
+      brief: brief('call_interrupted', 'recover_call_or_continue_chat', 'not_applicable', ['retry_call', 'continue_chat']),
+      reason: 'CALL_TIMED_OUT',
+    };
+  }
+
+  if (status === 'failed') {
     return {
       action: 'send',
       brief: brief('temporarily_unavailable', 'recover_call_or_continue_chat', 'not_applicable', ['retry_call_later', 'continue_chat']),
@@ -139,6 +151,13 @@ export function decidePostCallFollowup(input: {
   if (status !== 'completed') return { action: 'skip', reason: 'CALL_NOT_TERMINAL' };
 
   if (analysisStatus !== 'completed' || result === null) {
+    if (endReason === 'user_hangup') {
+      return {
+        action: 'send',
+        brief: brief('call_interrupted', 'recover_call_or_continue_chat', 'not_applicable', ['retry_call', 'continue_chat']),
+        reason: 'CALL_ENDED_BY_CONTACT_WITHOUT_ANALYSIS',
+      };
+    }
     return {
       action: 'send',
       brief: brief('analysis_unavailable', 'continue_chat', 'not_applicable', ['continue_chat']),

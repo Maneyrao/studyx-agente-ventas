@@ -174,6 +174,7 @@ describe('Retell lifecycle mapping', () => {
       ended_at: new Date(nowMs - 1_000).toISOString(),
       duration_seconds: 64,
       disconnection_reason: 'user_hangup',
+      provider_disconnection_reason: 'user_hangup',
     });
     expect(analyzed.payload).toEqual({
       event_type: 'analyzed',

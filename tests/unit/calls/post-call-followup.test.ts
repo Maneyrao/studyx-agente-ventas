@@ -47,7 +47,7 @@ describe('post-call followup verdicts (spec 007)', () => {
     expect(content).toMatch(/chat|por aqu[ií]|por ac[aá]/i);
   });
 
-  it.each(['timed_out', 'failed'] as const)(
+  it.each(['failed'] as const)(
     'explains temporary operator unavailability and keeps chat available for %s',
     (status) => {
       const verdict = decidePostCallFollowup({ status, result: null, ...base });
@@ -60,6 +60,37 @@ describe('post-call followup verdicts (spec 007)', () => {
       expect(content).toMatch(/chat|por aqu[ií]|por ac[aá]/i);
     },
   );
+
+  it('uses neutral interruption wording for an ambiguous timeout', () => {
+    const verdict = decidePostCallFollowup({ status: 'timed_out', result: null, ...base });
+    expect(verdict).toMatchObject({
+      action: 'send',
+      brief: { scenario: 'call_interrupted' },
+      reason: 'CALL_TIMED_OUT',
+    });
+    if (verdict.action !== 'send') return;
+    const content = renderPostCallFollowup(verdict.brief);
+    expect(content).toMatch(/interrumpi[oó]|cort[oó]/iu);
+    expect(content).not.toMatch(/culpa|rechazaste|operadores/iu);
+  });
+
+  it('recovers an abrupt user hangup when analysis did not arrive', () => {
+    const verdict = decidePostCallFollowup({
+      status: 'completed',
+      result: null,
+      analysisStatus: 'pending',
+      paymentVerified: false,
+      endReason: 'user_hangup',
+    });
+    expect(verdict).toMatchObject({
+      action: 'send',
+      brief: {
+        scenario: 'call_interrupted',
+        allowed_next_steps: ['retry_call', 'continue_chat'],
+      },
+      reason: 'CALL_ENDED_BY_CONTACT_WITHOUT_ANALYSIS',
+    });
+  });
 
   it('does not act on a call that has not reached a terminal state', () => {
     for (const status of ['requested', 'dispatching', 'provider_accepted', 'dispatch_ambiguous', 'in_progress'] as const) {
@@ -161,8 +192,10 @@ describe('post-call followup verdicts (spec 007)', () => {
 
 describe('post-call followup delivery boundary', () => {
   function storeFor(call: {
-    status?: 'completed' | 'failed' | 'cancelled';
+    status?: 'completed' | 'failed' | 'no_answer' | 'timed_out' | 'cancelled';
     result?: 'seguimiento_agendado' | 'no_contactar' | null;
+    channel?: 'telegram' | 'whatsapp';
+    endReason?: 'user_hangup' | 'agent_hangup' | null;
   }): PostCallFollowupStore & {
     completed: string[];
     followups: Array<Parameters<PostCallFollowupStore['markFollowupCompleted']>[0]['followup']>;
@@ -178,12 +211,14 @@ describe('post-call followup delivery boundary', () => {
           contact_id: '00000000-0000-4000-8000-000000000002',
           conversation_id: '00000000-0000-4000-8000-000000000003',
           workspace_id: '00000000-0000-4000-8000-000000000004',
-          channel: 'telegram' as const,
+          channel: call.channel ?? 'telegram',
           provider: 'telegram_sandbox' as const,
           status: call.status ?? 'completed',
-          result: call.result ?? 'seguimiento_agendado',
+          result: 'result' in call ? call.result ?? null : 'seguimiento_agendado',
           analysis_status: 'completed' as const,
           prompt_version: 'agent-b-v1',
+          disconnection_reason: call.endReason ?? null,
+          provider_disconnection_reason: call.endReason ?? null,
         }];
       },
       async hasVerifiedPayment() { return false; },
@@ -287,4 +322,63 @@ describe('post-call followup delivery boundary', () => {
 
     expect(listedCallId).toBe('00000000-0000-4000-8000-000000000001');
   });
+
+  it.each(['telegram', 'whatsapp'] as const)(
+    'sends the same abrupt-cut recovery through the originating %s channel',
+    async (channel) => {
+      const store = storeFor({ result: null, channel, endReason: 'user_hangup' });
+      let outbound: Parameters<NonNullable<Parameters<typeof runPostCallFollowup>[1]['sendOutbound']>>[0] | null = null;
+      await runPostCallFollowup(
+        { trace_id: '00000000-0000-4000-8000-000000000005' },
+        {
+          store,
+          sendOutbound: async (input) => {
+            outbound = input;
+            return {
+              outcome: 'sent', channel, providerMessageId: `${channel}:1`,
+              deliveryId: 'delivery-1', reason: null,
+            };
+          },
+        },
+      );
+
+      expect(outbound).toMatchObject({
+        preferredChannel: channel,
+        idempotencyKey: 'post-call:00000000-0000-4000-8000-000000000001',
+      });
+      expect((outbound as { text: string } | null)?.text).toMatch(/reintent|seguir por aqu[ií]/iu);
+    },
+  );
+
+  it.each([
+    ['telegram', 'no_answer', 'CALL_NO_ANSWER'],
+    ['whatsapp', 'no_answer', 'CALL_NO_ANSWER'],
+    ['telegram', 'timed_out', 'CALL_TIMED_OUT'],
+    ['whatsapp', 'timed_out', 'CALL_TIMED_OUT'],
+    ['telegram', 'failed', 'CALL_FAILED'],
+    ['whatsapp', 'failed', 'CALL_FAILED'],
+  ] as const)(
+    'keeps %s recovery channel-agnostic for %s',
+    async (channel, status, expectedReason) => {
+      const store = storeFor({ status, result: null, channel });
+      let selectedChannel: string | undefined;
+      const result = await runPostCallFollowup(
+        { trace_id: '00000000-0000-4000-8000-000000000005' },
+        {
+          store,
+          sendOutbound: async (input) => {
+            selectedChannel = input.preferredChannel;
+            return {
+              outcome: 'sent', channel, providerMessageId: `${channel}:terminal`,
+              deliveryId: 'delivery-terminal', reason: null,
+            };
+          },
+        },
+      );
+      expect(selectedChannel).toBe(channel);
+      expect(result.findings).toEqual([
+        expect.objectContaining({ action: 'send', reason: expectedReason }),
+      ]);
+    },
+  );
 });
