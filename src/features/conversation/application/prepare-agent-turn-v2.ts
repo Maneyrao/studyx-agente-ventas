@@ -8,7 +8,10 @@ import { loadConversationSessionConfig } from '@/lib/config';
 import { isCallablePhoneE164V1 } from '@/lib/heuristics/contact-identity';
 import type { AgentATurnProposalV1 } from '../domain/agent-a-brain';
 import { authorizeAgentTurnV2 } from '../domain/agent-turn-policy-v2';
-import { buildCanonicalFactRegistry } from '../domain/canonical-fact-registry';
+import {
+  buildCanonicalFactRegistry,
+  TEMPORARY_TEST_PAYMENT_FACT_ID,
+} from '../domain/canonical-fact-registry';
 import type {
   CanonicalFactV1,
   ConversationStateTransitionV1,
@@ -43,6 +46,10 @@ function protectedFactsFromCitations(input: {
   const result: ProtectedFactRef[] = [];
   for (const fact of input.facts) {
     if (!authorized.has(fact.id)) continue;
+    if (fact.id === TEMPORARY_TEST_PAYMENT_FACT_ID) {
+      result.push({ kind: 'price', value: 'USD 0.50' });
+      result.push({ kind: 'price', value: 'USD 0,50' });
+    }
     if (fact.kind === 'offering_duration') result.push({ kind: 'duration', value: fact.value });
     if (fact.kind === 'offering_modality') result.push({ kind: 'modality', value: fact.value });
     if (fact.kind === 'payment_plan_price') result.push({ kind: 'price', value: fact.value });

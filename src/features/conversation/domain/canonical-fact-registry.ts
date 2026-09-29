@@ -10,6 +10,8 @@ export interface CanonicalFactRegistryV1 {
   readonly facts: ReadonlyMap<string, CanonicalFactV1>;
 }
 
+export const TEMPORARY_TEST_PAYMENT_FACT_ID = 'payment-test:stripe_verification_050:label:v1';
+
 function factRef(fact: CanonicalFactV1): CanonicalFactRefV1 {
   return {
     id: fact.id,
@@ -31,6 +33,12 @@ export function buildCanonicalFactRegistry(input: {
   readonly catalog_index: CatalogIndexView | null;
 }): CanonicalFactRegistryV1 {
   const facts = new Map<string, CanonicalFactV1>();
+  facts.set(TEMPORARY_TEST_PAYMENT_FACT_ID, {
+    id: TEMPORARY_TEST_PAYMENT_FACT_ID,
+    kind: 'payment_plan_label',
+    source: 'payment_config',
+    value: 'Prueba temporal de pago de USD 0,50',
+  });
   const areas = new Map<string, string>();
   for (const offering of input.catalog_index?.offerings ?? []) {
     if (!offering.academy) continue;

@@ -317,7 +317,7 @@ run('plannerless Agent A vertical', () => {
         type: 'send_test_payment_link',
         offering_code: 'redes-informaticas',
       },
-      used_fact_ids: [],
+      used_fact_ids: ['payment-test:stripe_verification_050:label:v1'],
       used_memory_ids: [],
       memory_candidates: [],
       repair_of: null,

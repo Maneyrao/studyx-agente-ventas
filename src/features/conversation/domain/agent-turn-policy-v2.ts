@@ -8,6 +8,7 @@ import type {
   ConversationStateV1,
   PaymentLinkRequestV1,
 } from './conversation-pipeline';
+import { TEMPORARY_TEST_PAYMENT_FACT_ID } from './canonical-fact-registry';
 import type { SalesContextStage, SalesPaymentPlan } from '@/features/sales/domain/sales-context';
 import {
   dropUnsupportedStateAssertionsV1,
@@ -182,7 +183,11 @@ export function authorizeAgentTurnV2(input: {
     const selectedOfferingFact = fact !== undefined
       && fact.kind !== 'payment_link'
       && fact.offering_code === factOffering;
-    if (fact && (navigationFact || browsingCourseDetail || selectedOfferingFact)) authorizedFactIds.push(factId);
+    const temporaryTestPaymentFact = fact?.id === TEMPORARY_TEST_PAYMENT_FACT_ID
+      && proposal.proposed_action.type === 'send_test_payment_link';
+    if (fact && (navigationFact || browsingCourseDetail || selectedOfferingFact || temporaryTestPaymentFact)) {
+      authorizedFactIds.push(factId);
+    }
     else reasons.push('FACT_NOT_AUTHORIZED');
   }
 
