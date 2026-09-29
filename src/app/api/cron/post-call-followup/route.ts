@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { runPostCallFollowup } from '@/features/calls/application/post-call-followup';
 import { PostgresPostCallFollowupStore } from '@/features/calls/adapters/postgres-post-call-followup-store';
-import { createPostCallOutboundSender } from '@/features/calls/adapters/post-call-outbound';
+import { createManagedOutboundSender } from '@/features/messaging/adapters/managed-outbound';
 import { sql } from '@/lib/db/orchestrator';
 import { counter } from '@/lib/observability/counters';
 import { logger } from '@/lib/observability/structured-log';
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
       { trace_id: traceId },
       {
         store,
-        sendOutbound: createPostCallOutboundSender(sql),
+        sendOutbound: createManagedOutboundSender(sql),
         log: (event, fields) => logger.info({ event, ...fields }),
       }
     );

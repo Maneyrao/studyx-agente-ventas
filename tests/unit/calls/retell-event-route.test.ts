@@ -42,8 +42,8 @@ describe('Retell event route boundary', () => {
     vi.doMock('@/features/calls/adapters/postgres-post-call-followup-store', () => ({
       PostgresPostCallFollowupStore: class {},
     }));
-    vi.doMock('@/features/calls/adapters/post-call-outbound', () => ({
-      createPostCallOutboundSender: vi.fn(() => vi.fn()),
+    vi.doMock('@/features/messaging/adapters/managed-outbound', () => ({
+      createManagedOutboundSender: vi.fn(() => vi.fn()),
     }));
     vi.doMock('@/features/calls/application/post-call-followup', () => ({ runPostCallFollowup }));
     vi.doMock('@/features/calls/application/retell-webhook', () => ({

@@ -4,7 +4,7 @@ import { openLocalTestDatabase } from '../helpers/db';
 import { processInboundMessage, type InboundEnvelope } from '@/lib/services/ingestion.service';
 import { sql } from '@/lib/db/orchestrator';
 import { PostgresChannelIdentityStore } from '@/features/messaging/adapters/postgres-channel-identity-store';
-import { PostCallBotpressIdentityStore } from '@/features/calls/adapters/post-call-botpress-identity-store';
+import { BotpressManagedIdentityStore } from '@/features/messaging/adapters/botpress-managed-identity-store';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
@@ -22,7 +22,7 @@ run('post-call Botpress egress identity', () => {
     const inbound: InboundEnvelope = {
       schema_version: 1,
       source: 'botpress',
-      channel: 'whatsapp',
+      channel: 'telegram',
       integration_id: 'telegram',
       external_message_id: `message:${identity}`,
       external_conversation_id: externalConversationId,
@@ -43,7 +43,7 @@ run('post-call Botpress egress identity', () => {
     `;
 
     const generic = new PostgresChannelIdentityStore(db!);
-    const postCall = new PostCallBotpressIdentityStore(db!);
+    const postCall = new BotpressManagedIdentityStore(db!);
     await expect(generic.loadEligibilityFacts(membership.workspace_id, ingested.contact.id))
       .resolves.toMatchObject({ sandboxLocked: true });
     await expect(postCall.loadEligibilityFacts(membership.workspace_id, ingested.contact.id))
@@ -51,7 +51,7 @@ run('post-call Botpress egress identity', () => {
     await expect(postCall.listUsableIdentities(membership.workspace_id, ingested.contact.id))
       .resolves.toEqual([
         expect.objectContaining({
-          channel: 'whatsapp',
+          channel: 'telegram',
           provider: 'telegram_sandbox',
           destination: 'bp-conversation-safe',
         }),

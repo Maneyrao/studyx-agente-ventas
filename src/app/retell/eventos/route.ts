@@ -5,7 +5,7 @@ import {
 } from '@/features/calls/application/retell-webhook';
 import { runPostCallFollowup } from '@/features/calls/application/post-call-followup';
 import { PostgresPostCallFollowupStore } from '@/features/calls/adapters/postgres-post-call-followup-store';
-import { createPostCallOutboundSender } from '@/features/calls/adapters/post-call-outbound';
+import { createManagedOutboundSender } from '@/features/messaging/adapters/managed-outbound';
 import { logger } from '@/lib/observability/structured-log';
 import { randomUUID } from 'node:crypto';
 import { after } from 'next/server';
@@ -49,7 +49,7 @@ export async function POST(request: Request): Promise<Response> {
         { trace_id: randomUUID(), call_id: event.callId, grace_seconds: graceSeconds },
         {
           store: new PostgresPostCallFollowupStore(sql),
-          sendOutbound: createPostCallOutboundSender(sql),
+          sendOutbound: createManagedOutboundSender(sql),
           log: (name, fields) => logger.info({ event: name, ...fields }),
         },
       );
