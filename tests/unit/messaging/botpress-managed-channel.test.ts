@@ -23,8 +23,12 @@ describe('BotpressManagedChannel', () => {
   it('submits a proactive message to the existing Botpress conversation', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      message: { id: 'bp-message-1', createdAt: '2026-09-28T00:00:00.000Z' },
-    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      message: {
+        id: 'bp-message-1',
+        createdAt: '2026-09-28T00:00:00.000Z',
+        direction: 'outgoing',
+      },
+    }), { status: 201, headers: { 'content-type': 'application/json' } }));
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(channel().sendText({
@@ -50,7 +54,6 @@ describe('BotpressManagedChannel', () => {
           conversationId: 'bp-conversation-1',
           type: 'text',
           tags: {},
-          origin: 'synthetic',
         }),
         signal: expect.any(AbortSignal),
       }),
@@ -59,6 +62,47 @@ describe('BotpressManagedChannel', () => {
       '"counter":"botpress_managed_submissions_unreconciled"',
     ));
     log.mockRestore();
+  });
+
+  it('does not report success when Botpress creates an incoming message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      message: {
+        id: 'bp-message-incoming',
+        createdAt: '2026-09-28T00:00:00.000Z',
+        direction: 'incoming',
+      },
+    }), { status: 201, headers: { 'content-type': 'application/json' } })));
+
+    await expect(channel().sendText({
+      destination: 'bp-conversation-1',
+      text: 'Te envío el link.',
+      correlationId: 'delivery-incoming',
+    })).rejects.toMatchObject({
+      name: 'ConfirmedChannelError',
+      kind: 'config_error',
+      code: 'BOTPRESS_MESSAGE_NOT_OUTGOING',
+    });
+  });
+
+  it('does not report a synthetic Botpress record as a delivered channel message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      message: {
+        id: 'bp-message-synthetic',
+        createdAt: '2026-09-28T00:00:00.000Z',
+        direction: 'outgoing',
+        origin: 'synthetic',
+      },
+    }), { status: 201, headers: { 'content-type': 'application/json' } })));
+
+    await expect(channel().sendText({
+      destination: 'bp-conversation-1',
+      text: 'Te envío el link.',
+      correlationId: 'delivery-synthetic',
+    })).rejects.toMatchObject({
+      name: 'ConfirmedChannelError',
+      kind: 'config_error',
+      code: 'BOTPRESS_SYNTHETIC_MESSAGE_NOT_DELIVERED',
+    });
   });
 
   it('classifies an authorization failure as a confirmed configuration error', async () => {

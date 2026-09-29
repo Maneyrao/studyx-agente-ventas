@@ -62,8 +62,12 @@ run('Retell managed egress', () => {
     process.env.BOTPRESS_MANAGED_EGRESS_API_URL = 'https://api.botpress.test';
     const identity = randomUUID();
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      message: { id: `bp-payment-link:${identity}`, createdAt: '2026-09-29T10:00:00.000Z' },
-    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      message: {
+        id: `bp-payment-link:${identity}`,
+        createdAt: '2026-09-29T10:00:00.000Z',
+        direction: 'outgoing',
+      },
+    }), { status: 201, headers: { 'content-type': 'application/json' } }));
     vi.stubGlobal('fetch', fetchMock);
 
     const inbound = await processInboundMessage(telegramInbound(identity));
@@ -145,6 +149,8 @@ run('Retell managed egress', () => {
         body: expect.stringContaining(`\"conversationId\":\"bp-conversation:${identity}\"`),
       }),
     );
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
+    expect(body).not.toHaveProperty('origin');
     await expect(db!`
       SELECT count(*)::integer AS count
       FROM audit_log

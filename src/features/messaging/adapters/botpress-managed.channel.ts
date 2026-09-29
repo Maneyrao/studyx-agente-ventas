@@ -73,7 +73,6 @@ export class BotpressManagedChannel implements MessageChannel {
           conversationId: input.destination,
           type: 'text',
           tags: {},
-          origin: 'synthetic',
         }),
         signal: controller.signal,
       });
@@ -95,10 +94,33 @@ export class BotpressManagedChannel implements MessageChannel {
       throw new AmbiguousChannelError('BOTPRESS_RESPONSE_UNREADABLE');
     }
     const message = payload !== null && typeof payload === 'object'
-      ? (payload as { message?: { id?: unknown; createdAt?: unknown } }).message
+      ? (payload as {
+          message?: {
+            id?: unknown;
+            createdAt?: unknown;
+            direction?: unknown;
+            origin?: unknown;
+          };
+        }).message
       : null;
     if (!message || typeof message.id !== 'string') {
       throw new AmbiguousChannelError('BOTPRESS_MESSAGE_ID_MISSING');
+    }
+    // Botpress only forwards messages created *as the bot* to the installed
+    // Telegram/WhatsApp integration. An incoming message can still have a
+    // perfectly valid Botpress ID, but it remains internal and never reaches
+    // the contact. Do not turn that persistence acknowledgement into a false
+    // delivery success.
+    if (message.direction !== 'outgoing') {
+      counter.increment('botpress_managed_non_outgoing_messages');
+      throw new ConfirmedChannelError('config_error', 'BOTPRESS_MESSAGE_NOT_OUTGOING');
+    }
+    if ('origin' in message && message.origin === 'synthetic') {
+      counter.increment('botpress_managed_synthetic_messages');
+      throw new ConfirmedChannelError(
+        'config_error',
+        'BOTPRESS_SYNTHETIC_MESSAGE_NOT_DELIVERED',
+      );
     }
     counter.increment('botpress_managed_submissions_unreconciled');
     return {

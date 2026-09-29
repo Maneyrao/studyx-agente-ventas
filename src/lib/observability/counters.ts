@@ -67,7 +67,9 @@ type CounterName =
   // Botpress confirms creation, not physical delivery to the device. This
   // counter makes that deliberately weaker evidence visible until callbacks
   // are available for reconciliation.
-  | 'botpress_managed_submissions_unreconciled';
+  | 'botpress_managed_submissions_unreconciled'
+  | 'botpress_managed_non_outgoing_messages'
+  | 'botpress_managed_synthetic_messages';
 
 // Serverless-safe counter: no in-memory state between Vercel invocations.
 // Each increment emits a structured log line — verifiable in log drains / Vercel dashboard.
