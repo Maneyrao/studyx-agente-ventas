@@ -62,6 +62,11 @@ export interface RequestCallNowAction {
   course_of_interest?: string;
 }
 
+export interface SendTestPaymentLinkAction {
+  type: 'send_test_payment_link';
+  offering_sku: string;
+}
+
 /**
  * The executable v4 union. Narrower than v3's on purpose: v4 only carries
  * actions the backend actually executes or records. The dormant v3 shapes
@@ -72,6 +77,7 @@ export type DecisionV4BusinessAction =
   | { type: 'mark_hot_lead'; score: number }
   | { type: 'log_objection'; objection_key: string; quote: string }
   | RequestCallNowAction
+  | SendTestPaymentLinkAction
   | SendPaymentLinkAction;
 
 export interface DecisionV4 {
@@ -126,6 +132,7 @@ function parseRequestCallNow(value: Record<string, unknown>): RequestCallNowActi
 }
 
 const SEND_PAYMENT_LINK_FIELDS = new Set(['type', 'plan_code', 'offering_sku']);
+const SEND_TEST_PAYMENT_LINK_FIELDS = new Set(['type', 'offering_sku']);
 
 // A canonical offering sku is a short opaque slug. Anything shaped like a
 // URL or a monetary amount is exactly what the model must never be able to
@@ -167,6 +174,16 @@ function parseSendPaymentLinkAction(value: Record<string, unknown>): SendPayment
   };
 }
 
+function parseSendTestPaymentLinkAction(value: Record<string, unknown>): SendTestPaymentLinkAction {
+  if (Object.keys(value).some((key) => !SEND_TEST_PAYMENT_LINK_FIELDS.has(key))) {
+    throw new DecisionValidationError('INVALID_BUSINESS_ACTION');
+  }
+  if (typeof value.offering_sku !== 'string' || !isCanonicalOfferingSku(value.offering_sku)) {
+    throw new DecisionValidationError('INVALID_BUSINESS_ACTION');
+  }
+  return { type: 'send_test_payment_link', offering_sku: value.offering_sku };
+}
+
 function parseV4BusinessAction(value: unknown): DecisionV4BusinessAction | null {
   if (value === null || value === undefined) return null;
   if (!isRecord(value)) {
@@ -177,6 +194,9 @@ function parseV4BusinessAction(value: unknown): DecisionV4BusinessAction | null 
   }
   if (value.type === 'send_payment_link') {
     return parseSendPaymentLinkAction(value);
+  }
+  if (value.type === 'send_test_payment_link') {
+    return parseSendTestPaymentLinkAction(value);
   }
   if (value.type !== 'mark_hot_lead' && value.type !== 'log_objection') {
     throw new DecisionValidationError('INVALID_BUSINESS_ACTION');

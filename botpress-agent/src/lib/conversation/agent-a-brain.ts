@@ -472,6 +472,10 @@ function proposalJsonSchema(context: AgentAContextV1): unknown {
         offering_code: { type: 'string' },
         payment_plan: { type: 'string', enum: [...PAYMENT_PLANS] },
       }),
+      closedObject({
+        type: { type: 'string', enum: ['send_test_payment_link'] },
+        offering_code: { type: 'string' },
+      }),
     ],
   };
   return closedObject({

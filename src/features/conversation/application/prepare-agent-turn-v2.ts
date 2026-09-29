@@ -90,6 +90,8 @@ function decisionFromAuthorizedTurn(input: {
       }
     : action.type === 'send_payment_link'
       ? { type: 'send_payment_link', offering_sku: action.offering_code, plan_code: action.payment_plan }
+      : action.type === 'send_test_payment_link'
+        ? { type: 'send_test_payment_link', offering_sku: action.offering_code }
       : null;
   return {
     schema_version: 4,

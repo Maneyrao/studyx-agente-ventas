@@ -20,6 +20,7 @@ const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
 
 const link12 = 'https://buy.stripe.com/test_plannerless_v2_12';
 const link6 = 'https://buy.stripe.com/test_plannerless_v2_6';
+const verificationLink = 'https://buy.stripe.com/test_plannerless_v2_050';
 
 function placeholderDecision() {
   return {
@@ -87,12 +88,13 @@ run('plannerless Agent A vertical', () => {
   beforeAll(async () => {
     for (const key of [
       'BUSINESS_WORKSPACE_SLUG', 'PAYMENT_LINK_12M', 'PAYMENT_LINK_6M',
-      'PAYMENT_LINK_CONTADO', 'VOICE_PROVIDER',
+      'PAYMENT_LINK_CONTADO', 'PAYMENT_LINK_STRIPE_VERIFICATION', 'VOICE_PROVIDER',
     ]) previousEnv[key] = process.env[key];
     process.env.BUSINESS_WORKSPACE_SLUG = workspaceSlug;
     process.env.PAYMENT_LINK_12M = link12;
     process.env.PAYMENT_LINK_6M = link6;
     process.env.PAYMENT_LINK_CONTADO = 'https://buy.stripe.com/test_plannerless_v2_once';
+    process.env.PAYMENT_LINK_STRIPE_VERIFICATION = verificationLink;
     process.env.VOICE_PROVIDER = 'telegram_sandbox';
 
     const workspaces = await db!<Array<{ id: string }>>`
@@ -298,5 +300,42 @@ run('plannerless Agent A vertical', () => {
       selected_offering_code: 'redes-informaticas', selected_payment_plan: 'monthly_12',
       stage: 'payment_link_sent', call_offer_count: 1,
     });
+  });
+
+  it('delivers a correlated USD 0.50 test link without changing the commercial plan', async () => {
+    const payment = await commitTurn('Mandame el link de prueba de 0,50 dólares.', {
+      schema_version: 1,
+      move: {
+        schema_version: 1,
+        move: 'request_payment_link',
+        secondary_moves: [],
+        vetoes: [],
+        confidence: 1,
+      },
+      response: { messages: ['Dale, te paso el link de prueba.'] },
+      proposed_action: {
+        type: 'send_test_payment_link',
+        offering_code: 'redes-informaticas',
+      },
+      used_fact_ids: [],
+      used_memory_ids: [],
+      memory_candidates: [],
+      repair_of: null,
+    });
+
+    const content = payment.committed.outbounds.map((outbound) => outbound.content).join('\n');
+    expect(content).toContain(verificationLink);
+    expect(content).toContain('client_reference_id=');
+    const rows = await db!<Array<{ amount: string; plan_code: string | null }>>`
+      SELECT amount::text AS amount, plan_code
+      FROM payments
+      WHERE idempotency_key = ${`agent-a-stripe-verification:${payment.claimed.turn_id}`}
+    `;
+    expect(rows).toEqual([{ amount: '0.50', plan_code: null }]);
+
+    const state = await stateStore.load(
+      workspaceSlug, payment.claimed.batch.conversation_id, payment.claimed.batch.contact_id,
+    );
+    expect(state?.selected_payment_plan).toBe('monthly_12');
   });
 });

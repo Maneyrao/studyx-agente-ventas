@@ -139,6 +139,10 @@ const ProposedActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('none') }).strict(),
   z.object({ type: z.literal('request_call_now'), reason: z.enum(['direct_request', 'accepted_offer']) }).strict(),
   z.object({
+    type: z.literal('send_test_payment_link'),
+    offering_code: IdentifierSchema,
+  }).strict(),
+  z.object({
     type: z.literal('send_payment_link'),
     offering_code: IdentifierSchema,
     payment_plan: PaymentPlanSchema,

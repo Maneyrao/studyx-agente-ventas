@@ -301,6 +301,15 @@ export function authorizeAgentTurnV2(input: {
         : proposal.proposed_action;
     }
   }
+  if (proposal.proposed_action.type === 'send_test_payment_link') {
+    const explicitlyRequested = moves.has('request_payment_link')
+      && !proposal.move.vetoes.includes('payment_link')
+      && !proposal.move.vetoes.includes('purchase');
+    const matchesOffering = selectedOffering !== null
+      && proposal.proposed_action.offering_code === selectedOffering;
+    if (!explicitlyRequested || !matchesOffering) reasons.push('ACTION_NOT_AUTHORIZED');
+    else action = proposal.proposed_action;
+  }
   if (
     proposal.proposed_action.type === 'none'
     && paymentLinkRequested

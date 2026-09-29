@@ -113,6 +113,10 @@ const businessActionV4Schema = z.discriminatedUnion('type', [
     plan_code: z.enum(['monthly_12', 'monthly_6', 'one_time']),
     offering_sku: z.string().trim().min(1).max(128).nullable(),
   }).strict(),
+  z.object({
+    type: z.literal('send_test_payment_link'),
+    offering_sku: z.string().trim().min(1).max(128),
+  }).strict(),
 ]);
 
 const decisionV4Schema = z.object({

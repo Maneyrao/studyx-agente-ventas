@@ -59,8 +59,13 @@ import { createConfigPaymentLinkResolver } from '@/features/payments/adapters/co
 import {
   PaymentLinkReservationError,
   reservePaymentLink,
+  reserveStripeVerificationLink,
 } from '@/features/payments/application/reserve-payment-link';
-import { PAYMENT_PLAN_PRESENTATIONS } from '@/features/payments/domain/payment-link';
+import {
+  PAYMENT_PLAN_PRESENTATIONS,
+  isStripePaymentLinkUrl,
+  stripUnauthorizedUrls,
+} from '@/features/payments/domain/payment-link';
 import {
   classifyCurrentPaymentIntent,
   deriveDeferredPaymentChoiceFromBatch,
@@ -1024,6 +1029,52 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         paymentLinkStrippedUrls = materialized.stripped_urls;
         authorizedUrls = [materialized.block.url];
         authorizedProtectedFacts = paymentPlanProtectedFacts(action.plan_code);
+      }
+    }
+
+    if (decision.schema_version === 4 && decision.business_action?.type === 'send_test_payment_link') {
+      const action = decision.business_action;
+      const configuredUrl = process.env.PAYMENT_LINK_STRIPE_VERIFICATION?.trim() ?? '';
+      if (!isStripePaymentLinkUrl(configuredUrl)) {
+        throw new DecisionPolicyError('STRIPE_VERIFICATION_DISABLED');
+      }
+      if (effectiveAuthorizedOfferingCode === null
+        || action.offering_sku !== effectiveAuthorizedOfferingCode) {
+        throw new DecisionPolicyError('OFFERING_MISMATCH');
+      }
+      await loadCanonicalOfferings('payment_link');
+      if (!canonicalWorkspaceId) throw new DecisionPolicyError('PAYMENT_WORKSPACE_NOT_FOUND');
+      const payableOfferings = await db<Array<{ id: string }>>`
+        SELECT id
+        FROM offerings
+        WHERE workspace_id = ${canonicalWorkspaceId}::uuid
+          AND code = ${action.offering_sku}
+          AND status = 'active'
+        LIMIT 1
+      `;
+      if (!payableOfferings[0]) throw new DecisionPolicyError('OFFERING_NOT_FOUND');
+
+      try {
+        const reserved = await reserveStripeVerificationLink(db, {
+          workspace_id: canonicalWorkspaceId,
+          contact_id: turn.contact_id,
+          offering_id: payableOfferings[0].id,
+          idempotency_key: `agent-a-stripe-verification:${turn.id}`,
+          payment_link_url: configuredUrl,
+        });
+        const sanitized = stripUnauthorizedUrls(finalResponse ?? '', configuredUrl);
+        finalResponse = `${sanitized.text}\n\nPrueba temporal USD 0,50: ${reserved.url}`.trim();
+        paymentLinkStrippedUrls = sanitized.stripped_urls;
+        authorizedUrls = [reserved.url];
+        authorizedProtectedFacts = [
+          { kind: 'price', value: 'USD 0.50' },
+          { kind: 'price', value: 'USD 0,50' },
+        ];
+      } catch (error) {
+        if (error instanceof PaymentLinkReservationError) {
+          throw new DecisionPolicyError(error.code);
+        }
+        throw error;
       }
     }
 

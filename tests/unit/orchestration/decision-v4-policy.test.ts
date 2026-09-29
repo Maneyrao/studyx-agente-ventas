@@ -180,6 +180,19 @@ function paymentLinkDecision(overrides: Record<string, unknown> = {}): Record<st
 }
 
 describe('parseDecisionV4 — send_payment_link', () => {
+  it('accepts the isolated temporary Stripe verification action without a plan code', () => {
+    const parsed = parseDecisionV4(paymentLinkDecision({
+      business_action: {
+        type: 'send_test_payment_link',
+        offering_sku: 'redes_informaticas',
+      },
+    }));
+    expect(parsed.business_action).toEqual({
+      type: 'send_test_payment_link',
+      offering_sku: 'redes_informaticas',
+    });
+  });
+
   it('accepts the canonical action with a null offering_sku', () => {
     const parsed = parseDecisionV4(paymentLinkDecision());
     expect(parsed.business_action).toEqual({

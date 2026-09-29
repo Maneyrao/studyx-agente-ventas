@@ -119,6 +119,11 @@ export type AgentAProposedActionV1 =
   | { readonly type: 'none' }
   | { readonly type: 'request_call_now'; readonly reason: 'direct_request' | 'accepted_offer' }
   | {
+      /** Temporary, hidden Stripe verification checkout. Never a commercial plan. */
+      readonly type: 'send_test_payment_link';
+      readonly offering_code: string;
+    }
+  | {
       readonly type: 'send_payment_link';
       readonly offering_code: string;
       readonly payment_plan: AgentAPaymentPlanV1;
