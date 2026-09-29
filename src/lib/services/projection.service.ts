@@ -11,6 +11,10 @@ import { GoogleSheetsProvider } from '@/lib/providers/sheets/google-sheets-provi
 import type { SheetRowValues, SheetsProvider } from '@/lib/providers/sheets/sheets-provider';
 import { runDeadlineQuery, WorkerDeadline, WorkerDeadlineExceeded } from './durable-worker-deadline';
 import { leadProjectionKey } from '@/features/payments/domain/payment-report-projection';
+import {
+  PAYMENT_PLAN_PRESENTATIONS,
+  isPaymentPlanCode,
+} from '@/features/payments/domain/payment-link';
 
 export { leadProjectionKey };
 
@@ -63,6 +67,10 @@ export interface LeadProjectionInput {
   etapaComercial?: string;
   cursoInteres?: string;
   plan?: string;
+  /** Charged amount shown to operators; never model-authored. */
+  monto?: string;
+  /** Only true after a trusted payment provider confirms the charge. */
+  pagoVerificado?: boolean;
   estadoPago?: string;
   fechaPago?: string;
   callId?: string;
@@ -84,10 +92,20 @@ interface ExistingRow {
   source_order: string | number;
   source_key: string | null;
   payload: Partial<SheetRowValues> & {
-    /** Legacy aliases read only so an existing row converges to the six-column contract. */
+    /** Legacy aliases read only so an existing row converges to the current CRM contract. */
     email?: string;
     curso_interes?: string;
   };
+}
+
+function amountLabelForPlan(plan: string | undefined): string {
+  if (!isPaymentPlanCode(plan)) return '';
+  const presentation = PAYMENT_PLAN_PRESENTATIONS[plan];
+  return `${presentation.currency} ${presentation.installment_amount}`;
+}
+
+function nonEmpty(value: string | undefined): string | undefined {
+  return value?.trim() ? value : undefined;
 }
 
 function backoffSeconds(attemptCount: number): number {
@@ -141,7 +159,7 @@ export function agentBLeadProjectionSourceOrder(callSourceOrder: number): number
 /**
  * Idempotent upsert of the single outbox row for one lead.
  *
- * The persisted payload is deliberately the six visible A:F values only.
+ * The persisted payload is deliberately the eight visible A:H values only.
  * Optional canonical input values merge with the existing row so a later
  * correction updates the same row without erasing another captured value.
  *
@@ -188,13 +206,20 @@ async function enqueueLeadProjectionInTransaction(
     const values: SheetRowValues = {
       nombre: input.nombre ?? existing?.payload.nombre ?? '',
       apellido: input.apellido ?? existing?.payload.apellido ?? '',
-      mail: input.email ?? existing?.payload.mail ?? existing?.payload.email ?? '',
       telefono: input.telefono ?? existing?.payload.telefono ?? '',
+      mail: input.email ?? existing?.payload.mail ?? existing?.payload.email ?? '',
       tipo_de_curso: input.cursoInteres
         ?? existing?.payload.tipo_de_curso
         ?? existing?.payload.curso_interes
         ?? '',
       plan: input.plan ?? existing?.payload.plan ?? '',
+      monto: nonEmpty(input.monto)
+        ?? (input.plan ? amountLabelForPlan(input.plan) : undefined)
+        ?? nonEmpty(existing?.payload.monto)
+        ?? amountLabelForPlan(existing?.payload.plan),
+      pago: input.pagoVerificado === true
+        ? 'Sí'
+        : existing?.payload.pago ?? 'No',
     };
     if (!hasStableLeadIdentity(values)) return null;
     const payloadHash = sha256Hex(values);
@@ -302,6 +327,11 @@ export interface InboundLeadProjectionInput {
 
 export interface CommittedLeadStateProjectionInput {
   messageId: string;
+  traceId: string;
+}
+
+export interface VerifiedPaymentProjectionInput {
+  paymentId: string;
   traceId: string;
 }
 
@@ -463,6 +493,131 @@ export async function upsertCommittedLeadStateProjection(
   }
 }
 
+/**
+ * Projects a provider-verified payment onto the lead's existing stable row.
+ * This is intentionally separate from conversational ordering: a Stripe
+ * confirmation owns only `monto` and `pago` and must not erase newer identity
+ * or sales data captured by either agent.
+ */
+export async function upsertVerifiedPaymentProjection(
+  input: VerifiedPaymentProjectionInput,
+  deps: {
+    sql?: DbClient;
+    loadSheetsConfig?: typeof loadSheetsProjectionConfig;
+  } = {},
+): Promise<'created_or_updated' | 'skipped'> {
+  const db = deps.sql ?? orchestratorSql;
+  try {
+    const sheets = (deps.loadSheetsConfig ?? loadSheetsProjectionConfig)();
+    if (!sheets) return 'skipped';
+    const rows = await db<Array<{
+      workspace_id: string;
+      contact_id: string;
+      phone: string;
+      declared_phone: string | null;
+      name: string | null;
+      email: string | null;
+      offering_name: string;
+      plan_code: string | null;
+      amount: string;
+      currency: string;
+      status: string;
+    }>>`
+      SELECT
+        payment.workspace_id,
+        payment.contact_id,
+        contact.phone,
+        contact.declared_phone,
+        contact.name,
+        contact.email,
+        offering.display_name AS offering_name,
+        payment.plan_code,
+        payment.amount::text AS amount,
+        payment.currency,
+        payment.status
+      FROM payments AS payment
+      JOIN contacts AS contact ON contact.id = payment.contact_id
+      JOIN offerings AS offering ON offering.id = payment.offering_id
+      WHERE payment.id = ${input.paymentId}::uuid
+      LIMIT 1
+    `;
+    const payment = rows[0];
+    if (!payment || payment.status !== 'paid') return 'skipped';
+    const identity = payment.name ? splitFullName(payment.name) : null;
+    const projectionKey = leadProjectionKey(payment.workspace_id, payment.contact_id);
+
+    const applyVerifiedPayment = async (tx: postgres.TransactionSql) => {
+      const existingRows = await tx<ExistingRow[]>`
+        SELECT id, row_number, source_order, source_key, payload
+        FROM sheet_projection_rows
+        WHERE projection_key = ${projectionKey}
+        FOR UPDATE
+      `;
+      const existing = existingRows[0];
+      const monto = `${payment.currency.toUpperCase()} ${Number(payment.amount).toFixed(2)}`;
+      if (!existing) {
+        await enqueueLeadProjectionInTransaction({
+          workspaceId: payment.workspace_id,
+          contactId: payment.contact_id,
+          spreadsheetId: sheets.spreadsheetId,
+          tabName: sheets.tabName,
+          telefono: payment.declared_phone ?? payment.phone,
+          nombre: identity?.nombre,
+          apellido: identity?.apellido,
+          email: payment.email ?? undefined,
+          cursoInteres: payment.offering_name,
+          plan: payment.plan_code ?? 'Prueba Stripe',
+          monto,
+          pagoVerificado: true,
+          ultimaSenal: 'stripe_payment_verified',
+          traceId: input.traceId,
+        }, tx);
+        return;
+      }
+
+      const values: SheetRowValues = {
+        nombre: existing.payload.nombre ?? identity?.nombre ?? '',
+        apellido: existing.payload.apellido ?? identity?.apellido ?? '',
+        telefono: existing.payload.telefono ?? payment.declared_phone ?? payment.phone,
+        mail: existing.payload.mail ?? existing.payload.email ?? payment.email ?? '',
+        tipo_de_curso: existing.payload.tipo_de_curso
+          ?? existing.payload.curso_interes
+          ?? payment.offering_name,
+        plan: existing.payload.plan ?? payment.plan_code ?? 'Prueba Stripe',
+        monto,
+        pago: 'Sí',
+      };
+      await tx`
+        UPDATE sheet_projection_rows
+        SET payload = ${jsonbParam(tx, values)},
+            payload_hash = ${sha256Hex(values)},
+            state = 'pending',
+            available_at = now(),
+            attempt_count = 0,
+            lease_until = NULL,
+            leased_by = NULL,
+            error_code = NULL,
+            projected_at = NULL
+        WHERE id = ${existing.id}
+      `;
+    };
+    if ('begin' in db && typeof db.begin === 'function') {
+      await db.begin((tx) => applyVerifiedPayment(tx));
+    } else {
+      await applyVerifiedPayment(db as postgres.TransactionSql);
+    }
+    return 'created_or_updated';
+  } catch (error) {
+    logger.warn({
+      event: 'projection.verified_payment_upsert_failed',
+      trace_id: input.traceId,
+      payment_id: input.paymentId,
+      error: String(error).slice(0, 500),
+    });
+    return 'skipped';
+  }
+}
+
 export interface FlushSheetProjectionsInput {
   worker_id: string;
   limit?: number;
@@ -501,6 +656,49 @@ export interface FlushSheetProjectionsDeps {
   provider?: SheetsProvider;
 }
 
+/** Requeues old six-column rows in place; row_number and lead identity stay unchanged. */
+async function requeueLegacyLeadRows(sql: DbClient, limit: number): Promise<number> {
+  const legacy = await sql<Array<{ id: string; payload: ExistingRow['payload'] }>>`
+    SELECT id, payload
+    FROM sheet_projection_rows
+    WHERE projection_type = 'lead'
+      AND state <> 'leased'
+      AND (NOT (payload ? 'monto') OR NOT (payload ? 'pago'))
+    ORDER BY row_number
+    LIMIT ${limit}
+  `;
+  let requeued = 0;
+  for (const row of legacy) {
+    const values: SheetRowValues = {
+      nombre: row.payload.nombre ?? '',
+      apellido: row.payload.apellido ?? '',
+      telefono: row.payload.telefono ?? '',
+      mail: row.payload.mail ?? row.payload.email ?? '',
+      tipo_de_curso: row.payload.tipo_de_curso ?? row.payload.curso_interes ?? '',
+      plan: row.payload.plan ?? '',
+      monto: nonEmpty(row.payload.monto) ?? amountLabelForPlan(row.payload.plan),
+      pago: row.payload.pago ?? 'No',
+    };
+    const updated = await sql<Array<{ id: string }>>`
+      UPDATE sheet_projection_rows
+      SET payload = ${jsonbParam(sql, values)},
+          payload_hash = ${sha256Hex(values)},
+          state = 'pending',
+          available_at = now(),
+          attempt_count = 0,
+          lease_until = NULL,
+          leased_by = NULL,
+          error_code = NULL,
+          projected_at = NULL
+      WHERE id = ${row.id}
+        AND state <> 'leased'
+      RETURNING id
+    `;
+    requeued += updated.length;
+  }
+  return requeued;
+}
+
 /**
  * Leased worker that drains `sheet_projection_rows` (claim_sheet_projection_rows,
  * SKIP LOCKED) and performs the single `values.update` write per row. A
@@ -520,6 +718,11 @@ export async function flushSheetProjections(
   const limit = Math.min(Math.max(input.limit ?? MAX_BATCH_SIZE, 1), MAX_BATCH_SIZE);
   const leaseSeconds = Math.min(Math.max(input.lease_seconds ?? DEFAULT_LEASE_SECONDS, 20), 300);
   const deadline = new WorkerDeadline(input.deadline_ms ?? DEFAULT_DEADLINE_MS);
+
+  // Upgrade legacy rows lazily through the existing durable worker. No Sheet
+  // append, new row or database migration is needed, so deployments remain
+  // reversible and existing leads retain their exact row identity.
+  await requeueLegacyLeadRows(sql, limit);
 
   let claimed = 0;
   let completed = 0;

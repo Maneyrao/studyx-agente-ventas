@@ -14,11 +14,24 @@
 export const SHEET_COLUMN_ORDER = [
   'nombre',
   'apellido',
-  'mail',
   'telefono',
+  'mail',
   'tipo_de_curso',
   'plan',
+  'monto',
+  'pago',
 ] as const;
+
+export const SHEET_COLUMN_LABELS: Readonly<Record<SheetColumn, string>> = {
+  nombre: 'Nombre',
+  apellido: 'Apellido',
+  telefono: 'Teléfono',
+  mail: 'Mail',
+  tipo_de_curso: 'Curso',
+  plan: 'Plan de pago',
+  monto: 'Monto',
+  pago: 'Pago',
+};
 
 export type SheetColumn = (typeof SHEET_COLUMN_ORDER)[number];
 

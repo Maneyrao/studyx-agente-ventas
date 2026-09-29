@@ -4,7 +4,12 @@ import {
   isSandboxSheetWriteAllowlisted,
   type SandboxLookup,
 } from '@/lib/services/sandbox.service';
-import { SHEET_COLUMN_ORDER, type SheetsProvider, type UpdateRowParams } from './sheets-provider';
+import {
+  SHEET_COLUMN_LABELS,
+  SHEET_COLUMN_ORDER,
+  type SheetsProvider,
+  type UpdateRowParams,
+} from './sheets-provider';
 
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 
@@ -42,6 +47,10 @@ function columnLetter(zeroBasedIndex: number): string {
 
 const LAST_COLUMN = columnLetter(SHEET_COLUMN_ORDER.length - 1);
 
+function quotedTabName(tabName: string): string {
+  return `'${tabName.replaceAll("'", "''")}'`;
+}
+
 export interface GoogleSheetsProviderDeps {
   findSandboxProvider: SandboxLookup['findSandboxProvider'];
 }
@@ -56,6 +65,7 @@ export interface GoogleSheetsProviderDeps {
 export class GoogleSheetsProvider implements SheetsProvider {
   private readonly findSandboxProvider: GoogleSheetsProviderDeps['findSandboxProvider'];
   private client: ReturnType<typeof google.sheets> | null = null;
+  private readonly preparedTabs = new Set<string>();
 
   constructor(deps: GoogleSheetsProviderDeps) {
     this.findSandboxProvider = deps.findSandboxProvider;
@@ -73,10 +83,62 @@ export class GoogleSheetsProvider implements SheetsProvider {
       this.client = google.sheets({ version: 'v4', auth: buildAuth() as never });
     }
 
+    const preparedKey = `${params.spreadsheetId}:${params.tabName}`;
+    if (!this.preparedTabs.has(preparedKey)) {
+      const spreadsheet = await this.client.spreadsheets.get({
+        spreadsheetId: params.spreadsheetId,
+        fields: 'sheets(properties(sheetId,title))',
+      });
+      const sheet = spreadsheet.data.sheets?.find((candidate) => candidate.properties?.title === params.tabName);
+      const sheetId = sheet?.properties?.sheetId;
+      if (sheetId === undefined || sheetId === null) throw new Error('SHEETS_TAB_NOT_FOUND');
+
+      await this.client.spreadsheets.values.update({
+        spreadsheetId: params.spreadsheetId,
+        range: `${quotedTabName(params.tabName)}!A1:${LAST_COLUMN}1`,
+        valueInputOption: 'RAW',
+        requestBody: {
+          values: [SHEET_COLUMN_ORDER.map((column) => SHEET_COLUMN_LABELS[column])],
+        },
+      });
+      await this.client.spreadsheets.batchUpdate({
+        spreadsheetId: params.spreadsheetId,
+        requestBody: {
+          requests: [
+            {
+              updateSheetProperties: {
+                properties: { sheetId, gridProperties: { frozenRowCount: 1 } },
+                fields: 'gridProperties.frozenRowCount',
+              },
+            },
+            {
+              repeatCell: {
+                range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: SHEET_COLUMN_ORDER.length },
+                cell: {
+                  userEnteredFormat: {
+                    backgroundColor: { red: 0.12, green: 0.29, blue: 0.47 },
+                    textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } },
+                    horizontalAlignment: 'CENTER',
+                  },
+                },
+                fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+              },
+            },
+            {
+              autoResizeDimensions: {
+                dimensions: { sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: SHEET_COLUMN_ORDER.length },
+              },
+            },
+          ],
+        },
+      });
+      this.preparedTabs.add(preparedKey);
+    }
+
     const row = SHEET_COLUMN_ORDER.map((column) => params.values[column] ?? '');
     await this.client.spreadsheets.values.update({
       spreadsheetId: params.spreadsheetId,
-      range: `${params.tabName}!A${params.rowNumber}:${LAST_COLUMN}${params.rowNumber}`,
+      range: `${quotedTabName(params.tabName)}!A${params.rowNumber}:${LAST_COLUMN}${params.rowNumber}`,
       valueInputOption: 'RAW',
       requestBody: { values: [row] },
     });

@@ -6,7 +6,10 @@ import { reservePayment } from '@/features/payments/application/reserve-payment'
 import { createCheckout } from '@/features/payments/application/create-checkout';
 import { FakePaymentProvider } from '@/features/payments/adapters/fake-payment-provider';
 import { processStripeWebhook } from '@/features/payments/application/process-stripe-webhook';
-import { reservePaymentLink } from '@/features/payments/application/reserve-payment-link';
+import {
+  reservePaymentLink,
+  reserveStripeVerificationLink,
+} from '@/features/payments/application/reserve-payment-link';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
@@ -153,6 +156,42 @@ run('stripe payment webhook', () => {
     expect(result).toMatchObject({ status: 200, body: { outcome: 'applied', status: 'paid' } });
     expect(await paymentStatus(reserved.payment_id)).toBe('paid');
     expect(await fulfillmentCount(reserved.payment_id)).toBe(1);
+  });
+
+  it('correlates the operator-only USD 0.50 verification link without exposing a public plan', async () => {
+    const fixture = await paymentFixture();
+    const contact = await db!<Array<{ contact_id: string }>>`
+      SELECT contact_id FROM payments WHERE id = ${fixture.paymentId}::uuid
+    `;
+    const reserved = await reserveStripeVerificationLink(db!, {
+      workspace_id: fixture.workspaceId,
+      contact_id: contact[0].contact_id,
+      offering_id: fixture.offeringId,
+      idempotency_key: `stripe-verification:${randomUUID()}`,
+      payment_link_url: 'https://buy.stripe.com/internal-verification',
+    });
+    const payload = sessionEvent({
+      type: 'checkout.session.completed',
+      sessionId: `cs_verification_${randomUUID().slice(0, 8)}`,
+      paymentId: reserved.payment_id,
+      workspaceId: fixture.workspaceId,
+      offeringId: fixture.offeringId,
+      amountTotalCents: 50,
+      currency: 'usd',
+      useClientReference: true,
+      mode: 'payment',
+    });
+
+    const result = await deliver(payload, signed(payload));
+    expect(result).toMatchObject({
+      status: 200,
+      body: { outcome: 'applied', status: 'paid' },
+      verifiedPaymentId: reserved.payment_id,
+    });
+    const row = await db!<Array<{ plan_code: string | null; amount: string }>>`
+      SELECT plan_code, amount::text AS amount FROM payments WHERE id = ${reserved.payment_id}::uuid
+    `;
+    expect(row).toEqual([{ plan_code: null, amount: '0.50' }]);
   });
 
   it('rejects a missing or invalid signature without touching the ledger', async () => {

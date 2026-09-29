@@ -19,6 +19,7 @@ const {
   flushSheetProjections,
   leadProjectionKey,
   upsertInboundLeadProjection,
+  upsertVerifiedPaymentProjection,
 } = await import('@/lib/services/projection.service');
 type LeadProjectionInput = Parameters<typeof enqueueLeadProjection>[0];
 const { FakeSheetsProvider } = await import('@/lib/providers/sheets/fake-sheets-provider');
@@ -156,7 +157,7 @@ run('sheet projection idempotency', () => {
     await expect(outboxRowsFor(spreadsheetId, TAB_NAME)).resolves.toHaveLength(1);
   });
 
-  it('stores the six operator fields in the exact Sheets order', async () => {
+  it('stores the eight operator fields in the exact Sheets order', async () => {
     const workspaceId = await workspaceFixture();
     const spreadsheetId = randomUUID();
     const contactId = await contactFixture();
@@ -180,6 +181,8 @@ run('sheet projection idempotency', () => {
       telefono: '+5491100000000',
       tipo_de_curso: 'programacion',
       plan: 'monthly_12',
+      monto: 'USD 30.00',
+      pago: 'No',
     });
   });
 
@@ -222,6 +225,8 @@ run('sheet projection idempotency', () => {
       telefono: '+5491122222222',
       tipo_de_curso: 'Redes Informáticas',
       plan: 'monthly_12',
+      monto: 'USD 30.00',
+      pago: 'No',
     });
   });
 
@@ -294,6 +299,8 @@ run('sheet projection idempotency', () => {
       telefono: '+5491100000000',
       tipo_de_curso: 'matematicas',
       plan: 'monthly_12',
+      monto: 'USD 30.00',
+      pago: 'No',
     });
   });
 
@@ -364,6 +371,8 @@ run('sheet projection idempotency', () => {
         telefono: '+5491100000000',
         tipo_de_curso: 'reparacion-celulares',
         plan: 'monthly_12',
+        monto: 'USD 30.00',
+        pago: 'No',
       },
     }]);
   });
@@ -472,7 +481,7 @@ run('sheet projection idempotency', () => {
     )).resolves.toMatchObject({ completed: 1, failed: 0 });
   });
 
-  it('projects nombre, apellido, mail, telefono, tipo_de_curso and plan into A:F order', async () => {
+  it('projects the compact CRM row into A:H order with an explicit unpaid default', async () => {
     // Isolate this flush from any pending row another test in this file left
     // behind (claim_sheet_projection_rows claims globally, not per-spreadsheet).
     await drainPending();
@@ -498,13 +507,63 @@ run('sheet projection idempotency', () => {
     expect(written).toBeDefined();
 
     expect(SHEET_COLUMN_ORDER).toEqual([
-      'nombre', 'apellido', 'mail', 'telefono', 'tipo_de_curso', 'plan',
+      'nombre', 'apellido', 'telefono', 'mail', 'tipo_de_curso', 'plan', 'monto', 'pago',
     ]);
 
     const rowArray = SHEET_COLUMN_ORDER.map((column) => written!.values[column]);
     expect(rowArray).toEqual([
-      'Ada', 'Lovelace', 'ada@example.com', '+5491100000000', 'reparacion-celulares', 'monthly_12',
+      'Ada', 'Lovelace', '+5491100000000', 'ada@example.com',
+      'reparacion-celulares', 'monthly_12', 'USD 30.00', 'No',
     ]);
+  });
+
+  it('marks the same stable row paid only from a provider-verified payment', async () => {
+    const workspaceId = await workspaceFixture();
+    const spreadsheetId = randomUUID();
+    const contactId = await contactFixture();
+    await db!`
+      UPDATE contacts
+      SET name = 'Ada Lovelace', email = 'ada@example.com'
+      WHERE id = ${contactId}::uuid
+    `;
+    const offering = await db!<Array<{ id: string }>>`
+      INSERT INTO offerings (
+        workspace_id, code, display_name, offering_type, status, description,
+        price_type, price_amount, currency, billing_interval
+      ) VALUES (
+        ${workspaceId}::uuid, ${`course-${randomUUID().slice(0, 8)}`},
+        'Community Manager', 'course', 'active', 'desc', 'fixed', 360, 'USD', 'one_time'
+      ) RETURNING id
+    `;
+    const paymentId = randomUUID();
+    await db!`
+      INSERT INTO payments (
+        id, workspace_id, contact_id, offering_id, amount, currency, status,
+        provider, environment, checkout_mode, idempotency_key, plan_code, paid_at
+      ) VALUES (
+        ${paymentId}::uuid, ${workspaceId}::uuid, ${contactId}::uuid,
+        ${offering[0].id}::uuid, 30, 'USD', 'paid', 'stripe', 'live',
+        'subscription', ${`verified:${paymentId}`}, 'monthly_12', now()
+      )
+    `;
+    await enqueueLeadProjection(leadInput(workspaceId, contactId, spreadsheetId), { sql: db! });
+
+    expect(await upsertVerifiedPaymentProjection(
+      { paymentId, traceId: randomUUID() },
+      {
+        sql: db!,
+        loadSheetsConfig: () => ({
+          clientEmail: 'test@example.com', privateKey: 'test-key', spreadsheetId, tabName: TAB_NAME,
+        }),
+      },
+    )).toBe('created_or_updated');
+
+    const rows = await outboxRowsFor(spreadsheetId, TAB_NAME);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].payload).toMatchObject({
+      nombre: 'Ada', apellido: 'Lovelace', plan: 'monthly_12',
+      monto: 'USD 30.00', pago: 'Sí',
+    });
   });
 
   it('mixed events (replays plus a later identity-less payment update) stay on one row and never erase a previously projected identity', async () => {
@@ -544,8 +603,10 @@ run('sheet projection idempotency', () => {
     expect(rows[0].payload.apellido).toBe('Lovelace');
     expect(rows[0].payload.mail).toBe('ada@example.com');
     expect(rows[0].payload.tipo_de_curso).toBe('reparacion-celulares');
+    expect(rows[0].payload.monto).toBe('USD 30.00');
+    expect(rows[0].payload.pago).toBe('No');
     expect(Object.keys(rows[0].payload).sort()).toEqual([
-      'apellido', 'mail', 'nombre', 'plan', 'telefono', 'tipo_de_curso',
+      'apellido', 'mail', 'monto', 'nombre', 'pago', 'plan', 'telefono', 'tipo_de_curso',
     ]);
 
     const provider = new FakeSheetsProvider();

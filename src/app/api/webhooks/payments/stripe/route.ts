@@ -1,8 +1,11 @@
 import Stripe from 'stripe';
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
+import { randomUUID } from 'node:crypto';
 import { sql } from '@/lib/db/orchestrator';
 import { loadStripeWebhookConfig } from '@/lib/config';
 import { processStripeWebhook } from '@/features/payments/application/process-stripe-webhook';
+import { upsertVerifiedPaymentProjection } from '@/lib/services/projection.service';
+import { flushSheetProjectionsAfterMutation } from '@/lib/services/sheet-projection-trigger';
 
 /**
  * POST /api/webhooks/payments/stripe
@@ -32,5 +35,13 @@ export async function POST(request: NextRequest) {
       webhookSecret: config.webhookSecret,
     }
   );
+  if (result.verifiedPaymentId) {
+    const traceId = randomUUID();
+    const paymentId = result.verifiedPaymentId;
+    after(async () => {
+      await upsertVerifiedPaymentProjection({ paymentId, traceId });
+      await flushSheetProjectionsAfterMutation({ traceId, source: 'payment' });
+    });
+  }
   return NextResponse.json(result.body, { status: result.status });
 }

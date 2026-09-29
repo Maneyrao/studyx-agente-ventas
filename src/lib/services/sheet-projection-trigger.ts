@@ -9,7 +9,7 @@ type ProjectionFlusher = typeof import('./projection.service').flushSheetProject
  */
 export async function flushSheetProjectionsAfterMutation(input: {
   traceId: string;
-  source: 'ingest' | 'decision' | 'delivery';
+  source: 'ingest' | 'decision' | 'delivery' | 'payment';
 }, deps: {
   flush?: ProjectionFlusher;
 } = {}): Promise<void> {

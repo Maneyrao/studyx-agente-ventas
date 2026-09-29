@@ -71,6 +71,9 @@ const UNAUTHENTICATED_PATHS = new Set([
   // The handler verifies Stripe-Signature against the raw body. Stripe
   // cannot provide the orchestrator key either.
   '/api/webhooks/payments/stripe',
+  // Operator-only Stripe smoke route authenticates with its own ephemeral
+  // bearer secret and is never reachable from either conversational agent.
+  '/api/diagnostics/stripe-verification',
 ]);
 
 export async function proxy(request: NextRequest) {

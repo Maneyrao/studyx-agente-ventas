@@ -44,6 +44,8 @@ export interface StripeWebhookDeps {
 export interface StripeWebhookResult {
   status: number;
   body: Record<string, unknown>;
+  /** Internal correlation only; the HTTP route never returns it to Stripe. */
+  verifiedPaymentId?: string;
 }
 
 const HANDLED_EVENTS = new Set([
@@ -202,5 +204,9 @@ export async function processStripeWebhook(
     },
   });
 
-  return { status: 200, body: { outcome: recorded.outcome, status: recorded.status } };
+  return {
+    status: 200,
+    body: { outcome: recorded.outcome, status: recorded.status },
+    verifiedPaymentId: recorded.status === 'paid' ? payment.id : undefined,
+  };
 }
