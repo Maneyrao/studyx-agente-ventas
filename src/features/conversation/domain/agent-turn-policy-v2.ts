@@ -434,15 +434,13 @@ export function authorizeAgentTurnV2(input: {
     callOfferStatus = 'accepted';
     awaitingReply = 'none';
     stage = 'handoff';
-  } else if (
-    callRequestSupported
-    && !input.call_policy.may_request_call_now
-  ) {
-    // The customer already chose the call. Persist that choice while the
-    // assistant requests the missing callable number, so the next turn can
-    // resume instead of forcing the customer to ask twice.
+  } else if (callRequestSupported) {
+    // The customer chose the call, but dispatch always waits for a later
+    // availability confirmation. Persist the prepared call while the agent
+    // asks for that confirmation or for a missing callable number.
     callPreference = 'call';
     callOfferStatus = 'accepted';
+    awaitingReply = 'call_or_chat';
   }
   if (action.type === 'send_payment_link') {
     nextOffering = action.offering_code;

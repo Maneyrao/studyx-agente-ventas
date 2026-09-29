@@ -1101,6 +1101,8 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
         telefono: contactIdentity.phone,
         tipo_de_curso: 'Python',
         plan: '',
+        monto: '',
+        pago: 'No',
       },
     }]);
     await expect(sql<Array<{ count: string }>>`

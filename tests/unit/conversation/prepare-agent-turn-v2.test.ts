@@ -443,7 +443,61 @@ describe('prepareAgentTurnV2', () => {
     });
   });
 
-  it('authorizes a retry requested against the delivered post-call recovery prompt', async () => {
+  it('prepares a direct call request and waits for a later availability confirmation', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Llamame'],
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 0.98,
+        },
+        response: { messages: ['Dale. ¿Puedes atender si te llamamos ahora?'] },
+      }),
+    }, {
+      state_store: store(state()),
+      contact_intake: completeIntake,
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.decision.business_action).toBeNull();
+    expect(prepared.transition).toMatchObject({
+      call_preference: 'call',
+      call_offer_status: 'accepted',
+      awaiting_reply: 'call_or_chat',
+    });
+  });
+
+  it('dispatches only after a later reply confirms availability', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Sí'],
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 0.98,
+        },
+        response: { messages: ['Dale, te llamamos ahora.'] },
+        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+      }),
+    }, {
+      state_store: store(state({
+        call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat',
+      })),
+      contact_intake: completeIntake,
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.decision.business_action).toEqual({
+      type: 'request_call_now',
+      reason: 'direct_request',
+    });
+    expect(prepared.transition).toMatchObject({
+      call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'none', stage: 'handoff',
+    });
+  });
+
+  it('prepares a retry and asks availability before dispatching again', async () => {
     const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
       workspace_slug: 'studyx', business_context: business, catalog_index: index,
@@ -452,8 +506,7 @@ describe('prepareAgentTurnV2', () => {
         move: {
           schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 0.98,
         },
-        response: { messages: ['Claro, volvemos a intentar la llamada ahora.'] },
-        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+        response: { messages: ['Claro. ¿Puedes atender si te llamamos ahora?'] },
       }),
     }, {
       state_store: store(state()),
@@ -479,9 +532,9 @@ describe('prepareAgentTurnV2', () => {
       now: () => Date.parse(index.as_of),
     });
 
-    expect(prepared.decision.business_action).toEqual({
-      type: 'request_call_now',
-      reason: 'direct_request',
+    expect(prepared.decision.business_action).toBeNull();
+    expect(prepared.transition).toMatchObject({
+      call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat',
     });
   });
 

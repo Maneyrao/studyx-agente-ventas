@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const PROMPT_PATH = 'docs/prompts/studyx-agent-a-canonical.md';
 const GENERATED_PATH = 'botpress-agent/src/prompts/studyx-agent-a-canonical.generated.ts';
-const EXPECTED_SHA256 = 'db2e3bc6e02d3eccad4d81c8b5495c5d49a5a9bfcaea99b4f3a1ecb6f702a292';
+const EXPECTED_SHA256 = '5ea1ead1c000c5c0808414121978cb3f4e76dbdfa3d5ab5d07fd64203c2ac9a1';
 
 describe('Agent A canonical sales prompt', () => {
   it('ships the complete approved prompt and a byte-equivalent generated module', () => {
@@ -16,7 +16,7 @@ describe('Agent A canonical sales prompt', () => {
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v53' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v54' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
@@ -53,6 +53,16 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toMatch(/nombre[\s\S]*primer intercambio[\s\S]*sin bloquear/iu);
     expect(prompt).toMatch(/ofrece la primera[\s\S]*segunda intervenci[oó]n elegible/iu);
     expect(prompt).toMatch(/redacta ambas para el contexto[\s\S]*sin frases fijas/iu);
+  });
+
+  it('asks availability on one turn and dispatches only after the following confirmation', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+
+    expect(prompt).toMatch(/aceptar o pedir una llamada[\s\S]*proposed_action=none/iu);
+    expect(prompt).toMatch(/puede atender ahora/iu);
+    expect(prompt).toMatch(/respuesta posterior[\s\S]*request_call_now/iu);
+    expect(prompt).toMatch(/si no puede[\s\S]*sigue por chat/iu);
+    expect(prompt).toMatch(/pedido posterior[\s\S]*repite esta confirmaci[oó]n/iu);
   });
 
 });

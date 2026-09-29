@@ -3,7 +3,6 @@ import type { DecisionV4 } from '@/features/orchestration/domain/decision-v4';
 import type { ProtectedFactRef } from '@/features/orchestration/domain/egress-guard';
 import { materializeCanonicalCatalogFacts } from '@/features/orchestration/domain/canonical-offering-egress';
 import type { OrchestrationStore } from '@/features/orchestration/ports/orchestration-store';
-import { evaluateCallOfferPolicy } from '@/features/orchestration/domain/call-offer-policy';
 import { classifyBatchSalesSignal } from '@/features/orchestration/domain/sales-signal';
 import { loadConversationSessionConfig } from '@/lib/config';
 import { isCallablePhoneE164V1 } from '@/lib/heuristics/contact-identity';
@@ -172,20 +171,12 @@ export async function prepareAgentTurnV2(input: {
     }),
   );
   const noActiveCall = callFacts?.active_call == null;
-  const callAuthorization = evaluateCallOfferPolicy({
-    now: new Date(nowMs).toISOString(),
-    signal: classifyBatchSalesSignal(input.current_customer_messages ?? []),
-    openOffer: callFacts?.open_offer
-      ? { decisionId: callFacts.open_offer.decision_id, offeredAt: callFacts.open_offer.offered_at }
-      : null,
-    openRetry: callFacts?.open_retry_prompt
-      ? { callId: callFacts.open_retry_prompt.call_id, offeredAt: callFacts.open_retry_prompt.offered_at }
-      : null,
-    lastDeclineAt: callFacts?.last_decline_at ?? null,
-    optedOut: false,
-    blocked: false,
-    activeCall: !noActiveCall,
-  });
+  const salesSignal = classifyBatchSalesSignal(input.current_customer_messages ?? []);
+  const awaitingCallAvailability = state.call_preference === 'call'
+    && state.call_offer_status === 'accepted'
+    && state.awaiting_reply === 'call_or_chat';
+  const availabilityConfirmed = salesSignal.type === 'call_acceptance'
+    || salesSignal.type === 'direct_call_request';
   const authority = authorizeAgentTurnV2({
     proposal: input.proposal,
     state,
@@ -198,9 +189,11 @@ export async function prepareAgentTurnV2(input: {
       // conversation. The per-turn authority below still blocks an immediate
       // repeat; the durable counter keeps the lifetime ceiling at two.
       may_offer_call: noActiveCall,
-      // A direct customer request remains valid after an earlier decline.
+      // Accepting or requesting a call only prepares it. Dispatch requires a
+      // later turn that confirms availability against that durable state.
       may_request_call_now: noActiveCall
-        && callAuthorization.allowedActions.includes('request_call_now')
+        && awaitingCallAvailability
+        && availabilityConfirmed
         && isCallablePhoneE164V1(contactIntake?.telefono ?? ''),
     },
   });
