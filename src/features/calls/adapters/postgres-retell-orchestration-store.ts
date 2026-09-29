@@ -23,6 +23,7 @@ import {
 } from '@/features/payments/application/reserve-payment-link';
 import type { RetellOrchestrationStore } from '../application/retell-tools';
 import type { RetellPaymentPlanRequest } from '../application/retell-tools';
+import { logger } from '@/lib/observability/structured-log';
 
 export type RetellOutboundSender = (
   input: Parameters<typeof sendOutboundMessage>[0],
@@ -200,6 +201,17 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
       }),
       idempotencyKey: `agent-a:retell-payment-link:${input.callId}`,
       purpose: 'transactional',
+    });
+    logger.info({
+      event: 'retell.payment_link.outcome',
+      call_id: input.callId,
+      lead_id: input.contactId,
+      conversation_id: input.conversationId,
+      channel: sent.channel,
+      delivery_id: sent.deliveryId,
+      provider_message_id: sent.providerMessageId,
+      outcome: sent.outcome,
+      error_code: sent.reason,
     });
     if (sent.outcome !== 'sent') {
       return {

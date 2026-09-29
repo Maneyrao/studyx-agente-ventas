@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { PostgresRetellOrchestrationStore } from '@/features/calls/adapters/postgres-retell-orchestration-store';
 import { hashCallContext } from '@/features/calls/domain/call-context';
 import { openLocalTestDatabase } from '../helpers/db';
@@ -197,6 +197,66 @@ run('Retell five tools PostgreSQL adapter', () => {
       awaiting_reply: 'payment_confirmation',
     });
     expect(outbound.calls).toHaveLength(1);
+  });
+
+  it('reports a failed payment-link send without advancing commercial state or leaking content', async () => {
+    const ids = await callFixture();
+    const deliveryId = randomUUID();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      const store = new PostgresRetellOrchestrationStore(db!, {
+        paymentLinkResolver: { resolve: () => 'https://buy.stripe.com/private-test-link' },
+        sendOutbound: async () => ({
+          outcome: 'retryable',
+          channel: 'telegram',
+          providerMessageId: null,
+          deliveryId,
+          reason: 'BOTPRESS_HTTP_503',
+        }),
+      });
+
+      await expect(store.requestAgentAPaymentLink({
+        callId: ids.callId,
+        contactId: ids.contactId,
+        conversationId: ids.conversationId,
+        workspaceSlug: ids.workspaceSlug,
+        course: 'retell_course',
+        paymentPlan: 'one_time',
+      })).resolves.toEqual({
+        sent: false,
+        reference: deliveryId,
+        channel: 'telegram',
+        reason: 'BOTPRESS_HTTP_503',
+      });
+
+      await expect(db!`
+        SELECT stage, awaiting_reply
+        FROM conversation_sales_context_states_v1
+        WHERE workspace_id = ${ids.workspaceId}::uuid
+          AND conversation_id = ${ids.conversationId}::uuid
+      `).resolves.not.toEqual([
+        expect.objectContaining({ stage: 'payment_link_sent' }),
+      ]);
+
+      const records = log.mock.calls
+        .map(([line]) => typeof line === 'string' ? JSON.parse(line) as Record<string, unknown> : null)
+        .filter(Boolean);
+      expect(records).toContainEqual(expect.objectContaining({
+        event: 'retell.payment_link.outcome',
+        call_id: ids.callId,
+        lead_id: ids.contactId,
+        conversation_id: ids.conversationId,
+        channel: 'telegram',
+        delivery_id: deliveryId,
+        provider_message_id: null,
+        outcome: 'retryable',
+        error_code: 'BOTPRESS_HTTP_503',
+      }));
+      expect(JSON.stringify(records)).not.toContain('private-test-link');
+      expect(JSON.stringify(records)).not.toContain('lead@example.test');
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it('requires a durable installment selection and never infers six or twelve cuotas', async () => {
