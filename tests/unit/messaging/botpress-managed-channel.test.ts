@@ -21,6 +21,7 @@ function channel() {
 
 describe('BotpressManagedChannel', () => {
   it('submits a proactive message to the existing Botpress conversation', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       message: { id: 'bp-message-1', createdAt: '2026-09-28T00:00:00.000Z' },
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
@@ -54,6 +55,10 @@ describe('BotpressManagedChannel', () => {
         signal: expect.any(AbortSignal),
       }),
     );
+    expect(log.mock.calls.map(([line]) => line)).toContainEqual(expect.stringContaining(
+      '"counter":"botpress_managed_submissions_unreconciled"',
+    ));
+    log.mockRestore();
   });
 
   it('classifies an authorization failure as a confirmed configuration error', async () => {

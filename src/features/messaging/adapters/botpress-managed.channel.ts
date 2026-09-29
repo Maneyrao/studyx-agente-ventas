@@ -6,6 +6,7 @@ import {
   type SendTextInput,
   type SendTextResult,
 } from '../ports/message-channel';
+import { counter } from '@/lib/observability/counters';
 
 export interface BotpressManagedChannelConfig {
   readonly apiUrl: string;
@@ -99,6 +100,7 @@ export class BotpressManagedChannel implements MessageChannel {
     if (!message || typeof message.id !== 'string') {
       throw new AmbiguousChannelError('BOTPRESS_MESSAGE_ID_MISSING');
     }
+    counter.increment('botpress_managed_submissions_unreconciled');
     return {
       providerMessageId: message.id,
       acceptedAt: typeof message.createdAt === 'string'

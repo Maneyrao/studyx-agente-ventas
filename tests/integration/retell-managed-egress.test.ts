@@ -153,9 +153,22 @@ run('Retell managed egress', () => {
         AND payload->>'reason' = 'SANDBOX_LOCKED'
     `).resolves.toEqual([{ count: 0 }]);
     await expect(db!`
-      SELECT count(*)::integer AS count, max(channel) AS channel
+      SELECT
+        count(*)::integer AS count,
+        max(channel) AS channel,
+        max(provider) AS provider,
+        max(state) AS state,
+        max(provider_message_id) AS provider_message_id,
+        bool_and(delivered_at IS NULL) AS not_physically_confirmed
       FROM outbound_deliveries
       WHERE idempotency_key = ${`agent-a:retell-payment-link:${callId}`}
-    `).resolves.toEqual([{ count: 1, channel: 'telegram' }]);
+    `).resolves.toEqual([{
+      count: 1,
+      channel: 'telegram',
+      provider: 'botpress',
+      state: 'submitted',
+      provider_message_id: `bp-payment-link:${identity}`,
+      not_physically_confirmed: true,
+    }]);
   });
 });

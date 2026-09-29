@@ -63,7 +63,11 @@ type CounterName =
   | 'post_call_followup_sent'
   | 'post_call_followup_revoked'
   | 'post_call_followup_skipped'
-  | 'post_call_followup_failed';
+  | 'post_call_followup_failed'
+  // Botpress confirms creation, not physical delivery to the device. This
+  // counter makes that deliberately weaker evidence visible until callbacks
+  // are available for reconciliation.
+  | 'botpress_managed_submissions_unreconciled';
 
 // Serverless-safe counter: no in-memory state between Vercel invocations.
 // Each increment emits a structured log line — verifiable in log drains / Vercel dashboard.
