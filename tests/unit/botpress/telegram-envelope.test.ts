@@ -50,7 +50,7 @@ const baseInput = {
 };
 
 describe('buildTelegramSandboxEnvelope', () => {
-  it('emits channel=whatsapp and sandbox_provider=telegram_sandbox', () => {
+  it('emits the real Telegram channel while retaining the sandbox safety marker', () => {
     const envelope = buildTelegramSandboxEnvelope({
       ...baseInput,
       messageType: 'text',
@@ -60,7 +60,7 @@ describe('buildTelegramSandboxEnvelope', () => {
       metadata: {},
     });
 
-    expect(envelope.channel).toBe('whatsapp');
+    expect(envelope.channel).toBe('telegram');
     expect(envelope.sandbox_provider).toBe('telegram_sandbox');
     expect(envelope.source).toBe('botpress');
     expect(envelope.phone_e164).toBe('+9990012345678');

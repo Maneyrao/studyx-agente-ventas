@@ -86,7 +86,7 @@ describe('telegramChannel.toEnvelope (production payload)', () => {
     expect(result.input.external_conversation_id).toBe(`tg:chat:${PROD_TELEGRAM_USER_ID}`);
     expect(result.input.external_message_id).toBe(prodIncomingMessage.id);
     expect(result.input.integration_id).toBe('telegram');
-    expect(result.input.channel).toBe('whatsapp');
+    expect(result.input.channel).toBe('telegram');
     expect(result.input.sandbox_provider).toBe('telegram_sandbox');
     expect(result.input.message.type).toBe('text');
     expect(result.input.message.text).toBe('Hola');

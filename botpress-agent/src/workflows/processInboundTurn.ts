@@ -1775,9 +1775,9 @@ export const processInboundTurn = new Workflow({
       delivery = await step(
         'submit-outbound-to-botpress',
         () => {
-          // Telegram deliberately traverses the WhatsApp-shaped backend contract
-          // with `sandbox_provider=telegram_sandbox`. The WhatsApp production
-          // canary must never fence that sandbox egress.
+          // The WhatsApp production canary applies only to real WhatsApp. The
+          // Telegram sandbox is identified independently by its true channel
+          // and `sandbox_provider=telegram_sandbox` safety marker.
           if (input.channel === 'whatsapp' && input.sandbox_provider !== 'telegram_sandbox') {
             const canary = evaluateWhatsAppCanarySend({
               automationEnabled: configuration.automationEnabled,

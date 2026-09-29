@@ -40,7 +40,7 @@ export type TelegramAudioReference = {
 export type TelegramSandboxEnvelope = {
   schema_version: 1
   source: 'botpress'
-  channel: 'whatsapp'
+  channel: 'telegram'
   integration_id: string
   external_message_id: string
   external_conversation_id: string
@@ -110,7 +110,7 @@ export function buildTelegramSandboxEnvelope(
   return {
     schema_version: 1,
     source: 'botpress',
-    channel: 'whatsapp',
+    channel: 'telegram',
     integration_id: input.integrationId,
     external_message_id: input.externalMessageId,
     external_conversation_id: `tg:chat:${chatIdString}`,

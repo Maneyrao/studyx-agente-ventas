@@ -74,8 +74,14 @@ run('inbound channel derivation', () => {
 
   it('files a Telegram inbound as telegram, so it can be replied to there', async () => {
     const inbound = envelope({ channel: 'telegram' });
-    await processInboundMessage(inbound);
+    const accepted = await processInboundMessage(inbound);
     expect((await storedThreads(inbound.external_conversation_id)).map((row) => row.channel)).toEqual(['telegram']);
+    await expect(db!`SELECT channel FROM conversations WHERE id = ${accepted.conversation_id}::uuid`)
+      .resolves.toEqual([{ channel: 'telegram' }]);
+    await expect(db!`
+      SELECT channel FROM contact_channel_permissions
+      WHERE contact_id = ${accepted.contact.id}::uuid
+    `).resolves.toEqual([{ channel: 'telegram' }]);
   });
 
   // FR-030: the identity link is idempotent by construction, via the existing

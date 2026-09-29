@@ -3,7 +3,7 @@ import { ConversationPipelineCommitV1Schema } from './conversation-pipeline'
 import { AgentATurnCommitV2Schema } from './agent-turn-v2'
 
 export const SourceSchema = z.literal('botpress')
-export const ChannelSchema = z.enum(['emulator', 'whatsapp'])
+export const ChannelSchema = z.enum(['emulator', 'whatsapp', 'telegram'])
 export const MessageTypeSchema = z.enum(['text', 'audio', 'image', 'unsupported'])
 
 export const AudioReferenceSchema = z.object({
@@ -46,8 +46,8 @@ export const InboundEnvelopeSchema = z.object({
   message: MessageSchema,
   // When set, the backend treats this envelope as belonging to a sandbox provider
   // for idempotency (channel_events/channel_threads UNIQUE(provider, ...)) and for
-  // the real-side-effect lock. `channel` stays 'whatsapp' so the entire code path
-  // is identical to production WhatsApp — only the provider label changes.
+  // the real-side-effect lock. The transport channel remains truthful: Telegram
+  // is `telegram`; the sandbox marker controls safety independently.
   sandbox_provider: SandboxProviderSchema.nullable().default(null),
 })
 

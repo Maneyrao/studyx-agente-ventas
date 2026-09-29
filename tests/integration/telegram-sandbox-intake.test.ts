@@ -28,7 +28,7 @@ function envelope(overrides: Partial<InboundEnvelope> = {}): InboundEnvelope {
   const identity = randomUUID();
   const digits = identity.replace(/\D/g, '').slice(0, 10).padEnd(10, '7');
   return {
-    schema_version: 1, source: 'botpress', channel: 'whatsapp',
+    schema_version: 1, source: 'botpress', channel: 'telegram',
     integration_id: 'vitest-telegram-sandbox-intake',
     external_message_id: `message-${identity}`,
     external_conversation_id: `conversation-${identity}`,
@@ -53,6 +53,11 @@ run('Telegram sandbox intake boundary', () => {
       FROM sandbox_identities WHERE contact_id = ${accepted.contact.id}::uuid`;
     expect(rows).toEqual([{ provider: 'telegram_sandbox', external_user_id: first.external_user_id,
       contact_id: accepted.contact.id, synthetic_phone: first.phone_e164 }]);
+    await expect(db!`
+      SELECT channel FROM channel_threads
+      WHERE contact_id = ${accepted.contact.id}::uuid
+        AND provider = 'telegram_sandbox'
+    `).resolves.toEqual([{ channel: 'telegram' }]);
     const replay = await processInboundMessage({ ...first, trace_id: randomUUID() });
     const followUp = await processInboundMessage(nextMessage(first));
     expect(replay.status).toBe('duplicate');
