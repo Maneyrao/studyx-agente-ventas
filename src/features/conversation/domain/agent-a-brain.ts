@@ -104,6 +104,12 @@ export interface AgentAContextV1 {
       readonly fact_id: string;
       readonly label: string;
     }>;
+    readonly test_payment_options?: ReadonlyArray<{
+      readonly code: 'stripe_verification_050';
+      readonly fact_id: string;
+      readonly label: string;
+      readonly action: 'send_test_payment_link';
+    }>;
   };
   readonly capabilities: {
     readonly may_reply: boolean;

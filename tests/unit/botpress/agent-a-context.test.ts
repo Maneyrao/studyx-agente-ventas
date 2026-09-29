@@ -189,6 +189,17 @@ function claimedTurn(): ClaimedTurn {
 }
 
 describe('buildAgentAContextV1', () => {
+  it('exposes the temporary USD 0.50 checkout as an authorized non-commercial payment option', () => {
+    const context = buildAgentAContextV1(claimedTurn());
+
+    expect(context?.catalog.test_payment_options).toEqual([{
+      code: 'stripe_verification_050',
+      fact_id: 'payment-test:stripe_verification_050:label:v1',
+      label: 'Prueba temporal de pago de USD 0,50',
+      action: 'send_test_payment_link',
+    }]);
+  });
+
   it('projects a fragmented customer batch and its three reply bubbles as two complete interactions', () => {
     const claimed = claimedTurn();
     claimed.context.recent_turns = [

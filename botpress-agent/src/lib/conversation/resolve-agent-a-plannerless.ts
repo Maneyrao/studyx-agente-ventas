@@ -23,6 +23,7 @@ function authorizedFactIds(context: AgentAContextV1): string[] {
       offering.fact_id, ...(offering.facts?.map((fact) => fact.id) ?? []),
     ]),
     ...context.catalog.payment_plans.map((plan) => plan.fact_id),
+    ...(context.catalog.test_payment_options?.map((option) => option.fact_id) ?? []),
   ]
 }
 

@@ -853,6 +853,7 @@ function authorizedFactIds(context: AgentAContextV1): Set<string> {
     for (const fact of offering.facts ?? []) ids.add(fact.id);
   }
   for (const plan of context.catalog.payment_plans) ids.add(plan.fact_id);
+  for (const option of context.catalog.test_payment_options ?? []) ids.add(option.fact_id);
   return ids;
 }
 
@@ -935,6 +936,9 @@ function commercialValuesByFactId(context: AgentAContextV1): ReadonlyMap<string,
     for (const fact of offering.facts ?? []) values.set(fact.id, fact.value);
   }
   for (const plan of context.catalog.payment_plans) values.set(plan.fact_id, plan.label);
+  for (const option of context.catalog.test_payment_options ?? []) {
+    values.set(option.fact_id, option.label);
+  }
   return values;
 }
 
@@ -2004,6 +2008,7 @@ export function validateAgentATurnProposalV1(input: {
 function authorizedActionsV1(context: AgentAContextV1): string[] {
   const actions: string[] = ['none']
   if (context.capabilities.may_send_payment_link) actions.push('send_payment_link')
+  if ((context.catalog.test_payment_options?.length ?? 0) > 0) actions.push('send_test_payment_link')
   if (context.capabilities.may_request_call_now) actions.push('request_call_now')
   return actions
 }

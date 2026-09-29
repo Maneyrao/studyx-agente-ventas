@@ -108,6 +108,12 @@ export const AgentAContextV1Schema = z.object({
       fact_id: IdentifierSchema,
       label: z.string().trim().min(1).max(240),
     }).strict()).max(3),
+    test_payment_options: z.array(z.object({
+      code: z.literal('stripe_verification_050'),
+      fact_id: IdentifierSchema,
+      label: z.string().trim().min(1).max(240),
+      action: z.literal('send_test_payment_link'),
+    }).strict()).max(1).optional(),
   }).strict(),
   /**
    * Presente SÓLO en la llamada de reparación. Lleva códigos y

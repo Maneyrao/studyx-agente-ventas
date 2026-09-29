@@ -848,6 +848,14 @@ export function buildAgentAContextV1(
           fact_id: `payment:${selectedOffering.code}:${option.code}:label:v1`,
           label: option.label,
         })),
+      // Visible to the conversational owner as an authorized option, but kept
+      // outside payment_plans so it can never become the sale's selected plan.
+      test_payment_options: [{
+        code: 'stripe_verification_050',
+        fact_id: 'payment-test:stripe_verification_050:label:v1',
+        label: 'Prueba temporal de pago de USD 0,50',
+        action: 'send_test_payment_link',
+      }],
     },
     capabilities: {
       may_reply: claimed.policy.may_respond,
