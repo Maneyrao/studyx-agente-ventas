@@ -429,6 +429,8 @@ run('conversation pipeline V1 vertical', () => {
       telefono: expect.stringMatching(/^\+54911\d{8}$/u),
       tipo_de_curso: 'Redes Informáticas',
       plan: 'monthly_12',
+      monto: 'USD 30.00',
+      pago: 'No',
     });
 
     // The customer says they paid. Repeating it must not repeat the row.
@@ -447,6 +449,8 @@ run('conversation pipeline V1 vertical', () => {
       telefono: expect.stringMatching(/^\+54911\d{8}$/u),
       tipo_de_curso: 'Redes Informáticas',
       plan: 'monthly_12',
+      monto: 'USD 30.00',
+      pago: 'No',
     });
 
     const finalState = await stateStore.load(

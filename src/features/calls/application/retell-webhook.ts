@@ -125,7 +125,11 @@ async function persistLifecycleEvent(
       });
       return new Response(null, { status: 204 });
     }
-    const event = mapRetellLifecycleEvent(parsed.data, correlation.callId);
+    const event = mapRetellLifecycleEvent(
+      parsed.data,
+      correlation.callId,
+      retellCorrelationMetadata(parsed.data)?.contactId,
+    );
     if (event.event_type === 'requested') {
       throw new Error('RETELL_LIFECYCLE_REQUESTED_EVENT_INVALID');
     }

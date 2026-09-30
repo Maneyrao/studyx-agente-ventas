@@ -466,8 +466,9 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
     const event = CallEventSchema.parse(rawEvent);
     const payloadHash = eventPayloadHash(event);
     return this.db.begin(async (tx) => {
-      const locked = await tx<Array<{ id: string }>>`
-        SELECT id FROM call_sessions WHERE id = ${event.call_id}::uuid FOR UPDATE
+      const locked = await tx<Array<{ id: string; contact_id: string; conversation_id: string }>>`
+        SELECT id, contact_id, conversation_id
+        FROM call_sessions WHERE id = ${event.call_id}::uuid FOR UPDATE
       `;
       if (!locked[0]) throw new Error('CALL_NOT_FOUND');
       const inserted = await tx<Array<{ id: string }>>`
@@ -492,6 +493,26 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
         }
       }
       if (event.payload.event_type === 'analyzed') {
+        if (inserted[0] && event.payload.analysis.voice_memory_candidates?.length) {
+          for (const memory of event.payload.analysis.voice_memory_candidates) {
+            await tx`
+              SELECT outcome, memory_id, superseded_memory_id
+              FROM record_selected_voice_memory(
+                ${locked[0].contact_id}::uuid,
+                ${locked[0].conversation_id}::uuid,
+                ${inserted[0].id}::uuid,
+                ${memory.type},
+                ${memory.key},
+                ${memory.value},
+                ${memory.source_quote},
+                ${memory.confidence},
+                ${memory.dedupe_hash},
+                ${memory.ttl_days},
+                ${event.call_id}::uuid
+              )
+            `;
+          }
+        }
         const rows = await tx<Array<{
           event_id: string; event_type: CallEvent['event_type']; sequence: number;
           occurred_at: Date | string; provider: CallEvent['provider']; payload: unknown;

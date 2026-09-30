@@ -39,6 +39,7 @@ export function mergeCallAnalyses(events: readonly CallEvent[]): CallAnalysis {
     'user_sentiment', 'curso_ofrecido', 'precio_ofrecido', 'objecion_principal',
     'email_capturado', 'link_pago_enviado', 'pago_confirmado', 'pidio_humano',
     'pidio_no_contactar', 'pregunto_si_es_ia', 'compromiso_pendiente',
+    'voice_memory_candidates',
   ];
   const enrichmentOrder = [...analyzed].sort((left, right) => {
     const sourceRank = (event: CallEvent): number => {

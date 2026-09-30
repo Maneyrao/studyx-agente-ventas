@@ -911,6 +911,8 @@ run('Agent Loop preparation materialization', () => {
         telefono: expect.stringMatching(/^\+54911\d{8}$/u),
         tipo_de_curso: 'entrenamiento_funcional',
         plan: '',
+        monto: '',
+        pago: 'No',
       },
     }]);
 
@@ -1089,6 +1091,8 @@ run('Agent Loop preparation materialization', () => {
         telefono: expect.stringMatching(/^\+54911\d{8}$/u),
         tipo_de_curso: 'entrenamiento_funcional',
         plan: '',
+        monto: '',
+        pago: 'No',
       },
     }]);
   });
@@ -1146,6 +1150,8 @@ run('Agent Loop preparation materialization', () => {
         telefono: expect.stringMatching(/^\+54911\d{8}$/u),
         tipo_de_curso: 'entrenamiento_funcional',
         plan: '',
+        monto: '',
+        pago: 'No',
       },
     }]);
   });

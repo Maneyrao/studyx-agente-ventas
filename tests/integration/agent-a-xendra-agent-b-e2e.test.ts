@@ -294,6 +294,7 @@ async function bindStudyxContext(input: {
 async function createAgentACall(input: {
   readonly acceptedOffer: boolean;
   readonly selectedPaymentPlan: 'monthly_12' | null;
+  readonly seedLeadMemory?: boolean;
 }): Promise<AgentACall> {
   const identity = chatIdentity();
   const first = await processInboundMessage(inbound(
@@ -317,6 +318,25 @@ async function createAgentACall(input: {
     ));
     expect(offer.call_request).toBeNull();
     await markVisible(offer, `bp-offer-${offer.decision_id}`);
+    if (input.seedLeadMemory) {
+      await db!`
+        SELECT * FROM record_selected_memory(
+          ${first.contact.id}::uuid,
+          ${first.conversation_id}::uuid,
+          ${first.turn_id}::uuid,
+          ${first.batch.id}::uuid,
+          ${offer.decision_id}::uuid,
+          'study_goal',
+          'motivation',
+          'Aprender fotografía profesional para trabajar',
+          'Quiero saber sobre Fotografía Profesional',
+          0.95,
+          ${randomUUID().replaceAll('-', '') + randomUUID().replaceAll('-', '')},
+          NULL,
+          ${randomUUID()}::uuid
+        )
+      `;
+    }
     await completeSyntheticBatch(first.batch.id);
     const accepted = await processInboundMessage(inbound(identity, 'Sí, llamame'));
     confirmationTurnId = accepted.turn_id;
@@ -504,7 +524,11 @@ async function tool(
 
 run('Agent A → Xendra → Agent B → Agent A local smoke', () => {
   it('completes the full journey once and resumes the original Telegram conversation', async () => {
-    const call = await createAgentACall({ acceptedOffer: true, selectedPaymentPlan: 'monthly_12' });
+    const call = await createAgentACall({
+      acceptedOffer: true,
+      selectedPaymentPlan: 'monthly_12',
+      seedLeadMemory: true,
+    });
     const providerCallId = `call_xendra_${call.callId}`;
     const server = await startFakeXendraServer({ callId: providerCallId });
     try {
@@ -532,6 +556,7 @@ run('Agent A → Xendra → Agent B → Agent A local smoke', () => {
           curso_interes: 'fotografia_profesional',
           pais: 'Argentina',
           plan_code: 'monthly_12',
+          memoria_lead: '- Objetivo: Aprender fotografía profesional para trabajar',
           nombre_asesor: 'Sofía',
           numero_closer: '+5491144445555',
         },

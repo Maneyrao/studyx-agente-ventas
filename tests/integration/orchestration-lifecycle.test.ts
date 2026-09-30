@@ -85,7 +85,7 @@ afterAll(async () => {
 });
 
 run('canonical orchestration lifecycle', () => {
-  it('creates one progressive six-column lead and enriches it as facts become durable', async () => {
+  it('creates one progressive eight-column lead and enriches it as facts become durable', async () => {
     const spreadsheetId = randomUUID();
     const previousSpreadsheet = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
     const previousTab = process.env.GOOGLE_SHEETS_TAB_NAME;
@@ -106,7 +106,7 @@ run('canonical orchestration lifecycle', () => {
       expect(firstRows).toHaveLength(1);
       expect(firstRows[0].payload).toEqual({
         nombre: '', apellido: '', mail: '', telefono: firstEnvelope.phone_e164,
-        tipo_de_curso: '', plan: '',
+        tipo_de_curso: '', plan: '', monto: '', pago: 'No',
       });
 
       const enriched = await processInboundMessage({
@@ -164,6 +164,8 @@ run('canonical orchestration lifecycle', () => {
         telefono: firstEnvelope.phone_e164,
         tipo_de_curso: 'Redes Informáticas',
         plan: 'monthly_12',
+        monto: 'USD 30.00',
+        pago: 'No',
       });
       expect(first.status).toBe('accepted');
     } finally {
@@ -1593,7 +1595,7 @@ run('Fase 4 — pago y cierre de batch', () => {
   it.each([
     ['mismatched claim SKU', 'Confirmo nuevamente las 12 cuotas.', 'course_other'],
     ['current intent veto', 'Confirmo 12 cuotas, pero solo consultaba.', 'course_test'],
-  ])('revalidates %s before acknowledging a prior payment link', async (_case, text, authorizedSku) => {
+  ])('revalidates %s without authorizing a false payment fact', async (testCase, text, authorizedSku) => {
     const firstEnvelope = paymentInbound();
     const first = await processInboundMessage(firstEnvelope);
     await commitAgentDecision(paymentDecision(first.turn_id));
@@ -1614,15 +1616,26 @@ run('Fase 4 — pago y cierre de batch', () => {
       },
     });
 
-    await expect(commitAgentDecision({
+    const commit = commitAgentDecision({
       ...paymentDecision(second.turn_id),
       authorized_offering_code: authorizedSku,
-    })).rejects.toMatchObject({ code: 'DECISION_REJECTED' });
+    });
+
+    if (testCase === 'current intent veto') {
+      await expect(commit).resolves.toMatchObject({
+        status: 'committed',
+        conversation_effects: {
+          technical_fallback_reason: 'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED',
+        },
+      });
+    } else {
+      await expect(commit).rejects.toMatchObject({ code: 'DECISION_REJECTED' });
+    }
 
     const decisions = await db!<Array<{ count: number }>>`
       SELECT count(*)::integer AS count FROM agent_decisions WHERE turn_id = ${second.turn_id}::uuid
     `;
-    expect(decisions[0].count).toBe(0);
+    expect(decisions[0].count).toBe(testCase === 'current intent veto' ? 1 : 0);
   });
 
   it('does not emit the same payment link twice in one conversation', async () => {

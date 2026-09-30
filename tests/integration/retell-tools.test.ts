@@ -314,6 +314,8 @@ run('Retell P0 tools with PostgreSQL', () => {
       telefono: ids.phone,
       tipo_de_curso: 'Fotografía Profesional',
       plan: 'monthly_12',
+      monto: 'USD 30.00',
+      pago: 'No',
     } }]);
 
     const replay = await callTool(ids, 'registrar_resultado', args);
@@ -372,7 +374,7 @@ run('Retell P0 tools with PostgreSQL', () => {
     `).resolves.toEqual([{ result: 'seguimiento_agendado' }]);
   });
 
-  it('merges the correlated contact and converges one exact six-field outbox row', async () => {
+  it('merges the correlated contact and converges one exact eight-field outbox row', async () => {
     const ids = await fixture({ name: 'Ana López', email: null, sourceOrder: 4 });
     await db!`
       INSERT INTO offerings (
@@ -454,6 +456,8 @@ run('Retell P0 tools with PostgreSQL', () => {
         telefono: '+5491199999999',
         tipo_de_curso: 'Curso Posterior',
         plan: '',
+        monto: '',
+        pago: 'No',
       },
     }]);
 
@@ -943,6 +947,8 @@ run('Retell P0 tools with PostgreSQL', () => {
         telefono: expect.stringMatching(/^\+54911\d{8}$/u),
         tipo_de_curso: 'Reparación de Celulares',
         plan: '',
+        monto: '',
+        pago: 'No',
       },
     }]);
     await expect(db!<Array<{ event_type: string; payload: Record<string, unknown> }>>`
@@ -1068,6 +1074,8 @@ run('Retell P0 tools with PostgreSQL', () => {
         telefono: expect.stringMatching(/^\+54911\d{8}$/u),
         tipo_de_curso: 'Reparación de Celulares',
         plan: '',
+        monto: '',
+        pago: 'No',
       },
     }]);
   });

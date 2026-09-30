@@ -351,6 +351,60 @@ run('Retell call lifecycle persistence', () => {
     `).resolves.toEqual([{ status: 'provider_accepted', provider_call_id: providerCallId }]);
   });
 
+  it('projects grounded Agent B memories onto the original lead without retaining the transcript', async () => {
+    const providerCallId = `retell:${randomUUID()}`;
+    const ids = await fixture({ providerCallId, status: 'in_progress' });
+    const payload = wrapper('call_analyzed', providerCallId, ids);
+    payload.call.transcript = 'Agente: ¿Qué buscás? Cliente: Quiero conseguir trabajo remoto.';
+    (payload.call.call_analysis.custom_analysis_data as Record<string, unknown>).memory_candidates_json_v1 = JSON.stringify({
+      schema_version: 1,
+      candidates: [{
+        type: 'study_goal',
+        key: 'motivation',
+        value: 'conseguir trabajo remoto',
+        source_quote: 'Quiero conseguir trabajo remoto',
+        confidence: 0.94,
+      }],
+    });
+    const orchestratorSecret = 'xendra-voice-memory-secret';
+
+    const response = await handleXendraRelayedRetellWebhook(
+      new Request('http://localhost/retell/eventos', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-studyx-event': 'call_analyzed',
+          'x-studyx-orchestrator-secret': orchestratorSecret,
+        },
+        body: JSON.stringify(payload),
+      }),
+      { orchestratorSecret, calls: new PostgresCallStore(db!) },
+    );
+
+    expect(response.status).toBe(204);
+    await expect(db!<Array<{
+      memory_type: string;
+      memory_key: string;
+      value_normalized: string;
+      source_call_event_id: string;
+    }>>`
+      SELECT memory_type, memory_key, value_normalized, source_call_event_id
+      FROM selected_memories
+      WHERE contact_id = ${ids.contactId}::uuid AND status = 'active'
+    `).resolves.toEqual([{
+      memory_type: 'study_goal',
+      memory_key: 'motivation',
+      value_normalized: 'conseguir trabajo remoto',
+      source_call_event_id: expect.any(String),
+    }]);
+    const events = await db!<Array<{ payload: unknown }>>`
+      SELECT payload FROM call_events
+      WHERE call_id = ${ids.callId}::uuid AND event_type = 'analyzed'
+    `;
+    expect(JSON.stringify(events)).toContain('voice_memory_candidates');
+    expect(JSON.stringify(events)).not.toContain('¿Qué buscás?');
+  });
+
   it('rejects a cross-provider internal ID even when all metadata IDs match', async () => {
     const ids = await fixture({ provider: 'telegram_sandbox', status: 'dispatching' });
     const store = new PostgresCallStore(db!);

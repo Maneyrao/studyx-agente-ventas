@@ -7,6 +7,7 @@ import {
   type CallEvent,
 } from '@/lib/contracts/call-event';
 import type { RetellCorrelationMetadata } from '../ports/retell-call-correlation-store';
+import { parseVoiceMemoryCandidates } from '../domain/voice-memory-candidates';
 
 const RETELL_SIGNATURE_TOLERANCE_MS = 5 * 60 * 1_000;
 const ProviderTimestampSchema = z.number().int().nonnegative().max(8_640_000_000_000_000);
@@ -83,11 +84,14 @@ const RetellAnalysisDataSchema = z.object({
   pidio_no_contactar: z.boolean().optional(),
   pregunto_si_es_ia: z.boolean().optional(),
   compromiso_pendiente: OptionalBoundedTextSchema(1024),
+  memory_candidates_json_v1: OptionalBoundedTextSchema(32_768),
 }).passthrough().superRefine((analysis, context) => {
   // Retell may emit an analysis envelope after a call that never connected.
   // With no result there is no commercial analysis to validate or persist.
   if (analysis.resultado === undefined) return;
-  const legacyKeys = new Set(['resultado', 'nivel_interes', 'objecion_principal']);
+  const legacyKeys = new Set([
+    'resultado', 'nivel_interes', 'objecion_principal', 'memory_candidates_json_v1',
+  ]);
   const hasExtendedField = Object.entries(analysis).some(([key, value]) => (
     !legacyKeys.has(key)
     && value !== undefined
@@ -107,6 +111,7 @@ const RetellAnalyzedWebhookSchema = z.object({
   event: z.literal('call_analyzed'),
   call: RetellCallBaseSchema.extend({
     end_timestamp: ProviderTimestampSchema,
+    transcript: z.string().max(200_000).optional().nullable(),
     call_analysis: z.object({
       call_summary: OptionalBoundedTextSchema(4096),
       // Retell's system-presets export uses title case; normalize only this
@@ -203,7 +208,11 @@ function providerIso(timestamp: number): string {
   return new Date(timestamp).toISOString();
 }
 
-export function mapRetellLifecycleEvent(raw: unknown, internalCallId: string): CallEvent {
+export function mapRetellLifecycleEvent(
+  raw: unknown,
+  internalCallId: string,
+  canonicalContactId?: string,
+): CallEvent {
   const webhook = RetellLifecycleWebhookSchema.parse(raw);
   const base = {
     schema_version: 1 as const,
@@ -250,10 +259,16 @@ export function mapRetellLifecycleEvent(raw: unknown, internalCallId: string): C
     throw new Error('RETELL_ANALYSIS_RESULT_MISSING');
   }
   const occurredAt = providerIso(webhook.call.end_timestamp);
+  const voiceMemoryCandidates = parseVoiceMemoryCandidates({
+    raw: custom.memory_candidates_json_v1,
+    transcript: webhook.call.transcript,
+    contactId: canonicalContactId,
+  });
   const hasExtendedAnalysis = Object.keys(custom).some((key) => ![
-    'resultado', 'nivel_interes', 'objecion_principal',
+    'resultado', 'nivel_interes', 'objecion_principal', 'memory_candidates_json_v1',
   ].includes(key))
-    || webhook.call.call_analysis.user_sentiment !== undefined;
+    || webhook.call.call_analysis.user_sentiment !== undefined
+    || voiceMemoryCandidates.length > 0;
   const analysis = {
     result: custom.resultado,
     nivel_interes: custom.nivel_interes === 'nulo' ? null : (custom.nivel_interes ?? null),
@@ -282,6 +297,9 @@ export function mapRetellLifecycleEvent(raw: unknown, internalCallId: string): C
       pregunto_si_es_ia: custom.pregunto_si_es_ia ?? false,
       ...(custom.compromiso_pendiente === undefined || custom.compromiso_pendiente === null
         ? {} : { compromiso_pendiente: custom.compromiso_pendiente }),
+      ...(voiceMemoryCandidates.length === 0
+        ? {}
+        : { voice_memory_candidates: voiceMemoryCandidates }),
     } : {}),
   };
   return CallEventSchema.parse({

@@ -68,6 +68,7 @@ export class RetellVoiceProvider implements VoiceProvider {
         pais: context.pais,
         email_lead: context.email_lead,
         resumen_whatsapp: context.resumen_whatsapp,
+        ...(context.memoria_lead ? { memoria_lead: context.memoria_lead } : {}),
         campos_faltantes: (context.campos_faltantes ?? []).join(', '),
         nombre_asesor: this.config.advisorName,
       },

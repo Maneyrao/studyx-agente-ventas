@@ -555,7 +555,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
     expect(await projectionRows(turn.contact_id)).toEqual([{
       payload: {
         nombre: '', apellido: '', mail: '', telefono: expect.stringMatching(/^\+54911\d{8}$/u),
-        tipo_de_curso: '', plan: '',
+        tipo_de_curso: '', plan: '', monto: '', pago: 'No',
       },
     }]);
   });
@@ -575,7 +575,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
     expect(await projectionRows(turn.contact_id)).toEqual([{
       payload: {
         nombre: '', apellido: '', mail: '', telefono: expect.stringMatching(/^\+54911\d{8}$/u),
-        tipo_de_curso: '', plan: '',
+        tipo_de_curso: '', plan: '', monto: '', pago: 'No',
       },
     }]);
   });
@@ -607,6 +607,8 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       telefono: expect.stringMatching(/^\+54911\d{8}$/u),
       tipo_de_curso: 'Curso Fencing',
       plan: 'monthly_12',
+      monto: 'USD 30.00',
+      pago: 'No',
     });
   });
 
@@ -716,6 +718,8 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
         telefono: expect.stringMatching(/^\+54911\d{8}$/u),
         tipo_de_curso: 'Decoración de Interiores',
         plan: 'monthly_6',
+        monto: 'USD 60.00',
+        pago: 'No',
       },
     });
   });
@@ -1078,6 +1082,8 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
         telefono: expect.stringMatching(/^\+54911\d{8}$/u),
         tipo_de_curso: 'Decoración de Interiores',
         plan: 'monthly_6',
+        monto: 'USD 60.00',
+        pago: 'No',
       });
       return rows[0];
     };

@@ -199,6 +199,49 @@ describe('Retell lifecycle mapping', () => {
     expect([started.sequence, ended.sequence, analyzed.sequence]).toEqual([1, 2, 3]);
   });
 
+  it('keeps only grounded voice memories and never persists the raw transcript or JSON envelope', () => {
+    const payload = wrapper('call_analyzed');
+    payload.call.transcript = 'Cliente: Prefiero estudiar de noche. También quiero pagar en cuotas.';
+    (payload.call.call_analysis.custom_analysis_data as Record<string, unknown>).memory_candidates_json_v1 = JSON.stringify({
+      schema_version: 1,
+      candidates: [
+        {
+          type: 'preference', key: 'horario', value: 'estudiar de noche',
+          source_quote: 'Prefiero estudiar de noche', confidence: 0.93,
+        },
+        {
+          type: 'preference', key: 'payment_plan', value: 'pagar en cuotas',
+          source_quote: 'quiero pagar en cuotas', confidence: 0.99,
+        },
+      ],
+    });
+
+    const event = mapRetellLifecycleEvent(payload, internalCallId, contactId);
+    expect(event.payload).toMatchObject({
+      event_type: 'analyzed',
+      analysis: {
+        voice_memory_candidates: [{
+          type: 'preference',
+          key: 'horario',
+          value: 'estudiar de noche',
+          source_quote: 'Prefiero estudiar de noche',
+          confidence: 0.93,
+        }],
+      },
+    });
+    expect(JSON.stringify(event)).not.toContain('memory_candidates_json_v1');
+    expect(JSON.stringify(event)).not.toContain('También quiero pagar');
+  });
+
+  it('ignores malformed voice-memory JSON without rejecting the call analysis', () => {
+    const payload = wrapper('call_analyzed');
+    (payload.call.call_analysis.custom_analysis_data as Record<string, unknown>).memory_candidates_json_v1 = '{';
+    expect(() => mapRetellLifecycleEvent(payload, internalCallId, contactId)).not.toThrow();
+    expect(mapRetellLifecycleEvent(payload, internalCallId, contactId).payload).not.toHaveProperty(
+      'analysis.voice_memory_candidates',
+    );
+  });
+
   it.each([
     ['agent_hangup', 'agent_hangup'],
     ['manual_stopped', 'agent_hangup'],

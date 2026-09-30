@@ -29,6 +29,24 @@ export const CallResultSchema = z.enum([
   'corto_la_llamada',
 ]);
 
+export const VoiceMemoryCandidateSchema = z.object({
+  type: z.enum([
+    'study_goal',
+    'study_context',
+    'preference',
+    'constraint',
+    'objection',
+    'timeline',
+    'contact_preference',
+  ]),
+  key: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/u),
+  value: z.string().trim().min(1).max(512),
+  source_quote: z.string().trim().min(1).max(2_048),
+  confidence: z.number().min(0.7).max(1),
+  dedupe_hash: z.string().regex(/^[0-9a-f]{64}$/u),
+  ttl_days: z.number().int().positive().max(365).nullable(),
+}).strict();
+
 export const CallRequestedPayloadSchema = z.object({
   event_type: z.literal('requested'),
   contact_id: z.string().uuid(),
@@ -73,6 +91,7 @@ export const CallAnalysisSchema = z.object({
   pidio_no_contactar: z.boolean().optional(),
   pregunto_si_es_ia: z.boolean().optional(),
   compromiso_pendiente: z.string().trim().min(1).max(1024).optional(),
+  voice_memory_candidates: z.array(VoiceMemoryCandidateSchema).max(10).optional(),
 }).strict();
 
 export const CallAnalyzedPayloadSchema = z.object({
@@ -151,6 +170,7 @@ export type CallEventProvider = z.infer<typeof CallEventProviderSchema>;
 export type CallEventType = z.infer<typeof CallEventTypeSchema>;
 export type CallEndReason = z.infer<typeof CallEndReasonSchema>;
 export type CallResult = z.infer<typeof CallResultSchema>;
+export type VoiceMemoryCandidate = z.infer<typeof VoiceMemoryCandidateSchema>;
 export type CallAnalysis = z.infer<typeof CallAnalysisSchema>;
 export type CallEvent = z.infer<typeof CallEventSchema>;
 export type CallEventV2 = z.infer<typeof CallEventV2Schema>;

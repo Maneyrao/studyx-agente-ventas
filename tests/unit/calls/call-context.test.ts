@@ -44,11 +44,19 @@ describe('CallContextV1', () => {
   it('carries the shared intake state so Agent B asks only for data Agent A still lacks', () => {
     const parsed = CallContextV1Schema.parse(context({
       apellido_lead: 'Pérez',
+      memoria_lead: '- Objetivo: conseguir trabajo remoto',
       campos_faltantes: ['mail'],
     }));
     expect(parsed.apellido_lead).toBe('Pérez');
+    expect(parsed.memoria_lead).toBe('- Objetivo: conseguir trabajo remoto');
     expect(parsed.campos_faltantes).toEqual(['mail']);
+    expect(canonicalizeCallContext(parsed)).toContain('"memoria_lead":"- Objetivo: conseguir trabajo remoto"');
     expect(canonicalizeCallContext(parsed)).toContain('"campos_faltantes":["mail"]');
+  });
+
+  it('bounds the qualitative voice handoff at 1,500 characters', () => {
+    expect(() => CallContextV1Schema.parse(context({ memoria_lead: 'a'.repeat(1_500) }))).not.toThrow();
+    expect(() => CallContextV1Schema.parse(context({ memoria_lead: 'a'.repeat(1_501) }))).toThrow();
   });
 
   it('keeps legacy context hashes stable when the additive intake fields are absent', () => {

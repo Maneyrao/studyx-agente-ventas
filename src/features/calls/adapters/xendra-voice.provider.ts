@@ -69,6 +69,7 @@ export class XendraVoiceProvider implements VoiceProvider {
         ...(pais ? { pais } : {}),
         ...(context.email_lead ? { email_lead: context.email_lead } : {}),
         ...(context.plan_code ? { plan_code: context.plan_code } : {}),
+        ...(context.memoria_lead ? { memoria_lead: context.memoria_lead } : {}),
         ...(this.config.advisorName ? { nombre_asesor: this.config.advisorName } : {}),
         ...(this.config.closerNumber ? { numero_closer: this.config.closerNumber } : {}),
         resumen_whatsapp: context.resumen_whatsapp,

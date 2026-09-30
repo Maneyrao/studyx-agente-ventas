@@ -36,6 +36,41 @@ const ACTIVE_CALL_STATUSES = [
   'in_progress',
 ] as const;
 
+type LeadMemoryHandoffRow = {
+  readonly memory_type: string;
+  readonly memory_key: string;
+  readonly value_normalized: string;
+};
+
+const MEMORY_LABELS: Readonly<Record<string, string>> = {
+  study_goal: 'Objetivo',
+  study_context: 'Contexto',
+  preference: 'Preferencia',
+  constraint: 'Restricción',
+  objection: 'Objeción',
+  timeline: 'Momento',
+  contact_preference: 'Preferencia de contacto',
+};
+
+export function buildLeadMemoryHandoff(rows: readonly LeadMemoryHandoffRow[]): string {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const row of rows) {
+    const key = `${row.memory_type}\u0000${row.memory_key}\u0000${row.value_normalized}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const label = MEMORY_LABELS[row.memory_type] ?? 'Dato relevante';
+    const qualifier = row.memory_type === 'study_goal' || !row.memory_key
+      ? ''
+      : ` (${row.memory_key})`;
+    const line = `- ${label}${qualifier}: ${row.value_normalized}`;
+    const candidate = [...lines, line].join('\n');
+    if (candidate.length > 1_500) break;
+    lines.push(line);
+  }
+  return lines.join('\n');
+}
+
 export class CallRequestRejectedError extends Error {
   constructor(readonly reason: string) {
     super(`Call request rejected: ${reason}`);
@@ -281,6 +316,21 @@ export async function reserveCallForDecision(
   `;
   const durablePlan = durablePlans[0]?.selected_payment_plan ?? null;
 
+  const durableMemories = await db<LeadMemoryHandoffRow[]>`
+    SELECT memory.memory_type, memory.memory_key, memory.value_normalized
+    FROM selected_memories AS memory
+    JOIN conversation_sales_context_states_v1 AS origin
+      ON origin.workspace_id = ${workspaceId}::uuid
+     AND origin.conversation_id = memory.conversation_id
+     AND origin.contact_id = memory.contact_id
+    WHERE memory.contact_id = ${input.contact_id}::uuid
+      AND memory.status = 'active'
+      AND (memory.valid_until IS NULL OR memory.valid_until > now())
+    ORDER BY memory.created_at DESC, memory.id DESC
+    LIMIT 10
+  `;
+  const memoriaLead = buildLeadMemoryHandoff(durableMemories);
+
   const provider = resolveStoredVoiceProvider();
   const callId = input.reserved_call_id ?? randomUUID();
   const sharedLead = deriveSharedLeadContext({
@@ -300,6 +350,7 @@ export async function reserveCallForDecision(
     pais: inferCallCountryFromPhoneE164(input.phone),
     email_lead: sharedLead.emailLead,
     ...(durablePlan === null ? {} : { plan_code: durablePlan }),
+    ...(memoriaLead ? { memoria_lead: memoriaLead } : {}),
     resumen_whatsapp: resumenWhatsapp,
     prompt_version: input.prompt_version,
     campos_faltantes: sharedLead.missingFields,

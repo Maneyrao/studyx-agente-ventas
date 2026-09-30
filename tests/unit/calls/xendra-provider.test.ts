@@ -34,6 +34,7 @@ function input(): PlaceVoiceCallInput {
       pais: 'Argentina',
       email_lead: 'ana@example.test',
       plan_code: 'monthly_12',
+      memoria_lead: '- Objetivo: conseguir trabajo remoto',
       resumen_whatsapp: 'Pidió detalles y aceptó una llamada.',
       prompt_version: 'agent-b-v1',
       campos_faltantes: [],
@@ -87,6 +88,7 @@ describe('XendraVoiceProvider.placeCall', () => {
         pais: 'Argentina',
         email_lead: 'ana@example.test',
         plan_code: 'monthly_12',
+        memoria_lead: '- Objetivo: conseguir trabajo remoto',
         campos_faltantes: [],
         nombre_asesor: 'Sofía',
         numero_closer: '+5491144445555',
@@ -103,6 +105,7 @@ describe('XendraVoiceProvider.placeCall', () => {
       curso_interes: '',
       email_lead: '',
       plan_code: undefined,
+      memoria_lead: undefined,
       campos_faltantes: ['apellido', 'mail', 'tipo_de_curso'],
     };
     const fetchImpl = vi.fn<typeof fetch>(async () => json({ ok: true, call_id: 'call_partial' }));
