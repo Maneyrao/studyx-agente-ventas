@@ -123,6 +123,7 @@ function buildDeps(options: {
   knowledge?: ClaimBatchDependencies['knowledge'];
   now?: () => string;
   contactIntake?: ClaimBatchDependencies['contactIntake'];
+  paymentVerification?: ClaimBatchDependencies['paymentVerification'];
 } = {}): ClaimBatchDependencies & { store: OrchestrationStore } {
   const messages = options.messagesResult ?? [
     { id: 'm1', conversation_seq: 1, content: 'hola', created_at: '2026-08-11T12:00:00.000Z', message_type: 'text' },
@@ -159,6 +160,7 @@ function buildDeps(options: {
     contactIntake: options.contactIntake ?? (async () => ({
       nombre: null, apellido: null, correo: null, telefono: null,
     })),
+    paymentVerification: options.paymentVerification ?? (async () => null),
   } as ClaimBatchDependencies & { store: OrchestrationStore };
 }
 
@@ -831,6 +833,21 @@ describe('claimBatch', () => {
     if (result.outcome !== 'claimed') throw new Error('expected a claim');
     expect(result.contact_intake_missing).toContain('telefono');
     expect(result.deterministic_route).toBe('call_phone_required');
+  });
+
+  it('carries the canonical Stripe projection into Agent A context', async () => {
+    const paymentVerification = {
+      status: 'paid' as const,
+      offering_code: 'redes_informaticas',
+      plan_code: 'monthly_6' as const,
+      paid_at: '2026-09-30T11:30:00.000Z',
+    };
+    const result = await claimBatch(input, buildDeps({
+      paymentVerification: async () => paymentVerification,
+    }));
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.payment_verification).toEqual(paymentVerification);
   });
 
   it('classifies a burst made only of greetings before embedding or model work', async () => {

@@ -4,6 +4,7 @@ import { openLocalTestDatabase } from '../helpers/db';
 import { reservePayment, PaymentReservationError } from '@/features/payments/application/reserve-payment';
 import { createCheckout } from '@/features/payments/application/create-checkout';
 import { recordPaymentEvent } from '@/features/payments/application/record-payment-event';
+import { loadLatestPaymentVerificationV1 } from '@/features/payments/application/read-payment-verification';
 import { FakePaymentProvider } from '@/features/payments/adapters/fake-payment-provider';
 import { AmbiguousCheckoutError } from '@/features/payments/ports/payment-provider';
 
@@ -265,6 +266,51 @@ run('canonical payments — event recording', () => {
       SELECT id, status FROM fulfillment_jobs WHERE payment_id = ${paymentId}::uuid
     `;
   }
+
+  it('exposes paid to Agent A only after the canonical Stripe event is recorded', async () => {
+    const workspaceId = await workspaceFixture();
+    const contactId = await contactFixture();
+    const offering = await offeringFixture({ workspaceId });
+    const workspace = await db!<Array<{ slug: string }>>`
+      SELECT slug FROM workspaces WHERE id = ${workspaceId}::uuid
+    `;
+    const payments = await db!<Array<{ id: string }>>`
+      INSERT INTO payments (
+        workspace_id, contact_id, offering_id, amount, currency, status,
+        provider, environment, checkout_mode, idempotency_key,
+        provider_session_id, plan_code
+      ) VALUES (
+        ${workspaceId}::uuid, ${contactId}::uuid, ${offering.id}::uuid,
+        '60.00', 'USD', 'pending', 'stripe', 'live', 'subscription',
+        ${`stripe-ledger:${randomUUID()}`}, ${`cs_live_${randomUUID()}`}, 'monthly_6'
+      )
+      RETURNING id
+    `;
+    const paymentId = payments[0].id;
+
+    await expect(loadLatestPaymentVerificationV1({
+      workspace_slug: workspace[0].slug,
+      contact_id: contactId,
+    }, db!)).resolves.toMatchObject({ status: 'pending', paid_at: null });
+
+    await recordPaymentEvent(db!, {
+      payment_id: paymentId,
+      provider: 'stripe',
+      provider_event_id: `evt_${randomUUID()}`,
+      event: { type: 'checkout_completed_paid' },
+      payload: {},
+    });
+
+    await expect(loadLatestPaymentVerificationV1({
+      workspace_slug: workspace[0].slug,
+      contact_id: contactId,
+    }, db!)).resolves.toMatchObject({
+      status: 'paid',
+      offering_code: offering.code,
+      plan_code: 'monthly_6',
+      paid_at: expect.any(String),
+    });
+  });
 
   it('a paid event marks paid and enqueues exactly one fulfillment job, even replayed x10', async () => {
     const paymentId = await pendingPayment();

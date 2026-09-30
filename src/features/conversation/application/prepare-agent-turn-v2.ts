@@ -23,6 +23,7 @@ import {
 } from '../domain/conversation-planner';
 import { solicitsACall } from '../domain/operational-promise-guard';
 import type { ConversationStateStoreV1 } from '../ports/conversation-state-store';
+import type { PaymentVerificationV1 } from '@/features/payments/application/read-payment-verification';
 
 export class AgentTurnV2RejectedError extends Error {
   readonly code = 'AGENT_TURN_V2_REJECTED';
@@ -140,6 +141,10 @@ export async function prepareAgentTurnV2(input: {
   readonly state_store: Pick<ConversationStateStoreV1, 'load'>;
   readonly call_facts?: Pick<OrchestrationStore, 'loadClaimedCallFacts'>;
   readonly contact_intake?: (contactId: string) => Promise<ContactIntakeV1>;
+  readonly payment_verification?: (input: {
+    workspace_slug: string;
+    contact_id: string;
+  }) => Promise<PaymentVerificationV1 | null>;
   readonly now?: () => number;
 }): Promise<{
   readonly decision: DecisionV4;
@@ -150,13 +155,17 @@ export async function prepareAgentTurnV2(input: {
   readonly authorized_protected_facts: readonly ProtectedFactRef[];
 }> {
   const nowMs = deps.now?.() ?? Date.now();
-  const [loaded, callFacts, contactIntake] = await Promise.all([
+  const [loaded, callFacts, contactIntake, paymentVerification] = await Promise.all([
     deps.state_store.load(input.workspace_slug, input.turn.conversation_id, input.turn.contact_id),
     deps.call_facts?.loadClaimedCallFacts({
       conversation_id: input.turn.conversation_id,
       contact_id: input.turn.contact_id,
     }) ?? Promise.resolve(null),
     deps.contact_intake?.(input.turn.contact_id) ?? Promise.resolve(undefined),
+    deps.payment_verification?.({
+      workspace_slug: input.workspace_slug,
+      contact_id: input.turn.contact_id,
+    }) ?? Promise.resolve(null),
   ]);
   const state = loaded
     ? effectiveConversationStateV1(
@@ -190,6 +199,11 @@ export async function prepareAgentTurnV2(input: {
     offerings,
     facts,
     contact_intake: contactIntake,
+    payment_verified: paymentVerification?.status === 'paid'
+      && paymentVerification.paid_at !== null
+      && paymentVerification.offering_code === state.selected_offering_code
+      && (state.selected_payment_plan === null
+        || paymentVerification.plan_code === state.selected_payment_plan),
     current_customer_messages: input.current_customer_messages,
     call_policy: {
       // A refusal closes the invitation in that turn, not the whole sales

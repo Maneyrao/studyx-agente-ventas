@@ -42,6 +42,7 @@ import type {
   RetrievedKnowledge,
   RetrievedMemory,
 } from '../ports/retrieval';
+import type { PaymentVerificationV1 } from '@/features/payments/application/read-payment-verification';
 
 /**
  * Claim a batch and, only if this caller won it, build the one controlled
@@ -95,6 +96,8 @@ export interface ClaimBatchDependencies {
   readonly agentASingleRoute?: boolean;
   /** Inyectable para test; por defecto lee `contacts` con el cliente compartido. */
   readonly contactIntake?: (contactId: string) => Promise<ContactIntakeV1>;
+  /** Canonical Stripe ledger projection; customer text never supplies it. */
+  readonly paymentVerification?: (contactId: string) => Promise<PaymentVerificationV1 | null>;
   readonly agentABrainShadow?: boolean;
   /** Runtime rollout resolved after the batch is owned and its contact is canonical. */
   readonly agentLoopRollout?: AgentLoopRolloutReaderV3;
@@ -181,6 +184,7 @@ export interface ClaimedTurn {
   /** Valores canónicos necesarios para que el agente confirme los datos sin
    * reconstruirlos desde texto viejo ni volver a pedirlos. */
   readonly contact_intake: ContactIntakeV1;
+  readonly payment_verification: PaymentVerificationV1 | null;
   readonly contact: {
     readonly id: string;
     readonly status: 'prospecto' | 'cliente' | 'inactivo';
@@ -1107,7 +1111,11 @@ export async function claimBatch(
   // y este módulo tiene tests unitarios que no deben necesitar una conexión.
   const readIntake = deps.contactIntake
     ?? (await import('@/lib/repositories/contact-intake.repository')).loadContactIntakeV1;
-  const contactIntake = await readIntake(facts.contact.id);
+  const readPaymentVerification = deps.paymentVerification ?? (async () => null);
+  const [contactIntake, paymentVerification] = await Promise.all([
+    readIntake(facts.contact.id),
+    readPaymentVerification(facts.contact.id),
+  ]);
   const contactIntakeMissing = missingContactIntakeFieldsV1(contactIntake);
   // A call fast path has no conversational recovery. Preserve the customer's
   // call intent as structured context while Agent A asks naturally for an
@@ -1138,6 +1146,7 @@ export async function claimBatch(
     policy,
     contact_intake_missing: contactIntakeMissing,
     contact_intake: contactIntake,
+    payment_verification: paymentVerification,
     contact: {
       id: facts.contact.id,
       status: facts.contact.status,

@@ -322,7 +322,7 @@ const ASSERTION_CLASSES: readonly {
   },
   {
     pattern: new RegExp(`${L}pago${R}[^.;]{0,30}${L}(?:verificad|acreditad|confirmad)`, 'iu'),
-    requires: UNREACHABLE_MILESTONE,
+    requires: 'state:payment_verified:v1',
   },
   {
     // El posesivo no es decoración: "acceso 24/7" es una característica del

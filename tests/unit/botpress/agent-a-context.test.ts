@@ -189,6 +189,29 @@ function claimedTurn(): ClaimedTurn {
 }
 
 describe('buildAgentAContextV1', () => {
+  it('projects the latest canonical Stripe status without treating the customer claim as evidence', () => {
+    const claimed = claimedTurn();
+    (claimed as ClaimedTurn & {
+      payment_verification: {
+        status: 'paid'; offering_code: string; plan_code: null; paid_at: string;
+      };
+    }).payment_verification = {
+      status: 'paid',
+      offering_code: 'redes-informaticas',
+      plan_code: null,
+      paid_at: NOW,
+    };
+
+    const context = buildAgentAContextV1(claimed);
+
+    expect(context?.commercial_state.payment_verification).toEqual({
+      status: 'paid',
+      offering_code: 'redes-informaticas',
+      plan_code: null,
+      paid_at: NOW,
+    });
+  });
+
   it('exposes the temporary USD 0.50 checkout as an authorized non-commercial payment option', () => {
     const context = buildAgentAContextV1(claimedTurn());
 

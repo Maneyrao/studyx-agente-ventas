@@ -80,6 +80,110 @@ const completeIntake = async () => ({
 });
 
 describe('prepareAgentTurnV2', () => {
+  it('authorizes a verified-payment reply only when the canonical ledger is paid', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Ya pagué'],
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'report_payment', secondary_moves: [], vetoes: [], confidence: 0.99,
+        },
+        response: { messages: ['Listo, tu pago quedó verificado. Ahora el equipo continuará con tu inscripción y acceso.'] },
+        used_fact_ids: [
+          'state:payment_reported:v1',
+          'state:payment_verified:v1',
+          'process:access_after_verification:v1',
+        ],
+      }),
+    }, {
+      state_store: store(state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'monthly_6',
+        stage: 'payment_link_sent',
+      })),
+      contact_intake: completeIntake,
+      payment_verification: async () => ({
+        status: 'paid' as const,
+        offering_code: 'redes_informaticas',
+        plan_code: 'monthly_6' as const,
+        paid_at: index.as_of,
+      }),
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.decision.response).toContain('pago quedó verificado');
+    expect(prepared.transition.payment_reported).toBe(true);
+  });
+
+  it('rejects a verified-payment claim while the canonical Stripe attempt is only reserved', async () => {
+    const input = {
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Ya pagué'],
+      proposal: proposal({
+        move: {
+          schema_version: 1 as const,
+          move: 'report_payment' as const,
+          secondary_moves: [], vetoes: [], confidence: 0.99,
+        },
+        response: { messages: ['Listo, tu pago quedó verificado.'] },
+        used_fact_ids: ['state:payment_reported:v1', 'state:payment_verified:v1'],
+      }),
+    };
+
+    await expect(prepareAgentTurnV2(input, {
+      state_store: store(state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'monthly_6',
+        stage: 'payment_link_sent',
+      })),
+      contact_intake: completeIntake,
+      payment_verification: async () => ({
+        status: 'reserved' as const,
+        offering_code: 'redes_informaticas',
+        plan_code: 'monthly_6' as const,
+        paid_at: null,
+      }),
+      now: () => Date.parse(index.as_of),
+    })).rejects.toMatchObject({
+      code: 'AGENT_TURN_V2_REJECTED',
+      reasons: expect.arrayContaining(['FACT_NOT_AUTHORIZED']),
+    });
+  });
+
+  it('accepts a natural not-yet-verified reply while Stripe is still pending', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Ya pagué'],
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'report_payment', secondary_moves: [], vetoes: [], confidence: 0.99,
+        },
+        response: { messages: ['Gracias por avisarme. Todavía no pude verificar la acreditación; puede demorar unos instantes.'] },
+        used_fact_ids: ['state:payment_reported:v1'],
+      }),
+    }, {
+      state_store: store(state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'monthly_6',
+        stage: 'payment_link_sent',
+      })),
+      contact_intake: completeIntake,
+      payment_verification: async () => ({
+        status: 'pending',
+        offering_code: 'redes_informaticas',
+        plan_code: 'monthly_6',
+        paid_at: null,
+      }),
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.decision.response).toContain('no pude verificar');
+    expect(prepared.transition.payment_reported).toBe(true);
+  });
+
   it('does not label an ordinary CTA stored in call_offer as a call invitation', async () => {
     const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },

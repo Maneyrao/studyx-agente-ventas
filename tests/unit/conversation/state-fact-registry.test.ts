@@ -13,14 +13,15 @@ const completeIntake: ContactIntakeV1 = {
 };
 
 describe('registro de hechos de estado y proceso', () => {
-  it('expone exactamente los cuatro hechos decididos, ni uno más', () => {
-    // Q6: cuatro hechos, ninguno más. Un quinto hecho es una ampliación del
+  it('expone exactamente los cinco hechos decididos, ni uno más', () => {
+    // Q6: cinco hechos, ninguno más. Un sexto hecho es una ampliación del
     // contrato de autoridad, no un detalle de implementación.
     expect([...STATE_FACT_IDS_V1].sort()).toEqual([
       'process:access_after_verification:v1',
       'process:human_verification:v1',
       'state:intake_recorded:v1',
       'state:payment_reported:v1',
+      'state:payment_verified:v1',
     ]);
   });
 
@@ -69,6 +70,20 @@ describe('registro de hechos de estado y proceso', () => {
       intake: completeIntake,
       planned_payment_reported: false,
     })).not.toContain('state:payment_reported:v1');
+  });
+
+  it('materializa payment_verified sólo desde el estado canónico de Stripe', () => {
+    expect(materializeStateFactsV1({
+      intake: completeIntake,
+      planned_payment_reported: true,
+      payment_verified: true,
+    })).toContain('state:payment_verified:v1');
+
+    expect(materializeStateFactsV1({
+      intake: completeIntake,
+      planned_payment_reported: true,
+      payment_verified: false,
+    })).not.toContain('state:payment_verified:v1');
   });
 
   it('los hechos de proceso son canónicos y siempre están disponibles', () => {

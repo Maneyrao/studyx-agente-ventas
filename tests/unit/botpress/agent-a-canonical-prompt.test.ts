@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const PROMPT_PATH = 'docs/prompts/studyx-agent-a-canonical.md';
 const GENERATED_PATH = 'botpress-agent/src/prompts/studyx-agent-a-canonical.generated.ts';
-const EXPECTED_SHA256 = 'e4878c45beea45de5be1ab77699ba5e083484eb15a456e9fdd0a76638fb168a7';
+const EXPECTED_SHA256 = 'a9a4bdc9f50188acadd36c8ee25a20cbdad63559940e4a5c02e43e9d9edfac58';
 
 describe('Agent A canonical sales prompt', () => {
   it('ships the complete approved prompt and a byte-equivalent generated module', () => {
@@ -16,7 +16,7 @@ describe('Agent A canonical sales prompt', () => {
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v56' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v57' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
@@ -26,8 +26,16 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toMatch(/vender con iniciativa/iu);
     expect(prompt).toMatch(/objeci[oó]n[\s\S]*reconoce[\s\S]*responde[\s\S]*avanza/iu);
     expect(prompt).toMatch(/no fue atendida[\s\S]*reintentar[\s\S]*chat/iu);
-    expect(prompt).toMatch(/pago informado[\s\S]*no[\s\S]*pago verificado/iu);
-    expect(prompt).toMatch(/equipo humano[\s\S]*verific/iu);
+    expect(prompt).toMatch(/report_payment[\s\S]*payment_verification[\s\S]*[uú]nica autoridad/iu);
+    expect(prompt).toMatch(/`paid` con `paid_at`[\s\S]*state:payment_verified:v1/iu);
+    expect(prompt).toMatch(/a[uú]n no pudiste verificarlo/iu);
+  });
+
+  it('keeps intake confirmation brief instead of combining it with another sales explanation', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+
+    expect(prompt).toMatch(/Es un paso propio/iu);
+    expect(prompt).toMatch(/no vuelvas a explicar el curso ni a listar planes/iu);
   });
 
   it('teaches a scannable multi-message rhythm without imposing literal templates', () => {

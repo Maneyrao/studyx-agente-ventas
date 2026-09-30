@@ -788,6 +788,7 @@ export function buildAgentAContextV1(
       // that so it neither asks for the payment again nor claims it is
       // verified — this field is the claim, never a verification.
       payment_reported: state.payment_reported === true,
+      payment_verification: claimed.payment_verification ?? null,
       payment_link_request: state.payment_link_request === undefined
         ? null
         : state.payment_link_request === null

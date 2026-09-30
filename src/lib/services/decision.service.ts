@@ -755,6 +755,12 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           state_store: new PostgresConversationStateStoreV1(db),
           call_facts: new PostgresOrchestrationStore(db),
           contact_intake: (contactId) => loadContactIntakeV1(contactId, db),
+          payment_verification: async (paymentInput) => {
+            const { loadLatestPaymentVerificationV1 } = await import(
+              '@/features/payments/application/read-payment-verification'
+            );
+            return loadLatestPaymentVerificationV1(paymentInput, db);
+          },
         });
       } catch (error) {
         if (error instanceof AgentTurnV2RejectedError) {

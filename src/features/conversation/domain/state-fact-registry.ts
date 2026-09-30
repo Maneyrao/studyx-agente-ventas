@@ -22,12 +22,14 @@ import {
 export type StateFactIdV1 =
   | 'state:intake_recorded:v1'
   | 'state:payment_reported:v1'
+  | 'state:payment_verified:v1'
   | 'process:human_verification:v1'
   | 'process:access_after_verification:v1';
 
 export const STATE_FACT_IDS_V1: readonly StateFactIdV1[] = [
   'state:intake_recorded:v1',
   'state:payment_reported:v1',
+  'state:payment_verified:v1',
   'process:human_verification:v1',
   'process:access_after_verification:v1',
 ];
@@ -54,6 +56,8 @@ export interface StateFactSubjectV1 {
    * que es peor que el defecto que elimina.
    */
   readonly planned_payment_reported: boolean;
+  /** True only when the canonical Stripe ledger currently says `paid`. */
+  readonly payment_verified?: boolean;
 }
 
 /**
@@ -76,6 +80,9 @@ export function materializeStateFactsV1(
   }
   if (subject.planned_payment_reported) {
     facts.add('state:payment_reported:v1');
+  }
+  if (subject.payment_verified === true) {
+    facts.add('state:payment_verified:v1');
   }
   return facts;
 }

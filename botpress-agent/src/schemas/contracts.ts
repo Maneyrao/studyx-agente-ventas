@@ -560,6 +560,15 @@ export const ClaimedTurnSchema = z.object({
     correo: z.string().nullable(),
     telefono: z.string().nullable(),
   }).strict().optional(),
+  payment_verification: z.object({
+    status: z.enum([
+      'reserved', 'creating_checkout', 'creation_ambiguous', 'pending',
+      'paid', 'failed', 'expired', 'refunded',
+    ]),
+    offering_code: z.string().min(1),
+    plan_code: z.enum(['monthly_12', 'monthly_6', 'one_time']).nullable(),
+    paid_at: z.string().nullable(),
+  }).strict().nullable().optional(),
   context: z.object({
     batch_messages: z.array(BatchMessageSchema),
     recent_turns: z.array(RecentTurnSchema),

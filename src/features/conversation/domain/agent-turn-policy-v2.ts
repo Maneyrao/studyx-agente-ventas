@@ -98,6 +98,7 @@ function allMoves(proposal: AgentATurnProposalV1): Set<string> {
 function stateFactId(value: string): value is StateFactIdV1 {
   return value === 'state:intake_recorded:v1'
     || value === 'state:payment_reported:v1'
+    || value === 'state:payment_verified:v1'
     || value === 'process:human_verification:v1'
     || value === 'process:access_after_verification:v1';
 }
@@ -114,6 +115,8 @@ export function authorizeAgentTurnV2(input: {
   readonly offerings: readonly PlannerlessOfferingV2[];
   readonly facts: readonly CanonicalFactV1[];
   readonly contact_intake?: ContactIntakeV1;
+  /** Revalidated from the signed Stripe ledger at commit time. */
+  readonly payment_verified?: boolean;
   readonly current_customer_messages?: readonly string[];
   readonly call_policy: {
     readonly may_offer_call: boolean;
@@ -159,6 +162,7 @@ export function authorizeAgentTurnV2(input: {
   const stateFacts = materializeStateFactsV1({
     intake: input.contact_intake,
     planned_payment_reported: plannedPaymentReported,
+    payment_verified: input.payment_verified === true,
   });
   const factsById = new Map(input.facts.map((fact) => [fact.id, fact]));
   const authorizedFactIds: string[] = [];
