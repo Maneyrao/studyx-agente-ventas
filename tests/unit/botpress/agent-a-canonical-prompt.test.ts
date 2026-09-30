@@ -4,27 +4,27 @@ import { describe, expect, it } from 'vitest';
 
 const PROMPT_PATH = 'docs/prompts/studyx-agent-a-canonical.md';
 const GENERATED_PATH = 'botpress-agent/src/prompts/studyx-agent-a-canonical.generated.ts';
-const EXPECTED_SHA256 = 'a9a4bdc9f50188acadd36c8ee25a20cbdad63559940e4a5c02e43e9d9edfac58';
+const EXPECTED_SHA256 = 'f9682db79413d3cfe98fa6db52da52ff155d026cbcce42df293121f830e62f9a';
 
 describe('Agent A canonical sales prompt', () => {
   it('ships the complete approved prompt and a byte-equivalent generated module', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
-    expect(prompt.match(/\n/g) ?? []).toHaveLength(57);
+    expect(prompt.match(/\n/g) ?? []).toHaveLength(63);
     expect(createHash('sha256').update(prompt).digest('hex')).toBe(EXPECTED_SHA256);
     expect(existsSync(GENERATED_PATH)).toBe(true);
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v57' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v58' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
     expect(prompt).toMatch(/leads? c[aá]lidos?.*Meta/iu);
-    expect(prompt).toMatch(/vender con iniciativa/iu);
-    expect(prompt).toMatch(/objeci[oó]n[\s\S]*reconoce[\s\S]*responde[\s\S]*avanza/iu);
+    expect(prompt).toMatch(/iniciativa[\s\S]*llamada[\s\S]*inscripci[oó]n/iu);
+    expect(prompt).toMatch(/objeci[oó]n[\s\S]*entiend[ea][\s\S]*personaliza[\s\S]*avanza/iu);
     expect(prompt).toMatch(/no fue atendida[\s\S]*reintentar[\s\S]*chat/iu);
     expect(prompt).toMatch(/report_payment[\s\S]*payment_verification[\s\S]*[uú]nica autoridad/iu);
     expect(prompt).toMatch(/`paid` con `paid_at`[\s\S]*state:payment_verified:v1/iu);
@@ -38,11 +38,11 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toMatch(/no vuelvas a explicar el curso ni a listar planes/iu);
   });
 
-  it('teaches a scannable multi-message rhythm without imposing literal templates', () => {
+  it('teaches a variable WhatsApp rhythm without imposing two bubbles on every turn', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
     expect(prompt).toMatch(/formato orientativo, no (?:una )?plantilla literal/iu);
-    expect(prompt).toMatch(/dos mensajes[\s\S]*respuesta concreta[\s\S]*siguiente paso/iu);
+    expect(prompt).toMatch(/uno o dos mensajes[\s\S]*no fuerces dos/iu);
     expect(prompt).toMatch(/dos o m[aá]s (?:cursos|opciones)[\s\S]*lista/iu);
     expect(prompt).toMatch(/no conviertas cada elemento[\s\S]*mensaje separado/iu);
   });
@@ -55,12 +55,23 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toMatch(/una opci[oó]n por l[ií]nea/iu);
   });
 
-  it('makes the initial name request and first eligible call invitation explicit without canned copy', () => {
+  it('makes the initial name request explicit and uses commercially useful call invitations', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
     expect(prompt).toMatch(/nombre[\s\S]*primer intercambio[\s\S]*sin bloquear/iu);
-    expect(prompt).toMatch(/ofrece la primera[\s\S]*segunda intervenci[oó]n elegible/iu);
-    expect(prompt).toMatch(/redacta ambas para el contexto[\s\S]*sin frases fijas/iu);
+    expect(prompt).toMatch(/llamada[\s\S]*mejore realmente la venta/iu);
+    expect(prompt).toMatch(/no la fuerces[\s\S]*segunda intervenci[oó]n/iu);
+    expect(prompt).toMatch(/redacta[^.]*para el contexto[\s\S]*sin frases fijas/iu);
+  });
+
+  it('sells consultatively from the current message instead of completing a questionnaire', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+
+    expect(prompt).toMatch(/situaci[oó]n actual[\s\S]*deseo[\s\S]*motivaci[oó]n[\s\S]*freno/iu);
+    expect(prompt).toMatch(/lentes[^.]*no como secuencia r[ií]gida/iu);
+    expect(prompt).toMatch(/informaci[oó]n del cliente[\s\S]*hecho verificado[\s\S]*utilidad/iu);
+    expect(prompt).toMatch(/objeci[oó]n[\s\S]*entiend[ea][\s\S]*personaliza[\s\S]*comprueba/iu);
+    expect(prompt).toMatch(/memory_candidates[\s\S]*hechos expresados/iu);
   });
 
   it('asks availability on one turn and dispatches only after the following confirmation', () => {

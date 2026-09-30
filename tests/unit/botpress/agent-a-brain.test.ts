@@ -513,13 +513,13 @@ describe('Agent A Brain V1', () => {
 
   it('leaves the timing of an optional call invitation to the conversational model', () => {
     expect(buildAgentABrainInstructionsV1(context())).toContain(
-      'La llamada ayuda a orientar y cerrar; no condiciona la información',
+      'La llamada ayuda a orientar y cerrar; no condiciona información',
     );
   });
 
   it('does not renew a call invitation merely because the customer changes course', () => {
     expect(buildAgentABrainInstructionsV1(context())).toContain(
-      'La segunda y última va más adelante',
+      'La segunda necesita un motivo nuevo',
     );
   });
 
