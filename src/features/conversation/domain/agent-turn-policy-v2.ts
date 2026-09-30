@@ -313,6 +313,7 @@ export function authorizeAgentTurnV2(input: {
     const matchesOffering = selectedOffering !== null
       && proposal.proposed_action.offering_code === selectedOffering;
     if (!explicitlyRequested || !matchesOffering) reasons.push('ACTION_NOT_AUTHORIZED');
+    else if (!stateFacts.has('state:intake_recorded:v1')) reasons.push('MISSING_INTAKE');
     else action = proposal.proposed_action;
   }
   if (

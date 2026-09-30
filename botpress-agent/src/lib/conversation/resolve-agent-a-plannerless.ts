@@ -272,7 +272,8 @@ function mayDegradeToBackendBoundary(
   // la oración entera es la mentira. Eso sigue siendo un rechazo duro.
   if (claimsImmediatePaymentLinkDelivery(proposal)) return false
   if (isMissingPhoneForRequestedCall(proposal, rejection)) return false
-  if (proposal.proposed_action.type === 'send_payment_link' && rejection.rejections.some((reason) => (
+  if ((proposal.proposed_action.type === 'send_payment_link'
+    || proposal.proposed_action.type === 'send_test_payment_link') && rejection.rejections.some((reason) => (
     reason.code === 'ACTION_NOT_AUTHORIZED' || reason.code === 'MISSING_INTAKE'
   ))) return false
   if (rejection.rejections.some((reason) => (
@@ -290,7 +291,8 @@ function hasOnlyNonBlockingGuidance(
   rejection: TurnRejectionV1,
 ): boolean {
   if (isMissingPhoneForRequestedCall(proposal, rejection)) return false
-  if (proposal.proposed_action.type === 'send_payment_link' && rejection.rejections.some((reason) => (
+  if ((proposal.proposed_action.type === 'send_payment_link'
+    || proposal.proposed_action.type === 'send_test_payment_link') && rejection.rejections.some((reason) => (
     reason.code === 'ACTION_NOT_AUTHORIZED' || reason.code === 'MISSING_INTAKE'
   ))) return false
   return rejection.rejections.every((reason) => NON_BLOCKING_GUIDANCE_CODES.has(reason.code))

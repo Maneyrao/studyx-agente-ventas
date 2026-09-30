@@ -1285,6 +1285,43 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
+  it('repairs a premature temporary test-link action while contact intake is incomplete', async () => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'Mandame el link de prueba de 0,50';
+    current.commercial_state.awaiting_reply = 'contact_details';
+    current.capabilities.intake_missing = ['correo'];
+    const initial = generated(proposal({
+      move: {
+        schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+        confidence: 1,
+      },
+      response: { messages: ['Antes del link, ¿cuál es tu correo?'], call_offer: null },
+      proposed_action: {
+        type: 'send_test_payment_link', offering_code: 'maquillaje-profesional',
+      },
+      used_fact_ids: [],
+    }));
+    const repaired = generated(proposal({
+      move: initial.proposal.move,
+      response: initial.proposal.response,
+      proposed_action: { type: 'none' },
+      repair_of: { rejection_id: '00000000-0000-4000-8000-000000000001', attempt: 1 },
+    }));
+    const repair = vi.fn().mockResolvedValue(repaired);
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: true, repair,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.effective).toBe(repaired);
+    expect(result.evidence).toMatchObject({
+      rejection_codes: ['MISSING_INTAKE'], repair_attempted: true,
+      repaired: true, proposal_generation_calls: 2,
+    });
+  });
+
   it('does not demote an unsolicited action when the prose falsely claims the link was sent', async () => {
     const current = context();
     current.commercial_state.awaiting_reply = 'payment_confirmation';

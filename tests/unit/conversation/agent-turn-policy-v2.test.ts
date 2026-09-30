@@ -86,9 +86,36 @@ function authorize(input: {
 }
 
 describe('plannerless Agent A authority', () => {
-  it('authorizes the temporary USD 0.50 verification link only as an explicit model action', () => {
+  it('rejects the temporary USD 0.50 verification link while contact intake is incomplete', () => {
     const result = authorize({
       customerText: 'Mandame el link de prueba de 0,50 dólares.',
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        stage: 'course_selected',
+      }),
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'request_payment_link',
+          secondary_moves: [],
+          vetoes: [],
+          confidence: 1,
+        },
+        response: { messages: ['Dale, te paso el link de prueba de USD 0,50.'] },
+        proposed_action: {
+          type: 'send_test_payment_link',
+          offering_code: 'redes_informaticas',
+        },
+      } as unknown as AgentATurnProposalV1),
+    });
+
+    expect(result).toEqual({ ok: false, reasons: ['MISSING_INTAKE'] });
+  });
+
+  it('authorizes the temporary USD 0.50 verification link after contact intake is complete', () => {
+    const result = authorize({
+      customerText: 'Mandame el link de prueba de 0,50 dólares.',
+      intake: completeIntake,
       state: state({
         selected_offering_code: 'redes_informaticas',
         stage: 'course_selected',

@@ -1848,6 +1848,11 @@ export function validateAgentATurnProposalV1(input: {
       rejections.push({ code: 'MISSING_INTAKE', subject: field })
     }
   }
+  if (action.type === 'send_test_payment_link') {
+    for (const field of input.context.capabilities.intake_missing ?? []) {
+      rejections.push({ code: 'MISSING_INTAKE', subject: field })
+    }
+  }
   if (action.type === 'request_call_now' && !input.context.capabilities.may_request_call_now) {
     rejections.push({ code: 'ACTION_NOT_AUTHORIZED', subject: 'request_call_now' })
   }

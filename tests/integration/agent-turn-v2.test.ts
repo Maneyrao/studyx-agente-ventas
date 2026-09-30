@@ -312,18 +312,27 @@ run('plannerless Agent A vertical', () => {
         vetoes: [],
         confidence: 1,
       },
-      response: { messages: ['Dale, te paso el link de prueba.'] },
+      response: {
+        messages: [
+          'Dale, te paso el link de prueba. Cuando Stripe acredite el pago, el equipo gestionará tu inscripción y acceso.',
+        ],
+      },
       proposed_action: {
         type: 'send_test_payment_link',
         offering_code: 'redes-informaticas',
       },
-      used_fact_ids: ['payment-test:stripe_verification_050:label:v1'],
+      used_fact_ids: [
+        'payment-test:stripe_verification_050:label:v1',
+        'process:human_verification:v1',
+        'process:access_after_verification:v1',
+      ],
       used_memory_ids: [],
       memory_candidates: [],
       repair_of: null,
     });
 
     const content = payment.committed.outbounds.map((outbound) => outbound.content).join('\n');
+    expect(content).toContain('el equipo gestionará tu inscripción y acceso');
     expect(content).toContain(verificationLink);
     expect(content).toContain('client_reference_id=');
     const rows = await db!<Array<{ amount: string; plan_code: string | null }>>`

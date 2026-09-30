@@ -84,6 +84,34 @@ describe('validación de la propuesta del turno', () => {
     })).toBeNull();
   });
 
+  it('rechaza el link temporal mientras falten datos de contacto', () => {
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'request_payment_link',
+          secondary_moves: [],
+          vetoes: [],
+          confidence: 1,
+        },
+        response: { messages: ['Antes del link, ¿cuál es tu apellido?'], call_offer: null },
+        proposed_action: {
+          type: 'send_test_payment_link',
+          offering_code: 'redes-informaticas',
+        },
+        used_fact_ids: [],
+      }),
+      context: context(),
+      planned_fact_ids: [],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection?.rejections).toEqual([
+      { code: 'MISSING_INTAKE', subject: 'apellido' },
+      { code: 'MISSING_INTAKE', subject: 'correo' },
+    ]);
+  });
+
   it('requires the model to ask for the missing phone before acknowledging a requested call', () => {
     const current = context({
       turn: {
