@@ -873,7 +873,8 @@ export function buildAgentAContextV1(
         && claimed.sales_context.active_call === null
         && claimed.sales_context.allowed_actions.includes('request_call_now')
         && intakeStatus === 'known'
-        && !['nombre', 'apellido', 'telefono'].some((field) => intakeMissing.includes(field)),
+        && !(['nombre', 'apellido', 'telefono'] as const)
+          .some((field) => intakeMissing.includes(field)),
       may_present_payment_options: claimed.policy.may_respond
         && selectedCode !== null
         && (claimed.business_context?.workspace.payment_options.length ?? 0) > 0,
