@@ -18,7 +18,8 @@ describe('canonical prompt identity resolution', () => {
     const resolved = resolveCanonicalPromptIdentityV1(STUDYX_AGENT_A_CANONICAL_PROMPT, identity);
 
     expect(resolved.unresolved).toEqual([]);
-    expect(resolved.prompt).toContain('Eres la administrativa y asesora comercial de StudyX');
+    expect(resolved.prompt).toContain('Eres Camila, administrativa de StudyX');
+    expect(resolved.prompt).toContain('«Soy Camila, administrativa de StudyX»');
     for (const variable of AGENT_A_IDENTITY_VARIABLES_V1) {
       expect(resolved.prompt).not.toContain(`{{${variable}}}`);
     }

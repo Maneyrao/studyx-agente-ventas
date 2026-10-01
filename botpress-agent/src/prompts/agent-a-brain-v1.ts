@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v93' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v94' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -55,7 +55,8 @@ function mandatoryRepairDirectiveV1(context: AgentAContextV1): string {
 Use repair_of with this rejection_id and attempt 1. This is the only rewrite.
 Correct only the facts or effects identified in turn_rejection, preserving the customer's intent.
 For an unavailable request_call_now, retain move=request_call and use proposed_action=none. Ask
-only for a missing phone; otherwise ask whether they can attend now. Do not claim it was executed.
+only for missing call data among nombre, apellido and telefono; when those are complete, ask whether
+they can attend now. Do not claim it was executed.
 For a payment action, respect the missing fields and permission reported in the rejection.
 Use authorized fact values or omit unsupported claims. Never expose validation to the customer.
 </mandatory_repair>`;

@@ -79,14 +79,14 @@ describe('Agent A Brain prompt', () => {
     const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v58');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v93');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v59');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v94');
   });
   it('resolves academy identity without altering authorized facts', () => {
     const current = context();
     current.identity = { advisor_name: 'Asistente virtual', academy_name: 'StudyX', website: null, instagram: null };
     const instructions = buildAgentABrainInstructionsV1(current);
-    expect(instructions).toContain('administrativa y asesora comercial de StudyX');
+    expect(instructions).toContain('Eres Asistente virtual, administrativa de StudyX');
     expect(instructions).not.toContain('{{NOMBRE_ACADEMIA}}');
     expect(JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!)).toEqual(current);
   });

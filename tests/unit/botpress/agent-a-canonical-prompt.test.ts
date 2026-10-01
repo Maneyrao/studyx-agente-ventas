@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const PROMPT_PATH = 'docs/prompts/studyx-agent-a-canonical.md';
 const GENERATED_PATH = 'botpress-agent/src/prompts/studyx-agent-a-canonical.generated.ts';
-const EXPECTED_SHA256 = 'f9682db79413d3cfe98fa6db52da52ff155d026cbcce42df293121f830e62f9a';
+const EXPECTED_SHA256 = '1df53ea9db14acb7de539242a6648eaced419e7ea031011b0e88e4a5ab5e9a85';
 
 describe('Agent A canonical sales prompt', () => {
   it('ships the complete approved prompt and a byte-equivalent generated module', () => {
@@ -16,7 +16,7 @@ describe('Agent A canonical sales prompt', () => {
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v58' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v59' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
@@ -55,13 +55,26 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toMatch(/una opci[oó]n por l[ií]nea/iu);
   });
 
-  it('makes the initial name request explicit and uses commercially useful call invitations', () => {
+  it('uses Emma identity, collects name and surname early, and keeps calls commercially useful', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
-    expect(prompt).toMatch(/nombre[\s\S]*primer intercambio[\s\S]*sin bloquear/iu);
+    expect(prompt).toContain('Eres {{NOMBRE_ASESOR}}, administrativa de {{NOMBRE_ACADEMIA}}');
+    expect(prompt).toContain('«Soy {{NOMBRE_ASESOR}}, administrativa de {{NOMBRE_ACADEMIA}}»');
+    expect(prompt).toMatch(/nombre y apellido[\s\S]*primeras interacciones[\s\S]*sin bloquear/iu);
     expect(prompt).toMatch(/llamada[\s\S]*mejore realmente la venta/iu);
     expect(prompt).toMatch(/no la fuerces[\s\S]*segunda intervenci[oó]n/iu);
     expect(prompt).toMatch(/redacta[^.]*para el contexto[\s\S]*sin frases fijas/iu);
+  });
+
+  it('keeps Lisandro humanized selling as the primary behavior instead of a questionnaire', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+
+    expect(prompt).toMatch(/WhatsApp no es una llamada escrita/iu);
+    expect(prompt).toMatch(/no uses una plantilla fija/iu);
+    expect(prompt).toMatch(/no encadenes preguntas para completar campos/iu);
+    expect(prompt).toMatch(/situaci[oó]n actual[\s\S]*deseo[\s\S]*motivaci[oó]n[\s\S]*distancia[\s\S]*frenos/iu);
+    expect(prompt).toMatch(/informaci[oó]n del cliente[\s\S]*necesidad[\s\S]*hecho verificado[\s\S]*utilidad personal/iu);
+    expect(prompt).toMatch(/ejemplos[^.]*no son scripts/iu);
   });
 
   it('sells consultatively from the current message instead of completing a questionnaire', () => {
