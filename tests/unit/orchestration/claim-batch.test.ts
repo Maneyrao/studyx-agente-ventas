@@ -1022,12 +1022,14 @@ describe('claimBatch', () => {
     await expect(claimBatch(input, deps)).rejects.toBeInstanceOf(BatchFactsMissingError);
   });
 
-  it('narrows the policy when the whole batch is unreadable', async () => {
+  it('preserves conversational continuity when the whole batch is unreadable', async () => {
     const deps = buildDeps({ factsResult: facts({ unsupported_message: true }) });
     const result = await claimBatch(input, deps);
 
     if (result.outcome !== 'claimed') throw new Error('expected a claim');
-    expect(result.policy.allowed_response_types).toEqual(['out_of_scope', 'technical_fallback']);
+    expect(result.policy.reason).toBe('UNSUPPORTED_MESSAGE_TYPE');
+    expect(result.policy.allowed_response_types).toContain('commercial_reply');
+    expect(result.policy.allowed_response_types).toContain('clarification');
   });
 
   it('reports a stolen lease so the caller knows it is a recovery', async () => {

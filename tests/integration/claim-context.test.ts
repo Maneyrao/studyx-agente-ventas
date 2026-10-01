@@ -335,6 +335,8 @@ run('controlled context at claim time', () => {
     );
     if (unreadable.outcome !== 'claimed') throw new Error('expected a claim');
     expect(unreadable.policy.reason).toBe('UNSUPPORTED_MESSAGE_TYPE');
+    expect(unreadable.policy.allowed_response_types).toContain('commercial_reply');
+    expect(unreadable.policy.allowed_response_types).toContain('clarification');
 
     // One readable message in the burst is enough to answer normally.
     const second = envelope();

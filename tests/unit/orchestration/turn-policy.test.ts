@@ -70,13 +70,13 @@ describe('evaluateTurnPolicy', () => {
     expect(policy.blocked).toBe(true);
   });
 
-  it('narrows an unreadable message to out-of-scope handling', () => {
+  it('keeps conversational continuity available for an unreadable message', () => {
     const policy = evaluateTurnPolicy(facts({ unsupported_message: true }));
 
     expect(policy.may_respond).toBe(true);
     expect(policy.reason).toBe('UNSUPPORTED_MESSAGE_TYPE');
-    expect(policy.allowed_response_types).toEqual(['out_of_scope', 'technical_fallback']);
-    expect(policy.allowed_response_types).not.toContain('commercial_reply');
+    expect(policy.allowed_response_types).toContain('commercial_reply');
+    expect(policy.allowed_response_types).toContain('clarification');
   });
 
   it('lets blocking win over an unreadable message', () => {

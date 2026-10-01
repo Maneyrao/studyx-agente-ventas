@@ -41,6 +41,10 @@ export const AgentAContextV1Schema = z.object({
       id: IdentifierSchema,
       text: z.string().trim().min(1).max(2_000),
     }).strict()).min(1).max(20),
+    input_capability: z.object({
+      status: z.enum(['understood', 'partially_understood', 'unreadable']),
+      unavailable_message_count: z.number().int().min(0).max(20),
+    }).strict().optional(),
     recent_turns: z.array(z.object({
       id: IdentifierSchema,
       direction: z.enum(['inbound', 'outbound']),

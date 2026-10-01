@@ -138,10 +138,35 @@ function currentLogicalMessagesV1(claimed: ClaimedTurn): readonly CurrentLogical
     .slice(lastOutboundIndex + 1)
     .filter((turn) => turn.direction === 'inbound')
     .map((turn) => ({ id: `unanswered:${turn.id}`, content: turn.content }));
-  const current = claimed.context.batch_messages
-    .filter((message) => message.message_type === 'text')
-    .map((message) => ({ id: message.id, content: message.content }));
+  const current = claimed.context.batch_messages.map((message) => ({
+    id: message.id,
+    // Provider markers are transport details, not customer language. Keep an
+    // inert placeholder in the model context and describe its meaning through
+    // `input_capability` below.
+    content: message.message_type === 'unsupported'
+      ? '[contenido_no_interpretable]'
+      : message.content,
+  }));
   return [...unanswered, ...current].slice(-20);
+}
+
+function inputCapabilityV1(claimed: ClaimedTurn): NonNullable<AgentAContextV1['turn']['input_capability']> {
+  const unavailableMessageCount = claimed.context.batch_messages
+    .filter((message) => message.message_type === 'unsupported')
+    .length;
+  if (unavailableMessageCount === 0) {
+    return { status: 'understood', unavailable_message_count: 0 };
+  }
+  if (unavailableMessageCount === claimed.context.batch_messages.length) {
+    return {
+      status: 'unreadable',
+      unavailable_message_count: unavailableMessageCount,
+    };
+  }
+  return {
+    status: 'partially_understood',
+    unavailable_message_count: unavailableMessageCount,
+  };
 }
 
 function previousAgentRepliesV1(claimed: ClaimedTurn): readonly string[] {
@@ -698,6 +723,8 @@ export function buildAgentAContextV1(
     || (intakeAnswered && !intakeMissing.includes('nombre'));
   const logicalHistory = projectLogicalHistoryV1(claimed);
   const currentLogicalMessages = currentLogicalMessagesV1(claimed);
+  const inputCapability = inputCapabilityV1(claimed);
+  const hasReadableCurrentInput = inputCapability.status !== 'unreadable';
   const previousAgentReplies = previousAgentRepliesV1(claimed);
   const lastAgentReply = previousAgentReplies.at(-1) ?? null;
   const firstNameStatus = firstNameKnownNow
@@ -749,6 +776,7 @@ export function buildAgentAContextV1(
         id: message.id,
         text: message.content,
       })),
+      input_capability: inputCapability,
       recent_turns: logicalHistory.slice(-LOGICAL_HISTORY_LIMIT).map((turn) => ({
         id: turn.id,
         direction: turn.direction,
@@ -869,6 +897,7 @@ export function buildAgentAContextV1(
         && state.payment_reported !== true
         && callOfferCount < 2,
       may_request_call_now: claimed.policy.may_respond
+        && hasReadableCurrentInput
         && !claimed.contact.blocked
         && claimed.sales_context.active_call === null
         && claimed.sales_context.allowed_actions.includes('request_call_now')
@@ -878,7 +907,7 @@ export function buildAgentAContextV1(
       may_present_payment_options: claimed.policy.may_respond
         && selectedCode !== null
         && (claimed.business_context?.workspace.payment_options.length ?? 0) > 0,
-      may_send_payment_link: maySendPaymentLink,
+      may_send_payment_link: hasReadableCurrentInput && maySendPaymentLink,
       intake_status: intakeStatus,
       authorized_payment_plan: selectedPlan,
       intake_missing: intakeMissing,

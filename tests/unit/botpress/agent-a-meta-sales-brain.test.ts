@@ -88,7 +88,7 @@ describe('Agent A Meta sales brain', () => {
   it('keeps the instruction surface compact and leaves the real catalog in context', () => {
     const current = context();
     const instructions = buildAgentABrainInstructionsV1(current);
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v95');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v96');
     const staticInstructions = instructions.split('<authorized_context>')[0]!;
     expect(staticInstructions.trim().split(/\s+/u).length).toBeLessThan(1600);
     expect(JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!)).toEqual(current);

@@ -46,7 +46,17 @@ const CONVERSATIONAL_RESPONSE_TYPES: DecisionResponseType[] = [
   'technical_fallback',
 ];
 
-const UNREADABLE_RESPONSE_TYPES: DecisionResponseType[] = ['out_of_scope', 'technical_fallback'];
+// An unreadable attachment limits what the system understood; it does not
+// revoke Agent A's conversational authority. Keep the safe text surface open
+// so the agent can explain the limitation, request the minimum correction and
+// continue from durable sales state. Operational effects remain independently
+// gated by current-turn evidence and capabilities.
+const UNREADABLE_RESPONSE_TYPES: DecisionResponseType[] = [
+  'commercial_reply',
+  'clarification',
+  'out_of_scope',
+  'technical_fallback',
+];
 
 export function isContactBlocked(facts: TurnPolicyFacts): boolean {
   return (

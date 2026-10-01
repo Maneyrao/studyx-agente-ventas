@@ -189,6 +189,69 @@ function claimedTurn(): ClaimedTurn {
 }
 
 describe('buildAgentAContextV1', () => {
+  it('exposes an unreadable input as recoverable context without authorizing an action', () => {
+    const claimed = claimedTurn();
+    claimed.policy = {
+      may_respond: true,
+      allowed_response_types: ['commercial_reply', 'clarification', 'technical_fallback'],
+      reason: 'UNSUPPORTED_MESSAGE_TYPE',
+    };
+    claimed.context.batch_messages = [{
+      id: UUID,
+      conversation_seq: 11,
+      content: '[whatsapp_media_no_soportado]',
+      created_at: NOW,
+      message_type: 'unsupported',
+    }];
+
+    const context = buildAgentAContextV1(claimed);
+
+    expect(context?.turn.input_capability).toEqual({
+      status: 'unreadable',
+      unavailable_message_count: 1,
+    });
+    expect(context?.turn.batch_messages).toEqual([{
+      id: UUID,
+      text: '[contenido_no_interpretable]',
+    }]);
+    expect(context?.capabilities.may_reply).toBe(true);
+    expect(context?.capabilities.may_request_call_now).toBe(false);
+  });
+
+  it('keeps readable text and marks a mixed batch as partially understood', () => {
+    const claimed = claimedTurn();
+    claimed.context.batch_messages = [
+      {
+        id: UUID,
+        conversation_seq: 11,
+        content: 'Quiero información de Inglés 2',
+        created_at: NOW,
+        message_type: 'text',
+      },
+      {
+        id: '11111111-1111-4111-8111-111111111111',
+        conversation_seq: 12,
+        content: '[whatsapp_media_no_soportado]',
+        created_at: NOW,
+        message_type: 'unsupported',
+      },
+    ];
+
+    const context = buildAgentAContextV1(claimed);
+
+    expect(context?.turn.input_capability).toEqual({
+      status: 'partially_understood',
+      unavailable_message_count: 1,
+    });
+    expect(context?.turn.batch_messages).toEqual([
+      { id: UUID, text: 'Quiero información de Inglés 2' },
+      {
+        id: '11111111-1111-4111-8111-111111111111',
+        text: '[contenido_no_interpretable]',
+      },
+    ]);
+  });
+
   it('projects the latest canonical Stripe status without treating the customer claim as evidence', () => {
     const claimed = claimedTurn();
     (claimed as ClaimedTurn & {

@@ -537,6 +537,122 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
+  it('lets Agent A recover an unreadable input instead of forcing a technical fallback', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off',
+      conversation_pipeline_v1_enabled: true,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.policy = {
+      may_respond: true,
+      allowed_response_types: ['commercial_reply', 'clarification', 'technical_fallback'],
+      reason: 'UNSUPPORTED_MESSAGE_TYPE',
+    };
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null,
+      selected_payment_plan: null,
+      stage: 'exploring',
+      call_preference: 'unknown',
+      call_offer_status: 'not_offered',
+      call_offer_count: 0,
+      awaiting_reply: 'none',
+      version: 1,
+    };
+    claimed.context.batch_messages = [{
+      id: UUID,
+      conversation_seq: 1,
+      content: '[whatsapp_media_no_soportado]',
+      created_at: NOW,
+      message_type: 'unsupported',
+    }];
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+    actionSpies.agentABrainDeepSeek.mockResolvedValueOnce({
+      proposal: {
+        schema_version: 1,
+        move: {
+          schema_version: 1,
+          move: 'unknown',
+          secondary_moves: [],
+          vetoes: [],
+          confidence: 0.98,
+        },
+        response: {
+          messages: [
+            'No pude interpretar ese audio.',
+            'Escribime lo principal y seguimos desde donde estábamos.',
+          ],
+        },
+        proposed_action: { type: 'none' },
+        used_fact_ids: [],
+        used_memory_ids: [],
+        memory_candidates: [],
+        repair_of: null,
+      },
+      provider: 'deepseek-direct',
+      model: 'deepseek-v4-flash',
+      latency_ms: 180,
+      attempt_count: 1,
+    });
+    actionSpies.commit.mockResolvedValueOnce({
+      status: 'committed',
+      replayed: false,
+      trace_id: UUID,
+      turn_id: UUID,
+      decision_id: UUID,
+      next_state: 'completed',
+      outbound: null,
+      call_request: null,
+    });
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: {
+        ...workflowInput(),
+        message: {
+          ...workflowInput().message,
+          type: 'unsupported',
+          text: '[whatsapp_media_no_soportado]',
+        },
+      },
+      state: processingState(),
+      step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: {},
+      signal: new AbortController().signal,
+      workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
+    expect(actionSpies.plan).not.toHaveBeenCalled();
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      agent_turn_v2: {
+        proposal: {
+          move: { move: 'unknown' },
+          response: {
+            messages: [
+              'No pude interpretar ese audio.',
+              'Escribime lo principal y seguimos desde donde estábamos.',
+            ],
+          },
+          proposed_action: { type: 'none' },
+        },
+      },
+      model: {
+        provider: 'deepseek-direct',
+        prompt_version: AGENT_A_BRAIN_PROMPT_VERSION,
+      },
+    });
+  });
+
   it.each([
     ['legacy', false, false, 0, 0, 1],
     ['shadow', false, true, 1, 0, 1],
