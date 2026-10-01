@@ -1510,8 +1510,8 @@ describe('Agent A Brain V1', () => {
     expect(moveProperties.course_reference.description).toContain(
       'required whenever move or secondary_moves includes select_course',
     );
-    expect(body.instructions).toContain('When turn_rejection exists');
-    expect(body.instructions).toContain('Respond to their combined meaning');
+    expect(body.instructions).toContain('On turn_rejection, rewrite once');
+    expect(body.instructions).toContain('Read turn.batch_messages as one intervention');
     expect(body.instructions).not.toContain('control voice, rhythm and the choice of');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('greeting');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('unknown');
