@@ -83,7 +83,7 @@ describe('classifyDeterministicSalesSignal', () => {
     });
   });
 
-  it.each(['Sí', 'sí', 'Dale', 'De una', '¡Dale!', 'si.'])(
+  it.each(['Sí', 'sí', 'Sii', 'Siii', 'Dale', 'Daleee', 'De una', '¡Dale!', 'si.'])(
     'recognizes a short standalone acceptance (%s)',
     (text) => {
       expect(classifyDeterministicSalesSignal(text)).toEqual({ type: 'call_acceptance' });

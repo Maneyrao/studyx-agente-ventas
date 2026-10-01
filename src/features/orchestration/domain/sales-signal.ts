@@ -109,7 +109,11 @@ export function classifyDeterministicSalesSignal(text: string): DeterministicSal
   const bareReply = normalized
     .replace(/^[¿¡!.,;: ]+|[¿¡!.,;: ]+$/g, '')
     .replace(/^bueno,?\s+/u, '');
-  if (SHORT_ACCEPTANCE_REPLIES.has(bareReply)) {
+  // Chat commonly stretches the final letter for emphasis ("sii",
+  // "daleee"). Canonicalize only that terminal repetition and only for the
+  // bounded short-reply check below; longer prose still requires the model.
+  const canonicalShortReply = bareReply.replace(/(.)\1+$/u, '$1');
+  if (SHORT_ACCEPTANCE_REPLIES.has(canonicalShortReply)) {
     return { type: 'call_acceptance' };
   }
 

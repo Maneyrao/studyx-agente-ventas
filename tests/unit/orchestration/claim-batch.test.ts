@@ -2056,6 +2056,47 @@ describe('claimBatch sales_context', () => {
     });
   });
 
+  it.each(['Daleee', 'Sii'])(
+    'turns an emphatic chat acceptance (%s) of a durable retry prompt into a fresh call request',
+    async (content) => {
+      const messages = [{
+        id: '00000000-0000-4000-8000-000000000007',
+        conversation_seq: 4,
+        content,
+        created_at: '2026-08-11T12:00:00.000Z',
+        message_type: 'text',
+      }];
+      const deps = buildDeps({
+        messagesResult: messages,
+        callFactsResult: callFacts({
+          open_retry_prompt: {
+            call_id: '00000000-0000-4000-8000-000000000009',
+            offered_at: '2026-08-11T11:58:00.000Z',
+          },
+          last_call_result: {
+            call_id: '00000000-0000-4000-8000-000000000009',
+            result: 'no_answer',
+            ended_at: '2026-08-11T11:57:30.000Z',
+          },
+        } as Partial<ClaimedCallFacts>),
+        now: () => '2026-08-11T12:00:00.000Z',
+        contactIntake: async () => ({
+          nombre: 'Matias', apellido: 'Maneyro', correo: null, telefono: '+5491130872611',
+        }),
+      });
+
+      const result = await claimBatch(input, deps);
+      if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+      expect(result.sales_context.allowed_actions).toEqual(['request_call_now']);
+      expect(result.deterministic_route).toBe('call_direct_request');
+      expect(matchCallHandoffFastPath(withWireUuids(result) as unknown as BotpressClaimedTurn)).toMatchObject({
+        response_type: 'call_confirmation',
+        business_action: { type: 'request_call_now', reason: 'direct_request' },
+      });
+    },
+  );
+
   it('lets an expired offer fall back to advising and eligible for a new one', async () => {
     const deps = buildDeps({
       callFactsResult: callFacts({
