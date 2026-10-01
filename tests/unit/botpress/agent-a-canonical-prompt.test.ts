@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const PROMPT_PATH = 'docs/prompts/studyx-agent-a-canonical.md';
 const GENERATED_PATH = 'botpress-agent/src/prompts/studyx-agent-a-canonical.generated.ts';
-const EXPECTED_SHA256 = '1df53ea9db14acb7de539242a6648eaced419e7ea031011b0e88e4a5ab5e9a85';
+const EXPECTED_SHA256 = '131395bbeeeaf375e5254310f43f033a2fa047c7d579564d03768b5c6587f502';
 
 describe('Agent A canonical sales prompt', () => {
   it('ships the complete approved prompt and a byte-equivalent generated module', () => {
@@ -16,7 +16,7 @@ describe('Agent A canonical sales prompt', () => {
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v59' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v60' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
@@ -61,9 +61,9 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toContain('Eres {{NOMBRE_ASESOR}}, administrativa de {{NOMBRE_ACADEMIA}}');
     expect(prompt).toContain('«Soy {{NOMBRE_ASESOR}}, administrativa de {{NOMBRE_ACADEMIA}}»');
     expect(prompt).toMatch(/nombre y apellido[\s\S]*primeras interacciones[\s\S]*sin bloquear/iu);
-    expect(prompt).toMatch(/llamada[\s\S]*mejore realmente la venta/iu);
-    expect(prompt).toMatch(/no la fuerces[\s\S]*segunda intervenci[oó]n/iu);
-    expect(prompt).toMatch(/redacta[^.]*para el contexto[\s\S]*sin frases fijas/iu);
+    expect(prompt).toMatch(/curso concreto[\s\S]*segunda intervenci[oó]n comercial[\s\S]*primera invitaci[oó]n/iu);
+    expect(prompt).toMatch(/m[aá]ximo dos invitaciones[\s\S]*segunda[\s\S]*motivo nuevo/iu);
+    expect(prompt).toMatch(/ad[aá]ptalas al contexto[\s\S]*sin frases fijas/iu);
   });
 
   it('keeps Lisandro humanized selling as the primary behavior instead of a questionnaire', () => {

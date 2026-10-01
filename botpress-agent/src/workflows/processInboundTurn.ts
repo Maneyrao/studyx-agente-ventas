@@ -30,7 +30,6 @@ import { StudyxHttpError } from '../utils/http'
 import {
   applyDecisionPolicy,
   classifyBrainFailureReason,
-  callPhoneRequiredFallback,
   constrainModelToAdvisory,
   suppress,
   technicalFallback,
@@ -231,7 +230,28 @@ function pipelinePlaceholder(memoryCandidates: Decision['memory_candidates'] = [
   }
 }
 
-function callPhoneRequiredAgentTurn(): AgentATurnCommitV2 {
+const CALL_REQUIRED_INTAKE_FIELDS = ['nombre', 'apellido', 'telefono'] as const
+
+function callIntakeRequiredMessage(claimed: ClaimedTurn): string {
+  const missing = CALL_REQUIRED_INTAKE_FIELDS.filter((field) => (
+    claimed.contact_intake_missing.includes(field)
+  ))
+  const needsName = missing.includes('nombre')
+  const needsLastName = missing.includes('apellido')
+  const needsPhone = missing.includes('telefono')
+
+  if (needsName && needsLastName && needsPhone) {
+    return 'Claro. Para preparar la llamada, dime tu nombre, apellido y teléfono completo con código de país y área 🙂'
+  }
+  if (needsName && needsLastName) {
+    return 'Claro. Para preparar la llamada, dime tu nombre y apellido 🙂'
+  }
+  if (needsName) return 'Claro. Para preparar la llamada, dime tu nombre 🙂'
+  if (needsLastName) return 'Claro. Para preparar la llamada, dime tu apellido 🙂'
+  return 'De acuerdo. Pásame el número completo con código de país y área, por ejemplo +54 9 11…, para poder llamarte 🙂'
+}
+
+function callIntakeRequiredAgentTurn(claimed: ClaimedTurn): AgentATurnCommitV2 {
   return {
     schema_version: 2,
     proposal: {
@@ -244,7 +264,7 @@ function callPhoneRequiredAgentTurn(): AgentATurnCommitV2 {
         confidence: 1,
       },
       response: {
-        messages: ['De acuerdo. Pásame el número completo con código de país y área, por ejemplo +54 9 11…, para poder llamarte 🙂'],
+        messages: [callIntakeRequiredMessage(claimed)],
         call_offer: null,
       },
       proposed_action: { type: 'none' },
@@ -256,15 +276,44 @@ function callPhoneRequiredAgentTurn(): AgentATurnCommitV2 {
   }
 }
 
-function needsCallPhoneRecovery(claimed: ClaimedTurn, failureCode: string): boolean {
+function callIntakeRequiredFallback(claimed: ClaimedTurn): Decision {
+  const allowed = claimed.policy.allowed_response_types
+  const responseType = allowed.includes('commercial_reply')
+    ? 'commercial_reply' as const
+    : allowed.includes('clarification')
+      ? 'clarification' as const
+      : null
+  if (responseType === null) return suppress('CALL_INTAKE_REQUIRED')
+
+  return {
+    schema_version: 3,
+    intent: 'commercial',
+    kind: 'reply',
+    response: callIntakeRequiredMessage(claimed),
+    response_type: responseType,
+    business_action: null,
+    memory_candidates: [],
+    missing_information: CALL_REQUIRED_INTAKE_FIELDS.filter((field) => (
+      claimed.contact_intake_missing.includes(field)
+    )),
+    next_state: 'waiting_user',
+    reason_code: 'CALL_INTAKE_REQUIRED',
+    confidence: 1,
+    retrieval_used: null,
+  }
+}
+
+function needsCallIntakeRecovery(claimed: ClaimedTurn, failureCode: string): boolean {
+  const hasMissingCallIntake = CALL_REQUIRED_INTAKE_FIELDS.some((field) => (
+    claimed.contact_intake_missing.includes(field)
+  ))
+  if (!hasMissingCallIntake) return false
+
   return claimed.deterministic_route === 'call_phone_required'
-    || (
-      claimed.contact_intake_missing.includes('telefono')
-      && (
-        failureCode.includes('ACTION_NOT_AUTHORIZED:request_call_now')
-        || failureCode.includes('MISSING_INTAKE:telefono')
-      )
-    )
+    || claimed.deterministic_route === 'call_direct_request'
+    || claimed.deterministic_route === 'call_accepted_offer'
+    || failureCode.includes('ACTION_NOT_AUTHORIZED:request_call_now')
+    || failureCode.includes('MISSING_INTAKE:')
 }
 
 /**
@@ -1008,21 +1057,21 @@ export const processInboundTurn = new Workflow({
         // only a canonical deterministic route already proven by the claim;
         // otherwise return the narrow state/technical recovery below.
         if (brainAuthoritative) {
-          const callPhoneFallback = needsCallPhoneRecovery(owned, failureCode)
+          const callIntakeFallback = needsCallIntakeRecovery(owned, failureCode)
           const deterministicCommercialFallback = commercialRoute.kind === 'deterministic'
             && commercialRoute.decision.business_action === null
             ? commercialRoute
             : routeCanonicalCatalogFailureFallback(owned)
-          if (callPhoneFallback) {
-            agentTurnV2Commit = callPhoneRequiredAgentTurn()
+          if (callIntakeFallback) {
+            agentTurnV2Commit = callIntakeRequiredAgentTurn(owned)
             pipelineDecisionProvider = 'botpress'
-            pipelineDecisionModel = 'policy:call-phone-required'
+            pipelineDecisionModel = 'policy:call-intake-required'
             pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
           }
           const stateFallback = brainFailureReason === 'policy_rejected'
             ? policyRejectedStateFallback(owned)
             : null
-          if (!callPhoneFallback) {
+          if (!callIntakeFallback) {
             pipelineFailureDecision = deterministicCommercialFallback?.decision
               ?? stateFallback
               ?? technicalFallback(
@@ -1169,14 +1218,14 @@ export const processInboundTurn = new Workflow({
         })
         // No lexical sales substitute. A factual intake-status question may
         // use the canonical claim; every other failure stays technical.
-        const callPhoneFallback = needsCallPhoneRecovery(owned, failureCode)
-          ? callPhoneRequiredFallback(owned)
+        const callIntakeFallback = needsCallIntakeRecovery(owned, failureCode)
+          ? callIntakeRequiredFallback(owned)
           : null
         const stateFallback = brainFailureReason === 'policy_rejected'
           ? policyRejectedStateFallback(owned)
           : null
-        pipelineFailureDecision = callPhoneFallback
-          ? callPhoneFallback
+        pipelineFailureDecision = callIntakeFallback
+          ? callIntakeFallback
           : stateFallback
           ? stateFallback
           : technicalFallback(

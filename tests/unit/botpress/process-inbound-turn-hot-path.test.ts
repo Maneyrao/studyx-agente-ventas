@@ -2480,6 +2480,57 @@ describe('processInboundTurn hot path', () => {
     expect(response).not.toContain('Hubo un problema');
   });
 
+  it('asks for missing name and surname instead of exposing a model failure after a WhatsApp call request', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off',
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.deterministic_route = 'call_direct_request';
+    configuration.agentAPlannerlessV2Enabled = true;
+    claimed.context.batch_messages[0].content = 'Okay, llámame';
+    claimed.sales_context.allowed_actions = ['request_call_now'];
+    claimed.contact_intake_missing = ['nombre', 'apellido'];
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0,
+    };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    claimed.conversation_state_v1 = {
+      selected_offering_code: 'reparacion_celulares', selected_payment_plan: null,
+      stage: 'course_selected', call_preference: 'call', call_offer_status: 'accepted',
+      call_offer_count: 1, awaiting_reply: 'call_or_chat', version: 2,
+    };
+    actionSpies.claim.mockResolvedValue(claimed);
+    actionSpies.agentABrainDeepSeek.mockRejectedValue(new Error('BRAIN_DEEPSEEK_TIMEOUT'));
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    const proposal = actionSpies.commit.mock.calls[0]?.[0]?.input?.agent_turn_v2?.proposal;
+    expect(proposal).toMatchObject({
+      move: { move: 'request_call' },
+      response: { call_offer: null },
+      proposed_action: { type: 'none' },
+    });
+    const response = String(proposal?.response?.messages?.[0]);
+    expect(response).toMatch(/nombre/i);
+    expect(response).toMatch(/apellido/i);
+    expect(response).not.toContain('Hubo un problema');
+  });
+
   it('asks for the missing phone when DeepSeek finds a call request inside a mixed message', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
