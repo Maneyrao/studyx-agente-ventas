@@ -119,6 +119,62 @@ describe('Agent A Brain V1', () => {
     )).toBe(true);
   });
 
+  it('rejects a claimed immediate call when no call action was requested', () => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'Dale, llamame';
+    current.commercial_state.call_preference = 'call';
+    current.commercial_state.call_offer_status = 'accepted';
+    current.commercial_state.awaiting_reply = 'call_or_chat';
+    current.capabilities.may_request_call_now = true;
+    const parsed = parseAgentATurnProposalV1(proposal({
+      move: {
+        schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1,
+      },
+      response: { messages: ['Perfecto, te llamo ahora.'], call_offer: null },
+      proposed_action: { type: 'none' },
+    }), current);
+
+    expect(validateAgentATurnProposalV1({
+      proposal: parsed,
+      context: current,
+      planned_fact_ids: parsed.used_fact_ids,
+      rejection_id: '00000000-0000-4000-8000-0000000000c1',
+    })?.rejections).toContainEqual({
+      code: 'UNSUPPORTED_OPERATIONAL_CLAIM',
+      subject: 'call_confirmation',
+    });
+  });
+
+  it.each([
+    ['availability question', 'Puedes atender ahora?', { type: 'none' as const }],
+    ['negative statement', 'No te llamo hasta que me confirmes.', { type: 'none' as const }],
+    ['authorized dispatch', 'Perfecto, te llamo ahora.', { type: 'request_call_now' as const, reason: 'accepted_offer' as const }],
+  ])('allows call wording when it is an %s', (_label, message, proposedAction) => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'Sí, puedo atender ahora';
+    current.commercial_state.call_preference = 'call';
+    current.commercial_state.call_offer_status = 'accepted';
+    current.commercial_state.awaiting_reply = 'call_or_chat';
+    current.capabilities.may_request_call_now = true;
+    const parsed = parseAgentATurnProposalV1(proposal({
+      move: {
+        schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1,
+      },
+      response: { messages: [message], call_offer: null },
+      proposed_action: proposedAction,
+    }), current);
+
+    expect(validateAgentATurnProposalV1({
+      proposal: parsed,
+      context: current,
+      planned_fact_ids: parsed.used_fact_ids,
+      rejection_id: '00000000-0000-4000-8000-0000000000c2',
+    })?.rejections ?? []).not.toContainEqual({
+      code: 'UNSUPPORTED_OPERATIONAL_CLAIM',
+      subject: 'call_confirmation',
+    });
+  });
+
   it('preserves provider-authored bubble boundaries and call invitation copy', () => {
     const result = parseAgentATurnProposalV1(proposal({
       response: {

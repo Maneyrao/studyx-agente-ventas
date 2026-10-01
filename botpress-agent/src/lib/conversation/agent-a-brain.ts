@@ -1862,15 +1862,19 @@ export function validateAgentATurnProposalV1(input: {
     ...input.proposal.move.secondary_moves,
   ]);
   const missingIntake = input.context.capabilities.intake_missing ?? [];
-  const needsPhoneForRequestedCall = moves.has('request_call')
-    && missingIntakeFields.has('telefono')
+  const missingCallIntake = ['nombre', 'apellido', 'telefono']
+    .filter((field) => missingIntakeFields.has(field));
+  const needsIntakeForRequestedCall = moves.has('request_call')
+    && missingCallIntake.length > 0
     && !input.context.capabilities.may_request_call_now
     && input.proposal.proposed_action.type === 'none';
   if (
-    needsPhoneForRequestedCall
-    && !mentionsMissingIntakeField(input.proposal.response.messages, ['telefono'])
+    needsIntakeForRequestedCall
+    && !mentionsMissingIntakeField(input.proposal.response.messages, missingCallIntake)
   ) {
-    rejections.push({ code: 'MISSING_INTAKE', subject: 'telefono' });
+    for (const field of missingCallIntake) {
+      rejections.push({ code: 'MISSING_INTAKE', subject: field });
+    }
   }
   const currentPaymentDeferral = hasTemporalPaymentDeferral(
     input.context.turn.batch_messages.map((message) => ({ content: message.text })),
@@ -1915,6 +1919,11 @@ export function validateAgentATurnProposalV1(input: {
   const requestedCallNow = moves.has('request_call') && input.proposal.proposed_action.type === 'request_call_now'
     && input.context.capabilities.may_request_call_now && callRequestSupported
     && !input.proposal.move.vetoes.includes('call');
+  const claimsCallDispatchWithoutAction = input.proposal.proposed_action.type === 'none'
+    && input.proposal.response.messages.some((message) => claimsImmediateCallDispatchV1(message));
+  if (claimsCallDispatchWithoutAction) {
+    rejections.push({ code: 'UNSUPPORTED_OPERATIONAL_CLAIM', subject: 'call_confirmation' });
+  }
   // A declaration that also claims an enrolment already exists is removed by
   // the backend's state guard, so it cannot count as the required visible offer.
   const unsupportedDeclaredOffer = typeof declaredCallOffer === 'string'
@@ -2026,6 +2035,22 @@ function authorizedActionsV1(context: AgentAContextV1): string[] {
 const CALL_SOLICITATION_V1 = /\b(?:te\s+llamo|te\s+llamamos|(?:puedo|podemos)\s+llamar(?:te|los?|las?|le|les|nos)?|una\s+llamada|coordinamos\s+una\s+llamada|prefer[íi]s\s+que\s+te\s+llame)\b/iu
 const NOT_AN_OFFER_V1 = /\b(?:ya\s+(?:qued|registr|solicit)|no\s+te\s+llam|sin\s+llamada)/iu
 const DECLARED_CALL_CHANNEL_V1 = /\b(?:llam|videollam)|\btel[eé]fono\b|\btelef[oó]nic(?:a|o|as|os)\b|\bvoz\b|\bcontact(?:arte|emos)\b/iu
+const CALL_DISPATCH_CLAIM_V1 = /\b(?:te\s+(?:voy|vamos)\s+a\s+llamar|te\s+llam(?:o|amos)\b|(?:la\s+)?llamada\s+(?:ya\s+)?(?:qued[oó]|fue)\s+(?:registrad|solicitad|coordinad)\w*|(?:ya\s+)?(?:registr[eé]|solicit[eé]|coordin[eé])\s+(?:la\s+)?llamada)\b/iu
+const CALL_DISPATCH_QUESTION_OR_CONDITION_V1 = /\?|\b(?:si\s+(?:quieres|te\s+parece)|puedo|podemos|quieres\s+que|prefieres\s+que|cuando\s+(?:puedas|quieras))\b/iu
+const CALL_DISPATCH_NEGATION_V1 = /\b(?:no|aún\s+no|todavía\s+no)\b[^.!?]{0,28}\b(?:te\s+llam|llamada|registr|solicit|coordin)/iu
+
+/**
+ * Detecta una afirmación de efecto operativo, no una invitación. El texto
+ * sigue siendo libre; esta frontera sólo impide decir que la llamada ya se
+ * ejecuta cuando la propuesta no contiene la acción correspondiente.
+ */
+export function claimsImmediateCallDispatchV1(message: string): boolean {
+  return message.split(/[.!\n]+/u).some((clause) => (
+    CALL_DISPATCH_CLAIM_V1.test(clause)
+    && !CALL_DISPATCH_QUESTION_OR_CONDITION_V1.test(clause)
+    && !CALL_DISPATCH_NEGATION_V1.test(clause)
+  ));
+}
 
 export function solicitsACallV1(message: string, declaredOffer = false): boolean {
   if (declaredOffer) {

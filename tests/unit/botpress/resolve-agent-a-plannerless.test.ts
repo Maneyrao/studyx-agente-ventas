@@ -443,6 +443,70 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     ]);
   });
 
+  it('repairs a requested call that omitted missing name and surname', async () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm1', text: 'Dale, llamame' }];
+    current.capabilities.may_request_call_now = false;
+    current.capabilities.intake_missing = ['nombre', 'apellido'];
+    const initial = proposal({
+      move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+      response: { messages: ['Perfecto, te llamo ahora.'], call_offer: null },
+      proposed_action: { type: 'none' },
+      used_fact_ids: [],
+    });
+    const repair = vi.fn(async rejection => generated({
+      ...initial,
+      response: { messages: ['Antes de llamarte, dime tu nombre y apellido.'], call_offer: null },
+      repair_of: { rejection_id: rejection.rejection_id, attempt: 1 as const },
+    }));
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(initial),
+      context: current,
+      repair_enabled: true,
+      repair,
+      rejection_id: '00000000-0000-4000-8000-0000000000c3',
+    });
+
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.effective.proposal.response.messages).toEqual([
+      'Antes de llamarte, dime tu nombre y apellido.',
+    ]);
+  });
+
+  it('repairs a false call confirmation into an availability question', async () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm1', text: 'Dale, llamame' }];
+    current.commercial_state.call_preference = 'call';
+    current.commercial_state.call_offer_status = 'accepted';
+    current.commercial_state.awaiting_reply = 'call_or_chat';
+    const initial = proposal({
+      move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+      response: { messages: ['Perfecto, te llamo ahora.'], call_offer: null },
+      proposed_action: { type: 'none' },
+      used_fact_ids: [],
+    });
+    const repair = vi.fn(async rejection => generated({
+      ...initial,
+      response: { messages: ['Perfecto. Puedes atender ahora?'], call_offer: null },
+      repair_of: { rejection_id: rejection.rejection_id, attempt: 1 as const },
+    }));
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(initial),
+      context: current,
+      repair_enabled: true,
+      repair,
+      rejection_id: '00000000-0000-4000-8000-0000000000c4',
+    });
+
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.effective.proposal.response.messages).toEqual([
+      'Perfecto. Puedes atender ahora?',
+    ]);
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+  });
+
   it('preserves requested information embedded with an unsolicited pending-call reminder', async () => {
     const current = context();
     current.commercial_state.call_offer_count = 1;

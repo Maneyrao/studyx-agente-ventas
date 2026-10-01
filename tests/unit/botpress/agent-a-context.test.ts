@@ -2026,3 +2026,24 @@ it('does not authorize an immediate call when contact intake was not loaded', ()
   expect(context.capabilities.intake_status).toBe('unknown');
   expect(context.capabilities.may_request_call_now).toBe(false);
 });
+
+it.each(['nombre', 'apellido', 'telefono'] as const)(
+  'does not authorize an immediate call while %s is missing',
+  (missingField) => {
+    const claimed = claimedTurn();
+    claimed.contact_intake_missing = [missingField];
+
+    const context = buildAgentAContextV1(claimed)!;
+
+    expect(context.capabilities.may_request_call_now).toBe(false);
+  },
+);
+
+it('authorizes an immediate call when only payment-only email is missing', () => {
+  const claimed = claimedTurn();
+  claimed.contact_intake_missing = ['correo'];
+
+  const context = buildAgentAContextV1(claimed)!;
+
+  expect(context.capabilities.may_request_call_now).toBe(true);
+});
