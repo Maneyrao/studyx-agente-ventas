@@ -1243,8 +1243,9 @@ describe('processInboundTurn hot path', () => {
       conversation_pipeline_v1: null,
       decision: {
         kind: 'reply',
-        response: 'Hubo un problema al preparar la respuesta. Envíame el mensaje otra vez en un momento.',
+        response: 'Sigo contigo. Cuéntame de nuevo qué necesitas y avanzamos por aquí.',
         reason_code: 'MODEL_UNAVAILABLE',
+        next_state: 'waiting_user',
       },
     });
   });
@@ -1384,8 +1385,9 @@ describe('processInboundTurn hot path', () => {
       conversation_pipeline_v1: null,
       decision: {
         kind: 'reply',
-        response: 'Hubo un problema al preparar la respuesta. Envíame el mensaje otra vez en un momento.',
+        response: 'Sigo contigo. Cuéntame de nuevo qué necesitas y avanzamos por aquí.',
         reason_code: 'MODEL_UNAVAILABLE',
+        next_state: 'waiting_user',
       },
     });
   });
@@ -1796,8 +1798,9 @@ describe('processInboundTurn hot path', () => {
       conversation_pipeline_v1: null,
       decision: {
         kind: 'reply',
-        response: 'Hubo un problema al preparar la respuesta. Envíame el mensaje otra vez en un momento.',
+        response: 'Sigo contigo. Cuéntame de nuevo qué necesitas y avanzamos por aquí.',
         reason_code: 'MODEL_UNAVAILABLE',
+        next_state: 'waiting_user',
       },
     });
   });

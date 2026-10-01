@@ -305,6 +305,12 @@ function geminiRequestBody(context: AgentAContextV1): unknown {
     generationConfig: {
       temperature: 0.2,
       responseMimeType: 'application/json',
+      // Gemini was previously asked for JSON but not constrained to the
+      // proposal contract. During a real DeepSeek timeout it returned valid
+      // JSON with the wrong shape, so the failover failed too. Constraining
+      // the provider output here keeps the same semantic validator while
+      // preventing that avoidable shape drift.
+      responseSchema: proposalJsonSchema(context),
     },
   };
 }

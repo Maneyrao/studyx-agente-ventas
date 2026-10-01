@@ -884,7 +884,7 @@ export const processInboundTurn = new Workflow({
             model: typeof configuration.agentABrainDeepSeekModel === 'string'
               ? configuration.agentABrainDeepSeekModel
               : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
-            timeout_ms: 8_000,
+            timeout_ms: configuration.requestTimeoutMs,
           })
         const brainStartedAt = Date.now()
         let generated
@@ -928,7 +928,7 @@ export const processInboundTurn = new Workflow({
                 context: agentABrainContext,
                 apiKey: geminiApiKey,
                 signal,
-                timeout_ms: 8_000,
+                timeout_ms: configuration.requestTimeoutMs,
               }),
               { maxAttempts: 1 },
             )

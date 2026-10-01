@@ -43,12 +43,16 @@ export function technicalFallback(
     schema_version: 3,
     intent: 'unknown',
     kind: 'reply',
-    response: 'Hubo un problema al preparar la respuesta. Envíame el mensaje otra vez en un momento.',
+    // Last-resort continuity only. Do not expose provider failures to the
+    // customer or terminate the commercial conversation. This text neither
+    // invents facts nor interprets the customer's intent; Agent A regains
+    // ownership on the next message.
+    response: 'Sigo contigo. Cuéntame de nuevo qué necesitas y avanzamos por aquí.',
     response_type: responseType,
     business_action: null,
     memory_candidates: [],
     missing_information: [],
-    next_state: 'completed',
+    next_state: 'waiting_user',
     reason_code: 'MODEL_UNAVAILABLE',
     confidence: 1,
     retrieval_used: null,

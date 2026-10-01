@@ -11,14 +11,14 @@ const workflowSource = readFileSync(
  * When the model owns the copy, a provider outage does not license another
  * component to invent sales prose. Canonical catalog recovery may preserve a
  * verified answer; otherwise both model-owned routes use the same narrow
- * state fallback and technical acknowledgement instead of silence.
+ * state fallback and a neutral continuity acknowledgement instead of silence.
  * The conversation-pipeline route used to disagree — it called
  * `modelUnavailableFallback`, a nine-regex engine over the customer's own text
  * that produced greetings, identity lines and price answers. Two behaviours
  * for the same event is the defect; these tests pin them together.
  */
 describe('brain unavailable is one behaviour, not two', () => {
-  it('keeps both narrow state fallbacks and one canonical catalog recovery before technical acknowledgement', () => {
+  it('keeps both narrow state fallbacks and one canonical catalog recovery before continuity acknowledgement', () => {
     const stateFallbacks = workflowSource.match(/policyRejectedStateFallback\(owned\)/gu);
     const canonicalFallbacks = workflowSource.match(/routeCanonicalCatalogFailureFallback\(owned\)/gu);
     const technicalAcknowledgements = workflowSource.match(/technicalFallback\(/gu);

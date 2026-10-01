@@ -1791,6 +1791,14 @@ describe('Agent A Brain V1', () => {
     const body = JSON.parse(String(init?.body));
     expect(body.systemInstruction.parts[0].text).toContain('canonical_sales_behavior');
     expect(body.generationConfig.responseMimeType).toBe('application/json');
+    expect(body.generationConfig.responseSchema).toMatchObject({
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        response: expect.objectContaining({ type: 'object' }),
+        proposed_action: expect.any(Object),
+      },
+    });
   });
 
   it('classifies a 429 without retrying when Retry-After exceeds the remaining deadline', async () => {
