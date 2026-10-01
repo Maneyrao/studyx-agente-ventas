@@ -38,7 +38,7 @@ export const DEFAULT_AGENT_A_BRAIN_OPENAI_FALLBACK_MODEL = 'gpt-5.6-luna';
 export const DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL = AGENT_A_DEEPSEEK_MODEL;
 export const DEFAULT_AGENT_A_BRAIN_GEMINI_MODEL = 'gemini-2.5-flash';
 export const AGENT_A_BRAIN_DEADLINE_MS = 4_500;
-export const AGENT_A_BRAIN_DEEPSEEK_DEADLINE_MS = 10_000;
+export const AGENT_A_BRAIN_DEEPSEEK_DEADLINE_MS = 15_000;
 export const AGENT_A_BRAIN_OPENAI_DEADLINE_MS = 6_000;
 export const AGENT_A_BRAIN_GEMINI_DEADLINE_MS = 8_000;
 
@@ -305,12 +305,6 @@ function geminiRequestBody(context: AgentAContextV1): unknown {
     generationConfig: {
       temperature: 0.2,
       responseMimeType: 'application/json',
-      // Gemini was previously asked for JSON but not constrained to the
-      // proposal contract. During a real DeepSeek timeout it returned valid
-      // JSON with the wrong shape, so the failover failed too. Constraining
-      // the provider output here keeps the same semantic validator while
-      // preventing that avoidable shape drift.
-      responseSchema: proposalJsonSchema(context),
     },
   };
 }

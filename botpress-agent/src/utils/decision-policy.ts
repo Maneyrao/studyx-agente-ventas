@@ -47,7 +47,7 @@ export function technicalFallback(
     // customer or terminate the commercial conversation. This text neither
     // invents facts nor interprets the customer's intent; Agent A regains
     // ownership on the next message.
-    response: 'Sigo contigo. Cuéntame de nuevo qué necesitas y avanzamos por aquí.',
+    response: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.',
     response_type: responseType,
     business_action: null,
     memory_candidates: [],

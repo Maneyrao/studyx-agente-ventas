@@ -1077,7 +1077,7 @@ describe('processInboundTurn hot path', () => {
     expect(response).not.toContain('Hubo un problema');
   });
 
-  it('retries one transient DeepSeek timeout before using the technical fallback', async () => {
+  it('does not multiply latency by retrying a timed-out DeepSeek turn', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -1100,8 +1100,9 @@ describe('processInboundTurn hot path', () => {
     claimed.contact.name = 'Thiago';
     actionSpies.claim.mockResolvedValue(claimed);
     configuration.agentAPlannerlessV2Enabled = true;
-    actionSpies.agentABrainDeepSeek
-      .mockRejectedValueOnce(Object.assign(new Error('timeout'), { code: 'BRAIN_DEEPSEEK_TIMEOUT' }));
+    actionSpies.agentABrainDeepSeek.mockRejectedValueOnce(
+      Object.assign(new Error('timeout'), { code: 'BRAIN_DEEPSEEK_TIMEOUT' }),
+    );
 
     const stepNames: string[] = [];
     const step = Object.assign(
@@ -1117,27 +1118,33 @@ describe('processInboundTurn hot path', () => {
 
     await handler({
       input: workflowInput(), state: processingState(), step,
-      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      execute: vi.fn(async () => { throw new Error('MANAGED_MODEL_MUST_NOT_RUN'); }),
       client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
-    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
-    expect(stepNames).toContain('retry-agent-a-turn-proposal-v1-deepseek');
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
+    expect(actionSpies.agentABrainGemini).not.toHaveBeenCalled();
+    expect(stepNames).not.toContain('retry-agent-a-turn-proposal-v1-deepseek');
+    expect(stepNames).not.toContain('failover-agent-a-turn-proposal-v1-gemini');
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      agent_turn_v2: {
-        proposal: {
-          response: { messages: ['Perfecto, seguimos por chat.', '¿Qué aspecto querés revisar?'] },
-        },
+      conversation_pipeline_v1: null,
+      decision: {
+        kind: 'reply',
+        response: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.',
+        reason_code: 'MODEL_UNAVAILABLE',
+        next_state: 'waiting_user',
       },
-      model: { provider: 'deepseek-direct', model: 'deepseek-v4-flash' },
     });
-    const retryLog = vi.mocked(console.info).mock.calls
+    const failureLog = vi.mocked(console.info).mock.calls
       .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
-      .find((entry) => entry.event === 'studyx.turn.agent_a_brain_retry');
-    expect(retryLog).toMatchObject({ reason: 'BRAIN_DEEPSEEK_TIMEOUT', attempt: 2 });
+      .find((entry) => entry.event === 'studyx.turn.agent_a_brain_v1');
+    expect(failureLog).toMatchObject({
+      brain_source: 'fallback',
+      failure_code: 'BRAIN_DEEPSEEK_TIMEOUT',
+    });
   });
 
-  it('uses the same Brain contract through Gemini after two transient DeepSeek failures', async () => {
+  it('keeps DeepSeek as the only conversational provider when it fails', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
@@ -1151,19 +1158,10 @@ describe('processInboundTurn hot path', () => {
     claimed.catalog_index = { as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0 };
     actionSpies.claim.mockResolvedValue(claimed);
     configuration.agentAPlannerlessV2Enabled = true;
-    secrets.GEMINI_API_KEY = 'gemini-local-test-only';
-    actionSpies.agentABrainDeepSeek
-      .mockRejectedValueOnce(Object.assign(new Error('timeout'), { code: 'BRAIN_DEEPSEEK_TIMEOUT' }))
-      .mockRejectedValueOnce(Object.assign(new Error('timeout'), { code: 'BRAIN_DEEPSEEK_TIMEOUT' }));
-    actionSpies.agentABrainGemini.mockResolvedValueOnce({
-      proposal: {
-        schema_version: 1,
-        move: { schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 0.96 },
-        response: { messages: ['Cuéntame qué te gustaría aprender y te oriento.'] },
-        proposed_action: { type: 'none' }, used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
-      },
-      provider: 'google-ai-direct', model: 'gemini-2.5-flash', latency_ms: 150, attempt_count: 1,
-    });
+    secrets.GEMINI_API_KEY = 'must-not-be-used';
+    actionSpies.agentABrainDeepSeek.mockRejectedValueOnce(
+      Object.assign(new Error('timeout'), { code: 'BRAIN_DEEPSEEK_TIMEOUT' }),
+    );
     const step = Object.assign(
       async (_name: string, run: () => Promise<unknown>) => run(),
       { sleep: vi.fn(async () => undefined) },
@@ -1178,11 +1176,14 @@ describe('processInboundTurn hot path', () => {
       client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
-    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
-    expect(actionSpies.agentABrainGemini).toHaveBeenCalledTimes(1);
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
+    expect(actionSpies.agentABrainGemini).not.toHaveBeenCalled();
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      agent_turn_v2: { proposal: { response: { messages: ['Cuéntame qué te gustaría aprender y te oriento.'] } } },
-      model: { provider: 'google-ai-direct', model: 'gemini-2.5-flash' },
+      decision: {
+        response: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.',
+        reason_code: 'MODEL_UNAVAILABLE',
+      },
+      model: { provider: 'botpress', model: 'policy:conversation-pipeline-v1-unavailable' },
     });
   });
 
@@ -1243,7 +1244,7 @@ describe('processInboundTurn hot path', () => {
       conversation_pipeline_v1: null,
       decision: {
         kind: 'reply',
-        response: 'Sigo contigo. Cuéntame de nuevo qué necesitas y avanzamos por aquí.',
+        response: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.',
         reason_code: 'MODEL_UNAVAILABLE',
         next_state: 'waiting_user',
       },
@@ -1385,7 +1386,7 @@ describe('processInboundTurn hot path', () => {
       conversation_pipeline_v1: null,
       decision: {
         kind: 'reply',
-        response: 'Sigo contigo. Cuéntame de nuevo qué necesitas y avanzamos por aquí.',
+        response: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.',
         reason_code: 'MODEL_UNAVAILABLE',
         next_state: 'waiting_user',
       },
@@ -1798,7 +1799,7 @@ describe('processInboundTurn hot path', () => {
       conversation_pipeline_v1: null,
       decision: {
         kind: 'reply',
-        response: 'Sigo contigo. Cuéntame de nuevo qué necesitas y avanzamos por aquí.',
+        response: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.',
         reason_code: 'MODEL_UNAVAILABLE',
         next_state: 'waiting_user',
       },

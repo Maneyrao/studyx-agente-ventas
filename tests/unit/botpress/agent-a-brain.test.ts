@@ -1713,8 +1713,8 @@ describe('Agent A Brain V1', () => {
     });
   });
 
-  it('allows DeepSeek ten seconds and classifies a timeout while reading the response body', async () => {
-    expect(AGENT_A_BRAIN_DEEPSEEK_DEADLINE_MS).toBe(10_000);
+  it('allows DeepSeek fifteen seconds and classifies a timeout while reading the response body', async () => {
+    expect(AGENT_A_BRAIN_DEEPSEEK_DEADLINE_MS).toBe(15_000);
     vi.useFakeTimers();
     vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockImplementation(async (_url, init) => ({
       ok: true,
@@ -1791,14 +1791,7 @@ describe('Agent A Brain V1', () => {
     const body = JSON.parse(String(init?.body));
     expect(body.systemInstruction.parts[0].text).toContain('canonical_sales_behavior');
     expect(body.generationConfig.responseMimeType).toBe('application/json');
-    expect(body.generationConfig.responseSchema).toMatchObject({
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        response: expect.objectContaining({ type: 'object' }),
-        proposed_action: expect.any(Object),
-      },
-    });
+    expect(body.generationConfig.responseSchema).toBeUndefined();
   });
 
   it('classifies a 429 without retrying when Retry-After exceeds the remaining deadline', async () => {

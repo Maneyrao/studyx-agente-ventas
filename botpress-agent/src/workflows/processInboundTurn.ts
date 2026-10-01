@@ -60,7 +60,6 @@ import { isLegacyConversationPipelineEligibleV1 } from '../lib/conversation/agen
 import {
   DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
   generateDeepSeekAgentATurnProposalV1,
-  generateGeminiAgentATurnProposalV1,
 } from '../lib/conversation/agent-a-brain'
 import { resolveAgentAProposalV1 } from '../lib/conversation/resolve-agent-a-proposal'
 import { resolveAgentAPlannerlessProposalV2 } from '../lib/conversation/resolve-agent-a-plannerless'
@@ -475,12 +474,6 @@ function backendCommitTurnRejectionV1(input: {
   }
 }
 
-function isTransientDeepSeekFailure(code: string): boolean {
-  return code === 'BRAIN_DEEPSEEK_TIMEOUT'
-    || code === 'BRAIN_DEEPSEEK_NETWORK_ERROR'
-    || /^BRAIN_DEEPSEEK_HTTP_5\d\d$/u.test(code)
-}
-
 function resultFromState(state: z.infer<typeof workflowStateSchema>, traceId: string): WorkflowResult {
   return {
     status: state.phase,
@@ -884,56 +877,13 @@ export const processInboundTurn = new Workflow({
             model: typeof configuration.agentABrainDeepSeekModel === 'string'
               ? configuration.agentABrainDeepSeekModel
               : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
-            timeout_ms: configuration.requestTimeoutMs,
           })
         const brainStartedAt = Date.now()
-        let generated
-        try {
-          generated = await step(
-            'generate-agent-a-turn-proposal-v1-deepseek',
-            generateDeepSeekProposal,
-            { maxAttempts: 1 },
-          )
-        } catch (firstError) {
-          const firstFailureCode = errorCode(firstError)
-          if (!isTransientDeepSeekFailure(firstFailureCode)) throw firstError
-          safeLog('studyx.turn.agent_a_brain_retry', {
-            trace_id: input.trace_id,
-            turn_id: owned.turn_id,
-            reason: firstFailureCode,
-            attempt: 2,
-          })
-          try {
-            generated = await step(
-              'retry-agent-a-turn-proposal-v1-deepseek',
-              generateDeepSeekProposal,
-              { maxAttempts: 1 },
-            )
-          } catch (secondError) {
-            const secondFailureCode = errorCode(secondError)
-            const geminiApiKey = secrets.GEMINI_API_KEY
-            if (!isTransientDeepSeekFailure(secondFailureCode)
-              || typeof geminiApiKey !== 'string'
-              || geminiApiKey.length === 0) throw secondError
-            safeLog('studyx.turn.agent_a_brain_failover', {
-              trace_id: input.trace_id,
-              turn_id: owned.turn_id,
-              from_provider: 'deepseek-direct',
-              to_provider: 'google-ai-direct',
-              reason: secondFailureCode,
-            })
-            generated = await step(
-              'failover-agent-a-turn-proposal-v1-gemini',
-              () => generateGeminiAgentATurnProposalV1({
-                context: agentABrainContext,
-                apiKey: geminiApiKey,
-                signal,
-                timeout_ms: configuration.requestTimeoutMs,
-              }),
-              { maxAttempts: 1 },
-            )
-          }
-        }
+        let generated = await step(
+          'generate-agent-a-turn-proposal-v1-deepseek',
+          generateDeepSeekProposal,
+          { maxAttempts: 1 },
+        )
         timings.agent_a_brain_ms = Date.now() - brainStartedAt
 
         if (brainShadow) {
