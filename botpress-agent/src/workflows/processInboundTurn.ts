@@ -1517,7 +1517,7 @@ export const processInboundTurn = new Workflow({
           })
         : null
 
-      if (rejection === null) throw initialCommitError
+      if (rejection === null || rejectedProposal === null) throw initialCommitError
 
       safeLog('studyx.turn.backend_commit_rejected_recoverably', {
         trace_id: input.trace_id,
@@ -1527,81 +1527,21 @@ export const processInboundTurn = new Workflow({
         rejection_subjects: rejection.rejections.map((item) => item.subject),
       })
 
-      let repaired = false
-      if (repairEnabled
-        && rejectedProposal?.repair_of === null
-        && typeof secrets.DEEPSEEK_API_KEY === 'string'
-        && secrets.DEEPSEEK_API_KEY.length > 0
-        && agentABrainContext !== null) {
-        try {
-          const generated = await step(
-            'repair-agent-a-turn-after-backend-rejection-v1',
-            () => generateDeepSeekAgentATurnProposalV1({
-              context: { ...agentABrainContext, turn_rejection: rejection },
-              apiKey: secrets.DEEPSEEK_API_KEY as string,
-              signal,
-              model: typeof configuration.agentABrainDeepSeekModel === 'string'
-                ? configuration.agentABrainDeepSeekModel
-                : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
-              timeout_ms: 8_000,
-            }),
-            { maxAttempts: 1 },
-          )
-          const generatedWithAuthoritativeMove = {
-            ...generated,
-            proposal: {
-              ...generated.proposal,
-              move: bindCurrentConversationalIntentToMoveV1(generated.proposal.move, owned),
-            },
-          }
-          const resolved = await resolveAgentAPlannerlessProposalV2({
-            initial: generatedWithAuthoritativeMove,
-            context: agentABrainContext,
-            repair_enabled: false,
-            rejection_id: rejection.rejection_id,
-            repair: async () => {
-              throw new Error('BACKEND_REPAIR_MUST_NOT_RETRY')
-            },
-          })
-          agentTurnV2Commit = {
-            schema_version: 2,
-            proposal: resolved.effective.proposal,
-          }
-          pipelineCommit = null
-          pipelineMemoryCandidates = resolved.effective.proposal.memory_candidates
-          decision = pipelinePlaceholder(pipelineMemoryCandidates)
-          decisionProvider = generated.provider
-          decisionModel = generated.model
-          pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
-          committed = await commitCurrentDecision('commit-repaired-agent-a-turn-after-backend-rejection-v1')
-          repaired = true
-          safeLog('studyx.turn.backend_commit_repaired', {
-            trace_id: input.trace_id,
-            turn_id: owned.turn_id,
-            rejection_id: rejection.rejection_id,
-            repair_generation_calls: 1,
-          })
-        } catch (repairError) {
-          safeLog('studyx.turn.backend_commit_repair_failed', {
-            trace_id: input.trace_id,
-            turn_id: owned.turn_id,
-            rejection_id: rejection.rejection_id,
-            error_code: errorCode(repairError),
-          })
-        }
-      }
-
-        if (!repaired) {
-          // Final safety floor: no action crosses this boundary. It preserves a
-          // customer-visible continuation without fabricating business state or
-          // retrying the model indefinitely.
-          agentTurnV2Commit = null
-          pipelineCommit = null
-          decision = customerVisibleModelFallback(owned, 'policy_rejected')
-          decisionProvider = 'botpress'
-          decisionModel = 'policy:backend-commit-recovery'
-          committed = await commitCurrentDecision('commit-safe-floor-after-backend-rejection-v1')
-        }
+        // The customer-visible turn already exists. A rejected tool request is
+        // not permission to regenerate or replace it. Retry the commit once as
+        // presentation-only: the backend still validates the exact text, while
+        // every side effect, memory candidate and durable transition is removed.
+        agentTurnV2Commit = null
+        pipelineCommit = null
+        pipelineMemoryCandidates = []
+        decision = brainAdvisoryOnlyDecision(rejectedProposal, owned)
+        committed = await commitCurrentDecision('commit-advisory-after-backend-rejection-v1')
+        safeLog('studyx.turn.backend_commit_action_isolated', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          rejection_id: rejection.rejection_id,
+          generation_calls_after_rejection: 0,
+        })
       }
     } catch (error) {
       timings.commit_ms = Date.now() - commitStartedAt

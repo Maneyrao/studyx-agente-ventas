@@ -537,7 +537,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('lets Agent A repair one recoverable backend rejection and still answers the customer', async () => {
+  it('preserves Agent A wording and neutralizes only the action after a recoverable backend rejection', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -578,24 +578,7 @@ describe('processInboundTurn hot path', () => {
           used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
         },
         provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 180, attempt_count: 1,
-      })
-      .mockImplementationOnce(async (input: { context: { turn_rejection: unknown } }) => ({
-        proposal: {
-          schema_version: 1,
-          move: {
-            schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
-            course_reference: 'redes-informaticas', confidence: 0.98,
-          },
-          response: { messages: ['Contenido autorizado'], call_offer: null },
-          proposed_action: { type: 'none' },
-          used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
-          repair_of: {
-            rejection_id: (input.context.turn_rejection as { rejection_id: string }).rejection_id,
-            attempt: 1,
-          },
-        },
-        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 120, attempt_count: 1,
-      }));
+      });
 
     actionSpies.commit
       .mockRejectedValueOnce(new StudyxHttpError(
@@ -606,14 +589,21 @@ describe('processInboundTurn hot path', () => {
         status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
         decision_id: UUID, next_state: 'waiting_user',
         outbound: {
-          id: UUID, content: 'Contenido autorizado', status: 'pending', delivery_attempt: 1,
+          id: UUID, content: 'Te cuento los detalles del curso.', status: 'pending', delivery_attempt: 1,
           authorized_egress: {
             schema_version: 1,
-            content_hash: 'e2dee359447348131358a63664853c018f5db0fcb31835e30a0aac56badab6bd',
+            content_hash: '50e86e34f81509af7c5385592b8ea2c5069732f7dce2d8436f663d36186989e0',
             authorized_urls: [], protected_facts: [],
           },
         },
-        outbounds: [], call_request: null,
+        outbounds: [{
+          id: UUID, content: 'Te cuento los detalles del curso.', status: 'pending', delivery_attempt: 1,
+          authorized_egress: {
+            schema_version: 1,
+            content_hash: '50e86e34f81509af7c5385592b8ea2c5069732f7dce2d8436f663d36186989e0',
+            authorized_urls: [], protected_facts: [],
+          },
+        }], call_request: null,
       });
 
     const createMessage = vi.fn(async () => ({ message: { id: 'bp-recovered-message' } }));
@@ -633,18 +623,22 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(actionSpies.commit).toHaveBeenCalledTimes(2);
-    expect(actionSpies.commit.mock.calls[1]?.[0]?.input?.agent_turn_v2?.proposal).toMatchObject({
-      response: { messages: ['Contenido autorizado'] },
-      proposed_action: { type: 'none' },
-      repair_of: { attempt: 1 },
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
+    expect(actionSpies.commit.mock.calls[1]?.[0]?.input).toMatchObject({
+      agent_turn_v2: null,
+      decision: {
+        response: 'Te cuento los detalles del curso.',
+        business_action: null,
+        reason_code: 'BRAIN_ADVISORY_ONLY_PLANNER_REJECTED',
+      },
     });
     expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({
-      payload: { text: 'Contenido autorizado' },
+      payload: { text: 'Te cuento los detalles del curso.' },
     }));
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
   });
 
-  it('uses the action-free safety floor when the single backend repair cannot be generated', async () => {
+  it('does not invoke another model or canned copy after a backend rejection', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
@@ -676,8 +670,7 @@ describe('processInboundTurn hot path', () => {
           used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
         },
         provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 180, attempt_count: 1,
-      })
-      .mockRejectedValueOnce(new Error('MODEL_TEMPORARILY_UNAVAILABLE'));
+      });
     actionSpies.commit
       .mockRejectedValueOnce(new StudyxHttpError(
         'DECISION_REJECTED', false, 422, 1,
@@ -687,14 +680,21 @@ describe('processInboundTurn hot path', () => {
         status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
         decision_id: UUID, next_state: 'waiting_user',
         outbound: {
-          id: UUID, content: 'Seguimos por aquí. Cuéntame la consulta en una frase.', status: 'pending', delivery_attempt: 1,
+          id: UUID, content: 'Detalle que el backend rechazará.', status: 'pending', delivery_attempt: 1,
           authorized_egress: {
             schema_version: 1,
-            content_hash: 'd9188539f461251099501ab29586147f15ece79cd6bfa9a9cf02e667bb2d1a11',
+            content_hash: '7d9dbaaf750d13af746b0c3edc4b0da9c37e7f52bdf71572115f87fdcbf94894',
             authorized_urls: [], protected_facts: [],
           },
         },
-        outbounds: [], call_request: null,
+        outbounds: [{
+          id: UUID, content: 'Detalle que el backend rechazará.', status: 'pending', delivery_attempt: 1,
+          authorized_egress: {
+            schema_version: 1,
+            content_hash: '7d9dbaaf750d13af746b0c3edc4b0da9c37e7f52bdf71572115f87fdcbf94894',
+            authorized_urls: [], protected_facts: [],
+          },
+        }], call_request: null,
       });
 
     const createMessage = vi.fn(async () => ({ message: { id: 'bp-safe-floor-message' } }));
@@ -713,13 +713,18 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(actionSpies.commit).toHaveBeenCalledTimes(2);
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
     expect(actionSpies.commit.mock.calls[1]?.[0]?.input).toMatchObject({
       agent_turn_v2: null,
-      decision: { business_action: null, reason_code: expect.any(String) },
+      decision: {
+        response: 'Detalle que el backend rechazará.',
+        business_action: null,
+        reason_code: 'BRAIN_ADVISORY_ONLY_PLANNER_REJECTED',
+      },
     });
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
     expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({
-      payload: { text: 'Seguimos por aquí. Cuéntame la consulta en una frase.' },
+      payload: { text: 'Detalle que el backend rechazará.' },
     }));
   });
 

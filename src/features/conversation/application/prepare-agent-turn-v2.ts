@@ -193,8 +193,8 @@ export async function prepareAgentTurnV2(input: {
     && state.awaiting_reply === 'call_or_chat';
   const availabilityConfirmed = salesSignal.type === 'call_acceptance'
     || salesSignal.type === 'direct_call_request';
-  const authority = authorizeAgentTurnV2({
-    proposal: input.proposal,
+  const authorize = (proposal: AgentATurnProposalV1) => authorizeAgentTurnV2({
+    proposal,
     state,
     offerings,
     facts,
@@ -218,6 +218,25 @@ export async function prepareAgentTurnV2(input: {
         && isCallablePhoneE164V1(contactIntake?.telefono ?? ''),
     },
   });
+  let effectiveProposal = input.proposal;
+  let authority = authorize(effectiveProposal);
+
+  // A rejected side effect must not reject the conversation that requested it.
+  // Keep Agent A's wording and semantic move, remove only the unavailable
+  // action, then let the same authority derive the durable pending state. This
+  // is deliberately not a second planner or a backend-authored response.
+  const recoverablePaymentAction = effectiveProposal.proposed_action.type === 'send_payment_link'
+    || effectiveProposal.proposed_action.type === 'send_test_payment_link';
+  const recoverableCallAction = effectiveProposal.proposed_action.type === 'request_call_now'
+    && (effectiveProposal.proposed_action.reason === 'direct_request'
+      || (state.call_preference === 'call' && state.call_offer_status === 'accepted'));
+  if (!authority.ok && (recoverablePaymentAction || recoverableCallAction)
+    && authority.reasons.every((reason) => (
+      reason === 'ACTION_NOT_AUTHORIZED' || reason === 'MISSING_INTAKE'
+    ))) {
+    effectiveProposal = { ...effectiveProposal, proposed_action: { type: 'none' } };
+    authority = authorize(effectiveProposal);
+  }
   if (!authority.ok) throw new AgentTurnV2RejectedError(authority.reasons);
 
   const transition: ConversationStateTransitionV1 = {
@@ -235,7 +254,7 @@ export async function prepareAgentTurnV2(input: {
     source_turn_id: input.turn.id,
   };
   const decision = decisionFromAuthorizedTurn({
-    proposal: { ...input.proposal, proposed_action: authority.action },
+    proposal: { ...effectiveProposal, proposed_action: authority.action },
     response: authority.response,
     selected_offering_code: authority.transition.selected_offering_code,
   });
@@ -250,7 +269,7 @@ export async function prepareAgentTurnV2(input: {
     authorized_offering_code: authority.transition.selected_offering_code,
     authorized_payment_plan: authority.action.type === 'send_payment_link'
       ? authority.action.payment_plan
-      : [input.proposal.move.move, ...input.proposal.move.secondary_moves].includes('select_payment_plan')
+      : [effectiveProposal.move.move, ...effectiveProposal.move.secondary_moves].includes('select_payment_plan')
         ? authority.transition.selected_payment_plan
         : null,
     authorized_protected_facts: uniqueProtectedFacts([

@@ -547,6 +547,79 @@ describe('prepareAgentTurnV2', () => {
     });
   });
 
+  it('keeps Agent A conversationally in control when payment intake is incomplete', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Mandame el link de seis cuotas'],
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+          payment_plan: 'monthly_6', confidence: 0.98,
+        },
+        response: { messages: ['Claro. Para enviártelo necesito tu correo.'] },
+        proposed_action: {
+          type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+        },
+      }),
+    }, {
+      state_store: store(state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected',
+      })),
+      contact_intake: async () => ({
+        nombre: 'Lucía', apellido: 'Pérez', correo: null, telefono: '+5491112345678',
+      }),
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared).toMatchObject({
+      decision: {
+        response: 'Claro. Para enviártelo necesito tu correo.',
+        business_action: null,
+      },
+      transition: {
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected',
+        awaiting_reply: 'contact_details',
+        payment_link_request: { status: 'pending' },
+      },
+    });
+  });
+
+  it('keeps a direct call request pending when dispatch is not ready yet', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Llamame'],
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 0.99,
+        },
+        response: { messages: ['Dale. ¿Puedes atender si te llamamos ahora?'] },
+        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+      }),
+    }, {
+      state_store: store(state()),
+      contact_intake: completeIntake,
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared).toMatchObject({
+      decision: {
+        response: 'Dale. ¿Puedes atender si te llamamos ahora?',
+        business_action: null,
+      },
+      transition: {
+        call_preference: 'call',
+        call_offer_status: 'accepted',
+        awaiting_reply: 'call_or_chat',
+      },
+    });
+  });
+
   it('prepares a direct call request and waits for a later availability confirmation', async () => {
     const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
