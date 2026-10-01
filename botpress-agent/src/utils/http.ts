@@ -36,13 +36,14 @@ export class StudyxHttpError extends Error {
     public readonly retryable: boolean,
     public readonly status: number | null = null,
     public readonly attempts = 1,
+    public readonly payload: unknown = null,
   ) {
     super(code)
     this.name = 'StudyxHttpError'
   }
 
   withAttempts(attempts: number): StudyxHttpError {
-    return new StudyxHttpError(this.code, this.retryable, this.status, attempts)
+    return new StudyxHttpError(this.code, this.retryable, this.status, attempts, this.payload)
   }
 }
 
@@ -229,6 +230,8 @@ export async function requestStudyxJson<T>(params: {
             parseErrorCode(payload, `HTTP_${response.status}`),
             isRetryableStatus(response.status),
             response.status,
+            1,
+            payload,
           )
         }
 

@@ -537,6 +537,192 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
+  it('lets Agent A repair one recoverable backend rejection and still answers the customer', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off',
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+      agent_a_repair_enabled: true,
+    };
+    claimed.conversation_state_v1 = {
+      selected_offering_code: 'redes-informaticas', selected_payment_plan: null,
+      stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 1,
+    };
+    claimed.contact.name = 'Lucía Pérez';
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 1,
+      offerings: [{
+        code: 'redes-informaticas', display_name: 'Redes Informáticas',
+        academy: 'Tecnología', aliases: ['redes'],
+      }],
+      injection_suspected_count: 0,
+    };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+
+    actionSpies.agentABrainDeepSeek
+      .mockResolvedValueOnce({
+        proposal: {
+          schema_version: 1,
+          move: {
+            schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
+            course_reference: 'redes-informaticas', confidence: 0.98,
+          },
+          response: { messages: ['Te cuento los detalles del curso.'], call_offer: null },
+          proposed_action: { type: 'none' },
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
+        },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 180, attempt_count: 1,
+      })
+      .mockImplementationOnce(async (input: { context: { turn_rejection: unknown } }) => ({
+        proposal: {
+          schema_version: 1,
+          move: {
+            schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
+            course_reference: 'redes-informaticas', confidence: 0.98,
+          },
+          response: { messages: ['Contenido autorizado'], call_offer: null },
+          proposed_action: { type: 'none' },
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+          repair_of: {
+            rejection_id: (input.context.turn_rejection as { rejection_id: string }).rejection_id,
+            attempt: 1,
+          },
+        },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 120, attempt_count: 1,
+      }));
+
+    actionSpies.commit
+      .mockRejectedValueOnce(new StudyxHttpError(
+        'DECISION_REJECTED', false, 422, 1,
+        { error: 'DECISION_REJECTED', reason: 'AGENT_TURN_V2_REJECTED:FACT_NOT_AUTHORIZED' },
+      ))
+      .mockResolvedValueOnce({
+        status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
+        decision_id: UUID, next_state: 'waiting_user',
+        outbound: {
+          id: UUID, content: 'Contenido autorizado', status: 'pending', delivery_attempt: 1,
+          authorized_egress: {
+            schema_version: 1,
+            content_hash: 'e2dee359447348131358a63664853c018f5db0fcb31835e30a0aac56badab6bd',
+            authorized_urls: [], protected_facts: [],
+          },
+        },
+        outbounds: [], call_request: null,
+      });
+
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-recovered-message' } }));
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    const result = await handler({
+      input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: { createMessage }, signal: new AbortController().signal,
+      workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.commit).toHaveBeenCalledTimes(2);
+    expect(actionSpies.commit.mock.calls[1]?.[0]?.input?.agent_turn_v2?.proposal).toMatchObject({
+      response: { messages: ['Contenido autorizado'] },
+      proposed_action: { type: 'none' },
+      repair_of: { attempt: 1 },
+    });
+    expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({
+      payload: { text: 'Contenido autorizado' },
+    }));
+    expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
+  });
+
+  it('uses the action-free safety floor when the single backend repair cannot be generated', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true, agent_a_brain_v1_shadow: false,
+      agent_a_repair_enabled: true,
+    };
+    claimed.conversation_state_v1 = {
+      selected_offering_code: 'redes-informaticas', selected_payment_plan: null,
+      stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 1,
+    };
+    claimed.contact.name = 'Lucía Pérez';
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 1,
+      offerings: [{ code: 'redes-informaticas', display_name: 'Redes Informáticas', academy: 'Tecnología', aliases: ['redes'] }],
+      injection_suspected_count: 0,
+    };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+    actionSpies.agentABrainDeepSeek
+      .mockResolvedValueOnce({
+        proposal: {
+          schema_version: 1,
+          move: { schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [], course_reference: 'redes-informaticas', confidence: 0.98 },
+          response: { messages: ['Detalle que el backend rechazará.'], call_offer: null },
+          proposed_action: { type: 'none' },
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
+        },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 180, attempt_count: 1,
+      })
+      .mockRejectedValueOnce(new Error('MODEL_TEMPORARILY_UNAVAILABLE'));
+    actionSpies.commit
+      .mockRejectedValueOnce(new StudyxHttpError(
+        'DECISION_REJECTED', false, 422, 1,
+        { error: 'DECISION_REJECTED', reason: 'AGENT_TURN_V2_REJECTED:FACT_NOT_AUTHORIZED' },
+      ))
+      .mockResolvedValueOnce({
+        status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
+        decision_id: UUID, next_state: 'waiting_user',
+        outbound: {
+          id: UUID, content: 'Seguimos por aquí. Cuéntame la consulta en una frase.', status: 'pending', delivery_attempt: 1,
+          authorized_egress: {
+            schema_version: 1,
+            content_hash: 'd9188539f461251099501ab29586147f15ece79cd6bfa9a9cf02e667bb2d1a11',
+            authorized_urls: [], protected_facts: [],
+          },
+        },
+        outbounds: [], call_request: null,
+      });
+
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-safe-floor-message' } }));
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+    const result = await handler({
+      input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: { createMessage }, signal: new AbortController().signal,
+      workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.commit).toHaveBeenCalledTimes(2);
+    expect(actionSpies.commit.mock.calls[1]?.[0]?.input).toMatchObject({
+      agent_turn_v2: null,
+      decision: { business_action: null, reason_code: expect.any(String) },
+    });
+    expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
+    expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({
+      payload: { text: 'Seguimos por aquí. Cuéntame la consulta en una frase.' },
+    }));
+  });
+
   it('lets Agent A recover an unreadable input instead of forcing a technical fallback', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {

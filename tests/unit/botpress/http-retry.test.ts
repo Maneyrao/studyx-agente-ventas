@@ -136,4 +136,22 @@ describe('requestStudyxJson attempt counts', () => {
       expect((error as StudyxHttpError).retryable).toBe(false);
     }
   });
+
+  it('preserves the structured 422 reason so Agent A can repair a rejected commit', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(422, {
+      error: 'DECISION_REJECTED',
+      reason: 'AGENT_TURN_V2_REJECTED:FACT_NOT_AUTHORIZED,ACTION_NOT_AUTHORIZED',
+    }));
+
+    await expect(
+      requestStudyxJson({ ...baseParams, additionalRetries: 0 }),
+    ).rejects.toMatchObject({
+      code: 'DECISION_REJECTED',
+      status: 422,
+      payload: {
+        error: 'DECISION_REJECTED',
+        reason: 'AGENT_TURN_V2_REJECTED:FACT_NOT_AUTHORIZED,ACTION_NOT_AUTHORIZED',
+      },
+    });
+  });
 });

@@ -67,6 +67,7 @@ import { resolveAgentAPlannerlessProposalV2 } from '../lib/conversation/resolve-
 import { evaluateCallOfferTurnPolicyV1 } from '../lib/conversation/call-offer-turn-policy'
 import type { AgentATurnProposalV1 } from '../schemas/agent-a-brain'
 import type { AgentATurnCommitV2 } from '../schemas/agent-turn-v2'
+import type { TurnRejectionV1 } from '../schemas/turn-rejection'
 import {
   ComposedNarrativeV1Schema,
   type ConversationPipelineCommitV1,
@@ -231,6 +232,13 @@ function pipelinePlaceholder(memoryCandidates: Decision['memory_candidates'] = [
   }
 }
 
+function customerVisibleModelFallback(
+  claimed: ClaimedTurn,
+  reason?: Parameters<typeof modelUnavailableFallback>[1],
+): Decision {
+  return modelUnavailableFallback(claimed, reason)
+}
+
 const CALL_REQUIRED_INTAKE_FIELDS = ['nombre', 'apellido', 'telefono'] as const
 
 function callIntakeRequiredMessage(claimed: ClaimedTurn): string {
@@ -383,6 +391,88 @@ function errorCode(error: unknown): string {
   ) return error.message.slice(0, 256)
   if (error instanceof Error && error.name) return error.name.slice(0, 128)
   return 'UNKNOWN_ERROR'
+}
+
+function backendDecisionRejectionReason(error: unknown): string | null {
+  if (!(error instanceof StudyxHttpError)
+    || error.code !== 'DECISION_REJECTED'
+    || error.status !== 422
+    || error.payload === null
+    || typeof error.payload !== 'object'
+    || !('reason' in error.payload)
+    || typeof error.payload.reason !== 'string') return null
+  return error.payload.reason.slice(0, 512)
+}
+
+function backendCommitTurnRejectionV1(input: {
+  readonly error: unknown
+  readonly proposal: AgentATurnProposalV1
+  readonly context: NonNullable<ReturnType<typeof buildAgentAContextV1>>
+  readonly rejectionId: string
+}): TurnRejectionV1 | null {
+  const reason = backendDecisionRejectionReason(input.error)
+  if (reason === null) return null
+
+  const actionSubject = input.proposal.proposed_action.type === 'none'
+    ? 'backend_action'
+    : input.proposal.proposed_action.type
+  const factSubject = input.proposal.used_fact_ids[0] ?? 'backend_fact'
+  const missingSubject = input.context.capabilities.intake_missing?.[0] ?? 'contact_details'
+  const mapped: Array<TurnRejectionV1['rejections'][number]> = []
+  const push = (code: TurnRejectionV1['rejections'][number]['code'], subject: string) => {
+    if (!mapped.some((entry) => entry.code === code && entry.subject === subject)) {
+      mapped.push({ code, subject })
+    }
+  }
+
+  if (reason.startsWith('AGENT_TURN_V2_REJECTED:')) {
+    for (const backendCode of reason.slice('AGENT_TURN_V2_REJECTED:'.length).split(',')) {
+      switch (backendCode.trim()) {
+        case 'FACT_NOT_AUTHORIZED': push('FACT_NOT_AUTHORIZED', factSubject); break
+        case 'UNSUPPORTED_STATE_ASSERTION': push('UNSUPPORTED_OPERATIONAL_CLAIM', 'backend_state'); break
+        case 'ACTION_NOT_AUTHORIZED': push('ACTION_NOT_AUTHORIZED', actionSubject); break
+        case 'MISSING_INTAKE': push('MISSING_INTAKE', missingSubject); break
+        case 'CALL_OFFER_NOT_AUTHORIZED': push('CALL_BUDGET_EXHAUSTED', 'call_offer'); break
+        case 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID': push('CALL_OFFER_MESSAGE_BOUNDARY_INVALID', 'call_offer'); break
+        case 'CALL_OFFER_REQUIRED': push('CALL_OFFER_REQUIRED', 'call_offer'); break
+        case 'COURSE_NOT_RESOLVED': push('COURSE_NOT_RESOLVED', 'course_reference'); break
+        case 'CHANNEL_PREFERENCE_NOT_SUPPORTED': push('CHANNEL_PREFERENCE_NOT_SUPPORTED', 'channel_preference'); break
+      }
+    }
+  } else if (['PAYMENT_PLAN_MISMATCH', 'PAYMENT_OFFERING_REQUIRED', 'OFFERING_MISMATCH', 'OFFERING_NOT_FOUND'].includes(reason)) {
+    push('ACTION_NOT_AUTHORIZED', 'send_payment_link')
+    if (reason !== 'PAYMENT_PLAN_MISMATCH') push('COURSE_NOT_RESOLVED', 'course_reference')
+  } else if (reason === 'CALL_PHONE_INVALID') {
+    push('MISSING_INTAKE', 'telefono')
+  } else if (reason.startsWith('CALL_') || reason === 'ACTIVE_CALL_IN_PROGRESS') {
+    push('ACTION_NOT_AUTHORIZED', 'request_call_now')
+  }
+  if (mapped.length === 0) return null
+
+  const factIds = [
+    ...(input.context.catalog.selected_offering?.facts.map((fact) => fact.id) ?? []),
+    ...input.context.catalog.available_offerings.map((offering) => offering.fact_id),
+    ...input.context.catalog.areas.map((area) => area.fact_id),
+    ...input.context.catalog.candidate_offerings.map((offering) => offering.fact_id),
+    ...input.context.catalog.payment_plans.map((plan) => plan.fact_id),
+    ...(input.context.catalog.test_payment_options?.map((option) => option.fact_id) ?? []),
+  ]
+  const actions = ['none']
+  if (input.context.capabilities.may_send_payment_link) actions.push('send_payment_link')
+  if ((input.context.catalog.test_payment_options?.length ?? 0) > 0) actions.push('send_test_payment_link')
+  if (input.context.capabilities.may_request_call_now) actions.push('request_call_now')
+
+  return {
+    schema_version: 1,
+    rejection_id: input.rejectionId,
+    attempt: 1,
+    rejections: mapped,
+    authorized_alternatives: {
+      fact_ids: [...new Set(factIds)],
+      actions,
+      missing_information: [...(input.context.capabilities.intake_missing ?? [])],
+    },
+  }
 }
 
 function isTransientDeepSeekFailure(code: string): boolean {
@@ -1410,7 +1500,7 @@ export const processInboundTurn = new Workflow({
         })
         decision = owned.policy.allowed_response_types.includes('commercial_reply')
           || owned.policy.allowed_response_types.includes('technical_fallback')
-          ? modelUnavailableFallback(owned)
+          ? customerVisibleModelFallback(owned)
           : suppress('MODEL_UNAVAILABLE')
         decisionModel = 'policy:model-unavailable'
       }
@@ -1426,55 +1516,167 @@ export const processInboundTurn = new Workflow({
     }
 
     // ---- Paso 10: commitear en Next.js -----------------------------------
-    let committed: CommitDecisionResponse
+    let committed: CommitDecisionResponse | null = null
     const commitStartedAt = Date.now()
-    try {
-      committed = await step(
-        'commit-canonical-decision',
-        () =>
-          commitDecision.execute({
-            client,
-            input: {
-              turn_id: owned.turn_id,
-              trace_id: input.trace_id,
-              // Canonical course identity resolved by the deterministic route
-              // or preserved from the claim; the backend re-resolves it before
-              // authorizing any protected fact.
-              authorized_offering_code: authorizedOfferingCode,
-              // A deterministic current-batch selection only. The backend
-              // re-derives it before persisting plan_selected.
-              // Plannerless is the complete conversational authority. A
-              // deterministic legacy route may have noticed a plan token, but
-              // leaking that parallel interpretation into this commit can
-              // reject a valid objection turn with PAYMENT_PLAN_MISMATCH.
-              authorized_payment_plan: agentTurnV2Commit === null
-                ? authorizedPaymentPlan
-                : null,
-              conversation_pipeline_v1: pipelineCommit,
-              agent_turn_v2: agentTurnV2Commit,
-              supports_multi_outbound: true,
-              supports_turn_supersession: true,
-              decision,
-              model: {
-                provider: decisionProvider,
-                model: decisionModel,
-                prompt_version: pipelineCommit || agentTurnV2Commit || pipelineFailureDecision?.reason_code.startsWith('BRAIN_')
-                  ? pipelinePromptVersion
-                  : AGENT_A_PROMPT_VERSION,
-              },
-              // Batch fencing pair (spec §8): lets the backend try
-              // `completeBatch` right after this commit or its replay,
-              // never before and never on a rejected decision.
-              batch_id: owned.batch.id,
-              claim_token: owned.batch.claim_token,
+    const commitCurrentDecision = (stepName: string) => step(
+      stepName,
+      () =>
+        commitDecision.execute({
+          client,
+          input: {
+            turn_id: owned.turn_id,
+            trace_id: input.trace_id,
+            // Canonical course identity resolved by the deterministic route
+            // or preserved from the claim; the backend re-resolves it before
+            // authorizing any protected fact.
+            authorized_offering_code: authorizedOfferingCode,
+            // Plannerless is the complete conversational authority. A legacy
+            // payment token must not compete with its current-turn decision.
+            authorized_payment_plan: agentTurnV2Commit === null
+              ? authorizedPaymentPlan
+              : null,
+            conversation_pipeline_v1: pipelineCommit,
+            agent_turn_v2: agentTurnV2Commit,
+            supports_multi_outbound: true,
+            supports_turn_supersession: true,
+            decision,
+            model: {
+              provider: decisionProvider,
+              model: decisionModel,
+              prompt_version: pipelineCommit || agentTurnV2Commit || pipelineFailureDecision?.reason_code.startsWith('BRAIN_')
+                ? pipelinePromptVersion
+                : AGENT_A_PROMPT_VERSION,
             },
-          }),
-        { maxAttempts: 1 }
-      )
+            batch_id: owned.batch.id,
+            claim_token: owned.batch.claim_token,
+          },
+        }),
+      { maxAttempts: 1 },
+    )
+    try {
+      try {
+        committed = await commitCurrentDecision('commit-canonical-decision')
+      } catch (initialCommitError) {
+      const rejectedProposal = agentTurnV2Commit?.proposal ?? null
+      const rejection = rejectedProposal !== null && agentABrainContext !== null
+        ? backendCommitTurnRejectionV1({
+            error: initialCommitError,
+            proposal: rejectedProposal,
+            context: agentABrainContext,
+            rejectionId: randomUUID(),
+          })
+        : null
+
+      if (rejection === null) throw initialCommitError
+
+      safeLog('studyx.turn.backend_commit_rejected_recoverably', {
+        trace_id: input.trace_id,
+        turn_id: owned.turn_id,
+        rejection_id: rejection.rejection_id,
+        rejection_codes: rejection.rejections.map((item) => item.code),
+        rejection_subjects: rejection.rejections.map((item) => item.subject),
+      })
+
+      let repaired = false
+      if (repairEnabled
+        && rejectedProposal?.repair_of === null
+        && typeof secrets.DEEPSEEK_API_KEY === 'string'
+        && secrets.DEEPSEEK_API_KEY.length > 0
+        && agentABrainContext !== null) {
+        try {
+          const generated = await step(
+            'repair-agent-a-turn-after-backend-rejection-v1',
+            () => generateDeepSeekAgentATurnProposalV1({
+              context: { ...agentABrainContext, turn_rejection: rejection },
+              apiKey: secrets.DEEPSEEK_API_KEY as string,
+              signal,
+              model: typeof configuration.agentABrainDeepSeekModel === 'string'
+                ? configuration.agentABrainDeepSeekModel
+                : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
+              timeout_ms: 8_000,
+            }),
+            { maxAttempts: 1 },
+          )
+          const generatedWithAuthoritativeMove = {
+            ...generated,
+            proposal: {
+              ...generated.proposal,
+              move: bindCurrentConversationalIntentToMoveV1(generated.proposal.move, owned),
+            },
+          }
+          const resolved = await resolveAgentAPlannerlessProposalV2({
+            initial: generatedWithAuthoritativeMove,
+            context: agentABrainContext,
+            repair_enabled: false,
+            rejection_id: rejection.rejection_id,
+            repair: async () => {
+              throw new Error('BACKEND_REPAIR_MUST_NOT_RETRY')
+            },
+          })
+          agentTurnV2Commit = {
+            schema_version: 2,
+            proposal: resolved.effective.proposal,
+          }
+          pipelineCommit = null
+          pipelineMemoryCandidates = resolved.effective.proposal.memory_candidates
+          decision = pipelinePlaceholder(pipelineMemoryCandidates)
+          decisionProvider = generated.provider
+          decisionModel = generated.model
+          pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
+          committed = await commitCurrentDecision('commit-repaired-agent-a-turn-after-backend-rejection-v1')
+          repaired = true
+          safeLog('studyx.turn.backend_commit_repaired', {
+            trace_id: input.trace_id,
+            turn_id: owned.turn_id,
+            rejection_id: rejection.rejection_id,
+            repair_generation_calls: 1,
+          })
+        } catch (repairError) {
+          safeLog('studyx.turn.backend_commit_repair_failed', {
+            trace_id: input.trace_id,
+            turn_id: owned.turn_id,
+            rejection_id: rejection.rejection_id,
+            error_code: errorCode(repairError),
+          })
+        }
+      }
+
+        if (!repaired) {
+          // Final safety floor: no action crosses this boundary. It preserves a
+          // customer-visible continuation without fabricating business state or
+          // retrying the model indefinitely.
+          agentTurnV2Commit = null
+          pipelineCommit = null
+          decision = customerVisibleModelFallback(owned, 'policy_rejected')
+          decisionProvider = 'botpress'
+          decisionModel = 'policy:backend-commit-recovery'
+          committed = await commitCurrentDecision('commit-safe-floor-after-backend-rejection-v1')
+        }
+      }
+    } catch (error) {
       timings.commit_ms = Date.now() - commitStartedAt
-      state.decisionId = committed.decision_id
-      state.outboundId = committed.outbound?.id ?? null
-      state.phase = 'decision_committed'
+      state.phase = 'paused_error'
+      state.errorCode = errorCode(error)
+      safeLog('studyx.turn.commit_failed', {
+        trace_id: input.trace_id,
+        turn_id: owned.turn_id,
+        error_code: state.errorCode,
+      })
+      emitTimings()
+      return resultFromState(state, input.trace_id)
+    }
+
+    if (committed === null) {
+      state.phase = 'paused_error'
+      state.errorCode = 'COMMIT_RESULT_MISSING'
+      emitTimings()
+      return resultFromState(state, input.trace_id)
+    }
+
+    timings.commit_ms = Date.now() - commitStartedAt
+    state.decisionId = committed.decision_id
+    state.outboundId = committed.outbound?.id ?? null
+    state.phase = 'decision_committed'
       // Passthrough-only field (spec §8): whether the claimed batch actually
       // reached `completed`. Never gates anything here — a non-`completed`/
       // `duplicate` value is the backend's reconciler's job, not this
@@ -1512,18 +1714,6 @@ export const processInboundTurn = new Workflow({
           chat_preference: callOfferAudit.chat_preference,
           commit_status: committed.status,
         })
-      }
-    } catch (error) {
-      timings.commit_ms = Date.now() - commitStartedAt
-      state.phase = 'paused_error'
-      state.errorCode = errorCode(error)
-      safeLog('studyx.turn.commit_failed', {
-        trace_id: input.trace_id,
-        turn_id: owned.turn_id,
-        error_code: state.errorCode,
-      })
-      emitTimings()
-      return resultFromState(state, input.trace_id)
     }
 
     if (committed.status === 'rejected' || !committed.outbound) {
