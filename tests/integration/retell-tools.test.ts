@@ -309,6 +309,7 @@ run('Retell P0 tools with PostgreSQL', () => {
       WHERE projection_key = ${`lead:${ids.workspaceId}:${ids.contactId}`}
     `).resolves.toEqual([{ payload: {
       fecha_ingreso: '',
+      hora_inicio: '',
       nombre: 'Ana',
       apellido: 'López',
       mail: 'ana@example.test',
@@ -455,6 +456,7 @@ run('Retell P0 tools with PostgreSQL', () => {
       source_key: `retell-call:${ids.callId}`,
       payload: {
         fecha_ingreso: '',
+        hora_inicio: '',
         nombre: 'Mariana',
         apellido: 'López',
         mail: 'mariana@example.test',
@@ -950,6 +952,7 @@ run('Retell P0 tools with PostgreSQL', () => {
     `).resolves.toEqual([{
       payload: {
         fecha_ingreso: '',
+        hora_inicio: '',
         nombre: 'Ana',
         apellido: 'López',
         mail: 'new@example.test',
@@ -1081,6 +1084,7 @@ run('Retell P0 tools with PostgreSQL', () => {
     `).resolves.toEqual([{
       payload: {
         fecha_ingreso: '',
+        hora_inicio: '',
         nombre: 'Ana',
         apellido: 'López',
         mail: 'agent@example.test',

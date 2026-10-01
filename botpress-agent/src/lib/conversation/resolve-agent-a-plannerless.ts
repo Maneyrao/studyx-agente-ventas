@@ -450,7 +450,13 @@ function pruneKnownUnsupportedFactClaimsV1<T extends AgentAProposalEnvelopeV1>(i
     rejection_id: input.rejection.rejection_id,
     authorized_fact_ids: input.authorized_fact_ids,
   })
-  return candidateRejection === null ? candidate : null
+  // The fact assertion has already been removed here. A remaining quality
+  // warning (for example, the model omitted a recommended call invitation)
+  // must not turn the safe remainder into a customer-visible technical error.
+  return candidateRejection === null
+    || hasOnlyNonBlockingGuidance(candidate.proposal, candidateRejection)
+    ? candidate
+    : null
 }
 
 function pruneKnownUnsupportedFactClaimsWithoutValidationV1<

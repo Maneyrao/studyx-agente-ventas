@@ -157,13 +157,14 @@ run('sheet projection idempotency', () => {
     await expect(outboxRowsFor(spreadsheetId, TAB_NAME)).resolves.toHaveLength(1);
   });
 
-  it('stores the twelve operator fields in the exact Sheets order', async () => {
+  it('stores the thirteen operator fields in the exact Sheets order', async () => {
     const workspaceId = await workspaceFixture();
     const spreadsheetId = randomUUID();
     const contactId = await contactFixture();
 
     await enqueueLeadProjection(
       leadInput(workspaceId, contactId, spreadsheetId, {
+        horaInicio: '14:35',
         nombre: 'Ada',
         apellido: 'Lovelace',
         email: 'ada@example.com',
@@ -176,6 +177,7 @@ run('sheet projection idempotency', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].payload).toEqual({
       fecha_ingreso: '',
+      hora_inicio: '14:35',
       nombre: 'Ada',
       apellido: 'Lovelace',
       mail: 'ada@example.com',
@@ -226,6 +228,7 @@ run('sheet projection idempotency', () => {
     expect(rows[0].projection_key).toBe(leadProjectionKey(workspaceId, contactId));
     expect(rows[0].payload).toEqual({
       fecha_ingreso: expect.stringMatching(/^\d{2}\/\d{2}\/\d{4}$/u),
+      hora_inicio: expect.stringMatching(/^\d{2}:\d{2}$/u),
       nombre: 'Ana', apellido: 'Pérez', mail: 'ana@example.com',
       campana: '', anuncio: '',
       telefono: '+5491122222222',
@@ -301,6 +304,7 @@ run('sheet projection idempotency', () => {
     expect(rows[0].id).toBe(first!.id);
     expect(rows[0].payload).toEqual({
       fecha_ingreso: '',
+      hora_inicio: '',
       nombre: 'Ada',
       apellido: 'Byron',
       mail: 'ada@example.com',
@@ -377,6 +381,7 @@ run('sheet projection idempotency', () => {
       source_order: '2',
       payload: {
         fecha_ingreso: '',
+        hora_inicio: '',
         nombre: 'Ada',
         apellido: 'García',
         mail: 'ordered@example.com',
@@ -496,7 +501,7 @@ run('sheet projection idempotency', () => {
     )).resolves.toMatchObject({ completed: 1, failed: 0 });
   });
 
-  it('projects the compact CRM row into A:L order with an explicit unpaid default', async () => {
+  it('projects the compact CRM row into A:M order with an explicit unpaid default', async () => {
     // Isolate this flush from any pending row another test in this file left
     // behind (claim_sheet_projection_rows claims globally, not per-spreadsheet).
     await drainPending();
@@ -507,6 +512,7 @@ run('sheet projection idempotency', () => {
 
     await enqueueLeadProjection(
       leadInput(workspaceId, contactId, spreadsheetId, {
+        horaInicio: '14:35',
         nombre: 'Ada',
         apellido: 'Lovelace',
         email: 'ada@example.com',
@@ -522,13 +528,13 @@ run('sheet projection idempotency', () => {
     expect(written).toBeDefined();
 
     expect(SHEET_COLUMN_ORDER).toEqual([
-      'fecha_ingreso', 'nombre', 'apellido', 'telefono', 'mail', 'campana', 'anuncio',
+      'fecha_ingreso', 'hora_inicio', 'nombre', 'apellido', 'telefono', 'mail', 'campana', 'anuncio',
       'tipo_de_curso', 'plan', 'monto', 'pago', 'fecha_venta',
     ]);
 
     const rowArray = SHEET_COLUMN_ORDER.map((column) => written!.values[column]);
     expect(rowArray).toEqual([
-      '', 'Ada', 'Lovelace', '+5491100000000', 'ada@example.com', '', '',
+      '', '14:35', 'Ada', 'Lovelace', '+5491100000000', 'ada@example.com', '', '',
       'reparacion-celulares', 'monthly_12', 'USD 30.00', 'No', '',
     ]);
   });
@@ -622,8 +628,8 @@ run('sheet projection idempotency', () => {
     expect(rows[0].payload.monto).toBe('USD 30.00');
     expect(rows[0].payload.pago).toBe('No');
     expect(Object.keys(rows[0].payload).sort()).toEqual([
-      'anuncio', 'apellido', 'campana', 'fecha_ingreso', 'fecha_venta', 'mail',
-      'monto', 'nombre', 'pago', 'plan', 'telefono', 'tipo_de_curso',
+      'anuncio', 'apellido', 'campana', 'fecha_ingreso', 'fecha_venta', 'hora_inicio',
+      'mail', 'monto', 'nombre', 'pago', 'plan', 'telefono', 'tipo_de_curso',
     ]);
 
     const provider = new FakeSheetsProvider();

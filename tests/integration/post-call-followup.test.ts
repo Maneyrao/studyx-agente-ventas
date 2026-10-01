@@ -1096,6 +1096,7 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
     `).resolves.toEqual([{
       payload: {
         fecha_ingreso: '',
+        hora_inicio: '',
         nombre: 'Ariana',
         apellido: 'Paz',
         mail: 'e2e@example.test',

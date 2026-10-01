@@ -13,6 +13,7 @@
 /** The complete-lead operator view. This is the entire visible Sheet row. */
 export const SHEET_COLUMN_ORDER = [
   'fecha_ingreso',
+  'hora_inicio',
   'nombre',
   'apellido',
   'telefono',
@@ -28,6 +29,7 @@ export const SHEET_COLUMN_ORDER = [
 
 export const SHEET_COLUMN_LABELS: Readonly<Record<SheetColumn, string>> = {
   fecha_ingreso: 'Fecha de ingreso',
+  hora_inicio: 'Hora de inicio',
   nombre: 'Nombre',
   apellido: 'Apellido',
   telefono: 'Teléfono',

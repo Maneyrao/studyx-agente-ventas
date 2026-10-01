@@ -1617,6 +1617,72 @@ describe('afirmar un link no autorizado no puede terminar en silencio', () => {
  * link no autorizado.
  */
 describe('prerequisitos sin respaldo se podan, no se entregan', () => {
+  it('preserves the useful reply when unsupported candidate detail and a missing call offer occur together', async () => {
+    const current = context();
+    current.customer.display_name = 'Thiago';
+    current.turn.batch_messages = [
+      { id: 'm2', text: '¿Cómo funciona la llamada?' },
+    ];
+    current.turn.recent_turns = [{
+      id: 'prior-agent',
+      direction: 'outbound',
+      content: 'Cuéntame qué curso te interesa y te asesoro.',
+    }];
+    current.catalog.selected_offering = null;
+    current.commercial_state.selected_offering_code = null;
+    current.commercial_state.stage = 'exploring';
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_status = 'not_offered';
+    current.commercial_state.call_offer_count = 0;
+    current.catalog.candidate_offerings = [
+      {
+        code: 'fotografia-profesional',
+        fact_id: AVAILABLE_NAME_FACT,
+        display_name: 'Fotografía Profesional',
+        area_code: 'fotografia',
+      },
+      {
+        code: 'ingles-1',
+        fact_id: ENGLISH_1_NAME_FACT,
+        display_name: 'Inglés 1',
+        area_code: 'idiomas',
+      },
+    ];
+    current.capabilities.may_offer_call = true;
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({
+        move: {
+          schema_version: 1,
+          move: 'browse_catalog',
+          secondary_moves: [],
+          vetoes: [],
+          confidence: 0.9,
+        },
+        response: {
+          messages: [
+            'La llamada es breve y sirve para orientarte según lo que buscas.',
+            'Fotografía Profesional es ideal para empezar desde cero y editar imágenes.',
+          ],
+          call_offer: null,
+        },
+        used_fact_ids: [AVAILABLE_NAME_FACT, ENGLISH_1_NAME_FACT],
+      })),
+      context: current,
+      repair_enabled: true,
+      repair: async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); },
+      rejection_id: '00000000-0000-4000-8000-0000000000b4',
+    });
+
+    expect(result.effective.proposal.response.messages).toEqual([
+      'La llamada es breve y sirve para orientarte según lo que buscas.',
+    ]);
+    expect(result.evidence.rejection_codes).toEqual(expect.arrayContaining([
+      'FACT_VALUE_MISMATCH',
+      'CALL_OFFER_REQUIRED',
+    ]));
+  });
+
   it('combines safe pruning when one draft contains unsupported prerequisites and candidate advice', async () => {
     const current = context();
     current.turn.batch_messages = [

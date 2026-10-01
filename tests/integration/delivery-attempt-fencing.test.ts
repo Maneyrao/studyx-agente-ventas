@@ -555,6 +555,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
     expect(await projectionRows(turn.contact_id)).toEqual([{
       payload: {
         fecha_ingreso: expect.stringMatching(/^\d{2}\/\d{2}\/\d{4}$/u),
+        hora_inicio: expect.stringMatching(/^\d{2}:\d{2}$/u),
         nombre: '', apellido: '', mail: '', telefono: expect.stringMatching(/^\+54911\d{8}$/u),
         campana: '', anuncio: '',
         tipo_de_curso: '', plan: '', monto: '', pago: 'No',
@@ -578,6 +579,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
     expect(await projectionRows(turn.contact_id)).toEqual([{
       payload: {
         fecha_ingreso: expect.stringMatching(/^\d{2}\/\d{2}\/\d{4}$/u),
+        hora_inicio: expect.stringMatching(/^\d{2}:\d{2}$/u),
         nombre: '', apellido: '', mail: '', telefono: expect.stringMatching(/^\+54911\d{8}$/u),
         campana: '', anuncio: '',
         tipo_de_curso: '', plan: '', monto: '', pago: 'No',
@@ -608,6 +610,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].payload).toEqual({
       fecha_ingreso: expect.stringMatching(/^\d{2}\/\d{2}\/\d{4}$/u),
+      hora_inicio: expect.stringMatching(/^\d{2}:\d{2}$/u),
       nombre: 'Ariana',
       apellido: 'Paz',
       mail: 'ariana.paz@example.test',
@@ -723,6 +726,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       sheet_rows: 1,
       sheet_payload: {
         fecha_ingreso: expect.stringMatching(/^\d{2}\/\d{2}\/\d{4}$/u),
+        hora_inicio: expect.stringMatching(/^\d{2}:\d{2}$/u),
         nombre: 'Ariana',
         apellido: 'Paz',
         mail: 'ariana.paz@example.test',
@@ -1091,6 +1095,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       expect(rows).toHaveLength(1);
       expect(rows[0].payload).toEqual({
         fecha_ingreso: expect.stringMatching(/^\d{2}\/\d{2}\/\d{4}$/u),
+        hora_inicio: expect.stringMatching(/^\d{2}:\d{2}$/u),
         nombre: 'Ariana',
         apellido: 'Paz',
         mail: 'ariana.paz@example.test',

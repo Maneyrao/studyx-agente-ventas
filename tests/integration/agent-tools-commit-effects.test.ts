@@ -906,6 +906,7 @@ run('Agent Loop preparation materialization', () => {
     `).resolves.toEqual([{
       payload: {
         fecha_ingreso: '',
+        hora_inicio: '',
         nombre: 'Ana',
         apellido: 'Pérez',
         mail: expect.stringMatching(/^ana\..+@example\.test$/u),
@@ -1090,6 +1091,7 @@ run('Agent Loop preparation materialization', () => {
       source_order: '8',
       payload: {
         fecha_ingreso: expect.stringMatching(/^\d{2}\/\d{2}\/\d{4}$/u),
+        hora_inicio: expect.stringMatching(/^\d{2}:\d{2}$/u),
         nombre: 'Ana',
         apellido: 'García',
         mail: 'ana.garcia@example.test',
@@ -1153,6 +1155,7 @@ run('Agent Loop preparation materialization', () => {
       source_order: '4',
       payload: {
         fecha_ingreso: '',
+        hora_inicio: '',
         nombre: 'Ana',
         apellido: 'García',
         mail: expect.stringMatching(/^ana\..+@example\.test$/u),

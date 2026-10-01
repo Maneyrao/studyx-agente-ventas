@@ -57,6 +57,7 @@ export interface LeadProjectionInput {
   /** Channel-derived or customer-declared phone shown in the operator row. */
   telefono?: string;
   fechaIngreso?: string;
+  horaInicio?: string;
   campana?: string;
   anuncio?: string;
   /**
@@ -162,7 +163,7 @@ export function agentBLeadProjectionSourceOrder(callSourceOrder: number): number
 /**
  * Idempotent upsert of the single outbox row for one lead.
  *
- * The persisted payload is deliberately the twelve visible A:L values only.
+ * The persisted payload is deliberately the thirteen visible A:M values only.
  * Optional canonical input values merge with the existing row so a later
  * correction updates the same row without erasing another captured value.
  *
@@ -208,6 +209,7 @@ async function enqueueLeadProjectionInTransaction(
 
     const values: SheetRowValues = {
       fecha_ingreso: input.fechaIngreso ?? existing?.payload.fecha_ingreso ?? '',
+      hora_inicio: input.horaInicio ?? existing?.payload.hora_inicio ?? '',
       nombre: input.nombre ?? existing?.payload.nombre ?? '',
       apellido: input.apellido ?? existing?.payload.apellido ?? '',
       telefono: input.telefono ?? existing?.payload.telefono ?? '',
@@ -381,10 +383,12 @@ export async function upsertInboundLeadProjection(
     const workspaceRows = await db<Array<{
       id: string;
       fecha_ingreso: string;
+      hora_inicio: string;
       metadata: Record<string, unknown>;
     }>>`
       SELECT workspace.id,
              to_char(COALESCE(membership.created_at, now()) AT TIME ZONE workspace.timezone, 'DD/MM/YYYY') AS fecha_ingreso,
+             to_char(COALESCE(membership.created_at, now()) AT TIME ZONE workspace.timezone, 'HH24:MI') AS hora_inicio,
              COALESCE(membership.metadata, '{}'::jsonb) AS metadata
       FROM workspaces AS workspace
       LEFT JOIN workspace_contacts AS membership
@@ -405,6 +409,7 @@ export async function upsertInboundLeadProjection(
         tabName: sheets.tabName,
         telefono: input.phone,
         fechaIngreso: workspace.fecha_ingreso,
+        horaInicio: workspace.hora_inicio,
         campana: labels.campana,
         anuncio: labels.anuncio,
         nombre: input.nombre,
@@ -458,6 +463,7 @@ export async function upsertCommittedLeadStateProjection(
       offering_name: string | null;
       offering_names: string | null;
       fecha_ingreso: string;
+      hora_inicio: string;
       fecha_venta: string | null;
       membership_metadata: Record<string, unknown>;
       delivery_state: string | null;
@@ -476,6 +482,7 @@ export async function upsertCommittedLeadStateProjection(
         offering.display_name AS offering_name,
         interests.offering_names,
         to_char(COALESCE(membership.created_at, state.created_at) AT TIME ZONE workspace.timezone, 'DD/MM/YYYY') AS fecha_ingreso,
+        to_char(COALESCE(membership.created_at, state.created_at) AT TIME ZONE workspace.timezone, 'HH24:MI') AS hora_inicio,
         paid.fecha_venta,
         COALESCE(membership.metadata, '{}'::jsonb) AS membership_metadata,
         delivery.state AS delivery_state,
@@ -540,6 +547,7 @@ export async function upsertCommittedLeadStateProjection(
       tabName: sheets.tabName,
       telefono: row.declared_phone ?? row.phone,
       fechaIngreso: row.fecha_ingreso,
+      horaInicio: row.hora_inicio,
       campana: labels.campana,
       anuncio: labels.anuncio,
       nombre: identity?.nombre,
@@ -595,6 +603,7 @@ export async function upsertVerifiedPaymentProjection(
       status: string;
       offering_names: string | null;
       fecha_ingreso: string;
+      hora_inicio: string;
       fecha_venta: string | null;
       membership_metadata: Record<string, unknown>;
     }>>`
@@ -612,6 +621,7 @@ export async function upsertVerifiedPaymentProjection(
         payment.status
         , interests.offering_names
         , to_char(COALESCE(membership.created_at, payment.created_at) AT TIME ZONE workspace.timezone, 'DD/MM/YYYY') AS fecha_ingreso
+        , to_char(COALESCE(membership.created_at, payment.created_at) AT TIME ZONE workspace.timezone, 'HH24:MI') AS hora_inicio
         , to_char(first_paid.paid_at AT TIME ZONE workspace.timezone, 'DD/MM/YYYY') AS fecha_venta
         , COALESCE(membership.metadata, '{}'::jsonb) AS membership_metadata
       FROM payments AS payment
@@ -660,6 +670,7 @@ export async function upsertVerifiedPaymentProjection(
           tabName: sheets.tabName,
           telefono: payment.declared_phone ?? payment.phone,
           fechaIngreso: payment.fecha_ingreso,
+          horaInicio: payment.hora_inicio,
           campana: labels.campana,
           anuncio: labels.anuncio,
           nombre: identity?.nombre,
@@ -678,6 +689,7 @@ export async function upsertVerifiedPaymentProjection(
 
       const values: SheetRowValues = {
         fecha_ingreso: existing.payload.fecha_ingreso ?? payment.fecha_ingreso,
+        hora_inicio: existing.payload.hora_inicio ?? payment.hora_inicio,
         nombre: existing.payload.nombre ?? identity?.nombre ?? '',
         apellido: existing.payload.apellido ?? identity?.apellido ?? '',
         telefono: existing.payload.telefono ?? payment.declared_phone ?? payment.phone,
@@ -764,26 +776,41 @@ export interface FlushSheetProjectionsDeps {
 
 /** Requeues rows from any older Sheet layout in place; identity and row_number stay unchanged. */
 async function requeueLegacyLeadRows(sql: DbClient, limit: number): Promise<number> {
-  const legacy = await sql<Array<{ id: string; payload: ExistingRow['payload'] }>>`
-    SELECT id, payload
-    FROM sheet_projection_rows
-    WHERE projection_type = 'lead'
-      AND state <> 'leased'
+  const legacy = await sql<Array<{
+    id: string;
+    payload: ExistingRow['payload'];
+    hora_inicio: string;
+  }>>`
+    SELECT projection.id,
+           projection.payload,
+           COALESCE(
+             to_char(membership.created_at AT TIME ZONE workspace.timezone, 'HH24:MI'),
+             ''
+           ) AS hora_inicio
+    FROM sheet_projection_rows AS projection
+    LEFT JOIN workspace_contacts AS membership
+      ON membership.workspace_id = split_part(projection.projection_key, ':', 2)::uuid
+     AND membership.contact_id = split_part(projection.projection_key, ':', 3)::uuid
+    LEFT JOIN workspaces AS workspace ON workspace.id = membership.workspace_id
+    WHERE projection.projection_type = 'lead'
+      AND projection.state <> 'leased'
       AND (
-        NOT (payload ? 'fecha_ingreso')
-        OR NOT (payload ? 'campana')
-        OR NOT (payload ? 'anuncio')
-        OR NOT (payload ? 'monto')
-        OR NOT (payload ? 'pago')
-        OR NOT (payload ? 'fecha_venta')
+        NOT (projection.payload ? 'fecha_ingreso')
+        OR NOT (projection.payload ? 'hora_inicio')
+        OR NOT (projection.payload ? 'campana')
+        OR NOT (projection.payload ? 'anuncio')
+        OR NOT (projection.payload ? 'monto')
+        OR NOT (projection.payload ? 'pago')
+        OR NOT (projection.payload ? 'fecha_venta')
       )
-    ORDER BY row_number
+    ORDER BY projection.row_number
     LIMIT ${limit}
   `;
   let requeued = 0;
   for (const row of legacy) {
     const values: SheetRowValues = {
       fecha_ingreso: row.payload.fecha_ingreso ?? '',
+      hora_inicio: row.payload.hora_inicio ?? row.hora_inicio,
       nombre: row.payload.nombre ?? '',
       apellido: row.payload.apellido ?? '',
       telefono: row.payload.telefono ?? '',

@@ -424,6 +424,7 @@ run('conversation pipeline V1 vertical', () => {
     expect(beforeReport).toHaveLength(1);
     expect(beforeReport[0].payload).toEqual({
       fecha_ingreso: expect.stringMatching(/^\d{2}\/\d{2}\/\d{4}$/u),
+      hora_inicio: expect.stringMatching(/^\d{2}:\d{2}$/u),
       nombre: 'Ariana',
       apellido: 'Paz',
       mail: 'ariana.paz@example.test',
@@ -448,6 +449,7 @@ run('conversation pipeline V1 vertical', () => {
     expect(afterReport).toHaveLength(1);
     expect(afterReport[0].payload).toEqual({
       fecha_ingreso: expect.stringMatching(/^\d{2}\/\d{2}\/\d{4}$/u),
+      hora_inicio: expect.stringMatching(/^\d{2}:\d{2}$/u),
       nombre: 'Ariana',
       apellido: 'Paz',
       mail: 'ariana.paz@example.test',
