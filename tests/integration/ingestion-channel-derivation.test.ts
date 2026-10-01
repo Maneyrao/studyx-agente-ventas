@@ -64,6 +64,43 @@ run('inbound channel derivation', () => {
     expect((await storedThreads(inbound.external_conversation_id)).map((row) => row.channel)).toEqual(['whatsapp']);
   });
 
+  it('keeps immutable first-touch Meta attribution and refreshes last-touch', async () => {
+    const first = envelope({
+      message: {
+        type: 'text', text: 'hola', occurred_at: '2026-10-01T12:00:00.000Z',
+        reply_to_external_message_id: null, audio_reference: null,
+        metadata: {
+          meta_source_id: 'ad-1', meta_source_type: 'ad',
+          meta_headline: 'Curso de Inglés', meta_ctwa_clid: 'click-1',
+        },
+      },
+    });
+    const accepted = await processInboundMessage(first);
+    await processInboundMessage(envelope({
+      external_conversation_id: first.external_conversation_id,
+      external_user_id: first.external_user_id,
+      phone_e164: first.phone_e164,
+      message: {
+        type: 'text', text: 'también vi fotografía', occurred_at: '2026-10-01T12:05:00.000Z',
+        reply_to_external_message_id: null, audio_reference: null,
+        metadata: {
+          meta_source_id: 'ad-2', meta_source_type: 'ad',
+          meta_headline: 'Curso de Fotografía', meta_ctwa_clid: 'click-2',
+        },
+      },
+    }));
+
+    const rows = await db!<Array<{ metadata: Record<string, unknown> }>>`
+      SELECT metadata FROM workspace_contacts WHERE contact_id = ${accepted.contact.id}::uuid
+    `;
+    expect(rows[0].metadata).toMatchObject({
+      attribution: {
+        first_touch: { source_id: 'ad-1', headline: 'Curso de Inglés', ctwa_clid: 'click-1' },
+        last_touch: { source_id: 'ad-2', headline: 'Curso de Fotografía', ctwa_clid: 'click-2' },
+      },
+    });
+  });
+
   // The emulator simulates a WhatsApp conversation. Giving it a channel of its
   // own would change the meaning of every row already stored under it.
   it('still maps the emulator to whatsapp, unchanged', async () => {

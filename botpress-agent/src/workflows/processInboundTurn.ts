@@ -60,6 +60,7 @@ import { isLegacyConversationPipelineEligibleV1 } from '../lib/conversation/agen
 import {
   DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
   generateDeepSeekAgentATurnProposalV1,
+  generateGeminiAgentATurnProposalV1,
 } from '../lib/conversation/agent-a-brain'
 import { resolveAgentAProposalV1 } from '../lib/conversation/resolve-agent-a-proposal'
 import { resolveAgentAPlannerlessProposalV2 } from '../lib/conversation/resolve-agent-a-plannerless'
@@ -812,11 +813,36 @@ export const processInboundTurn = new Workflow({
             reason: firstFailureCode,
             attempt: 2,
           })
-          generated = await step(
-            'retry-agent-a-turn-proposal-v1-deepseek',
-            generateDeepSeekProposal,
-            { maxAttempts: 1 },
-          )
+          try {
+            generated = await step(
+              'retry-agent-a-turn-proposal-v1-deepseek',
+              generateDeepSeekProposal,
+              { maxAttempts: 1 },
+            )
+          } catch (secondError) {
+            const secondFailureCode = errorCode(secondError)
+            const geminiApiKey = secrets.GEMINI_API_KEY
+            if (!isTransientDeepSeekFailure(secondFailureCode)
+              || typeof geminiApiKey !== 'string'
+              || geminiApiKey.length === 0) throw secondError
+            safeLog('studyx.turn.agent_a_brain_failover', {
+              trace_id: input.trace_id,
+              turn_id: owned.turn_id,
+              from_provider: 'deepseek-direct',
+              to_provider: 'google-ai-direct',
+              reason: secondFailureCode,
+            })
+            generated = await step(
+              'failover-agent-a-turn-proposal-v1-gemini',
+              () => generateGeminiAgentATurnProposalV1({
+                context: agentABrainContext,
+                apiKey: geminiApiKey,
+                signal,
+                timeout_ms: 8_000,
+              }),
+              { maxAttempts: 1 },
+            )
+          }
         }
         timings.agent_a_brain_ms = Date.now() - brainStartedAt
 

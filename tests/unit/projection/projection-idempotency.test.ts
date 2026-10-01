@@ -157,7 +157,7 @@ run('sheet projection idempotency', () => {
     await expect(outboxRowsFor(spreadsheetId, TAB_NAME)).resolves.toHaveLength(1);
   });
 
-  it('stores the eight operator fields in the exact Sheets order', async () => {
+  it('stores the twelve operator fields in the exact Sheets order', async () => {
     const workspaceId = await workspaceFixture();
     const spreadsheetId = randomUUID();
     const contactId = await contactFixture();
@@ -175,14 +175,18 @@ run('sheet projection idempotency', () => {
     const rows = await outboxRowsFor(spreadsheetId, TAB_NAME);
     expect(rows).toHaveLength(1);
     expect(rows[0].payload).toEqual({
+      fecha_ingreso: '',
       nombre: 'Ada',
       apellido: 'Lovelace',
       mail: 'ada@example.com',
+      campana: '',
+      anuncio: '',
       telefono: '+5491100000000',
       tipo_de_curso: 'programacion',
       plan: 'monthly_12',
       monto: 'USD 30.00',
       pago: 'No',
+      fecha_venta: '',
     });
   });
 
@@ -221,12 +225,15 @@ run('sheet projection idempotency', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].projection_key).toBe(leadProjectionKey(workspaceId, contactId));
     expect(rows[0].payload).toEqual({
+      fecha_ingreso: expect.stringMatching(/^\d{2}\/\d{2}\/\d{4}$/u),
       nombre: 'Ana', apellido: 'Pérez', mail: 'ana@example.com',
+      campana: '', anuncio: '',
       telefono: '+5491122222222',
       tipo_de_curso: 'Redes Informáticas',
       plan: 'monthly_12',
       monto: 'USD 30.00',
       pago: 'No',
+      fecha_venta: '',
     });
   });
 
@@ -293,14 +300,18 @@ run('sheet projection idempotency', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].id).toBe(first!.id);
     expect(rows[0].payload).toEqual({
+      fecha_ingreso: '',
       nombre: 'Ada',
       apellido: 'Byron',
       mail: 'ada@example.com',
+      campana: '',
+      anuncio: '',
       telefono: '+5491100000000',
       tipo_de_curso: 'matematicas',
       plan: 'monthly_12',
       monto: 'USD 30.00',
       pago: 'No',
+      fecha_venta: '',
     });
   });
 
@@ -365,14 +376,18 @@ run('sheet projection idempotency', () => {
     `).resolves.toEqual([{
       source_order: '2',
       payload: {
+        fecha_ingreso: '',
         nombre: 'Ada',
         apellido: 'García',
         mail: 'ordered@example.com',
+        campana: '',
+        anuncio: '',
         telefono: '+5491100000000',
         tipo_de_curso: 'reparacion-celulares',
         plan: 'monthly_12',
         monto: 'USD 30.00',
         pago: 'No',
+        fecha_venta: '',
       },
     }]);
   });
@@ -481,7 +496,7 @@ run('sheet projection idempotency', () => {
     )).resolves.toMatchObject({ completed: 1, failed: 0 });
   });
 
-  it('projects the compact CRM row into A:H order with an explicit unpaid default', async () => {
+  it('projects the compact CRM row into A:L order with an explicit unpaid default', async () => {
     // Isolate this flush from any pending row another test in this file left
     // behind (claim_sheet_projection_rows claims globally, not per-spreadsheet).
     await drainPending();
@@ -507,13 +522,14 @@ run('sheet projection idempotency', () => {
     expect(written).toBeDefined();
 
     expect(SHEET_COLUMN_ORDER).toEqual([
-      'nombre', 'apellido', 'telefono', 'mail', 'tipo_de_curso', 'plan', 'monto', 'pago',
+      'fecha_ingreso', 'nombre', 'apellido', 'telefono', 'mail', 'campana', 'anuncio',
+      'tipo_de_curso', 'plan', 'monto', 'pago', 'fecha_venta',
     ]);
 
     const rowArray = SHEET_COLUMN_ORDER.map((column) => written!.values[column]);
     expect(rowArray).toEqual([
-      'Ada', 'Lovelace', '+5491100000000', 'ada@example.com',
-      'reparacion-celulares', 'monthly_12', 'USD 30.00', 'No',
+      '', 'Ada', 'Lovelace', '+5491100000000', 'ada@example.com', '', '',
+      'reparacion-celulares', 'monthly_12', 'USD 30.00', 'No', '',
     ]);
   });
 
@@ -606,7 +622,8 @@ run('sheet projection idempotency', () => {
     expect(rows[0].payload.monto).toBe('USD 30.00');
     expect(rows[0].payload.pago).toBe('No');
     expect(Object.keys(rows[0].payload).sort()).toEqual([
-      'apellido', 'mail', 'monto', 'nombre', 'pago', 'plan', 'telefono', 'tipo_de_curso',
+      'anuncio', 'apellido', 'campana', 'fecha_ingreso', 'fecha_venta', 'mail',
+      'monto', 'nombre', 'pago', 'plan', 'telefono', 'tipo_de_curso',
     ]);
 
     const provider = new FakeSheetsProvider();

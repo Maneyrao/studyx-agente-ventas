@@ -85,7 +85,7 @@ afterAll(async () => {
 });
 
 run('canonical orchestration lifecycle', () => {
-  it('creates one progressive eight-column lead and enriches it as facts become durable', async () => {
+  it('creates one progressive twelve-column lead and enriches it as facts become durable', async () => {
     const spreadsheetId = randomUUID();
     const previousSpreadsheet = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
     const previousTab = process.env.GOOGLE_SHEETS_TAB_NAME;
@@ -105,8 +105,11 @@ run('canonical orchestration lifecycle', () => {
       `;
       expect(firstRows).toHaveLength(1);
       expect(firstRows[0].payload).toEqual({
+        fecha_ingreso: expect.stringMatching(/^\d{2}\/\d{2}\/\d{4}$/u),
         nombre: '', apellido: '', mail: '', telefono: firstEnvelope.phone_e164,
+        campana: '', anuncio: '',
         tipo_de_curso: '', plan: '', monto: '', pago: 'No',
+        fecha_venta: '',
       });
 
       const enriched = await processInboundMessage({
@@ -158,14 +161,18 @@ run('canonical orchestration lifecycle', () => {
       `;
       expect(commercialRows).toHaveLength(1);
       expect(commercialRows[0].payload).toEqual({
+        fecha_ingreso: expect.stringMatching(/^\d{2}\/\d{2}\/\d{4}$/u),
         nombre: 'Ana',
         apellido: 'Pérez',
         mail: 'ana@example.com',
         telefono: firstEnvelope.phone_e164,
+        campana: '',
+        anuncio: '',
         tipo_de_curso: 'Redes Informáticas',
         plan: 'monthly_12',
         monto: 'USD 30.00',
         pago: 'No',
+        fecha_venta: '',
       });
       expect(first.status).toBe('accepted');
     } finally {

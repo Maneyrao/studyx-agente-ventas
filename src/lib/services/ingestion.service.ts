@@ -331,6 +331,12 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
     message: envelope.message,
   };
   const payloadHash = sha256Hex(canonicalPayload);
+  const attributionEntries = Object.entries(envelope.message.metadata ?? {})
+    .filter(([key, value]) => key.startsWith('meta_') && typeof value === 'string' && value.trim() !== '')
+    .map(([key, value]) => [key.slice(5), String(value).trim()] as const);
+  const attribution = attributionEntries.length > 0
+    ? Object.fromEntries([...attributionEntries, ['received_at', envelope.message.occurred_at]])
+    : null;
 
   return withSerializableTransaction(async (db) => {
     // Per-phase wall-clock inside the transaction. One log line per attempt,
@@ -416,6 +422,25 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
       if (existingMembership.length === 0) {
         throw new Error('BUSINESS_WORKSPACE_NOT_FOUND');
       }
+    }
+
+    if (attribution !== null) {
+      await db`
+        UPDATE workspace_contacts
+        SET metadata = metadata || jsonb_build_object(
+              'attribution',
+              COALESCE(metadata -> 'attribution', '{}'::jsonb)
+              || jsonb_build_object(
+                'first_touch', COALESCE(metadata #> '{attribution,first_touch}', ${jsonbParam(db, attribution)}),
+                'last_touch', ${jsonbParam(db, attribution)}
+              )
+            ),
+            updated_at = now()
+        WHERE contact_id = ${contact.id}::uuid
+          AND workspace_id IN (
+            SELECT id FROM workspaces WHERE slug = ${workspaceSlug} AND status = 'active'
+          )
+      `;
     }
 
     if (envelope.sandbox_provider === 'telegram_sandbox') {

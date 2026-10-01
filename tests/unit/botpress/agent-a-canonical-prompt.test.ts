@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const PROMPT_PATH = 'docs/prompts/studyx-agent-a-canonical.md';
 const GENERATED_PATH = 'botpress-agent/src/prompts/studyx-agent-a-canonical.generated.ts';
-const EXPECTED_SHA256 = '131395bbeeeaf375e5254310f43f033a2fa047c7d579564d03768b5c6587f502';
+const EXPECTED_SHA256 = '172c2965a2c4e369ad191d84e8f8ac7aae5690bc7febfb3f4a3b919f1ddc9b72';
 
 describe('Agent A canonical sales prompt', () => {
   it('ships the complete approved prompt and a byte-equivalent generated module', () => {
@@ -16,7 +16,7 @@ describe('Agent A canonical sales prompt', () => {
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v60' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v61' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {

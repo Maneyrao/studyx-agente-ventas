@@ -56,6 +56,9 @@ export interface LeadProjectionInput {
   sourceKey?: string;
   /** Channel-derived or customer-declared phone shown in the operator row. */
   telefono?: string;
+  fechaIngreso?: string;
+  campana?: string;
+  anuncio?: string;
   /**
    * Canonical application names remain compatible with the existing callers.
    * They are persisted as `nombre`, `apellido`, and visible `mail`.
@@ -159,7 +162,7 @@ export function agentBLeadProjectionSourceOrder(callSourceOrder: number): number
 /**
  * Idempotent upsert of the single outbox row for one lead.
  *
- * The persisted payload is deliberately the eight visible A:H values only.
+ * The persisted payload is deliberately the twelve visible A:L values only.
  * Optional canonical input values merge with the existing row so a later
  * correction updates the same row without erasing another captured value.
  *
@@ -204,10 +207,13 @@ async function enqueueLeadProjectionInTransaction(
     const existing = existingRows[0];
 
     const values: SheetRowValues = {
+      fecha_ingreso: input.fechaIngreso ?? existing?.payload.fecha_ingreso ?? '',
       nombre: input.nombre ?? existing?.payload.nombre ?? '',
       apellido: input.apellido ?? existing?.payload.apellido ?? '',
       telefono: input.telefono ?? existing?.payload.telefono ?? '',
       mail: input.email ?? existing?.payload.mail ?? existing?.payload.email ?? '',
+      campana: input.campana ?? existing?.payload.campana ?? '',
+      anuncio: input.anuncio ?? existing?.payload.anuncio ?? '',
       tipo_de_curso: input.cursoInteres
         ?? existing?.payload.tipo_de_curso
         ?? existing?.payload.curso_interes
@@ -220,6 +226,7 @@ async function enqueueLeadProjectionInTransaction(
       pago: input.pagoVerificado === true
         ? 'Sí'
         : existing?.payload.pago ?? 'No',
+      fecha_venta: input.fechaPago ?? existing?.payload.fecha_venta ?? '',
     };
     if (!hasStableLeadIdentity(values)) return null;
     const payloadHash = sha256Hex(values);
@@ -325,6 +332,24 @@ export interface InboundLeadProjectionInput {
   traceId: string;
 }
 
+function attributionLabels(metadata: Record<string, unknown> | null | undefined): {
+  campana?: string;
+  anuncio?: string;
+} {
+  const attribution = metadata?.attribution;
+  if (!attribution || typeof attribution !== 'object' || Array.isArray(attribution)) return {};
+  const first = (attribution as Record<string, unknown>).first_touch;
+  if (!first || typeof first !== 'object' || Array.isArray(first)) return {};
+  const touch = first as Record<string, unknown>;
+  const value = (...keys: string[]) => keys
+    .map((key) => touch[key])
+    .find((candidate): candidate is string => typeof candidate === 'string' && candidate.trim() !== '');
+  return {
+    campana: value('campaign_name', 'utm_campaign', 'campaign_id', 'source_id'),
+    anuncio: value('ad_name', 'utm_content', 'headline', 'ad_id', 'source_id'),
+  };
+}
+
 export interface CommittedLeadStateProjectionInput {
   messageId: string;
   traceId: string;
@@ -353,19 +378,35 @@ export async function upsertInboundLeadProjection(
     const sheets = (deps.loadSheetsConfig ?? loadSheetsProjectionConfig)();
     if (!sheets) return 'skipped';
     const workspaceSlug = (deps.loadWorkspaceConfig ?? loadBusinessWorkspaceConfig)().workspaceSlug;
-    const workspaceRows = await db<Array<{ id: string }>>`
-      SELECT id FROM workspaces WHERE slug = ${workspaceSlug} AND status = 'active' LIMIT 1
+    const workspaceRows = await db<Array<{
+      id: string;
+      fecha_ingreso: string;
+      metadata: Record<string, unknown>;
+    }>>`
+      SELECT workspace.id,
+             to_char(COALESCE(membership.created_at, now()) AT TIME ZONE workspace.timezone, 'DD/MM/YYYY') AS fecha_ingreso,
+             COALESCE(membership.metadata, '{}'::jsonb) AS metadata
+      FROM workspaces AS workspace
+      LEFT JOIN workspace_contacts AS membership
+        ON membership.workspace_id = workspace.id
+       AND membership.contact_id = ${input.contactId}::uuid
+      WHERE workspace.slug = ${workspaceSlug} AND workspace.status = 'active'
+      LIMIT 1
     `;
-    const workspaceId = workspaceRows[0]?.id;
-    if (!workspaceId) return 'skipped';
+    const workspace = workspaceRows[0];
+    if (!workspace) return 'skipped';
+    const labels = attributionLabels(workspace.metadata);
 
     const projected = await enqueueLeadProjection(
       {
-        workspaceId,
+        workspaceId: workspace.id,
         contactId: input.contactId,
         spreadsheetId: sheets.spreadsheetId,
         tabName: sheets.tabName,
         telefono: input.phone,
+        fechaIngreso: workspace.fecha_ingreso,
+        campana: labels.campana,
+        anuncio: labels.anuncio,
         nombre: input.nombre,
         apellido: input.apellido,
         email: input.email,
@@ -415,6 +456,10 @@ export async function upsertCommittedLeadStateProjection(
       selected_offering_code: string | null;
       selected_payment_plan: string | null;
       offering_name: string | null;
+      offering_names: string | null;
+      fecha_ingreso: string;
+      fecha_venta: string | null;
+      membership_metadata: Record<string, unknown>;
       delivery_state: string | null;
       has_deferred_lead_projection: boolean;
     }>>`
@@ -429,6 +474,10 @@ export async function upsertCommittedLeadStateProjection(
         state.selected_offering_code,
         state.selected_payment_plan,
         offering.display_name AS offering_name,
+        interests.offering_names,
+        to_char(COALESCE(membership.created_at, state.created_at) AT TIME ZONE workspace.timezone, 'DD/MM/YYYY') AS fecha_ingreso,
+        paid.fecha_venta,
+        COALESCE(membership.metadata, '{}'::jsonb) AS membership_metadata,
         delivery.state AS delivery_state,
         (delivery.deferred_lead_projection IS NOT NULL) AS has_deferred_lead_projection
       FROM messages AS message
@@ -440,9 +489,26 @@ export async function upsertCommittedLeadStateProjection(
        AND workspace.slug = ${workspaceSlug}
        AND workspace.status = 'active'
       JOIN contacts AS contact ON contact.id = state.contact_id
+      LEFT JOIN workspace_contacts AS membership
+        ON membership.workspace_id = state.workspace_id
+       AND membership.contact_id = state.contact_id
       LEFT JOIN offerings AS offering
         ON offering.workspace_id = state.workspace_id
        AND offering.code = state.selected_offering_code
+      LEFT JOIN LATERAL (
+        SELECT string_agg(item.display_name, ', ' ORDER BY interest.first_seen_at) AS offering_names
+        FROM lead_course_interests AS interest
+        JOIN offerings AS item
+          ON item.workspace_id = interest.workspace_id AND item.code = interest.offering_code
+        WHERE interest.workspace_id = state.workspace_id AND interest.contact_id = state.contact_id
+      ) AS interests ON true
+      LEFT JOIN LATERAL (
+        SELECT to_char(MIN(payment.paid_at) AT TIME ZONE workspace.timezone, 'DD/MM/YYYY') AS fecha_venta
+        FROM payments AS payment
+        WHERE payment.workspace_id = state.workspace_id
+          AND payment.contact_id = state.contact_id
+          AND payment.status IN ('paid', 'refunded')
+      ) AS paid ON true
       LEFT JOIN agent_decisions AS decision
         ON decision.turn_id = CASE
           WHEN message.direction = 'inbound' THEN message.id
@@ -466,18 +532,23 @@ export async function upsertCommittedLeadStateProjection(
     const projectedStage = row.stage === 'payment_link_sent' && !delivered
       ? 'plan_selected'
       : row.stage;
+    const labels = attributionLabels(row.membership_metadata);
     const projected = await enqueueLeadProjection({
       workspaceId: row.workspace_id,
       contactId: row.contact_id,
       spreadsheetId: sheets.spreadsheetId,
       tabName: sheets.tabName,
       telefono: row.declared_phone ?? row.phone,
+      fechaIngreso: row.fecha_ingreso,
+      campana: labels.campana,
+      anuncio: labels.anuncio,
       nombre: identity?.nombre,
       apellido: identity?.apellido,
       email: row.email ?? undefined,
       etapaComercial: projectedStage,
-      cursoInteres: row.offering_name ?? row.selected_offering_code ?? undefined,
+      cursoInteres: row.offering_names ?? row.offering_name ?? row.selected_offering_code ?? undefined,
       plan: row.selected_payment_plan ?? undefined,
+      fechaPago: row.fecha_venta ?? undefined,
       ultimaSenal: 'commercial_state_updated',
       traceId: input.traceId,
     }, { sql: db });
@@ -522,6 +593,10 @@ export async function upsertVerifiedPaymentProjection(
       amount: string;
       currency: string;
       status: string;
+      offering_names: string | null;
+      fecha_ingreso: string;
+      fecha_venta: string | null;
+      membership_metadata: Record<string, unknown>;
     }>>`
       SELECT
         payment.workspace_id,
@@ -535,15 +610,37 @@ export async function upsertVerifiedPaymentProjection(
         payment.amount::text AS amount,
         payment.currency,
         payment.status
+        , interests.offering_names
+        , to_char(COALESCE(membership.created_at, payment.created_at) AT TIME ZONE workspace.timezone, 'DD/MM/YYYY') AS fecha_ingreso
+        , to_char(first_paid.paid_at AT TIME ZONE workspace.timezone, 'DD/MM/YYYY') AS fecha_venta
+        , COALESCE(membership.metadata, '{}'::jsonb) AS membership_metadata
       FROM payments AS payment
       JOIN contacts AS contact ON contact.id = payment.contact_id
       JOIN offerings AS offering ON offering.id = payment.offering_id
+      JOIN workspaces AS workspace ON workspace.id = payment.workspace_id
+      LEFT JOIN workspace_contacts AS membership
+        ON membership.workspace_id = payment.workspace_id AND membership.contact_id = payment.contact_id
+      LEFT JOIN LATERAL (
+        SELECT string_agg(item.display_name, ', ' ORDER BY interest.first_seen_at) AS offering_names
+        FROM lead_course_interests AS interest
+        JOIN offerings AS item
+          ON item.workspace_id = interest.workspace_id AND item.code = interest.offering_code
+        WHERE interest.workspace_id = payment.workspace_id AND interest.contact_id = payment.contact_id
+      ) AS interests ON true
+      LEFT JOIN LATERAL (
+        SELECT MIN(other.paid_at) AS paid_at
+        FROM payments AS other
+        WHERE other.workspace_id = payment.workspace_id
+          AND other.contact_id = payment.contact_id
+          AND other.status IN ('paid', 'refunded')
+      ) AS first_paid ON true
       WHERE payment.id = ${input.paymentId}::uuid
       LIMIT 1
     `;
     const payment = rows[0];
     if (!payment || payment.status !== 'paid') return 'skipped';
     const identity = payment.name ? splitFullName(payment.name) : null;
+    const labels = attributionLabels(payment.membership_metadata);
     const projectionKey = leadProjectionKey(payment.workspace_id, payment.contact_id);
 
     const applyVerifiedPayment = async (tx: postgres.TransactionSql) => {
@@ -562,13 +659,17 @@ export async function upsertVerifiedPaymentProjection(
           spreadsheetId: sheets.spreadsheetId,
           tabName: sheets.tabName,
           telefono: payment.declared_phone ?? payment.phone,
+          fechaIngreso: payment.fecha_ingreso,
+          campana: labels.campana,
+          anuncio: labels.anuncio,
           nombre: identity?.nombre,
           apellido: identity?.apellido,
           email: payment.email ?? undefined,
-          cursoInteres: payment.offering_name,
+          cursoInteres: payment.offering_names ?? payment.offering_name,
           plan: payment.plan_code ?? 'Prueba Stripe',
           monto,
           pagoVerificado: true,
+          fechaPago: payment.fecha_venta ?? undefined,
           ultimaSenal: 'stripe_payment_verified',
           traceId: input.traceId,
         }, tx);
@@ -576,16 +677,21 @@ export async function upsertVerifiedPaymentProjection(
       }
 
       const values: SheetRowValues = {
+        fecha_ingreso: existing.payload.fecha_ingreso ?? payment.fecha_ingreso,
         nombre: existing.payload.nombre ?? identity?.nombre ?? '',
         apellido: existing.payload.apellido ?? identity?.apellido ?? '',
         telefono: existing.payload.telefono ?? payment.declared_phone ?? payment.phone,
         mail: existing.payload.mail ?? existing.payload.email ?? payment.email ?? '',
-        tipo_de_curso: existing.payload.tipo_de_curso
+        campana: existing.payload.campana ?? labels.campana ?? '',
+        anuncio: existing.payload.anuncio ?? labels.anuncio ?? '',
+        tipo_de_curso: payment.offering_names
+          ?? existing.payload.tipo_de_curso
           ?? existing.payload.curso_interes
           ?? payment.offering_name,
         plan: existing.payload.plan ?? payment.plan_code ?? 'Prueba Stripe',
         monto,
         pago: 'Sí',
+        fecha_venta: payment.fecha_venta ?? existing.payload.fecha_venta ?? '',
       };
       await tx`
         UPDATE sheet_projection_rows
@@ -656,28 +762,39 @@ export interface FlushSheetProjectionsDeps {
   provider?: SheetsProvider;
 }
 
-/** Requeues old six-column rows in place; row_number and lead identity stay unchanged. */
+/** Requeues rows from any older Sheet layout in place; identity and row_number stay unchanged. */
 async function requeueLegacyLeadRows(sql: DbClient, limit: number): Promise<number> {
   const legacy = await sql<Array<{ id: string; payload: ExistingRow['payload'] }>>`
     SELECT id, payload
     FROM sheet_projection_rows
     WHERE projection_type = 'lead'
       AND state <> 'leased'
-      AND (NOT (payload ? 'monto') OR NOT (payload ? 'pago'))
+      AND (
+        NOT (payload ? 'fecha_ingreso')
+        OR NOT (payload ? 'campana')
+        OR NOT (payload ? 'anuncio')
+        OR NOT (payload ? 'monto')
+        OR NOT (payload ? 'pago')
+        OR NOT (payload ? 'fecha_venta')
+      )
     ORDER BY row_number
     LIMIT ${limit}
   `;
   let requeued = 0;
   for (const row of legacy) {
     const values: SheetRowValues = {
+      fecha_ingreso: row.payload.fecha_ingreso ?? '',
       nombre: row.payload.nombre ?? '',
       apellido: row.payload.apellido ?? '',
       telefono: row.payload.telefono ?? '',
       mail: row.payload.mail ?? row.payload.email ?? '',
+      campana: row.payload.campana ?? '',
+      anuncio: row.payload.anuncio ?? '',
       tipo_de_curso: row.payload.tipo_de_curso ?? row.payload.curso_interes ?? '',
       plan: row.payload.plan ?? '',
       monto: nonEmpty(row.payload.monto) ?? amountLabelForPlan(row.payload.plan),
       pago: row.payload.pago ?? 'No',
+      fecha_venta: row.payload.fecha_venta ?? '',
     };
     const updated = await sql<Array<{ id: string }>>`
       UPDATE sheet_projection_rows

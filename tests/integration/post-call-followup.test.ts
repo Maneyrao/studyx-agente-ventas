@@ -1095,14 +1095,18 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
       WHERE projection_key = ${leadProjectionKey(fixture.workspaceId, fixture.contactId)}
     `).resolves.toEqual([{
       payload: {
+        fecha_ingreso: '',
         nombre: 'Ariana',
         apellido: 'Paz',
         mail: 'e2e@example.test',
         telefono: contactIdentity.phone,
+        campana: '',
+        anuncio: '',
         tipo_de_curso: 'Python',
         plan: '',
         monto: '',
         pago: 'No',
+        fecha_venta: '',
       },
     }]);
     await expect(sql<Array<{ count: string }>>`

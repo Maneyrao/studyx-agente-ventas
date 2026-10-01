@@ -123,6 +123,65 @@ function nonEmpty(value: string | undefined): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined
 }
 
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function firstString(source: Record<string, unknown> | null, keys: readonly string[]): string | undefined {
+  if (!source) return undefined
+  for (const key of keys) {
+    const value = source[key]
+    if (typeof value === 'string' && value.trim() !== '') return value.trim().slice(0, 512)
+  }
+  return undefined
+}
+
+function sourceUrlAttribution(sourceUrl: string | undefined): Record<string, string> {
+  if (!sourceUrl) return {}
+  try {
+    const url = new URL(sourceUrl)
+    const campaign = url.searchParams.get('utm_campaign')?.trim()
+    const content = url.searchParams.get('utm_content')?.trim()
+    return {
+      ...(campaign ? { meta_utm_campaign: campaign.slice(0, 512) } : {}),
+      ...(content ? { meta_utm_content: content.slice(0, 512) } : {}),
+    }
+  } catch {
+    return {}
+  }
+}
+
+/** Preserve Meta Click-to-WhatsApp attribution without storing the raw payload. */
+function referralMetadata(message: IncomingWhatsAppMessage): Record<string, string> {
+  const context = record(message.payload.context)
+  const referral = record(message.payload.referral) ?? record(context?.referral)
+  const tags = message.tags ?? {}
+  const sourceUrl = firstString(referral, ['source_url', 'sourceUrl'])
+  const fields = {
+    meta_source_url: sourceUrl,
+    meta_source_id: firstString(referral, ['source_id', 'sourceId']),
+    meta_source_type: firstString(referral, ['source_type', 'sourceType']),
+    meta_headline: firstString(referral, ['headline']),
+    meta_body: firstString(referral, ['body']),
+    meta_ctwa_clid: firstString(referral, ['ctwa_clid', 'ctwaClid'])
+      ?? nonEmpty(tags['whatsapp:ctwaClid']),
+    meta_campaign_id: firstString(referral, ['campaign_id', 'campaignId'])
+      ?? nonEmpty(tags['whatsapp:campaignId']),
+    meta_campaign_name: firstString(referral, ['campaign_name', 'campaignName'])
+      ?? nonEmpty(tags['whatsapp:campaignName']),
+    meta_adset_id: firstString(referral, ['adset_id', 'adsetId']),
+    meta_adset_name: firstString(referral, ['adset_name', 'adsetName']),
+    meta_ad_id: firstString(referral, ['ad_id', 'adId']),
+    meta_ad_name: firstString(referral, ['ad_name', 'adName']),
+    ...sourceUrlAttribution(sourceUrl),
+  }
+  return Object.fromEntries(
+    Object.entries(fields).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+  )
+}
+
 export const whatsappChannel: ChannelAdapter = {
   name: 'whatsapp',
 
@@ -162,6 +221,7 @@ export const whatsappChannel: ChannelAdapter = {
           metadata: {
             original_type: message.type,
             ...(botPhoneNumberId ? { bot_phone_number_id: botPhoneNumberId } : {}),
+            ...referralMetadata(message),
           },
           botpressConversationId: ctx.conversation.id,
           botpressUserId: message.userId,

@@ -67,6 +67,38 @@ describe('whatsappChannel.toEnvelope', () => {
     expect(JSON.stringify(result.input.message.metadata)).not.toContain('Necesito información');
   });
 
+  it('preserves Click-to-WhatsApp attribution supplied by Meta', () => {
+    const result = whatsappChannel.toEnvelope(ctx({
+      message: {
+        ...incomingText,
+        payload: {
+          text: 'Quiero información',
+          referral: {
+            source_url: 'https://fb.me/ad/example?utm_campaign=ingles-meta&utm_content=video-1',
+            source_id: '120210000000001',
+            source_type: 'ad',
+            headline: 'Aprende Community Manager',
+            body: 'Consulta por el curso',
+            ctwa_clid: 'ARbitrary-click-id',
+          },
+        },
+      },
+    }));
+
+    expect(result.kind).toBe('envelope');
+    if (result.kind !== 'envelope') return;
+    expect(result.input.message.metadata).toMatchObject({
+      meta_source_url: 'https://fb.me/ad/example?utm_campaign=ingles-meta&utm_content=video-1',
+      meta_source_id: '120210000000001',
+      meta_source_type: 'ad',
+      meta_utm_campaign: 'ingles-meta',
+      meta_utm_content: 'video-1',
+      meta_headline: 'Aprende Community Manager',
+      meta_body: 'Consulta por el curso',
+      meta_ctwa_clid: 'ARbitrary-click-id',
+    });
+  });
+
   it.each(['image', 'audio', 'video', 'file'])(
     'maps %s media to one unsupported marker without media references',
     (type) => {

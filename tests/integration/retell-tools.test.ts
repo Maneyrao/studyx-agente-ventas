@@ -308,14 +308,18 @@ run('Retell P0 tools with PostgreSQL', () => {
       SELECT payload FROM sheet_projection_rows
       WHERE projection_key = ${`lead:${ids.workspaceId}:${ids.contactId}`}
     `).resolves.toEqual([{ payload: {
+      fecha_ingreso: '',
       nombre: 'Ana',
       apellido: 'López',
       mail: 'ana@example.test',
       telefono: ids.phone,
+      campana: '',
+      anuncio: '',
       tipo_de_curso: 'Fotografía Profesional',
       plan: 'monthly_12',
       monto: 'USD 30.00',
       pago: 'No',
+      fecha_venta: '',
     } }]);
 
     const replay = await callTool(ids, 'registrar_resultado', args);
@@ -450,14 +454,18 @@ run('Retell P0 tools with PostgreSQL', () => {
       source_order: '9',
       source_key: `retell-call:${ids.callId}`,
       payload: {
+        fecha_ingreso: '',
         nombre: 'Mariana',
         apellido: 'López',
         mail: 'mariana@example.test',
         telefono: '+5491199999999',
+        campana: '',
+        anuncio: '',
         tipo_de_curso: 'Curso Posterior',
         plan: '',
         monto: '',
         pago: 'No',
+        fecha_venta: '',
       },
     }]);
 
@@ -941,14 +949,18 @@ run('Retell P0 tools with PostgreSQL', () => {
       WHERE projection_key = ${`lead:${ids.workspaceId}:${ids.contactId}`}
     `).resolves.toEqual([{
       payload: {
+        fecha_ingreso: '',
         nombre: 'Ana',
         apellido: 'López',
         mail: 'new@example.test',
         telefono: expect.stringMatching(/^\+54911\d{8}$/u),
+        campana: '',
+        anuncio: '',
         tipo_de_curso: 'Reparación de Celulares',
         plan: '',
         monto: '',
         pago: 'No',
+        fecha_venta: '',
       },
     }]);
     await expect(db!<Array<{ event_type: string; payload: Record<string, unknown> }>>`
@@ -1068,14 +1080,18 @@ run('Retell P0 tools with PostgreSQL', () => {
       WHERE projection_key = ${leadProjectionKey(ids.workspaceId, ids.contactId)}
     `).resolves.toEqual([{
       payload: {
+        fecha_ingreso: '',
         nombre: 'Ana',
         apellido: 'López',
         mail: 'agent@example.test',
         telefono: expect.stringMatching(/^\+54911\d{8}$/u),
+        campana: '',
+        anuncio: '',
         tipo_de_curso: 'Reparación de Celulares',
         plan: '',
         monto: '',
         pago: 'No',
+        fecha_venta: '',
       },
     }]);
   });

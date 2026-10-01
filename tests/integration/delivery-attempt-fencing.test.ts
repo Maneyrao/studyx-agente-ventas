@@ -554,8 +554,11 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
 
     expect(await projectionRows(turn.contact_id)).toEqual([{
       payload: {
+        fecha_ingreso: expect.stringMatching(/^\d{2}\/\d{2}\/\d{4}$/u),
         nombre: '', apellido: '', mail: '', telefono: expect.stringMatching(/^\+54911\d{8}$/u),
+        campana: '', anuncio: '',
         tipo_de_curso: '', plan: '', monto: '', pago: 'No',
+        fecha_venta: '',
       },
     }]);
   });
@@ -574,8 +577,11 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
 
     expect(await projectionRows(turn.contact_id)).toEqual([{
       payload: {
+        fecha_ingreso: expect.stringMatching(/^\d{2}\/\d{2}\/\d{4}$/u),
         nombre: '', apellido: '', mail: '', telefono: expect.stringMatching(/^\+54911\d{8}$/u),
+        campana: '', anuncio: '',
         tipo_de_curso: '', plan: '', monto: '', pago: 'No',
+        fecha_venta: '',
       },
     }]);
   });
@@ -601,14 +607,18 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
     const rows = await projectionRows(turn.contact_id);
     expect(rows).toHaveLength(1);
     expect(rows[0].payload).toEqual({
+      fecha_ingreso: expect.stringMatching(/^\d{2}\/\d{2}\/\d{4}$/u),
       nombre: 'Ariana',
       apellido: 'Paz',
       mail: 'ariana.paz@example.test',
       telefono: expect.stringMatching(/^\+54911\d{8}$/u),
+      campana: '',
+      anuncio: '',
       tipo_de_curso: 'Curso Fencing',
       plan: 'monthly_12',
       monto: 'USD 30.00',
       pago: 'No',
+      fecha_venta: '',
     });
   });
 
@@ -712,14 +722,18 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       link_messages: 1,
       sheet_rows: 1,
       sheet_payload: {
+        fecha_ingreso: expect.stringMatching(/^\d{2}\/\d{2}\/\d{4}$/u),
         nombre: 'Ariana',
         apellido: 'Paz',
         mail: 'ariana.paz@example.test',
         telefono: expect.stringMatching(/^\+54911\d{8}$/u),
+        campana: '',
+        anuncio: '',
         tipo_de_curso: 'Decoración de Interiores',
         plan: 'monthly_6',
         monto: 'USD 60.00',
         pago: 'No',
+        fecha_venta: '',
       },
     });
   });
@@ -1076,14 +1090,18 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       `;
       expect(rows).toHaveLength(1);
       expect(rows[0].payload).toEqual({
+        fecha_ingreso: expect.stringMatching(/^\d{2}\/\d{2}\/\d{4}$/u),
         nombre: 'Ariana',
         apellido: 'Paz',
         mail: 'ariana.paz@example.test',
         telefono: expect.stringMatching(/^\+54911\d{8}$/u),
+        campana: '',
+        anuncio: '',
         tipo_de_curso: 'Decoración de Interiores',
         plan: 'monthly_6',
         monto: 'USD 60.00',
         pago: 'No',
+        fecha_venta: '',
       });
       return rows[0];
     };

@@ -12,25 +12,33 @@
 
 /** The complete-lead operator view. This is the entire visible Sheet row. */
 export const SHEET_COLUMN_ORDER = [
+  'fecha_ingreso',
   'nombre',
   'apellido',
   'telefono',
   'mail',
+  'campana',
+  'anuncio',
   'tipo_de_curso',
   'plan',
   'monto',
   'pago',
+  'fecha_venta',
 ] as const;
 
 export const SHEET_COLUMN_LABELS: Readonly<Record<SheetColumn, string>> = {
+  fecha_ingreso: 'Fecha de ingreso',
   nombre: 'Nombre',
   apellido: 'Apellido',
   telefono: 'Teléfono',
   mail: 'Mail',
-  tipo_de_curso: 'Curso',
+  campana: 'Campaña',
+  anuncio: 'Anuncio',
+  tipo_de_curso: 'Curso(s)',
   plan: 'Plan de pago',
   monto: 'Monto',
   pago: 'Pago',
+  fecha_venta: 'Fecha de venta',
 };
 
 export type SheetColumn = (typeof SHEET_COLUMN_ORDER)[number];

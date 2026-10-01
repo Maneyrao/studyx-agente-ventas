@@ -835,6 +835,55 @@ describe('processInboundTurn hot path', () => {
     expect(retryLog).toMatchObject({ reason: 'BRAIN_DEEPSEEK_TIMEOUT', attempt: 2 });
   });
 
+  it('uses the same Brain contract through Gemini after two transient DeepSeek failures', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true, agent_a_brain_v1_shadow: false,
+    };
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null, selected_payment_plan: null, stage: 'exploring',
+      call_preference: 'unknown', call_offer_status: 'not_offered', call_offer_count: 0,
+      awaiting_reply: 'none', version: 1,
+    };
+    claimed.catalog_index = { as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0 };
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+    secrets.GEMINI_API_KEY = 'gemini-local-test-only';
+    actionSpies.agentABrainDeepSeek
+      .mockRejectedValueOnce(Object.assign(new Error('timeout'), { code: 'BRAIN_DEEPSEEK_TIMEOUT' }))
+      .mockRejectedValueOnce(Object.assign(new Error('timeout'), { code: 'BRAIN_DEEPSEEK_TIMEOUT' }));
+    actionSpies.agentABrainGemini.mockResolvedValueOnce({
+      proposal: {
+        schema_version: 1,
+        move: { schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 0.96 },
+        response: { messages: ['Cuéntame qué te gustaría aprender y te oriento.'] },
+        proposed_action: { type: 'none' }, used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+      },
+      provider: 'google-ai-direct', model: 'gemini-2.5-flash', latency_ms: 150, attempt_count: 1,
+    });
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
+    expect(actionSpies.agentABrainGemini).toHaveBeenCalledTimes(1);
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      agent_turn_v2: { proposal: { response: { messages: ['Cuéntame qué te gustaría aprender y te oriento.'] } } },
+      model: { provider: 'google-ai-direct', model: 'gemini-2.5-flash' },
+    });
+  });
+
   it('does not use Botpress managed extraction when DeepSeek fails', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {

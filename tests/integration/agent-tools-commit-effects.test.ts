@@ -905,14 +905,18 @@ run('Agent Loop preparation materialization', () => {
       WHERE projection_key = ${`lead:${seeded.workspace_id}:${seeded.contact_id}`}
     `).resolves.toEqual([{
       payload: {
+        fecha_ingreso: '',
         nombre: 'Ana',
         apellido: 'Pérez',
         mail: expect.stringMatching(/^ana\..+@example\.test$/u),
         telefono: expect.stringMatching(/^\+54911\d{8}$/u),
+        campana: '',
+        anuncio: '',
         tipo_de_curso: 'entrenamiento_funcional',
         plan: '',
         monto: '',
         pago: 'No',
+        fecha_venta: '',
       },
     }]);
 
@@ -1085,14 +1089,18 @@ run('Agent Loop preparation materialization', () => {
     `).resolves.toEqual([{
       source_order: '8',
       payload: {
+        fecha_ingreso: expect.stringMatching(/^\d{2}\/\d{2}\/\d{4}$/u),
         nombre: 'Ana',
         apellido: 'García',
         mail: 'ana.garcia@example.test',
         telefono: expect.stringMatching(/^\+54911\d{8}$/u),
+        campana: '',
+        anuncio: '',
         tipo_de_curso: 'entrenamiento_funcional',
         plan: '',
         monto: '',
         pago: 'No',
+        fecha_venta: '',
       },
     }]);
   });
@@ -1144,14 +1152,18 @@ run('Agent Loop preparation materialization', () => {
     `).resolves.toEqual([{
       source_order: '4',
       payload: {
+        fecha_ingreso: '',
         nombre: 'Ana',
         apellido: 'García',
         mail: expect.stringMatching(/^ana\..+@example\.test$/u),
         telefono: expect.stringMatching(/^\+54911\d{8}$/u),
+        campana: '',
+        anuncio: '',
         tipo_de_curso: 'entrenamiento_funcional',
         plan: '',
         monto: '',
         pago: 'No',
+        fecha_venta: '',
       },
     }]);
   });
