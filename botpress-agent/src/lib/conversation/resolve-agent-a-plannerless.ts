@@ -200,6 +200,19 @@ const NON_BLOCKING_GUIDANCE_CODES = new Set([
   'MISSING_INTAKE',
 ])
 
+function isNonBlockingGuidanceReason(
+  reason: TurnRejectionV1['rejections'][number],
+): boolean {
+  if (NON_BLOCKING_GUIDANCE_CODES.has(reason.code)) return true
+  // This heuristic only notices that Agent A compared unresolved candidates;
+  // it does not prove a false catalog value. Treating it as a hard commercial
+  // fact check duplicated the backend's canonical truth boundary and replaced
+  // ordinary catalog guidance with a technical fallback. Prices, promises,
+  // logistics, prerequisites and every other FACT_VALUE_MISMATCH stay hard.
+  return reason.code === 'FACT_VALUE_MISMATCH'
+    && reason.subject === 'candidate_course_detail'
+}
+
 function isMissingRequiredIntakeForRequestedCall(
   proposal: AgentATurnProposalV1,
   rejection: TurnRejectionV1,
@@ -223,7 +236,7 @@ function mayDegradeToBackendBoundary(
     || proposal.proposed_action.type === 'send_test_payment_link') && rejection.rejections.some((reason) => (
     reason.code === 'ACTION_NOT_AUTHORIZED' || reason.code === 'MISSING_INTAKE'
   ))) return false
-  return rejection.rejections.every((reason) => NON_BLOCKING_GUIDANCE_CODES.has(reason.code))
+  return rejection.rejections.every(isNonBlockingGuidanceReason)
 }
 
 function hasOnlyNonBlockingGuidance(
@@ -235,7 +248,7 @@ function hasOnlyNonBlockingGuidance(
     || proposal.proposed_action.type === 'send_test_payment_link') && rejection.rejections.some((reason) => (
     reason.code === 'ACTION_NOT_AUTHORIZED' || reason.code === 'MISSING_INTAKE'
   ))) return false
-  return rejection.rejections.every((reason) => NON_BLOCKING_GUIDANCE_CODES.has(reason.code))
+  return rejection.rejections.every(isNonBlockingGuidanceReason)
 }
 
 function plannerlessRejectionError(rejection: TurnRejectionV1): Error {

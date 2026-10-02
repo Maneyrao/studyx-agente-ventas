@@ -308,7 +308,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:PROPOSAL_SCHEMA_INVALID:response.messages');
   });
 
-  it('does not degrade to invented candidate differences when the only repair is malformed', async () => {
+  it('records candidate comparison guidance without making a malformed repair block the reply', async () => {
     const current = context();
     current.customer.display_name = 'Julia';
     current.turn.batch_messages = [{ id: 'm2', text: 'Sigo sin decidirme: cuál me conviene para conseguir clientes?' }];
@@ -340,7 +340,10 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     current.capabilities.may_offer_call = true;
     const callOffer = 'Si prefieres, lo vemos en una llamada breve y te ayudo a decidir.';
 
-    await expect(resolveAgentAPlannerlessProposalV2({
+    const repair = vi.fn(async () => {
+      throw new AgentABrainError('BRAIN_INVALID_SCHEMA', null, 'move:invalid_type');
+    });
+    const result = await resolveAgentAPlannerlessProposalV2({
       initial: generated(proposal({
         move: {
           schema_version: 1,
@@ -360,11 +363,18 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       })),
       context: current,
       repair_enabled: true,
-      repair: async () => {
-        throw new AgentABrainError('BRAIN_INVALID_SCHEMA', null, 'move:invalid_type');
-      },
+      repair,
       rejection_id: '00000000-0000-4000-8000-000000000001',
-    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:PROPOSAL_SCHEMA_INVALID:move');
+    });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.response.messages).toEqual([
+      'Los dos sirven, pero uno apunta a campañas y el otro a manejar una comunidad.',
+    ]);
+    expect(result.evidence.rejection_codes).toEqual([
+      'FACT_VALUE_MISMATCH',
+      'COURSE_NOT_RESOLVED',
+    ]);
   });
 
   it('preserves a confirmed call action and its model-authored acknowledgement after an offer', async () => {
@@ -1165,6 +1175,77 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
+  it('keeps a useful catalog reply when candidate wording and a repeated greeting are only conversational guidance', async () => {
+    const current = context();
+    current.customer.display_name = 'Thiago';
+    current.turn.batch_messages = [
+      { id: 'm2', text: 'Buenas' },
+      { id: 'm3', text: 'Me contás respecto a los cursos?' },
+    ];
+    current.turn.recent_turns = [{
+      id: 'prior-agent',
+      direction: 'outbound',
+      content: 'Hola, Thiago. Soy Emma, administrativa de StudyX.',
+    }];
+    current.commercial_state.selected_offering_code = null;
+    current.commercial_state.stage = 'exploring';
+    current.catalog.selected_offering = null;
+    current.catalog.candidate_offerings = [
+      {
+        code: 'marketing_digital',
+        fact_id: 'offering:marketing_digital:name:v1',
+        display_name: 'Marketing Digital',
+        area_code: 'marketing',
+      },
+      {
+        code: 'community_manager',
+        fact_id: 'offering:community_manager:name:v1',
+        display_name: 'Community Manager',
+        area_code: 'marketing',
+      },
+    ];
+    const messages = [
+      'Hola de nuevo, Thiago. Marketing Digital sirve para trabajar campañas y Community Manager para gestionar comunidades.',
+      'Contame qué te gustaría lograr y te recomiendo por cuál empezar.',
+    ];
+    const repair = vi.fn(async () => {
+      throw new AgentABrainError('BRAIN_INVALID_SCHEMA', null, 'move:invalid_type');
+    });
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({
+        move: {
+          schema_version: 1,
+          move: 'browse_catalog',
+          secondary_moves: [],
+          vetoes: [],
+          confidence: 0.9,
+        },
+        response: { messages, call_offer: null },
+        used_fact_ids: [
+          'offering:marketing_digital:name:v1',
+          'offering:community_manager:name:v1',
+        ],
+      })),
+      context: current,
+      repair_enabled: true,
+      repair,
+      rejection_id: '00000000-0000-4000-8000-000000000004',
+    });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.response.messages).toEqual(messages);
+    expect(result.evidence).toMatchObject({
+      rejection_codes: [
+        'REPEATED_AGENT_REPLY',
+        'FACT_VALUE_MISMATCH',
+        'CALL_OFFER_REQUIRED',
+      ],
+      repair_attempted: false,
+      proposal_generation_calls: 1,
+    });
+  });
+
   it.each([
     {
       draft: '¡Perfecto, seguimos por acá sin problema! 😊 Para contarte bien cómo funciona el curso, ¿ya tenías pensado estudiar maquillaje o recién estás empezando a averiguar?',
@@ -1643,8 +1724,8 @@ describe('afirmar un link no autorizado no puede terminar en silencio', () => {
  * y se entrega el resto, que es el mismo criterio de la pregunta repetida y del
  * link no autorizado.
  */
-describe('afirmaciones sin respaldo se rechazan sin reescritura', () => {
-  it('rejects candidate detail and call action together without pruning the response', async () => {
+describe('la conversación sobre candidatos no se confunde con autoridad comercial', () => {
+  it('removes a rejected call effect but preserves the model-owned catalog reply', async () => {
     const current = context();
     current.turn.batch_messages = [{ id: 'm2', text: 'Contame de fotografía' }];
     current.catalog.selected_offering = null;
@@ -1663,7 +1744,8 @@ describe('afirmaciones sin respaldo se rechazan sin reescritura', () => {
       area_code: 'idiomas',
     }];
 
-    await expect(resolveAgentAPlannerlessProposalV2({
+    const repair = vi.fn(async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); });
+    const result = await resolveAgentAPlannerlessProposalV2({
       initial: generated(proposal({
         move: {
           schema_version: 1,
@@ -1684,12 +1766,20 @@ describe('afirmaciones sin respaldo se rechazan sin reescritura', () => {
       })),
       context: current,
       repair_enabled: true,
-      repair: async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); },
+      repair,
       rejection_id: '00000000-0000-4000-8000-0000000000b5',
-    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
+    });
+
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+    expect(result.effective.proposal.response.messages).toEqual([
+      'Fotografía Profesional es ideal para empezar desde cero y editar imágenes.',
+      'Puedo ayudarte a comparar opciones por aquí.',
+    ]);
+    expect(result.action_rejection).toMatchObject({ action: 'request_call_now' });
   });
 
-  it('rejects unsupported candidate detail and a missing call offer without pruning', async () => {
+  it('keeps candidate guidance when the missing call offer is only advisory', async () => {
     const current = context();
     current.customer.display_name = 'Thiago';
     current.turn.batch_messages = [
@@ -1722,7 +1812,8 @@ describe('afirmaciones sin respaldo se rechazan sin reescritura', () => {
     ];
     current.capabilities.may_offer_call = true;
 
-    await expect(resolveAgentAPlannerlessProposalV2({
+    const repair = vi.fn(async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); });
+    const result = await resolveAgentAPlannerlessProposalV2({
       initial: generated(proposal({
         move: {
           schema_version: 1,
@@ -1742,12 +1833,18 @@ describe('afirmaciones sin respaldo se rechazan sin reescritura', () => {
       })),
       context: current,
       repair_enabled: true,
-      repair: async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); },
+      repair,
       rejection_id: '00000000-0000-4000-8000-0000000000b4',
-    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
+    });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.response.messages).toEqual([
+      'La llamada es breve y sirve para orientarte según lo que buscas.',
+      'Fotografía Profesional es ideal para empezar desde cero y editar imágenes.',
+    ]);
   });
 
-  it('rejects one draft containing unsupported prerequisites and candidate advice', async () => {
+  it('keeps the catalog explanation and list in the model-authored form', async () => {
     const current = context();
     current.turn.batch_messages = [
       { id: 'm2', text: 'Me gustaría Photoshop, pero no estoy seguro' },
@@ -1783,13 +1880,17 @@ describe('afirmaciones sin respaldo se rechazan sin reescritura', () => {
       ],
     }));
 
-    await expect(resolveAgentAPlannerlessProposalV2({
+    const repair = vi.fn(async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); });
+    const result = await resolveAgentAPlannerlessProposalV2({
       initial,
       context: current,
       repair_enabled: true,
       rejection_id: '00000000-0000-4000-8000-0000000000b2',
-      repair: async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); },
-    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
+      repair,
+    });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.response.messages).toEqual(initial.proposal.response.messages);
   });
 
   it('rechaza la respuesta completa sin quitar una oración', async () => {

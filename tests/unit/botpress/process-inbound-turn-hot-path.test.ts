@@ -2981,7 +2981,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('lets Agent A repair a multi-course reply even when the rollout flag omitted repair', async () => {
+  it('keeps Agent A multi-course guidance without forcing a second generation', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -3075,14 +3075,14 @@ describe('processInboundTurn hot path', () => {
       client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
-    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       agent_turn_v2: {
         proposal: {
           response: {
             messages: [
-              'Sí, puedes inscribirte en más de un curso.',
-              'Quieres que comparemos Community Manager con Marketing Digital?',
+              'Sí, puedes hacer más de un curso.',
+              'Marketing Digital combina bien con Community Manager.',
             ],
           },
         },
