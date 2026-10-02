@@ -99,7 +99,45 @@ describe('whatsappChannel.toEnvelope', () => {
     });
   });
 
-  it.each(['image', 'audio', 'video', 'file'])(
+  it('maps audio to one pending transcription with a workflow-only Botpress Files URL', () => {
+    const result = whatsappChannel.toEnvelope(
+      ctx({
+        message: {
+          ...incomingText,
+          type: 'audio',
+          payload: {
+            audioUrl: 'https://files.bpcontent.cloud/2026/10/02/voice.ogg',
+          },
+        },
+      }),
+    );
+
+    expect(result.kind).toBe('envelope');
+    if (result.kind !== 'envelope') return;
+    expect(result.input.message.type).toBe('audio');
+    expect(result.input.message.text).toBe('[audio_pendiente_transcripcion]');
+    expect(result.input.message.audio_reference).toMatchObject({
+      provider_file_id: 'wamid.external-1',
+      mime_type: 'audio/ogg',
+      transcription_status: 'skipped',
+    });
+    expect(result.input.transport_media_url).toBe(
+      'https://files.bpcontent.cloud/2026/10/02/voice.ogg',
+    );
+    expect(JSON.stringify(result.input.message.audio_reference)).not.toContain('https://');
+  });
+
+  it('does not mistake an audio without audioUrl for a supported transcription', () => {
+    const result = whatsappChannel.toEnvelope(ctx({
+      message: { ...incomingText, type: 'audio', payload: {} },
+    }));
+    expect(result.kind).toBe('envelope');
+    if (result.kind !== 'envelope') return;
+    expect(result.input.message.type).toBe('unsupported');
+    expect(result.input.message.audio_reference).toBeNull();
+  });
+
+  it.each(['image', 'video', 'file', 'sticker'])(
     'maps %s media to one unsupported marker without media references',
     (type) => {
       const result = whatsappChannel.toEnvelope(

@@ -382,6 +382,117 @@ describe('processInboundTurn hot path', () => {
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
   });
 
+  it('transcribes a WhatsApp audio before ingesting and never sends its signed URL to the backend', async () => {
+    actionSpies.transcribe.mockResolvedValueOnce({
+      status: 'ok',
+      text: 'Quiero información del curso de inglés',
+      provider: 'groq/whisper-large-v3-turbo',
+      reason: null,
+    });
+    const input = {
+      ...workflowInput(),
+      channel: 'whatsapp',
+      transport_media_url: 'https://files.bpcontent.cloud/2026/10/02/audio.ogg',
+      message: {
+        ...workflowInput().message,
+        type: 'audio',
+        text: '[audio_pendiente_transcripcion]',
+        audio_reference: {
+          provider_file_id: 'wamid.audio-1',
+          mime_type: 'audio/ogg',
+          duration_seconds: null,
+          transcription_status: 'skipped',
+          transcription_provider: null,
+        },
+      },
+    };
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input,
+      state: processingState(),
+      step,
+      execute: vi.fn(async () => { throw new Error('MODEL_MUST_NOT_RUN'); }),
+      client: {},
+      signal: new AbortController().signal,
+      workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.transcribe).toHaveBeenCalledWith(expect.objectContaining({
+      input: expect.objectContaining({
+        provider_source: 'whatsapp_botpress',
+        media_download_url: input.transport_media_url,
+      }),
+    }));
+    const ingested = actionSpies.ingest.mock.calls[0]?.[0]?.input;
+    expect(ingested.message).toMatchObject({
+      type: 'audio',
+      text: 'Quiero información del curso de inglés',
+      audio_reference: {
+        transcription_status: 'ok',
+        transcription_provider: 'groq/whisper-large-v3-turbo',
+      },
+    });
+    expect(ingested.transport_media_url).toBeUndefined();
+    expect(JSON.stringify(ingested)).not.toContain('files.bpcontent.cloud');
+  });
+
+  it('turns an untranscribable audio into recoverable unreadable input instead of crashing', async () => {
+    actionSpies.transcribe.mockResolvedValueOnce({
+      status: 'failed',
+      text: '[audio_no_transcrito]',
+      provider: 'disabled',
+      reason: 'STT_DISABLED',
+    });
+    const input = {
+      ...workflowInput(),
+      channel: 'whatsapp',
+      transport_media_url: 'https://files.bpcontent.cloud/audio.ogg',
+      message: {
+        ...workflowInput().message,
+        type: 'audio',
+        text: '[audio_pendiente_transcripcion]',
+        audio_reference: {
+          provider_file_id: 'wamid.audio-2',
+          mime_type: 'audio/ogg',
+          duration_seconds: null,
+          transcription_status: 'skipped',
+          transcription_provider: null,
+        },
+      },
+    };
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input,
+      state: processingState(),
+      step,
+      execute: vi.fn(async () => { throw new Error('MODEL_MUST_NOT_RUN'); }),
+      client: {},
+      signal: new AbortController().signal,
+      workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.transcribe).toHaveBeenCalledTimes(1);
+    expect(actionSpies.ingest.mock.calls[0]?.[0]?.input.message).toMatchObject({
+      type: 'unsupported',
+      text: '[audio_no_transcrito]',
+      audio_reference: { transcription_status: 'failed' },
+    });
+  });
+
   it.each([
     [true, 'off'],
     [false, 'authoritative'],

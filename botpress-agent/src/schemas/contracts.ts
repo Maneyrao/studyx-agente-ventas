@@ -871,6 +871,9 @@ export const DeliveryReportResponseSchema = z.object({
 export const WorkflowInputSchema = InboundEnvelopeSchema.extend({
   botpress_conversation_id: z.string().min(1).max(512),
   botpress_user_id: z.string().min(1).max(512),
+  // Ephemeral transport capability. It is consumed before ingest and is not
+  // part of InboundEnvelopeSchema, so signed media URLs never reach Supabase.
+  transport_media_url: z.string().url().max(2048).optional(),
   preingested: IngestResponseSchema.nullable().default(null),
 })
 

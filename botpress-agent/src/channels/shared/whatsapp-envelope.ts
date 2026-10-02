@@ -1,4 +1,5 @@
 import { E164_PATTERN } from './emulator-envelope'
+import type { AudioReference } from '../../schemas/contracts'
 
 export type WhatsAppEnvelopeInput = {
   integrationId: string
@@ -11,6 +12,8 @@ export type WhatsAppEnvelopeInput = {
   text: string
   occurredAt: string
   replyToExternalMessageId: string | null
+  audioReference?: AudioReference | null
+  transportMediaUrl?: string
   metadata: Record<string, string | number | boolean>
   botpressConversationId: string
   botpressUserId: string
@@ -31,12 +34,13 @@ export type InboundEnvelope = {
     text: string
     occurred_at: string
     reply_to_external_message_id: string | null
-    audio_reference: null
+    audio_reference: AudioReference | null
     metadata: Record<string, string | number | boolean>
   }
   sandbox_provider: null
   botpress_conversation_id: string
   botpress_user_id: string
+  transport_media_url?: string
 }
 
 /** Normalize the documented digits-only form while refusing sandbox identities. */
@@ -68,11 +72,12 @@ export function buildWhatsAppEnvelope(input: WhatsAppEnvelopeInput): InboundEnve
       text: input.text,
       occurred_at: input.occurredAt,
       reply_to_external_message_id: input.replyToExternalMessageId,
-      audio_reference: null,
+      audio_reference: input.audioReference ?? null,
       metadata: input.metadata,
     },
     sandbox_provider: null,
     botpress_conversation_id: input.botpressConversationId,
     botpress_user_id: input.botpressUserId,
+    ...(input.transportMediaUrl ? { transport_media_url: input.transportMediaUrl } : {}),
   }
 }

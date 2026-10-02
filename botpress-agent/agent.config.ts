@@ -40,6 +40,11 @@ export default defineConfig({
       // Identidad estable del asesor. La academia NO se configura acá: sale del
       // snapshot canónico del workspace, que es su fuente de verdad.
       agentAAdvisorName: z.string().default(''),
+      audioTranscriptionPrimaryProvider: z.enum(['disabled', 'groq', 'gemini']).default('disabled'),
+      audioTranscriptionFallbackProvider: z.enum(['disabled', 'groq', 'gemini']).default('disabled'),
+      groqTranscriptionModel: z.literal('whisper-large-v3-turbo').default('whisper-large-v3-turbo'),
+      // Kept configurable until StudyX confirms the exact Gemini API model.
+      geminiTranscriptionModel: z.string().default(''),
     }),
   },
 
@@ -53,12 +58,12 @@ export default defineConfig({
     GEMINI_API_KEY: {
       optional: true,
       description:
-        "Retired from production Agent A. Optional legacy audio compatibility only.",
+        "Optional Google Gemini API credential used only when Gemini STT is selected.",
     },
     GROQ_API_KEY: {
       optional: true,
       description:
-        "Retired compatibility secret. Production Agent A never falls back to Groq.",
+        "Optional Groq credential used by Whisper STT or an explicitly selected legacy decision path.",
     },
     DEEPSEEK_API_KEY: {
       description:

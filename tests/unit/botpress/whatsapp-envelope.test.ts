@@ -87,4 +87,34 @@ describe('buildWhatsAppEnvelope', () => {
       }),
     ).toThrow(/WhatsApp phone/i);
   });
+
+  it('keeps the temporary media URL outside the canonical message', () => {
+    const envelope = buildWhatsAppEnvelope({
+      integrationId: 'whatsapp',
+      externalMessageId: 'wamid.audio-1',
+      externalConversationId: 'bp-conversation-external-1',
+      externalUserId: 'bp-user-external-1',
+      phoneE164: '5491112345678',
+      traceId: '11111111-1111-4111-8111-111111111111',
+      messageType: 'audio',
+      text: '[audio_pendiente_transcripcion]',
+      occurredAt: '2026-08-25T10:15:00.000Z',
+      replyToExternalMessageId: null,
+      audioReference: {
+        provider_file_id: 'wamid.audio-1',
+        mime_type: 'audio/ogg',
+        duration_seconds: null,
+        transcription_status: 'skipped',
+        transcription_provider: null,
+      },
+      transportMediaUrl: 'https://files.bpcontent.cloud/audio.ogg',
+      metadata: { original_type: 'audio' },
+      botpressConversationId: 'bp-conversation-1',
+      botpressUserId: 'bp-user-1',
+    });
+
+    expect(envelope.transport_media_url).toBe('https://files.bpcontent.cloud/audio.ogg');
+    expect(envelope.message.audio_reference?.provider_file_id).toBe('wamid.audio-1');
+    expect(JSON.stringify(envelope.message)).not.toContain('files.bpcontent.cloud');
+  });
 });

@@ -447,26 +447,35 @@ export const processInboundTurn = new Workflow({
 
     // ---- Paso 1-2: normalizar audio pendiente ----------------------------
     // Si el adapter dejó la transcripción pendiente, se resuelve antes de
-    // ingerir. Hasta 3 intentos; al fallar definitivamente el turno sigue con
-    // un marcador, para no perder el mensaje en silencio.
+    // ingerir. El action ya contiene la cadena primaria/fallback: no se
+    // reintenta el conjunto para evitar cobros y latencia duplicados.
     if (
       input.message.type === 'audio' &&
-      input.message.audio_reference?.transcription_status === 'skipped' &&
-      input.sandbox_provider === 'telegram_sandbox'
+      input.message.audio_reference?.transcription_status === 'skipped'
     ) {
       const audioRef = input.message.audio_reference
+      const providerSource = input.sandbox_provider === 'telegram_sandbox'
+        ? 'telegram_sandbox'
+        : input.channel === 'whatsapp'
+          ? 'whatsapp_botpress'
+          : null
       try {
+        if (providerSource === null) throw new Error('UNSUPPORTED_AUDIO_SOURCE')
         const result = await step(
           'transcribe-audio',
           async () => {
             const r = await transcribeAudio.execute({
-              input: { audio_reference: audioRef, provider_source: 'telegram_sandbox' },
+              input: {
+                audio_reference: audioRef,
+                provider_source: providerSource,
+                ...(input.transport_media_url ? { media_download_url: input.transport_media_url } : {}),
+              },
               client,
             })
             if (r.status !== 'ok') throw new Error(`TRANSCRIPTION_${r.reason ?? 'FAILED'}`)
             return r
           },
-          { maxAttempts: 3 }
+          { maxAttempts: 1 }
         )
         input.message.text = result.text
         input.message.audio_reference = {
@@ -479,6 +488,7 @@ export const processInboundTurn = new Workflow({
           provider: result.provider,
         })
       } catch (error) {
+        input.message.type = 'unsupported'
         input.message.text = '[audio_no_transcrito]'
         input.message.audio_reference = {
           ...audioRef,

@@ -4,7 +4,7 @@ import { E164_PATTERN } from './shared/normalize'
 import { buildWhatsAppEnvelope } from './shared/whatsapp-envelope'
 
 const WHATSAPP_CHANNEL = 'whatsapp.channel'
-const UNSUPPORTED_MEDIA_TYPES = new Set(['image', 'audio', 'video', 'file'])
+const UNSUPPORTED_MEDIA_TYPES = new Set(['image', 'video', 'file', 'sticker'])
 const UNSUPPORTED_MEDIA_MARKER = '[whatsapp_media_no_soportado]'
 const UNSUPPORTED_TYPE_MARKER = '[whatsapp_tipo_no_soportado]'
 
@@ -105,13 +105,21 @@ function isIncomingWhatsAppMessage(value: unknown): value is IncomingWhatsAppMes
 }
 
 function mapMessage(message: IncomingWhatsAppMessage): {
-  type: 'text' | 'unsupported'
+  type: 'text' | 'audio' | 'unsupported'
   text: string
+  audioUrl?: string
 } | null {
   if (message.type === 'text') {
     const text = message.payload.text
     if (typeof text !== 'string' || text === '') return null
     return { type: 'text', text }
+  }
+  if (message.type === 'audio') {
+    const audioUrl = message.payload.audioUrl
+    if (typeof audioUrl === 'string' && audioUrl !== '') {
+      return { type: 'audio', text: '[audio_pendiente_transcripcion]', audioUrl }
+    }
+    return { type: 'unsupported', text: UNSUPPORTED_MEDIA_MARKER }
   }
   if (UNSUPPORTED_MEDIA_TYPES.has(message.type)) {
     return { type: 'unsupported', text: UNSUPPORTED_MEDIA_MARKER }
@@ -218,6 +226,14 @@ export const whatsappChannel: ChannelAdapter = {
           text: mapped.text,
           occurredAt: message.createdAt,
           replyToExternalMessageId: replyTo,
+          audioReference: mapped.type === 'audio' ? {
+            provider_file_id: message.id,
+            mime_type: 'audio/ogg',
+            duration_seconds: null,
+            transcription_status: 'skipped',
+            transcription_provider: null,
+          } : null,
+          transportMediaUrl: mapped.audioUrl,
           metadata: {
             original_type: message.type,
             ...(botPhoneNumberId ? { bot_phone_number_id: botPhoneNumberId } : {}),
