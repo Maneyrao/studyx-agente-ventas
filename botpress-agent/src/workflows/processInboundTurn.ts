@@ -272,6 +272,29 @@ function errorCode(error: unknown): string {
   return 'UNKNOWN_ERROR'
 }
 
+const PLANNERLESS_REJECTION_PREFIX = 'PLANNERLESS_PROPOSAL_REJECTED:'
+
+function attemptFailureDiagnosticCodes(input: {
+  readonly stage: string
+  readonly code: string
+}): string[] {
+  if (input.stage === 'policy' && input.code.startsWith(PLANNERLESS_REJECTION_PREFIX)) {
+    const policyCodes = input.code
+      .slice(PLANNERLESS_REJECTION_PREFIX.length)
+      .split(',')
+      .map((code) => code.trim())
+      .filter((code) => /^[A-Z0-9_:.-]+$/iu.test(code))
+      .map((code) => `${PLANNERLESS_REJECTION_PREFIX}${code}`.slice(0, 128))
+      .slice(0, 8)
+    if (policyCodes.length > 0) return policyCodes
+  }
+
+  const diagnosticCode = input.code.split(':', 1)[0]!.slice(0, 128)
+  return /^[A-Z0-9_.-]+$/u.test(diagnosticCode)
+    ? [diagnosticCode]
+    : ['UNKNOWN_ERROR']
+}
+
 function backendDecisionRejectionReason(error: unknown): string | null {
   if (!(error instanceof StudyxHttpError)
     || error.code !== 'DECISION_REJECTED'
@@ -723,12 +746,16 @@ export const processInboundTurn = new Workflow({
       readonly call_rejected: boolean
       readonly chat_preference: boolean
     } | null = null
-    // R1: conducta nueva, apagada por defecto. Apagada, un rechazo no podable
-    // cae a N3 y nunca a silencio (R2).
-    const repairEnabled = owned.features?.agent_a_repair_enabled === true
     const brainAuthoritative = owned.features?.agent_a_brain_v1_enabled === true
     const brainShadow = owned.features?.agent_a_brain_v1_shadow === true
     const plannerlessV2Enabled = configuration.agentAPlannerlessV2Enabled === true
+    // Plannerless always returns a structured rejection to Agent A once and
+    // lets Agent A rewrite its own response. Keeping this behind the legacy
+    // rollout flag made a valid DeepSeek turn become MODEL_UNAVAILABLE when
+    // the flag was omitted in production. The backend still authorizes facts
+    // and effects; it never rewrites the customer's reply.
+    const repairEnabled = plannerlessV2Enabled
+      || owned.features?.agent_a_repair_enabled === true
     const conversationalBaseEligible = configuration.automationEnabled
       && owned.policy.may_respond
       && (owned.policy.allowed_response_types.includes('commercial_reply')
@@ -1067,7 +1094,6 @@ export const processInboundTurn = new Workflow({
       } catch (error) {
         const failureCode = errorCode(error)
         const attemptFailure = classifyAgentAAttemptFailure(error)
-        const diagnosticCode = attemptFailure.code.split(':', 1)[0]!
         turnDiagnostics = {
           schema_version: 1,
           generation_attempts: agentAGenerationAttempts,
@@ -1076,9 +1102,7 @@ export const processInboundTurn = new Workflow({
             || attemptFailure.stage === 'schema'
             ? 'provider_generation'
             : 'proposal_validation',
-          failure_codes: /^[A-Z0-9_.-]+$/u.test(diagnosticCode)
-            ? [diagnosticCode]
-            : ['UNKNOWN_ERROR'],
+          failure_codes: attemptFailureDiagnosticCodes(attemptFailure),
           action_status: attemptFailure.stage === 'policy' ? 'rejected' : 'none',
         }
         const brainFailureReason = classifyBrainFailureReason(
@@ -1107,11 +1131,14 @@ export const processInboundTurn = new Workflow({
         // replace it with backend-authored sales copy; the backend reports
         // only the narrow technical interruption.
         if (brainAuthoritative) {
-          pipelineFailureDecision = technicalFallback(
+          const interruption = technicalFallback(
             owned.policy.allowed_response_types.includes('technical_fallback')
               ? 'technical_fallback'
               : 'commercial_reply',
           )
+          pipelineFailureDecision = attemptFailure.stage === 'policy'
+            ? { ...interruption, reason_code: 'AGENT_A_POLICY_REJECTED' }
+            : interruption
         }
       }
     }

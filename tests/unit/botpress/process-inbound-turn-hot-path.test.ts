@@ -16,6 +16,7 @@ const actionSpies = vi.hoisted(() => ({
   agentABrainDeepSeek: vi.fn(),
   agentABrainOpenAI: vi.fn(),
   agentABrainGemini: vi.fn(),
+  agentABrainValidate: vi.fn(),
   conversationInterpreter: vi.fn(),
 }));
 
@@ -60,7 +61,7 @@ vi.mock('../../../botpress-agent/src/lib/conversation/agent-a-brain', () => ({
   // La validación real vive en su propio test. Acá se neutraliza para que
   // estos casos midan el ruteo de proveedores, que es lo que afirman: un
   // rechazo real convertiría cada caso en una prueba de la escalera.
-  validateAgentATurnProposalV1: () => null,
+  validateAgentATurnProposalV1: (...args: unknown[]) => actionSpies.agentABrainValidate(...args),
   decideRepairLevelV1: () => ({ level: 'N1' as const, messages: [] as string[] }),
   generateAgentATurnProposalV1: actionSpies.agentABrain,
   generateDeepSeekAgentATurnProposalV1: actionSpies.agentABrainDeepSeek,
@@ -303,6 +304,7 @@ describe('processInboundTurn hot path', () => {
     delete secrets.GEMINI_API_KEY;
     actionSpies.ingest.mockResolvedValue(ingestResponse());
     actionSpies.claim.mockResolvedValue(claimedResponse());
+    actionSpies.agentABrainValidate.mockReturnValue(null);
     actionSpies.catalog.mockResolvedValue({
       items: [],
       count: 0,
@@ -2925,7 +2927,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('does not invent a missing-phone reply when a mixed-message proposal fails', async () => {
+  it('records a policy rejection exactly instead of calling it MODEL_UNAVAILABLE', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -2949,7 +2951,7 @@ describe('processInboundTurn hot path', () => {
     };
     actionSpies.claim.mockResolvedValue(claimed);
     actionSpies.agentABrainDeepSeek.mockReset().mockRejectedValueOnce(new Error(
-      'PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:request_call_now',
+      'PLANNERLESS_PROPOSAL_REJECTED:FACT_VALUE_MISMATCH:candidate_course_detail,ACTION_NOT_AUTHORIZED:request_call_now',
     ));
     const step = Object.assign(
       async (_name: string, run: () => Promise<unknown>) => run(),
@@ -2967,8 +2969,131 @@ describe('processInboundTurn hot path', () => {
 
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       agent_turn_v2: null,
-      decision: { reason_code: 'MODEL_UNAVAILABLE' },
+      decision: { reason_code: 'AGENT_A_POLICY_REJECTED' },
+      turn_diagnostics: {
+        failure_stage: 'proposal_validation',
+        failure_codes: [
+          'PLANNERLESS_PROPOSAL_REJECTED:FACT_VALUE_MISMATCH:candidate_course_detail',
+          'PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:request_call_now',
+        ],
+        action_status: 'rejected',
+      },
     });
+  });
+
+  it('lets Agent A repair a multi-course reply even when the rollout flag omitted repair', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off',
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+      agent_a_repair_enabled: false,
+    };
+    claimed.context.batch_messages[0].content = 'Dale, pero quiero otro curso. Me puedo anotar en dos?';
+    claimed.conversation_state_v1 = {
+      selected_offering_code: 'community-manager', selected_payment_plan: null,
+      stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'offered',
+      call_offer_count: 1, awaiting_reply: 'none', version: 2,
+    };
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 2,
+      offerings: [
+        { code: 'community-manager', display_name: 'Community Manager', academy: 'Marketing', aliases: [] },
+        { code: 'marketing-digital', display_name: 'Marketing Digital', academy: 'Marketing', aliases: [] },
+      ],
+      injection_suspected_count: 0,
+    };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+
+    const multiCourseRejection = {
+        schema_version: 1,
+        rejection_id: '00000000-0000-4000-8000-0000000000c1',
+        attempt: 1,
+        rejections: [{ code: 'FACT_VALUE_MISMATCH', subject: 'candidate_course_detail' }],
+        authorized_alternatives: {
+          fact_ids: [], actions: ['none'], missing_information: [],
+        },
+      } as const;
+    actionSpies.agentABrainValidate
+      .mockReturnValueOnce(multiCourseRejection)
+      .mockReturnValueOnce(multiCourseRejection)
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce(null);
+    actionSpies.agentABrainDeepSeek
+      .mockResolvedValueOnce({
+        proposal: {
+          schema_version: 1,
+          move: {
+            schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 0.96,
+          },
+          response: {
+            messages: ['Sí, puedes hacer más de un curso.', 'Marketing Digital combina bien con Community Manager.'],
+            call_offer: null,
+          },
+          proposed_action: { type: 'none' },
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
+        },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 180, attempt_count: 1,
+      })
+      .mockImplementationOnce(async (input: {
+        context: { turn_rejection: { rejection_id: string } | null };
+      }) => ({
+        proposal: {
+          schema_version: 1,
+          move: {
+            schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 0.96,
+          },
+          response: {
+            messages: ['Sí, puedes inscribirte en más de un curso.', 'Quieres que comparemos Community Manager con Marketing Digital?'],
+            call_offer: null,
+          },
+          proposed_action: { type: 'none' },
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+          repair_of: {
+            rejection_id: input.context.turn_rejection!.rejection_id,
+            attempt: 1,
+          },
+        },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 140, attempt_count: 1,
+      }));
+
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      agent_turn_v2: {
+        proposal: {
+          response: {
+            messages: [
+              'Sí, puedes inscribirte en más de un curso.',
+              'Quieres que comparemos Community Manager con Marketing Digital?',
+            ],
+          },
+        },
+      },
+      turn_diagnostics: {
+        failure_stage: 'none',
+        action_status: 'none',
+      },
+    });
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input?.decision?.reason_code)
+      .not.toBe('MODEL_UNAVAILABLE');
   });
 
   it('fails closed on interpreter timeout without invoking the legacy model or planner', async () => {

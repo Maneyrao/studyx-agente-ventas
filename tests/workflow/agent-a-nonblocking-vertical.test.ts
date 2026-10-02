@@ -23,7 +23,13 @@ const databaseUrl = process.env.TEST_DATABASE_URL
 const previousKey = secrets.DEEPSEEK_API_KEY;
 const db = openLocalTestDatabase();
 
-type FixtureMode = 'conversation' | 'mixed_call' | 'missing_call_data' | 'missing_plan' | 'timeout';
+type FixtureMode =
+  | 'conversation'
+  | 'mixed_call'
+  | 'multi_course_repair'
+  | 'missing_call_data'
+  | 'missing_plan'
+  | 'timeout';
 let fixtureMode: FixtureMode = 'conversation';
 let deepSeekRequests = 0;
 
@@ -54,22 +60,66 @@ function proposal(input: {
   };
 }
 
-function fixtureProposal(): AgentATurnProposalV1 {
+function fixtureProposal(rejectionId?: string): AgentATurnProposalV1 {
   switch (fixtureMode) {
     case 'mixed_call':
-      return proposal({
-        move: 'browse_catalog',
-        secondaryMoves: ['request_call'],
-        messages: [
-          'Puedo orientarte con Marketing Digital y Community Manager.',
-          'Pásame un número con código de país y coordinamos la llamada.',
-        ],
-        action: { type: 'request_call_now', reason: 'direct_request' },
-        factIds: [
-          'offering:marketing_digital:name:v1',
-          'offering:community_manager:name:v1',
-        ],
-      });
+      return rejectionId
+        ? {
+            ...proposal({
+              move: 'request_call',
+              secondaryMoves: ['provide_contact_details'],
+              messages: [
+                'Para hablar de Marketing Digital y Community Manager, pásame un número con código de país y coordinamos la llamada.',
+              ],
+              factIds: [
+                'offering:marketing_digital:name:v1',
+                'offering:community_manager:name:v1',
+              ],
+            }),
+            repair_of: { rejection_id: rejectionId, attempt: 1 },
+          }
+        : proposal({
+            move: 'browse_catalog',
+            secondaryMoves: ['request_call'],
+            messages: [
+              'Puedo orientarte con Marketing Digital y Community Manager.',
+              'Pásame un número con código de país y coordinamos la llamada.',
+            ],
+            action: { type: 'request_call_now', reason: 'direct_request' },
+            factIds: [
+              'offering:marketing_digital:name:v1',
+              'offering:community_manager:name:v1',
+            ],
+          });
+    case 'multi_course_repair': {
+      const selected = rejectionId
+        ? proposal({
+            move: 'browse_catalog',
+            messages: [
+              'Sí, puedes anotarte en más de un curso.',
+              'Quieres que comparemos Community Manager y Marketing Digital?',
+            ],
+            factIds: [
+              'offering:community_manager:name:v1',
+              'offering:marketing_digital:name:v1',
+            ],
+          })
+        : proposal({
+            move: 'browse_catalog',
+            messages: [
+              'Sí, puedes anotarte en más de un curso.',
+              'Community Manager es ideal para empezar desde cero y conseguir clientes.',
+            ],
+            factIds: [
+              'offering:community_manager:name:v1',
+              'offering:marketing_digital:name:v1',
+            ],
+          });
+      return {
+        ...selected,
+        repair_of: rejectionId ? { rejection_id: rejectionId, attempt: 1 } : null,
+      };
+    }
     case 'missing_call_data':
       return proposal({
         move: 'request_call',
@@ -165,7 +215,7 @@ beforeAll(async () => {
     const context = JSON.parse(serialized) as {
       readonly turn_rejection?: { readonly rejection_id: string };
     };
-    const selected = fixtureProposal();
+    const selected = fixtureProposal(context.turn_rejection?.rejection_id);
     const effective = {
       ...selected,
       repair_of: context.turn_rejection
@@ -223,6 +273,23 @@ describe('Agent A nonblocking vertical production path', () => {
     expect(evidence.authorizedMessages.join('\n'))
       .toMatch(/(?:n[uú]mero|tel[eé]fono)[\s\S]*c[oó]digo de pa[ií]s/iu);
     expect(evidence.actions.some((action) => action.name === 'dispatchCall')).toBe(false);
+    expect(await decisionReasonCodes(evidence, id.conversationId)).not.toContain('MODEL_UNAVAILABLE');
+  }, 120_000);
+
+  it('returns a rejected multi-course draft to Agent A and commits its own repair', async () => {
+    fixtureMode = 'multi_course_repair';
+    deepSeekRequests = 0;
+    const id = identity('nonblocking-multi-course');
+    const evidence = await runWorkflowTurnV1({
+      ...id,
+      text: 'Estoy entre Community Manager y Marketing Digital. Me puedo anotar en los dos?',
+    });
+
+    expect(deepSeekRequests).toBe(2);
+    expect(evidence.errorCode).toBeNull();
+    expect(evidence.commitSucceeded).toBe(true);
+    expect(evidence.authorizedMessages.join('\n')).toContain('puedes anotarte en más de un curso');
+    expect(evidence.authorizedMessages.join('\n')).not.toContain('conseguir clientes');
     expect(await decisionReasonCodes(evidence, id.conversationId)).not.toContain('MODEL_UNAVAILABLE');
   }, 120_000);
 

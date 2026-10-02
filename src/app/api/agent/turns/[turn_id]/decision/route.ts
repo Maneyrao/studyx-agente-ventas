@@ -75,7 +75,7 @@ const turnDiagnosticsV1Schema = z.object({
     'backend_commit',
   ]),
   failure_codes: z.array(
-    z.string().trim().min(1).max(128).regex(/^[A-Z0-9_:.-]+$/u),
+    z.string().trim().min(1).max(128).regex(/^[A-Z0-9_:.-]+$/iu),
   ).max(8),
   action_status: z.enum(['none', 'authorized', 'needs_input', 'rejected']),
 }).strict();
