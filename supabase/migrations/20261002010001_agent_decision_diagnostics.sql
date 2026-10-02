@@ -63,7 +63,9 @@ BEGIN
      OR OLD.response IS DISTINCT FROM NEW.response
      OR OLD.response_type IS DISTINCT FROM NEW.response_type
      OR OLD.business_action IS DISTINCT FROM NEW.business_action
+     OR OLD.retrieval_used IS DISTINCT FROM NEW.retrieval_used
      OR OLD.memory_candidates IS DISTINCT FROM NEW.memory_candidates
+     OR OLD.used_memory_ids IS DISTINCT FROM NEW.used_memory_ids
      OR OLD.missing_information IS DISTINCT FROM NEW.missing_information
      OR OLD.next_state IS DISTINCT FROM NEW.next_state
      OR OLD.reason_code IS DISTINCT FROM NEW.reason_code
@@ -72,6 +74,7 @@ BEGIN
      OR OLD.model_name IS DISTINCT FROM NEW.model_name
      OR OLD.prompt_version IS DISTINCT FROM NEW.prompt_version
      OR OLD.payload_hash IS DISTINCT FROM NEW.payload_hash
+     OR OLD.release_manifest IS DISTINCT FROM NEW.release_manifest
      OR OLD.diagnostics IS DISTINCT FROM NEW.diagnostics
      OR (
        OLD.outbound_message_id IS DISTINCT FROM NEW.outbound_message_id

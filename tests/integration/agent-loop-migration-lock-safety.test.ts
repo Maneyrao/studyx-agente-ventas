@@ -6,6 +6,7 @@ import { openLocalTestDatabase } from '../helpers/db';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
+const latestAgentDecisionMigration = '20261002010001_agent_decision_diagnostics.sql';
 
 const migrations = [
   {
@@ -67,7 +68,13 @@ function applyLocalMigration(name: string): void {
   ], { stdio: 'pipe' });
 }
 
-afterAll(async () => db?.end());
+afterAll(async () => {
+  // This suite intentionally reapplies historical migrations to prove their
+  // lock/index safety. Restore the current trigger definition afterwards so
+  // later integration files never observe an older decision schema.
+  if (db) applyLocalMigration(latestAgentDecisionMigration);
+  await db?.end();
+});
 
 run('Agent Loop additive CHECK migrations', () => {
   it.each(migrations)(
