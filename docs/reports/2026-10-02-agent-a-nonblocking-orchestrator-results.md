@@ -11,7 +11,8 @@ unavailable commercial action no longer discards otherwise safe model-authored
 prose. Transient DeepSeek failures receive one bounded retry; invalid model
 output and policy failures are not retried blindly.
 
-No production deployment was performed as part of this verification.
+The certified candidate was subsequently deployed to production from the same
+source SHA after explicit authorization.
 
 ## Root causes addressed
 
@@ -73,9 +74,27 @@ fixture so the gate measures orchestration rather than paid model variance.
 - Next.js production build: passed.
 - `git diff --check`: passed.
 
-## Remaining production gate
+## Production release evidence
 
-Apply the pending migration, deploy Vercel and Botpress from the same candidate
-SHA, verify health/readiness, and run one clean supervised smoke on Telegram or
-WhatsApp plus one supervised A→B→A call. This requires explicit deployment
-authorization and is not part of this local certification.
+- Source SHA: `0d8e67b7d398e2674153a69278365173326602bc`.
+- Remote branch: `origin/codex/agent-a-logical-turn-recovery`.
+- Supabase migration `20261002010001_agent_decision_diagnostics.sql`: applied;
+  a subsequent dry run reported the remote database up to date.
+- Vercel production deployment: `dpl_AfKfzD15EYNWTivTJAhSghG7St5Q`.
+- Production domain: `https://studyx-agente-ventas.vercel.app`.
+- `/api/health`: `status=ok`, exact source SHA reported.
+- `/api/ready`: `ready=true`; configuration, Agent A brain, PostgreSQL,
+  agent-loop schema and commercial snapshot probes all passed. Verification
+  trace: `e8a23ebf-75a3-4157-b338-30990d120fd1`.
+- Botpress production deployment: successful for bot
+  `2f7fe6e1-1fc9-40d9-9045-d0c96b456f4b` in workspace
+  `wkspace_01M0X4K3H2EE7RGM39Q29GF6VS`.
+- Post-deploy Botpress configuration: canonical production API URL,
+  `deepseek-v4-flash`, plannerless V2 enabled and automation enabled.
+
+## Remaining supervised acceptance
+
+One clean customer-visible turn on Telegram or WhatsApp remains to confirm the
+external channel after deployment. A supervised A→B→A telephone call remains a
+separate paid acceptance step and was intentionally not triggered by this
+release.
