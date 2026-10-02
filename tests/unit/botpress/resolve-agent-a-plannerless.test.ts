@@ -244,7 +244,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.evidence).toMatchObject({ repair_attempted: false, repaired: false });
   });
 
-  it('rehomes a model-authored CTA without adding an invitation', async () => {
+  it('does not relocate or rewrite a model-authored CTA', async () => {
     const current = context();
     current.turn.recent_turns = [{
       id: 'prior-agent', direction: 'outbound',
@@ -272,9 +272,9 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(repair).not.toHaveBeenCalled();
     expect(result.effective.proposal.response.messages).toEqual([
       'Tenemos cursos de oficios, marketing y diseño.',
-      'Cuéntame qué te gustaría aprender y te recomiendo una opción.',
     ]);
-    expect(result.effective.proposal.response.call_offer).toBeNull();
+    expect(result.effective.proposal.response.call_offer)
+      .toBe('Cuéntame qué te gustaría aprender y te recomiendo una opción.');
   });
 
   it('reports the terminal repair schema rejection instead of only the initial missing call', async () => {
@@ -414,6 +414,37 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       codes: ['ACTION_NOT_AUTHORIZED'],
       missing_fields: ['telefono'],
       retryable: false,
+    });
+  });
+
+  it('keeps the exact model-authored intake question when only the call action is unavailable', async () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm1', text: 'Dale, llamame' }];
+    current.capabilities.may_request_call_now = false;
+    current.capabilities.intake_missing = ['telefono'];
+    const exactMessage = 'Dale, pásame tu número completo con código de país y área 🙂';
+    const initial = generated(proposal({
+      move: {
+        schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1,
+      },
+      response: { messages: [exactMessage], call_offer: null },
+      proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+      used_fact_ids: [],
+    }));
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial,
+      context: current,
+      repair_enabled: true,
+      repair: async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); },
+      rejection_id: '00000000-0000-4000-8000-0000000000c4',
+    });
+
+    expect(result.effective.proposal.response.messages).toEqual([exactMessage]);
+    expect(result.effective.proposal.response.call_offer).toBeNull();
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+    expect(result.action_rejection).toMatchObject({
+      action: 'request_call_now', missing_fields: ['telefono'],
     });
   });
 
@@ -1483,37 +1514,32 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
  *
  * Lo que sigue siendo intolerable es afirmar un efecto que no ocurrió.
  */
-describe('degradado en vez de rechazo duro', () => {
+describe('rechazo completo sin reescritura del backend', () => {
   const rejectedByPrice = () => generated(proposal({
     response: { messages: ['La formación sale USD 480.'], call_offer: null },
     used_fact_ids: [NAME_FACT],
   }));
 
-  it('entrega la propuesta al backend cuando la reparación está apagada', async () => {
-    const result = await resolveAgentAPlannerlessProposalV2({
+  it('rechaza la propuesta intacta cuando la reparación está apagada', async () => {
+    await expect(resolveAgentAPlannerlessProposalV2({
       initial: rejectedByPrice(), context: context(), repair_enabled: false,
       repair: vi.fn(), rejection_id: '00000000-0000-4000-8000-000000000001',
-    });
-
-    expect(result.evidence.rejection_codes).toEqual(['FACT_VALUE_MISMATCH']);
-    expect(result.evidence.repaired).toBe(false);
-    expect(result.effective.proposal.response.messages).toEqual(['La formación sale USD 480.']);
+    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:FACT_VALUE_MISMATCH:price');
   });
 
-  it('entrega la propuesta cuando la única reparación sigue siendo inválida', async () => {
+  it('rechaza cuando la única reparación sigue siendo inválida', async () => {
     const repair = vi.fn().mockResolvedValue(generated(proposal({
       response: { messages: ['La formación sale USD 480.'], call_offer: null },
       used_fact_ids: [NAME_FACT],
       repair_of: { rejection_id: '00000000-0000-4000-8000-000000000001', attempt: 1 },
     })));
 
-    const result = await resolveAgentAPlannerlessProposalV2({
+    await expect(resolveAgentAPlannerlessProposalV2({
       initial: rejectedByPrice(), context: context(), repair_enabled: true,
       repair, rejection_id: '00000000-0000-4000-8000-000000000001',
-    });
+    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:FACT_VALUE_MISMATCH:price');
 
     expect(repair).toHaveBeenCalledTimes(1);
-    expect(result.effective.proposal.response.messages).toEqual(['La formación sale USD 480.']);
   });
 
   it('sigue rechazando una propuesta que afirma haber mandado el link de pago', async () => {
@@ -1557,7 +1583,7 @@ describe('afirmar un link no autorizado no puede terminar en silencio', () => {
     capabilities: { ...context().capabilities, may_send_payment_link: false },
   });
 
-  it('entrega el resto del turno en vez de callarse', async () => {
+  it('rechaza el turno completo en vez de podar la afirmación falsa', async () => {
     const initial = generated(proposal({
       response: {
         messages: [
@@ -1575,24 +1601,13 @@ describe('afirmar un link no autorizado no puede terminar en silencio', () => {
       },
     }));
 
-    const resolved = await resolveAgentAPlannerlessProposalV2({
+    await expect(resolveAgentAPlannerlessProposalV2({
       initial,
       context: contextoSinLink(),
       repair_enabled: true,
       rejection_id: '00000000-0000-4000-8000-0000000000aa',
       repair: async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); },
-    });
-
-    const mensajes = resolved.effective.proposal.response.messages;
-    expect(mensajes.length).toBeGreaterThan(0);
-    expect(mensajes.join(' ')).not.toMatch(/link/iu);
-    expect(resolved.effective.proposal.proposed_action.type).toBe('none');
-    expect(resolved.action_rejection).toEqual({
-      action: 'send_payment_link',
-      codes: ['ACTION_NOT_AUTHORIZED', 'PLAN_NOT_SELECTED'],
-      missing_fields: ['payment_plan'],
-      retryable: false,
-    });
+    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
   });
 
   it('si no queda nada verdadero que decir, sigue siendo un rechazo duro', async () => {
@@ -1628,8 +1643,8 @@ describe('afirmar un link no autorizado no puede terminar en silencio', () => {
  * y se entrega el resto, que es el mismo criterio de la pregunta repetida y del
  * link no autorizado.
  */
-describe('prerequisitos sin respaldo se podan, no se entregan', () => {
-  it('preserves safe guidance when candidate detail and call action are rejected together', async () => {
+describe('afirmaciones sin respaldo se rechazan sin reescritura', () => {
+  it('rejects candidate detail and call action together without pruning the response', async () => {
     const current = context();
     current.turn.batch_messages = [{ id: 'm2', text: 'Contame de fotografía' }];
     current.catalog.selected_offering = null;
@@ -1648,7 +1663,7 @@ describe('prerequisitos sin respaldo se podan, no se entregan', () => {
       area_code: 'idiomas',
     }];
 
-    const result = await resolveAgentAPlannerlessProposalV2({
+    await expect(resolveAgentAPlannerlessProposalV2({
       initial: generated(proposal({
         move: {
           schema_version: 1,
@@ -1671,21 +1686,10 @@ describe('prerequisitos sin respaldo se podan, no se entregan', () => {
       repair_enabled: true,
       repair: async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); },
       rejection_id: '00000000-0000-4000-8000-0000000000b5',
-    });
-
-    expect(result.effective.proposal.response.messages).toEqual([
-      'Puedo ayudarte a comparar opciones por aquí.',
-    ]);
-    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
-    expect(result.action_rejection).toEqual({
-      action: 'request_call_now',
-      codes: ['ACTION_NOT_AUTHORIZED'],
-      missing_fields: [],
-      retryable: false,
-    });
+    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
   });
 
-  it('preserves the useful reply when unsupported candidate detail and a missing call offer occur together', async () => {
+  it('rejects unsupported candidate detail and a missing call offer without pruning', async () => {
     const current = context();
     current.customer.display_name = 'Thiago';
     current.turn.batch_messages = [
@@ -1718,7 +1722,7 @@ describe('prerequisitos sin respaldo se podan, no se entregan', () => {
     ];
     current.capabilities.may_offer_call = true;
 
-    const result = await resolveAgentAPlannerlessProposalV2({
+    await expect(resolveAgentAPlannerlessProposalV2({
       initial: generated(proposal({
         move: {
           schema_version: 1,
@@ -1740,18 +1744,10 @@ describe('prerequisitos sin respaldo se podan, no se entregan', () => {
       repair_enabled: true,
       repair: async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); },
       rejection_id: '00000000-0000-4000-8000-0000000000b4',
-    });
-
-    expect(result.effective.proposal.response.messages).toEqual([
-      'La llamada es breve y sirve para orientarte según lo que buscas.',
-    ]);
-    expect(result.evidence.rejection_codes).toEqual(expect.arrayContaining([
-      'FACT_VALUE_MISMATCH',
-      'CALL_OFFER_REQUIRED',
-    ]));
+    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
   });
 
-  it('combines safe pruning when one draft contains unsupported prerequisites and candidate advice', async () => {
+  it('rejects one draft containing unsupported prerequisites and candidate advice', async () => {
     const current = context();
     current.turn.batch_messages = [
       { id: 'm2', text: 'Me gustaría Photoshop, pero no estoy seguro' },
@@ -1787,22 +1783,16 @@ describe('prerequisitos sin respaldo se podan, no se entregan', () => {
       ],
     }));
 
-    const result = await resolveAgentAPlannerlessProposalV2({
+    await expect(resolveAgentAPlannerlessProposalV2({
       initial,
       context: current,
       repair_enabled: true,
       rejection_id: '00000000-0000-4000-8000-0000000000b2',
       repair: async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); },
-    });
-
-    const visible = result.effective.proposal.response.messages.join('\n');
-    expect(visible).not.toMatch(/ideal para empezar desde cero|editar im[aá]genes/iu);
-    expect(visible).toContain('- Diseño Gráfico con Photoshop');
-    expect(visible).toContain('- Diseño Gráfico con Illustrator');
-    expect(visible).toContain('Cuál te interesa más?');
+    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
   });
 
-  it('quita la oración y conserva el resto del turno', async () => {
+  it('rechaza la respuesta completa sin quitar una oración', async () => {
     const initial = generated(proposal({
       response: {
         messages: [
@@ -1813,21 +1803,16 @@ describe('prerequisitos sin respaldo se podan, no se entregan', () => {
       },
     }));
 
-    const resolved = await resolveAgentAPlannerlessProposalV2({
+    await expect(resolveAgentAPlannerlessProposalV2({
       initial,
       context: context(),
       repair_enabled: true,
       rejection_id: '00000000-0000-4000-8000-0000000000ac',
       repair: vi.fn(),
-    });
-
-    const mensajes = resolved.effective.proposal.response.messages;
-    expect(mensajes.length).toBeGreaterThan(0);
-    expect(mensajes.join(' ')).not.toMatch(/no necesit[aá]s experiencia/iu);
-    expect(mensajes.join(' ')).toMatch(/38 clases/u);
+    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
   });
 
-  it('preserves a valid course selection while removing an unsupported prerequisite clause', async () => {
+  it('rejects an unsupported prerequisite clause without altering it', async () => {
     const initial = generated(proposal({
       response: {
         messages: [
@@ -1837,17 +1822,13 @@ describe('prerequisitos sin respaldo se podan, no se entregan', () => {
       },
     }));
 
-    const resolved = await resolveAgentAPlannerlessProposalV2({
+    await expect(resolveAgentAPlannerlessProposalV2({
       initial,
       context: context(),
       repair_enabled: true,
       rejection_id: '00000000-0000-4000-8000-0000000000ae',
       repair: async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); },
-    });
-
-    expect(resolved.effective.proposal.response.messages.join(' ')).toContain('Inglés 1');
-    expect(resolved.effective.proposal.response.messages.join(' '))
-      .not.toMatch(/no tienen conocimientos previos/iu);
+    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
   });
 
   it('una pregunta de diagnóstico no se poda: no afirma nada', async () => {
@@ -1871,8 +1852,8 @@ describe('prerequisitos sin respaldo se podan, no se entregan', () => {
   });
 });
 
-describe('flexibilidad de cursada sin respaldo se poda, no se entrega', () => {
-  it('conserva las partes seguras cuando la reparación repite la inferencia', async () => {
+describe('flexibilidad de cursada sin respaldo se devuelve al agente', () => {
+  it('rechaza sin podar cuando la reparación repite la inferencia', async () => {
     const initial = generated(proposal({
       response: {
         messages: [
@@ -1883,7 +1864,7 @@ describe('flexibilidad de cursada sin respaldo se poda, no se entrega', () => {
       },
     }));
 
-    const resolved = await resolveAgentAPlannerlessProposalV2({
+    await expect(resolveAgentAPlannerlessProposalV2({
       initial,
       context: context(),
       repair_enabled: true,
@@ -1894,14 +1875,7 @@ describe('flexibilidad de cursada sin respaldo se poda, no se entrega', () => {
           rejection_id: '00000000-0000-4000-8000-0000000000af', attempt: 1,
         },
       })),
-    });
-
-    expect(resolved.effective.proposal.response.messages).toEqual([
-      'La formación tiene 38 clases.',
-      '¿Querés conocer el contenido?',
-    ]);
-    expect(resolved.effective.proposal.response.messages.join(' '))
-      .not.toMatch(/a tu ritmo|desde donde est[eé]s/iu);
+    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
   });
 });
 

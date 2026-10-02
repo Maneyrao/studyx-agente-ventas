@@ -12,12 +12,12 @@ import { sql } from '@/lib/db/orchestrator';
 const databaseAvailable = process.env.TEST_DATABASE_URL;
 const run = databaseAvailable ? describe : describe.skip;
 
-run('partial commercial-truth veto', () => {
-  it('does not persist an initial offer whose informational bubble was completely removed', async () => {
+run('commercial-truth boundary', () => {
+  it('rejects an Agent A turn instead of deleting its informational bubble', async () => {
     const seeded = await seedConversationForAgentTurn({
       call_offer_count: 0, selected_offering_code: 'entrenamiento_funcional', intake_complete: true,
     });
-    const committed = await commitAgentDecision({
+    await expect(commitAgentDecision({
       turn_id: seeded.turn_id, trace_id: seeded.trace_id,
       authorized_offering_code: 'entrenamiento_funcional', authorized_payment_plan: null,
       conversation_pipeline_v1: null,
@@ -29,16 +29,17 @@ run('partial commercial-truth veto', () => {
         },
       } as never },
       decision: seeded.placeholderDecision as never, model: seeded.model as never,
+    })).rejects.toMatchObject({
+      message: 'AGENT_TURN_V2_REJECTED:FACT_NOT_AUTHORIZED',
     });
-    expect(committed.status).toBe('committed');
     const state = await new PostgresConversationStateStoreV1(sql).load('studyx', seeded.conversation_id, seeded.contact_id);
     expect(state).toMatchObject({ call_offer_count: 0, call_offer_status: 'not_offered', awaiting_reply: 'none' });
   });
-  it('does not persist a call transition when its only declared invitation is vetoed', async () => {
+  it('rejects an Agent A turn instead of removing its call invitation', async () => {
     const seeded = await seedConversationForAgentTurn({
       call_offer_count: 0, selected_offering_code: 'entrenamiento_funcional', intake_complete: true,
     });
-    const committed = await commitAgentDecision({
+    await expect(commitAgentDecision({
       turn_id: seeded.turn_id, trace_id: seeded.trace_id,
       authorized_offering_code: 'entrenamiento_funcional', authorized_payment_plan: null,
       conversation_pipeline_v1: null,
@@ -50,11 +51,9 @@ run('partial commercial-truth veto', () => {
         },
       } as never },
       decision: seeded.placeholderDecision as never, model: seeded.model as never,
+    })).rejects.toMatchObject({
+      message: 'AGENT_TURN_V2_REJECTED:FACT_NOT_AUTHORIZED',
     });
-    expect(committed.status).toBe('committed');
-    expect(committed.outbound?.content).toBe('Tenemos Entrenamiento Funcional.');
-    expect(committed.conversation_effects).toBeUndefined();
-    expect(committed.outbound?.content).not.toContain('USD 47');
     const state = await new PostgresConversationStateStoreV1(sql).load(
       'studyx', seeded.conversation_id, seeded.contact_id,
     );
@@ -67,15 +66,7 @@ run('partial commercial-truth veto', () => {
     `;
     expect(eventCount?.count).toBe(0);
   });
-  it('keeps a safe transition when the vetoed sentence carries no stateful effect', async () => {
-    // El turno ofrece una llamada Y afirma un precio inexistente. El guard veta
-    // la oración del precio; la invitación sobrevive. La transición se había
-    // calculado sobre AMBAS oraciones.
-    //
-    // El precio falso no cambia el efecto de la transición: el curso ya se
-    // resolvió canónicamente y la invitación a llamada sobrevive intacta. Un
-    // veto de esa oración no debe degradar una respuesta comercial sana a un
-    // fallback técnico ni borrar la transición independiente.
+  it('rejects the complete Agent A response even when one paragraph was safe', async () => {
     const seeded = await seedConversationForAgentTurn({
       call_offer_count: 0,
       selected_offering_code: 'entrenamiento_funcional',
@@ -86,7 +77,7 @@ run('partial commercial-truth veto', () => {
     // `claim_token` en su `CommitDecisionInput` — el fencing por lote vive en
     // la capa de orquestación (`commit-claimed-decision.ts`), no acá. Ver la
     // nota de deviación en `tests/helpers/agent-turn-fixtures.ts`.
-    const committed = await commitAgentDecision({
+    await expect(commitAgentDecision({
       turn_id: seeded.turn_id,
       trace_id: seeded.trace_id,
       supports_multi_outbound: true,
@@ -105,16 +96,9 @@ run('partial commercial-truth veto', () => {
       },
       decision: seeded.placeholderDecision as never,
       model: seeded.model as never,
+    })).rejects.toMatchObject({
+      message: 'AGENT_TURN_V2_REJECTED:FACT_NOT_AUTHORIZED',
     });
-
-    expect(committed.status).toBe('committed');
-    // Sólo cae el precio falso; la invitación segura sigue siendo la respuesta
-    // entregada y su transición queda durable.
-    expect(committed.outbounds?.map((message) => message.content)).toEqual([
-      'Tenemos Entrenamiento Funcional.', '¿Te gustaría que te llamemos para contarte más?',
-    ]);
-    expect(committed.outbound?.content ?? '').not.toContain('USD 47');
-    expect(committed.conversation_effects).toBeUndefined();
 
     const [decision] = await sql<Array<{
       response: string | null;
@@ -127,24 +111,19 @@ run('partial commercial-truth veto', () => {
       FROM agent_decisions
       WHERE turn_id = ${seeded.turn_id}::uuid
     `;
-    expect(decision).toMatchObject({
-      response: 'Tenemos Entrenamiento Funcional.\n\n¿Te gustaría que te llamemos para contarte más?',
-      business_action: null,
-    });
+    expect(decision).toBeUndefined();
 
-    // La transición depende del curso canónico y de la invitación entregada,
-    // no de la afirmación de precio que se vetó.
+    // Nothing from a rejected response becomes durable. DeepSeek receives the
+    // structured rejection and must author the complete replacement itself.
     const state = await new PostgresConversationStateStoreV1(sql).load(
       'studyx', seeded.conversation_id, seeded.contact_id,
     );
-    expect(state?.call_offer_count).toBe(1);
-    expect(state?.awaiting_reply).toBe('call_or_chat');
-    // El fixture ya sembró 'entrenamiento_funcional' como curso elegido
-    // ANTES de este turno; el punto es que sigue siendo ese valor sembrado —
-    // el `move: 'select_course'` del turno vetado nunca se persistió — no
-    // que se haya vuelto null.
+    expect(state?.call_offer_count).toBe(0);
+    expect(state?.awaiting_reply).toBe('none');
+    // El fixture ya sembró el código, pero el turno rechazado no puede avanzar
+    // la etapa ni ningún otro estado comercial.
     expect(state?.selected_offering_code).toBe('entrenamiento_funcional');
-    expect(state?.stage).toBe('course_selected');
+    expect(state?.stage).toBe('exploring');
   });
 
   it('keeps a pipeline transition when only an unrelated false price is vetoed', async () => {

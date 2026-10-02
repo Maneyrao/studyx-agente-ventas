@@ -210,10 +210,10 @@ export function authorizeAgentTurnV2(input: {
   const requestedCallNow = moves.has('request_call') && proposal.proposed_action.type === 'request_call_now'
     && input.call_policy.may_request_call_now && callRequestSupported
     && !proposal.move.vetoes.includes('call');
-  const authoredCallOffer = proposal.response.call_offer?.trim() || null;
-  const sanitizedCallOffer = authoredCallOffer === null
+  const authoredCallOffer = proposal.response.call_offer ?? null;
+  const inspectedCallOffer = authoredCallOffer === null
     ? null
-    : dropUnsupportedStateAssertionsV1(authoredCallOffer, stateFacts).trim() || null;
+    : dropUnsupportedStateAssertionsV1(authoredCallOffer, stateFacts);
   const mayDeliverCallOffer = input.call_policy.may_offer_call
     && state.call_offer_count < 2
     && state.call_preference !== 'call'
@@ -234,15 +234,23 @@ export function authorizeAgentTurnV2(input: {
   if (proactiveCallOffer && state.call_offer_count >= 2) {
     reasons.push('CALL_OFFER_NOT_AUTHORIZED');
   }
-  const authorizedCallOffer = sanitizedCallOffer !== null
-    && (!solicitsACall(sanitizedCallOffer, true) || mayDeliverCallOffer)
-    ? sanitizedCallOffer
-    : null;
-  const authorizedMessages = authoredMessages
-    .map((message) => dropUnsupportedStateAssertionsV1(message, stateFacts).trim())
-    .filter((message) => message.length > 0);
-  const visibleCallOffer = (authorizedCallOffer !== null && solicitsACall(authorizedCallOffer, true))
-    || !requestedCallNow && authorizedMessages.some((message) => solicitsACall(message));
+  const inspectedMessages = authoredMessages.map((message) => (
+    dropUnsupportedStateAssertionsV1(message, stateFacts)
+  ));
+  // The backend is an authority boundary, not a copy editor. If any sentence
+  // depends on state that is not durable yet, reject the complete proposal so
+  // Agent A can rewrite it. Never delete, shorten or replace model-authored
+  // customer copy here.
+  if (inspectedMessages.some((message, index) => message !== authoredMessages[index])
+    || inspectedCallOffer !== authoredCallOffer) {
+    reasons.push('UNSUPPORTED_STATE_ASSERTION');
+  }
+  if (authoredCallOffer !== null && solicitsACall(authoredCallOffer, true)
+    && !mayDeliverCallOffer && !callRequestSupported) {
+    reasons.push('CALL_OFFER_NOT_AUTHORIZED');
+  }
+  const visibleCallOffer = (authoredCallOffer !== null && solicitsACall(authoredCallOffer, true))
+    || !requestedCallNow && authoredMessages.some((message) => solicitsACall(message));
   // Call timing and message boundaries are sales guidance. They remain in the
   // prompt and evaluation suite, but they never reject customer-facing copy.
   // Only an eligible visible invitation advances the durable call ledger.
@@ -342,7 +350,8 @@ export function authorizeAgentTurnV2(input: {
 
   if (reasons.length > 0) return { ok: false, reasons: unique(reasons) };
 
-  const response = [...authorizedMessages, ...(authorizedCallOffer ? [authorizedCallOffer] : [])]
+  const responseMessages = [...authoredMessages, ...(authoredCallOffer ? [authoredCallOffer] : [])];
+  const response = responseMessages
     .join('\n\n').trim();
   if (!response) return { ok: false, reasons: ['UNSUPPORTED_STATE_ASSERTION'] };
 
@@ -474,7 +483,7 @@ export function authorizeAgentTurnV2(input: {
   return {
     ok: true,
     response,
-    response_messages: [...authorizedMessages, ...(authorizedCallOffer ? [authorizedCallOffer] : [])],
+    response_messages: responseMessages,
     action,
     authorized_fact_ids: unique(authorizedFactIds),
     state_facts: stateFacts,

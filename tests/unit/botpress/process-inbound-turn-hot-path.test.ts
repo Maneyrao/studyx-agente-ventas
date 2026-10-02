@@ -537,7 +537,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('preserves Agent A wording and neutralizes only the action after a recoverable backend rejection', async () => {
+  it('returns a backend rejection to Agent A and commits only its repaired response', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -578,7 +578,26 @@ describe('processInboundTurn hot path', () => {
           used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
         },
         provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 180, attempt_count: 1,
-      });
+      })
+      .mockImplementationOnce(async (input: {
+        context: { turn_rejection: { rejection_id: string } | null };
+      }) => ({
+        proposal: {
+          schema_version: 1,
+          move: {
+            schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
+            course_reference: 'redes-informaticas', confidence: 0.98,
+          },
+          response: { messages: ['Te cuento únicamente la información verificada del curso.'], call_offer: null },
+          proposed_action: { type: 'none' },
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+          repair_of: {
+            rejection_id: input.context.turn_rejection!.rejection_id,
+            attempt: 1,
+          },
+        },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 160, attempt_count: 1,
+      }));
 
     actionSpies.commit
       .mockRejectedValueOnce(new StudyxHttpError(
@@ -589,18 +608,18 @@ describe('processInboundTurn hot path', () => {
         status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
         decision_id: UUID, next_state: 'waiting_user',
         outbound: {
-          id: UUID, content: 'Te cuento los detalles del curso.', status: 'pending', delivery_attempt: 1,
+          id: UUID, content: 'Te cuento únicamente la información verificada del curso.', status: 'pending', delivery_attempt: 1,
           authorized_egress: {
             schema_version: 1,
-            content_hash: '50e86e34f81509af7c5385592b8ea2c5069732f7dce2d8436f663d36186989e0',
+            content_hash: '475afbdaee1fd8588c53b37ae16f80b1c131ab0fb3b38263e5f465179fc1d894',
             authorized_urls: [], protected_facts: [],
           },
         },
         outbounds: [{
-          id: UUID, content: 'Te cuento los detalles del curso.', status: 'pending', delivery_attempt: 1,
+          id: UUID, content: 'Te cuento únicamente la información verificada del curso.', status: 'pending', delivery_attempt: 1,
           authorized_egress: {
             schema_version: 1,
-            content_hash: '50e86e34f81509af7c5385592b8ea2c5069732f7dce2d8436f663d36186989e0',
+            content_hash: '475afbdaee1fd8588c53b37ae16f80b1c131ab0fb3b38263e5f465179fc1d894',
             authorized_urls: [], protected_facts: [],
           },
         }], call_request: null,
@@ -623,27 +642,27 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(actionSpies.commit).toHaveBeenCalledTimes(2);
-    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
     expect(actionSpies.commit.mock.calls[1]?.[0]?.input).toMatchObject({
-      agent_turn_v2: null,
+      agent_turn_v2: {
+        proposal: {
+          response: { messages: ['Te cuento únicamente la información verificada del curso.'] },
+          proposed_action: { type: 'none' },
+        },
+      },
       turn_diagnostics: {
         generation_attempts: 1,
         failure_stage: 'backend_commit',
-        action_status: 'rejected',
-      },
-      decision: {
-        response: 'Te cuento los detalles del curso.',
-        business_action: null,
-        reason_code: 'BRAIN_ADVISORY_ONLY_PLANNER_REJECTED',
+        action_status: 'none',
       },
     });
     expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({
-      payload: { text: 'Te cuento los detalles del curso.' },
+      payload: { text: 'Te cuento únicamente la información verificada del curso.' },
     }));
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
   });
 
-  it('does not invoke another model or canned copy after a backend rejection', async () => {
+  it('uses only a technical notice when Agent A cannot repair a backend rejection', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
@@ -675,7 +694,8 @@ describe('processInboundTurn hot path', () => {
           used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
         },
         provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 180, attempt_count: 1,
-      });
+      })
+      .mockRejectedValueOnce(new Error('BRAIN_DEEPSEEK_TIMEOUT'));
     actionSpies.commit
       .mockRejectedValueOnce(new StudyxHttpError(
         'DECISION_REJECTED', false, 422, 1,
@@ -685,18 +705,18 @@ describe('processInboundTurn hot path', () => {
         status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
         decision_id: UUID, next_state: 'waiting_user',
         outbound: {
-          id: UUID, content: 'Detalle que el backend rechazará.', status: 'pending', delivery_attempt: 1,
+          id: UUID, content: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.', status: 'pending', delivery_attempt: 1,
           authorized_egress: {
             schema_version: 1,
-            content_hash: '7d9dbaaf750d13af746b0c3edc4b0da9c37e7f52bdf71572115f87fdcbf94894',
+            content_hash: '6059f66ef980b4591ffe2d2b2adb9e98ae1ece07a3b6d2bbd2c2b72f8e3db747',
             authorized_urls: [], protected_facts: [],
           },
         },
         outbounds: [{
-          id: UUID, content: 'Detalle que el backend rechazará.', status: 'pending', delivery_attempt: 1,
+          id: UUID, content: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.', status: 'pending', delivery_attempt: 1,
           authorized_egress: {
             schema_version: 1,
-            content_hash: '7d9dbaaf750d13af746b0c3edc4b0da9c37e7f52bdf71572115f87fdcbf94894',
+            content_hash: '6059f66ef980b4591ffe2d2b2adb9e98ae1ece07a3b6d2bbd2c2b72f8e3db747',
             authorized_urls: [], protected_facts: [],
           },
         }], call_request: null,
@@ -718,18 +738,18 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(actionSpies.commit).toHaveBeenCalledTimes(2);
-    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
     expect(actionSpies.commit.mock.calls[1]?.[0]?.input).toMatchObject({
       agent_turn_v2: null,
       decision: {
-        response: 'Detalle que el backend rechazará.',
+        response: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.',
         business_action: null,
-        reason_code: 'BRAIN_ADVISORY_ONLY_PLANNER_REJECTED',
+        reason_code: 'MODEL_UNAVAILABLE',
       },
     });
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
     expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({
-      payload: { text: 'Detalle que el backend rechazará.' },
+      payload: { text: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.' },
     }));
   });
 
@@ -950,7 +970,7 @@ describe('processInboundTurn hot path', () => {
     },
   );
 
-  it('returns a canonical course fact instead of a technical reply when the authoritative brain is unavailable', async () => {
+  it('does not author a course reply in the backend when the authoritative brain is unavailable', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -999,9 +1019,9 @@ describe('processInboundTurn hot path', () => {
       conversation_pipeline_v1: null,
       decision: {
         kind: 'reply',
-        response: 'El precio de Redes Informáticas es USD 360. ¿Preferís 12 cuotas, 6 cuotas o un pago único?',
+        response: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.',
         response_type: 'commercial_reply',
-        reason_code: 'DETERMINISTIC_COURSE_FACTS',
+        reason_code: 'MODEL_UNAVAILABLE',
         business_action: null,
       },
     });
@@ -1017,7 +1037,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('keeps a canonical course choice moving when DeepSeek rejects the turn', async () => {
+  it('does not reinterpret a course choice when DeepSeek rejects the turn', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -1073,18 +1093,16 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      authorized_offering_code: 'community-manager',
+      authorized_offering_code: null,
       decision: {
         kind: 'reply',
-        response_type: 'call_offer',
-        reason_code: 'DETERMINISTIC_COURSE_DISCOVERY',
+        response_type: 'commercial_reply',
+        reason_code: 'MODEL_UNAVAILABLE',
         business_action: null,
       },
     });
     const response = String(actionSpies.commit.mock.calls[0]?.[0]?.input?.decision?.response);
-    expect(response).toContain('Community Manager');
-    expect(response).toMatch(/llamada|llamar/iu);
-    expect(response).not.toContain('Hubo un problema');
+    expect(response).toBe('Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.');
   });
 
   it('retries one transient DeepSeek timeout before committing the model reply', async () => {
@@ -1271,7 +1289,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('preserves DeepSeek wording but strips every action when the planner rejects it', async () => {
+  it('does not publish a backend-edited subset when the legacy planner rejects Agent A', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -1340,15 +1358,16 @@ describe('processInboundTurn hot path', () => {
       },
       decision: {
         kind: 'reply',
-        response: 'No, también tenemos opciones en tecnología, diseño y negocios.\n\n¿Qué te gustaría aprender?',
+        response: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.',
         response_type: 'commercial_reply',
-        reason_code: 'BRAIN_ADVISORY_ONLY_PLANNER_REJECTED',
+        reason_code: 'MODEL_UNAVAILABLE',
         business_action: null,
         memory_candidates: [],
       },
-      model: { provider: 'deepseek-direct', model: 'deepseek-v4-flash' },
+      model: { provider: 'botpress', model: 'policy:conversation-pipeline-v1-unavailable' },
     });
-    expect(actionSpies.commit.mock.calls[0]?.[0]?.input.decision.response).not.toContain('te llamo');
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input.decision.response)
+      .not.toContain('tecnología');
   });
 
   it('does not use a managed model when DeepSeek is rate limited', async () => {
@@ -1557,7 +1576,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('keeps canonical catalog navigation without invoking a second model when DeepSeek is unavailable', async () => {
+  it('never substitutes backend-authored catalog copy when DeepSeek is unavailable', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -1628,8 +1647,8 @@ describe('processInboundTurn hot path', () => {
       agent_turn_v2: null,
       decision: {
         kind: 'reply',
-        response: 'Podemos orientarte por estas áreas: Tecnología. ¿Cuál te interesa?',
-        reason_code: 'DETERMINISTIC_CATALOG_NAVIGATION',
+        response: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.',
+        reason_code: 'MODEL_UNAVAILABLE',
       },
     });
   });
@@ -2804,7 +2823,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('asks for the missing phone instead of exposing a model failure after a call request', async () => {
+  it('does not invent a missing-phone reply after a model failure', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -2843,24 +2862,14 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      agent_turn_v2: {
-        schema_version: 2,
-        proposal: {
-          move: { move: 'request_call' },
-          response: { call_offer: null },
-          proposed_action: { type: 'none' },
-        },
+      agent_turn_v2: null,
+      decision: {
+        reason_code: 'MODEL_UNAVAILABLE',
       },
     });
-    const response = String(
-      actionSpies.commit.mock.calls[0]?.[0]?.input?.agent_turn_v2?.proposal?.response?.messages?.[0],
-    );
-    expect(response).toMatch(/n[uú]mero/i);
-    expect(response).toMatch(/c[oó]digo de pa[ií]s/i);
-    expect(response).not.toContain('Hubo un problema');
   });
 
-  it('asks for missing name and surname instead of exposing a model failure after a WhatsApp call request', async () => {
+  it('does not invent a name request after a WhatsApp model failure', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -2899,19 +2908,13 @@ describe('processInboundTurn hot path', () => {
       client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
-    const proposal = actionSpies.commit.mock.calls[0]?.[0]?.input?.agent_turn_v2?.proposal;
-    expect(proposal).toMatchObject({
-      move: { move: 'request_call' },
-      response: { call_offer: null },
-      proposed_action: { type: 'none' },
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      agent_turn_v2: null,
+      decision: { reason_code: 'MODEL_UNAVAILABLE' },
     });
-    const response = String(proposal?.response?.messages?.[0]);
-    expect(response).toMatch(/nombre/i);
-    expect(response).toMatch(/apellido/i);
-    expect(response).not.toContain('Hubo un problema');
   });
 
-  it('asks for the missing phone when DeepSeek finds a call request inside a mixed message', async () => {
+  it('does not invent a missing-phone reply when a mixed-message proposal fails', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -2952,19 +2955,9 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      agent_turn_v2: {
-        schema_version: 2,
-        proposal: {
-          move: { move: 'request_call' },
-          proposed_action: { type: 'none' },
-        },
-      },
+      agent_turn_v2: null,
+      decision: { reason_code: 'MODEL_UNAVAILABLE' },
     });
-    const response = String(
-      actionSpies.commit.mock.calls[0]?.[0]?.input?.agent_turn_v2?.proposal?.response?.messages?.[0],
-    );
-    expect(response).toMatch(/n[uú]mero/i);
-    expect(response).not.toContain('Hubo un problema');
   });
 
   it('fails closed on interpreter timeout without invoking the legacy model or planner', async () => {

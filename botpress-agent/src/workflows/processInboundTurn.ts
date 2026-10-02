@@ -35,10 +35,8 @@ import {
   suppress,
   technicalFallback,
   modelUnavailableFallback,
-  policyRejectedStateFallback,
 } from '../utils/decision-policy'
 import {
-  routeCanonicalCatalogFailureFallback,
   routeCommercialTurn,
 } from '../utils/commercial-router'
 import { verifyAuthorizedEgressPortable } from '../utils/authorized-egress'
@@ -241,129 +239,6 @@ function customerVisibleModelFallback(
   reason?: Parameters<typeof modelUnavailableFallback>[1],
 ): Decision {
   return modelUnavailableFallback(claimed, reason)
-}
-
-const CALL_REQUIRED_INTAKE_FIELDS = ['nombre', 'apellido', 'telefono'] as const
-
-function callIntakeRequiredMessage(claimed: ClaimedTurn): string {
-  const missing = CALL_REQUIRED_INTAKE_FIELDS.filter((field) => (
-    claimed.contact_intake_missing.includes(field)
-  ))
-  const needsName = missing.includes('nombre')
-  const needsLastName = missing.includes('apellido')
-  const needsPhone = missing.includes('telefono')
-
-  if (needsName && needsLastName && needsPhone) {
-    return 'Claro. Para preparar la llamada, dime tu nombre, apellido y teléfono completo con código de país y área 🙂'
-  }
-  if (needsName && needsLastName) {
-    return 'Claro. Para preparar la llamada, dime tu nombre y apellido 🙂'
-  }
-  if (needsName) return 'Claro. Para preparar la llamada, dime tu nombre 🙂'
-  if (needsLastName) return 'Claro. Para preparar la llamada, dime tu apellido 🙂'
-  return 'De acuerdo. Pásame el número completo con código de país y área, por ejemplo +54 9 11…, para poder llamarte 🙂'
-}
-
-function callIntakeRequiredAgentTurn(claimed: ClaimedTurn): AgentATurnCommitV2 {
-  return {
-    schema_version: 2,
-    proposal: {
-      schema_version: 1,
-      move: {
-        schema_version: 1,
-        move: 'request_call',
-        secondary_moves: [],
-        vetoes: [],
-        confidence: 1,
-      },
-      response: {
-        messages: [callIntakeRequiredMessage(claimed)],
-        call_offer: null,
-      },
-      proposed_action: { type: 'none' },
-      used_fact_ids: [],
-      used_memory_ids: [],
-      memory_candidates: [],
-      repair_of: null,
-    },
-  }
-}
-
-function callIntakeRequiredFallback(claimed: ClaimedTurn): Decision {
-  const allowed = claimed.policy.allowed_response_types
-  const responseType = allowed.includes('commercial_reply')
-    ? 'commercial_reply' as const
-    : allowed.includes('clarification')
-      ? 'clarification' as const
-      : null
-  if (responseType === null) return suppress('CALL_INTAKE_REQUIRED')
-
-  return {
-    schema_version: 3,
-    intent: 'commercial',
-    kind: 'reply',
-    response: callIntakeRequiredMessage(claimed),
-    response_type: responseType,
-    business_action: null,
-    memory_candidates: [],
-    missing_information: CALL_REQUIRED_INTAKE_FIELDS.filter((field) => (
-      claimed.contact_intake_missing.includes(field)
-    )),
-    next_state: 'waiting_user',
-    reason_code: 'CALL_INTAKE_REQUIRED',
-    confidence: 1,
-    retrieval_used: null,
-  }
-}
-
-function needsCallIntakeRecovery(claimed: ClaimedTurn, failureCode: string): boolean {
-  const hasMissingCallIntake = CALL_REQUIRED_INTAKE_FIELDS.some((field) => (
-    claimed.contact_intake_missing.includes(field)
-  ))
-  if (!hasMissingCallIntake) return false
-
-  return claimed.deterministic_route === 'call_phone_required'
-    || claimed.deterministic_route === 'call_direct_request'
-    || claimed.deterministic_route === 'call_accepted_offer'
-    || failureCode.includes('ACTION_NOT_AUTHORIZED:request_call_now')
-    || failureCode.includes('MISSING_INTAKE:')
-}
-
-/**
- * Preserve the model-owned conversation when the authoritative planner cannot
- * authorize its move. This is deliberately a presentation-only decision:
- * proposed actions, call offers and model-authored memories never cross the
- * boundary. The backend still validates the exact text and canonical facts
- * before it can become an outbound message.
- */
-function brainAdvisoryOnlyDecision(
-  proposal: AgentATurnProposalV1,
-  claimed: ClaimedTurn,
-): Decision {
-  const allowed = claimed.policy.allowed_response_types as readonly string[]
-  const responseType = proposal.move.move === 'greeting' && allowed.includes('social_reply')
-    ? 'social_reply' as const
-    : allowed.includes('commercial_reply')
-      ? 'commercial_reply' as const
-      : allowed.includes('social_reply')
-        ? 'social_reply' as const
-        : null
-  if (responseType === null) return suppress('BRAIN_ADVISORY_RESPONSE_NOT_ALLOWED')
-
-  return DecisionSchema.parse({
-    schema_version: 4,
-    intent: responseType === 'social_reply' ? 'social' : 'commercial',
-    kind: 'reply',
-    response: proposal.response.messages.join('\n\n'),
-    response_type: responseType,
-    confidence: proposal.move.confidence,
-    reason_code: 'BRAIN_ADVISORY_ONLY_PLANNER_REJECTED',
-    business_action: null,
-    memory_candidates: [],
-    missing_information: [],
-    next_state: 'waiting_user',
-    retrieval_used: null,
-  })
 }
 
 const workflowStateSchema = z.object({
@@ -818,6 +693,7 @@ export const processInboundTurn = new Workflow({
     let pipelineMemoryCandidates: Decision['memory_candidates'] = []
     let turnDiagnostics: TurnDiagnosticsV1 | null = null
     let agentAGenerationAttempts: 0 | 1 | 2 = 0
+    let agentARepairAttempted = false
     let callOfferAudit: {
       readonly call_offer_count_before: 0 | 1 | 2
       readonly call_offer_count_after: 0 | 1 | 2
@@ -948,12 +824,12 @@ export const processInboundTurn = new Workflow({
           pipelineDecisionProvider = generated.provider
           pipelineDecisionModel = generated.model
           pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
-          const authoritativeMove = bindCurrentConversationalIntentToMoveV1(
-            plannerlessV2Enabled
-              ? generated.proposal.move
-              : bindCurrentCatalogResolutionToMoveV1(generated.proposal.move, owned),
-            owned,
-          )
+          const authoritativeMove = plannerlessV2Enabled
+            ? generated.proposal.move
+            : bindCurrentConversationalIntentToMoveV1(
+                bindCurrentCatalogResolutionToMoveV1(generated.proposal.move, owned),
+                owned,
+              )
           if (plannerlessV2Enabled) {
             timings.planner_ms = 0
             const authoritativeGenerated = {
@@ -966,6 +842,7 @@ export const processInboundTurn = new Workflow({
               repair_enabled: repairEnabled,
               rejection_id: randomUUID(),
               repair: async (rejection) => {
+                agentARepairAttempted = true
                 if (typeof secrets.DEEPSEEK_API_KEY !== 'string'
                   || secrets.DEEPSEEK_API_KEY.length === 0) {
                   throw new Error('DEEPSEEK_API_KEY_MISSING')
@@ -982,11 +859,7 @@ export const processInboundTurn = new Workflow({
                   }),
                   { maxAttempts: 1 },
                 )
-                const repairedMove = bindCurrentConversationalIntentToMoveV1(
-                  repaired.proposal.move,
-                  owned,
-                )
-                return { ...repaired, proposal: { ...repaired.proposal, move: repairedMove } }
+                return repaired
               },
             })
             const effectiveGenerated = resolved.effective
@@ -1077,7 +950,11 @@ export const processInboundTurn = new Workflow({
                   : ['UNKNOWN_ERROR'],
                 action_status: 'rejected',
               }
-              pipelineFailureDecision = brainAdvisoryOnlyDecision(generated.proposal, owned)
+              pipelineFailureDecision = technicalFallback(
+                owned.policy.allowed_response_types.includes('technical_fallback')
+                  ? 'technical_fallback'
+                  : 'commercial_reply',
+              )
               safeLog('studyx.turn.agent_a_brain_v1', {
                 trace_id: input.trace_id,
                 turn_id: owned.turn_id,
@@ -1206,39 +1083,15 @@ export const processInboundTurn = new Workflow({
           proposed_action_type: 'none',
           authorized_action_type: 'none',
         })
-        // Keep the brain as the normal commercial author. On failure, reuse
-        // only a canonical deterministic route already proven by the claim;
-        // otherwise return the narrow state/technical recovery below.
+        // A failed model turn has no customer response to preserve. Never
+        // replace it with backend-authored sales copy; the backend reports
+        // only the narrow technical interruption.
         if (brainAuthoritative) {
-          const callIntakeFallback = needsCallIntakeRecovery(owned, failureCode)
-          const deterministicCommercialFallback = commercialRoute.kind === 'deterministic'
-            && commercialRoute.decision.business_action === null
-            ? commercialRoute
-            : routeCanonicalCatalogFailureFallback(owned)
-          if (callIntakeFallback) {
-            agentTurnV2Commit = callIntakeRequiredAgentTurn(owned)
-            pipelineDecisionProvider = 'botpress'
-            pipelineDecisionModel = 'policy:call-intake-required'
-            pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
-          }
-          const stateFallback = brainFailureReason === 'policy_rejected'
-            ? policyRejectedStateFallback(owned)
-            : null
-          if (!callIntakeFallback) {
-            pipelineFailureDecision = deterministicCommercialFallback?.decision
-              ?? stateFallback
-              ?? technicalFallback(
-                  owned.policy.allowed_response_types.includes('technical_fallback')
-                    ? 'technical_fallback'
-                    : 'commercial_reply',
-                )
-            if (deterministicCommercialFallback) {
-              pipelineDecisionProvider = 'botpress'
-              pipelineDecisionModel = `fallback:${deterministicCommercialFallback.model}`
-              authorizedOfferingCode = deterministicCommercialFallback.authorizedOfferingCode
-                ?? authorizedOfferingCode
-            }
-          }
+          pipelineFailureDecision = technicalFallback(
+            owned.policy.allowed_response_types.includes('technical_fallback')
+              ? 'technical_fallback'
+              : 'commercial_reply',
+          )
         }
       }
     }
@@ -1369,23 +1222,11 @@ export const processInboundTurn = new Workflow({
           brain_source: 'fallback',
           brain_failure_reason: brainFailureReason,
         })
-        // No lexical sales substitute. A factual intake-status question may
-        // use the canonical claim; every other failure stays technical.
-        const callIntakeFallback = needsCallIntakeRecovery(owned, failureCode)
-          ? callIntakeRequiredFallback(owned)
-          : null
-        const stateFallback = brainFailureReason === 'policy_rejected'
-          ? policyRejectedStateFallback(owned)
-          : null
-        pipelineFailureDecision = callIntakeFallback
-          ? callIntakeFallback
-          : stateFallback
-          ? stateFallback
-          : technicalFallback(
-              owned.policy.allowed_response_types.includes('technical_fallback')
-                ? 'technical_fallback'
-                : 'commercial_reply',
-            )
+        pipelineFailureDecision = technicalFallback(
+          owned.policy.allowed_response_types.includes('technical_fallback')
+            ? 'technical_fallback'
+            : 'commercial_reply',
+        )
       }
     }
 
@@ -1404,12 +1245,7 @@ export const processInboundTurn = new Workflow({
       decisionModel = pipelineDecisionModel
     } else if (pipelineFailureDecision) {
       decision = pipelineFailureDecision
-      if (pipelineFailureDecision.reason_code === 'BRAIN_ADVISORY_ONLY_PLANNER_REJECTED') {
-        decisionProvider = pipelineDecisionProvider
-        decisionModel = pipelineDecisionModel
-      } else {
-        decisionModel = 'policy:conversation-pipeline-v1-unavailable'
-      }
+      decisionModel = 'policy:conversation-pipeline-v1-unavailable'
     } else if (commercialRoute.kind !== 'model_required') {
       decision = commercialRoute.decision
       decisionModel = commercialRoute.model
@@ -1596,16 +1432,19 @@ export const processInboundTurn = new Workflow({
         committed = await commitCurrentDecision('commit-canonical-decision')
       } catch (initialCommitError) {
       const rejectedProposal = agentTurnV2Commit?.proposal ?? null
-      const rejection = rejectedProposal !== null && agentABrainContext !== null
+      const repairContext = agentABrainContext
+      const rejection = rejectedProposal !== null && repairContext !== null
         ? backendCommitTurnRejectionV1({
             error: initialCommitError,
             proposal: rejectedProposal,
-            context: agentABrainContext,
+            context: repairContext,
             rejectionId: randomUUID(),
           })
         : null
 
-      if (rejection === null || rejectedProposal === null) throw initialCommitError
+      if (rejection === null || rejectedProposal === null || repairContext === null) {
+        throw initialCommitError
+      }
 
       safeLog('studyx.turn.backend_commit_rejected_recoverably', {
         trace_id: input.trace_id,
@@ -1615,29 +1454,102 @@ export const processInboundTurn = new Workflow({
         rejection_subjects: rejection.rejections.map((item) => item.subject),
       })
 
-        turnDiagnostics = {
-          schema_version: 1,
-          generation_attempts: agentAGenerationAttempts,
-          failure_stage: 'backend_commit',
-          failure_codes: [...new Set(rejection.rejections.map((item) => item.code))].slice(0, 8),
-          action_status: 'rejected',
+        const rejectionCodes = [...new Set(
+          rejection.rejections.map((item) => item.code),
+        )].slice(0, 8)
+        const deepSeekApiKey = secrets.DEEPSEEK_API_KEY
+        const mayRepairWithAgentA = plannerlessV2Enabled
+          && repairEnabled
+          && !agentARepairAttempted
+          && typeof deepSeekApiKey === 'string'
+          && deepSeekApiKey.length > 0
+
+        if (mayRepairWithAgentA) {
+          agentARepairAttempted = true
+          try {
+            const repaired = await step(
+              'repair-agent-a-turn-after-backend-rejection-v1',
+              () => generateDeepSeekAgentATurnProposalV1({
+                context: { ...repairContext, turn_rejection: rejection },
+                apiKey: deepSeekApiKey,
+                signal,
+                model: typeof configuration.agentABrainDeepSeekModel === 'string'
+                  ? configuration.agentABrainDeepSeekModel
+                  : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
+              }),
+              { maxAttempts: 1 },
+            )
+            const resolvedRepair = await resolveAgentAPlannerlessProposalV2({
+              initial: repaired,
+              context: repairContext,
+              repair_enabled: false,
+              rejection_id: rejection.rejection_id,
+              repair: async () => {
+                throw new Error('AGENT_A_SECOND_REPAIR_NOT_ALLOWED')
+              },
+            })
+            const effectiveRepair = resolvedRepair.effective
+            agentTurnV2Commit = {
+              schema_version: 2,
+              proposal: effectiveRepair.proposal,
+            }
+            pipelineCommit = null
+            pipelineMemoryCandidates = effectiveRepair.proposal.memory_candidates
+            decision = pipelinePlaceholder(pipelineMemoryCandidates)
+            decisionProvider = effectiveRepair.provider
+            decisionModel = effectiveRepair.model
+            pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
+            turnDiagnostics = {
+              schema_version: 1,
+              generation_attempts: agentAGenerationAttempts,
+              failure_stage: 'backend_commit',
+              failure_codes: rejectionCodes,
+              action_status: effectiveRepair.proposal.proposed_action.type === 'none'
+                ? 'none'
+                : 'authorized',
+            }
+            committed = await commitCurrentDecision('commit-agent-a-repair-after-backend-rejection-v1')
+            safeLog('studyx.turn.backend_commit_repaired_by_agent_a', {
+              trace_id: input.trace_id,
+              turn_id: owned.turn_id,
+              rejection_id: rejection.rejection_id,
+              rejection_codes: rejectionCodes,
+              repaired_action_type: effectiveRepair.proposal.proposed_action.type,
+            })
+          } catch (repairError) {
+            safeLog('studyx.turn.backend_commit_agent_a_repair_failed', {
+              trace_id: input.trace_id,
+              turn_id: owned.turn_id,
+              rejection_id: rejection.rejection_id,
+              error_code: errorCode(repairError),
+            })
+          }
         }
 
-        // The customer-visible turn already exists. A rejected tool request is
-        // not permission to regenerate or replace it. Retry the commit once as
-        // presentation-only: the backend still validates the exact text, while
-        // every side effect, memory candidate and durable transition is removed.
-        agentTurnV2Commit = null
-        pipelineCommit = null
-        pipelineMemoryCandidates = []
-        decision = brainAdvisoryOnlyDecision(rejectedProposal, owned)
-        committed = await commitCurrentDecision('commit-advisory-after-backend-rejection-v1')
-        safeLog('studyx.turn.backend_commit_action_isolated', {
-          trace_id: input.trace_id,
-          turn_id: owned.turn_id,
-          rejection_id: rejection.rejection_id,
-          generation_calls_after_rejection: 0,
-        })
+        if (committed === null) {
+          // No valid Agent A response exists at this point. The backend does
+          // not rewrite or salvage the rejected proposal; it emits only the
+          // narrow technical continuity notice and lets Agent A own the next
+          // customer turn again.
+          agentTurnV2Commit = null
+          pipelineCommit = null
+          pipelineMemoryCandidates = []
+          decision = technicalFallback(
+            owned.policy.allowed_response_types.includes('technical_fallback')
+              ? 'technical_fallback'
+              : 'commercial_reply',
+          )
+          decisionProvider = 'botpress'
+          decisionModel = 'policy:agent-a-repair-unavailable'
+          turnDiagnostics = {
+            schema_version: 1,
+            generation_attempts: agentAGenerationAttempts,
+            failure_stage: 'backend_commit',
+            failure_codes: rejectionCodes,
+            action_status: 'rejected',
+          }
+          committed = await commitCurrentDecision('commit-technical-after-backend-rejection-v1')
+        }
       }
     } catch (error) {
       timings.commit_ms = Date.now() - commitStartedAt

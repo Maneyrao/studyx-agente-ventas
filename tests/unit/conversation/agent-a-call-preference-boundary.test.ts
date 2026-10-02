@@ -54,10 +54,10 @@ describe('model-owned channel choices and backend call consent',()=>{
   });
   expect(adk(x)).toBeNull();
  });
- it('records chat preference without blocking contradictory model copy',()=>{
+ it('rejects contradictory call copy so Agent A can repair it without backend rewriting',()=>{
   const x=setup('Prefiero seguir por chat','continue_by_chat');
   x.proposal.response.call_offer='Si querés, podemos coordinar una llamada.';
-  expect(backend(x)).toMatchObject({ok:true,transition:{call_preference:'chat',call_offer_status:'not_offered'}});
+  expect(backend(x)).toEqual({ok:false,reasons:['CALL_OFFER_NOT_AUTHORIZED']});
   expect(adk(x)?.rejections).toContainEqual({code:'CHANNEL_PREFERENCE_NOT_SUPPORTED',subject:'call_offer'});
  });
  it('uses the latest message in a batch as the channel decision',()=>{
@@ -171,10 +171,10 @@ describe('model-owned channel choices and backend call consent',()=>{
   expect(backend(x)).toMatchObject({ok:true,transition:{call_offer_count:0}});
   expect(adk(x)).toBeNull();
  });
- it('removes an unsupported call sentence while preserving safe copy',()=>{
+ it('rejects an unsupported call sentence instead of editing Agent A copy',()=>{
   const x=setup('Contame sobre Fotografía Profesional','ask_course_information');
   x.proposal.response.call_offer='Tu inscripción quedó confirmada y podemos coordinar una llamada.';
-  expect(backend(x)).toMatchObject({ok:true,response:'Te cuento cómo podemos seguir.',transition:{call_offer_count:0}});
+  expect(backend(x)).toEqual({ok:false,reasons:['UNSUPPORTED_STATE_ASSERTION']});
   expect(adk(x)?.rejections).toContainEqual({code:'UNSUPPORTED_OPERATIONAL_CLAIM',subject:'call_offer'});
  });
  it('accepts a genuine first call offer',()=>{

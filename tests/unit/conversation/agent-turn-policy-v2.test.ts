@@ -234,7 +234,7 @@ describe('plannerless Agent A authority', () => {
     expect(result).toEqual({ ok: false, reasons: ['FACT_NOT_AUTHORIZED'] });
   });
 
-  it('drops a false registration claim instead of treating it as conversational truth', () => {
+  it('rejects a false registration claim instead of rewriting the response', () => {
     const result = authorize({
       proposal: proposal({
         response: {
@@ -243,10 +243,7 @@ describe('plannerless Agent A authority', () => {
       }),
     });
 
-    expect(result).toMatchObject({
-      ok: true,
-      response: 'Todavía me falta tu correo para continuar.',
-    });
+    expect(result).toEqual({ ok: false, reasons: ['UNSUPPORTED_STATE_ASSERTION'] });
   });
 
   it('rejects an answer left empty after removing a false state assertion', () => {
@@ -976,7 +973,7 @@ describe('payment link consent across intake', () => {
     });
   });
 
-  it('removes an unsupported state claim without blocking the remaining acknowledgement', () => {
+  it('rejects an unsupported state claim without rewriting the remaining acknowledgement', () => {
     const result = authorize({
       customerText: 'Inés',
       state: state({
@@ -999,11 +996,7 @@ describe('payment link consent across intake', () => {
       }),
     });
 
-    expect(result).toMatchObject({
-      ok: true,
-      response_messages: ['Gracias, Inés.'],
-      transition: { stage: 'plan_selected', awaiting_reply: 'contact_details' },
-    });
+    expect(result).toEqual({ ok: false, reasons: ['UNSUPPORTED_STATE_ASSERTION'] });
   });
 
   it('a postponement takes precedence over a conflicting link request', () => {

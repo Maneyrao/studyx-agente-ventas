@@ -2,10 +2,6 @@ import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import { AgentATurnProposalV1Schema, type AgentAContextV1, type AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
 import {
   AgentABrainError,
-  removeUnsupportedCourseLogisticsAssertionsV1,
-  removeUnsupportedPrerequisiteAssertionsV1,
-  removeUnverifiedCandidateCourseDetailAssertionsV1,
-  solicitsACallV1,
   validateAgentATurnProposalV1,
 } from './agent-a-brain'
 import type {
@@ -130,10 +126,9 @@ function claimsImmediatePaymentLinkDelivery(proposal: AgentATurnProposalV1): boo
 }
 
 /**
- * `move` and `proposed_action` are two views of the same model decision. When
- * the model explicitly requests the payment link but omits the redundant
- * action field, materialize only the action that durable capabilities already
- * authorize. This does not infer intent or write customer-facing copy.
+ * `request_payment_link` is already Agent A's structured tool decision. Map it
+ * to the canonical resource call when every durable precondition is present;
+ * this changes no customer-facing text and performs no semantic reinterpretation.
  */
 function materializeAuthorizedPaymentAction<T extends AgentAProposalEnvelopeV1>(input: {
   readonly initial: T
@@ -166,33 +161,6 @@ function materializeAuthorizedPaymentAction<T extends AgentAProposalEnvelopeV1>(
   }
 }
 
-/**
- * Keep an ordinary CTA visible, but never let it masquerade as the dedicated
- * call invitation. All text stays model-authored; timing is prompt guidance.
- */
-function normalizeCallOfferBoundary<T extends AgentAProposalEnvelopeV1>(input: {
-  readonly initial: T
-  readonly context: AgentAContextV1
-}): T {
-  const declared = input.initial.proposal.response.call_offer?.trim() || null
-  const declaredOffersCall = declared !== null && solicitsACallV1(declared, true)
-  const messages = declared !== null && !declaredOffersCall
-    && !input.initial.proposal.response.messages.includes(declared)
-    ? [...input.initial.proposal.response.messages, declared]
-    : input.initial.proposal.response.messages
-  const callOffer = declaredOffersCall ? declared : null
-
-  if (messages === input.initial.proposal.response.messages
-    && callOffer === (input.initial.proposal.response.call_offer ?? null)) return input.initial
-  return {
-    ...input.initial,
-    proposal: {
-      ...input.initial.proposal,
-      response: { messages, call_offer: callOffer },
-    },
-  }
-}
-
 /** Both the initial proposal and its one repair use this exact pipeline. */
 function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   readonly initial: T
@@ -208,10 +176,7 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   if (originalRejection?.rejections.some((reason) => reason.code === 'PROPOSAL_SCHEMA_INVALID')) {
     return { effective: input.initial, rejection: originalRejection, originalRejection }
   }
-  const effective = normalizeCallOfferBoundary({
-    initial: input.initial,
-    context: input.context,
-  })
+  const effective = input.initial
   const rejection = validate(effective)
   if (rejection === null) return { effective, rejection, originalRejection }
   // An unavailable call needs the existing model repair: changing only the
@@ -221,17 +186,6 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   }
   return { effective, rejection, originalRejection }
 }
-
-/**
- * Códigos que el backend vuelve a verificar por su cuenta y puede vetar a
- * nivel de oración. Dejar pasar la propuesta con uno de estos es más seguro
- * que descartarla: el hecho falso muere igual en el egress, y la conversación
- * —que era lo único que se perdía— sobrevive.
- */
-const BACKEND_ENFORCEABLE_CODES = new Set([
-  'FACT_VALUE_MISMATCH',
-  'FACT_NOT_AUTHORIZED',
-])
 
 /**
  * These codes describe conversational quality, not unsafe side effects.
@@ -244,14 +198,6 @@ const NON_BLOCKING_GUIDANCE_CODES = new Set([
   'CHANNEL_PREFERENCE_NOT_SUPPORTED',
   'COURSE_NOT_RESOLVED',
   'MISSING_INTAKE',
-])
-
-const NON_DEGRADABLE_FACT_SUBJECTS = new Set([
-  'course_logistics',
-  'inferred_course_detail',
-  'prerequisites',
-  'candidate_course_detail',
-  'employment_outcome',
 ])
 
 function isMissingRequiredIntakeForRequestedCall(
@@ -277,14 +223,7 @@ function mayDegradeToBackendBoundary(
     || proposal.proposed_action.type === 'send_test_payment_link') && rejection.rejections.some((reason) => (
     reason.code === 'ACTION_NOT_AUTHORIZED' || reason.code === 'MISSING_INTAKE'
   ))) return false
-  if (rejection.rejections.some((reason) => (
-    reason.code === 'FACT_VALUE_MISMATCH'
-    && NON_DEGRADABLE_FACT_SUBJECTS.has(reason.subject)
-  ))) return false
-  return rejection.rejections.every((reason) => (
-    BACKEND_ENFORCEABLE_CODES.has(reason.code)
-    || NON_BLOCKING_GUIDANCE_CODES.has(reason.code)
-  ))
+  return rejection.rejections.every((reason) => NON_BLOCKING_GUIDANCE_CODES.has(reason.code))
 }
 
 function hasOnlyNonBlockingGuidance(
@@ -454,25 +393,6 @@ export async function resolveAgentAPlannerlessProposalV2<
       }
     }
   }
-  for (const prune of [
-    pruneKnownUnsupportedFactClaimsV1,
-    pruneFalseLinkDeliveryClaimV1,
-  ]) {
-    const candidate = prune({
-      initial, rejection, context: input.context, authorized_fact_ids: factIds,
-    })
-    if (candidate !== null) {
-      return {
-        effective: candidate,
-        evidence: {
-          rejection_codes: rejectedCodes(),
-          repair_attempted: true, repaired: false, proposal_generation_calls: 2,
-        },
-        rejection: terminalRejection,
-        action_rejection: initialActionRejection,
-      }
-    }
-  }
   const actionRejectedCandidate = pruneRejectedActionV1({
     initial,
     rejection,
@@ -507,16 +427,15 @@ function pruneRejectedActionV1<T extends AgentAProposalEnvelopeV1>(input: {
   readonly authorized_fact_ids: readonly string[]
 }): T | null {
   if (actionRejectionV1(input.initial.proposal, input.rejection) === null) return null
-  const factPruned = pruneKnownUnsupportedFactClaimsWithoutValidationV1(input)
-  const source = factPruned ?? input.initial
   // Removing the structured action cannot make an authored success claim
-  // true. The dedicated link-claim pruner above may retain other safe
-  // messages; if the claim is all that remains, the turn stays rejected.
-  if (claimsImmediatePaymentLinkDelivery(source.proposal)) return null
+  // true. The response itself stays byte-for-byte model-owned; when it claims
+  // an effect that did not happen, the whole proposal remains rejected and is
+  // returned to Agent A for repair.
+  if (claimsImmediatePaymentLinkDelivery(input.initial.proposal)) return null
   const candidate = {
-    ...source,
+    ...input.initial,
     proposal: {
-      ...source.proposal,
+      ...input.initial.proposal,
       proposed_action: { type: 'none' as const },
     },
   } as T
@@ -530,133 +449,6 @@ function pruneRejectedActionV1<T extends AgentAProposalEnvelopeV1>(input: {
     || hasOnlyNonBlockingGuidance(candidate.proposal, candidateRejection)
     ? candidate
     : null
-}
-
-/**
- * A single draft can contain more than one removable unsupported assertion.
- * Applying each pruner independently to the original draft meant none could
- * make a combined defect valid. Sanitize every known fact class cumulatively,
- * then validate the resulting model-authored remainder once.
- */
-function pruneKnownUnsupportedFactClaimsV1<T extends AgentAProposalEnvelopeV1>(input: {
-  readonly initial: T
-  readonly rejection: TurnRejectionV1
-  readonly context: AgentAContextV1
-  readonly authorized_fact_ids: readonly string[]
-}): T | null {
-  const candidate = pruneKnownUnsupportedFactClaimsWithoutValidationV1(input)
-  if (candidate === null) return null
-  const candidateRejection = validatePlannerless({
-    proposal: candidate.proposal,
-    context: input.context,
-    rejection_id: input.rejection.rejection_id,
-    authorized_fact_ids: input.authorized_fact_ids,
-  })
-  // The fact assertion has already been removed here. A remaining quality
-  // warning (for example, the model omitted a recommended call invitation)
-  // must not turn the safe remainder into a customer-visible technical error.
-  return candidateRejection === null
-    || hasOnlyNonBlockingGuidance(candidate.proposal, candidateRejection)
-    ? candidate
-    : null
-}
-
-function pruneKnownUnsupportedFactClaimsWithoutValidationV1<
-  T extends AgentAProposalEnvelopeV1,
->(input: {
-  readonly initial: T
-  readonly rejection: TurnRejectionV1
-  readonly context: AgentAContextV1
-  readonly authorized_fact_ids: readonly string[]
-}): T | null {
-  const subjects = new Set(input.rejection.rejections
-    .filter((reason) => reason.code === 'FACT_VALUE_MISMATCH')
-    .map((reason) => reason.subject));
-  const supported = ['prerequisites', 'course_logistics', 'candidate_course_detail']
-    .some((subject) => subjects.has(subject));
-  if (!supported) return null;
-
-  const availableIds = new Set(input.authorized_fact_ids)
-  const citedIds = new Set(input.initial.proposal.used_fact_ids.filter((id) => availableIds.has(id)))
-  let safeMessages = [...input.initial.proposal.response.messages];
-  if (subjects.has('prerequisites')) {
-    safeMessages = safeMessages.flatMap(removeUnsupportedPrerequisiteAssertionsV1);
-  }
-  if (subjects.has('course_logistics')) {
-    const authorizedValues = input.context.catalog.selected_offering?.facts
-      .filter((fact) => citedIds.has(fact.id))
-      .map((fact) => fact.value) ?? [];
-    safeMessages = safeMessages.flatMap((message) => (
-      removeUnsupportedCourseLogisticsAssertionsV1(message, authorizedValues)
-    ));
-  }
-  if (subjects.has('candidate_course_detail')) {
-    safeMessages = removeUnverifiedCandidateCourseDetailAssertionsV1(
-      safeMessages,
-      input.context,
-      citedIds,
-      input.initial.proposal.move.course_reference ?? null,
-    );
-  }
-  if (safeMessages.length === 0) return null;
-
-  const candidate = {
-    ...input.initial,
-    proposal: {
-      ...input.initial.proposal,
-      response: { ...input.initial.proposal.response, messages: safeMessages },
-    },
-  } as T;
-  return candidate;
-}
-
-/**
- * Último recurso antes del silencio.
- *
- * Afirmar que el link sale cuando la acción no está autorizada es una mentira
- * de oración entera, así que exige la reparación del modelo y no se puede
- * podar por hecho. Pero cuando esa única reparación también falla, lanzar
- * dejaba el turno mudo: el workflow lo clasificaba como cerebro caído y
- * committeaba `BRAIN_UNAVAILABLE_NO_CANNED_FALLBACK`.
- *
- * Lo observó el arnés de workflow en `wf_03_plan_postergacion_link`: la
- * persona entregó sus cuatro datos, pidió el link y no recibió absolutamente
- * nada, con 2046 ms de cerebro gastados. Un turno mudo es el peor resultado
- * posible de la conversación y es peor que uno recortado.
- *
- * El criterio es el mismo que ya se aplica a la pregunta repetida: se quita la
- * oración ofensiva y se entrega lo que queda, siempre que lo que queda valide
- * limpio por sí solo. La afirmación falsa nunca viaja, y si no sobrevive nada
- * verdadero el rechazo sigue siendo duro.
- */
-function pruneFalseLinkDeliveryClaimV1<T extends AgentAProposalEnvelopeV1>(input: {
-  readonly initial: T
-  readonly rejection: TurnRejectionV1
-  readonly context: AgentAContextV1
-  readonly authorized_fact_ids: readonly string[]
-}): T | null {
-  if (!claimsImmediatePaymentLinkDelivery(input.initial.proposal)) return null
-
-  const safeMessages = input.initial.proposal.response.messages.filter((message) => !(
-    SENDS_LINK_BEFORE_NOUN.test(message) || SENDS_LINK_AFTER_NOUN.test(message)
-  ))
-  if (safeMessages.length === 0) return null
-
-  const candidate = {
-    ...input.initial,
-    proposal: {
-      ...input.initial.proposal,
-      response: { ...input.initial.proposal.response, messages: safeMessages },
-      proposed_action: { type: 'none' as const },
-    },
-  } as T
-  const candidateRejection = validatePlannerless({
-    proposal: candidate.proposal,
-    context: input.context,
-    rejection_id: input.rejection.rejection_id,
-    authorized_fact_ids: input.authorized_fact_ids,
-  })
-  return candidateRejection === null ? candidate : null
 }
 
 export type PlannerlessAgentATurnProposalV2 = AgentATurnProposalV1

@@ -297,8 +297,8 @@ describe('prepareAgentTurnV2', () => {
     });
   });
 
-  it('does not repeat an invitation in the same turn where the customer refuses the call', async () => {
-    const prepared = await prepareAgentTurnV2({
+  it('rejects an inconsistent call invitation instead of deleting it from the response', async () => {
+    const prepared = prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
       workspace_slug: 'studyx', business_context: business, catalog_index: index,
       current_customer_messages: ['No me llames, prefiero seguir por chat.'],
@@ -321,11 +321,7 @@ describe('prepareAgentTurnV2', () => {
       now: () => Date.parse(index.as_of),
     });
 
-    expect(prepared.response_messages).toEqual(['Seguimos por chat y te ayudo por aquí.']);
-    expect(prepared.transition).toMatchObject({
-      call_preference: 'chat', call_offer_count: 1, call_offer_status: 'declined',
-      awaiting_reply: 'none',
-    });
+    await expect(prepared).rejects.toThrow('AGENT_TURN_V2_REJECTED');
   });
 
   it('turns the model-owned response into a decision without creating a TurnPlan', async () => {

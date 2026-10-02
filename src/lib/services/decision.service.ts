@@ -1147,6 +1147,18 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       });
       const verdict = inspectCommercialText(finalResponse);
 
+      // Agent A owns every customer-facing byte. For plannerless turns the
+      // commercial guard may accept or reject, but it must never publish a
+      // shortened/rephrased subset. Return a structured rejection to the
+      // caller so Agent A can author a new complete response.
+      if (preparedAgentTurn !== null && (
+        verdict.violations.length > 0
+        || verdict.content === null
+        || verdict.content !== finalResponse
+      )) {
+        throw new DecisionPolicyError('AGENT_TURN_V2_REJECTED:FACT_NOT_AUTHORIZED');
+      }
+
       // La URL sigue fallando cerrado sobre el turno completo: no es una frase
       // que se pueda quitar, es un canal de cobro.
       if (verdict.violations.some((violation) => violation.code === 'UNAUTHORIZED_URL')) {
