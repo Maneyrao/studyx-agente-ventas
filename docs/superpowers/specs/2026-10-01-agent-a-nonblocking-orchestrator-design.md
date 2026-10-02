@@ -55,8 +55,8 @@ outage from an action rejection or a projection failure.
 2. The orchestrator remains the authority for facts, permissions and effects.
 3. An action result may change what Agent A says next, but cannot erase the
    conversation that requested the action.
-4. Persistence and external projections may retry independently and cannot block
-   message delivery.
+4. Canonical lead and action state is committed synchronously. External
+   projections may retry independently and cannot block message delivery.
 5. Every sensitive effect is idempotent and correlated to the same lead,
    conversation and logical turn.
 6. Provider failures, invalid model output, action rejections and projection
@@ -91,9 +91,11 @@ type AgentTurnDraftV3 = {
 }
 ```
 
-For a normal answer, `messages` are final. For a sensitive action, the draft must
-not claim that the action succeeded before execution. The action result is added
-to the same logical turn and Agent A produces the final continuation.
+For a normal answer, `messages` are final. For a sensitive action, the draft is
+not delivered and must not claim that the action succeeded before execution.
+The action result is durably recorded, added to the same logical turn and Agent A
+produces the final continuation. If that continuation generation fails, its
+retry reuses the receipt and cannot execute the action again.
 
 ### 5.2 Action lane
 
@@ -128,9 +130,12 @@ model outage and never discards safe conversational content.
 
 ### 5.3 Projection lane
 
-Memory selection, Sheets projection, embeddings, campaign attribution,
-multi-course projection and noncritical summaries run through the existing
-outbox/idempotent jobs after the conversational turn is committed.
+Sheets projection, embeddings and noncritical summaries run through the
+existing outbox/idempotent jobs after the conversational turn is committed.
+Canonical contact fields, commercial selection, campaign attribution and action
+receipts are authoritative state and commit synchronously before the turn is
+closed. Multi-course Sheets rendering remains an asynchronous projection of its
+normalized canonical state.
 
 Projection failure records an exact retryable error and retries independently.
 It cannot replace, delay or retract an Agent A reply. Sheets continues to update
@@ -145,8 +150,9 @@ one row per lead, while normalized Supabase state remains the source of truth.
 5. If no sensitive action is requested, commit and deliver Agent A's messages.
 6. If an action is requested, execute it once in the action lane.
 7. Give `ActionResultV1` to DeepSeek and request the natural continuation.
-8. Commit the final messages and durable commercial effects atomically where
-   required.
+8. Commit the final messages and durable commercial state. External effects use
+   a reservation/receipt pattern because a database transaction cannot be
+   atomic with Xendra, Stripe or Botpress.
 9. Enqueue noncritical projections and delivery reconciliation.
 
 The second DeepSeek call exists only when the customer-visible response depends
@@ -161,10 +167,11 @@ provider `5xx`. Do not retry `4xx`, schema-policy rejection or application
 validation as if they were provider outages.
 
 If both transient attempts fail, keep the batch recoverable as `retry_pending`
-with the same idempotency keys. Do not complete it with backend-authored sales
-copy. An operational notice after the retry window may be sent as a technical
-channel message, but it must not mutate the commercial state or pretend to be
-Agent A.
+with the same idempotency keys. Permit one delayed workflow retry inside a
+bounded five-minute recovery window. Do not complete it with backend-authored
+sales copy. When the recovery window is exhausted, an operational channel
+notice may be sent once; it must be identified as technical, must not mutate
+commercial state and must not pretend to be Agent A.
 
 ### 7.2 Invalid model structure or unsupported fact
 
@@ -218,6 +225,9 @@ of style, phrasing, message count or sales-sequence preference.
   decision.
 - Store an exact failure stage and code for every failed attempt.
 - Keep Agent A and Agent B as two channels into the same commercial lead state.
+- Call dispatch is a synchronous action receipt. Later `call_started`,
+  `call_ended`, `call_analyzed` and voice-tool results are asynchronous events;
+  each correlates idempotently and may enqueue a new Agent A continuation.
 - A completed Agent B call updates durable state and memory; Agent A reads that
   state on the next turn without asking for confirmed information again.
 - Project each lead idempotently to one Sheets row; multiple courses and plans
@@ -271,7 +281,8 @@ insufficient.
 
 The regression corpus includes:
 
-- stable Tuesday conversations as the naturalness baseline;
+- conversations and prompt behavior at Tuesday baseline `422c4c9` as the
+  naturalness reference, represented by pinned transcript fixtures;
 - typos, slang, fragments and consecutive messages;
 - short ambiguous replies such as `sí` and `entonces`;
 - unsupported amounts and media placeholders;
@@ -294,8 +305,9 @@ Acceptance criteria:
    flows pass focused vertical tests.
 7. The supervised clean smoke passes on Telegram and WhatsApp from the same
    Vercel/Botpress SHA.
-8. Conversation survival is at least 99% excluding confirmed provider outages;
-   outages leave recoverable turns rather than false commercial completion.
+8. Every pinned regression conversation either produces an Agent A reply or a
+   recoverable provider-outage state; no policy/action/projection error is
+   classified as a provider outage.
 
 ## 13. Expected implementation surface
 
