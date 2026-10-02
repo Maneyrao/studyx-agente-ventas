@@ -295,6 +295,7 @@ async function createAgentACall(input: {
   readonly acceptedOffer: boolean;
   readonly selectedPaymentPlan: 'monthly_12' | null;
   readonly seedLeadMemory?: boolean;
+  readonly actionCourseOfInterest?: string | null;
 }): Promise<AgentACall> {
   const identity = chatIdentity();
   const first = await processInboundMessage(inbound(
@@ -349,7 +350,13 @@ async function createAgentACall(input: {
     {
       type: 'request_call_now',
       reason: input.acceptedOffer ? 'accepted_offer' : 'direct_request',
-      course_of_interest: 'fotografia_profesional',
+      ...(input.actionCourseOfInterest === null
+        ? {}
+        : {
+            course_of_interest: input.actionCourseOfInterest === undefined
+              ? 'fotografia_profesional'
+              : input.actionCourseOfInterest,
+          }),
     },
   ));
   expect(confirmation.call_request?.call_id).toBeDefined();
@@ -528,6 +535,9 @@ run('Agent A → Xendra → Agent B → Agent A local smoke', () => {
       acceptedOffer: true,
       selectedPaymentPlan: 'monthly_12',
       seedLeadMemory: true,
+      // Reproduce production: the final “sí, llamame” turn carried no course,
+      // while the durable conversation state already had the chosen course.
+      actionCourseOfInterest: null,
     });
     const providerCallId = `call_xendra_${call.callId}`;
     const server = await startFakeXendraServer({ callId: providerCallId });
@@ -565,6 +575,8 @@ run('Agent A → Xendra → Agent B → Agent A local smoke', () => {
       const summaries = (server.requests[0].body as { variables: { resumen_whatsapp: string } })
         .variables.resumen_whatsapp.match(/[^.!?]+[.!?]+|[^.!?]+$/gu) ?? [];
       expect(summaries.length).toBeLessThanOrEqual(6);
+      expect((server.requests[0].body as { variables: { resumen_whatsapp: string } })
+        .variables.resumen_whatsapp).toContain('Quiero saber sobre Fotografía Profesional');
       expect(await relay(call, providerCallId, 'call_started')).toMatchObject({ status: 204 });
       expect(await relay(call, providerCallId, 'call_started')).toMatchObject({ status: 204 });
 

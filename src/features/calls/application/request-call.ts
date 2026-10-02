@@ -143,9 +143,10 @@ function summarySentences(value: string | null | undefined): string[] {
 
 /**
  * Xendra receives only a short durable handoff, never a raw transcript. The
- * existing contact summary leads, followed by the current consent burst in
- * the lead's own words. Duplicate sentences, sentence seven onward, and bytes
- * beyond the transport limit are discarded deterministically.
+ * existing contact summary leads, followed by recent logical interventions
+ * and the current consent burst in the lead's own words. Duplicate sentences,
+ * sentence seven onward, and bytes beyond the transport limit are discarded
+ * deterministically.
  */
 export function buildPersistedWhatsappSummary(input: {
   readonly persistedSummary: string | null | undefined;
@@ -304,17 +305,72 @@ export async function reserveCallForDecision(
   const workspaceId = workspaces[0]?.workspace_id;
   if (!workspaceId) throw new CallRequestRejectedError('CALL_WORKSPACE_UNRESOLVED');
 
-  const durablePlans = await db<Array<{
+  const durableStates = await db<Array<{
+    selected_offering_code: string | null;
     selected_payment_plan: 'monthly_12' | 'monthly_6' | 'one_time' | null;
   }>>`
-    SELECT selected_payment_plan
+    SELECT selected_offering_code, selected_payment_plan
     FROM conversation_sales_context_states_v1
     WHERE workspace_id = ${workspaceId}::uuid
       AND conversation_id = ${input.conversation_id}::uuid
       AND contact_id = ${input.contact_id}::uuid
     LIMIT 1
   `;
-  const durablePlan = durablePlans[0]?.selected_payment_plan ?? null;
+  const durableOffering = durableStates[0]?.selected_offering_code ?? null;
+  const durablePlan = durableStates[0]?.selected_payment_plan ?? null;
+
+  const recentLogicalTurns = await db<Array<{ content: string }>>`
+    WITH recent_physical AS (
+      SELECT
+        message.id,
+        message.direction,
+        message.content,
+        message.created_at,
+        message.batch_id,
+        message.in_reply_to,
+        message.part_index,
+        message.conversation_seq
+      FROM messages AS message
+      WHERE message.conversation_id = ${input.conversation_id}::uuid
+        AND message.contact_id = ${input.contact_id}::uuid
+      ORDER BY
+        message.conversation_seq DESC NULLS LAST,
+        message.created_at DESC,
+        message.part_index DESC,
+        message.id DESC
+      LIMIT 24
+    ), grouped AS (
+      SELECT
+        physical.*,
+        CASE
+          WHEN physical.direction = 'inbound' AND physical.batch_id IS NOT NULL
+            THEN 'inbound:' || physical.batch_id::text
+          WHEN physical.direction = 'outbound' AND physical.in_reply_to IS NOT NULL
+            THEN 'outbound:' || physical.in_reply_to::text
+          ELSE 'physical:' || physical.id::text
+        END AS logical_turn_id
+      FROM recent_physical AS physical
+    ), logical_turns AS (
+      SELECT
+        grouped.logical_turn_id,
+        grouped.direction,
+        min(grouped.created_at) AS created_at,
+        string_agg(
+          grouped.content,
+          E'\n' ORDER BY grouped.created_at, grouped.part_index, grouped.id
+        ) AS content
+      FROM grouped
+      GROUP BY grouped.logical_turn_id, grouped.direction
+    ), latest AS (
+      SELECT logical_turn_id, direction, created_at, content
+      FROM logical_turns
+      ORDER BY created_at DESC, logical_turn_id DESC
+      LIMIT 6
+    )
+    SELECT content
+    FROM latest
+    ORDER BY created_at ASC, logical_turn_id ASC
+  `;
 
   const durableMemories = await db<LeadMemoryHandoffRow[]>`
     SELECT memory.memory_type, memory.memory_key, memory.value_normalized
@@ -336,11 +392,17 @@ export async function reserveCallForDecision(
   const sharedLead = deriveSharedLeadContext({
     contactName: input.contact_name,
     contactEmail: input.contact_email ?? null,
-    courseOfInterest: input.course_of_interest,
+    // The final availability confirmation is commonly just “sí, llamame”.
+    // An optional action field from that turn must not erase the course already
+    // selected in the canonical conversation state.
+    courseOfInterest: input.course_of_interest?.trim() || durableOffering,
   });
   const resumenWhatsapp = buildPersistedWhatsappSummary({
     persistedSummary: input.persisted_summary,
-    consentMessages: input.consent_messages,
+    consentMessages: [
+      ...recentLogicalTurns.map((turn, index) => ({ id: `logical:${index}`, content: turn.content })),
+      ...input.consent_messages,
+    ],
   });
   const context = parseCallContext({
     call_id: callId,
