@@ -13,6 +13,7 @@ import type { SalesContextStage, SalesPaymentPlan } from '@/features/sales/domai
 import {
   dropUnsupportedStateAssertionsV1,
   solicitsACall,
+  unsupportedOperationalAssertionsV1,
 } from './operational-promise-guard';
 import {
   materializeStateFactsV1,
@@ -65,6 +66,8 @@ export type AgentTurnAuthorityResultV2 = {
 } | {
   readonly ok: false;
   readonly reasons: readonly AgentTurnRejectionReasonV2[];
+  /** Exact durable facts the authored response claimed without authority. */
+  readonly rejection_subjects?: readonly StateFactIdV1[];
 };
 
 function referenceKey(value: string): string {
@@ -211,6 +214,12 @@ export function authorizeAgentTurnV2(input: {
     && input.call_policy.may_request_call_now && callRequestSupported
     && !proposal.move.vetoes.includes('call');
   const authoredCallOffer = proposal.response.call_offer ?? null;
+  const rejectionSubjects = unique([
+    ...authoredMessages,
+    ...(authoredCallOffer === null ? [] : [authoredCallOffer]),
+  ].flatMap((message) => (
+    unsupportedOperationalAssertionsV1(message, stateFacts).map((assertion) => assertion.requires)
+  )));
   const inspectedCallOffer = authoredCallOffer === null
     ? null
     : dropUnsupportedStateAssertionsV1(authoredCallOffer, stateFacts);
@@ -348,12 +357,20 @@ export function authorizeAgentTurnV2(input: {
     };
   }
 
-  if (reasons.length > 0) return { ok: false, reasons: unique(reasons) };
+  if (reasons.length > 0) return {
+    ok: false,
+    reasons: unique(reasons),
+    ...(rejectionSubjects.length > 0 ? { rejection_subjects: rejectionSubjects } : {}),
+  };
 
   const responseMessages = [...authoredMessages, ...(authoredCallOffer ? [authoredCallOffer] : [])];
   const response = responseMessages
     .join('\n\n').trim();
-  if (!response) return { ok: false, reasons: ['UNSUPPORTED_STATE_ASSERTION'] };
+  if (!response) return {
+    ok: false,
+    reasons: ['UNSUPPORTED_STATE_ASSERTION'],
+    ...(rejectionSubjects.length > 0 ? { rejection_subjects: rejectionSubjects } : {}),
+  };
 
   let nextOffering = state.selected_offering_code;
   let nextPlan = state.selected_payment_plan;

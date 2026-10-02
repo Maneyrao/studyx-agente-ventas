@@ -283,6 +283,21 @@ function backendDecisionRejectionReason(error: unknown): string | null {
   return error.payload.reason.slice(0, 512)
 }
 
+function backendDecisionRejectionSubjects(error: unknown): readonly string[] {
+  if (!(error instanceof StudyxHttpError)
+    || error.code !== 'DECISION_REJECTED'
+    || error.status !== 422
+    || error.payload === null
+    || typeof error.payload !== 'object'
+    || !('subjects' in error.payload)
+    || !Array.isArray(error.payload.subjects)) return []
+  return error.payload.subjects.filter((subject): subject is string => (
+    typeof subject === 'string'
+    && subject.length <= 160
+    && /^[a-z0-9_:.-]+$/iu.test(subject)
+  ))
+}
+
 function backendCommitTurnRejectionV1(input: {
   readonly error: unknown
   readonly proposal: AgentATurnProposalV1
@@ -297,6 +312,7 @@ function backendCommitTurnRejectionV1(input: {
     : input.proposal.proposed_action.type
   const factSubject = input.proposal.used_fact_ids[0] ?? 'backend_fact'
   const missingSubject = input.context.capabilities.intake_missing?.[0] ?? 'contact_details'
+  const detailedSubjects = backendDecisionRejectionSubjects(input.error)
   const mapped: Array<TurnRejectionV1['rejections'][number]> = []
   const push = (code: TurnRejectionV1['rejections'][number]['code'], subject: string) => {
     if (!mapped.some((entry) => entry.code === code && entry.subject === subject)) {
@@ -308,7 +324,11 @@ function backendCommitTurnRejectionV1(input: {
     for (const backendCode of reason.slice('AGENT_TURN_V2_REJECTED:'.length).split(',')) {
       switch (backendCode.trim()) {
         case 'FACT_NOT_AUTHORIZED': push('FACT_NOT_AUTHORIZED', factSubject); break
-        case 'UNSUPPORTED_STATE_ASSERTION': push('UNSUPPORTED_OPERATIONAL_CLAIM', 'backend_state'); break
+        case 'UNSUPPORTED_STATE_ASSERTION': {
+          if (detailedSubjects.length === 0) push('UNSUPPORTED_OPERATIONAL_CLAIM', 'backend_state')
+          else detailedSubjects.forEach((subject) => push('UNSUPPORTED_OPERATIONAL_CLAIM', subject))
+          break
+        }
         case 'ACTION_NOT_AUTHORIZED': push('ACTION_NOT_AUTHORIZED', actionSubject); break
         case 'MISSING_INTAKE': push('MISSING_INTAKE', missingSubject); break
         case 'CALL_OFFER_NOT_AUTHORIZED': push('CALL_BUDGET_EXHAUSTED', 'call_offer'); break
@@ -1466,6 +1486,7 @@ export const processInboundTurn = new Workflow({
 
         if (mayRepairWithAgentA) {
           agentARepairAttempted = true
+          agentAGenerationAttempts = 2
           try {
             const repaired = await step(
               'repair-agent-a-turn-after-backend-rejection-v1',

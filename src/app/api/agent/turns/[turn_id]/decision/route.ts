@@ -239,7 +239,11 @@ export async function POST(
       return NextResponse.json({ error: error.code }, { status: 409 });
     }
     if (error instanceof DecisionPolicyError) {
-      return NextResponse.json({ error: error.code, reason: error.reason }, { status: 422 });
+      return NextResponse.json({
+        error: error.code,
+        reason: error.reason,
+        ...(error.subjects.length > 0 ? { subjects: error.subjects } : {}),
+      }, { status: 422 });
     }
     // Serialization/deadlock exhaustion is transient and the commit is
     // idempotent per turn: let the client retry instead of reporting a

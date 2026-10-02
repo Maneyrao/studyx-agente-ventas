@@ -243,7 +243,11 @@ describe('plannerless Agent A authority', () => {
       }),
     });
 
-    expect(result).toEqual({ ok: false, reasons: ['UNSUPPORTED_STATE_ASSERTION'] });
+    expect(result).toEqual({
+      ok: false,
+      reasons: ['UNSUPPORTED_STATE_ASSERTION'],
+      rejection_subjects: ['state:intake_recorded:v1'],
+    });
   });
 
   it('rejects an answer left empty after removing a false state assertion', () => {
@@ -251,7 +255,11 @@ describe('plannerless Agent A authority', () => {
       proposal: proposal({ response: { messages: ['Ya tengo todos tus datos registrados.'] } }),
     });
 
-    expect(result).toEqual({ ok: false, reasons: ['UNSUPPORTED_STATE_ASSERTION'] });
+    expect(result).toEqual({
+      ok: false,
+      reasons: ['UNSUPPORTED_STATE_ASSERTION'],
+      rejection_subjects: ['state:intake_recorded:v1'],
+    });
   });
 
   it('authorizes a payment link only after a separate durable data-confirmation step', () => {
@@ -996,7 +1004,11 @@ describe('payment link consent across intake', () => {
       }),
     });
 
-    expect(result).toEqual({ ok: false, reasons: ['UNSUPPORTED_STATE_ASSERTION'] });
+    expect(result).toEqual({
+      ok: false,
+      reasons: ['UNSUPPORTED_STATE_ASSERTION'],
+      rejection_subjects: ['state:intake_recorded:v1'],
+    });
   });
 
   it('a postponement takes precedence over a conflicting link request', () => {

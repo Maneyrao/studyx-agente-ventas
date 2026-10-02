@@ -224,7 +224,10 @@ export class DecisionConflictError extends Error {
 
 export class DecisionPolicyError extends Error {
   readonly code = 'DECISION_REJECTED';
-  constructor(public readonly reason: string) {
+  constructor(
+    public readonly reason: string,
+    public readonly subjects: readonly string[] = [],
+  ) {
     super(reason);
     this.name = 'DecisionPolicyError';
   }
@@ -781,7 +784,10 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         });
       } catch (error) {
         if (error instanceof AgentTurnV2RejectedError) {
-          throw new DecisionPolicyError(`${error.code}:${error.reasons.join(',')}`);
+          throw new DecisionPolicyError(
+            `${error.code}:${error.reasons.join(',')}`,
+            error.rejectionSubjects,
+          );
         }
         throw error;
       }

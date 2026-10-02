@@ -174,7 +174,11 @@ describe('model-owned channel choices and backend call consent',()=>{
  it('rejects an unsupported call sentence instead of editing Agent A copy',()=>{
   const x=setup('Contame sobre Fotografía Profesional','ask_course_information');
   x.proposal.response.call_offer='Tu inscripción quedó confirmada y podemos coordinar una llamada.';
-  expect(backend(x)).toEqual({ok:false,reasons:['UNSUPPORTED_STATE_ASSERTION']});
+  expect(backend(x)).toEqual({
+   ok:false,
+   reasons:['UNSUPPORTED_STATE_ASSERTION'],
+   rejection_subjects:['state:__external_milestone__:v1'],
+  });
   expect(adk(x)?.rejections).toContainEqual({code:'UNSUPPORTED_OPERATIONAL_CLAIM',subject:'call_offer'});
  });
  it('accepts a genuine first call offer',()=>{

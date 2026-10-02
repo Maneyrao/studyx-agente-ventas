@@ -28,7 +28,10 @@ import type { PaymentVerificationV1 } from '@/features/payments/application/read
 export class AgentTurnV2RejectedError extends Error {
   readonly code = 'AGENT_TURN_V2_REJECTED';
 
-  constructor(readonly reasons: readonly string[]) {
+  constructor(
+    readonly reasons: readonly string[],
+    readonly rejectionSubjects: readonly string[] = [],
+  ) {
     super(`AGENT_TURN_V2_REJECTED:${reasons.join(',')}`);
     this.name = 'AgentTurnV2RejectedError';
   }
@@ -245,7 +248,7 @@ export async function prepareAgentTurnV2(input: {
     ))) {
     const rejectedAction = effectiveProposal.proposed_action.type;
     if (rejectedAction === 'none') {
-      throw new AgentTurnV2RejectedError(authority.reasons);
+      throw new AgentTurnV2RejectedError(authority.reasons, authority.rejection_subjects);
     }
     const requiredFields = rejectedAction === 'request_call_now'
       ? (['nombre', 'apellido', 'telefono'] as const)
@@ -259,7 +262,9 @@ export async function prepareAgentTurnV2(input: {
     effectiveProposal = { ...effectiveProposal, proposed_action: { type: 'none' } };
     authority = authorize(effectiveProposal);
   }
-  if (!authority.ok) throw new AgentTurnV2RejectedError(authority.reasons);
+  if (!authority.ok) {
+    throw new AgentTurnV2RejectedError(authority.reasons, authority.rejection_subjects);
+  }
 
   const transition: ConversationStateTransitionV1 = {
     workspace_slug: input.workspace_slug,

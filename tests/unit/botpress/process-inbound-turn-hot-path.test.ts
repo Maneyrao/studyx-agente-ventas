@@ -537,7 +537,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('returns a backend rejection to Agent A and commits only its repaired response', async () => {
+  it('returns the exact missing state to Agent A and commits only its repaired response', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -602,7 +602,11 @@ describe('processInboundTurn hot path', () => {
     actionSpies.commit
       .mockRejectedValueOnce(new StudyxHttpError(
         'DECISION_REJECTED', false, 422, 1,
-        { error: 'DECISION_REJECTED', reason: 'AGENT_TURN_V2_REJECTED:FACT_NOT_AUTHORIZED' },
+        {
+          error: 'DECISION_REJECTED',
+          reason: 'AGENT_TURN_V2_REJECTED:UNSUPPORTED_STATE_ASSERTION',
+          subjects: ['state:payment_verified:v1'],
+        },
       ))
       .mockResolvedValueOnce({
         status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
@@ -643,6 +647,13 @@ describe('processInboundTurn hot path', () => {
 
     expect(actionSpies.commit).toHaveBeenCalledTimes(2);
     expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
+    expect(actionSpies.agentABrainDeepSeek.mock.calls[1]?.[0]?.context.turn_rejection)
+      .toMatchObject({
+        rejections: [{
+          code: 'UNSUPPORTED_OPERATIONAL_CLAIM',
+          subject: 'state:payment_verified:v1',
+        }],
+      });
     expect(actionSpies.commit.mock.calls[1]?.[0]?.input).toMatchObject({
       agent_turn_v2: {
         proposal: {
@@ -651,7 +662,7 @@ describe('processInboundTurn hot path', () => {
         },
       },
       turn_diagnostics: {
-        generation_attempts: 1,
+        generation_attempts: 2,
         failure_stage: 'backend_commit',
         action_status: 'none',
       },
