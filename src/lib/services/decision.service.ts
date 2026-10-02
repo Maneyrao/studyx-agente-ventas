@@ -728,9 +728,19 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       assertDecisionBusinessActionPermitted(decision);
     } else if (validatedInput.agent_turn_v2) {
       const confirmedPhone = validatedInput.agent_turn_v2.proposal.confirmed_phone;
-      if (confirmedPhone && !await confirmDeliveredContactPhone({
+      const confirmedPhoneAuthorized = !confirmedPhone || await confirmDeliveredContactPhone({
         turnId: turn.id, phone: confirmedPhone,
-      }, db)) throw new DecisionPolicyError('AGENT_TURN_V2_REJECTED:FACT_NOT_AUTHORIZED');
+      }, db);
+      const agentTurnProposal = confirmedPhoneAuthorized
+        ? validatedInput.agent_turn_v2.proposal
+        : { ...validatedInput.agent_turn_v2.proposal, confirmed_phone: null };
+      if (!confirmedPhoneAuthorized) {
+        logger.warn({
+          event: 'orchestration.agent_a.confirmed_phone_ignored',
+          trace_id: validatedInput.trace_id,
+          turn_id: turn.id,
+        });
+      }
       pipelineStateBefore = await new PostgresConversationStateStoreV1(db).load(
         workspaceSlug, turn.conversation_id, turn.contact_id,
       );
@@ -767,7 +777,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             contact_id: turn.contact_id,
           },
           workspace_slug: workspaceSlug,
-          proposal: validatedInput.agent_turn_v2.proposal,
+          proposal: agentTurnProposal,
+          semantic_rejections: 'advisory',
           current_customer_messages: currentMessages.map((message) => message.content),
           business_context: rawBusiness ? buildBusinessContextView(rawBusiness) : null,
           catalog_index: rawCatalogIndex ? buildCatalogIndexView(rawCatalogIndex) : null,
@@ -1151,18 +1162,26 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           ],
         },
       });
-      const verdict = inspectCommercialText(finalResponse);
-
-      // Agent A owns every customer-facing byte. For plannerless turns the
-      // commercial guard may accept or reject, but it must never publish a
-      // shortened/rephrased subset. Return a structured rejection to the
-      // caller so Agent A can author a new complete response.
-      if (preparedAgentTurn !== null && (
-        verdict.violations.length > 0
-        || verdict.content === null
-        || verdict.content !== finalResponse
-      )) {
-        throw new DecisionPolicyError('AGENT_TURN_V2_REJECTED:FACT_NOT_AUTHORIZED');
+      const inspectedVerdict = inspectCommercialText(finalResponse);
+      const unauthorizedUrl = inspectedVerdict.violations.some(
+        (violation) => violation.code === 'UNAUTHORIZED_URL',
+      );
+      // Agent A owns the conversation. Catalog, price, duration and wording
+      // heuristics are useful telemetry, but they are not allowed to replace a
+      // structurally valid DeepSeek response with a technical fallback. Only
+      // an untrusted URL remains an egress boundary because it is an external
+      // resource, not conversational copy. Structured calls, payments and
+      // persistence are authorized independently before execution.
+      const verdict = preparedAgentTurn !== null && !unauthorizedUrl
+        ? { ...inspectedVerdict, content: finalResponse, removed: [] }
+        : inspectedVerdict;
+      if (preparedAgentTurn !== null && inspectedVerdict.violations.length > 0 && !unauthorizedUrl) {
+        logger.warn({
+          event: 'orchestration.agent_a.semantic_advisory',
+          trace_id: validatedInput.trace_id,
+          turn_id: turn.id,
+          violations: inspectedVerdict.violations.map((violation) => violation.code),
+        });
       }
 
       // La URL sigue fallando cerrado sobre el turno completo: no es una frase

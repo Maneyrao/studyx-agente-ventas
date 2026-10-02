@@ -145,6 +145,8 @@ export async function prepareAgentTurnV2(input: {
   readonly workspace_slug: string;
   readonly current_customer_messages?: readonly string[];
   readonly proposal: AgentATurnProposalV1;
+  /** Production Agent A keeps semantic checks diagnostic-only. */
+  readonly semantic_rejections?: 'blocking' | 'advisory';
   readonly business_context: BusinessContextView | null;
   readonly catalog_index: CatalogIndexView | null;
 }, deps: {
@@ -216,6 +218,7 @@ export async function prepareAgentTurnV2(input: {
       && (state.selected_payment_plan === null
         || paymentVerification.plan_code === state.selected_payment_plan),
     current_customer_messages: input.current_customer_messages,
+    semantic_rejections: input.semantic_rejections,
     call_policy: {
       // A refusal closes the invitation in that turn, not the whole sales
       // conversation. The per-turn authority below still blocks an immediate
@@ -232,6 +235,26 @@ export async function prepareAgentTurnV2(input: {
   let effectiveProposal = input.proposal;
   let authority = authorize(effectiveProposal);
   let actionRejection: AgentActionRejectionV1 | null = null;
+
+  if (authority.ok
+    && effectiveProposal.proposed_action.type !== 'none'
+    && authority.action.type === 'none') {
+    const actionCodes = (authority.advisory_reasons ?? []).filter((reason) => (
+      reason === 'ACTION_NOT_AUTHORIZED' || reason === 'MISSING_INTAKE'
+    ));
+    if (actionCodes.length > 0) {
+      const rejectedAction = effectiveProposal.proposed_action.type;
+      const requiredFields = rejectedAction === 'request_call_now'
+        ? (['nombre', 'apellido', 'telefono'] as const)
+        : (['nombre', 'apellido', 'correo', 'telefono'] as const);
+      actionRejection = {
+        action: rejectedAction,
+        codes: [...new Set(actionCodes)],
+        missing_fields: requiredFields.filter((field) => !contactIntake?.[field]),
+        retryable: false,
+      };
+    }
+  }
 
   // A rejected side effect must not reject the conversation that requested it.
   // Keep Agent A's wording and semantic move, remove only the unavailable

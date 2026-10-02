@@ -70,6 +70,7 @@ function authorize(input: {
   mayOfferCall?: boolean;
   mayRequestCall?: boolean;
   customerText?: string;
+  semanticRejections?: 'blocking' | 'advisory';
 }) {
   return authorizeAgentTurnV2({
     proposal: input.proposal,
@@ -78,6 +79,7 @@ function authorize(input: {
     facts,
     contact_intake: input.intake,
     current_customer_messages: input.customerText ? [input.customerText] : [],
+    semantic_rejections: input.semanticRejections,
     call_policy: {
       may_offer_call: input.mayOfferCall ?? true,
       may_request_call_now: input.mayRequestCall ?? true,
@@ -86,6 +88,36 @@ function authorize(input: {
 }
 
 describe('plannerless Agent A authority', () => {
+  it('keeps valid conversational copy when semantic checks disagree and exposes only advisories', () => {
+    const messages = [
+      'Ya tengo todos tus datos registrados.',
+      'El curso que estamos comparando tiene 12 clases.',
+    ];
+    const result = authorize({
+      mayOfferCall: false,
+      semanticRejections: 'advisory',
+      proposal: proposal({
+        response: { messages },
+        used_fact_ids: ['offering:excel_integral:duration:v1'],
+        move: {
+          schema_version: 1,
+          move: 'ask_course_information',
+          secondary_moves: [],
+          vetoes: [],
+          course_reference: 'redes',
+          confidence: 0.98,
+        },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      response: messages.join('\n\n'),
+      action: { type: 'none' },
+      advisory_reasons: ['FACT_NOT_AUTHORIZED', 'UNSUPPORTED_STATE_ASSERTION'],
+    });
+  });
+
   it('rejects the temporary USD 0.50 verification link while contact intake is incomplete', () => {
     const result = authorize({
       customerText: 'Mandame el link de prueba de 0,50 dólares.',

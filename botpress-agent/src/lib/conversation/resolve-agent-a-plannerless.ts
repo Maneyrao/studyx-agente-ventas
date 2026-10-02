@@ -167,6 +167,7 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   readonly context: AgentAContextV1
   readonly authorized_fact_ids: readonly string[]
   readonly rejection_id: string
+  readonly semantic_rejections: 'blocking' | 'advisory'
 }): { effective: T; rejection: TurnRejectionV1 | null; originalRejection: TurnRejectionV1 | null } {
   const validate = (candidate: T) => validatePlannerless({
     proposal: candidate.proposal, context: input.context,
@@ -181,7 +182,8 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   if (rejection === null) return { effective, rejection, originalRejection }
   // An unavailable call needs the existing model repair: changing only the
   // action would publish an acknowledgement for a call that never occurred.
-  if (hasOnlyNonBlockingGuidance(effective.proposal, rejection)) {
+  if (input.semantic_rejections === 'advisory'
+    || hasOnlyNonBlockingGuidance(effective.proposal, rejection)) {
     return { effective, rejection: null, originalRejection }
   }
   return { effective, rejection, originalRejection }
@@ -203,14 +205,10 @@ const NON_BLOCKING_GUIDANCE_CODES = new Set([
 function isNonBlockingGuidanceReason(
   reason: TurnRejectionV1['rejections'][number],
 ): boolean {
-  if (NON_BLOCKING_GUIDANCE_CODES.has(reason.code)) return true
-  // This heuristic only notices that Agent A compared unresolved candidates;
-  // it does not prove a false catalog value. Treating it as a hard commercial
-  // fact check duplicated the backend's canonical truth boundary and replaced
-  // ordinary catalog guidance with a technical fallback. Prices, promises,
-  // logistics, prerequisites and every other FACT_VALUE_MISMATCH stay hard.
-  return reason.code === 'FACT_VALUE_MISMATCH'
-    && reason.subject === 'candidate_course_detail'
+  if (reason.code === 'PROPOSAL_SCHEMA_INVALID') return false
+  if (reason.code === 'FACT_VALUE_MISMATCH'
+    && reason.subject === 'candidate_course_detail') return true
+  return NON_BLOCKING_GUIDANCE_CODES.has(reason.code)
 }
 
 function isMissingRequiredIntakeForRequestedCall(
@@ -321,6 +319,7 @@ export async function resolveAgentAPlannerlessProposalV2<
   readonly repair_enabled: boolean
   readonly repair: (rejection: TurnRejectionV1) => Promise<T>
   readonly rejection_id: string
+  readonly semantic_rejections?: 'blocking' | 'advisory'
 }): Promise<PlannerlessResolutionV2<T>> {
   const factIds = authorizedFactIds(input.context)
   const boundInitial = materializeAuthorizedPaymentAction({
@@ -330,11 +329,15 @@ export async function resolveAgentAPlannerlessProposalV2<
   const prepared = preparePlannerlessProposal({
     initial: boundInitial, context: input.context, authorized_fact_ids: factIds,
     rejection_id: input.rejection_id,
+    semantic_rejections: input.semantic_rejections ?? 'blocking',
   })
   const rejection = prepared.rejection
   const initial = prepared.effective
   const originalRejection = prepared.originalRejection ?? rejection
   if (rejection === null) {
+    const advisoryActionRejection = input.semantic_rejections === 'advisory'
+      ? actionRejectionV1(initial.proposal, originalRejection)
+      : null
     return {
       effective: initial,
       evidence: {
@@ -342,7 +345,7 @@ export async function resolveAgentAPlannerlessProposalV2<
         repair_attempted: false, repaired: false, proposal_generation_calls: 1,
       },
       rejection: originalRejection,
-      action_rejection: null,
+      action_rejection: advisoryActionRejection,
     }
   }
   const initialActionRejection = actionRejectionV1(initial.proposal, originalRejection)
@@ -378,6 +381,7 @@ export async function resolveAgentAPlannerlessProposalV2<
       const repaired = preparePlannerlessProposal({
         initial: candidate, context: input.context, authorized_fact_ids: factIds,
         rejection_id: rejection.rejection_id,
+        semantic_rejections: input.semantic_rejections ?? 'blocking',
       })
       if (repaired.rejection === null) {
         return {

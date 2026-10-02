@@ -887,6 +887,7 @@ export const processInboundTurn = new Workflow({
               initial: authoritativeGenerated,
               context: agentABrainContext,
               repair_enabled: repairEnabled,
+              semantic_rejections: 'advisory',
               rejection_id: randomUUID(),
               repair: async (rejection) => {
                 agentARepairAttempted = true
@@ -1531,6 +1532,7 @@ export const processInboundTurn = new Workflow({
               initial: repaired,
               context: repairContext,
               repair_enabled: false,
+              semantic_rejections: 'advisory',
               rejection_id: rejection.rejection_id,
               repair: async () => {
                 throw new Error('AGENT_A_SECOND_REPAIR_NOT_ALLOWED')

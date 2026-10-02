@@ -13,11 +13,11 @@ const databaseAvailable = process.env.TEST_DATABASE_URL;
 const run = databaseAvailable ? describe : describe.skip;
 
 run('commercial-truth boundary', () => {
-  it('rejects an Agent A turn instead of deleting its informational bubble', async () => {
+  it('commits Agent A wording intact instead of replacing the conversation with a fallback', async () => {
     const seeded = await seedConversationForAgentTurn({
       call_offer_count: 0, selected_offering_code: 'entrenamiento_funcional', intake_complete: true,
     });
-    await expect(commitAgentDecision({
+    const committed = await commitAgentDecision({
       turn_id: seeded.turn_id, trace_id: seeded.trace_id,
       authorized_offering_code: 'entrenamiento_funcional', authorized_payment_plan: null,
       conversation_pipeline_v1: null,
@@ -29,17 +29,19 @@ run('commercial-truth boundary', () => {
         },
       } as never },
       decision: seeded.placeholderDecision as never, model: seeded.model as never,
-    })).rejects.toMatchObject({
-      message: 'AGENT_TURN_V2_REJECTED:FACT_NOT_AUTHORIZED',
     });
+    expect(committed.status).toBe('committed');
+    expect(committed.outbound?.content).toBe(
+      'El diplomado sale USD 47.\n\nSi querés, puedo llamarte para asesorarte.',
+    );
     const state = await new PostgresConversationStateStoreV1(sql).load('studyx', seeded.conversation_id, seeded.contact_id);
-    expect(state).toMatchObject({ call_offer_count: 0, call_offer_status: 'not_offered', awaiting_reply: 'none' });
+    expect(state).toMatchObject({ call_offer_count: 1, call_offer_status: 'offered', awaiting_reply: 'call_or_chat' });
   });
-  it('rejects an Agent A turn instead of removing its call invitation', async () => {
+  it('keeps an Agent A call invitation even when semantic telemetry disagrees', async () => {
     const seeded = await seedConversationForAgentTurn({
       call_offer_count: 0, selected_offering_code: 'entrenamiento_funcional', intake_complete: true,
     });
-    await expect(commitAgentDecision({
+    const committed = await commitAgentDecision({
       turn_id: seeded.turn_id, trace_id: seeded.trace_id,
       authorized_offering_code: 'entrenamiento_funcional', authorized_payment_plan: null,
       conversation_pipeline_v1: null,
@@ -51,22 +53,24 @@ run('commercial-truth boundary', () => {
         },
       } as never },
       decision: seeded.placeholderDecision as never, model: seeded.model as never,
-    })).rejects.toMatchObject({
-      message: 'AGENT_TURN_V2_REJECTED:FACT_NOT_AUTHORIZED',
     });
+    expect(committed.status).toBe('committed');
+    expect(committed.outbound?.content).toBe(
+      'Tenemos Entrenamiento Funcional.\n\nPuedo llamarte por USD 47.',
+    );
     const state = await new PostgresConversationStateStoreV1(sql).load(
       'studyx', seeded.conversation_id, seeded.contact_id,
     );
     expect(state).toMatchObject({
-      call_offer_count: 0, call_offer_status: 'not_offered', awaiting_reply: 'none',
+      call_offer_count: 1, call_offer_status: 'offered', awaiting_reply: 'call_or_chat',
     });
     const [eventCount] = await sql<Array<{ count: number }>>`
       SELECT COUNT(*)::int AS count FROM conversation_sales_context_state_events_v1
       WHERE conversation_id = ${seeded.conversation_id}::uuid AND call_offer_count > 0
     `;
-    expect(eventCount?.count).toBe(0);
+    expect(eventCount?.count).toBe(1);
   });
-  it('rejects the complete Agent A response even when one paragraph was safe', async () => {
+  it('commits every Agent A paragraph without semantic copy editing', async () => {
     const seeded = await seedConversationForAgentTurn({
       call_offer_count: 0,
       selected_offering_code: 'entrenamiento_funcional',
@@ -77,7 +81,7 @@ run('commercial-truth boundary', () => {
     // `claim_token` en su `CommitDecisionInput` — el fencing por lote vive en
     // la capa de orquestación (`commit-claimed-decision.ts`), no acá. Ver la
     // nota de deviación en `tests/helpers/agent-turn-fixtures.ts`.
-    await expect(commitAgentDecision({
+    const committed = await commitAgentDecision({
       turn_id: seeded.turn_id,
       trace_id: seeded.trace_id,
       supports_multi_outbound: true,
@@ -96,9 +100,12 @@ run('commercial-truth boundary', () => {
       },
       decision: seeded.placeholderDecision as never,
       model: seeded.model as never,
-    })).rejects.toMatchObject({
-      message: 'AGENT_TURN_V2_REJECTED:FACT_NOT_AUTHORIZED',
     });
+    expect(committed.status).toBe('committed');
+    expect(committed.outbounds.map((outbound) => outbound.content)).toEqual([
+      'Tenemos Entrenamiento Funcional. El diplomado sale USD 47.',
+      '¿Te gustaría que te llamemos para contarte más?',
+    ]);
 
     const [decision] = await sql<Array<{
       response: string | null;
@@ -111,19 +118,53 @@ run('commercial-truth boundary', () => {
       FROM agent_decisions
       WHERE turn_id = ${seeded.turn_id}::uuid
     `;
-    expect(decision).toBeUndefined();
+    expect(decision).toMatchObject({
+      response: 'Tenemos Entrenamiento Funcional. El diplomado sale USD 47.\n\n¿Te gustaría que te llamemos para contarte más?',
+      response_type: 'call_offer',
+      business_action: null,
+      reason_code: 'AGENT_A_PLANNERLESS_V2',
+      next_state: 'waiting_user',
+    });
 
-    // Nothing from a rejected response becomes durable. DeepSeek receives the
-    // structured rejection and must author the complete replacement itself.
+    // Semantic diagnostics never replace copy; the eligible call invitation
+    // still advances its own durable ledger.
     const state = await new PostgresConversationStateStoreV1(sql).load(
       'studyx', seeded.conversation_id, seeded.contact_id,
     );
-    expect(state?.call_offer_count).toBe(0);
-    expect(state?.awaiting_reply).toBe('none');
-    // El fixture ya sembró el código, pero el turno rechazado no puede avanzar
-    // la etapa ni ningún otro estado comercial.
+    expect(state?.call_offer_count).toBe(1);
+    expect(state?.awaiting_reply).toBe('call_or_chat');
     expect(state?.selected_offering_code).toBe('entrenamiento_funcional');
-    expect(state?.stage).toBe('exploring');
+    expect(state?.stage).toBe('course_selected');
+  });
+
+  it('ignores an unproven confirmed phone without rejecting Agent A copy', async () => {
+    const seeded = await seedConversationForAgentTurn({
+      call_offer_count: 0,
+      selected_offering_code: 'entrenamiento_funcional',
+      intake_complete: true,
+    });
+    const content = 'Seguimos con Entrenamiento Funcional. ¿Qué te gustaría saber?';
+
+    const committed = await commitAgentDecision({
+      turn_id: seeded.turn_id,
+      trace_id: seeded.trace_id,
+      authorized_offering_code: 'entrenamiento_funcional',
+      authorized_payment_plan: null,
+      conversation_pipeline_v1: null,
+      agent_turn_v2: {
+        schema_version: 2,
+        proposal: {
+          ...seeded.proposalWithCallOfferAndFalsePrice,
+          confirmed_phone: '+5491199999999',
+          response: { messages: [content], call_offer: null },
+        } as never,
+      },
+      decision: seeded.placeholderDecision as never,
+      model: seeded.model as never,
+    });
+
+    expect(committed.status).toBe('committed');
+    expect(committed.outbound?.content).toBe(content);
   });
 
   it('keeps a pipeline transition when only an unrelated false price is vetoed', async () => {

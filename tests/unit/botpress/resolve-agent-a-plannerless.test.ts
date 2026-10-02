@@ -1601,6 +1601,81 @@ describe('rechazo completo sin reescritura del backend', () => {
     used_fact_ids: [NAME_FACT],
   }));
 
+  it('never replaces a valid DeepSeek conversation because semantic controls disagree with its wording', async () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm2', text: 'Hay descuento por comprar dos cursos?' }];
+    current.commercial_state.selected_offering_code = null;
+    current.commercial_state.stage = 'exploring';
+    current.catalog.selected_offering = null;
+    current.catalog.candidate_offerings = [
+      {
+        code: 'ingles-2', fact_id: ENGLISH_2_NAME_FACT, display_name: 'Inglés 2', area_code: 'idiomas',
+      },
+      {
+        code: 'ingles-3', fact_id: ENGLISH_3_NAME_FACT, display_name: 'Inglés 3', area_code: 'idiomas',
+      },
+    ];
+    const messages = [
+      'Podés sumar Inglés 2 e Inglés 3. El total de cada curso es USD 360.',
+      'Si querés, vemos cuál te conviene empezar primero.',
+    ];
+    const repair = vi.fn();
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({
+        move: { schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 0.9 },
+        response: { messages, call_offer: null },
+        used_fact_ids: [ENGLISH_2_NAME_FACT, ENGLISH_3_NAME_FACT],
+      })),
+      context: current,
+      repair_enabled: true,
+      semantic_rejections: 'advisory',
+      repair,
+      rejection_id: '00000000-0000-4000-8000-0000000000d1',
+    });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.response.messages).toEqual(messages);
+    expect(result.evidence.rejection_codes).toEqual(expect.arrayContaining([
+      'FACT_VALUE_MISMATCH',
+    ]));
+  });
+
+  it('preserves the conversation and reports only the unavailable effect for the production double rejection', async () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm2', text: 'Hay descuento por comprar dos cursos?' }];
+    current.commercial_state.selected_offering_code = null;
+    current.commercial_state.stage = 'exploring';
+    current.catalog.selected_offering = null;
+    current.capabilities.may_request_call_now = false;
+    current.catalog.candidate_offerings = [{
+      code: 'ingles-2', fact_id: ENGLISH_2_NAME_FACT, display_name: 'Inglés 2', area_code: 'idiomas',
+    }];
+    const messages = ['Podés sumar Inglés 2 y otro curso. Te ayudo a elegir el orden.'];
+    const repair = vi.fn();
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({
+        move: { schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 0.9 },
+        response: { messages, call_offer: null },
+        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+        used_fact_ids: [ENGLISH_2_NAME_FACT],
+      })),
+      context: current,
+      repair_enabled: true,
+      semantic_rejections: 'advisory',
+      repair,
+      rejection_id: '00000000-0000-4000-8000-0000000000d2',
+    });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.response.messages).toEqual(messages);
+    expect(result.action_rejection).toMatchObject({
+      action: 'request_call_now',
+      codes: ['ACTION_NOT_AUTHORIZED'],
+    });
+  });
+
   it('rechaza la propuesta intacta cuando la reparación está apagada', async () => {
     await expect(resolveAgentAPlannerlessProposalV2({
       initial: rejectedByPrice(), context: context(), repair_enabled: false,

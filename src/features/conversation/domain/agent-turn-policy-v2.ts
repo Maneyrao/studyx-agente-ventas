@@ -63,6 +63,9 @@ export type AgentTurnAuthorityResultV2 = {
   readonly transition: AgentTurnStateTransitionV2;
   readonly authorized_fact_ids: readonly string[];
   readonly state_facts: ReadonlySet<StateFactIdV1>;
+  /** Present when semantic checks run as diagnostics instead of a copy veto. */
+  readonly advisory_reasons?: readonly AgentTurnRejectionReasonV2[];
+  readonly rejection_subjects?: readonly StateFactIdV1[];
 } | {
   readonly ok: false;
   readonly reasons: readonly AgentTurnRejectionReasonV2[];
@@ -121,6 +124,12 @@ export function authorizeAgentTurnV2(input: {
   /** Revalidated from the signed Stripe ledger at commit time. */
   readonly payment_verified?: boolean;
   readonly current_customer_messages?: readonly string[];
+  /**
+   * Agent A owns customer-facing copy in production. `advisory` preserves the
+   * exact response while this boundary still reduces unauthorized effects to
+   * `none`. The strict mode remains useful for offline policy evaluation.
+   */
+  readonly semantic_rejections?: 'blocking' | 'advisory';
   readonly call_policy: {
     readonly may_offer_call: boolean;
     readonly may_request_call_now: boolean;
@@ -357,7 +366,7 @@ export function authorizeAgentTurnV2(input: {
     };
   }
 
-  if (reasons.length > 0) return {
+  if (reasons.length > 0 && input.semantic_rejections !== 'advisory') return {
     ok: false,
     reasons: unique(reasons),
     ...(rejectionSubjects.length > 0 ? { rejection_subjects: rejectionSubjects } : {}),
@@ -504,6 +513,8 @@ export function authorizeAgentTurnV2(input: {
     action,
     authorized_fact_ids: unique(authorizedFactIds),
     state_facts: stateFacts,
+    ...(reasons.length > 0 ? { advisory_reasons: unique(reasons) } : {}),
+    ...(rejectionSubjects.length > 0 ? { rejection_subjects: rejectionSubjects } : {}),
     transition: {
       selected_offering_code: nextOffering,
       selected_payment_plan: nextPlan,
