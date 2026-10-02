@@ -64,6 +64,22 @@ const retrievalUsedSchema = z.object({
   summary_version: z.number().int().nonnegative().nullable(),
 }).strict();
 
+const turnDiagnosticsV1Schema = z.object({
+  schema_version: z.literal(1),
+  generation_attempts: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+  failure_stage: z.enum([
+    'none',
+    'provider_generation',
+    'proposal_validation',
+    'action_authorization',
+    'backend_commit',
+  ]),
+  failure_codes: z.array(
+    z.string().trim().min(1).max(128).regex(/^[A-Z0-9_:.-]+$/u),
+  ).max(8),
+  action_status: z.enum(['none', 'authorized', 'needs_input', 'rejected']),
+}).strict();
+
 const decisionCoreShape = {
   intent: z.enum(DECISION_INTENTS),
   kind: z.enum(DECISION_KINDS),
@@ -151,6 +167,7 @@ const schema = z.object({
   agent_turn_v2: AgentATurnCommitV2Schema.nullable().optional(),
   supports_multi_outbound: z.boolean().optional(),
   supports_turn_supersession: z.boolean().optional(),
+  turn_diagnostics: turnDiagnosticsV1Schema.nullable().optional(),
   decision: decisionSchema,
   model: z.object({
     provider: z.enum(['botpress', 'google-ai-direct', 'groq-direct', 'openai-direct', 'deepseek-direct']),

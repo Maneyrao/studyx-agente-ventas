@@ -19,6 +19,7 @@ import {
   type CommitDecisionResponse,
   type Decision,
   type IngestResponse,
+  type TurnDiagnosticsV1,
   type WorkflowResult,
 } from '../schemas/contracts'
 import {
@@ -61,7 +62,10 @@ import {
   DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
   generateDeepSeekAgentATurnProposalV1,
 } from '../lib/conversation/agent-a-brain'
-import { runAgentADeepSeekAttemptV1 } from '../lib/conversation/agent-a-attempt'
+import {
+  classifyAgentAAttemptFailure,
+  runAgentADeepSeekAttemptV1,
+} from '../lib/conversation/agent-a-attempt'
 import { resolveAgentAProposalV1 } from '../lib/conversation/resolve-agent-a-proposal'
 import { resolveAgentAPlannerlessProposalV2 } from '../lib/conversation/resolve-agent-a-plannerless'
 import { evaluateCallOfferTurnPolicyV1 } from '../lib/conversation/call-offer-turn-policy'
@@ -812,6 +816,8 @@ export const processInboundTurn = new Workflow({
     let pipelineDecisionModel = 'conversation-pipeline-v1'
     let pipelinePromptVersion = `${CONVERSATION_INTERPRETER_PROMPT_VERSION}+${CONVERSATION_COMPOSER_PROMPT_VERSION}+${STUDYX_SALES_BEHAVIOR_VERSION}`
     let pipelineMemoryCandidates: Decision['memory_candidates'] = []
+    let turnDiagnostics: TurnDiagnosticsV1 | null = null
+    let agentAGenerationAttempts: 0 | 1 | 2 = 0
     let callOfferAudit: {
       readonly call_offer_count_before: 0 | 1 | 2
       readonly call_offer_count_after: 0 | 1 | 2
@@ -885,6 +891,7 @@ export const processInboundTurn = new Workflow({
         const generatedAttempt = await runAgentADeepSeekAttemptV1({
           generate: async () => {
             generationAttempt += 1
+            agentAGenerationAttempts = generationAttempt as 1 | 2
             return step(
               generationAttempt === 1
                 ? 'generate-agent-a-turn-proposal-v1-deepseek'
@@ -903,6 +910,14 @@ export const processInboundTurn = new Workflow({
             })
           },
         })
+        agentAGenerationAttempts = generatedAttempt.attempts
+        turnDiagnostics = {
+          schema_version: 1,
+          generation_attempts: generatedAttempt.attempts,
+          failure_stage: firstRetryCode === null ? 'none' : 'provider_generation',
+          failure_codes: firstRetryCode === null ? [] : [firstRetryCode],
+          action_status: 'none',
+        }
         let generated = generatedAttempt.value
         timings.agent_a_brain_ms = Date.now() - brainStartedAt
         safeLog('studyx.turn.agent_a_brain_generation', {
@@ -976,6 +991,27 @@ export const processInboundTurn = new Workflow({
             })
             const effectiveGenerated = resolved.effective
             generated = effectiveGenerated
+            turnDiagnostics = resolved.action_rejection === null
+              ? {
+                  ...(turnDiagnostics ?? {
+                    schema_version: 1 as const,
+                    generation_attempts: agentAGenerationAttempts,
+                    failure_stage: 'none' as const,
+                    failure_codes: [],
+                  }),
+                  action_status: effectiveGenerated.proposal.proposed_action.type === 'none'
+                    ? 'none'
+                    : 'authorized',
+                }
+              : {
+                  schema_version: 1,
+                  generation_attempts: agentAGenerationAttempts,
+                  failure_stage: 'action_authorization',
+                  failure_codes: resolved.action_rejection.codes
+                    .filter((code) => /^[A-Z0-9_:.-]+$/u.test(code))
+                    .slice(0, 8),
+                  action_status: 'needs_input',
+                }
             const policy = evaluateCallOfferTurnPolicyV1({
               context: agentABrainContext,
               response_messages: effectiveGenerated.proposal.response.messages,
@@ -1031,6 +1067,16 @@ export const processInboundTurn = new Workflow({
               )
             } catch (plannerError) {
               timings.planner_ms = Date.now() - plannerStartedAt
+              const plannerFailureCode = errorCode(plannerError).split(':', 1)[0]!
+              turnDiagnostics = {
+                schema_version: 1,
+                generation_attempts: agentAGenerationAttempts,
+                failure_stage: 'proposal_validation',
+                failure_codes: /^[A-Z0-9_.-]+$/u.test(plannerFailureCode)
+                  ? [plannerFailureCode]
+                  : ['UNKNOWN_ERROR'],
+                action_status: 'rejected',
+              }
               pipelineFailureDecision = brainAdvisoryOnlyDecision(generated.proposal, owned)
               safeLog('studyx.turn.agent_a_brain_v1', {
                 trace_id: input.trace_id,
@@ -1123,6 +1169,21 @@ export const processInboundTurn = new Workflow({
         }
       } catch (error) {
         const failureCode = errorCode(error)
+        const attemptFailure = classifyAgentAAttemptFailure(error)
+        const diagnosticCode = attemptFailure.code.split(':', 1)[0]!
+        turnDiagnostics = {
+          schema_version: 1,
+          generation_attempts: agentAGenerationAttempts,
+          failure_stage: attemptFailure.stage === 'provider_transport'
+            || attemptFailure.stage === 'provider_rejected'
+            || attemptFailure.stage === 'schema'
+            ? 'provider_generation'
+            : 'proposal_validation',
+          failure_codes: /^[A-Z0-9_.-]+$/u.test(diagnosticCode)
+            ? [diagnosticCode]
+            : ['UNKNOWN_ERROR'],
+          action_status: attemptFailure.stage === 'policy' ? 'rejected' : 'none',
+        }
         const brainFailureReason = classifyBrainFailureReason(
           failureCode,
           owned.business_context_available && owned.catalog_index !== null,
@@ -1515,6 +1576,7 @@ export const processInboundTurn = new Workflow({
             agent_turn_v2: agentTurnV2Commit,
             supports_multi_outbound: true,
             supports_turn_supersession: true,
+            turn_diagnostics: turnDiagnostics,
             decision,
             model: {
               provider: decisionProvider,
@@ -1552,6 +1614,14 @@ export const processInboundTurn = new Workflow({
         rejection_codes: rejection.rejections.map((item) => item.code),
         rejection_subjects: rejection.rejections.map((item) => item.subject),
       })
+
+        turnDiagnostics = {
+          schema_version: 1,
+          generation_attempts: agentAGenerationAttempts,
+          failure_stage: 'backend_commit',
+          failure_codes: [...new Set(rejection.rejections.map((item) => item.code))].slice(0, 8),
+          action_status: 'rejected',
+        }
 
         // The customer-visible turn already exists. A rejected tool request is
         // not permission to regenerate or replace it. Retry the commit once as

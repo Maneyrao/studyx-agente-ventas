@@ -626,6 +626,11 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
     expect(actionSpies.commit.mock.calls[1]?.[0]?.input).toMatchObject({
       agent_turn_v2: null,
+      turn_diagnostics: {
+        generation_attempts: 1,
+        failure_stage: 'backend_commit',
+        action_status: 'rejected',
+      },
       decision: {
         response: 'Te cuento los detalles del curso.',
         business_action: null,
@@ -1132,6 +1137,11 @@ describe('processInboundTurn hot path', () => {
     expect(stepNames).toContain('retry-agent-a-turn-proposal-v1-deepseek');
     expect(stepNames).not.toContain('failover-agent-a-turn-proposal-v1-gemini');
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      turn_diagnostics: {
+        generation_attempts: 2,
+        failure_stage: 'provider_generation',
+        failure_codes: ['BRAIN_DEEPSEEK_TIMEOUT'],
+      },
       agent_turn_v2: {
         proposal: {
           response: {
@@ -1184,6 +1194,11 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
     expect(actionSpies.agentABrainGemini).not.toHaveBeenCalled();
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      turn_diagnostics: {
+        generation_attempts: 2,
+        failure_stage: 'provider_generation',
+        failure_codes: ['BRAIN_DEEPSEEK_TIMEOUT'],
+      },
       decision: {
         response: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.',
         reason_code: 'MODEL_UNAVAILABLE',
@@ -1318,6 +1333,11 @@ describe('processInboundTurn hot path', () => {
     expect(execute).not.toHaveBeenCalled();
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       conversation_pipeline_v1: null,
+      turn_diagnostics: {
+        generation_attempts: 1,
+        failure_stage: 'proposal_validation',
+        action_status: 'rejected',
+      },
       decision: {
         kind: 'reply',
         response: 'No, también tenemos opciones en tecnología, diseño y negocios.\n\n¿Qué te gustaría aprender?',

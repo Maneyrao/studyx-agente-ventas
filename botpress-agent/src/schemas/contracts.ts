@@ -753,6 +753,24 @@ export const AuthorizedEgressSchema = z.object({
 
 export type AuthorizedEgress = z.infer<typeof AuthorizedEgressSchema>
 
+export const TurnDiagnosticsV1Schema = z.object({
+  schema_version: z.literal(1),
+  generation_attempts: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+  failure_stage: z.enum([
+    'none',
+    'provider_generation',
+    'proposal_validation',
+    'action_authorization',
+    'backend_commit',
+  ]),
+  failure_codes: z.array(
+    z.string().trim().min(1).max(128).regex(/^[A-Z0-9_:.-]+$/u),
+  ).max(8),
+  action_status: z.enum(['none', 'authorized', 'needs_input', 'rejected']),
+}).strict()
+
+export type TurnDiagnosticsV1 = z.infer<typeof TurnDiagnosticsV1Schema>
+
 export const CommitDecisionInputSchema = z.object({
   turn_id: z.string().uuid(),
   trace_id: z.string().uuid(),
@@ -766,6 +784,7 @@ export const CommitDecisionInputSchema = z.object({
   agent_turn_v2: AgentATurnCommitV2Schema.nullable().default(null),
   supports_multi_outbound: z.boolean().default(false),
   supports_turn_supersession: z.boolean().default(false),
+  turn_diagnostics: TurnDiagnosticsV1Schema.nullable().default(null),
   decision: DecisionSchema,
   model: z.object({
     provider: z.enum(['botpress', 'google-ai-direct', 'groq-direct', 'openai-direct', 'deepseek-direct']),

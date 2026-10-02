@@ -117,6 +117,19 @@ import {
  */
 export type AnyDecision = DecisionV2 | DecisionV3 | DecisionV4;
 
+export interface TurnDiagnosticsV1 {
+  readonly schema_version: 1;
+  readonly generation_attempts: 0 | 1 | 2;
+  readonly failure_stage:
+    | 'none'
+    | 'provider_generation'
+    | 'proposal_validation'
+    | 'action_authorization'
+    | 'backend_commit';
+  readonly failure_codes: readonly string[];
+  readonly action_status: 'none' | 'authorized' | 'needs_input' | 'rejected';
+}
+
 function retrievalUsedOf(decision: AnyDecision) {
   return 'retrieval_used' in decision ? decision.retrieval_used : null;
 }
@@ -143,6 +156,8 @@ export interface CommitDecisionInput {
   supports_multi_outbound?: boolean;
   /** New workflow capability: stale model results may yield to a newer inbound batch. */
   supports_turn_supersession?: boolean;
+  /** Immutable PII-free classification of generation/policy outcomes. */
+  turn_diagnostics?: TurnDiagnosticsV1 | null;
   decision: AnyDecision;
   model: {
     provider: 'botpress' | 'google-ai-direct' | 'groq-direct' | 'openai-direct' | 'deepseek-direct';
@@ -427,6 +442,7 @@ function decisionPayload(input: CommitDecisionInput) {
       : {}),
     ...(input.supports_multi_outbound ? { supports_multi_outbound: true } : {}),
     ...(input.supports_turn_supersession ? { supports_turn_supersession: true } : {}),
+    ...(input.turn_diagnostics ? { turn_diagnostics: input.turn_diagnostics } : {}),
   };
 }
 
@@ -579,7 +595,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             turn_id, trace_id, schema_version, intent, decision_kind, response,
             response_type, business_action, retrieval_used, memory_candidates,
             missing_information, next_state, reason_code, confidence,
-            model_provider, model_name, prompt_version, payload_hash
+            model_provider, model_name, prompt_version, payload_hash, diagnostics
           ) VALUES (
             ${validatedInput.turn_id}::uuid,
             ${validatedInput.trace_id}::uuid,
@@ -598,7 +614,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             ${validatedInput.model.provider},
             ${validatedInput.model.model},
             ${validatedInput.model.prompt_version},
-            decode(${payloadHash}, 'hex')
+            decode(${payloadHash}, 'hex'),
+            ${jsonbParam(db, validatedInput.turn_diagnostics ?? null)}
           )
           RETURNING id
         `;
@@ -1319,7 +1336,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         model_provider,
         model_name,
         prompt_version,
-        payload_hash
+        payload_hash,
+        diagnostics
       )
       VALUES (
         ${validatedInput.turn_id}::uuid,
@@ -1339,7 +1357,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         ${validatedInput.model.provider},
         ${validatedInput.model.model},
         ${validatedInput.model.prompt_version},
-        decode(${payloadHash}, 'hex')
+        decode(${payloadHash}, 'hex'),
+        ${jsonbParam(db, validatedInput.turn_diagnostics ?? null)}
       )
       RETURNING id
     `;
