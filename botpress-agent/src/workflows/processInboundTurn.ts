@@ -61,6 +61,7 @@ import {
   DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
   generateDeepSeekAgentATurnProposalV1,
 } from '../lib/conversation/agent-a-brain'
+import { runAgentADeepSeekAttemptV1 } from '../lib/conversation/agent-a-attempt'
 import { resolveAgentAProposalV1 } from '../lib/conversation/resolve-agent-a-proposal'
 import { resolveAgentAPlannerlessProposalV2 } from '../lib/conversation/resolve-agent-a-plannerless'
 import { evaluateCallOfferTurnPolicyV1 } from '../lib/conversation/call-offer-turn-policy'
@@ -879,12 +880,37 @@ export const processInboundTurn = new Workflow({
               : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
           })
         const brainStartedAt = Date.now()
-        let generated = await step(
-          'generate-agent-a-turn-proposal-v1-deepseek',
-          generateDeepSeekProposal,
-          { maxAttempts: 1 },
-        )
+        let generationAttempt = 0
+        let firstRetryCode: string | null = null
+        const generatedAttempt = await runAgentADeepSeekAttemptV1({
+          generate: async () => {
+            generationAttempt += 1
+            return step(
+              generationAttempt === 1
+                ? 'generate-agent-a-turn-proposal-v1-deepseek'
+                : 'retry-agent-a-turn-proposal-v1-deepseek',
+              generateDeepSeekProposal,
+              { maxAttempts: 1 },
+            )
+          },
+          onRetry: (failure) => {
+            firstRetryCode = failure.code
+            safeLog('studyx.turn.agent_a_brain_retry', {
+              trace_id: input.trace_id,
+              turn_id: owned.turn_id,
+              failure_code: failure.code,
+              attempt: 2,
+            })
+          },
+        })
+        let generated = generatedAttempt.value
         timings.agent_a_brain_ms = Date.now() - brainStartedAt
+        safeLog('studyx.turn.agent_a_brain_generation', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          agent_a_generation_attempts: generatedAttempt.attempts,
+          first_retry_code: firstRetryCode,
+        })
 
         if (brainShadow) {
           const currentCount = agentABrainContext.commercial_state.call_offer_count

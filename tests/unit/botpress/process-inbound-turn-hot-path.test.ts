@@ -1082,7 +1082,7 @@ describe('processInboundTurn hot path', () => {
     expect(response).not.toContain('Hubo un problema');
   });
 
-  it('does not multiply latency by retrying a timed-out DeepSeek turn', async () => {
+  it('retries one transient DeepSeek timeout before committing the model reply', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -1127,25 +1127,25 @@ describe('processInboundTurn hot path', () => {
       client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
-    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
     expect(actionSpies.agentABrainGemini).not.toHaveBeenCalled();
-    expect(stepNames).not.toContain('retry-agent-a-turn-proposal-v1-deepseek');
+    expect(stepNames).toContain('retry-agent-a-turn-proposal-v1-deepseek');
     expect(stepNames).not.toContain('failover-agent-a-turn-proposal-v1-gemini');
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      conversation_pipeline_v1: null,
-      decision: {
-        kind: 'reply',
-        response: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.',
-        reason_code: 'MODEL_UNAVAILABLE',
-        next_state: 'waiting_user',
+      agent_turn_v2: {
+        proposal: {
+          response: {
+            messages: ['Perfecto, seguimos por chat.', '¿Qué aspecto querés revisar?'],
+          },
+        },
       },
     });
-    const failureLog = vi.mocked(console.info).mock.calls
+    const retryLog = vi.mocked(console.info).mock.calls
       .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
-      .find((entry) => entry.event === 'studyx.turn.agent_a_brain_v1');
-    expect(failureLog).toMatchObject({
-      brain_source: 'fallback',
+      .find((entry) => entry.event === 'studyx.turn.agent_a_brain_retry');
+    expect(retryLog).toMatchObject({
       failure_code: 'BRAIN_DEEPSEEK_TIMEOUT',
+      attempt: 2,
     });
   });
 
@@ -1164,7 +1164,7 @@ describe('processInboundTurn hot path', () => {
     actionSpies.claim.mockResolvedValue(claimed);
     configuration.agentAPlannerlessV2Enabled = true;
     secrets.GEMINI_API_KEY = 'must-not-be-used';
-    actionSpies.agentABrainDeepSeek.mockRejectedValueOnce(
+    actionSpies.agentABrainDeepSeek.mockRejectedValue(
       Object.assign(new Error('timeout'), { code: 'BRAIN_DEEPSEEK_TIMEOUT' }),
     );
     const step = Object.assign(
@@ -1181,7 +1181,7 @@ describe('processInboundTurn hot path', () => {
       client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
-    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
     expect(actionSpies.agentABrainGemini).not.toHaveBeenCalled();
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       decision: {
