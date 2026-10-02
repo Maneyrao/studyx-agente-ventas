@@ -579,6 +579,12 @@ describe('prepareAgentTurnV2', () => {
         response: 'Claro. Para enviártelo necesito tu correo.',
         business_action: null,
       },
+      action_rejection: {
+        action: 'send_payment_link',
+        codes: ['MISSING_INTAKE'],
+        missing_fields: ['correo'],
+        retryable: false,
+      },
       transition: {
         selected_offering_code: 'redes_informaticas',
         selected_payment_plan: 'monthly_6',

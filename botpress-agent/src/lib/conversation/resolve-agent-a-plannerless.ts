@@ -309,6 +309,52 @@ function plannerlessRejectionError(rejection: TurnRejectionV1): Error {
   return new Error(`PLANNERLESS_PROPOSAL_REJECTED:${classes}`)
 }
 
+export type AgentActionRejectionActionV1 =
+  | 'request_call_now'
+  | 'send_payment_link'
+  | 'send_test_payment_link'
+
+export interface AgentActionRejectionV1 {
+  readonly action: AgentActionRejectionActionV1
+  readonly codes: readonly string[]
+  readonly missing_fields: readonly string[]
+  readonly retryable: boolean
+}
+
+export interface PlannerlessResolutionV2<T extends AgentAProposalEnvelopeV1> {
+  readonly effective: T
+  readonly evidence: AgentAProposalCycleEvidenceV1
+  readonly rejection: TurnRejectionV1 | null
+  readonly action_rejection: AgentActionRejectionV1 | null
+}
+
+const ACTION_REJECTION_CODES = new Set([
+  'ACTION_NOT_AUTHORIZED',
+  'MISSING_INTAKE',
+  'PLAN_NOT_SELECTED',
+])
+
+function actionRejectionV1(
+  proposal: AgentATurnProposalV1,
+  rejection: TurnRejectionV1 | null,
+): AgentActionRejectionV1 | null {
+  const action = proposal.proposed_action.type
+  if (action === 'none' || rejection === null) return null
+  const codes = [...new Set(rejection.rejections
+    .filter((reason) => ACTION_REJECTION_CODES.has(reason.code))
+    .map((reason) => reason.code))]
+  if (codes.length === 0) return null
+  return {
+    action,
+    codes,
+    missing_fields: [...new Set([
+      ...rejection.authorized_alternatives.missing_information,
+      ...(codes.includes('PLAN_NOT_SELECTED') ? ['payment_plan'] : []),
+    ])],
+    retryable: false,
+  }
+}
+
 /**
  * Pre-commit validation for the plannerless route. DeepSeek still owns the
  * complete response and the next move. This boundary only tells it which
@@ -323,11 +369,7 @@ export async function resolveAgentAPlannerlessProposalV2<
   readonly repair_enabled: boolean
   readonly repair: (rejection: TurnRejectionV1) => Promise<T>
   readonly rejection_id: string
-}): Promise<{
-  readonly effective: T
-  readonly evidence: AgentAProposalCycleEvidenceV1
-  readonly rejection: TurnRejectionV1 | null
-}> {
+}): Promise<PlannerlessResolutionV2<T>> {
   const factIds = authorizedFactIds(input.context)
   const boundInitial = materializeAuthorizedPaymentAction({
     initial: input.initial,
@@ -348,8 +390,10 @@ export async function resolveAgentAPlannerlessProposalV2<
         repair_attempted: false, repaired: false, proposal_generation_calls: 1,
       },
       rejection: originalRejection,
+      action_rejection: null,
     }
   }
+  const initialActionRejection = actionRejectionV1(initial.proposal, originalRejection)
   let terminalRejection = rejection
   const rejectedCodes = () => [...new Set([
     ...(originalRejection?.rejections.map((reason) => reason.code) ?? []),
@@ -363,6 +407,7 @@ export async function resolveAgentAPlannerlessProposalV2<
       proposal_generation_calls: repair_attempted ? (2 as const) : (1 as const),
     },
     rejection: terminalRejection,
+    action_rejection: initialActionRejection,
   })
   const mayRepair = input.repair_enabled
     && initial.proposal.repair_of === null
@@ -390,6 +435,7 @@ export async function resolveAgentAPlannerlessProposalV2<
             repair_attempted: true, repaired: true, proposal_generation_calls: 2,
           },
           rejection: originalRejection,
+          action_rejection: initialActionRejection,
         }
       }
       terminalRejection = repaired.rejection
@@ -423,11 +469,67 @@ export async function resolveAgentAPlannerlessProposalV2<
           repair_attempted: true, repaired: false, proposal_generation_calls: 2,
         },
         rejection: terminalRejection,
+        action_rejection: initialActionRejection,
       }
+    }
+  }
+  const actionRejectedCandidate = pruneRejectedActionV1({
+    initial,
+    rejection,
+    context: input.context,
+    authorized_fact_ids: factIds,
+  })
+  if (actionRejectedCandidate !== null) {
+    return {
+      effective: actionRejectedCandidate,
+      evidence: {
+        rejection_codes: rejectedCodes(),
+        repair_attempted: true, repaired: false, proposal_generation_calls: 2,
+      },
+      rejection: terminalRejection,
+      action_rejection: initialActionRejection,
     }
   }
   if (mayDegradeToBackendBoundary(initial.proposal, rejection)) return degraded(true)
   throw plannerlessRejectionError(terminalRejection)
+}
+
+/**
+ * An action rejection is not a conversation rejection. After the single
+ * model repair has failed, remove only the structured effect and revalidate
+ * the exact model-authored remainder. Existing validation still rejects any
+ * wording that falsely claims the effect happened.
+ */
+function pruneRejectedActionV1<T extends AgentAProposalEnvelopeV1>(input: {
+  readonly initial: T
+  readonly rejection: TurnRejectionV1
+  readonly context: AgentAContextV1
+  readonly authorized_fact_ids: readonly string[]
+}): T | null {
+  if (actionRejectionV1(input.initial.proposal, input.rejection) === null) return null
+  const factPruned = pruneKnownUnsupportedFactClaimsWithoutValidationV1(input)
+  const source = factPruned ?? input.initial
+  // Removing the structured action cannot make an authored success claim
+  // true. The dedicated link-claim pruner above may retain other safe
+  // messages; if the claim is all that remains, the turn stays rejected.
+  if (claimsImmediatePaymentLinkDelivery(source.proposal)) return null
+  const candidate = {
+    ...source,
+    proposal: {
+      ...source.proposal,
+      proposed_action: { type: 'none' as const },
+    },
+  } as T
+  const candidateRejection = validatePlannerless({
+    proposal: candidate.proposal,
+    context: input.context,
+    rejection_id: input.rejection.rejection_id,
+    authorized_fact_ids: input.authorized_fact_ids,
+  })
+  return candidateRejection === null
+    || hasOnlyNonBlockingGuidance(candidate.proposal, candidateRejection)
+    ? candidate
+    : null
 }
 
 /**

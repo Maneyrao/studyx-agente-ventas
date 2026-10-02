@@ -409,6 +409,12 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.effective.proposal.response.messages).toEqual(['A qué número con código de país y área puedo llamarte?']);
     expect(result.effective.proposal.move.move).toBe('request_call');
     expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+    expect(result.action_rejection).toEqual({
+      action: 'request_call_now',
+      codes: ['ACTION_NOT_AUTHORIZED'],
+      missing_fields: ['telefono'],
+      retryable: false,
+    });
   });
 
   it('repairs a call acknowledgement that omitted the missing phone request', async () => {
@@ -1581,6 +1587,12 @@ describe('afirmar un link no autorizado no puede terminar en silencio', () => {
     expect(mensajes.length).toBeGreaterThan(0);
     expect(mensajes.join(' ')).not.toMatch(/link/iu);
     expect(resolved.effective.proposal.proposed_action.type).toBe('none');
+    expect(resolved.action_rejection).toEqual({
+      action: 'send_payment_link',
+      codes: ['ACTION_NOT_AUTHORIZED', 'PLAN_NOT_SELECTED'],
+      missing_fields: ['payment_plan'],
+      retryable: false,
+    });
   });
 
   it('si no queda nada verdadero que decir, sigue siendo un rechazo duro', async () => {
@@ -1617,6 +1629,62 @@ describe('afirmar un link no autorizado no puede terminar en silencio', () => {
  * link no autorizado.
  */
 describe('prerequisitos sin respaldo se podan, no se entregan', () => {
+  it('preserves safe guidance when candidate detail and call action are rejected together', async () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm2', text: 'Contame de fotografía' }];
+    current.catalog.selected_offering = null;
+    current.commercial_state.selected_offering_code = null;
+    current.commercial_state.stage = 'exploring';
+    current.capabilities.may_request_call_now = false;
+    current.catalog.candidate_offerings = [{
+      code: 'fotografia-profesional',
+      fact_id: AVAILABLE_NAME_FACT,
+      display_name: 'Fotografía Profesional',
+      area_code: 'fotografia',
+    }, {
+      code: 'ingles-1',
+      fact_id: ENGLISH_1_NAME_FACT,
+      display_name: 'Inglés 1',
+      area_code: 'idiomas',
+    }];
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({
+        move: {
+          schema_version: 1,
+          move: 'browse_catalog',
+          secondary_moves: [],
+          vetoes: [],
+          confidence: 0.9,
+        },
+        response: {
+          messages: [
+            'Fotografía Profesional es ideal para empezar desde cero y editar imágenes.',
+            'Puedo ayudarte a comparar opciones por aquí.',
+          ],
+          call_offer: null,
+        },
+        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+        used_fact_ids: [AVAILABLE_NAME_FACT, ENGLISH_1_NAME_FACT],
+      })),
+      context: current,
+      repair_enabled: true,
+      repair: async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); },
+      rejection_id: '00000000-0000-4000-8000-0000000000b5',
+    });
+
+    expect(result.effective.proposal.response.messages).toEqual([
+      'Puedo ayudarte a comparar opciones por aquí.',
+    ]);
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+    expect(result.action_rejection).toEqual({
+      action: 'request_call_now',
+      codes: ['ACTION_NOT_AUTHORIZED'],
+      missing_fields: [],
+      retryable: false,
+    });
+  });
+
   it('preserves the useful reply when unsupported candidate detail and a missing call offer occur together', async () => {
     const current = context();
     current.customer.display_name = 'Thiago';

@@ -34,6 +34,13 @@ export class AgentTurnV2RejectedError extends Error {
   }
 }
 
+export interface AgentActionRejectionV1 {
+  readonly action: 'request_call_now' | 'send_payment_link' | 'send_test_payment_link';
+  readonly codes: readonly string[];
+  readonly missing_fields: readonly string[];
+  readonly retryable: boolean;
+}
+
 function renderDecimal(amount: string): string {
   return amount.replace(/(\.\d*?[1-9])0+$/u, '$1').replace(/\.0+$/u, '');
 }
@@ -153,6 +160,7 @@ export async function prepareAgentTurnV2(input: {
   readonly authorized_offering_code: string | null;
   readonly authorized_payment_plan: 'monthly_12' | 'monthly_6' | 'one_time' | null;
   readonly authorized_protected_facts: readonly ProtectedFactRef[];
+  readonly action_rejection: AgentActionRejectionV1 | null;
 }> {
   const nowMs = deps.now?.() ?? Date.now();
   const [loaded, callFacts, contactIntake, paymentVerification] = await Promise.all([
@@ -220,6 +228,7 @@ export async function prepareAgentTurnV2(input: {
   });
   let effectiveProposal = input.proposal;
   let authority = authorize(effectiveProposal);
+  let actionRejection: AgentActionRejectionV1 | null = null;
 
   // A rejected side effect must not reject the conversation that requested it.
   // Keep Agent A's wording and semantic move, remove only the unavailable
@@ -234,6 +243,19 @@ export async function prepareAgentTurnV2(input: {
     && authority.reasons.every((reason) => (
       reason === 'ACTION_NOT_AUTHORIZED' || reason === 'MISSING_INTAKE'
     ))) {
+    const rejectedAction = effectiveProposal.proposed_action.type;
+    if (rejectedAction === 'none') {
+      throw new AgentTurnV2RejectedError(authority.reasons);
+    }
+    const requiredFields = rejectedAction === 'request_call_now'
+      ? (['nombre', 'apellido', 'telefono'] as const)
+      : (['nombre', 'apellido', 'correo', 'telefono'] as const);
+    actionRejection = {
+      action: rejectedAction,
+      codes: [...authority.reasons],
+      missing_fields: requiredFields.filter((field) => !contactIntake?.[field]),
+      retryable: false,
+    };
     effectiveProposal = { ...effectiveProposal, proposed_action: { type: 'none' } };
     authority = authorize(effectiveProposal);
   }
@@ -280,5 +302,6 @@ export async function prepareAgentTurnV2(input: {
       }),
       ...catalogFacts,
     ]),
+    action_rejection: actionRejection,
   };
 }
