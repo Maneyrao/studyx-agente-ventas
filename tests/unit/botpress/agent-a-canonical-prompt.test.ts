@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const PROMPT_PATH = 'docs/prompts/studyx-agent-a-canonical.md';
 const GENERATED_PATH = 'botpress-agent/src/prompts/studyx-agent-a-canonical.generated.ts';
-const EXPECTED_SHA256 = '6217b2df90ac1f2cae2458e3e55b1b48e0fd31205e7ec688e202e8aa31ed550b';
+const EXPECTED_SHA256 = 'aeed3653ab0816fdf2fada8a36e4b5c03549b9db913f0fbcd51cf4e61ae289e7';
 
 describe('Agent A canonical sales prompt', () => {
   it('ships the complete approved prompt and a byte-equivalent generated module', () => {
@@ -16,7 +16,7 @@ describe('Agent A canonical sales prompt', () => {
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v64' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v65' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
@@ -77,6 +77,37 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toMatch(/situaci[oó]n actual[\s\S]*deseo[\s\S]*motivaci[oó]n[\s\S]*distancia[\s\S]*frenos/iu);
     expect(prompt).toMatch(/informaci[oó]n del cliente[\s\S]*necesidad[\s\S]*hecho verificado[\s\S]*utilidad personal/iu);
     expect(prompt).toMatch(/ejemplos[^.]*no son scripts/iu);
+  });
+
+  it('keeps commercial firmness collaborative instead of blaming or ordering the prospect', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+
+    expect(prompt).toMatch(/firmeza comercial[^.]*impaciencia[^.]*reproche[^.]*orden/iu);
+    expect(prompt).toMatch(/peticiones colaborativas/iu);
+    expect(prompt).toMatch(/no atribuyas la fricci[oó]n al cliente/iu);
+  });
+
+  it('runs Lisandro humanity check before returning the model-authored reply', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+
+    expect(prompt).toMatch(/antes de entregar[^.]*persona real por WhatsApp/iu);
+    expect(prompt).toMatch(/suena gen[eé]rica[^.]*fr[ií]a[^.]*brusca[^.]*repetitiva/iu);
+    expect(prompt).toMatch(/reescr[ií]bela/iu);
+  });
+
+  it('offers a call for a commercial reason rather than for turn position alone', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+
+    expect(prompt).toMatch(/segunda intervenci[oó]n comercial[^.]*raz[oó]n concreta/iu);
+    expect(prompt).toMatch(/posici[oó]n temporal[^.]*no sustituye[^.]*raz[oó]n comercial/iu);
+  });
+
+  it('retains the richer commercial context Lisandro expects without storing inference', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+
+    expect(prompt).toMatch(/trabajo[^.]*habilidad[^.]*reconocimiento de terceros/iu);
+    expect(prompt).toMatch(/frustraci[oó]n[^.]*persona relevante[^.]*oportunidad[^.]*visi[oó]n futura/iu);
+    expect(prompt).toMatch(/no guardes inferencias/iu);
   });
 
   it('sells consultatively from the current message instead of completing a questionnaire', () => {
