@@ -329,6 +329,7 @@
       "code": "ingles_1",
       "name": "Inglés 1",
       "academy": "Academia Cultural",
+      "aliases": ["inglés", "inglés básico", "inglés inicial", "nivel básico"],
       "classes": 12,
       "source_page": 16,
       "description": "El objetivo de este curso es que el alumno adquiera conocimientos de inglés que perduren en el tiempo a través del aprendizaje y la lectura de materiales teóricos que pueda aplicar y apropiar en la práctica. Se trabajará en acercar al estudiante a la lengua de forma natural, se explicarán los conceptos básicos del idioma, se ayudará a estructurar conversaciones y comunicaciones escritas y orales simples pero efectivas, se motivará a cada persona a poner en práctica lo aprendido en producciones originales dentro y fuera del aula para comprender e interactuar con los hablantes nativos y no nativos.Este diplomado cuenta con 12 clases, 4 exámenes parciales y 1 examen final."
@@ -337,6 +338,7 @@
       "code": "ingles_2",
       "name": "Inglés 2",
       "academy": "Academia Cultural",
+      "aliases": ["inglés", "inglés intermedio", "nivel intermedio"],
       "classes": 12,
       "source_page": 16,
       "description": "En este diplomado el alumno se adentrará en los modos, en cómo entablar una conversación y podrá aplicar todo lo aprendido. Este diplomado cuenta con 12 clases, 3 exámenes parciales y 1 examen final."
@@ -345,6 +347,7 @@
       "code": "ingles_3",
       "name": "Inglés 3",
       "academy": "Academia Cultural",
+      "aliases": ["inglés", "inglés avanzado", "nivel avanzado"],
       "classes": 21,
       "source_page": 16,
       "description": "En este diplomado el alumno adquirirá conocimientos sobre gramática y vocabulario que le dará las herramientas necesarias para poder desenvolverse en los distintos contextos presentados en el curso, tales como en el aeropuerto, en una entrevista laboral, etc. Se brindará ayuda visual, audios, videos y diversas actividades que ayudarán al alumno a adquirir y practicar los temas presentados. La comunicación y el uso del inglés en la vida real son los principales tópicos en este curso.Este diplomado cuenta con 21 clases, 3 exámenes parciales y 1 examen final."

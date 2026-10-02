@@ -458,7 +458,7 @@ function rawCatalogIdentitiesAreSafe(raw: {
   });
 }
 
-function resolveCourse(
+function resolveCourseCandidates(
   requestedCourse: string,
   requestedAcademy: string | undefined,
   offerings: ReadonlyArray<{
@@ -467,9 +467,9 @@ function resolveCourse(
     academy: string | null;
     aliases?: readonly string[];
   }>,
-): string | null {
+): ReadonlyArray<{ readonly code: string; readonly display_name: string }> {
   if (inputIsUnsafe(requestedCourse) || (requestedAcademy && inputIsUnsafe(requestedAcademy))) {
-    return null;
+    return [];
   }
   const courseIdentity = normalizedCatalogIdentity(requestedCourse);
   const academyIdentity = requestedAcademy
@@ -491,6 +491,20 @@ function resolveCourse(
       .map(normalizedCatalogIdentity);
     return canonicalIdentities.includes(courseIdentity);
   });
+  return matches.map(({ code, display_name }) => ({ code, display_name }));
+}
+
+function resolveCourse(
+  requestedCourse: string,
+  requestedAcademy: string | undefined,
+  offerings: ReadonlyArray<{
+    code: string;
+    display_name: string;
+    academy: string | null;
+    aliases?: readonly string[];
+  }>,
+): string | null {
+  const matches = resolveCourseCandidates(requestedCourse, requestedAcademy, offerings);
   return matches.length === 1 ? matches[0].code : null;
 }
 
@@ -505,7 +519,18 @@ async function consultCourse(
     index.injection_suspected_count > 0
     || index.offerings_total !== index.offerings.length
   ) return resultError('COURSE_UNAVAILABLE');
-  const code = resolveCourse(args.curso, args.academia, index.offerings);
+  const matches = resolveCourseCandidates(args.curso, args.academia, index.offerings);
+  if (matches.length > 1) {
+    return Response.json({
+      ok: false,
+      error: { code: 'COURSE_AMBIGUOUS' },
+      candidatos: matches.slice(0, 4).map((course) => ({
+        codigo: course.code,
+        nombre: course.display_name,
+      })),
+    });
+  }
+  const code = matches[0]?.code ?? null;
   if (!code) return resultError('COURSE_UNAVAILABLE');
 
   const rawDetail = await dependencies.business.loadByCode(dependencies.workspaceSlug, code);
@@ -830,24 +855,55 @@ export async function handleRetellToolRequest(
     contactId = correlation.contactId;
     conversationId = correlation.conversationId;
   } catch (error) {
-    if (error instanceof RetellCallCorrelationError) return resultError(error.code);
+    if (error instanceof RetellCallCorrelationError) {
+      logger.warn({
+        event: 'retell.tool.correlation_rejected',
+        tool: expectedName,
+        provider_call_id: envelope.call.call_id,
+        has_internal_call_id: Boolean(envelope.call.metadata.internal_call_id),
+        has_contact_id: Boolean(envelope.call.metadata.lead_id ?? envelope.call.metadata.contact_id),
+        has_conversation_id: Boolean(envelope.call.metadata.conversation_id),
+        error_code: error.code,
+      });
+      return resultError(error.code);
+    }
+    logger.error({
+      event: 'retell.tool.correlation_rejected',
+      tool: expectedName,
+      provider_call_id: envelope.call.call_id,
+      has_internal_call_id: Boolean(envelope.call.metadata.internal_call_id),
+      has_contact_id: Boolean(envelope.call.metadata.lead_id ?? envelope.call.metadata.contact_id),
+      has_conversation_id: Boolean(envelope.call.metadata.conversation_id),
+      error_code: 'TOOL_UNAVAILABLE',
+    });
     return resultError('TOOL_UNAVAILABLE');
   }
 
+  const correlation = {
+    call_id: callId,
+    contact_id: contactId,
+    conversation_id: conversationId,
+    provider_call_id: envelope.call.call_id,
+  };
+  logger.info({
+    event: 'retell.tool.started',
+    tool: expectedName,
+    ...correlation,
+  });
+
   try {
+    let response: Response;
     if (expectedName === 'consultar_curso') {
-      return await consultCourse(
+      response = await consultCourse(
         envelope.args as z.infer<typeof ToolArgsSchemas.consultar_curso>,
         dependencies,
       );
-    }
-    if (expectedName === 'consultar_oferta') {
-      return await consultOffer(
+    } else if (expectedName === 'consultar_oferta') {
+      response = await consultOffer(
         envelope.args as z.infer<typeof ToolArgsSchemas.consultar_oferta>,
         dependencies,
       );
-    }
-    if (expectedName === 'guardar_datos_contacto') {
+    } else if (expectedName === 'guardar_datos_contacto') {
       const args = envelope.args as z.infer<typeof ToolArgsSchemas.guardar_datos_contacto>;
       const saved = await dependencies.contacts.saveCorrelatedContact({
         callId,
@@ -860,24 +916,46 @@ export async function handleRetellToolRequest(
           : { telefonoAlternativo: args.telefono_alternativo }),
         sheets: dependencies.sheets,
       });
-      return Response.json({ ok: true, saved: saved.updated, projected: saved.projected });
-    }
-    if ((['enviar_link_pago', 'verificar_pago', 'enviar_material', 'derivar_a_asesor_humano', 'agendar_seguimiento'] as const)
+      response = Response.json({ ok: true, saved: saved.updated, projected: saved.projected });
+    } else if ((['enviar_link_pago', 'verificar_pago', 'enviar_material', 'derivar_a_asesor_humano', 'agendar_seguimiento'] as const)
       .includes(expectedName as RetellOrchestrationToolName)) {
-      return await runOrchestrationTool(
+      response = await runOrchestrationTool(
         envelope as ParsedEnvelope<RetellOrchestrationToolName>,
         callId,
         { contactId, conversationId },
         dependencies,
       );
+    } else {
+      response = await recordResult(
+        envelope as ParsedEnvelope<'registrar_resultado'>,
+        callId,
+        { contactId, conversationId },
+        dependencies,
+      );
     }
-    return await recordResult(
-      envelope as ParsedEnvelope<'registrar_resultado'>,
-      callId,
-      { contactId, conversationId },
-      dependencies,
-    );
+
+    const result = await response.clone().json().catch(() => null) as {
+      readonly ok?: unknown;
+      readonly error?: { readonly code?: unknown };
+    } | null;
+    logger.info({
+      event: 'retell.tool.completed',
+      tool: expectedName,
+      ...correlation,
+      accepted: result?.ok === true,
+      http_status: response.status,
+      error_code: typeof result?.error?.code === 'string' ? result.error.code : null,
+    });
+    return response;
   } catch {
+    logger.error({
+      event: 'retell.tool.completed',
+      tool: expectedName,
+      ...correlation,
+      accepted: false,
+      http_status: 200,
+      error_code: 'TOOL_UNAVAILABLE',
+    });
     return resultError('TOOL_UNAVAILABLE');
   }
 }

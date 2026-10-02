@@ -390,6 +390,39 @@ describe('Retell P0 tool boundary', () => {
     expect(JSON.stringify(result.body)).not.toContain('must be discarded');
   });
 
+  it('returns bounded canonical candidates when an owner alias identifies a course family', async () => {
+    const deps = dependencies();
+    const english = [
+      { ...offering, code: 'ingles_1', display_name: 'Inglés 1', metadata: {
+        ...offering.metadata, academy: 'Academia Cultural', aliases: ['inglés', 'inglés básico'],
+      } },
+      { ...offering, code: 'ingles_2', display_name: 'Inglés 2', metadata: {
+        ...offering.metadata, academy: 'Academia Cultural', aliases: ['inglés', 'inglés intermedio'],
+      } },
+      { ...offering, code: 'ingles_3', display_name: 'Inglés 3', metadata: {
+        ...offering.metadata, academy: 'Academia Cultural', aliases: ['inglés', 'inglés avanzado'],
+      } },
+    ];
+    deps.business.loadCompleteIndex.mockResolvedValue(rawIndex(english.map((course) => ({
+      code: course.code, display_name: course.display_name, metadata: course.metadata,
+    }))));
+
+    const result = await invoke('consultar_curso', envelope('consultar_curso', {
+      curso: 'inglés',
+    }), deps);
+
+    expect(result.body).toEqual({
+      ok: false,
+      error: { code: 'COURSE_AMBIGUOUS' },
+      candidatos: [
+        { codigo: 'ingles_1', nombre: 'Inglés 1' },
+        { codigo: 'ingles_2', nombre: 'Inglés 2' },
+        { codigo: 'ingles_3', nombre: 'Inglés 3' },
+      ],
+    });
+    expect(deps.business.loadByCode).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['wrong academy', { curso: offering.display_name, academia: 'Academia Incorrecta' }],
     ['extra promotion text', { curso: `${offering.display_name} con promoción` }],
