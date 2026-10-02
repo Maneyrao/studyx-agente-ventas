@@ -47,6 +47,20 @@ async function outbound(initial: InboundEnvelope, context: IngestContext, conten
 const fullRequest = 'Para dejarlo registrado necesito tu nombre, apellido y teléfono. ¿Me los pasás?';
 
 run('contact identity from delivered conversational requests', () => {
+  it('does not replace a complete durable identity with a conversational reminder', async () => {
+    const first = envelope();
+    first.message.text = 'Me llamo Gustavo Fring, quiero el curso de alemán';
+    const opened = await processInboundMessage(first);
+    expect(opened.contact.name).toBe('Gustavo Fring');
+
+    await outbound(first, opened, '¿Me confirmas tu nombre y apellido?');
+    const reminded = await processInboundMessage(answer(first, 'ya te lo pasé'));
+
+    expect(reminded.contact.name).toBe('Gustavo Fring');
+    expect(await db!`SELECT name FROM contacts WHERE id = ${opened.contact.id}::uuid`)
+      .toEqual([{ name: 'Gustavo Fring' }]);
+  });
+
   it('preserves the durable surname when the customer corrects only the first name', async () => {
     const first = envelope();
     first.message.text = 'Me llamo Lucas Pierella';

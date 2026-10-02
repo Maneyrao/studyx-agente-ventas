@@ -290,9 +290,14 @@ async function captureDeliveredContactNameAnswer(db: DbClient, input: {
   `;
   const request = rows[0];
   if (!request) return null;
+  const canonical = input.contact.name ? splitFullName(input.contact.name) : null;
+  // Contextual capture only fills an identity field that is genuinely absent.
+  // Once both parts are durable, a bare answer to a repeated request is too
+  // ambiguous to replace them. Explicit self-identification/correction still
+  // runs first through `extractContactIdentity` in `persistInbound`.
+  if (canonical?.nombre && canonical.apellido) return null;
   const stored = request.previous && typeof request.previous === 'object' && !Array.isArray(request.previous)
     ? request.previous as Record<string, unknown> : null;
-  const canonical = input.contact.name ? splitFullName(input.contact.name) : null;
   const storedParts = {
     firstName: typeof stored?.first_name === 'string' ? stored.first_name : null,
     surname: typeof stored?.surname === 'string' ? stored.surname : null,
