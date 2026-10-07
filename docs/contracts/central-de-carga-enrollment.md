@@ -1,6 +1,6 @@
 # CONTRATO — Orquestador StudyX → Central de Carga mystudyx (alta de alumnos)
 
-> **Estado 06-10-2026:** la Central de Carga implementó ambos endpoints (branch `feature/api-enrollments` de su repo, sin desplegar; guía en su `docs/api-enrollments.md`). El lado orquestador (worker que consume `fulfillment_jobs`) todavía no existe. Las decisiones marcadas como **ABIERTA** (§9) deben cerrarse antes de pasar a producción.
+> **Estado 07-10-2026:** la Central de Carga implementó ambos endpoints (branch `feature/api-enrollments` de su repo, todavía sin desplegar; guía en su `docs/api-enrollments.md`) y el orquestador ya incluye el worker que consume `fulfillment_jobs`. La integración permanece deshabilitada por defecto y pendiente de configuración/despliegue. Las decisiones marcadas como **ABIERTA** (§9) deben cerrarse antes de pasar a producción.
 >
 > Reemplaza, para el alta, la decisión de `agent-b-signal.md` §0 ("el alta al campus es manual, `estado_alta=pendiente_operador`"): el alta pasa a ser automática vía este contrato, con un humano como fallback (§7).
 
