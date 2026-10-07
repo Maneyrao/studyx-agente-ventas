@@ -1,0 +1,347 @@
+import { randomUUID } from 'node:crypto';
+import { sql as orchestratorSql } from '@/lib/db/orchestrator';
+import type postgres from 'postgres';
+import { logger } from '@/lib/observability/structured-log';
+import { CentralCargaClient, type EnrollmentCallOutcome } from './client';
+import { loadCentralCargaConfig, type CentralCargaConfig } from './config';
+import {
+  buildEnrollmentRequest,
+  issuePaths,
+  type EnrollmentResponseV1,
+  type EnrollmentSource,
+} from './contract';
+import { computeBackoffSeconds, effectiveMaxAttempts, preflight } from './policy';
+
+const DEFAULT_LIMIT = 10;
+const DEFAULT_LEASE_SECONDS = 120;
+const DEFAULT_DEADLINE_MS = 50_000;
+/** One job can spend 2 x 15 s on the Central; do not start another past this. */
+const MIN_JOB_BUDGET_MS = 35_000;
+
+interface ClaimedJob {
+  id: string;
+  payment_id: string;
+  workspace_id: string;
+  attempt_count: number;
+  max_attempts: number;
+}
+
+interface SourceRow extends EnrollmentSource {
+  payment_status: string;
+  sandbox_contact: boolean;
+}
+
+export interface EnrollmentWorkerResult {
+  enabled: boolean;
+  claimed: number;
+  completed: number;
+  retried: number;
+  skipped: number;
+  dead_lettered: number;
+  lease_lost: number;
+}
+
+export interface EnrollmentWorkerInput {
+  worker_id?: string;
+  limit?: number;
+  lease_seconds?: number;
+  deadline_ms?: number;
+}
+
+export interface EnrollmentWorkerDeps {
+  sql?: postgres.Sql;
+  config?: CentralCargaConfig;
+  client?: CentralCargaClient;
+  fetchImpl?: typeof fetch;
+  now?: () => number;
+  random?: () => number;
+}
+
+type Terminal =
+  | { kind: 'completed'; body: EnrollmentResponseV1 }
+  | { kind: 'retry'; code: string; delaySeconds?: number }
+  | { kind: 'skipped'; code: string }
+  | { kind: 'dead_letter'; code: string };
+
+/**
+ * Leased worker that turns `fulfillment_jobs` into Central de Carga
+ * enrollments. Safety order: do nothing unless explicitly enabled, never call
+ * the Central for payments that are out of scope, always reconcile with GET
+ * before re-POSTing, and fence every post-claim write on the exact claim
+ * (status, worker and attempt) so a stale worker can never overwrite a newer
+ * one. Errors never carry PII: logs and `last_error_*` hold codes only.
+ */
+export async function runEnrollmentWorker(
+  input: EnrollmentWorkerInput = {},
+  deps: EnrollmentWorkerDeps = {},
+): Promise<EnrollmentWorkerResult> {
+  const result: EnrollmentWorkerResult = {
+    enabled: false, claimed: 0, completed: 0, retried: 0, skipped: 0, dead_lettered: 0, lease_lost: 0,
+  };
+  let config: CentralCargaConfig;
+  try {
+    config = deps.config ?? loadCentralCargaConfig();
+  } catch (error) {
+    // Enabled but misconfigured: claim nothing, alert.
+    logger.error({
+      event: 'central_carga.config_invalid',
+      fields: error instanceof Error && 'fields' in error ? String((error as { fields: string }).fields) : 'unknown',
+    });
+    throw error;
+  }
+  if (!config.enabled) return result;
+  result.enabled = true;
+
+  const sql = deps.sql ?? orchestratorSql;
+  const workerId = input.worker_id ?? `central-carga-enrollment:${randomUUID()}`;
+  const limit = Math.min(Math.max(input.limit ?? DEFAULT_LIMIT, 1), 50);
+  const leaseSeconds = Math.min(Math.max(input.lease_seconds ?? DEFAULT_LEASE_SECONDS, 60), 900);
+  const now = deps.now ?? Date.now;
+  const startedAt = now();
+  const deadlineMs = input.deadline_ms ?? DEFAULT_DEADLINE_MS;
+  const client = deps.client ?? new CentralCargaClient({
+    baseUrl: config.baseUrl,
+    signingSecret: config.signingSecret,
+    fetchImpl: deps.fetchImpl,
+    now,
+  });
+  const random = deps.random ?? Math.random;
+
+  while (result.claimed < limit) {
+    if (deadlineMs - (now() - startedAt) < MIN_JOB_BUDGET_MS) break;
+    const claimed = await sql<ClaimedJob[]>`
+      SELECT id, payment_id, workspace_id, attempt_count, max_attempts
+      FROM claim_fulfillment_jobs(${workerId}, 1, ${leaseSeconds})
+    `;
+    const job = claimed[0];
+    if (!job) break;
+    result.claimed += 1;
+
+    let terminal: Terminal;
+    try {
+      terminal = await decide(sql, job, config, client);
+    } catch (error) {
+      // Unexpected local failure (DB read etc.): the Central outcome is
+      // unknown, so retry rather than assume anything.
+      terminal = { kind: 'retry', code: 'worker_error' };
+      logger.error({
+        event: 'central_carga.worker_error',
+        payment_id: job.payment_id,
+        job_id: job.id,
+        error_name: error instanceof Error ? error.name : 'unknown',
+      });
+    }
+
+    const applied = await settle(sql, job, workerId, terminal, random);
+    if (!applied) {
+      result.lease_lost += 1;
+      logger.warn({ event: 'central_carga.lease_lost', payment_id: job.payment_id, job_id: job.id });
+      continue;
+    }
+    if (applied.kind === 'completed') result.completed += 1;
+    else if (applied.kind === 'retry') result.retried += 1;
+    else if (applied.kind === 'skipped') result.skipped += 1;
+    else result.dead_lettered += 1;
+  }
+
+  logger.info({ event: 'central_carga.worker_completed', worker_id: workerId, ...result });
+  return result;
+}
+
+async function loadSource(sql: postgres.Sql, paymentId: string): Promise<SourceRow | null> {
+  const rows = await sql<SourceRow[]>`
+    SELECT
+      p.id AS payment_id, p.workspace_id, p.contact_id, p.environment, p.provider,
+      p.provider_session_id, p.paid_at, p.amount::text AS amount, p.currency,
+      p.plan_code, p.status AS payment_status,
+      c.name AS contact_name, c.email AS contact_email, c.phone AS contact_phone,
+      c.declared_phone AS contact_declared_phone,
+      o.code AS offering_code, o.display_name AS offering_display_name,
+      EXISTS (SELECT 1 FROM sandbox_identities s WHERE s.contact_id = c.id) AS sandbox_contact
+    FROM payments p
+    JOIN contacts c ON c.id = p.contact_id
+    LEFT JOIN offerings o ON o.id = p.offering_id
+    WHERE p.id = ${paymentId}::uuid
+  `;
+  return rows[0] ?? null;
+}
+
+function fromOutcome(outcome: EnrollmentCallOutcome, onNotFound: Terminal | null): Terminal {
+  switch (outcome.kind) {
+    case 'success':
+      return { kind: 'completed', body: outcome.body };
+    case 'processing':
+      return { kind: 'retry', code: 'enrollment_processing' };
+    case 'retry':
+      return { kind: 'retry', code: outcome.code, delaySeconds: outcome.retryAfterSeconds };
+    case 'dead_letter':
+      return { kind: 'dead_letter', code: outcome.code };
+    case 'not_found':
+      return onNotFound ?? { kind: 'dead_letter', code: 'http_404' };
+  }
+}
+
+async function decide(
+  sql: postgres.Sql,
+  job: ClaimedJob,
+  config: Extract<CentralCargaConfig, { enabled: true }>,
+  client: CentralCargaClient,
+): Promise<Terminal> {
+  const source = await loadSource(sql, job.payment_id);
+  if (!source) return { kind: 'dead_letter', code: 'payment_not_found' };
+
+  const decision = preflight({
+    source,
+    paymentStatus: source.payment_status,
+    sandboxContact: source.sandbox_contact,
+    environment: config.environment,
+    paidAfter: config.paidAfter,
+  });
+  if (decision.action === 'skip') return { kind: 'skipped', code: decision.code };
+  if (decision.action === 'dead_letter') return { kind: 'dead_letter', code: decision.code };
+
+  // An attempt beyond the cap (row created with the old default of 5) is
+  // never executed.
+  if (job.attempt_count > effectiveMaxAttempts(job.max_attempts)) {
+    return { kind: 'dead_letter', code: 'max_attempts_exhausted' };
+  }
+
+  const request = buildEnrollmentRequest(source);
+  if (!request.success) {
+    logger.error({
+      event: 'central_carga.invalid_request',
+      payment_id: job.payment_id,
+      invalid_fields: issuePaths(request.error),
+    });
+    return { kind: 'dead_letter', code: 'invalid_enrollment_request' };
+  }
+
+  if (job.attempt_count > 1) {
+    // Previous attempt may have reached the Central (timeout, lost response).
+    const existing = await client.getEnrollment(job.payment_id);
+    if (existing.kind === 'success' || existing.kind === 'processing'
+      || existing.kind === 'retry' || existing.kind === 'dead_letter') {
+      return fromOutcome(existing, null);
+    }
+    // 404: nothing completed there; the POST is idempotent, so it is safe.
+  }
+  return fromOutcome(await client.createEnrollment(request.data), null);
+}
+
+/**
+ * Fenced transition. Every write requires the job to still be the exact claim
+ * this worker took; 0 affected rows means someone else owns it and nothing
+ * else is written.
+ */
+async function settle(
+  sql: postgres.Sql,
+  job: ClaimedJob,
+  workerId: string,
+  outcome: Terminal,
+  random: () => number,
+): Promise<Terminal | null> {
+  let terminal = outcome;
+  // Retry budget exhausted: escalate instead of rescheduling.
+  if (terminal.kind === 'retry' && job.attempt_count >= effectiveMaxAttempts(job.max_attempts)) {
+    terminal = { kind: 'dead_letter', code: `max_attempts_exhausted:${terminal.code}`.slice(0, 80) };
+  }
+
+  const fence = sql`id = ${job.id}::uuid AND status = 'leased' AND leased_by = ${workerId}
+    AND attempt_count = ${job.attempt_count}`;
+  const detail = (code: string) => `code=${code} attempt=${job.attempt_count}`;
+  let fenced: Array<{ id: string }>;
+
+  if (terminal.kind === 'completed') {
+    const body = terminal.body;
+    const done = await sql.begin(async (tx) => {
+      const rows = await tx<Array<{ id: string }>>`
+        UPDATE fulfillment_jobs
+        SET status = 'completed', completed_at = now(), lease_until = NULL, leased_by = NULL,
+            last_error_code = NULL, last_error_detail = NULL
+        WHERE ${fence}
+        RETURNING id
+      `;
+      if (rows.length === 0) return false;
+      await tx`
+        INSERT INTO central_enrollments (
+          payment_id, workspace_id, enrollment_id, student_id, enrollment_status,
+          student_was_created, welcome_sent, login_email, central_created_at
+        ) VALUES (
+          ${job.payment_id}::uuid, ${job.workspace_id}::uuid, ${body.enrollment_id},
+          ${body.student_id}, ${body.enrollment_status}, ${body.student_was_created},
+          ${body.access.welcome_sent}, ${body.access.login_email}, ${body.created_at ?? null}
+        )
+        ON CONFLICT (payment_id) DO NOTHING
+      `;
+      return true;
+    });
+    if (!done) return null;
+    logger.info({
+      event: 'central_carga.enrollment_completed',
+      payment_id: job.payment_id,
+      attempt: job.attempt_count,
+      enrollment_status: body.enrollment_status,
+    });
+    return terminal;
+  }
+
+  if (terminal.kind === 'retry') {
+    const delay = terminal.delaySeconds ?? computeBackoffSeconds(job.attempt_count, random);
+    fenced = await sql<Array<{ id: string }>>`
+      UPDATE fulfillment_jobs
+      SET status = 'failed_retryable', available_at = now() + make_interval(secs => ${delay}),
+          lease_until = NULL, leased_by = NULL,
+          last_error_code = ${terminal.code}, last_error_detail = ${detail(terminal.code)}
+      WHERE ${fence}
+      RETURNING id
+    `;
+    if (fenced.length === 0) return null;
+    logger.warn({
+      event: 'central_carga.enrollment_retry',
+      payment_id: job.payment_id,
+      attempt: job.attempt_count,
+      code: terminal.code,
+      delay_seconds: delay,
+    });
+    return terminal;
+  }
+
+  if (terminal.kind === 'skipped') {
+    fenced = await sql<Array<{ id: string }>>`
+      UPDATE fulfillment_jobs
+      SET status = 'skipped', lease_until = NULL, leased_by = NULL,
+          last_error_code = ${terminal.code}, last_error_detail = ${detail(terminal.code)}
+      WHERE ${fence}
+      RETURNING id
+    `;
+    if (fenced.length === 0) return null;
+    logger.info({
+      event: 'central_carga.enrollment_skipped',
+      payment_id: job.payment_id,
+      code: terminal.code,
+    });
+    return terminal;
+  }
+
+  fenced = await sql<Array<{ id: string }>>`
+    UPDATE fulfillment_jobs
+    SET status = 'dead_letter', lease_until = NULL, leased_by = NULL,
+        last_error_code = ${terminal.code}, last_error_detail = ${detail(terminal.code)}
+    WHERE ${fence}
+    RETURNING id
+  `;
+  if (fenced.length === 0) return null;
+  // Escalation: the repo has no operator-alert channel for payments (the
+  // existing human-review flag is conversation-scoped), so a structured
+  // error line is the alert. No PII: payment_id, job_id and a code only.
+  logger.error({
+    event: 'central_carga.enrollment_dead_letter',
+    payment_id: job.payment_id,
+    job_id: job.id,
+    workspace_id: job.workspace_id,
+    attempt: job.attempt_count,
+    code: terminal.code,
+    action_required: 'human_enrollment',
+  });
+  return terminal;
+}
