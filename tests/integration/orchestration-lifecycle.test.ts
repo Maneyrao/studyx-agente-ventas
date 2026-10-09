@@ -1706,9 +1706,12 @@ run('Fase 4 — pago y cierre de batch', () => {
 
   it('allows a sandbox link after an earlier live link in the same chat', async () => {
     const sandboxUrl = process.env.PAYMENT_LINK_12M;
+    const priorMode = process.env.PAYMENT_LINK_ENVIRONMENT;
+    const priorSandboxUrl = process.env.PAYMENT_LINK_SANDBOX_12M;
     const liveUrl = 'https://buy.stripe.com/live_12m_environment_switch';
     const firstEnvelope = paymentInbound();
     try {
+      process.env.PAYMENT_LINK_ENVIRONMENT = 'live';
       process.env.PAYMENT_LINK_12M = liveUrl;
       const first = await processInboundMessage(firstEnvelope);
       const firstCommit = await commitAgentDecision(paymentDecision(first.turn_id));
@@ -1717,7 +1720,8 @@ run('Fase 4 — pago y cierre de batch', () => {
         UPDATE inbound_batches SET state = 'completed', completed_at = now(), updated_at = now()
         WHERE id = ${first.batch.id}::uuid
       `;
-      process.env.PAYMENT_LINK_12M = sandboxUrl;
+      process.env.PAYMENT_LINK_ENVIRONMENT = 'test';
+      process.env.PAYMENT_LINK_SANDBOX_12M = sandboxUrl;
       const second = await processInboundMessage({
         ...firstEnvelope, external_message_id: `message-${randomUUID()}`, trace_id: randomUUID(),
         message: { type: 'text', text: 'Confirmo nuevamente las 12 cuotas',
@@ -1736,6 +1740,10 @@ run('Fase 4 — pago y cierre de batch', () => {
     } finally {
       if (sandboxUrl === undefined) delete process.env.PAYMENT_LINK_12M;
       else process.env.PAYMENT_LINK_12M = sandboxUrl;
+      if (priorMode === undefined) delete process.env.PAYMENT_LINK_ENVIRONMENT;
+      else process.env.PAYMENT_LINK_ENVIRONMENT = priorMode;
+      if (priorSandboxUrl === undefined) delete process.env.PAYMENT_LINK_SANDBOX_12M;
+      else process.env.PAYMENT_LINK_SANDBOX_12M = priorSandboxUrl;
     }
   });
 
