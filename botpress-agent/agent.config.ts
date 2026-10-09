@@ -89,6 +89,13 @@ export default defineConfig({
     },
   },
 
+  events: {
+    studyxPostSale: {
+      description: "Verified payment/enrollment follow-up, claimed from StudyX backend.",
+      schema: z.object({ notification_id: z.string().uuid() }),
+    },
+  },
+
   bot: {
     state: z.object({
       schemaVersion: z.number().int().default(1),

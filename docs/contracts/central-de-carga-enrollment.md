@@ -1,6 +1,8 @@
 # CONTRATO — Orquestador StudyX → Central de Carga mystudyx (alta de alumnos)
 
-> **Estado 06-10-2026:** la Central de Carga implementó ambos endpoints (branch `feature/api-enrollments` de su repo, sin desplegar; guía en su `docs/api-enrollments.md`). El lado orquestador (worker que consume `fulfillment_jobs`) todavía no existe. Las decisiones marcadas como **ABIERTA** (§9) deben cerrarse antes de pasar a producción.
+> **Actualización 09-10-2026:** worker y avisos del agente implementados. Por autorización explícita del usuario, la prueba Stripe puede crear cuentas de prueba en la central actual: se conserva `environment=test` y se exige que la central lo acepte. La central configura `Studyx.123` para cuentas nuevas; cuentas existentes conservan su contraseña. El agente entrega las credenciales en lista sólo después de confirmar el alta.
+>
+> **Antecedente 06-10-2026:** la Central de Carga implementó ambos endpoints (branch `feature/api-enrollments` de su repo, sin desplegar; guía en su `docs/api-enrollments.md`). El lado orquestador (worker que consume `fulfillment_jobs`) todavía no existe. Las decisiones marcadas como **ABIERTA** (§9) deben cerrarse antes de pasar a producción.
 >
 > Reemplaza, para el alta, la decisión de `agent-b-signal.md` §0 ("el alta al campus es manual, `estado_alta=pendiente_operador`"): el alta pasa a ser automática vía este contrato, con un humano como fallback (§7).
 
@@ -12,7 +14,7 @@ Este archivo es la única fuente de verdad para la integración. Quien implement
 - **Cuándo:** sólo después de que un pago queda `paid` en el ledger del orquestador. El orquestador sólo acepta pagos confirmados por el webhook de Stripe con firma verificada; la Central confía en ese juicio y **no** vuelve a verificar contra Stripe.
 - **Cola:** al pasar a `paid`, el orquestador inserta una fila en `fulfillment_jobs` en la misma transacción (un job por pago, `payment_id` UNIQUE). Un worker reclama el job y llama a la Central. Ningún request HTTP de Stripe espera a la Central.
 - **Idempotencia:** la clave es `payment_id` (UUID del orquestador). Un pago produce como máximo un alta. El orquestador puede reintentar el mismo request cuantas veces quiera; la Central debe responder lo mismo sin duplicar alumnos.
-- **Entornos separados:** un pago `environment=test` nunca debe crear un alumno real. La Central de producción rechaza `test` (§5).
+- **Entornos:** los pagos de prueba conservan `environment=test`. El modo de prueba autorizado usa la central actual para cuentas de prueba; no convierte el pago a `live`. La central debe habilitar explícitamente esta excepción (§5).
 - **Datos sensibles:** los logs de ambos lados no registran email, teléfono ni nombre completo en claro; usan `payment_id` y `contact_id` para correlacionar.
 
 ## 1. Endpoints que la Central de Carga debe exponer
@@ -169,7 +171,7 @@ La Central persiste `payment_id` con constraint UNIQUE **en la misma transacció
 | `enrollment_status` | `"active"` \| `"already_enrolled"` \| `"processing"` | |
 | `student_was_created` | boolean | `false` si el alumno ya existía. |
 | `access.login_email` | string | Con qué email entra al campus. |
-| `access.welcome_sent` | boolean | Si la Central ya envió credenciales o bienvenida. El orquestador lo usa para decidir qué decirle al alumno por WhatsApp; **nunca** recibe ni reenvía contraseñas. |
+| `access.welcome_sent` | boolean | Si la Central ya envió credenciales o bienvenida. El orquestador lo usa para decidir qué decirle al alumno por WhatsApp; el agente añade la contraseña inicial acordada únicamente para cuentas nuevas, después de confirmar el alta y la identidad del correo. No reinicia contraseñas existentes. |
 | `created_at` | ISO 8601 UTC | |
 
 ## 4. Errores
@@ -195,7 +197,7 @@ Cuerpo de error uniforme:
 ## 5. Entornos
 
 - La Central expone (o es) dos instancias: una de prueba y una de producción, con secretos distintos.
-- La instancia de producción responde `422 environment_mismatch` a `environment: "test"`.
+- Por defecto la instancia de producción rechaza `test`. Para la prueba autorizada del 09-10-2026, la central actual debe aceptar explícitamente `test` para crear cuentas de prueba. Un rechazo sigue siendo un fallo de alta, nunca se oculta cambiando el pago a `live`.
 - La de prueba responde `422 environment_mismatch` a `environment: "live"`.
 - Así, un error de configuración (URL de prod con pago de prueba) falla cerrado y no crea un alumno real.
 
@@ -240,4 +242,4 @@ Uso del orquestador: si un POST terminó en timeout, consulta el GET antes de re
 3. **Mapa de cursos.** Quién mantiene la equivalencia `offering.code` → curso/campus de la Central, y dónde vive (configuración de la Central recomendada).
 4. **Reembolsos y bajas.** `payments.status` admite `refunded`. Falta definir si un reembolso debe dar de baja (p. ej. `POST /api/v1/enrollments/{payment_id}/revoke`) y si las cuotas impagas de `monthly_*` suspenden el acceso. Fuera de `schema_version: 1`.
 5. **Auth.** HMAC (este contrato) vs. bearer token estático. HMAC protege contra replay y alteración; bearer es más simple. Recomendado: HMAC.
-6. **Bienvenida.** Quién envía las credenciales de acceso: la Central (email) o el orquestador (WhatsApp, con un link de activación que provee la Central). Este contrato asume que la Central envía y lo informa en `access.welcome_sent`.
+6. **Bienvenida.** Quién envía las credenciales de acceso: la Central (email) o el orquestador (WhatsApp, con un link de activación que provee la Central). Decisión del 09-10-2026: el agente envía las credenciales en el chat original tras la confirmación de alta, independientemente del email de bienvenida.

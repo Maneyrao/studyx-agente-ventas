@@ -1,3 +1,4 @@
+import { runPostSalePipeline } from '@/features/fulfillment/post-sale/service';
 import Stripe from 'stripe';
 import { after, NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
@@ -6,6 +7,8 @@ import { loadStripeWebhookConfig } from '@/lib/config';
 import { processStripeWebhook } from '@/features/payments/application/process-stripe-webhook';
 import { upsertVerifiedPaymentProjection } from '@/lib/services/projection.service';
 import { flushSheetProjectionsAfterMutation } from '@/lib/services/sheet-projection-trigger';
+
+export const maxDuration = 300;
 
 /** Separate signing secret; only sandbox events may update sandbox payments. */
 export async function POST(request: NextRequest) {
@@ -28,8 +31,11 @@ export async function POST(request: NextRequest) {
     const paymentId = result.verifiedPaymentId;
     const traceId = randomUUID();
     after(async () => {
-      await upsertVerifiedPaymentProjection({ paymentId, traceId });
-      await flushSheetProjectionsAfterMutation({ traceId, source: 'payment' });
+      await Promise.allSettled([
+        runPostSalePipeline(paymentId),
+        upsertVerifiedPaymentProjection({ paymentId, traceId }).then(() => flushSheetProjectionsAfterMutation({ traceId, source: 'payment' })),
+      ]);
+
     });
   }
   return NextResponse.json(result.body, { status: result.status });

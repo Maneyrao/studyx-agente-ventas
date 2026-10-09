@@ -26,6 +26,7 @@ export type CentralCargaConfig =
       signingSecret: string;
       environment: 'test' | 'live';
       paidAfter: Date;
+      allowSandboxContacts?: boolean;
     };
 
 /**
@@ -57,5 +58,7 @@ export function loadCentralCargaConfig(
     signingSecret: parsed.data.CENTRAL_CARGA_SIGNING_SECRET,
     environment: parsed.data.CENTRAL_CARGA_ENVIRONMENT,
     paidAfter: new Date(parsed.data.CENTRAL_CARGA_ENROLL_PAID_AFTER),
+    allowSandboxContacts: parsed.data.CENTRAL_CARGA_ENVIRONMENT === 'test'
+      && environment.CENTRAL_CARGA_ALLOW_SANDBOX_CONTACTS === 'true',
   };
 }

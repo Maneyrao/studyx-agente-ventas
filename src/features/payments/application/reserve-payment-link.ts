@@ -23,6 +23,7 @@ export interface ReservePaymentLinkInput {
   readonly plan_code: PaymentPlanCode;
   readonly idempotency_key: string;
   readonly payment_link_url: string;
+  readonly conversation_id?: string;
 }
 
 export interface ReservedPaymentLink {
@@ -112,12 +113,16 @@ export async function reservePaymentLink(
     WITH inserted_payment AS (
       INSERT INTO payments (
         id, workspace_id, contact_id, offering_id, amount, currency, status,
-        provider, environment, checkout_mode, idempotency_key, checkout_url, plan_code
+        provider, environment, checkout_mode, idempotency_key, checkout_url, plan_code,
+        registration_email, registration_name, source_conversation_id
       ) VALUES (
         ${paymentId}::uuid, ${input.workspace_id}::uuid, ${input.contact_id}::uuid,
         ${input.offering_id}::uuid, ${presentation.installment_amount},
         ${presentation.currency}, 'reserved', 'stripe', ${environment}, ${checkoutMode},
-        ${input.idempotency_key}, ${checkoutUrl}, ${input.plan_code}
+        ${input.idempotency_key}, ${checkoutUrl}, ${input.plan_code},
+        (SELECT lower(trim(email)) FROM contacts WHERE id = ${input.contact_id}::uuid),
+        (SELECT name FROM contacts WHERE id = ${input.contact_id}::uuid),
+        ${input.conversation_id ?? null}::uuid
       )
       ON CONFLICT (idempotency_key) DO NOTHING
       RETURNING id, status, checkout_url

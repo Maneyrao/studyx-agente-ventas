@@ -1,3 +1,4 @@
+import type { ChannelIdentityStore } from '../ports/channel-identity-store';
 import type postgres from 'postgres';
 import {
   loadBotpressManagedMessagingConfig,
@@ -29,7 +30,7 @@ export type ManagedOutboundSender = (
  * explicit fallback for installations that do not use Botpress-managed
  * channels.
  */
-export function createManagedOutboundSender(db: postgres.Sql): ManagedOutboundSender {
+export function createManagedOutboundSender(db: postgres.Sql, pinnedDestination?: string): ManagedOutboundSender {
   const botpress = loadBotpressManagedMessagingConfig();
   const messaging = botpress ? null : loadMessagingChannelsConfig();
   const channels: Partial<Record<MessagingChannelName, MessageChannel>> = {};
@@ -64,13 +65,22 @@ export function createManagedOutboundSender(db: postgres.Sql): ManagedOutboundSe
     }
   }
 
+  const routedIdentities: ChannelIdentityStore = pinnedDestination ? {
+    loadEligibilityFacts: (...args) => identities.loadEligibilityFacts(...args),
+    listUsableIdentities: async (...args) => (await identities.listUsableIdentities(...args))
+      .filter(identity => identity.destination === pinnedDestination),
+    markIdentityUnusable: (...args) => identities.markIdentityUnusable(...args),
+    closeReplyWindow: (...args) => identities.closeReplyWindow(...args),
+  } : identities;
   return (input) => sendOutboundMessage(input, {
-    identities,
+    identities: routedIdentities,
     channels,
     preferenceOrder: messaging?.channelPreference ?? ['whatsapp', 'telegram'],
     contentAuthorizer: new AuthorizedEgressContentAuthorizer(),
     sideEffectAuthorizer: {
-      authorize: async () => ({ allowed: true as const, reason: null }),
+      authorize: async ({ destination }) => pinnedDestination && destination !== pinnedDestination
+        ? { allowed: false as const, reason: 'POST_SALE_WRONG_CONVERSATION' }
+        : { allowed: true as const, reason: null },
     },
     db,
   });

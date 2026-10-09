@@ -62,3 +62,20 @@ de credenciales una vez que la central confirme la habilitación.
 Documentación: [Payment Links](https://docs.stripe.com/payment-links/api),
 [tarjetas de prueba](https://docs.stripe.com/testing),
 [webhooks](https://docs.stripe.com/webhooks).
+
+## Activated post-sale flow — 2026-10-09
+
+The production Agent A chat now selects explicit Stripe sandbox links (`PAYMENT_LINK_ENVIRONMENT=test`). `POST_SALE_ENABLED=true` activates durable follow-ups. Central enrollment consumes only test payments after the configured activation cutoff. The user explicitly authorized creating test accounts in the current Central de Carga; `CENTRAL_CARGA_ALLOW_SANDBOX_CONTACTS=true` permits those identities while retaining `environment=test`.
+
+A verified paid event queues `payment_received` and enrollment independently. The Botpress custom event `studyxPostSale` lets the existing Agent A model/personality write the confirmation without another customer turn. Confirmed central enrollment queues `access_ready`; it waits until the payment notification has been accepted by the messaging provider. Enrollment email must match the frozen registration email. The backend adds:
+
+- Usuario: the confirmed registration email
+- Contraseña: Studyx.123 for a newly created user
+
+Existing users retain their current password. Password changes are suggested, never required. The login URL is included only when the central returns a valid HTTPS URL. The narrative is model-authored; the credential list uses authoritative values. Delivery is pinned to the purchase conversation.
+
+Stripe webhook background work runs enrollment immediately and can retry transient enrollment failures within a bounded 240-second budget, at most three attempts. Hobby does not support a minute-level cron; the daily recovery sweep remains, with opportunistic recovery on the existing chat projection flush. Failed narrative generation schedules a bounded delayed dispatch. Ambiguous message delivery is held for reconciliation rather than blindly resending credentials. Permanent enrollment failures queue an access-delay notice and retain the paid state for operator resolution.
+
+Validation: TypeScript/lint, production build, 3,691 unit tests and 97 integration tests passed. Botpress ADK build/typecheck/check passed and production deployment succeeded. The production backend health and authenticated pipeline probes returned 200; Central signed GET returned expected `not_found` for a random payment UUID; Botpress runtime authentication returned 200 and matched the deployed bot. Actual DeepSeek smoke responses confirmed natural payment/access copy and an optional password-change suggestion.
+
+This establishes deployment and integration readiness. A new chat purchase still needs to confirm actual Central POST acceptance of `test`, course mapping, credentials, and campus login. Do not label those downstream behaviors verified solely from the GET probe or local fake Central tests.

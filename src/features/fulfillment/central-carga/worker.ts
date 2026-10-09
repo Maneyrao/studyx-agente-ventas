@@ -46,6 +46,8 @@ export interface EnrollmentWorkerInput {
   limit?: number;
   lease_seconds?: number;
   deadline_ms?: number;
+  payment_id?: string;
+  scoped?: boolean;
 }
 
 export interface EnrollmentWorkerDeps {
@@ -109,7 +111,11 @@ export async function runEnrollmentWorker(
 
   while (result.claimed < limit) {
     if (deadlineMs - (now() - startedAt) < MIN_JOB_BUDGET_MS) break;
-    const claimed = await sql<ClaimedJob[]>`
+    const claimed = input.scoped ? await sql<ClaimedJob[]>`
+      SELECT id, payment_id, workspace_id, attempt_count, max_attempts
+      FROM claim_central_enrollment_jobs(${workerId}, ${config.environment}, ${config.paidAfter},
+        ${input.payment_id ?? null}::uuid, ${leaseSeconds})
+    ` : await sql<ClaimedJob[]>`
       SELECT id, payment_id, workspace_id, attempt_count, max_attempts
       FROM claim_fulfillment_jobs(${workerId}, 1, ${leaseSeconds})
     `;
@@ -154,7 +160,8 @@ async function loadSource(sql: postgres.Sql, paymentId: string): Promise<SourceR
       p.id AS payment_id, p.workspace_id, p.contact_id, p.environment, p.provider,
       p.provider_session_id, p.paid_at, p.amount::text AS amount, p.currency,
       p.plan_code, p.status AS payment_status,
-      c.name AS contact_name, c.email AS contact_email, c.phone AS contact_phone,
+      COALESCE(p.registration_name, c.name) AS contact_name,
+      COALESCE(p.registration_email, c.email) AS contact_email, c.phone AS contact_phone,
       c.declared_phone AS contact_declared_phone,
       o.code AS offering_code, o.display_name AS offering_display_name,
       EXISTS (SELECT 1 FROM sandbox_identities s WHERE s.contact_id = c.id) AS sandbox_contact
@@ -193,7 +200,7 @@ async function decide(
   const decision = preflight({
     source,
     paymentStatus: source.payment_status,
-    sandboxContact: source.sandbox_contact,
+    sandboxContact: source.sandbox_contact && !(config.environment === 'test' && config.allowSandboxContacts),
     environment: config.environment,
     paidAfter: config.paidAfter,
   });
@@ -265,11 +272,12 @@ async function settle(
       await tx`
         INSERT INTO central_enrollments (
           payment_id, workspace_id, enrollment_id, student_id, enrollment_status,
-          student_was_created, welcome_sent, login_email, central_created_at
+          student_was_created, welcome_sent, login_email, central_created_at, login_url
         ) VALUES (
           ${job.payment_id}::uuid, ${job.workspace_id}::uuid, ${body.enrollment_id},
           ${body.student_id}, ${body.enrollment_status}, ${body.student_was_created},
-          ${body.access.welcome_sent}, ${body.access.login_email}, ${body.created_at ?? null}
+          ${body.access.welcome_sent}, ${body.access.login_email}, ${body.created_at ?? null},
+          ${body.access.login_url ?? null}
         )
         ON CONFLICT (payment_id) DO NOTHING
       `;

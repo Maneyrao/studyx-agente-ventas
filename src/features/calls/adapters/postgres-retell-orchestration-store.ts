@@ -176,6 +176,7 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
         workspace_id: workspace.id,
         contact_id: input.contactId,
         offering_id: offering.id,
+        conversation_id: input.conversationId,
         plan_code: paymentPlan.planCode,
         idempotency_key: `retell-payment-link:${workspace.id}:${input.callId}`,
         payment_link_url: configuredUrl,

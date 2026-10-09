@@ -40,6 +40,7 @@ export const EnrollmentResponseV1 = z.object({
   access: z.object({
     login_email: z.string().min(1),
     welcome_sent: z.boolean(),
+    login_url: z.string().url().refine(value => new URL(value).protocol === 'https:').optional(),
   }),
   created_at: z.string().datetime().optional(),
 });

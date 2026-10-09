@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { runPostSalePipeline } from '@/features/fulfillment/post-sale/service';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { flushSheetProjections } from '@/lib/services/projection.service';
 import { logger } from '@/lib/observability/structured-log';
@@ -21,6 +22,8 @@ export async function GET(request: NextRequest) {
   if (!process.env.CRON_SECRET || authHeader !== expected) {
     return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
   }
+
+  if (process.env.POST_SALE_ENABLED === 'true') after(() => runPostSalePipeline().then(() => undefined));
 
   const workerId = `flush-projections-cron:${randomUUID()}`;
   const totals = await flushSheetProjections({
