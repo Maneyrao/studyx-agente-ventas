@@ -50,14 +50,15 @@ repetidos no crean una segunda solicitud. Los pagos de prueba conservan
 5. Probar los otros planes y dos contactos distintos. Cada pago debe conservar
    su propio cliente y curso.
 6. Repetir el aviso de confirmación y comprobar que no se duplica la solicitud.
-7. Para probar el alta efectiva, disponer de una central de carga de pruebas y
-   del worker publicado con entorno `test`. Una central configurada como `live`
-   no debe dar de alta al cliente por un pago sandbox. Una fila en
-   `fulfillment_jobs` confirma el pedido pendiente, no la habilitación del campus.
+7. Para la prueba autorizada del 09-10-2026, la central actual debe aceptar
+   explícitamente pagos `test` y ejecutar el alta real en el campus. El worker
+   sigue publicado con entorno `test`. Sin esa excepción, una central `live`
+   rechaza el pago sandbox. Una fila en `fulfillment_jobs` confirma el pedido
+   pendiente, no la habilitación del campus.
 
-La integración de enlaces y avisos no agrega por sí misma un mensaje automático
-de confirmación al cliente: comprobar por separado el worker de alta y la entrega
-de credenciales una vez que la central confirme la habilitación.
+Con `POST_SALE_ENABLED=true`, el pago confirmado dispara el aviso automático y
+el pedido de alta. La entrega de credenciales requiere la confirmación efectiva
+de la central; comprobar también que se puede ingresar al curso.
 
 Documentación: [Payment Links](https://docs.stripe.com/payment-links/api),
 [tarjetas de prueba](https://docs.stripe.com/testing),
@@ -65,7 +66,7 @@ Documentación: [Payment Links](https://docs.stripe.com/payment-links/api),
 
 ## Activated post-sale flow — 2026-10-09
 
-The production Agent A chat now selects explicit Stripe sandbox links (`PAYMENT_LINK_ENVIRONMENT=test`). `POST_SALE_ENABLED=true` activates durable follow-ups. Central enrollment consumes only test payments after the configured activation cutoff. The user explicitly authorized creating test accounts in the current Central de Carga; `CENTRAL_CARGA_ALLOW_SANDBOX_CONTACTS=true` permits those identities while retaining `environment=test`.
+The production Agent A chat now selects explicit Stripe sandbox links (`PAYMENT_LINK_ENVIRONMENT=test`). `POST_SALE_ENABLED=true` activates durable follow-ups. Central enrollment consumes only test payments after the configured activation cutoff. The user explicitly authorized creating real platform accounts and course access from these test payments in the current Central de Carga. `CENTRAL_CARGA_ALLOW_SANDBOX_CONTACTS=true` permits those identities while retaining `environment=test`; it does not change the remote Central's accepted payment environments.
 
 A verified paid event queues `payment_received` and enrollment independently. The Botpress custom event `studyxPostSale` lets the existing Agent A model/personality write the confirmation without another customer turn. Confirmed central enrollment queues `access_ready`; it waits until the payment notification has been accepted by the messaging provider. Enrollment email must match the frozen registration email. The backend adds:
 
@@ -79,3 +80,32 @@ Stripe webhook background work runs enrollment immediately and can retry transie
 Validation: TypeScript/lint, production build, 3,691 unit tests and 97 integration tests passed. Botpress ADK build/typecheck/check passed and production deployment succeeded. The production backend health and authenticated pipeline probes returned 200; Central signed GET returned expected `not_found` for a random payment UUID; Botpress runtime authentication returned 200 and matched the deployed bot. Actual DeepSeek smoke responses confirmed natural payment/access copy and an optional password-change suggestion.
 
 This establishes deployment and integration readiness. A new chat purchase still needs to confirm actual Central POST acceptance of `test`, course mapping, credentials, and campus login. Do not label those downstream behaviors verified solely from the GET probe or local fake Central tests.
+
+## Alta real desde sandbox: activación pendiente
+
+El pago `46595744-4993-48cd-87f0-026ec619272e` está confirmado en `test`.
+La tarea `e3b37e71-de3f-48bc-933e-429ee8c5b2af` recibió
+`central_environment_mismatch`, tras un intento, y no tiene alta confirmada.
+
+El cambio pendiente pertenece a la central: permitir temporalmente `test` en
+su validación de entorno, después de autenticar la request, y usar el servicio
+real de alta e inscripción. El repositorio del orquestador no contiene esa
+implementación ni controla la configuración remota de aceptación de la central.
+
+Después de publicar ese cambio, recuperar el pago existente sin cobrar otra vez:
+
+1. Consultar la central por el mismo `payment_id` para reconciliar cualquier alta.
+2. Reabrir sólo la tarea identificada, si sigue en `dead_letter` por ese error y
+   el pago sigue `paid/test`. Conservar el historial y `attempt_count=1`.
+3. Ejecutar el pipeline con ese `payment_id`. El worker consulta primero el alta
+   y reutiliza la clave de idempotencia si debe crearla.
+4. Confirmar el alta del mail registrado al curso Inglés 2, la entrega de la lista
+   de credenciales y el ingreso efectivo a ese curso. La contraseña acordada
+   para cuentas nuevas es `Studyx.123`; cuentas existentes conservan la suya.
+
+Para cerrar la prueba, retirar la aceptación de `test` en la central, restaurar
+`PAYMENT_LINK_ENVIRONMENT=live` y `CENTRAL_CARGA_ENVIRONMENT=live` en el
+orquestador y publicar nuevamente. Desactivar los Payment Links sandbox para
+que los links ya enviados no permitan nuevas compras de prueba. Revisar antes
+las tareas pendientes; no borrar pagos ni volver a enviar credenciales de altas
+ya completadas.

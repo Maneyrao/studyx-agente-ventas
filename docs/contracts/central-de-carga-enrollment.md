@@ -1,6 +1,6 @@
 # CONTRATO — Orquestador StudyX → Central de Carga mystudyx (alta de alumnos)
 
-> **Actualización 09-10-2026:** worker y avisos del agente implementados. Por autorización explícita del usuario, la prueba Stripe puede crear cuentas de prueba en la central actual: se conserva `environment=test` y se exige que la central lo acepte. La central configura `Studyx.123` para cuentas nuevas; cuentas existentes conservan su contraseña. El agente entrega las credenciales en lista sólo después de confirmar el alta.
+> **Actualización 09-10-2026:** worker y avisos del agente implementados. Por autorización explícita del usuario, los pagos Stripe sandbox deben crear usuarios reales con acceso al curso comprado en la plataforma actual, durante la prueba con personas del desarrollo. Se conserva `environment=test` para el pago y se exige que la central lo acepte explícitamente. La central configura `Studyx.123` para cuentas nuevas; cuentas existentes conservan su contraseña. El agente entrega las credenciales en lista sólo después de confirmar el alta. La activación en la central sigue pendiente: el primer pago confirmado recibió `central_environment_mismatch`.
 >
 > **Antecedente 06-10-2026:** la Central de Carga implementó ambos endpoints (branch `feature/api-enrollments` de su repo, sin desplegar; guía en su `docs/api-enrollments.md`). El lado orquestador (worker que consume `fulfillment_jobs`) todavía no existe. Las decisiones marcadas como **ABIERTA** (§9) deben cerrarse antes de pasar a producción.
 >
@@ -14,7 +14,7 @@ Este archivo es la única fuente de verdad para la integración. Quien implement
 - **Cuándo:** sólo después de que un pago queda `paid` en el ledger del orquestador. El orquestador sólo acepta pagos confirmados por el webhook de Stripe con firma verificada; la Central confía en ese juicio y **no** vuelve a verificar contra Stripe.
 - **Cola:** al pasar a `paid`, el orquestador inserta una fila en `fulfillment_jobs` en la misma transacción (un job por pago, `payment_id` UNIQUE). Un worker reclama el job y llama a la Central. Ningún request HTTP de Stripe espera a la Central.
 - **Idempotencia:** la clave es `payment_id` (UUID del orquestador). Un pago produce como máximo un alta. El orquestador puede reintentar el mismo request cuantas veces quiera; la Central debe responder lo mismo sin duplicar alumnos.
-- **Entornos:** los pagos de prueba conservan `environment=test`. El modo de prueba autorizado usa la central actual para cuentas de prueba; no convierte el pago a `live`. La central debe habilitar explícitamente esta excepción (§5).
+- **Entornos:** los pagos de prueba conservan `environment=test`. El modo de prueba autorizado usa la central actual para crear usuarios reales e inscribirlos en el curso comprado; no convierte el pago a `live`. La central debe habilitar explícitamente esta excepción (§5).
 - **Datos sensibles:** los logs de ambos lados no registran email, teléfono ni nombre completo en claro; usan `payment_id` y `contact_id` para correlacionar.
 
 ## 1. Endpoints que la Central de Carga debe exponer
@@ -197,9 +197,11 @@ Cuerpo de error uniforme:
 ## 5. Entornos
 
 - La Central expone (o es) dos instancias: una de prueba y una de producción, con secretos distintos.
-- Por defecto la instancia de producción rechaza `test`. Para la prueba autorizada del 09-10-2026, la central actual debe aceptar explícitamente `test` para crear cuentas de prueba. Un rechazo sigue siendo un fallo de alta, nunca se oculta cambiando el pago a `live`.
+- Por defecto la instancia de producción rechaza `test`. Para la prueba autorizada del 09-10-2026, la central actual debe aceptar explícitamente `test` desde el orquestador autenticado y ejecutar el mismo alta real e inscripción al campus que con un pago `live`. No alcanza con devolver una respuesta simulada ni con crear un alumno en una base de prueba. Un rechazo sigue siendo un fallo de alta, nunca se oculta cambiando el pago a `live`.
+- `environment` identifica el entorno del pago, no exige por sí mismo un campus separado. La excepción temporal se administra en la central, sin cambiar la firma HMAC, la validación de identidad, el mapa de cursos ni la idempotencia. Debe quedar desactivada por defecto y poder retirarse al terminar la prueba.
+- Durante esta prueba, el orquestador conserva `PAYMENT_LINK_ENVIRONMENT=test` y `CENTRAL_CARGA_ENVIRONMENT=test`. Cambiar sólo esta última a `live` haría que el worker omitiera los pagos sandbox; no habilitaría el alta real.
 - La de prueba responde `422 environment_mismatch` a `environment: "live"`.
-- Así, un error de configuración (URL de prod con pago de prueba) falla cerrado y no crea un alumno real.
+- Sin la excepción explícita, un error de configuración (URL de prod con pago de prueba) falla cerrado y no crea un alumno real.
 
 ## 6. `GET /api/v1/enrollments/{payment_id}`
 
