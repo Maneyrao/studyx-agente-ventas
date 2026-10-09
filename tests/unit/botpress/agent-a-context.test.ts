@@ -670,7 +670,7 @@ describe('buildAgentAContextV1', () => {
     });
   });
 
-  it('does not authorize a second payment-link action after the canonical link was sent', () => {
+  it('exposes the pending link for an explicitly requested redelivery', () => {
     const claimed = claimedTurn();
     claimed.catalog_resolution = { kind: 'no_catalog_intent' };
     claimed.conversation_state_v1 = {
@@ -682,7 +682,7 @@ describe('buildAgentAContextV1', () => {
 
     const context = buildAgentAContextV1(claimed);
 
-    expect(context?.capabilities.may_send_payment_link).toBe(false);
+    expect(context?.capabilities.may_send_payment_link).toBe(true);
   });
 
   it('does not authorize the payment link in the same turn that completes contact intake', () => {

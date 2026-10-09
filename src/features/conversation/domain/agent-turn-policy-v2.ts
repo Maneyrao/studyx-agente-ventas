@@ -123,6 +123,7 @@ export function authorizeAgentTurnV2(input: {
   readonly contact_intake?: ContactIntakeV1;
   /** Revalidated from the signed Stripe ledger at commit time. */
   readonly payment_verified?: boolean;
+  readonly paid_purchase?: { readonly offering_code: string; readonly plan_code: SalesPaymentPlan | null };
   readonly current_customer_messages?: readonly string[];
   /**
    * Agent A owns customer-facing copy in production. `advisory` preserves the
@@ -297,7 +298,15 @@ export function authorizeAgentTurnV2(input: {
     && state.payment_link_request.payment_plan === selectedPlan
     ? state.payment_link_request
     : null;
-  const paymentLinkAuthorized = !plannedPaymentReported
+  // A customer's historical claim is evidence of what they said, not a paid
+  // purchase and not an indefinite veto of later payment requests.
+  const selectedPurchasePaid = input.paid_purchase
+    ? input.paid_purchase.offering_code === selectedOffering
+      && input.paid_purchase.plan_code === selectedPlan
+    : input.payment_verified === true
+      && selectedOffering === state.selected_offering_code
+      && selectedPlan === state.selected_payment_plan;
+  const paymentLinkAuthorized = !moves.has('report_payment') && !selectedPurchasePaid
     && stateFacts.has('state:intake_recorded:v1');
   // Asking for the next missing field is also prompt guidance. Missing intake
   // remains a hard boundary only for the payment side effect below.

@@ -26,6 +26,14 @@
 
 /** The outcome nouns. Participles are listed as written; no prefix matching,
  *  so the verb "inscribirte" is never mistaken for the noun "inscripción". */
+export function claimsImmediatePaymentLinkDelivery(text: string): boolean {
+  if (!/\b(?:link|enlace)\b/iu.test(text)) return false;
+  if (/\b(?:cuando|si)\b.{0,65}\b(?:te\s+(?:lo\s+)?(?:paso|env[ií]o|mando|comparto)|ah[ií]\s+va)\b/iu.test(text)) return false;
+  return /\bte\s+(?:lo\s+)?(?:paso|env[ií]o|mando|comparto)\b.{0,48}\b(?:link|enlace)\b/iu.test(text)
+    || /\b(?:link|enlace)\b.{0,48}\bte\s+(?:lo\s+)?(?:mand[eé]|envi[eé]|compart[ií]|pas[eé])\b/iu.test(text)
+    || /\bah[ií]\s+va\b/iu.test(text);
+}
+
 const OPERATIONAL_OUTCOME = new RegExp(
   '(?:^|[^\\p{L}])(?:'
   + 'pre\\s?-?\\s?inscripci[oó]n(?:es)?|inscripci[oó]n(?:es)?'

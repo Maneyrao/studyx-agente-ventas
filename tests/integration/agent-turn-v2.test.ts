@@ -347,4 +347,65 @@ run('plannerless Agent A vertical', () => {
     );
     expect(state?.selected_payment_plan).toBe('monthly_12');
   });
+
+  it('creates a sandbox purchase after a historical unverified claim and replays it without duplication', async () => {
+    const previousMode = process.env.PAYMENT_LINK_ENVIRONMENT;
+    const previousLink = process.env.PAYMENT_LINK_SANDBOX_6M;
+    try {
+      process.env.PAYMENT_LINK_ENVIRONMENT = 'test';
+      process.env.PAYMENT_LINK_SANDBOX_6M = link6;
+      // Keep the old statement and the old payment ledger intact. Only this
+      // test customer's current course/plan selection is reset for the retry.
+      await db!`
+        UPDATE conversation_sales_context_states_v1
+        SET selected_offering_code = 'redes-informaticas', selected_payment_plan = 'monthly_6',
+            stage = 'plan_selected', awaiting_reply = 'payment_confirmation',
+            payment_reported_at = '2026-10-03T10:57:31.097Z'::timestamptz,
+            payment_link_request = NULL, updated_at = now()
+        WHERE workspace_id = ${workspaceId}::uuid
+      `;
+      const payment = await commitTurn('y el link?', {
+        schema_version: 1,
+        move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Ahí va. El enlace es de Stripe.'] },
+        proposed_action: { type: 'none' }, used_fact_ids: [], used_memory_ids: [],
+        memory_candidates: [], repair_of: null,
+      });
+      const texts = payment.committed.outbounds.map(outbound => outbound.content).join('\n');
+      expect(texts).toContain(link6);
+      expect(texts).toMatch(/client_reference_id=[0-9a-f-]{36}/u);
+      const ledger = await db!`
+        SELECT id,environment,status,source_conversation_id,registration_email
+        FROM payments WHERE idempotency_key = ${`agent-a-payment-link:${payment.claimed.turn_id}`}
+      `;
+      expect(ledger).toHaveLength(1);
+      expect(ledger[0]).toMatchObject({ environment: 'test', status: 'reserved',
+        source_conversation_id: payment.claimed.batch.conversation_id, registration_email: 'matia@example.test' });
+      const replay = await commitClaimedDecision(payment.commitInput, { store: orchestrationStore });
+      expect(replay.status).toBe('duplicate');
+      expect(replay.outbounds).toEqual(payment.committed.outbounds);
+      const resend = await commitTurn('No encuentro el enlace, mandamelo otra vez', {
+        schema_version: 1,
+        move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Te paso el enlace de nuevo.'] },
+        proposed_action: { type: 'none' }, used_fact_ids: [], used_memory_ids: [],
+        memory_candidates: [], repair_of: null,
+      });
+      const resentText = resend.committed.outbounds.map(outbound => outbound.content).join('\n');
+      expect(resentText).toContain(`client_reference_id=${ledger[0].id}`);
+      const purchaseCount = await db!`
+        SELECT count(*)::integer AS n FROM payments
+        WHERE workspace_id = ${workspaceId}::uuid AND environment = 'test' AND plan_code = 'monthly_6'
+      `;
+      expect(purchaseCount[0].n).toBe(1);
+      const state = await stateStore.load(workspaceSlug, payment.claimed.batch.conversation_id, payment.claimed.batch.contact_id);
+      expect(state).toMatchObject({ stage: 'payment_link_sent', payment_reported_at: expect.any(String),
+        payment_link_request: { status: 'consumed' } });
+    } finally {
+      if (previousMode === undefined) delete process.env.PAYMENT_LINK_ENVIRONMENT;
+      else process.env.PAYMENT_LINK_ENVIRONMENT = previousMode;
+      if (previousLink === undefined) delete process.env.PAYMENT_LINK_SANDBOX_6M;
+      else process.env.PAYMENT_LINK_SANDBOX_6M = previousLink;
+    }
+  });
 });

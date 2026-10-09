@@ -80,6 +80,24 @@ const completeIntake = async () => ({
 });
 
 describe('prepareAgentTurnV2', () => {
+  it('rejects a delivery announcement when the paid ledger prevents the link', async () => {
+    await expect(prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      semantic_rejections: 'advisory', current_customer_messages: ['y el link?'],
+      proposal: proposal({
+        move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Ahí va, Matía. El enlace es de Stripe.'] },
+        proposed_action: { type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6' },
+      }),
+    }, {
+      state_store: store(state({ selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected', awaiting_reply: 'payment_confirmation' })),
+      contact_intake: completeIntake, now: () => Date.parse(index.as_of),
+      payment_verification: async () => ({ status: 'paid', offering_code: 'redes_informaticas',
+        plan_code: 'monthly_6', paid_at: index.as_of }),
+    })).rejects.toMatchObject({ code: 'AGENT_TURN_V2_REJECTED', reasons: ['ACTION_NOT_AUTHORIZED'] });
+  });
   it('authorizes a verified-payment reply only when the canonical ledger is paid', async () => {
     const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },

@@ -32,7 +32,7 @@ import {
   resolveTechnicalFallbackV1,
   type TechnicalFallbackV1,
 } from '@/features/conversation/domain/technical-fallback';
-import { solicitsACall } from '@/features/conversation/domain/operational-promise-guard';
+import { claimsImmediatePaymentLinkDelivery, solicitsACall } from '@/features/conversation/domain/operational-promise-guard';
 import { PostgresOrchestrationStore } from '@/features/orchestration/adapters/postgres-orchestration-store';
 import { enqueueAgentAMemoryProjectionJobs } from '@/features/memory/application/project-agent-a-memories';
 import {
@@ -982,12 +982,25 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       if (!materialized.ok) {
         throw new DecisionPolicyError(materialized.reason);
       }
+      const alreadyPaid = await db<Array<{ id: string }>>`
+        SELECT p.id FROM payments p
+        JOIN offerings o ON o.id = p.offering_id AND o.workspace_id = p.workspace_id
+        WHERE p.workspace_id = ${canonicalWorkspaceId}::uuid
+          AND p.contact_id = ${turn.contact_id}::uuid AND p.provider = 'stripe'
+          AND o.code = ${action.offering_sku} AND p.plan_code = ${action.plan_code}
+          AND p.environment = ${stripePaymentLinkEnvironment(materialized.block.url)}
+          AND p.status = 'paid' AND p.paid_at IS NOT NULL
+        LIMIT 1
+      `;
+      if (alreadyPaid.length > 0) {
+        throw new DecisionPolicyError('AGENT_TURN_V2_REJECTED:ACTION_NOT_AUTHORIZED');
+      }
 
       // Revalidation above must happen before this dedupe read. Otherwise a
       // mismatched SKU or a current veto could obtain a friendly acknowledgement
       // merely because an older valid link existed in the same conversation.
-      const priorPaymentLinks = await db<Array<{ id: string }>>`
-        SELECT ad.id
+      const priorPaymentLinks = await db<Array<{ id: string; checkout_url: string | null; status: string | null }>>`
+        SELECT ad.id, prior_payment.checkout_url, prior_payment.status
         FROM agent_decisions AS ad
         JOIN messages AS prior_turn ON prior_turn.id = ad.turn_id
         LEFT JOIN payments AS prior_payment
@@ -998,6 +1011,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           AND ad.business_action ->> 'plan_code' = ${action.plan_code}
           AND ad.business_action ->> 'offering_sku' = ${action.offering_sku}
           AND COALESCE(prior_payment.environment, 'live') = ${stripePaymentLinkEnvironment(materialized.block.url) ?? 'live'}
+          AND (prior_payment.id IS NULL OR prior_payment.status NOT IN ('failed', 'expired', 'refunded'))
+        ORDER BY ad.created_at DESC
         LIMIT 1
       `;
 
@@ -1043,7 +1058,24 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         }
       }
 
-      if (priorPaymentLinks.length > 0) {
+      const prior = priorPaymentLinks[0];
+      const explicitlyRequestsExistingLink = preparedAgentTurn !== null
+        && validatedInput.agent_turn_v2 !== null && validatedInput.agent_turn_v2 !== undefined
+        && [validatedInput.agent_turn_v2.proposal.move.move,
+          ...validatedInput.agent_turn_v2.proposal.move.secondary_moves].includes('request_payment_link');
+      if (prior?.checkout_url && (prior.status === 'reserved' || prior.status === 'pending')
+        && explicitlyRequestsExistingLink) {
+        const configuredUrl = materialized.block.url;
+        materialized = { ...materialized, block: { ...materialized.block, url: prior.checkout_url },
+          response_text: materialized.response_text.replaceAll(configuredUrl, prior.checkout_url) };
+        finalResponse = assembleMaterializedPaymentResponse(materialized);
+        authorizedUrls = [prior.checkout_url];
+        authorizedProtectedFacts = paymentPlanProtectedFacts(action.plan_code);
+        paymentLinkStrippedUrls = materialized.stripped_urls;
+        // Re-deliver the existing resource, without reserving another purchase
+        // or repeating the payment-link projection/business side effect.
+        committedBusinessAction = null;
+      } else if (priorPaymentLinks.length > 0) {
         // Cross-turn idempotency governs the ACTION, not the answer: no second
         // Stripe URL, no second payment_link_sent signal, no second projection.
         // The question the customer actually asked still deserves the reply
@@ -1359,6 +1391,23 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       }
     }
 
+    if (preparedAgentTurn && committedBusinessAction?.type !== 'send_payment_link'
+      && committedBusinessAction?.type !== 'send_test_payment_link'
+      && !authorizedUrls.some(url => finalResponse?.includes(url))
+      && claimsImmediatePaymentLinkDelivery(finalResponse ?? '')) {
+      throw new DecisionPolicyError('AGENT_TURN_V2_REJECTED:ACTION_NOT_AUTHORIZED');
+    }
+    const actualDiagnostics = validatedInput.turn_diagnostics === undefined || validatedInput.turn_diagnostics === null
+      ? null
+      : preparedAgentTurn?.action_rejection
+        ? { ...validatedInput.turn_diagnostics, action_status: 'needs_input',
+            failure_stage: 'action_authorization', failure_codes: preparedAgentTurn.action_rejection.codes }
+        : { ...validatedInput.turn_diagnostics,
+            action_status: committedBusinessAction === null
+              && authorizedUrls.length === 0
+              && validatedInput.turn_diagnostics.action_status === 'authorized'
+              ? 'none' : validatedInput.turn_diagnostics.action_status };
+
     const inserted = await db<Array<{ id: string }>>`
       INSERT INTO agent_decisions (
         turn_id,
@@ -1400,7 +1449,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         ${validatedInput.model.model},
         ${validatedInput.model.prompt_version},
         decode(${payloadHash}, 'hex'),
-        ${jsonbParam(db, validatedInput.turn_diagnostics ?? null)}
+        ${jsonbParam(db, actualDiagnostics)}
       )
       RETURNING id
     `;

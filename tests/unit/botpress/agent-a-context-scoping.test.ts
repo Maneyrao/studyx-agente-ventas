@@ -75,6 +75,18 @@ function claim(overrides: Record<string, unknown> = {}): ClaimedTurn {
 }
 
 describe('recorte de contexto por alcanzabilidad', () => {
+  it.each(['reserved', 'paid'] as const)('aligns link capability with the %s ledger, even after a historical claim', (status) => {
+    const base = claim();
+    const current = claim({ contact_intake_missing: [],
+      conversation_state_v1: { ...base.conversation_state_v1,
+        selected_offering_code: 'redes', selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected', awaiting_reply: 'payment_confirmation', payment_reported: true },
+      payment_verification: { status, offering_code: 'redes', plan_code: 'monthly_6',
+        paid_at: status === 'paid' ? '2026-10-09T17:00:00Z' : null },
+    });
+    const context = buildAgentAContextV1(current, null)!;
+    expect(context.capabilities.may_send_payment_link).toBe(status !== 'paid');
+  });
   it('anuncia qué falta de los cuatro campos de contacto', () => {
     const context = buildAgentAContextV1(claim({
       contact_intake_missing: ['apellido', 'correo', 'telefono'],

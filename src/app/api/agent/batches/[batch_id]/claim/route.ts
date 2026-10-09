@@ -168,7 +168,7 @@ export async function POST(
         agentAStateAssertions: rolloutConfig.stateAssertions,
         agentASingleRoute: rolloutConfig.singleRoute,
         agentABrainShadow: brainConfig.shadow,
-        paymentVerification: async (contactId) => {
+        paymentVerification: async (contactId, purchase) => {
           // Keep the database-owning adapter behind the request boundary so
           // importing the route for schema/unit checks needs no DATABASE_URL.
           const { loadLatestPaymentVerificationV1 } = await import(
@@ -177,6 +177,7 @@ export async function POST(
           return loadLatestPaymentVerificationV1({
             workspace_slug: workspaceSlug,
             contact_id: contactId,
+            ...purchase,
           });
         },
         agentLoopRollout,

@@ -72,6 +72,23 @@ function generated(value: AgentATurnProposalV1) {
 }
 
 describe('resolveAgentAPlannerlessProposalV2', () => {
+  it('repairs an empty delivery announcement even with advisory semantics', async () => {
+    const current = context();
+    const repair = vi.fn(async (rejection) => generated(proposal({
+      response: { messages: ['No pude enviarte el enlace. Lo revisamos.'] },
+      repair_of: { rejection_id: rejection.rejection_id, attempt: 1 },
+      used_fact_ids: [],
+    })));
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({
+        move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Ahí va. El enlace es de Stripe.'] }, used_fact_ids: [],
+      })), context: current, repair_enabled: true, semantic_rejections: 'advisory',
+      rejection_id: '11111111-1111-4111-8111-111111111111', repair,
+    });
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.effective.proposal.response.messages.join(' ')).not.toContain('Ahí va');
+  });
   it('keeps first-offer timing advisory and never inserts commercial copy', async () => {
     const current = context();
     current.turn.batch_messages = [{ id: 'm2', text: 'Mmm no lo sé' }];

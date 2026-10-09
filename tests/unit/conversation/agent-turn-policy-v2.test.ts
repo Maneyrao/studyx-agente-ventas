@@ -71,6 +71,7 @@ function authorize(input: {
   mayRequestCall?: boolean;
   customerText?: string;
   semanticRejections?: 'blocking' | 'advisory';
+  paymentVerified?: boolean;
 }) {
   return authorizeAgentTurnV2({
     proposal: input.proposal,
@@ -80,6 +81,7 @@ function authorize(input: {
     contact_intake: input.intake,
     current_customer_messages: input.customerText ? [input.customerText] : [],
     semantic_rejections: input.semanticRejections,
+    payment_verified: input.paymentVerified,
     call_policy: {
       may_offer_call: input.mayOfferCall ?? true,
       may_request_call_now: input.mayRequestCall ?? true,
@@ -88,6 +90,34 @@ function authorize(input: {
 }
 
 describe('plannerless Agent A authority', () => {
+  it('allows a new link request after a historical unverified payment claim', () => {
+    const result = authorize({
+      state: state({ selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected', awaiting_reply: 'payment_confirmation',
+        payment_reported_at: '2026-10-03T10:57:31.097Z' }),
+      intake: completeIntake, customerText: 'y el link?',
+      proposal: proposal({
+        move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Ahí va. El enlace es de Stripe.'] },
+      }),
+    });
+    expect(result).toMatchObject({ ok: true, action: { type: 'send_payment_link',
+      offering_code: 'redes_informaticas', payment_plan: 'monthly_6' },
+      transition: { payment_reported: true, payment_link_request: { status: 'consumed' } } });
+  });
+
+  it('does not issue a new link when the selected purchase is verified paid', () => {
+    const result = authorize({
+      state: state({ selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6' }),
+      intake: completeIntake, paymentVerified: true,
+      proposal: proposal({
+        move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Tu pago está confirmado.'] },
+        proposed_action: { type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6' },
+      }),
+    });
+    expect(result).toMatchObject({ ok: false, reasons: ['ACTION_NOT_AUTHORIZED'] });
+  });
   it('keeps valid conversational copy when semantic checks disagree and exposes only advisories', () => {
     const messages = [
       'Ya tengo todos tus datos registrados.',

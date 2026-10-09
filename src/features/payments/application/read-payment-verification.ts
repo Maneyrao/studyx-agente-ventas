@@ -33,7 +33,10 @@ export interface PaymentVerificationV1 {
 export async function loadLatestPaymentVerificationV1(input: {
   readonly workspace_slug: string;
   readonly contact_id: string;
+  readonly offering_code?: string | null;
+  readonly plan_code?: PaymentPlanCode | null;
 }, db: DbClient = defaultSql): Promise<PaymentVerificationV1 | null> {
+  const environment = process.env.PAYMENT_LINK_ENVIRONMENT ?? null;
   const rows = await db<Array<{
     status: PaymentVerificationStatus;
     offering_code: string;
@@ -52,7 +55,12 @@ export async function loadLatestPaymentVerificationV1(input: {
      AND offering.workspace_id = payment.workspace_id
     WHERE payment.contact_id = ${input.contact_id}::uuid
       AND payment.provider = 'stripe'
-    ORDER BY payment.created_at DESC, payment.id DESC
+      AND (${environment}::text IS NULL OR payment.environment = ${environment})
+      AND (${input.offering_code ?? null}::text IS NULL OR offering.code = ${input.offering_code ?? null})
+      AND (${input.plan_code ?? null}::text IS NULL OR payment.plan_code = ${input.plan_code ?? null})
+    ORDER BY (${input.offering_code ?? null}::text IS NOT NULL
+                AND payment.status = 'paid' AND payment.paid_at IS NOT NULL) DESC,
+             payment.created_at DESC, payment.id DESC
     LIMIT 1
   `;
   const row = rows[0];

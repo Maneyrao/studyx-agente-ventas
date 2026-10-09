@@ -310,6 +310,22 @@ run('canonical payments — event recording', () => {
       plan_code: 'monthly_6',
       paid_at: expect.any(String),
     });
+    const previousEnvironment = process.env.PAYMENT_LINK_ENVIRONMENT;
+    try {
+      process.env.PAYMENT_LINK_ENVIRONMENT = 'test';
+      await expect(loadLatestPaymentVerificationV1({
+        workspace_slug: workspace[0].slug, contact_id: contactId,
+        offering_code: offering.code, plan_code: 'monthly_6',
+      }, db!)).resolves.toBeNull();
+      process.env.PAYMENT_LINK_ENVIRONMENT = 'live';
+      await expect(loadLatestPaymentVerificationV1({
+        workspace_slug: workspace[0].slug, contact_id: contactId,
+        offering_code: offering.code, plan_code: 'monthly_6',
+      }, db!)).resolves.toMatchObject({ status: 'paid' });
+    } finally {
+      if (previousEnvironment === undefined) delete process.env.PAYMENT_LINK_ENVIRONMENT;
+      else process.env.PAYMENT_LINK_ENVIRONMENT = previousEnvironment;
+    }
   });
 
   it('a paid event marks paid and enqueues exactly one fulfillment job, even replayed x10', async () => {

@@ -738,10 +738,15 @@ export function buildAgentAContextV1(
     && state.payment_link_request.offering_code === selectedCode
     && state.payment_link_request.payment_plan === selectedPlan;
   const maySendPaymentLink = claimed.policy.may_respond
+    && !claimed.contact.blocked
+    && !(claimed.payment_verification?.status === 'paid'
+      && claimed.payment_verification.paid_at !== null
+      && claimed.payment_verification.offering_code === selectedCode
+      && claimed.payment_verification.plan_code === selectedPlan)
     && selectedCode !== null
     && selectedPlan !== null
-    && state.stage !== 'payment_link_sent'
-    && (state.awaiting_reply === 'payment_confirmation' || pendingPaymentLinkRequest)
+    && (state.stage === 'payment_link_sent'
+      || state.awaiting_reply === 'payment_confirmation' || pendingPaymentLinkRequest)
     && (!currentBatchSuppliesContactDetails(claimed) || pendingPaymentLinkRequest)
     && intakeStatus === 'known'
     && intakeMissing.length === 0;

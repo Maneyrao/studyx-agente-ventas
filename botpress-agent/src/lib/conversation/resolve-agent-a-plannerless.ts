@@ -63,6 +63,14 @@ function validatePlannerless(input: {
     || (moves.has('provide_contact_details')
       && input.context.commercial_state.awaiting_reply === 'contact_details'))
   const action = input.proposal.proposed_action
+  if (action.type === 'none' && claimsImmediatePaymentLinkDelivery(input.proposal)) {
+    return {
+      schema_version: 1, rejection_id: input.rejection_id, attempt: 1,
+      rejections: [{ code: 'ACTION_NOT_AUTHORIZED', subject: 'send_payment_link' }],
+      authorized_alternatives: { fact_ids: [...input.authorized_fact_ids], actions: ['none'],
+        missing_information: [...(input.context.capabilities.intake_missing ?? [])] },
+    }
+  }
   const paymentTransitionAuthorized = action.type === 'send_payment_link'
     && input.context.capabilities.may_send_payment_link
     && paymentActionRequested
@@ -120,7 +128,9 @@ const SENDS_LINK_BEFORE_NOUN = /\b(?:ahora\s+)?te\s+(?:mando|env[ií]o|comparto|
 const SENDS_LINK_AFTER_NOUN = /\b(?:link|enlace)\b.{0,48}(?:\bya\s+(?:est[aá]|qued[oó])\b|\bte\s+(?:lo\s+)?(?:mand[eé]|envi[eé]|compart[ií]|pas[eé])\b)/iu
 
 function claimsImmediatePaymentLinkDelivery(proposal: AgentATurnProposalV1): boolean {
-  return proposal.response.messages.some((message) => (
+  const text = proposal.response.messages.join('\n\n')
+  return /\b(?:link|enlace)\b/iu.test(text) && /\bah[ií]\s+va\b/iu.test(text)
+    || proposal.response.messages.some((message) => (
     SENDS_LINK_BEFORE_NOUN.test(message) || SENDS_LINK_AFTER_NOUN.test(message)
   ))
 }
@@ -182,7 +192,7 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   if (rejection === null) return { effective, rejection, originalRejection }
   // An unavailable call needs the existing model repair: changing only the
   // action would publish an acknowledgement for a call that never occurred.
-  if (input.semantic_rejections === 'advisory'
+  if (input.semantic_rejections === 'advisory' && !claimsImmediatePaymentLinkDelivery(effective.proposal)
     || hasOnlyNonBlockingGuidance(effective.proposal, rejection)) {
     return { effective, rejection: null, originalRejection }
   }
@@ -241,6 +251,7 @@ function hasOnlyNonBlockingGuidance(
   proposal: AgentATurnProposalV1,
   rejection: TurnRejectionV1,
 ): boolean {
+  if (claimsImmediatePaymentLinkDelivery(proposal)) return false
   if (isMissingRequiredIntakeForRequestedCall(proposal, rejection)) return false
   if ((proposal.proposed_action.type === 'send_payment_link'
     || proposal.proposed_action.type === 'send_test_payment_link') && rejection.rejections.some((reason) => (

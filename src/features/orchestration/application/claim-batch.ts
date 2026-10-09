@@ -97,7 +97,10 @@ export interface ClaimBatchDependencies {
   /** Inyectable para test; por defecto lee `contacts` con el cliente compartido. */
   readonly contactIntake?: (contactId: string) => Promise<ContactIntakeV1>;
   /** Canonical Stripe ledger projection; customer text never supplies it. */
-  readonly paymentVerification?: (contactId: string) => Promise<PaymentVerificationV1 | null>;
+  readonly paymentVerification?: (contactId: string, purchase?: {
+    offering_code: string | null;
+    plan_code: 'monthly_12' | 'monthly_6' | 'one_time' | null;
+  }) => Promise<PaymentVerificationV1 | null>;
   readonly agentABrainShadow?: boolean;
   /** Runtime rollout resolved after the batch is owned and its contact is canonical. */
   readonly agentLoopRollout?: AgentLoopRolloutReaderV3;
@@ -1114,7 +1117,10 @@ export async function claimBatch(
   const readPaymentVerification = deps.paymentVerification ?? (async () => null);
   const [contactIntake, paymentVerification] = await Promise.all([
     readIntake(facts.contact.id),
-    readPaymentVerification(facts.contact.id),
+    readPaymentVerification(facts.contact.id, {
+      offering_code: conversationStateV1?.selected_offering_code ?? null,
+      plan_code: conversationStateV1?.selected_payment_plan ?? null,
+    }),
   ]);
   const contactIntakeMissing = missingContactIntakeFieldsV1(contactIntake);
   // A call fast path has no conversational recovery. Preserve the customer's

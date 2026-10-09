@@ -21,7 +21,7 @@ import {
   effectiveConversationStateV1,
   type ContactIntakeV1,
 } from '../domain/conversation-planner';
-import { solicitsACall } from '../domain/operational-promise-guard';
+import { claimsImmediatePaymentLinkDelivery, solicitsACall } from '../domain/operational-promise-guard';
 import type { ConversationStateStoreV1 } from '../ports/conversation-state-store';
 import type { PaymentVerificationV1 } from '@/features/payments/application/read-payment-verification';
 
@@ -156,6 +156,8 @@ export async function prepareAgentTurnV2(input: {
   readonly payment_verification?: (input: {
     workspace_slug: string;
     contact_id: string;
+    offering_code?: string | null;
+    plan_code?: 'monthly_12' | 'monthly_6' | 'one_time' | null;
   }) => Promise<PaymentVerificationV1 | null>;
   readonly now?: () => number;
 }): Promise<{
@@ -168,17 +170,13 @@ export async function prepareAgentTurnV2(input: {
   readonly action_rejection: AgentActionRejectionV1 | null;
 }> {
   const nowMs = deps.now?.() ?? Date.now();
-  const [loaded, callFacts, contactIntake, paymentVerification] = await Promise.all([
+  const [loaded, callFacts, contactIntake] = await Promise.all([
     deps.state_store.load(input.workspace_slug, input.turn.conversation_id, input.turn.contact_id),
     deps.call_facts?.loadClaimedCallFacts({
       conversation_id: input.turn.conversation_id,
       contact_id: input.turn.contact_id,
     }) ?? Promise.resolve(null),
     deps.contact_intake?.(input.turn.contact_id) ?? Promise.resolve(undefined),
-    deps.payment_verification?.({
-      workspace_slug: input.workspace_slug,
-      contact_id: input.turn.contact_id,
-    }) ?? Promise.resolve(null),
   ]);
   const state = loaded
     ? effectiveConversationStateV1(
@@ -187,6 +185,10 @@ export async function prepareAgentTurnV2(input: {
         loadConversationSessionConfig().sessionIdleMs,
       )
     : createDefaultConversationStateV1(input.turn);
+  const paymentVerification = await deps.payment_verification?.({
+    workspace_slug: input.workspace_slug, contact_id: input.turn.contact_id,
+    offering_code: state.selected_offering_code, plan_code: state.selected_payment_plan,
+  }) ?? null;
   const registry = buildCanonicalFactRegistry({
     business_context: input.business_context,
     catalog_index: input.catalog_index,
@@ -212,6 +214,8 @@ export async function prepareAgentTurnV2(input: {
     offerings,
     facts,
     contact_intake: contactIntake,
+    ...(paymentVerification?.status === 'paid' && paymentVerification.paid_at !== null
+      ? { paid_purchase: paymentVerification } : {}),
     payment_verified: paymentVerification?.status === 'paid'
       && paymentVerification.paid_at !== null
       && paymentVerification.offering_code === state.selected_offering_code
@@ -287,6 +291,12 @@ export async function prepareAgentTurnV2(input: {
   }
   if (!authority.ok) {
     throw new AgentTurnV2RejectedError(authority.reasons, authority.rejection_subjects);
+  }
+  // Reject a false completion, so Agent A can rewrite it through the existing
+  // repair path. Do not publish "here is the link" with a removed side effect.
+  if (authority.action.type !== 'send_payment_link' && authority.action.type !== 'send_test_payment_link'
+    && claimsImmediatePaymentLinkDelivery(authority.response)) {
+    throw new AgentTurnV2RejectedError(['ACTION_NOT_AUTHORIZED']);
   }
 
   const transition: ConversationStateTransitionV1 = {
