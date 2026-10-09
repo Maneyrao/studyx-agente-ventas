@@ -2,6 +2,8 @@
 
 > **Actualización 09-10-2026:** worker y avisos del agente implementados. Por autorización explícita del usuario, los pagos Stripe sandbox deben crear usuarios reales con acceso al curso comprado en la plataforma actual. El primer intento recibió `central_environment_mismatch`. Para destrabar la prueba, el usuario autorizó hoy un parche temporal: el pedido de alta se envía como `live`, mientras el pago conserva `test` en el ledger. La excepción vence el 10-10-2026 a las 00:00 de Argentina (§5). El agente entrega credenciales en lista sólo después de confirmar el alta; cuentas existentes conservan su contraseña.
 >
+> **Corrección de credenciales:** el usuario confirmó que el alta funciona y la contraseña inicial efectiva de la central es `Escuela.123`. El agente debe comunicar esa contraseña para cuentas nuevas. La indicación anterior `Studyx.123` no coincidía con la central; no se modifica la contraseña de la plataforma desde el orquestador.
+>
 > **Antecedente 06-10-2026:** la Central de Carga implementó ambos endpoints (branch `feature/api-enrollments` de su repo, sin desplegar; guía en su `docs/api-enrollments.md`). El lado orquestador (worker que consume `fulfillment_jobs`) todavía no existe. Las decisiones marcadas como **ABIERTA** (§9) deben cerrarse antes de pasar a producción.
 >
 > Reemplaza, para el alta, la decisión de `agent-b-signal.md` §0 ("el alta al campus es manual, `estado_alta=pendiente_operador`"): el alta pasa a ser automática vía este contrato, con un humano como fallback (§7).

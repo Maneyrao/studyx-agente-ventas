@@ -8,7 +8,7 @@ import { buildAuthorizedEgress, verifyAuthorizedEgress } from '@/features/orches
 import { runEnrollmentWorker } from '../central-carga/worker';
 import { logger } from '@/lib/observability/structured-log';
 
-export const INITIAL_PASSWORD = 'Studyx.123';
+export const INITIAL_PASSWORD = 'Escuela.123';
 export type NotificationKind = 'payment_received' | 'access_ready' | 'access_delayed';
 interface Source {
   id: string; payment_id: string; kind: NotificationKind; status: string; claim_token: string | null;
@@ -134,7 +134,7 @@ export const NarrativeSchema = z.object({
 }).strict();
 export function assemblePostSaleMessage(source: Pick<Source, 'kind' | 'student_was_created' | 'login_email' | 'login_url'>, narrative: z.infer<typeof NarrativeSchema>) {
   // The model authors the conversation. Credentials are bound to verified backend data, outside the model.
-  if (/https?:|www\.|@|(?:usuario|contraseña|password)\s*:|Studyx\.123/i.test(narrative.intro)) throw new Error('POST_SALE_UNAUTHORIZED_PROSE');
+  if (/https?:|www\.|@|(?:usuario|contraseña|password)\s*:|(?:Studyx|Escuela)\.123/i.test(narrative.intro)) throw new Error('POST_SALE_UNAUTHORIZED_PROSE');
   if (source.kind !== 'access_ready') {
     if (narrative.suggestion) throw new Error('POST_SALE_UNEXPECTED_SUGGESTION');
     return narrative.intro;

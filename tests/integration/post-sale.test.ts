@@ -67,7 +67,7 @@ run('post-sale payment / central / Agent A pipeline', () => {
     let message='';
     await deliverNotification(ready.id,{claim_token:claim.claim_token,botpress_conversation_id:f.botpressId,narrative:{intro:'Ya tienes acceso a tu curso.',suggestion:'Si quieres, puedes cambiar tu contraseña.'}},
       {...deps(),sender:async(input)=>{message=input.text;return {outcome:'sent',channel:'whatsapp',providerMessageId:'ready',deliveryId:null,reason:null};}});
-    expect(message).toContain('- Usuario: ana@example.com\n- Contraseña: Studyx.123');
+    expect(message).toContain('- Usuario: ana@example.com\n- Contraseña: Escuela.123');
   });
   it('releases failed generation but holds ambiguous delivery without resending', async () => {
     const f=await fixture(); await dispatchNotifications(f.paymentId,deps());

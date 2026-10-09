@@ -71,7 +71,7 @@ The production Agent A chat now selects explicit Stripe sandbox links (`PAYMENT_
 A verified paid event queues `payment_received` and enrollment independently. The Botpress custom event `studyxPostSale` lets the existing Agent A model/personality write the confirmation without another customer turn. Confirmed central enrollment queues `access_ready`; it waits until the payment notification has been accepted by the messaging provider. Enrollment email must match the frozen registration email. The backend adds:
 
 - Usuario: the confirmed registration email
-- Contraseña: Studyx.123 for a newly created user
+- Contraseña: Escuela.123 for a newly created user
 
 Existing users retain their current password. Password changes are suggested, never required. The login URL is included only when the central returns a valid HTTPS URL. The narrative is model-authored; the credential list uses authoritative values. Delivery is pinned to the purchase conversation.
 
@@ -113,7 +113,7 @@ Después de publicar el parche vigente, recuperar el pago existente sin cobrar o
    `probe=true&payment_id=<uuid>` consulta el estado sin reclamar tareas.
 4. Confirmar el alta del mail registrado al curso Inglés 2, la entrega de la lista
    de credenciales y el ingreso efectivo a ese curso. La contraseña acordada
-   para cuentas nuevas es `Studyx.123`; cuentas existentes conservan la suya.
+   para cuentas nuevas es `Escuela.123`; cuentas existentes conservan la suya.
 
 Para cerrar la prueba, retirar la aceptación de `test` en la central, restaurar
 `PAYMENT_LINK_ENVIRONMENT=live` y `CENTRAL_CARGA_ENVIRONMENT=live` en el
