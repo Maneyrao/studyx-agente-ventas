@@ -58,6 +58,11 @@ describe('unauthenticated operational endpoints', () => {
     expect(prefixMiss.status).toBe(401);
   });
 
+  it('allows sandbox signature verification without opening nested administrative paths', async () => {
+    expect((await proxy(unauthenticatedGet('/api/webhooks/payments/stripe/sandbox'))).status).not.toBe(401);
+    expect((await proxy(unauthenticatedGet('/api/webhooks/payments/stripe/sandbox/replay'))).status).toBe(401);
+  });
+
   it('lets the cron routes through, as before', async () => {
     const response = await proxy(unauthenticatedGet('/api/cron/reconcile-orchestration'));
     expect(response.status).not.toBe(401);

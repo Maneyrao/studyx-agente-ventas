@@ -64,6 +64,7 @@ import {
 import {
   PAYMENT_PLAN_PRESENTATIONS,
   isStripePaymentLinkUrl,
+  stripePaymentLinkEnvironment,
   stripUnauthorizedUrls,
 } from '@/features/payments/domain/payment-link';
 import {
@@ -989,11 +990,14 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         SELECT ad.id
         FROM agent_decisions AS ad
         JOIN messages AS prior_turn ON prior_turn.id = ad.turn_id
+        LEFT JOIN payments AS prior_payment
+          ON prior_payment.idempotency_key = 'agent-a-payment-link:' || ad.turn_id::text
         WHERE prior_turn.conversation_id = ${turn.conversation_id}::uuid
           AND ad.outbound_message_id IS NOT NULL
           AND ad.business_action ->> 'type' = 'send_payment_link'
           AND ad.business_action ->> 'plan_code' = ${action.plan_code}
           AND ad.business_action ->> 'offering_sku' = ${action.offering_sku}
+          AND COALESCE(prior_payment.environment, 'live') = ${stripePaymentLinkEnvironment(materialized.block.url) ?? 'live'}
         LIMIT 1
       `;
 

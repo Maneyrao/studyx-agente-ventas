@@ -5,6 +5,7 @@ import {
   PAYMENT_PLAN_PRESENTATIONS,
   isPaymentPlanCode,
   isStripePaymentLinkUrl,
+  stripePaymentLinkEnvironment,
   type PaymentPlanCode,
 } from '../domain/payment-link';
 
@@ -62,6 +63,8 @@ export async function reservePaymentLink(
   if (!isPaymentPlanCode(input.plan_code)) {
     throw new PaymentLinkReservationError('PLAN_INVALID');
   }
+  const environment = stripePaymentLinkEnvironment(input.payment_link_url);
+  if (!environment) throw new PaymentLinkReservationError('PAYMENT_LINK_INVALID');
 
   const existing = await db<Array<{
     id: string;
@@ -71,8 +74,9 @@ export async function reservePaymentLink(
     offering_id: string;
     plan_code: PaymentPlanCode | null;
     checkout_url: string | null;
+    environment: 'test' | 'live';
   }>>`
-    SELECT id, status, workspace_id, contact_id, offering_id, plan_code, checkout_url
+    SELECT id, status, workspace_id, contact_id, offering_id, plan_code, checkout_url, environment
     FROM payments
     WHERE idempotency_key = ${input.idempotency_key}
   `;
@@ -83,6 +87,7 @@ export async function reservePaymentLink(
       || found.contact_id !== input.contact_id
       || found.offering_id !== input.offering_id
       || found.plan_code !== input.plan_code
+      || found.environment !== environment
       || !found.checkout_url
     ) {
       throw new PaymentLinkReservationError('IDEMPOTENCY_KEY_CONFLICT');
@@ -111,7 +116,7 @@ export async function reservePaymentLink(
       ) VALUES (
         ${paymentId}::uuid, ${input.workspace_id}::uuid, ${input.contact_id}::uuid,
         ${input.offering_id}::uuid, ${presentation.installment_amount},
-        ${presentation.currency}, 'reserved', 'stripe', 'live', ${checkoutMode},
+        ${presentation.currency}, 'reserved', 'stripe', ${environment}, ${checkoutMode},
         ${input.idempotency_key}, ${checkoutUrl}, ${input.plan_code}
       )
       ON CONFLICT (idempotency_key) DO NOTHING

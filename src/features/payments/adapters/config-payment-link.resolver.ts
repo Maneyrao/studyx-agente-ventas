@@ -1,9 +1,10 @@
-import { PaymentPlanCode, isStripePaymentLinkUrl } from '../domain/payment-link';
+import { PaymentPlanCode, stripePaymentLinkEnvironment } from '../domain/payment-link';
 
 /**
  * Resolves a plan code to its owner-approved Stripe link. Reads ONLY
  * environment (PAYMENT_LINK_12M / PAYMENT_LINK_6M / PAYMENT_LINK_CONTADO,
- * per spec §3) — never the database, never model output. Partial or invalid
+ * or PAYMENT_LINK_SANDBOX_* with PAYMENT_LINK_ENVIRONMENT=test) — never
+ * the database, never model output. Partial or invalid
  * configuration fails closed to null for that plan: the caller's job is to
  * turn that into "no link, ask to confirm the payment option", never to
  * substitute a different plan's link.
@@ -55,11 +56,19 @@ export function createConfigPaymentLinkResolver(
   env: Record<string, string | undefined> = process.env
 ): PaymentLinkResolver {
   const syntheticLinksAllowed = isStructurallyIsolatedEvaluation(env);
+  // An unset selector preserves existing owner-approved configurations; the
+  // reservation still derives and persists the actual Stripe environment.
+  const environment = env.PAYMENT_LINK_ENVIRONMENT;
   return {
     resolve(planCode: PaymentPlanCode): string | null {
-      const envVarName = ENV_VAR_BY_PLAN[planCode];
+      if (environment !== undefined && environment !== 'test' && environment !== 'live') return null;
+      const liveEnvVar = ENV_VAR_BY_PLAN[planCode];
+      const envVarName = environment === 'test'
+        ? liveEnvVar?.replace('PAYMENT_LINK_', 'PAYMENT_LINK_SANDBOX_')
+        : liveEnvVar;
       const raw = envVarName ? env[envVarName] : undefined;
-      return isStripePaymentLinkUrl(raw)
+      const linkEnvironment = raw === undefined ? null : stripePaymentLinkEnvironment(raw);
+      return (linkEnvironment !== null && (environment === undefined || linkEnvironment === environment))
         || (syntheticLinksAllowed && isSyntheticEvaluationLink(raw))
         ? raw ?? null
         : null;

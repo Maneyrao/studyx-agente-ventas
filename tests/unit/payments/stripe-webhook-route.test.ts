@@ -5,6 +5,7 @@ const prior = {
   paymentProvider: process.env.PAYMENT_PROVIDER,
   secretKey: process.env.STRIPE_SECRET_KEY,
   webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+  sandboxSecret: process.env.STRIPE_SANDBOX_WEBHOOK_SECRET,
   databaseUrl: process.env.DATABASE_URL,
 };
 
@@ -16,10 +17,35 @@ afterEach(() => {
   restore('PAYMENT_PROVIDER', prior.paymentProvider);
   restore('STRIPE_SECRET_KEY', prior.secretKey);
   restore('STRIPE_WEBHOOK_SECRET', prior.webhookSecret);
+  restore('STRIPE_SANDBOX_WEBHOOK_SECRET', prior.sandboxSecret);
   restore('DATABASE_URL', prior.databaseUrl);
 });
 
 describe('Stripe webhook route', () => {
+  it('requires a separately configured sandbox secret and never falls back to live', async () => {
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_live_fixture';
+    delete process.env.STRIPE_SANDBOX_WEBHOOK_SECRET;
+    process.env.DATABASE_URL = 'postgresql://postgres@127.0.0.1:1/not-used';
+    const { POST } = await import('@/app/api/webhooks/payments/stripe/sandbox/route');
+    const response = await POST(new NextRequest('https://studyx.example/api/webhooks/payments/stripe/sandbox', {
+      method: 'POST', body: '{}',
+    }));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'PAYMENT_WEBHOOK_UNCONFIGURED' });
+  });
+
+  it('verifies sandbox signatures without requiring the sandbox API key', async () => {
+    delete process.env.STRIPE_SECRET_KEY;
+    process.env.STRIPE_SANDBOX_WEBHOOK_SECRET = 'whsec_sandbox_fixture';
+    process.env.DATABASE_URL = 'postgresql://postgres@127.0.0.1:1/not-used';
+    const { POST } = await import('@/app/api/webhooks/payments/stripe/sandbox/route');
+    const response = await POST(new NextRequest('https://studyx.example/api/webhooks/payments/stripe/sandbox', {
+      method: 'POST', body: '{}',
+    }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'SIGNATURE_REQUIRED' });
+  });
+
   it('reaches signature verification with live inbound credentials while checkout stays fake', async () => {
     process.env.PAYMENT_PROVIDER = 'fake';
     delete process.env.STRIPE_SECRET_KEY;

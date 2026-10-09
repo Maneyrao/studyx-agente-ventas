@@ -49,6 +49,7 @@ async function paymentFixture() {
   });
   return {
     workspaceId: workspaces[0].id,
+    contactId: contacts[0].id,
     offeringId: offerings[0].id,
     paymentId: reserved.payment_id,
   };
@@ -76,10 +77,12 @@ function sessionEvent(input: {
   currency?: string;
   useClientReference?: boolean;
   mode?: 'payment' | 'subscription';
+  livemode?: boolean;
 }) {
   return JSON.stringify({
     id: input.eventId ?? `evt_${randomUUID().replaceAll('-', '')}`,
     object: 'event',
+    livemode: input.livemode ?? false,
     type: input.type,
     created: Math.floor(Date.now() / 1000),
     data: {
@@ -128,6 +131,71 @@ async function fulfillmentCount(paymentId: string) {
 }
 
 run('stripe payment webhook', () => {
+  it.each([
+    ['monthly_12', 3000, 'subscription'],
+    ['monthly_6', 6000, 'subscription'],
+    ['one_time', 36000, 'payment'],
+  ] as const)('correlates sandbox %s with its customer, course and first payment', async (plan, cents, mode) => {
+    const fixture = await paymentFixture();
+    const input = {
+      workspace_id: fixture.workspaceId, contact_id: fixture.contactId, offering_id: fixture.offeringId,
+      plan_code: plan, idempotency_key: `sandbox:${randomUUID()}`,
+      payment_link_url: `https://buy.stripe.com/test_${plan}`,
+    };
+    const reserved = await reservePaymentLink(db!, input);
+    expect(new URL(reserved.url).searchParams.get('client_reference_id')).toBe(reserved.payment_id);
+    expect(await reservePaymentLink(db!, input)).toEqual(reserved);
+    await expect(reservePaymentLink(db!, { ...input, payment_link_url: 'https://buy.stripe.com/live_link' }))
+      .rejects.toMatchObject({ code: 'IDEMPOTENCY_KEY_CONFLICT' });
+    const row = await db!`
+      SELECT contact_id, offering_id, environment FROM payments WHERE id = ${reserved.payment_id}::uuid
+    `;
+    expect(row[0]).toMatchObject({ contact_id: fixture.contactId, offering_id: fixture.offeringId, environment: 'test' });
+    const payload = sessionEvent({
+      ...fixture, paymentId: reserved.payment_id, sessionId: `cs_test_${randomUUID()}`,
+      type: 'checkout.session.completed', amountTotalCents: cents, currency: 'usd', mode, useClientReference: true,
+    });
+    // Simultaneous delivery plus subsequent retries must produce a single job.
+    const results = await Promise.all(Array.from({ length: 4 }, () => deliver(payload, signed(payload))));
+    expect(results.every(result => result.status === 200)).toBe(true);
+    expect(await paymentStatus(reserved.payment_id)).toBe('paid');
+    expect(await fulfillmentCount(reserved.payment_id)).toBe(1);
+  });
+
+  it.each(['test', 'live'] as const)('ignores a signed event from the opposite environment before attaching a session (%s)', async environment => {
+    const fixture = await paymentFixture();
+    const reserved = await reservePaymentLink(db!, {
+      workspace_id: fixture.workspaceId, contact_id: fixture.contactId, offering_id: fixture.offeringId,
+      plan_code: 'one_time', idempotency_key: `env:${randomUUID()}`,
+      payment_link_url: environment === 'test' ? 'https://buy.stripe.com/test_link' : 'https://buy.stripe.com/live_link',
+    });
+    const payload = sessionEvent({
+      ...fixture, paymentId: reserved.payment_id, sessionId: `cs_${randomUUID()}`,
+      type: 'checkout.session.completed', amountTotalCents: 36000, currency: 'usd', mode: 'payment',
+      useClientReference: true, livemode: environment === 'test',
+    });
+    const result = await deliver(payload, signed(payload));
+    expect(result.body).toEqual({ outcome: 'environment_mismatch' });
+    expect(result.verifiedPaymentId).toBeUndefined();
+    const row = await db!`
+      SELECT status, provider_session_id FROM payments WHERE id = ${reserved.payment_id}::uuid
+    `;
+    expect(row[0]).toMatchObject({ status: 'reserved', provider_session_id: null });
+    expect(await fulfillmentCount(reserved.payment_id)).toBe(0);
+  });
+
+  it('rejects a live event at the sandbox endpoint before any database call', async () => {
+    const payload = sessionEvent({
+      type: 'checkout.session.completed', sessionId: 'cs_live', paymentId: randomUUID(),
+      workspaceId: randomUUID(), offeringId: randomUUID(), livemode: true,
+    });
+    const result = await processStripeWebhook(payload, signed(payload), {
+      db: (() => { throw new Error('Database must not be touched'); }) as unknown as NonNullable<typeof db>,
+      stripe, webhookSecret: WEBHOOK_SECRET, expectedEnvironment: 'test',
+    });
+    expect(result.body).toEqual({ outcome: 'environment_mismatch' });
+  });
+
   it('correlates a shared Payment Link by client_reference_id and applies its first paid charge', async () => {
     const fixture = await paymentFixture();
     const reserved = await reservePaymentLink(db!, {
@@ -138,7 +206,7 @@ run('stripe payment webhook', () => {
       offering_id: fixture.offeringId,
       plan_code: 'one_time',
       idempotency_key: `payment-link:${randomUUID()}`,
-      payment_link_url: 'https://buy.stripe.com/test-link',
+      payment_link_url: 'https://buy.stripe.com/test_link',
     });
     const payload = sessionEvent({
       type: 'checkout.session.completed',
@@ -173,6 +241,7 @@ run('stripe payment webhook', () => {
     const payload = sessionEvent({
       type: 'checkout.session.completed',
       sessionId: `cs_verification_${randomUUID().slice(0, 8)}`,
+      livemode: true,
       paymentId: reserved.payment_id,
       workspaceId: fixture.workspaceId,
       offeringId: fixture.offeringId,

@@ -39,6 +39,7 @@ export interface StripeWebhookDeps {
   db: postgres.Sql;
   stripe: Stripe;
   webhookSecret: string;
+  expectedEnvironment?: 'test' | 'live';
 }
 
 export interface StripeWebhookResult {
@@ -85,6 +86,11 @@ export async function processStripeWebhook(
   if (!HANDLED_EVENTS.has(event.type)) {
     return { status: 200, body: { outcome: 'unhandled_event_type' } };
   }
+  const eventEnvironment = event.livemode === false ? 'test'
+    : event.livemode === true ? 'live' : null;
+  if (!eventEnvironment || (deps.expectedEnvironment && eventEnvironment !== deps.expectedEnvironment)) {
+    return { status: 200, body: { outcome: 'environment_mismatch' } };
+  }
 
   const session = event.data.object as StripeSessionPayload;
   const paymentId = session.metadata?.payment_id ?? session.client_reference_id ?? undefined;
@@ -98,14 +104,19 @@ export async function processStripeWebhook(
     id: string; status: string; amount: string; currency: string;
     checkout_mode: 'payment' | 'subscription';
     provider_session_id: string | null;
+    environment: 'test' | 'live';
   }>>`
-    SELECT id, status, amount::text AS amount, currency, checkout_mode, provider_session_id
+    SELECT id, status, amount::text AS amount, currency, checkout_mode, provider_session_id, environment
     FROM payments WHERE id = ${paymentId}::uuid
   `;
   const payment = payments[0];
   if (!payment) {
     logger.warn({ event: 'payments.webhook.payment_not_found', event_id: event.id });
     return { status: 200, body: { outcome: 'payment_not_found' } };
+  }
+  if (payment.environment !== eventEnvironment) {
+    logger.warn({ event: 'payments.webhook.environment_mismatch', payment_id: payment.id, event_id: event.id });
+    return { status: 200, body: { outcome: 'environment_mismatch' } };
   }
 
   if (payment.provider_session_id !== null && payment.provider_session_id !== sessionId) {

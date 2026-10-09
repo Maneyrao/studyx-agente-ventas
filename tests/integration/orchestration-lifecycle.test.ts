@@ -1704,6 +1704,41 @@ run('Fase 4 — pago y cierre de batch', () => {
     expect(rows[0]).toEqual({ payment_actions: 1, link_messages: 1 });
   });
 
+  it('allows a sandbox link after an earlier live link in the same chat', async () => {
+    const sandboxUrl = process.env.PAYMENT_LINK_12M;
+    const liveUrl = 'https://buy.stripe.com/live_12m_environment_switch';
+    const firstEnvelope = paymentInbound();
+    try {
+      process.env.PAYMENT_LINK_12M = liveUrl;
+      const first = await processInboundMessage(firstEnvelope);
+      const firstCommit = await commitAgentDecision(paymentDecision(first.turn_id));
+      expect(firstCommit.outbound?.content).toContain(liveUrl);
+      await db!`
+        UPDATE inbound_batches SET state = 'completed', completed_at = now(), updated_at = now()
+        WHERE id = ${first.batch.id}::uuid
+      `;
+      process.env.PAYMENT_LINK_12M = sandboxUrl;
+      const second = await processInboundMessage({
+        ...firstEnvelope, external_message_id: `message-${randomUUID()}`, trace_id: randomUUID(),
+        message: { type: 'text', text: 'Confirmo nuevamente las 12 cuotas',
+          occurred_at: new Date(Date.now() + 1000).toISOString(),
+          reply_to_external_message_id: firstEnvelope.external_message_id },
+      });
+      const secondCommit = await commitAgentDecision(paymentDecision(second.turn_id));
+      expect(secondCommit.outbound?.content).toContain(PAYMENT_LINK_12M);
+      expect(secondCommit.outbound?.content).toMatch(/client_reference_id=[0-9a-f-]{36}/u);
+      const payments = await db!`
+        SELECT environment FROM payments
+        WHERE idempotency_key IN (${`agent-a-payment-link:${first.turn_id}`}, ${`agent-a-payment-link:${second.turn_id}`})
+        ORDER BY environment
+      `;
+      expect(payments.map(row => row.environment)).toEqual(['live', 'test']);
+    } finally {
+      if (sandboxUrl === undefined) delete process.env.PAYMENT_LINK_12M;
+      else process.env.PAYMENT_LINK_12M = sandboxUrl;
+    }
+  });
+
   it('records a technical degradation when a duplicate link has no useful model prose', async () => {
     const firstEnvelope = paymentInbound();
     const first = await processInboundMessage(firstEnvelope);

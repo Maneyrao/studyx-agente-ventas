@@ -68,10 +68,17 @@ export function isStripePaymentLinkUrl(value: unknown): value is string {
   if (typeof value !== 'string' || value.length === 0 || value.length > 2_048) return false;
   try {
     const url = new URL(value);
-    return url.protocol === 'https:' && url.hostname === 'buy.stripe.com';
+    return url.protocol === 'https:' && url.hostname === 'buy.stripe.com'
+      && !url.username && !url.password && !url.port && url.pathname.length > 1;
   } catch {
     return false;
   }
+}
+
+/** Stripe-hosted sandbox Payment Links use the `/test_` path prefix. */
+export function stripePaymentLinkEnvironment(value: string): 'test' | 'live' | null {
+  if (!isStripePaymentLinkUrl(value)) return null;
+  return new URL(value).pathname.startsWith('/test_') ? 'test' : 'live';
 }
 
 /** The fixed block appended to the model's text — never model-authored. */

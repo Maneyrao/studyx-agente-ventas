@@ -324,6 +324,38 @@ describe('deterministic payment-link authorization', () => {
 });
 
 describe('createConfigPaymentLinkResolver', () => {
+  it('switches every plan to its separate sandbox link', () => {
+    const sandbox = {
+      PAYMENT_LINK_SANDBOX_12M: 'https://buy.stripe.com/test_12m',
+      PAYMENT_LINK_SANDBOX_6M: 'https://buy.stripe.com/test_6m',
+      PAYMENT_LINK_SANDBOX_CONTADO: 'https://buy.stripe.com/test_contado',
+    };
+    const resolver = createConfigPaymentLinkResolver({ ...FULL_ENV, ...sandbox, PAYMENT_LINK_ENVIRONMENT: 'test' });
+    expect(resolver.resolve('monthly_12')).toBe(sandbox.PAYMENT_LINK_SANDBOX_12M);
+    expect(resolver.resolve('monthly_6')).toBe(sandbox.PAYMENT_LINK_SANDBOX_6M);
+    expect(resolver.resolve('one_time')).toBe(sandbox.PAYMENT_LINK_SANDBOX_CONTADO);
+    expect(createConfigPaymentLinkResolver({ ...FULL_ENV, ...sandbox }).resolve('one_time')).toBe(LINK_CONTADO);
+  });
+
+  it('never falls back to real charges when sandbox configuration is missing or live', () => {
+    const env = { ...FULL_ENV, PAYMENT_LINK_ENVIRONMENT: 'test' };
+    expect(createConfigPaymentLinkResolver(env).resolve('one_time')).toBeNull();
+    expect(createConfigPaymentLinkResolver({ ...env, PAYMENT_LINK_SANDBOX_CONTADO: LINK_CONTADO })
+      .resolve('one_time')).toBeNull();
+  });
+
+  it('rejects a sandbox link in live mode and an unknown mode', () => {
+    expect(createConfigPaymentLinkResolver({ PAYMENT_LINK_ENVIRONMENT: 'live', PAYMENT_LINK_CONTADO: 'https://buy.stripe.com/test_example' })
+      .resolve('one_time')).toBeNull();
+    expect(createConfigPaymentLinkResolver({ ...FULL_ENV, PAYMENT_LINK_ENVIRONMENT: 'typo' })
+      .resolve('one_time')).toBeNull();
+  });
+
+  it('preserves existing approved sandbox links when the selector has not been configured', () => {
+    expect(createConfigPaymentLinkResolver({ PAYMENT_LINK_CONTADO: 'https://buy.stripe.com/test_existing' })
+      .resolve('one_time')).toBe('https://buy.stripe.com/test_existing');
+  });
+
   it('resolves each of the three plans to its exact configured URL', () => {
     const resolver = createConfigPaymentLinkResolver(FULL_ENV);
     expect(resolver.resolve('monthly_12')).toBe(LINK_12M);
