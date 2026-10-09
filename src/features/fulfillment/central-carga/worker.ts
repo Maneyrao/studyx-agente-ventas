@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { sql as orchestratorSql } from '@/lib/db/orchestrator';
+import { jsonbParam } from '@/lib/db/json';
 import type postgres from 'postgres';
 import { logger } from '@/lib/observability/structured-log';
 import { CentralCargaClient, type EnrollmentCallOutcome } from './client';
@@ -10,7 +11,7 @@ import {
   type EnrollmentResponseV1,
   type EnrollmentSource,
 } from './contract';
-import { computeBackoffSeconds, effectiveMaxAttempts, preflight } from './policy';
+import { computeBackoffSeconds, effectiveMaxAttempts, preflight, sandboxLiveBridgeState } from './policy';
 
 const DEFAULT_LIMIT = 10;
 const DEFAULT_LEASE_SECONDS = 120;
@@ -125,7 +126,7 @@ export async function runEnrollmentWorker(
 
     let terminal: Terminal;
     try {
-      terminal = await decide(sql, job, config, client);
+      terminal = await decide(sql, job, config, client, now);
     } catch (error) {
       // Unexpected local failure (DB read etc.): the Central outcome is
       // unknown, so retry rather than assume anything.
@@ -193,6 +194,7 @@ async function decide(
   job: ClaimedJob,
   config: Extract<CentralCargaConfig, { enabled: true }>,
   client: CentralCargaClient,
+  now: () => number,
 ): Promise<Terminal> {
   const source = await loadSource(sql, job.payment_id);
   if (!source) return { kind: 'dead_letter', code: 'payment_not_found' };
@@ -232,7 +234,42 @@ async function decide(
     }
     // 404: nothing completed there; the POST is idempotent, so it is safe.
   }
-  return fromOutcome(await client.createEnrollment(request.data), null);
+  // Resolve immediately before POST, including retries that cross the expiry.
+  // GET reconciliation above remains available after expiry for an already-created account.
+  const bridge = sandboxLiveBridgeState({
+    paymentEnvironment: source.environment,
+    workerEnvironment: config.environment,
+    until: config.sandboxLiveUntil,
+    now: now(),
+  });
+  if (bridge === 'expired') return { kind: 'dead_letter', code: 'sandbox_live_bridge_expired' };
+  const outbound = bridge === 'active' ? { ...request.data, environment: 'live' as const } : request.data;
+  if (bridge === 'active') {
+    await sql`
+      INSERT INTO payment_events (payment_id, provider, provider_event_id, event_type, payload)
+      VALUES (${source.payment_id}::uuid, 'internal',
+        ${`internal:sandbox_live_enrollment:${source.payment_id}:${job.attempt_count}`},
+        'sandbox_live_enrollment_requested', ${jsonbParam(sql, {
+          payment_environment: source.environment,
+          central_environment: outbound.environment,
+          expires_at: config.sandboxLiveUntil!.toISOString(),
+          job_id: job.id,
+          attempt_count: job.attempt_count,
+        })})
+      ON CONFLICT (provider, provider_event_id) DO NOTHING
+    `;
+    if (now() >= config.sandboxLiveUntil!.getTime()) {
+      return { kind: 'dead_letter', code: 'sandbox_live_bridge_expired' };
+    }
+    logger.warn({
+      event: 'central_carga.sandbox_live_bridge_used',
+      payment_id: source.payment_id,
+      payment_environment: source.environment,
+      central_environment: outbound.environment,
+      expires_at: config.sandboxLiveUntil!.toISOString(),
+    });
+  }
+  return fromOutcome(await client.createEnrollment(outbound), null);
 }
 
 /**

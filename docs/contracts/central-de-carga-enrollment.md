@@ -1,6 +1,6 @@
 # CONTRATO — Orquestador StudyX → Central de Carga mystudyx (alta de alumnos)
 
-> **Actualización 09-10-2026:** worker y avisos del agente implementados. Por autorización explícita del usuario, los pagos Stripe sandbox deben crear usuarios reales con acceso al curso comprado en la plataforma actual, durante la prueba con personas del desarrollo. Se conserva `environment=test` para el pago y se exige que la central lo acepte explícitamente. La central configura `Studyx.123` para cuentas nuevas; cuentas existentes conservan su contraseña. El agente entrega las credenciales en lista sólo después de confirmar el alta. La activación en la central sigue pendiente: el primer pago confirmado recibió `central_environment_mismatch`.
+> **Actualización 09-10-2026:** worker y avisos del agente implementados. Por autorización explícita del usuario, los pagos Stripe sandbox deben crear usuarios reales con acceso al curso comprado en la plataforma actual. El primer intento recibió `central_environment_mismatch`. Para destrabar la prueba, el usuario autorizó hoy un parche temporal: el pedido de alta se envía como `live`, mientras el pago conserva `test` en el ledger. La excepción vence el 10-10-2026 a las 00:00 de Argentina (§5). El agente entrega credenciales en lista sólo después de confirmar el alta; cuentas existentes conservan su contraseña.
 >
 > **Antecedente 06-10-2026:** la Central de Carga implementó ambos endpoints (branch `feature/api-enrollments` de su repo, sin desplegar; guía en su `docs/api-enrollments.md`). El lado orquestador (worker que consume `fulfillment_jobs`) todavía no existe. Las decisiones marcadas como **ABIERTA** (§9) deben cerrarse antes de pasar a producción.
 >
@@ -14,7 +14,7 @@ Este archivo es la única fuente de verdad para la integración. Quien implement
 - **Cuándo:** sólo después de que un pago queda `paid` en el ledger del orquestador. El orquestador sólo acepta pagos confirmados por el webhook de Stripe con firma verificada; la Central confía en ese juicio y **no** vuelve a verificar contra Stripe.
 - **Cola:** al pasar a `paid`, el orquestador inserta una fila en `fulfillment_jobs` en la misma transacción (un job por pago, `payment_id` UNIQUE). Un worker reclama el job y llama a la Central. Ningún request HTTP de Stripe espera a la Central.
 - **Idempotencia:** la clave es `payment_id` (UUID del orquestador). Un pago produce como máximo un alta. El orquestador puede reintentar el mismo request cuantas veces quiera; la Central debe responder lo mismo sin duplicar alumnos.
-- **Entornos:** los pagos de prueba conservan `environment=test`. El modo de prueba autorizado usa la central actual para crear usuarios reales e inscribirlos en el curso comprado; no convierte el pago a `live`. La central debe habilitar explícitamente esta excepción (§5).
+- **Entornos:** los pagos de prueba conservan `environment=test` en el ledger. El parche temporal autorizado puede enviar el pedido de alta como `live` a la central actual, con vencimiento y evento de auditoría (§5). La central recibe `live` y puede registrarlo así; esto no representa dinero real cobrado en Stripe.
 - **Datos sensibles:** los logs de ambos lados no registran email, teléfono ni nombre completo en claro; usan `payment_id` y `contact_id` para correlacionar.
 
 ## 1. Endpoints que la Central de Carga debe exponer
@@ -87,7 +87,7 @@ Fallos de auth → `401` (§4). Ver alternativa bearer en §9.
 | `payment_id` | uuid | sí | `payments.id` | Clave de idempotencia. |
 | `workspace_id` | uuid | sí | `payments.workspace_id` | Tenant del orquestador. |
 | `contact_id` | uuid | sí | `payments.contact_id` | Id estable del lead en StudyX. Útil para soporte. |
-| `environment` | `"test"` \| `"live"` | sí | `payments.environment` | Ver §5. |
+| `environment` | `"test"` \| `"live"` | sí | `payments.environment`, salvo el parche temporal de §5 | Identifica el entorno declarado a la central; el ledger no se modifica. |
 | `student.full_name` | string 1–200 | sí* | `contacts.name` | *Hoy es nullable en el orquestador. Ver §9. |
 | `student.email` | string email | sí* | `contacts.email` | *Hoy es nullable en el orquestador. Ver §9. Llega en minúsculas y sin espacios. |
 | `student.phone` | string E.164 | sí | `contacts.declared_phone` si existe; si no, `contacts.phone` | `contacts.phone` es la identidad del canal; `declared_phone` es el que el alumno dijo que usa. |
@@ -195,6 +195,25 @@ Cuerpo de error uniforme:
 `retryable` en el cuerpo es una pista; la decisión final del orquestador sale del status HTTP de esta tabla.
 
 ## 5. Entornos
+
+### Parche temporal autorizado del 09-10-2026
+
+- `CENTRAL_CARGA_SANDBOX_LIVE_UNTIL=2026-10-10T03:00:00Z` habilita el puente
+  únicamente para pagos `paid/test` dentro del alcance vigente del worker `test`.
+- Sólo se modifica `environment` del POST firmado hacia la central a `live`.
+  El mail registrado, curso, monto, sesión Stripe y `payment_id` se conservan.
+  El ledger sigue siendo `test`; no se simula un cobro ni se fabrica una sesión `cs_live`.
+- Cada intento deja un evento interno `sandbox_live_enrollment_requested` en
+  `payment_events` con los dos entornos, vencimiento, job e intento, sin datos personales.
+- Al vencer, no se hacen nuevos POST para estos pagos. Un reintento puede consultar
+  el GET y confirmar un alta ya creada; un GET sin alta termina en
+  `sandbox_live_bridge_expired`, sin recrearla ni cambiar la clave de idempotencia.
+- Configuración vacía desactiva el puente. Si se vuelve al flujo sin parche,
+  se aplican las reglas de aceptación explícita de `test` siguientes.
+- Este puente no confirma por sí mismo que la central crea cuentas ni que la
+  contraseña acordada funciona. Verificar alta, curso, credenciales e ingreso.
+
+### Comportamiento habitual sin el parche
 
 - La Central expone (o es) dos instancias: una de prueba y una de producción, con secretos distintos.
 - Por defecto la instancia de producción rechaza `test`. Para la prueba autorizada del 09-10-2026, la central actual debe aceptar explícitamente `test` desde el orquestador autenticado y ejecutar el mismo alta real e inscripción al campus que con un pago `live`. No alcanza con devolver una respuesta simulada ni con crear un alumno en una base de prueba. Un rechazo sigue siendo un fallo de alta, nunca se oculta cambiando el pago a `live`.

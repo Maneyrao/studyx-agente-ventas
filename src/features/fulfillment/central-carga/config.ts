@@ -16,6 +16,7 @@ const ConfigSchema = z.object({
   CENTRAL_CARGA_SIGNING_SECRET: z.string().min(16),
   CENTRAL_CARGA_ENVIRONMENT: z.enum(['test', 'live']),
   CENTRAL_CARGA_ENROLL_PAID_AFTER: z.string().datetime({ offset: true }),
+  CENTRAL_CARGA_SANDBOX_LIVE_UNTIL: z.string().datetime({ offset: true }).optional(),
 });
 
 export type CentralCargaConfig =
@@ -27,6 +28,7 @@ export type CentralCargaConfig =
       environment: 'test' | 'live';
       paidAfter: Date;
       allowSandboxContacts?: boolean;
+      sandboxLiveUntil?: Date;
     };
 
 /**
@@ -46,6 +48,7 @@ export function loadCentralCargaConfig(
     CENTRAL_CARGA_SIGNING_SECRET: environment.CENTRAL_CARGA_SIGNING_SECRET?.trim(),
     CENTRAL_CARGA_ENVIRONMENT: environment.CENTRAL_CARGA_ENVIRONMENT?.trim().toLowerCase(),
     CENTRAL_CARGA_ENROLL_PAID_AFTER: environment.CENTRAL_CARGA_ENROLL_PAID_AFTER?.trim(),
+    CENTRAL_CARGA_SANDBOX_LIVE_UNTIL: environment.CENTRAL_CARGA_SANDBOX_LIVE_UNTIL?.trim() || undefined,
   });
   if (!parsed.success) {
     throw new CentralCargaConfigError(
@@ -60,5 +63,8 @@ export function loadCentralCargaConfig(
     paidAfter: new Date(parsed.data.CENTRAL_CARGA_ENROLL_PAID_AFTER),
     allowSandboxContacts: parsed.data.CENTRAL_CARGA_ENVIRONMENT === 'test'
       && environment.CENTRAL_CARGA_ALLOW_SANDBOX_CONTACTS === 'true',
+    ...(parsed.data.CENTRAL_CARGA_SANDBOX_LIVE_UNTIL
+      ? { sandboxLiveUntil: new Date(parsed.data.CENTRAL_CARGA_SANDBOX_LIVE_UNTIL) }
+      : {}),
   };
 }

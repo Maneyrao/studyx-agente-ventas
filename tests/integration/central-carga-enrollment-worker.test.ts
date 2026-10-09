@@ -119,6 +119,63 @@ beforeEach(async () => {
 });
 
 run('Central de Carga enrollment worker', () => {
+  const bridgeUntil = new Date('2026-10-10T03:00:00Z');
+  const bridgeConfig: CentralCargaConfig = { ...config, enabled: true, environment: 'test',
+    sandboxLiveUntil: bridgeUntil };
+  it('temporarily sends a paid sandbox enrollment as live without rewriting the payment or its session', async () => {
+    const f = await fixture({ environment: 'test' });
+    const [original] = await db!`SELECT provider_session_id FROM payments WHERE id=${f.paymentId}::uuid`;
+    let outbound: Record<string, unknown> | undefined;
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      outbound = JSON.parse(String(init.body));
+      expect((init.headers as Record<string, string>)['idempotency-key']).toBe(f.paymentId);
+      expect(outbound).toMatchObject({ payment_id: f.paymentId, environment: 'live',
+        payment: { provider_session_id: original.provider_session_id } });
+      return json(201, body(f.paymentId));
+    }) as unknown as typeof fetch;
+    const result = await runEnrollmentWorker({ scoped: true, payment_id: f.paymentId },
+      { sql: db!, config: bridgeConfig, fetchImpl, now: () => bridgeUntil.getTime()-1 });
+    expect(result.completed).toBe(1);
+    const [payment] = await db!`SELECT environment,status,provider_session_id FROM payments WHERE id=${f.paymentId}::uuid`;
+    expect(payment).toMatchObject({ environment: 'test', status: 'paid', provider_session_id: original.provider_session_id });
+    const [event] = await db!`SELECT provider,event_type,payload FROM payment_events
+      WHERE payment_id=${f.paymentId}::uuid AND event_type='sandbox_live_enrollment_requested'`;
+    expect(event).toMatchObject({ provider: 'internal', payload: { payment_environment: 'test', central_environment: 'live',
+      expires_at: bridgeUntil.toISOString(), attempt_count: 1 } });
+    expect(await enrollments(f.paymentId)).toHaveLength(1);
+  });
+
+  it('does not POST new sandbox enrollments at or after expiry', async () => {
+    const f = await fixture({ environment: 'test' });
+    const central = mockCentral(created);
+    const result = await runEnrollmentWorker({ scoped: true, payment_id: f.paymentId },
+      { sql: db!, config: bridgeConfig, fetchImpl: central.fetchImpl, now: () => bridgeUntil.getTime() });
+    expect(result.dead_lettered).toBe(1);
+    expect(central.calls).toHaveLength(0);
+    expect(await job(f.jobId)).toMatchObject({ last_error_code: 'sandbox_live_bridge_expired' });
+  });
+
+  it('reconciles an already-created enrollment after expiry without another POST', async () => {
+    const f = await fixture({ environment: 'test' });
+    await db!`UPDATE fulfillment_jobs SET attempt_count=1 WHERE id=${f.jobId}::uuid`;
+    const central = mockCentral(call => json(200, body(call.paymentId)));
+    const result = await runEnrollmentWorker({ scoped: true, payment_id: f.paymentId },
+      { sql: db!, config: bridgeConfig, fetchImpl: central.fetchImpl, now: () => bridgeUntil.getTime()+1 });
+    expect(result.completed).toBe(1);
+    expect(central.calls.map(c=>c.method)).toEqual(['GET']);
+  });
+
+  it('does not recreate a missing enrollment after expiry when reconciling a retry', async () => {
+    const f = await fixture({ environment: 'test' });
+    await db!`UPDATE fulfillment_jobs SET attempt_count=1 WHERE id=${f.jobId}::uuid`;
+    const central = mockCentral(() => status(404, 'not_found'));
+    const result = await runEnrollmentWorker({ scoped: true, payment_id: f.paymentId },
+      { sql: db!, config: bridgeConfig, fetchImpl: central.fetchImpl, now: () => bridgeUntil.getTime()+1 });
+    expect(result.dead_lettered).toBe(1);
+    expect(central.calls.map(c=>c.method)).toEqual(['GET']);
+    expect(await job(f.jobId)).toMatchObject({ last_error_code: 'sandbox_live_bridge_expired' });
+  });
+
   it('claims nothing while the feature flag is off', async () => {
     const f = await fixture();
     const central = mockCentral(created);

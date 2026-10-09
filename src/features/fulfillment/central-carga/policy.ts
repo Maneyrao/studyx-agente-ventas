@@ -5,6 +5,17 @@ export const HARD_MAX_ATTEMPTS = 3;
 const BASE_BACKOFF_SECONDS = 30;
 const MAX_BACKOFF_SECONDS = 3600;
 
+/** Explicit, expiring permission to provision real access from a verified test payment. */
+export function sandboxLiveBridgeState(input: {
+  paymentEnvironment: string;
+  workerEnvironment: 'test' | 'live';
+  until?: Date;
+  now: number;
+}): 'off' | 'active' | 'expired' {
+  if (input.paymentEnvironment !== 'test' || input.workerEnvironment !== 'test' || !input.until) return 'off';
+  return input.now < input.until.getTime() ? 'active' : 'expired';
+}
+
 export function effectiveMaxAttempts(rowMaxAttempts: number): number {
   return Math.min(Math.max(rowMaxAttempts, 1), HARD_MAX_ATTEMPTS);
 }

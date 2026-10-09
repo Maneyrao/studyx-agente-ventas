@@ -81,24 +81,36 @@ Validation: TypeScript/lint, production build, 3,691 unit tests and 97 integrati
 
 This establishes deployment and integration readiness. A new chat purchase still needs to confirm actual Central POST acceptance of `test`, course mapping, credentials, and campus login. Do not label those downstream behaviors verified solely from the GET probe or local fake Central tests.
 
-## Alta real desde sandbox: activación pendiente
+## Alta real desde sandbox: parche temporal autorizado
+
+El 09-10-2026 el usuario autorizó enviar los pedidos de alta como `live` durante
+el día, sin cambiar los pagos `test`. La configuración
+`CENTRAL_CARGA_SANDBOX_LIVE_UNTIL=2026-10-10T03:00:00Z` vence automáticamente
+a las 00:00 del 10-10-2026 en Argentina. No alcanza con un flag sin vencimiento.
+El worker conserva su filtro `test`, valida el pago confirmado y escribe el evento
+interno `sandbox_live_enrollment_requested` antes de enviar el POST. La central
+puede registrar el pedido como `live`; el orquestador mantiene la trazabilidad de prueba.
+Al vencer se bloquean nuevos POST; continúa la reconciliación por GET de altas
+iniciadas. El vencimiento no cambia automáticamente los Payment Links a reales.
 
 El pago `46595744-4993-48cd-87f0-026ec619272e` está confirmado en `test`.
 La tarea `e3b37e71-de3f-48bc-933e-429ee8c5b2af` recibió
 `central_environment_mismatch`, tras un intento, y no tiene alta confirmada.
 
-El cambio pendiente pertenece a la central: permitir temporalmente `test` en
+La solución habitual pertenece a la central: permitir temporalmente `test` en
 su validación de entorno, después de autenticar la request, y usar el servicio
 real de alta e inscripción. El repositorio del orquestador no contiene esa
 implementación ni controla la configuración remota de aceptación de la central.
 
-Después de publicar ese cambio, recuperar el pago existente sin cobrar otra vez:
+Después de publicar el parche vigente, recuperar el pago existente sin cobrar otra vez:
 
 1. Consultar la central por el mismo `payment_id` para reconciliar cualquier alta.
 2. Reabrir sólo la tarea identificada, si sigue en `dead_letter` por ese error y
    el pago sigue `paid/test`. Conservar el historial y `attempt_count=1`.
 3. Ejecutar el pipeline con ese `payment_id`. El worker consulta primero el alta
-   y reutiliza la clave de idempotencia si debe crearla.
+   y reutiliza la clave de idempotencia si debe crearla. El cron autenticado
+   `/api/cron/central-carga-enrollment?payment_id=<uuid>` permite este alcance;
+   `probe=true&payment_id=<uuid>` consulta el estado sin reclamar tareas.
 4. Confirmar el alta del mail registrado al curso Inglés 2, la entrega de la lista
    de credenciales y el ingreso efectivo a ese curso. La contraseña acordada
    para cuentas nuevas es `Studyx.123`; cuentas existentes conservan la suya.

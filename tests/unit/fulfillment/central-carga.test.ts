@@ -14,6 +14,7 @@ import {
   computeBackoffSeconds,
   effectiveMaxAttempts,
   preflight,
+  sandboxLiveBridgeState,
 } from '@/features/fulfillment/central-carga/policy';
 
 const PAYMENT_ID = '6f1c2a9e-4b7d-4c1e-9a55-0d3e8b2f71aa';
@@ -231,6 +232,31 @@ describe('config', () => {
     const config = loadCentralCargaConfig(full);
     expect(config.enabled && config.baseUrl).toBe('https://example.test/central-carga');
     expect(config.enabled && config.paidAfter.toISOString()).toBe('2026-10-06T00:00:00.000Z');
+  });
+
+  it('requires a valid expiry for the optional sandbox/live bridge', () => {
+    const config = loadCentralCargaConfig({ ...full, CENTRAL_CARGA_ENVIRONMENT: 'test',
+      CENTRAL_CARGA_SANDBOX_LIVE_UNTIL: '2026-10-10T03:00:00Z' });
+    expect(config.enabled && config.sandboxLiveUntil?.toISOString()).toBe('2026-10-10T03:00:00.000Z');
+    expect(() => loadCentralCargaConfig({ ...full, CENTRAL_CARGA_SANDBOX_LIVE_UNTIL: 'forever' }))
+      .toThrow('CENTRAL_CARGA_SANDBOX_LIVE_UNTIL');
+  });
+});
+
+describe('temporary sandbox/live bridge', () => {
+  const until = new Date('2026-10-10T03:00:00Z');
+  const input = { paymentEnvironment: 'test', workerEnvironment: 'test' as const, until, now: until.getTime() - 1 };
+  it('is disabled unless explicitly configured and never affects live or unsupported payments', () => {
+    expect(sandboxLiveBridgeState({ ...input, until: undefined })).toBe('off');
+    expect(sandboxLiveBridgeState({ ...input, paymentEnvironment: 'live' })).toBe('off');
+    expect(sandboxLiveBridgeState({ ...input, paymentEnvironment: 'unknown' })).toBe('off');
+    expect(sandboxLiveBridgeState({ ...input, workerEnvironment: 'live' })).toBe('off');
+  });
+  it('expires exactly at the configured instant, including an invalid injected date', () => {
+    expect(sandboxLiveBridgeState(input)).toBe('active');
+    expect(sandboxLiveBridgeState({ ...input, now: until.getTime() })).toBe('expired');
+    expect(sandboxLiveBridgeState({ ...input, now: until.getTime() + 1 })).toBe('expired');
+    expect(sandboxLiveBridgeState({ ...input, until: new Date(NaN) })).toBe('expired');
   });
 });
 
