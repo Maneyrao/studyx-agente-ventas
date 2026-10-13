@@ -189,6 +189,14 @@ function claimedTurn(): ClaimedTurn {
 }
 
 describe('buildAgentAContextV1', () => {
+  it('projects the durable active call without authorizing another dispatch', () => {
+    const claimed = claimedTurn();
+    claimed.sales_context.active_call = { call_id: UUID, status: 'provider_accepted' };
+    const context = buildAgentAContextV1(claimed);
+    expect(context?.commercial_state.active_call).toEqual({ call_id: UUID, status: 'provider_accepted' });
+    expect(context?.capabilities.may_request_call_now).toBe(false);
+  });
+
   it('exposes an unreadable input as recoverable context without authorizing an action', () => {
     const claimed = claimedTurn();
     claimed.policy = {

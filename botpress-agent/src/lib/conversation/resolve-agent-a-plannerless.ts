@@ -2,6 +2,7 @@ import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import { AgentATurnProposalV1Schema, type AgentAContextV1, type AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
 import {
   AgentABrainError,
+  claimsImmediateCallDispatchV1,
   validateAgentATurnProposalV1,
 } from './agent-a-brain'
 import type {
@@ -135,6 +136,21 @@ function claimsImmediatePaymentLinkDelivery(proposal: AgentATurnProposalV1): boo
   ))
 }
 
+function hasUnbackedCallDispatchClaim(
+  proposal: AgentATurnProposalV1,
+  rejection: TurnRejectionV1,
+  context: AgentAContextV1,
+): boolean {
+  const declaredCallOffer = proposal.response.call_offer
+  return [...proposal.response.messages, typeof declaredCallOffer === 'string' ? declaredCallOffer : '']
+    .some(message => claimsImmediateCallDispatchV1(message, context.commercial_state.active_call?.status))
+    && (proposal.proposed_action.type !== 'request_call_now'
+      || rejection.rejections.some((reason) => (
+        reason.code === 'ACTION_NOT_AUTHORIZED' && reason.subject === 'request_call_now'
+        || reason.code === 'MISSING_INTAKE' && ['nombre', 'apellido', 'telefono'].includes(reason.subject)
+      )))
+}
+
 /**
  * `request_payment_link` is already Agent A's structured tool decision. Map it
  * to the canonical resource call when every durable precondition is present;
@@ -192,8 +208,10 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   if (rejection === null) return { effective, rejection, originalRejection }
   // An unavailable call needs the existing model repair: changing only the
   // action would publish an acknowledgement for a call that never occurred.
-  if (input.semantic_rejections === 'advisory' && !claimsImmediatePaymentLinkDelivery(effective.proposal)
-    || hasOnlyNonBlockingGuidance(effective.proposal, rejection)) {
+  if (input.semantic_rejections === 'advisory'
+    && !claimsImmediatePaymentLinkDelivery(effective.proposal)
+    && !hasUnbackedCallDispatchClaim(effective.proposal, rejection, input.context)
+    || hasOnlyNonBlockingGuidance(effective.proposal, rejection, input.context)) {
     return { effective, rejection: null, originalRejection }
   }
   return { effective, rejection, originalRejection }
@@ -235,10 +253,12 @@ function isMissingRequiredIntakeForRequestedCall(
 function mayDegradeToBackendBoundary(
   proposal: AgentATurnProposalV1,
   rejection: TurnRejectionV1,
+  context: AgentAContextV1,
 ): boolean {
   // Afirmar un efecto que no ocurrió no es un hecho que el egress pueda podar:
   // la oración entera es la mentira. Eso sigue siendo un rechazo duro.
   if (claimsImmediatePaymentLinkDelivery(proposal)) return false
+  if (hasUnbackedCallDispatchClaim(proposal, rejection, context)) return false
   if (isMissingRequiredIntakeForRequestedCall(proposal, rejection)) return false
   if ((proposal.proposed_action.type === 'send_payment_link'
     || proposal.proposed_action.type === 'send_test_payment_link') && rejection.rejections.some((reason) => (
@@ -250,8 +270,10 @@ function mayDegradeToBackendBoundary(
 function hasOnlyNonBlockingGuidance(
   proposal: AgentATurnProposalV1,
   rejection: TurnRejectionV1,
+  context: AgentAContextV1,
 ): boolean {
   if (claimsImmediatePaymentLinkDelivery(proposal)) return false
+  if (hasUnbackedCallDispatchClaim(proposal, rejection, context)) return false
   if (isMissingRequiredIntakeForRequestedCall(proposal, rejection)) return false
   if ((proposal.proposed_action.type === 'send_payment_link'
     || proposal.proposed_action.type === 'send_test_payment_link') && rejection.rejections.some((reason) => (
@@ -378,7 +400,7 @@ export async function resolveAgentAPlannerlessProposalV2<
   const mayRepair = input.repair_enabled
     && initial.proposal.repair_of === null
   if (!mayRepair) {
-    if (mayDegradeToBackendBoundary(initial.proposal, rejection)) return degraded(false)
+    if (mayDegradeToBackendBoundary(initial.proposal, rejection, input.context)) return degraded(false)
     throw plannerlessRejectionError(rejection)
   }
   try {
@@ -438,7 +460,7 @@ export async function resolveAgentAPlannerlessProposalV2<
       action_rejection: initialActionRejection,
     }
   }
-  if (mayDegradeToBackendBoundary(initial.proposal, rejection)) return degraded(true)
+  if (mayDegradeToBackendBoundary(initial.proposal, rejection, input.context)) return degraded(true)
   throw plannerlessRejectionError(terminalRejection)
 }
 
@@ -460,6 +482,7 @@ function pruneRejectedActionV1<T extends AgentAProposalEnvelopeV1>(input: {
   // an effect that did not happen, the whole proposal remains rejected and is
   // returned to Agent A for repair.
   if (claimsImmediatePaymentLinkDelivery(input.initial.proposal)) return null
+  if (hasUnbackedCallDispatchClaim(input.initial.proposal, input.rejection, input.context)) return null
   const candidate = {
     ...input.initial,
     proposal: {
@@ -474,7 +497,7 @@ function pruneRejectedActionV1<T extends AgentAProposalEnvelopeV1>(input: {
     authorized_fact_ids: input.authorized_fact_ids,
   })
   return candidateRejection === null
-    || hasOnlyNonBlockingGuidance(candidate.proposal, candidateRejection)
+    || hasOnlyNonBlockingGuidance(candidate.proposal, candidateRejection, input.context)
     ? candidate
     : null
 }

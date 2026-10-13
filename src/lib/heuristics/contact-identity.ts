@@ -25,6 +25,7 @@ const EMAIL_PATTERN = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/u;
 
 const NAME_TOKEN = "[A-ZÁÉÍÓÚÜÑ][\\p{L}'’-]*";
 const NAME_SEQUENCE = `${NAME_TOKEN}(?:\\s+${NAME_TOKEN}){0,3}`;
+const SURNAME_SEQUENCE = `${NAME_TOKEN}(?:\\s+${NAME_TOKEN}){0,4}?`;
 const CONTEXTUAL_NAME_TOKEN = "[\\p{L}][\\p{L}'’-]*";
 const CONTEXTUAL_NAME_SEQUENCE = `${CONTEXTUAL_NAME_TOKEN}(?:\\s+${CONTEXTUAL_NAME_TOKEN}){0,3}`;
 const CONTEXTUAL_NON_NAME_TOKENS = new Set([
@@ -90,7 +91,7 @@ const CORRECTED_SURNAME_PATTERN = new RegExp(
 );
 
 const STATED_SURNAME_PATTERN = new RegExp(
-  `\\bmi\\s+apellido\\s+es\\s+(${NAME_TOKEN})(?=\\s*(?:[,;.:!?]|$))`,
+  `\\bmi\\s+apellido\\s+es\\s+(${SURNAME_SEQUENCE})(?=\\s*(?:[,;.:!?]|$|y\\b))`,
   'iu',
 );
 
@@ -103,6 +104,14 @@ function isPlausibleName(candidate: string): boolean {
   const tokens = candidate.trim().split(/\s+/u);
   if (tokens.length === 0 || tokens.length > 4) return false;
   return tokens.every((token) => /^[A-ZÁÉÍÓÚÜÑ]/u.test(token));
+}
+
+function isPlausibleSurname(candidate: string): boolean {
+  const tokens = candidate.trim().split(/\s+/u);
+  const nameToken = new RegExp(`^${NAME_TOKEN}$`, 'u');
+  return tokens.length > 0 && tokens.length <= 5
+    && tokens.every(token => nameToken.test(token) || /^(?:de|del|la|las|los)$/u.test(token))
+    && nameToken.test(tokens.at(-1)!);
 }
 
 function normalizeContextualName(candidate: string): string {
@@ -227,15 +236,27 @@ export function extractContactIdentity(
     }
   }
 
-  if (name === null && existingName) {
-    const statedSurname = STATED_SURNAME_PATTERN.exec(text)?.[1]
-      ?? CORRECTED_SURNAME_PATTERN.exec(text)?.[1]
-      ?? POSTPOSED_SURNAME_PATTERN.exec(text)?.[1]
-      ?? null;
-    if (statedSurname && isPlausibleName(statedSurname)) {
-      const existingTokens = existingName.trim().split(/\s+/u);
-      name = `${existingTokens[0]} ${statedSurname}`;
-    }
+  // The same turn may state first name and surname in separate clauses.
+  // Merge both before preserving a previously stored surname, and require
+  // the same self-ownership evidence used for the first-name introduction.
+  const surnameMatch = STATED_SURNAME_PATTERN.exec(text)
+    ?? CORRECTED_SURNAME_PATTERN.exec(text)
+    ?? POSTPOSED_SURNAME_PATTERN.exec(text);
+  const surnamePrefix = surnameMatch
+    ? text.slice(0, surnameMatch.index).split(/[.;!?\n]/u).at(-1) ?? ''
+    : '';
+  const knownName = name ?? existingName;
+  if (surnameMatch && knownName
+    && !UNSAFE_NAME_OWNER.test(surnamePrefix)
+    && isPlausibleSurname(surnameMatch[1])) {
+    const surname = surnameMatch[1].trim();
+    const alreadyHasSurname = knownName.toLocaleLowerCase('es')
+      .endsWith(` ${surname.toLocaleLowerCase('es')}`);
+    // A current introduction can contain several given names. Only split
+    // a stored full name when replacing its surname.
+    name = alreadyHasSurname
+      ? knownName
+      : `${name ?? splitFullName(knownName).nombre} ${surname}`;
   }
 
   // Una corrección explícita de nombre no retracta el apellido ya durable.

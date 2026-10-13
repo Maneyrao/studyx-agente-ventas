@@ -26,6 +26,70 @@ describe('extractContactIdentity', () => {
     expect(extractContactIdentity('mi nombre es Diego Farías, gracias').name).toBe('Diego Farías');
   });
 
+  it.each([
+    ['Mi nombre es Juan y mi apellido es Perez', 'Juan Perez'],
+    ['Mi nombre es Juan Carlos y mi apellido es Perez', 'Juan Carlos Perez'],
+    ['Mi nombre es Ana María y mi apellido es de la Cruz', 'Ana María de la Cruz'],
+    ['Mi nombre es Juan y mi apellido es de la Cruz', 'Juan de la Cruz'],
+    ['Me llamo Lucía. Mi apellido es López Díaz.', 'Lucía López Díaz'],
+  ])('keeps the explicitly stated surname alongside the first name in one turn: %s', (text, name) => {
+    expect(extractContactIdentity(text).name).toBe(name);
+  });
+
+  it('uses an explicit combined identity instead of retaining the previous surname', () => {
+    expect(extractContactIdentity(
+      'Mi nombre es Juan y mi apellido es Perez', 'Juan Gómez',
+    ).name).toBe('Juan Perez');
+  });
+
+  it('keeps the complete current first name when replacing the stored surname', () => {
+    expect(extractContactIdentity(
+      'Mi nombre es Juan Carlos y mi apellido es Perez', 'Juan Gómez',
+    ).name).toBe('Juan Carlos Perez');
+  });
+
+  it.each([
+    ['Mi nombre es Juan Perez y mi apellido es Perez', null, 'Juan Perez'],
+    ['Mi nombre es Juan Carlos Perez y mi apellido es Perez', null, 'Juan Carlos Perez'],
+    ['Mi apellido es Perez', 'Juan Perez', 'Juan Perez'],
+    ['Mi apellido es Perez', 'Juan Carlos Perez', 'Juan Carlos Perez'],
+    ['Mi apellido es Gómez', 'Juan Perez', 'Juan Gómez'],
+  ])('does not append a stated surname to an already complete name: %s', (text, previous, name) => {
+    expect(extractContactIdentity(text, previous).name).toBe(name);
+  });
+
+  it('adds a compound stated surname to the already known first name', () => {
+    expect(extractContactIdentity('Mi apellido es de los Santos Ruiz.', 'Juan').name)
+      .toBe('Juan de los Santos Ruiz');
+  });
+
+  it.each([
+    'Mi apellido es Perez',
+    'Mi apellido es de la Cruz',
+  ])('does not manufacture a first name from a surname alone: %s', text => {
+    expect(extractContactIdentity(text).name).toBeNull();
+  });
+
+  it.each([
+    'No, mi apellido es Perez',
+    'Mi hermana dice: mi apellido es Perez',
+    'No es cierto que mi apellido es Perez',
+  ])('does not overwrite a stored identity from an unsafe surname claim: %s', text => {
+    expect(extractContactIdentity(text, 'Juan Gómez').name).toBeNull();
+  });
+
+  it.each([
+    'No es cierto que mi nombre es Juan y mi apellido es Perez',
+    'Mi hermano dice: mi nombre es Juan y mi apellido es Perez',
+  ])('does not capture a negated or third-party combined identity: %s', text => {
+    expect(extractContactIdentity(text).name).toBeNull();
+  });
+
+  it('keeps a stored compound surname when only the first name is corrected', () => {
+    expect(extractContactIdentity('Mi nombre es Juana', 'Juan de la Cruz').name)
+      .toBe('Juana de la Cruz');
+  });
+
   it('captures and normalizes a lowercase explicit identity inside a commercial reply', () => {
     expect(extractContactIdentity(
       'Quiero 1 pago de 360 y mi nombre es agustin pierella tmaneyro@gmail.com',

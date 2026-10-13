@@ -1,5 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
 import { processInboundMessage, type InboundEnvelope } from '@/lib/services/ingestion.service';
 import { hashCallContext } from '@/features/calls/domain/call-context';
@@ -21,6 +21,9 @@ import { enqueueLeadProjection, leadProjectionKey } from '@/lib/services/project
 import { commitAgentDecision } from '@/lib/services/decision.service';
 import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
 import { PostgresRetellContactToolStore } from '@/features/calls/adapters/postgres-retell-tools';
+import * as config from '@/lib/config';
+import * as dispatchProvider from '@/app/api/agent/calls/[call_id]/dispatch/route-dependencies';
+import * as managedOutbound from '@/features/messaging/adapters/managed-outbound';
 
 /**
  * Spec 007 (B → A) against a real database. Unit tests already cover
@@ -248,6 +251,82 @@ async function consentStatus(contactId: string) {
 }
 
 run('post-call-followup cron (spec 007, B -> A)', () => {
+  it.each([
+    { failure: 'provider', code: 'XENDRA_CREATE_REJECTED_503', attempts: 1 },
+    { failure: 'configuration', code: 'VOICE_PROVIDER_CONFIGURATION_UNAVAILABLE', attempts: 0 },
+    { failure: 'constructor', code: 'VOICE_PROVIDER_CONFIGURATION_UNAVAILABLE', attempts: 0 },
+  ])('dispatches the durable $failure failure follow-up immediately and deduplicates replay plus webhook processing', async ({ failure, code, attempts }) => {
+    const fixture = await seedTerminalCall({ status: 'requested', analysis_status: 'pending', provider: 'retell', ageMinutes: 0 });
+    await sql`
+      UPDATE call_sessions SET provider_call_id = NULL, completed_at = NULL
+      WHERE id = ${fixture.callId}::uuid
+    `;
+    let dialAttempts = 0;
+    const deliveredTexts: string[] = [];
+    const channel: MessageChannel = {
+      ...postCallChannel,
+      async sendText(input) {
+        deliveredTexts.push(input.text);
+        return postCallChannel.sendText(input);
+      },
+    };
+    const sendOutbound = (input: Parameters<typeof sendOutboundMessage>[0]) => sendOutboundMessage(input, {
+      identities: new PostgresChannelIdentityStore(sql),
+      channels: { whatsapp: channel }, preferenceOrder: ['whatsapp'],
+      contentAuthorizer: new AuthorizedEgressContentAuthorizer(),
+      sideEffectAuthorizer: { authorize: async () => ({ allowed: true as const, reason: null }) },
+      db: sql,
+    });
+    const originalBuildProvider = dispatchProvider.buildDispatchVoiceProvider;
+    vi.spyOn(config, 'loadVoiceDispatchConfig').mockImplementation(() => {
+      if (failure === 'configuration') throw new Error('MISSING_XENDRA_CONFIG:test-private-detail');
+      return {
+        voiceProvider: 'xendra', callUrl: 'https://xendra.test/api/studyx/llamar',
+        orchestratorSecret: 'local-test-secret', advisorName: '', closerNumber: '',
+        telegramCanaryContactIds: [], requestTimeoutMs: 100,
+      };
+    });
+    vi.spyOn(dispatchProvider, 'buildDispatchVoiceProvider').mockImplementation((settings, db) => {
+      if (failure === 'constructor') throw new Error('PROVIDER_CONSTRUCTION_FAILED:test-private-detail');
+      return originalBuildProvider(settings, db, {
+        fetch: async () => { dialAttempts += 1; return Response.json({ error: 'temporarily_unavailable' }, { status: 503 }); },
+      });
+    });
+    vi.spyOn(managedOutbound, 'createManagedOutboundSender').mockReturnValue(sendOutbound);
+    try {
+      const { POST } = await import('@/app/api/agent/calls/[call_id]/dispatch/route');
+      const dispatch = () => POST(new Request(`http://localhost/api/agent/calls/${fixture.callId}/dispatch`, {
+        method: 'POST', headers: { 'x-request-id': randomUUID() },
+      }), { params: Promise.resolve({ call_id: fixture.callId }) });
+      const first = await dispatch();
+      expect(first.status).toBe(502);
+      await expect(first.json()).resolves.toEqual({ status: 'failed', providerCallId: null });
+      await expect(sql<Array<{ status: string; error_code: string }>>`
+        SELECT status, error_code FROM call_sessions WHERE id = ${fixture.callId}::uuid
+      `).resolves.toEqual([{ status: 'failed', error_code: code }]);
+      expect(deliveredTexts).toHaveLength(1);
+      expect(deliveredTexts[0]).toContain('No pudimos completar la llamada');
+      expect(deliveredTexts[0]).not.toContain('test-private-detail');
+      expect(await systemCallResultEventCount(fixture.callId)).toBe(1);
+      expect(await postCallOutboundDeliveryCount(fixture.callId)).toBe(1);
+
+      const replay = await dispatch();
+      expect(replay.status).toBe(502);
+      // The webhook route invokes this same call-scoped worker. A replay or
+      // webhook arriving after the dispatch notice must observe its marker.
+      const webhookFollowup = await runPostCallFollowup({
+        trace_id: randomUUID(), call_id: fixture.callId, grace_seconds: 0,
+      }, { store, sendOutbound });
+      expect(webhookFollowup.examined).toBe(0);
+      expect(dialAttempts).toBe(attempts);
+      expect(deliveredTexts).toHaveLength(1);
+      expect(await systemCallResultEventCount(fixture.callId)).toBe(1);
+      expect(await postCallOutboundDeliveryCount(fixture.callId)).toBe(1);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
   it('waits through the analysis grace window and then emits one technical fallback', async () => {
     const fixture = await seedTerminalCall({
       status: 'completed',

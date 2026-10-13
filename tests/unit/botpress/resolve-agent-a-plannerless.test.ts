@@ -72,6 +72,162 @@ function generated(value: AgentATurnProposalV1) {
 }
 
 describe('resolveAgentAPlannerlessProposalV2', () => {
+  it.each(['requested', 'provider_accepted', 'in_progress'])(
+    'keeps a factual registration confirmation backed by an active %s call', async status => {
+      const current = context();
+      current.turn.batch_messages = [{ id: 'm1', text: '¿Ya pediste la llamada?' }];
+      current.commercial_state.active_call = { call_id: '00000000-0000-4000-8000-0000000000c1', status };
+      current.capabilities.may_request_call_now = false;
+      const messages = ['Sí, la llamada ya quedó registrada.'];
+      const result = await resolveAgentAPlannerlessProposalV2({
+        initial: generated(proposal({ response: { messages, call_offer: null } })),
+        context: current, repair_enabled: false, semantic_rejections: 'advisory',
+        rejection_id: '00000000-0000-4000-8000-0000000000e7',
+        repair: async () => { throw new Error('Unexpected repair'); },
+      });
+      expect(result.effective.proposal.response.messages).toEqual(messages);
+      expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+      expect(result.evidence.repair_attempted).toBe(false);
+    },
+  );
+
+  it.each([
+    ['provider_accepted', 'Te llamo ahora.'],
+    ['failed', 'Sí, la llamada ya quedó registrada.'],
+    ['completed', 'Sí, la llamada ya quedó registrada.'],
+    ['dispatch_ambiguous', 'Sí, la llamada ya quedó registrada.'],
+  ])('rejects an unsupported confirmation with prior status %s: %s', async (status, message) => {
+    const current = context();
+    current.commercial_state.active_call = { call_id: '00000000-0000-4000-8000-0000000000c1', status };
+    current.capabilities.may_request_call_now = false;
+    await expect(resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({ response: { messages: [message], call_offer: null } })),
+      context: current, repair_enabled: false, semantic_rejections: 'advisory',
+      rejection_id: '00000000-0000-4000-8000-0000000000e8',
+      repair: async () => { throw new Error('Unexpected repair'); },
+    })).rejects.toThrow('UNSUPPORTED_OPERATIONAL_CLAIM:call_confirmation');
+  });
+
+  it.each([
+    'No te preocupes, te llamo ahora.',
+    'Te llamo ahora y podemos hablar del curso.',
+    '¿Te parece bien? Te llamo ahora.',
+    'Perfecto, te llamo ahora, ¿de acuerdo?',
+    'Sí, la llamada ya quedó registrada, ¿te parece bien?',
+  ])('rejects an unbacked call claim despite unrelated wording: %s', async message => {
+    await expect(resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({ response: { messages: [message], call_offer: null } })),
+      context: context(), repair_enabled: false, semantic_rejections: 'advisory',
+      rejection_id: '00000000-0000-4000-8000-0000000000e5',
+      repair: async () => { throw new Error('Unexpected repair'); },
+    })).rejects.toThrow('UNSUPPORTED_OPERATIONAL_CLAIM:call_confirmation');
+  });
+
+  it.each([
+    'Si estás disponible, te llamo.',
+    'Si puedes atender, te llamo ahora.',
+    'Te llamo si estás disponible.',
+    'No te llamo hasta que me confirmes.',
+    '¿Te llamo ahora?',
+    '¿La llamada ya quedó registrada?',
+  ])('preserves a conditional or negated call without inventing an action: %s', async message => {
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({ response: { messages: [message], call_offer: null } })),
+      context: context(), repair_enabled: false, semantic_rejections: 'advisory',
+      rejection_id: '00000000-0000-4000-8000-0000000000e6',
+      repair: async () => { throw new Error('Unexpected repair'); },
+    });
+    expect(result.effective.proposal.response.messages).toEqual([message]);
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+    expect(result.evidence.repair_attempted).toBe(false);
+  });
+
+  it.each(['none', 'unavailable'] as const)('repairs a call announcement with %s action in production advisory mode', async (actionCase) => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm1', text: 'Dale, llamame' }];
+    current.commercial_state.call_preference = 'call';
+    current.commercial_state.call_offer_status = 'accepted';
+    current.capabilities.may_request_call_now = actionCase !== 'unavailable';
+    const initial = proposal({
+      move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+      response: { messages: ['Perfecto, te llamo ahora.'], call_offer: null },
+      proposed_action: actionCase === 'none'
+        ? { type: 'none' } : { type: 'request_call_now', reason: 'direct_request' },
+      used_fact_ids: [],
+    });
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(initial), context: current, repair_enabled: true, semantic_rejections: 'advisory',
+      rejection_id: '00000000-0000-4000-8000-0000000000e1',
+      repair: async rejection => generated({
+        ...initial,
+        response: { messages: ['Perfecto. Puedes atender ahora?'], call_offer: null },
+        proposed_action: { type: 'none' },
+        repair_of: { rejection_id: rejection.rejection_id, attempt: 1 },
+      }),
+    });
+    expect(result.effective.proposal.response.messages).toEqual(['Perfecto. Puedes atender ahora?']);
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
+  });
+
+  it.each(['disabled', 'transport_failure', 'still_false'] as const)(
+    'never publishes a false call announcement when repair is %s in advisory mode', async repairOutcome => {
+      const current = context();
+      current.turn.batch_messages = [{ id: 'm1', text: 'Dale, llamame' }];
+      const initial = proposal({
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Perfecto, te llamo ahora.'], call_offer: null },
+        proposed_action: { type: 'none' }, used_fact_ids: [],
+      });
+      await expect(resolveAgentAPlannerlessProposalV2({
+        initial: generated(initial), context: current,
+        repair_enabled: repairOutcome !== 'disabled', semantic_rejections: 'advisory',
+        rejection_id: '00000000-0000-4000-8000-0000000000e2',
+        repair: async rejection => {
+          if (repairOutcome === 'transport_failure') throw new Error('BRAIN_DEEPSEEK_TIMEOUT');
+          return generated({ ...initial, repair_of: { rejection_id: rejection.rejection_id, attempt: 1 } });
+        },
+      })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:UNSUPPORTED_OPERATIONAL_CLAIM:call_confirmation');
+    },
+  );
+
+  it('rejects a false dispatch claim in the separate call bubble in advisory mode', async () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm1', text: 'Dale, llamame' }];
+    await expect(resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Claro.'], call_offer: 'Te llamo ahora.' },
+        proposed_action: { type: 'none' }, used_fact_ids: [],
+      })),
+      context: current, repair_enabled: false, semantic_rejections: 'advisory',
+      rejection_id: '00000000-0000-4000-8000-0000000000e3',
+      repair: async () => { throw new Error('Unexpected repair'); },
+    })).rejects.toThrow('UNSUPPORTED_OPERATIONAL_CLAIM:call_confirmation');
+  });
+
+  it('keeps unrelated semantic guidance advisory during an authorized call', async () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm1', text: 'Sí, llamame ahora' }];
+    current.commercial_state.call_preference = 'call';
+    current.commercial_state.call_offer_status = 'accepted';
+    const messages = ['Perfecto, te llamo ahora.'];
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages, call_offer: null },
+        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+        used_fact_ids: ['offering:unknown:name:v1'],
+      })),
+      context: current, repair_enabled: false, semantic_rejections: 'advisory',
+      rejection_id: '00000000-0000-4000-8000-0000000000e4',
+      repair: async () => { throw new Error('Unexpected repair'); },
+    });
+    expect(result.effective.proposal.response.messages).toEqual(messages);
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'request_call_now', reason: 'direct_request' });
+    expect(result.evidence).toMatchObject({ repair_attempted: false, rejection_codes: ['FACT_NOT_AUTHORIZED'] });
+  });
+
   it('repairs an empty delivery announcement even with advisory semantics', async () => {
     const current = context();
     const repair = vi.fn(async (rejection) => generated(proposal({

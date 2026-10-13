@@ -21,7 +21,7 @@ import {
   effectiveConversationStateV1,
   type ContactIntakeV1,
 } from '../domain/conversation-planner';
-import { claimsImmediatePaymentLinkDelivery, solicitsACall } from '../domain/operational-promise-guard';
+import { claimsImmediateCallDispatchV1, claimsImmediatePaymentLinkDelivery, solicitsACall } from '../domain/operational-promise-guard';
 import type { ConversationStateStoreV1 } from '../ports/conversation-state-store';
 import type { PaymentVerificationV1 } from '@/features/payments/application/read-payment-verification';
 
@@ -233,6 +233,7 @@ export async function prepareAgentTurnV2(input: {
       may_request_call_now: noActiveCall
         && awaitingCallAvailability
         && availabilityConfirmed
+        && Boolean(contactIntake?.nombre?.trim() && contactIntake?.apellido?.trim())
         && isCallablePhoneE164V1(contactIntake?.telefono ?? ''),
     },
   });
@@ -296,6 +297,10 @@ export async function prepareAgentTurnV2(input: {
   // repair path. Do not publish "here is the link" with a removed side effect.
   if (authority.action.type !== 'send_payment_link' && authority.action.type !== 'send_test_payment_link'
     && claimsImmediatePaymentLinkDelivery(authority.response)) {
+    throw new AgentTurnV2RejectedError(['ACTION_NOT_AUTHORIZED']);
+  }
+  if (authority.action.type !== 'request_call_now'
+    && claimsImmediateCallDispatchV1(authority.response, callFacts?.active_call?.status)) {
     throw new AgentTurnV2RejectedError(['ACTION_NOT_AUTHORIZED']);
   }
 

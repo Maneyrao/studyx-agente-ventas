@@ -901,6 +901,7 @@ export const processInboundTurn = new Workflow({
               rejection_id: randomUUID(),
               repair: async (rejection) => {
                 agentARepairAttempted = true
+                agentAGenerationAttempts = 2
                 if (typeof secrets.DEEPSEEK_API_KEY !== 'string'
                   || secrets.DEEPSEEK_API_KEY.length === 0) {
                   throw new Error('DEEPSEEK_API_KEY_MISSING')
@@ -922,6 +923,19 @@ export const processInboundTurn = new Workflow({
             })
             const effectiveGenerated = resolved.effective
             generated = effectiveGenerated
+            if (resolved.evidence.repair_attempted) {
+              turnDiagnostics = {
+                schema_version: 1,
+                generation_attempts: agentAGenerationAttempts,
+                failure_stage: 'proposal_validation',
+                failure_codes: [...new Set([
+                  ...(turnDiagnostics?.failure_codes ?? []),
+                  ...resolved.evidence.rejection_codes,
+                ])].filter((code) => /^[A-Z0-9_:.-]+$/u.test(code)).slice(0, 8),
+                action_status: effectiveGenerated.proposal.proposed_action.type === 'none'
+                  ? 'none' : 'authorized',
+              }
+            }
             turnDiagnostics = resolved.action_rejection === null
               ? {
                   ...(turnDiagnostics ?? {

@@ -34,6 +34,31 @@ export function claimsImmediatePaymentLinkDelivery(text: string): boolean {
     || /\bah[ií]\s+va\b/iu.test(text);
 }
 
+const CALL_DISPATCH_CLAIM_V1 = /\b(?:te\s+(?:voy|vamos)\s+a\s+llamar|te\s+llam(?:o|amos)\b|(?:la\s+)?llamada\s+(?:ya\s+)?(?:qued[oó]|fue)\s+(?:registrad|solicitad|coordinad)\w*|(?:ya\s+)?(?:registr[eé]|solicit[eé]|coordin[eé])\s+(?:la\s+)?llamada)\b/iu;
+// Scope negation and conditions to each matched claim. A reassurance such as
+// “no te preocupes” or another sentence's question cannot cancel a dispatch.
+const CALL_DISPATCH_NEGATION_PREFIX_V1 = /\b(?:no|nunca|tampoco)\s+(?:ya\s+)?$/iu;
+const CALL_DISPATCH_CONDITION_PREFIX_V1 = /(?:^|,)\s*(?:si|cuando)\s+[^,;]+,?\s*$/iu;
+const CALL_DISPATCH_CONDITION_SUFFIX_V1 = /^\s*(?:ahora\s*)?,?\s*(?:si|cuando)\s+/iu;
+const REGISTERED_CALL_STATUSES_V1 = new Set(['requested', 'dispatching', 'provider_accepted', 'in_progress']);
+
+/** An unconditional call-effect claim, not a question or a conditional offer. */
+export function claimsImmediateCallDispatchV1(text: string, activeCallStatus?: string | null): boolean {
+  return (text.match(/[^.!?;¿\n]+[.!?;]?/gu) ?? []).some((clause) => {
+    if (clause.trimEnd().endsWith('?')) return false;
+    return [...clause.matchAll(new RegExp(CALL_DISPATCH_CLAIM_V1.source, 'giu'))].some((claim) => {
+      // A known request can substantiate its registration. It cannot support
+      // a fresh “te llamo” promise, nor an ambiguous or terminal call outcome.
+      if (REGISTERED_CALL_STATUSES_V1.has(activeCallStatus ?? '') && !/^te\s+/iu.test(claim[0])) return false;
+      const before = clause.slice(0, claim.index);
+      const after = clause.slice(claim.index + claim[0].length);
+      return !CALL_DISPATCH_NEGATION_PREFIX_V1.test(before)
+        && !CALL_DISPATCH_CONDITION_PREFIX_V1.test(before)
+        && !CALL_DISPATCH_CONDITION_SUFFIX_V1.test(after);
+    });
+  });
+}
+
 const OPERATIONAL_OUTCOME = new RegExp(
   '(?:^|[^\\p{L}])(?:'
   + 'pre\\s?-?\\s?inscripci[oó]n(?:es)?|inscripci[oó]n(?:es)?'

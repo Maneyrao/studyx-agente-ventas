@@ -80,6 +80,145 @@ const completeIntake = async () => ({
 });
 
 describe('prepareAgentTurnV2', () => {
+  it.each(['requested', 'provider_accepted', 'in_progress'])(
+    'allows a registration confirmation backed by an active %s call without another dispatch', async status => {
+      const message = 'Sí, la llamada ya quedó registrada.';
+      const prepared = await prepareAgentTurnV2({
+        turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+        workspace_slug: 'studyx', business_context: business, catalog_index: index,
+        semantic_rejections: 'advisory', current_customer_messages: ['¿Ya pediste la llamada?'],
+        proposal: proposal({ response: { messages: [message] } }),
+      }, {
+        state_store: store(state()), contact_intake: completeIntake, now: () => Date.parse(index.as_of),
+        call_facts: { async loadClaimedCallFacts() { return {
+          open_offer: null, open_retry_prompt: null, last_call_result: null, last_decline_at: null,
+          active_call: { call_id: '00000000-0000-4000-8000-0000000000c1', status },
+        }; } },
+      });
+      expect(prepared.decision).toMatchObject({ response: message, business_action: null });
+    },
+  );
+
+  it.each([
+    ['provider_accepted', 'Te llamo ahora.'],
+    ['failed', 'Sí, la llamada ya quedó registrada.'],
+    ['completed', 'Sí, la llamada ya quedó registrada.'],
+    ['dispatch_ambiguous', 'Sí, la llamada ya quedó registrada.'],
+  ])('rejects an unsupported claim with prior status %s: %s', async (status, message) => {
+    await expect(prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      semantic_rejections: 'advisory',
+      proposal: proposal({ response: { messages: [message] } }),
+    }, {
+      state_store: store(state()), contact_intake: completeIntake, now: () => Date.parse(index.as_of),
+      call_facts: { async loadClaimedCallFacts() { return {
+        open_offer: null, open_retry_prompt: null, last_call_result: null, last_decline_at: null,
+        active_call: { call_id: '00000000-0000-4000-8000-0000000000c1', status },
+      }; } },
+    })).rejects.toMatchObject({ code: 'AGENT_TURN_V2_REJECTED', reasons: ['ACTION_NOT_AUTHORIZED'] });
+  });
+
+  it.each([
+    'No te preocupes, te llamo ahora.',
+    'Te llamo ahora y podemos hablar del curso.',
+    '¿Te parece bien? Te llamo ahora.',
+    'Perfecto, te llamo ahora, ¿de acuerdo?',
+    'Sí, la llamada ya quedó registrada, ¿te parece bien?',
+  ])('rejects an unbacked dispatch claim despite unrelated wording: %s', async message => {
+    await expect(prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      semantic_rejections: 'advisory',
+      proposal: proposal({ response: { messages: [message] } }),
+    }, { state_store: store(state()), contact_intake: completeIntake, now: () => Date.parse(index.as_of) }))
+      .rejects.toMatchObject({ code: 'AGENT_TURN_V2_REJECTED', reasons: ['ACTION_NOT_AUTHORIZED'] });
+  });
+
+  it.each(['omitted_action', 'missing_phone', 'missing_surname', 'withdrawn_consent'] as const)(
+    'rejects a call announcement with %s before commit in advisory mode', async failure => {
+      await expect(prepareAgentTurnV2({
+        turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+        workspace_slug: 'studyx', business_context: business, catalog_index: index,
+        semantic_rejections: 'advisory',
+        current_customer_messages: [failure === 'withdrawn_consent' ? 'Mejor seguimos por chat' : 'Sí'],
+        proposal: proposal({
+          move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+          response: { messages: ['Perfecto, te llamo ahora.'] },
+          proposed_action: failure === 'omitted_action'
+            ? { type: 'none' } : { type: 'request_call_now', reason: 'direct_request' },
+        }),
+      }, {
+        state_store: store(state({ call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat' })),
+        contact_intake: async () => ({ ...(await completeIntake()),
+          ...(failure === 'missing_phone' ? { telefono: null } : {}),
+          ...(failure === 'missing_surname' ? { apellido: null } : {}),
+        }),
+        now: () => Date.parse(index.as_of),
+      })).rejects.toMatchObject({ code: 'AGENT_TURN_V2_REJECTED', reasons: ['ACTION_NOT_AUTHORIZED'] });
+    },
+  );
+
+  it('preserves a model-authored surname question and reports the missing call field', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      semantic_rejections: 'advisory', current_customer_messages: ['Sí'],
+      proposal: proposal({
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Antes de llamarte, dime tu apellido.'] },
+        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+      }),
+    }, {
+      state_store: store(state({ call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat' })),
+      contact_intake: async () => ({ ...(await completeIntake()), apellido: null }),
+      now: () => Date.parse(index.as_of),
+    });
+    expect(prepared.decision).toMatchObject({ response: 'Antes de llamarte, dime tu apellido.', business_action: null });
+    expect(prepared.action_rejection).toMatchObject({ action: 'request_call_now', missing_fields: ['apellido'] });
+  });
+
+  it('authorizes a confirmed call without asking for the payment-only email field', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      semantic_rejections: 'advisory', current_customer_messages: ['Sí'],
+      proposal: proposal({
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Perfecto, te llamo ahora.'] },
+        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+      }),
+    }, {
+      state_store: store(state({ call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat' })),
+      contact_intake: async () => ({ ...(await completeIntake()), correo: null }),
+      now: () => Date.parse(index.as_of),
+    });
+    expect(prepared.decision.business_action).toEqual({ type: 'request_call_now', reason: 'direct_request' });
+  });
+
+  it.each([
+    'No te llamo hasta que me confirmes.',
+    'Puedes atender si te llamo ahora?',
+    'Si estás disponible, te llamo.',
+    'Si puedes atender, te llamo ahora.',
+    'Te llamo si estás disponible.',
+    '¿Te llamo ahora?',
+    '¿La llamada ya quedó registrada?',
+  ])(
+    'keeps a non-dispatch statement unchanged: %s', async message => {
+      const prepared = await prepareAgentTurnV2({
+        turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+        workspace_slug: 'studyx', business_context: business, catalog_index: index,
+        semantic_rejections: 'advisory', current_customer_messages: ['Llamame'],
+        proposal: proposal({
+          move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+          response: { messages: [message] },
+        }),
+      }, { state_store: store(state()), contact_intake: completeIntake, now: () => Date.parse(index.as_of) });
+      expect(prepared.decision).toMatchObject({ response: message, business_action: null });
+    },
+  );
+
   it('rejects a delivery announcement when the paid ledger prevents the link', async () => {
     await expect(prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },

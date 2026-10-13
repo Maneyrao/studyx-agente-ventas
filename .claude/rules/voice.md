@@ -4,6 +4,8 @@ paths:
   - "src/app/api/webhooks/voice/**"
   - "src/lib/services/call.service.ts"
   - "src/lib/contracts/voice.ts"
+  - "src/features/calls/**"
+  - "src/app/api/agent/calls/**"
 ---
 
 # Agent B / Retell — reglas de subsistema
@@ -32,3 +34,11 @@ paths:
 - `derivado_humano` no dispara contacto humano (no existe): se trata como
   `no_contactar` + marca en la oportunidad.
 - Separar `disconnection_reason` (técnico: buzón, cortó) de `result` (comercial).
+
+## Despacho canónico
+- `call_sessions` es la autoridad del despacho. Construir el proveedor después
+  de adquirir `claimDispatch`: un error previo a la petición es un fallo
+  confirmado; un resultado incierto conserva `dispatch_ambiguous`.
+- Un rechazo puede no producir webhook. Ejecutar `runPostCallFollowup` al
+  confirmar `failed`, conservando la clave `post-call:<call_id>` y el marcador
+  `system:call_result:<call_id>` para no duplicar avisos con replay o webhook.

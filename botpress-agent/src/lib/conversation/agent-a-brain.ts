@@ -1919,8 +1919,9 @@ export function validateAgentATurnProposalV1(input: {
   const requestedCallNow = moves.has('request_call') && input.proposal.proposed_action.type === 'request_call_now'
     && input.context.capabilities.may_request_call_now && callRequestSupported
     && !input.proposal.move.vetoes.includes('call');
-  const claimsCallDispatchWithoutAction = input.proposal.proposed_action.type === 'none'
-    && input.proposal.response.messages.some((message) => claimsImmediateCallDispatchV1(message));
+  const claimsCallDispatchWithoutAction = input.proposal.proposed_action.type !== 'request_call_now'
+    && [...input.proposal.response.messages, typeof declaredCallOffer === 'string' ? declaredCallOffer : '']
+      .some(message => claimsImmediateCallDispatchV1(message, input.context.commercial_state.active_call?.status));
   if (claimsCallDispatchWithoutAction) {
     rejections.push({ code: 'UNSUPPORTED_OPERATIONAL_CLAIM', subject: 'call_confirmation' });
   }
@@ -2036,20 +2037,28 @@ const CALL_SOLICITATION_V1 = /\b(?:te\s+llamo|te\s+llamamos|(?:puedo|podemos)\s+
 const NOT_AN_OFFER_V1 = /\b(?:ya\s+(?:qued|registr|solicit)|no\s+te\s+llam|sin\s+llamada)/iu
 const DECLARED_CALL_CHANNEL_V1 = /\b(?:llam|videollam)|\btel[eé]fono\b|\btelef[oó]nic(?:a|o|as|os)\b|\bvoz\b|\bcontact(?:arte|emos)\b/iu
 const CALL_DISPATCH_CLAIM_V1 = /\b(?:te\s+(?:voy|vamos)\s+a\s+llamar|te\s+llam(?:o|amos)\b|(?:la\s+)?llamada\s+(?:ya\s+)?(?:qued[oó]|fue)\s+(?:registrad|solicitad|coordinad)\w*|(?:ya\s+)?(?:registr[eé]|solicit[eé]|coordin[eé])\s+(?:la\s+)?llamada)\b/iu
-const CALL_DISPATCH_QUESTION_OR_CONDITION_V1 = /\?|\b(?:si\s+(?:quieres|te\s+parece)|puedo|podemos|quieres\s+que|prefieres\s+que|cuando\s+(?:puedas|quieras))\b/iu
-const CALL_DISPATCH_NEGATION_V1 = /\b(?:no|aún\s+no|todavía\s+no)\b[^.!?]{0,28}\b(?:te\s+llam|llamada|registr|solicit|coordin)/iu
+// Scope negation and conditions to each matched claim. A reassurance such as
+// “no te preocupes” or another sentence's question cannot cancel a dispatch.
+const CALL_DISPATCH_NEGATION_PREFIX_V1 = /\b(?:no|nunca|tampoco)\s+(?:ya\s+)?$/iu;
+const CALL_DISPATCH_CONDITION_PREFIX_V1 = /(?:^|,)\s*(?:si|cuando)\s+[^,;]+,?\s*$/iu;
+const CALL_DISPATCH_CONDITION_SUFFIX_V1 = /^\s*(?:ahora\s*)?,?\s*(?:si|cuando)\s+/iu;
+const REGISTERED_CALL_STATUSES_V1 = new Set(['requested', 'dispatching', 'provider_accepted', 'in_progress']);
 
-/**
- * Detecta una afirmación de efecto operativo, no una invitación. El texto
- * sigue siendo libre; esta frontera sólo impide decir que la llamada ya se
- * ejecuta cuando la propuesta no contiene la acción correspondiente.
- */
-export function claimsImmediateCallDispatchV1(message: string): boolean {
-  return message.split(/[.!\n]+/u).some((clause) => (
-    CALL_DISPATCH_CLAIM_V1.test(clause)
-    && !CALL_DISPATCH_QUESTION_OR_CONDITION_V1.test(clause)
-    && !CALL_DISPATCH_NEGATION_V1.test(clause)
-  ));
+/** An unconditional call-effect claim, not a question or a conditional offer. */
+export function claimsImmediateCallDispatchV1(text: string, activeCallStatus?: string | null): boolean {
+  return (text.match(/[^.!?;¿\n]+[.!?;]?/gu) ?? []).some((clause) => {
+    if (clause.trimEnd().endsWith('?')) return false;
+    return [...clause.matchAll(new RegExp(CALL_DISPATCH_CLAIM_V1.source, 'giu'))].some((claim) => {
+      // A known request can substantiate its registration. It cannot support
+      // a fresh “te llamo” promise, nor an ambiguous or terminal call outcome.
+      if (REGISTERED_CALL_STATUSES_V1.has(activeCallStatus ?? '') && !/^te\s+/iu.test(claim[0])) return false;
+      const before = clause.slice(0, claim.index);
+      const after = clause.slice(claim.index + claim[0].length);
+      return !CALL_DISPATCH_NEGATION_PREFIX_V1.test(before)
+        && !CALL_DISPATCH_CONDITION_PREFIX_V1.test(before)
+        && !CALL_DISPATCH_CONDITION_SUFFIX_V1.test(after);
+    });
+  });
 }
 
 export function solicitsACallV1(message: string, declaredOffer = false): boolean {
