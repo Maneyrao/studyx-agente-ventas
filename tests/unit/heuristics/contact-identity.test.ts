@@ -1,5 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import { extractContactIdentity, extractContactNameAnswer, splitFullName } from '@/lib/heuristics/contact-identity';
+import { extractContactIdentity, extractContactNameAnswer, requestedContactFieldsV1, splitFullName } from '@/lib/heuristics/contact-identity';
+
+describe('delivered personal-data requests', () => {
+  it('recognizes the fields that the customer was asked to provide', () => {
+    expect(requestedContactFieldsV1('Para llamarte necesito tu nombre, apellido, correo y teléfono.'))
+      .toEqual(['nombre', 'apellido', 'correo', 'telefono']);
+  });
+  it.each([
+    'Ya tengo tu nombre y apellido. Tu correo y teléfono quedaron registrados.',
+    'No necesito tu nombre ni apellido.',
+    'Me falta el nombre y apellido de tu hermana.',
+  ])('does not treat a receipt, negation or third-party request as personal intake: %s', request => {
+    expect(requestedContactFieldsV1(request)).toEqual([]);
+  });
+  it.each(['Mi teléfono es +15555550123', 'Teléfono +15555550123', 'Correo agus@example.com'])(
+    'does not interpret a contact-field label as a name answer: %s', text => {
+    expect(extractContactNameAnswer(text, 'Necesito tu nombre y apellido.')).toBeNull();
+  });
+  it('keeps a repeated first-name reply partial until a surname is provided', () => {
+    expect(extractContactNameAnswer('Agus', 'Necesito tu nombre y apellido.', { firstName: 'Agus', surname: null }))
+      .toEqual({ firstName: 'Agus', surname: null, name: 'Agus' });
+  });
+});
 
 describe('extractContactIdentity', () => {
   it('captures name and email from the canonical "Soy Nombre Apellido, email" turn', () => {

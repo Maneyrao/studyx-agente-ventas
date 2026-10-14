@@ -4,6 +4,7 @@ import { openLocalTestDatabase } from '../helpers/db';
 import { processInboundMessage, type InboundEnvelope, type IngestContext } from '@/lib/services/ingestion.service';
 import { registerMessage } from '@/lib/services/message.service';
 import { confirmDeliveredContactPhone } from '@/lib/repositories/contact-phone-confirmation.repository';
+import { loadContactIntakeV1 } from '@/lib/repositories/contact-intake.repository';
 import { sql } from '@/lib/db/orchestrator';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
@@ -47,6 +48,89 @@ async function outbound(initial: InboundEnvelope, context: IngestContext, conten
 const fullRequest = 'Para dejarlo registrado necesito tu nombre, apellido y teléfono. ¿Me los pasás?';
 
 run('contact identity from delivered conversational requests', () => {
+  it('persists the Agus surname in the second message of one delivered intake request', async () => {
+    const first = envelope();
+    const opened = await processInboundMessage(first);
+    const requestId = await outbound(first, opened,
+      'Para llamarte necesito tu nombre, tu apellido y tu correo. El teléfono lo tengo como +5491132104399, es correcto?');
+    const named = await processInboundMessage(answer(first, 'así es, mi nombre es Agus'));
+    const surnameInput = answer(first, 'maneyro');
+    const completed = await processInboundMessage(surnameInput);
+    expect(completed.batch.id).toBe(named.batch.id);
+    expect(completed.contact.name).toBe('Agus Maneyro');
+    expect(await loadContactIntakeV1(completed.contact.id, db!))
+      .toMatchObject({ nombre: 'Agus', apellido: 'Maneyro' });
+    const [receipt] = await db!`SELECT metadata->'contact_intake_response_v1' AS capture FROM messages WHERE id=${named.turn_id}::uuid`;
+    expect(receipt.capture).toMatchObject({ request_message_id: requestId, captured_fields: ['nombre'] });
+    expect((await processInboundMessage({ ...surnameInput, trace_id: randomUUID() })).status).toBe('duplicate');
+    expect((await db!`SELECT name FROM contacts WHERE id=${completed.contact.id}::uuid`)[0].name).toBe('Agus Maneyro');
+  });
+
+  it('continues a delivered request across bare first-name and surname messages', async () => {
+    const first = envelope();
+    const opened = await processInboundMessage(first);
+    await outbound(first, opened, fullRequest);
+    await processInboundMessage(answer(first, 'Agus'));
+    expect((await processInboundMessage(answer(first, 'maneyro'))).contact.name).toBe('Agus Maneyro');
+  });
+
+  it('does not treat a repeated first-name reply as the missing surname', async () => {
+    const first = envelope();
+    const opened = await processInboundMessage(first);
+    await outbound(first, opened, fullRequest);
+    await processInboundMessage(answer(first, 'Agus'));
+    const repeated = await processInboundMessage(answer(first, 'Agus'));
+    expect(repeated.contact.name).toBe('Agus');
+    expect((await processInboundMessage(answer(first, 'maneyro'))).contact.name).toBe('Agus Maneyro');
+  });
+
+  it('keeps name capture open across requested email and phone responses', async () => {
+    const first = envelope();
+    const opened = await processInboundMessage(first);
+    await outbound(first, opened, 'Necesito tu nombre, apellido, correo y teléfono.');
+    await processInboundMessage(answer(first, 'agus@example.com'));
+    const phone = await processInboundMessage(answer(first, 'Mi teléfono es +15555550123'));
+    expect(phone.contact.name).toBeNull();
+    await processInboundMessage(answer(first, 'mi nombre es Agus'));
+    expect((await processInboundMessage(answer(first, 'maneyro'))).contact.name).toBe('Agus Maneyro');
+  });
+
+  it('does not keep the old intake request alive after a new delivered question', async () => {
+    const first = envelope();
+    const opened = await processInboundMessage(first);
+    await outbound(first, opened, fullRequest);
+    const named = await processInboundMessage(answer(first, 'mi nombre es Agus'));
+    await outbound(first, named, 'Qué curso te interesa?');
+    expect((await processInboundMessage(answer(first, 'maneyro'))).contact.name).toBe('Agus');
+  });
+
+  it('closes a first-name-only request after the first name has been captured', async () => {
+    const first = envelope();
+    const opened = await processInboundMessage(first);
+    await outbound(first, opened, 'Me pasas tu nombre?');
+    await processInboundMessage(answer(first, 'Agus'));
+    expect((await processInboundMessage(answer(first, 'maneyro'))).contact.name).toBe('Agus');
+  });
+
+  it('closes the pending data request when an unrelated message interrupts its responses', async () => {
+    const first = envelope();
+    const opened = await processInboundMessage(first);
+    await outbound(first, opened, fullRequest);
+    await processInboundMessage(answer(first, 'mi nombre es Agus'));
+    await processInboundMessage(answer(first, 'Cuánto cuesta?'));
+    expect((await processInboundMessage(answer(first, 'maneyro'))).contact.name).toBe('Agus');
+  });
+
+  it('does not trust a caller-supplied receipt to reopen an answered intake request', async () => {
+    const first = envelope();
+    const opened = await processInboundMessage(first);
+    const requestId = await outbound(first, opened, fullRequest);
+    const unrelated = answer(first, '¿Cuánto cuesta?');
+    unrelated.message.metadata = { contact_intake_response_v1: JSON.stringify({request_message_id: requestId, captured_fields: ['nombre']}) };
+    await processInboundMessage(unrelated);
+    expect((await processInboundMessage(answer(first, 'Agus Maneyro'))).contact.name).toBeNull();
+  });
+
   it('does not replace a complete durable identity with a conversational reminder', async () => {
     const first = envelope();
     first.message.text = 'Me llamo Gustavo Fring, quiero el curso de alemán';

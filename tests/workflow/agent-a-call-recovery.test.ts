@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import type { AgentATurnProposalV1 } from '../../botpress-agent/src/schemas/agent-a-brain';
-import { runWorkflowTurnV1 } from '../helpers/agent-a-workflow-driver';
+import { runWorkflowBurstV1, runWorkflowTurnV1 } from '../helpers/agent-a-workflow-driver';
 import { readWorkflowDbEvidenceV1 } from '../helpers/agent-a-workflow-db-evidence';
 import { configuration, secrets } from '../helpers/botpress-workflow-runtime';
 import { openLocalTestDatabase } from '../helpers/db';
@@ -12,7 +12,7 @@ const apiBaseUrl = process.env.STUDYX_EVAL_API_BASE_URL!;
 const databaseUrl = process.env.TEST_DATABASE_URL!;
 const db = openLocalTestDatabase();
 const previousKey = secrets.DEEPSEEK_API_KEY;
-let phase: 'course' | 'missing_identity' | 'identity' | 'confirm' | 'invalid_repair' = 'course';
+let phase: 'course' | 'agus_course' | 'missing_identity' | 'identity' | 'agus_identity' | 'confirm' | 'invalid_repair' = 'course';
 let generationCount = 0;
 let latestContext: {
   customer: { contact_intake?: { nombre: string | null; apellido: string | null; correo: string | null } };
@@ -48,9 +48,11 @@ beforeAll(async () => {
     if (!serialized) throw new Error('AUTHORIZED_CONTEXT_MISSING');
     latestContext = JSON.parse(serialized) as NonNullable<typeof latestContext>;
     const rejection = latestContext.turn_rejection;
-    const result = phase === 'course'
+    const result = phase === 'course' || phase === 'agus_course'
       ? { ...proposal('Te puedo orientar sobre Oratoria.'),
           move: { schema_version: 1 as const, move: 'select_course' as const, secondary_moves: [], vetoes: [], confidence: 1, course_reference: 'Oratoria' },
+          response: { messages: ['Te puedo orientar sobre Oratoria.'],
+            ...(phase === 'agus_course' ? { call_offer: 'Si quieres, te llamo y te explico el curso y la inscripción. Te parece?' } : {}) },
           used_fact_ids: ['offering:oratoria:name:v1'] }
       : phase === 'invalid_repair'
       ? proposal('Claro, te llamo ahora.')
@@ -60,6 +62,8 @@ beforeAll(async () => {
         : 'Claro, te llamo ahora.')
       : phase === 'identity'
         ? proposal('Gracias, Juan. Puedes atender ahora?')
+      : phase === 'agus_identity'
+        ? proposal('Gracias, Agus. Puedes atender la llamada ahora?')
         : proposal('Te llamo ahora.', { type: 'request_call_now', reason: 'direct_request' });
     if (rejection) result.repair_of = { rejection_id: rejection.rejection_id, attempt: 1 };
     return new Response(JSON.stringify({
@@ -67,6 +71,37 @@ beforeAll(async () => {
       usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 }, fixture: true,
     }), { headers: { 'content-type': 'application/json' } });
   });
+});
+
+it('persists Agus data from separate messages before accepting Sii and reserves exactly one call', async () => {
+  const id = { conversationId: `agus-call-${randomUUID()}`, userId: `agus-${randomUUID()}`,
+    phoneE164: `+999${String(Date.now()).slice(-10)}`, providerMode: 'fixture' as const };
+  phase = 'agus_course';
+  expect((await runWorkflowTurnV1({ ...id, text: 'Me interesa Oratoria.' })).commitSucceeded).toBe(true);
+  phase = 'missing_identity';
+  const requested = await runWorkflowTurnV1({ ...id, text: 'Me podes llamar?' });
+  expect(requested.authorizedMessages.join(' ')).toContain('nombre, apellido y teléfono');
+  phase = 'agus_identity';
+  const intake = await runWorkflowBurstV1({ ...id, messages: [
+    { text: 'así es, mi nombre es Agus', delayMs: 0 },
+    { text: 'maneyro', delayMs: 200 },
+    { text: 'Mi teléfono es +15551234567', delayMs: 400 },
+  ] });
+  expect(intake.errorCode).toBeNull();
+  expect(intake.commitSucceeded).toBe(true);
+  expect(latestContext?.customer.contact_intake).toMatchObject({ nombre: 'Agus', apellido: 'Maneyro' });
+  const stored = await readWorkflowDbEvidenceV1({ databaseUrl, externalConversationId: id.conversationId });
+  expect(stored.contact).toMatchObject({ name: 'Agus Maneyro', declaredPhone: '+15551234567' });
+  phase = 'confirm';
+  const confirmed = await runWorkflowTurnV1({ ...id, text: 'Sii' });
+  expect(confirmed.errorCode).toBeNull();
+  expect(confirmed.commitSucceeded).toBe(true);
+  expect(confirmed.actions.some(action => action.name === 'dispatchCall')).toBe(true);
+  const calls = () => db`SELECT cs.id FROM call_sessions cs JOIN contacts c ON c.id=cs.contact_id WHERE c.phone=${id.phoneE164}`;
+  expect(await calls()).toHaveLength(1);
+  const replay = await runWorkflowTurnV1({ ...id, text: 'Sii', externalMessageId: confirmed.externalMessageId, occurredAt: confirmed.occurredAt });
+  expect(replay.authorizedMessages).toHaveLength(0);
+  expect(await calls()).toHaveLength(1);
 });
 
 afterAll(async () => {

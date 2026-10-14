@@ -14,7 +14,7 @@ import { withSerializableTransaction } from '@/lib/db/transaction';
 import { jsonbParam } from '@/lib/db/json';
 import { sha256Hex } from '@/lib/idempotency/canonical-json';
 import { isExplicitOptOut } from '@/lib/heuristics/opt-out';
-import { couldBeContactNameAnswer, extractContactIdentity, extractContactNameAnswer, splitFullName, type ContactNameParts } from '@/lib/heuristics/contact-identity';
+import { couldBeContactNameAnswer, extractContactIdentity, extractContactNameAnswer, requestedContactFieldsV1, splitFullName, type CapturedContactIdentity, type ContactNameParts, type RequestedContactFieldV1 } from '@/lib/heuristics/contact-identity';
 import { registerSandboxIdentity } from '@/lib/repositories/sandbox-identity.repository';
 import { upsertInboundLeadProjection } from './projection.service';
 import type { DbClient } from '@/lib/db/types';
@@ -254,15 +254,17 @@ function resolveLogicalChannel(envelope: InboundEnvelope): 'whatsapp' | 'telegra
   return envelope.channel === 'telegram' ? 'telegram' : 'whatsapp';
 }
 
-async function captureDeliveredContactNameAnswer(db: DbClient, input: {
+async function captureDeliveredContactIntakeResponse(db: DbClient, input: {
   conversationId: string;
   contact: Contact;
   provider: string;
   integrationId: string;
   text: string;
   occurredAt: string;
-}): Promise<(ContactNameParts & { name: string | null; requestMessageId: string }) | null> {
-  if (!couldBeContactNameAnswer(input.text)) return null;
+  volunteeredIdentity: CapturedContactIdentity;
+}): Promise<(ContactNameParts & { name: string | null; requestMessageId: string; capturedFields: readonly RequestedContactFieldV1[] }) | null> {
+  if (!couldBeContactNameAnswer(input.text)
+    && !Object.values(input.volunteeredIdentity).some(value => value !== null)) return null;
   const rows = await db<Array<{ id: string; content: string; previous: unknown }>>`
     SELECT m.id, m.content, (
       SELECT earlier.metadata->'contact_name_answer_v1'
@@ -284,18 +286,23 @@ async function captureDeliveredContactNameAnswer(db: DbClient, input: {
         SELECT 1 FROM messages intervening
         WHERE intervening.conversation_id = m.conversation_id AND intervening.direction = 'inbound'
           AND intervening.created_at > m.created_at
+          -- A multi-message answer remains tied to the delivered request only
+          -- while every intervening input carries a backend-owned capture receipt.
+          AND intervening.metadata->'contact_intake_response_v1'->>'request_message_id'
+            IS DISTINCT FROM m.id::text
       )
     ORDER BY COALESCE(od.submitted_at, od.delivered_at) DESC, m.created_at DESC, m.id DESC
     LIMIT 1
   `;
   const request = rows[0];
   if (!request) return null;
+  const requested = requestedContactFieldsV1(request.content);
+  if (requested.length === 0) return null;
   const canonical = input.contact.name ? splitFullName(input.contact.name) : null;
   // Contextual capture only fills an identity field that is genuinely absent.
   // Once both parts are durable, a bare answer to a repeated request is too
   // ambiguous to replace them. Explicit self-identification/correction still
   // runs first through `extractContactIdentity` in `persistInbound`.
-  if (canonical?.nombre && canonical.apellido) return null;
   const stored = request.previous && typeof request.previous === 'object' && !Array.isArray(request.previous)
     ? request.previous as Record<string, unknown> : null;
   const storedParts = {
@@ -305,8 +312,29 @@ async function captureDeliveredContactNameAnswer(db: DbClient, input: {
   const storedName = [storedParts.firstName, storedParts.surname].filter(Boolean).join(' ');
   const previous = !canonical || storedName === input.contact.name ? storedParts
     : { firstName: canonical.nombre || null, surname: canonical.apellido || null };
-  const captured = extractContactNameAnswer(input.text, request.content, previous);
-  return captured ? { ...captured, requestMessageId: request.id } : null;
+  const nameRequestAnswered = stored?.request_message_id === request.id
+    && (requested.includes('nombre') && !requested.includes('apellido') && previous.firstName !== null
+      || requested.includes('apellido') && !requested.includes('nombre') && previous.surname !== null);
+  let captured: (ContactNameParts & { name: string | null }) | null = null;
+  if (input.volunteeredIdentity.name !== null) {
+    const parts = splitFullName(input.volunteeredIdentity.name);
+    const surname = parts.apellido || previous.surname;
+    captured = { firstName: parts.nombre || null, surname,
+      name: [parts.nombre, surname].filter(Boolean).join(' ') || null };
+  } else if (!(canonical?.nombre && canonical.apellido) && !nameRequestAnswered) {
+    captured = extractContactNameAnswer(input.text, request.content, previous);
+  }
+  const capturedFields: RequestedContactFieldV1[] = [];
+  if (captured?.firstName && captured.firstName !== previous.firstName && requested.includes('nombre')) capturedFields.push('nombre');
+  if (captured?.surname && captured.surname !== previous.surname && requested.includes('apellido')) capturedFields.push('apellido');
+  if (captured?.firstName && !captured.surname && capturedFields.length === 0 && requested.includes('nombre')) {
+    capturedFields.push('nombre');
+  }
+  if (input.volunteeredIdentity.email && requested.includes('correo')) capturedFields.push('correo');
+  if (input.volunteeredIdentity.declaredPhone && requested.includes('telefono')) capturedFields.push('telefono');
+  if (capturedFields.length === 0) return null;
+  return { ...(captured ?? { ...previous, name: null }),
+    requestMessageId: request.id, capturedFields };
 }
 
 async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
@@ -554,12 +582,13 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
       envelope.message.type === 'unsupported'
         ? { name: null, email: null, declaredPhone: null }
         : extractContactIdentity(envelope.message.text, contact.name);
-    const contextual = envelope.message.type === 'unsupported' || volunteeredIdentity.name !== null ? null
-      : await captureDeliveredContactNameAnswer(db, {
+    const contextual = envelope.message.type === 'unsupported' ? null
+      : await captureDeliveredContactIntakeResponse(db, {
         conversationId, contact, provider, integrationId: envelope.integration_id,
         text: envelope.message.text, occurredAt: occurrence.occurred_at,
+        volunteeredIdentity,
       });
-    const capturedIdentity = { ...volunteeredIdentity, name: volunteeredIdentity.name ?? contextual?.name ?? null };
+    const capturedIdentity = { ...volunteeredIdentity, name: contextual?.name ?? volunteeredIdentity.name };
     if (
       capturedIdentity.name !== null
       || capturedIdentity.email !== null
@@ -650,7 +679,11 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
         opt_out_ack_eligible: optOutAckEligible,
         // Backend-owned provenance, never copied from envelope metadata. A
         // surname alone is kept here until a requested first name completes it.
-        ...(contextual ? { contact_name_answer_v1: {
+        ...(contextual ? { contact_intake_response_v1: {
+          request_message_id: contextual.requestMessageId,
+          captured_fields: contextual.capturedFields,
+        } } : {}),
+        ...(contextual?.capturedFields.some(field => field === 'nombre' || field === 'apellido') ? { contact_name_answer_v1: {
           request_message_id: contextual.requestMessageId,
           first_name: contextual.firstName, surname: contextual.surname,
         } } : {}),

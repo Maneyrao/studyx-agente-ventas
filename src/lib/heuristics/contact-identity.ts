@@ -277,6 +277,23 @@ export interface ContactNameParts {
   readonly surname: string | null;
 }
 
+export type RequestedContactFieldV1 = 'nombre' | 'apellido' | 'correo' | 'telefono';
+
+/** Requested fields in the same delivered, non-negated personal-data clauses
+ * used for contextual name capture. A statement that data is known is not a request. */
+export function requestedContactFieldsV1(deliveredRequest: string): readonly RequestedContactFieldV1[] {
+  const request = deliveredRequest.split(/[.!?\n]/u).filter(clause =>
+    !UNSAFE_NAME_REQUEST.test(clause)
+    && /\b(?:necesito|necesitamos|falta[ns]?|pas[aá](?:s|me|rme)|compart[ií](?:s|me|rme)|dec[ií](?:s|me|rme)|d[ií](?:ces|me)|indic[aá](?:s|me|rme)|confirm[aá](?:s|me|rme)|cu[aá]l\s+es|c[oó]mo\s+te\s+llam[aá]s)\b/iu.test(clause))
+    .join(' ');
+  const fields: RequestedContactFieldV1[] = [];
+  if (/\bnombre\b|\bc[oó]mo\s+te\s+llam[aá]s\b/iu.test(request)) fields.push('nombre');
+  if (/\bapellido\b|\bnombre\s+completo\b/iu.test(request)) fields.push('apellido');
+  if (/\b(?:correo|email|mail)\b/iu.test(request)) fields.push('correo');
+  if (/\b(?:tel[eé]fono|celular|n[uú]mero)\b/iu.test(request)) fields.push('telefono');
+  return fields;
+}
+
 /** Only ingestion may supply a request after proving its delivery to this
  * conversation. A model's awaiting state or an unsent draft is not a request. */
 export function extractContactNameAnswer(
@@ -284,12 +301,9 @@ export function extractContactNameAnswer(
   deliveredRequest: string,
   previous: ContactNameParts = { firstName: null, surname: null },
 ): (ContactNameParts & { readonly name: string | null }) | null {
-  const clauses = deliveredRequest.split(/[.!?\n]/u).filter(clause =>
-    !UNSAFE_NAME_REQUEST.test(clause)
-    && /\b(?:necesito|necesitamos|falta[ns]?|pas[aá](?:s|me|rme)|compart[ií](?:s|me|rme)|dec[ií](?:s|me|rme)|d[ií](?:ces|me)|indic[aá](?:s|me|rme)|confirm[aá](?:s|me|rme)|cu[aá]l\s+es|c[oó]mo\s+te\s+llam[aá]s)\b/iu.test(clause));
-  const request = clauses.join(' ');
-  const asksFirstName = /\bnombre\b|\bc[oó]mo\s+te\s+llam[aá]s\b/iu.test(request);
-  const asksSurname = /\bapellido\b|\bnombre\s+completo\b/iu.test(request);
+  const requested = requestedContactFieldsV1(deliveredRequest);
+  const asksFirstName = requested.includes('nombre');
+  const asksSurname = requested.includes('apellido');
   if ((!asksFirstName && !asksSurname) || UNSAFE_NAME_OWNER.test(text)) return null;
 
   const surnameFirst = new RegExp(
@@ -320,6 +334,8 @@ export function extractContactNameAnswer(
     .replace(/\[([^\]]+)\]\((?:tel:|mailto:)[^)]+\)/giu, '$1')
     .replace(/(?:[,;.!?…]\s*)?(?:ya\s+te\s+(?:lo\s+)?dije|te\s+lo\s+dije)\s*[.!?…]*$/iu, '')
     .trim();
+  if ((EMAIL_PATTERN.test(plain) || DECLARED_PHONE_PATTERN.test(plain))
+    && /^(?:(?:mi|mis|el|la)\s+)?(?:tel[eé]fono|tel|correo|e-?mail|celular|n[uú]mero)(?=\s|:|$)/iu.test(plain)) return null;
   const boundary = plain.search(new RegExp(`${EMAIL_PATTERN.source}|${DECLARED_PHONE_PATTERN.source}|[\\n,;.!?¿]`, 'u'));
   const candidate = (boundary < 0 ? plain : plain.slice(0, boundary)).trim();
   const remainder = boundary < 0 ? '' : plain.slice(boundary).replace(/^[\s,;.!]+/u, '');
@@ -350,8 +366,11 @@ export function extractContactNameAnswer(
       surname = parts.apellido;
     } else if (!firstName) {
       firstName = normalizedCandidate;
-    } else if (!surname) {
+    } else if (!surname && normalizedCandidate.toLocaleLowerCase('es') !== firstName.toLocaleLowerCase('es')) {
       surname = normalizedCandidate;
+    } else if (!surname) {
+      // Repeating the already supplied first name does not fill the surname.
+      firstName = normalizedCandidate;
     } else {
       return null;
     }

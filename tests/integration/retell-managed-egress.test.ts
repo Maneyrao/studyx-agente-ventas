@@ -77,16 +77,14 @@ run('Retell managed egress', () => {
       JOIN workspaces AS workspace ON workspace.id = membership.workspace_id
       WHERE membership.contact_id = ${inbound.contact.id}::uuid
     `;
-    const course = `managed_${identity.replace(/-/gu, '').slice(0, 12)}`;
-    await db!`
-      INSERT INTO offerings (
-        workspace_id, code, display_name, offering_type, status, description,
-        price_type, price_amount, currency, billing_interval
-      ) VALUES (
-        ${membership.workspace_id}::uuid, ${course}, 'Curso administrado',
-        'course', 'active', 'Curso de prueba', 'fixed', 360, 'USD', 'custom'
-      )
+    // Delivery idempotency is scoped to callId, not to a new course. Reuse
+    // the seeded catalog so this fixture cannot pollute the manual seed tests.
+    const [offering] = await db!<Array<{ code: string }>>`
+      SELECT code FROM offerings WHERE workspace_id=${membership.workspace_id}::uuid
+        AND status='active' ORDER BY code LIMIT 1
     `;
+    expect(offering).toBeDefined();
+    const course = offering.code;
     await db!`
       INSERT INTO conversation_sales_context_states_v1 (
         workspace_id, conversation_id, contact_id,
