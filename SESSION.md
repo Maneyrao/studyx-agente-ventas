@@ -1,7 +1,7 @@
 # Sesión StudyX
 
 ## Fase actual
-PHASE 6 — corrección de las variantes reales de solicitud de pago observadas tras publicar bee55aa. Estado: lista para publicar; 3994 unitarias, 601 integraciones y ocho workflows aprobados; tipos, lint, builds, parity de fuente/bundle y revisión independiente aprobados. Producción conserva bee55aa hasta activar esta fase. Evidencia: doble etiqueta de intención, preguntas tomadas como efectos y pérdida de solicitud explícita durante continuación; informe 2026-10-14-payment-retest.md.
+PHASE 6 — corrección de las variantes reales de solicitud de pago. Estado: completa y publicada; fuente 32e109a en backend dpl_CE59p3BbNY9mEeosuCBzNpW5Afko y Botpress 2026-10-14T13:49:53.977Z; health y probe canónicos HTTP 200. 3994 unitarias, 601 integraciones y ocho workflows aprobados; tipos, lint, builds, fuente/bundle y revisión independiente aprobados. Canario real v102 pendiente del usuario; informe 2026-10-14-payment-retest.md.
 
 ## Fases completas
 - PHASE 0: fallos y silencios observables.
@@ -9,6 +9,7 @@ PHASE 6 — corrección de las variantes reales de solicitud de pago observadas 
 - PHASE 2: propuesta, rechazo estructurado y backend autoritativo.
 - PHASE 4: persistencia de respuestas fragmentadas publicada en 232611a; 3793 unitarias, 599 integraciones y tres workflows aprobados.
 - PHASE 5: A conserva voz y estado al recibir resultados/faltantes; plan y enlace en el mismo turno, seguimiento de llamada redactado por A; 3892 unitarias, 601 integraciones, seis workflows; lint, tipos, builds y revisión aprobados, producción verificada.
+- PHASE 6: petición explícita de pago sin segunda etiqueta, guardas por cláusula y solicitud pendiente conservada durante faltantes; 3994 unitarias, 601 integraciones y ocho workflows; fuente 32e109a publicada y verificada.
 
 ## Decisiones de arquitectura tomadas
 - A interpreta y redacta; backend conserva hechos, transiciones y efectos → restaurar especificación del 1-10, cuyos commits siguen en la rama → informe de restauración del 14-10.
@@ -30,7 +31,7 @@ PHASE 6 — corrección de las variantes reales de solicitud de pago observadas 
 - Máximo dos solicitudes reales al modelo, incluidos JSON, transporte y replay durable → callback previo al HTTP y pruebas de Brain, workflow y runner.
 - Seguimiento con redacción congelada, egress canónico, DNC y entrega única → caché bajo lock corto y clave post-call:<call_id>, pruebas de concurrencia/crash.
 - Datos fragmentados conservan recibos de pregunta entregada → ingesta de 232611a y workflow Agus.
-- Prompt canónico v69 intacto; Brain v101 cambia ejecución → módulos idénticos byte por byte y pruebas de prompt/bundle.
+- Prompt canónico v69 intacto; Brain v102 cambia ejecución → módulos idénticos byte por byte y pruebas de prompt/bundle.
 
 ## Tests agregados
 - Feedback/hot path: voz propia, faltantes, conservación de semántica/teléfono y respuesta segura.
@@ -44,4 +45,4 @@ PHASE 6 — corrección de las variantes reales de solicitud de pago observadas 
 - Motivo del primer HTTP 400 de Xendra no conservado → requiere evidencia remota; reintento posterior del usuario aceptado y terminado en buzón. No se atribuye al merge.
 - Evento access_ready procesado sin claim de Botpress → alta y aviso de Lucas recuperados; causa del handler pendiente de auditoría separada.
 - Tres expectativas previas de workflow de catálogo/pago también fallan en a69970a → deuda documentada; no se declara aprobada toda la matriz de workflows.
-- Canario real de esta restauración pendiente tras publicar → prueba del usuario; laboratorio sin llamadas ni cobros reales.
+- Canario real v102 pendiente tras publicar → prueba del usuario en la misma conversación; laboratorio sin llamadas ni cobros reales, apagado y evidencia conservada.

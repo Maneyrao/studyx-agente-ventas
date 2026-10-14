@@ -76,7 +76,7 @@ de base, borrado de conversación, cobro o llamada real por la auditoría.
 
 ## Verificación y publicación
 
-Fuente preparada y verificada; publicación pendiente en este checkpoint:
+Fuente verificada y publicada:
 
 - 3994 unitarias aprobadas; 17 omitidas por condición de entorno y 7 pendientes
   previas. Cobertura configurada: 98,91% líneas y 93,07% ramas.
@@ -104,9 +104,32 @@ Fuente preparada y verificada; publicación pendiente en este checkpoint:
   bloqueantes ni cambios destructivos de almacenamiento. Dos avisos de claves
   opcionales heredadas no participan en la ruta productiva de Agent A.
 
-El backend se publicará primero porque debe aceptar el campo opcional del
-nuevo caller; admite también al caller anterior. Luego se publicará el mismo
-bot, preservando su configuración y las conversaciones existentes.
+Publicación completada el 14 de octubre de 2026:
+
+- Fuente `32e109a422a0950d4ed0617e7e1701c367ffb6fa`.
+- Backend `dpl_CE59p3BbNY9mEeosuCBzNpW5Afko`, READY, construido remotamente
+  desde fuente. Health preparado 200 con ese SHA a las 10:46:22 Argentina;
+  probe preparado 200 a las 10:47:35. Se promovió el mismo artefacto.
+- Dominio canónico: health 200 con el SHA a las 10:48:43 y 10:50:57;
+  probe 200 a las 10:50:58, Central `success`, Botpress 200, entorno `test`,
+  límite conservado `2026-10-16T03:00:00.000Z`.
+- Botpress prod aceptado para el mismo bot
+  `2f7fe6e1-1fc9-40d9-9045-d0c96b456f4b` y workspace existente;
+  `deployedAt=2026-10-14T13:49:53.977Z` (10:49:53 Argentina).
+  SDK confirmó plannerless activo, Emma, `deepseek-v4-flash`, timeout 10000ms
+  y URL canónica, sin cambio de configuración.
+- Bundle publicado congelado fuera de Git con SHA-256
+  `52e55b72f1ebacbf6f8027c11edabc6d0a6d139b023e12a4bc989c9e3af7d22b`.
+  Las 303 fuentes siguen sin modificaciones respecto del snapshot probado;
+  contiene v102, v69, callback físico, helper compartido y `requested_action`.
+- Consulta inmediata de errores del deployment: cero eventos retornados.
+  Esto no demuestra un canario nuevo del modelo ni la aceptación de Xendra.
+
+Se publicó primero el backend compatible y luego Botpress. Se reutilizó la
+credencial existente del mismo bot, ya autorizada por el usuario. No se borró
+el contexto de prueba ni se ejecutaron cobros, llamadas o altas nuevas.
+Laboratorio apagado; bases, bundle y evidencia privada conservados. La prueba
+real de esta versión queda para el usuario en la misma conversación.
 
 ## Alcance
 
