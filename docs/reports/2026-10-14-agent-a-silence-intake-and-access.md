@@ -25,10 +25,15 @@ Postventa recibe `new_user=true` únicamente cuando la central confirmó `studen
 
 Pruebas RED/GREEN de los defectos, revisión independiente, 4122 pruebas unitarias aprobadas (7 pendientes), 23 pruebas de integración seleccionadas y 97 pruebas focalizadas de recuperación. Compilación del backend con webpack, tipos de ambos proyectos y validación ADK aprobados. El constructor local Turbopack no admite el enlace a dependencias compartidas de este worktree; se verificó con webpack sin modificar esa configuración de producción.
 
-La prueba vertical usa el workflow real, HTTP firmado y PostgreSQL local; controla el modelo y la entrega externa. El arnés asigna un workflow distinto a cada mensaje, como en Cloud, para no simular varios competidores con la misma identidad de dueño.
+La prueba vertical aprobó el caso exacto de negación que falló, conservó cinco mensajes de identidad fragmentada y entregó el enlace una sola vez; usa el workflow real, HTTP firmado y PostgreSQL local y controla el modelo y la entrega externa. El arnés asigna un workflow distinto a cada mensaje, como en Cloud, para no simular varios competidores con la misma identidad de dueño.
 
 No se hicieron llamadas, cobros ni envíos reales para probar. No se reinició la memoria ni se reprodujeron automáticamente pedidos antiguos de llamada. Los lotes ya abandonados y los mensajes históricos que no fueron ingeridos no se restauran con una migración de código. El plazo de recuperación es acotado; no garantiza disponibilidad ante interrupciones prolongadas. La reconfirmación y el estilo son instrucciones al agente, no una nueva máquina de estados persistida.
 
 ## Publicación
 
-Pendiente de registrar la evidencia final de despliegue y comprobación remota.
+- Fuente publicada: `00fceae7b24efa7cbd087a995e1750bf901c7a2d`, rama `codex/lucas-call-recovery`, enviada a origin.
+- Migración aplicada a las 16:13:06 Argentina, con historial idéntico al archivo y privilegios sin cambios. SHA256 `26d2984ab508f3d66ccff3047a20dd700cebffd2f97151a1bde64a177b084e51`.
+- Botpress publicado a las 16:14:18 Argentina en el bot `2f7fe6e1-1fc9-40d9-9045-d0c96b456f4b`: Brain v105, canónico v70, identidad Emma y modelo `deepseek-v4-flash` conservados.
+- Backend `dpl_6fSeab89Wm8DbQigkyJceUEGUEp7`, READY y promovido al dominio habitual. A las 16:15:41 Argentina `/api/health` confirmó HTTP 200 y el commit publicado; `/api/ready` dio HTTP 200, `ready=true`, en 513 ms, PostgreSQL en 16 ms.
+- Prueba firmada sin mutaciones: HTTP 409 `CONTACT_PROFILE_CLAIM_NOT_AUTHORIZED` usando identificadores inexistentes. Probe de conexiones: HTTP 200, central `success`, Botpress 200 con el mismo bot y puente sandbox vigente hasta finalizar el 15 de octubre Argentina.
+- Verificados 403 hashes de fuentes/configuración/migraciones antes y después de publicar. Bundle final 23.847.616 bytes, SHA256 `b5cc23fec1c0718f7d61b0da8f21ff77abb7f4f1a4dc45f453e411cefd061082`. Archivo congelado y manifiesto de evidencia privados bajo `tmp/agent-silence-owner-00fceae-*` en el workspace padre.

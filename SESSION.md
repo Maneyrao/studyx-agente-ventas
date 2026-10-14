@@ -53,3 +53,8 @@ PHASE 8 — veracidad comercial y continuidad, Brain v104, personalidad canónic
 - Evento access_ready procesado sin claim de Botpress → alta y aviso de Lucas recuperados; causa del handler pendiente de auditoría separada.
 - Dos expectativas previas de múltiples cursos también fallan en a69970a → deuda documentada; no se declara aprobada toda la matriz de workflows. La tercera, CALL_OFFER_REQUIRED ante un pago autorizado, queda corregida y su escenario original pasa.
 - Canal de Botpress Cloud y scheduler pendientes de prueba funcional del usuario tras publicar v103 → canario de seis turnos con modelo real aprobado contra backend y PostgreSQL aislados, sin llamadas ni cobros reales; evidencia conservada.
+
+
+## 2026-10-14 16:16 Argentina — silencios y acceso publicados
+
+Fuente de producción `00fceae7b24efa7cbd087a995e1750bf901c7a2d`. Backend `dpl_6fSeab89Wm8DbQigkyJceUEGUEp7` promovido, Botpress publicado 19:14:18 UTC, Brain v105/canónico v70. Migración `20261014190001` aplicada con permisos intactos. Detalles y límites: `docs/reports/2026-10-14-agent-a-silence-intake-and-access.md`. Correcciones: negación de planes sin perder la respuesta, entrada/reclamo durables tras timeout, reconfirmación de datos, emojis excepcionales, aviso de credenciales correo/WhatsApp, bienvenida sólo nueva alta. 4122 unitarias + 23 integración + 1 vertical aprobadas. No se relanzaron llamadas ni mensajes históricos; no se reinició memoria. Origen del bloqueo Vercel de 300s no demostrado; readiness actual OK.
