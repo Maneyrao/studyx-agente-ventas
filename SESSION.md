@@ -1,7 +1,7 @@
 # Sesión StudyX
 
 ## Fase actual
-PHASE 5 — restauración de autoría y continuidad de Agent A. Estado: completa; fuente bee55aa publicada en backend dpl_HCrK4LdASYyGtuRfbo9eGEDKUBeK y Botpress 2026-10-14T12:09:40.856Z; health y probe canónicos HTTP 200. Canario real de esta versión pendiente del usuario.
+PHASE 6 — corrección de las variantes reales de solicitud de pago observadas tras publicar bee55aa. Estado: lista para publicar; 3994 unitarias, 601 integraciones y ocho workflows aprobados; tipos, lint, builds, parity de fuente/bundle y revisión independiente aprobados. Producción conserva bee55aa hasta activar esta fase. Evidencia: doble etiqueta de intención, preguntas tomadas como efectos y pérdida de solicitud explícita durante continuación; informe 2026-10-14-payment-retest.md.
 
 ## Fases completas
 - PHASE 0: fallos y silencios observables.
@@ -14,6 +14,9 @@ PHASE 5 — restauración de autoría y continuidad de Agent A. Estado: completa
 - A interpreta y redacta; backend conserva hechos, transiciones y efectos → restaurar especificación del 1-10, cuyos commits siguen en la rama → informe de restauración del 14-10.
 - Plan y enlace en un mismo turno con recursos canónicos y datos completos → quitar permiso basado en fase previa y reinterpretación regex → contexto, resolver y agent-turn-policy-v2.ts.
 - Una continuación conserva movimiento y teléfono confirmado de A → memoria semántica no desaparece al reparar texto → agent-a-action-feedback.ts y conversation_only.
+- La herramienta explícita expresa la solicitud sin otra etiqueta → validar recursos canónicos y autorización real → fase 6, Brain v102.
+- requested_action conserva la operación original sólo bajo conversation_only → guardar intención pendiente sin ejecutar efectos ni inventar movimientos → schemas, workflow, runner, decisión y preparer.
+- Selección de curso no resuelta conserva su procedencia → nunca reutilizar checkout del curso anterior → normalización, resolver y backend.
 - Efectos bloqueados, estado permitido durante continuación → prevenir checkout implícito sin perder intención → decision.service.ts, prepare-agent-turn-v2.ts, effects_allowed=false.
 - A redacta resultado de llamada con prompt y academia canónicos → eliminar plantilla antigua activada en e34130a → agent-a-post-call-narrative.ts, prompt canónico v69.
 - Despacho/webhook devuelven hechos antes de generar texto con after → evitar timeout del caller → rutas dispatch y retell/eventos.

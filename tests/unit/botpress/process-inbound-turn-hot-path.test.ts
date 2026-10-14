@@ -3152,7 +3152,8 @@ describe('processInboundTurn hot path', () => {
       signal: new AbortController().signal, workflow: { id: 'workflow-test' } });
     expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(failure === 'spent_budget' ? 1 : 2);
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      agent_turn_v2: { conversation_only: true, proposal: {
+      agent_turn_v2: { conversation_only: true,
+        requested_action: { type: 'request_call_now', reason: 'direct_request' }, proposal: {
         move: { move: 'request_call' }, proposed_action: { type: 'none' }, response: { messages: [safeText] },
       } }, turn_diagnostics: { generation_attempts: 2, action_status: 'needs_input' },
     });

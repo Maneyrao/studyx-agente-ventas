@@ -24,6 +24,29 @@ const proposal = {
 };
 
 describe('AgentATurnCommitV2 contract', () => {
+  it.each([
+    { type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'one_time' },
+    { type: 'request_call_now', reason: 'direct_request' },
+  ])('carries the original typed request only inside the effect fence: $type', requestedAction => {
+    const payload = { schema_version: 2, proposal, conversation_only: true, requested_action: requestedAction };
+    expect(AgentATurnCommitV2Schema.parse(payload)).toEqual(payload);
+    expect(BotpressAgentATurnCommitV2Schema.parse(payload)).toEqual(payload);
+  });
+
+  it.each([undefined, false])('rejects an original request without the conversation-only fence: %s', conversationOnly => {
+    const payload = { schema_version: 2, proposal, conversation_only: conversationOnly,
+      requested_action: { type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'one_time' } };
+    expect(AgentATurnCommitV2Schema.safeParse(payload).success).toBe(false);
+    expect(BotpressAgentATurnCommitV2Schema.safeParse(payload).success).toBe(false);
+  });
+
+  it('rejects an untyped original request even inside the effect fence', () => {
+    const payload = { schema_version: 2, proposal, conversation_only: true,
+      requested_action: { type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'invented' } };
+    expect(AgentATurnCommitV2Schema.safeParse(payload).success).toBe(false);
+    expect(BotpressAgentATurnCommitV2Schema.safeParse(payload).success).toBe(false);
+  });
+
   it.each([true, false])('carries the explicit conversation-only effect fence: %s', conversationOnly => {
     const payload = { schema_version: 2, proposal, conversation_only: conversationOnly };
     expect(AgentATurnCommitV2Schema.parse(payload)).toEqual(payload);

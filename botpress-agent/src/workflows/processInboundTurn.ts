@@ -66,7 +66,7 @@ import {
 } from '../lib/conversation/agent-a-attempt'
 import { resolveAgentAProposalV1 } from '../lib/conversation/resolve-agent-a-proposal'
 import { resolveAgentAPlannerlessProposalV2 } from '../lib/conversation/resolve-agent-a-plannerless'
-import { continueAgentAAfterActionFeedbackV1, plannerlessActionFeedbackV1 } from '../lib/conversation/agent-a-action-feedback'
+import { continueAgentAAfterActionFeedbackV1, fencedAgentARequestV1, plannerlessActionFeedbackV1 } from '../lib/conversation/agent-a-action-feedback'
 import { evaluateCallOfferTurnPolicyV1 } from '../lib/conversation/call-offer-turn-policy'
 import type { AgentATurnProposalV1 } from '../schemas/agent-a-brain'
 import type { AgentATurnCommitV2 } from '../schemas/agent-turn-v2'
@@ -1048,7 +1048,7 @@ export const processInboundTurn = new Workflow({
             agentTurnV2Commit = {
               schema_version: 2,
               proposal: effectiveGenerated.proposal,
-              ...(agentAConversationOnly ? { conversation_only: true } : {}),
+              ...(agentAConversationOnly ? fencedAgentARequestV1(initialAgentAProposal) : {}),
             }
             pipelineMemoryCandidates = effectiveGenerated.proposal.memory_candidates
             safeLog('studyx.turn.agent_a_plannerless_v2', {
@@ -1244,7 +1244,7 @@ export const processInboundTurn = new Workflow({
                     model: typeof configuration.agentABrainDeepSeekModel === 'string'
                       ? configuration.agentABrainDeepSeekModel : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
                   }), { maxAttempts: 1 })
-                agentTurnV2Commit = { schema_version: 2, proposal: continuation.proposal, conversation_only: true }
+                agentTurnV2Commit = { schema_version: 2, proposal: continuation.proposal, ...fencedAgentARequestV1(initialAgentAProposal) }
                 pipelineMemoryCandidates = continuation.proposal.memory_candidates
                 pipelineDecisionProvider = continuation.provider
                 pipelineDecisionModel = continuation.model
@@ -1676,7 +1676,7 @@ export const processInboundTurn = new Workflow({
             agentTurnV2Commit = {
               schema_version: 2,
               proposal: effectiveRepair.proposal,
-              conversation_only: true,
+              ...fencedAgentARequestV1(initialAgentAProposal ?? rejectedProposal),
             }
             pipelineCommit = null
             pipelineMemoryCandidates = effectiveRepair.proposal.memory_candidates

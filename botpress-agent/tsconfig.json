@@ -8,7 +8,7 @@
       "DOM"
     ],
     "outDir": "./dist",
-    "rootDir": ".",
+    "rootDir": "..",
     "strict": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,

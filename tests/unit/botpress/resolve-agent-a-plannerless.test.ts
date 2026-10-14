@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { resolveAgentAPlannerlessProposalV2 } from '../../../botpress-agent/src/lib/conversation/resolve-agent-a-plannerless';
-import { AgentABrainError } from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
+import { AgentABrainError, parseAgentATurnProposalV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
+import { authorizeAgentTurnV2 } from '@/features/conversation/domain/agent-turn-policy-v2';
+import { createDefaultConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
 import type {
   AgentAContextV1,
   AgentATurnProposalV1,
@@ -76,6 +78,42 @@ function generated(value: AgentATurnProposalV1) {
 }
 
 describe('resolveAgentAPlannerlessProposalV2', () => {
+  it.each([
+    ['pago 1', 'select_payment_plan', null, 'one_time'],
+    ['12 pagos 30', 'select_payment_plan', null, 'monthly_12'],
+    ['si', 'select_course', 'one_time', 'one_time'],
+    ['si', 'ask_current_state', 'one_time', 'one_time'],
+  ] as const)('accepts the explicit canonical payment tool request without a duplicate move label: %s / %s', async (text, kind, durablePlan, plan) => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm1', text }];
+    current.commercial_state = { ...current.commercial_state,
+      selected_offering_code: 'ingles_1', selected_payment_plan: durablePlan, stage: 'handoff' };
+    current.catalog.selected_offering = { code: 'ingles_1', display_name: 'Inglés 1', area_code: 'idiomas',
+      facts: [{ id: 'offering:ingles_1:name:v1', kind: 'offering_name', value: 'Inglés 1' }] };
+    current.catalog.payment_plans = [
+      { code: 'one_time', fact_id: 'payment:ingles_1:one_time:label:v1', label: '1 pago de USD 360' },
+      { code: 'monthly_12', fact_id: 'payment:ingles_1:monthly_12:label:v1', label: '12 pagos mensuales de USD 30' },
+    ];
+    current.capabilities.may_send_payment_link = true;
+    const initial = generated(proposal({
+      move: { schema_version: 1, move: kind, secondary_moves: [], vetoes: [], confidence: 1,
+        ...(kind === 'select_payment_plan' ? { payment_plan: plan } : {}),
+        ...(kind === 'select_course' ? { course_reference: 'ingles_1' } : {}) },
+      response: { messages: [kind === 'select_course'
+        ? 'Perfecto, Thiago. Entonces queda Inglés 1 con el pago único de USD 360. Te dejo el enlace de pago enseguida.'
+        : 'Perfecto, te comparto el enlace seguro.'], call_offer: null },
+      proposed_action: { type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: plan },
+      used_fact_ids: ['offering:ingles_1:name:v1', `payment:ingles_1:${plan}:label:v1`],
+    }));
+    const repair = vi.fn().mockRejectedValue(new Error('Unexpected repair'));
+    const result = await resolveAgentAPlannerlessProposalV2({ initial, context: current,
+      repair_enabled: true, semantic_rejections: 'advisory', repair, rejection_id: '00000000-0000-4000-8000-000000000001' });
+    expect(result.effective).toBe(initial);
+    expect(result.rejection).toBeNull();
+    expect(result.evidence).toMatchObject({ repair_attempted: false, proposal_generation_calls: 1 });
+    expect(repair).not.toHaveBeenCalled();
+  });
+
   it.each(['unavailable plan', 'unknown course', 'unknown intake', 'paid purchase', 'payment veto'])(
     'does not authorize a same-turn payment effect with %s', async condition => {
       const current = context();
@@ -88,7 +126,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
         status: 'paid', offering_code: 'maquillaje-profesional', plan_code: 'monthly_6', paid_at: '2026-10-13T12:00:00Z',
       };
       const initial = generated(proposal({
-        move: { schema_version: 1, move: 'select_payment_plan', secondary_moves: ['request_payment_link'],
+        move: { schema_version: 1, move: 'select_payment_plan', secondary_moves: [],
           vetoes: condition === 'payment veto' ? ['payment_link'] : [], payment_plan: 'monthly_6', confidence: 1 },
         response: { messages: ['Perfecto, te comparto el enlace seguro.'], call_offer: null },
         proposed_action: { type: 'send_payment_link', offering_code: 'maquillaje-profesional', payment_plan: 'monthly_6' },
@@ -100,6 +138,86 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:send_payment_link');
     },
   );
+
+  it('accepts a canonical course confirmation and explicit link without requiring the course name in prose', async () => {
+    const current = context();
+    current.commercial_state.selected_payment_plan = 'one_time';
+    current.capabilities.may_send_payment_link = true;
+    const initial = generated(proposal({
+      move: { schema_version: 1, move: 'select_course', course_reference: 'maquillaje-profesional',
+        secondary_moves: [], vetoes: [], confidence: 1 },
+      response: { messages: ['Perfecto, te dejo el enlace.'], call_offer: null },
+      proposed_action: { type: 'send_payment_link', offering_code: 'maquillaje-profesional', payment_plan: 'one_time' },
+      used_fact_ids: [],
+    }));
+    const repair = vi.fn();
+    const result = await resolveAgentAPlannerlessProposalV2({ initial, context: current,
+      repair_enabled: true, semantic_rejections: 'advisory', repair, rejection_id: '00000000-0000-4000-8000-000000000001' });
+    expect(result.effective).toBe(initial);
+    expect(result.rejection).toBeNull();
+    expect(repair).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown course selection even if the explicit tool names the previous canonical purchase', async () => {
+    const current = context();
+    current.commercial_state.selected_payment_plan = 'one_time';
+    current.capabilities.may_send_payment_link = true;
+    await expect(resolveAgentAPlannerlessProposalV2({ context: current,
+      initial: generated(proposal({
+        move: { schema_version: 1, move: 'select_course', course_reference: 'unknown_course',
+          secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Perfecto, te comparto el enlace.'], call_offer: null },
+        proposed_action: { type: 'send_payment_link', offering_code: 'maquillaje-profesional', payment_plan: 'one_time' }, used_fact_ids: [],
+      })), repair_enabled: false, semantic_rejections: 'advisory', repair: vi.fn(),
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    })).rejects.toThrow('ACTION_NOT_AUTHORIZED:send_payment_link');
+  });
+
+  it.each(['primary', 'secondary'] as const)('preserves unresolved %s course selection through parse, resolver and backend without reusing the previous purchase', async position => {
+    const current = context();
+    current.commercial_state = { ...current.commercial_state, selected_offering_code: 'python', selected_payment_plan: 'one_time' };
+    current.catalog.selected_offering = { code: 'python', display_name: 'Python', area_code: 'tecnologia', facts: [] };
+    current.catalog.payment_plans = [{ code: 'one_time', fact_id: 'payment:python:one_time:label:v1', label: '1 pago de USD 360' }];
+    current.capabilities.may_send_payment_link = true;
+    const messages = ['Seguimos por aquí.'];
+    const parsed = parseAgentATurnProposalV1(proposal({
+      move: { schema_version: 1, move: position === 'primary' ? 'select_course' : 'ask_current_state',
+        course_reference: 'desconocido', secondary_moves: position === 'secondary' ? ['select_course'] : [],
+        vetoes: [], confidence: 1 }, response: { messages, call_offer: null },
+      proposed_action: { type: 'send_payment_link', offering_code: 'python', payment_plan: 'one_time' }, used_fact_ids: [],
+    }), current);
+    const result = await resolveAgentAPlannerlessProposalV2({ initial: generated(parsed), context: current,
+      repair_enabled: false, semantic_rejections: 'advisory', repair: vi.fn(),
+      rejection_id: '00000000-0000-4000-8000-000000000001' });
+    expect(result.effective.proposal.response.messages).toEqual(messages);
+    expect(result.action_rejection).toMatchObject({ action: 'send_payment_link', codes: ['ACTION_NOT_AUTHORIZED'] });
+    const authority = authorizeAgentTurnV2({ proposal: result.effective.proposal,
+      state: { ...createDefaultConversationStateV1({ workspace_id: 'w', conversation_id: 'c', contact_id: 'u' }),
+        selected_offering_code: 'python', selected_payment_plan: 'one_time' },
+      offerings: [{ code: 'python', display_name: 'Python' }],
+      facts: [{ id: 'payment:python:one_time:label:v1', kind: 'payment_plan_label', source: 'business_snapshot',
+        value: '1 pago de USD 360', offering_code: 'python', payment_plan: 'one_time' }],
+      contact_intake: { nombre: 'Ana', apellido: 'Pérez', correo: 'ana@example.test', telefono: '+5491112345678' },
+      semantic_rejections: 'advisory', call_policy: { may_offer_call: false, may_request_call_now: false },
+    });
+    expect(authority).toMatchObject({ ok: true, action: { type: 'none' }, transition: {
+      selected_offering_code: 'python', selected_payment_plan: 'one_time', payment_link_request: null,
+    } });
+  });
+
+  it('keeps a plan selection with none action free of implicit payment requests', async () => {
+    const current = context();
+    current.capabilities.may_send_payment_link = true;
+    const initial = generated(proposal({
+      move: { schema_version: 1, move: 'select_payment_plan', payment_plan: 'one_time',
+        secondary_moves: [], vetoes: [], confidence: 1 },
+      response: { messages: ['Perfecto, seguimos con esa opción.'], call_offer: null }, used_fact_ids: [],
+    }));
+    const result = await resolveAgentAPlannerlessProposalV2({ initial, context: current,
+      repair_enabled: false, semantic_rejections: 'advisory', repair: vi.fn(),
+      rejection_id: '00000000-0000-4000-8000-000000000001' });
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+  });
 
   it.each(['requested', 'provider_accepted', 'in_progress'])(
     'keeps a factual registration confirmation backed by an active %s call', async status => {
@@ -1488,7 +1606,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
-  it('repairs a payment action that the current conversational move did not request', async () => {
+  it('accepts an explicit canonical tool request alongside contact details without duplicating its move label', async () => {
     const current = context();
     current.turn.batch_messages[0].text = 'Soy Matía Damonte, matia@example.test';
     current.commercial_state.awaiting_reply = 'payment_confirmation';
@@ -1519,9 +1637,9 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 
-    expect(repair).toHaveBeenCalledTimes(1);
-    expect(result.effective).toBe(repaired);
-    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective).toBe(initial);
+    expect(result.evidence).toMatchObject({ repair_attempted: false, repaired: false, proposal_generation_calls: 1 });
   });
 
   it('accepts a link action when the same explicit move selects its canonical plan', async () => {
@@ -1664,7 +1782,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(repair).toHaveBeenCalledTimes(1);
     expect(result.effective).toBe(repaired);
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['MISSING_INTAKE', 'ACTION_NOT_AUTHORIZED'], repair_attempted: true,
+      rejection_codes: ['MISSING_INTAKE'], repair_attempted: true,
       repaired: true, proposal_generation_calls: 2,
     });
   });

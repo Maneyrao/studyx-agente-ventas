@@ -24,15 +24,7 @@
  * really did record. Neither is touched.
  */
 
-/** The outcome nouns. Participles are listed as written; no prefix matching,
- *  so the verb "inscribirte" is never mistaken for the noun "inscripción". */
-export function claimsImmediatePaymentLinkDelivery(text: string): boolean {
-  if (!/\b(?:link|enlace)\b/iu.test(text)) return false;
-  if (/\b(?:cuando|si)\b.{0,65}\b(?:te\s+(?:lo\s+)?(?:paso|env[ií]o|mando|comparto)|ah[ií]\s+va)\b/iu.test(text)) return false;
-  return /\bte\s+(?:lo\s+)?(?:paso|env[ií]o|mando|comparto)\b.{0,48}\b(?:link|enlace)\b/iu.test(text)
-    || /\b(?:link|enlace)\b.{0,48}\bte\s+(?:lo\s+)?(?:mand[eé]|envi[eé]|compart[ií]|pas[eé])\b/iu.test(text)
-    || /\bah[ií]\s+va\b/iu.test(text);
-}
+export { claimsImmediatePaymentLinkDeliveryV1 as claimsImmediatePaymentLinkDelivery } from '@/shared/conversation/payment-link-claim';
 
 const CALL_DISPATCH_CLAIM_V1 = /\b(?:te\s+(?:voy|vamos)\s+a\s+llamar|te\s+llam(?:o|amos)\b|(?:la\s+)?llamada\s+(?:ya\s+)?(?:qued[oó]|fue)\s+(?:registrad|solicitad|coordinad)\w*|(?:ya\s+)?(?:registr[eé]|solicit[eé]|coordin[eé])\s+(?:la\s+)?llamada)\b/iu;
 // Scope negation and conditions to each matched claim. A reassurance such as

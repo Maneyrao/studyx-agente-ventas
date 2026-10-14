@@ -1,4 +1,5 @@
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
+import { claimsImmediatePaymentLinkDeliveryV1 } from '../../../../src/shared/conversation/payment-link-claim'
 import { AgentATurnProposalV1Schema, type AgentAContextV1, type AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
 import {
   AgentABrainError,
@@ -27,6 +28,7 @@ function authorizedFactIds(context: AgentAContextV1): string[] {
 function canonicalPaymentResource(proposal: AgentATurnProposalV1, context: AgentAContextV1) {
   const moves = new Set([proposal.move.move, ...proposal.move.secondary_moves])
   const offeringCode = context.commercial_state.selected_offering_code
+  if (moves.has('select_course') && proposal.move.course_reference !== offeringCode) return null
   const paymentPlan = moves.has('select_payment_plan')
     ? proposal.move.payment_plan ?? null
     : context.commercial_state.selected_payment_plan
@@ -75,10 +77,13 @@ function validatePlannerless(input: {
   const paymentDeferred = moves.has('defer_payment') || moves.has('decline_purchase')
     || input.proposal.move.vetoes.includes('payment_link')
     || input.proposal.move.vetoes.includes('purchase')
-  const paymentActionRequested = !paymentDeferred && (moves.has('request_payment_link')
+  const action = input.proposal.proposed_action
+  // The explicit tool request carries payment intent even when Agent A's
+  // primary move records the current course or plan selection.
+  const paymentActionRequested = !paymentDeferred && (action.type === 'send_payment_link'
+    || moves.has('request_payment_link')
     || (moves.has('provide_contact_details')
       && input.context.commercial_state.payment_link_request?.status === 'pending'))
-  const action = input.proposal.proposed_action
   if (action.type === 'none' && claimsImmediatePaymentLinkDelivery(input.proposal)) {
     return {
       schema_version: 1, rejection_id: input.rejection_id, attempt: 1,
@@ -148,15 +153,8 @@ function validatePlannerless(input: {
   }
 }
 
-const SENDS_LINK_BEFORE_NOUN = /\b(?:ahora\s+)?te\s+(?:mando|env[ií]o|comparto|paso)\b.{0,48}\b(?:link|enlace)\b/iu
-const SENDS_LINK_AFTER_NOUN = /\b(?:link|enlace)\b.{0,48}(?:\bya\s+(?:est[aá]|qued[oó])\b|\bte\s+(?:lo\s+)?(?:mand[eé]|envi[eé]|compart[ií]|pas[eé])\b)/iu
-
 function claimsImmediatePaymentLinkDelivery(proposal: AgentATurnProposalV1): boolean {
-  const text = proposal.response.messages.join('\n\n')
-  return /\b(?:link|enlace)\b/iu.test(text) && /\bah[ií]\s+va\b/iu.test(text)
-    || proposal.response.messages.some((message) => (
-    SENDS_LINK_BEFORE_NOUN.test(message) || SENDS_LINK_AFTER_NOUN.test(message)
-  ))
+  return claimsImmediatePaymentLinkDeliveryV1(proposal.response.messages.join('\n\n'))
 }
 
 function hasUnbackedCallDispatchClaim(

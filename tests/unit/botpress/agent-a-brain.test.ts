@@ -93,6 +93,22 @@ afterEach(() => {
 });
 
 describe('Agent A Brain V1', () => {
+  it('recognizes the canonical current plan selected by Agent A before it has been persisted', () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm1', text: '12 pagos 30' }];
+    current.capabilities.may_send_payment_link = true;
+    current.capabilities.may_offer_call = false;
+    const parsed = parseAgentATurnProposalV1(proposal({
+      move: { schema_version: 1, move: 'select_payment_plan', secondary_moves: [], vetoes: [],
+        payment_plan: 'monthly_12', confidence: 1 },
+      response: { messages: ['Seguimos con esa opción.'], call_offer: null },
+      proposed_action: { type: 'send_payment_link', offering_code: 'redes-informaticas', payment_plan: 'monthly_12' },
+      used_fact_ids: [], used_memory_ids: [],
+    }), current);
+    expect(validateAgentATurnProposalV1({ proposal: parsed, context: current,
+      planned_fact_ids: [], rejection_id: '00000000-0000-4000-8000-000000000001' })).toBeNull();
+  });
+
   it('canonicalizes phone separators without inferring or changing digits', () => {
     const parsed = parseAgentATurnProposalV1(proposal({ confirmed_phone: '+54 11 5555 0101' }), context());
     expect(parsed.confirmed_phone).toBe('+541155550101');
@@ -678,7 +694,7 @@ describe('Agent A Brain V1', () => {
     })).toBeNull();
   });
 
-  it('rejects a selected course response that omits its canonical display name', () => {
+  it('accepts a canonical selected course without requiring its name in model-authored prose', () => {
     const current = context();
     const parsed = parseAgentATurnProposalV1(proposal({
       move: {
@@ -693,10 +709,18 @@ describe('Agent A Brain V1', () => {
       context: current,
       planned_fact_ids: parsed.used_fact_ids,
       rejection_id: '00000000-0000-4000-8000-000000000004',
-    })?.rejections).toContainEqual({
-      code: 'COURSE_NOT_RESOLVED',
-      subject: 'course_name',
-    });
+    })).toBeNull();
+  });
+
+  it('still rejects an unknown structured course reference without imposing customer wording', () => {
+    const current = context();
+    const parsed = parseAgentATurnProposalV1(proposal({ response: {
+      messages: ['Seguimos con esa opción.'], call_offer: 'Si querés, puedo llamarte.',
+    } }), current);
+    const unresolved = { ...parsed, move: { ...parsed.move, move: 'select_course' as const, course_reference: 'unknown_course' } };
+    expect(validateAgentATurnProposalV1({ proposal: unresolved, context: current,
+      planned_fact_ids: parsed.used_fact_ids, rejection_id: '00000000-0000-4000-8000-000000000004' })?.rejections
+    ).toContainEqual({ code: 'COURSE_NOT_RESOLVED', subject: 'course_reference' });
   });
 
   it('pone la orden de reparación después del contexto y prohíbe repetir valores rechazados', () => {
@@ -788,7 +812,7 @@ describe('Agent A Brain V1', () => {
     expect(parsed.used_fact_ids).toEqual(['offering:fotografia_profesional:name:v1']);
   });
 
-  it('keeps the reply but drops a course reference absent from the visible catalog', () => {
+  it('keeps both safe prose and unresolved course-selection evidence for the effect boundary', () => {
     const ctx = context() as AgentAContextV1 & {
       catalog: AgentAContextV1['catalog'] & {
         available_offerings: Array<{
@@ -824,8 +848,8 @@ describe('Agent A Brain V1', () => {
       'Te cuento sobre el curso.',
       'Lo buscas para trabajar o para formación personal?',
     ]);
-    expect(parsed.move.move).toBe('unknown');
-    expect(parsed.move.course_reference).toBeUndefined();
+    expect(parsed.move.move).toBe('select_course');
+    expect(parsed.move.course_reference).toBe('Medicina');
   });
 
   it('removes duplicate secondary moves and vetoes without adding authority', () => {
@@ -1484,7 +1508,9 @@ describe('Agent A Brain V1', () => {
     expect(body.instructions).toContain('<canonical_sales_behavior');
     expect(body.input).toContain('JSON');
     expect(body.input).toContain(JSON.stringify(context().turn.batch_messages.map((message) => message.text)));
-    expect(body.input).toContain('The current catalog resolution is not_found.');
+    expect(body.instructions).toContain('"resolution":"not_found"');
+    expect(body.input).not.toContain('The customer asked about an inactive offering');
+    expect(body.input).not.toContain('answer that honest absence');
     const moveProperties = body.text.format.schema.properties.move.properties;
     const responseProperties = body.text.format.schema.properties.response.properties;
     expect(body.text.format.schema.properties.used_fact_ids.maxItems).toBe(60);

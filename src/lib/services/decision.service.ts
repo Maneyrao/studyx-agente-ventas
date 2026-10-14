@@ -45,7 +45,7 @@ import {
   enforceCommercialTruthV1,
 } from '@/features/orchestration/domain/commercial-truth-guard';
 import type { ParsedConversationPipelineCommitV1 } from '@/features/conversation/adapters/conversation-pipeline-schema';
-import type { AgentATurnProposalV1 } from '@/features/conversation/domain/agent-a-brain';
+import type { AgentAProposedActionV1, AgentATurnProposalV1 } from '@/features/conversation/domain/agent-a-brain';
 import {
   AgentTurnV2RejectedError,
   prepareAgentTurnV2,
@@ -153,6 +153,7 @@ export interface CommitDecisionInput {
     readonly schema_version: 2;
     readonly proposal: AgentATurnProposalV1;
     readonly conversation_only?: boolean;
+    readonly requested_action?: AgentAProposedActionV1;
   } | null;
   /** Additive capability negotiation: older Botpress bundles keep one outbound. */
   supports_multi_outbound?: boolean;
@@ -781,6 +782,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           workspace_slug: workspaceSlug,
           proposal: agentTurnProposal,
           conversation_only: validatedInput.agent_turn_v2.conversation_only,
+          requested_action: validatedInput.agent_turn_v2.requested_action,
           semantic_rejections: 'advisory',
           current_customer_messages: currentMessages.map((message) => message.content),
           business_context: rawBusiness ? buildBusinessContextView(rawBusiness) : null,

@@ -164,11 +164,6 @@ function addTokenUsage(
   };
 }
 
-function currentCatalogResolutionDirective(context: AgentAContextV1): string {
-  if (context.catalog.resolution !== 'not_found') return '';
-  return '\nThe current catalog resolution is not_found. The customer asked about an inactive offering: answer that honest absence, browse up to three real alternatives from catalog.available_offerings, include the required initial call_offer when allowed, and do not ask the customer to reinterpret the noun.';
-}
-
 export async function generateDeepSeekAgentATurnProposalV1(input: {
   readonly context: AgentAContextV1;
   readonly apiKey: string;
@@ -176,6 +171,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
   readonly model?: string;
   readonly timeout_ms?: number;
   readonly conversation_only?: boolean;
+  readonly on_provider_request?: () => void;
 }): Promise<GeneratedAgentATurnProposalV1> {
   const model = resolveAgentADeepSeekModelV1(input.model);
   const timeoutMs = Math.min(
@@ -197,6 +193,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
     let accumulatedTokenUsage: GeneratedAgentATurnProposalV1['token_usage'];
     let retryDiagnostic: string | null = null;
     for (const attempt of [1, 2] as const) {
+      input.on_provider_request?.();
       let response: Response;
       try {
         response = await fetch(DEEPSEEK_RESPONSES_URL, {
@@ -209,7 +206,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
             model,
             instructions: buildAgentABrainInstructionsV1(input.context)
               + (input.conversation_only ? '\nThe requested operation was not executed. This is a conversation-only continuation from the structured turn_rejection. Answer the customer in your own usual voice using the actual context and explain or ask for the relevant missing information. Do not claim an effect succeeded, repeat an action, invent a provider cause, or ask the customer to repeat a message that is already in context. Use move unknown, no secondary moves, proposed_action none, and no call_offer; these are internal effect boundaries, not wording instructions.' : ''),
-            input: `Current customer messages: ${JSON.stringify(input.context.turn.batch_messages.map((message) => message.text))}${currentCatalogResolutionDirective(input.context)}\nAnswer these messages and return only the single AgentATurnProposalV1 JSON object.${retryDiagnostic ? `\nThe previous output failed validation at ${retryDiagnostic}. Return a corrected full object. ${naturalnessRepairDirectiveV1(input.context)}` : ''}`,
+            input: `Current customer messages: ${JSON.stringify(input.context.turn.batch_messages.map((message) => message.text))}\nAnswer these messages and return only the single AgentATurnProposalV1 JSON object.${retryDiagnostic ? `\nThe previous output failed validation at ${retryDiagnostic}. Return a corrected full object. ${naturalnessRepairDirectiveV1(input.context)}` : ''}`,
             reasoning: { effort: 'none' },
             temperature: 0.2,
             stream: false,
@@ -829,14 +826,10 @@ function normalizeStrictProposal(value: unknown, context: AgentAContextV1): unkn
         || referenceKey(offering.display_name) === key
       ));
     if (matches.length !== 1) {
-      // A non-canonical reference cannot mutate catalog state, but it is not
-      // a reason to lose the model's useful conversational answer.
-      delete normalizedMove.course_reference;
-      if (normalizedMove.move === 'select_course') normalizedMove.move = 'unknown';
-      if (Array.isArray(normalizedMove.secondary_moves)) {
-        normalizedMove.secondary_moves = normalizedMove.secondary_moves
-          .filter((kind) => kind !== 'select_course');
-      }
+      // Retain an unresolved selection as evidence for effect authorization.
+      // Erasing it would make an explicit tool request reuse the old course.
+      // Safe model-authored prose remains available to the advisory boundary.
+      if (!moveKinds.has('select_course')) delete normalizedMove.course_reference;
     } else {
       normalizedMove.course_reference = matches[0].code;
     }
@@ -1840,6 +1833,14 @@ export function validateAgentATurnProposalV1(input: {
   }
 
   const action = input.proposal.proposed_action
+  const selectsCanonicalPlanNow = (input.proposal.move.move === 'select_payment_plan'
+    || input.proposal.move.secondary_moves.includes('select_payment_plan'))
+    && input.proposal.move.payment_plan !== undefined
+    && input.context.catalog.payment_plans.some((plan) => plan.code === input.proposal.move.payment_plan)
+    && action.type === 'send_payment_link'
+    && action.payment_plan === input.proposal.move.payment_plan
+    && action.offering_code === input.context.commercial_state.selected_offering_code
+    && action.offering_code === input.context.catalog.selected_offering?.code
   if (action.type === 'send_payment_link') {
     if (!input.context.capabilities.may_send_payment_link) {
       rejections.push({ code: 'ACTION_NOT_AUTHORIZED', subject: 'send_payment_link' })
@@ -1847,7 +1848,7 @@ export function validateAgentATurnProposalV1(input: {
     if (input.context.commercial_state.selected_offering_code === null) {
       rejections.push({ code: 'COURSE_NOT_RESOLVED', subject: 'course_selection' })
     }
-    if (input.context.commercial_state.selected_payment_plan === null) {
+    if (input.context.commercial_state.selected_payment_plan === null && !selectsCanonicalPlanNow) {
       rejections.push({ code: 'PLAN_NOT_SELECTED', subject: 'payment_plan' })
     }
     // `?? []`: un contexto construido a mano —tests, replay— no pasó por el
@@ -1986,24 +1987,19 @@ export function validateAgentATurnProposalV1(input: {
       ...input.context.catalog.candidate_offerings,
       ...input.context.catalog.available_offerings,
     ].some((offering) => cited.has(offering.fact_id));
+  const selectedCourseReferenceIsCanonical = [
+    ...(input.context.catalog.selected_offering ? [input.context.catalog.selected_offering] : []),
+    ...input.context.catalog.candidate_offerings,
+    ...input.context.catalog.available_offerings,
+  ].some((offering) => offering.code === input.proposal.move.course_reference);
   const missingCourseSubject = moves.has('select_course')
-    && typeof input.proposal.move.course_reference !== 'string'
+    && !selectedCourseReferenceIsCanonical
     ? 'course_reference'
     : offersACall && !hasCanonicalCourse && !hasResolvedCourseFamily
       ? 'call_offer'
       : null;
   if (missingCourseSubject !== null) {
     rejections.push({ code: 'COURSE_NOT_RESOLVED', subject: missingCourseSubject });
-  }
-  const selectedCourseName = input.context.catalog.selected_offering?.display_name ?? null;
-  if (moves.has('select_course') && selectedCourseName !== null) {
-    const visibleModelText = [
-      ...input.proposal.response.messages,
-      input.proposal.response.call_offer ?? '',
-    ].join('\n').toLocaleLowerCase('es');
-    if (!visibleModelText.includes(selectedCourseName.toLocaleLowerCase('es'))) {
-      rejections.push({ code: 'COURSE_NOT_RESOLVED', subject: 'course_name' });
-    }
   }
   // V7 — ninguna URL escrita por el modelo. El link lo inserta el backend.
   for (const message of input.proposal.response.messages) {

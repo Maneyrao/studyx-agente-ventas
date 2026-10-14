@@ -80,6 +80,62 @@ const completeIntake = async () => ({
 });
 
 describe('prepareAgentTurnV2', () => {
+  it.each(['missing', 'complete'] as const)('keeps the original explicit tool intent while continuation sends only prose: %s intake', async intakeCase => {
+    const messages = ['Para avanzar, vemos los datos necesarios.'];
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      conversation_only: true,
+      requested_action: { type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6' },
+      proposal: proposal({ move: { schema_version: 1, move: 'select_payment_plan', secondary_moves: [],
+        vetoes: [], payment_plan: 'monthly_6', confidence: 1 }, response: { messages } }),
+    }, { state_store: store(state({ selected_offering_code: 'redes_informaticas', stage: 'handoff' })),
+      now: () => Date.parse(index.as_of), contact_intake: intakeCase === 'complete' ? completeIntake
+        : async () => ({ nombre: 'Camila', apellido: 'Pérez', correo: null, telefono: '+5491112345678' }) });
+    expect(prepared.decision.business_action).toBeNull();
+    expect(prepared.response_messages).toEqual(messages);
+    expect(prepared.transition).toMatchObject({ selected_payment_plan: 'monthly_6', stage: 'plan_selected',
+      awaiting_reply: intakeCase === 'missing' ? 'contact_details' : 'payment_confirmation',
+      payment_link_request: { status: 'pending', offering_code: 'redes_informaticas', payment_plan: 'monthly_6', requested_by_turn_id: ids.turn } });
+  });
+
+  it.each(['unknown course', 'mismatched course', 'mismatched plan', 'deferral', 'veto', 'paid'] as const)(
+    'does not manufacture pending payment consent from an original tool request with %s', async condition => {
+      const prepared = await prepareAgentTurnV2({
+        turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+        workspace_slug: 'studyx', business_context: business, catalog_index: index,
+        conversation_only: true, semantic_rejections: 'advisory',
+        requested_action: { type: 'send_payment_link', offering_code: condition === 'mismatched course' ? 'unknown_course' : 'redes_informaticas',
+          payment_plan: condition === 'mismatched plan' ? 'one_time' : 'monthly_6' },
+        proposal: proposal({ move: { schema_version: 1, move: condition === 'deferral' ? 'defer_payment' : 'select_payment_plan',
+          secondary_moves: [], vetoes: condition === 'veto' ? ['payment_link'] : [], payment_plan: 'monthly_6', confidence: 1 },
+          response: { messages: ['Seguimos conversando.'] } }),
+      }, { state_store: store(state({ selected_offering_code: condition === 'unknown course' ? 'unknown_course' : 'redes_informaticas' })),
+        now: () => Date.parse(index.as_of), contact_intake: completeIntake,
+        payment_verification: condition === 'paid' ? async () => ({ status: 'paid', offering_code: 'redes_informaticas',
+          plan_code: 'monthly_6', paid_at: index.as_of }) : undefined });
+      expect(prepared.decision.business_action).toBeNull();
+      expect(prepared.transition.payment_link_request?.status).not.toBe('pending');
+    },
+  );
+
+  it('keeps the explicit link tool intent pending when a selector lacks intake', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['6 pagos 60'],
+      proposal: proposal({ move: { schema_version: 1, move: 'select_payment_plan', secondary_moves: [],
+        vetoes: [], payment_plan: 'monthly_6', confidence: 1 },
+        response: { messages: ['Para avanzar necesito tu correo.'] },
+        proposed_action: { type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6' } }),
+    }, { state_store: store(state({ selected_offering_code: 'redes_informaticas' })), now: () => Date.parse(index.as_of),
+      contact_intake: async () => ({ nombre: 'Camila', apellido: 'Pérez', correo: null, telefono: '+5491112345678' }) });
+    expect(prepared.decision.business_action).toBeNull();
+    expect(prepared.transition).toMatchObject({ selected_payment_plan: 'monthly_6', awaiting_reply: 'contact_details',
+      payment_link_request: { status: 'pending', payment_plan: 'monthly_6', requested_by_turn_id: ids.turn } });
+    expect(prepared.action_rejection).toMatchObject({ codes: ['MISSING_INTAKE'], missing_fields: ['correo'] });
+  });
+
   it.each(['missing', 'complete'] as const)('preserves one-time checkout intent without effects during %s intake continuation', async intakeCase => {
     const messages = ['Vemos primero los datos necesarios para avanzar.'];
     const prepared = await prepareAgentTurnV2({ conversation_only: true,

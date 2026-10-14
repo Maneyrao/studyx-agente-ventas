@@ -86,6 +86,7 @@ import {
 import { resolveAgentAPlannerlessProposalV2 } from '../botpress-agent/src/lib/conversation/resolve-agent-a-plannerless';
 import {
   continueAgentAAfterActionFeedbackV1,
+  fencedAgentARequestV1,
   plannerlessActionFeedbackV1,
 } from '../botpress-agent/src/lib/conversation/agent-a-action-feedback';
 import { classifyAgentAAttemptFailure } from '../botpress-agent/src/lib/conversation/agent-a-attempt';
@@ -931,8 +932,8 @@ export function createLocalTurnSender(
             confidence: generated.proposal.move.confidence };
           agentTurnV2 = {
             schema_version: 2,
-            proposal: generated.proposal,
-            ...(plannerlessConversationOnly ? { conversation_only: true } : {}),
+            proposal: plannerlessConversationOnly ? { ...generated.proposal, proposed_action: { type: 'none' } } : generated.proposal,
+            ...(plannerlessConversationOnly ? fencedAgentARequestV1(plannerlessOriginalProposal) : {}),
           };
           visibleCallOffers = generated.proposal.response.call_offer
             || generated.proposal.response.messages.some((message) => solicitsACall(message))
@@ -1055,7 +1056,7 @@ export function createLocalTurnSender(
           if (plannerlessGenerationAttempts < 2 && credentials.deepseekApiKey) {
             try {
               const continuation = await continueWithFeedback(rejection);
-              agentTurnV2 = { schema_version: 2, proposal: continuation.proposal, conversation_only: true };
+              agentTurnV2 = { schema_version: 2, proposal: continuation.proposal, ...fencedAgentARequestV1(plannerlessOriginalProposal) };
               proposalCycleEvidence = { rejection_codes: codes, repair_attempted: true,
                 repaired: true, proposal_generation_calls: 2 };
               decision = { schema_version: 4, intent: 'commercial', kind: 'reply',

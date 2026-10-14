@@ -126,6 +126,12 @@ locales no se modificaron.
 
 ## Límites de la conclusión
 
+El retest posterior mostró variantes reales de pago que esos seis fixtures
+no cubrían. La segunda etiqueta de intención seguía exigida y preguntas
+válidas podían confundirse con promesas de envío. La fase 6 y la rectificación
+de esa cobertura se documentan en `2026-10-14-payment-retest.md`. También se
+restaura el callback físico del generador ausente en la fuente de `bee55aa`.
+
 Estas correcciones resuelven las interferencias y pérdidas de estado
 reproducidas; no garantizan que un modelo interprete cualquier entrada.
 El primer rechazo remoto de Xendra y el evento automático de acceso sin

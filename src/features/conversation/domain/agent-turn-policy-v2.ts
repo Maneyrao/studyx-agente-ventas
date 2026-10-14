@@ -310,7 +310,12 @@ export function authorizeAgentTurnV2(input: {
     && stateFacts.has('state:intake_recorded:v1');
   // Asking for the next missing field is also prompt guidance. Missing intake
   // remains a hard boundary only for the payment side effect below.
-  const paymentLinkRequestedNow = !paymentRequestWithdrawn && moves.has('request_payment_link');
+  const explicitPaymentLinkRequested = proposal.proposed_action.type === 'send_payment_link'
+    && selectedOffering !== null && proposal.proposed_action.offering_code === selectedOffering
+    && selectedPlan !== null && proposal.proposed_action.payment_plan === selectedPlan
+    && !moves.has('report_payment') && !selectedPurchasePaid;
+  const paymentLinkRequestedNow = !paymentRequestWithdrawn
+    && (moves.has('request_payment_link') || explicitPaymentLinkRequested);
   const paymentLinkRequested = paymentLinkRequestedNow
     || (!paymentRequestWithdrawn && pendingPaymentRequest !== null && moves.has('provide_contact_details'));
   if (proposal.proposed_action.type === 'request_call_now') {
@@ -439,7 +444,7 @@ export function authorizeAgentTurnV2(input: {
     awaitingReply = 'payment_confirmation';
   }
   if (
-    moves.has('request_payment_link') && !paymentRequestWithdrawn
+    paymentLinkRequestedNow
     && selectedOffering !== null
     && selectedPlan !== null
     && !stateFacts.has('state:intake_recorded:v1')
@@ -450,7 +455,7 @@ export function authorizeAgentTurnV2(input: {
     awaitingReply = 'contact_details';
   }
   if (
-    moves.has('request_payment_link') && !paymentRequestWithdrawn
+    paymentLinkRequestedNow
     && selectedOffering !== null
     && selectedPlan !== null
     && stateFacts.has('state:intake_recorded:v1')

@@ -12,7 +12,7 @@ const apiBaseUrl = process.env.STUDYX_EVAL_API_BASE_URL!;
 const databaseUrl = process.env.TEST_DATABASE_URL!;
 const db = openLocalTestDatabase();
 const previousKey = secrets.DEEPSEEK_API_KEY;
-let phase: 'course' | 'agus_course' | 'missing_identity' | 'identity' | 'agus_identity' | 'confirm' | 'invalid_repair' | 'payment_course' | 'payment_identity' | 'payment_options' | 'payment_choice' = 'course';
+let phase: 'course' | 'agus_course' | 'missing_identity' | 'identity' | 'agus_identity' | 'confirm' | 'invalid_repair' | 'payment_course' | 'payment_identity' | 'payment_options' | 'payment_choice' | 'payment_permission' | 'payment_confirm_choice' | 'payment_missing_identity' | 'payment_complete_intake' = 'course';
 let generationCount = 0;
 let latestContext: {
   customer: { contact_intake?: { nombre: string | null; apellido: string | null; correo: string | null } };
@@ -61,8 +61,23 @@ beforeAll(async () => {
           used_fact_ids: ['payment:ingles_1:monthly_12:amount:v1', 'payment:ingles_1:monthly_6:amount:v1', 'payment:ingles_1:one_time:amount:v1'] }
       : phase === 'payment_choice'
       ? { ...proposal('Te paso el enlace para hacer el pago único.', { type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'one_time' }),
-          move: { schema_version: 1 as const, move: 'request_payment_link' as const, secondary_moves: ['select_payment_plan' as const], vetoes: [], payment_plan: 'one_time' as const, confidence: 1 },
+          move: { schema_version: 1 as const, move: 'select_payment_plan' as const, secondary_moves: [], vetoes: [], payment_plan: 'one_time' as const, confidence: 1 },
           used_fact_ids: ['payment:ingles_1:one_time:label:v1'] }
+      : phase === 'payment_permission'
+      ? { ...proposal('Entonces queda el pago único de USD 360. Te envío el enlace de pago para avanzar?'),
+          move: { schema_version: 1 as const, move: 'select_payment_plan' as const, secondary_moves: [], vetoes: [], payment_plan: 'one_time' as const, confidence: 1 },
+          used_fact_ids: ['payment:ingles_1:one_time:label:v1'] }
+      : phase === 'payment_missing_identity'
+      ? { ...proposal('Te paso el enlace de pago.', { type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'one_time' }),
+          move: { schema_version: 1 as const, move: 'select_payment_plan' as const, secondary_moves: [], vetoes: [], payment_plan: 'one_time' as const, confidence: 1 },
+          used_fact_ids: ['payment:ingles_1:one_time:label:v1'] }
+      : phase === 'payment_complete_intake'
+      ? { ...proposal('Gracias, continuamos con el pago que elegiste.'),
+          move: { schema_version: 1 as const, move: 'provide_contact_details' as const, secondary_moves: [], vetoes: [], confidence: 1 } }
+      : phase === 'payment_confirm_choice'
+      ? { ...proposal('Perfecto. Te dejo el enlace de pago para Inglés 1.', { type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'one_time' }),
+          move: { schema_version: 1 as const, move: 'select_course' as const, secondary_moves: [], vetoes: [], course_reference: 'ingles_1', confidence: 1 },
+          used_fact_ids: ['offering:ingles_1:name:v1', 'payment:ingles_1:one_time:label:v1'] }
       : phase === 'course' || phase === 'agus_course'
       ? { ...proposal('Te puedo orientar sobre Oratoria.'),
           move: { schema_version: 1 as const, move: 'select_course' as const, secondary_moves: [], vetoes: [], confidence: 1, course_reference: 'Oratoria' },
@@ -81,7 +96,9 @@ beforeAll(async () => {
         ? proposal('Gracias, Agus. Puedes atender la llamada ahora?')
         : proposal('Te llamo ahora.', { type: 'request_call_now', reason: 'direct_request' });
     if (requestBody.text.format.schema.properties.proposed_action.anyOf.length === 1) {
-      result = { ...proposal('Para coordinarla, me pasas tu nombre, apellido y teléfono con código de país?'),
+      result = { ...proposal(phase === 'payment_missing_identity'
+        ? 'Para generar el enlace, me pasas tu nombre, apellido, correo y teléfono con código de país?'
+        : 'Para coordinarla, me pasas tu nombre, apellido y teléfono con código de país?'),
         move: { schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 1 } };
     }
     if (rejection) result.repair_of = { rejection_id: rejection.rejection_id, attempt: 1 };
@@ -90,6 +107,34 @@ beforeAll(async () => {
       usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 }, fixture: true,
     }), { headers: { 'content-type': 'application/json' } });
   });
+});
+
+it('retains an explicit payment request through missing data and resumes it exactly once after intake', async () => {
+  const id = { conversationId: `payment-pending-${randomUUID()}`, userId: `payment-pending-${randomUUID()}`,
+    phoneE164: `+999${String(Date.now()).slice(-10)}`, providerMode: 'fixture' as const };
+  phase = 'payment_course';
+  expect((await runWorkflowTurnV1({ ...id, text: 'Me interesa Inglés 1.' })).commitSucceeded).toBe(true);
+  phase = 'payment_missing_identity'; generationCount = 0;
+  const initial = await runWorkflowTurnV1({ ...id, text: 'Quiero el enlace para 1 pago.' });
+  expect(initial.commitSucceeded).toBe(true);
+  expect(generationCount).toBe(2);
+  expect(initial.authorizedMessages.join(' ')).toContain('nombre, apellido, correo y teléfono');
+  const payments = () => db`SELECT p.id,p.plan_code FROM payments p JOIN contacts c ON c.id=p.contact_id WHERE c.phone=${id.phoneE164}`;
+  expect(await payments()).toHaveLength(0);
+  const [pending] = await db`SELECT s.payment_link_request,s.selected_payment_plan,s.awaiting_reply
+    FROM conversation_sales_context_states_v1 s JOIN contacts c ON c.id=s.contact_id WHERE c.phone=${id.phoneE164}`;
+  expect(pending).toMatchObject({ selected_payment_plan: 'one_time', awaiting_reply: 'contact_details',
+    payment_link_request: { status: 'pending', offering_code: 'ingles_1', payment_plan: 'one_time', requested_by_turn_id: initial.turnId } });
+  phase = 'payment_complete_intake'; generationCount = 0;
+  const completedText = 'Mi nombre es Thiago y mi apellido es Maneyro. Mi correo es thiago@example.com. Mi teléfono es +15551234567.';
+  const completed = await runWorkflowTurnV1({ ...id, text: completedText });
+  expect(completed.commitSucceeded).toBe(true);
+  expect(generationCount).toBe(1);
+  expect(completed.authorizedMessages.join(' ')).toContain('https://buy.stripe.com/local-eval-contado');
+  expect(await payments()).toMatchObject([{ plan_code: 'one_time' }]);
+  await runWorkflowTurnV1({ ...id, text: completedText,
+    externalMessageId: completed.externalMessageId, occurredAt: completed.occurredAt });
+  expect(await payments()).toHaveLength(1);
 });
 
 it('persists Agus data from separate messages before accepting Sii and reserves exactly one call', async () => {
@@ -250,4 +295,28 @@ it.each(['1 pago', 'un pago de 360', 'split'])('keeps intake and executes the Ag
   expect(Number(rows[0].amount)).toBe(360);
   const [contact] = await db`SELECT name,email,declared_phone FROM contacts WHERE phone=${id.phoneE164}`;
   expect(contact).toMatchObject({ name: 'Thiago Maneyro', email: 'thiago@example.com', declared_phone: '+15551234567' });
+});
+
+it('keeps the Agent A payment permission question and executes its explicit tool after course confirmation', async () => {
+  const id = { conversationId: `payment-permission-${randomUUID()}`, userId: `payment-permission-${randomUUID()}`,
+    phoneE164: `+999${String(Date.now()).slice(-10)}`, providerMode: 'fixture' as const };
+  phase = 'payment_course';
+  expect((await runWorkflowTurnV1({ ...id, text: 'Me interesa Inglés 1.' })).commitSucceeded).toBe(true);
+  phase = 'payment_identity';
+  expect((await runWorkflowTurnV1({ ...id, text: 'Mi nombre es Thiago y mi apellido es Maneyro. Mi correo es thiago@example.com. Mi teléfono es +15551234567.' })).commitSucceeded).toBe(true);
+  phase = 'payment_permission'; generationCount = 0;
+  const permission = await runWorkflowTurnV1({ ...id, text: 'quiero 1 pago' });
+  expect(permission.commitSucceeded).toBe(true);
+  expect(generationCount).toBe(1);
+  expect(permission.authorizedMessages.join(' ')).toContain('Te envío el enlace de pago para avanzar?');
+  const payments = () => db`SELECT p.id,p.plan_code FROM payments p JOIN contacts c ON c.id=p.contact_id WHERE c.phone=${id.phoneE164}`;
+  expect(await payments()).toHaveLength(0);
+  phase = 'payment_confirm_choice'; generationCount = 0;
+  const confirmed = await runWorkflowTurnV1({ ...id, text: 'sí' });
+  expect(confirmed.commitSucceeded).toBe(true);
+  expect(generationCount).toBe(1);
+  expect(confirmed.authorizedMessages.join(' ')).toContain('https://buy.stripe.com/local-eval-contado');
+  expect(await payments()).toMatchObject([{ plan_code: 'one_time' }]);
+  const calls = await db`SELECT cs.id FROM call_sessions cs JOIN contacts c ON c.id=cs.contact_id WHERE c.phone=${id.phoneE164}`;
+  expect(calls).toHaveLength(0);
 });

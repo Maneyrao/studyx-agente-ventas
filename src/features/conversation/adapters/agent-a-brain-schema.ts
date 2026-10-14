@@ -141,7 +141,7 @@ export const AgentAContextV1Schema = z.object({
   }).strict(),
 }).strict();
 
-const ProposedActionSchema = z.discriminatedUnion('type', [
+export const AgentAProposedActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('none') }).strict(),
   z.object({ type: z.literal('request_call_now'), reason: z.enum(['direct_request', 'accepted_offer']) }).strict(),
   z.object({
@@ -171,7 +171,7 @@ export const AgentATurnProposalV1Schema = z.object({
     messages: z.array(CustomerMessageSchema).min(1),
     call_offer: CallOfferMessageSchema.nullable().optional(),
   }).strict(),
-  proposed_action: ProposedActionSchema,
+  proposed_action: AgentAProposedActionSchema,
   confirmed_phone: z.string().regex(/^\+[1-9]\d{7,14}$/u).nullable().optional(),
   used_fact_ids: z.array(IdentifierSchema).max(60),
   used_memory_ids: z.array(IdentifierSchema).max(5),

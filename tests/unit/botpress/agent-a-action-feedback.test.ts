@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { continueAgentAAfterActionFeedbackV1, plannerlessActionFeedbackV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-action-feedback';
+import { continueAgentAAfterActionFeedbackV1, fencedAgentARequestV1, plannerlessActionFeedbackV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-action-feedback';
 import type { AgentAContextV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
 
 function context(): AgentAContextV1 {
@@ -23,6 +23,20 @@ function reply(text: string) {
 }
 
 describe('Agent A conversation from action feedback', () => {
+  it.each([
+    { type: 'send_payment_link' as const, offering_code: 'ingles_1', payment_plan: 'one_time' as const },
+    { type: 'request_call_now' as const, reason: 'direct_request' as const },
+  ])('preserves the original typed $type request inside the execution fence', action => {
+    const original = { ...reply('Necesito un dato para continuar.').proposal, proposed_action: action };
+    expect(fencedAgentARequestV1(original)).toEqual({ conversation_only: true, requested_action: action });
+    expect(original.proposed_action).toEqual(action);
+  });
+
+  it('never invents an operation for an informational reply or absent proposal', () => {
+    expect(fencedAgentARequestV1(reply('Qué opción prefieres?').proposal)).toEqual({ conversation_only: true });
+    expect(fencedAgentARequestV1(null)).toEqual({ conversation_only: true });
+  });
+
   it('passes exact structural missing fields and preserves the original customer messages', async () => {
     const current = context();
     const rejection = plannerlessActionFeedbackV1({ context: current,

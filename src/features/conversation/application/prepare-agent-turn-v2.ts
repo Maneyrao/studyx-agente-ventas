@@ -6,7 +6,7 @@ import type { OrchestrationStore } from '@/features/orchestration/ports/orchestr
 import { classifyBatchSalesSignal } from '@/features/orchestration/domain/sales-signal';
 import { loadConversationSessionConfig } from '@/lib/config';
 import { isCallablePhoneE164V1 } from '@/lib/heuristics/contact-identity';
-import type { AgentATurnProposalV1 } from '../domain/agent-a-brain';
+import type { AgentAProposedActionV1, AgentATurnProposalV1 } from '../domain/agent-a-brain';
 import { authorizeAgentTurnV2 } from '../domain/agent-turn-policy-v2';
 import {
   buildCanonicalFactRegistry,
@@ -147,6 +147,8 @@ export async function prepareAgentTurnV2(input: {
   readonly proposal: AgentATurnProposalV1;
   /** Retain semantic state while a model continuation cannot execute effects. */
   readonly conversation_only?: boolean;
+  /** Original explicit request, retained only as semantic evidence by a continuation. */
+  readonly requested_action?: AgentAProposedActionV1;
   /** Production Agent A keeps semantic checks diagnostic-only. */
   readonly semantic_rejections?: 'blocking' | 'advisory';
   readonly business_context: BusinessContextView | null;
@@ -210,7 +212,8 @@ export async function prepareAgentTurnV2(input: {
     && state.awaiting_reply === 'call_or_chat';
   const availabilityConfirmed = salesSignal.type === 'call_acceptance'
     || salesSignal.type === 'direct_call_request';
-  const authorize = (proposal: AgentATurnProposalV1) => authorizeAgentTurnV2({
+  const authorize = (proposal: AgentATurnProposalV1, effectsAllowed = input.conversation_only !== true,
+    semanticRejections = input.semantic_rejections) => authorizeAgentTurnV2({
     proposal,
     state,
     offerings,
@@ -224,8 +227,8 @@ export async function prepareAgentTurnV2(input: {
       && (state.selected_payment_plan === null
         || paymentVerification.plan_code === state.selected_payment_plan),
     current_customer_messages: input.current_customer_messages,
-    semantic_rejections: input.semantic_rejections,
-    effects_allowed: input.conversation_only !== true,
+    semantic_rejections: semanticRejections,
+    effects_allowed: effectsAllowed,
     call_policy: {
       // A refusal closes the invitation in that turn, not the whole sales
       // conversation. The per-turn authority below still blocks an immediate
@@ -240,7 +243,11 @@ export async function prepareAgentTurnV2(input: {
         && isCallablePhoneE164V1(contactIntake?.telefono ?? ''),
     },
   });
-  let effectiveProposal = input.proposal;
+  if (input.requested_action !== undefined && input.conversation_only !== true) {
+    throw new AgentTurnV2RejectedError(['ACTION_NOT_AUTHORIZED']);
+  }
+  let effectiveProposal = input.requested_action === undefined ? input.proposal
+    : { ...input.proposal, proposed_action: input.requested_action };
   let authority = authorize(effectiveProposal);
   let actionRejection: AgentActionRejectionV1 | null = null;
 
@@ -265,8 +272,8 @@ export async function prepareAgentTurnV2(input: {
   }
 
   // A rejected side effect must not reject the conversation that requested it.
-  // Keep Agent A's wording and semantic move, remove only the unavailable
-  // action, then let the same authority derive the durable pending state. This
+  // Keep Agent A's wording, semantic move and explicit request while the same
+  // authority derives pending state with every side effect fenced. This
   // is deliberately not a second planner or a backend-authored response.
   const recoverablePaymentAction = effectiveProposal.proposed_action.type === 'send_payment_link'
     || effectiveProposal.proposed_action.type === 'send_test_payment_link';
@@ -290,8 +297,10 @@ export async function prepareAgentTurnV2(input: {
       missing_fields: requiredFields.filter((field) => !contactIntake?.[field]),
       retryable: false,
     };
+    // Preserve the explicit request as semantic evidence while fencing every
+    // side effect. Removing it would lose pending intent for a selector move.
+    authority = authorize(effectiveProposal, false, 'advisory');
     effectiveProposal = { ...effectiveProposal, proposed_action: { type: 'none' } };
-    authority = authorize(effectiveProposal);
   }
   if (!authority.ok) {
     throw new AgentTurnV2RejectedError(authority.reasons, authority.rejection_subjects);
