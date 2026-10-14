@@ -1,7 +1,7 @@
 # Sesión StudyX
 
 ## Fase actual
-PHASE 7 — perfil canónico por campo interpretado por Agent A. Estado: validación aprobada y publicación en curso; autorización del usuario para modificar y publicar el 14-10. Producción sigue en 32e109a/v102 hasta promover backend y Botpress; migración 20261014163031 aplicada. 4027 unitarias, 639 integraciones, 11 workflows finales y canario real de seis turnos aprobados. Diagnóstico previo: docs/reports/2026-10-14-ori-intake-architecture.md.
+PHASE 7 — perfil canónico por campo interpretado por Agent A. Estado: publicado y verificado el 14-10 a las 14:47 Argentina; autorización del usuario para modificar y publicar. Fuente productiva 4abe256, backend dpl_DAyd8b5tKNdSus6Hpa5ZHaM7rgTn activo en el dominio principal, Botpress Brain v103 publicado a las 14:44:50 Argentina, personalidad canónica v69 intacta y migración 20261014163031 aplicada. 4027 unitarias, 639 integraciones, 11 workflows finales y canario real de seis turnos aprobados. Salud, contrato firmado y conexión Central/Botpress verificados. Reporte: docs/reports/2026-10-14-agent-a-contact-profile-release.md.
 
 ## Fases completas
 - PHASE 0: fallos y silencios observables.
@@ -10,6 +10,7 @@ PHASE 7 — perfil canónico por campo interpretado por Agent A. Estado: validac
 - PHASE 4: persistencia de respuestas fragmentadas publicada en 232611a; 3793 unitarias, 599 integraciones y tres workflows aprobados.
 - PHASE 5: A conserva voz y estado al recibir resultados/faltantes; plan y enlace en el mismo turno, seguimiento de llamada redactado por A; 3892 unitarias, 601 integraciones, seis workflows; lint, tipos, builds y revisión aprobados, producción verificada.
 - PHASE 6: petición explícita de pago sin segunda etiqueta, guardas por cláusula y solicitud pendiente conservada durante faltantes; 3994 unitarias, 601 integraciones y ocho workflows; fuente 32e109a publicada y verificada.
+- PHASE 7: persistencia independiente por campo, correcciones y retractaciones, preguntas entregadas estructuradas y escritores canónicos de chat/voz; fuente 4abe256 y Brain v103 publicados, pruebas y comprobaciones finales aprobadas.
 
 ## Decisiones de arquitectura tomadas
 - A propone perfil con UUID físico y evidencia literal; backend valida formato, procedencia, orden y versión por campo sin interpretar nombres → contrato contact-profile-v1 y Brain v103, canónico v69 intacto.
@@ -36,7 +37,7 @@ PHASE 7 — perfil canónico por campo interpretado por Agent A. Estado: validac
 - Máximo dos solicitudes reales al modelo, incluidos JSON, transporte y replay durable → callback previo al HTTP y pruebas de Brain, workflow y runner.
 - Seguimiento con redacción congelada, egress canónico, DNC y entrega única → caché bajo lock corto y clave post-call:<call_id>, pruebas de concurrencia/crash.
 - Datos fragmentados conservan recibos de pregunta entregada → ingesta de 232611a y workflow Agus.
-- Prompt canónico v69 intacto; Brain v102 cambia ejecución → módulos idénticos byte por byte y pruebas de prompt/bundle.
+- Prompt canónico v69 intacto; Brain v103 cambia ejecución → módulos idénticos byte por byte y pruebas de prompt/bundle.
 
 ## Tests agregados
 - Feedback/hot path: voz propia, faltantes, conservación de semántica/teléfono y respuesta segura.
@@ -49,5 +50,5 @@ PHASE 7 — perfil canónico por campo interpretado por Agent A. Estado: validac
 ## Bloqueos
 - Motivo del primer HTTP 400 de Xendra no conservado → requiere evidencia remota; reintento posterior del usuario aceptado y terminado en buzón. No se atribuye al merge.
 - Evento access_ready procesado sin claim de Botpress → alta y aviso de Lucas recuperados; causa del handler pendiente de auditoría separada.
-- Tres expectativas previas de workflow de catálogo/pago también fallan en a69970a → deuda documentada; no se declara aprobada toda la matriz de workflows.
-- Canario real v102 pendiente tras publicar → prueba del usuario en la misma conversación; laboratorio sin llamadas ni cobros reales, apagado y evidencia conservada.
+- Dos expectativas previas de múltiples cursos también fallan en a69970a → deuda documentada; no se declara aprobada toda la matriz de workflows. La tercera, CALL_OFFER_REQUIRED ante un pago autorizado, queda corregida y su escenario original pasa.
+- Canal de Botpress Cloud y scheduler pendientes de prueba funcional del usuario tras publicar v103 → canario de seis turnos con modelo real aprobado contra backend y PostgreSQL aislados, sin llamadas ni cobros reales; evidencia conservada.
