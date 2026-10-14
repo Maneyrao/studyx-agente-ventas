@@ -1,6 +1,6 @@
 # Agent A — veracidad comercial y continuidad conversacional
 
-Estado: corrección implementada; publicación en curso. Autorización del usuario: corregir directamente los fallos, conservar lo resuelto y publicar para sus pruebas exploratorias.
+Estado: publicado y verificado el 14-10-2026 a las 15:42 Argentina. Autorización del usuario: corregir directamente los fallos, conservar lo resuelto y publicar para sus pruebas exploratorias.
 
 ## Problema y alcance
 
@@ -28,8 +28,16 @@ Con DeepSeek real se observaron cinco respuestas entregadas en una conversación
 
 Ese canario detectó un falso rechazo de una pregunta que usaba «registro» como sustantivo y una repetición que agotaba la reparación. Ambos quedaron reproducidos y corregidos. El sexto turno de un intento no validó una respuesta del modelo: la reserva del presupuesto acumulado lo impidió y produjo el aviso técnico del laboratorio. No se aumentó el límite ni se cuenta ese turno como validación de A. El gasto acumulado quedó en USD 1,280287848 de USD 1,30, con USD 0,03466516 adicionales en esta corrección.
 
-La revisión independiente final no encontró bloqueos materiales. Las compilaciones, tipos, lint configurado y regresión unitaria se verifican sobre la fuente final antes de publicar. Un chequeo adicional fuera de la configuración habitual de lint encontró cuatro errores preexistentes en el workflow y dos advertencias preexistentes; no se mezcló su refactorización con esta corrección.
+La revisión independiente final no encontró bloqueos materiales. Compilaciones, tipos, lint configurado y regresión unitaria aprobados. La compilación final de Vercel verificó la fuente final con Turbopack. Un chequeo adicional fuera de la configuración habitual de lint encontró cuatro errores preexistentes en el workflow y dos advertencias preexistentes; no se mezcló su refactorización con esta corrección. La prueba de procesos agotó su límite bajo compilaciones concurrentes; la regresión final con dos workers aprobó sin aumentar ese límite.
 
 ## Publicación
 
-Pendiente de registrar SHA, despliegue backend, fecha de Botpress y comprobaciones del dominio principal. Se conservan el bot, modelo, asesor y ventana sandbox existentes.
+Fuente final `40236e13cd73065c83523105082dc5f58e45efef`, precedida por `cfb3c44` para la corrección principal; ambos commits están en `origin/codex/lucas-call-recovery`. El despliegue preparado anterior de `cfb3c44` no se promovió al dominio principal.
+
+Backend final `dpl_2akosk2QVGonzc1K3MtvvCzjStp8`, READY, promovido a `https://studyx-agente-ventas.vercel.app`. Salud del dominio activo: HTTP 200, SHA final correcto, 15:42:02 Argentina. Contrato firmado: HTTP 409 `CONTACT_PROFILE_CLAIM_NOT_AUTHORIZED` para identificadores ficticios, sin mutaciones. Sondeo de sólo lectura a las 15:42:05: HTTP 200, Central Carga accesible y Botpress HTTP 200 con el bot correcto. La consulta de errores del despliegue en los diez minutos previos no devolvió entradas; no equivale a probar todo el canal.
+
+Botpress final: mismo bot `2f7fe6e1-1fc9-40d9-9045-d0c96b456f4b`, Brain v104, `deployedAt=2026-10-14T18:40:34.668Z` (15:40:34 Argentina). SDK confirmó modo plannerless, `deepseek-v4-flash`, Emma, timeout de 10 segundos y URL principal. Preflight sin cambios destructivos de almacenamiento, dependencias bloqueantes ni cambios de configuración.
+
+Se verificaron los 308 hashes de fuente antes y después de publicar. Bundle final: 23.835.921 bytes, SHA-256 `a3edc4aa65c4a149b14c828f0ca8a27b43f230a5fe93c3753e75266b188d0d89`. Bundle comprimido y manifiesto privados conservados en `tmp/agent-truth-owner-40236e1-index.cjs.gz` y `tmp/agent-truth-owner-40236e1-release.json` del workspace principal, fuera de Git. Laboratorio propio apagado; bases y evidencia conservadas.
+
+Se conservan bot, modelo, asesor, alta recuperada y ventana sandbox hasta `2026-10-16T03:00:00Z` (final del 15 de octubre Argentina). No se reiniciaron conversaciones del usuario ni se ejecutaron llamadas o cobros reales durante esta corrección.

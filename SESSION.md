@@ -1,7 +1,7 @@
 # Sesión StudyX
 
 ## Fase actual
-PHASE 8 — corrección de veracidad comercial y continuidad, Brain v104, personalidad canónica v69 intacta. Estado: implementado y publicación autorizada en curso; se conserva la persistencia de v103. Se corrige el bypass factual heredado de 7dabdb3, se devuelve la contradicción a A y se separa el contrato interno de datos de las decisiones conversacionales. Reporte: docs/reports/2026-10-14-agent-a-truth-and-voice-recovery.md. La fuente productiva anterior es 4abe256/v103, con migración 20261014163031 ya aplicada.
+PHASE 8 — veracidad comercial y continuidad, Brain v104, personalidad canónica v69 intacta. Publicado y verificado el 14-10 a las 15:42 Argentina: fuente 40236e1, backend dpl_2akosk2QVGonzc1K3MtvvCzjStp8 en el dominio principal y Botpress final publicado a las 15:40:34. Se conserva la persistencia de v103 y la migración 20261014163031. Se corrige el bypass factual de 7dabdb3, se devuelven contradicciones a A y se separa el contrato interno de datos de las decisiones conversacionales. 4088 unitarias, 93 integraciones y workflow firmado de rechazo/reformulación/persistencia/pago aprobados. Muestra real de cinco respuestas sin emojis; canario reanudado, límite acumulado impidió un sexto turno del modelo. Reporte: docs/reports/2026-10-14-agent-a-truth-and-voice-recovery.md.
 
 ## Fases completas
 - PHASE 0: fallos y silencios observables.
@@ -11,6 +11,7 @@ PHASE 8 — corrección de veracidad comercial y continuidad, Brain v104, person
 - PHASE 5: A conserva voz y estado al recibir resultados/faltantes; plan y enlace en el mismo turno, seguimiento de llamada redactado por A; 3892 unitarias, 601 integraciones, seis workflows; lint, tipos, builds y revisión aprobados, producción verificada.
 - PHASE 6: petición explícita de pago sin segunda etiqueta, guardas por cláusula y solicitud pendiente conservada durante faltantes; 3994 unitarias, 601 integraciones y ocho workflows; fuente 32e109a publicada y verificada.
 - PHASE 7: persistencia independiente por campo, correcciones y retractaciones, preguntas entregadas estructuradas y escritores canónicos de chat/voz; fuente 4abe256 y Brain v103 publicados, pruebas y comprobaciones finales aprobadas.
+- PHASE 8: validación factual y combinaciones de cuotas, reformulación propia de A, reparación de repeticiones sin silenciar respuestas seguras y contrato interno separado de la personalidad; fuente 40236e1 y Brain v104 publicados y verificados.
 
 ## Decisiones de arquitectura tomadas
 - A propone perfil con UUID físico y evidencia literal; backend valida formato, procedencia, orden y versión por campo sin interpretar nombres → contrato contact-profile-v1 y Brain v103, canónico v69 intacto.
