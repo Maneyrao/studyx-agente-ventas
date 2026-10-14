@@ -6,9 +6,8 @@ import { logger } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
 import { getPostgresError, type DbClient } from '@/lib/db/types';
 import { sha256Hex } from '@/lib/idempotency/canonical-json';
-import { physicalOutboundTexts } from '@/features/orchestration/domain/physical-outbound-texts';
+import { physicalOutboundTexts, contactProfileRequestsForPartsV1 } from '@/features/orchestration/domain/physical-outbound-texts';
 import { isExplicitOptOut } from '@/lib/heuristics/opt-out';
-import { splitFullName } from '@/lib/heuristics/contact-identity';
 import { registerMessage, type Message } from './message.service';
 import { enqueueLeadProjection, upsertCommittedLeadStateProjection } from './projection.service';
 import { loadContactIntakeV1 } from '@/lib/repositories/contact-intake.repository';
@@ -1523,6 +1522,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           contact_id: turn.contact_id,
           conversation_id: turn.conversation_id,
           contact_name: turn.contact_name,
+          contact_intake: await loadContactIntakeV1(turn.contact_id, db),
           contact_email: turn.contact_email,
           persisted_summary: turn.contact_summary,
           phone: turn.phone,
@@ -1554,6 +1554,11 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         authored_messages: preparedAgentTurn?.response_messages ?? null,
         enabled: validatedInput.supports_multi_outbound === true,
       });
+      const profileRequests = preparedAgentTurn && validatedInput.agent_turn_v2
+        ? contactProfileRequestsForPartsV1({
+            authored_messages: validatedInput.agent_turn_v2.proposal.response.messages,
+            part_texts: partTexts, requests: validatedInput.agent_turn_v2.proposal.profile_requests ?? [],
+          }) : partTexts.map(() => []);
       const purpose = decision.response_type === 'opt_out_ack'
         ? 'consent_confirmation'
         : decision.response_type === 'commercial_reply' || decision.response_type === 'clarification'
@@ -1582,6 +1587,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
               part_index: partIndex,
               part_count: partTexts.length,
               authorized_egress: partManifest,
+              ...(profileRequests[partIndex]?.length ? { contact_profile_requests_v1: profileRequests[partIndex] } : {}),
             },
           }, {
             db,
@@ -2456,12 +2462,12 @@ async function enqueuePaymentLinkSentProjection(
     LIMIT 1
   `;
   const cursoInteres = offeringRows[0]?.display_name ?? signal.offeringSku;
-  const identity = signal.contactName ? splitFullName(signal.contactName) : null;
+  const identity = await loadContactIntakeV1(signal.contactId, db);
   const subject: PaymentReportProjectionSubjectV1 = {
     nombre: identity?.nombre ?? null,
     apellido: identity?.apellido ?? null,
-    correo: signal.contactEmail,
-    telefono: signal.phone,
+    correo: identity.correo,
+    telefono: identity.telefono,
     cursoInteres,
     plan: signal.planCode,
     paymentReported: signal.paymentReported,

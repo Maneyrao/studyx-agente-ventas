@@ -3,9 +3,19 @@ import { evaluateCallOfferTurnPolicyV1 } from './call-offer-turn-policy';
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import {
   AgentATurnProposalV1Schema,
+  ContactProfileUpdateV1Schema,
+  ContactProfileRequestV1Schema,
   type AgentAContextV1,
   type AgentATurnProposalV1,
 } from '../../schemas/agent-a-brain';
+import {
+  CONTACT_PROFILE_FIELDS_V1,
+  CONTACT_PROFILE_OPERATIONS_V1,
+  CONTACT_PROFILE_PURPOSES_V1,
+  CONTACT_PROFILE_MODES_V1,
+  CONTACT_PROFILE_MAX_UPDATES_V1,
+  CONTACT_PROFILE_MAX_REQUESTS_V1,
+} from '../../../../src/shared/conversation/contact-profile-contract';
 import {
   ComposedNarrativeV1Schema,
   ConversationMoveV1Schema,
@@ -86,6 +96,8 @@ const DEEPSEEK_PROPOSAL_ROOT_FIELDS = new Set([
   'response',
   'proposed_action',
   'confirmed_phone',
+  'profile_updates',
+  'profile_requests',
   'used_fact_ids',
   'used_memory_ids',
   'memory_candidates',
@@ -120,6 +132,39 @@ function stripDeepSeekRootMetadata(value: unknown): unknown {
       confidence: typeof confidence === 'number' ? confidence : 1,
     },
   };
+}
+
+type ProfileUpdates = NonNullable<AgentATurnProposalV1['profile_updates']>;
+
+function validProfileUpdates(value: unknown): ProfileUpdates {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+  const updates = (value as Record<string, unknown>).profile_updates;
+  if (!Array.isArray(updates) || updates.length > CONTACT_PROFILE_MAX_UPDATES_V1) return [];
+  return updates.flatMap((update) => {
+    const parsed = ContactProfileUpdateV1Schema.safeParse(update);
+    return parsed.success ? [parsed.data] : [];
+  });
+}
+
+function carryProfileInterpretation(value: unknown, prior: ProfileUpdates): unknown {
+  if (prior.length === 0 || !value || typeof value !== 'object' || Array.isArray(value)) return value;
+  // A present array is the final semantic interpretation, including an
+  // explicit empty array withdrawing a mistaken observation. Only legacy
+  // omission can carry earlier valid structure into a shape-only repair.
+  if (Object.hasOwn(value, 'profile_updates')) return value;
+  return { ...value, profile_updates: prior };
+}
+
+function profileRepairEvidence(value: unknown, updates: ProfileUpdates): string {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
+  const rawRequests = (value as Record<string, unknown>).profile_requests;
+  const requests = Array.isArray(rawRequests) && rawRequests.length <= CONTACT_PROFILE_MAX_REQUESTS_V1
+    ? rawRequests.flatMap((request) => {
+      const parsed = ContactProfileRequestV1Schema.safeParse(request);
+      return parsed.success ? [parsed.data] : [];
+    }) : [];
+  if (updates.length === 0 && requests.length === 0) return '';
+  return `\nThe prior output contained these structurally valid contact observations: ${JSON.stringify(updates)}. Preserve their evidence unless you correct their interpretation. Prior question metadata: ${JSON.stringify(requests)}. Rebuild profile_requests against the final response.messages indexes; do not retain an index for a rewritten or removed question.`;
 }
 
 function extractResponsesTokenUsage(payload: unknown): GeneratedAgentATurnProposalV1['token_usage'] {
@@ -192,6 +237,8 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
   try {
     let accumulatedTokenUsage: GeneratedAgentATurnProposalV1['token_usage'];
     let retryDiagnostic: string | null = null;
+    let recoveredProfileUpdates: ProfileUpdates = [];
+    let retryProfileEvidence = '';
     for (const attempt of [1, 2] as const) {
       input.on_provider_request?.();
       let response: Response;
@@ -206,11 +253,11 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
             model,
             instructions: buildAgentABrainInstructionsV1(input.context)
               + (input.conversation_only ? '\nThe requested operation was not executed. This is a conversation-only continuation from the structured turn_rejection. Answer the customer in your own usual voice using the actual context and explain or ask for the relevant missing information. Do not claim an effect succeeded, repeat an action, invent a provider cause, or ask the customer to repeat a message that is already in context. Use move unknown, no secondary moves, proposed_action none, and no call_offer; these are internal effect boundaries, not wording instructions.' : ''),
-            input: `Current customer messages: ${JSON.stringify(input.context.turn.batch_messages.map((message) => message.text))}\nAnswer these messages and return only the single AgentATurnProposalV1 JSON object.${retryDiagnostic ? `\nThe previous output failed validation at ${retryDiagnostic}. Return a corrected full object. ${naturalnessRepairDirectiveV1(input.context)}` : ''}`,
+            input: `Current customer messages: ${JSON.stringify(input.context.turn.batch_messages.map((message) => message.text))}\nAnswer these messages and return only the single AgentATurnProposalV1 JSON object.${retryDiagnostic ? `\nThe previous output failed validation at ${retryDiagnostic}. Return a corrected full object. ${naturalnessRepairDirectiveV1(input.context)}${retryProfileEvidence}` : ''}`,
             reasoning: { effort: 'none' },
             temperature: 0.2,
             stream: false,
-            max_output_tokens: 800,
+            max_output_tokens: 1600,
             text: {
               format: {
                 type: 'json_schema',
@@ -261,7 +308,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
       let proposal: AgentATurnProposalV1;
       try {
         proposal = parseAgentATurnProposalV1(
-          stripDeepSeekRootMetadata(decoded),
+          carryProfileInterpretation(stripDeepSeekRootMetadata(decoded), recoveredProfileUpdates),
           input.context,
         );
       } catch (error) {
@@ -273,6 +320,8 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
           && !controller.signal.aborted
         ) {
           retryDiagnostic = error.detail ?? 'root:invalid_schema';
+          recoveredProfileUpdates = validProfileUpdates(decoded);
+          retryProfileEvidence = profileRepairEvidence(decoded, recoveredProfileUpdates);
           continue;
         }
         throw error;
@@ -437,6 +486,10 @@ function closedObject(properties: Record<string, unknown>) {
 
 function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false): unknown {
   const nullableString = { anyOf: [{ type: 'string' }, { type: 'null' }] };
+  const profileFields = {
+    type: 'array', minItems: 1, maxItems: 4, uniqueItems: true,
+    items: { type: 'string', enum: [...CONTACT_PROFILE_FIELDS_V1] },
+  };
   const move = closedObject({
     schema_version: { type: 'integer', enum: [1] },
     move: { type: 'string', enum: [...MOVE_KINDS], description: MOVE_SEMANTICS },
@@ -500,6 +553,27 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
     }),
     proposed_action: proposedAction,
     confirmed_phone: { ...nullableString, description: "The complete phone the customer confirms from the immediately previous assistant turn; otherwise null. Never infer a country code without customer confirmation." },
+    profile_updates: {
+      type: 'array', maxItems: CONTACT_PROFILE_MAX_UPDATES_V1,
+      description: 'Your interpretation of the customer\'s own contact data, with actual inbound source IDs and verbatim source quotes. Return an empty array when there is no supported update. A profile version is backend-owned and must never be generated.',
+      items: closedObject({
+        field: { type: 'string', enum: [...CONTACT_PROFILE_FIELDS_V1] },
+        value: { anyOf: [{ type: 'string', minLength: 1, maxLength: 512 }, { type: 'null' }] },
+        operation: { type: 'string', enum: [...CONTACT_PROFILE_OPERATIONS_V1] },
+        source_message_id: { type: 'string', format: 'uuid', description: 'An actual customer.contact_profile.sources id or current inbound message id; never a logical history-turn id.' },
+        source_quote: { type: 'string', minLength: 1, maxLength: 4_096, description: 'Verbatim source evidence. Prefer the exact value excerpt for set/correct; quote explicit retraction words for retract.' },
+      }),
+    },
+    profile_requests: {
+      type: 'array', maxItems: CONTACT_PROFILE_MAX_REQUESTS_V1,
+      description: 'For each question collecting or clarifying contact data, identify the response.messages bubble and the fields it requests. Return an empty array when no data is requested.',
+      items: closedObject({
+        message_index: { type: 'integer', minimum: 0 },
+        fields: profileFields,
+        purpose: { type: 'string', enum: [...CONTACT_PROFILE_PURPOSES_V1] },
+        mode: { type: 'string', enum: [...CONTACT_PROFILE_MODES_V1] },
+      }),
+    },
     // The single repair must echo its actual rejection. Omitting this field
     // from a closed provider schema made every conforming repair fail the
     // resolver's correlation check, even when its rewritten text was valid.
@@ -739,11 +813,24 @@ function normalizeStrictProposal(value: unknown, context: AgentAContextV1): unkn
   if (response && typeof response === 'object' && !Array.isArray(response)) {
     const messages = (response as Record<string, unknown>).messages;
     if (Array.isArray(messages)) {
-      const safeMessages = messages.filter((message) => (
+      const safeMessageIndexes = messages.flatMap((message, index) => (
         typeof message === 'string'
         && !/https?:\/\//iu.test(message)
         && !/\{\{[^}]+\}\}/u.test(message)
-      )).map((message) => normalizeCustomerFacingSpanishV1(message as string));
+      ) ? [index] : []);
+      const safeMessages = safeMessageIndexes.map((index) => normalizeCustomerFacingSpanishV1(messages[index] as string));
+      if (Array.isArray(proposal.profile_requests)) {
+        normalizedProposal.profile_requests = proposal.profile_requests.flatMap((request) => {
+          const parsedRequest = ContactProfileRequestV1Schema.safeParse(request);
+          if (!parsedRequest.success) return [request];
+          const previousIndex = parsedRequest.data.message_index;
+          // Keep an invalid original index invalid rather than hiding a
+          // provider contract violation; only remap actual retained bubbles.
+          if (previousIndex >= messages.length) return [request];
+          const nextIndex = safeMessageIndexes.indexOf(previousIndex);
+          return nextIndex < 0 ? [] : [{ ...parsedRequest.data, message_index: nextIndex }];
+        });
+      }
       const rawMove = typeof proposal.move === 'string'
         ? proposal.move
         : proposal.move && typeof proposal.move === 'object' && !Array.isArray(proposal.move)

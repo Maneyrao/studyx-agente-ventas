@@ -601,6 +601,7 @@ export function buildAgentAContextV1(
     customer: {
       display_name: nonBlankOrNull(claimed.contact.name),
       contact_intake: canonicalContactIntake,
+      ...(claimed.contact_profile ? { contact_profile: claimed.contact_profile } : {}),
       memories: (suppressContactMemories ? [] : [...claimed.context.selected_memories])
         .sort((left, right) => right.similarity - left.similarity)
         .filter((memory) => MEMORY_TYPES.has(memory.type))
@@ -711,7 +712,9 @@ export function buildAgentAContextV1(
         && hasReadableCurrentInput
         && !claimed.contact.blocked
         && claimed.sales_context.active_call === null
-        && claimed.sales_context.allowed_actions.includes('request_call_now')
+        && (claimed.sales_context.allowed_actions.includes('request_call_now')
+          || (state.call_preference === 'call' && state.call_offer_status === 'accepted'
+            && state.awaiting_reply === 'call_or_chat' && !['handoff', 'closed'].includes(state.stage)))
         && intakeStatus === 'known'
         && !(['nombre', 'apellido', 'telefono'] as const)
           .some((field) => intakeMissing.includes(field)),

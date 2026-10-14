@@ -8,6 +8,7 @@ import { configuration, secrets } from '../helpers/botpress-workflow-runtime';
 import type { AgentAContextV1, AgentATurnProposalV1 } from '../../botpress-agent/src/schemas/agent-a-brain';
 import recordedCall from '../fixtures/agent-a/deepseek-20260923-call.json';
 import recordedPayment from '../fixtures/agent-a/deepseek-20260923-payment.json';
+import { contactFixtureUpdatesV1 } from './contact-profile-fixture';
 
 // Only the external model and physical delivery are fixtures. Context, validators,
 // signed HTTP, database, transitions and commit execute the production code.
@@ -84,6 +85,7 @@ function proposal(move: AgentATurnProposalV1['move']['move'], text: string,
   return { schema_version: 1,
     move: { schema_version: 1, move, secondary_moves: [], vetoes: [], confidence: 1 },
     response: { messages: [text] }, proposed_action: { type: 'none' },
+    profile_updates: [], profile_requests: [],
     used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null, ...extra };
 }
 function conversation() {
@@ -131,10 +133,13 @@ it('keeps a general opening unselected despite a course saved for a previous con
 
 it('retains call acceptance without a phone, repairs the impossible action and creates one session after the phone', async () => {
   const c = conversation();
-  const first = await c.send('Dsle llamame', context => context.turn_rejection
-    ? proposal('request_call', 'A qué número con código de país y área puedo llamarte?')
+  const first = await c.send('Dsle llamame. Mi nombre es Nora y mi apellido es Vale', context => context.turn_rejection
+    ? proposal('unknown', 'A qué número con código de país y área puedo llamarte?', {
+      profile_requests: [{ message_index: 0, fields: ['telefono'], purpose: 'call', mode: 'collect' }],
+    })
     : proposal('request_call', 'Coordino la llamada para explicarte el curso.', {
       proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+      profile_updates: contactFixtureUpdatesV1(context, [{ field: 'nombre', value: 'Nora' }, { field: 'apellido', value: 'Vale' }]),
     }));
   expect.soft(first.evidence.authorizedMessages).toEqual(['A qué número con código de país y área puedo llamarte?']);
   expect.soft(first.context.turn_rejection, 'the impossible action must reach the existing model repair').toBeDefined();
@@ -142,10 +147,10 @@ it('retains call acceptance without a phone, repairs the impossible action and c
   expect(first.calls).toHaveLength(0);
   const second = await c.send('Mi teléfono es +54 9 11 5555 0101', context => {
     expect(context.commercial_state.call_preference).toBe('call');
-    expect(context.capabilities.may_request_call_now).toBe(true);
     return proposal('request_call', 'Solicito la llamada al número que me pasaste.', {
       confirmed_phone: '+5491155550101',
       proposed_action: { type: 'request_call_now', reason: 'accepted_offer' },
+      profile_updates: contactFixtureUpdatesV1(context, [{ field: 'telefono', value: '+5491155550101', quote: '+54 9 11 5555 0101' }]),
     });
   });
   expect(second.calls).toHaveLength(1);
@@ -158,15 +163,24 @@ it('retains call acceptance without a phone, repairs the impossible action and c
 
 it('persists a delivered phone confirmation, preserves the full name and sends exactly one canonical link', async () => {
   const c = conversation();
-  await c.send('Quiero Community Manager y elijo 12 cuotas. Me llamo Ludmi.', () => proposal('select_course',
+  await c.send('Quiero Community Manager y elijo 12 cuotas. Me llamo Ludmi.', context => proposal('select_course',
     'Me faltan tu apellido, correo y teléfono para completar la inscripción.', {
       move: { schema_version: 1, move: 'select_course', secondary_moves: ['select_payment_plan'], vetoes: [],
         course_reference: 'community_manager', payment_plan: 'monthly_12', confidence: 1 },
+      profile_updates: contactFixtureUpdatesV1(context, [{ field: 'nombre', value: 'Ludmi' }]),
+      profile_requests: [{ message_index: 0, fields: ['apellido', 'correo', 'telefono'], purpose: 'payment', mode: 'collect' }],
     }));
   const supplied = await c.send('Ludmi medina\n[ludmi@example.test](mailto:ludmi@example.test)\n[1155550101](tel:1155550101)',
-    () => proposal('provide_contact_details', 'El teléfono completo es +54 9 11 5555 0101?'));
+    context => proposal('provide_contact_details', 'El teléfono completo es +54 9 11 5555 0101?', {
+      profile_updates: contactFixtureUpdatesV1(context, [{ field: 'apellido', value: 'Medina', quote: 'medina' },
+        { field: 'correo', value: 'ludmi@example.test' }]),
+      profile_requests: [{ message_index: 0, fields: ['telefono'], purpose: 'payment', mode: 'clarify' }],
+    }));
   expect(supplied.persisted.contact?.name).toBe('Ludmi Medina');
-  expect(supplied.persisted.contact?.declaredPhone).toBe('1155550101');
+  expect(supplied.persisted.contact?.declaredPhone).toBeNull();
+  const [rawPhone] = await db`SELECT content FROM messages
+    WHERE id = ${supplied.evidence.turnId}::uuid AND direction = 'inbound'`;
+  expect(rawPhone!.content).toContain('[1155550101](tel:1155550101)');
   const confirmed = await c.send('Si', () => ({
     ...proposal('provide_contact_details', 'Ludmi Medina, ludmi@example.test, +54 9 11 5555 0101; Community Manager, 12 cuotas. Está todo correcto?'),
     confirmed_phone: '+5491155550101',
@@ -181,29 +195,35 @@ it('persists a delivered phone confirmation, preserves the full name and sends e
     });
   });
   expect(paid.persisted.contact?.name).toBe('Ludmi Medina');
-  expect(paid.persisted.deliveredLinks).toEqual(['https://example.invalid/eval/12m']);
+  expect(paid.persisted.deliveredLinks).toHaveLength(1);
+  const deliveredLink = paid.persisted.deliveredLinks[0]!;
+  const configuredLink = new URL(process.env.PAYMENT_LINK_12M ?? 'https://example.invalid/eval/12m');
+  expect(new URL(deliveredLink)).toMatchObject({ origin: configuredLink.origin, pathname: configuredLink.pathname });
   expect(paid.persisted.decisions.filter(d => d.businessActionType === 'send_payment_link')).toHaveLength(1);
   const replay = await c.retryLast();
   expect(replay.decisions).toHaveLength(paid.persisted.decisions.length);
-  expect(replay.recordedLinks).toEqual(['https://example.invalid/eval/12m']);
+  expect(replay.recordedLinks).toEqual([deliveredLink]);
   expect(replay.outboundCount).toBe(paid.persisted.outboundCount);
   const last = await c.send('Gracias', context => {
     expect(context.capabilities.intake_missing).toEqual([]);
     return proposal('unknown', 'Cuando pagues, avísame y el equipo verificará la acreditación.');
   });
-  expect(last.persisted.deliveredLinks).toEqual(['https://example.invalid/eval/12m']);
+  expect(last.persisted.deliveredLinks).toEqual([deliveredLink]);
 }, 120_000);
 
 it('keeps an explicit link request while contact data arrives and consumes it exactly once', async () => {
   const c = conversation();
   const requested = await c.send(
     'Quiero Community Manager, elijo 6 cuotas y quiero el link. Soy Ana Pérez, ana@example.test.',
-    () => proposal('select_course', 'Para Community Manager me falta tu teléfono completo para enviarte el link.', {
+    context => proposal('select_course', 'Para Community Manager me falta tu teléfono completo para enviarte el link.', {
       move: {
         schema_version: 1, move: 'select_course',
         secondary_moves: ['select_payment_plan', 'request_payment_link'], vetoes: [],
         course_reference: 'community_manager', payment_plan: 'monthly_6', confidence: 1,
       },
+      profile_updates: contactFixtureUpdatesV1(context, [{ field: 'nombre', value: 'Ana' },
+        { field: 'apellido', value: 'Pérez' }, { field: 'correo', value: 'ana@example.test' }]),
+      profile_requests: [{ message_index: 0, fields: ['telefono'], purpose: 'payment', mode: 'collect' }],
     }),
   );
   expect(requested.persisted.deliveredLinks).toEqual([]);
@@ -215,18 +235,23 @@ it('keeps an explicit link request while contact data arrives and consumes it ex
     expect(context.commercial_state.payment_link_request).toMatchObject({
       status: 'pending', offering_code: 'community_manager', payment_plan: 'monthly_6',
     });
-    expect(context.capabilities.intake_missing).toEqual([]);
-    expect(context.capabilities.may_send_payment_link).toBe(true);
-    return proposal('provide_contact_details', 'Listo, te comparto el enlace seguro.');
+    expect(context.customer.contact_intake).toMatchObject({ nombre: 'Ana', apellido: 'Pérez', correo: 'ana@example.test' });
+    return proposal('provide_contact_details', 'Listo, te comparto el enlace seguro.', {
+      proposed_action: { type: 'send_payment_link', offering_code: 'community_manager', payment_plan: 'monthly_6' },
+      profile_updates: contactFixtureUpdatesV1(context, [{ field: 'telefono', value: '+5491155550202', quote: '+54 9 11 5555 0202' }]),
+    });
   });
 
-  expect(paid.persisted.deliveredLinks).toEqual(['https://example.invalid/eval/6m']);
+  expect(paid.persisted.deliveredLinks).toHaveLength(1);
+  const deliveredLink = paid.persisted.deliveredLinks[0]!;
+  const configuredLink = new URL(process.env.PAYMENT_LINK_6M ?? 'https://example.invalid/eval/6m');
+  expect(new URL(deliveredLink)).toMatchObject({ origin: configuredLink.origin, pathname: configuredLink.pathname });
   expect(paid.persisted.decisions.filter(d => d.businessActionType === 'send_payment_link')).toHaveLength(1);
   expect(paid.persisted.state?.paymentLinkRequest).toMatchObject({
     status: 'consumed', offering_code: 'community_manager', payment_plan: 'monthly_6',
   });
   const replay = await c.retryLast();
-  expect(replay.recordedLinks).toEqual(['https://example.invalid/eval/6m']);
+  expect(replay.recordedLinks).toEqual([deliveredLink]);
   expect(replay.decisions.filter(d => d.businessActionType === 'send_payment_link')).toHaveLength(1);
 }, 120_000);
 
@@ -235,7 +260,9 @@ it('cancels pending call intent when the model interprets the choice to continue
   await c.send('Dale, llamame', () => proposal('request_call', 'A qué número con código de país y área puedo llamarte?'));
   const changed = await c.send('seguir por aca', () => proposal('continue_by_chat', 'Seguimos por aquí. Qué te gustaría saber?'));
   expect(changed.persisted.state).toMatchObject({ callPreference: 'chat', callOfferStatus: 'declined' });
-  const phone = await c.send('Mi teléfono es +54 9 11 5555 0101', () => proposal('provide_contact_details', 'Qué te gustaría aprender?'));
+  const phone = await c.send('Mi teléfono es +54 9 11 5555 0101', context => proposal('provide_contact_details', 'Qué te gustaría aprender?', {
+    profile_updates: contactFixtureUpdatesV1(context, [{ field: 'telefono', value: '+5491155550101', quote: '+54 9 11 5555 0101' }]),
+  }));
   expect(phone.persisted.state?.callPreference).toBe('chat');
   expect(phone.calls).toHaveLength(0);
 }, 120_000);
@@ -276,17 +303,20 @@ it('keeps two rejected invitations across idle time and honors a later customer 
       ? proposal('browse_catalog', 'Prefieres crear contenido visual o trabajar con las manos?')
       : proposal('browse_catalog', 'Si quieres, puedo llamarte para orientarte.');
   });
-  expect(third.context.turn_rejection?.rejections.map(r => r.code)).toContain('CALL_BUDGET_EXHAUSTED');
-  expect(third.evidence.authorizedMessages).toEqual(['Prefieres crear contenido visual o trabajar con las manos?']);
+  expect(third.evidence.workflowEvents.some(event => event.event === 'studyx.turn.agent_a_plannerless_v2'
+    && Array.isArray(event.rejection_codes) && event.rejection_codes.includes('CALL_BUDGET_EXHAUSTED'))).toBe(true);
+  expect(third.calls).toHaveLength(0);
+  expect(third.evidence.actions.some(action => action.name === 'dispatchCall')).toBe(false);
   expect(third.persisted.state?.callOfferCount).toBe(2);
   const requested = await c.send('Dale, ahora llamame', () => proposal('request_call', 'A qué número con código de país y área puedo llamarte?'));
   expect(requested.persisted.state).toMatchObject({ callPreference: 'call', callOfferStatus: 'accepted', callOfferCount: 2 });
   expect(requested.calls).toHaveLength(0);
-  const phone = await c.send('Mi teléfono es +54 9 11 5555 0101', context => {
+  const phone = await c.send('Mi nombre es Nora y mi apellido es Vale. Mi teléfono es +54 9 11 5555 0101', context => {
     expect(context.capabilities.may_offer_call).toBe(false);
-    expect(context.capabilities.may_request_call_now).toBe(true);
     return proposal('request_call', 'Solicito la llamada al número que me pasaste.', {
       proposed_action: { type: 'request_call_now', reason: 'accepted_offer' },
+      profile_updates: contactFixtureUpdatesV1(context, [{ field: 'nombre', value: 'Nora' },
+        { field: 'apellido', value: 'Vale' }, { field: 'telefono', value: '+5491155550101', quote: '+54 9 11 5555 0101' }]),
     });
   });
   expect(phone.persisted.state?.callOfferCount).toBe(2);

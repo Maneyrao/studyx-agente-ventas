@@ -1,3 +1,4 @@
+import { ContactProfileContextV1Schema } from './agent-a-brain'
 import { z } from '@botpress/runtime'
 import { ConversationPipelineCommitV1Schema } from './conversation-pipeline'
 import { AgentATurnCommitV2Schema } from './agent-turn-v2'
@@ -33,6 +34,7 @@ export const SandboxProviderSchema = z.enum(['telegram_sandbox'])
 export const InboundEnvelopeSchema = z.object({
   schema_version: z.literal(1),
   source: SourceSchema,
+  identity_owner: z.literal('agent_a_v1').optional(),
   channel: ChannelSchema,
   integration_id: z.string().min(1).max(512),
   external_message_id: z.string().min(1).max(512),
@@ -560,6 +562,7 @@ export const ClaimedTurnSchema = z.object({
     correo: z.string().nullable(),
     telefono: z.string().nullable(),
   }).strict().optional(),
+  contact_profile: ContactProfileContextV1Schema.nullable().optional(),
   payment_verification: z.object({
     status: z.enum([
       'reserved', 'creating_checkout', 'creation_ambiguous', 'pending',

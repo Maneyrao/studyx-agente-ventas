@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
-import type { AgentATurnProposalV1 } from '../../botpress-agent/src/schemas/agent-a-brain';
+import type { AgentAContextV1, AgentATurnProposalV1 } from '../../botpress-agent/src/schemas/agent-a-brain';
+import { contactFixtureUpdatesV1 } from './contact-profile-fixture';
 import { runWorkflowBurstV1, runWorkflowTurnV1 } from '../helpers/agent-a-workflow-driver';
 import { readWorkflowDbEvidenceV1 } from '../helpers/agent-a-workflow-db-evidence';
 import { configuration, secrets } from '../helpers/botpress-workflow-runtime';
@@ -14,16 +15,14 @@ const db = openLocalTestDatabase();
 const previousKey = secrets.DEEPSEEK_API_KEY;
 let phase: 'course' | 'agus_course' | 'missing_identity' | 'identity' | 'agus_identity' | 'confirm' | 'invalid_repair' | 'payment_course' | 'payment_identity' | 'payment_options' | 'payment_choice' | 'payment_permission' | 'payment_confirm_choice' | 'payment_missing_identity' | 'payment_complete_intake' = 'course';
 let generationCount = 0;
-let latestContext: {
-  customer: { contact_intake?: { nombre: string | null; apellido: string | null; correo: string | null } };
-  turn_rejection?: { rejection_id: string };
-} | null = null;
+let latestContext: AgentAContextV1 | null = null;
 
 function proposal(text: string, action: AgentATurnProposalV1['proposed_action'] = { type: 'none' }): AgentATurnProposalV1 {
   return {
     schema_version: 1,
     move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
     response: { messages: [text] }, proposed_action: action,
+    profile_updates: [], profile_requests: [],
     used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
   };
 }
@@ -101,6 +100,21 @@ beforeAll(async () => {
         : 'Para coordinarla, me pasas tu nombre, apellido y teléfono con código de país?'),
         move: { schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 1 } };
     }
+    result.profile_updates = contactFixtureUpdatesV1(latestContext,
+      phase === 'identity' ? [{ field: 'nombre', value: 'Juan' }, { field: 'apellido', value: 'Perez' },
+        { field: 'telefono', value: '+15551234567' }]
+      : phase === 'agus_identity' ? [{ field: 'nombre', value: 'Agus' },
+        { field: 'apellido', value: 'Maneyro', quote: 'maneyro' }, { field: 'telefono', value: '+15551234567' }]
+      : phase === 'payment_identity' || phase === 'payment_complete_intake'
+        ? [{ field: 'nombre', value: 'Thiago' }, { field: 'apellido', value: 'Maneyro' },
+            { field: 'correo', value: 'thiago@example.com' }, { field: 'telefono', value: '+15551234567' }]
+        : []);
+    if (requestBody.text.format.schema.properties.proposed_action.anyOf.length === 1 || phase === 'missing_identity' && rejection) {
+      const fields = latestContext.capabilities.intake_missing.filter(field =>
+        phase === 'payment_missing_identity' || field !== 'correo');
+      result.profile_requests = fields.length ? [{ message_index: 0, fields,
+        purpose: phase === 'payment_missing_identity' ? 'payment' : 'call', mode: 'collect' }] : [];
+    }
     if (rejection) result.repair_of = { rejection_id: rejection.rejection_id, attempt: 1 };
     return new Response(JSON.stringify({
       output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(result) }] }],
@@ -156,7 +170,8 @@ it('persists Agus data from separate messages before accepting Sii and reserves 
   ] });
   expect(intake.errorCode).toBeNull();
   expect(intake.commitSucceeded).toBe(true);
-  expect(latestContext?.customer.contact_intake).toMatchObject({ nombre: 'Agus', apellido: 'Maneyro' });
+  const receipt = intake.httpExchanges.find(exchange => exchange.url.endsWith('/profile'))?.responseBody as { values?: unknown };
+  expect(receipt.values).toMatchObject({ nombre: 'Agus', apellido: 'Maneyro' });
   const stored = await readWorkflowDbEvidenceV1({ databaseUrl, externalConversationId: id.conversationId });
   expect(stored.contact).toMatchObject({ name: 'Agus Maneyro', declaredPhone: '+15551234567' });
   phase = 'confirm';
@@ -209,7 +224,8 @@ it('repairs the Lucas promise, records the real repair, retains full identity an
   expect(intake.errorCode).toBeNull();
   const persisted = await readWorkflowDbEvidenceV1({ databaseUrl, externalConversationId: id.conversationId });
   expect(persisted.contact).toMatchObject({ name: 'Juan Perez', email: null });
-  expect(latestContext?.customer.contact_intake).toMatchObject({ nombre: 'Juan', apellido: 'Perez', correo: null });
+  const receipt = intake.httpExchanges.find(exchange => exchange.url.endsWith('/profile'))?.responseBody as { values?: unknown };
+  expect(receipt.values).toMatchObject({ nombre: 'Juan', apellido: 'Perez', correo: null });
   expect(persisted.state).toMatchObject({ callPreference: 'call', callOfferStatus: 'accepted' });
 
   phase = 'confirm';

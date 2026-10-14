@@ -15,13 +15,13 @@ export const SHARED_LEAD_FIELDS = ['nombre', 'apellido', 'mail', 'tipo_de_curso'
 
 export const CallContextV1Schema = z.object({
   call_id: z.string().uuid(),
-  nombre_lead: z.string().max(128),
+  nombre_lead: z.string().max(321),
   curso_interes: z.string().max(128),
   pais: z.string().max(128),
   email_lead: z.string().max(254),
   resumen_whatsapp: z.string().max(1_200),
   prompt_version: z.string().min(1).max(128),
-  apellido_lead: z.string().max(128).optional(),
+  apellido_lead: z.string().max(160).optional(),
   plan_code: z.enum(['monthly_12', 'monthly_6', 'one_time']).optional(),
   memoria_lead: z.string().max(1_500).optional(),
   campos_faltantes: z.array(z.enum(SHARED_LEAD_FIELDS)).max(SHARED_LEAD_FIELDS.length).optional(),

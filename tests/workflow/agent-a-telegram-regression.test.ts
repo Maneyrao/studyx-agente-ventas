@@ -90,6 +90,7 @@ function telegramFixtureProposal(input: {
       call_offer: input.callOffer ?? null,
     },
     proposed_action: { type: 'none' },
+    profile_updates: [], profile_requests: [],
     used_fact_ids: [...(input.factIds ?? [])],
     used_memory_ids: [],
     memory_candidates: [],

@@ -108,6 +108,8 @@ function validatePlannerless(input: {
   if (rejection !== null && paymentTransitionAuthorized) {
     const remaining = rejection.rejections.filter((reason) => !(
       reason.subject === 'send_payment_link'
+      // Invitation guidance cannot revoke a canonical, fully backed payment.
+      || reason.code === 'CALL_OFFER_REQUIRED'
       || (reason.code === 'PLAN_NOT_SELECTED' && reason.subject === 'payment_plan')
     ))
     rejection = remaining.length === 0 ? null : { ...rejection, rejections: remaining }

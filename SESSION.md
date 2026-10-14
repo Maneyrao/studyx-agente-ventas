@@ -1,7 +1,7 @@
 # Sesión StudyX
 
 ## Fase actual
-PHASE 6 — corrección de las variantes reales de solicitud de pago. Estado: completa y publicada; fuente 32e109a en backend dpl_CE59p3BbNY9mEeosuCBzNpW5Afko y Botpress 2026-10-14T13:49:53.977Z; health y probe canónicos HTTP 200. 3994 unitarias, 601 integraciones y ocho workflows aprobados; tipos, lint, builds, fuente/bundle y revisión independiente aprobados. Canario real v102 pendiente del usuario; informe 2026-10-14-payment-retest.md.
+PHASE 7 — perfil canónico por campo interpretado por Agent A. Estado: validación aprobada y publicación en curso; autorización del usuario para modificar y publicar el 14-10. Producción sigue en 32e109a/v102 hasta promover backend y Botpress; migración 20261014163031 aplicada. 4027 unitarias, 639 integraciones, 11 workflows finales y canario real de seis turnos aprobados. Diagnóstico previo: docs/reports/2026-10-14-ori-intake-architecture.md.
 
 ## Fases completas
 - PHASE 0: fallos y silencios observables.
@@ -12,6 +12,11 @@ PHASE 6 — corrección de las variantes reales de solicitud de pago. Estado: co
 - PHASE 6: petición explícita de pago sin segunda etiqueta, guardas por cláusula y solicitud pendiente conservada durante faltantes; 3994 unitarias, 601 integraciones y ocho workflows; fuente 32e109a publicada y verificada.
 
 ## Decisiones de arquitectura tomadas
+- A propone perfil con UUID físico y evidencia literal; backend valida formato, procedencia, orden y versión por campo sin interpretar nombres → contrato contact-profile-v1 y Brain v103, canónico v69 intacto.
+- Captura independiente antes de validar texto/efectos, incluidas confirmaciones de teléfono probadas → datos válidos sobreviven reparación, veto y supersession; cualquier reparación con nuevos datos pasa nuevamente por persistencia.
+- Una columna JSONB aditiva con campos independientes, retractaciones explícitas y recibos acotados es la fuente única → columnas antiguas son proyecciones; ingestión y escritores de voz no pueden competir con ella.
+- Preguntas estructuradas siguen las burbujas realmente entregadas y cierran por campo respondido → no se infiere intake desde la última burbuja; entrega debe preceder al inbound.
+- Una solicitud de llamada pendiente puede continuar cuando llegan sus datos → A interpreta la disponibilidad; backend mantiene autorización de efecto, consentimiento y ledger.
 - A interpreta y redacta; backend conserva hechos, transiciones y efectos → restaurar especificación del 1-10, cuyos commits siguen en la rama → informe de restauración del 14-10.
 - Plan y enlace en un mismo turno con recursos canónicos y datos completos → quitar permiso basado en fase previa y reinterpretación regex → contexto, resolver y agent-turn-policy-v2.ts.
 - Una continuación conserva movimiento y teléfono confirmado de A → memoria semántica no desaparece al reparar texto → agent-a-action-feedback.ts y conversation_only.

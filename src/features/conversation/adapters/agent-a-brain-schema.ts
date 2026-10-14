@@ -5,6 +5,13 @@ import {
   AGENT_A_MEMORY_TYPES_V1,
 } from '../domain/agent-a-brain';
 import { ConversationMoveV1Schema } from './conversation-pipeline-schema';
+import {
+  ContactProfileContextV1Schema,
+  ContactProfileRequestV1Schema,
+  ContactProfileUpdateV1Schema,
+  CONTACT_PROFILE_MAX_REQUESTS_V1,
+  CONTACT_PROFILE_MAX_UPDATES_V1,
+} from '../../../shared/conversation/contact-profile-contract';
 
 const PaymentPlanSchema = z.enum(['monthly_12', 'monthly_6', 'one_time']);
 const MemoryTypeSchema = z.enum(AGENT_A_MEMORY_TYPES_V1);
@@ -48,7 +55,14 @@ export const AgentAContextV1Schema = z.object({
     last_agent_reply: z.string().trim().min(1).max(4_096).nullable(),
   }).strict().optional(),
   customer: z.object({
-    display_name: z.string().trim().min(1).max(200).nullable(),
+    display_name: z.string().trim().min(1).max(321).nullable(),
+    contact_profile: ContactProfileContextV1Schema.optional(),
+    contact_intake: z.object({
+      nombre: z.string().trim().min(1).max(160).nullable(),
+      apellido: z.string().trim().min(1).max(160).nullable(),
+      correo: z.string().trim().min(1).max(320).nullable(),
+      telefono: z.string().trim().min(1).max(40).nullable(),
+    }).strict().nullable().optional(),
     memories: z.array(AgentAMemorySchema).max(5),
   }).strict(),
   identity: z.object({
@@ -173,6 +187,8 @@ export const AgentATurnProposalV1Schema = z.object({
   }).strict(),
   proposed_action: AgentAProposedActionSchema,
   confirmed_phone: z.string().regex(/^\+[1-9]\d{7,14}$/u).nullable().optional(),
+  profile_updates: z.array(ContactProfileUpdateV1Schema).max(CONTACT_PROFILE_MAX_UPDATES_V1).optional(),
+  profile_requests: z.array(ContactProfileRequestV1Schema).max(CONTACT_PROFILE_MAX_REQUESTS_V1).optional(),
   used_fact_ids: z.array(IdentifierSchema).max(60),
   used_memory_ids: z.array(IdentifierSchema).max(5),
   // Asesor. No persiste y no autoriza nada (§ 09): el backend conserva
@@ -191,6 +207,11 @@ export const AgentATurnProposalV1Schema = z.object({
   }).strict().nullable().default(null),
   memory_candidates: z.array(MemoryCandidateSchema).max(10),
 }).strict().superRefine((value, context) => {
+  for (const [index, request] of (value.profile_requests ?? []).entries()) {
+    if (request.message_index >= value.response.messages.length) {
+      context.addIssue({ code: 'custom', path: ['profile_requests', index, 'message_index'], message: 'PROFILE_REQUEST_MESSAGE_NOT_FOUND' });
+    }
+  }
   if (new Set(value.used_fact_ids).size !== value.used_fact_ids.length) {
     context.addIssue({ code: 'custom', path: ['used_fact_ids'], message: 'DUPLICATE_FACT_ID' });
   }

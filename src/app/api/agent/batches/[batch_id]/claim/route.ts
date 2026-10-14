@@ -1,3 +1,4 @@
+import { loadContactProfileContextV1 } from '@/lib/repositories/contact-profile-context.repository';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import {
@@ -141,6 +142,7 @@ export async function POST(
       { batch_id, claimed_by: parsed.data.claimed_by, trace_id: parsed.data.trace_id },
       {
         store: orchestrationStore,
+        contactProfileContext: loadContactProfileContextV1,
         embedding: queryEmbedder,
         memory: memoryRetriever,
         knowledge: knowledgeRetriever,

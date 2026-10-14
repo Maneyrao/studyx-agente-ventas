@@ -74,6 +74,7 @@ function proposalFor(
     },
     response: { messages: [message], call_offer: null },
     proposed_action: { type: 'none' },
+    profile_updates: [], profile_requests: [],
     used_fact_ids: offerings.map((offering) => offering.fact_id),
     used_memory_ids: [],
     memory_candidates: [],

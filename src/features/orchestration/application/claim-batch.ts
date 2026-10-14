@@ -1,3 +1,4 @@
+import type { ContactProfileContextV1 } from '@/shared/conversation/contact-profile-contract';
 import { evaluateTurnPolicy, type TurnPolicy } from '../domain/turn-policy';
 import type { BusinessContextView, CatalogIndexView } from '../domain/business-context';
 import type { SalesContextState } from '@/features/sales/domain/sales-context';
@@ -95,6 +96,7 @@ export interface ClaimBatchDependencies {
   readonly agentAStateAssertions?: boolean;
   readonly agentASingleRoute?: boolean;
   /** Inyectable para test; por defecto lee `contacts` con el cliente compartido. */
+  readonly contactProfileContext?: (input: { contactId: string; conversationId: string; batchId: string }) => Promise<ContactProfileContextV1 | null>;
   readonly contactIntake?: (contactId: string) => Promise<ContactIntakeV1>;
   /** Canonical Stripe ledger projection; customer text never supplies it. */
   readonly paymentVerification?: (contactId: string, purchase?: {
@@ -187,6 +189,7 @@ export interface ClaimedTurn {
   /** Valores canónicos necesarios para que el agente confirme los datos sin
    * reconstruirlos desde texto viejo ni volver a pedirlos. */
   readonly contact_intake: ContactIntakeV1;
+  readonly contact_profile?: ContactProfileContextV1 | null;
   readonly payment_verification: PaymentVerificationV1 | null;
   readonly contact: {
     readonly id: string;
@@ -1115,12 +1118,13 @@ export async function claimBatch(
   const readIntake = deps.contactIntake
     ?? (await import('@/lib/repositories/contact-intake.repository')).loadContactIntakeV1;
   const readPaymentVerification = deps.paymentVerification ?? (async () => null);
-  const [contactIntake, paymentVerification] = await Promise.all([
+  const [contactIntake, paymentVerification, contactProfile] = await Promise.all([
     readIntake(facts.contact.id),
     readPaymentVerification(facts.contact.id, {
       offering_code: conversationStateV1?.selected_offering_code ?? null,
       plan_code: conversationStateV1?.selected_payment_plan ?? null,
     }),
+    deps.contactProfileContext?.({ contactId: facts.contact.id, conversationId: claim.conversation_id!, batchId: claim.batch_id }) ?? null,
   ]);
   const contactIntakeMissing = missingContactIntakeFieldsV1(contactIntake);
   // A call fast path has no conversational recovery. Preserve the customer's
@@ -1152,6 +1156,7 @@ export async function claimBatch(
     policy,
     contact_intake_missing: contactIntakeMissing,
     contact_intake: contactIntake,
+    ...(contactProfile ? { contact_profile: contactProfile } : {}),
     payment_verification: paymentVerification,
     contact: {
       id: facts.contact.id,

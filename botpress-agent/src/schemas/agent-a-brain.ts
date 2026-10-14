@@ -1,6 +1,49 @@
 import { z } from '@botpress/runtime';
 import { ConversationMoveV1Schema } from './conversation-pipeline';
 import { TurnRejectionV1Schema } from './turn-rejection';
+import {
+  CONTACT_PROFILE_FIELDS_V1,
+  CONTACT_PROFILE_OPERATIONS_V1,
+  CONTACT_PROFILE_PURPOSES_V1,
+  CONTACT_PROFILE_MODES_V1,
+  CONTACT_PROFILE_MAX_UPDATES_V1,
+  CONTACT_PROFILE_MAX_REQUESTS_V1,
+  CONTACT_PROFILE_MAX_SOURCES_V1,
+  CONTACT_PROFILE_MAX_PENDING_REQUESTS_V1,
+} from '../../../src/shared/conversation/contact-profile-contract';
+
+// Zui uses Zod 3; construct the ADK mirror locally from the portable constants.
+const ProfileFieldSchema = z.enum(CONTACT_PROFILE_FIELDS_V1);
+const ProfileFieldsSchema = z.array(ProfileFieldSchema).min(1).max(4)
+  .refine((fields) => new Set(fields).size === fields.length, 'DUPLICATE_PROFILE_FIELD');
+export const ContactProfileUpdateV1Schema = z.object({
+  field: ProfileFieldSchema,
+  value: z.string().min(1).max(512).nullable(),
+  operation: z.enum(CONTACT_PROFILE_OPERATIONS_V1),
+  source_message_id: z.string().uuid(),
+  source_quote: z.string().min(1).max(4_096),
+}).strict().refine((update) => update.operation === 'retract'
+  ? update.value === null : update.value !== null, 'PROFILE_OPERATION_VALUE_MISMATCH');
+export const ContactProfileRequestV1Schema = z.object({
+  message_index: z.number().int().min(0),
+  fields: ProfileFieldsSchema,
+  purpose: z.enum(CONTACT_PROFILE_PURPOSES_V1),
+  mode: z.enum(CONTACT_PROFILE_MODES_V1),
+}).strict();
+export const ContactProfileContextV1Schema = z.object({
+  version: z.number().int().min(0),
+  sources: z.array(z.object({
+    id: z.string().uuid(),
+    text: z.string().min(1).max(4_096),
+    sequence: z.number().int().min(0),
+  }).strict()).max(CONTACT_PROFILE_MAX_SOURCES_V1),
+  pending_requests: z.array(z.object({
+    message_id: z.string().uuid(),
+    fields: ProfileFieldsSchema,
+    purpose: z.enum(CONTACT_PROFILE_PURPOSES_V1),
+    mode: z.enum(CONTACT_PROFILE_MODES_V1),
+  }).strict()).max(CONTACT_PROFILE_MAX_PENDING_REQUESTS_V1),
+}).strict();
 
 const PaymentPlanSchema = z.enum(['monthly_12', 'monthly_6', 'one_time']);
 const MemoryTypeSchema = z.enum([
@@ -60,9 +103,10 @@ export const AgentAContextV1Schema = z.object({
     last_agent_reply: z.string().trim().min(1).max(6_002).nullable(),
   }).strict().optional(),
   customer: z.object({
-    display_name: z.string().trim().min(1).max(200).nullable(),
+    display_name: z.string().trim().min(1).max(321).nullable(),
+    contact_profile: ContactProfileContextV1Schema.optional(),
     contact_intake: z.object({
-      nombre: z.string().trim().min(1).max(120).nullable(),
+      nombre: z.string().trim().min(1).max(160).nullable(),
       apellido: z.string().trim().min(1).max(160).nullable(),
       correo: z.string().trim().min(1).max(320).nullable(),
       telefono: z.string().trim().min(1).max(40).nullable(),
@@ -223,6 +267,8 @@ export const AgentATurnProposalV1Schema = z.object({
   }).strict(),
   proposed_action: AgentAProposedActionSchema,
   confirmed_phone: z.string().regex(/^\+[1-9]\d{7,14}$/u).nullable().optional(),
+  profile_updates: z.array(ContactProfileUpdateV1Schema).max(CONTACT_PROFILE_MAX_UPDATES_V1).optional(),
+  profile_requests: z.array(ContactProfileRequestV1Schema).max(CONTACT_PROFILE_MAX_REQUESTS_V1).optional(),
   used_fact_ids: z.array(IdentifierSchema).max(60),
   used_memory_ids: z.array(IdentifierSchema).max(5),
   // Asesor. No persiste y no autoriza nada (§ 09): el backend conserva
@@ -241,6 +287,11 @@ export const AgentATurnProposalV1Schema = z.object({
   }).strict().nullable().default(null),
   memory_candidates: z.array(MemoryCandidateSchema).max(10),
 }).strict().superRefine((value, context) => {
+  for (const [index, request] of (value.profile_requests ?? []).entries()) {
+    if (request.message_index >= value.response.messages.length) {
+      context.addIssue({ code: 'custom', path: ['profile_requests', index, 'message_index'], message: 'PROFILE_REQUEST_MESSAGE_NOT_FOUND' });
+    }
+  }
   if (new Set(value.used_fact_ids).size !== value.used_fact_ids.length) {
     context.addIssue({ code: 'custom', path: ['used_fact_ids'], message: 'DUPLICATE_FACT_ID' });
   }

@@ -8,6 +8,12 @@ import {
 } from '@/features/calls/application/request-call';
 
 describe('buildLeadMemoryHandoff', () => {
+  it('uses independent canonical compound names instead of re-splitting the display name', () => {
+    expect(deriveSharedLeadContext({ contactName: 'Luz María del Sol van der Velde', contactEmail: 'luz@example.test',
+      courseOfInterest: 'Fotografía', contactIntake: { nombre: 'Luz María del Sol', apellido: 'van der Velde', correo: 'luz@example.test', telefono: '+15551234567' } }))
+      .toMatchObject({ nombreLead: 'Luz María del Sol van der Velde', apellidoLead: 'van der Velde', missingFields: [] });
+  });
+
   it('renders qualitative facts once, without quotes or commercial state', () => {
     expect(buildLeadMemoryHandoff([
       { memory_type: 'study_goal', memory_key: 'motivation', value_normalized: 'conseguir trabajo remoto' },

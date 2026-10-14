@@ -115,7 +115,8 @@ export interface RetellContactToolStore {
     readonly email?: string;
     readonly telefonoAlternativo?: string;
     readonly sheets: { readonly spreadsheetId: string; readonly tabName: string } | null;
-  }): Promise<{ readonly updated: boolean; readonly projected: boolean }>;
+  }): Promise<{ readonly updated: boolean; readonly projected: boolean;
+    readonly rejections?: ReadonlyArray<{ readonly field: string; readonly code: string }> }>;
 }
 
 export interface RetellToolDependencies {
@@ -916,7 +917,8 @@ export async function handleRetellToolRequest(
           : { telefonoAlternativo: args.telefono_alternativo }),
         sheets: dependencies.sheets,
       });
-      response = Response.json({ ok: true, saved: saved.updated, projected: saved.projected });
+      response = Response.json({ ok: true, saved: saved.updated, projected: saved.projected,
+        ...(saved.rejections?.length ? { rejections: saved.rejections } : {}) });
     } else if ((['enviar_link_pago', 'verificar_pago', 'enviar_material', 'derivar_a_asesor_humano', 'agendar_seguimiento'] as const)
       .includes(expectedName as RetellOrchestrationToolName)) {
       response = await runOrchestrationTool(

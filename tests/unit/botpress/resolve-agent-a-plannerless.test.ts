@@ -78,6 +78,28 @@ function generated(value: AgentATurnProposalV1) {
 }
 
 describe('resolveAgentAPlannerlessProposalV2', () => {
+  it('does not let call-offer guidance block a canonical payment requested after the final intake field', async () => {
+    const current = context();
+    current.customer.display_name = 'Ana María Pérez';
+    current.customer.contact_intake = { nombre: 'Ana María', apellido: 'Pérez', correo: 'ana@example.test', telefono: '+15551234567' };
+    current.continuity = { assistant_has_spoken: true, first_name_status: 'known', last_agent_reply: 'Me pasás el teléfono?' };
+    current.turn.batch_messages = [{ id: 'm1', text: '+15551234567' }];
+    current.commercial_state = { ...current.commercial_state, selected_payment_plan: 'monthly_12', call_offer_status: 'not_offered',
+      payment_link_request: { status: 'pending', offering_code: 'maquillaje-profesional', payment_plan: 'monthly_12' } };
+    current.capabilities.may_send_payment_link = true;
+    const initial = generated(proposal({
+      move: { schema_version: 1, move: 'provide_contact_details', secondary_moves: [], vetoes: [], confidence: 1 },
+      response: { messages: ['Ya tengo tus datos. Te comparto el enlace para pagar en 12 cuotas.'], call_offer: null },
+      proposed_action: { type: 'send_payment_link', offering_code: 'maquillaje-profesional', payment_plan: 'monthly_12' },
+      used_fact_ids: ['payment:maquillaje-profesional:monthly_12:label:v1'],
+    }));
+    const repair = vi.fn().mockRejectedValue(new Error('Unexpected semantic repair'));
+    const result = await resolveAgentAPlannerlessProposalV2({ initial, context: current,
+      repair_enabled: true, semantic_rejections: 'advisory', repair, rejection_id: '00000000-0000-4000-8000-000000000001' });
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.proposed_action).toEqual(initial.proposal.proposed_action);
+  });
+
   it.each([
     ['pago 1', 'select_payment_plan', null, 'one_time'],
     ['12 pagos 30', 'select_payment_plan', null, 'monthly_12'],

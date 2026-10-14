@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const actionSpies = vi.hoisted(() => ({
   ingest: vi.fn(),
+  captureProfile: vi.fn(),
   claim: vi.fn(),
   plan: vi.fn(),
   catalog: vi.fn(),
@@ -22,6 +23,10 @@ const actionSpies = vi.hoisted(() => ({
 
 vi.mock('../../../botpress-agent/src/actions/ingestTurn', () => ({
   ingestTurn: { execute: actionSpies.ingest },
+}));
+vi.mock('../../../botpress-agent/src/actions/captureContactProfile', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../botpress-agent/src/actions/captureContactProfile')>(),
+  captureContactProfile: { execute: actionSpies.captureProfile },
 }));
 vi.mock('../../../botpress-agent/src/actions/claimBatch', () => ({
   claimBatch: { execute: actionSpies.claim },
@@ -93,6 +98,7 @@ vi.mock('../../../botpress-agent/src/lib/conversation/agent-a-brain', async (imp
 
 import { adk, configuration, secrets } from '../../helpers/botpress-runtime-stub';
 import { processInboundTurn } from '../../../botpress-agent/src/workflows/processInboundTurn';
+import { buildAgentAContextV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-context';
 import { AGENT_A_BRAIN_PROMPT_VERSION } from '../../../botpress-agent/src/prompts/agent-a-brain-v1';
 import type { ClaimedTurn } from '../../../botpress-agent/src/schemas/contracts';
 import type { AgentAContextV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
@@ -382,6 +388,54 @@ describe('processInboundTurn hot path', () => {
       plan_hash: 'a'.repeat(64),
     });
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
+  });
+
+  it('persists independent profile fields before effect validation and repairs from the receipt', async () => {
+    configuration.agentAPlannerlessV2Enabled = true;
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true, agent_a_brain_v1_shadow: false, agent_a_repair_enabled: true };
+    claimed.deterministic_route = null;
+    claimed.contact_intake = { nombre: null, apellido: null, correo: null, telefono: '+5491169004497' };
+    claimed.contact_intake_missing = ['nombre', 'apellido', 'correo'];
+    claimed.conversation_state_v1 = { selected_offering_code: null, selected_payment_plan: null, stage: 'exploring',
+      call_preference: 'unknown', call_offer_status: 'not_offered', call_offer_count: 0, awaiting_reply: 'none', version: 0 };
+    claimed.contact_profile = { version: 0, sources: [{ id: UUID, text: 'María José', sequence: 1 }], pending_requests: [] };
+    claimed.catalog_index = { as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0 };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+    actionSpies.captureProfile.mockResolvedValue({ version: 1,
+      values: { nombre: 'María José', apellido: null, correo: null, telefono: '+5491169004497' },
+      accepted_fields: ['nombre'], rejections: [] });
+    expect(buildAgentAContextV1(claimed)).not.toBeNull();
+    actionSpies.commit.mockRejectedValueOnce(new StudyxHttpError('DECISION_REJECTED', false, 422, 1,
+      { reason: 'AGENT_TURN_V2_REJECTED:MISSING_INTAKE', subjects: ['apellido', 'correo'] }));
+    const original = { schema_version: 1,
+      move: { schema_version: 1, move: 'provide_contact_details', secondary_moves: ['request_call'], vetoes: [], confidence: 1 },
+      response: { messages: ['Gracias.'], call_offer: null }, proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+      used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+      profile_updates: [{ field: 'nombre', value: 'María José', operation: 'set', source_message_id: UUID, source_quote: 'María José' }], profile_requests: [],
+    };
+    actionSpies.agentABrainDeepSeek.mockReset().mockResolvedValueOnce({ proposal: original,
+      provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1 })
+      .mockImplementationOnce(async ({ context }: { context: AgentAContextV1 }) => {
+        expect(context.customer.contact_intake?.nombre).toBe('María José');
+        expect(context.capabilities.intake_missing).not.toContain('nombre');
+        return { proposal: { ...original, move: { ...original.move, move: 'unknown', secondary_moves: [] },
+          response: { messages: ['María José, me pasás tu apellido y correo?'], call_offer: null },
+          proposed_action: { type: 'none' }, profile_updates: [],
+          profile_requests: [{ message_index: 0, fields: ['apellido', 'correo'], purpose: 'call', mode: 'collect' }],
+          repair_of: context.turn_rejection ? { rejection_id: context.turn_rejection.rejection_id, attempt: 1 } : null },
+          provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1 };
+      });
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(), { sleep: vi.fn(async () => undefined) });
+    await (processInboundTurn as unknown as { definition: { handler: (args: Record<string, unknown>) => Promise<unknown> } }).definition.handler({
+      input: workflowInput(), state: processingState(), step, execute: vi.fn(), client: {}, signal: new AbortController().signal, workflow: { id: 'profile-test' },
+    });
+    expect(actionSpies.captureProfile).toHaveBeenCalled();
+    expect(actionSpies.captureProfile.mock.invocationCallOrder[0]).toBeLessThan(actionSpies.commit.mock.invocationCallOrder[0]!);
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
   });
 
   it('transcribes a WhatsApp audio before ingesting and never sends its signed URL to the backend', async () => {

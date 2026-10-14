@@ -1,3 +1,31 @@
+import type { ContactProfileRequestV1 } from '@/shared/conversation/contact-profile-contract';
+
+/** Attach only to an exact authored paragraph that survived physical rendering. */
+export function contactProfileRequestsForPartsV1(input: {
+  readonly authored_messages: readonly string[];
+  readonly part_texts: readonly string[];
+  readonly requests: readonly {
+    message_index: number; fields: ContactProfileRequestV1['fields'] | readonly ContactProfileRequestV1['fields'][number][];
+    purpose: ContactProfileRequestV1['purpose']; mode: ContactProfileRequestV1['mode'];
+  }[];
+}): Array<Array<Omit<ContactProfileRequestV1, 'message_index'>>> {
+  const result: Array<Array<Omit<ContactProfileRequestV1, 'message_index'>>> = input.part_texts.map(() => []);
+  for (const request of input.requests) {
+    const original = input.authored_messages[request.message_index]?.trim();
+    if (!original) continue;
+    const matches = input.part_texts.flatMap((part, index) => {
+      const at = part.indexOf(original);
+      return at >= 0 && (at === 0 || part.slice(at - 2, at) === '\n\n')
+        && (at + original.length === part.length || part.slice(at + original.length, at + original.length + 2) === '\n\n')
+        ? [index] : [];
+    });
+    if (matches.length === 1) result[matches[0]!]!.push({
+      fields: [...request.fields], purpose: request.purpose, mode: request.mode,
+    });
+  }
+  return result;
+}
+
 export function physicalOutboundTexts(input: {
   readonly final_response: string;
   readonly authored_messages: readonly string[] | null;

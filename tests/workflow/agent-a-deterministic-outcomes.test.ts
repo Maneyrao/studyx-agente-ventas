@@ -6,6 +6,8 @@ import { readWorkflowDbEvidenceV1 } from '../helpers/agent-a-workflow-db-evidenc
 import { countWorkflowAvailabilityFailuresV1 } from '../helpers/agent-a-workflow-measurement';
 import { writeWorkflowReportV1 } from '../helpers/agent-a-workflow-report';
 import { configuration, secrets } from '../helpers/botpress-workflow-runtime';
+import type { AgentAContextV1 } from '../../botpress-agent/src/schemas/agent-a-brain';
+import { contactFixtureUpdatesV1 } from './contact-profile-fixture';
 
 /** Workflow, backend y PostgreSQL reales. Sólo DeepSeek es una frontera fixture.
  * Esto certifica contratos y persistencia, nunca comprensión ni naturalidad. */
@@ -32,8 +34,15 @@ beforeAll(async () => {
     if (fixture === 'unavailable') return new Response('{"error":"fixture_unavailable"}', { status: 503 });
     if (!fixture) throw new Error('WORKFLOW_FIXTURE_NOT_SELECTED');
     const instructions = JSON.parse(String(init?.body)).instructions as string;
-    const context = JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!);
-    const proposal = { ...fixture, repair_of: context.turn_rejection
+    const context = JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!) as AgentAContextV1;
+    const proposal = { ...fixture,
+      profile_updates: contactFixtureUpdatesV1(context, [
+        { field: 'nombre', value: 'Inés' }, { field: 'apellido', value: 'Valdés' },
+        { field: 'correo', value: 'ines.valdes@example.test' }, { field: 'telefono', value: '+13055550176', quote: '+1 305 555 0176' },
+        { field: 'nombre', value: 'Celina' }, { field: 'apellido', value: 'Duarte' },
+        { field: 'correo', value: 'celina.duarte@example.test' }, { field: 'telefono', value: '+13055550158', quote: '+1 305 555 0158' },
+      ]),
+      repair_of: context.turn_rejection
       ? { rejection_id: context.turn_rejection.rejection_id, attempt: 1 } : null };
     return new Response(JSON.stringify({
       output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(proposal) }] }],
@@ -53,11 +62,14 @@ function proposal(
   move: AgentATurnProposalV1['move']['move'], message: string,
   fields: Partial<AgentATurnProposalV1['move']> = {},
   action: AgentATurnProposalV1['proposed_action'] = { type: 'none' },
+  requestedFields: NonNullable<AgentATurnProposalV1['profile_requests']>[number]['fields'] = [],
 ): AgentATurnProposalV1 {
   return {
     schema_version: 1,
     move: { schema_version: 1, move, secondary_moves: [], vetoes: [], confidence: 0.99, ...fields },
     response: { messages: [message] }, proposed_action: action,
+    profile_updates: [], profile_requests: requestedFields.length
+      ? [{ message_index: 0, fields: requestedFields, purpose: 'payment', mode: 'collect' }] : [],
     used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
   };
 }
@@ -173,7 +185,7 @@ describe('contratos por workflow real con proveedor determinístico sin costo', 
       proposal('request_payment_link',
         'Para dejarlo registrado necesito tu nombre, apellido, correo electrónico y teléfono. ¿Me los pasás?', {
           course_reference: 'fotografia_profesional', payment_plan: 'monthly_12',
-        }),
+        }, { type: 'none' }, ['nombre', 'apellido', 'correo', 'telefono']),
     );
     expect(result.text).toMatch(/nombre[\s\S]*apellido[\s\S]*correo[\s\S]*tel[eé]fono/iu);
 
@@ -182,7 +194,7 @@ describe('contratos por workflow real con proveedor determinístico sin costo', 
       proposal('provide_contact_details',
         '¡Gracias, Inés! Me falta tu apellido, tu correo electrónico y tu teléfono para dejarlo registrado. ¿Me los pasás?', {
           course_reference: 'fotografia_profesional', payment_plan: 'monthly_12',
-        }),
+        }, { type: 'none' }, ['apellido', 'correo', 'telefono']),
     );
     expect(result.db.contact?.name).toBe('Inés');
     expect(result.text).toMatch(/apellido[\s\S]*correo[\s\S]*tel[eé]fono/iu);
@@ -192,7 +204,7 @@ describe('contratos por workflow real con proveedor determinístico sin costo', 
       proposal('provide_contact_details',
         '¡Gracias, Inés Valdés! Me falta tu correo electrónico y tu teléfono para dejarlo registrado. ¿Me los pasás?', {
           course_reference: 'fotografia_profesional', payment_plan: 'monthly_12',
-        }),
+        }, { type: 'none' }, ['correo', 'telefono']),
     );
     expect(result.db.contact?.name).toBe('Inés Valdés');
     expect(result.text).toMatch(/correo[\s\S]*tel[eé]fono/iu);
@@ -202,7 +214,7 @@ describe('contratos por workflow real con proveedor determinístico sin costo', 
       proposal('provide_contact_details',
         '¡Gracias, Inés! Me falta tu teléfono para dejarlo registrado. ¿Me lo pasás?', {
           course_reference: 'fotografia_profesional', payment_plan: 'monthly_12',
-        }),
+        }, { type: 'none' }, ['telefono']),
     );
     expect(result.db.contact?.email).toBe('ines.valdes@example.test');
     expect(result.text).toMatch(/tel[eé]fono/iu);

@@ -1496,7 +1496,7 @@ describe('Agent A Brain V1', () => {
     expect(body).toMatchObject({
       model: 'deepseek-v4-flash',
       reasoning: { effort: 'none' },
-      max_output_tokens: 800,
+      max_output_tokens: 1600,
       text: {
         format: { type: 'json_schema', name: 'studyx_agent_a_turn_proposal_v1' },
       },
@@ -1637,6 +1637,109 @@ describe('Agent A Brain V1', () => {
     const retryBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
     expect(retryBody.input).toContain('response.messages:too_small');
     expect(retryBody.input).toContain('previous output failed validation');
+  });
+
+  it('requires structured profile metadata and preserves real source ids through DeepSeek normalization', async () => {
+    const sourceId = '00000000-0000-4000-8000-000000000019';
+    const updates = [{ field: 'nombre', value: 'ANA maría del Pilar', operation: 'set',
+      source_message_id: sourceId, source_quote: 'ANA maría del Pilar' }];
+    const requests = [{ message_index: 1, fields: ['apellido'], purpose: 'identity', mode: 'clarify' }];
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(200,
+      responsesSuccessBody(proposal({ profile_updates: updates, profile_requests: requests }))));
+    vi.stubGlobal('fetch', fetchMock);
+    const current = context();
+    current.turn.batch_messages = [{ id: sourceId, text: 'ANA maría del Pilar' }];
+    const result = await generateDeepSeekAgentATurnProposalV1({
+      context: current, apiKey: 'deepseek-test-key', signal: new AbortController().signal,
+    });
+    expect(result.proposal).toMatchObject({ profile_updates: updates, profile_requests: requests });
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1]?.body));
+    expect(body.text.format.schema.required).toEqual(expect.arrayContaining(['profile_updates', 'profile_requests']));
+    expect(body.text.format.schema.properties.profile_updates.items).toMatchObject({
+      additionalProperties: false,
+      required: ['field', 'value', 'operation', 'source_message_id', 'source_quote'],
+    });
+    expect(body.text.format.schema.properties.profile_updates.items.properties).not.toHaveProperty('version');
+    expect(body.text.format.schema.properties.profile_requests.items).toMatchObject({
+      additionalProperties: false,
+      required: ['message_index', 'fields', 'purpose', 'mode'],
+    });
+  });
+
+  it('preserves valid contact interpretation on JSON schema repair without retaining obsolete question indexes', async () => {
+    const updates = [{ field: 'apellido', value: 'de la Cruz', operation: 'set',
+      source_message_id: '00000000-0000-4000-8000-000000000020', source_quote: 'de la Cruz' }];
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(providerResponse(200, responsesSuccessBody(proposal({
+        response: { messages: [] }, profile_updates: updates,
+        profile_requests: [{ message_index: 1, fields: ['correo'], purpose: 'payment', mode: 'collect' }],
+      }))))
+      .mockResolvedValueOnce(providerResponse(200, responsesSuccessBody(proposal({
+        response: { messages: ['Gracias por el apellido.'] }, profile_updates: undefined, profile_requests: [],
+      }))));
+    vi.stubGlobal('fetch', fetchMock);
+    const accountRequest = vi.fn();
+    const result = await generateDeepSeekAgentATurnProposalV1({
+      context: context(), apiKey: 'deepseek-test-key', signal: new AbortController().signal,
+      on_provider_request: accountRequest,
+    });
+    expect(result.proposal.profile_updates).toEqual(updates);
+    expect(result.proposal.profile_requests).toEqual([]);
+    expect(result.attempt_count).toBe(2);
+    expect(accountRequest).toHaveBeenCalledTimes(2);
+    const repairInput = JSON.parse(String(fetchMock.mock.calls[1]![1]?.body)).input;
+    expect(repairInput).toContain('de la Cruz');
+    expect(repairInput).toContain('source_message_id');
+  });
+
+  it('allows Agent A to withdraw a mistaken third-party update during schema repair', async () => {
+    const updates = [{ field: 'apellido', value: 'de la Cruz', operation: 'set',
+      source_message_id: '00000000-0000-4000-8000-000000000020', source_quote: 'de la Cruz' }];
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(providerResponse(200, responsesSuccessBody(proposal({
+        response: { messages: [] }, profile_updates: updates,
+        profile_requests: [{ message_index: 1, fields: ['correo'], purpose: 'payment', mode: 'collect' }],
+      }))))
+      .mockResolvedValueOnce(providerResponse(200, responsesSuccessBody(proposal({
+        response: { messages: ['Gracias por el apellido.'] }, profile_updates: [], profile_requests: [],
+      }))));
+    vi.stubGlobal('fetch', fetchMock);
+    const accountRequest = vi.fn();
+    const result = await generateDeepSeekAgentATurnProposalV1({
+      context: context(), apiKey: 'deepseek-test-key', signal: new AbortController().signal,
+      on_provider_request: accountRequest,
+    });
+    expect(result.proposal.profile_updates).toEqual([]);
+    expect(result.proposal.profile_requests).toEqual([]);
+    expect(result.attempt_count).toBe(2);
+    expect(accountRequest).toHaveBeenCalledTimes(2);
+    const repairInput = JSON.parse(String(fetchMock.mock.calls[1]![1]?.body)).input;
+    expect(repairInput).toContain('de la Cruz');
+    expect(repairInput).toContain('source_message_id');
+  });
+
+  it('keeps reference acknowledgements free of invented profile changes', () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: '00000000-0000-4000-8000-000000000021', text: 'Lo de arriba' }];
+    const parsed = parseAgentATurnProposalV1(proposal({ profile_updates: [], profile_requests: [
+      { message_index: 1, fields: ['apellido'], purpose: 'identity', mode: 'clarify' },
+    ] }), current);
+    expect(parsed.profile_updates).toEqual([]);
+    expect(parsed.profile_requests).toMatchObject([{ fields: ['apellido'], mode: 'clarify' }]);
+  });
+
+  it('keeps contact question metadata aligned when unsafe response bubbles are removed', () => {
+    const parsed = parseAgentATurnProposalV1(proposal({
+      response: { messages: ['Mi correo está en https://example.test', 'Gracias.', 'Cuál es tu apellido?'] },
+      profile_requests: [
+        { message_index: 0, fields: ['correo'], purpose: 'payment', mode: 'collect' },
+        { message_index: 2, fields: ['apellido'], purpose: 'identity', mode: 'clarify' },
+      ],
+    }), context());
+    expect(parsed.response.messages).toEqual(['Gracias.', 'Cuál es tu apellido?']);
+    expect(parsed.profile_requests).toEqual([
+      { message_index: 1, fields: ['apellido'], purpose: 'identity', mode: 'clarify' },
+    ]);
   });
 
   it('retries one malformed DeepSeek JSON response inside the same bounded deadline', async () => {

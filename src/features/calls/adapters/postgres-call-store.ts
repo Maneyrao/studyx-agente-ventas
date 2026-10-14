@@ -13,6 +13,8 @@ import { splitFullName } from '@/lib/heuristics/contact-identity';
 import { agentBLeadProjectionSourceOrder, enqueueLeadProjection, leadProjectionKey } from '@/lib/services/projection.service';
 import { loadBusinessWorkspaceConfig, loadSheetsProjectionConfig } from '@/lib/config';
 import { resolveRetellProjectionTarget } from '../domain/retell-final-review-policy';
+import { applyStructuredVoiceContactProfileV1, contactProfileValuesV1, isAgentOwnedContactProfileV1,
+  loadContactProfileV1, type StoredContactProfileV1 } from '@/lib/repositories/contact-profile.repository';
 
 export { resolveRetellProjectionTarget } from '../domain/retell-final-review-policy';
 
@@ -564,6 +566,7 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
       email: string | null;
       phone: string;
       declared_phone: string | null;
+      contact_profile_v1: StoredContactProfileV1 | null;
       selected_payment_plan: string | null;
       course_name: string | null;
       course_code: string | null;
@@ -577,6 +580,7 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
         contact.email,
         contact.phone,
         contact.declared_phone,
+        contact.contact_profile_v1,
         state.selected_payment_plan,
         offering.display_name AS course_name,
         NULLIF(btrim(cs.context_snapshot ->> 'curso_interes'), '') AS course_code
@@ -607,11 +611,30 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
       WHERE cs.id = ${callId}::uuid
         AND cs.provider = 'retell'
       LIMIT 1
+      FOR UPDATE OF contact
     `;
     const row = rows[0];
     if (!row) return;
 
-    const identity = row.name ? splitFullName(row.name) : null;
+    let canonical: ReturnType<typeof contactProfileValuesV1> | null = null;
+    if (isAgentOwnedContactProfileV1(row.contact_profile_v1)) {
+      const [source] = await db<Array<{ id: string; event_id: string; occurred_at: Date | string }>>`
+        SELECT id, event_id, occurred_at FROM call_events WHERE call_id = ${callId}::uuid
+          AND provider = 'retell' AND event_type = 'analyzed' AND payload#>>'{analysis,email_capturado}' = ${email}
+        ORDER BY CASE WHEN event_id LIKE 'retell:webhook:%' THEN 0
+          WHEN event_id LIKE 'retell:call_analyzed:%' THEN 1 ELSE 2 END, event_id LIMIT 1
+      `;
+      if (!source) return;
+      const result = await applyStructuredVoiceContactProfileV1(db, { contactId: row.contact_id, callId,
+        source: { kind: 'retell_analysis', event_key: source.event_id, occurred_at: iso(source.occurred_at), source_call_event_id: source.id },
+        values: { correo: email } });
+      if (result.receipt.rejections.length) return;
+      canonical = contactProfileValuesV1((await loadContactProfileV1(row.contact_id, db))!);
+    }
+    const canonicalEmail = canonical ? canonical.correo : email;
+    if (!canonicalEmail) return;
+    const identity = canonical ? { nombre: canonical.nombre ?? '', apellido: canonical.apellido ?? '' }
+      : row.name ? splitFullName(row.name) : null;
     if (!identity?.nombre.trim() || !identity.apellido.trim()) return;
     // Retell's declared course is bounded evidence only. A commercial Sheet
     // row requires an active offering resolved in the canonical workspace.
@@ -654,8 +677,8 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
       sourceKey: `retell-call:${callId}`,
       nombre: identity.nombre,
       apellido: identity.apellido,
-      email,
-      telefono: row.declared_phone ?? row.phone,
+      email: canonicalEmail,
+      telefono: canonical ? canonical.telefono ?? row.phone : row.declared_phone ?? row.phone,
       cursoInteres: course,
       plan: row.selected_payment_plan ?? undefined,
       ultimaSenal: 'retell_post_call_analysis_email_captured',
@@ -664,12 +687,13 @@ export class PostgresCallStore implements CallStore, RetellToolCallCorrelationSt
     // A late event cannot win the outbox ordering fence and then mutate the
     // canonical contact independently of that projection decision.
     if (!projection?.changed) return;
-    if (row.email !== email) {
+    if (!canonical && row.email !== email) {
       await db`
         UPDATE contacts
         SET email = ${email}
         WHERE id = ${row.contact_id}::uuid
           AND deleted_at IS NULL
+          AND (contact_profile_v1 IS NULL OR contact_profile_v1->>'owner' IS DISTINCT FROM 'agent_a_v1')
       `;
     }
   }

@@ -1,5 +1,8 @@
 import type { DbClient } from '@/lib/db/types';
 import { extractDeclaredPhones, isCallablePhoneE164V1 } from '@/lib/heuristics/contact-identity';
+import { isAgentOwnedContactProfileV1, isContactProfileSourceStaleV1, type StoredContactProfileV1 } from './contact-profile.repository';
+import { jsonbParam } from '@/lib/db/json';
+import { withSerializableTransactionOn } from '@/lib/db/transaction';
 
 /** The model interprets confirmation. PostgreSQL proves the number belonged
  * to the immediately preceding, delivered reply and extends the customer's
@@ -8,16 +11,28 @@ export async function confirmDeliveredContactPhone(input: {
   turnId: string;
   phone: string;
 }, db: DbClient): Promise<boolean> {
+  if ('begin' in db) return withSerializableTransactionOn(db, tx => confirmDeliveredContactPhone(input, tx));
   if (!isCallablePhoneE164V1(input.phone)) return false;
   // Intake may already have captured the complete number from this inbound
   // message. Repeating that durable fact is a no-op, not a new confirmation
   // requiring a previous assistant suggestion. Never invent provenance.
-  const [recorded] = await db<Array<{ declared_phone: string | null }>>`
-    SELECT contact.declared_phone FROM messages current
+  const [recorded] = await db<Array<{ contact_id: string; conversation_id: string; conversation_seq: string | number | null;
+    content: string; declared_phone: string | null; contact_profile_v1: StoredContactProfileV1 | null }>>`
+    SELECT current.contact_id, current.conversation_id, current.conversation_seq, current.content,
+      contact.declared_phone, contact.contact_profile_v1 FROM messages current
     JOIN contacts contact ON contact.id = current.contact_id
-    WHERE current.id = ${input.turnId}::uuid AND current.direction = 'inbound'
+    WHERE current.id = ${input.turnId}::uuid AND current.direction = 'inbound' AND contact.deleted_at IS NULL
+    FOR UPDATE OF contact
   `;
-  if (recorded?.declared_phone === input.phone) return true;
+  if (!recorded) return false;
+  const profile = isAgentOwnedContactProfileV1(recorded.contact_profile_v1) ? recorded.contact_profile_v1 : null;
+  if (profile) {
+    if (profile.fields.telefono.value === input.phone) return true;
+    if (recorded.conversation_seq === null || await isContactProfileSourceStaleV1(db, {
+      contactId: recorded.contact_id, current: profile.fields.telefono,
+      source: { id: input.turnId, conversation_id: recorded.conversation_id, conversation_seq: Number(recorded.conversation_seq) },
+    }) || profile.fields.telefono.status === 'retracted' && profile.fields.telefono.source_message_id === input.turnId) return false;
+  } else if (recorded.declared_phone === input.phone) return true;
   const rows = await db<Array<{ id: string; contact_id: string; declared_phone: string | null; content: string }>>`
     SELECT previous.id, current.contact_id, contact.declared_phone, previous.content
     FROM messages current
@@ -49,11 +64,40 @@ export async function confirmDeliveredContactPhone(input: {
     ORDER BY previous.created_at DESC, previous.id DESC
   `;
   const source = rows.find(row => extractDeclaredPhones(row.content).includes(input.phone));
-  const declared = source?.declared_phone?.replace(/\D/gu, '') ?? '';
-  if (!source || declared.length < 8 || !input.phone.endsWith(declared)) return false;
-  await db`UPDATE contacts SET declared_phone = ${input.phone}, updated_at = now()
-    WHERE id = ${source.contact_id}::uuid`;
-  await db`UPDATE messages SET metadata = metadata || jsonb_build_object('confirmed_phone_v1',
+  if (!source) return false;
+  const declared = source.declared_phone?.replace(/\D/gu, '') ?? '';
+  let numberEvidence: { id: string; content: string } | undefined;
+  if (profile) {
+    // Literal number provenance survives retirement of semantic ingestion.
+    // A chooses what the customer confirms; this only proves the supplied
+    // suffix predates the exact delivered full-number suggestion.
+    const priorNumbers = await db<Array<{ id: string; content: string }>>`
+      SELECT supplied.id, supplied.content FROM messages supplied JOIN messages suggestion ON suggestion.id = ${source.id}::uuid
+      WHERE supplied.contact_id = ${recorded.contact_id}::uuid AND supplied.conversation_id = ${recorded.conversation_id}::uuid
+        AND supplied.direction = 'inbound' AND supplied.created_at < suggestion.created_at
+        AND supplied.conversation_seq < ${Number(recorded.conversation_seq)}
+        AND COALESCE(supplied.metadata->>'message_type', 'text') <> 'unsupported'
+      ORDER BY supplied.conversation_seq DESC LIMIT 32
+    `;
+    numberEvidence = priorNumbers.find(message => extractDeclaredPhones(message.content)
+      .some(number => input.phone.endsWith(number.replace(/\D/gu, ''))));
+    if (!numberEvidence && (declared.length < 8 || !input.phone.endsWith(declared))) return false;
+    const nextProfile = structuredClone(profile);
+    nextProfile.version += 1;
+    nextProfile.fields.telefono = { value: input.phone, status: 'confirmed', source: 'legacy',
+      source_message_id: input.turnId, source_conversation_id: recorded.conversation_id,
+      source_quote: recorded.content, source_seq: Number(recorded.conversation_seq), version: nextProfile.version,
+      confirmation_evidence: { kind: 'delivered_phone_confirmation_v1', suggested_message_id: source.id,
+        suggested_quote: source.content, local_phone_message_id: numberEvidence?.id ?? null,
+        local_phone_quote: numberEvidence?.content ?? null } };
+    await db`UPDATE contacts SET contact_profile_v1 = ${jsonbParam(db, nextProfile)},
+      declared_phone = ${input.phone}, updated_at = now() WHERE id = ${source.contact_id}::uuid`;
+  } else {
+    if (declared.length < 8 || !input.phone.endsWith(declared)) return false;
+    await db`UPDATE contacts SET declared_phone = ${input.phone}, updated_at = now()
+      WHERE id = ${source.contact_id}::uuid AND contact_profile_v1 IS NULL`;
+  }
+  await db`UPDATE messages SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('confirmed_phone_v1',
     jsonb_build_object('phone', ${input.phone}::text, 'source_message_id', ${source.id}::text))
     WHERE id = ${input.turnId}::uuid`;
   return true;

@@ -238,7 +238,8 @@ export async function prepareAgentTurnV2(input: {
       // later turn that confirms availability against that durable state.
       may_request_call_now: noActiveCall
         && awaitingCallAvailability
-        && availabilityConfirmed
+        && (availabilityConfirmed || (proposal.proposed_action.type === 'request_call_now'
+          && [proposal.move.move, ...proposal.move.secondary_moves].includes('request_call')))
         && Boolean(contactIntake?.nombre?.trim() && contactIntake?.apellido?.trim())
         && isCallablePhoneE164V1(contactIntake?.telefono ?? ''),
     },

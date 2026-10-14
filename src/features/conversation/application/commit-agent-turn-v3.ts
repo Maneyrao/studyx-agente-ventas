@@ -48,6 +48,7 @@ import { withSerializableTransactionOn } from '@/lib/db/transaction';
 import type { DbClient } from '@/lib/db/types';
 import { sha256Hex } from '@/lib/idempotency/canonical-json';
 import { registerMessage } from '@/lib/services/message.service';
+import { contactProfileValuesV1, isAgentOwnedContactProfileV1, type StoredContactProfileV1 } from '@/lib/repositories/contact-profile.repository';
 
 interface ExistingDecisionRowV3 {
   readonly id: string;
@@ -70,6 +71,7 @@ interface TurnContextRowV3 {
   readonly destination: string;
   readonly contact_name: string | null;
   readonly contact_email: string | null;
+  readonly contact_profile_v1: StoredContactProfileV1 | null;
   readonly contact_summary: string | null;
   readonly declared_phone: string | null;
   readonly selected_offering_code: string | null;
@@ -324,10 +326,11 @@ function selectedPreparations(
 }
 
 function projectContactSnapshot(
-  context: Pick<TurnContextRowV3, 'destination' | 'declared_phone' | 'contact_name' | 'contact_email'>,
+  context: Pick<TurnContextRowV3, 'destination' | 'declared_phone' | 'contact_name' | 'contact_email' | 'contact_profile_v1'>,
   preparations: readonly PreparationRowV3[],
 ): ContactSnapshotV3 {
-  const current = commercialIntakeFromContactRowV1({
+  const owned = isAgentOwnedContactProfileV1(context.contact_profile_v1);
+  const current = owned ? contactProfileValuesV1(context.contact_profile_v1!) : commercialIntakeFromContactRowV1({
     phone: context.destination,
     declared_phone: context.declared_phone,
     name: context.contact_name,
@@ -335,8 +338,8 @@ function projectContactSnapshot(
   });
   let nombre = current.nombre;
   let apellido = current.apellido;
-  let email = context.contact_email;
-  let declaredPhone = context.declared_phone;
+  let email = current.correo;
+  let declaredPhone = owned ? current.telefono : context.declared_phone;
   for (const preparation of preparations) {
     if (preparation.tool !== 'prepare_contact_details') continue;
     const artifact = contactArtifact(preparation.canonical_data);
@@ -348,7 +351,7 @@ function projectContactSnapshot(
   }
   const name = nombre
     ? [nombre, apellido].filter((part): part is string => Boolean(part)).join(' ')
-    : context.contact_name;
+    : owned ? null : context.contact_name;
   return {
     name,
     email,
@@ -415,6 +418,7 @@ async function loadTurnContext(db: DbClient, turnId: string): Promise<TurnContex
       contact.phone,
       contact.name AS contact_name,
       contact.email AS contact_email,
+      contact.contact_profile_v1,
       contact.summary AS contact_summary,
       contact.declared_phone,
       state.selected_offering_code,
@@ -862,6 +866,15 @@ export async function commitAgentTurnV3(
       preparations,
       input.decision.commit_preparations,
     );
+    if (isAgentOwnedContactProfileV1(context.contact_profile_v1)
+      && committedPreparations.some(preparation => preparation.tool === 'prepare_contact_details')) {
+      throw rejected(input.trace_id, 'CONTACT_PROFILE_CANONICAL_READ_ONLY', 'commit_preparations', {
+        factIds: [...facts.keys()], preparationIds: preparations.map(preparation => preparation.id),
+        missing: missingContactIntakeFieldsV1({ nombre: context.contact_profile_v1.fields.nombre.value,
+          apellido: context.contact_profile_v1.fields.apellido.value, correo: context.contact_profile_v1.fields.correo.value,
+          telefono: context.contact_profile_v1.fields.telefono.value }),
+      });
+    }
     const projectedContact = projectContactSnapshot(context, committedPreparations);
     const missing = missingContactIntakeFieldsV1(projectedContact.intake);
     const preparationTools = Object.fromEntries(
@@ -1099,6 +1112,7 @@ export async function commitAgentTurnV3(
           declared_phone = ${projectedContact.declared_phone},
           updated_at = now()
         WHERE id = ${context.contact_id}::uuid
+          AND (contact_profile_v1 IS NULL OR contact_profile_v1->>'owner' IS DISTINCT FROM 'agent_a_v1')
       `;
     }
 

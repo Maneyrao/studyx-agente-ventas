@@ -21,6 +21,12 @@ function context(overrides: Record<string, unknown> = {}) {
 }
 
 describe('CallContextV1', () => {
+  it('carries the complete maximum canonical given name and surname without truncation', () => {
+    const given = 'A'.repeat(160), surname = 'B'.repeat(160);
+    expect(CallContextV1Schema.parse(context({ nombre_lead: `${given} ${surname}`, apellido_lead: surname })))
+      .toMatchObject({ nombre_lead: `${given} ${surname}`, apellido_lead: surname });
+  });
+
   it('accepts the complete strict contract and rejects missing or extra fields', () => {
     expect(CallContextV1Schema.parse(context())).toBeDefined();
     const missing = context();

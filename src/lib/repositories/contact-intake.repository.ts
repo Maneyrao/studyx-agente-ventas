@@ -2,16 +2,11 @@ import { sql as orchestratorSql } from '@/lib/db/orchestrator';
 import type { DbClient } from '@/lib/db/types';
 import { commercialIntakeFromContactRowV1 } from '@/lib/heuristics/contact-identity';
 import type { ContactIntakeV1 } from '@/features/conversation/domain/conversation-planner';
+import { contactProfileValuesV1, isAgentOwnedContactProfileV1, type StoredContactProfileV1 } from './contact-profile.repository';
 
 /**
- * Reads the frozen six-field commercial contract's identity half from the one
- * place that already owns it: `contacts`. Ingestion captures name and email
- * from the customer's own words before planning runs, so this is a pure read —
- * there is no second identity store and no second capture path.
- *
- * `contacts.name` holds one full name; the operator sheet wants it split, so
- * the same split the projection uses is applied here. A contact that is
- * unknown returns every field null, which the planner reads as incomplete.
+ * Owned profiles expose independent fields, including partial and retracted
+ * values. Legacy contacts retain their existing compatibility projection.
  */
 export async function loadContactIntakeV1(
   contactId: string,
@@ -22,11 +17,14 @@ export async function loadContactIntakeV1(
     declared_phone: string | null;
     name: string | null;
     email: string | null;
+    contact_profile_v1: StoredContactProfileV1 | null;
   }>>`
-    SELECT phone, declared_phone, name, email
+    SELECT phone, declared_phone, name, email, contact_profile_v1
     FROM contacts
     WHERE id = ${contactId}::uuid AND deleted_at IS NULL
     LIMIT 1
   `;
-  return commercialIntakeFromContactRowV1(rows[0] ?? null);
+  const row = rows[0];
+  if (isAgentOwnedContactProfileV1(row?.contact_profile_v1)) return contactProfileValuesV1(row.contact_profile_v1);
+  return commercialIntakeFromContactRowV1(row ?? null);
 }

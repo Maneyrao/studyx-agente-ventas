@@ -25,6 +25,7 @@ import type { BatchMembership } from '@/features/orchestration/ports/orchestrati
 import { DEFAULT_BATCH_WINDOW_POLICY } from '@/features/orchestration/domain/batch-window';
 import { loadBusinessWorkspaceConfig } from '@/lib/config';
 import { resolveProviderOccurrenceV1 } from '@/lib/heuristics/provider-occurrence';
+import { contactProfileValuesV1, ensureAgentOwnedContactProfileV1, isAgentOwnedContactProfileV1, loadContactProfileV1 } from '@/lib/repositories/contact-profile.repository';
 
 export class TurnNotFoundError extends Error {
   readonly code = 'TURN_NOT_FOUND';
@@ -103,6 +104,7 @@ export interface InboundEnvelope {
   external_conversation_id: string;
   external_user_id: string;
   phone_e164: string;
+  identity_owner?: 'agent_a_v1';
   trace_id: string;
   botpress_conversation_id?: string;
   botpress_user_id?: string;
@@ -407,7 +409,12 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
       SELECT status FROM channel_events WHERE id = ${reservation.event_id}::uuid FOR UPDATE
     `;
     const existing = await findExistingInbound(reservation.event_id, db);
-    if (existing) return existing;
+    if (existing) {
+      if (envelope.identity_owner === 'agent_a_v1' && existing.contact.deleted_at === null) {
+        await ensureAgentOwnedContactProfileV1(existing.contact.id, db);
+      }
+      return existing;
+    }
     if (events[0]?.status === 'processing') throw new InboundEventUnavailableError(true);
     if (events[0]?.status === 'processed' || events[0]?.status === 'dead_letter') {
       throw new InboundEventUnavailableError(false);
@@ -424,7 +431,14 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
         source_event_id: reservation.event_id,
       },
     });
-    await db`SELECT id FROM contacts WHERE id = ${contact.id}::uuid FOR UPDATE`;
+    const [lockedContact] = await db<Array<{ contact_profile_v1: unknown }>>`
+      SELECT id, contact_profile_v1 FROM contacts WHERE id = ${contact.id}::uuid FOR UPDATE
+    `;
+    const identityOwned = envelope.identity_owner === 'agent_a_v1'
+      || isAgentOwnedContactProfileV1(lockedContact.contact_profile_v1);
+    if (identityOwned && !isAgentOwnedContactProfileV1(lockedContact.contact_profile_v1) && contact.deleted_at === null) {
+      await ensureAgentOwnedContactProfileV1(contact.id, db);
+    }
 
     // A channel contact becomes a lead of the configured business workspace
     // at first ingest. Call reservation, commercial state and every later
@@ -579,10 +593,10 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
     // P0 (informe 2026-08-23): el bot afirmaba registrar datos que ninguna
     // pieza persistía — esta es la pieza que los persiste.
     const volunteeredIdentity =
-      envelope.message.type === 'unsupported'
+      identityOwned || envelope.message.type === 'unsupported'
         ? { name: null, email: null, declaredPhone: null }
         : extractContactIdentity(envelope.message.text, contact.name);
-    const contextual = envelope.message.type === 'unsupported' ? null
+    const contextual = identityOwned || envelope.message.type === 'unsupported' ? null
       : await captureDeliveredContactIntakeResponse(db, {
         conversationId, contact, provider, integrationId: envelope.integration_id,
         text: envelope.message.text, occurredAt: occurrence.occurred_at,
@@ -597,7 +611,7 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
       // `phone` NO se toca: es la clave de identidad del canal, NOT NULL
       // UNIQUE, y pisarla dejaría al contacto sin poder ser encontrado por su
       // propio canal. El teléfono declarado vive en su propia columna.
-      await db`
+      const written = await db<Array<{ name: string | null; email: string | null; declared_phone: string | null }>>`
         UPDATE contacts
         SET
           name = COALESCE(${capturedIdentity.name}, name),
@@ -605,10 +619,10 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
           declared_phone = COALESCE(${capturedIdentity.declaredPhone}, declared_phone),
           updated_at = now()
         WHERE id = ${contact.id}::uuid
+          AND (contact_profile_v1 IS NULL OR contact_profile_v1->>'owner' IS DISTINCT FROM 'agent_a_v1')
+        RETURNING name, email, declared_phone
       `;
-      contact.name = capturedIdentity.name ?? contact.name;
-      contact.email = capturedIdentity.email ?? contact.email;
-      contact.declared_phone = capturedIdentity.declaredPhone ?? contact.declared_phone;
+      if (written[0]) Object.assign(contact, written[0]);
     }
     mark('identity');
 
@@ -767,16 +781,18 @@ export async function processInboundMessage(envelope: InboundEnvelope): Promise<
   // con la identidad disponible. Un opt-out se conserva en PostgreSQL para
   // cumplimiento, pero nunca se exporta como oportunidad comercial a Sheets.
   if (!replayed && !explicit_opt_out) {
+    const profile = await loadContactProfileV1(contact.id);
+    const canonical = profile ? contactProfileValuesV1(profile) : null;
     const effectiveName = captured_identity?.name ?? contact.name;
-    const { nombre, apellido } = effectiveName
+    const { nombre, apellido } = canonical ? { nombre: canonical.nombre ?? undefined, apellido: canonical.apellido ?? undefined } : effectiveName
       ? splitFullName(effectiveName)
       : { nombre: undefined, apellido: undefined };
     await upsertInboundLeadProjection({
       contactId: contact.id,
-      phone: captured_identity?.declaredPhone ?? contact.declared_phone ?? contact.phone,
+      phone: canonical?.telefono ?? captured_identity?.declaredPhone ?? contact.declared_phone ?? contact.phone,
       nombre,
       apellido,
-      email: captured_identity?.email ?? contact.email ?? undefined,
+      email: canonical ? canonical.correo ?? undefined : captured_identity?.email ?? contact.email ?? undefined,
       traceId: envelope.trace_id,
     });
   }

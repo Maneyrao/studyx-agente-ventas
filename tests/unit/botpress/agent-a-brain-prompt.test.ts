@@ -80,7 +80,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v69');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v102');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v103');
   });
   it('resolves academy identity without altering authorized facts', () => {
     const current = context();
@@ -108,5 +108,27 @@ describe('Agent A Brain prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(current);
     expect(instructions).toContain('<mandatory_repair attempt="1" rejection_id="00000000-0000-4000-8000-000000000001">');
     expect(JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!).turn_rejection).toEqual(current.turn_rejection);
+  });
+
+  it('exposes contact source evidence and a delivered question even after another assistant bubble', () => {
+    const current = context();
+    current.customer.contact_profile = {
+      version: 7,
+      sources: [{ id: '00000000-0000-4000-8000-000000000008', text: 'ANa Sofía', sequence: 8 }],
+      pending_requests: [{ message_id: '00000000-0000-4000-8000-000000000007',
+        fields: ['nombre'], purpose: 'identity', mode: 'collect' }],
+    };
+    current.turn.recent_turns = [{ id: 'logical-turn', direction: 'outbound',
+      content: 'Cómo te llamas?\nTambién podemos hablar por llamada.' }];
+    const instructions = buildAgentABrainInstructionsV1(current);
+    const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
+    expect(JSON.parse(encoded).customer.contact_profile).toEqual(current.customer.contact_profile);
+    const execution = instructions.split('<canonical_sales_behavior')[0]!;
+    expect(execution).toContain('profile_updates');
+    expect(execution).toContain('profile_requests');
+    expect(execution).toContain('independent fields');
+    expect(execution).toContain('never split');
+    expect(execution).toContain('only the customer');
+    expect(execution).toContain('later bubbles');
   });
 });

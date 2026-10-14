@@ -1,3 +1,4 @@
+import type { ContactIntakeV1 } from '@/features/conversation/domain/conversation-planner';
 import { createHash, randomUUID } from 'node:crypto';
 import type { DbClient } from '@/lib/db/types';
 import { jsonbParam } from '@/lib/db/json';
@@ -86,6 +87,7 @@ export interface ReserveCallInput {
   conversation_id: string;
   contact_name: string | null;
   contact_email?: string | null;
+  contact_intake?: ContactIntakeV1;
   /** Durable contact summary produced from prior conversation turns. */
   persisted_summary?: string | null;
   phone: string | null;
@@ -116,16 +118,17 @@ export interface ReservedCallRequest {
 
 export function deriveSharedLeadContext(input: {
   readonly contactName: string | null;
+  readonly contactIntake?: ContactIntakeV1;
   readonly contactEmail: string | null;
   readonly courseOfInterest: string | null;
 }) {
   const nombreLead = input.contactName?.trim() ?? '';
-  const identity = nombreLead ? splitFullName(nombreLead) : null;
-  const apellidoLead = identity?.apellido.trim() ?? '';
+  const identity = input.contactIntake ?? (nombreLead ? splitFullName(nombreLead) : null);
+  const apellidoLead = identity?.apellido?.trim() ?? '';
   const emailLead = input.contactEmail?.trim() ?? '';
   const courseOfInterest = input.courseOfInterest?.trim() ?? '';
   const missingFields: Array<'nombre' | 'apellido' | 'mail' | 'tipo_de_curso'> = [];
-  if (!identity?.nombre.trim()) missingFields.push('nombre');
+  if (!identity?.nombre?.trim()) missingFields.push('nombre');
   if (!apellidoLead) missingFields.push('apellido');
   if (!emailLead) missingFields.push('mail');
   if (!courseOfInterest) missingFields.push('tipo_de_curso');
@@ -391,6 +394,7 @@ export async function reserveCallForDecision(
   const callId = input.reserved_call_id ?? randomUUID();
   const sharedLead = deriveSharedLeadContext({
     contactName: input.contact_name,
+    contactIntake: input.contact_intake,
     contactEmail: input.contact_email ?? null,
     // The final availability confirmation is commonly just “sí, llamame”.
     // An optional action field from that turn must not erase the course already

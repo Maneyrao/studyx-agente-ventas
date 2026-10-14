@@ -1,4 +1,9 @@
 import type { ConversationMoveV1 } from './conversation-pipeline';
+import type {
+  ContactProfileContextV1,
+  ContactProfileRequestV1,
+  ContactProfileUpdateV1,
+} from '../../../shared/conversation/contact-profile-contract';
 
 export const AGENT_A_MEMORY_TYPES_V1 = [
   'study_goal',
@@ -41,6 +46,7 @@ export interface AgentAContextV1 {
   };
   readonly customer: {
     readonly display_name: string | null;
+    readonly contact_profile?: ContactProfileContextV1;
     readonly contact_intake?: {
       readonly nombre: string | null;
       readonly apellido: string | null;
@@ -146,6 +152,8 @@ export interface AgentATurnProposalV1 {
   readonly proposed_action: AgentAProposedActionV1;
   /** Model interpretation of the customer confirming the last delivered phone. */
   readonly confirmed_phone?: string | null;
+  readonly profile_updates?: readonly ContactProfileUpdateV1[];
+  readonly profile_requests?: readonly ContactProfileRequestV1[];
   readonly used_fact_ids: readonly string[];
   readonly used_memory_ids: readonly string[];
   readonly stage_hypothesis?: 'exploring' | 'qualified' | 'course_selected' | 'plan_selected'
