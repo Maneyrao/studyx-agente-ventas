@@ -1,6 +1,7 @@
 import type { CallEndReason, CallResult } from '@/lib/contracts/call-event';
 import type { CallStatus } from '../domain/call-state';
 import type { PostCallFollowupBriefV1 } from '../domain/post-call-followup';
+import type { PostCallNarrativeContext } from './post-call-followup-composer';
 
 /**
  * Port for the post-call followup sweep (spec 007). Narrow on purpose, same
@@ -27,6 +28,17 @@ export interface TerminalCallForFollowup {
 }
 
 export interface PostCallFollowupStore {
+  loadNarrativeContext(call: TerminalCallForFollowup): Promise<PostCallNarrativeContext>;
+
+  /** Prefer the committed outbound, then a previously authored draft. Never regenerate on send/marker crashes. */
+  readFollowupNarrative(call: TerminalCallForFollowup): Promise<string | null>;
+
+  /** First valid draft wins under the call lock; concurrent composers reuse that exact text. */
+  commitFollowupNarrative(call: TerminalCallForFollowup, text: string, selectedCourse?: PostCallNarrativeContext['selected_course']): Promise<string>;
+
+  /** Availability evidence committed with the first authored draft, retained for recovery. */
+  readFollowupNarrativeCourse?(call: TerminalCallForFollowup): Promise<PostCallNarrativeContext['selected_course']>;
+
   /**
    * Converge provider-accepted calls that never emitted a start/lifecycle
    * event. Optional so narrow test doubles written before this recovery keep

@@ -24,6 +24,21 @@ function authorizedFactIds(context: AgentAContextV1): string[] {
   ]
 }
 
+function canonicalPaymentResource(proposal: AgentATurnProposalV1, context: AgentAContextV1) {
+  const moves = new Set([proposal.move.move, ...proposal.move.secondary_moves])
+  const offeringCode = context.commercial_state.selected_offering_code
+  const paymentPlan = moves.has('select_payment_plan')
+    ? proposal.move.payment_plan ?? null
+    : context.commercial_state.selected_payment_plan
+  if (offeringCode === null || context.catalog.selected_offering?.code !== offeringCode
+    || paymentPlan === null || !context.catalog.payment_plans.some(plan => plan.code === paymentPlan)) return null
+  const paid = context.commercial_state.payment_verification
+  if (paid?.status === 'paid' && paid.paid_at !== null
+    && paid.offering_code === offeringCode && paid.plan_code === paymentPlan) return null
+  if (moves.has('report_payment')) return null
+  return { offering_code: offeringCode, payment_plan: paymentPlan }
+}
+
 function validatePlannerless(input: {
   readonly proposal: AgentATurnProposalV1
   readonly context: AgentAContextV1
@@ -62,7 +77,7 @@ function validatePlannerless(input: {
     || input.proposal.move.vetoes.includes('purchase')
   const paymentActionRequested = !paymentDeferred && (moves.has('request_payment_link')
     || (moves.has('provide_contact_details')
-      && input.context.commercial_state.awaiting_reply === 'contact_details'))
+      && input.context.commercial_state.payment_link_request?.status === 'pending'))
   const action = input.proposal.proposed_action
   if (action.type === 'none' && claimsImmediatePaymentLinkDelivery(input.proposal)) {
     return {
@@ -72,17 +87,19 @@ function validatePlannerless(input: {
         missing_information: [...(input.context.capabilities.intake_missing ?? [])] },
     }
   }
+  const paymentResource = canonicalPaymentResource(input.proposal, input.context)
   const paymentTransitionAuthorized = action.type === 'send_payment_link'
+    && input.context.capabilities.may_reply
     && input.context.capabilities.may_send_payment_link
+    && input.context.turn.input_capability?.status !== 'unreadable'
+    && input.context.capabilities.intake_status === 'known'
     && paymentActionRequested
     && !input.proposal.move.vetoes.includes('payment_link')
     && !input.proposal.move.vetoes.includes('purchase')
     && (input.context.capabilities.intake_missing ?? []).length === 0
-    && action.offering_code === input.context.commercial_state.selected_offering_code
-    && action.payment_plan === (
-      input.proposal.move.payment_plan
-      ?? input.context.commercial_state.selected_payment_plan
-    )
+    && paymentResource !== null
+    && action.offering_code === paymentResource.offering_code
+    && action.payment_plan === paymentResource.payment_plan
   if (rejection !== null && paymentTransitionAuthorized) {
     const remaining = rejection.rejections.filter((reason) => !(
       reason.subject === 'send_payment_link'
@@ -90,7 +107,13 @@ function validatePlannerless(input: {
     ))
     rejection = remaining.length === 0 ? null : { ...rejection, rejections: remaining }
   }
-  if (input.proposal.proposed_action.type === 'send_payment_link' && !paymentActionRequested) {
+  if (action.type === 'send_payment_link' && (!paymentActionRequested
+    || paymentResource === null
+    || action.offering_code !== paymentResource.offering_code
+    || action.payment_plan !== paymentResource.payment_plan
+    || !input.context.capabilities.may_reply
+    || input.context.turn.input_capability?.status === 'unreadable'
+    || input.context.capabilities.intake_status !== 'known')) {
     const actionReason = { code: 'ACTION_NOT_AUTHORIZED' as const, subject: 'send_payment_link' }
     rejection = rejection === null
       ? {
@@ -153,7 +176,8 @@ function hasUnbackedCallDispatchClaim(
 
 /**
  * `request_payment_link` is already Agent A's structured tool decision. Map it
- * to the canonical resource call when every durable precondition is present;
+ * to the canonical resource call when the current selection or durable plan
+ * and intake authorize it;
  * this changes no customer-facing text and performs no semantic reinterpretation.
  */
 function materializeAuthorizedPaymentAction<T extends AgentAProposalEnvelopeV1>(input: {
@@ -166,22 +190,22 @@ function materializeAuthorizedPaymentAction<T extends AgentAProposalEnvelopeV1>(
     ...input.initial.proposal.move.secondary_moves,
   ])
   if (!moves.has('request_payment_link')) return input.initial
+  if (moves.has('defer_payment') || moves.has('decline_purchase')) return input.initial
   if (input.initial.proposal.move.vetoes.includes('payment_link')
     || input.initial.proposal.move.vetoes.includes('purchase')) return input.initial
-  if (!input.context.capabilities.may_send_payment_link
+  if (!input.context.capabilities.may_reply || !input.context.capabilities.may_send_payment_link
+    || input.context.turn.input_capability?.status === 'unreadable'
+    || input.context.capabilities.intake_status !== 'known'
     || (input.context.capabilities.intake_missing ?? []).length > 0) return input.initial
-  const offeringCode = input.context.commercial_state.selected_offering_code
-  const paymentPlan = input.initial.proposal.move.payment_plan
-    ?? input.context.commercial_state.selected_payment_plan
-  if (offeringCode === null || paymentPlan === null) return input.initial
+  const resource = canonicalPaymentResource(input.initial.proposal, input.context)
+  if (resource === null) return input.initial
   return {
     ...input.initial,
     proposal: {
       ...input.initial.proposal,
       proposed_action: {
         type: 'send_payment_link',
-        offering_code: offeringCode,
-        payment_plan: paymentPlan,
+        ...resource,
       },
     },
   }

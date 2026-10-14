@@ -12,7 +12,7 @@ const apiBaseUrl = process.env.STUDYX_EVAL_API_BASE_URL!;
 const databaseUrl = process.env.TEST_DATABASE_URL!;
 const db = openLocalTestDatabase();
 const previousKey = secrets.DEEPSEEK_API_KEY;
-let phase: 'course' | 'agus_course' | 'missing_identity' | 'identity' | 'agus_identity' | 'confirm' | 'invalid_repair' = 'course';
+let phase: 'course' | 'agus_course' | 'missing_identity' | 'identity' | 'agus_identity' | 'confirm' | 'invalid_repair' | 'payment_course' | 'payment_identity' | 'payment_options' | 'payment_choice' = 'course';
 let generationCount = 0;
 let latestContext: {
   customer: { contact_intake?: { nombre: string | null; apellido: string | null; correo: string | null } };
@@ -43,12 +43,27 @@ beforeAll(async () => {
     if (target.origin === backend.origin) return localFetch(request, init);
     if (target.href !== 'https://api.deepseek.com/responses') throw new Error('UNEXPECTED_EXTERNAL_CALL');
     generationCount += 1;
-    const instructions = JSON.parse(String(init?.body)).instructions as string;
+    const requestBody = JSON.parse(String(init?.body));
+    const instructions = requestBody.instructions as string;
     const serialized = instructions.match(/<authorized_context>\s*([\s\S]*?)\s*<\/authorized_context>/u)?.[1];
     if (!serialized) throw new Error('AUTHORIZED_CONTEXT_MISSING');
     latestContext = JSON.parse(serialized) as NonNullable<typeof latestContext>;
     const rejection = latestContext.turn_rejection;
-    const result = phase === 'course' || phase === 'agus_course'
+    let result = phase === 'payment_course'
+      ? { ...proposal('Te puedo orientar sobre Inglés 1.'),
+          move: { schema_version: 1 as const, move: 'select_course' as const, secondary_moves: [], vetoes: [], confidence: 1, course_reference: 'ingles_1' },
+          used_fact_ids: ['offering:ingles_1:name:v1'] }
+      : phase === 'payment_identity'
+      ? proposal('Gracias, Thiago. Puedes atender la llamada ahora?')
+      : phase === 'payment_options'
+      ? { ...proposal('Seguimos por aquí. Puedes elegir 12 pagos de USD 30, 6 de USD 60 o un pago de USD 360.'),
+          move: { schema_version: 1 as const, move: 'continue_by_chat' as const, secondary_moves: ['ask_payment_options' as const], vetoes: ['call' as const], confidence: 1 },
+          used_fact_ids: ['payment:ingles_1:monthly_12:amount:v1', 'payment:ingles_1:monthly_6:amount:v1', 'payment:ingles_1:one_time:amount:v1'] }
+      : phase === 'payment_choice'
+      ? { ...proposal('Te paso el enlace para hacer el pago único.', { type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'one_time' }),
+          move: { schema_version: 1 as const, move: 'request_payment_link' as const, secondary_moves: ['select_payment_plan' as const], vetoes: [], payment_plan: 'one_time' as const, confidence: 1 },
+          used_fact_ids: ['payment:ingles_1:one_time:label:v1'] }
+      : phase === 'course' || phase === 'agus_course'
       ? { ...proposal('Te puedo orientar sobre Oratoria.'),
           move: { schema_version: 1 as const, move: 'select_course' as const, secondary_moves: [], vetoes: [], confidence: 1, course_reference: 'Oratoria' },
           response: { messages: ['Te puedo orientar sobre Oratoria.'],
@@ -65,6 +80,10 @@ beforeAll(async () => {
       : phase === 'agus_identity'
         ? proposal('Gracias, Agus. Puedes atender la llamada ahora?')
         : proposal('Te llamo ahora.', { type: 'request_call_now', reason: 'direct_request' });
+    if (requestBody.text.format.schema.properties.proposed_action.anyOf.length === 1) {
+      result = { ...proposal('Para coordinarla, me pasas tu nombre, apellido y teléfono con código de país?'),
+        move: { schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 1 } };
+    }
     if (rejection) result.repair_of = { rejection_id: rejection.rejection_id, attempt: 1 };
     return new Response(JSON.stringify({
       output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(result) }] }],
@@ -81,6 +100,9 @@ it('persists Agus data from separate messages before accepting Sii and reserves 
   phase = 'missing_identity';
   const requested = await runWorkflowTurnV1({ ...id, text: 'Me podes llamar?' });
   expect(requested.authorizedMessages.join(' ')).toContain('nombre, apellido y teléfono');
+  const [pendingIntent] = await db`SELECT s.call_preference,s.call_offer_status,s.awaiting_reply
+    FROM conversation_sales_context_states_v1 s JOIN contacts c ON c.id=s.contact_id WHERE c.phone=${id.phoneE164}`;
+  expect(pendingIntent).toMatchObject({ call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat' });
   phase = 'agus_identity';
   const intake = await runWorkflowBurstV1({ ...id, messages: [
     { text: 'así es, mi nombre es Agus', delayMs: 0 },
@@ -171,7 +193,7 @@ it('repairs the Lucas promise, records the real repair, retains full identity an
   expect(replayedCalls[0]!.id).toBe(calls[0]!.id);
 });
 
-it('emits one bounded technical notice when the model repeats the false call promise during repair', async () => {
+it('lets Agent A request missing data after the rejected call promise without a protocol notice', async () => {
   const id = {
     conversationId: `lucas-invalid-repair-${randomUUID()}`, userId: `lucas-${randomUUID()}`,
     phoneE164: `+999${String(Date.now()).slice(-10)}`, providerMode: 'fixture' as const,
@@ -184,6 +206,8 @@ it('emits one bounded technical notice when the model repeats the false call pro
   expect(result.adapterCaptures).toHaveLength(1);
   expect(result.authorizedMessages).toHaveLength(1);
   expect(result.authorizedMessages.join(' ')).not.toMatch(/te llamo|registrad|ocupad/iu);
+  expect(result.authorizedMessages.join(' ')).toContain('nombre, apellido y teléfono');
+  expect(result.authorizedMessages.join(' ')).not.toContain('se cortó mi respuesta');
   expect(result.actions.some(action => action.name === 'dispatchCall')).toBe(false);
   const calls = await db`
     SELECT cs.id FROM call_sessions cs
@@ -194,6 +218,36 @@ it('emits one bounded technical notice when the model repeats the false call pro
     SELECT diagnostics FROM agent_decisions WHERE trace_id = ${result.traceId}::uuid
   `;
   expect(rows[0]?.diagnostics).toMatchObject({
-    generation_attempts: 2, failure_stage: 'proposal_validation', action_status: 'rejected',
+    generation_attempts: 2, failure_stage: 'proposal_validation', action_status: 'none',
   });
+});
+
+it.each(['1 pago', 'un pago de 360', 'split'])('keeps intake and executes the Agent A interpreted %s plan after a call handoff', async choice => {
+  const id = { conversationId: `payment-owner-${randomUUID()}`, userId: `payment-owner-${randomUUID()}`,
+    phoneE164: `+999${String(Date.now()).slice(-10)}`, providerMode: 'fixture' as const };
+  phase = 'payment_course';
+  expect((await runWorkflowTurnV1({ ...id, text: 'Me interesa Inglés 1.' })).commitSucceeded).toBe(true);
+  phase = 'payment_identity';
+  expect((await runWorkflowTurnV1({ ...id, text: 'Mi nombre es Thiago y mi apellido es Maneyro. Mi correo es thiago@example.com. Mi teléfono es +15551234567.' })).commitSucceeded).toBe(true);
+  phase = 'confirm';
+  expect((await runWorkflowTurnV1({ ...id, text: 'Sí, puedo atender ahora, llámame.' })).commitSucceeded).toBe(true);
+  const [handoff] = await db`SELECT s.stage,s.selected_payment_plan FROM conversation_sales_context_states_v1 s JOIN contacts c ON c.id=s.contact_id WHERE c.phone=${id.phoneE164}`;
+  expect(handoff).toMatchObject({ stage: 'handoff', selected_payment_plan: null });
+  phase = 'payment_options';
+  expect((await runWorkflowTurnV1({ ...id, text: 'dale quiero pagar por acá' })).commitSucceeded).toBe(true);
+  phase = 'payment_choice';
+  generationCount = 0;
+  const result = choice === 'split'
+    ? await runWorkflowBurstV1({ ...id, messages: [{ text: '1', delayMs: 0 }, { text: 'pago', delayMs: 200 }] })
+    : await runWorkflowTurnV1({ ...id, text: choice });
+  expect(result.errorCode).toBeNull();
+  expect(result.commitSucceeded).toBe(true);
+  expect(generationCount).toBe(1);
+  expect(result.authorizedMessages.join(' ')).not.toContain('se cortó mi respuesta');
+  const rows = await db`SELECT p.id,p.plan_code,p.amount FROM payments p JOIN contacts c ON c.id=p.contact_id WHERE c.phone=${id.phoneE164}`;
+  expect(rows).toHaveLength(1);
+  expect(rows[0].plan_code).toBe('one_time');
+  expect(Number(rows[0].amount)).toBe(360);
+  const [contact] = await db`SELECT name,email,declared_phone FROM contacts WHERE phone=${id.phoneE164}`;
+  expect(contact).toMatchObject({ name: 'Thiago Maneyro', email: 'thiago@example.com', declared_phone: '+15551234567' });
 });

@@ -32,3 +32,14 @@ Usar siempre `--format json`: `adk check`, `adk logs`, `adk traces`,
 `adk status`. El dev server (`adk dev`) debe estar corriendo para traces.
 Antes de tocar un canal nuevo: `adk integrations info <name>` para confirmar
 los nombres reales de los tags.
+
+## Autoría y continuidad de A
+- Agent A interpreta el movimiento y redacta. El rechazo informa códigos y
+  campos faltantes, nunca una frase para el cliente.
+- `agent_turn_v2.conversation_only` conserva la interpretación de A y sus
+  transiciones canónicas; el backend fija `effects_allowed=false`, incluso
+  para materializadores implícitos de enlaces. No neutralizar la intención
+  de llamar ni el plan para impedir un efecto.
+- Una continuación opcional fallida no descarta una primera respuesta de A
+  ya validada. Las generaciones comparten un límite de dos solicitudes
+  reales, contando reparaciones de JSON y replay de pasos durables.

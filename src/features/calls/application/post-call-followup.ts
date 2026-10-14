@@ -1,7 +1,9 @@
-import { decidePostCallFollowup, renderPostCallFollowup } from '../domain/post-call-followup';
+import { decidePostCallFollowup } from '../domain/post-call-followup';
 import type { PostCallFollowupStore } from '../ports/post-call-followup-store';
+import { buildPostCallNarrativeEgress } from '../domain/post-call-narrative-egress';
+import type { ComposePostCallFollowup, PostCallNarrativeContext } from '../ports/post-call-followup-composer';
 import type { SendOutboundMessageInput, SendOutboundMessageResult } from '@/features/messaging/application/send-outbound-message';
-import { buildAuthorizedEgress } from '@/features/orchestration/domain/egress-guard';
+import { protectedFactsInContentV1, verifyAuthorizedEgress } from '@/features/orchestration/domain/egress-guard';
 import { CALL_START_TIMEOUT_SECONDS } from '../domain/call-timeouts';
 
 /**
@@ -21,12 +23,16 @@ export interface PostCallFollowupInput {
   readonly call_id?: string;
   readonly limit?: number;
   readonly grace_seconds?: number;
+  /** Soft row-start budget. A row already in progress finishes normally. */
+  readonly max_processing_ms?: number;
   readonly now?: number;
 }
 
 export interface PostCallFollowupResult {
   readonly trace_id: string;
   readonly examined: number;
+  /** Listed candidates left untouched when the processing budget expires. */
+  readonly deferred: number;
   readonly sent: number;
   readonly revoked: number;
   readonly skipped: number;
@@ -40,8 +46,11 @@ export interface PostCallFollowupResult {
 
 export interface PostCallFollowupDependencies {
   readonly store: PostCallFollowupStore;
+  readonly composeFollowup: ComposePostCallFollowup;
   readonly sendOutbound: (input: SendOutboundMessageInput) => Promise<SendOutboundMessageResult>;
   readonly log?: (event: string, fields: Record<string, unknown>) => void;
+  /** Monotonic elapsed time in production; injectable for deadline verification. */
+  readonly now?: () => number;
 }
 
 const DEFAULT_LIMIT = 50;
@@ -52,6 +61,12 @@ export async function runPostCallFollowup(
   deps: PostCallFollowupDependencies
 ): Promise<PostCallFollowupResult> {
   const log = deps.log ?? (() => {});
+  const now = deps.now ?? (() => performance.now());
+  const startedAt = now();
+  const maxProcessingMs = input.max_processing_ms;
+  if (maxProcessingMs !== undefined && (!Number.isFinite(maxProcessingMs) || maxProcessingMs < 0)) {
+    throw new Error('POST_CALL_FOLLOWUP_INVALID_PROCESSING_BUDGET');
+  }
   const limit = input.limit ?? DEFAULT_LIMIT;
   const graceSeconds = input.grace_seconds ?? DEFAULT_GRACE_SECONDS;
 
@@ -65,12 +80,21 @@ export async function runPostCallFollowup(
     ...(input.call_id ? { call_id: input.call_id } : {}),
   });
   const findings: PostCallFollowupResult['findings'] = [];
+  let examined = 0;
+  let deferred = 0;
   let sent = 0;
   let revoked = 0;
   let skipped = 0;
   let failed = 0;
 
   for (const call of pending) {
+    if (maxProcessingMs !== undefined && now() - startedAt >= maxProcessingMs) {
+      // These candidates have no send, revocation or completion effect. They
+      // remain eligible for the next worker rather than being counted examined.
+      deferred = pending.length - examined;
+      break;
+    }
+    examined += 1;
     try {
       // `pending` is intentionally a snapshot. A registrar_resultado or
       // webhook can commit DNC after listPendingFollowups returns, so the
@@ -163,9 +187,28 @@ export async function runPostCallFollowup(
         continue;
       }
 
-      // verdict.action === 'send'. The domain authorizes a structured factual
-      // brief; this boundary renders the minimal proactive status. Agent A
-      // owns the conversational continuation on the next turn.
+      // Agent A owns this message too. Persist the first authored draft before
+      // any send so concurrent workers and delivery/marker recovery use one text.
+      let content = await deps.store.readFollowupNarrative(call);
+      let narrativeContext: PostCallNarrativeContext | undefined;
+      if (content === null) {
+        narrativeContext = await deps.store.loadNarrativeContext(call);
+        const authored = await deps.composeFollowup({
+          brief: verdict.brief,
+          call: {
+            call_id: call.call_id,
+            status: call.status,
+            result: call.result,
+            analysis_status: call.analysis_status,
+            disconnection_reason: call.disconnection_reason,
+          },
+          context: narrativeContext,
+        });
+        if (!authored.trim()) throw new Error('AGENT_A_FOLLOWUP_EMPTY_NARRATIVE');
+        const authoredEgress = buildPostCallNarrativeEgress(authored, narrativeContext.selected_course);
+        if (!verifyAuthorizedEgress({ content: authored, manifest: authoredEgress }).ok) throw new Error('AGENT_A_FOLLOWUP_UNSUPPORTED_NARRATIVE');
+        content = await deps.store.commitFollowupNarrative(call, authored, narrativeContext.selected_course);
+      }
       // Revalidate at the actual outbound boundary too. The first check
       // protects the snapshot, while this one closes the gap introduced by
       // blocked/payment/verdict reads before provider contact.
@@ -179,17 +222,19 @@ export async function runPostCallFollowup(
         continue;
       }
 
-      const content = renderPostCallFollowup(verdict.brief);
+      let course = narrativeContext?.selected_course ?? null;
+      if (protectedFactsInContentV1(content).some((fact) => fact.kind === 'offering')) {
+        course = await deps.store.readFollowupNarrativeCourse?.(call) ?? course;
+        if (!course) course = (await deps.store.loadNarrativeContext(call)).selected_course;
+      }
+      const authorizedEgress = buildPostCallNarrativeEgress(content, course);
+      if (!verifyAuthorizedEgress({ content, manifest: authorizedEgress }).ok) throw new Error('AGENT_A_FOLLOWUP_UNSUPPORTED_NARRATIVE');
       const delivery = await deps.sendOutbound({
         workspaceId: call.workspace_id,
         contactId: call.contact_id,
         conversationId: call.conversation_id,
         text: content,
-        authorizedEgress: buildAuthorizedEgress({
-          content,
-          authorized_urls: [],
-          protected_facts: [],
-        }),
+        authorizedEgress,
         idempotencyKey: `post-call:${call.call_id}`,
         preferredChannel: call.channel,
         purpose: 'conversational',
@@ -232,7 +277,8 @@ export async function runPostCallFollowup(
 
   const result: PostCallFollowupResult = {
     trace_id: input.trace_id,
-    examined: pending.length,
+    examined,
+    deferred,
     sent,
     revoked,
     skipped,
@@ -242,7 +288,8 @@ export async function runPostCallFollowup(
 
   log('calls.post_call_followup.completed', {
     trace_id: input.trace_id,
-    examined: pending.length,
+    examined,
+    deferred,
     sent,
     revoked,
     skipped,

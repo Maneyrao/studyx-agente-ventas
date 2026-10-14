@@ -1510,7 +1510,7 @@ describe('Agent A Brain V1', () => {
     expect(moveProperties.course_reference.description).toContain(
       'required whenever move or secondary_moves includes select_course',
     );
-    expect(body.instructions).toContain('On turn_rejection, rewrite once');
+    expect(body.instructions).toContain('On turn_rejection, continue once in your voice');
     expect(body.instructions).toContain('Read turn.batch_messages as one intervention');
     expect(body.instructions).not.toContain('control voice, rhythm and the choice of');
     expect(moveProperties.secondary_moves.items.enum).not.toContain('greeting');
@@ -1621,16 +1621,19 @@ describe('Agent A Brain V1', () => {
       .mockResolvedValueOnce(providerResponse(200, malformed))
       .mockResolvedValueOnce(providerResponse(200, responsesSuccessBody(proposal())));
     vi.stubGlobal('fetch', fetchMock);
+    const accountRequest = vi.fn();
 
     await expect(generateDeepSeekAgentATurnProposalV1({
       context: context(),
       apiKey: 'deepseek-test-key',
       signal: new AbortController().signal,
+      on_provider_request: accountRequest,
     })).resolves.toMatchObject({
       provider: 'deepseek-direct',
       attempt_count: 2,
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(accountRequest).toHaveBeenCalledTimes(2);
     const retryBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
     expect(retryBody.input).toContain('root:invalid_json');
   });

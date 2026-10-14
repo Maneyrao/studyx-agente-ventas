@@ -42,3 +42,9 @@ paths:
 - Un rechazo puede no producir webhook. Ejecutar `runPostCallFollowup` al
   confirmar `failed`, conservando la clave `post-call:<call_id>` y el marcador
   `system:call_result:<call_id>` para no duplicar avisos con replay o webhook.
+- Agent A redacta el seguimiento con su prompt canónico y el workspace de la
+  llamada; no existe `renderPostCallFollowup` ni un reemplazo textual del
+  backend. Conservar la primera redacción y sus hechos de egress antes del
+  envío. Si el modelo falla, dejar recuperación pendiente.
+- Generar el seguimiento con `after` de Next después de responder al
+  despacho/webhook; el modelo puede demorar más que el timeout del caller.

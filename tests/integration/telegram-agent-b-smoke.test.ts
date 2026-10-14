@@ -193,6 +193,7 @@ run('Agent B Telegram smoke vertical slice', () => {
       { trace_id: randomUUID(), grace_seconds: 0, limit: 500 },
       {
         store: followupStore,
+        composeFollowup: async () => 'Retomamos lo que estabas viendo por aquí.',
         // This fixture is deliberately sandbox-locked. The production
         // physical consumer therefore refuses it before any provider call.
         sendOutbound: async () => ({

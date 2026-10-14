@@ -145,6 +145,8 @@ export async function prepareAgentTurnV2(input: {
   readonly workspace_slug: string;
   readonly current_customer_messages?: readonly string[];
   readonly proposal: AgentATurnProposalV1;
+  /** Retain semantic state while a model continuation cannot execute effects. */
+  readonly conversation_only?: boolean;
   /** Production Agent A keeps semantic checks diagnostic-only. */
   readonly semantic_rejections?: 'blocking' | 'advisory';
   readonly business_context: BusinessContextView | null;
@@ -223,6 +225,7 @@ export async function prepareAgentTurnV2(input: {
         || paymentVerification.plan_code === state.selected_payment_plan),
     current_customer_messages: input.current_customer_messages,
     semantic_rejections: input.semantic_rejections,
+    effects_allowed: input.conversation_only !== true,
     call_policy: {
       // A refusal closes the invitation in that turn, not the whole sales
       // conversation. The per-turn authority below still blocks an immediate

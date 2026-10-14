@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
+import { createAgentAPostCallComposer } from '@/features/calls/adapters/agent-a-post-call-narrative';
 import { runPostCallFollowup } from '@/features/calls/application/post-call-followup';
 import { PostgresPostCallFollowupStore } from '@/features/calls/adapters/postgres-post-call-followup-store';
 import { createManagedOutboundSender } from '@/features/messaging/adapters/managed-outbound';
 import { sql } from '@/lib/db/orchestrator';
 import { counter } from '@/lib/observability/counters';
 import { logger } from '@/lib/observability/structured-log';
+
+export const maxDuration = 180;
 
 const store = new PostgresPostCallFollowupStore(sql);
 
@@ -14,9 +17,8 @@ const store = new PostgresPostCallFollowupStore(sql);
  *
  * Spec 007 — cierra el loop B→A: una llamada que terminó en estado terminal
  * inicia su propio mensaje de cierre por WhatsApp, sin esperar a que el
- * cliente escriba primero. El dominio autoriza un brief estructurado y el
- * borde emite un estado operativo mínimo; el Agente A conserva la autoría de
- * toda continuación conversacional con ese mismo contexto durable.
+ * cliente escriba primero. El dominio autoriza un brief estructurado y Agent A
+ * escribe el mensaje con su identidad, prompt y contexto durable habituales.
  *
  * Protegido por CRON_SECRET, igual que el resto de /api/cron/* — sin firma
  * HMAC de Botpress porque no hay turno de Botpress que lo dispare.
@@ -32,9 +34,10 @@ export async function GET(request: NextRequest) {
 
   try {
     const result = await runPostCallFollowup(
-      { trace_id: traceId },
+      { trace_id: traceId, limit: 50, max_processing_ms: 120_000 },
       {
         store,
+        composeFollowup: createAgentAPostCallComposer(),
         sendOutbound: createManagedOutboundSender(sql),
         log: (event, fields) => logger.info({ event, ...fields }),
       }

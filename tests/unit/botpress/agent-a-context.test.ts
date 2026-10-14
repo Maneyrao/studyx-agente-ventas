@@ -6,6 +6,10 @@ import {
 } from '../../../botpress-agent/src/lib/conversation/agent-a-context';
 import type { ClaimedTurn } from '../../../botpress-agent/src/schemas/contracts';
 import type { ConversationMoveV1 } from '../../../botpress-agent/src/schemas/conversation-pipeline';
+import { resolveAgentAPlannerlessProposalV2 } from '../../../botpress-agent/src/lib/conversation/resolve-agent-a-plannerless';
+import { authorizeAgentTurnV2 } from '@/features/conversation/domain/agent-turn-policy-v2';
+import { createDefaultConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
+import type { AgentATurnProposalV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
 
 const UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
 const NOW = '2026-08-28T12:00:00.000Z';
@@ -189,6 +193,88 @@ function claimedTurn(): ClaimedTurn {
 }
 
 describe('buildAgentAContextV1', () => {
+  it.each([
+    ['1', 'pago'],
+    ['1 pago'],
+    ['un pago de 360'],
+  ])('lets Agent A select and request the canonical one-time plan after a call: %j', async (...messages) => {
+    const claimed = claimedTurn();
+    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+    claimed.context.batch_messages = messages.map((content, index) => ({
+      ...claimed.context.batch_messages[0]!, id: `${UUID}-${index}`, content,
+    }));
+    claimed.context.recent_turns = [{ direction: 'outbound', created_at: NOW,
+      content: 'Puedes elegir 12 pagos de USD 30, 6 pagos de USD 60 o 1 pago de USD 360.' }];
+    claimed.conversation_state_v1 = { ...claimed.conversation_state_v1!,
+      selected_payment_plan: null, stage: 'handoff', awaiting_reply: 'none',
+      call_preference: 'call', call_offer_status: 'accepted' };
+    claimed.contact_intake = {
+      nombre: 'Matías', apellido: 'Damonte', correo: 'matias@example.test', telefono: '+5491112345678',
+    };
+    claimed.business_context!.workspace.payment_options = [{
+      code: 'one_time', label: '1 pago de USD 360', total: { amount: '360.00', currency: 'USD' },
+      installments: 1, installment_amount: '360.00', payment_link: 'https://buy.stripe.com/local-test',
+    }];
+    const move: ConversationMoveV1 = { schema_version: 1, move: 'select_payment_plan',
+      secondary_moves: ['request_payment_link'], vetoes: [], payment_plan: 'one_time', confidence: 1 };
+    const paymentProposal: AgentATurnProposalV1 = {
+      schema_version: 1, move, response: { messages: ['Perfecto, te comparto el enlace seguro.'], call_offer: null },
+      proposed_action: { type: 'send_payment_link', offering_code: 'redes-informaticas', payment_plan: 'one_time' },
+      used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
+    };
+    const backend = authorizeAgentTurnV2({
+      proposal: paymentProposal,
+      state: { ...createDefaultConversationStateV1({ workspace_id: UUID, conversation_id: UUID, contact_id: UUID }),
+        selected_offering_code: 'redes-informaticas', selected_payment_plan: null, stage: 'handoff' },
+      offerings: [{ code: 'redes-informaticas', display_name: 'Redes Informáticas' }],
+      facts: [{ id: 'payment:redes-informaticas:one_time:label:v1', kind: 'payment_plan_label',
+        source: 'business_snapshot', value: '1 pago de USD 360', offering_code: 'redes-informaticas', payment_plan: 'one_time' }],
+      contact_intake: claimed.contact_intake,
+      current_customer_messages: messages,
+      call_policy: { may_offer_call: false, may_request_call_now: false },
+    });
+    expect(backend).toMatchObject({ ok: true, action: { type: 'send_payment_link', payment_plan: 'one_time' },
+      transition: { selected_payment_plan: 'one_time', stage: 'payment_link_sent' } });
+    const context = buildAgentAContextV1(claimed)!;
+    expect(context.capabilities.may_send_payment_link).toBe(true);
+    expect(bindCurrentConversationalIntentToMoveV1(move, claimed)).toEqual(move);
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: { proposal: { ...paymentProposal, move: bindCurrentConversationalIntentToMoveV1(move, claimed) },
+        provider: 'deepseek-direct', model: 'offline-test', latency_ms: 0, attempt_count: 1 },
+      context, repair_enabled: false, semantic_rejections: 'advisory', rejection_id: UUID,
+      repair: async () => { throw new Error('Unexpected repair'); },
+    });
+    expect(result.effective.proposal.proposed_action).toEqual({
+      type: 'send_payment_link', offering_code: 'redes-informaticas', payment_plan: 'one_time',
+    });
+    expect(result.evidence.repair_attempted).toBe(false);
+  });
+
+  it('preserves a model-interpreted payment choice outside the payment phrase parser', () => {
+    const claimed = claimedTurn();
+    claimed.context.batch_messages[0]!.content = '1 pago';
+    const move: ConversationMoveV1 = { schema_version: 1, move: 'select_payment_plan',
+      secondary_moves: ['request_payment_link'], vetoes: [], payment_plan: 'one_time', confidence: 1 };
+    expect(bindCurrentConversationalIntentToMoveV1(move, claimed)).toEqual(move);
+  });
+
+  it.each(['blocked contact', 'opt-out policy', 'unknown course', 'missing intake', 'unreadable input', 'paid purchase'])(
+    'keeps the payment resource unavailable for %s', condition => {
+      const claimed = claimedTurn();
+      claimed.catalog_resolution = { kind: 'no_catalog_intent' };
+      claimed.conversation_state_v1 = { ...claimed.conversation_state_v1!, stage: 'handoff', awaiting_reply: 'none' };
+      if (condition === 'blocked contact') claimed.contact.blocked = true;
+      if (condition === 'opt-out policy') claimed.policy.may_respond = false;
+      if (condition === 'unknown course') claimed.conversation_state_v1.selected_offering_code = 'unknown-course';
+      if (condition === 'missing intake') claimed.contact_intake_missing = ['correo'];
+      if (condition === 'unreadable input') claimed.context.batch_messages[0]!.message_type = 'unsupported';
+      if (condition === 'paid purchase') claimed.payment_verification = {
+        status: 'paid', offering_code: 'redes-informaticas', plan_code: 'monthly_12', paid_at: NOW,
+      };
+      expect(buildAgentAContextV1(claimed)!.capabilities.may_send_payment_link).toBe(false);
+    },
+  );
+
   it('projects the durable active call without authorizing another dispatch', () => {
     const claimed = claimedTurn();
     claimed.sales_context.active_call = { call_id: UUID, status: 'provider_accepted' };
@@ -433,7 +519,7 @@ describe('buildAgentAContextV1', () => {
     ]);
   });
 
-  it('binds a payment plan selected in an unanswered customer intervention', () => {
+  it('preserves Agent A payment plan selected in an unanswered customer intervention', () => {
     const claimed = claimedTurn();
     claimed.catalog_resolution = { kind: 'no_catalog_intent' };
     (claimed.context as unknown as {
@@ -462,6 +548,7 @@ describe('buildAgentAContextV1', () => {
     expect(bindCurrentConversationalIntentToMoveV1({
       schema_version: 1,
       move: 'select_payment_plan',
+      payment_plan: 'one_time',
       secondary_moves: [],
       vetoes: [],
       confidence: 0.98,
@@ -693,7 +780,7 @@ describe('buildAgentAContextV1', () => {
     expect(context?.capabilities.may_send_payment_link).toBe(true);
   });
 
-  it('does not authorize the payment link in the same turn that completes contact intake', () => {
+  it('exposes the resource after contact intake without inferring link consent', () => {
     const claimed = claimedTurn();
     claimed.context.batch_messages[0] = {
       ...claimed.context.batch_messages[0]!,
@@ -713,7 +800,7 @@ describe('buildAgentAContextV1', () => {
 
     const context = buildAgentAContextV1(claimed);
 
-    expect(context?.capabilities.may_send_payment_link).toBe(false);
+    expect(context?.capabilities.may_send_payment_link).toBe(true);
     expect(context?.customer.contact_intake).toEqual(claimed.contact_intake);
   });
 
@@ -1077,20 +1164,20 @@ describe('buildAgentAContextV1', () => {
 
     expect(bindCurrentConversationalIntentToMoveV1({
       schema_version: 1,
-      move: 'defer_payment',
+      move: 'provide_contact_details',
       secondary_moves: [],
-      vetoes: ['payment_link'],
+      vetoes: [],
       confidence: 0.91,
     }, claimed)).toEqual({
       schema_version: 1,
       move: 'provide_contact_details',
       secondary_moves: [],
       vetoes: [],
-      confidence: 1,
+      confidence: 0.91,
     });
   });
 
-  it('vincula una confirmación explícita del link con el pago pendiente ya completo', () => {
+  it('preserves Agent A explicit link confirmation with complete intake', () => {
     const claimed = claimedTurn();
     claimed.catalog_resolution = { kind: 'no_catalog_intent' };
     claimed.context.batch_messages[0] = {
@@ -1108,7 +1195,7 @@ describe('buildAgentAContextV1', () => {
 
     expect(bindCurrentConversationalIntentToMoveV1({
       schema_version: 1,
-      move: 'provide_contact_details',
+      move: 'request_payment_link',
       secondary_moves: [],
       vetoes: [],
       confidence: 0.91,
@@ -1117,7 +1204,7 @@ describe('buildAgentAContextV1', () => {
       move: 'request_payment_link',
       secondary_moves: [],
       vetoes: [],
-      confidence: 1,
+      confidence: 0.91,
     });
   });
 
@@ -1145,90 +1232,22 @@ describe('buildAgentAContextV1', () => {
   });
 
   it.each([
-    'Por ahora no tengo correo; mi teléfono es +54 9 11 1234 5678',
-    'Después te paso mi apellido',
-  ])('no convierte timing del intake en postergación de pago: %s', (content) => {
+    ['Por ahora no tengo correo; mi teléfono es +54 9 11 1234 5678', 'provide_contact_details', []],
+    ['Después te paso mi apellido', 'provide_contact_details', []],
+    ['Inés', 'provide_contact_details', []],
+    ['No quiero comprar ahora.', 'defer_payment', ['payment_link']],
+    ['No me voy a inscribir todavía.', 'defer_payment', ['payment_link']],
+    ['Lo dejamos para otro momento.', 'defer_payment', ['payment_link']],
+    ['Ya no me interesa.', 'decline_purchase', ['purchase']],
+  ] as const)('preserves Agent A payment/intake interpretation without a second lexical classifier: %s', (content, kind, vetoes) => {
     const claimed = claimedTurn();
     claimed.catalog_resolution = { kind: 'no_catalog_intent' };
-    claimed.context.batch_messages[0] = {
-      ...claimed.context.batch_messages[0],
-      content,
-    };
-    claimed.conversation_state_v1 = {
-      ...claimed.conversation_state_v1!,
-      selected_payment_plan: 'one_time',
-      awaiting_reply: 'contact_details',
-    };
-
-    expect(bindCurrentConversationalIntentToMoveV1({
-      schema_version: 1,
-      move: 'defer_payment',
-      secondary_moves: [],
-      vetoes: ['payment_link'],
-      confidence: 0.91,
-    }, claimed)).toMatchObject({
-      move: 'provide_contact_details',
-      vetoes: [],
-    });
-  });
-
-  it('reencuadra un decline_purchase inventado como continuación del intake', () => {
-    const claimed = claimedTurn();
-    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
-    claimed.context.batch_messages[0] = {
-      ...claimed.context.batch_messages[0],
-      content: 'Inés',
-    };
-    claimed.conversation_state_v1 = {
-      ...claimed.conversation_state_v1!,
-      selected_payment_plan: 'one_time',
-      awaiting_reply: 'contact_details',
-    };
-
-    expect(bindCurrentConversationalIntentToMoveV1({
-      schema_version: 1,
-      move: 'decline_purchase',
-      secondary_moves: [],
-      vetoes: ['purchase'],
-      confidence: 0.91,
-    }, claimed)).toEqual({
-      schema_version: 1,
-      move: 'provide_contact_details',
-      secondary_moves: [],
-      vetoes: [],
-      confidence: 1,
-    });
-  });
-
-  it.each([
-    'No quiero comprar ahora.',
-    'No me voy a inscribir todavía.',
-  ])('reencuadra un rechazo temporal como defer_payment: %s', (content) => {
-    const claimed = claimedTurn();
-    claimed.catalog_resolution = { kind: 'no_catalog_intent' };
-    claimed.context.batch_messages[0] = {
-      ...claimed.context.batch_messages[0],
-      content,
-    };
-    claimed.conversation_state_v1 = {
-      ...claimed.conversation_state_v1!,
-      selected_payment_plan: 'one_time',
-      awaiting_reply: 'contact_details',
-    };
-
-    expect(bindCurrentConversationalIntentToMoveV1({
-      schema_version: 1,
-      move: 'decline_purchase',
-      secondary_moves: [],
-      vetoes: ['purchase'],
-      confidence: 0.91,
-    }, claimed)).toEqual({
-      schema_version: 1,
-      move: 'defer_payment',
-      secondary_moves: [],
-      vetoes: [],
-      confidence: 1,
-    });
+    claimed.context.batch_messages[0]!.content = content;
+    claimed.conversation_state_v1 = { ...claimed.conversation_state_v1!,
+      selected_payment_plan: 'one_time', awaiting_reply: 'contact_details' };
+    const move: ConversationMoveV1 = { schema_version: 1, move: kind,
+      secondary_moves: [], vetoes: [...vetoes], confidence: 0.91 };
+    expect(bindCurrentConversationalIntentToMoveV1(move, claimed)).toEqual(move);
   });
 
   it('preserves an explicit payment-plan choice when the same message names the course', () => {
@@ -1319,7 +1338,7 @@ describe('buildAgentAContextV1', () => {
     }, claimed).secondary_moves).toEqual([]);
   });
 
-  it('resumes a deferred link only when the customer explicitly says now yes', () => {
+  it('preserves Agent A decision to resume a deferred link', () => {
     const claimed = claimedTurn();
     claimed.catalog_resolution = { kind: 'no_catalog_intent' };
     claimed.context.recent_turns = [{
@@ -1335,14 +1354,14 @@ describe('buildAgentAContextV1', () => {
     expect(bindCurrentConversationalIntentToMoveV1({
       schema_version: 1,
       move: 'select_payment_plan',
-      secondary_moves: [],
+      secondary_moves: ['request_payment_link'],
       vetoes: [],
       payment_plan: 'monthly_6',
       confidence: 0.98,
     }, claimed).secondary_moves).toEqual(['request_payment_link']);
   });
 
-  it('binds the canonical plan when a direct link request omitted it from the model JSON', () => {
+  it('leaves a missing current plan for Agent A to supply', () => {
     const claimed = claimedTurn();
     claimed.catalog_resolution = { kind: 'no_catalog_intent' };
     claimed.context.batch_messages[0] = {
@@ -1356,14 +1375,13 @@ describe('buildAgentAContextV1', () => {
       secondary_moves: [],
       vetoes: [],
       confidence: 0.98,
-    }, claimed)).toMatchObject({
-      move: 'request_payment_link',
-      payment_plan: 'one_time',
-      secondary_moves: ['select_payment_plan'],
+    }, claimed)).toEqual({
+      schema_version: 1, move: 'request_payment_link',
+      secondary_moves: [], vetoes: [], confidence: 0.98,
     });
   });
 
-  it('binds an explicitly selected canonical plan when the model omitted the field', () => {
+  it('does not fill a missing model plan with a phrase parser', () => {
     const claimed = claimedTurn();
     claimed.catalog_resolution = { kind: 'no_catalog_intent' };
     claimed.context.batch_messages[0] = {
@@ -1377,9 +1395,9 @@ describe('buildAgentAContextV1', () => {
       secondary_moves: [],
       vetoes: [],
       confidence: 0.98,
-    }, claimed)).toMatchObject({
-      move: 'select_payment_plan',
-      payment_plan: 'monthly_6',
+    }, claimed)).toEqual({
+      schema_version: 1, move: 'select_payment_plan',
+      secondary_moves: [], vetoes: [], confidence: 0.98,
     });
   });
 
@@ -1393,17 +1411,16 @@ describe('buildAgentAContextV1', () => {
 
     expect(bindCurrentConversationalIntentToMoveV1({
       schema_version: 1,
-      move: 'select_payment_plan',
+      move: 'ask_payment_options',
       secondary_moves: [],
       vetoes: [],
-      payment_plan: 'monthly_12',
       confidence: 0.95,
     }, claimed)).toEqual({
       schema_version: 1,
       move: 'ask_payment_options',
       secondary_moves: [],
       vetoes: [],
-      confidence: 1,
+      confidence: 0.95,
     });
   });
 
@@ -1460,10 +1477,9 @@ describe('buildAgentAContextV1', () => {
 
     expect(bindCurrentConversationalIntentToMoveV1({
       schema_version: 1,
-      move: 'select_payment_plan',
+      move: 'ask_payment_options',
       secondary_moves: [],
       vetoes: [],
-      payment_plan: 'monthly_12',
       confidence: 0.99,
     }, claimed)).toMatchObject({ move: 'ask_payment_options' });
   });

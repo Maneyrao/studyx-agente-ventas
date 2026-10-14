@@ -22,7 +22,9 @@ describe('Retell event route boundary', () => {
     await expect(response.json()).resolves.toEqual({ error: 'UNAUTHORIZED' });
   });
 
-  it('runs no-answer follow-up immediately instead of sleeping in request-scoped background work', async () => {
+  it.each([
+    ['ended', 'no_answer'], ['ended', 'failed'], ['ended', 'timed_out'], ['analyzed', 'completed'],
+  ] as const)('acknowledges %s/%s before scheduling immediate composition without an analysis sleep', async (eventType, callStatus) => {
     const runPostCallFollowup = vi.fn(async () => ({
       trace_id: 'trace',
       examined: 1,
@@ -32,7 +34,8 @@ describe('Retell event route boundary', () => {
       failed: 0,
       findings: [],
     }));
-    const after = vi.fn();
+    const backgroundTasks: Array<() => Promise<void>> = [];
+    const after = vi.fn((work: () => Promise<void>) => { backgroundTasks.push(work); });
 
     vi.doMock('next/server', () => ({ after }));
     vi.doMock('@/lib/db/orchestrator', () => ({ sql: {} }));
@@ -51,8 +54,8 @@ describe('Retell event route boundary', () => {
       handleXendraRelayedRetellWebhook: vi.fn(async (_request, dependencies) => {
         await dependencies.afterPersisted({
           callId: '7c2c4052-54dd-4125-bf6f-b7cf91a244df',
-          eventType: 'ended',
-          callStatus: 'no_answer',
+          eventType,
+          callStatus,
         });
         return new Response(null, { status: 204 });
       }),
@@ -74,6 +77,9 @@ describe('Retell event route boundary', () => {
     }));
 
     expect(response.status).toBe(204);
+    expect(runPostCallFollowup).not.toHaveBeenCalled();
+    expect(backgroundTasks).toHaveLength(1);
+    await backgroundTasks[0]();
     expect(runPostCallFollowup).toHaveBeenCalledWith(
       expect.objectContaining({
         call_id: '7c2c4052-54dd-4125-bf6f-b7cf91a244df',
@@ -81,6 +87,6 @@ describe('Retell event route boundary', () => {
       }),
       expect.any(Object),
     );
-    expect(after).not.toHaveBeenCalled();
+    expect(after).toHaveBeenCalledTimes(1);
   });
 });

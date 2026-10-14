@@ -80,6 +80,47 @@ const completeIntake = async () => ({
 });
 
 describe('prepareAgentTurnV2', () => {
+  it.each(['missing', 'complete'] as const)('preserves one-time checkout intent without effects during %s intake continuation', async intakeCase => {
+    const messages = ['Vemos primero los datos necesarios para avanzar.'];
+    const prepared = await prepareAgentTurnV2({ conversation_only: true,
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', catalog_index: index,
+      business_context: { ...business, workspace: { ...business.workspace, payment_options: [
+        ...business.workspace.payment_options,
+        { code: 'one_time', label: '1 pago de USD 360', total: { amount: '360.00', currency: 'USD' },
+          installments: 1, installment_amount: '360.00', payment_link: 'https://buy.stripe.com/test_one_time' },
+      ] } },
+      current_customer_messages: ['1 pago'],
+      proposal: proposal({ move: { schema_version: 1, move: 'select_payment_plan',
+        secondary_moves: ['request_payment_link'], vetoes: [], payment_plan: 'one_time', confidence: 1 },
+        response: { messages } }),
+    }, {
+      state_store: store(state({ selected_offering_code: 'redes_informaticas', stage: 'handoff' })),
+      contact_intake: intakeCase === 'complete' ? completeIntake
+        : async () => ({ nombre: 'Camila', apellido: null, correo: null, telefono: null }),
+      now: () => Date.parse(index.as_of),
+    });
+    expect(prepared.decision.business_action).toBeNull();
+    expect(prepared.response_messages).toEqual(messages);
+    expect(prepared.transition).toMatchObject({ selected_payment_plan: 'one_time', stage: 'plan_selected',
+      awaiting_reply: intakeCase === 'complete' ? 'payment_confirmation' : 'contact_details',
+      payment_link_request: { status: 'pending', payment_plan: 'one_time', requested_by_turn_id: ids.turn },
+    });
+  });
+
+  it('preserves direct call consent while conversation-only continuation asks for the missing phone', async () => {
+    const prepared = await prepareAgentTurnV2({ conversation_only: true,
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Dale llamame'],
+      proposal: proposal({ move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['A qué número con código de país y área puedo llamarte?'] } }),
+    }, { state_store: store(state()), now: () => Date.parse(index.as_of),
+      contact_intake: async () => ({ nombre: 'Camila', apellido: null, correo: null, telefono: null }) });
+    expect(prepared.decision.business_action).toBeNull();
+    expect(prepared.transition).toMatchObject({ call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat' });
+  });
+
   it.each(['requested', 'provider_accepted', 'in_progress'])(
     'allows a registration confirmation backed by an active %s call without another dispatch', async status => {
       const message = 'Sí, la llamada ya quedó registrada.';
@@ -565,7 +606,13 @@ describe('prepareAgentTurnV2', () => {
   it('resumes the durable plan for a generic link request instead of trusting a model-inferred plan', async () => {
     const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
-      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      workspace_slug: 'studyx',
+      business_context: { ...business, workspace: { ...business.workspace, payment_options: [
+        ...business.workspace.payment_options,
+        { code: 'one_time', label: '1 pago de USD 360', total: { amount: '360.00', currency: 'USD' },
+          installments: 1, installment_amount: '360.00', payment_link: 'https://buy.stripe.com/test_one_time' },
+      ] } },
+      catalog_index: index,
       current_customer_messages: ['Mandame el link de pago'],
       proposal: proposal({
         move: {

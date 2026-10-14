@@ -20,10 +20,6 @@ import {
   type StateFactIdV1,
 } from './state-fact-registry';
 import type { ContactIntakeV1 } from './conversation-planner';
-import {
-  classifyCurrentPaymentIntent,
-  derivePaymentPlanSelectionFromBatch,
-} from '@/features/payments/domain/payment-choice-policy';
 
 export interface PlannerlessOfferingV2 {
   readonly code: string;
@@ -125,6 +121,8 @@ export function authorizeAgentTurnV2(input: {
   readonly payment_verified?: boolean;
   readonly paid_purchase?: { readonly offering_code: string; readonly plan_code: SalesPaymentPlan | null };
   readonly current_customer_messages?: readonly string[];
+  /** A continuation retains its semantic transition without executing effects. */
+  readonly effects_allowed?: boolean;
   /**
    * Agent A owns customer-facing copy in production. `advisory` preserves the
    * exact response while this boundary still reduces unauthorized effects to
@@ -140,37 +138,36 @@ export function authorizeAgentTurnV2(input: {
   const moves = allMoves(proposal);
   const requestedOffering = resolveOffering(proposal.move.course_reference, input.offerings);
   const changesCourse = moves.has('select_course');
-  const selectedOffering = changesCourse
-    ? requestedOffering ?? state.selected_offering_code
+  const selectedOfferingCandidate = changesCourse
+    ? requestedOffering
     : state.selected_offering_code;
+  const selectedOffering = input.offerings.some(offering => offering.code === selectedOfferingCandidate)
+    ? selectedOfferingCandidate : null;
   const factOffering = moves.has('ask_course_information') && requestedOffering !== null
     ? requestedOffering
     : selectedOffering;
   const courseChanged = selectedOffering !== state.selected_offering_code;
-  const currentPaymentMessages = (input.current_customer_messages ?? [])
-    .map((content) => ({ content }));
-  const explicitCurrentPlan = derivePaymentPlanSelectionFromBatch(currentPaymentMessages);
-  const currentPaymentIntent = classifyCurrentPaymentIntent(currentPaymentMessages);
-  const committedCurrentPlan = currentPaymentIntent.kind === 'direct'
-    ? currentPaymentIntent.planCode
-    : null;
-  // The customer's explicit current-turn choice outranks a mismatching model
-  // field. The model still owns the reply; this boundary only chooses which
-  // canonical plan may be persisted or materialized as a payment action.
-  const selectedCurrentPlan = committedCurrentPlan ?? proposal.move.payment_plan;
-  const selectsPaymentPlanNow = selectedCurrentPlan !== null && (
-    moves.has('select_payment_plan')
-    || selectedCurrentPlan === explicitCurrentPlan
+  const canonicalPlan = (plan: SalesPaymentPlan | null | undefined): plan is SalesPaymentPlan => (
+    selectedOffering !== null && plan != null && input.facts.some(fact => (
+      fact.kind === 'payment_plan_label' && fact.offering_code === selectedOffering && fact.payment_plan === plan
+    ))
   );
+  // Agent A owns the current choice. Check its canonical resource rather than
+  // reinterpreting the customer's wording with a second payment classifier.
+  const selectedCurrentPlan = moves.has('select_payment_plan') && canonicalPlan(proposal.move.payment_plan)
+    ? proposal.move.payment_plan : null;
+  const selectsPaymentPlanNow = selectedCurrentPlan !== null;
+  const invalidCurrentPaymentSelection = moves.has('select_payment_plan')
+    && selectedCurrentPlan === null;
   const resumesDurablePlan = moves.has('request_payment_link')
     && state.selected_payment_plan !== null
     && !selectsPaymentPlanNow;
   // A link request without a simultaneous plan-selection move always uses the
   // already persisted customer choice. Agent A owns the meaning of the request;
   // the backend prevents an incidental model field from replacing that plan.
-  const selectedPlan = resumesDurablePlan
-    ? state.selected_payment_plan
-    : selectedCurrentPlan ?? (courseChanged ? null : state.selected_payment_plan);
+  const durablePlan = !courseChanged && canonicalPlan(state.selected_payment_plan)
+    ? state.selected_payment_plan : null;
+  const selectedPlan = invalidCurrentPaymentSelection ? null : selectedCurrentPlan ?? durablePlan;
   const plannedPaymentReported = moves.has('report_payment') || state.payment_reported_at !== null;
   const stateFacts = materializeStateFactsV1({
     intake: input.contact_intake,
@@ -180,6 +177,9 @@ export function authorizeAgentTurnV2(input: {
   const factsById = new Map(input.facts.map((fact) => [fact.id, fact]));
   const authorizedFactIds: string[] = [];
   const reasons: AgentTurnRejectionReasonV2[] = [];
+  if (invalidCurrentPaymentSelection) {
+    reasons.push('ACTION_NOT_AUTHORIZED');
+  }
 
   // An ambiguous course reference is a conversational miss, not a reason to
   // discard the reply. It simply cannot mutate the canonical course state.
@@ -374,6 +374,11 @@ export function authorizeAgentTurnV2(input: {
       payment_plan: selectedPlan,
     };
   }
+
+  // Effect authorization and conversational meaning are separate. Preserve
+  // the validated selection/consent below, but do not turn this continuation
+  // into dispatch, checkout, or a consumed pending request.
+  if (input.effects_allowed === false) action = { type: 'none' };
 
   if (reasons.length > 0 && input.semantic_rejections !== 'advisory') return {
     ok: false,

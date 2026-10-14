@@ -24,6 +24,8 @@ import { PostgresRetellContactToolStore } from '@/features/calls/adapters/postgr
 import * as config from '@/lib/config';
 import * as dispatchProvider from '@/app/api/agent/calls/[call_id]/dispatch/route-dependencies';
 import * as managedOutbound from '@/features/messaging/adapters/managed-outbound';
+import * as agentANarrative from '@/features/calls/adapters/agent-a-post-call-narrative';
+import type { ComposePostCallFollowupInput } from '@/features/calls/ports/post-call-followup-composer';
 
 /**
  * Spec 007 (B → A) against a real database. Unit tests already cover
@@ -34,9 +36,22 @@ import * as managedOutbound from '@/features/messaging/adapters/managed-outbound
  * requires? Each test here asserts a row count, not just "no error was thrown".
  */
 
+const scheduledFollowups = vi.hoisted(() => [] as Array<() => Promise<void>>);
+vi.mock('next/server', async (importOriginal) => {
+  const original = await importOriginal<typeof import('next/server')>();
+  return { ...original, after: (work: () => Promise<void>) => { scheduledFollowups.push(work); } };
+});
+async function flushScheduledFollowups() { while (scheduledFollowups.length) await scheduledFollowups.shift()!(); }
+
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
 const store = new PostgresPostCallFollowupStore(sql);
+const composeFollowup = async (input: ComposePostCallFollowupInput) => {
+  expect(input.brief.schema_version).toBe(1);
+  expect(input.call.call_id).toBeTruthy();
+  expect(input.context.customer.contact_intake).toBeDefined();
+  return `Agent A retomó ${input.brief.scenario} con ${input.context.selected_course?.name ?? input.context.call_context.course_interest ?? 'la orientación pendiente'}.`;
+};
 const postCallChannel: MessageChannel = {
   channel: 'whatsapp',
   provider: 'whatsapp_cloud',
@@ -185,6 +200,7 @@ async function sweep(traceId = randomUUID(), graceSeconds = 60) {
     { trace_id: traceId, grace_seconds: graceSeconds, limit: 500 },
     {
       store,
+      composeFollowup,
       sendOutbound: (input) => sendOutboundMessage(input, {
         identities: new PostgresChannelIdentityStore(sql),
         channels: { whatsapp: postCallChannel },
@@ -251,11 +267,86 @@ async function consentStatus(contactId: string) {
 }
 
 run('post-call-followup cron (spec 007, B -> A)', () => {
+  it('commits one Agent A narrative and sends it once when two composers race', async () => {
+    const fixture = await seedTerminalCall({ status: 'failed', analysis_status: 'pending' });
+    const texts: string[] = [];
+    const channel: MessageChannel = { ...postCallChannel, async sendText(input) {
+      texts.push(input.text);
+      return postCallChannel.sendText(input);
+    } };
+    const send = (input: Parameters<typeof sendOutboundMessage>[0]) => sendOutboundMessage(input, {
+      identities: new PostgresChannelIdentityStore(sql), channels: { whatsapp: channel }, preferenceOrder: ['whatsapp'],
+      contentAuthorizer: new AuthorizedEgressContentAuthorizer(),
+      sideEffectAuthorizer: { authorize: async () => ({ allowed: true as const, reason: null }) }, db: sql,
+    });
+    let drafts = 0;
+    let release: () => void = () => {};
+    const bothDrafts = new Promise<void>((resolve) => { release = resolve; });
+    const compose = async () => {
+      const draft = ++drafts;
+      if (drafts === 2) release();
+      await bothDrafts;
+      return `Redacción propia de Agent A número ${draft}.`;
+    };
+    await Promise.all([1, 2].map(() => runPostCallFollowup({
+      trace_id: randomUUID(), call_id: fixture.callId, grace_seconds: 0,
+    }, { store, composeFollowup: compose, sendOutbound: send })));
+    expect(drafts).toBe(2);
+    expect(texts).toHaveLength(1);
+    expect(await postCallOutboundDeliveryCount(fixture.callId)).toBe(1);
+    const authored = await sql<Array<{ draft: string; outbound: string }>>`
+      SELECT source.metadata -> 'post_call_followup_narrative_v1' ->> 'text' AS draft, message.content AS outbound
+      FROM call_sessions AS call JOIN messages AS source ON source.id = call.source_turn_id
+      JOIN outbound_deliveries AS delivery ON delivery.idempotency_key = 'post-call:' || call.id::text
+      JOIN messages AS message ON message.id = delivery.message_id
+      WHERE call.id = ${fixture.callId}::uuid
+    `;
+    expect(authored).toEqual([{ draft: texts[0], outbound: texts[0] }]);
+    expect(await systemCallResultEventCount(fixture.callId)).toBe(1);
+  });
+
+  it('reuses actual committed outbound after a marker crash without regenerating even if the draft cache differs', async () => {
+    const fixture = await seedTerminalCall({ status: 'failed', analysis_status: 'pending' });
+    const failingStore = new PostgresPostCallFollowupStore(sql);
+    const mark = vi.spyOn(failingStore, 'markFollowupCompleted').mockRejectedValueOnce(new Error('SIMULATED_MARKER_CRASH'));
+    const texts: string[] = [];
+    const channel: MessageChannel = { ...postCallChannel, async sendText(input) {
+      texts.push(input.text);
+      return postCallChannel.sendText(input);
+    } };
+    const send = (input: Parameters<typeof sendOutboundMessage>[0]) => sendOutboundMessage(input, {
+      identities: new PostgresChannelIdentityStore(sql), channels: { whatsapp: channel }, preferenceOrder: ['whatsapp'],
+      contentAuthorizer: new AuthorizedEgressContentAuthorizer(),
+      sideEffectAuthorizer: { authorize: async () => ({ allowed: true as const, reason: null }) }, db: sql,
+    });
+    const authored = 'Lucas, seguimos desde Python por aquí mientras revisamos la llamada.';
+    const first = await runPostCallFollowup({ trace_id: randomUUID(), call_id: fixture.callId, grace_seconds: 0 }, {
+      store: failingStore, composeFollowup: async () => authored, sendOutbound: send,
+    });
+    expect(first.failed).toBe(1);
+    expect(await systemCallResultEventCount(fixture.callId)).toBe(0);
+    await sql`
+      UPDATE messages SET metadata = jsonb_set(metadata, '{post_call_followup_narrative_v1,text}',
+        to_jsonb('A different uncommitted draft'::text))
+      WHERE id = (SELECT source_turn_id FROM call_sessions WHERE id = ${fixture.callId}::uuid)
+    `;
+    const second = await runPostCallFollowup({ trace_id: randomUUID(), call_id: fixture.callId, grace_seconds: 0 }, {
+      store: failingStore,
+      composeFollowup: async () => { throw new Error('MODEL_MUST_NOT_BE_REGENERATED'); },
+      sendOutbound: async (input) => { expect(input.text).toBe(authored); return send(input); },
+    });
+    expect(second.sent).toBe(1);
+    expect(texts).toEqual([authored]);
+    expect(await postCallOutboundDeliveryCount(fixture.callId)).toBe(1);
+    expect(await systemCallResultEventCount(fixture.callId)).toBe(1);
+    mark.mockRestore();
+  });
+
   it.each([
     { failure: 'provider', code: 'XENDRA_CREATE_REJECTED_503', attempts: 1 },
     { failure: 'configuration', code: 'VOICE_PROVIDER_CONFIGURATION_UNAVAILABLE', attempts: 0 },
     { failure: 'constructor', code: 'VOICE_PROVIDER_CONFIGURATION_UNAVAILABLE', attempts: 0 },
-  ])('dispatches the durable $failure failure follow-up immediately and deduplicates replay plus webhook processing', async ({ failure, code, attempts }) => {
+  ])('acknowledges the durable $failure failure and delivers one Agent A follow-up in the request background lifetime', async ({ failure, code, attempts }) => {
     const fixture = await seedTerminalCall({ status: 'requested', analysis_status: 'pending', provider: 'retell', ageMinutes: 0 });
     await sql`
       UPDATE call_sessions SET provider_call_id = NULL, completed_at = NULL
@@ -293,30 +384,33 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
       });
     });
     vi.spyOn(managedOutbound, 'createManagedOutboundSender').mockReturnValue(sendOutbound);
+    vi.spyOn(agentANarrative, 'createAgentAPostCallComposer').mockReturnValue(composeFollowup);
     try {
       const { POST } = await import('@/app/api/agent/calls/[call_id]/dispatch/route');
       const dispatch = () => POST(new Request(`http://localhost/api/agent/calls/${fixture.callId}/dispatch`, {
         method: 'POST', headers: { 'x-request-id': randomUUID() },
       }), { params: Promise.resolve({ call_id: fixture.callId }) });
       const first = await dispatch();
+      await flushScheduledFollowups();
       expect(first.status).toBe(502);
       await expect(first.json()).resolves.toEqual({ status: 'failed', providerCallId: null });
       await expect(sql<Array<{ status: string; error_code: string }>>`
         SELECT status, error_code FROM call_sessions WHERE id = ${fixture.callId}::uuid
       `).resolves.toEqual([{ status: 'failed', error_code: code }]);
       expect(deliveredTexts).toHaveLength(1);
-      expect(deliveredTexts[0]).toContain('No pudimos completar la llamada');
+      expect(deliveredTexts[0]).toBe('Agent A retomó temporarily_unavailable con Python.');
       expect(deliveredTexts[0]).not.toContain('test-private-detail');
       expect(await systemCallResultEventCount(fixture.callId)).toBe(1);
       expect(await postCallOutboundDeliveryCount(fixture.callId)).toBe(1);
 
       const replay = await dispatch();
+      await flushScheduledFollowups();
       expect(replay.status).toBe(502);
       // The webhook route invokes this same call-scoped worker. A replay or
       // webhook arriving after the dispatch notice must observe its marker.
       const webhookFollowup = await runPostCallFollowup({
         trace_id: randomUUID(), call_id: fixture.callId, grace_seconds: 0,
-      }, { store, sendOutbound });
+      }, { store, sendOutbound, composeFollowup });
       expect(webhookFollowup.examined).toBe(0);
       expect(dialAttempts).toBe(attempts);
       expect(deliveredTexts).toHaveLength(1);
@@ -573,6 +667,9 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
         await resumed;
         return rows.filter((call) => call.call_id === fixture.callId);
       },
+      loadNarrativeContext: store.loadNarrativeContext.bind(store),
+      readFollowupNarrative: store.readFollowupNarrative.bind(store),
+      commitFollowupNarrative: store.commitFollowupNarrative.bind(store),
       revalidateFollowup: store.revalidateFollowup.bind(store),
       hasVerifiedPayment: store.hasVerifiedPayment.bind(store),
       isContactBlocked: store.isContactBlocked.bind(store),
@@ -583,6 +680,7 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
       { trace_id: randomUUID(), grace_seconds: 0, limit: 500 },
       {
         store: pausedStore,
+        composeFollowup,
         sendOutbound: async () => {
           providerAttempts += 1;
           return { outcome: 'sent' as const, channel: 'whatsapp' as const, providerMessageId: 'unexpected', deliveryId: 'unexpected', reason: null };
@@ -1091,6 +1189,7 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
         { trace_id: randomUUID(), call_id: event.callId, grace_seconds: 0 },
         {
           store,
+          composeFollowup,
           sendOutbound: (input) => sendOutboundMessage(input, {
             identities: new PostgresChannelIdentityStore(sql),
             channels: { whatsapp: postCallChannel },

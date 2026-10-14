@@ -61,7 +61,8 @@ describe('dispatch route provider selection', () => {
   it('keeps the Next route module limited to supported exports', async () => {
     vi.stubEnv('DATABASE_URL', 'postgresql://postgres@127.0.0.1:55432/studyx_test');
     const routeModule = await import('@/app/api/agent/calls/[call_id]/dispatch/route');
-    expect(Object.keys(routeModule).sort()).toEqual(['POST', 'runtime']);
+    expect(Object.keys(routeModule).sort()).toEqual(['POST', 'maxDuration', 'runtime']);
+    expect(routeModule.maxDuration).toBe(60);
     vi.unstubAllEnvs();
   });
 });

@@ -4,7 +4,10 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const sourcePath = resolve(root, 'docs/prompts/studyx-agent-a-canonical.md');
-const outputPath = resolve(root, 'botpress-agent/src/prompts/studyx-agent-a-canonical.generated.ts');
+const outputPaths = [
+  resolve(root, 'botpress-agent/src/prompts/studyx-agent-a-canonical.generated.ts'),
+  resolve(root, 'src/shared/prompts/studyx-agent-a-canonical.generated.ts'),
+];
 // v69: conserva la intención de llamada sin anunciar un despacho inexistente.
 const expectedSha256 = 'abd982eb0ca110219160fcd65e9fc374bcef6df908b555de7087b325f011a4ac';
 const prompt = readFileSync(sourcePath, 'utf8');
@@ -26,4 +29,4 @@ const generated = [
   '',
 ].join('\n');
 
-writeFileSync(outputPath, generated, 'utf8');
+for (const outputPath of outputPaths) writeFileSync(outputPath, generated, 'utf8');

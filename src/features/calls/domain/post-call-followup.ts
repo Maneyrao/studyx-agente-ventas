@@ -4,9 +4,8 @@ import type { CallStatus } from './call-state';
 /**
  * Spec 007 — the orchestrator decides whether a post-call turn is allowed and
  * which verified situation it represents.  It does not decide the sales
- * conversation.  The structured brief is persisted with the synthetic call
- * result and can be rendered safely at the delivery boundary without turning
- * call-state policy into an implicit conversational planner.
+ * conversation. The structured brief is passed to Agent A, which authors the
+ * proactive message using the same identity and canonical prompt as chat.
  */
 
 export const POST_CALL_FOLLOWUP_PROMPT_VERSION = 'post-call-followup-v3';
@@ -68,39 +67,6 @@ function brief(
     payment_state: paymentState,
     allowed_next_steps: allowedNextSteps,
   };
-}
-
-/**
- * Minimal operational renderer for the proactive message emitted by the
- * scheduled worker.  It may express only the facts and choices authorized by
- * the brief.  Agent A owns every subsequent conversational turn with the same
- * durable call context.
- */
-export function renderPostCallFollowup(briefing: PostCallFollowupBriefV1): string {
-  switch (briefing.scenario) {
-    case 'no_answer':
-      return 'Intentamos llamarte pero no pudimos comunicarnos. Ocurrió algo? Si quieres, reintentamos o seguimos por aquí.';
-    case 'voicemail':
-      return 'La llamada llegó al buzón de voz. Si quieres, reintentamos o seguimos por aquí.';
-    case 'call_interrupted':
-      return 'Se cortó la llamada. Quieres que reintentemos o prefieres seguir por aquí?';
-    case 'temporarily_unavailable':
-      return 'No pudimos completar la llamada en este momento. Si quieres, reintentamos más tarde o seguimos por aquí.';
-    case 'analysis_unavailable':
-      return 'Ya terminó la llamada. Quedó alguna duda o quieres continuar por aquí?';
-    case 'payment_verified':
-      return 'El pago quedó verificado. El equipo continuará con tu inscripción y acceso.';
-    case 'payment_pending':
-      return 'El link quedó disponible en este chat. Cuando realices el pago, avísanos para que el equipo verifique la acreditación.';
-    case 'followup_scheduled':
-      return 'Quedó registrado el seguimiento acordado en la llamada. Si necesitas algo antes, puedes escribirnos por aquí.';
-    case 'not_interested':
-      return 'Gracias por tu tiempo. Si más adelante quieres retomarlo, puedes escribirnos por aquí.';
-    case 'human_handoff_unavailable':
-      return 'Por ahora podemos continuar la orientación por este chat. Dime qué necesitas resolver.';
-    case 'neutral_after_call':
-      return 'Gracias por tu tiempo en la llamada. Si quedó alguna duda, podemos continuar por aquí.';
-  }
 }
 
 /**

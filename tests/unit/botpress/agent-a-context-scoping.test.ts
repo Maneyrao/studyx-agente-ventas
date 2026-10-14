@@ -78,6 +78,10 @@ describe('recorte de contexto por alcanzabilidad', () => {
   it.each(['reserved', 'paid'] as const)('aligns link capability with the %s ledger, even after a historical claim', (status) => {
     const base = claim();
     const current = claim({ contact_intake_missing: [],
+      catalog_index: { offerings: [{ code: 'redes', display_name: 'Redes Informáticas', academy: 'Tecnología', aliases: [] }] },
+      business_context: { offerings: [], workspace: { payment_options: [{
+        code: 'monthly_6', label: '6 pagos mensuales de USD 60', total: { amount: '360.00', currency: 'USD' },
+      }] } },
       conversation_state_v1: { ...base.conversation_state_v1,
         selected_offering_code: 'redes', selected_payment_plan: 'monthly_6',
         stage: 'plan_selected', awaiting_reply: 'payment_confirmation', payment_reported: true },

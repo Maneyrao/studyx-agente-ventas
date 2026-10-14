@@ -24,6 +24,16 @@ const proposal = {
 };
 
 describe('AgentATurnCommitV2 contract', () => {
+  it.each([true, false])('carries the explicit conversation-only effect fence: %s', conversationOnly => {
+    const payload = { schema_version: 2, proposal, conversation_only: conversationOnly };
+    expect(AgentATurnCommitV2Schema.parse(payload)).toEqual(payload);
+  });
+
+  it.each(['true', 1, null])('rejects an invalid conversation-only fence value: %s', conversationOnly => {
+    expect(AgentATurnCommitV2Schema.safeParse({ schema_version: 2, proposal,
+      conversation_only: conversationOnly }).success).toBe(false);
+  });
+
   it('carries the model-owned turn without a conversational plan', () => {
     const payload = { schema_version: 2, proposal };
 

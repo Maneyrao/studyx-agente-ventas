@@ -5,6 +5,8 @@ import { AgentATurnProposalV1Schema } from './agent-a-brain';
 export const AgentATurnCommitV2Schema = z.object({
   schema_version: z.literal(2),
   proposal: AgentATurnProposalV1Schema,
+  // Persist Agent A's semantic state while fencing all effect materialization.
+  conversation_only: z.boolean().optional(),
 }).strict();
 
 export type AgentATurnCommitV2 = z.infer<typeof AgentATurnCommitV2Schema>;

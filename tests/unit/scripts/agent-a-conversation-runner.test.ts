@@ -685,32 +685,24 @@ describe('Agent A conversation runner', () => {
     });
   });
 
-  it('runs the same one-repair authority cycle as production when the flag is enabled', async () => {
+  it.each([
+    ['Te mando el link ahora.', 'valid'],
+    ['Seguimos por chat.', 'valid'],
+    ['Te mando el link ahora.', 'rejected'],
+    ['Seguimos por chat.', 'rejected'],
+    ['Te mando el link ahora.', 'provider_failure'],
+    ['Seguimos por chat.', 'provider_failure'],
+  ] as const)('returns a rejected action to Agent A within two plannerless generations: %s / %s', async (initialMessage, continuationResult) => {
     const claimed = localBrainClaimedTurn();
-    claimed.features = {
-      agent_loop_v3_mode: 'off',
-      conversation_pipeline_v1_enabled: false,
-      agent_a_brain_v1_enabled: true,
-      agent_a_brain_v1_shadow: false,
-      agent_a_repair_enabled: true,
-    };
+    claimed.features = { ...claimed.features!, agent_a_repair_enabled: true };
     const invalidProposal = {
       schema_version: 1,
-      move: {
-        schema_version: 1, move: 'continue_by_chat', secondary_moves: [], vetoes: [], confidence: 0.98,
-      },
-      response: { messages: ['Te mando el link ahora.'], call_offer: null },
-      proposed_action: {
-        type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
-      },
+      move: { schema_version: 1, move: 'continue_by_chat', secondary_moves: [], vetoes: [], confidence: 0.98 },
+      response: { messages: [initialMessage], call_offer: null },
+      proposed_action: { type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6' },
       used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
     };
-    const repairedProposal = {
-      ...invalidProposal,
-      response: { messages: ['Seguimos por chat y vemos primero qué opción te conviene.'], call_offer: null },
-      proposed_action: { type: 'none' },
-      repair_of: { rejection_id: '00000000-0000-4000-8000-000000000001', attempt: 1 },
-    };
+    const messages = ['Seguimos por chat y vemos primero qué opción te conviene.'];
     const deepSeekResponse = (value: unknown) => jsonResponse(200, {
       output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(value) }] }],
     });
@@ -718,46 +710,97 @@ describe('Agent A conversation runner', () => {
       .mockResolvedValueOnce(jsonResponse(200, localIngestResponse()))
       .mockResolvedValueOnce(jsonResponse(200, claimed))
       .mockResolvedValueOnce(deepSeekResponse(invalidProposal))
-      .mockResolvedValueOnce(jsonResponse(200, {
-        plan: {
-          schema_version: 1, next_stage: 'course_selected', response_goal: 'acknowledge_chat_preference',
-          canonical_fact_requests: [], allowed_business_action: { type: 'none' },
-          missing_information: [], should_offer_call: false, next_call_preference: 'chat',
-          next_call_offer_status: 'declined', next_call_offer_count: 1,
-          next_awaiting_reply: 'none', payment_reported: false,
-          selected_offering_code: 'redes_informaticas', selected_payment_plan: null,
-        },
-        fact_refs: [], state_version: 1, plan_hash: 'a'.repeat(64),
-      }))
-      .mockResolvedValueOnce(deepSeekResponse(repairedProposal))
+      .mockImplementationOnce(async (_url, init) => {
+        if (continuationResult === 'provider_failure') return jsonResponse(503, { error: 'temporary_unavailable' });
+        const body = JSON.parse(String(init?.body));
+        const rejectionId = body.text.format.schema.properties.repair_of.properties.rejection_id.enum[0];
+        return deepSeekResponse({
+          ...invalidProposal,
+          ...(continuationResult === 'valid' ? {
+            move: { schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 1 },
+            response: { messages, call_offer: null }, proposed_action: { type: 'none' },
+          } : {}),
+          repair_of: { rejection_id: rejectionId, attempt: 1 },
+        });
+      })
       .mockResolvedValueOnce(jsonResponse(200, {
         status: 'committed', replayed: false, trace_id: LOCAL_TRANSPORT_UUID,
         turn_id: LOCAL_TRANSPORT_UUID, decision_id: LOCAL_TRANSPORT_UUID,
-        next_state: 'waiting_user', outbound: null, call_request: null,
-        batch_completion: 'completed',
+        next_state: 'waiting_user', outbound: null, call_request: null, batch_completion: 'completed',
       }));
     vi.stubGlobal('fetch', fetchMock);
     const sendTurn = createLocalTurnSender({
-      apiBaseUrl: 'http://127.0.0.1:3000',
-      orchestratorKey: 'test-orchestrator-key', orchestratorKeyId: 'test-key-id',
-      signingSecret: 'test-signing-secret', cronSecret: null,
+      apiBaseUrl: 'http://127.0.0.1:3000', orchestratorKey: 'test-orchestrator-key',
+      orchestratorKeyId: 'test-key-id', signingSecret: 'test-signing-secret', cronSecret: null,
       geminiModel: 'unused-gemini', groqModel: 'unused-groq',
       deepseekApiKey: 'test-deepseek-key', deepseekModel: 'deepseek-v4-flash',
-    }, 'brain-repair-v1', 'groq', 0, true, 'deepseek');
+    }, 'brain-repair-v2', 'groq', 0, true, 'deepseek', undefined, true);
 
     const result = await sendTurn('Prefiero seguir por chat', null);
+    const modelCalls = fetchMock.mock.calls.filter(([url]) => url === 'https://api.deepseek.com/responses');
+    expect(modelCalls).toHaveLength(2);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/plan'))).toBe(false);
+    const repairBody = JSON.parse(String(modelCalls[1]?.[1]?.body));
+    const repairContext = JSON.parse(repairBody.instructions.split('<authorized_context>')[1].split('</authorized_context>')[0]);
+    expect(repairContext.turn_rejection.rejections).toContainEqual({ code: 'ACTION_NOT_AUTHORIZED', subject: 'send_payment_link' });
+    expect(repairContext.turn_rejection.authorized_alternatives.actions).toEqual(['none']);
+    expect(repairBody.text.format.schema.properties.proposed_action.anyOf).toEqual([
+      { type: 'object', additionalProperties: false, required: ['type'], properties: { type: { type: 'string', enum: ['none'] } } },
+    ]);
+    const commitBody = JSON.parse(String(fetchMock.mock.calls[4]?.[1]?.body));
+    expect(commitBody.conversation_pipeline_v1).toBeNull();
+    expect(result.turnDiagnostic).toMatchObject({ repairAttempted: true, proposalGenerationCalls: 2,
+      rejectionCodes: expect.arrayContaining(['ACTION_NOT_AUTHORIZED']) });
+    if (continuationResult === 'valid') {
+      expect(commitBody.agent_turn_v2.conversation_only).toBe(true);
+      expect(commitBody.agent_turn_v2.proposal).toMatchObject({
+        move: invalidProposal.move, proposed_action: { type: 'none' },
+        response: { messages, call_offer: null },
+      });
+      expect(result.turnDiagnostic?.repaired).toBe(true);
+    } else if (initialMessage === 'Seguimos por chat.') {
+      expect(commitBody.agent_turn_v2).toMatchObject({ conversation_only: true,
+        proposal: { move: invalidProposal.move, response: { messages: [initialMessage] } } });
+      expect(result.turnDiagnostic?.repaired).toBe(false);
+      expect(result.turnDiagnostic?.technicalFallbackReason).toBeNull();
+    } else if (continuationResult === 'rejected') {
+      expect(commitBody.agent_turn_v2).toBeNull();
+      expect(commitBody.decision).toMatchObject({ kind: 'suppress', response: null, reason_code: 'AGENT_A_CONTINUATION_REJECTED' });
+      expect(result.turnDiagnostic?.technicalFallbackReason).toBeNull();
+    } else {
+      expect(commitBody.agent_turn_v2).toBeNull();
+      expect(result.turnDiagnostic?.brainFailureCode).toBe('BRAIN_DEEPSEEK_HTTP_503');
+      expect(result.turnDiagnostic?.technicalFallbackReason).toBe('BRAIN_UNAVAILABLE');
+    }
+  });
 
-    expect(fetchMock.mock.calls.filter(([url]) => url === 'https://api.deepseek.com/responses'))
-      .toHaveLength(2);
-    expect(result.turnDiagnostic).toMatchObject({
-      repairAttempted: true,
-      repaired: true,
-      proposalGenerationCalls: 2,
-      rejectionCodes: expect.arrayContaining(['ACTION_NOT_AUTHORIZED']),
+  it('counts the initial schema retry in the two-request budget and fences the retained safe reply', async () => {
+    const claimed = localBrainClaimedTurn();
+    claimed.features = { ...claimed.features!, agent_a_repair_enabled: true };
+    const invalidActionProposal = { schema_version: 1,
+      move: { schema_version: 1, move: 'continue_by_chat', secondary_moves: [], vetoes: [], confidence: 1 },
+      response: { messages: ['Seguimos por chat.'], call_offer: null },
+      proposed_action: { type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6' },
+      used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(200, localIngestResponse()))
+      .mockResolvedValueOnce(jsonResponse(200, claimed))
+      .mockResolvedValueOnce(jsonResponse(200, { output: [{ type: 'message', content: [{ type: 'output_text', text: '{broken json' }] }] }))
+      .mockResolvedValueOnce(jsonResponse(200, { output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(invalidActionProposal) }] }] }))
+      .mockResolvedValueOnce(jsonResponse(200, { status: 'committed', replayed: false, trace_id: LOCAL_TRANSPORT_UUID,
+        turn_id: LOCAL_TRANSPORT_UUID, decision_id: LOCAL_TRANSPORT_UUID, next_state: 'waiting_user',
+        outbound: null, call_request: null, batch_completion: 'completed' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const sendTurn = createLocalTurnSender({ apiBaseUrl: 'http://127.0.0.1:3000',
+      orchestratorKey: 'test-orchestrator-key', orchestratorKeyId: 'test-key-id', signingSecret: 'test-signing-secret', cronSecret: null,
+      geminiModel: 'unused-gemini', groqModel: 'unused-groq', deepseekApiKey: 'test-deepseek-key', deepseekModel: 'deepseek-v4-flash',
+    }, 'physical-two-request-budget', 'groq', 0, true, 'deepseek', undefined, true);
+    const result = await sendTurn('Prefiero seguir por chat', null);
+    expect(fetchMock.mock.calls.filter(([url]) => url === 'https://api.deepseek.com/responses')).toHaveLength(2);
+    expect(JSON.parse(String(fetchMock.mock.calls[4]?.[1]?.body)).agent_turn_v2).toMatchObject({
+      conversation_only: true, proposal: { move: invalidActionProposal.move, response: invalidActionProposal.response },
     });
-    const commitBody = JSON.parse(String(fetchMock.mock.calls[5]?.[1]?.body));
-    expect(commitBody.conversation_pipeline_v1.composition.narrative.opening)
-      .toBe('Seguimos por chat y vemos primero qué opción te conviene.');
+    expect(result.turnDiagnostic).toMatchObject({ proposalGenerationCalls: 2, repairAttempted: false });
   });
 
   it('keeps strict DeepSeek semantics but commits the same technical fallback as production', async () => {

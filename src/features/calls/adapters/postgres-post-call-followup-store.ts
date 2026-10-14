@@ -1,4 +1,8 @@
 import type postgres from 'postgres';
+import type { DbClient } from '@/lib/db/types';
+import { STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION } from '@/shared/prompts/studyx-agent-a-canonical.generated';
+import { loadContactIntakeV1 } from '@/lib/repositories/contact-intake.repository';
+import type { PostCallNarrativeContext } from '../ports/post-call-followup-composer';
 import type { CallEndReason, CallResult } from '@/lib/contracts/call-event';
 import type { CallStatus } from '../domain/call-state';
 import type { PostCallFollowupStore, TerminalCallForFollowup } from '../ports/post-call-followup-store';
@@ -15,6 +19,131 @@ const TERMINAL_STATUSES: readonly CallStatus[] = [
 
 export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
   constructor(private readonly db: postgres.Sql) {}
+
+  async loadNarrativeContext(call: TerminalCallForFollowup): Promise<PostCallNarrativeContext> {
+    if (!call.workspace_id) throw new Error('WORKSPACE_UNRESOLVED');
+    const rows = await this.db<Array<{
+      academy_name: string; course_interest: string | null; conversation_summary: string | null;
+      selected_offering_code: string | null; course_name: string | null;
+      selected_payment_plan: string | null; failure_code: string | null;
+      analysis: PostCallNarrativeContext['analysis'];
+    }>>`
+      SELECT
+        workspace.display_name AS academy_name,
+        cs.context_snapshot ->> 'curso_interes' AS course_interest,
+        cs.context_snapshot ->> 'resumen_whatsapp' AS conversation_summary,
+        state.selected_offering_code, offering.display_name AS course_name,
+        state.selected_payment_plan,
+        CASE WHEN cs.error_code ~ '^[A-Z][A-Z0-9_]{0,127}$' THEN cs.error_code ELSE NULL END AS failure_code,
+        CASE WHEN analysis.payload IS NOT NULL THEN jsonb_build_object(
+          'summary', analysis.payload -> 'analysis' ->> 'call_summary',
+          'pending_commitment', analysis.payload -> 'analysis' ->> 'compromiso_pendiente',
+          'principal_objection', analysis.payload -> 'analysis' ->> 'objecion_principal',
+          'interest_level', analysis.payload -> 'analysis' ->> 'nivel_interes'
+        ) ELSE NULL END AS analysis
+      FROM call_sessions AS cs
+      JOIN workspaces AS workspace ON workspace.id = cs.workspace_id AND workspace.status = 'active'
+      JOIN workspace_contacts AS wc ON wc.workspace_id = cs.workspace_id
+        AND wc.contact_id = cs.contact_id AND wc.lifecycle_status = 'active'
+      LEFT JOIN conversation_sales_context_states_v1 AS state
+        ON state.workspace_id = cs.workspace_id AND state.conversation_id = cs.conversation_id
+        AND state.contact_id = cs.contact_id
+      LEFT JOIN offerings AS offering
+        ON offering.workspace_id = cs.workspace_id AND offering.code = state.selected_offering_code
+        AND offering.status = 'active'
+      LEFT JOIN LATERAL (
+        SELECT payload FROM call_events WHERE call_id = cs.id AND event_type = 'analyzed'
+        ORDER BY sequence DESC, occurred_at DESC, id DESC LIMIT 1
+      ) AS analysis ON TRUE
+      WHERE cs.id = ${call.call_id}::uuid AND cs.workspace_id = ${call.workspace_id}::uuid
+        AND cs.contact_id = ${call.contact_id}::uuid AND cs.conversation_id = ${call.conversation_id}::uuid
+    `;
+    const row = rows[0];
+    if (!row) throw new Error('FOLLOWUP_CONTEXT_UNRESOLVED');
+    const history = await this.db<Array<{ direction: 'inbound' | 'outbound'; text: string }>>`
+      SELECT direction, left(content, 2000) AS text FROM messages
+      WHERE conversation_id = ${call.conversation_id}::uuid AND contact_id = ${call.contact_id}::uuid
+        AND content <> '[system:call_result]'
+      ORDER BY conversation_seq DESC NULLS LAST, created_at DESC, id DESC LIMIT 12
+    `;
+    return {
+      academy_name: row.academy_name,
+      customer: { contact_intake: await loadContactIntakeV1(call.contact_id, this.db) },
+      selected_course: row.selected_offering_code && row.course_name
+        ? { code: row.selected_offering_code, name: row.course_name } : null,
+      selected_payment_plan: row.selected_payment_plan,
+      history: history.reverse(),
+      call_context: { course_interest: row.course_interest, conversation_summary: row.conversation_summary },
+      analysis: row.analysis,
+      failure_code: row.failure_code,
+    };
+  }
+
+  private async readNarrativeOn(db: DbClient, call: TerminalCallForFollowup): Promise<string | null> {
+    const rows = await db<Array<{ text: string | null }>>`
+      SELECT COALESCE(
+        (
+          SELECT message.content FROM outbound_deliveries AS delivery
+          JOIN messages AS message ON message.id = delivery.message_id
+          WHERE delivery.idempotency_key = ${`post-call:${call.call_id}`}
+            AND message.contact_id = cs.contact_id AND message.conversation_id = cs.conversation_id
+          ORDER BY message.created_at, message.id LIMIT 1
+        ),
+        CASE WHEN source.metadata -> 'post_call_followup_narrative_v1' ->> 'call_id' = cs.id::text
+          THEN source.metadata -> 'post_call_followup_narrative_v1' ->> 'text' END
+      ) AS text
+      FROM call_sessions AS cs
+      JOIN messages AS source ON source.id = cs.source_turn_id
+        AND source.contact_id = cs.contact_id AND source.conversation_id = cs.conversation_id
+      WHERE cs.id = ${call.call_id}::uuid AND cs.contact_id = ${call.contact_id}::uuid
+        AND cs.conversation_id = ${call.conversation_id}::uuid
+        AND cs.workspace_id = ${call.workspace_id}::uuid
+    `;
+    return rows[0]?.text ?? null;
+  }
+
+  async readFollowupNarrative(call: TerminalCallForFollowup): Promise<string | null> {
+    return this.readNarrativeOn(this.db, call);
+  }
+
+  async readFollowupNarrativeCourse(call: TerminalCallForFollowup): Promise<PostCallNarrativeContext['selected_course']> {
+    const rows = await this.db<Array<{ code: string | null; name: string | null }>>`
+      SELECT
+        source.metadata -> 'post_call_followup_narrative_v1' -> 'selected_course' ->> 'code' AS code,
+        source.metadata -> 'post_call_followup_narrative_v1' -> 'selected_course' ->> 'name' AS name
+      FROM call_sessions AS cs JOIN messages AS source ON source.id = cs.source_turn_id
+      WHERE cs.id = ${call.call_id}::uuid AND cs.contact_id = ${call.contact_id}::uuid
+        AND cs.conversation_id = ${call.conversation_id}::uuid AND cs.workspace_id = ${call.workspace_id}::uuid
+        AND source.metadata -> 'post_call_followup_narrative_v1' ->> 'call_id' = cs.id::text
+    `;
+    const row = rows[0];
+    return row?.code?.trim() && row.name?.trim() ? { code: row.code, name: row.name } : null;
+  }
+
+  async commitFollowupNarrative(call: TerminalCallForFollowup, text: string, selectedCourse?: PostCallNarrativeContext['selected_course']): Promise<string> {
+    return this.db.begin(async (tx) => {
+      const locked = await tx<Array<{ source_turn_id: string }>>`
+        SELECT source_turn_id FROM call_sessions
+        WHERE id = ${call.call_id}::uuid AND contact_id = ${call.contact_id}::uuid
+          AND conversation_id = ${call.conversation_id}::uuid AND workspace_id = ${call.workspace_id}::uuid
+        FOR UPDATE
+      `;
+      if (!locked[0]) throw new Error('FOLLOWUP_CONTEXT_UNRESOLVED');
+      const previous = await this.readNarrativeOn(tx, call);
+      if (previous !== null) return previous;
+      // source_turn_id is unique per call. This is an authored draft, not a
+      // completion marker or an extra visible message. Network IO stays outside
+      // this short transaction; the normal managed delivery lease owns sending.
+      await tx`
+        UPDATE messages SET metadata = jsonb_set(
+          COALESCE(metadata, '{}'::jsonb), '{post_call_followup_narrative_v1}',
+          ${tx.json({ schema_version: 1, call_id: call.call_id, text, selected_course: selectedCourse ?? null, author: 'agent_a', canonical_prompt_version: STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION })}, TRUE
+        )
+        WHERE id = ${locked[0].source_turn_id}::uuid
+      `;
+      return text;
+    });
+  }
 
   async expireStaleAcceptedCalls(input: { timeout_seconds: number }): Promise<number> {
     const rows = await this.db<Array<{ id: string }>>`

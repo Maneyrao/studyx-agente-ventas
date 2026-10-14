@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { decidePostCallFollowup, renderPostCallFollowup } from '@/features/calls/domain/post-call-followup';
+import { decidePostCallFollowup } from '@/features/calls/domain/post-call-followup';
 import { runPostCallFollowup } from '@/features/calls/application/post-call-followup';
 import type { PostCallFollowupStore } from '@/features/calls/ports/post-call-followup-store';
+import { verifyAuthorizedEgress } from '@/features/orchestration/domain/egress-guard';
+import type { PostCallNarrativeContext } from '@/features/calls/ports/post-call-followup-composer';
+
+const narrativeContext: PostCallNarrativeContext = {
+  academy_name: 'StudyX',
+  customer: { contact_intake: { nombre: 'Lucas', apellido: 'Pérez', correo: 'lucas@example.test', telefono: '+5491123456789' } },
+  selected_course: { code: 'python', name: 'Python' }, selected_payment_plan: null, history: [],
+  call_context: { course_interest: 'Python', conversation_summary: null }, analysis: null, failure_code: null,
+};
+const composeFollowup = async () => 'Lucas, podemos reintentar o seguir por aquí con Python.';
 
 const base = { analysisStatus: 'completed' as const, paymentVerified: false };
 
@@ -37,31 +47,25 @@ describe('post-call followup verdicts (spec 007)', () => {
     }
   });
 
-  it('asks what happened after no answer and offers retry or chat', () => {
+  it('authorizes retry or chat after no answer with a factual brief', () => {
     const verdict = decidePostCallFollowup({ status: 'no_answer', result: null, ...base });
     expect(verdict.action).toBe('send');
     if (verdict.action !== 'send') return;
-    const content = renderPostCallFollowup(verdict.brief);
-    expect(content).toMatch(/ocurri[oó] algo/i);
-    expect(content).toMatch(/reintent/iu);
-    expect(content).toMatch(/chat|por aqu[ií]|por ac[aá]/i);
+    expect(verdict.brief).toMatchObject({ scenario: 'no_answer', allowed_next_steps: ['retry_call', 'continue_chat'] });
   });
 
   it.each(['failed'] as const)(
-    'explains temporary operator unavailability and keeps chat available for %s',
+    'authorizes later retry or chat after a failed call with no asserted cause for %s',
     (status) => {
       const verdict = decidePostCallFollowup({ status, result: null, ...base });
       expect(verdict.action).toBe('send');
       if (verdict.action !== 'send') return;
-      const content = renderPostCallFollowup(verdict.brief);
       expect(verdict.brief.scenario).toBe('temporarily_unavailable');
-      expect(content).toMatch(/no pudimos completar/iu);
-      expect(content).toMatch(/reintent.*m[aá]s tarde/i);
-      expect(content).toMatch(/chat|por aqu[ií]|por ac[aá]/i);
+      expect(verdict.brief.allowed_next_steps).toEqual(['retry_call_later', 'continue_chat']);
     },
   );
 
-  it('uses neutral interruption wording for an ambiguous timeout', () => {
+  it('represents an ambiguous timeout as interruption with recovery choices', () => {
     const verdict = decidePostCallFollowup({ status: 'timed_out', result: null, ...base });
     expect(verdict).toMatchObject({
       action: 'send',
@@ -69,9 +73,7 @@ describe('post-call followup verdicts (spec 007)', () => {
       reason: 'CALL_TIMED_OUT',
     });
     if (verdict.action !== 'send') return;
-    const content = renderPostCallFollowup(verdict.brief);
-    expect(content).toMatch(/interrumpi[oó]|cort[oó]/iu);
-    expect(content).not.toMatch(/culpa|rechazaste|operadores/iu);
+    expect(verdict.brief.allowed_next_steps).toEqual(['retry_call', 'continue_chat']);
   });
 
   it('recovers an abrupt user hangup when analysis did not arrive', () => {
@@ -101,7 +103,7 @@ describe('post-call followup verdicts (spec 007)', () => {
     }
   });
 
-  it('sends a neutral continuity message when analysis is unavailable, never claims a result', () => {
+  it('authorizes continuity when analysis is unavailable without asserting an outcome', () => {
     const pending = decidePostCallFollowup({
       status: 'completed', result: null, analysisStatus: 'pending', paymentVerified: false,
     });
@@ -125,22 +127,18 @@ describe('post-call followup verdicts (spec 007)', () => {
     expect(verified.action).toBe('send');
     if (unverified.action === 'send' && verified.action === 'send') {
       expect(unverified.brief.payment_state).toBe('reported_or_pending');
-      expect(renderPostCallFollowup(unverified.brief)).not.toMatch(/pago qued[oó] verificado/iu);
       expect(verified.brief.payment_state).toBe('verified');
-      expect(renderPostCallFollowup(verified.brief)).toMatch(/pago qued[oó] verificado/iu);
     }
   });
 
-  it('reminds that Agent A sent the payment link in chat, never claims it was sent inside the call', () => {
+  it('authorizes payment continuation for a reported link without asserting verified payment', () => {
     const verdict = decidePostCallFollowup({
       status: 'completed', result: 'link_enviado_sin_pago', ...base,
     });
     expect(verdict.action).toBe('send');
     if (verdict.action !== 'send') return;
-    const content = renderPostCallFollowup(verdict.brief);
     expect(verdict.brief.payment_state).toBe('reported_or_pending');
-    expect(content).toContain('en este chat');
-    expect(content).not.toContain('en la llamada');
+    expect(verdict.brief.allowed_next_steps).toEqual(['complete_payment', 'await_human_verification']);
   });
 
   it('routes no_contactar to revocation, not a message', () => {
@@ -150,12 +148,13 @@ describe('post-call followup verdicts (spec 007)', () => {
     expect(verdict).toEqual({ action: 'revoke_contact', reason: 'DO_NOT_CONTACT' });
   });
 
-  it('keeps human handoff disabled: derivado_humano gets a neutral close, no transfer promise', () => {
+  it('keeps human handoff unavailable and authorizes only continued chat', () => {
     const verdict = decidePostCallFollowup({
       status: 'completed', result: 'derivado_humano', ...base,
     });
     expect(verdict.action).toBe('send');
     expect(verdict.reason).toBe('HUMAN_HANDOFF_REQUESTED_DISABLED');
+    if (verdict.action === 'send') expect(verdict.brief.allowed_next_steps).toEqual(['continue_chat']);
   });
 
   it('covers every neutral no-claim result without throwing', () => {
@@ -202,9 +201,13 @@ describe('post-call followup delivery boundary', () => {
   } {
     const completed: string[] = [];
     const followups: Array<Parameters<PostCallFollowupStore['markFollowupCompleted']>[0]['followup']> = [];
+    let narrative: string | null = null;
     return {
       completed,
       followups,
+      async loadNarrativeContext() { return narrativeContext; },
+      async readFollowupNarrative() { return narrative; },
+      async commitFollowupNarrative(_call, text) { narrative ??= text; return narrative; },
       async listPendingFollowups() {
         return [{
           call_id: '00000000-0000-4000-8000-000000000001',
@@ -231,6 +234,165 @@ describe('post-call followup delivery boundary', () => {
     };
   }
 
+  it('delivers the Agent A authored narrative with factual call and durable customer context', async () => {
+    const store = storeFor({ status: 'failed', result: null });
+    let deliveredText: string | undefined;
+    let authoredInput: unknown;
+    const result = await runPostCallFollowup({ trace_id: 'trace-agent-a' }, {
+      store,
+      composeFollowup: async (input: unknown) => {
+        authoredInput = input;
+        return 'Lucas, la llamada no llegó a iniciarse. Podemos seguir con Python por aquí.';
+      },
+      sendOutbound: async (input) => {
+        deliveredText = input.text;
+        return { outcome: 'sent', channel: 'telegram', providerMessageId: '1', deliveryId: '1', reason: null };
+      },
+    });
+    expect(result.sent).toBe(1);
+    expect(deliveredText).toBe('Lucas, la llamada no llegó a iniciarse. Podemos seguir con Python por aquí.');
+    expect(authoredInput).toMatchObject({
+      brief: { scenario: 'temporarily_unavailable', payment_state: 'not_applicable' },
+      call: { status: 'failed', result: null, analysis_status: 'completed' },
+      context: { customer: { contact_intake: { nombre: 'Lucas' } }, selected_course: { code: 'python' } },
+    });
+  });
+
+  it('reuses the committed narrative after a send/marker crash without invoking an unavailable model', async () => {
+    const store = storeFor({});
+    let text = '';
+    store.readFollowupNarrative = async () => 'Lucas, retomamos desde el acuerdo que ya hicimos.';
+    store.loadNarrativeContext = async () => { throw new Error('CONTEXT_MUST_NOT_BE_RELOADED'); };
+    store.commitFollowupNarrative = async () => { throw new Error('NARRATIVE_MUST_NOT_BE_REGENERATED'); };
+    const result = await runPostCallFollowup({ trace_id: 'trace-replay' }, {
+      store,
+      composeFollowup: async () => { throw new Error('MODEL_UNAVAILABLE'); },
+      sendOutbound: async (input) => {
+        text = input.text;
+        return { outcome: 'sent', channel: 'telegram', providerMessageId: '1', deliveryId: '1', reason: null };
+      },
+    });
+    expect(result.sent).toBe(1);
+    expect(text).toBe('Lucas, retomamos desde el acuerdo que ya hicimos.');
+    expect(store.completed).toHaveLength(1);
+  });
+
+  it('keeps the call pending without sending template copy when the model is unavailable', async () => {
+    const store = storeFor({});
+    let attempts = 0;
+    const result = await runPostCallFollowup({ trace_id: 'trace-missing-model' }, {
+      store,
+      composeFollowup: async () => { throw new Error('AGENT_A_FOLLOWUP_CONFIG_UNAVAILABLE'); },
+      sendOutbound: async () => { attempts += 1; throw new Error('NO_FALLBACK_ALLOWED'); },
+    });
+    expect(result.failed).toBe(1);
+    expect(result.sent).toBe(0);
+    expect(attempts).toBe(0);
+    expect(store.completed).toEqual([]);
+  });
+
+  it('delivers the first committed narrative when concurrent composition produced a different draft', async () => {
+    const store = storeFor({});
+    store.commitFollowupNarrative = async () => 'La redacción de Agent A que ganó la reserva.';
+    let sentText: string | undefined;
+    await runPostCallFollowup({ trace_id: 'trace-concurrent' }, {
+      store,
+      composeFollowup: async () => 'Una segunda redacción que debe descartarse.',
+      sendOutbound: async (input) => {
+        sentText = input.text;
+        return { outcome: 'sent', channel: 'telegram', providerMessageId: '1', deliveryId: '1', reason: null };
+      },
+    });
+    expect(sentText).toBe('La redacción de Agent A que ganó la reserva.');
+  });
+
+  it('revalidates DNC after composition and never sends the newly authored draft', async () => {
+    const store = storeFor({});
+    let consentChecks = 0;
+    let attempts = 0;
+    store.revalidateFollowup = async () => ({ do_not_contact: ++consentChecks === 2 });
+    const result = await runPostCallFollowup({ trace_id: 'trace-late-dnc' }, {
+      store,
+      composeFollowup,
+      sendOutbound: async () => { attempts += 1; throw new Error('DNC_SEND'); },
+    });
+    expect(result.revoked).toBe(1);
+    expect(attempts).toBe(0);
+  });
+
+  it.each([false, true])('authorizes the same canonical offering fact for a fresh or cached Agent A narrative (cached=%s)', async (cached) => {
+    const store = storeFor({ status: 'failed', result: null });
+    const text = 'El curso de Python está disponible. Podemos seguir por aquí.';
+    if (cached) store.readFollowupNarrative = async () => text;
+    let accepted = false;
+    const result = await runPostCallFollowup({ trace_id: 'trace-course-fact' }, {
+      store,
+      composeFollowup: async () => text,
+      sendOutbound: async (input) => {
+        accepted = verifyAuthorizedEgress({ content: input.text, manifest: input.authorizedEgress }).ok;
+        return { outcome: accepted ? 'sent' : 'rejected_by_policy', channel: 'telegram', providerMessageId: '1', deliveryId: '1', reason: null };
+      },
+    });
+    expect(result.sent).toBe(1);
+    expect(accepted).toBe(true);
+  });
+
+  it('reuses the committed course evidence for a cached narrative when live context cannot be reloaded', async () => {
+    const store = storeFor({ status: 'failed', result: null });
+    const text = 'El curso de Python está disponible. Podemos seguir por aquí.';
+    store.readFollowupNarrative = async () => text;
+    store.readFollowupNarrativeCourse = async () => ({ code: 'python', name: 'Python' });
+    store.loadNarrativeContext = async () => { throw new Error('LIVE_CONTEXT_UNAVAILABLE'); };
+    const result = await runPostCallFollowup({ trace_id: 'trace-cached-facts' }, {
+      store,
+      composeFollowup: async () => { throw new Error('NO_REGENERATION_ALLOWED'); },
+      sendOutbound: async (input) => {
+        expect(input.text).toBe(text);
+        expect(verifyAuthorizedEgress({ content: input.text, manifest: input.authorizedEgress }).ok).toBe(true);
+        return { outcome: 'sent', channel: 'telegram', providerMessageId: '1', deliveryId: '1', reason: null };
+      },
+    });
+    expect(result.sent).toBe(1);
+  });
+
+  it('stops before a new row once processing time expires and leaves remaining candidates pending', async () => {
+    const store = storeFor({ status: 'failed', result: null });
+    const initial = (await store.listPendingFollowups({ limit: 50, grace_seconds: 0 }))[0];
+    const candidates = Array.from({ length: 5 }, (_, index) => ({ ...initial, call_id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}` }));
+    store.listPendingFollowups = async () => candidates;
+    store.readFollowupNarrative = async () => null;
+    let clockMs = 0;
+    const sends: string[] = [];
+    const result = await runPostCallFollowup({ trace_id: 'trace-deadline', max_processing_ms: 1000 }, {
+      store, now: () => clockMs,
+      composeFollowup,
+      sendOutbound: async (input) => {
+        sends.push(input.idempotencyKey);
+        clockMs += 600;
+        return { outcome: 'sent', channel: 'telegram', providerMessageId: '1', deliveryId: '1', reason: null };
+      },
+    });
+    expect(result).toMatchObject({ examined: 2, sent: 2, failed: 0, deferred: 3 });
+    expect(result.findings.map((finding) => finding.call_id)).toEqual(candidates.slice(0, 2).map((call) => call.call_id));
+    expect(store.completed).toEqual(candidates.slice(0, 2).map((call) => call.call_id));
+    expect(sends).toHaveLength(2);
+  });
+
+  it('can process all fifty normal recovery candidates within the time budget', async () => {
+    const store = storeFor({ status: 'failed', result: null });
+    const initial = (await store.listPendingFollowups({ limit: 50, grace_seconds: 0 }))[0];
+    const candidates = Array.from({ length: 50 }, (_, index) => ({ ...initial, call_id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}` }));
+    store.listPendingFollowups = async () => candidates;
+    store.readFollowupNarrative = async () => null;
+    const result = await runPostCallFollowup({ trace_id: 'trace-fifty', max_processing_ms: 120_000 }, {
+      store, now: () => 0, composeFollowup,
+      sendOutbound: async () => ({ outcome: 'sent', channel: 'telegram', providerMessageId: '1', deliveryId: '1', reason: null }),
+    });
+    expect(result).toMatchObject({ examined: 50, sent: 50, failed: 0, deferred: 0 });
+    expect(store.completed).toHaveLength(50);
+    expect(result.findings).toHaveLength(50);
+  });
+
   it('uses one stable key and marks completion only after provider acceptance', async () => {
     const store = storeFor({});
     const blockedChecks: Array<{ contactId: string; channel: string }> = [];
@@ -247,6 +409,7 @@ describe('post-call followup delivery boundary', () => {
       { trace_id: '00000000-0000-4000-8000-000000000005' },
       {
         store,
+        composeFollowup,
         sendOutbound: async (input) => {
           attempts.push({
             idempotencyKey: input.idempotencyKey,
@@ -285,6 +448,7 @@ describe('post-call followup delivery boundary', () => {
       { trace_id: '00000000-0000-4000-8000-000000000005' },
       {
         store,
+        composeFollowup,
         sendOutbound: async () => ({ outcome: 'retryable', channel: 'whatsapp', providerMessageId: null, deliveryId: 'delivery-1', reason: 'TIMEOUT' }),
       },
     );
@@ -310,6 +474,7 @@ describe('post-call followup delivery boundary', () => {
       },
       {
         store,
+        composeFollowup,
         sendOutbound: async () => ({
           outcome: 'sent',
           channel: 'telegram',
@@ -332,6 +497,7 @@ describe('post-call followup delivery boundary', () => {
         { trace_id: '00000000-0000-4000-8000-000000000005' },
         {
           store,
+          composeFollowup,
           sendOutbound: async (input) => {
             outbound = input;
             return {
@@ -366,6 +532,7 @@ describe('post-call followup delivery boundary', () => {
         { trace_id: '00000000-0000-4000-8000-000000000005' },
         {
           store,
+          composeFollowup,
           sendOutbound: async (input) => {
             selectedChannel = input.preferredChannel;
             return {

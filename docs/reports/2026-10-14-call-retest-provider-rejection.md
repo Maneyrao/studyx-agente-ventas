@@ -13,4 +13,6 @@ Acceso comprobado: CLI y conector Vercel disponibles pertenecen al equipo maneyr
 
 Se solicitó el detalle del rechazo de Xendra para ese internal_call_id y horario. Pendiente: evidencia del servidor remoto o acceso autorizado a sus logs; conservar un diagnóstico acotado del rechazo en futuros despachos; reparar el fallback de propuesta inválida con datos faltantes. No se reprodujo mediante llamadas reales, no se reintentó la llamada y no se cambiaron credenciales ni configuración del proveedor.
 
+Actualización del corte posterior: el usuario reintentó con `a3609e31-7c45-4242-be15-1218c5b6ab74`; Xendra aceptó `call_88a35ee71afda089462fb2ad40d` y la llamada terminó en `buzon_de_voz`. No hubo cambio de configuración por esta intervención. Esto acredita un despacho posterior funcional, sin explicar el motivo del primer 400. Después, «1 pago» y «un pago de 360» fallaron por autorización local del plan, con intake completo persistido; diagnóstico y restauración en `2026-10-14-agent-a-conversation-ownership.md`.
+
 Evidencia privada: `tmp/call-retest-20261014-evidence.json` (primer corte) y archivos fechados `tmp/call-retest-20261014-evidence-*.json`, en el workspace padre.

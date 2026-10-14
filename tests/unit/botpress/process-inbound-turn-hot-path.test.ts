@@ -95,6 +95,7 @@ import { adk, configuration, secrets } from '../../helpers/botpress-runtime-stub
 import { processInboundTurn } from '../../../botpress-agent/src/workflows/processInboundTurn';
 import { AGENT_A_BRAIN_PROMPT_VERSION } from '../../../botpress-agent/src/prompts/agent-a-brain-v1';
 import type { ClaimedTurn } from '../../../botpress-agent/src/schemas/contracts';
+import type { AgentAContextV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
 import {
   DEFAULT_REQUEST_TIMEOUT_MS,
   resolveRequestTimeoutMs,
@@ -787,7 +788,7 @@ describe('processInboundTurn hot path', () => {
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
   });
 
-  it('uses only a technical notice when Agent A cannot repair a backend rejection', async () => {
+  it('uses a technical notice only when Agent A continuation actually times out', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
@@ -3039,7 +3040,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('records a policy rejection exactly instead of calling it MODEL_UNAVAILABLE', async () => {
+  it('lets Agent A ask for missing data after a policy rejection without a protocol message', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -3064,7 +3065,16 @@ describe('processInboundTurn hot path', () => {
     actionSpies.claim.mockResolvedValue(claimed);
     actionSpies.agentABrainDeepSeek.mockReset().mockRejectedValueOnce(new Error(
       'PLANNERLESS_PROPOSAL_REJECTED:FACT_VALUE_MISMATCH:candidate_course_detail,ACTION_NOT_AUTHORIZED:request_call_now',
-    ));
+    )).mockImplementationOnce(async ({ context }: { context: AgentAContextV1 }) => ({
+      proposal: {
+        schema_version: 1,
+        move: { schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Sí, podemos coordinarla. Me pasas el teléfono al que quieres que te llame?'], call_offer: null },
+        proposed_action: { type: 'none' }, used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+        repair_of: context.turn_rejection ? { rejection_id: context.turn_rejection.rejection_id, attempt: 1 } : null,
+      },
+      provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 100, attempt_count: 1,
+    }));
     const step = Object.assign(
       async (_name: string, run: () => Promise<unknown>) => run(),
       { sleep: vi.fn(async () => undefined) },
@@ -3080,17 +3090,74 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      agent_turn_v2: null,
-      decision: { reason_code: 'AGENT_A_POLICY_REJECTED' },
+      agent_turn_v2: { proposal: {
+        proposed_action: { type: 'none' },
+        response: { messages: ['Sí, podemos coordinarla. Me pasas el teléfono al que quieres que te llame?'] },
+      } },
       turn_diagnostics: {
         failure_stage: 'proposal_validation',
         failure_codes: [
           'PLANNERLESS_PROPOSAL_REJECTED:FACT_VALUE_MISMATCH:candidate_course_detail',
           'PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:request_call_now',
         ],
-        action_status: 'rejected',
+        action_status: 'none',
       },
     });
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
+    expect(actionSpies.dispatch).not.toHaveBeenCalled();
+  });
+
+  it.each(['policy', 'schema', 'timeout', 'spent_budget'])('keeps safe Agent A prose and semantic state when optional continuation fails: %s', async failure => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true, agent_a_brain_v1_shadow: false };
+    claimed.deterministic_route = null;
+    claimed.context.batch_messages[0].content = 'Me gustaría una llamada por favor';
+    claimed.sales_context.allowed_actions = ['offer_call'];
+    claimed.contact_intake_missing = ['telefono'];
+    claimed.catalog_index = { as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0 };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    claimed.conversation_state_v1 = { selected_offering_code: 'energia_solar_fotovoltaica', selected_payment_plan: null,
+      stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 2 };
+    actionSpies.claim.mockResolvedValue(claimed);
+    actionSpies.agentABrainValidate.mockImplementation(({ proposal }: { proposal: { proposed_action: { type: string } } }) => proposal.proposed_action.type === 'request_call_now' ? {
+      schema_version: 1, rejection_id: UUID, attempt: 1,
+      rejections: [{ code: 'ACTION_NOT_AUTHORIZED', subject: 'request_call_now' }],
+      authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: ['telefono'] },
+    } : null);
+    const safeText = 'Podemos coordinarla. Me pasas tu teléfono con código de país?';
+    actionSpies.agentABrainDeepSeek.mockReset().mockImplementationOnce(async ({ on_provider_request }: { on_provider_request?: () => void }) => {
+      on_provider_request?.();
+      if (failure === 'spent_budget') on_provider_request?.();
+      return { proposal: { schema_version: 1,
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: [safeText], call_offer: null },
+        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1,
+        attempt_count: failure === 'spent_budget' ? 2 : 1 };
+    }).mockRejectedValueOnce(new Error(failure === 'policy'
+      ? 'PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:continuation'
+      : failure === 'schema' ? 'BRAIN_INVALID_SCHEMA' : 'BRAIN_DEEPSEEK_TIMEOUT'));
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) });
+    configuration.agentAPlannerlessV2Enabled = true;
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+    await handler({ input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }), client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' } });
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(failure === 'spent_budget' ? 1 : 2);
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      agent_turn_v2: { conversation_only: true, proposal: {
+        move: { move: 'request_call' }, proposed_action: { type: 'none' }, response: { messages: [safeText] },
+      } }, turn_diagnostics: { generation_attempts: 2, action_status: 'needs_input' },
+    });
+    expect(actionSpies.dispatch).not.toHaveBeenCalled();
+    actionSpies.agentABrainDeepSeek.mockReset();
   });
 
   it('keeps Agent A multi-course guidance without forcing a second generation', async () => {

@@ -33,6 +33,16 @@ const facts: CanonicalFactV1[] = [
     source: 'business_snapshot', value: '6 pagos mensuales de USD 60',
     offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
   },
+  {
+    id: 'payment:redes_informaticas:monthly_12:label:v1', kind: 'payment_plan_label',
+    source: 'business_snapshot', value: '12 pagos mensuales de USD 30',
+    offering_code: 'redes_informaticas', payment_plan: 'monthly_12',
+  },
+  {
+    id: 'payment:redes_informaticas:one_time:label:v1', kind: 'payment_plan_label',
+    source: 'business_snapshot', value: '1 pago de USD 360',
+    offering_code: 'redes_informaticas', payment_plan: 'one_time',
+  },
 ];
 
 function state(overrides: Partial<ConversationStateV1> = {}): ConversationStateV1 {
@@ -90,6 +100,111 @@ function authorize(input: {
 }
 
 describe('plannerless Agent A authority', () => {
+  it.each(['none', 'send_payment_link'] as const)('keeps same-turn payment consent pending when effects are fenced: %s', actionType => {
+    const result = authorizeAgentTurnV2({ effects_allowed: false,
+      state: state({ selected_offering_code: 'redes_informaticas', stage: 'handoff' }),
+      offerings, facts, contact_intake: completeIntake,
+      call_policy: { may_offer_call: false, may_request_call_now: false },
+      proposal: proposal({ move: { schema_version: 1, move: 'select_payment_plan',
+        secondary_moves: ['request_payment_link'], vetoes: [], payment_plan: 'one_time', confidence: 1 },
+        proposed_action: actionType === 'none' ? { type: 'none' }
+          : { type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'one_time' } }),
+    });
+    expect(result).toMatchObject({ ok: true, action: { type: 'none' }, transition: {
+      selected_payment_plan: 'one_time', stage: 'plan_selected', awaiting_reply: 'payment_confirmation',
+      payment_link_request: { status: 'pending', offering_code: 'redes_informaticas', payment_plan: 'one_time' },
+    } });
+  });
+
+  it('keeps accepted call consent instead of dispatching when effects are fenced', () => {
+    const result = authorizeAgentTurnV2({ effects_allowed: false,
+      state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected' }),
+      offerings, facts, contact_intake: completeIntake, current_customer_messages: ['Dale llamame'],
+      call_policy: { may_offer_call: true, may_request_call_now: true },
+      proposal: proposal({ move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+        proposed_action: { type: 'request_call_now', reason: 'direct_request' } }),
+    });
+    expect(result).toMatchObject({ ok: true, action: { type: 'none' }, transition: {
+      call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat', stage: 'course_selected',
+    } });
+  });
+
+  it('does not execute a temporary test payment in conversation-only mode', () => {
+    const result = authorizeAgentTurnV2({ effects_allowed: false,
+      state: state({ selected_offering_code: 'redes_informaticas' }), offerings, facts,
+      contact_intake: completeIntake, call_policy: { may_offer_call: false, may_request_call_now: false },
+      proposal: proposal({ move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [], confidence: 1 },
+        proposed_action: { type: 'send_test_payment_link', offering_code: 'redes_informaticas' } }),
+    });
+    expect(result).toMatchObject({ ok: true, action: { type: 'none' }, transition: {
+      selected_payment_plan: null, payment_link_request: null,
+    } });
+  });
+
+  it.each(['1 pago', 'un pago de 360'])('honors Agent A same-turn canonical selection after handoff: %s', customerText => {
+    const result = authorizeAgentTurnV2({
+      state: state({ selected_offering_code: 'redes_informaticas', selected_payment_plan: null,
+        stage: 'handoff', awaiting_reply: 'none' }),
+      offerings, facts: [...facts, { id: 'payment:redes_informaticas:one_time:label:v1', kind: 'payment_plan_label',
+        source: 'business_snapshot', value: '1 pago de USD 360', offering_code: 'redes_informaticas', payment_plan: 'one_time' }],
+      contact_intake: completeIntake, current_customer_messages: [customerText],
+      call_policy: { may_offer_call: false, may_request_call_now: false },
+      proposal: proposal({ move: { schema_version: 1, move: 'select_payment_plan',
+        secondary_moves: ['request_payment_link'], vetoes: [], payment_plan: 'one_time', confidence: 1 },
+        proposed_action: { type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'one_time' } }),
+    });
+    expect(result).toMatchObject({ ok: true, action: { type: 'send_payment_link', payment_plan: 'one_time' },
+      transition: { selected_payment_plan: 'one_time', stage: 'payment_link_sent' } });
+  });
+
+  it.each([
+    ['un pago de 360', 'monthly_6'],
+    ['Antes dijiste 6 pagos. Prefiero la otra opción.', 'monthly_6'],
+  ] as const)('persists only the structured Agent A choice rather than reinterpreting %s', (customerText, plan) => {
+    const result = authorize({ customerText, intake: completeIntake,
+      state: state({ selected_offering_code: 'redes_informaticas', selected_payment_plan: null }),
+      proposal: proposal({ move: { schema_version: 1, move: 'select_payment_plan', secondary_moves: [],
+        vetoes: [], payment_plan: plan, confidence: 1 } }),
+    });
+    expect(result).toMatchObject({ ok: true, action: { type: 'none' },
+      transition: { selected_payment_plan: 'monthly_6' } });
+  });
+
+  it.each([
+    ['unknown course', 'unlisted_course', 'monthly_6'],
+    ['unavailable canonical plan', 'redes_informaticas', 'one_time'],
+    ['unknown plan', 'redes_informaticas', 'monthly_3'],
+  ])('keeps a link request without %s out of effects and pending state', (_case, offeringCode, planCode) => {
+    const result = authorizeAgentTurnV2({
+      state: state({ selected_offering_code: offeringCode, selected_payment_plan: null }),
+      offerings, facts: facts.filter(fact => fact.payment_plan === 'monthly_6'),
+      contact_intake: completeIntake, semantic_rejections: 'advisory',
+      call_policy: { may_offer_call: false, may_request_call_now: false },
+      proposal: proposal({ move: { schema_version: 1, move: 'select_payment_plan',
+        secondary_moves: ['request_payment_link'], vetoes: [], payment_plan: planCode, confidence: 1 },
+        proposed_action: { type: 'send_payment_link', offering_code: offeringCode, payment_plan: planCode } } as Partial<AgentATurnProposalV1>),
+    });
+    expect(result).toMatchObject({ ok: true, action: { type: 'none' },
+      transition: { selected_payment_plan: null, payment_link_request: null } });
+  });
+
+  it.each(['unknown new course', 'unknown new plan', 'missing new plan'])('does not turn %s into permission for the previous purchase', condition => {
+    const result = authorizeAgentTurnV2({
+      state: state({ selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6' }),
+      offerings, facts, contact_intake: completeIntake, semantic_rejections: 'advisory',
+      call_policy: { may_offer_call: false, may_request_call_now: false },
+      proposal: proposal({ move: { schema_version: 1,
+        move: condition === 'unknown new course' ? 'select_course' : 'select_payment_plan',
+        secondary_moves: condition === 'unknown new course' ? ['select_payment_plan', 'request_payment_link'] : ['request_payment_link'],
+        course_reference: condition === 'unknown new course' ? 'invented course' : undefined,
+        vetoes: [], payment_plan: condition === 'unknown new course' ? 'monthly_6'
+          : condition === 'missing new plan' ? undefined : 'monthly_3', confidence: 1 },
+        proposed_action: { type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6' } } as Partial<AgentATurnProposalV1>),
+    });
+    expect(result).toMatchObject({ ok: true, action: { type: 'none' },
+      transition: { selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6', payment_link_request: null } });
+  });
+
   it('allows a new link request after a historical unverified payment claim', () => {
     const result = authorize({
       state: state({ selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6',
@@ -398,7 +513,7 @@ describe('plannerless Agent A authority', () => {
       intake: completeIntake,
       proposal: proposal({
         move: {
-          schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+          schema_version: 1, move: 'request_payment_link', secondary_moves: ['select_payment_plan'], vetoes: [],
           payment_plan: 'monthly_6', confidence: 0.99,
         },
         response: { messages: ['Te comparto el enlace seguro de las 6 cuotas.'] },
@@ -1107,7 +1222,7 @@ describe('payment link consent across intake', () => {
     });
   });
 
-  it('persists an explicit current plan even when the model omits the redundant structured selection', () => {
+  it('does not infer a payment selection when Agent A has not emitted one', () => {
     const result = authorize({
       customerText: '1 pago de 360',
       state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected' }),
@@ -1133,9 +1248,9 @@ describe('payment link consent across intake', () => {
       ok: true,
       action: { type: 'none' },
       transition: {
-        selected_payment_plan: 'one_time',
-        stage: 'plan_selected',
-        awaiting_reply: 'payment_confirmation',
+        selected_payment_plan: null,
+        stage: 'course_selected',
+        awaiting_reply: 'none',
       },
     });
   });

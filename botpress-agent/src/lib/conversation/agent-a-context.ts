@@ -4,12 +4,6 @@ import {
 } from '../../schemas/agent-a-brain';
 import type { ClaimedTurn } from '../../schemas/contracts';
 import type { ConversationMoveV1 } from '../../schemas/conversation-pipeline';
-import {
-  classifyCurrentPaymentIntent,
-  derivePaymentPlanSelectionFromBatch,
-  hasExplicitPurchaseDecline,
-  hasTemporalPaymentDeferral,
-} from '../../utils/payment-choice';
 
 const MEMORY_TYPES = new Set([
   'study_goal', 'study_context', 'preference', 'constraint',
@@ -27,13 +21,6 @@ const COURSE_BOUND_MOVES = new Set<ConversationMoveV1['move']>([
   'decline_purchase',
 ]);
 
-const PAYMENT_INTENT_MOVES = new Set<ConversationMoveV1['move']>([
-  'select_payment_plan',
-  'defer_payment',
-  'request_payment_link',
-  'decline_purchase',
-]);
-
 const LOW_INFORMATION_TOKENS = new Set([
   'buen', 'buenas', 'como', 'cual', 'cuales', 'curso', 'cursos', 'dame',
   'detalle', 'detalles', 'dia', 'disponible', 'disponibles', 'favor', 'hay',
@@ -41,15 +28,6 @@ const LOW_INFORMATION_TOKENS = new Set([
   'ofrecen', 'opcion', 'opciones', 'pasame', 'por', 'que', 'quien', 'quiero',
   'saber', 'sos', 'tarde', 'tenes', 'tienen', 'toda', 'todas', 'todos', 'vos',
 ]);
-
-function currentBatchSuppliesContactDetails(claimed: ClaimedTurn): boolean {
-  return currentLogicalMessagesV1(claimed).some((message) => {
-    const text = message.content;
-    return /\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b/iu.test(text)
-      || /(?:^|\D)\+?\d[\d\s().-]{7,}\d(?:\D|$)/u.test(text)
-      || /\b(?:me llamo|mi nombre es|mi apellido es|soy)\s+[\p{L}]{2,}/iu.test(text);
-  });
-}
 
 const LOGICAL_HISTORY_LIMIT = 6;
 
@@ -236,13 +214,10 @@ export function bindCurrentCatalogResolutionToMoveV1(
 }
 
 /**
- * Vinculación de dinero y área desde el mensaje ACTUAL.
- *
- * Ya no clasifica intención: DeepSeek elige el `move`. Lo único que el backend
- * sigue imponiendo acá es la selección de plan de pago derivada del mensaje
- * actual o de una aceptación corta de la única opción del último outbound
- * —nunca de la memoria— y la desambiguación de un área nombrada. Son las dos
- * cosas cuyo error cuesta dinero o manda al cliente a otro lado.
+ * Agent A owns payment meaning, including contextual selections and consent.
+ * Keep its structured move intact; canonical resources, intake and paid
+ * purchases are checked at the action boundary. Only bind canonical area IDs
+ * and the backend's already-established pending call intent here.
  */
 export function bindCurrentConversationalIntentToMoveV1(
   move: ConversationMoveV1,
@@ -268,158 +243,11 @@ export function bindCurrentConversationalIntentToMoveV1(
       confidence: 1,
     };
   }
-  const currentBatchMessages = currentLogicalMessagesV1(claimed)
-    .map((message) => ({ content: message.content }));
-  const currentBatch = currentBatchMessages
-    .map((message) => message.content)
-    .join(' ')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/gu, '')
-    .toLocaleLowerCase('es')
-    .trim()
-    .replace(/[^a-z0-9]+/gu, ' ')
-    .trim();
-  const recentCustomerText = claimed.context.recent_turns
-    .filter((turn) => turn.direction === 'inbound')
-    .map((turn) => turn.content)
-    .join(' ')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/gu, '')
-    .toLocaleLowerCase('es');
-  const explicitLinkRequest = /\b(?:pasame|mandame|enviame|comparti(?:me)?)\s+(?:el\s+)?(?:link|enlace)\b/u
-    .test(currentBatch);
-  const resumesDeferredLink = /\bahora\s+si\b/u.test(currentBatch)
-    && /\b(?:no\s+(?:me\s+)?(?:mandes|envies|compartas)\s+(?:el\s+)?(?:link|enlace)|todavia\s+no|quiero\s+pensarlo)\b/u
-      .test(recentCustomerText);
-  const explicitPaymentPlan = derivePaymentPlanSelectionFromBatch(currentBatchMessages);
-  const currentPaymentIntent = classifyCurrentPaymentIntent(currentBatchMessages);
-  const shortContextualAcceptance = /^(?:si(?:\s+por\s+favor)?|dale|de\s+una|bueno|ok|okay|perfecto|listo)$/u
-    .test(currentBatch);
-  const previousTurn = claimed.context.recent_turns.at(-1);
-  const lastAgentReply = previousTurn?.direction === 'outbound'
-    ? previousTurn.content
-    : undefined;
-  const contextualPaymentPlan = shortContextualAcceptance && lastAgentReply
-    ? derivePaymentPlanSelectionFromBatch([{ content: lastAgentReply }])
-    : null;
-  const awaitingPaymentReply = claimed.conversation_state_v1?.awaiting_reply === 'payment_confirmation'
-    || claimed.conversation_state_v1?.awaiting_reply === 'contact_details';
-  const currentPaymentDeferral = hasTemporalPaymentDeferral(
-    currentBatchMessages,
-    awaitingPaymentReply,
-  );
-  const currentPurchaseDecline = hasExplicitPurchaseDecline(currentBatchMessages);
-  const unsupportedDeferral = !currentPaymentDeferral;
-  const unsupportedDecline = !currentPurchaseDecline;
-  const sanitizedSecondaryMoves = [...new Set(move.secondary_moves
-    .map((kind): ConversationMoveV1['move'] => (
-      kind === 'decline_purchase' && unsupportedDecline && currentPaymentDeferral
-        ? 'defer_payment'
-        : kind
-    ))
-    .filter((kind) => !(
-      (kind === 'defer_payment' && unsupportedDeferral)
-      || (kind === 'decline_purchase' && unsupportedDecline)
-    )))].filter((kind) => kind !== move.move).slice(0, 2);
-  const secondaryMovesChanged = sanitizedSecondaryMoves.length !== move.secondary_moves.length
-    || sanitizedSecondaryMoves.some((kind, index) => kind !== move.secondary_moves[index]);
-  if (move.move === 'decline_purchase' && unsupportedDecline && currentPaymentDeferral) {
-    const { payment_plan: _ignoredPaymentPlan, ...withoutPlan } = move;
-    return {
-      ...withoutPlan,
-      move: 'defer_payment',
-      secondary_moves: sanitizedSecondaryMoves,
-      vetoes: withoutPlan.vetoes.filter((veto) => veto !== 'purchase'),
-      confidence: 1,
-    };
-  }
-  const unsupportedPrimaryExit = (move.move === 'defer_payment' && unsupportedDeferral)
-    || (move.move === 'decline_purchase' && unsupportedDecline);
-  if (unsupportedPrimaryExit) {
-    const continuePendingIntake = claimed.conversation_state_v1?.awaiting_reply === 'contact_details';
-    const { payment_plan: _ignoredPaymentPlan, ...withoutPlan } = move;
-    return {
-      ...withoutPlan,
-      move: continuePendingIntake ? 'provide_contact_details' : 'unknown',
-      secondary_moves: sanitizedSecondaryMoves.filter((kind) => !PAYMENT_INTENT_MOVES.has(kind)),
-      vetoes: withoutPlan.vetoes.filter((veto) => veto !== 'payment_link' && veto !== 'purchase'),
-      confidence: 1,
-    };
-  }
-  if (secondaryMovesChanged) {
-    return {
-      ...move,
-      secondary_moves: sanitizedSecondaryMoves,
-      vetoes: move.vetoes.filter((veto) => (
-        !(unsupportedDeferral && veto === 'payment_link')
-        && !(unsupportedDecline && veto === 'purchase')
-      )),
-    };
-  }
-  const selectedOfferingCode = claimed.conversation_state_v1?.selected_offering_code ?? null;
-  const selectedPaymentPlan = claimed.conversation_state_v1?.selected_payment_plan ?? null;
-  const intakeComplete = claimed.contact_intake_missing.length === 0;
-  if (
-    (explicitLinkRequest || resumesDeferredLink)
-    && awaitingPaymentReply
-    && selectedOfferingCode !== null
-    && selectedPaymentPlan !== null
-    && intakeComplete
-    && !move.vetoes.includes('payment_link')
-    && !move.vetoes.includes('purchase')
-  ) {
-    const { payment_plan: _ignoredPaymentPlan, ...withoutPlan } = move;
-    return {
-      ...withoutPlan,
-      move: 'request_payment_link',
-      secondary_moves: withoutPlan.secondary_moves
-        .filter((kind) => kind !== 'request_payment_link')
-        .slice(0, 2),
-      confidence: 1,
-    };
-  }
-  if (move.move === 'select_payment_plan' && currentPaymentIntent.kind === 'none') {
-    if (contextualPaymentPlan !== null) {
-      return { ...move, payment_plan: contextualPaymentPlan };
-    }
-    const { payment_plan: _ignoredPaymentPlan, ...withoutPlan } = move;
-    return {
-      ...withoutPlan,
-      move: 'ask_payment_options',
-      secondary_moves: withoutPlan.secondary_moves.filter((kind) => !PAYMENT_INTENT_MOVES.has(kind)),
-      confidence: 1,
-    };
-  }
-  if (explicitPaymentPlan && move.move === 'request_payment_link') {
-    return {
-      ...move,
-      payment_plan: explicitPaymentPlan,
-      // The planner makes the dependency explicit: select first, then request.
-      // This is authority derived from the current batch, never from memory.
-      secondary_moves: [...new Set([
-        'select_payment_plan' as const,
-        ...move.secondary_moves,
-      ])].filter((kind) => kind !== move.move).slice(0, 2),
-    };
-  }
-  if (explicitPaymentPlan && move.move === 'select_payment_plan') {
-    const bound = { ...move, payment_plan: explicitPaymentPlan };
-    if (
-      (explicitLinkRequest || resumesDeferredLink)
-      && !move.vetoes.includes('payment_link')
-      && !move.vetoes.includes('purchase')
-    ) {
-      return {
-        ...bound,
-        secondary_moves: [...new Set([
-          ...bound.secondary_moves,
-          'request_payment_link' as const,
-        ])].slice(0, 2),
-      };
-    }
-    return bound;
-  }
   if (move.move === 'select_area') {
+    const currentBatch = currentLogicalMessagesV1(claimed)
+      .map((message) => message.content).join(' ')
+      .normalize('NFD').replace(/[\u0300-\u036f]/gu, '')
+      .toLocaleLowerCase('es').replace(/[^a-z0-9]+/gu, ' ').trim();
     const normalizeArea = (value: string) => value
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/gu, '')
@@ -439,26 +267,6 @@ export function bindCurrentConversationalIntentToMoveV1(
       return { ...move, area_reference: matches[0] };
     }
   }
-  if (
-    move.move === 'select_payment_plan'
-    && move.payment_plan
-    && (explicitLinkRequest || resumesDeferredLink)
-    && !move.vetoes.includes('payment_link')
-    && !move.vetoes.includes('purchase')
-  ) {
-    return {
-      ...move,
-      secondary_moves: [...new Set([
-        ...move.secondary_moves,
-        'request_payment_link' as const,
-      ])].slice(0, 2),
-    };
-  }
-  // Las dos reescrituras de intención que vivían acá —forzar
-  // `ask_course_information` ante una pregunta de precio, y forzar
-  // `browse_catalog` ante «info»— se eliminaron: DeepSeek elige la intención.
-  // El backend sólo sigue vinculando lo que es dinero (el plan de pago
-  // explícito del mensaje actual) y la desambiguación de área.
   return move;
 }
 
@@ -732,22 +540,19 @@ export function buildAgentAContextV1(
     : requestedFirstNameBeforeV1(previousAgentReplies)
       ? 'requested' as const
       : 'missing' as const;
-  // Desconocido no abre el gate. La única lectura segura de una respuesta que
-  // nadie dio es que todavía falta algo.
-  const pendingPaymentLinkRequest = state.payment_link_request?.status === 'pending'
-    && state.payment_link_request.offering_code === selectedCode
-    && state.payment_link_request.payment_plan === selectedPlan;
+  // This is resource availability, not consent and not a persisted-plan
+  // requirement. Agent A may select a canonical plan and request its link in
+  // this turn; the proposal and backend still authorize the exact purchase.
+  const paymentOptions = claimed.business_context?.workspace.payment_options ?? [];
   const maySendPaymentLink = claimed.policy.may_respond
     && !claimed.contact.blocked
-    && !(claimed.payment_verification?.status === 'paid'
+    && selectedCode !== null
+    && index.some((offering) => offering.code === selectedCode)
+    && selectedOffering?.code === selectedCode
+    && paymentOptions.some((option) => !(claimed.payment_verification?.status === 'paid'
       && claimed.payment_verification.paid_at !== null
       && claimed.payment_verification.offering_code === selectedCode
-      && claimed.payment_verification.plan_code === selectedPlan)
-    && selectedCode !== null
-    && selectedPlan !== null
-    && (state.stage === 'payment_link_sent'
-      || state.awaiting_reply === 'payment_confirmation' || pendingPaymentLinkRequest)
-    && (!currentBatchSuppliesContactDetails(claimed) || pendingPaymentLinkRequest)
+      && claimed.payment_verification.plan_code === option.code))
     && intakeStatus === 'known'
     && intakeMissing.length === 0;
   const obligations = options.rigidObligations !== true ? null : salesObligationsV1({

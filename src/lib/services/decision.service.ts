@@ -152,6 +152,7 @@ export interface CommitDecisionInput {
   agent_turn_v2?: {
     readonly schema_version: 2;
     readonly proposal: AgentATurnProposalV1;
+    readonly conversation_only?: boolean;
   } | null;
   /** Additive capability negotiation: older Botpress bundles keep one outbound. */
   supports_multi_outbound?: boolean;
@@ -779,6 +780,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           },
           workspace_slug: workspaceSlug,
           proposal: agentTurnProposal,
+          conversation_only: validatedInput.agent_turn_v2.conversation_only,
           semantic_rejections: 'advisory',
           current_customer_messages: currentMessages.map((message) => message.content),
           business_context: rawBusiness ? buildBusinessContextView(rawBusiness) : null,

@@ -175,6 +175,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
   readonly signal: AbortSignal;
   readonly model?: string;
   readonly timeout_ms?: number;
+  readonly conversation_only?: boolean;
 }): Promise<GeneratedAgentATurnProposalV1> {
   const model = resolveAgentADeepSeekModelV1(input.model);
   const timeoutMs = Math.min(
@@ -206,7 +207,8 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
           },
           body: JSON.stringify({
             model,
-            instructions: buildAgentABrainInstructionsV1(input.context),
+            instructions: buildAgentABrainInstructionsV1(input.context)
+              + (input.conversation_only ? '\nThe requested operation was not executed. This is a conversation-only continuation from the structured turn_rejection. Answer the customer in your own usual voice using the actual context and explain or ask for the relevant missing information. Do not claim an effect succeeded, repeat an action, invent a provider cause, or ask the customer to repeat a message that is already in context. Use move unknown, no secondary moves, proposed_action none, and no call_offer; these are internal effect boundaries, not wording instructions.' : ''),
             input: `Current customer messages: ${JSON.stringify(input.context.turn.batch_messages.map((message) => message.text))}${currentCatalogResolutionDirective(input.context)}\nAnswer these messages and return only the single AgentATurnProposalV1 JSON object.${retryDiagnostic ? `\nThe previous output failed validation at ${retryDiagnostic}. Return a corrected full object. ${naturalnessRepairDirectiveV1(input.context)}` : ''}`,
             reasoning: { effort: 'none' },
             temperature: 0.2,
@@ -216,7 +218,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
               format: {
                 type: 'json_schema',
                 name: 'studyx_agent_a_turn_proposal_v1',
-                schema: proposalJsonSchema(input.context),
+                schema: proposalJsonSchema(input.context, input.conversation_only),
               },
             },
           }),
@@ -256,7 +258,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
       try {
         decoded = parseDeepSeekJsonContent(content);
       } catch {
-        if (attempt === 1 && !controller.signal.aborted) { retryDiagnostic = 'root:invalid_json'; continue; }
+        if (attempt === 1 && !input.conversation_only && !controller.signal.aborted) { retryDiagnostic = 'root:invalid_json'; continue; }
         throw new AgentABrainError('BRAIN_DEEPSEEK_INVALID_JSON', response.status);
       }
       let proposal: AgentATurnProposalV1;
@@ -268,6 +270,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
       } catch (error) {
         if (
           attempt === 1
+          && !input.conversation_only
           && error instanceof AgentABrainError
           && error.code === 'BRAIN_INVALID_SCHEMA'
           && !controller.signal.aborted
@@ -435,7 +438,7 @@ function closedObject(properties: Record<string, unknown>) {
   return { type: 'object', properties, required: Object.keys(properties), additionalProperties: false };
 }
 
-function proposalJsonSchema(context: AgentAContextV1): unknown {
+function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false): unknown {
   const nullableString = { anyOf: [{ type: 'string' }, { type: 'null' }] };
   const move = closedObject({
     schema_version: { type: 'integer', enum: [1] },
@@ -478,6 +481,11 @@ function proposalJsonSchema(context: AgentAContextV1): unknown {
       }),
     ],
   };
+  if (conversationOnly) {
+    move.properties.move = { type: 'string', enum: ['unknown'] };
+    move.properties.secondary_moves = { type: 'array', maxItems: 0, items: { type: 'string' } };
+    proposedAction.anyOf = [closedObject({ type: { type: 'string', enum: ['none'] } })];
+  }
   return closedObject({
     schema_version: { type: 'integer', enum: [1] },
     move,
@@ -489,7 +497,7 @@ function proposalJsonSchema(context: AgentAContextV1): unknown {
         description: 'Use the conversational style guidance in the instructions. Message count and length are preferences, never reasons to discard an otherwise safe answer.',
       },
       call_offer: {
-        anyOf: [{ type: 'string', maxLength: 2_000 }, { type: 'null' }],
+        anyOf: conversationOnly ? [{ type: 'null' }] : [{ type: 'string', maxLength: 2_000 }, { type: 'null' }],
         description: 'Optional short and natural call invitation. Follow the call policy in the instructions; a natural question is allowed.',
       },
     }),

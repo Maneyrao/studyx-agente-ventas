@@ -649,6 +649,12 @@ run('Agent A → Xendra → Agent B → Agent A local smoke', () => {
         { trace_id: randomUUID(), call_id: call.callId, grace_seconds: 0 },
         {
           store: new PostgresPostCallFollowupStore(db!),
+          composeFollowup: async (input) => {
+            expect(input.brief.scenario).toBe('call_interrupted');
+            expect(input.context.customer.contact_intake.nombre).toBe('Ana');
+            expect(input.context.selected_course?.name).toBe('Fotografía Profesional');
+            return 'Ana, retomamos Fotografía Profesional. Podemos reintentar la llamada o seguir con el link que ya tienes.';
+          },
           sendOutbound: outbound.dependencies.orchestration
             ? (input) => sendOutboundMessage(input, {
                 identities: new PostgresChannelIdentityStore(db!),
@@ -682,12 +688,13 @@ run('Agent A → Xendra → Agent B → Agent A local smoke', () => {
         reason: 'CALL_ENDED_BY_CONTACT',
       });
       expect(outbound.sends).toHaveLength(2);
-      expect(outbound.sends[1].text).toMatch(/se cort[oó][\s\S]*reintent[\s\S]*seguir/iu);
+      expect(outbound.sends[1].text).toBe('Ana, retomamos Fotografía Profesional. Podemos reintentar la llamada o seguir con el link que ya tienes.');
 
       const followupReplay = await runPostCallFollowup(
         { trace_id: randomUUID(), call_id: call.callId, grace_seconds: 0 },
         {
           store: new PostgresPostCallFollowupStore(db!),
+          composeFollowup: async () => { throw new Error('DUPLICATE_POST_CALL_COMPOSITION'); },
           sendOutbound: async () => { throw new Error('DUPLICATE_POST_CALL_OUTBOUND'); },
         },
       );

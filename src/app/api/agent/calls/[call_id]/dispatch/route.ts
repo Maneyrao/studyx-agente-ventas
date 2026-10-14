@@ -1,6 +1,8 @@
 import { z } from 'zod';
+import { after } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { dispatchCall } from '@/features/calls/application/dispatch-call';
+import { createAgentAPostCallComposer } from '@/features/calls/adapters/agent-a-post-call-narrative';
 import { runPostCallFollowup } from '@/features/calls/application/post-call-followup';
 import { PostgresCallStore } from '@/features/calls/adapters/postgres-call-store';
 import { PostgresPostCallFollowupStore } from '@/features/calls/adapters/postgres-post-call-followup-store';
@@ -11,6 +13,7 @@ import { logger } from '@/lib/observability/structured-log';
 import { buildDispatchVoiceProvider } from './route-dependencies';
 
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 export async function POST(
   request: Request,
@@ -43,22 +46,29 @@ export async function POST(
     const result = await dispatchCall({ callId: parsedCallId.data, workerId }, { store, provider });
     if (result.status === 'failed') {
       // A rejected dispatch may never produce a webhook. Reuse the durable
-      // post-call recovery now; its call-scoped idempotency also covers replay
+      // post-call recovery in the request background lifetime; its stable key covers replay
       // and a later webhook. Unknown outcomes must remain fenced, not retried.
       const traceId = randomUUID();
       try {
-        await runPostCallFollowup(
-          { trace_id: traceId, call_id: parsedCallId.data, grace_seconds: 0 },
-          {
-            store: new PostgresPostCallFollowupStore(sql),
-            sendOutbound: createManagedOutboundSender(sql),
-            log: (name, fields) => logger.info({ event: name, ...fields }),
-          },
-        );
+        after(async () => {
+          try {
+            await runPostCallFollowup(
+              { trace_id: traceId, call_id: parsedCallId.data, grace_seconds: 0 },
+              {
+                store: new PostgresPostCallFollowupStore(sql),
+                composeFollowup: createAgentAPostCallComposer(),
+                sendOutbound: createManagedOutboundSender(sql),
+                log: (name, fields) => logger.info({ event: name, ...fields }),
+              },
+            );
+          } catch {
+            // The known dispatch result is already acknowledged. Recovery
+            // remains durable for cron if composition or delivery cannot run.
+            logger.error({ event: 'calls.dispatch_followup.failed', trace_id: traceId, call_id: parsedCallId.data });
+          }
+        });
       } catch {
-        // Keep the confirmed dispatch result even if the recovery store is
-        // unavailable. The terminal call remains pending for replay or cron.
-        logger.error({ event: 'calls.dispatch_followup.failed', trace_id: traceId, call_id: parsedCallId.data });
+        logger.error({ event: 'calls.dispatch_followup.schedule_failed', trace_id: traceId, call_id: parsedCallId.data });
       }
     }
     const status = result.status === 'provider_accepted' ? 200 : result.status === 'failed' ? 502 : 202;

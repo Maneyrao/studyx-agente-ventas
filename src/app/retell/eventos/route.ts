@@ -3,6 +3,7 @@ import {
   handleRetellWebhook,
   handleXendraRelayedRetellWebhook,
 } from '@/features/calls/application/retell-webhook';
+import { createAgentAPostCallComposer } from '@/features/calls/adapters/agent-a-post-call-narrative';
 import { runPostCallFollowup } from '@/features/calls/application/post-call-followup';
 import { PostgresPostCallFollowupStore } from '@/features/calls/adapters/postgres-post-call-followup-store';
 import { createManagedOutboundSender } from '@/features/messaging/adapters/managed-outbound';
@@ -49,32 +50,30 @@ export async function POST(request: Request): Promise<Response> {
         { trace_id: randomUUID(), call_id: event.callId, grace_seconds: graceSeconds },
         {
           store: new PostgresPostCallFollowupStore(sql),
+          composeFollowup: createAgentAPostCallComposer(),
           sendOutbound: createManagedOutboundSender(sql),
           log: (name, fields) => logger.info({ event: name, ...fields }),
         },
       );
 
-      if (event.eventType === 'analyzed') {
-        await followUp(0);
-        return;
+      const immediate = event.eventType === 'analyzed'
+        || ['no_answer', 'timed_out', 'failed'].includes(event.callStatus);
+      try {
+        // Acknowledge the durable lifecycle event before composition: the
+        // model's bounded 30s can exceed the provider webhook's HTTP deadline.
+        after(async () => {
+          try {
+            if (!immediate) await waitForAnalysisGrace();
+            await followUp(immediate ? 0 : 120);
+          } catch {
+            logger.error({ event: 'calls.retell_followup.failed', call_id: event.callId });
+          }
+        });
+      } catch {
+        // Scheduling cannot rewrite an event that has already been committed.
+        // Its missing completion marker remains eligible for the daily sweep.
+        logger.error({ event: 'calls.retell_followup.schedule_failed', call_id: event.callId });
       }
-
-      // These terminal outcomes are already conclusive at call_ended and do
-      // not receive useful call analysis. Process them now: sleeping inside
-      // request-scoped background work can be terminated by the host before
-      // the recovery message is emitted.
-      if (['no_answer', 'timed_out', 'failed'].includes(event.callStatus)) {
-        await followUp(0);
-        return;
-      }
-
-      // Vercel Hobby only supports daily cron jobs. Keep the webhook fast and
-      // use the request-scoped background lifetime for the short analysis
-      // window; the daily cron remains the durable recovery sweep.
-      after(async () => {
-        await waitForAnalysisGrace();
-        await followUp(120);
-      });
     };
     if (isXendraRelay) {
       return await handleXendraRelayedRetellWebhook(request, {

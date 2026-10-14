@@ -62,6 +62,7 @@ import {
   classifyBrainFailureReason,
   constrainModelToAdvisory,
   modelUnavailableFallback,
+  suppress,
 } from '../botpress-agent/src/utils/decision-policy';
 import { routeCommercialTurn } from '../botpress-agent/src/utils/commercial-router';
 import {
@@ -83,6 +84,13 @@ import {
   type AgentAProposalCycleEvidenceV1,
 } from '../botpress-agent/src/lib/conversation/resolve-agent-a-proposal';
 import { resolveAgentAPlannerlessProposalV2 } from '../botpress-agent/src/lib/conversation/resolve-agent-a-plannerless';
+import {
+  continueAgentAAfterActionFeedbackV1,
+  plannerlessActionFeedbackV1,
+} from '../botpress-agent/src/lib/conversation/agent-a-action-feedback';
+import { classifyAgentAAttemptFailure } from '../botpress-agent/src/lib/conversation/agent-a-attempt';
+import type { TurnRejectionV1 } from '../botpress-agent/src/schemas/turn-rejection';
+import type { TurnDiagnosticsV1 } from '../botpress-agent/src/schemas/contracts';
 import { AGENT_A_BRAIN_PROMPT_VERSION } from '../botpress-agent/src/prompts/agent-a-brain-v1';
 import { deliverAuthorizedLocalOutbound } from './lib/local-authorized-delivery';
 import { createLocalEvalClaimCleanup } from './lib/local-eval-claim-cleanup';
@@ -737,6 +745,12 @@ export function createLocalTurnSender(
     let modelTokenUsage: NonNullable<AgentChatResult['runtime']>['token_usage'];
     let modelAttemptCount: number | undefined;
     let proposalCycleEvidence: AgentAProposalCycleEvidenceV1 | undefined;
+    let plannerlessGenerationAttempts: 0 | 1 | 2 = 0;
+    let physicalModelRequests = 0;
+    let plannerlessConversationOnly = false;
+    let plannerlessOriginalProposal: AgentATurnCommitV2['proposal'] | null = null;
+    let plannerlessContinuationError: unknown;
+    let turnDiagnostics: TurnDiagnosticsV1 | null = null;
     let visibleCallOffers = 0;
     let callOfferLedgerEntries = 0;
     const brainContext = buildAgentAContextV1(
@@ -754,24 +768,61 @@ export function createLocalTurnSender(
 
     if (brainEligible) {
       const modelStartedAt = Date.now();
+      const accountProviderRequest = () => {
+        if (physicalModelRequests >= 2) throw new Error('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:generation_budget');
+        physicalModelRequests += 1;
+        plannerlessGenerationAttempts = Math.max(plannerlessGenerationAttempts, physicalModelRequests) as 1 | 2;
+        modelAttemptCount = plannerlessGenerationAttempts;
+      };
+      const continueWithFeedback = async (rejection: TurnRejectionV1) => {
+        if (!credentials.deepseekApiKey) throw new AgentABrainError('BRAIN_DEEPSEEK_REQUIRED');
+        if (plannerlessGenerationAttempts >= 2) throw new Error('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:generation_budget');
+        plannerlessConversationOnly = true;
+        plannerlessGenerationAttempts = 2;
+        modelAttemptCount = 2;
+        const codes = [...new Set([
+          ...(proposalCycleEvidence?.rejection_codes ?? []),
+          ...rejection.rejections.map(reason => reason.code),
+        ])];
+        proposalCycleEvidence = { rejection_codes: codes, repair_attempted: true,
+          repaired: false, proposal_generation_calls: 2 };
+        turnDiagnostics = { schema_version: 1, generation_attempts: 2,
+          failure_stage: 'action_authorization', failure_codes: codes.slice(0, 8), action_status: 'needs_input' };
+        evaluationPacingMs += await paceModelProvider();
+        try {
+          return await continueAgentAAfterActionFeedbackV1({
+            context: brainContext, rejection, apiKey: credentials.deepseekApiKey,
+            original_proposal: plannerlessOriginalProposal,
+            on_provider_request: accountProviderRequest,
+            model: credentials.deepseekModel ?? DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
+            signal: new AbortController().signal, generate: generateDeepSeekAgentATurnProposalV1,
+          });
+        } catch (error) {
+          plannerlessContinuationError = error;
+          if (classifyAgentAAttemptFailure(error).stage !== 'policy') brainTransportRetries += 1;
+          throw error;
+        }
+      };
       try {
         evaluationPacingMs += await paceModelProvider();
         if (evaluationControl?.forceProviderFailure) throw new Error('BRAIN_TIMEOUT');
         let generated: Awaited<ReturnType<typeof generateAgentATurnProposalV1>> | null = null;
-        if (strictBrainProvider === 'deepseek' && !credentials.deepseekApiKey) {
+        if ((strictBrainProvider === 'deepseek' || plannerlessV2) && !credentials.deepseekApiKey) {
           throw new AgentABrainError('BRAIN_DEEPSEEK_REQUIRED');
         }
         if (credentials.deepseekApiKey) {
           try {
+            if (plannerlessV2) plannerlessGenerationAttempts = 1;
             generated = await generateDeepSeekAgentATurnProposalV1({
               context: brainContext,
+              ...(plannerlessV2 ? { on_provider_request: accountProviderRequest } : {}),
               apiKey: credentials.deepseekApiKey,
               model: credentials.deepseekModel ?? DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
               signal: new AbortController().signal,
             });
           } catch (error) {
             brainTransportRetries += 1;
-            if (strictBrainProvider === 'deepseek') throw error;
+            if (strictBrainProvider === 'deepseek' || plannerlessV2) throw error;
           }
         }
         if (generated === null && credentials.openaiApiKey) {
@@ -827,7 +878,8 @@ export function createLocalTurnSender(
         latenciesMs.agent_a_brain_ms = generated.latency_ms;
         modelTokenUsage = generated.token_usage;
         modelAttemptCount = generated.attempt_count;
-        const authoritativeMove = bindCurrentConversationalIntentToMoveV1(
+        if (plannerlessV2) plannerlessGenerationAttempts = Math.max(generated.attempt_count, physicalModelRequests) as 1 | 2;
+        const authoritativeMove = plannerlessV2 ? generated.proposal.move : bindCurrentConversationalIntentToMoveV1(
           bindCurrentCatalogResolutionToMoveV1(generated.proposal.move, claimed),
           claimed,
         );
@@ -846,39 +898,41 @@ export function createLocalTurnSender(
             ...generated,
             proposal: { ...generated.proposal, move: authoritativeMove },
           };
+          plannerlessOriginalProposal = authoritativeGenerated.proposal;
           const resolved = await resolveAgentAPlannerlessProposalV2({
             initial: authoritativeGenerated,
             context: brainContext,
-            repair_enabled: claimed.features?.agent_a_repair_enabled === true,
+            repair_enabled: claimed.features?.agent_a_repair_enabled === true && plannerlessGenerationAttempts < 2,
+            semantic_rejections: 'advisory',
             rejection_id: randomUUID(),
-            repair: async (rejection) => {
-              if (!credentials.deepseekApiKey) {
-                throw new AgentABrainError('BRAIN_DEEPSEEK_REQUIRED');
-              }
-              evaluationPacingMs += await paceModelProvider();
-              try {
-                const repaired = await generateDeepSeekAgentATurnProposalV1({
-                  context: { ...brainContext, turn_rejection: rejection },
-                  apiKey: credentials.deepseekApiKey,
-                  model: credentials.deepseekModel ?? DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
-                  signal: new AbortController().signal,
-                });
-                const repairedMove = bindCurrentConversationalIntentToMoveV1(
-                  bindCurrentCatalogResolutionToMoveV1(repaired.proposal.move, claimed),
-                  claimed,
-                );
-                return { ...repaired, proposal: { ...repaired.proposal, move: repairedMove } };
-              } catch (error) {
-                brainTransportRetries += 1;
-                throw error;
-              }
-            },
+            repair: continueWithFeedback,
           });
           generated = resolved.effective;
-          proposalCycleEvidence = resolved.evidence;
+          proposalCycleEvidence = { ...resolved.evidence,
+            proposal_generation_calls: plannerlessGenerationAttempts >= 2 ? 2 : 1 };
+          if (resolved.action_rejection !== null) plannerlessConversationOnly = true;
+          if (resolved.action_rejection !== null && resolved.rejection !== null
+            && !resolved.evidence.repair_attempted && plannerlessGenerationAttempts < 2) {
+            try {
+              generated = await continueWithFeedback(resolved.rejection);
+              proposalCycleEvidence = { rejection_codes: resolved.evidence.rejection_codes,
+                repair_attempted: true, repaired: true, proposal_generation_calls: 2 };
+            } catch {
+              // This first draft already passed the resolver. Keep its exact
+              // Agent A text and semantic state behind the backend effect fence.
+              generated = resolved.effective;
+              proposalCycleEvidence = { rejection_codes: resolved.evidence.rejection_codes,
+                repair_attempted: true, repaired: false, proposal_generation_calls: 2 };
+            }
+          }
+          conversationMove = { move: generated.proposal.move.move,
+            secondary_moves: generated.proposal.move.secondary_moves, vetoes: generated.proposal.move.vetoes,
+            ...(generated.proposal.move.course_reference ? { course_reference: generated.proposal.move.course_reference } : {}),
+            confidence: generated.proposal.move.confidence };
           agentTurnV2 = {
             schema_version: 2,
             proposal: generated.proposal,
+            ...(plannerlessConversationOnly ? { conversation_only: true } : {}),
           };
           visibleCallOffers = generated.proposal.response.call_offer
             || generated.proposal.response.messages.some((message) => solicitsACall(message))
@@ -980,19 +1034,66 @@ export function createLocalTurnSender(
         // does not mean silence: production commits the deterministic N3
         // technical floor when DeepSeek is unavailable, so eval must do the
         // same or the provider-down case measures a different workflow.
-        const code = error instanceof Error ? error.message.slice(0, 128) : 'UNKNOWN';
-        const reason = classifyBrainFailureReason(
-          code,
-          claimed.business_context_available && claimed.catalog_index !== null,
-        );
-        fallbackReason = reason;
-        brainFailureReason = reason;
-        brainFailureCode = code;
-        brainFailureDetail = error instanceof AgentABrainError ? error.detail : null;
-        decision = modelUnavailableFallback(claimed, reason);
-        provider = 'groq-direct';
-        decisionModel = 'policy:agent-a-brain-v1-unavailable';
-        promptVersion = AGENT_A_BRAIN_PROMPT_VERSION;
+        const actualError = plannerlessV2 && plannerlessContinuationError !== undefined ? plannerlessContinuationError : error;
+        const code = actualError instanceof Error ? actualError.message.slice(0, plannerlessV2 ? 256 : 128) : 'UNKNOWN';
+        if (plannerlessV2 && classifyAgentAAttemptFailure(actualError).stage === 'policy') {
+          brainFailureCode = code;
+          decision = suppress('AGENT_A_CONTINUATION_REJECTED');
+          agentTurnV2 = null;
+          plannedBusinessAction = null;
+          provider = 'deepseek-direct';
+          decisionModel = credentials.deepseekModel ?? DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL;
+          promptVersion = AGENT_A_BRAIN_PROMPT_VERSION;
+          const rejection = plannerlessActionFeedbackV1({ failure_code: code, context: brainContext,
+            rejection_id: randomUUID() });
+          const codes = [...new Set([...(proposalCycleEvidence?.rejection_codes ?? []),
+            ...rejection.rejections.map(reason => reason.code)])];
+          proposalCycleEvidence = { rejection_codes: codes, repair_attempted: plannerlessGenerationAttempts === 2,
+            repaired: false, proposal_generation_calls: plannerlessGenerationAttempts === 2 ? 2 : 1 };
+          turnDiagnostics = { schema_version: 1, generation_attempts: plannerlessGenerationAttempts,
+            failure_stage: 'proposal_validation', failure_codes: codes.slice(0, 8), action_status: 'rejected' };
+          if (plannerlessGenerationAttempts < 2 && credentials.deepseekApiKey) {
+            try {
+              const continuation = await continueWithFeedback(rejection);
+              agentTurnV2 = { schema_version: 2, proposal: continuation.proposal, conversation_only: true };
+              proposalCycleEvidence = { rejection_codes: codes, repair_attempted: true,
+                repaired: true, proposal_generation_calls: 2 };
+              decision = { schema_version: 4, intent: 'commercial', kind: 'reply',
+                response: 'El backend preparará la respuesta autorizada.', response_type: 'commercial_reply',
+                confidence: 1, reason_code: 'AGENT_A_PLANNERLESS_V2_PENDING_BACKEND', business_action: null,
+                memory_candidates: continuation.proposal.memory_candidates, missing_information: [],
+                next_state: 'waiting_user', retrieval_used: null };
+            } catch (continuationError) {
+              const failure = classifyAgentAAttemptFailure(continuationError);
+              brainFailureCode = failure.code;
+              if (failure.stage !== 'policy') {
+                const reason = classifyBrainFailureReason(failure.code, claimed.business_context_available && claimed.catalog_index !== null);
+                fallbackReason = reason;
+                brainFailureReason = reason;
+                decision = modelUnavailableFallback(claimed, reason);
+                turnDiagnostics = { schema_version: 1, generation_attempts: 2, failure_stage: 'provider_generation',
+                  failure_codes: [failure.code], action_status: 'none' };
+              } else {
+                turnDiagnostics = { ...turnDiagnostics!, generation_attempts: 2, action_status: 'rejected' };
+              }
+            }
+          }
+        } else {
+          const reason = classifyBrainFailureReason(
+            code,
+            claimed.business_context_available && claimed.catalog_index !== null,
+          );
+          fallbackReason = reason;
+          brainFailureReason = reason;
+          brainFailureCode = code;
+          brainFailureDetail = actualError instanceof AgentABrainError ? actualError.detail : null;
+          decision = modelUnavailableFallback(claimed, reason);
+          provider = 'groq-direct';
+          decisionModel = 'policy:agent-a-brain-v1-unavailable';
+          promptVersion = AGENT_A_BRAIN_PROMPT_VERSION;
+          if (plannerlessV2) turnDiagnostics = { schema_version: 1, generation_attempts: plannerlessGenerationAttempts,
+            failure_stage: 'provider_generation', failure_codes: [code], action_status: 'none' };
+        }
       }
       latenciesMs.model_ms = Date.now() - modelStartedAt;
     } else if (commercialRoute.kind !== 'model_required') {
@@ -1090,6 +1191,7 @@ export function createLocalTurnSender(
           authorized_payment_plan: authorizedPaymentPlan,
           conversation_pipeline_v1: conversationPipelineV1,
           agent_turn_v2: agentTurnV2,
+          ...(plannerlessV2 ? { turn_diagnostics: turnDiagnostics } : {}),
           supports_multi_outbound: true,
           decision,
           model: {
@@ -1123,6 +1225,7 @@ export function createLocalTurnSender(
           authorized_payment_plan: authorizedPaymentPlan,
           conversation_pipeline_v1: conversationPipelineV1,
           agent_turn_v2: agentTurnV2,
+          ...(plannerlessV2 ? { turn_diagnostics: turnDiagnostics } : {}),
           supports_multi_outbound: true,
           decision,
           model: { provider, model: decisionModel, prompt_version: promptVersion },

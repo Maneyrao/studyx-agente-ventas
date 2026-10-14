@@ -38,7 +38,11 @@ function context(): AgentAContextV1 {
           { id: DURATION_FACT, kind: 'offering_duration', value: '38 clases' },
         ],
       },
-      areas: [], candidate_offerings: [], payment_plans: [],
+      areas: [], candidate_offerings: [], payment_plans: [
+        { code: 'monthly_12', fact_id: 'payment:maquillaje-profesional:monthly_12:label:v1', label: '12 pagos mensuales de USD 30' },
+        { code: 'monthly_6', fact_id: 'payment:maquillaje-profesional:monthly_6:label:v1', label: '6 pagos mensuales de USD 60' },
+        { code: 'one_time', fact_id: 'payment:maquillaje-profesional:one_time:label:v1', label: '1 pago de USD 360' },
+      ],
     },
     capabilities: {
       may_reply: true, may_offer_call: true, may_request_call_now: true,
@@ -72,6 +76,31 @@ function generated(value: AgentATurnProposalV1) {
 }
 
 describe('resolveAgentAPlannerlessProposalV2', () => {
+  it.each(['unavailable plan', 'unknown course', 'unknown intake', 'paid purchase', 'payment veto'])(
+    'does not authorize a same-turn payment effect with %s', async condition => {
+      const current = context();
+      current.commercial_state.selected_payment_plan = 'monthly_6';
+      current.capabilities.may_send_payment_link = true;
+      if (condition === 'unavailable plan') current.catalog.payment_plans = [];
+      if (condition === 'unknown course') current.catalog.selected_offering = null;
+      if (condition === 'unknown intake') current.capabilities.intake_status = 'unknown';
+      if (condition === 'paid purchase') current.commercial_state.payment_verification = {
+        status: 'paid', offering_code: 'maquillaje-profesional', plan_code: 'monthly_6', paid_at: '2026-10-13T12:00:00Z',
+      };
+      const initial = generated(proposal({
+        move: { schema_version: 1, move: 'select_payment_plan', secondary_moves: ['request_payment_link'],
+          vetoes: condition === 'payment veto' ? ['payment_link'] : [], payment_plan: 'monthly_6', confidence: 1 },
+        response: { messages: ['Perfecto, te comparto el enlace seguro.'], call_offer: null },
+        proposed_action: { type: 'send_payment_link', offering_code: 'maquillaje-profesional', payment_plan: 'monthly_6' },
+        used_fact_ids: [],
+      }));
+      await expect(resolveAgentAPlannerlessProposalV2({ initial, context: current,
+        repair_enabled: false, semantic_rejections: 'advisory', rejection_id: '00000000-0000-4000-8000-000000000001',
+        repair: async () => { throw new Error('Unexpected repair'); },
+      })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:send_payment_link');
+    },
+  );
+
   it.each(['requested', 'provider_accepted', 'in_progress'])(
     'keeps a factual registration confirmation backed by an active %s call', async status => {
       const current = context();
@@ -1635,7 +1664,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(repair).toHaveBeenCalledTimes(1);
     expect(result.effective).toBe(repaired);
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['MISSING_INTAKE'], repair_attempted: true,
+      rejection_codes: ['MISSING_INTAKE', 'ACTION_NOT_AUTHORIZED'], repair_attempted: true,
       repaired: true, proposal_generation_calls: 2,
     });
   });
