@@ -126,7 +126,8 @@ export async function claimNotification(id: string, botpressConversationId: stri
   return { claimed: true as const, claim_token: token, kind: source.kind,
     academy_name: source.academy_name, offering_name: source.offering_name,
     customer_first_name: source.registration_name?.split(' ')[0] ?? '',
-    existing_user: source.student_was_created === false, history: history.reverse() };
+    existing_user: source.student_was_created === false, new_user: source.student_was_created === true,
+    history: history.reverse() };
 }
 export const NarrativeSchema = z.object({
   intro: z.string().trim().min(1).max(500),

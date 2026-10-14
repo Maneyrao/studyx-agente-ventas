@@ -78,7 +78,9 @@ it('repairs a fabricated installment count without losing fragmented identity, t
   expect(selected.commitSucceeded).toBe(true);
 
   const falseClaim = 'Podés pagar en 2 cuotas de USD 60.';
-  const repairedAnswer = 'Para Inglés 1 puedes elegir 12 pagos de USD 30, 6 pagos de USD 60 o 1 pago de USD 360. Cuál te sirve?';
+  // Real production regression: the denial itself was mistaken for an offer,
+  // so even this correct A-authored repair used to end in a silent completed turn.
+  const repairedAnswer = 'No tengo un plan de dos pagos: los disponibles son 12 pagos de USD 30, 6 pagos de USD 60 o un pago único de USD 360.';
   const beforeRepair = contexts.length;
   respond = context => {
     expect(context.commercial_state.selected_offering_code).toBe('ingles_1');

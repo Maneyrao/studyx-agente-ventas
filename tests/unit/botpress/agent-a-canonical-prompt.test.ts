@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const PROMPT_PATH = 'docs/prompts/studyx-agent-a-canonical.md';
 const GENERATED_PATH = 'botpress-agent/src/prompts/studyx-agent-a-canonical.generated.ts';
-const EXPECTED_SHA256 = 'abd982eb0ca110219160fcd65e9fc374bcef6df908b555de7087b325f011a4ac';
+const EXPECTED_SHA256 = '2ebcd38c3d4ae089d27cf82d74bdc0c042720fef43afeea6a5ed0f8f9751a161';
 
 describe('Agent A canonical sales prompt', () => {
   it('ships the complete approved prompt and a byte-equivalent generated module', () => {
@@ -16,7 +16,7 @@ describe('Agent A canonical sales prompt', () => {
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v69' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v70' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
@@ -36,6 +36,28 @@ describe('Agent A canonical sales prompt', () => {
 
     expect(prompt).toMatch(/Es un paso propio/iu);
     expect(prompt).toMatch(/no vuelvas a explicar el curso ni a listar planes/iu);
+  });
+
+  it('reconfirms complete data once and waits for corrections or confirmation before the payment link', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+    expect(prompt).toContain('reconfirma nombre, apellido, correo y teléfono en un solo resumen');
+    expect(prompt).toContain('espera su confirmación antes de enviar el enlace');
+    expect(prompt).toContain('Si corrige un dato, actualízalo y reconfirma el resumen corregido');
+    expect(prompt).toContain('No repitas una reconfirmación ya aceptada si los datos no cambiaron');
+    expect(prompt).not.toContain('confirma brevemente si aún hace falta');
+  });
+
+  it('defaults to no emojis and keeps data, payment and access messages free of them', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+    expect(prompt).toContain('Por defecto escribe sin emojis');
+    expect(prompt).toContain('nunca en respuestas consecutivas ni al recoger o reconfirmar datos, enviar pagos o entregar accesos');
+  });
+
+  it('explains both access delivery channels with the link and reserves welcome for confirmed new students', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+    expect(prompt).toContain('junto al enlace aclara que, cuando se confirme el pago y se complete el alta, recibirá sus credenciales por correo y WhatsApp');
+    expect(prompt).toContain('Sólo para un alumno nuevo con alta confirmada');
+    expect(prompt).toContain('Bienvenido a Studyx, espero que disfrutes mucho de estudiar con nosotros!');
   });
 
   it('teaches a variable WhatsApp rhythm without imposing two bubbles on every turn', () => {

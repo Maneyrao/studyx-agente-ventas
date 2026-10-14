@@ -251,6 +251,7 @@ const workflowStateSchema = z.object({
   outboundId: z.string().uuid().nullable().default(null),
   deliveryStatus: z.enum(['submitted_to_botpress', 'failed']).nullable().default(null),
   errorCode: z.string().nullable().default(null),
+  inboundRecoveryDeadlineAt: z.number().nullable().default(null),
 })
 
 function safeLog(event: string, fields: Record<string, unknown>): void {
@@ -423,9 +424,9 @@ export const processInboundTurn = new Workflow({
   input: WorkflowInputSchema as any,
   output: WorkflowResultSchema as any,
   state: workflowStateSchema as any,
-  // La ventana de lote desliza hasta `hard_deadline_at` y después vienen claim,
-  // modelo y entrega. 2 minutos dejaban el turno sin margen.
-  timeout: '5m',
+  // Ingest/claim recovery sleeps durably through short backend outages, then
+  // leaves enough time for the owned decision and delivery.
+  timeout: '15m',
 
   async handler({ input, state, step, execute, client, signal, workflow }) {
     input = WorkflowInputSchema.parse(input)
@@ -437,6 +438,42 @@ export const processInboundTurn = new Workflow({
     // Best-effort under durable replays — a resumed workflow re-times only the
     // stages that actually re-run.
     const workflowStartedAt = Date.now()
+    state.inboundRecoveryDeadlineAt ??= workflowStartedAt + 8 * 60_000
+    const recoverInboundOperation = async <T>(name: string, operation: () => Promise<T>): Promise<T> => {
+      for (let recovery = 0; ; recovery += 1) {
+        const receipt = await step(
+          recovery === 0 ? name : `${name}-recovery-${recovery}`,
+          async () => {
+            try { return await operation() }
+            catch (error) {
+              if (!(error instanceof StudyxHttpError) || !error.retryable) throw error
+              // ADK rehydrates thrown errors as plain Error. Persist a typed
+              // receipt so a durable sleep can replay the retry decision.
+              return { studyx_inbound_retry: {
+                code: error.code, status: error.status, attempts: error.attempts,
+                retry_allowed: recovery < 5
+                  && Date.now() + Math.min(60_000, 15_000 * 2 ** recovery) <= state.inboundRecoveryDeadlineAt!,
+              } }
+            }
+          },
+          { maxAttempts: 1 },
+        )
+        // Successful receipts stay in their original shape for workflows
+        // whose ingest/claim steps were cached by an earlier deployment.
+        if (!receipt || typeof receipt !== 'object' || !('studyx_inbound_retry' in receipt)) return receipt as T
+        const failure = receipt.studyx_inbound_retry
+        const error = new StudyxHttpError(failure.code, true, failure.status, failure.attempts)
+        const delayMs = Math.min(60_000, 15_000 * 2 ** recovery)
+        if (!failure.retry_allowed) throw error
+        safeLog('studyx.turn.inbound_recovery_scheduled', {
+          trace_id: input.trace_id, stage: name, recovery: recovery + 1,
+          delay_ms: delayMs, error_code: error.code,
+        })
+        // Only idempotent ingest and claim use this retry. Never wrap a
+        // provider send, payment or call dispatch in it.
+        await step.sleep(`${name}-recovery-wait-${recovery + 1}`, delayMs)
+      }
+    }
     const timings: Record<string, number> = {}
     let occurredAtMs = Date.parse(input.message.occurred_at ?? '')
     if (Number.isFinite(occurredAtMs)) {
@@ -513,19 +550,20 @@ export const processInboundTurn = new Workflow({
     let ingest: IngestResponse
     const ingestStartedAt = Date.now()
     try {
-      ingest = input.preingested ?? await step(
+      ingest = input.preingested ?? await recoverInboundOperation(
         'ingest-canonical-turn',
         () => ingestTurn.execute({
           input: InboundEnvelopeSchema.parse({ ...input, identity_owner:
             configuration.agentAPlannerlessV2Enabled === true ? 'agent_a_v1' : undefined }),
           client,
         }),
-        { maxAttempts: 1 }
       )
       timings.ingest_ms = Date.now() - ingestStartedAt
       state.turnId = ingest.turn_id
       state.batchId = ingest.batch.id
     } catch (error) {
+      // ADK durable suspension is a control object, not a failed request.
+      if (!(error instanceof Error)) throw error
       timings.ingest_ms = Date.now() - ingestStartedAt
       state.phase = 'paused_error'
       state.errorCode = errorCode(error)
@@ -595,7 +633,7 @@ export const processInboundTurn = new Workflow({
       let outcome
       const claimStartedAt = Date.now()
       try {
-        outcome = await step(
+        outcome = await recoverInboundOperation(
           `claim-inbound-batch-${attempt}`,
           () =>
             claimBatch.execute({
@@ -606,10 +644,10 @@ export const processInboundTurn = new Workflow({
                 claimed_by: `botpress:${workflow?.id ?? input.trace_id}`,
               },
             }),
-          { maxAttempts: 1 }
         )
         timings.claim_ms += Date.now() - claimStartedAt
       } catch (error) {
+        if (!(error instanceof Error)) throw error
         timings.claim_ms += Date.now() - claimStartedAt
         state.phase = 'paused_error'
         state.errorCode = errorCode(error)

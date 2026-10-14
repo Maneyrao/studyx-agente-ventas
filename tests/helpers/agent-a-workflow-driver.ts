@@ -232,7 +232,9 @@ async function executeWorkflowTurnV1(
         },
       },
       signal: new AbortController().signal,
-      workflow: { id: 'workflow-harness' },
+      // Cloud creates a distinct durable workflow for each source message.
+      // A constant id would impersonate the same owner in concurrent bursts.
+      workflow: { id: `workflow-harness:${externalMessageId}` },
     });
     status = (result as { status?: string } | null)?.status ?? null;
   } catch (error) {

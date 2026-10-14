@@ -254,6 +254,20 @@ const PAYMENT_PLAN_PATTERN = new RegExp(
   'gu',
 );
 
+// Remove only the explicitly denied monetary object from the inspection copy,
+// never the remainder of a sentence. A following positive offer is inspected
+// regardless of its conjunction. The original customer-facing text is untouched.
+const PAYMENT_AMOUNT = `(?:(?:usd|ars|eur)\\s*\\$?\\s*\\d[\\d.,]*|\\d[\\d.,]*\\s*(?:usd|ars|eur)\\b)`;
+const COUNTED_PAYMENT_OBJECT = `${PAYMENT_COUNT}\\s*(?:pagos?|cuotas?)\\b(?:\\s+mensuales?)?(?:\\s+(?:de|por|a)\\s+${PAYMENT_AMOUNT})?`;
+const PAYMENT_OBJECT = `(?:(?:(?:el|la|un|una|ningun|ninguna|este|esta|ese|esa|otro|otra|los|las)\\s+)?(?:plan(?:es)?|opcion(?:es)?|alternativas?)\\b(?:\\s*(?::|\\b(?:de|en|con)\\b)\\s*${COUNTED_PAYMENT_OBJECT})?|${COUNTED_PAYMENT_OBJECT}|${PAYMENT_AMOUNT})`;
+const DENIED_PAYMENT = new RegExp(
+  `\\b(?:no|nunca|tampoco)\\s+(?:(?:lo|se)\\s+)?`
+    + `(?:ofrezco|ofrecemos|ofrece|tengo|tenemos|hay|contamos|puedo|podemos|puede|puedes|podes|es|son|sale|cuesta|paga|pagas|pagar|pagamos|cobramos|incluimos|existe|existen)\\s+`
+    + `(?:(?:ofrecer|dar|hacer|pagar|abonar|elegir)\\p{L}*\\s+)?(?:(?:en|con|de|mas)\\s+)*${PAYMENT_OBJECT}`,
+  'gu',
+);
+const DENIED_PAYMENT_SUFFIX = new RegExp(`${PAYMENT_OBJECT}\\s+(?:no|nunca|tampoco)\\s+(?:(?:lo|se)\\s+)?(?:esta|estan)\\s+(?:disponibles?|habilitad[oa]s?|autorizad[oa]s?)\\b`, 'gu');
+
 function assertedPaymentClauses(sentence: string): string[] {
   const normalized = normalize(sentence);
   const isQuestion = normalized.trim().endsWith('?');
@@ -261,8 +275,8 @@ function assertedPaymentClauses(sentence: string): string[] {
   const offersChoice = /\b(?:queres|quieres|preferis|prefieres|elegis|te\s+(?:gustaria|sirve|parece))\b/u.test(normalized)
     || /\b(?:podes|puedes|podemos|puedo|podrias)\s+(?:pagar|abonar|hacer|dar|ofrecer|elegir)\p{L}*\b/u.test(normalized);
   if (isQuestion && !offersChoice) return [];
-  return normalized.split(/,(?!\d)|;|\b(?:pero|aunque|sin embargo)\b|\by\s+(?=(?:(?:yo|tu|vos|usted|nosotros|ustedes|ellos|ellas|te)\s+)?(?:doy|damos|dan|ofrezco|ofrecemos|ofrece|ofrecen|tengo|tenemos|tiene|tienen|puedo|puedes|puede|pueden|podemos|podes|pagas|paga|pagamos|cobro|cobramos|cobran|sale|cuesta|es|son)\b)/u)
-    .filter((clause) => !/\b(?:no|nunca|tampoco)\s+(?:(?:lo|se)\s+)?(?:ofrecemos|ofrece|tenemos|hay|contamos|podemos|puede|puedes|podes|es|son|sale|cuesta|paga|pagas|pagar|pagamos|cobramos|incluimos|existe|existen|(?:esta|estan)\s+(?:disponibles?|habilitad[oa]s?|autorizad[oa]s?))\b/u.test(clause));
+  return normalized.replace(DENIED_PAYMENT, ' ').replace(DENIED_PAYMENT_SUFFIX, ' ')
+    .split(/,(?!\d)|;|:|\b(?:pero|aunque|sino|sin embargo)\b/u);
 }
 
 /** Shared assertion scope for monetary fact extraction on both sides of commit. */

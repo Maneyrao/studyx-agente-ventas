@@ -93,6 +93,14 @@ describe('canonical installment plans', () => {
     'Podés pagarlo en dos cuotas.',
     'Tenemos 12 pagos de USD 30, 6 de USD 30 o un pago de USD 360.',
     'No tenemos 2 pagos, pero podemos ofrecer 3 cuotas de USD 60.',
+    'No tengo un plan de dos pagos: los disponibles son 3 pagos de USD 60.',
+    'No tengo dudas: puedes pagar en 2 cuotas de USD 180.',
+    'No tengo problema en ofrecer dos pagos de USD 180.',
+    'No tengo más problemas para ofrecer 2 cuotas de USD 180.',
+    'No tengo un plan de dos pagos: te ofrezco 3 cuotas de USD 60.',
+    'No tengo tu correo: te ofrezco 2 cuotas de USD 180.',
+    'No tengo un plan de dos pagos y la opción es 3 cuotas de USD 60.',
+    'No tengo un plan de dos pagos así que puedes pagar en 3 cuotas de USD 60.',
   ])('rejects an asserted unsupported installment count or pair: %s', (content) => {
     expect(enforce(content, canonical).violations.map((violation) => violation.code))
       .toContain('PAYMENT_PLAN_NOT_CANONICAL');
@@ -116,6 +124,15 @@ describe('canonical installment plans', () => {
       .toContainEqual({ code: 'PRICE_NOT_CANONICAL', value: 'usd 999' });
   });
 
+  it('validates a positive price after a first-person denial followed by a colon', () => {
+    expect(enforce('No puedo ofrecer dos pagos: puedes pagar USD 999.', canonical).violations)
+      .toContainEqual({ code: 'PRICE_NOT_CANONICAL', value: 'usd 999' });
+    expect(enforce('No tengo un plan de dos pagos: el precio es USD 999.', canonical).violations)
+      .toContainEqual({ code: 'PRICE_NOT_CANONICAL', value: 'usd 999' });
+    expect(enforce('No puedo darte 2 cuotas porque el precio es USD 999.', canonical).violations)
+      .toContainEqual({ code: 'PRICE_NOT_CANONICAL', value: 'usd 999' });
+  });
+
   it('does not let an unrelated negation authorize an unsupported price', () => {
     expect(enforce('El precio no cambia: USD 999.', canonical).violations)
       .toContainEqual({ code: 'PRICE_NOT_CANONICAL', value: 'usd 999' });
@@ -130,6 +147,11 @@ describe('canonical installment plans', () => {
     'El total es USD 360; podés elegir 12 pagos de USD 30 o 6 pagos de USD 60.',
     'No tenemos 2 cuotas de USD 180. Podés pagar en 12 cuotas de USD 30.',
     'No se puede en 2 pagos; tenemos 6 pagos de USD 60.',
+    'Thiago, no tengo un plan de dos pagos: los disponibles son 12 pagos de USD 30, 6 pagos de USD 60 o un pago único de USD 360.',
+    'No tengo un plan de dos pagos. Puedes elegir 12 pagos de USD 30.',
+    'No puedo ofrecerte dos pagos de USD 180; tenemos 6 pagos de USD 60.',
+    'No ofrezco dos cuotas de USD 180: las opciones son 12 pagos de USD 30 o 6 de USD 60.',
+    'No tengo este plan: dos pagos de USD 180.',
     'Dos pagos de USD 180 no están disponibles; puedes pagar en 12 de USD 30.',
     '¿Buscabas 2 cuotas de USD 180? Tenemos 6 pagos de USD 60.',
     '¿En cuántos pagos te gustaría hacerlo?',

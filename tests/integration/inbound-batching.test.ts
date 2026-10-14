@@ -92,26 +92,52 @@ run('durable inbound batching', () => {
     expect(b.batch.hard_deadline_at).toBe(a.batch.hard_deadline_at);
   });
 
-  it('opens a new batch once the hard deadline has passed', async () => {
+  it('keeps an expired unclaimed batch immediately claimable with its unanswered messages', async () => {
     const first = envelope();
     const a = await processInboundMessage(first);
-
-    await db!`
-      UPDATE inbound_batches
+    await db!`UPDATE inbound_batches
       SET due_at = now() - interval '5 seconds', hard_deadline_at = now() - interval '3 seconds'
-      WHERE id = ${a.batch.id}::uuid
-    `;
+      WHERE id = ${a.batch.id}::uuid`;
+    const [before] = await db!`SELECT due_at, hard_deadline_at FROM inbound_batches WHERE id = ${a.batch.id}::uuid`;
+    const b = await processInboundMessage(followUp(first, '¿Me vas a llamar?'));
+    expect(b.batch.id).toBe(a.batch.id);
+    expect(b.batch.joined_existing).toBe(true);
+    expect(b.batch.message_count).toBe(2);
+    const [after] = await db!`SELECT state, due_at, hard_deadline_at, last_error_code
+      FROM inbound_batches WHERE id = ${a.batch.id}::uuid`;
+    expect(after).toEqual({ ...before, state: 'waiting', last_error_code: null });
+    const owned = await store.claimBatch({ batch_id: a.batch.id, claimed_by: 'recovered-workflow' });
+    expect(owned.outcome).toBe('claimed');
+    expect((await store.listBatchMessages(a.batch.id)).map(message => message.content))
+      .toEqual(['Hola, quiero información', '¿Me vas a llamar?']);
+  });
 
-    const b = await processInboundMessage(followUp(first, 'mucho después'));
-    expect(b.batch.id).not.toBe(a.batch.id);
-    expect(b.batch.joined_existing).toBe(false);
+  it('replays the same live owner after an ambiguous claim response without extending or rotating ownership', async () => {
+    const ingested = await processInboundMessage(envelope());
+    await forceDue(ingested.batch.id);
+    const first = await store.claimBatch({ batch_id: ingested.batch.id, claimed_by: 'same-workflow' });
+    const replay = await store.claimBatch({ batch_id: ingested.batch.id, claimed_by: 'same-workflow' });
+    expect(replay).toEqual(first);
+    const competitor = await store.claimBatch({ batch_id: ingested.batch.id, claimed_by: 'another-workflow' });
+    expect(competitor.outcome).toBe('absorbed');
+    expect(competitor.claim_token).toBeNull();
+    const [row] = await db!`SELECT claim_attempt_count FROM inbound_batches WHERE id = ${ingested.batch.id}::uuid`;
+    expect(row.claim_attempt_count).toBe(1);
+  });
 
-    const previous = await db!<Array<{ state: string; last_error_code: string | null }>>`
-      SELECT state, last_error_code FROM inbound_batches WHERE id = ${a.batch.id}::uuid
-    `;
-    // The stale window is closed explicitly, never left dangling.
-    expect(previous[0].state).toBe('abandoned');
-    expect(previous[0].last_error_code).toBe('WINDOW_EXPIRED_UNCLAIMED');
+  it('never returns an old owner token after a competitor has stolen its expired lease', async () => {
+    const ingested = await processInboundMessage(envelope());
+    await forceDue(ingested.batch.id);
+    const original = await store.claimBatch({ batch_id: ingested.batch.id, claimed_by: 'original-workflow' });
+    await db!`UPDATE inbound_batches SET lease_until = now() - interval '1 second' WHERE id = ${ingested.batch.id}::uuid`;
+    const current = await store.claimBatch({ batch_id: ingested.batch.id, claimed_by: 'replacement-workflow' });
+    expect(current.outcome).toBe('claimed');
+    expect(current.claim_token).not.toBe(original.claim_token);
+    const staleReplay = await store.claimBatch({ batch_id: ingested.batch.id, claimed_by: 'original-workflow' });
+    expect(staleReplay.outcome).toBe('absorbed');
+    expect(staleReplay.claim_token).toBeNull();
+    expect((await store.completeBatch({ batch_id: ingested.batch.id, claim_token: original.claim_token! })).outcome)
+      .toBe('stale_claim');
   });
 
   it('gives exactly one of five concurrent claimers the ownership token', async () => {

@@ -24,6 +24,7 @@ vi.mock('../../../botpress-agent/src/lib/inbound/ingest-canonical-turn', () => (
 // alias, so importing the stub directly yields the same module instance.
 import { configuration } from '../../helpers/botpress-runtime-stub';
 import router from '../../../botpress-agent/src/conversations/router';
+import { StudyxHttpError } from '../../../botpress-agent/src/utils/http';
 import { deriveEmulatorPhoneE164 } from '../../../botpress-agent/src/channels/shared/emulator-envelope';
 
 type RouterHandler = (props: {
@@ -218,6 +219,19 @@ describe('router dispatch for production Telegram events', () => {
         conversation: telegramConversation,
       }),
     ).rejects.toThrow('boom');
+  });
+
+  it('retains the inbound in a durable workflow when preingest exhausts transient HTTP retries', async () => {
+    ingestCanonicalTurnV1.mockRejectedValueOnce(new StudyxHttpError('STUDYX_TIMEOUT', true, null, 4));
+    await definition.handler({ type: 'message', channel: 'telegram.channel',
+      message: telegramInbound, conversation: telegramConversation });
+
+    expect(getOrCreate).toHaveBeenCalledTimes(1);
+    const scheduled = getOrCreate.mock.calls[0][0];
+    expect(scheduled.key).toBe(`turn:botpress:telegram:${telegramInbound.id}`);
+    expect(scheduled.input.external_message_id).toBe(telegramInbound.id);
+    expect(scheduled.input.message.text).toBe('Hola');
+    expect(scheduled.input.preingested).toBeNull();
   });
 
   it('rethrows a canonical ingest failure without scheduling an empty workflow', async () => {

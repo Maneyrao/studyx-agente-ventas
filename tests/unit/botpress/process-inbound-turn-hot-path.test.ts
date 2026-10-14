@@ -390,6 +390,104 @@ describe('processInboundTurn hot path', () => {
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
   });
 
+  it.each(['ingest', 'claim'] as const)('recovers a transient %s outage durably before accepting a terminal backend result', async stage => {
+    actionSpies[stage].mockRejectedValueOnce(new StudyxHttpError('STUDYX_TIMEOUT', true, null, 4));
+    actionSpies.claim.mockResolvedValue({ outcome: 'completed', trace_id: UUID, batch_id: UUID, retry_after_ms: 0 });
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async (name: string, delayMs: number) => { void name; void delayMs; }) });
+    const result = await (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler({ input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(), client: {}, signal: new AbortController().signal, workflow: { id: 'recover-test' } });
+
+    expect(result).toMatchObject({ status: 'completed', error_code: null });
+    expect(actionSpies[stage]).toHaveBeenCalledTimes(2);
+    expect(step.sleep.mock.calls.some(call => Number(call[1]) >= 15_000)).toBe(true);
+    expect(actionSpies.commit).not.toHaveBeenCalled();
+  });
+
+  it('resumes a persisted transient failure after the ADK durable sleep suspends execution', async () => {
+    actionSpies.ingest.mockRejectedValueOnce(new StudyxHttpError('STUDYX_TIMEOUT', true, null, 4));
+    actionSpies.claim.mockResolvedValue({ outcome: 'completed', trace_id: UUID, batch_id: UUID, retry_after_ms: 0 });
+    const suspension = { [Symbol('adk-step-signal')]: true };
+    const persisted = new Map<string, unknown>();
+    const step = Object.assign(async (name: string, run: () => Promise<unknown>) => {
+      if (persisted.has(name)) {
+        const stored = persisted.get(name);
+        // ADK reconstructs failed steps as Error, losing custom error fields.
+        if (stored instanceof Error) throw new Error(stored.message);
+        return structuredClone(stored);
+      }
+      try { const output = await run(); persisted.set(name, structuredClone(output)); return output; }
+      catch (error) { persisted.set(name, error); throw error; }
+    }, { sleep: vi.fn(async (name: string, delayMs: number) => { void name; void delayMs; }) });
+    step.sleep.mockRejectedValueOnce(suspension);
+    const state = processingState();
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+    const args = { input: workflowInput(), state, step, execute: vi.fn(), client: {},
+      signal: new AbortController().signal, workflow: { id: 'recover-resume-test' } };
+    await expect(handler(args)).rejects.toBe(suspension);
+    await expect(handler(args)).resolves.toMatchObject({ status: 'completed', error_code: null });
+    expect(actionSpies.ingest).toHaveBeenCalledTimes(2);
+    // A later replay must reach cached success even after its retry budget
+    // expired; it must not reconsider a retry that already completed.
+    Object.assign(state, { inboundRecoveryDeadlineAt: Date.now() - 1 });
+    await expect(handler(args)).resolves.toMatchObject({ status: 'completed', error_code: null });
+    expect(actionSpies.ingest).toHaveBeenCalledTimes(2);
+    expect(actionSpies.commit).not.toHaveBeenCalled();
+  });
+
+  it('reuses successful ingest and claim steps saved before recovery receipts existed', async () => {
+    const step = Object.assign(async (name: string, run: () => Promise<unknown>) => {
+      if (name === 'ingest-canonical-turn') return ingestResponse();
+      if (name === 'claim-inbound-batch-0') return { outcome: 'completed', trace_id: UUID, batch_id: UUID, retry_after_ms: 0 };
+      return run();
+    }, { sleep: vi.fn(async (name: string, delayMs: number) => { void name; void delayMs; }) });
+    const result = await (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler({ input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(), client: {}, signal: new AbortController().signal, workflow: { id: 'legacy-cache-test' } });
+    expect(result).toMatchObject({ status: 'completed', error_code: null });
+    expect(actionSpies.ingest).not.toHaveBeenCalled();
+    expect(actionSpies.claim).not.toHaveBeenCalled();
+    expect(actionSpies.commit).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['transient', new StudyxHttpError('STUDYX_TIMEOUT', true), 6, 5],
+    ['permanent', new StudyxHttpError('INVALID_STUDYX_RESPONSE', false), 1, 0],
+  ] as const)('bounds %s ingest failures without reaching claim or external effects', async (_kind, failure, attempts, waits) => {
+    actionSpies.ingest.mockRejectedValue(failure);
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async (name: string, delayMs: number) => { void name; void delayMs; }) });
+    const result = await (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler({ input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(), client: {}, signal: new AbortController().signal, workflow: { id: 'bounded-recover-test' } });
+    expect(result).toMatchObject({ status: 'paused_error', error_code: failure.code });
+    expect(actionSpies.ingest).toHaveBeenCalledTimes(attempts);
+    expect(step.sleep).toHaveBeenCalledTimes(waits);
+    expect(actionSpies.claim).not.toHaveBeenCalled();
+    expect(actionSpies.commit).not.toHaveBeenCalled();
+    expect(actionSpies.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('preserves the shared recovery deadline across workflow resumptions', async () => {
+    actionSpies.ingest.mockRejectedValue(new StudyxHttpError('STUDYX_TIMEOUT', true));
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async (name: string, delayMs: number) => { void name; void delayMs; }) });
+    const result = await (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler({ input: workflowInput(), state: { ...processingState(), inboundRecoveryDeadlineAt: Date.now() - 1 }, step,
+      execute: vi.fn(), client: {}, signal: new AbortController().signal, workflow: { id: 'expired-recovery-test' } });
+    expect(result).toMatchObject({ status: 'paused_error', error_code: 'STUDYX_TIMEOUT' });
+    expect(actionSpies.ingest).toHaveBeenCalledTimes(1);
+    expect(step.sleep).not.toHaveBeenCalled();
+    expect(actionSpies.claim).not.toHaveBeenCalled();
+  });
+
   it('persists independent profile fields before effect validation and repairs from the receipt', async () => {
     configuration.agentAPlannerlessV2Enabled = true;
     const claimed = claimedResponse() as unknown as ClaimedTurn;
