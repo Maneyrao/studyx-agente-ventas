@@ -349,6 +349,11 @@ function backendCommitTurnRejectionV1(input: {
     for (const backendCode of reason.slice('AGENT_TURN_V2_REJECTED:'.length).split(',')) {
       switch (backendCode.trim()) {
         case 'FACT_NOT_AUTHORIZED': push('FACT_NOT_AUTHORIZED', factSubject); break
+        case 'COMMERCIAL_TRUTH_VIOLATION': {
+          if (detailedSubjects.length === 0) push('FACT_VALUE_MISMATCH', 'backend_commercial_fact')
+          else detailedSubjects.forEach(subject => push('FACT_VALUE_MISMATCH', subject))
+          break
+        }
         case 'UNSUPPORTED_STATE_ASSERTION': {
           if (detailedSubjects.length === 0) push('UNSUPPORTED_OPERATIONAL_CLAIM', 'backend_state')
           else detailedSubjects.forEach((subject) => push('UNSUPPORTED_OPERATIONAL_CLAIM', subject))
@@ -377,7 +382,8 @@ function backendCommitTurnRejectionV1(input: {
     ...(input.context.catalog.selected_offering?.facts.map((fact) => fact.id) ?? []),
     ...input.context.catalog.available_offerings.map((offering) => offering.fact_id),
     ...input.context.catalog.areas.map((area) => area.fact_id),
-    ...input.context.catalog.candidate_offerings.map((offering) => offering.fact_id),
+    ...input.context.catalog.candidate_offerings.flatMap(offering => [offering.fact_id,
+      ...(offering.facts?.map(fact => fact.id) ?? [])]),
     ...input.context.catalog.payment_plans.map((plan) => plan.fact_id),
     ...(input.context.catalog.test_payment_options?.map((option) => option.fact_id) ?? []),
   ]

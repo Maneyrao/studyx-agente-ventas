@@ -80,7 +80,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v69');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v103');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v104');
   });
   it('resolves academy identity without altering authorized facts', () => {
     const current = context();
@@ -97,6 +97,35 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).not.toContain(injection);
     expect(instructions.match(/<authorized_context>/gu)).toHaveLength(1);
     expect(JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!)).toEqual(current);
+  });
+  it('keeps profile extraction subordinate to the canonical conversation behavior', () => {
+    const instructions = buildAgentABrainInstructionsV1(context());
+    const canonicalEnd = instructions.indexOf('</canonical_sales_behavior>');
+    const profileStart = instructions.indexOf('<internal_contact_profile_contract>');
+    const profileEnd = instructions.indexOf('</internal_contact_profile_contract>');
+
+    expect(profileStart).toBeGreaterThan(canonicalEnd);
+    expect(profileEnd).toBeGreaterThan(profileStart);
+    expect(profileEnd).toBeLessThan(instructions.indexOf('<authorized_context>'));
+    const execution = instructions.slice(0, instructions.indexOf('<canonical_sales_behavior'));
+    expect(execution).not.toContain('profile_updates');
+    const profileContract = instructions.slice(profileStart, profileEnd);
+    expect(profileContract).toContain('only govern profile_updates and profile_requests');
+    expect(profileContract).toContain('Canonical behavior alone decides whether to ask or acknowledge');
+    expect(profileContract).toContain('Ambiguous evidence produces no guessed update');
+  });
+  it('uses assistant history for continuity while preserving canonical authority over style', () => {
+    const current = context();
+    current.turn.recent_turns = [{ id: 'earlier-reply', direction: 'outbound',
+      content: 'An earlier reply can deviate from approved behavior.' }];
+    current.continuity!.last_agent_reply = current.turn.recent_turns[0]!.content;
+    const instructions = buildAgentABrainInstructionsV1(current);
+    const execution = instructions.slice(0, instructions.indexOf('<canonical_sales_behavior'));
+
+    expect(execution).toContain('conversation evidence, not stylistic examples');
+    expect(execution).toContain('Canonical behavior governs every new reply even when history deviates from it');
+    const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
+    expect(JSON.parse(encoded)).toEqual(current);
   });
   it('correlates the sole model repair with the factual or action rejection', () => {
     const current = context();
@@ -123,12 +152,13 @@ describe('Agent A Brain prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(current);
     const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
     expect(JSON.parse(encoded).customer.contact_profile).toEqual(current.customer.contact_profile);
-    const execution = instructions.split('<canonical_sales_behavior')[0]!;
-    expect(execution).toContain('profile_updates');
-    expect(execution).toContain('profile_requests');
-    expect(execution).toContain('independent fields');
-    expect(execution).toContain('never split');
-    expect(execution).toContain('only the customer');
-    expect(execution).toContain('later bubbles');
+    const profileContract = instructions.split('<internal_contact_profile_contract>')[1]
+      ?.split('</internal_contact_profile_contract>')[0] ?? '';
+    expect(profileContract).toContain('profile_updates');
+    expect(profileContract).toContain('profile_requests');
+    expect(profileContract).toContain('independent fields');
+    expect(profileContract).toContain('never split');
+    expect(profileContract).toContain('only the customer');
+    expect(profileContract).toContain('later bubbles');
   });
 });

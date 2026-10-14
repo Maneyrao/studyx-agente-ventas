@@ -1194,6 +1194,13 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
               .filter((fact) => fact.kind === 'price')
               .map((fact) => fact.value),
           ],
+          // The reserved verification purchase authorizes exactly one USD
+          // 0.50 payment; its price alone must not authorize installments.
+          payment_plans: [
+            ...(canonicalTruth.payment_plans ?? []),
+            ...(committedBusinessAction?.type === 'send_test_payment_link'
+              ? [{ installments: 1, price: 'USD 0.50' }] : []),
+          ],
           durations: [
             ...canonicalTruth.durations,
             ...authorizedProtectedFacts
@@ -1203,31 +1210,26 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         },
       });
       const inspectedVerdict = inspectCommercialText(finalResponse);
-      const unauthorizedUrl = inspectedVerdict.violations.some(
-        (violation) => violation.code === 'UNAUTHORIZED_URL',
-      );
-      // Agent A owns the conversation. Catalog, price, duration and wording
-      // heuristics are useful telemetry, but they are not allowed to replace a
-      // structurally valid DeepSeek response with a technical fallback. Only
-      // an untrusted URL remains an egress boundary because it is an external
-      // resource, not conversational copy. Structured calls, payments and
-      // persistence are authorized independently before execution.
-      const verdict = preparedAgentTurn !== null && !unauthorizedUrl
-        ? { ...inspectedVerdict, content: finalResponse, removed: [] }
-        : inspectedVerdict;
-      if (preparedAgentTurn !== null && inspectedVerdict.violations.length > 0 && !unauthorizedUrl) {
-        logger.warn({
-          event: 'orchestration.agent_a.semantic_advisory',
-          trace_id: validatedInput.trace_id,
-          turn_id: turn.id,
-          violations: inspectedVerdict.violations.map((violation) => violation.code),
-        });
-      }
-
-      // La URL sigue fallando cerrado sobre el turno completo: no es una frase
-      // que se pueda quitar, es un canal de cobro.
+      // Agent A owns its wording and transition. Reject an unsupported fact
+      // before the transaction commits so A can reformulate the complete turn;
+      // pruning sentences here would persist a transition for different copy.
+      // The legacy pipeline below retains its existing sentence-veto contract.
+      const verdict = inspectedVerdict;
       if (verdict.violations.some((violation) => violation.code === 'UNAUTHORIZED_URL')) {
         throw egressPolicyError('UNAUTHORIZED_URL');
+      }
+      if (preparedAgentTurn !== null && verdict.violations.length > 0) {
+        const subjects = [...new Set(verdict.violations.map((violation) => violation.code.toLowerCase()))];
+        logger.warn({
+          event: 'orchestration.agent_a.commercial_truth_rejected',
+          trace_id: validatedInput.trace_id,
+          turn_id: turn.id,
+          violations: subjects,
+        });
+        throw new DecisionPolicyError(
+          'AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
+          subjects,
+        );
       }
       // Un efecto ya comprometido no puede quedar sin respuesta que lo
       // acompañe: eso rompería la correspondencia entre acción y mensaje.

@@ -21,6 +21,8 @@ export interface CanonicalTruthSetV1 {
   readonly durations: readonly string[];
   /** Plazos de cuotas mensuales; nunca duraciones académicas. */
   readonly payment_terms?: readonly { readonly months: number; readonly price: string }[];
+  /** Combinaciones explícitas de cantidad de pagos e importe por pago. */
+  readonly payment_plans?: readonly { readonly installments: number; readonly price: string }[];
   /** Modalidad canónica, p. ej. `'100% online'`. `null` si no está informada. */
   readonly modality: string | null;
   /** `null` cuando el registro no informa certificación: no se puede contradecir. */
@@ -44,6 +46,7 @@ type CourseLogisticsFactV1 =
 export type CommercialTruthViolationCodeV1 =
   | 'UNAUTHORIZED_URL'
   | 'PRICE_NOT_CANONICAL'
+  | 'PAYMENT_PLAN_NOT_CANONICAL'
   | 'DURATION_NOT_CANONICAL'
   | 'MODALITY_CONTRADICTS_CANONICAL'
   | 'CERTIFICATION_CONTRADICTS_CANONICAL'
@@ -240,6 +243,65 @@ function extractMoney(text: string): string[] {
   return found;
 }
 
+const PAYMENT_COUNT_WORDS: Readonly<Record<string, number>> = {
+  un: 1, una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6,
+  siete: 7, ocho: 8, nueve: 9, diez: 10, once: 11, doce: 12,
+};
+const PAYMENT_COUNT = `(?:\\d+|${Object.keys(PAYMENT_COUNT_WORDS).join('|')})`;
+const PAYMENT_PLAN_PATTERN = new RegExp(
+  `\\b(${PAYMENT_COUNT})\\s*(?:(pagos?|cuotas?)(?:\\s+mensuales?)?|([x×])|de(?=\\s+(?:usd|ars|eur)\\b))`
+    + `(?:\\s*(?:de|por|a))?\\s*(?:(?:usd|ars|eur)\\s*\\$?\\s*\\d[\\d.,]*|\\d[\\d.,]*\\s*(?:usd|ars|eur)\\b|\\d[\\d.,]*)?`,
+  'gu',
+);
+
+function assertedPaymentClauses(sentence: string): string[] {
+  const normalized = normalize(sentence);
+  const isQuestion = normalized.trim().endsWith('?');
+  // An offered choice still asserts availability, even with question marks.
+  const offersChoice = /\b(?:queres|quieres|preferis|prefieres|elegis|te\s+(?:gustaria|sirve|parece))\b/u.test(normalized)
+    || /\b(?:podes|puedes|podemos|puedo|podrias)\s+(?:pagar|abonar|hacer|dar|ofrecer|elegir)\p{L}*\b/u.test(normalized);
+  if (isQuestion && !offersChoice) return [];
+  return normalized.split(/,(?!\d)|;|\b(?:pero|aunque|sin embargo)\b|\by\s+(?=(?:(?:yo|tu|vos|usted|nosotros|ustedes|ellos|ellas|te)\s+)?(?:doy|damos|dan|ofrezco|ofrecemos|ofrece|ofrecen|tengo|tenemos|tiene|tienen|puedo|puedes|puede|pueden|podemos|podes|pagas|paga|pagamos|cobro|cobramos|cobran|sale|cuesta|es|son)\b)/u)
+    .filter((clause) => !/\b(?:no|nunca|tampoco)\s+(?:(?:lo|se)\s+)?(?:ofrecemos|ofrece|tenemos|hay|contamos|podemos|puede|puedes|podes|es|son|sale|cuesta|paga|pagas|pagar|pagamos|cobramos|incluimos|existe|existen|(?:esta|estan)\s+(?:disponibles?|habilitad[oa]s?|autorizad[oa]s?))\b/u.test(clause));
+}
+
+/** Shared assertion scope for monetary fact extraction on both sides of commit. */
+export function assertedCommercialClausesV1(content: string): readonly string[] {
+  return splitSentences(content).flatMap((segment) => assertedPaymentClauses(segment.text));
+}
+
+/** Only asserted prices; denied availability and clarification questions are not offers. */
+export function assertedCommercialPricesV1(content: string): readonly string[] {
+  return [...new Set(assertedCommercialClausesV1(content).flatMap(extractMoney))];
+}
+
+function paymentPlanViolations(sentence: string, canonical: CanonicalTruthSetV1): CommercialTruthViolationV1[] {
+  if (canonical.payment_plans === undefined) return [];
+  const violations: CommercialTruthViolationV1[] = [];
+  for (const clause of assertedPaymentClauses(sentence)) {
+    let hasExplicitPlan = false;
+    for (const match of clause.matchAll(PAYMENT_PLAN_PATTERN)) {
+      // An elided list item ("12 pagos de USD 30, 6 de USD 60") belongs
+      // to a payment list only if the sentence itself establishes that topic.
+      const explicit = Boolean(match[2] || match[3]);
+      if (!explicit && !hasExplicitPlan && !/\b(?:pagos?|cuotas?|plan)\b/u.test(normalize(sentence))) continue;
+      hasExplicitPlan ||= explicit;
+      const installments = PAYMENT_COUNT_WORDS[match[1]!] ?? Number(match[1]);
+      const [price] = extractMoney(match[0]);
+      const bareAmount = match[0].match(/(?:de|por|a|[x×])\s*(\d[\d.,]*)$/u)?.[1];
+      const allowed = canonical.payment_plans.some((plan) => plan.installments === installments
+        && (price !== undefined ? normalize(plan.price) === price
+          : bareAmount !== undefined ? extractMoney(plan.price).some((value) => value.split(' ')[1] === canonicalAmount(bareAmount))
+          : true));
+      if (!allowed) violations.push({
+        code: 'PAYMENT_PLAN_NOT_CANONICAL',
+        value: price === undefined ? String(installments) : `${installments} x ${price}`,
+      });
+    }
+  }
+  return violations;
+}
+
 function extractDurations(text: string): string[] {
   return [...normalize(text).matchAll(DURATION_PATTERN)]
     .map((match) => `${canonicalAmount(match[1]!)} ${match[2]!}`);
@@ -315,11 +377,13 @@ function sentenceViolations(
   const violations: CommercialTruthViolationV1[] = [];
   const normalized = normalize(sentence);
 
-  for (const price of extractMoney(sentence)) {
+  for (const price of assertedCommercialPricesV1(sentence)) {
     if (!authorizedPrices.has(price)) {
       violations.push({ code: 'PRICE_NOT_CANONICAL', value: price });
     }
   }
+
+  violations.push(...paymentPlanViolations(sentence, canonical));
 
   for (const match of normalized.matchAll(DURATION_PATTERN)) {
     const duration = `${canonicalAmount(match[1]!)} ${match[2]!}`;
@@ -391,6 +455,7 @@ export function canonicalTruthSetFromOfferingsV1(input: {
   const prices: string[] = [];
   const durations: string[] = [];
   const paymentTerms: { months: number; price: string }[] = [];
+  const paymentPlans: { installments: number; price: string }[] = [];
   const courseLogistics = new Set<CourseLogisticsFactV1>();
   for (const offering of scope) {
     const currency = offering.currency?.trim() ?? '';
@@ -428,6 +493,11 @@ export function canonicalTruthSetFromOfferingsV1(input: {
     const currency = option.total.currency.trim();
     if (currency.length === 0) continue;
     prices.push(`${currency} ${canonicalAmount(option.total.amount)}`);
+    const installments = positiveInteger(option.installments);
+    const installmentAmount = option.installment_amount ?? (installments === 1 ? option.total.amount : null);
+    if (installments !== null && installmentAmount !== null) {
+      paymentPlans.push({ installments, price: `${currency} ${canonicalAmount(installmentAmount)}` });
+    }
     if (option.installment_amount) {
       prices.push(`${currency} ${canonicalAmount(option.installment_amount)}`);
       const months = positiveInteger(option.installments);
@@ -454,6 +524,7 @@ export function canonicalTruthSetFromOfferingsV1(input: {
     prices: [...new Set(prices)],
     durations: [...new Set(durations)],
     payment_terms: paymentTerms,
+    payment_plans: paymentPlans,
     // Con modalidades distintas en el alcance no hay una sola verdad que
     // contradecir: el guard no puede vetar sin saber de qué curso se habla.
     modality: modalities.length === scope.length ? unanimous(modalities) : null,

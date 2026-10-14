@@ -88,7 +88,7 @@ describe('Agent A Meta sales brain', () => {
   it('keeps the instruction surface compact and leaves the real catalog in context', () => {
     const current = context();
     const instructions = buildAgentABrainInstructionsV1(current);
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v103');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v104');
     const staticInstructions = instructions.split('<authorized_context>')[0]!;
     // The independent contact-data contract adds execution semantics while
     // leaving canonical v69 intact; keep an explicit bounded prompt budget.

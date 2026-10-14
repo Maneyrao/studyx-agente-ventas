@@ -4,6 +4,7 @@ import { AgentATurnProposalV1Schema, type AgentAContextV1, type AgentATurnPropos
 import {
   AgentABrainError,
   claimsImmediateCallDispatchV1,
+  solicitsACallV1,
   validateAgentATurnProposalV1,
 } from './agent-a-brain'
 import type {
@@ -59,17 +60,23 @@ function validatePlannerless(input: {
       authorized_alternatives: { fact_ids: [...input.authorized_fact_ids], actions: ['none'], missing_information: [] },
     }
   }
-  const authorized = new Set(input.authorized_fact_ids)
-  // In the plannerless route, a fact becomes usable only when the model cites
-  // it. The complete context list is returned as the repair alternative; it
-  // does not silently authorize uncited prose.
-  const citedAuthorizedIds = input.proposal.used_fact_ids.filter((id) => authorized.has(id))
+  // The canonical context authorizes values. Citation bookkeeping must not
+  // turn a correct known amount into an invented fact or authorize a new one.
   let rejection = validateAgentATurnProposalV1({
     proposal: input.proposal,
     context: input.context,
-    planned_fact_ids: citedAuthorizedIds,
+    planned_fact_ids: input.authorized_fact_ids,
     rejection_id: input.rejection_id,
   })
+  if (input.proposal.response.call_offer
+    && input.proposal.response.messages.some(message => solicitsACallV1(message))) {
+    const duplicate = { code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID' as const, subject: 'duplicate_call_offer' }
+    rejection = rejection === null ? {
+      schema_version: 1, rejection_id: input.rejection_id, attempt: 1,
+      rejections: [duplicate],
+      authorized_alternatives: { fact_ids: [...input.authorized_fact_ids], actions: ['none'], missing_information: [] },
+    } : { ...rejection, rejections: [...rejection.rejections, duplicate] }
+  }
   const moves = new Set([
     input.proposal.move.move,
     ...input.proposal.move.secondary_moves,
@@ -233,6 +240,7 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   // An unavailable call needs the existing model repair: changing only the
   // action would publish an acknowledgement for a call that never occurred.
   if (input.semantic_rejections === 'advisory'
+    && !rejection.rejections.some(requiresModelCorrection)
     && !claimsImmediatePaymentLinkDelivery(effective.proposal)
     && !hasUnbackedCallDispatchClaim(effective.proposal, rejection, input.context)
     || hasOnlyNonBlockingGuidance(effective.proposal, rejection, input.context)) {
@@ -247,12 +255,21 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
  * model-authored reply or trigger a second paid generation.
  */
 const NON_BLOCKING_GUIDANCE_CODES = new Set([
-  'REPEATED_AGENT_REPLY',
   'CALL_OFFER_REQUIRED',
   'CHANNEL_PREFERENCE_NOT_SUPPORTED',
   'COURSE_NOT_RESOLVED',
   'MISSING_INTAKE',
 ])
+
+function requiresModelCorrection(reason: TurnRejectionV1['rejections'][number]): boolean {
+  if (reason.code === 'FACT_VALUE_MISMATCH') {
+    // Candidate naming/resolution heuristics remain guidance. The backend
+    // independently validates actual catalogue values before any delivery.
+    return !['candidate_course_detail', 'candidate_course_names'].includes(reason.subject)
+  }
+  return ['UNSUPPORTED_OPERATIONAL_CLAIM',
+    'REPEATED_AGENT_REPLY', 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'].includes(reason.code)
+}
 
 function isNonBlockingGuidanceReason(
   reason: TurnRejectionV1['rejections'][number],
@@ -288,7 +305,10 @@ function mayDegradeToBackendBoundary(
     || proposal.proposed_action.type === 'send_test_payment_link') && rejection.rejections.some((reason) => (
     reason.code === 'ACTION_NOT_AUTHORIZED' || reason.code === 'MISSING_INTAKE'
   ))) return false
-  return rejection.rejections.every(isNonBlockingGuidanceReason)
+  // A failed style repair must not silence a factually safe answer. Actual
+  // commercial/operational contradictions never enter this fallback.
+  return rejection.rejections.every(reason => reason.code === 'REPEATED_AGENT_REPLY'
+    || isNonBlockingGuidanceReason(reason))
 }
 
 function hasOnlyNonBlockingGuidance(

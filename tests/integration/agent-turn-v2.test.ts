@@ -302,7 +302,10 @@ run('plannerless Agent A vertical', () => {
     });
   });
 
-  it('delivers a correlated USD 0.50 test link without changing the commercial plan', async () => {
+  it.each([
+    'Dale, te paso el link de prueba.',
+    'Un pago de USD 0.50.',
+  ])('delivers a correlated USD 0.50 test link without changing the commercial plan: %s', async (copy) => {
     const payment = await commitTurn('Mandame el link de prueba de 0,50 dólares.', {
       schema_version: 1,
       move: {
@@ -314,7 +317,7 @@ run('plannerless Agent A vertical', () => {
       },
       response: {
         messages: [
-          'Dale, te paso el link de prueba. Cuando Stripe acredite el pago, el equipo gestionará tu inscripción y acceso.',
+          `${copy} Cuando Stripe acredite el pago, el equipo gestionará tu inscripción y acceso.`,
         ],
       },
       proposed_action: {
@@ -408,4 +411,19 @@ run('plannerless Agent A vertical', () => {
       else process.env.PAYMENT_LINK_SANDBOX_6M = previousLink;
     }
   });
+
+  it('rejects a fabricated two-payment test option despite an authorized test link', async () => {
+    await expect(commitTurn('Mandame el link de prueba de 0,50 dólares.', {
+      schema_version: 1,
+      move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [], confidence: 1 },
+      response: { messages: ['Podés hacerlo en 2 pagos de USD 0.50.'] },
+      proposed_action: { type: 'send_test_payment_link', offering_code: 'redes-informaticas' },
+      used_fact_ids: ['payment-test:stripe_verification_050:label:v1'],
+      used_memory_ids: [], memory_candidates: [], repair_of: null,
+    })).rejects.toMatchObject({
+      reason: 'AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
+      subjects: ['payment_plan_not_canonical'],
+    });
+  });
+
 });

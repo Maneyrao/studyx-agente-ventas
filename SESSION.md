@@ -1,7 +1,7 @@
 # Sesión StudyX
 
 ## Fase actual
-PHASE 7 — perfil canónico por campo interpretado por Agent A. Estado: publicado y verificado el 14-10 a las 14:47 Argentina; autorización del usuario para modificar y publicar. Fuente productiva 4abe256, backend dpl_DAyd8b5tKNdSus6Hpa5ZHaM7rgTn activo en el dominio principal, Botpress Brain v103 publicado a las 14:44:50 Argentina, personalidad canónica v69 intacta y migración 20261014163031 aplicada. 4027 unitarias, 639 integraciones, 11 workflows finales y canario real de seis turnos aprobados. Salud, contrato firmado y conexión Central/Botpress verificados. Reporte: docs/reports/2026-10-14-agent-a-contact-profile-release.md.
+PHASE 8 — corrección de veracidad comercial y continuidad, Brain v104, personalidad canónica v69 intacta. Estado: implementado y publicación autorizada en curso; se conserva la persistencia de v103. Se corrige el bypass factual heredado de 7dabdb3, se devuelve la contradicción a A y se separa el contrato interno de datos de las decisiones conversacionales. Reporte: docs/reports/2026-10-14-agent-a-truth-and-voice-recovery.md. La fuente productiva anterior es 4abe256/v103, con migración 20261014163031 ya aplicada.
 
 ## Fases completas
 - PHASE 0: fallos y silencios observables.

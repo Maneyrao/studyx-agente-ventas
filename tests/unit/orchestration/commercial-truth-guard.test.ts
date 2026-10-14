@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   canonicalTruthSetFromOfferingsV1,
+  assertedCommercialPricesV1,
   enforceCommercialTruthV1,
   type CanonicalTruthSetV1,
 } from '@/features/orchestration/domain/commercial-truth-guard';
@@ -60,6 +61,76 @@ describe('plazo del pago separado de la duración del curso', () => {
   it('no autoriza un monto inventado por tener un plazo correcto', () => {
     expect(enforce('Cada cuota es de USD 99 durante 6 meses.', canonical).violations)
       .toContainEqual({ code: 'PRICE_NOT_CANONICAL', value: 'usd 99' });
+  });
+});
+
+describe('canonical installment plans', () => {
+  const canonical = canonicalTruthSetFromOfferingsV1({
+    offerings: [{ code: 'redes', price_type: 'fixed', price_amount: '360', currency: 'USD', delivery: {} }],
+    selected_offering_code: 'redes',
+    payment_options: [
+      { total: { currency: 'USD', amount: '360' }, installment_amount: '30', installments: 12, label: '12 pagos mensuales de USD 30' },
+      { total: { currency: 'USD', amount: '360' }, installment_amount: '60', installments: 6, label: '6 pagos mensuales de USD 60' },
+      { total: { currency: 'USD', amount: '360' }, installment_amount: '360', installments: 1, label: 'Un pago de USD 360' },
+    ],
+  });
+
+  it.each([
+    'Podés pagar en 2 cuotas de USD 60.',
+    '¿Querés pagar en 2 cuotas de USD 60?',
+    '¿Puedes pagar en dos cuotas de USD 180?',
+    '¿Podemos hacer 2x60?',
+    'No te preocupes, puedo darte 2 pagos de USD 60.',
+    'No te preocupes y te damos 2 pagos de USD 60.',
+    'Tenemos 12 pagos de USD 60.',
+    'El plan es 2 x USD 60.',
+    'El plan es 12x60.',
+    'Se puede en 2 pagos.',
+    'Podés pagarlo en dos cuotas.',
+    'Tenemos 12 pagos de USD 30, 6 de USD 30 o un pago de USD 360.',
+    'No tenemos 2 pagos, pero podemos ofrecer 3 cuotas de USD 60.',
+  ])('rejects an asserted unsupported installment count or pair: %s', (content) => {
+    expect(enforce(content, canonical).violations.map((violation) => violation.code))
+      .toContain('PAYMENT_PLAN_NOT_CANONICAL');
+  });
+
+  it('preserves decimal commas when classifying price clauses', () => {
+    const content = 'El importe es USD 0,50.';
+    expect(enforce(content, { ...CANONICAL, prices: ['USD 0.50'] }))
+      .toMatchObject({ content, violations: [], removed: [] });
+  });
+
+  it('shares asserted prices without treating denied plans or clarification as offers', () => {
+    expect(assertedCommercialPricesV1(
+      'No tenemos 2 cuotas de USD 180. ¿Buscabas 2 pagos de USD 180? Tenemos 6 pagos de USD 60.',
+    )).toEqual(['usd 60']);
+    expect(assertedCommercialPricesV1('¿Puedes pagar en dos cuotas de USD 180?')).toEqual(['usd 180']);
+  });
+
+  it('ends a payment denial at a following positive predicate', () => {
+    expect(enforce('No tenemos dos pagos de USD 180 y puedes pagar USD 999.', canonical).violations)
+      .toContainEqual({ code: 'PRICE_NOT_CANONICAL', value: 'usd 999' });
+  });
+
+  it('does not let an unrelated negation authorize an unsupported price', () => {
+    expect(enforce('El precio no cambia: USD 999.', canonical).violations)
+      .toContainEqual({ code: 'PRICE_NOT_CANONICAL', value: 'usd 999' });
+  });
+
+  it.each([
+    'Podés pagar en 12 cuotas de USD 30 o 6 pagos de USD 60.',
+    'Tenemos 12 pagos mensuales de USD 30, 6 de USD 60 o un pago de USD 360.',
+    'El plan es 12 x USD 30.',
+    'El plan es 6x60.',
+    'Podés hacerlo en seis pagos de USD 60.',
+    'El total es USD 360; podés elegir 12 pagos de USD 30 o 6 pagos de USD 60.',
+    'No tenemos 2 cuotas de USD 180. Podés pagar en 12 cuotas de USD 30.',
+    'No se puede en 2 pagos; tenemos 6 pagos de USD 60.',
+    'Dos pagos de USD 180 no están disponibles; puedes pagar en 12 de USD 30.',
+    '¿Buscabas 2 cuotas de USD 180? Tenemos 6 pagos de USD 60.',
+    '¿En cuántos pagos te gustaría hacerlo?',
+  ])('preserves canonical alternatives, denied plans and customer questions: %s', (content) => {
+    expect(enforce(content, canonical)).toMatchObject({ content, removed: [], violations: [] });
   });
 });
 

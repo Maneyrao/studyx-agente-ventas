@@ -13,64 +13,111 @@ const databaseAvailable = process.env.TEST_DATABASE_URL;
 const run = databaseAvailable ? describe : describe.skip;
 
 run('commercial-truth boundary', () => {
-  it('commits Agent A wording intact instead of replacing the conversation with a fallback', async () => {
+  it.each([
+    {
+      label: 'a fabricated price in the narrative',
+      messages: ['El diplomado sale USD 47.'],
+      call_offer: 'Si querés, puedo llamarte para asesorarte.',
+      subjects: ['price_not_canonical'],
+    },
+    {
+      label: 'a fabricated price in the call invitation',
+      messages: ['Tenemos Entrenamiento Funcional.'],
+      call_offer: 'Puedo llamarte por USD 47.',
+      subjects: ['price_not_canonical'],
+    },
+    {
+      label: 'the unsupported two-payment plan',
+      messages: ['Podés hacerlo en 2 cuotas de USD 180.'],
+      call_offer: 'Si querés, puedo llamarte para asesorarte.',
+      subjects: ['price_not_canonical', 'payment_plan_not_canonical'],
+    },
+    {
+      label: 'a fabricated installment count with a real amount',
+      messages: ['Podés pagar en 2 cuotas de USD 60.'],
+      call_offer: 'Si querés, puedo llamarte para asesorarte.',
+      subjects: ['payment_plan_not_canonical'],
+    },
+    {
+      label: 'a fabricated installment count without an amount',
+      messages: ['Se puede en 2 pagos.'],
+      call_offer: 'Si querés, puedo llamarte para asesorarte.',
+      subjects: ['payment_plan_not_canonical'],
+    },
+    {
+      label: 'an unsupported course duration',
+      messages: ['El curso dura 3 meses.'],
+      call_offer: 'Si querés, puedo llamarte para asesorarte.',
+      subjects: ['duration_not_canonical'],
+    },
+    {
+      label: 'an unavailable course presented as offered',
+      messages: ['Tenemos Mecánica Automotriz.'],
+      call_offer: 'Si querés, puedo llamarte para asesorarte.',
+      subjects: ['offering_not_canonical'],
+    },
+    {
+      label: 'an unsupported employment guarantee',
+      messages: ['Te aseguramos empleo al terminar.'],
+      call_offer: 'Si querés, puedo llamarte para asesorarte.',
+      subjects: ['forbidden_promise'],
+    },
+  ])('rejects $label without persisting an answer or its transition', async ({ messages, call_offer, subjects }) => {
     const seeded = await seedConversationForAgentTurn({
       call_offer_count: 0, selected_offering_code: 'entrenamiento_funcional', intake_complete: true,
     });
-    const committed = await commitAgentDecision({
+    const store = new PostgresConversationStateStoreV1(sql);
+    const before = await store.load('studyx', seeded.conversation_id, seeded.contact_id);
+    const input = {
       turn_id: seeded.turn_id, trace_id: seeded.trace_id,
+      supports_multi_outbound: true,
       authorized_offering_code: 'entrenamiento_funcional', authorized_payment_plan: null,
       conversation_pipeline_v1: null,
+      agent_turn_v2: { schema_version: 2 as const, proposal: {
+        ...seeded.proposalWithCallOfferAndFalsePrice,
+        response: { messages, call_offer },
+      } as never },
+      decision: seeded.placeholderDecision as never, model: seeded.model as never,
+    };
+
+    await expect(commitAgentDecision(input)).rejects.toMatchObject({
+      code: 'DECISION_REJECTED',
+      reason: 'AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
+      subjects,
+    });
+
+    const [counts] = await sql<Array<{ decisions: number; outbounds: number; state_events: number }>>`
+      SELECT
+        (SELECT COUNT(*)::int FROM agent_decisions WHERE turn_id = ${seeded.turn_id}::uuid) AS decisions,
+        (SELECT COUNT(*)::int FROM messages
+          WHERE conversation_id = ${seeded.conversation_id}::uuid AND direction = 'outbound') AS outbounds,
+        (SELECT COUNT(*)::int FROM conversation_sales_context_state_events_v1
+          WHERE conversation_id = ${seeded.conversation_id}::uuid) AS state_events
+    `;
+    expect(counts).toEqual({ decisions: 0, outbounds: 0, state_events: 0 });
+    expect(await store.load('studyx', seeded.conversation_id, seeded.contact_id)).toEqual(before);
+
+    // The rejected turn remains available for Agent A's own reformulation.
+    const repaired = await commitAgentDecision({
+      ...input,
       agent_turn_v2: { schema_version: 2, proposal: {
         ...seeded.proposalWithCallOfferAndFalsePrice,
         response: {
-          messages: ['El diplomado sale USD 47.'],
+          messages: ['El total es USD 360; podés elegir 12 pagos de USD 30 o 6 pagos de USD 60.'],
           call_offer: 'Si querés, puedo llamarte para asesorarte.',
         },
       } as never },
-      decision: seeded.placeholderDecision as never, model: seeded.model as never,
     });
-    expect(committed.status).toBe('committed');
-    expect(committed.outbound?.content).toBe(
-      'El diplomado sale USD 47.\n\nSi querés, puedo llamarte para asesorarte.',
-    );
-    const state = await new PostgresConversationStateStoreV1(sql).load('studyx', seeded.conversation_id, seeded.contact_id);
-    expect(state).toMatchObject({ call_offer_count: 1, call_offer_status: 'offered', awaiting_reply: 'call_or_chat' });
-  });
-  it('keeps an Agent A call invitation even when semantic telemetry disagrees', async () => {
-    const seeded = await seedConversationForAgentTurn({
-      call_offer_count: 0, selected_offering_code: 'entrenamiento_funcional', intake_complete: true,
-    });
-    const committed = await commitAgentDecision({
-      turn_id: seeded.turn_id, trace_id: seeded.trace_id,
-      authorized_offering_code: 'entrenamiento_funcional', authorized_payment_plan: null,
-      conversation_pipeline_v1: null,
-      agent_turn_v2: { schema_version: 2, proposal: {
-        ...seeded.proposalWithCallOfferAndFalsePrice,
-        response: {
-          messages: ['Tenemos Entrenamiento Funcional.'],
-          call_offer: 'Puedo llamarte por USD 47.',
-        },
-      } as never },
-      decision: seeded.placeholderDecision as never, model: seeded.model as never,
-    });
-    expect(committed.status).toBe('committed');
-    expect(committed.outbound?.content).toBe(
-      'Tenemos Entrenamiento Funcional.\n\nPuedo llamarte por USD 47.',
-    );
-    const state = await new PostgresConversationStateStoreV1(sql).load(
-      'studyx', seeded.conversation_id, seeded.contact_id,
-    );
-    expect(state).toMatchObject({
+    expect(repaired.status).toBe('committed');
+    expect(repaired.outbounds.map((outbound) => outbound.content)).toEqual([
+      'El total es USD 360; podés elegir 12 pagos de USD 30 o 6 pagos de USD 60.',
+      'Si querés, puedo llamarte para asesorarte.',
+    ]);
+    expect(await store.load('studyx', seeded.conversation_id, seeded.contact_id)).toMatchObject({
       call_offer_count: 1, call_offer_status: 'offered', awaiting_reply: 'call_or_chat',
     });
-    const [eventCount] = await sql<Array<{ count: number }>>`
-      SELECT COUNT(*)::int AS count FROM conversation_sales_context_state_events_v1
-      WHERE conversation_id = ${seeded.conversation_id}::uuid AND call_offer_count > 0
-    `;
-    expect(eventCount?.count).toBe(1);
   });
-  it('commits every Agent A paragraph without semantic copy editing', async () => {
+  it('commits canonical commercial facts in Agent A’s own paragraphs', async () => {
     const seeded = await seedConversationForAgentTurn({
       call_offer_count: 0,
       selected_offering_code: 'entrenamiento_funcional',
@@ -93,7 +140,7 @@ run('commercial-truth boundary', () => {
         proposal: {
           ...seeded.proposalWithCallOfferAndFalsePrice,
           response: {
-            messages: ['Tenemos Entrenamiento Funcional. El diplomado sale USD 47.'],
+            messages: ['Tenemos Entrenamiento Funcional. Podés elegir 12 pagos de USD 30, 6 de USD 60 o un pago de USD 360.'],
             call_offer: '¿Te gustaría que te llamemos para contarte más?',
           },
         } as never,
@@ -103,7 +150,7 @@ run('commercial-truth boundary', () => {
     });
     expect(committed.status).toBe('committed');
     expect(committed.outbounds.map((outbound) => outbound.content)).toEqual([
-      'Tenemos Entrenamiento Funcional. El diplomado sale USD 47.',
+      'Tenemos Entrenamiento Funcional. Podés elegir 12 pagos de USD 30, 6 de USD 60 o un pago de USD 360.',
       '¿Te gustaría que te llamemos para contarte más?',
     ]);
 
@@ -119,15 +166,15 @@ run('commercial-truth boundary', () => {
       WHERE turn_id = ${seeded.turn_id}::uuid
     `;
     expect(decision).toMatchObject({
-      response: 'Tenemos Entrenamiento Funcional. El diplomado sale USD 47.\n\n¿Te gustaría que te llamemos para contarte más?',
+      response: 'Tenemos Entrenamiento Funcional. Podés elegir 12 pagos de USD 30, 6 de USD 60 o un pago de USD 360.\n\n¿Te gustaría que te llamemos para contarte más?',
       response_type: 'call_offer',
       business_action: null,
       reason_code: 'AGENT_A_PLANNERLESS_V2',
       next_state: 'waiting_user',
     });
 
-    // Semantic diagnostics never replace copy; the eligible call invitation
-    // still advances its own durable ledger.
+    // Canonical commercial facts preserve the authored copy and advance
+    // the eligible call invitation’s own durable ledger.
     const state = await new PostgresConversationStateStoreV1(sql).load(
       'studyx', seeded.conversation_id, seeded.contact_id,
     );
@@ -135,6 +182,24 @@ run('commercial-truth boundary', () => {
     expect(state?.awaiting_reply).toBe('call_or_chat');
     expect(state?.selected_offering_code).toBe('entrenamiento_funcional');
     expect(state?.stage).toBe('course_selected');
+  });
+
+  it('preserves an unavailable-course denial and the following question', async () => {
+    const seeded = await seedConversationForAgentTurn({
+      call_offer_count: 0, selected_offering_code: 'entrenamiento_funcional', intake_complete: true,
+    });
+    const content = 'No ofrecemos Mecánica Automotriz ni 2 cuotas de USD 180. ¿Buscabas 2 pagos? Podemos seguir con Entrenamiento Funcional.';
+    const committed = await commitAgentDecision({
+      turn_id: seeded.turn_id, trace_id: seeded.trace_id,
+      authorized_offering_code: 'entrenamiento_funcional', authorized_payment_plan: null,
+      conversation_pipeline_v1: null,
+      agent_turn_v2: { schema_version: 2, proposal: {
+        ...seeded.proposalWithCallOfferAndFalsePrice,
+        response: { messages: [content], call_offer: null },
+      } as never },
+      decision: seeded.placeholderDecision as never, model: seeded.model as never,
+    });
+    expect(committed.outbound?.content).toBe(content);
   });
 
   it('ignores an unproven confirmed phone without rejecting Agent A copy', async () => {

@@ -23,6 +23,7 @@ import {
   type TurnPlanV1,
 } from '../../schemas/conversation-pipeline';
 import { buildAgentABrainInstructionsV1 } from '../../prompts/agent-a-brain-v1';
+import { assertedCommercialClausesV1 } from '../../../../src/features/orchestration/domain/commercial-truth-guard';
 import { lastAgentReplyV1 } from './conversation-composer';
 import {
   extractProtectedFacts,
@@ -1464,7 +1465,7 @@ function repeatsPreviousQuestion(messages: readonly string[], previous: string):
     .some((question) => previousQuestions.has(question));
 }
 
-const CUSTOMER_REQUESTS_REPEAT = /\b(?:repet|otra\s+vez|no\s+entend|de\s+nuevo)\w*/iu;
+const CUSTOMER_REQUESTS_REPEAT = /\b(?:rep(?:et|[ií]t)|otra\s+vez|no\s+entend|de\s+nuevo)\w*/iu;
 const UNSUPPORTED_PREREQUISITE_ASSERTION = /(?:\bno\s+(?:necesit\w*|hace\s+falta|se\s+requiere|tienen)\b[^.!?\n]{0,80}\b(?:experiencia|conocimientos?|requisitos?)\b|\bsin\s+(?:experiencia|conocimientos?\s+previos?)\b|\b(?:pod[eé]s|puedes|empez[aá]s?|part[ií]s?)\b[^.!?\n]{0,32}\bdesde\s+cero\b|\b(?:pensad[oa]|dise[nñ]ad[oa])\w*\b[^.!?\n]{0,80}\b(?:(?:empe\w*)\s+)?(?:desde\s+(?:cero|la\s+base|lo\s+b[aá]sico)|paso\s+a\s+paso)\b|\bdesde\s+los\s+fundamentos\b)/iu;
 const REMOVABLE_UNSUPPORTED_PREREQUISITE_CLAUSE = /\s*,?\s*para\s+(?:quienes|personas?\s+que)\s+no\s+tienen\s+conocimientos?\s+previos\b/iu;
 
@@ -1755,10 +1756,12 @@ export function validateAgentATurnProposalV1(input: {
   // sí puede rechazar y abrir la única reparación. No se piden hechos nuevos ni
   // se autoriza nada: la alternativa autorizada es exactamente la misma.
   const previousReply = lastAgentReplyV1(input.context.turn.recent_turns);
-  if (previousReply && sameVisibleText(input.proposal.response.messages, previousReply)) {
+  const currentCustomerText = input.context.turn.batch_messages.map((message) => message.text).join('\n');
+  const customerRequestsRepeat = CUSTOMER_REQUESTS_REPEAT.test(currentCustomerText);
+  if (previousReply && !customerRequestsRepeat && sameVisibleText(input.proposal.response.messages, previousReply)) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_reply' });
   }
-  if (previousReply && input.proposal.response.messages.some((message) => {
+  if (previousReply && !customerRequestsRepeat && input.proposal.response.messages.some((message) => {
     const withoutOpening = removeRepeatedAgentOpeningMessagesV1([message]);
     // The helper also normalizes whitespace for delivery. A multiline answer
     // therefore differs byte-for-byte even when no greeting was removed; only
@@ -1769,15 +1772,15 @@ export function validateAgentATurnProposalV1(input: {
   }
   if (
     previousReply
+    && !customerRequestsRepeat
     && input.proposal.response.call_offer
     && sameVisibleFragment(input.proposal.response.call_offer, previousReply)
   ) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_call_offer' });
   }
-  const currentCustomerText = input.context.turn.batch_messages.map((message) => message.text).join('\n');
   if (
     previousReply
-    && !CUSTOMER_REQUESTS_REPEAT.test(currentCustomerText)
+    && !customerRequestsRepeat
     && repeatsPreviousQuestion(input.proposal.response.messages, previousReply)
   ) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_question' });
@@ -1864,7 +1867,22 @@ export function validateAgentATurnProposalV1(input: {
   // cualquier frase natural en un rechazo y, con la reparación apagada, en el
   // piso técnico: era la causa raíz de que el modelo no pudiera conversar.
   for (const message of authoredNarrative) {
+    const assertedPrices = assertedCommercialClausesV1(message).flatMap(clause => extractProtectedFacts(clause))
+      .filter(fact => fact.kind === 'price');
+    if (assertedPrices.some(fact => !authorizedProtectedFacts.has(comparableProtectedFact(fact)))) {
+      unauthorizedKinds.add('price');
+    }
     for (const fact of extractProtectedFacts(message)) {
+      if (fact.kind === 'price') {
+        // Denying an unavailable option is valid; denying an authorized
+        // canonical price would still contradict the supplied facts.
+        const positiveValue = fact.value.replace(/^no\s+(?:cuesta|sale|vale)\s+/iu, '');
+        if (positiveValue !== fact.value
+          && authorizedProtectedFacts.has(comparableProtectedFact({ ...fact, value: positiveValue }))) {
+          unauthorizedKinds.add('price');
+        }
+        continue;
+      }
       if (!ADK_BLOCKING_FACT_KINDS.has(fact.kind)) continue;
       if (!authorizedProtectedFacts.has(comparableProtectedFact(fact))) {
         unauthorizedKinds.add(fact.kind);
@@ -1896,7 +1914,10 @@ export function validateAgentATurnProposalV1(input: {
           /\bpara\s+(?:poder\s+)?(?:dejar(?:lo|la|te|los|las)?|que\s+quede(?:n)?|quedar)(?:\s+(?:tus?\s+)?datos?)?\s+registrad[oa]s?\b/gu,
           '',
         );
-        const claim = /\b(?:quedo|registre|registro|registrado|registrada|guarde|guardo|guardado|guardada|tengo|tenemos)\w*\b[^.!?]{0,60}\b(?:datos|nombre|apellido|correo|email|telefono)\b/u;
+        // "registro" is also a noun for an incomplete process. It is not
+        // evidence of a completed write; actual receipt claims use a verb
+        // or result (registré, quedó registrado, ya tengo).
+        const claim = /\b(?:quedo|registre|registrado|registrada|guarde|guardo|guardado|guardada|tengo|tenemos)\w*\b[^.!?]{0,60}\b(?:datos|nombre|apellido|correo|email|telefono)\b/u;
         const negatedClaim = /\b(?:no|aun\s+no|todavia\s+no)\b[^.!?]{0,24}\b(?:quedo|registre|registro|registrado|registrada|guarde|guardo|guardado|guardada|tengo|tenemos)\w*\b/u;
         if (!claim.test(assertiveClause) || negatedClaim.test(assertiveClause)) return false;
 
