@@ -17,6 +17,7 @@ PHASE 4 — persistencia de datos en varios mensajes. Estado: completa; correcci
 - Partir de a69970a → su fuente coincide con el backend publicado auditado → rama codex/lucas-call-recovery; prompt v100/canónico v69.
 - Permiso sandbox→alta real extendido por el usuario hasta el final del 15-10 Argentina → vencimiento publicado 2026-10-16T03:00:00Z; pagos siguen test → configuración y docs/runbooks/stripe-sandbox-chat.md.
 - Lucas conserva su registro de prueba Juan/Oratoria → pago original recuperado, solicitud completed en intento 2, matrícula enr_2 activa y aviso sent → docs/reports/2026-10-13-lucas-enrollment-recovery.md.
+- Reinicio autorizado del número de prueba terminado en 4497 → contexto y transcripción borrados en backend y Botpress; número real resuelve al contacto nuevo bba7f055-bd2d-4a74-84fd-958a354ec536; pagos y matrícula anteriores conservados fuera del contexto nuevo → docs/reports/2026-10-14-test-contact-memory-reset.md.
 - Una solicitud de datos entregada continúa sólo con recibos de respuestas del backend → no perder apellido/correo/teléfono entre mensajes sin autorizar capturas de otros temas → captureDeliveredContactIntakeResponse y metadata.contact_intake_response_v1.
 
 ## Invariantes establecidas en esta fase
