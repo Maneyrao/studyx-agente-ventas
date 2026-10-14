@@ -94,8 +94,35 @@ Verificación local aprobada:
   ni cambios destructivos de tablas, conocimiento o assets.
 
 El laboratorio usa modelo, pagos y voz simulados; no ejecuta cobros ni llamadas
-reales. La publicación se registrará con el SHA,
-deployment y comprobaciones canónicas cuando concluyan.
+reales.
+
+Publicación completada el 14 de octubre de 2026:
+
+- Fuente: `bee55aa936485c12861b91f6f2018bc19f0973a9`.
+- Backend: `dpl_HCrK4LdASYyGtuRfbo9eGEDKUBeK`, construido desde fuente y READY.
+  Health y probe de la URL preparada devolvieron HTTP 200 antes de activar
+  el dominio. Se promovió el mismo artefacto.
+- Dominio `https://studyx-agente-ventas.vercel.app`: health HTTP 200 con ese
+  SHA a las 09:08:50 Argentina; probe HTTP 200 a las 09:09:47, Central
+  `success`, Botpress HTTP 200, entorno de pago `test`, vencimiento
+  conservado `2026-10-16T03:00:00.000Z`.
+- Botpress: deploy `prod` aceptado para
+  `2f7fe6e1-1fc9-40d9-9045-d0c96b456f4b` en el workspace existente;
+  `deployedAt=2026-10-14T12:09:40.856Z` (09:09:40 Argentina).
+  SDK verificó plannerless activo, Emma, `deepseek-v4-flash` y URL canónica.
+  Bundle compilado contiene Brain v101, canónico v69 y `conversation_only`;
+  SHA-256 `5bc7a41ab1e16f7c90d7278065ebb884bb813f7f6fb6d2afb845dc5ccbb20782`.
+- Se provisionaron únicamente la clave existente de DeepSeek del mismo bot
+  y su identidad de asesor en el backend, además del SHA de versión. La
+  academia sigue obteniéndose del workspace; no hay configuración duplicada.
+  Valores privados transmitidos por stdin, sin incorporarlos a Git.
+- Consulta inmediata de logs de error del deployment: sin eventos retornados.
+  Esto no sustituye un canario real ni prueba una generación nueva del modelo.
+
+Se conservaron el contexto de la prueba posterior al reinicio y el alta
+recuperada. El canario de esta versión queda para la prueba del usuario.
+Laboratorio local apagado, datos y evidencia conservados; otros servicios
+locales no se modificaron.
 
 ## Límites de la conclusión
 

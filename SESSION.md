@@ -1,13 +1,14 @@
 # Sesión StudyX
 
 ## Fase actual
-PHASE 5 — restauración de autoría y continuidad de Agent A. Estado: en curso; código y revisión final aprobados, 3892 unitarias/601 integraciones/6 workflows aprobados; publicación coordinada pendiente de completar.
+PHASE 5 — restauración de autoría y continuidad de Agent A. Estado: completa; fuente bee55aa publicada en backend dpl_HCrK4LdASYyGtuRfbo9eGEDKUBeK y Botpress 2026-10-14T12:09:40.856Z; health y probe canónicos HTTP 200. Canario real de esta versión pendiente del usuario.
 
 ## Fases completas
 - PHASE 0: fallos y silencios observables.
 - PHASE 1: contexto acotado e intake autoritativo del Brain.
 - PHASE 2: propuesta, rechazo estructurado y backend autoritativo.
 - PHASE 4: persistencia de respuestas fragmentadas publicada en 232611a; 3793 unitarias, 599 integraciones y tres workflows aprobados.
+- PHASE 5: A conserva voz y estado al recibir resultados/faltantes; plan y enlace en el mismo turno, seguimiento de llamada redactado por A; 3892 unitarias, 601 integraciones, seis workflows; lint, tipos, builds y revisión aprobados, producción verificada.
 
 ## Decisiones de arquitectura tomadas
 - A interpreta y redacta; backend conserva hechos, transiciones y efectos → restaurar especificación del 1-10, cuyos commits siguen en la rama → informe de restauración del 14-10.
