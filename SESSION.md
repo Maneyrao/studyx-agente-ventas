@@ -40,4 +40,4 @@ PHASE 4 — persistencia de datos en varios mensajes. Estado: completa; correcci
 - Aviso access_ready de Lucas: Botpress informó processed sin iniciar claim; se completó la misma notificación por rutas firmadas, conservando entrega única → falta determinar la causa del evento sin ejecución; el primer fallo precede al despliegue de Botpress.
 - Tres expectativas de workflow de catálogo/pago fallan igual en la base a69970a → deuda previa documentada en el informe; no se relajaron pruebas ni se cambió la política general para ocultarlas.
 - El mensaje sin reclamar de la auditoría original tiene causa no demostrada → investigación separada; esta corrección no la atribuye ni declara resuelta.
-- Prueba real de conversación pendiente del usuario → corrección de captura 232611a activa; no se hizo backfill ni se llamó a Agus.
+- Prueba del usuario del 14-10 confirmó captura de identidad fragmentada y despacho real; Xendra rechazó HTTP 400, aviso de fallo entregado → faltan motivo remoto del rechazo y reparación del fallback inicial sin intake; docs/reports/2026-10-14-call-retest-provider-rejection.md. No se llamó a Agus ni se reintentó la nueva llamada.
