@@ -1,7 +1,7 @@
 # Sesión StudyX
 
 ## Fase actual
-PHASE 3 — recuperación de llamadas y validación del incidente de Lucas. Estado: en curso; corrección local basada en a69970a, pendiente de publicación y canario.
+PHASE 3 — recuperación de llamadas y validación del incidente de Lucas. Estado: en curso; corrección e34130a publicada en Vercel y Botpress, alta de Lucas recuperada; pendiente canario de llamada real y diagnóstico del aviso automático.
 
 ## Fases completas
 - PHASE 0: fallos y silencios observables.
@@ -14,6 +14,8 @@ PHASE 3 — recuperación de llamadas y validación del incidente de Lucas. Esta
 - Construir proveedor tras claimDispatch y cerrar fallos confirmados anteriores al HTTP → evita solicitudes activas indefinidas por mala configuración → ruta calls/[call_id]/dispatch.
 - Ejecutar seguimiento al fallar el despacho → un rechazo puede no generar webhook → runPostCallFollowup y claves existentes por call_id.
 - Partir de a69970a → su fuente coincide con el backend publicado auditado → rama codex/lucas-call-recovery; prompt v100/canónico v69.
+- Permiso sandbox→alta real extendido por el usuario hasta el final del 15-10 Argentina → vencimiento publicado 2026-10-16T03:00:00Z; pagos siguen test → configuración y docs/runbooks/stripe-sandbox-chat.md.
+- Lucas conserva su registro de prueba Juan/Oratoria → pago original recuperado, solicitud completed en intento 2, matrícula enr_2 activa y aviso sent → docs/reports/2026-10-13-lucas-enrollment-recovery.md.
 
 ## Invariantes establecidas en esta fase
 - Sin acción autorizada no se publica una promesa de nueva llamada → guards de Botpress y backend, reparación limitada y aviso técnico al agotarse.
@@ -28,6 +30,7 @@ PHASE 3 — recuperación de llamadas y validación del incidente de Lucas. Esta
 - Verificación completa: 3785 unitarias y 591 integraciones aprobadas; cobertura configurada 98,85% líneas; lint, tipos y builds de backend/Botpress aprobados. Detalle en docs/reports/2026-10-13-lucas-call-recovery.md.
 
 ## Bloqueos
-- Publicación de backend y Botpress y llamada real supervisada pendientes → requiere coordinar la salida a producción y una persona disponible con consentimiento; no se hicieron llamadas reales.
+- Backend dpl_5nAmth2X62aJ3ggaYmxnGncezRSh y Botpress desplegado 2026-10-14T00:18:29.312Z verificados; falta llamada real supervisada → requiere una persona disponible con consentimiento; no se hicieron llamadas reales.
+- Aviso access_ready de Lucas: Botpress informó processed sin iniciar claim; se completó la misma notificación por rutas firmadas, conservando entrega única → falta determinar la causa del evento sin ejecución; el primer fallo precede al despliegue de Botpress.
 - Tres expectativas de workflow de catálogo/pago fallan igual en la base a69970a → deuda previa documentada en el informe; no se relajaron pruebas ni se cambió la política general para ocultarlas.
 - El mensaje sin reclamar de la auditoría original tiene causa no demostrada → investigación separada; esta corrección no la atribuye ni declara resuelta.

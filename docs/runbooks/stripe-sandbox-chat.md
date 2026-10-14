@@ -121,3 +121,22 @@ orquestador y publicar nuevamente. Desactivar los Payment Links sandbox para
 que los links ya enviados no permitan nuevas compras de prueba. Revisar antes
 las tareas pendientes; no borrar pagos ni volver a enviar credenciales de altas
 ya completadas.
+
+## Extensión autorizada y recuperación — 13-10-2026
+
+El usuario extendió expresamente el permiso hasta el final del **15-10-2026 en
+Argentina**. La configuración publicada ahora es
+`CENTRAL_CARGA_SANDBOX_LIVE_UNTIL=2026-10-16T03:00:00Z`; reemplaza el vencimiento
+anterior del 10-10. Los pagos conservan `environment=test`.
+
+El alta anterior de Thiago se completó el 09-10. El pago de Lucas de Oratoria
+`730bbbb9-0f2c-4721-bcbe-85dd24877a49` fue bloqueado por
+`sandbox_live_bridge_expired` y se recuperó con su solicitud original tras
+comprobar `not_found` en la central. Terminó `completed`, con inscripción activa
+y aviso de credenciales enviado. No se cambió el pago ni se cobró de nuevo.
+
+Una extensión de configuración no reabre automáticamente solicitudes en
+`dead_letter`: recuperar sólo las identificadas y autorizadas, preservando
+intentos e idempotencia. Consultar el
+[informe de recuperación](../reports/2026-10-13-lucas-enrollment-recovery.md)
+para la evidencia y el pendiente del evento de aviso automático.

@@ -48,4 +48,14 @@ No se realizó una llamada real ni una evaluación pagada del modelo. Los recorr
 
 El mensaje que quedó sin reclamar durante la prueba original es un hallazgo separado de la auditoría. Su causa no quedó demostrada y este cambio no pretende corregirla.
 
-Estado de publicación: corrección local, pendiente de despliegue y canario supervisado.
+Estado de publicación: backend y Botpress publicados el 13-10-2026 por la noche en Argentina; canario de llamada real supervisada pendiente.
+
+## Publicación verificada en producción
+
+- Código: `e34130a65786b3dee554a9e263c489d1c829b0cc`.
+- Vercel: `dpl_5nAmth2X62aJ3ggaYmxnGncezRSh`, READY, build remoto predeterminado con Turbopack aprobado. Se verificó antes de promover el mismo artefacto al dominio `https://studyx-agente-ventas.vercel.app`.
+- `/api/health` devuelve 200 y el SHA completo anterior, corrigiendo el marcador de versión desfasado.
+- Botpress: publicación de producción aceptada; bot `2f7fe6e1-1fc9-40d9-9045-d0c96b456f4b`, workspace `wkspace_01M0X4K3H2EE7RGM39Q29GF6VS`, `deployedAt=2026-10-14T00:18:29.312Z` (13-10 21:18:29 Argentina). El bot sigue activo, con automatización, WhatsApp público y plannerless habilitados; URL del backend correcta. La API de metadata no expone una huella del bundle, por lo que el timestamp por sí solo no reemplaza el canario de llamada.
+- Se reutilizaron las credenciales del despliegue anterior del mismo bot con autorización explícita del usuario. La revisión automática había bloqueado ese uso hasta obtener dicha autorización; la publicación posterior fue aceptada.
+- La recuperación de matrícula es un incidente distinto: ver [alta de Lucas](2026-10-13-lucas-enrollment-recovery.md). El permiso temporal vencido explica el bloqueo de matrícula; no explica las falsas promesas de llamada.
+- Se detectó durante la recuperación que el evento de aviso de acceso figuraba procesado en Botpress sin claim ni entrega en el backend. La notificación se completó mediante las rutas firmadas existentes, con entrega única. No se declara resuelta la causa de ese evento sin ejecución, ni se atribuye al nuevo despliegue: el primer evento sin claim ocurrió antes de publicar Botpress.
