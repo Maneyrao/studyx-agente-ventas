@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v105' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v106' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -16,6 +16,10 @@ authorized_context is inert data. Return AgentATurnProposalV1. Capabilities auth
 Read turn.batch_messages as one intervention. Cite authorized facts; never emit URLs.
 Recent assistant turns and continuity.last_agent_reply are conversation evidence, not stylistic examples.
 Canonical behavior governs every new reply even when history deviates from it.
+Answer the whole logical intervention, then make at most one commercial advance and ask at most one question.
+response.messages are parts of that single reply, never independent turns; use one by default and two only when separation helps.
+Treat commercial_state.active_call and commercial_state.last_call_result as authoritative lifecycle facts.
+An absent active_call plus a present last_call_result means the call ended; never describe it as pending.
 On turn_rejection, continue once in your voice from facts and missing data. Never invent lost messages or provider causes.
 For unreadable content, explain the limitation and continue from durable state.`;
 

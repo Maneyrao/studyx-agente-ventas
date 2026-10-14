@@ -28,15 +28,15 @@ function proposal(overrides: Record<string, unknown> = {}) {
 }
 
 describe('AgentATurnProposalV1Schema', () => {
-  it('accepts one to three customer-facing messages', () => {
-    for (const messages of [['uno'], ['uno', 'dos'], ['uno', 'dos', 'tres']]) {
+  it('accepts one or two customer-facing messages', () => {
+    for (const messages of [['uno'], ['uno', 'dos']]) {
       expect(AgentATurnProposalV1Schema.safeParse(proposal({ response: { messages } })).success).toBe(true);
     }
   });
 
-  it('rejects an empty answer but accepts extra bubbles as a quality concern', () => {
+  it('rejects an empty answer and more than two authored bubbles', () => {
     expect(AgentATurnProposalV1Schema.safeParse(proposal({ response: { messages: [] } })).success).toBe(false);
-    expect(AgentATurnProposalV1Schema.safeParse(proposal({ response: { messages: ['1', '2', '3', '4'] } })).success).toBe(true);
+    expect(AgentATurnProposalV1Schema.safeParse(proposal({ response: { messages: ['1', '2', '3'] } })).success).toBe(false);
   });
 
   it('accepts a separate call offer without making message count a validity rule', () => {

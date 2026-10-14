@@ -478,7 +478,7 @@ function normalizedCurrentCustomerTextV1(context: AgentAContextV1): string {
 }
 
 function naturalnessRepairDirectiveV1(_context: AgentAContextV1): string {
-  return 'Preserve the customer intent and the natural rhythm of the original answer. Use one to three short messages as needed, change only the rejected fact or action, and do not add unsupported claims.';
+  return 'Preserve the customer intent and the natural rhythm of the original answer. Use one or two short messages as needed, change only the rejected fact or action, and do not add unsupported claims.';
 }
 
 function closedObject(properties: Record<string, unknown>) {
@@ -544,8 +544,9 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
       messages: {
         type: 'array',
         minItems: 1,
+        maxItems: 2,
         items: { type: 'string', maxLength: 2_000 },
-        description: 'Use the conversational style guidance in the instructions. Message count and length are preferences, never reasons to discard an otherwise safe answer.',
+        description: 'One coherent reply split into one or two messages only. Answer the complete logical customer intervention before advancing once.',
       },
       call_offer: {
         anyOf: conversationOnly ? [{ type: 'null' }] : [{ type: 'string', maxLength: 2_000 }, { type: 'null' }],

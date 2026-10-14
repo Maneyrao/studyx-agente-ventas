@@ -306,8 +306,20 @@ export function authorizeAgentTurnV2(input: {
     : input.payment_verified === true
       && selectedOffering === state.selected_offering_code
       && selectedPlan === state.selected_payment_plan;
-  const paymentLinkAuthorized = !moves.has('report_payment') && !selectedPurchasePaid
+  // Contact data and payment consent are separate durable steps. A complete
+  // intake never authorizes checkout in the same turn it is first assembled.
+  // The prior turn must have persisted both a pending link request and the
+  // `payment_confirmation` wait; only the customer's next confirmation may
+  // consume that request. This makes reconfirmation a state boundary rather
+  // than optional wording in the prompt.
+  const paymentConfirmationSatisfied = state.awaiting_reply === 'payment_confirmation';
+  const paymentLinkWasAlreadyDelivered = state.stage === 'payment_link_sent'
+    && state.selected_offering_code === selectedOffering
+    && state.selected_payment_plan === selectedPlan;
+  const paymentLinkBaseAuthorized = !moves.has('report_payment') && !selectedPurchasePaid
     && stateFacts.has('state:intake_recorded:v1');
+  const paymentLinkAuthorized = paymentLinkBaseAuthorized
+    && (paymentConfirmationSatisfied || paymentLinkWasAlreadyDelivered);
   // Asking for the next missing field is also prompt guidance. Missing intake
   // remains a hard boundary only for the payment side effect below.
   const explicitPaymentLinkRequested = proposal.proposed_action.type === 'send_payment_link'
@@ -338,9 +350,9 @@ export function authorizeAgentTurnV2(input: {
       reasons.push('ACTION_NOT_AUTHORIZED');
     } else if (!stateFacts.has('state:intake_recorded:v1')) {
       reasons.push('MISSING_INTAKE');
-    } else if (!paymentLinkAuthorized) {
+    } else if (!paymentLinkBaseAuthorized) {
       reasons.push('ACTION_NOT_AUTHORIZED');
-    } else {
+    } else if (paymentLinkAuthorized) {
       action = resumesDurablePlan
         ? {
             type: 'send_payment_link',

@@ -78,6 +78,10 @@ export const AgentAContextV1Schema = z.object({
     call_preference: z.enum(['unknown', 'call', 'chat', 'declined']),
     call_offer_status: z.enum(['not_offered', 'offered', 'accepted', 'declined']),
     call_offer_count: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+    active_call: z.object({ call_id: z.string().uuid(), status: z.string() }).strict().nullable().optional(),
+    last_call_result: z.object({
+      call_id: z.string().uuid(), result: z.string().nullable(), ended_at: z.string(),
+    }).strict().nullable().optional(),
     awaiting_reply: z.enum(['none', 'area_choice', 'course_choice', 'call_or_chat', 'payment_plan', 'payment_confirmation', 'contact_details']),
     payment_reported: z.boolean(),
   }).strict(),
@@ -182,7 +186,7 @@ export const AgentATurnProposalV1Schema = z.object({
   move: ConversationMoveV1Schema,
   response: z.object({
     // Conversational length is evaluated, not rejected transactionally.
-    messages: z.array(CustomerMessageSchema).min(1),
+    messages: z.array(CustomerMessageSchema).min(1).max(2),
     call_offer: CallOfferMessageSchema.nullable().optional(),
   }).strict(),
   proposed_action: AgentAProposedActionSchema,

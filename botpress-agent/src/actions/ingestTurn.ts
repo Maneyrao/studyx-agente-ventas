@@ -14,6 +14,10 @@ export const ingestTurn = new Action<any, any>({
   output: IngestResponseSchema as any,
   cached: false,
   async handler({ input }: { input: unknown }) {
-    return ingestCanonicalTurnV1(input)
+    // The durable workflow owns the retry schedule. Retrying four times inside
+    // each action multiplied load across every physical bubble during a shared
+    // database outage and then repeated the same burst on the next durable
+    // attempt.
+    return ingestCanonicalTurnV1(input, { additionalRetries: 0 })
   },
 })

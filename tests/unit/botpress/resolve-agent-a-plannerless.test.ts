@@ -666,17 +666,16 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
-  it('preserves every model-authored message before an authorized call reminder', async () => {
+  it('preserves both model-authored messages before an authorized call reminder', async () => {
     const current = context();
     current.turn.batch_messages[0].text = 'Contame en detalle qué voy a aprender y cómo se cursa.';
     current.commercial_state.call_preference = 'unknown';
     current.commercial_state.call_offer_status = 'offered';
     current.commercial_state.call_offer_count = 1;
     current.capabilities.may_offer_call = true;
-    const messages: [string, string, string] = [
+    const messages: [string, string] = [
       `Primera parte. ${'a'.repeat(175)}`,
-      `Segunda parte. ${'b'.repeat(175)}`,
-      'Tercera parte con el próximo paso elegido por DeepSeek.',
+      `Segunda parte. ${'b'.repeat(175)} Tercera parte con el próximo paso elegido por DeepSeek.`,
     ];
     const repair = vi.fn();
 
@@ -2464,8 +2463,7 @@ describe('la conversación sobre candidatos no se confunde con autoridad comerci
       response: {
         messages: [
           'Diseño Gráfico con Photoshop es ideal para empezar desde cero y editar imágenes.',
-          'Te puedo ofrecer:\n- Diseño Gráfico con Photoshop\n- Diseño Gráfico con Illustrator',
-          'Cuál te interesa más?',
+          'Te puedo ofrecer:\n- Diseño Gráfico con Photoshop\n- Diseño Gráfico con Illustrator\n¿Cuál te interesa más?',
         ],
         call_offer: null,
       },

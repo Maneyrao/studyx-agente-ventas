@@ -38,6 +38,10 @@ export const claimBatch = new Action<any, any>({
       traceId: validated.trace_id,
       responseSchema: ClaimResponseSchema,
       acceptStatuses: [202, 404, 409, 410],
+      // The processInboundTurn workflow owns durable claim retries and their
+      // backoff. A second in-request retry loop only creates synchronized
+      // pressure when the backend is unhealthy.
+      additionalRetries: 0,
     })
   },
 })

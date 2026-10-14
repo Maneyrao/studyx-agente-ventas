@@ -632,21 +632,21 @@ describe('Agent A Brain V1', () => {
     expect(parseAgentATurnProposalV1(proposal(), context()).response.messages).toHaveLength(2);
   });
 
-  it('preserves the model-authored message sequence and separate invitation', () => {
-    const fourPartTurn = proposal({
+  it('preserves a two-message sequence and separate invitation', () => {
+    const threePartTurn = proposal({
       response: {
-        messages: ['Primera idea.', 'Segunda idea.', 'Tercera idea.'],
+        messages: ['Primera idea.', 'Segunda idea.'],
         call_offer: 'Recordá que puedo llamarte y aclararte todo mejor, si gustás.',
       },
     });
 
-    const parsed = parseAgentATurnProposalV1(fourPartTurn, context());
+    const parsed = parseAgentATurnProposalV1(threePartTurn, context());
     expect(parsed.response).toEqual({
-      messages: ['Primera idea.', 'Segunda idea.', 'Tercera idea.'],
+      messages: ['Primera idea.', 'Segunda idea.'],
       call_offer: 'Recordá que puedo llamarte y aclararte todo mejor, si gustás.',
     });
     expect(BackendAgentATurnProposalV1Schema.safeParse(parsed).success).toBe(true);
-    expect(BackendAgentATurnProposalV1Schema.safeParse(fourPartTurn).success).toBe(true);
+    expect(BackendAgentATurnProposalV1Schema.safeParse(threePartTurn).success).toBe(true);
   });
 
   it('rejects a new greeting after the agent already opened the conversation', () => {
@@ -957,11 +957,10 @@ describe('Agent A Brain V1', () => {
       callOffer: null,
     },
     {
-      label: 'three useful messages for a price objection',
+      label: 'two useful messages for a price objection',
       messages: [
         'Entiendo que el precio pesa.',
-        'La alternativa disponible es 12 pagos mensuales de USD 30.',
-        'Podemos avanzar con esa opción y mantener una cuota más cómoda.',
+        'La alternativa disponible es 12 pagos mensuales de USD 30, para mantener una cuota más cómoda.',
       ],
       usedFactIds: ['payment:redes-informaticas:monthly_12:label:v1'],
       callOffer: null,
@@ -1514,10 +1513,8 @@ describe('Agent A Brain V1', () => {
     const moveProperties = body.text.format.schema.properties.move.properties;
     const responseProperties = body.text.format.schema.properties.response.properties;
     expect(body.text.format.schema.properties.used_fact_ids.maxItems).toBe(60);
-    expect(responseProperties.messages.maxItems).toBeUndefined();
-    expect(responseProperties.messages.description).toContain(
-      'preferences, never reasons to discard',
-    );
+    expect(responseProperties.messages.maxItems).toBe(2);
+    expect(responseProperties.messages.description).toContain('One coherent reply');
     expect(responseProperties.call_offer.description).toContain('a natural question is allowed');
     expect(moveProperties.move.enum).toEqual(expect.arrayContaining([
       'report_payment',

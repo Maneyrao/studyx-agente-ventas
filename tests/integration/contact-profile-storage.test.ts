@@ -43,6 +43,18 @@ async function apply(request: ContactProfileApplyInputV1) {
   return withSerializableTransactionOn(db!, tx => applyContactProfileUpdatesV1(tx, request));
 }
 
+async function followUp(f: Awaited<ReturnType<typeof fixture>>, text: string, expectedVersion: number) {
+  await db!`UPDATE inbound_batches SET state = 'completed', completed_at = now() WHERE id = ${f.opened.batch.id}::uuid`;
+  const opened = await processInboundMessage({ ...f.first, external_message_id: randomUUID(), trace_id: randomUUID(),
+    message: { ...f.first.message, text } });
+  const token = randomUUID();
+  await db!`UPDATE inbound_batches SET state = 'claimed', claim_token = ${token}::uuid,
+    claimed_by = 'vitest-profile', claimed_at = now(), lease_until = now() + interval '5 minutes'
+    WHERE id = ${opened.batch.id}::uuid`;
+  return { opened, request: { turn_id: opened.turn_id, batch_id: opened.batch.id,
+    claim_token: token, expected_version: expectedVersion, updates: [] } satisfies ContactProfileApplyInputV1 };
+}
+
 run('canonical Agent A contact profile persistence', () => {
   it('persists a surname alone, then keeps a compound first name independent', async () => {
     const f = await fixture('de la Croix\nAna María');
@@ -69,6 +81,70 @@ run('canonical Agent A contact profile persistence', () => {
     const corrected = await apply({ ...f.request, expected_version: 1,
       updates: [update('nombre', 'José', f.opened.turn_id, 'José', 'correct')] });
     expect(corrected.values.nombre).toBe('José');
+  });
+
+  it.each([
+    { label: 'identical values', nameQuote: 'thiago', surnameQuote: 'maneyro', name: 'Thiago', surname: 'Maneyro',
+      observedName: 'Thiago', observedSurname: 'Maneyro' },
+    { label: 'casing', nameQuote: 'thiago', surnameQuote: 'maneyro', name: 'Thiago', surname: 'Maneyro',
+      observedName: 'thiago', observedSurname: 'maneyro' },
+    { label: 'spacing and canonical Unicode', nameQuote: 'Jose\u0301    Luis', surnameQuote: 'de   la   Pen\u0303a',
+      name: 'José Luis', surname: 'de la Peña', observedName: 'jose\u0301 \t luis', observedSurname: 'DE \t LA PEÑA' },
+  ])('keeps $label reobservations unchanged while storing a later email', async ({ nameQuote, surnameQuote, name, surname, observedName, observedSurname }) => {
+    const f = await fixture(`${nameQuote}\n${surnameQuote}`);
+    await apply({ ...f.request, updates: [update('nombre', name, f.opened.turn_id, nameQuote),
+      update('apellido', surname, f.opened.turn_id, surnameQuote)] });
+    const before = await loadContactProfileV1(f.opened.contact.id, db!);
+    const next = await followUp(f, 'thiago@example.test', 1);
+    const receipt = await apply({ ...next.request, updates: [
+      update('nombre', observedName, f.opened.turn_id, nameQuote),
+      update('apellido', observedSurname, f.opened.turn_id, surnameQuote),
+      update('correo', 'thiago@example.test', next.opened.turn_id, 'thiago@example.test'),
+    ] });
+
+    expect(receipt).toMatchObject({ version: 2, accepted_fields: ['correo'], rejections: [],
+      values: { nombre: name, apellido: surname, correo: 'thiago@example.test' } });
+    const after = await loadContactProfileV1(f.opened.contact.id, db!);
+    expect(after!.fields.nombre).toEqual(before!.fields.nombre);
+    expect(after!.fields.apellido).toEqual(before!.fields.apellido);
+    const repeated = await apply({ ...next.request, expected_version: 2, updates: [
+      update('nombre', observedName, f.opened.turn_id, nameQuote),
+      update('apellido', observedSurname, f.opened.turn_id, surnameQuote),
+    ] });
+    expect(repeated).toMatchObject({ version: 2, accepted_fields: [], rejections: [] });
+    expect(await loadContactProfileV1(f.opened.contact.id, db!)).toEqual(after);
+  });
+
+  it('requires explicit correction for changes in accents, punctuation or actual name text', async () => {
+    const f = await fixture("José\nJose\nJosè\nJosé Luis\nO’Neill\nO'Neill");
+    await apply({ ...f.request, updates: [update('nombre', 'José', f.opened.turn_id, 'José'),
+      update('apellido', 'O’Neill', f.opened.turn_id, 'O’Neill')] });
+    for (const value of ['Jose', 'Josè', 'José Luis']) {
+      expect((await apply({ ...f.request, expected_version: 1,
+        updates: [update('nombre', value, f.opened.turn_id, value)] })).rejections)
+        .toEqual([{ field: 'nombre', code: 'CORRECTION_REQUIRED' }]);
+    }
+    expect((await apply({ ...f.request, expected_version: 1,
+      updates: [update('apellido', "O'Neill", f.opened.turn_id, "O'Neill")] })).rejections)
+      .toEqual([{ field: 'apellido', code: 'CORRECTION_REQUIRED' }]);
+    const corrected = await apply({ ...f.request, expected_version: 1,
+      updates: [update('nombre', 'Jose', f.opened.turn_id, 'Jose', 'correct')] });
+    expect(corrected).toMatchObject({ version: 2, accepted_fields: ['nombre'], values: { nombre: 'Jose' }, rejections: [] });
+  });
+
+  it('still fences equivalent observations by field version and stale evidence', async () => {
+    const f = await fixture('thiago\nRiver');
+    await apply({ ...f.request, updates: [update('nombre', 'River', f.opened.turn_id, 'River')] });
+    const next = await followUp(f, 'Thiago', 1);
+    await apply({ ...next.request, updates: [update('nombre', 'Thiago', next.opened.turn_id, 'Thiago', 'correct')] });
+    const before = await loadContactProfileV1(f.opened.contact.id, db!);
+
+    expect((await apply({ ...next.request, updates: [update('nombre', 'thiago', next.opened.turn_id, 'Thiago')] })).rejections)
+      .toEqual([{ field: 'nombre', code: 'VERSION_CONFLICT' }]);
+    expect((await apply({ ...next.request, expected_version: 2,
+      updates: [update('nombre', 'thiago', f.opened.turn_id, 'thiago')] })).rejections)
+      .toEqual([{ field: 'nombre', code: 'STALE_SOURCE' }]);
+    expect(await loadContactProfileV1(f.opened.contact.id, db!)).toEqual(before);
   });
 
   it('validates each field independently and persists only the matching evidence', async () => {

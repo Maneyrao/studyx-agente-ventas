@@ -151,6 +151,7 @@ describe('canonical installment plans', () => {
     'No tengo un plan de dos pagos. Puedes elegir 12 pagos de USD 30.',
     'No puedo ofrecerte dos pagos de USD 180; tenemos 6 pagos de USD 60.',
     'No ofrezco dos cuotas de USD 180: las opciones son 12 pagos de USD 30 o 6 de USD 60.',
+    'No ofrecemos Mecánica Automotriz ni 2 cuotas de USD 180. Podemos seguir con Entrenamiento Funcional.',
     'No tengo este plan: dos pagos de USD 180.',
     'Dos pagos de USD 180 no están disponibles; puedes pagar en 12 de USD 30.',
     '¿Buscabas 2 cuotas de USD 180? Tenemos 6 pagos de USD 60.',

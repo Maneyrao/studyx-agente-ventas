@@ -88,11 +88,11 @@ describe('Agent A Meta sales brain', () => {
   it('keeps the instruction surface compact and leaves the real catalog in context', () => {
     const current = context();
     const instructions = buildAgentABrainInstructionsV1(current);
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v105');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v106');
     const staticInstructions = instructions.split('<authorized_context>')[0]!;
-    // v70 adds the explicitly requested confirmation, emoji and access-delivery
-    // rules (2144 words here). Keep that addition bounded without rewriting voice.
-    expect(staticInstructions.trim().split(/\s+/u).length).toBeLessThan(2200);
+    // v70 keeps the approved voice; Brain v106 adds only bounded execution and
+    // lifecycle rules. Keep the complete instruction surface compact.
+    expect(staticInstructions.trim().split(/\s+/u).length).toBeLessThan(2225);
     expect(JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!)).toEqual(current);
   });
 });

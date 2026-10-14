@@ -135,6 +135,14 @@ export const AgentAContextV1Schema = z.object({
     call_offer_count: z.union([z.literal(0), z.literal(1), z.literal(2)]),
     // A persisted request supports a status reply, never another dispatch.
     active_call: z.object({ call_id: z.string().uuid(), status: z.string() }).strict().nullable().optional(),
+    // Most recently ended call. `result=null` is still terminal evidence: it
+    // prevents Agent A from inferring that an already-finished dispatch is
+    // pending merely because the provider supplied no classification.
+    last_call_result: z.object({
+      call_id: z.string().uuid(),
+      result: z.string().nullable(),
+      ended_at: z.string(),
+    }).strict().nullable().optional(),
     awaiting_reply: z.enum(['none', 'area_choice', 'course_choice', 'call_or_chat', 'payment_plan', 'payment_confirmation', 'contact_details']),
     payment_reported: z.boolean(),
     payment_verification: z.object({
@@ -260,9 +268,11 @@ export const AgentATurnProposalV1Schema = z.object({
   schema_version: z.literal(1),
   move: ConversationMoveV1Schema,
   response: z.object({
-    // Keep at least one visible answer, but do not turn the recommended bubble
-    // count into a rejection boundary. The prompt and evaluator own brevity.
-    messages: z.array(CustomerMessageSchema).min(1),
+    // One authored intervention may use one or two WhatsApp bubbles. The call
+    // invitation and a canonical payment block are separate transport parts,
+    // so permitting more authored bubbles only fragments one logical answer
+    // and makes downstream consumers mistake presentation for new context.
+    messages: z.array(CustomerMessageSchema).min(1).max(2),
     call_offer: CallOfferMessageSchema.nullable().optional(),
   }).strict(),
   proposed_action: AgentAProposedActionSchema,

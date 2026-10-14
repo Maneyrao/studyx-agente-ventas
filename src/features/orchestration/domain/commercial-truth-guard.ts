@@ -267,6 +267,8 @@ const DENIED_PAYMENT = new RegExp(
   'gu',
 );
 const DENIED_PAYMENT_SUFFIX = new RegExp(`${PAYMENT_OBJECT}\\s+(?:no|nunca|tampoco)\\s+(?:(?:lo|se)\\s+)?(?:esta|estan)\\s+(?:disponibles?|habilitad[oa]s?|autorizad[oa]s?)\\b`, 'gu');
+const DENIED_COORDINATED_PAYMENT = new RegExp(`\\bni\\s+${PAYMENT_OBJECT}`, 'gu');
+const DENIES_COMMERCIAL_AVAILABILITY = /\b(?:no|nunca|tampoco)\s+(?:(?:lo|la|los|las|te)\s+)?(?:ofrezco|ofrecemos|ofrece|tengo|tenemos|hay|contamos|existe|existen)\b/u;
 
 function assertedPaymentClauses(sentence: string): string[] {
   const normalized = normalize(sentence);
@@ -275,7 +277,14 @@ function assertedPaymentClauses(sentence: string): string[] {
   const offersChoice = /\b(?:queres|quieres|preferis|prefieres|elegis|te\s+(?:gustaria|sirve|parece))\b/u.test(normalized)
     || /\b(?:podes|puedes|podemos|puedo|podrias)\s+(?:pagar|abonar|hacer|dar|ofrecer|elegir)\p{L}*\b/u.test(normalized);
   if (isQuestion && !offersChoice) return [];
-  return normalized.replace(DENIED_PAYMENT, ' ').replace(DENIED_PAYMENT_SUFFIX, ' ')
+  let asserted = normalized.replace(DENIED_PAYMENT, ' ').replace(DENIED_PAYMENT_SUFFIX, ' ');
+  // One availability predicate can deny unlike coordinated objects:
+  // "No ofrecemos Mecánica ni 2 cuotas" denies both. Strip only the payment
+  // object after `ni`; later positive predicates remain inspectable.
+  if (DENIES_COMMERCIAL_AVAILABILITY.test(normalized)) {
+    asserted = asserted.replace(DENIED_COORDINATED_PAYMENT, ' ');
+  }
+  return asserted
     .split(/,(?!\d)|;|:|\b(?:pero|aunque|sino|sin embargo)\b/u);
 }
 

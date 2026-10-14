@@ -197,7 +197,7 @@ describe('buildAgentAContextV1', () => {
     ['1', 'pago'],
     ['1 pago'],
     ['un pago de 360'],
-  ])('lets Agent A select and request the canonical one-time plan after a call: %j', async (...messages) => {
+  ])('lets Agent A persist the canonical one-time request after a call before reconfirmation: %j', async (...messages) => {
     const claimed = claimedTurn();
     claimed.catalog_resolution = { kind: 'no_catalog_intent' };
     claimed.context.batch_messages = messages.map((content, index) => ({
@@ -233,8 +233,10 @@ describe('buildAgentAContextV1', () => {
       current_customer_messages: messages,
       call_policy: { may_offer_call: false, may_request_call_now: false },
     });
-    expect(backend).toMatchObject({ ok: true, action: { type: 'send_payment_link', payment_plan: 'one_time' },
-      transition: { selected_payment_plan: 'one_time', stage: 'payment_link_sent' } });
+    expect(backend).toMatchObject({ ok: true, action: { type: 'none' }, transition: {
+      selected_payment_plan: 'one_time', stage: 'plan_selected', awaiting_reply: 'payment_confirmation',
+      payment_link_request: { status: 'pending' },
+    } });
     const context = buildAgentAContextV1(claimed)!;
     expect(context.capabilities.may_send_payment_link).toBe(true);
     expect(bindCurrentConversationalIntentToMoveV1(move, claimed)).toEqual(move);
@@ -281,6 +283,25 @@ describe('buildAgentAContextV1', () => {
     const context = buildAgentAContextV1(claimed);
     expect(context?.commercial_state.active_call).toEqual({ call_id: UUID, status: 'provider_accepted' });
     expect(context?.capabilities.may_request_call_now).toBe(false);
+  });
+
+  it('projects a terminal call result even when the provider supplied no classification', () => {
+    const claimed = claimedTurn();
+    claimed.sales_context.active_call = null;
+    claimed.sales_context.last_call_result = {
+      call_id: UUID,
+      result: null,
+      ended_at: '2026-08-28T11:03:00.000Z',
+    };
+
+    const context = buildAgentAContextV1(claimed);
+
+    expect(context?.commercial_state.active_call).toBeNull();
+    expect(context?.commercial_state.last_call_result).toEqual({
+      call_id: UUID,
+      result: null,
+      ended_at: '2026-08-28T11:03:00.000Z',
+    });
   });
 
   it('exposes an unreadable input as recoverable context without authorizing an action', () => {

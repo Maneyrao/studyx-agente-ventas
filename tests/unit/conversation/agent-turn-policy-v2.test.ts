@@ -105,7 +105,7 @@ describe('plannerless Agent A authority', () => {
     ['12 pagos 30', 'select_payment_plan', null, 'monthly_12'],
     ['si', 'select_course', 'one_time', 'one_time'],
     ['si', 'ask_current_state', 'one_time', 'one_time'],
-  ] as const)('authorizes the explicit payment action without a duplicate request move: %s / %s', (text, kind, durablePlan, plan) => {
+  ] as const)('persists the explicit payment request before dispatch without a duplicate request move: %s / %s', (text, kind, durablePlan, plan) => {
     const result = authorizeAgentTurnV2({
       state: state({ selected_offering_code: 'ingles_1', selected_payment_plan: durablePlan, stage: 'handoff' }),
       offerings: [{ code: 'ingles_1', display_name: 'Inglés 1' }],
@@ -118,8 +118,10 @@ describe('plannerless Agent A authority', () => {
         ...(kind === 'select_course' ? { course_reference: 'ingles_1' } : {}) },
         proposed_action: { type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: plan } }),
     });
-    expect(result).toMatchObject({ ok: true, action: { type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: plan },
-      transition: { selected_payment_plan: plan, stage: 'payment_link_sent', payment_link_request: { status: 'consumed' } } });
+    expect(result).toMatchObject({ ok: true, action: { type: 'none' }, transition: {
+      selected_payment_plan: plan, stage: 'plan_selected', awaiting_reply: 'payment_confirmation',
+      payment_link_request: { status: 'pending' },
+    } });
   });
 
   it('keeps an explicit payment tool request pending during a fenced selection-only continuation', () => {
@@ -193,7 +195,7 @@ describe('plannerless Agent A authority', () => {
     } });
   });
 
-  it.each(['1 pago', 'un pago de 360'])('honors Agent A same-turn canonical selection after handoff: %s', customerText => {
+  it.each(['1 pago', 'un pago de 360'])('persists Agent A same-turn canonical selection after handoff before sending a link: %s', customerText => {
     const result = authorizeAgentTurnV2({
       state: state({ selected_offering_code: 'redes_informaticas', selected_payment_plan: null,
         stage: 'handoff', awaiting_reply: 'none' }),
@@ -205,8 +207,10 @@ describe('plannerless Agent A authority', () => {
         secondary_moves: ['request_payment_link'], vetoes: [], payment_plan: 'one_time', confidence: 1 },
         proposed_action: { type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'one_time' } }),
     });
-    expect(result).toMatchObject({ ok: true, action: { type: 'send_payment_link', payment_plan: 'one_time' },
-      transition: { selected_payment_plan: 'one_time', stage: 'payment_link_sent' } });
+    expect(result).toMatchObject({ ok: true, action: { type: 'none' }, transition: {
+      selected_payment_plan: 'one_time', stage: 'plan_selected', awaiting_reply: 'payment_confirmation',
+      payment_link_request: { status: 'pending' },
+    } });
   });
 
   it.each([
@@ -585,7 +589,7 @@ describe('plannerless Agent A authority', () => {
     });
   });
 
-  it('materializes a link in the same turn that selects the plan and requests checkout', () => {
+  it('persists checkout intent when the plan is selected and waits for data reconfirmation', () => {
     const result = authorize({
       state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected' }),
       intake: completeIntake,
@@ -602,14 +606,15 @@ describe('plannerless Agent A authority', () => {
 
     expect(result).toMatchObject({
       ok: true,
-      action: {
-        type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+      action: { type: 'none' },
+      transition: {
+        stage: 'plan_selected', awaiting_reply: 'payment_confirmation',
+        payment_link_request: { status: 'pending', payment_plan: 'monthly_6' },
       },
-      transition: { stage: 'payment_link_sent', awaiting_reply: 'none' },
     });
   });
 
-  it('consumes a durable payment-link request when the final contact detail arrives', () => {
+  it('keeps a durable payment-link request pending when the final contact detail arrives', () => {
     const result = authorize({
       customerText: 'Mi teléfono es +54 9 11 1234 5678',
       state: state({
@@ -634,12 +639,10 @@ describe('plannerless Agent A authority', () => {
 
     expect(result).toMatchObject({
       ok: true,
-      action: {
-        type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
-      },
+      action: { type: 'none' },
       transition: {
-        stage: 'payment_link_sent', awaiting_reply: 'none',
-        payment_link_request: { status: 'consumed' },
+        stage: 'plan_selected', awaiting_reply: 'payment_confirmation',
+        payment_link_request: { status: 'pending' },
       },
     });
   });
@@ -695,6 +698,67 @@ describe('plannerless Agent A authority', () => {
 
     expect(result).toMatchObject({
       ok: true,
+      transition: { stage: 'payment_link_sent', awaiting_reply: 'none' },
+    });
+  });
+
+  it('resends an already delivered link without reconfirming unchanged data', () => {
+    const result = authorize({
+      customerText: 'No encuentro el enlace, ¿me lo mandás de nuevo?',
+      state: state({
+        selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6',
+        stage: 'payment_link_sent', awaiting_reply: 'none',
+        payment_link_request: {
+          status: 'consumed', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+          requested_by_turn_id: '44444444-4444-4444-8444-444444444444',
+          resolved_by_decision_id: '55555555-5555-4555-8555-555555555555',
+        },
+      } as Partial<ConversationStateV1>),
+      intake: completeIntake,
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+          confidence: 0.99,
+        },
+        response: { messages: ['Te lo comparto de nuevo.'] },
+        proposed_action: { type: 'none' },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: {
+        type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+      },
+      transition: { stage: 'payment_link_sent', awaiting_reply: 'none' },
+    });
+  });
+
+  it('accepts the model explicit resend action after a link was already delivered', () => {
+    const result = authorize({
+      customerText: 'Reenviame el link, por favor.',
+      state: state({
+        selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6',
+        stage: 'payment_link_sent', awaiting_reply: 'none',
+      }),
+      intake: completeIntake,
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+          confidence: 0.99,
+        },
+        response: { messages: ['Claro, te lo reenvío.'] },
+        proposed_action: {
+          type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+        },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: {
+        type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+      },
       transition: { stage: 'payment_link_sent', awaiting_reply: 'none' },
     });
   });
@@ -794,7 +858,7 @@ describe('plannerless Agent A authority', () => {
     });
   });
 
-  it('accepts an explicit canonical link request alongside contact details without another move label', () => {
+  it('does not send an explicit canonical link request in the contact-details turn', () => {
     const result = authorize({
       state: state({
         selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6',
@@ -813,9 +877,10 @@ describe('plannerless Agent A authority', () => {
       }),
     });
 
-    expect(result).toMatchObject({ ok: true,
-      action: { type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6' },
-      transition: { payment_link_request: { status: 'consumed' } } });
+    expect(result).toMatchObject({ ok: true, action: { type: 'none' }, transition: {
+      stage: 'plan_selected', awaiting_reply: 'payment_confirmation',
+      payment_link_request: { status: 'pending' },
+    } });
   });
 
   it('allows one final call reminder after a soft preference to continue by chat', () => {

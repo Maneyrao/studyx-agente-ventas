@@ -119,6 +119,22 @@ export async function ensureAgentOwnedContactProfileV1(contactId: string, db: Db
 const normalizeText = (value: string): string => value.normalize('NFC').trim().replace(/\s+/gu, ' ');
 const foldedText = (value: string): string => normalizeText(value).toLowerCase();
 
+function equivalentFieldValueV1(
+  field: ContactProfileFieldV1,
+  current: string | null,
+  proposed: string | null,
+): boolean {
+  if (current === null || proposed === null) return current === proposed;
+  // Names preserve the spelling first confirmed by the customer. Re-observing
+  // that same spelling with casing or chat whitespace differences is a no-op,
+  // not a correction. Accents and punctuation remain meaningful: removing an
+  // accent or changing an apostrophe still requires explicit correction.
+  if (field === 'nombre' || field === 'apellido') {
+    return foldedText(current) === foldedText(proposed);
+  }
+  return current === proposed;
+}
+
 function normalizeFieldValue(field: ContactProfileFieldV1, value: string): string | null {
   const normalized = normalizeText(value);
   if (field === 'nombre' || field === 'apellido') {
@@ -344,7 +360,11 @@ export async function applyContactProfileUpdatesV1(db: DbClient, input: ContactP
     }
     if (!Number.isInteger(input.expected_version) || input.expected_version < 0 || input.expected_version > profile.version
       || current.version > input.expected_version) { reject('VERSION_CONFLICT'); continue; }
-    if (current.value !== null && normalized.value !== null && current.value !== normalized.value && update.operation !== 'correct') {
+    // Retraction is meaningful even if the value is already empty: it records
+    // this turn as the withdrawal source and fences older confirmation proof.
+    if (update.operation !== 'retract'
+      && equivalentFieldValueV1(update.field, current.value, normalized.value)) continue;
+    if (current.value !== null && normalized.value !== null && update.operation !== 'correct') {
       reject('CORRECTION_REQUIRED'); continue;
     }
     profile.fields[update.field] = { value: normalized.value, status: update.operation === 'retract' ? 'retracted' : 'confirmed',

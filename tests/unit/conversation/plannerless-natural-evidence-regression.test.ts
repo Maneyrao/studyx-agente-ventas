@@ -33,7 +33,7 @@ const proposal: AgentATurnProposalV1 = {
     confidence: 0.9,
   },
   response: {
-    messages: ['Comparación principal.', 'Diferencia práctica.', 'Pregunta de cierre.'],
+    messages: ['Comparación principal.', 'Diferencia práctica. Pregunta de cierre.'],
     call_offer: 'Si te sirve, lo vemos en una llamada breve.',
   },
   proposed_action: { type: 'none' },
@@ -222,7 +222,7 @@ describe('plannerless natural evidence regression', () => {
       rejection_id: '44444444-4444-4444-8444-444444444444',
     });
     expect.soft(resolved.effective.proposal.response).toEqual({
-      messages: ['Comparación principal.', 'Diferencia práctica.', 'Pregunta de cierre.'],
+      messages: ['Comparación principal.', 'Diferencia práctica. Pregunta de cierre.'],
       call_offer: 'Si te sirve, lo vemos en una llamada breve.',
     });
   });

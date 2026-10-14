@@ -439,8 +439,16 @@ export const processInboundTurn = new Workflow({
     // stages that actually re-run.
     const workflowStartedAt = Date.now()
     state.inboundRecoveryDeadlineAt ??= workflowStartedAt + 8 * 60_000
+    const recoveryJitterMs = (recovery: number): number => {
+      // Stable per physical event so durable replays use the same schedule,
+      // while different WhatsApp bubbles stop retrying in lockstep.
+      let hash = recovery + 1
+      for (const char of input.external_message_id) hash = ((hash * 33) ^ char.charCodeAt(0)) >>> 0
+      return hash % 5_001
+    }
     const recoverInboundOperation = async <T>(name: string, operation: () => Promise<T>): Promise<T> => {
       for (let recovery = 0; ; recovery += 1) {
+        const delayMs = Math.min(60_000, 15_000 * 2 ** recovery) + recoveryJitterMs(recovery)
         const receipt = await step(
           recovery === 0 ? name : `${name}-recovery-${recovery}`,
           async () => {
@@ -452,7 +460,7 @@ export const processInboundTurn = new Workflow({
               return { studyx_inbound_retry: {
                 code: error.code, status: error.status, attempts: error.attempts,
                 retry_allowed: recovery < 5
-                  && Date.now() + Math.min(60_000, 15_000 * 2 ** recovery) <= state.inboundRecoveryDeadlineAt!,
+                  && Date.now() + delayMs <= state.inboundRecoveryDeadlineAt!,
               } }
             }
           },
@@ -463,7 +471,6 @@ export const processInboundTurn = new Workflow({
         if (!receipt || typeof receipt !== 'object' || !('studyx_inbound_retry' in receipt)) return receipt as T
         const failure = receipt.studyx_inbound_retry
         const error = new StudyxHttpError(failure.code, true, failure.status, failure.attempts)
-        const delayMs = Math.min(60_000, 15_000 * 2 ** recovery)
         if (!failure.retry_allowed) throw error
         safeLog('studyx.turn.inbound_recovery_scheduled', {
           trace_id: input.trace_id, stage: name, recovery: recovery + 1,
@@ -896,8 +903,13 @@ export const processInboundTurn = new Workflow({
         safeLog('studyx.turn.contact_profile_persisted', { trace_id: input.trace_id,
           turn_id: owned.turn_id, version: receipt.version, accepted_fields: receipt.accepted_fields,
           rejection_codes: receipt.rejections.map(item => item.code) })
-        if (receipt.rejections.length) throw new Error(`PLANNERLESS_PROPOSAL_REJECTED:${receipt.rejections
-          .map(item => `ACTION_NOT_AUTHORIZED:contact_profile.${item.field}.${item.code}`).join(',')}`)
+        // A profile receipt is deliberately field-granular. Accepted
+        // observations are already durable and rejected observations remain
+        // unconfirmed facts in the refreshed context. They must not invalidate
+        // Agent A's safe prose or an independently authorized effect. The
+        // action resolver below still gates calls and payments against the
+        // refreshed canonical intake, so an invalid missing field cannot open
+        // an effect by being ignored here.
       }
       const repeated = (proposal.profile_requests ?? []).flatMap(request => request.mode === 'collect'
         ? request.fields.filter(field => owned.contact_intake?.[field] != null) : [])

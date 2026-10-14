@@ -179,7 +179,8 @@ run('canonical contact profile external writers', () => {
       updates: [{ field: 'apellido', value: null, operation: 'retract', source_message_id: f.turn_id, source_quote: 'Hola' }] }));
     expect((await loadContactIntakeV1(f.contact_id, db!)).apellido).toBeNull();
     const preparation = await preparePaymentLinkToolV1({ db: db!, turn_id: f.turn_id, conversation_id: f.conversation_id },
-      { offering_code: 'entrenamiento_funcional', payment_plan: 'one_time' });
+      { offering_code: 'entrenamiento_funcional', payment_plan: 'one_time' },
+      { resolver: { resolve: () => 'https://buy.stripe.com/test_example' } });
     expect(preparation.success).toBe(true);
     await expect(commitAgentTurnV3(db!, { turn_id: f.turn_id, trace_id: randomUUID(),
       effective_prompt_sha256: f.release_manifest.prompt_sha256, release_manifest: f.release_manifest,

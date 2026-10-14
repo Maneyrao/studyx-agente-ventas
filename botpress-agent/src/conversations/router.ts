@@ -69,7 +69,9 @@ export default new Conversation({
       let preingested = null
       if (input.message.type === 'text') {
         try {
-          preingested = await ingestCanonicalTurnV1(input)
+          // One fast attempt keeps normal text latency low. On a retryable
+          // outage the workflow below becomes the sole retry owner.
+          preingested = await ingestCanonicalTurnV1(input, { additionalRetries: 0 })
         } catch (error) {
           if (!(error instanceof StudyxHttpError) || !error.retryable) throw error
           // Persist the original envelope in Botpress even when StudyX cannot

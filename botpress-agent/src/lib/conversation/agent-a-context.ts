@@ -623,6 +623,7 @@ export function buildAgentAContextV1(
       call_offer_status: state.call_offer_status,
       call_offer_count: callOfferCount,
       active_call: claimed.sales_context.active_call,
+      last_call_result: claimed.sales_context.last_call_result,
       awaiting_reply: state.awaiting_reply,
       // The customer already said they paid. The model must be able to see
       // that so it neither asks for the payment again nor claims it is

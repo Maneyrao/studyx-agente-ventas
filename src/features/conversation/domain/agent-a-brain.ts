@@ -75,7 +75,13 @@ export interface AgentAContextV1 {
     readonly call_preference: 'unknown' | 'call' | 'chat' | 'declined';
     readonly call_offer_status: 'not_offered' | 'offered' | 'accepted' | 'declined';
     readonly call_offer_count: 0 | 1 | 2;
-    readonly awaiting_reply: 'none' | 'area_choice' | 'course_choice' | 'call_or_chat' | 'payment_plan' | 'payment_confirmation';
+    readonly active_call?: { readonly call_id: string; readonly status: string } | null;
+    readonly last_call_result?: {
+      readonly call_id: string;
+      readonly result: string | null;
+      readonly ended_at: string;
+    } | null;
+    readonly awaiting_reply: 'none' | 'area_choice' | 'course_choice' | 'call_or_chat' | 'payment_plan' | 'payment_confirmation' | 'contact_details';
     readonly payment_link_request?: {
       readonly status: 'pending' | 'withdrawn' | 'consumed';
       readonly offering_code: string;
