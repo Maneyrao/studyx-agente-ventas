@@ -1,12 +1,13 @@
 # Sesión StudyX
 
 ## Fase actual
-PHASE 4 — persistencia de datos en varios mensajes. Estado: en curso; corrección local verificada, pendiente de publicar el backend. PHASE 3 conserva pendiente el canario real y el diagnóstico del aviso automático.
+PHASE 4 — persistencia de datos en varios mensajes. Estado: completa; corrección verificada y publicada, fuente 232611a, health y probe canónicos HTTP 200. PHASE 3 conserva pendiente el canario real y el diagnóstico del aviso automático.
 
 ## Fases completas
 - PHASE 0: fallos y silencios observables.
 - PHASE 1: contexto acotado e intake autoritativo del Brain.
 - PHASE 2: propuesta, rechazo estructurado y reparación con backend autoritativo.
+- PHASE 4: captura de respuestas en varios mensajes publicada en dpl_Cb5LoQdkafz2YdmLhdNFHTCEDyEv; 3793 unitarias, 599 integraciones y 3/3 workflows aprobados; comprobaciones de producción en docs/reports/2026-10-14-contact-intake-persistence.md.
 
 ## Decisiones de arquitectura tomadas
 - Mantener advisory general y exigir coherencia de promesas de llamada → protege efectos sin restaurar todos los vetos semánticos → resolve-agent-a-plannerless.ts y prepare-agent-turn-v2.ts.
@@ -34,8 +35,8 @@ PHASE 4 — persistencia de datos en varios mensajes. Estado: en curso; correcci
 - Persistencia: 3793 unitarias, 599 integraciones, 3/3 workflows y cobertura configurada 98,91% líneas aprobadas; lint, tipos y build del backend aprobados. Casos de datos separados, recibos falsos, cierre, replay y etiquetas de teléfono/correo → docs/reports/2026-10-14-contact-intake-persistence.md.
 
 ## Bloqueos
-- Backend dpl_5nAmth2X62aJ3ggaYmxnGncezRSh y Botpress desplegado 2026-10-14T00:18:29.312Z verificados; falta llamada real supervisada → requiere una persona disponible con consentimiento; no se hicieron llamadas reales.
+- Backend dpl_Cb5LoQdkafz2YdmLhdNFHTCEDyEv y Botpress desplegado 2026-10-14T00:18:29.312Z verificados; falta llamada real supervisada → requiere una persona disponible con consentimiento; no se hicieron llamadas reales.
 - Aviso access_ready de Lucas: Botpress informó processed sin iniciar claim; se completó la misma notificación por rutas firmadas, conservando entrega única → falta determinar la causa del evento sin ejecución; el primer fallo precede al despliegue de Botpress.
 - Tres expectativas de workflow de catálogo/pago fallan igual en la base a69970a → deuda previa documentada en el informe; no se relajaron pruebas ni se cambió la política general para ocultarlas.
 - El mensaje sin reclamar de la auditoría original tiene causa no demostrada → investigación separada; esta corrección no la atribuye ni declara resuelta.
-- Corrección de captura pendiente de publicación del backend → producción continúa con e34130a; no se hizo backfill ni se llamó a Agus.
+- Prueba real de conversación pendiente del usuario → corrección de captura 232611a activa; no se hizo backfill ni se llamó a Agus.

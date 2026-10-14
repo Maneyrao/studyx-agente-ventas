@@ -38,7 +38,9 @@ Un recorrido inicial de workflow omitía la oferta previa existente en la charla
 
 ## Alcance y estado
 
-Corrección local preparada para publicar el backend. No modifica el bundle de Botpress ni el prompt, y todavía no está en producción. No se alteró el contacto de Agus ni se reintentó una llamada después de que pidió continuar por chat.
+Corrección publicada en producción el 14-10-2026 a las 07:09 Argentina, con autorización del usuario («aplica los cambios asi lo testeo»). Fuente: `232611aaa5280d9e273f21a1f6d8f4c251fbf9e6`; deployment `dpl_Cb5LoQdkafz2YdmLhdNFHTCEDyEv`, READY. No modifica el bundle de Botpress ni el prompt. No se alteró el contacto de Agus ni se reintentó una llamada después de que pidió continuar por chat.
+
+El build remoto de producción con Turbopack aprobó. Se comprobó health HTTP 200 con la versión exacta y probe autenticado HTTP 200 en el deployment antes de promover el mismo artefacto. Después de promover, `https://studyx-agente-ventas.vercel.app/api/health` confirmó la misma versión a las `2026-10-14T10:09:05.722Z`; el probe canónico confirmó autenticación Botpress 200, bot esperado y vencimiento del permiso `2026-10-16T03:00:00.000Z`. No hubo registros de error en la consulta del nuevo deployment de los últimos diez minutos realizada inmediatamente después de publicar; es una observación inicial, no un canario de conversación o llamada real. No se configuraron nuevos monitores ni drains.
 
 Esto cierra la pérdida de datos en la secuencia verificada. No convierte cualquier texto libre en un dato válido ni elimina la necesidad de reparar las confirmaciones no respaldadas o los fallbacks genéricos descritos en la auditoría. Una afirmación del modelo sigue sin ser prueba de persistencia.
 
