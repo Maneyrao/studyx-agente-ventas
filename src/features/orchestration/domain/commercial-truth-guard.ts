@@ -226,7 +226,7 @@ function canonicalAmount(value: string): string {
   return value
     .replace(/[.,]+$/u, '')
     .replace(/,/gu, '.')
-    .replace(/\.0+$/u, '');
+    .replace(/\.0{1,2}$/u, '');
 }
 
 function extractMoney(text: string): string[] {

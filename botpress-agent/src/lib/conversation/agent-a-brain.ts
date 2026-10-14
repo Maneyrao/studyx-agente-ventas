@@ -23,7 +23,7 @@ import {
   type TurnPlanV1,
 } from '../../schemas/conversation-pipeline';
 import { buildAgentABrainInstructionsV1 } from '../../prompts/agent-a-brain-v1';
-import { assertedCommercialClausesV1 } from '../../../../src/features/orchestration/domain/commercial-truth-guard';
+import { assertedCommercialClausesV1, assertedCommercialPricesV1 } from '../../../../src/features/orchestration/domain/commercial-truth-guard';
 import { lastAgentReplyV1 } from './conversation-composer';
 import {
   extractProtectedFacts,
@@ -1725,13 +1725,11 @@ function omitsCustomerNamedCandidateV1(
 }
 
 function comparableProtectedFact(fact: ReturnType<typeof extractProtectedFacts>[number]): string {
-  // Zero cents in the catalog's dot-decimal format do not change an amount.
-  // Do not normalize commas: the portable extractor can truncate 360,000 to
-  // 360,00. Keep currency, qualifiers and all
-  // non-zero digits intact; this is only the draft check, not the signed
-  // egress representation or the backend's final commercial authorization.
+  // Decimal punctuation is a representation, not another commercial price.
+  // Complete raw tokens are checked separately below, so the portable
+  // extractor cannot authorize a truncated three-place amount.
   const value = fact.kind === 'price'
-    ? fact.value.replace(/(\d)\.0{1,2}(?!\d)/gu, '$1')
+    ? fact.value.replace(/(\d),(\d{1,2})(?!\d)/gu, '$1.$2').replace(/(\d)\.0{1,2}(?!\d)/gu, '$1')
     : fact.value;
   return `${fact.kind}\u0000${value}`;
 }
@@ -1805,6 +1803,8 @@ export function validateAgentATurnProposalV1(input: {
       .map(comparableProtectedFact),
   );
   const unauthorizedKinds = new Set<string>();
+  const authorizedRawPrices = new Set([...commercialValuesByFactId(input.context)]
+    .filter(([factId]) => planned.has(factId)).flatMap(([, value]) => assertedCommercialPricesV1(value)));
   const authoredNarrative = [
     ...input.proposal.response.messages,
     ...(input.proposal.response.call_offer ? [input.proposal.response.call_offer] : []),
@@ -1867,6 +1867,9 @@ export function validateAgentATurnProposalV1(input: {
   // cualquier frase natural en un rechazo y, con la reparación apagada, en el
   // piso técnico: era la causa raíz de que el modelo no pudiera conversar.
   for (const message of authoredNarrative) {
+    if (assertedCommercialPricesV1(message).some(price => !authorizedRawPrices.has(price))) {
+      unauthorizedKinds.add('price');
+    }
     const assertedPrices = assertedCommercialClausesV1(message).flatMap(clause => extractProtectedFacts(clause))
       .filter(fact => fact.kind === 'price');
     if (assertedPrices.some(fact => !authorizedProtectedFacts.has(comparableProtectedFact(fact)))) {

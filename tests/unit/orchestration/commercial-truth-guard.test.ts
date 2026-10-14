@@ -29,6 +29,10 @@ function enforce(content: string, canonical: CanonicalTruthSetV1 = CANONICAL, ur
   return enforceCommercialTruthV1({ content, authorized_urls: urls, canonical });
 }
 
+it.each(['USD 360,000', 'USD 360.000'])('does not erase ambiguous three-place money precision: %s', amount => {
+  expect(enforce(`El total es ${amount}.`).violations).toContainEqual(expect.objectContaining({ code: 'PRICE_NOT_CANONICAL' }));
+});
+
 describe('plazo del pago separado de la duración del curso', () => {
   const canonical = canonicalTruthSetFromOfferingsV1({
     offerings: [{ code: 'redes', price_type: 'fixed', price_amount: '360', currency: 'USD', delivery: { classes: 16 } }],

@@ -595,7 +595,7 @@ describe('Agent A Brain V1', () => {
     );
   });
 
-  it.each(['USD 360', 'USD 360.0', 'USD 360.00'])(
+  it.each(['USD 360', 'USD 360.0', 'USD 360.00', 'USD 360,00'])(
     'accepts equivalent zero cents without rejecting an authorized total: %s', (total) => {
       const ctx = context();
       ctx.capabilities.may_offer_call = false; // Monetary normalization, no call capability.
@@ -613,7 +613,7 @@ describe('Agent A Brain V1', () => {
   );
 
   it.each(['USD 361', 'USD 360.01', 'EUR 360', 'USD 36000', 'USD 360.000',
-    'USD 360,00', 'USD 360,000', 'USD 360,001', 'no cuesta USD 360'])(
+    'USD 360,000', 'USD 360,001', 'no cuesta USD 360'])(
     'still rejects a different amount, currency or negated price: %s', (total) => {
       const ctx = context();
       const priceId = 'payment:redes-informaticas:monthly_12:price:v1';

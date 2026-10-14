@@ -12,6 +12,7 @@ Se conserva la base actual, incluido el perfil canónico por campo de v103, corr
 
 - El backend rechaza afirmaciones comerciales sin respaldo antes de confirmar la transacción. Devuelve `COMMERCIAL_TRUTH_VIOLATION` y tipos de contradicción; A recibe las alternativas canónicas y redacta su respuesta completa. No se publica una poda o una plantilla del backend.
 - Cantidad e importe de las cuotas se validan como una combinación autorizada. Se rechazan tanto 2×USD 180 como combinaciones de importes conocidos que no constituyen un plan, por ejemplo 2×USD 60. Las negativas de disponibilidad y preguntas de aclaración conservan su sentido. El pago de prueba reservado admite exactamente 1×USD 0,50.
+- Coma y punto decimales representan el mismo importe autorizado. La validación contrasta también el token monetario completo para que tres cifras ambiguas no se autoricen por truncamiento del extractor.
 - Los valores ya presentes en el contexto autorizado pueden usarse sin exigir una segunda etiqueta de cita para cada palabra. Esto no habilita importes nuevos; el backend vuelve a contrastar el catálogo vigente.
 - Las repeticiones y ofertas dobles vuelven a A para una única reformulación. Repetir a pedido explícito del usuario sigue permitido. Si sólo falla la reparación de estilo, una respuesta original que siga siendo segura no se transforma en silencio. Una contradicción factual u operacional no puede usar esa recuperación.
 - Las instrucciones del perfil pasan a un bloque interno: serializar evidencia no exige preguntar o agradecer datos. Una pregunta pendiente conserva memoria y no exige repetirla en cada respuesta. El historial sirve para continuidad y no como una personalidad alternativa que deba imitarse.
@@ -19,7 +20,7 @@ Se conserva la base actual, incluido el perfil canónico por campo de v103, corr
 
 ## Verificación
 
-Los casos nuevos fallaron antes de la corrección y aprobaron después. La regresión unitaria completa final aprobó 4.085 pruebas, con siete pendientes previas. La regresión enfocada de integración aprobó 93 casos en seis archivos: veracidad, perfil, autorización, pagos, Stripe y seguimiento de llamadas. Las comprobaciones adicionales cubren el pago de prueba de USD 0,50 y la prohibición de dividirlo en dos.
+Los casos nuevos fallaron antes de la corrección y aprobaron después. La regresión unitaria completa final aprobó 4.088 pruebas, con siete pendientes previas. La regresión enfocada de integración aprobó 93 casos en seis archivos: veracidad, perfil, autorización, pagos, Stripe y seguimiento de llamadas. Las comprobaciones adicionales cubren el pago de prueba de USD 0,50 y la prohibición de dividirlo en dos.
 
 El workflow nuevo aprobó el recorrido con HTTP firmado, PostgreSQL aislado y modelo simulado: curso, cinco entradas fragmentadas, rechazo real del plan 2×USD 60, exactamente dos solicitudes al modelo, entrega exclusiva de la reformulación de A, persistencia de cuatro campos, cero efectos del turno rechazado y posterior enlace válido una sola vez. El replay no repitió entrega ni generación.
 

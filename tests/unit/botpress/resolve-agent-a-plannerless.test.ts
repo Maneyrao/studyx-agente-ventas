@@ -78,6 +78,19 @@ function generated(value: AgentATurnProposalV1) {
 }
 
 describe('resolveAgentAPlannerlessProposalV2', () => {
+  it('accepts the authorized test amount with decimal dot when its source uses a decimal comma', async () => {
+    const current = context();
+    current.catalog.test_payment_options = [{ code: 'stripe_verification_050',
+      fact_id: 'payment-test:stripe_verification_050:label:v1', label: 'Prueba temporal de pago de USD 0,50', action: 'send_test_payment_link' }];
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({ response: { messages: ['La prueba temporal es de USD 0.50.'], call_offer: null },
+        used_fact_ids: ['payment-test:stripe_verification_050:label:v1'] })),
+      context: current, repair_enabled: false, semantic_rejections: 'advisory',
+      rejection_id: '00000000-0000-4000-8000-000000000098', repair: vi.fn(),
+    });
+    expect(result.effective.proposal.response.messages).toEqual(['La prueba temporal es de USD 0.50.']);
+  });
+
   it('retains a factually safe A draft when the single style repair still repeats instead of silencing the conversation', async () => {
     const current = context();
     current.turn.recent_turns = [{ id: 'previous', direction: 'outbound', content: 'La formación tiene 38 clases.' }];
