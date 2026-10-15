@@ -1442,7 +1442,12 @@ export const processInboundTurn = new Workflow({
       && owned.deterministic_route === null
       ? buildInterpreterInput(owned)
       : null
-    if (!pipelineCommit && !pipelineFailureDecision && (deterministicPipelineMove || interpreterInput)) {
+    // Agent A plannerless is the sole conversational authority once it has
+    // produced a commit. A stale deterministic call projection must not add a
+    // second V1 authority: the backend correctly rejects that ambiguous turn,
+    // which would otherwise leave the customer without an outbound response.
+    if (!agentTurnV2Commit && !pipelineCommit && !pipelineFailureDecision
+      && (deterministicPipelineMove || interpreterInput)) {
       try {
         const interpreted = deterministicPipelineMove
           ? {

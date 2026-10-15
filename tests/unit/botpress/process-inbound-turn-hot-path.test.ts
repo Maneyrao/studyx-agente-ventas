@@ -3615,6 +3615,64 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
+  it('keeps plannerless Agent A as the sole authority when a stale call acceptance is also projected', async () => {
+    configuration.agentAPlannerlessV2Enabled = true;
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off',
+      conversation_pipeline_v1_enabled: true,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+      agent_a_repair_enabled: true,
+    };
+    claimed.deterministic_route = 'call_accepted_offer';
+    claimed.batch.message_count = 3;
+    claimed.context.batch_messages = [
+      { id: UUID, conversation_seq: 1, content: 'sii', created_at: NOW, message_type: 'text' },
+      { id: '28a823e8-27c2-4279-9956-058f45f33cd5', conversation_seq: 2,
+        content: 'esta bien', created_at: NOW, message_type: 'text' },
+      { id: '38a823e8-27c2-4279-9956-058f45f33cd5', conversation_seq: 3,
+        content: 'me anotas?', created_at: NOW, message_type: 'text' },
+    ];
+    claimed.conversation_state_v1 = {
+      selected_offering_code: 'redes-informaticas', selected_payment_plan: 'one_time',
+      stage: 'plan_selected', call_preference: 'unknown', call_offer_status: 'offered',
+      call_offer_count: 1, awaiting_reply: 'call_or_chat', version: 2,
+    };
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 1,
+      offerings: [{ code: 'redes-informaticas', display_name: 'Redes Informáticas',
+        academy: 'Tecnología', aliases: [] }],
+      injection_suspected_count: 0,
+    };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute: vi.fn(), client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
+    expect(actionSpies.plan).not.toHaveBeenCalled();
+    expect(actionSpies.commit).toHaveBeenCalledTimes(1);
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: null,
+      agent_turn_v2: {
+        schema_version: 2,
+        proposal: { proposed_action: { type: 'none' } },
+      },
+    });
+  });
+
   it('executes an authorized direct call without waiting for the authoritative brain', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
