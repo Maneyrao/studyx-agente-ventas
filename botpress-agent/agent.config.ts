@@ -75,6 +75,7 @@ export default defineConfig({
         "Retired compatibility secret. Production Agent A never falls back to OpenAI.",
     },
     TELEGRAM_BOT_A_TOKEN: {
+      optional: true,
       description:
         "Telegram Bot API token for the sandbox Bot A (Phase 2). Used to download voice notes for transcription.",
     },
