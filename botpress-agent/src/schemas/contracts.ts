@@ -2,7 +2,7 @@ import { ContactProfileContextV1Schema } from './agent-a-brain'
 import { z } from '@botpress/runtime'
 import { ConversationPipelineCommitV1Schema } from './conversation-pipeline'
 import { AgentATurnCommitV2Schema } from './agent-turn-v2'
-import { TurnRejectionV1Schema } from './turn-rejection'
+import { TurnRejectionCodeSchema } from './turn-rejection'
 
 export const SourceSchema = z.literal('botpress')
 export const ChannelSchema = z.enum(['emulator', 'whatsapp', 'telegram'])
@@ -873,6 +873,27 @@ export const DeliveryReportResponseSchema = z.object({
   delivery_status: DeliveryStatusSchema,
 })
 
+// Botpress serializes every Workflow input through JSON Schema while loading
+// the project. Zod transforms such as `.trim()` are valid domain validation,
+// but ADK 2.0.5 cannot represent them and silently omits the whole workflow.
+// Keep this durable, internal transport envelope transform-free; the domain
+// rejection schema remains the canonical parser at its business boundaries.
+const WorkflowTurnRejectionV1Schema = z.object({
+  schema_version: z.literal(1),
+  rejection_id: z.string().uuid(),
+  attempt: z.literal(1),
+  rejections: z.array(z.object({
+    code: TurnRejectionCodeSchema,
+    subject: z.string().min(1).max(160)
+      .regex(/^[a-z0-9_:.-]+$/iu, 'TURN_REJECTION_SUBJECT_NOT_STRUCTURED'),
+  }).strict()).min(1),
+  authorized_alternatives: z.object({
+    fact_ids: z.array(z.string().min(1)).default([]),
+    actions: z.array(z.string().min(1)).default([]),
+    missing_information: z.array(z.string().min(1)).default([]),
+  }).strict(),
+}).strict()
+
 export const WorkflowInputSchema = InboundEnvelopeSchema.extend({
   botpress_conversation_id: z.string().min(1).max(512),
   botpress_user_id: z.string().min(1).max(512),
@@ -883,7 +904,7 @@ export const WorkflowInputSchema = InboundEnvelopeSchema.extend({
   // Internal durable evidence; transport normalizers never accept it from a customer.
   recovery_feedback: z.object({
     batch_id: z.string().uuid(), conversation_id: z.string().uuid(), turn_id: z.string().uuid(),
-    selected_offering_code: z.string().min(1).nullable(), rejection: TurnRejectionV1Schema,
+    selected_offering_code: z.string().min(1).nullable(), rejection: WorkflowTurnRejectionV1Schema,
   }).strict().optional(),
 })
 
