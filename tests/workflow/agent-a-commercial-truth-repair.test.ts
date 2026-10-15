@@ -4,7 +4,7 @@ import type { AgentAContextV1, AgentATurnProposalV1 } from '../../botpress-agent
 import type { StoredContactProfileV1 } from '../../src/lib/repositories/contact-profile.repository';
 import { runWorkflowBurstV1, runWorkflowTurnV1 } from '../helpers/agent-a-workflow-driver';
 import { readWorkflowDbEvidenceV1 } from '../helpers/agent-a-workflow-db-evidence';
-import { configuration, secrets } from '../helpers/botpress-workflow-runtime';
+import { configuration, secrets, Workflow } from '../helpers/botpress-workflow-runtime';
 import { openLocalTestDatabase } from '../helpers/db';
 import { contactFixtureUpdatesV1 } from './contact-profile-fixture';
 
@@ -153,13 +153,20 @@ it('repairs a fabricated installment count without losing fragmented identity, t
   respond = context => {
     expect(context.turn_rejection).toBeUndefined();
     expect(context.customer.contact_intake).toMatchObject({ nombre: 'Luz María', apellido: 'van der Velde', correo: 'luz.repair@example.test', telefono: '+15551234029' });
-    return proposal('Te comparto el enlace para pagar en 12 cuotas.', {
+    const confirmed = context.commercial_state.awaiting_reply === 'payment_confirmation';
+    return proposal(confirmed ? 'Te comparto el enlace para pagar en 12 cuotas.'
+      : '¿Confirmas tus datos y las 12 cuotas de USD 30 para que te envíe el enlace?', {
       move: { schema_version: 1, move: 'select_payment_plan', secondary_moves: ['request_payment_link'], vetoes: [], confidence: 1, payment_plan: 'monthly_12' },
-      proposed_action: { type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'monthly_12' },
+      proposed_action: confirmed
+        ? { type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'monthly_12' }
+        : { type: 'none' },
       used_fact_ids: ['payment:ingles_1:monthly_12:label:v1'],
     });
   };
-  const paymentText = 'Quiero pagar en 12 cuotas de USD 30; envíame el enlace de pago.';
+  const awaiting = await runWorkflowTurnV1({ ...id, text: 'Quiero pagar en 12 cuotas de USD 30; envíame el enlace de pago.' });
+  expect(awaiting.errorCode).toBeNull();
+  expect(await payments()).toHaveLength(0);
+  const paymentText = 'Sí, confirmo mis datos y las 12 cuotas de USD 30; envíame el enlace de pago.';
   const paid = await runWorkflowTurnV1({ ...id, text: paymentText });
   expect(paid.errorCode, JSON.stringify(paid.httpExchanges.filter(exchange => exchange.status !== 200))).toBeNull();
   expect(paid.commitSucceeded).toBe(true);
@@ -167,7 +174,7 @@ it('repairs a fabricated installment count without losing fragmented identity, t
   expect(await payments()).toMatchObject([{ plan_code: 'monthly_12' }]);
   expect(await calls()).toHaveLength(0);
   const paidDb = await readWorkflowDbEvidenceV1({ databaseUrl, externalConversationId: id.conversationId,
-    adapterCaptures: [...selected.adapterCaptures, ...repaired.adapterCaptures, ...paid.adapterCaptures] });
+    adapterCaptures: [...selected.adapterCaptures, ...repaired.adapterCaptures, ...awaiting.adapterCaptures, ...paid.adapterCaptures] });
   expect(paidDb.recordedLinks).toHaveLength(1);
   expect(paidDb.recordedLinks[0]).toMatch(/^https:\/\/buy\.stripe\.com\/local-eval-12m\?client_reference_id=/u);
   expect(paidDb.deliveredLinks).toEqual(paidDb.recordedLinks);
@@ -182,4 +189,74 @@ it('repairs a fabricated installment count without losing fragmented identity, t
   const replayDb = await readWorkflowDbEvidenceV1({ databaseUrl, externalConversationId: id.conversationId });
   expect(replayDb.outboundCount).toBe(paidDb.outboundCount);
   expect(replayDb.recordedLinks).toEqual(paidDb.recordedLinks);
+});
+
+it('replays the English enumeration and unselected plan request without losing either reply', async () => {
+  const id = { conversationId: `integrity-${randomUUID()}`, userId: randomUUID(),
+    phoneE164: `+999${String(Date.now()).slice(-10)}`, providerMode: 'fixture' as const };
+  const enumeration = 'Tenemos Inglés 1, Inglés 2 e Inglés 3, todos online y de 12 clases, salvo Inglés 3 que son 21.';
+  respond = () => proposal(enumeration, {
+    move: { schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 1 },
+    used_fact_ids: ['offering:ingles_1:name:v1', 'offering:ingles_2:name:v1', 'offering:ingles_3:name:v1'],
+  });
+  const courses = await runWorkflowTurnV1({ ...id, text: 'Quiero información de inglés' });
+  expect(courses.errorCode).toBeNull();
+  expect(courses.authorizedMessages).toEqual([enumeration]);
+  const plans = 'Tenemos 12 pagos mensuales de USD 30, 6 pagos mensuales de USD 60 o un pago de USD 360.';
+  respond = context => {
+    expect(context.commercial_state.selected_offering_code).toBeNull();
+    expect(context.capabilities.may_send_payment_link).toBe(false);
+    return proposal(plans, { used_fact_ids: context.catalog.payment_plans.map(plan => plan.fact_id) });
+  };
+  const answer = await runWorkflowTurnV1({ ...id, text: 'Quiero ver los planes directamente, ¿cómo son?' });
+  expect(answer.errorCode).toBeNull();
+  expect(answer.authorizedMessages).toEqual([plans]);
+  const persisted = await readWorkflowDbEvidenceV1({ databaseUrl, externalConversationId: id.conversationId });
+  expect(persisted.state?.selectedOfferingCode).toBeNull();
+  expect(persisted.recordedLinks).toEqual([]);
+});
+
+it('recovers a twice-rejected proposal with a fresh claim, one answer and no duplicate effects', async () => {
+  const id = { conversationId: `durable-repair-${randomUUID()}`, userId: randomUUID(),
+    phoneE164: `+999${randomUUID().replace(/\D/gu, '').slice(0, 10).padEnd(10, '0')}`, providerMode: 'fixture' as const };
+  const child = vi.spyOn(Workflow.prototype, 'getOrCreate');
+  respond = () => proposal('Podés pagar en 2 cuotas de USD 60.', {
+    used_fact_ids: ['payment-workspace:monthly_6:label:v1'],
+  });
+  const first = await runWorkflowTurnV1({ ...id, text: '¿Cuáles son los planes de pago?' });
+  expect(first.authorizedMessages).toEqual([]);
+  expect(first.commitSucceeded).toBe(false);
+  expect(first.errorCode).toBe('AGENT_A_CONTINUATION_REJECTED');
+  expect(first.httpExchanges.filter(exchange => exchange.status === 422 && exchange.url.endsWith('/decision'))).toHaveLength(2);
+  expect(child).toHaveBeenCalledWith(expect.objectContaining({
+    key: expect.stringMatching(/^recovery:/u), input: expect.objectContaining({
+      external_message_id: first.externalMessageId, preingested: null,
+    }),
+  }));
+  const answer = 'Los planes son 12 pagos de USD 30, 6 pagos de USD 60 o un pago de USD 360.';
+  respond = () => proposal(answer, { used_fact_ids: ['payment-workspace:monthly_12:label:v1',
+    'payment-workspace:monthly_6:label:v1', 'payment-workspace:one_time:label:v1'] });
+  // Execute the envelope handed to the next workflow against the real backend.
+  // Cloud scheduling itself remains a separate deployment canary.
+  const resumed = await runWorkflowTurnV1({ ...id, text: '¿Cuáles son los planes de pago?',
+    externalMessageId: first.externalMessageId, occurredAt: first.occurredAt });
+  expect(resumed.errorCode, JSON.stringify(resumed.httpExchanges.filter(exchange => (exchange.status ?? 0) >= 400))).toBeNull();
+  expect(resumed.turnId).toBe(first.turnId);
+  expect(resumed.authorizedMessages).toEqual([answer]);
+  expect(resumed.commitSucceeded).toBe(true);
+  const rows = await db`SELECT b.state, b.claim_attempt_count, r.outcome, r.resolved_at
+    FROM inbound_batches b JOIN inbound_batch_recoveries r ON r.batch_id = b.id
+    WHERE b.representative_turn_id = ${first.turnId}::uuid`;
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({ state: 'completed', claim_attempt_count: 2, outcome: 'scheduled' });
+  expect(rows[0]!.resolved_at).toBeTruthy();
+  const evidence = await readWorkflowDbEvidenceV1({ databaseUrl, externalConversationId: id.conversationId,
+    adapterCaptures: resumed.adapterCaptures });
+  expect(evidence.decisions).toHaveLength(1);
+  expect(evidence.outbound).toHaveLength(1);
+  expect(evidence.recordedLinks).toEqual([]);
+  const duplicate = await runWorkflowTurnV1({ ...id, text: '¿Cuáles son los planes de pago?',
+    externalMessageId: first.externalMessageId, occurredAt: first.occurredAt });
+  expect(duplicate.authorizedMessages).toEqual([]);
+  child.mockRestore();
 });

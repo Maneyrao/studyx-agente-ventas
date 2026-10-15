@@ -106,7 +106,7 @@ export function classifyBrainFailureReason(
   if (code === 'BRAIN_TIMEOUT' || code === 'BRAIN_OPENAI_TIMEOUT'
     || code === 'BRAIN_DEEPSEEK_TIMEOUT'
     || code === 'TimeoutError' || code === 'AbortError') return 'timeout'
-  if (code === 'BRAIN_RATE_LIMITED' || code === 'BRAIN_OPENAI_RATE_LIMITED'
+  if (code === 'BRAIN_RATE_LIMITED' || code === 'BRAIN_DEEPSEEK_HTTP_429' || code === 'BRAIN_OPENAI_RATE_LIMITED'
     || code === 'BRAIN_DEEPSEEK_RATE_LIMITED'
     || code === 'GROQ_HTTP_429') return 'rate_limited'
   if (

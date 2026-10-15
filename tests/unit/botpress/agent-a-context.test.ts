@@ -956,7 +956,7 @@ describe('buildAgentAContextV1', () => {
 
     expect(context?.catalog.available_offerings.length).toBeGreaterThan(0);
     expect(context?.capabilities.may_offer_call).toBe(true);
-    expect(context?.capabilities.may_present_payment_options).toBe(false);
+    expect(context?.capabilities.may_present_payment_options).toBe(true);
   });
 
   it('exposes an exact current course without inventing a durable selection', () => {
@@ -996,7 +996,7 @@ describe('buildAgentAContextV1', () => {
     ]);
     expect(context?.capabilities).toMatchObject({
       may_offer_call: true,
-      may_present_payment_options: false,
+      may_present_payment_options: true,
     });
   });
 
@@ -2124,7 +2124,7 @@ it('keeps the exhausted call budget authoritative despite a retrieved preference
   const context = buildAgentAContextV1(claimed)!;
   expect(context.commercial_state).toMatchObject({ call_offer_count: 2, call_preference: 'chat' });
   expect(context.capabilities.may_offer_call).toBe(false);
-  expect(context.capabilities.may_request_call_now).toBe(true);
+  expect(context.capabilities.may_request_call_now).toBe(false);
 });
 
 it('does not authorize an immediate call when contact intake was not loaded', () => {
@@ -2150,6 +2150,8 @@ it.each(['nombre', 'apellido', 'telefono'] as const)(
 it('authorizes an immediate call when only payment-only email is missing', () => {
   const claimed = claimedTurn();
   claimed.contact_intake_missing = ['correo'];
+  Object.assign(claimed.conversation_state_v1!, { call_preference: 'call',
+    call_offer_status: 'accepted', awaiting_reply: 'call_or_chat' });
 
   const context = buildAgentAContextV1(claimed)!;
 

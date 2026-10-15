@@ -168,11 +168,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
         m.conversation_seq,
         m.content,
         m.created_at,
-        CASE
-          WHEN m.metadata ->> 'occurred_at_trusted' = 'true'
-            THEN (m.metadata ->> 'occurred_at')::timestamptz
-          ELSE m.created_at
-        END AS effective_occurred_at,
+        message_occurrence_v1(m.metadata, m.created_at) AS effective_occurred_at,
         COALESCE(m.metadata ->> 'message_type', 'text') AS message_type,
         COALESCE(m.metadata ->> 'opt_out_ack_eligible', 'false') = 'true'
           AS opt_out_ack_eligible
@@ -287,11 +283,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
               'opt_out_ack_eligible',
                 COALESCE(bm.metadata ->> 'opt_out_ack_eligible', 'false') = 'true'
             ) ORDER BY
-              CASE
-                WHEN bm.metadata ->> 'occurred_at_trusted' = 'true'
-                  THEN (bm.metadata ->> 'occurred_at')::timestamptz
-                ELSE bm.created_at
-              END,
+              message_occurrence_v1(bm.metadata, bm.created_at),
               bm.conversation_seq,
               bm.id
           )
@@ -309,17 +301,17 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
               'batch_id', recent.batch_id,
               'in_reply_to', recent.in_reply_to,
               'part_index', recent.part_index
-            ) ORDER BY recent.created_at, recent.part_index, recent.id
+            ) ORDER BY recent.occurred_at, recent.part_index, recent.id
           )
           FROM (
             SELECT
               rm.id, rm.direction, rm.content, rm.created_at, rm.batch_id, rm.in_reply_to,
-              rm.part_index
+              rm.part_index, message_occurrence_v1(rm.metadata, rm.created_at) AS occurred_at
             FROM messages AS rm
             WHERE rm.conversation_id = b.conversation_id
               AND rm.contact_id = b.contact_id
               AND rm.batch_id IS DISTINCT FROM b.id
-            ORDER BY rm.created_at DESC, rm.part_index DESC, rm.id DESC
+            ORDER BY message_occurrence_v1(rm.metadata, rm.created_at) DESC, rm.part_index DESC, rm.id DESC
             LIMIT ${limit}
           ) AS recent
         ), '[]'::jsonb) AS recent_turns,
@@ -339,16 +331,17 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
               grouped.direction,
               string_agg(
                 grouped.content,
-                E'\n' ORDER BY grouped.created_at, grouped.part_index, grouped.id
+                E'\n' ORDER BY grouped.occurred_at, grouped.part_index, grouped.id
               ) AS content,
               max(grouped.created_at) AS created_at,
-              max(grouped.created_at) AS last_created_at
+              max(grouped.occurred_at) AS last_created_at
             FROM (
               SELECT
                 rm.id,
                 rm.direction,
                 rm.content,
                 rm.created_at,
+                message_occurrence_v1(rm.metadata, rm.created_at) AS occurred_at,
                 rm.conversation_seq,
                 rm.part_index,
                 CASE
@@ -364,7 +357,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
                 AND rm.batch_id IS DISTINCT FROM b.id
             ) AS grouped
             GROUP BY grouped.logical_turn_id, grouped.direction
-            ORDER BY max(grouped.created_at) DESC
+            ORDER BY max(grouped.occurred_at) DESC
             LIMIT ${logicalLimit}
           ) AS logical
         ), '[]'::jsonb) AS logical_recent_turns,

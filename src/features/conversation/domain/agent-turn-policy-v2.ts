@@ -200,9 +200,12 @@ export function authorizeAgentTurnV2(input: {
     const selectedOfferingFact = fact !== undefined
       && fact.kind !== 'payment_link'
       && fact.offering_code === factOffering;
+    const workspacePlanFact = fact?.kind === 'payment_plan_label'
+      && fact.offering_code === undefined
+      && fact.id === `payment-workspace:${fact.payment_plan}:label:v1`;
     const temporaryTestPaymentFact = fact?.id === TEMPORARY_TEST_PAYMENT_FACT_ID
       && proposal.proposed_action.type === 'send_test_payment_link';
-    if (fact && (navigationFact || browsingCourseDetail || selectedOfferingFact || temporaryTestPaymentFact)) {
+    if (fact && (navigationFact || browsingCourseDetail || selectedOfferingFact || workspacePlanFact || temporaryTestPaymentFact)) {
       authorizedFactIds.push(factId);
     }
     else reasons.push('FACT_NOT_AUTHORIZED');
@@ -510,7 +513,12 @@ export function authorizeAgentTurnV2(input: {
     callOfferStatus = 'accepted';
     awaitingReply = 'none';
     stage = 'handoff';
-  } else if (callRequestSupported) {
+  // Historical call consent must not overwrite a newer payment checkpoint or
+  // reopen availability after a fulfilled handoff. Resume only a pending call.
+  } else if (callRequestSupported && (moves.has('request_call') || (
+    state.awaiting_reply === 'call_or_chat'
+    && !selectsPaymentPlanNow && !paymentLinkRequested
+  ))) {
     // The customer chose the call, but dispatch always waits for a later
     // availability confirmation. Persist the prepared call while the agent
     // asks for that confirmation or for a missing callable number.

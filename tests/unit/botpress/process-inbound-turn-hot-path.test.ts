@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const actionSpies = vi.hoisted(() => ({
   ingest: vi.fn(),
+  recovery: vi.fn(),
   captureProfile: vi.fn(),
   claim: vi.fn(),
   plan: vi.fn(),
@@ -21,6 +22,9 @@ const actionSpies = vi.hoisted(() => ({
   conversationInterpreter: vi.fn(),
 }));
 
+vi.mock('../../../botpress-agent/src/actions/scheduleTurnRecovery', () => ({
+  scheduleTurnRecovery: { execute: actionSpies.recovery },
+}));
 vi.mock('../../../botpress-agent/src/actions/ingestTurn', () => ({
   ingestTurn: { execute: actionSpies.ingest },
 }));
@@ -302,6 +306,8 @@ function processingState() {
 
 describe('processInboundTurn hot path', () => {
   beforeEach(() => {
+    for (const spy of Object.values(actionSpies)) spy.mockReset();
+    actionSpies.recovery.mockResolvedValue({ outcome: 'scheduled', attempt: 1, delay_ms: 2000 });
     configuration.automationEnabled = true;
     configuration.decisionProvider = 'botpress_managed';
     configuration.agentAPlannerlessV2Enabled = false;
@@ -990,6 +996,124 @@ describe('processInboundTurn hot path', () => {
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
   });
 
+  it('keeps a twice-rejected turn pending recovery without a false provider notice or terminal decision', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off',
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+      agent_a_repair_enabled: true,
+    };
+    claimed.conversation_state_v1 = {
+      selected_offering_code: 'redes-informaticas', selected_payment_plan: null,
+      stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 1,
+    };
+    claimed.contact.name = 'Lucía Pérez';
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 1,
+      offerings: [{
+        code: 'redes-informaticas', display_name: 'Redes Informáticas',
+        academy: 'Tecnología', aliases: ['redes'],
+      }],
+      injection_suspected_count: 0,
+    };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+
+    actionSpies.agentABrainDeepSeek
+      .mockResolvedValueOnce({
+        proposal: {
+          schema_version: 1,
+          move: {
+            schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
+            course_reference: 'redes-informaticas', confidence: 0.98,
+          },
+          response: { messages: ['Te cuento los detalles del curso.'], call_offer: null },
+          proposed_action: { type: 'none' },
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
+        },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 180, attempt_count: 1,
+      })
+      .mockImplementationOnce(async (input: {
+        context: { turn_rejection: { rejection_id: string } | null };
+      }) => ({
+        proposal: {
+          schema_version: 1,
+          move: {
+            schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
+            course_reference: 'redes-informaticas', confidence: 0.98,
+          },
+          response: { messages: ['Te cuento únicamente la información verificada del curso.'], call_offer: null },
+          proposed_action: { type: 'none' },
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+          repair_of: {
+            rejection_id: input.context.turn_rejection!.rejection_id,
+            attempt: 1,
+          },
+        },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 160, attempt_count: 1,
+      }));
+
+    actionSpies.commit
+      .mockRejectedValueOnce(new StudyxHttpError(
+        'DECISION_REJECTED', false, 422, 1,
+        {
+          error: 'DECISION_REJECTED',
+          reason: 'AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
+          subjects: ['offering_not_canonical'],
+        },
+      ))
+      .mockRejectedValueOnce(new StudyxHttpError('DECISION_REJECTED', false, 422, 1, {
+        error: 'DECISION_REJECTED', reason: 'AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
+        subjects: ['offering_not_canonical'],
+      }))
+      .mockResolvedValue({
+        status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
+        decision_id: UUID, next_state: 'waiting_user',
+        outbound: {
+          id: UUID, content: 'Te cuento únicamente la información verificada del curso.', status: 'pending', delivery_attempt: 1,
+          authorized_egress: {
+            schema_version: 1,
+            content_hash: '475afbdaee1fd8588c53b37ae16f80b1c131ab0fb3b38263e5f465179fc1d894',
+            authorized_urls: [], protected_facts: [],
+          },
+        },
+        outbounds: [{
+          id: UUID, content: 'Te cuento únicamente la información verificada del curso.', status: 'pending', delivery_attempt: 1,
+          authorized_egress: {
+            schema_version: 1,
+            content_hash: '475afbdaee1fd8588c53b37ae16f80b1c131ab0fb3b38263e5f465179fc1d894',
+            authorized_urls: [], protected_facts: [],
+          },
+        }], call_request: null,
+      });
+
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-recovered-message' } }));
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    const result = await handler({
+      input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: { createMessage }, signal: new AbortController().signal,
+      workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.commit).toHaveBeenCalledTimes(2);
+    expect(createMessage).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: 'retry_pending', decision_id: null,
+      error_code: 'AGENT_A_CONTINUATION_REJECTED' });
+  });
+
   it('uses a technical notice only when Agent A continuation actually times out', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
@@ -1322,7 +1446,7 @@ describe('processInboundTurn hot path', () => {
     claimed.sales_context.offering_code = 'redes-informaticas';
     actionSpies.claim.mockResolvedValue(claimed);
     actionSpies.agentABrainDeepSeek.mockRejectedValue(
-      Object.assign(new Error('provider failure'), { code: 'BRAIN_RATE_LIMITED' }),
+      Object.assign(new Error('provider failure'), { code: 'BRAIN_DEEPSEEK_HTTP_429' }),
     );
 
     const step = Object.assign(
@@ -1360,7 +1484,7 @@ describe('processInboundTurn hot path', () => {
       rollout_mode: 'authoritative',
       brain_source: 'fallback',
       brain_failure_reason: 'rate_limited',
-      failure_code: 'BRAIN_RATE_LIMITED',
+      failure_code: 'BRAIN_DEEPSEEK_HTTP_429',
       authorized_action_type: 'none',
     });
   });
@@ -1420,17 +1544,10 @@ describe('processInboundTurn hot path', () => {
       client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
-    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      authorized_offering_code: null,
-      decision: {
-        kind: 'reply',
-        response_type: 'commercial_reply',
-        reason_code: 'MODEL_UNAVAILABLE',
-        business_action: null,
-      },
-    });
-    const response = String(actionSpies.commit.mock.calls[0]?.[0]?.input?.decision?.response);
-    expect(response).toBe('Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.');
+    expect(actionSpies.commit).not.toHaveBeenCalled();
+    expect(actionSpies.recovery).toHaveBeenCalledWith(expect.objectContaining({
+      input: expect.objectContaining({ reason_code: 'BRAIN_INVALID_SCHEMA' }),
+    }));
   });
 
   it('retries one transient DeepSeek timeout before committing the model reply', async () => {
@@ -1571,7 +1688,7 @@ describe('processInboundTurn hot path', () => {
     actionSpies.claim.mockResolvedValue(claimed);
     secrets.DEEPSEEK_API_KEY = 'invalid-deepseek-test-key';
     secrets.OPENAI_API_KEY = 'invalid-openai-test-key';
-    actionSpies.agentABrainDeepSeek.mockRejectedValueOnce(new Error('DEEPSEEK_REJECTED'));
+    actionSpies.agentABrainDeepSeek.mockRejectedValueOnce(new Error('BRAIN_DEEPSEEK_HTTP_400'));
     actionSpies.agentABrainOpenAI
       .mockRejectedValueOnce(new Error('OPENAI_PRIMARY_REJECTED'))
       .mockRejectedValueOnce(new Error('OPENAI_FALLBACK_REJECTED'));
@@ -1721,7 +1838,7 @@ describe('processInboundTurn hot path', () => {
     claimed.business_context_available = true;
     actionSpies.claim.mockResolvedValue(claimed);
     actionSpies.agentABrainDeepSeek.mockRejectedValue(
-      Object.assign(new Error('provider failure'), { code: 'BRAIN_RATE_LIMITED' }),
+      Object.assign(new Error('provider failure'), { code: 'BRAIN_DEEPSEEK_HTTP_429' }),
     );
 
     const step = Object.assign(
@@ -1935,7 +2052,7 @@ describe('processInboundTurn hot path', () => {
     secrets.GROQ_API_KEY = 'groq-must-not-run';
     secrets.GEMINI_API_KEY = 'gemini-must-not-run';
     actionSpies.agentABrainDeepSeek.mockRejectedValueOnce(
-      Object.assign(new Error('provider failure'), { code: 'BRAIN_RATE_LIMITED' }),
+      Object.assign(new Error('provider failure'), { code: 'BRAIN_DEEPSEEK_HTTP_429' }),
     );
     actionSpies.agentABrainOpenAI.mockResolvedValueOnce({
       proposal: {
@@ -2150,7 +2267,7 @@ describe('processInboundTurn hot path', () => {
     claimed.catalog_index = { as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0 };
     actionSpies.claim.mockResolvedValue(claimed);
     secrets.DEEPSEEK_API_KEY = 'deepseek-local-test-only';
-    actionSpies.agentABrainDeepSeek.mockRejectedValueOnce(new Error('DEEPSEEK_UNAVAILABLE'));
+    actionSpies.agentABrainDeepSeek.mockRejectedValue(new Error('BRAIN_DEEPSEEK_HTTP_503'));
     actionSpies.agentABrain.mockRejectedValueOnce(new Error('GROQ_UNAVAILABLE'));
     const step = Object.assign(
       async (_name: string, run: () => Promise<unknown>) => run(),
@@ -2254,7 +2371,7 @@ describe('processInboundTurn hot path', () => {
     claimed.business_context_available = true;
     actionSpies.claim.mockResolvedValue(claimed);
     actionSpies.agentABrain.mockRejectedValue(
-      Object.assign(new Error('provider failure'), { code: 'BRAIN_RATE_LIMITED' }),
+      Object.assign(new Error('provider failure'), { code: 'BRAIN_DEEPSEEK_HTTP_429' }),
     );
     actionSpies.agentABrainGemini.mockResolvedValue({
       proposal: {
@@ -3122,7 +3239,7 @@ describe('processInboundTurn hot path', () => {
     claimed.catalog_index = { as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0 };
     actionSpies.claim.mockResolvedValue(claimed);
     secrets.DEEPSEEK_API_KEY = 'deepseek-local-test-only';
-    actionSpies.agentABrainDeepSeek.mockRejectedValueOnce(new Error('DEEPSEEK_UNAVAILABLE'));
+    actionSpies.agentABrainDeepSeek.mockRejectedValue(new Error('BRAIN_DEEPSEEK_HTTP_503'));
     actionSpies.agentABrain.mockRejectedValueOnce(new Error('GROQ_UNAVAILABLE'));
     const step = Object.assign(
       async (_name: string, run: () => Promise<unknown>) => run(),
@@ -3174,7 +3291,7 @@ describe('processInboundTurn hot path', () => {
       call_offer_count: 1, awaiting_reply: 'none', version: 2,
     };
     actionSpies.claim.mockResolvedValue(claimed);
-    actionSpies.agentABrainDeepSeek.mockRejectedValueOnce(new Error('BRAIN_DEEPSEEK_TIMEOUT'));
+    actionSpies.agentABrainDeepSeek.mockRejectedValue(new Error('BRAIN_DEEPSEEK_TIMEOUT'));
     const step = Object.assign(
       async (_name: string, run: () => Promise<unknown>) => run(),
       { sleep: vi.fn(async () => undefined) },

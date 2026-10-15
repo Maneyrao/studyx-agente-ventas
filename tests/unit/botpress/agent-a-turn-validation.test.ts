@@ -1625,3 +1625,18 @@ describe('poda de la pregunta ya hecha', () => {
     expect(resultado).toEqual(['¿Cuál de las tres opciones de pago te resulta más cómoda?']);
   });
 });
+
+it('does not require a purchase course to clarify a customer-initiated call', () => {
+  const ctx = context();
+  ctx.commercial_state.selected_offering_code = null;
+  ctx.catalog.selected_offering = null;
+  ctx.turn.batch_messages = [{ id: 'm1', text: 'Me gustaría que me llames' }];
+  const request = proposal({
+    move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+    response: { messages: ['Sí, te llamo. ¿Puedes atender ahora?'] },
+  });
+  const rejection = validateAgentATurnProposalV1({ proposal: request, context: ctx,
+    planned_fact_ids: [], rejection_id: '00000000-0000-4000-8000-000000000001' });
+  expect(rejection?.rejections.filter(item => item.code === 'COURSE_NOT_RESOLVED') ?? []).toEqual([]);
+  expect(rejection?.rejections).toContainEqual({ code: 'UNSUPPORTED_OPERATIONAL_CLAIM', subject: 'call_confirmation' });
+});

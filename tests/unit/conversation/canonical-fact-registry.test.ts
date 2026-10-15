@@ -92,3 +92,12 @@ describe('canonical fact registry V1', () => {
     expect(result).toEqual({ facts: [], refs: [] });
   });
 });
+
+it('registers public workspace plan facts without assigning a course or exposing a link', () => {
+  const registry = buildCanonicalFactRegistry({ business_context: business, catalog_index: catalog });
+  expect(registry.facts.get('payment-workspace:monthly_12:label:v1')).toEqual({
+    id: 'payment-workspace:monthly_12:label:v1', kind: 'payment_plan_label',
+    source: 'business_snapshot', value: '12 cuotas mensuales', payment_plan: 'monthly_12',
+  });
+  expect(registry.facts.has('payment-workspace:monthly_12:link:v1')).toBe(false);
+});

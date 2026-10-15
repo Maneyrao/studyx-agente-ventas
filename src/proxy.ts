@@ -35,6 +35,8 @@ function expectedIdempotencyKey(pathname: string, body: Record<string, unknown>)
   // be able to masquerade as a claim on a different window.
   const claim = pathname.match(/^\/api\/agent\/batches\/([^/]+)\/claim$/);
   if (claim) return `claim:${claim[1]}`;
+  const recovery = pathname.match(/^\/api\/agent\/batches\/([^/]+)\/recovery$/);
+  if (recovery) return `recovery:${recovery[1]}:${String(body.claim_token)}`;
   const decision = pathname.match(/^\/api\/agent\/turns\/([^/]+)\/decision$/);
   if (decision) return `decision:${decision[1]}`;
   const delivery = pathname.match(/^\/api\/agent\/outbounds\/([^/]+)\/delivery$/);

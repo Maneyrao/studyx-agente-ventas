@@ -589,9 +589,17 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         FROM messages AS newer
         WHERE newer.conversation_id = ${turn.conversation_id}::uuid
           AND newer.direction = 'inbound'
-          AND newer.conversation_seq > ${turn.conversation_seq}
+          AND (message_occurrence_v1(newer.metadata, newer.created_at), newer.conversation_seq) > (
+            SELECT message_occurrence_v1(current.metadata, current.created_at), current.conversation_seq
+            FROM messages current
+            WHERE current.conversation_id = ${turn.conversation_id}::uuid
+              AND current.direction = 'inbound'
+              AND (current.id = ${turn.id}::uuid OR current.batch_id = ${turn.batch_id}::uuid)
+            ORDER BY message_occurrence_v1(current.metadata, current.created_at) DESC, current.conversation_seq DESC
+            LIMIT 1
+          )
           AND newer.batch_id IS DISTINCT FROM ${turn.batch_id}::uuid
-        ORDER BY newer.conversation_seq
+        ORDER BY message_occurrence_v1(newer.metadata, newer.created_at), newer.conversation_seq
         LIMIT 1
       `;
       if (newerInbound.length > 0) {
@@ -1174,6 +1182,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       const canonicalTruth = canonicalTruthSetFromOfferingsV1({
         offerings,
         selected_offering_code: effectiveAuthorizedOfferingCode ?? null,
+        allow_workspace_payment_options: validatedInput.agent_turn_v2 != null
+          && effectiveAuthorizedOfferingCode == null,
         payment_options: Object.values(PAYMENT_PLAN_PRESENTATIONS).map((plan) => ({
           label: plan.label,
           installments: plan.installments,

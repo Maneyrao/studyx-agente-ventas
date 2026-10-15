@@ -1424,3 +1424,41 @@ it('resumes durable customer call consent without requiring a new agent offer', 
   expect(result).toMatchObject({ ok: true, action: { type: 'request_call_now', reason: 'direct_request' },
     transition: { call_preference: 'call', call_offer_count: 0, stage: 'handoff' } });
 });
+
+it('allows citing a workspace plan while preserving the absence of a purchase selection', () => {
+  const plan: CanonicalFactV1 = { id: 'payment-workspace:monthly_12:label:v1', kind: 'payment_plan_label',
+    source: 'business_snapshot', value: '12 pagos mensuales de USD 30', payment_plan: 'monthly_12' };
+  const result = authorizeAgentTurnV2({ state: state(), offerings, facts: [...facts, plan],
+    call_policy: { may_offer_call: false, may_request_call_now: false },
+    proposal: proposal({ used_fact_ids: [plan.id],
+      move: { schema_version: 1, move: 'ask_payment_options', secondary_moves: [], vetoes: [], confidence: 1 },
+      response: { messages: ['Entre las opciones tenemos 12 pagos mensuales de USD 30.'] } }),
+  });
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.transition.selected_offering_code).toBeNull();
+  expect(result.transition.selected_payment_plan).toBeNull();
+});
+
+it('keeps payment confirmation when a historically accepted call coexists with a new plan selection', () => {
+  const result = authorize({ state: state({ selected_offering_code: 'redes_informaticas',
+    call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat' }),
+    intake: completeIntake, customerText: 'Elijo un pago.',
+    proposal: proposal({ move: { schema_version: 1, move: 'select_payment_plan',
+      secondary_moves: [], vetoes: [], confidence: 1, payment_plan: 'one_time' },
+      response: { messages: ['Elegiste el pago único. ¿Confirmas tus datos para continuar?'] },
+      used_fact_ids: ['payment:redes_informaticas:one_time:label:v1'] }) });
+  expect(result).toMatchObject({ ok: true, action: { type: 'none' }, transition: {
+    selected_payment_plan: 'one_time', awaiting_reply: 'payment_confirmation',
+    call_preference: 'call', call_offer_status: 'accepted' } });
+});
+
+it('does not rearm call availability from historical consent after an already completed handoff', () => {
+  const result = authorize({ state: state({ selected_offering_code: 'redes_informaticas', stage: 'handoff',
+    call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'none' }),
+    customerText: '¿Cuánto dura el curso?',
+    proposal: proposal({ move: { schema_version: 1, move: 'ask_course_information',
+      secondary_moves: [], vetoes: [], confidence: 1 }, response: { messages: ['Son 16 clases.'] },
+      used_fact_ids: ['offering:redes_informaticas:duration:v1'] }) });
+  expect(result).toMatchObject({ ok: true, action: { type: 'none' }, transition: { awaiting_reply: 'none' } });
+});

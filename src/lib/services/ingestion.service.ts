@@ -7,7 +7,7 @@ import {
   DecisionConflictError,
   DecisionTurnNotFoundError,
 } from './decision.service';
-import { logger } from '@/lib/observability/structured-log';
+import { logger, timedStage } from '@/lib/observability/structured-log';
 import { counter } from '@/lib/observability/counters';
 import { sql } from '@/lib/db/orchestrator';
 import { withSerializableTransaction } from '@/lib/db/transaction';
@@ -760,7 +760,7 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
       batch,
       captured_identity: capturedIdentity,
     };
-  });
+  }, { traceId: envelope.trace_id });
 }
 
 export async function processInboundMessage(envelope: InboundEnvelope): Promise<IngestContext> {
@@ -774,27 +774,27 @@ export async function processInboundMessage(envelope: InboundEnvelope): Promise<
     consent_status,
     batch,
     captured_identity,
-  } = await persistInbound(envelope);
+  } = await timedStage('ingest.persist', { trace_id: envelope.trace_id }, () => persistInbound(envelope));
 
   // Todo primer contacto es un lead, aun antes de conocer su nombre. Se crea
   // una única fila estable por contact_id y cada mensaje posterior la enriquece
   // con la identidad disponible. Un opt-out se conserva en PostgreSQL para
   // cumplimiento, pero nunca se exporta como oportunidad comercial a Sheets.
   if (!replayed && !explicit_opt_out) {
-    const profile = await loadContactProfileV1(contact.id);
+    const profile = await timedStage('ingest.profile', { trace_id: envelope.trace_id }, () => loadContactProfileV1(contact.id));
     const canonical = profile ? contactProfileValuesV1(profile) : null;
     const effectiveName = captured_identity?.name ?? contact.name;
     const { nombre, apellido } = canonical ? { nombre: canonical.nombre ?? undefined, apellido: canonical.apellido ?? undefined } : effectiveName
       ? splitFullName(effectiveName)
       : { nombre: undefined, apellido: undefined };
-    await upsertInboundLeadProjection({
+    await timedStage('ingest.projection_enqueue', { trace_id: envelope.trace_id }, () => upsertInboundLeadProjection({
       contactId: contact.id,
       phone: canonical?.telefono ?? captured_identity?.declaredPhone ?? contact.declared_phone ?? contact.phone,
       nombre,
       apellido,
       email: canonical ? canonical.correo ?? undefined : captured_identity?.email ?? contact.email ?? undefined,
       traceId: envelope.trace_id,
-    });
+    }));
   }
   // Fase 3: la ingesta no construye contexto. Recuperación semántica, base de
   // conocimiento y regeneración de resumen son trabajo derivado y se hacen una

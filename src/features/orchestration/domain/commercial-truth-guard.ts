@@ -119,7 +119,7 @@ const COMMERCIAL_BENEFIT = /\b(?:becas?|descuentos?)\b/u;
 const DENIED_BENEFIT = /\b(?:no|nunca|tampoco)\s+(?:ofrecemos|ofrece|tenemos|damos|aplicamos|hay|incluye|tenes|tienes|podemos\s+ofrecer)\b[^.;]{0,40}\b(?:becas?|descuentos?)\b|\bsin\s+(?:becas?|descuentos?)\b/u;
 const OFFERING_CLAIM = /\b(?:(?:studyx\s+)?(?:ofrece(?:mos)?|tenemos|brinda(?:mos)?|dicta(?:mos)?|contamos\s+con|disponemos\s+de)|studyx\s+tiene|pod[eé]s\s+estudiar|te\s+recomiendo)\s+([^.!?\n]+)/giu;
 const GENERIC_CATALOG = /^(?:(?:varias|distintas|muchas|algunas|las|estas|tres)\s+)?(?:opciones|alternativas|areas|formas|planes)\b|^(?:cursos|diplomados)\s*(?:$|disponibles\b)/u;
-const OFFERING_DESCRIPTION = /^(?:que|para|con|sin|ideal|donde|porque|si|una\s+opcion|un\s+curso|es|tiene|incluye)\b/u;
+const OFFERING_DESCRIPTION = /^(?:todos|todas|ambos|ambas|que|para|con|sin|ideal|donde|porque|si|una\s+opcion|un\s+curso|es|tiene|incluye)\b/u;
 const NON_COURSE_OBJECT = /^(?:(?:el|la|un|una|nuestro|nuestra)\s+)?(?:\d+\s+)?(?:pagos?|cuotas?|planes?|chat|soporte|llamadas?|asesoria|acompanamiento|ayuda|informacion|acceso|profesores|clases|certificados?|descuentos?|becas?)\b/u;
 const EXPLICIT_COURSE = /^(?:(?:el|un|nuestro)\s+)?(?:curso|diplomado|diplomatura|carrera)\s+(?:de\s+|en\s+)?/u;
 const AREA_MEMBERSHIP = /^(?:que\s+)?(?:dentro\s+de|(?:como\s+)?parte\s+de|(?:forma|es)\s+parte\s+de|(?:pertenece|perteneciente)\s+a)\s+(?:(?:la|el|nuestra|nuestro)\s+)?/u;
@@ -469,6 +469,8 @@ export function canonicalTruthSetFromOfferingsV1(input: {
   readonly offerings: readonly CanonicalOfferingSourceV1[];
   readonly selected_offering_code: string | null;
   readonly payment_options?: readonly CanonicalPaymentOptionSourceV1[];
+  /** Public workspace configuration, never a selected-course price override. */
+  readonly allow_workspace_payment_options?: boolean;
 }): CanonicalTruthSetV1 {
   const selected = input.selected_offering_code === null
     ? null
@@ -503,12 +505,10 @@ export function canonicalTruthSetFromOfferingsV1(input: {
     }
   }
 
-  // Los planes son configuración del workspace, pero un precio sólo puede
-  // autorizarse para la oferta concreta cuyo total coincide. Sin una selección
-  // resuelta, o si el código no existe, agregar esos importes contaminaría el
-  // alcance y permitiría atribuir el precio de otro curso.
+  // Browsing may cite workspace configuration explicitly. Once a course is
+  // scoped, its total must still match; global facts cannot override it.
   const applicablePaymentOptions = selected === null
-    ? []
+    ? (input.allow_workspace_payment_options ? input.payment_options ?? [] : [])
     : (input.payment_options ?? []).filter((option) => (
         selected.some((offering) => paymentOptionMatchesOffering(option, offering))
       ));

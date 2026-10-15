@@ -221,6 +221,69 @@ run('durable inbound batching', () => {
     expect(proof).toEqual([{ reason_code: 'SUPERSEDED_BY_NEWER_INBOUND', outbounds: 0 }]);
   });
 
+  it('suppresses a delayed older provider message even when it persisted last', async () => {
+    const latestEnvelope = envelope({ message: { type: 'text', text: 'Prefiero seguir por chat',
+      occurred_at: new Date(Date.now() - 20_000).toISOString(), reply_to_external_message_id: null } });
+    const latest = await processInboundMessage(latestEnvelope);
+    await forceDue(latest.batch.id);
+    await store.claimBatch({ batch_id: latest.batch.id, claimed_by: 'latest' });
+    const firstEnvelope = { ...latestEnvelope, external_message_id: randomUUID(), trace_id: randomUUID(),
+      message: { ...latestEnvelope.message, text: 'Sí, llamame', occurred_at: new Date(Date.now() - 8 * 60_000).toISOString() } };
+    const first = await processInboundMessage(firstEnvelope);
+    await forceDue(first.batch.id);
+    const firstClaim = await store.claimBatch({ batch_id: first.batch.id, claimed_by: 'delayed-old-message' });
+
+    const committed = await commitClaimedDecision({
+      turn_id: first.turn_id,
+      trace_id: firstEnvelope.trace_id,
+      decision: {
+        schema_version: 2,
+        intent: 'commercial',
+        kind: 'reply',
+        response: 'Esta respuesta quedó vieja.',
+        response_type: 'commercial_reply',
+        business_action: null,
+        memory_candidates: [],
+        missing_information: [],
+        next_state: 'waiting_user',
+        reason_code: 'SLOW_MODEL_RESULT',
+        confidence: 1,
+      },
+      model: { provider: 'botpress', model: 'test', prompt_version: 'test' },
+      supports_turn_supersession: true,
+      batch_id: first.batch.id,
+      claim_token: firstClaim.claim_token,
+    }, { store });
+
+    expect(committed.status).toBe('committed');
+    expect(committed.outbound).toBeNull();
+    expect(committed.outbounds).toEqual([]);
+    expect(committed.batch_completion).toBe('completed');
+    const proof = await db!<Array<{ reason_code: string; outbounds: number }>>`
+      SELECT ad.reason_code,
+        (SELECT count(*)::integer FROM messages m
+         WHERE m.in_reply_to = ad.turn_id AND m.direction = 'outbound') AS outbounds
+      FROM agent_decisions ad WHERE ad.turn_id = ${first.turn_id}::uuid
+    `;
+    expect(proof).toEqual([{ reason_code: 'SUPERSEDED_BY_NEWER_INBOUND', outbounds: 0 }]);
+  });
+
+  it('orders recovered history by trusted provider time across batches', async () => {
+    const original = envelope({ message: { type: 'text', text: 'Prefiero chat',
+      occurred_at: new Date(Date.now() - 20_000).toISOString(), reply_to_external_message_id: null } });
+    const latest = await processInboundMessage(original);
+    await forceDue(latest.batch.id);
+    await store.claimBatch({ batch_id: latest.batch.id, claimed_by: 'newer' });
+    const delayed = await processInboundMessage({ ...original, external_message_id: randomUUID(), trace_id: randomUUID(),
+      message: { ...original.message, text: 'Llamame', occurred_at: new Date(Date.now() - 8 * 60_000).toISOString() } });
+    await forceDue(delayed.batch.id);
+    await store.claimBatch({ batch_id: delayed.batch.id, claimed_by: 'older' });
+    const current = await processInboundMessage(followUp(original, 'Quiero los planes'));
+    const context = await store.loadClaimedBatchContext({ batch_id: current.batch.id, recent_turns_limit: 10 });
+    expect(context?.facts.recent_turns.map(turn => turn.content)).toEqual(['Llamame', 'Prefiero chat']);
+    expect(context?.logical_recent_turns?.map(turn => turn.content)).toEqual(['Llamame', 'Prefiero chat']);
+  });
+
   it('answers waiting with a bounded retry delay before the window is due', async () => {
     const ingested = await processInboundMessage(envelope());
 

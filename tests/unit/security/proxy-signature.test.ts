@@ -168,3 +168,19 @@ describe('API proxy authentication', () => {
     expect(response.headers.get('x-middleware-next')).toBe('1');
   });
 });
+
+it('binds recovery idempotency to both the batch and the released claim', async () => {
+  const batchId = '7f9f3f66-0b7c-4c8e-9a9e-2f8f0a1b2c3d';
+  const token = 'a1b2c3d4-1111-4222-8333-944455566677';
+  const traceId = '53b13d12-2a1d-4b28-b1fd-605b97ebef34';
+  const path = `/api/agent/batches/${batchId}/recovery`;
+  const body = JSON.stringify({ trace_id: traceId, claim_token: token, reason_code: 'AGENT_A_CONTINUATION_REJECTED' });
+  const timestamp = Date.now().toString();
+  const signature = createHmac('sha256', 'signing-secret').update(`${timestamp}\nPOST\n${path}\n${body}`).digest('hex');
+  const request = (key: string) => new NextRequest(`http://localhost${path}`, { method: 'POST', body,
+    headers: { 'content-type': 'application/json', 'x-orchestrator-key-id': 'botpress-test',
+      'x-orchestrator-key': 'orchestrator-key', 'x-request-timestamp': timestamp, 'x-signature': `v1=${signature}`,
+      'x-trace-id': traceId, 'idempotency-key': key, 'x-request-id': `${traceId}:${key}` } });
+  expect((await proxy(request(`recovery:${batchId}:${token}`))).status).toBe(200);
+  expect((await proxy(request(`recovery:${batchId}:other-claim`))).status).toBe(409);
+});

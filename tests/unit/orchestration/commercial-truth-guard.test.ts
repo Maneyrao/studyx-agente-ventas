@@ -590,3 +590,13 @@ describe('registro canónico desde el catálogo', () => {
     expect(set.prices).toEqual(expect.arrayContaining(['USD 360', 'USD 30']));
   });
 });
+
+it('allows explicitly scoped workspace plan information without authorizing a course purchase', () => {
+  const canonical = canonicalTruthSetFromOfferingsV1({
+    offerings: [], selected_offering_code: null, allow_workspace_payment_options: true,
+    payment_options: [{ total: { currency: 'USD', amount: '360' }, installment_amount: '30',
+      installments: 12, label: '12 pagos mensuales de USD 30' }],
+  });
+  expect(enforce('Una opción es 12 pagos mensuales de USD 30, total USD 360.', canonical).violations).toEqual([]);
+  expect(enforce('Una opción es 12 pagos de USD 60.', canonical).violations.length).toBeGreaterThan(0);
+});

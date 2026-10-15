@@ -1,4 +1,6 @@
-const MAX_PROVIDER_PAST_SKEW_MS = 5 * 60 * 1000;
+// Ingress can recover for eight minutes. Keep the original provider ordering
+// throughout that window, plus transport margin; older clocks stay untrusted.
+const MAX_PROVIDER_PAST_SKEW_MS = 10 * 60 * 1000;
 const MAX_PROVIDER_FUTURE_SKEW_MS = 2 * 60 * 1000;
 
 export interface ProviderOccurrenceV1 {

@@ -145,3 +145,33 @@ describe('recorte de contexto por alcanzabilidad', () => {
     expect(context.commercial_state.stage).toBe('exploring');
   });
 });
+
+it('exposes workspace plans for browsing without granting a payment action or selecting a course', () => {
+  const current = claim({ business_context: { offerings: [], workspace: { payment_options: [
+    { code: 'monthly_12', label: '12 pagos mensuales de USD 30' },
+    { code: 'monthly_6', label: '6 pagos mensuales de USD 60' },
+    { code: 'one_time', label: '1 pago de USD 360' },
+  ] } } });
+  const context = buildAgentAContextV1(current, null)!;
+  expect(context.catalog.payment_plans).toEqual([
+    { code: 'monthly_12', fact_id: 'payment-workspace:monthly_12:label:v1', label: '12 pagos mensuales de USD 30' },
+    { code: 'monthly_6', fact_id: 'payment-workspace:monthly_6:label:v1', label: '6 pagos mensuales de USD 60' },
+    { code: 'one_time', fact_id: 'payment-workspace:one_time:label:v1', label: '1 pago de USD 360' },
+  ]);
+  expect(context.capabilities.may_present_payment_options).toBe(true);
+  expect(context.capabilities.may_send_payment_link).toBe(false);
+  expect(context.commercial_state.selected_offering_code).toBeNull();
+});
+
+it.each([
+  ['unknown', 'not_offered', 'none', ['request_call_now'], false],
+  ['call', 'accepted', 'call_or_chat', [], true],
+  ['chat', 'declined', 'none', ['request_call_now'], false],
+] as const)('derives call execution from the durable conversation consent (%s/%s)', (preference, status, awaiting, legacyActions, permitted) => {
+  const base = claim();
+  const current = claim({ contact_intake_missing: [],
+    sales_context: { offering_code: null, active_call: null, allowed_actions: [...legacyActions] },
+    conversation_state_v1: { ...base.conversation_state_v1, call_preference: preference,
+      call_offer_status: status, awaiting_reply: awaiting } });
+  expect(buildAgentAContextV1(current, null)!.capabilities.may_request_call_now).toBe(permitted);
+});

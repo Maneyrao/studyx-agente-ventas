@@ -3,6 +3,8 @@ export type AgentAAttemptFailureStageV1 =
   | 'provider_rejected'
   | 'schema'
   | 'policy'
+  | 'backend_rejected'
+  | 'backend_transport'
   | 'unknown'
 
 export interface AgentAAttemptFailureV1 {
@@ -24,6 +26,13 @@ function stableFailureCode(error: unknown): string {
 
 export function classifyAgentAAttemptFailure(error: unknown): AgentAAttemptFailureV1 {
   const code = stableFailureCode(error)
+  // These originate after generation, at the persistence/action boundary.
+  if (code === 'DECISION_REJECTED' || code === 'PROFILE_UPDATE_REJECTED') {
+    return { stage: 'backend_rejected', code, retryable: false }
+  }
+  if (code.startsWith('STUDYX_')) {
+    return { stage: 'backend_transport', code, retryable: false }
+  }
   if (
     code === 'BRAIN_DEEPSEEK_TIMEOUT'
     || code === 'BRAIN_DEEPSEEK_NETWORK_ERROR'
@@ -55,4 +64,9 @@ export async function runAgentADeepSeekAttemptV1<T>(input: {
     input.onRetry(failure)
     return { value: await input.generate(), attempts: 2 }
   }
+}
+
+/** Only an actual model-provider boundary failure can justify its outage notice. */
+export function isAgentAProviderFailure(failure: AgentAAttemptFailureV1): boolean {
+  return failure.stage === 'provider_transport' || failure.stage === 'provider_rejected'
 }

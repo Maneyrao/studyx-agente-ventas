@@ -95,7 +95,7 @@ function fixtureProposal(rejectionId?: string): AgentATurnProposalV1 {
     case 'multi_course_repair': {
       const selected = rejectionId
         ? proposal({
-            move: 'browse_catalog',
+            move: 'ask_course_information',
             messages: [
               'Sí, puedes anotarte en más de un curso.',
               'Quieres que comparemos Community Manager y Marketing Digital?',
@@ -109,7 +109,7 @@ function fixtureProposal(rejectionId?: string): AgentATurnProposalV1 {
             move: 'browse_catalog',
             messages: [
               'Sí, puedes anotarte en más de un curso.',
-              'Community Manager es ideal para empezar desde cero y conseguir clientes.',
+              'Community Manager cuesta USD 777.',
             ],
             factIds: [
               'offering:community_manager:name:v1',
@@ -290,7 +290,7 @@ describe('Agent A nonblocking vertical production path', () => {
     expect(evidence.errorCode).toBeNull();
     expect(evidence.commitSucceeded).toBe(true);
     expect(evidence.authorizedMessages.join('\n')).toContain('puedes anotarte en más de un curso');
-    expect(evidence.authorizedMessages.join('\n')).not.toContain('conseguir clientes');
+    expect(evidence.authorizedMessages.join('\n')).not.toContain('777');
     expect(await decisionReasonCodes(evidence, id.conversationId)).not.toContain('MODEL_UNAVAILABLE');
   }, 120_000);
 

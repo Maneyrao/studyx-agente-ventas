@@ -1,6 +1,7 @@
 type ChannelPreferenceEvidenceV1 = 'call' | 'chat' | 'declined' | null;
 
-const CALL_REFUSAL = /\b(?:no\s+(?:(?:quiero|puedo|deseo|me\s+interesa|quisiera|me\s+gustaria)\s+)?(?:(?:una\s+|la\s+|me\s+|que\s+me\s+)?llam\w*|(?:que\s+me\s+)?contact\w*|(?:quiero\s+)?hablar\s+por\s+telefono)|no\s+por\s+llamada|sin\s+llam\w*|prefiero\s+que\s+no\s+me\s+(?:llam\w*|contact\w*))\b/u;
+// Refusals name a future action; past-tense complaints are not revocations.
+const CALL_REFUSAL = /\b(?:no\s+(?:(?:quiero|puedo|deseo|me\s+interesa|quisiera|me\s+gustaria)\s+)?(?:(?:una\s+|la\s+|me\s+|que\s+me\s+)?(?:llamad(?:a|as)|llam(?:ar(?:me)?|es|en|e))|(?:que\s+me\s+)?contact(?:ar(?:me)?|es|en|e)|(?:quiero\s+)?hablar\s+por\s+telefono)|no\s+por\s+llamada|sin\s+(?:llamad(?:a|as)|llam(?:ar(?:me)?|es|en|e))|prefiero\s+que\s+no\s+me\s+(?:(?:llamad(?:a|as)|llam(?:ar(?:me)?|es|en|e))|contact(?:ar(?:me)?|es|en|e)))\b/u;
 
 const CALL_CHOICE = /\b(?:mejor\s+llamame|prefiero\s+(?:una\s+)?llamada|prefiero\s+(?:hablar\s+)?por\s+telefono|(?:quiero|necesito|quisiera|desearia|me\s+gustaria)\s+(?:(?:una\s+)?llamada|(?:que\s+me\s+)?(?:llam\w*|contact\w*)(?:\s+por\s+telefono)?|(?:hablar|conversar)\s+por\s+telefono)|(?:podes|podrias|puedes|pueden|podrian)\s+(?:llamarme|contactarme)|me\s+(?:podes|podrias|puedes|pueden|podrian)\s+llamar|(?:te\s+)?(?:puedo|podria)\s+llamar(?:te)?|(?:hablemos|hablamos|podemos\s+(?:hablar|conversar)|podriamos\s+(?:hablar|conversar))\s+por\s+telefono|por\s+llamada|llamame)\b|^(?:llamar|llamada)$/u;
 

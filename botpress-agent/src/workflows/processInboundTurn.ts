@@ -1,3 +1,4 @@
+import { scheduleTurnRecovery } from '../actions/scheduleTurnRecovery'
 import { captureContactProfile, ContactProfileReceiptSchema } from '../actions/captureContactProfile'
 import { randomUUID } from 'node:crypto'
 import { Autonomous, Workflow, configuration, context, secrets, z } from '@botpress/runtime'
@@ -63,6 +64,7 @@ import {
 } from '../lib/conversation/agent-a-brain'
 import {
   classifyAgentAAttemptFailure,
+  isAgentAProviderFailure,
   runAgentADeepSeekAttemptV1,
 } from '../lib/conversation/agent-a-attempt'
 import { resolveAgentAProposalV1 } from '../lib/conversation/resolve-agent-a-proposal'
@@ -1331,7 +1333,7 @@ export const processInboundTurn = new Workflow({
         // The remaining bounded generation is conversation-only: no effect
         // can be requested or inferred from its neutral internal move.
         if (brainAuthoritative) {
-          if (attemptFailure.stage === 'policy') {
+          if (!isAgentAProviderFailure(attemptFailure)) {
             pipelineFailureDecision = suppress('AGENT_A_CONTINUATION_REJECTED')
             if (agentAGenerationAttempts < 2 && typeof secrets.DEEPSEEK_API_KEY === 'string') {
               agentAGenerationAttempts = 2
@@ -1361,7 +1363,7 @@ export const processInboundTurn = new Workflow({
                 turnDiagnostics = { ...turnDiagnostics, generation_attempts: 2,
                   failure_codes: [...new Set([...turnDiagnostics.failure_codes,
                     ...attemptFailureDiagnosticCodes(continuationFailure)])].slice(0, 8) }
-                if (continuationFailure.stage !== 'policy') {
+                if (isAgentAProviderFailure(continuationFailure)) {
                   pipelineFailureDecision = technicalFallback(
                     owned.policy.allowed_response_types.includes('technical_fallback')
                       ? 'technical_fallback' : 'commercial_reply')
@@ -1669,6 +1671,42 @@ export const processInboundTurn = new Workflow({
       timings.event_to_decision_ms = Math.max(0, Date.now() - occurredAtMs)
     }
 
+    // A bounded recovery is durable work, not a silent completed decision.
+    // A fresh workflow reclaims current state; it cannot reuse a rejected
+    // proposal, provider result, old token or previously authorized effect.
+    const recoverRejectedTurn = async (): Promise<WorkflowResult> => {
+      try {
+        const recoveryCause = turnDiagnostics?.failure_codes.find(code => /^[A-Z0-9_]{1,128}$/u.test(code))
+          ?? 'AGENT_A_CONTINUATION_REJECTED'
+        const recovery = await step('schedule-rejected-turn-recovery-v1', () =>
+          scheduleTurnRecovery.execute({ client, input: { batch_id: owned.batch.id,
+            claim_token: owned.batch.claim_token, trace_id: input.trace_id,
+            reason_code: recoveryCause } }), { maxAttempts: 3 })
+        state.errorCode = recovery.outcome === 'exhausted'
+          ? 'AGENT_A_RECOVERY_EXHAUSTED' : 'AGENT_A_CONTINUATION_REJECTED'
+        state.phase = recovery.outcome === 'scheduled' ? 'retry_pending'
+          : recovery.outcome === 'exhausted' ? 'paused_error' : 'absorbed'
+        safeLog('studyx.turn.recovery', { trace_id: input.trace_id, turn_id: owned.turn_id,
+          batch_id: owned.batch.id, outcome: recovery.outcome, attempt: recovery.attempt })
+        if (recovery.outcome === 'scheduled') {
+          await step.sleep(`rejected-turn-recovery-wait-${recovery.attempt}`, recovery.delay_ms)
+          await step('start-rejected-turn-recovery-v1', () => processInboundTurn.getOrCreate({
+            key: `recovery:${owned.batch.id}:${recovery.attempt}`,
+            input: { ...input, preingested: null, transport_media_url: undefined },
+          }), { maxAttempts: 3 })
+        }
+      } catch (error) {
+        if (!(error instanceof Error)) throw error // preserve durable suspension
+        state.phase = 'paused_error'
+        state.errorCode = errorCode(error)
+        safeLog('studyx.turn.recovery_schedule_failed', { trace_id: input.trace_id,
+          turn_id: owned.turn_id, error_code: state.errorCode })
+      }
+      emitTimings()
+      return resultFromState(state, input.trace_id)
+    }
+    if (decision.reason_code === 'AGENT_A_CONTINUATION_REJECTED') return recoverRejectedTurn()
+
     // ---- Paso 10: commitear en Next.js -----------------------------------
     let committed: CommitDecisionResponse | null = null
     const commitStartedAt = Date.now()
@@ -1825,7 +1863,7 @@ export const processInboundTurn = new Workflow({
           pipelineCommit = null
           pipelineMemoryCandidates = []
           const generationUnavailable = continuationFailure !== null
-            && continuationFailure.stage !== 'policy'
+            && isAgentAProviderFailure(continuationFailure)
           decision = generationUnavailable
             ? technicalFallback(owned.policy.allowed_response_types.includes('technical_fallback')
               ? 'technical_fallback' : 'commercial_reply')
@@ -1840,6 +1878,7 @@ export const processInboundTurn = new Workflow({
               : [...new Set([...rejectionCodes, ...attemptFailureDiagnosticCodes(continuationFailure)])].slice(0, 8),
             action_status: 'rejected',
           }
+          if (!generationUnavailable) return await recoverRejectedTurn()
           committed = await commitCurrentDecision('commit-rejection-after-agent-a-continuation-v1')
         }
       }

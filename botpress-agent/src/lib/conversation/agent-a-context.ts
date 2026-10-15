@@ -680,16 +680,15 @@ export function buildAgentAContextV1(
       resolution: (claimed.catalog_resolution as { kind: string }).kind === 'none'
         ? 'no_catalog_intent'
         : claimed.catalog_resolution.kind,
-      // El id sigue el esquema del registro canónico del backend, igual que
-      // `area:<code>:name:v1` arriba. Sin offering seleccionado no hay plan que
-      // referenciar, así que la lista queda vacía.
-      payment_plans: selectedOffering === null
-        ? []
-        : (claimed.business_context?.workspace.payment_options ?? []).map((option) => ({
-          code: option.code,
-          fact_id: `payment:${selectedOffering.code}:${option.code}:label:v1`,
-          label: option.label,
-        })),
+      // Browsing a configured workspace plan is not a course selection or
+      // permission to charge. Keep its scope explicit in the canonical ID.
+      payment_plans: (claimed.business_context?.workspace.payment_options ?? []).map((option) => ({
+        code: option.code,
+        fact_id: selectedOffering === null
+          ? `payment-workspace:${option.code}:label:v1`
+          : `payment:${selectedOffering.code}:${option.code}:label:v1`,
+        label: option.label,
+      })),
       // Visible to the conversational owner as an authorized option, but kept
       // outside payment_plans so it can never become the sale's selected plan.
       test_payment_options: [{
@@ -713,14 +712,14 @@ export function buildAgentAContextV1(
         && hasReadableCurrentInput
         && !claimed.contact.blocked
         && claimed.sales_context.active_call === null
-        && (claimed.sales_context.allowed_actions.includes('request_call_now')
-          || (state.call_preference === 'call' && state.call_offer_status === 'accepted'
-            && state.awaiting_reply === 'call_or_chat' && !['handoff', 'closed'].includes(state.stage)))
+        // Same durable readiness contract as prepareAgentTurnV2. Legacy
+        // classifier permissions cannot grant an effect this state forbids.
+        && state.call_preference === 'call' && state.call_offer_status === 'accepted'
+        && state.awaiting_reply === 'call_or_chat' && !['handoff', 'closed'].includes(state.stage)
         && intakeStatus === 'known'
         && !(['nombre', 'apellido', 'telefono'] as const)
           .some((field) => intakeMissing.includes(field)),
       may_present_payment_options: claimed.policy.may_respond
-        && selectedCode !== null
         && (claimed.business_context?.workspace.payment_options.length ?? 0) > 0,
       may_send_payment_link: hasReadableCurrentInput && maySendPaymentLink,
       intake_status: intakeStatus,

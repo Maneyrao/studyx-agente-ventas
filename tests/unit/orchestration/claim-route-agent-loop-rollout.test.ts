@@ -6,6 +6,10 @@ const mocks = vi.hoisted(() => ({
   readerInstances: [] as Array<{ readonly workspaceSlug: string }>,
 }));
 
+vi.mock('@/lib/repositories/contact-profile-context.repository', () => ({
+  loadContactProfileContextV1: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock('@/features/orchestration/application/claim-batch', () => ({
   claimBatch: mocks.claimBatch,
   BatchFactsMissingError: class BatchFactsMissingError extends Error {

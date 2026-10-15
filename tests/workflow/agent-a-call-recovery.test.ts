@@ -71,7 +71,7 @@ beforeAll(async () => {
           move: { schema_version: 1 as const, move: 'select_payment_plan' as const, secondary_moves: [], vetoes: [], payment_plan: 'one_time' as const, confidence: 1 },
           used_fact_ids: ['payment:ingles_1:one_time:label:v1'] }
       : phase === 'payment_complete_intake'
-      ? { ...proposal('Gracias, continuamos con el pago que elegiste.'),
+      ? { ...proposal('Gracias. ¿Confirmas tus datos y el pago único para enviarte el enlace?'),
           move: { schema_version: 1 as const, move: 'provide_contact_details' as const, secondary_moves: [], vetoes: [], confidence: 1 } }
       : phase === 'payment_confirm_choice'
       ? { ...proposal('Perfecto. Te dejo el enlace de pago para Inglés 1.', { type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'one_time' }),
@@ -95,7 +95,9 @@ beforeAll(async () => {
         ? proposal('Gracias, Agus. Puedes atender la llamada ahora?')
         : proposal('Te llamo ahora.', { type: 'request_call_now', reason: 'direct_request' });
     if (requestBody.text.format.schema.properties.proposed_action.anyOf.length === 1) {
-      result = { ...proposal(phase === 'payment_missing_identity'
+      result = { ...proposal(phase === 'payment_choice'
+        ? '¿Confirmas tus datos y el pago único para enviarte el enlace?'
+        : phase === 'payment_missing_identity'
         ? 'Para generar el enlace, me pasas tu nombre, apellido, correo y teléfono con código de país?'
         : 'Para coordinarla, me pasas tu nombre, apellido y teléfono con código de país?'),
         move: { schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 1 } };
@@ -123,7 +125,7 @@ beforeAll(async () => {
   });
 });
 
-it('retains an explicit payment request through missing data and resumes it exactly once after intake', async () => {
+it('retains a payment request through intake and executes it once after the separate confirmation', async () => {
   const id = { conversationId: `payment-pending-${randomUUID()}`, userId: `payment-pending-${randomUUID()}`,
     phoneE164: `+999${String(Date.now()).slice(-10)}`, providerMode: 'fixture' as const };
   phase = 'payment_course';
@@ -144,10 +146,15 @@ it('retains an explicit payment request through missing data and resumes it exac
   const completed = await runWorkflowTurnV1({ ...id, text: completedText });
   expect(completed.commitSucceeded).toBe(true);
   expect(generationCount).toBe(1);
-  expect(completed.authorizedMessages.join(' ')).toContain('https://buy.stripe.com/local-eval-contado');
+  expect(await payments()).toHaveLength(0);
+  phase = 'payment_confirm_choice';
+  const confirmationText = 'Sí, confirmo mis datos y el pago único. Envíame el enlace.';
+  const confirmed = await runWorkflowTurnV1({ ...id, text: confirmationText });
+  expect(confirmed.errorCode).toBeNull();
+  expect(confirmed.authorizedMessages.join(' ')).toContain('https://buy.stripe.com/local-eval-contado');
   expect(await payments()).toMatchObject([{ plan_code: 'one_time' }]);
-  await runWorkflowTurnV1({ ...id, text: completedText,
-    externalMessageId: completed.externalMessageId, occurredAt: completed.occurredAt });
+  await runWorkflowTurnV1({ ...id, text: confirmationText,
+    externalMessageId: confirmed.externalMessageId, occurredAt: confirmed.occurredAt });
   expect(await payments()).toHaveLength(1);
 });
 
@@ -303,8 +310,13 @@ it.each(['1 pago', 'un pago de 360', 'split'])('keeps intake and executes the Ag
     : await runWorkflowTurnV1({ ...id, text: choice });
   expect(result.errorCode).toBeNull();
   expect(result.commitSucceeded).toBe(true);
-  expect(generationCount).toBe(1);
+  expect(generationCount).toBe(2);
   expect(result.authorizedMessages.join(' ')).not.toContain('se cortó mi respuesta');
+  expect(await db`SELECT p.id FROM payments p JOIN contacts c ON c.id=p.contact_id WHERE c.phone=${id.phoneE164}`).toHaveLength(0);
+  phase = 'payment_confirm_choice';
+  const confirmed = await runWorkflowTurnV1({ ...id, text: 'Sí, confirmo mis datos y el pago único. Envíame el enlace.' });
+  expect(confirmed.errorCode).toBeNull();
+  expect(confirmed.authorizedMessages.join(' ')).toContain('https://buy.stripe.com/local-eval-contado');
   const rows = await db`SELECT p.id,p.plan_code,p.amount FROM payments p JOIN contacts c ON c.id=p.contact_id WHERE c.phone=${id.phoneE164}`;
   expect(rows).toHaveLength(1);
   expect(rows[0].plan_code).toBe('one_time');

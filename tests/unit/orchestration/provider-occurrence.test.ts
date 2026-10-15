@@ -17,7 +17,7 @@ describe('resolveProviderOccurrenceV1', () => {
 
   it.each([
     ['invalid', 'not-a-date'],
-    ['too old', '2026-09-23T11:54:59.999Z'],
+    ['too old', '2026-09-23T11:49:59.999Z'],
     ['too far in the future', '2026-09-23T12:02:00.001Z'],
   ])('falls back to receive time when provider time is %s', (_label, providerOccurredAt) => {
     expect(resolveProviderOccurrenceV1({ providerOccurredAt, receivedAt })).toEqual({
@@ -25,5 +25,10 @@ describe('resolveProviderOccurrenceV1', () => {
       occurred_at: receivedAt,
       occurred_at_trusted: false,
     });
+  });
+
+  it('preserves occurrence throughout the eight-minute durable ingress recovery window', () => {
+    expect(resolveProviderOccurrenceV1({ providerOccurredAt: '2026-09-23T11:52:00.000Z', receivedAt }))
+      .toMatchObject({ occurred_at: '2026-09-23T11:52:00.000Z', occurred_at_trusted: true });
   });
 });

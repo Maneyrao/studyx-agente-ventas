@@ -12,6 +12,7 @@ const RETRYABLE_TRANSACTION_CODES = new Set([
 const DEFAULT_MAX_ATTEMPTS = 3;
 
 export interface TransactionRetryOptions {
+  traceId?: string;
   maxAttempts?: number;
   baseDelayMs?: number;
   maxDelayMs?: number;
@@ -44,7 +45,17 @@ export async function withSerializableTransactionOn<T>(
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      return (await connection.begin('isolation level serializable', operation)) as T;
+      const queuedAt = Date.now();
+      return (await connection.begin('isolation level serializable', async (transaction) => {
+        const startedAt = Date.now();
+        console.info(JSON.stringify({ event: 'db.transaction.started', trace_id: options.traceId,
+          attempt, pool_wait_ms: startedAt - queuedAt }));
+        try { return await operation(transaction); }
+        finally {
+          console.info(JSON.stringify({ event: 'db.transaction.finished', trace_id: options.traceId,
+            attempt, transaction_ms: Date.now() - startedAt }));
+        }
+      })) as T;
     } catch (error) {
       if (!isRetryableTransactionError(error) || attempt === maxAttempts) throw error;
       // Structured so contention is countable per deploy: a rising retry rate

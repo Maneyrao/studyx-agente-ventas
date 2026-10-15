@@ -85,6 +85,12 @@ export function buildCanonicalFactRegistry(input: {
       });
     }
   }
+  // Public informational scope; no course selection and never a payment URL.
+  for (const option of input.business_context?.workspace.payment_options ?? []) {
+    const id = `payment-workspace:${option.code}:label:v1`;
+    facts.set(id, { id, kind: 'payment_plan_label', source: 'business_snapshot',
+      value: option.label, payment_plan: option.code });
+  }
   for (const offering of input.catalog_index?.offerings ?? []) {
     for (const option of input.business_context?.workspace.payment_options ?? []) {
       facts.set(`payment:${offering.code}:${option.code}:label:v1`, {

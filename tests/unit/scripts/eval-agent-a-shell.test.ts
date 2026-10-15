@@ -3,7 +3,10 @@ import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Each case launches several real processes; allow contention in the full suite.
+vi.setConfig({ testTimeout: 15_000 });
 
 /**
  * Contrato de salida de `scripts/eval-agent-a.sh`.

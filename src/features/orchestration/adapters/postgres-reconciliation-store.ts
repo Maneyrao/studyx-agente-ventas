@@ -1,4 +1,5 @@
 import { sql } from '@/lib/db/orchestrator';
+import { loadBusinessWorkspaceConfig } from '@/lib/config';
 import type { DbClient } from '@/lib/db/types';
 import type {
   AppliedReconciliation,
@@ -21,10 +22,15 @@ export class PostgresReconciliationStore implements ReconciliationStore {
   constructor(private readonly db: DbClient = sql) {}
 
   async expireStaleClaims(input: { max_claim_attempts?: number; limit?: number } = {}) {
-    return this.db<ExpiredClaim[]>`
+    const recoveries = await this.db<ExpiredClaim[]>`
+      SELECT batch_id, conversation_id, claim_attempt_count, action
+      FROM expire_inbound_batch_recoveries(${loadBusinessWorkspaceConfig().workspaceSlug}, ${input.limit ?? 100})
+    `;
+    const claims = await this.db<ExpiredClaim[]>`
       SELECT batch_id, conversation_id, claim_attempt_count, action
       FROM expire_inbound_batch_claims(${input.max_claim_attempts ?? 3}, ${input.limit ?? 100})
     `;
+    return [...recoveries, ...claims];
   }
 
   async listStaleDeliveries(input: { limit?: number; grace_seconds?: number } = {}) {

@@ -2107,7 +2107,7 @@ export function validateAgentATurnProposalV1(input: {
   const missingCourseSubject = moves.has('select_course')
     && !selectedCourseReferenceIsCanonical
     ? 'course_reference'
-    : offersACall && !hasCanonicalCourse && !hasResolvedCourseFamily
+    : offersACall && !callRequestSupported && !hasCanonicalCourse && !hasResolvedCourseFamily
       ? 'call_offer'
       : null;
   if (missingCourseSubject !== null) {
