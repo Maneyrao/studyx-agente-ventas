@@ -1657,10 +1657,37 @@ describe('Agent A Brain V1', () => {
       required: ['field', 'value', 'operation', 'source_message_id', 'source_quote'],
     });
     expect(body.text.format.schema.properties.profile_updates.items.properties).not.toHaveProperty('version');
-    expect(body.text.format.schema.properties.profile_requests.items).toMatchObject({
-      additionalProperties: false,
-      required: ['message_index', 'fields', 'purpose', 'mode'],
+    expect(body.text.format.schema.properties.profile_requests.items.anyOf).toEqual(expect.arrayContaining([
+      expect.objectContaining({ additionalProperties: false,
+        required: ['message_index', 'fields', 'purpose', 'mode'] }),
+    ]));
+  });
+
+  it.each([
+    { confirmed: { nombre: null, apellido: null, correo: null, telefono: '+15555550168' },
+      collectable: ['nombre', 'apellido', 'correo'] },
+    { confirmed: { nombre: 'Ana', apellido: 'Costa', correo: 'ana@example.test', telefono: '+15555550168' },
+      collectable: [] },
+  ])('never authorizes collection of confirmed profile fields in the provider contract: $collectable', async ({ confirmed, collectable }) => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(200,
+      responsesSuccessBody(proposal({ profile_updates: [], profile_requests: [] }))));
+    vi.stubGlobal('fetch', fetchMock);
+    const current = context();
+    current.customer.contact_intake = confirmed;
+    await generateDeepSeekAgentATurnProposalV1({
+      context: current, apiKey: 'deepseek-test-key', signal: new AbortController().signal,
     });
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1]?.body));
+    const alternatives = body.text.format.schema.properties.profile_requests.items.anyOf;
+    expect(alternatives).toBeInstanceOf(Array);
+    const collection = alternatives.find((item: { properties: { mode: { enum: string[] }; fields: { items: { enum: string[] } } } }) => item.properties.mode.enum.includes('collect'));
+    if (collectable.length) {
+      expect(collection.properties.fields.items.enum).toEqual(collectable);
+    } else {
+      expect(collection).toBeUndefined();
+    }
+    const clarification = alternatives.find((item: { properties: { mode: { enum: string[] }; fields: { items: { enum: string[] } } } }) => item.properties.mode.enum.includes('clarify'));
+    expect(clarification.properties.fields.items.enum).toContain('telefono');
   });
 
   it('preserves valid contact interpretation on JSON schema repair without retaining obsolete question indexes', async () => {

@@ -1,3 +1,4 @@
+import { eligibleContactRequestFieldsV1 } from '../lib/conversation/contact-profile-request-policy'
 import { scheduleTurnRecovery } from '../actions/scheduleTurnRecovery'
 import { captureContactProfile, ContactProfileReceiptSchema } from '../actions/captureContactProfile'
 import { randomUUID } from 'node:crypto'
@@ -874,7 +875,7 @@ export const processInboundTurn = new Workflow({
     let profileCapturePhase = 0
     // Data commits independently of prose and business effects. Every parsed
     // generation, including a repair, must pass here before it can be used.
-    const persistProfileProposal = async (proposal: AgentATurnProposalV1) => {
+    const persistProfileProposal = async (proposal: AgentATurnProposalV1, rejection?: TurnRejectionV1) => {
       if (!plannerlessV2Enabled || brainShadow || !owned.contact_profile || !agentABrainContext) return
       const updates = proposal.profile_updates ?? []
       if (updates.length > 0 || proposal.confirmed_phone) {
@@ -913,8 +914,11 @@ export const processInboundTurn = new Workflow({
         // refreshed canonical intake, so an invalid missing field cannot open
         // an effect by being ignored here.
       }
-      const repeated = (proposal.profile_requests ?? []).flatMap(request => request.mode === 'collect'
-        ? request.fields.filter(field => owned.contact_intake?.[field] != null) : [])
+      const repeated = (proposal.profile_requests ?? []).flatMap(request => {
+        const eligible = eligibleContactRequestFieldsV1({ values: owned.contact_intake,
+          mode: request.mode, rejection })
+        return request.fields.filter(field => !eligible.includes(field))
+      })
       if (repeated.length) throw new Error(`PLANNERLESS_PROPOSAL_REJECTED:${[...new Set(repeated)]
         .map(field => `ACTION_NOT_AUTHORIZED:contact_profile.already_confirmed.${field}`).join(',')}`)
     }
@@ -1049,7 +1053,7 @@ export const processInboundTurn = new Workflow({
                   }),
                   { maxAttempts: 1 },
                 )
-                await persistProfileProposal(repaired.proposal)
+                await persistProfileProposal(repaired.proposal, rejection)
                 return repaired
                 } catch (continuationError) {
                   agentAContinuationFailure = continuationError
@@ -1075,7 +1079,7 @@ export const processInboundTurn = new Workflow({
                   model: typeof configuration.agentABrainDeepSeekModel === 'string'
                     ? configuration.agentABrainDeepSeekModel : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
                 }), { maxAttempts: 1 })
-              await persistProfileProposal(effectiveGenerated.proposal)
+              await persistProfileProposal(effectiveGenerated.proposal, resolved.rejection!)
               turnDiagnostics = {
                 schema_version: 1, generation_attempts: 2, failure_stage: 'action_authorization',
                 failure_codes: resolved.action_rejection.codes.slice(0, 8), action_status: 'needs_input',
@@ -1338,19 +1342,20 @@ export const processInboundTurn = new Workflow({
             if (agentAGenerationAttempts < 2 && typeof secrets.DEEPSEEK_API_KEY === 'string') {
               agentAGenerationAttempts = 2
               try {
+                const profileRejection = plannerlessActionFeedbackV1({ failure_code: failureCode,
+                  context: agentABrainContext, rejection_id: randomUUID() })
                 const continuation = await step('continue-agent-a-after-action-feedback-v1',
                   () => continueAgentAAfterActionFeedbackV1({
                     context: agentABrainContext,
                     original_proposal: initialAgentAProposal,
                     on_provider_request: accountAgentAProviderRequest,
-                    rejection: plannerlessActionFeedbackV1({ failure_code: failureCode,
-                      context: agentABrainContext, rejection_id: randomUUID() }),
+                    rejection: profileRejection,
                     apiKey: secrets.DEEPSEEK_API_KEY as string, signal,
                     generate: generateDeepSeekAgentATurnProposalV1,
                     model: typeof configuration.agentABrainDeepSeekModel === 'string'
                       ? configuration.agentABrainDeepSeekModel : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
                   }), { maxAttempts: 1 })
-                await persistProfileProposal(continuation.proposal)
+                await persistProfileProposal(continuation.proposal, profileRejection)
                 agentTurnV2Commit = { schema_version: 2, proposal: continuation.proposal, ...fencedAgentARequestV1(initialAgentAProposal) }
                 pipelineMemoryCandidates = continuation.proposal.memory_candidates
                 pipelineDecisionProvider = continuation.provider
@@ -1805,7 +1810,7 @@ export const processInboundTurn = new Workflow({
               }),
               { maxAttempts: 1 },
             )
-            await persistProfileProposal(repaired.proposal)
+            await persistProfileProposal(repaired.proposal, rejection)
             const resolvedRepair = await resolveAgentAPlannerlessProposalV2({
               initial: repaired,
               context: repairContext,

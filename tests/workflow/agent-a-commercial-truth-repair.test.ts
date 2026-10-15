@@ -260,3 +260,69 @@ it('recovers a twice-rejected proposal with a fresh claim, one answer and no dup
   expect(duplicate.authorizedMessages).toEqual([]);
   child.mockRestore();
 });
+
+
+it('recovers a known channel phone requested as collect then disguised as clarify without losing identity', async () => {
+  const id = { conversationId: `known-phone-${randomUUID()}`, userId: randomUUID(),
+    phoneE164: `+999${String(Date.now()).slice(-10)}`, providerMode: 'fixture' as const };
+  respond = () => proposal('Hola. ¿En qué te ayudo?', {
+    move: { schema_version: 1, move: 'greeting', secondary_moves: [], vetoes: [], confidence: 1 },
+  });
+  await runWorkflowTurnV1({ ...id, text: 'Hola' });
+  // The harness keeps the +999 transport identity. Only the disposable DB
+  // receives the canonical, trusted-phone fixture; no real channel is used.
+  const channelPhone = '+15551234070';
+  await db`UPDATE contacts SET contact_profile_v1 = jsonb_set(contact_profile_v1,
+    '{fields,telefono}', jsonb_build_object('value', ${channelPhone}::text, 'status', 'confirmed',
+    'source', 'channel', 'source_message_id', NULL, 'source_conversation_id', NULL,
+    'source_quote', NULL, 'source_seq', NULL, 'version', 0)) WHERE phone = ${id.phoneE164}`;
+  const child = vi.spyOn(Workflow.prototype, 'getOrCreate');
+  const text = 'Dale, me llamas? Mi nombre es Ana; mi apellido es Costa; mi correo es ana.costa@example.test';
+  let generations = 0;
+  respond = context => {
+    generations += 1;
+    expect(context.customer.contact_intake?.telefono).toBe(channelPhone);
+    if (context.turn_rejection) expect(context.customer.contact_intake)
+      .toMatchObject({ nombre: 'Ana', apellido: 'Costa', correo: 'ana.costa@example.test' });
+    return proposal('Me falta tu teléfono para coordinar la llamada.', {
+      move: context.turn_rejection
+        ? { schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 1 }
+        : { schema_version: 1, move: 'request_call', secondary_moves: ['provide_contact_details'], vetoes: [], confidence: 1 },
+      profile_updates: context.turn_rejection ? [] : contactFixtureUpdatesV1(context, [
+        { field: 'nombre', value: 'Ana' }, { field: 'apellido', value: 'Costa' },
+        { field: 'correo', value: 'ana.costa@example.test' }]),
+      profile_requests: [{ message_index: 0, fields: ['telefono'], purpose: 'call',
+        mode: context.turn_rejection ? 'clarify' : 'collect' }],
+    });
+  };
+  try {
+    const first = await runWorkflowTurnV1({ ...id, text });
+    expect(generations).toBe(2);
+    expect(first.authorizedMessages).toEqual([]);
+    expect(first.commitSucceeded).toBe(false);
+    expect(first.errorCode).toBe('AGENT_A_CONTINUATION_REJECTED');
+    expect(child).toHaveBeenCalledWith(expect.objectContaining({ key: expect.stringMatching(/^recovery:/u) }));
+    const [contact] = await db`SELECT id, name, email FROM contacts WHERE phone = ${id.phoneE164}`;
+    expect(contact).toMatchObject({ name: 'Ana Costa', email: 'ana.costa@example.test' });
+    expect(await db`SELECT id FROM call_sessions WHERE contact_id = ${contact!.id}::uuid`).toHaveLength(0);
+    respond = context => {
+      expect(context.turn_rejection).toBeUndefined();
+      expect(context.customer.contact_intake).toMatchObject({ nombre: 'Ana', apellido: 'Costa',
+        correo: 'ana.costa@example.test', telefono: channelPhone });
+      return proposal('Gracias, Ana. Puedes atender una llamada ahora?', {
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+      });
+    };
+    const resumed = await runWorkflowTurnV1({ ...id, text,
+      externalMessageId: first.externalMessageId, occurredAt: first.occurredAt });
+    expect(resumed.errorCode).toBeNull();
+    expect(resumed.authorizedMessages).toEqual(['Gracias, Ana. Puedes atender una llamada ahora?']);
+    const evidence = await readWorkflowDbEvidenceV1({ databaseUrl, externalConversationId: id.conversationId });
+    expect(evidence.decisions.filter(decision => decision.turnId === first.turnId)).toHaveLength(1);
+    expect(evidence.state?.awaitingReply).toBe('call_or_chat');
+    expect(await db`SELECT id FROM call_sessions WHERE contact_id = ${contact!.id}::uuid`).toHaveLength(0);
+    const duplicate = await runWorkflowTurnV1({ ...id, text,
+      externalMessageId: first.externalMessageId, occurredAt: first.occurredAt });
+    expect(duplicate.authorizedMessages).toEqual([]);
+  } finally { child.mockRestore(); }
+});

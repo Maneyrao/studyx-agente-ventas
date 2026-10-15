@@ -80,8 +80,24 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v70');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v106');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v107');
   });
+  it('distinguishes authoritative channel intake from evidence required for new observations', () => {
+    const current = context();
+    current.customer.contact_intake = { nombre: 'Ana', apellido: 'Costa', correo: 'ana@example.test', telefono: '+15555550168' };
+    const instructions = buildAgentABrainInstructionsV1(current);
+    const contract = instructions.split('<internal_contact_profile_contract>')[1]!.split('</internal_contact_profile_contract>')[0]!;
+    expect(contract).toContain('including a channel-provided phone');
+    expect(contract).toContain('Source evidence is required for new updates, not for re-validating existing canonical values');
+    current.turn_rejection = { schema_version: 1, attempt: 1,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+      rejections: [{ code: 'ACTION_NOT_AUTHORIZED', subject: 'contact_profile.already_confirmed.telefono' }],
+      authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: [] } };
+    const repair = buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]!;
+    expect(repair).toContain('already confirmed, not missing');
+    expect(repair).toContain('profile_requests');
+  });
+
   it('resolves academy identity without altering authorized facts', () => {
     const current = context();
     current.identity = { advisor_name: 'Asistente virtual', academy_name: 'StudyX', website: null, instagram: null };

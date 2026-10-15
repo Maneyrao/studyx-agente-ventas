@@ -1,3 +1,4 @@
+import { eligibleContactRequestFieldsV1 } from './contact-profile-request-policy';
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import { evaluateCallOfferTurnPolicyV1 } from './call-offer-turn-policy';
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
@@ -12,7 +13,6 @@ import {
   CONTACT_PROFILE_FIELDS_V1,
   CONTACT_PROFILE_OPERATIONS_V1,
   CONTACT_PROFILE_PURPOSES_V1,
-  CONTACT_PROFILE_MODES_V1,
   CONTACT_PROFILE_MAX_UPDATES_V1,
   CONTACT_PROFILE_MAX_REQUESTS_V1,
 } from '../../../../src/shared/conversation/contact-profile-contract';
@@ -491,6 +491,27 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
     type: 'array', minItems: 1, maxItems: 4, uniqueItems: true,
     items: { type: 'string', enum: [...CONTACT_PROFILE_FIELDS_V1] },
   };
+  // The provider and the runtime must agree on which fields are missing.
+  // A trusted channel phone is already canonical intake; allowing it in a
+  // collect request made both generations ask for it and then fail locally.
+  // Clarification remains available for an explicit correction/ambiguity.
+  const collectableFields = eligibleContactRequestFieldsV1({
+    values: context.customer.contact_intake, mode: 'collect', rejection: context.turn_rejection,
+  });
+  const clarifiableFields = eligibleContactRequestFieldsV1({
+    values: context.customer.contact_intake, mode: 'clarify', rejection: context.turn_rejection,
+  });
+  const profileRequest = (mode: 'collect' | 'clarify', fields: readonly string[]) => closedObject({
+    message_index: { type: 'integer', minimum: 0 },
+    fields: { ...profileFields, maxItems: fields.length,
+      items: { type: 'string', enum: [...fields] } },
+    purpose: { type: 'string', enum: [...CONTACT_PROFILE_PURPOSES_V1] },
+    mode: { type: 'string', enum: [mode] },
+  });
+  const profileRequestAlternatives = [
+    ...(collectableFields.length ? [profileRequest('collect', collectableFields)] : []),
+    ...(clarifiableFields.length ? [profileRequest('clarify', clarifiableFields)] : []),
+  ];
   const move = closedObject({
     schema_version: { type: 'integer', enum: [1] },
     move: { type: 'string', enum: [...MOVE_KINDS], description: MOVE_SEMANTICS },
@@ -567,14 +588,10 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
       }),
     },
     profile_requests: {
-      type: 'array', maxItems: CONTACT_PROFILE_MAX_REQUESTS_V1,
+      type: 'array', maxItems: profileRequestAlternatives.length ? CONTACT_PROFILE_MAX_REQUESTS_V1 : 0,
       description: 'For each question collecting or clarifying contact data, identify the response.messages bubble and the fields it requests. Return an empty array when no data is requested.',
-      items: closedObject({
-        message_index: { type: 'integer', minimum: 0 },
-        fields: profileFields,
-        purpose: { type: 'string', enum: [...CONTACT_PROFILE_PURPOSES_V1] },
-        mode: { type: 'string', enum: [...CONTACT_PROFILE_MODES_V1] },
-      }),
+      items: profileRequestAlternatives.length ? { anyOf: profileRequestAlternatives }
+        : profileRequest('clarify', CONTACT_PROFILE_FIELDS_V1),
     },
     // The single repair must echo its actual rejection. Omitting this field
     // from a closed provider schema made every conforming repair fail the

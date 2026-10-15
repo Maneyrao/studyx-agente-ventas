@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v106' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v107' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -26,9 +26,11 @@ For unreadable content, explain the limitation and continue from durable state.`
 /** Evidence serialization, not a second conversation policy. */
 const INTERNAL_CONTACT_PROFILE_CONTRACT = `These rules only govern profile_updates and profile_requests.
 Canonical behavior alone decides whether to ask or acknowledge contact data and how to advance.
-Metadata records customer evidence and questions already chosen; it does not require a question or acknowledgement.
-You own the interpretation of contact data. Always return profile_updates and profile_requests arrays,
-using empty arrays when none apply. nombre, apellido, correo and telefono are independent fields:
+Metadata records evidence and chosen questions; it requires no question or acknowledgement.
+You own the interpretation of contact data. Return profile_updates and profile_requests; use empty arrays when inapplicable. customer.contact_intake is backend-confirmed,
+including a channel-provided phone without message evidence.
+Source evidence is required for new updates, not for re-validating existing canonical values.
+nombre, apellido, correo and telefono are independent fields:
 a first name can be captured before a surname and a surname before a first name. Keep compound names
 and the customer's spelling intact; never split a name by word position to invent a surname.
 Capture only the customer's own data, never a third party's data or the advisor's identity.
@@ -66,6 +68,9 @@ function mandatoryRepairDirectiveV1(context: AgentAContextV1): string {
 Use repair_of with this rejection_id and attempt 1. This is the only rewrite.
 Correct only the facts or effects identified in turn_rejection, preserving the customer's intent.
 For REPEATED_AGENT_REPLY, answer the current request without repeating the identified earlier question or opening.
+For contact_profile.already_confirmed.<field>, it is already confirmed, not missing.
+Do not request it again in collect or clarify without an explicit current correction.
+Repair prose and profile_requests together; preserve accepted observations and customer intent.
 A missing field is a fact, not an obligation to ask again on every reply; an existing question may remain pending.
 Respect the permitted effects and missing fields reported in the rejection. An unavailable action
 was not executed: continue from that result without claiming success.
