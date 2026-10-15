@@ -1,6 +1,7 @@
 import { Workflow, z } from '@botpress/runtime'
 import { randomUUID } from 'node:crypto'
 import { persistDeliveryReportDurably } from '../lib/delivery/durable-delivery-report'
+import { commitDecisionWithRejectionReceiptV1 } from '../lib/delivery/commit-decision-receipt'
 import { requestStudyxJson, StudyxHttpError } from '../utils/http'
 
 /**
@@ -25,6 +26,10 @@ export const transportRecoveryCanary = new Workflow({
     model_calls: z.literal(0),
     backend_probe_before_ms: z.number(),
     backend_probe_after_ms: z.number(),
+    rejected_commit_count: z.literal(1),
+    rejection_continuation_count: z.literal(1),
+    rejection_reason: z.literal('AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION'),
+    rejection_subjects: z.tuple([z.literal('forbidden_promise')]),
   }) as any,
   state: z.object({
     firstSendCount: z.number().int().default(0),
@@ -32,6 +37,8 @@ export const transportRecoveryCanary = new Workflow({
     reportAttempts: z.number().int().default(0),
     pendingSuspensions: z.number().int().default(0),
     fixtureAcknowledged: z.boolean().default(false),
+    rejectedCommitCount: z.number().int().default(0),
+    rejectionContinuationCount: z.number().int().default(0),
   }) as any,
   timeout: '5m',
   async handler({ input, state, step, workflow }) {
@@ -91,8 +98,43 @@ export const transportRecoveryCanary = new Workflow({
       return { id: 'fixture-part-1' as const }
     }, { maxAttempts: 1 })
 
+    // Exercise the same rejection receipt as production. A cached thrown
+    // Error loses its HTTP payload in ADK; this receipt must survive JSON
+    // serialization and a real suspension before recovery can continue.
+    const rejectionReason = 'AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION' as const
+    const rejectionSubjects = ['forbidden_promise'] as const
+    let rejectionObserved = false
+    try {
+      await commitDecisionWithRejectionReceiptV1({
+        name: 'fixture-rejected-commit-v1', step,
+        commit: async () => {
+          state.rejectedCommitCount += 1
+          throw new StudyxHttpError('DECISION_REJECTED', false, 422, 1, {
+            reason: rejectionReason, subjects: [...rejectionSubjects],
+          })
+        },
+      })
+    } catch (error) {
+      if (!(error instanceof Error)) throw error
+      if (!(error instanceof StudyxHttpError) || error.code !== 'DECISION_REJECTED'
+        || error.status !== 422 || error.payload === null || typeof error.payload !== 'object'
+        || !('reason' in error.payload) || error.payload.reason !== rejectionReason
+        || !('subjects' in error.payload)
+        || JSON.stringify(error.payload.subjects) !== JSON.stringify(rejectionSubjects)) {
+        throw new Error('CANARY_COMMIT_REJECTION_RECEIPT_LOST')
+      }
+      rejectionObserved = true
+    }
+    if (!rejectionObserved) throw new Error('CANARY_COMMIT_REJECTION_NOT_OBSERVED')
+    await step.sleep('fixture-rejected-commit-recovery-wait-v1', 10_000)
+    await step('fixture-rejected-commit-recovery-continuation-v1', async () => {
+      state.rejectionContinuationCount += 1
+      return { continued: true }
+    }, { maxAttempts: 1 })
+
     if (state.firstSendCount !== 1 || state.continuationCount !== 1
-      || state.reportAttempts !== 3 || state.pendingSuspensions !== 2) {
+      || state.reportAttempts !== 3 || state.pendingSuspensions !== 2
+      || state.rejectedCommitCount !== 1 || state.rejectionContinuationCount !== 1) {
       throw new Error('CANARY_DURABLE_REPLAY_INVARIANT_FAILED')
     }
     const afterMs = await step('probe-backend-after', probeBackend, { maxAttempts: 1 })
@@ -108,6 +150,10 @@ export const transportRecoveryCanary = new Workflow({
       model_calls: 0 as const,
       backend_probe_before_ms: beforeMs,
       backend_probe_after_ms: afterMs,
+      rejected_commit_count: 1 as const,
+      rejection_continuation_count: 1 as const,
+      rejection_reason: rejectionReason,
+      rejection_subjects: [...rejectionSubjects],
     }
   },
 })

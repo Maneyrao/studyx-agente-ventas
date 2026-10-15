@@ -2,6 +2,7 @@ import { ContactProfileContextV1Schema } from './agent-a-brain'
 import { z } from '@botpress/runtime'
 import { ConversationPipelineCommitV1Schema } from './conversation-pipeline'
 import { AgentATurnCommitV2Schema } from './agent-turn-v2'
+import { TurnRejectionV1Schema } from './turn-rejection'
 
 export const SourceSchema = z.literal('botpress')
 export const ChannelSchema = z.enum(['emulator', 'whatsapp', 'telegram'])
@@ -879,6 +880,11 @@ export const WorkflowInputSchema = InboundEnvelopeSchema.extend({
   // part of InboundEnvelopeSchema, so signed media URLs never reach Supabase.
   transport_media_url: z.string().url().max(2048).optional(),
   preingested: IngestResponseSchema.nullable().default(null),
+  // Internal durable evidence; transport normalizers never accept it from a customer.
+  recovery_feedback: z.object({
+    batch_id: z.string().uuid(), conversation_id: z.string().uuid(), turn_id: z.string().uuid(),
+    selected_offering_code: z.string().min(1).nullable(), rejection: TurnRejectionV1Schema,
+  }).strict().optional(),
 })
 
 export const ProcessingStateSchema = z.enum([

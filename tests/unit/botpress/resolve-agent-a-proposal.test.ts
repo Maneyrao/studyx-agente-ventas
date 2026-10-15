@@ -83,6 +83,17 @@ describe('resolveAgentAProposalV1', () => {
     expect(result.composition.narrative.opening).toBe('Te cuento sobre Redes Informáticas.');
   });
 
+  it('preserves a durable repair suspension instead of returning a fallback composition', async () => {
+    const suspension = { [Symbol.for('StepSignal')]: true };
+    const repair = vi.fn().mockRejectedValue(suspension);
+    await expect(resolveAgentAProposalV1({ initial: generated(proposal({ proposed_action: {
+      type: 'send_payment_link', offering_code: 'redes-informaticas', payment_plan: 'monthly_6',
+    } })), context: context(), response_goal: 'continue_course_advice', planned_fact_ids: [FACT_ID],
+    repair_enabled: true, repair, rejection_id: '00000000-0000-4000-8000-000000000001',
+    })).rejects.toBe(suspension);
+    expect(repair).toHaveBeenCalledTimes(1);
+  });
+
   it('repairs once and revalidates the replacement against the same planned facts', async () => {
     const first = proposal({
       proposed_action: {

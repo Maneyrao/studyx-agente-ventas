@@ -103,6 +103,18 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: false, proposal_generation_calls: 2 });
   });
 
+  it('preserves the exact repair suspension instead of returning or pruning the prior draft', async () => {
+    const current = context();
+    current.turn.recent_turns = [{ id: 'previous', direction: 'outbound', content: 'La formación tiene 38 clases.' }];
+    const suspension = { [Symbol.for('StepSignal')]: true };
+    const repair = vi.fn().mockRejectedValue(suspension);
+    await expect(resolveAgentAPlannerlessProposalV2({ initial: generated(proposal()), context: current,
+      repair_enabled: true, semantic_rejections: 'advisory',
+      rejection_id: '00000000-0000-4000-8000-000000000090', repair,
+    })).rejects.toBe(suspension);
+    expect(repair).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     'Para completar el registro solo me falta tu teléfono. Me lo pasas con el código de tu país?',
     'El registro está incompleto; todavía necesito tu teléfono.',

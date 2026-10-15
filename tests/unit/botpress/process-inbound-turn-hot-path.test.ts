@@ -1035,7 +1035,7 @@ describe('processInboundTurn hot path', () => {
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
   });
 
-  it('keeps a twice-rejected turn pending recovery without a false provider notice or terminal decision', async () => {
+  it.each([false, true])('keeps a twice-rejected turn durable across recovery suspension (%s)', async (suspend) => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -1132,25 +1132,146 @@ describe('processInboundTurn hot path', () => {
       });
 
     const createMessage = vi.fn(async () => ({ message: { id: 'bp-recovered-message' } }));
-    const step = Object.assign(
-      async (_name: string, run: () => Promise<unknown>) => run(),
-      { sleep: vi.fn(async () => undefined) },
-    );
+    const savedSteps = new Map<string, { value?: unknown; error?: unknown }>();
+    const suspension = { [Symbol.for('StepSignal')]: true };
+    actionSpies.recovery.mockResolvedValue({ outcome: 'scheduled', attempt: 2, delay_ms: 10_000 });
+    const step = Object.assign(async (name: string, run: () => Promise<unknown>) => {
+      const saved = savedSteps.get(name);
+      if (saved) { if ('error' in saved) throw new Error(`${(saved.error as Error).message} [step="${name}"]`); return structuredClone(saved.value); }
+      try { const value = await run(); savedSteps.set(name, { value: structuredClone(value) }); return value; }
+      catch (error) { savedSteps.set(name, { error }); throw error; }
+    }, { sleep: vi.fn(async (name: string, delayMs: number) => {
+      if (!suspend || !name.startsWith('rejected-turn-recovery-')) return;
+      expect(delayMs).toBe(10_000);
+      if (savedSteps.has(name)) return;
+      savedSteps.set(name, {});
+      throw suspension;
+    }) });
     const handler = (processInboundTurn as unknown as {
       definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
     }).definition.handler;
 
-    const result = await handler({
+    const startRecovery = vi.spyOn(processInboundTurn, 'getOrCreate').mockResolvedValue({ id: 'next-recovery' } as never);
+    const run = () => handler({
       input: workflowInput(), state: processingState(), step,
       execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
       client: { createMessage }, signal: new AbortController().signal,
       workflow: { id: 'workflow-test' },
     });
 
+    if (suspend) {
+      await expect(run()).rejects.toBe(suspension);
+      expect(startRecovery).not.toHaveBeenCalled();
+      expect(createMessage).not.toHaveBeenCalled();
+    }
+    const result = await run();
+    await run();
+    expect(startRecovery).toHaveBeenCalledTimes(1);
+    expect(startRecovery).toHaveBeenCalledWith(expect.objectContaining({ input: expect.objectContaining({
+      recovery_feedback: expect.objectContaining({ batch_id: UUID, conversation_id: UUID,
+        rejection: expect.objectContaining({ rejections: expect.arrayContaining([
+          { code: 'FACT_VALUE_MISMATCH', subject: 'offering_not_canonical' },
+        ]) }),
+      }),
+    }) }));
+    startRecovery.mockRestore();
     expect(actionSpies.commit).toHaveBeenCalledTimes(2);
     expect(createMessage).not.toHaveBeenCalled();
     expect(result).toMatchObject({ status: 'retry_pending', decision_id: null,
       error_code: 'AGENT_A_CONTINUATION_REJECTED' });
+  });
+
+  async function runRecoveryFeedbackHotPath(mismatch?: 'batch_id' | 'turn_id') {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true, agent_a_brain_v1_shadow: false, agent_a_repair_enabled: true };
+    claimed.conversation_state_v1 = { selected_offering_code: 'redes-informaticas', selected_payment_plan: null,
+      stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 2 };
+    claimed.contact.name = 'Lucía Pérez';
+    claimed.catalog_index = { as_of: NOW, offerings_total: 1,
+      offerings: [{ code: 'redes-informaticas', display_name: 'Redes Informáticas',
+        academy: 'Tecnología', aliases: ['redes'] }], injection_suspected_count: 0 };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context.offerings[0]!.modality = 'online';
+    claimed.business_context_available = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+    const feedback = { batch_id: UUID, conversation_id: UUID, turn_id: UUID,
+      selected_offering_code: 'redes-informaticas', rejection: {
+        schema_version: 1 as const, rejection_id: UUID, attempt: 1 as const,
+        rejections: [{ code: 'FACT_VALUE_MISMATCH' as const, subject: 'course_logistics.self_paced' }],
+        authorized_alternatives: { fact_ids: ['stale:price'], actions: ['send_payment_link'], missing_information: ['nombre'] },
+      } };
+    if (mismatch) feedback[mismatch] = '00000000-0000-4000-8000-000000000099';
+    const safeText = 'Te cuento únicamente la información verificada del curso.';
+    actionSpies.agentABrainDeepSeek.mockReset().mockResolvedValue({
+      proposal: { schema_version: 1,
+        move: { schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 0.98 },
+        response: { messages: [safeText], call_offer: null }, proposed_action: { type: 'none' },
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+        repair_of: mismatch ? null : { rejection_id: UUID, attempt: 1 } },
+      provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1,
+    });
+    const outbound = { id: UUID, content: safeText, status: 'pending', delivery_attempt: 1,
+      authorized_egress: { schema_version: 1,
+        content_hash: '475afbdaee1fd8588c53b37ae16f80b1c131ab0fb3b38263e5f465179fc1d894',
+        authorized_urls: [], protected_facts: [] } };
+    actionSpies.commit.mockReset().mockResolvedValue({ status: 'committed', replayed: false,
+      trace_id: UUID, turn_id: UUID, decision_id: UUID, next_state: 'waiting_user',
+      outbound, outbounds: [outbound], call_request: null });
+    actionSpies.delivery.mockClear();
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-recovery-feedback-message' } }));
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+    const result = await handler({ input: { ...workflowInput(), recovery_feedback: feedback },
+      state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }), client: { createMessage },
+      signal: new AbortController().signal, workflow: { id: 'workflow-recovery-feedback' } });
+    return { result, feedback, createMessage };
+  }
+
+  it('consumes matching recovery feedback in the first generation with fresh facts and delivers its safe proposal', async () => {
+    const { result, feedback, createMessage } = await runRecoveryFeedbackHotPath();
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
+    const generated = actionSpies.agentABrainDeepSeek.mock.calls[0]![0];
+    expect(generated).toMatchObject({ conversation_only: true, context: {
+      turn_rejection: { rejection_id: UUID, rejections: [
+        { code: 'FACT_VALUE_MISMATCH', subject: 'course_logistics.self_paced' },
+      ], authorized_alternatives: { actions: ['none'] } },
+    } });
+    const factIds = generated.context.turn_rejection.authorized_alternatives.fact_ids;
+    expect(factIds).toContain('offering:redes-informaticas:modality:v1');
+    expect(factIds).not.toContain('stale:price');
+    expect(generated.context.catalog.selected_offering.facts).toContainEqual({
+      id: 'offering:redes-informaticas:modality:v1', kind: 'offering_modality', value: 'online',
+    });
+    expect(feedback.rejection.authorized_alternatives).toEqual({
+      fact_ids: ['stale:price'], actions: ['send_payment_link'], missing_information: ['nombre'],
+    });
+    expect(actionSpies.commit).toHaveBeenCalledTimes(1);
+    expect(actionSpies.commit.mock.calls[0]![0].input.agent_turn_v2).toMatchObject({
+      conversation_only: true, proposal: { proposed_action: { type: 'none' } },
+    });
+    expect(createMessage).toHaveBeenCalledTimes(1);
+    expect(actionSpies.delivery).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
+  });
+
+  it('ignores recovery feedback from a different origin batch or turn before the first generation', async () => {
+    for (const mismatch of ['batch_id', 'turn_id'] as const) {
+      const { result, createMessage } = await runRecoveryFeedbackHotPath(mismatch);
+      expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
+      const generated = actionSpies.agentABrainDeepSeek.mock.calls[0]![0];
+      expect(generated).not.toHaveProperty('conversation_only');
+      expect(generated.context).not.toHaveProperty('turn_rejection');
+      expect(actionSpies.commit.mock.calls[0]![0].input.agent_turn_v2).not.toHaveProperty('conversation_only');
+      expect(createMessage).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
+    }
   });
 
   it('uses a technical notice only when Agent A continuation actually times out', async () => {
@@ -2704,6 +2825,60 @@ describe('processInboundTurn hot path', () => {
       status: 'submitted_to_botpress', botpress_message_id: 'bp-positive-proof', delivery_attempt: 1,
     });
     expect(state).toMatchObject({ needsOperator: false, pendingDeliveryReport: null });
+  });
+
+  it('propagates the exact durable suspension before Agent A generation without a fallback or effect', async () => {
+    const suspension = { [Symbol.for('StepSignal')]: true };
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true, agent_a_brain_v1_shadow: false, agent_a_repair_enabled: true };
+    claimed.conversation_state_v1 = { selected_offering_code: null, selected_payment_plan: null,
+      stage: 'exploring', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 0 };
+    claimed.catalog_index = { as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0 };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+    const createMessage = vi.fn();
+    const state = processingState();
+    const step = Object.assign(async (name: string, run: () => Promise<unknown>) => {
+      if (name === 'generate-agent-a-turn-proposal-v1-deepseek') throw suspension;
+      return run();
+    }, { sleep: vi.fn(async () => undefined) });
+    await expect(runCommittedOutbound({}, {}, { step, state, createMessage })).rejects.toBe(suspension);
+    expect(actionSpies.agentABrainDeepSeek).not.toHaveBeenCalled();
+    expect(actionSpies.commit).not.toHaveBeenCalled();
+    expect(actionSpies.recovery).not.toHaveBeenCalled();
+    expect(actionSpies.dispatch).not.toHaveBeenCalled();
+    expect(actionSpies.delivery).not.toHaveBeenCalled();
+    expect(createMessage).not.toHaveBeenCalled();
+    expect(state.errorCode).toBeNull();
+    expect(console.info).not.toHaveBeenCalledWith(expect.stringContaining('"brain_source":"fallback"'));
+  });
+
+  it('propagates the exact durable suspension before call dispatch without reporting a failed or completed call', async () => {
+    const suspension = { [Symbol.for('StepSignal')]: true };
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-call-ack-before-suspend' } }));
+    const state = processingState();
+    const step = Object.assign(async (name: string, run: () => Promise<unknown>) => {
+      if (name === 'dispatch-voice-call-after-agent-a-ack') throw suspension;
+      return run();
+    }, { sleep: vi.fn(async () => undefined) });
+    await expect(runCommittedOutbound({
+      content: 'Perfecto. Registré la llamada; nuestra asesora virtual intenta comunicarse ahora.',
+      authorized_egress: { schema_version: 1,
+        content_hash: '305f1762b8455e6e893f353c779db410e3a2cd070d8b493f28f82f1fadd0bc9e',
+        authorized_urls: [], protected_facts: [] },
+    }, {}, { step, state, createMessage, callRequest: { call_id: UUID, status: 'requested' } }))
+      .rejects.toBe(suspension);
+    expect(createMessage).toHaveBeenCalledTimes(1);
+    expect(actionSpies.delivery).toHaveBeenCalledTimes(1);
+    expect(actionSpies.dispatch).not.toHaveBeenCalled();
+    expect(actionSpies.flush).not.toHaveBeenCalled();
+    expect(state).toMatchObject({ phase: 'decision_committed', errorCode: null });
+    expect(console.info).not.toHaveBeenCalledWith(expect.stringContaining('"event":"studyx.turn.call_dispatch_unconfirmed"'));
+    expect(console.info).not.toHaveBeenCalledWith(expect.stringContaining('"event":"studyx.turn.completed"'));
   });
 
   it('submits and records the Agent A acknowledgement before dispatching the reserved call', async () => {

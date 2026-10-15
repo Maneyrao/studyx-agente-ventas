@@ -1326,6 +1326,35 @@ describe('Agent A Brain V1', () => {
     });
   });
 
+  it('reports exact unsupported logistics attributes for the real failed reply', () => {
+    const current = context();
+    current.capabilities.may_offer_call = false;
+    const parsed = parseAgentATurnProposalV1(proposal({ response: {
+      messages: ['Sí, es online. Son 20 clases y las haces a tu ritmo, desde cualquier lugar.'],
+      call_offer: null,
+    } }), current);
+    const rejection = validateAgentATurnProposalV1({ proposal: parsed, context: current,
+      planned_fact_ids: parsed.used_fact_ids, rejection_id: '00000000-0000-4000-8000-000000000006' });
+    expect(rejection?.rejections).toEqual(expect.arrayContaining([
+      { code: 'FACT_VALUE_MISMATCH', subject: 'course_logistics.self_paced' },
+      { code: 'FACT_VALUE_MISMATCH', subject: 'course_logistics.remote_location' },
+    ]));
+  });
+
+  it('allows an honest unknown logistics statement but rejects a later affirmative claim', () => {
+    const current = context();
+    current.capabilities.may_offer_call = false;
+    const validate = (text: string) => {
+      const parsed = parseAgentATurnProposalV1(proposal({ response: { messages: [text], call_offer: null } }), current);
+      return validateAgentATurnProposalV1({ proposal: parsed, context: current,
+        planned_fact_ids: parsed.used_fact_ids, rejection_id: '00000000-0000-4000-8000-000000000006' });
+    };
+    expect(validate('No tengo confirmado si las clases son a tu ritmo.')?.rejections ?? [])
+      .not.toContainEqual(expect.objectContaining({ subject: 'course_logistics' }));
+    expect(validate('No tengo confirmado si son grabadas, pero lo haces a tu ritmo.')?.rejections)
+      .toContainEqual({ code: 'FACT_VALUE_MISMATCH', subject: 'course_logistics.self_paced' });
+  });
+
   it('compacts multiline model copy before canonical assembly', () => {
     const composition = buildSafeAgentABrainCompositionV1({
       proposal: parseAgentATurnProposalV1(proposal({

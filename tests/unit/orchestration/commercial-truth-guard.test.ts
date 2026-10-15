@@ -189,7 +189,7 @@ describe('lenguaje natural liberado', () => {
     const content = '¡Hola! Es 100% online, así que lo hacés a tu ritmo. '
       + 'Además te llevás un certificado al terminar. ¿Querés que te cuente el temario?';
 
-    const verdict = enforce(content);
+    const verdict = enforce(content, { ...CANONICAL, course_logistics: ['self_paced'] });
 
     expect(verdict.content).toBe(content);
     expect(verdict.removed).toEqual([]);
@@ -599,4 +599,41 @@ it('allows explicitly scoped workspace plan information without authorizing a co
   });
   expect(enforce('Una opción es 12 pagos mensuales de USD 30, total USD 360.', canonical).violations).toEqual([]);
   expect(enforce('Una opción es 12 pagos de USD 60.', canonical).violations.length).toBeGreaterThan(0);
+});
+
+describe('logistics contract shared with the agent boundary', () => {
+  it.each(['Lo haces a tu ritmo.', 'Lo haces desde cualquier lugar.', 'Lo haces a tu ritmo y no tengo confirmado el precio.', 'No tengo confirmado el horario, lo haces a tu ritmo.', 'No tengo confirmado si son grabadas y el curso es a tu ritmo.'])('blocks unsupported flexibility: %s', text => {
+    expect(enforce(text).violations).toContainEqual(expect.objectContaining({ code: 'LOGISTICS_NOT_CANONICAL' }));
+  });
+  it('preserves an honest unknown without authorizing an affirmative clause', () => {
+    expect(enforce('No tengo confirmado si las clases son a tu ritmo.').violations).toEqual([]);
+    expect(enforce('No tengo confirmado si son grabadas, pero lo haces a tu ritmo.').violations)
+      .toContainEqual(expect.objectContaining({ code: 'LOGISTICS_NOT_CANONICAL' }));
+  });
+});
+
+describe('discount topic is not an affirmative benefit', () => {
+  it.each([
+    'Sobre descuentos, no hay: el curso son USD 360.',
+    'Sobre descuentos, no hay promociones ni rebajas sobre esos planes: los tres suman USD 360.',
+    'Sobre descuentos, no hay promociones ni descuentos vigentes: los planes son esos tres, todos por USD 360.',
+    'Sobre descuentos, no hay promociones ni rebajas sobre esos valores.',
+    'Sobre descuentos.',
+    'Sobre descuentos, no tengo información confirmada.',
+    'Sobre descuentos, no puedo confirmarte ninguno.',
+  ])('preserves the real denied-benefit reply: %s', content => {
+    expect(enforce(content).violations).not.toContainEqual(expect.objectContaining({ code: 'FORBIDDEN_PROMISE' }));
+    expect(enforce(content).content).toBe(content);
+  });
+  it.each([
+    'Sobre descuentos, te damos uno.',
+    'Sobre descuentos, hay uno para vos.',
+    'Sobre descuentos, no hay rebajas, pero te ofrecemos una.',
+    'Sobre descuentos, no hay problema, te damos uno.',
+    'No hay descuentos, pero te damos un descuento del 20%.',
+    'No hay descuentos y te ofrecemos una beca.',
+    'Sobre descuentos, no tengo información confirmada, pero te damos uno.',
+  ])('still rejects an affirmative or referential benefit: %s', content => {
+    expect(enforce(content).violations).toContainEqual(expect.objectContaining({ code: 'FORBIDDEN_PROMISE' }));
+  });
 });

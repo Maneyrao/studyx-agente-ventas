@@ -1,3 +1,5 @@
+import { courseLogisticsInV1 as courseLogisticsIn, type CourseLogisticsFactV1 } from '../../../shared/conversation/course-logistics';
+
 /**
  * Frontera de verdad comercial.
  *
@@ -33,15 +35,6 @@ export interface CanonicalTruthSetV1 {
   /** Logística explícita de la oferta; nunca se infiere de que sea online. */
   readonly course_logistics?: readonly CourseLogisticsFactV1[];
 }
-
-type CourseLogisticsFactV1 =
-  | 'access_24_7'
-  | 'open_ended'
-  | 'access_duration'
-  | 'live_classes'
-  | 'recorded_classes'
-  | 'class_frequency'
-  | 'unrestricted_access';
 
 export type CommercialTruthViolationCodeV1 =
   | 'UNAUTHORIZED_URL'
@@ -126,22 +119,27 @@ const AREA_MEMBERSHIP = /^(?:que\s+)?(?:dentro\s+de|(?:como\s+)?parte\s+de|(?:fo
 const COLLECTIVE_AREA_MEMBERSHIP = /^(?:todos?|todas?)\s+(?:dentro\s+de|(?:como\s+)?parte\s+de|pertenecientes?\s+a)\s+(?:(?:la|el|nuestra|nuestro)\s+)?/u;
 const OFFERING_LIST_SEPARATOR = /^(?:[,;:]\s*(?:(?:y|e|o)\s+)?|(?:y|e|o)\s+)/u;
 
-const COURSE_LOGISTICS_PATTERNS: Readonly<Record<CourseLogisticsFactV1, RegExp>> = {
-  access_24_7: /\b24\s*\/\s*7\b/u,
-  open_ended: /\b(?:sin\s+(?:una\s+)?fecha\s+fija|no\s+hay\s+presion\s+de\s+terminar)\b/u,
-  access_duration: /\b(?:plataforma|acceso)\b[^.!?\n]{0,48}\b(?:varios?|algunos?|\d+)\s+mes(?:es)?\b/u,
-  live_classes: /\bclases?\s+en\s+vivo\b/u,
-  recorded_classes: /\b(?:clases?\s+en\s+vivo[^.!?\n]{0,48})?(?:queda|quedan)\s+grabad[ao]s?\b|\bclases?\s+grabad[ao]s?\b/u,
-  class_frequency: /\bclases?[^.!?\n]{0,32}\b(?:semanal(?:es)?|cada\s+semana)\b|\b(?:semanal(?:es)?|cada\s+semana)\b[^.!?\n]{0,32}\bclases?\b/u,
-  unrestricted_access: /\b(?:acceso|plataforma|acced(?:e|er|es|en)|entr(?:a|ar|as))\b[^.!?\n]{0,48}\b(?:cuando\s+quieras|a\s+cualquier\s+hora|cuando\s+te\s+quede\s+comodo)\b/u,
-};
-
 function offersUnauthorizedBenefit(sentence: string): boolean {
   // Una negación alcanza su cláusula, nunca una oferta afirmativa posterior.
-  return sentence.split(/[,;]|\b(?:pero|aunque|sin embargo)\b|\by\s+(?=(?:te\s+)?(?:damos|ofrecemos|tenemos|aplicamos|hay)\b)/u)
-    .some((clause) => COMMERCIAL_BENEFIT.test(clause)
+  const clauses = sentence.split(/[,;]|\b(?:pero|aunque|sin embargo)\b|\by\s+(?=(?:te\s+)?(?:damos|ofrecemos|tenemos|aplicamos|hay)\b)/u);
+  const topic = /^\s*(?:sobre|en cuanto a|respecto (?:a|de))\s+(?:(?:los|las)\s+)?(?:becas?|descuentos?)\s*[.:?]?\s*$/u;
+  const deniesTopic = /^\s*(?:no|nunca|tampoco)\s+(?:ofrecemos|ofrece|tenemos|damos|aplicamos|hay|incluye|podemos\s+ofrecer)\s*(?:$|[.:]|(?:promociones?|rebajas?|becas?|descuentos?)\b)/u;
+  const uncertainTopic = /^\s*no\s+(?:(?:tengo|tenemos)\s+(?:informacion|datos?)\s+confirmad[ao]s?|(?:puedo|podemos)\s+confirmar(?:te)?\s+ningun[oa]?)\s*[.:]?\s*$/u;
+  const hasTopic = clauses.some(clause => topic.test(clause));
+  return clauses.some((clause, index) => {
+    // "Sobre descuentos, no hay..." names the topic before denying it.
+    // Retain the topic as context for an affirmative "te ofrecemos una".
+    if (topic.test(clause)) {
+      return index + 1 < clauses.length
+        && !deniesTopic.test(clauses[index + 1]!) && !uncertainTopic.test(clauses[index + 1]!);
+    }
+    const referentialOffer = hasTopic
+      && /\b(?:damos|ofrecemos|tenemos|aplicamos|hay)\s+(?:un[oa]?|algun[oa]?|otr[oa])\b/u.test(clause)
+      && !/^\s*(?:no|nunca|tampoco)\b/u.test(clause);
+    return referentialOffer || (COMMERCIAL_BENEFIT.test(clause)
       && !DENIED_BENEFIT.test(clause)
       && !/^\s*ni\b/u.test(clause));
+  });
 }
 
 /** Compara el nombre ofrecido, dejando libre la descripción que lo acompaña. */
@@ -209,12 +207,6 @@ function normalize(value: string): string {
     .trim();
 }
 
-function courseLogisticsIn(text: string): CourseLogisticsFactV1[] {
-  const normalized = normalize(text);
-  return (Object.entries(COURSE_LOGISTICS_PATTERNS) as Array<[CourseLogisticsFactV1, RegExp]>)
-    .filter(([, pattern]) => pattern.test(normalized))
-    .map(([kind]) => kind);
-}
 
 /**
  * `USD 360.00` y `USD 360` son el mismo precio. El primer recorte saca la

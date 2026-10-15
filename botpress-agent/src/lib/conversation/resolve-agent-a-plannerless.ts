@@ -13,7 +13,7 @@ import type {
 } from './resolve-agent-a-proposal'
 
 
-function authorizedFactIds(context: AgentAContextV1): string[] {
+export function authorizedFactIds(context: AgentAContextV1): string[] {
   return [
     ...(context.catalog.selected_offering?.facts.map((fact) => fact.id) ?? []),
     ...context.catalog.available_offerings.map((offering) => offering.fact_id),
@@ -474,6 +474,7 @@ export async function resolveAgentAPlannerlessProposalV2<
       terminalRejection = repaired.rejection
     }
   } catch (error) {
+    if (!(error instanceof Error)) throw error
     // A transport error never opens a second rewrite or authorizes a draft.
     // Retain the last structured validation result, not any customer text.
     if (error instanceof AgentABrainError && error.code === 'BRAIN_INVALID_SCHEMA') {

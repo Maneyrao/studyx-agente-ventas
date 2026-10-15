@@ -102,7 +102,8 @@ export async function resolveAgentAProposalV1<T extends AgentAProposalEnvelopeV1
         effective = candidate
         repaired = true
       }
-    } catch {
+    } catch (error) {
+      if (!(error instanceof Error)) throw error
       // N3/N1 composition below is the fail-closed result. The caller owns
       // provider-specific logging; this pure cycle owns only the evidence.
     }

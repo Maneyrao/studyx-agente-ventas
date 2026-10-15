@@ -1,5 +1,7 @@
+import { commitDecisionWithRejectionReceiptV1, backendDecisionRejectionReason, backendDecisionRejectionSubjects } from '../lib/delivery/commit-decision-receipt'
 import { eligibleContactRequestFieldsV1 } from '../lib/conversation/contact-profile-request-policy'
 import { scheduleTurnRecovery } from '../actions/scheduleTurnRecovery'
+import { bindRecoveryFeedbackV1 } from '../lib/conversation/recovery-feedback'
 import { captureContactProfile, ContactProfileReceiptSchema } from '../actions/captureContactProfile'
 import { randomUUID } from 'node:crypto'
 import { Autonomous, Workflow, configuration, context, secrets, z } from '@botpress/runtime'
@@ -318,32 +320,6 @@ function attemptFailureDiagnosticCodes(input: {
     : ['UNKNOWN_ERROR']
 }
 
-function backendDecisionRejectionReason(error: unknown): string | null {
-  if (!(error instanceof StudyxHttpError)
-    || error.code !== 'DECISION_REJECTED'
-    || error.status !== 422
-    || error.payload === null
-    || typeof error.payload !== 'object'
-    || !('reason' in error.payload)
-    || typeof error.payload.reason !== 'string') return null
-  return error.payload.reason.slice(0, 512)
-}
-
-function backendDecisionRejectionSubjects(error: unknown): readonly string[] {
-  if (!(error instanceof StudyxHttpError)
-    || error.code !== 'DECISION_REJECTED'
-    || error.status !== 422
-    || error.payload === null
-    || typeof error.payload !== 'object'
-    || !('subjects' in error.payload)
-    || !Array.isArray(error.payload.subjects)) return []
-  return error.payload.subjects.filter((subject): subject is string => (
-    typeof subject === 'string'
-    && subject.length <= 160
-    && /^[a-z0-9_:.-]+$/iu.test(subject)
-  ))
-}
-
 function backendCommitTurnRejectionV1(input: {
   readonly error: unknown
   readonly proposal: AgentATurnProposalV1
@@ -576,6 +552,7 @@ export const processInboundTurn = new Workflow({
           provider: result.provider,
         })
       } catch (error) {
+        if (!(error instanceof Error)) throw error
         input.message.type = 'unsupported'
         input.message.text = '[audio_no_transcrito]'
         input.message.audio_reference = {
@@ -805,6 +782,12 @@ export const processInboundTurn = new Workflow({
       owned,
       typeof configuration.agentAAdvisorName === 'string' ? configuration.agentAAdvisorName : null,
     )
+    const resumedRejection = agentABrainContext ? bindRecoveryFeedbackV1({
+      feedback: input.recovery_feedback, batch_id: owned.batch.id,
+      conversation_id: owned.batch.conversation_id, turn_id: owned.turn_id, context: agentABrainContext,
+    }) : null
+    let latestRejection: TurnRejectionV1 | null = resumedRejection
+    if (agentABrainContext && resumedRejection) agentABrainContext.turn_rejection = resumedRejection
     if (agentABrainContext) {
       safeLog('studyx.turn.agent_a_context_built', {
         trace_id: input.trace_id,
@@ -853,7 +836,7 @@ export const processInboundTurn = new Workflow({
     let agentAGenerationAttempts: 0 | 1 | 2 = 0
     let physicalAgentARequests = 0
     let initialAgentAProposal: AgentATurnProposalV1 | null = null
-    let agentAConversationOnly = false
+    let agentAConversationOnly = resumedRejection !== null
     const accountAgentAProviderRequest = () => {
       if (physicalAgentARequests >= 2) {
         throw new Error('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:generation_budget')
@@ -979,6 +962,7 @@ export const processInboundTurn = new Workflow({
         }
         const generateDeepSeekProposal = () => generateDeepSeekAgentATurnProposalV1({
             context: agentABrainContext,
+            ...(resumedRejection ? { conversation_only: true } : {}),
             on_provider_request: accountAgentAProviderRequest,
             apiKey: deepSeekApiKey,
             signal,
@@ -1074,6 +1058,7 @@ export const processInboundTurn = new Workflow({
               semantic_rejections: 'advisory',
               rejection_id: randomUUID(),
               repair: async (rejection) => {
+                latestRejection = rejection
                 if (agentAGenerationAttempts >= 2) {
                   throw new Error('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:generation_budget')
                 }
@@ -1133,6 +1118,7 @@ export const processInboundTurn = new Workflow({
                 failure_codes: resolved.action_rejection.codes.slice(0, 8), action_status: 'needs_input',
               }
               } catch (continuationError) {
+                if (!(continuationError instanceof Error)) throw continuationError
                 // The first draft has already passed the resolver. Preserve
                 // that safe Agent A reply if a better continuation fails.
                 // The wrapper below fences every effect while preserving its
@@ -1238,6 +1224,7 @@ export const processInboundTurn = new Workflow({
                 { maxAttempts: 1 },
               )
             } catch (plannerError) {
+              if (!(plannerError instanceof Error)) throw plannerError
               timings.planner_ms = Date.now() - plannerStartedAt
               const plannerFailureCode = errorCode(plannerError).split(':', 1)[0]!
               turnDiagnostics = {
@@ -1299,6 +1286,7 @@ export const processInboundTurn = new Workflow({
                     { maxAttempts: 1 },
                   )
                 } catch (repairError) {
+                  if (!(repairError instanceof Error)) throw repairError
                   safeLog('studyx.turn.agent_a_repair_failed', {
                     trace_id: input.trace_id,
                     turn_id: owned.turn_id,
@@ -1345,6 +1333,7 @@ export const processInboundTurn = new Workflow({
           }
         }
       } catch (error) {
+        if (!(error instanceof Error)) throw error
         const effectiveFailure = agentAContinuationFailure ?? error
         const failureCode = errorCode(effectiveFailure)
         const attemptFailure = classifyAgentAAttemptFailure(effectiveFailure)
@@ -1386,6 +1375,8 @@ export const processInboundTurn = new Workflow({
         // can be requested or inferred from its neutral internal move.
         if (brainAuthoritative) {
           if (!isAgentAProviderFailure(attemptFailure)) {
+            latestRejection = plannerlessActionFeedbackV1({ failure_code: failureCode,
+              context: agentABrainContext, rejection_id: randomUUID() })
             pipelineFailureDecision = suppress('AGENT_A_CONTINUATION_REJECTED')
             if (agentAGenerationAttempts < 2 && typeof secrets.DEEPSEEK_API_KEY === 'string') {
               agentAGenerationAttempts = 2
@@ -1412,6 +1403,7 @@ export const processInboundTurn = new Workflow({
                 pipelineFailureDecision = null
                 turnDiagnostics = { ...turnDiagnostics, generation_attempts: 2, action_status: 'none' }
               } catch (continuationError) {
+                if (!(continuationError instanceof Error)) throw continuationError
                 const continuationFailure = classifyAgentAAttemptFailure(continuationError)
                 turnDiagnostics = { ...turnDiagnostics, generation_attempts: 2,
                   failure_codes: [...new Set([...turnDiagnostics.failure_codes,
@@ -1546,6 +1538,7 @@ export const processInboundTurn = new Workflow({
           sales_behavior_version: STUDYX_SALES_BEHAVIOR_VERSION,
         })
       } catch (error) {
+        if (!(error instanceof Error)) throw error
         const failureCode = errorCode(error)
         const brainFailureReason = classifyBrainFailureReason(
           failureCode,
@@ -1701,6 +1694,7 @@ export const processInboundTurn = new Workflow({
         decisionModel = generatedTurn.model
         timings.model_ms = Date.now() - modelStartedAt
       } catch (error) {
+        if (!(error instanceof Error)) throw error
         timings.model_ms = Date.now() - modelStartedAt
         safeLog('studyx.turn.model_failed', {
           trace_id: input.trace_id,
@@ -1745,7 +1739,13 @@ export const processInboundTurn = new Workflow({
           await step.sleep(`rejected-turn-recovery-wait-${recovery.attempt}`, recovery.delay_ms)
           await step('start-rejected-turn-recovery-v1', () => processInboundTurn.getOrCreate({
             key: `recovery:${owned.batch.id}:${recovery.attempt}`,
-            input: { ...input, preingested: null, transport_media_url: undefined },
+            input: { ...input, preingested: null, transport_media_url: undefined,
+              recovery_feedback: latestRejection && agentABrainContext ? {
+                batch_id: owned.batch.id, conversation_id: owned.batch.conversation_id, turn_id: owned.turn_id,
+                selected_offering_code: agentABrainContext.commercial_state.selected_offering_code,
+                rejection: { ...latestRejection, authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: [] } },
+              } : undefined,
+            },
           }), { maxAttempts: 3 })
         }
       } catch (error) {
@@ -1763,10 +1763,9 @@ export const processInboundTurn = new Workflow({
     // ---- Paso 10: commitear en Next.js -----------------------------------
     let committed: CommitDecisionResponse | null = null
     const commitStartedAt = Date.now()
-    const commitCurrentDecision = (stepName: string) => step(
-      stepName,
-      () =>
-        commitDecision.execute({
+    const commitCurrentDecision = (stepName: string) => commitDecisionWithRejectionReceiptV1({
+      name: stepName, step,
+      commit: () => commitDecision.execute({
           client,
           input: {
             turn_id: owned.turn_id,
@@ -1798,12 +1797,12 @@ export const processInboundTurn = new Workflow({
             claim_token: owned.batch.claim_token,
           },
         }),
-      { maxAttempts: 1 },
-    )
+    })
     try {
       try {
         committed = await commitCurrentDecision('commit-canonical-decision')
       } catch (initialCommitError) {
+        if (!(initialCommitError instanceof Error)) throw initialCommitError
       const rejectedProposal = agentTurnV2Commit?.proposal ?? null
       const repairContext = agentABrainContext
       const rejection = rejectedProposal !== null && repairContext !== null
@@ -1826,6 +1825,7 @@ export const processInboundTurn = new Workflow({
         rejection_codes: rejection.rejections.map((item) => item.code),
         rejection_subjects: rejection.rejections.map((item) => item.subject),
       })
+      latestRejection = rejection
 
         const rejectionCodes = [...new Set(
           rejection.rejections.map((item) => item.code),
@@ -1900,6 +1900,7 @@ export const processInboundTurn = new Workflow({
               repaired_action_type: effectiveRepair.proposal.proposed_action.type,
             })
           } catch (repairError) {
+            if (!(repairError instanceof Error)) throw repairError
             continuationFailure = classifyAgentAAttemptFailure(repairError)
             safeLog('studyx.turn.backend_commit_agent_a_repair_failed', {
               trace_id: input.trace_id,
@@ -1937,6 +1938,9 @@ export const processInboundTurn = new Workflow({
         }
       }
     } catch (error) {
+      // Durable sleep throws an ADK control signal, not a failed commit.
+      // Let the runtime suspend and resume the scheduled recovery.
+      if (!(error instanceof Error)) throw error
       timings.commit_ms = Date.now() - commitStartedAt
       state.phase = 'paused_error'
       state.errorCode = errorCode(error)
@@ -2034,6 +2038,7 @@ export const processInboundTurn = new Workflow({
           dispatch_status: dispatched.status,
         })
       } catch (error) {
+        if (!(error instanceof Error)) throw error
         timings.call_dispatch_ms = Date.now() - dispatchStartedAt
         safeLog('studyx.turn.call_dispatch_unconfirmed', {
           trace_id: input.trace_id,
@@ -2171,7 +2176,10 @@ export const processInboundTurn = new Workflow({
         const verification = await verifyAuthorizedEgressPortable({
           content: outboundPart.content,
           manifest: outboundPart.authorized_egress,
-        }).catch(() => ({ ok: false, reason: 'CRYPTO_UNAVAILABLE' } as const))
+        }).catch((error: unknown) => {
+          if (!(error instanceof Error)) throw error
+          return { ok: false, reason: 'CRYPTO_UNAVAILABLE' } as const
+        })
 
         if (!verification.ok) {
           state.deliveryStatus = 'failed'
@@ -2195,6 +2203,7 @@ export const processInboundTurn = new Workflow({
               { maxAttempts: 1 }
             )
           } catch (reportError) {
+            if (!(reportError instanceof Error)) throw reportError
             safeLog('studyx.turn.delivery_report_failed', {
               trace_id: input.trace_id,
               turn_id: owned.turn_id,
@@ -2285,6 +2294,7 @@ export const processInboundTurn = new Workflow({
               { maxAttempts: 1 }
             )
           } catch (reportError) {
+            if (!(reportError instanceof Error)) throw reportError
             safeLog('studyx.turn.delivery_report_failed', {
               trace_id: input.trace_id,
               turn_id: owned.turn_id,
@@ -2347,6 +2357,7 @@ export const processInboundTurn = new Workflow({
           { maxAttempts: 1 }
         )
       } catch (error) {
+        if (!(error instanceof Error)) throw error
         safeLog('studyx.turn.projection_flush_skipped', {
           trace_id: input.trace_id,
           turn_id: owned.turn_id,
@@ -2377,7 +2388,10 @@ export const processInboundTurn = new Workflow({
     const egressVerification = await verifyAuthorizedEgressPortable({
       content: committed.outbound.content,
       manifest: committed.outbound.authorized_egress,
-    }).catch(() => ({ ok: false, reason: 'CRYPTO_UNAVAILABLE' } as const))
+    }).catch((error: unknown) => {
+      if (!(error instanceof Error)) throw error
+      return { ok: false, reason: 'CRYPTO_UNAVAILABLE' } as const
+    })
     timings.egress_verify_ms = Date.now() - egressStartedAt
     if (!egressVerification.ok) {
       state.deliveryStatus = 'failed'
@@ -2403,6 +2417,7 @@ export const processInboundTurn = new Workflow({
           { maxAttempts: 1 }
         )
       } catch (reportError) {
+        if (!(reportError instanceof Error)) throw reportError
         safeLog('studyx.turn.delivery_report_failed', {
           trace_id: input.trace_id,
           turn_id: owned.turn_id,
@@ -2513,6 +2528,7 @@ export const processInboundTurn = new Workflow({
           { maxAttempts: 1 }
         )
       } catch (reportError) {
+        if (!(reportError instanceof Error)) throw reportError
         safeLog('studyx.turn.delivery_report_failed', {
           trace_id: input.trace_id,
           turn_id: owned.turn_id,
@@ -2569,6 +2585,7 @@ export const processInboundTurn = new Workflow({
         { maxAttempts: 1 }
       )
     } catch (error) {
+      if (!(error instanceof Error)) throw error
       safeLog('studyx.turn.projection_flush_skipped', {
         trace_id: input.trace_id,
         turn_id: owned.turn_id,
