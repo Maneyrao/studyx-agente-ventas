@@ -30,4 +30,11 @@ La verificación final de esta revisión y el resultado de publicación se regis
 
 ## Publicación autorizada
 
-El usuario confirmó aplicar sobre la cuenta actual. La publicación coordina las tres migraciones nuevas, el backend y Botpress. Se conserva la configuración remota y se prepara reversión al deployment anterior. El cron de recuperación se puede ejecutar cada minuto en Supabase Cron, disponible en esta cuenta; su comando solo reconcilia las recuperaciones del workspace StudyX y no envía mensajes ni llamadas.
+El usuario confirmó aplicar sobre la cuenta actual. La publicación coordina las tres migraciones nuevas, el backend y Botpress. Se conserva la configuración remota y se prepara reversión al deployment anterior. El cron de recuperación se puede ejecutar cada minuto en Supabase Cron, cuya extensión está disponible pero requiere habilitación en esta cuenta; su comando solo reconcilia las recuperaciones del workspace StudyX y no envía mensajes ni llamadas.
+
+
+## Diferencia operativa detectada antes del corte
+
+La conexión `DATABASE_URL` actual inicia como `postgres`, con `statement_timeout=2min`. Los límites nuevos de `orchestrator_role` no acotan esa conexión. No se cambiaron límites globales de `postgres` ni se rotó la conexión a un rol sin verificar todos sus permisos. Las mediciones nuevas identifican el backend por `application_name`; la migración de credencial/rol y la reducción comprobada de latencia quedan como trabajo pendiente. La publicación de recuperación no debe describirse como solución demostrada de los timeouts antiguos.
+
+Validación local final: 4.147 pruebas unitarias y 22 de workflow aprobadas; 17 unitarias omitidas, 7 pendientes de implementación. La integración de backend conserva 662 pruebas aprobadas en el candidato anterior y 23 dirigidas posteriores al orden temporal; esta revisión cambia el agente y su contrato, sin cambiar el backend. Tipos, lint y compilación ADK pasaron.

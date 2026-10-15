@@ -1,6 +1,7 @@
 -- Run after the three 20261015 migrations, only in the verified StudyX database.
--- Uses the installed Supabase Cron extension; no HTTP secret or paid Vercel
+-- Enables the available Supabase Cron extension; no HTTP secret or paid Vercel
 -- cron frequency is needed. Existing unrelated jobs are untouched.
+CREATE EXTENSION IF NOT EXISTS pg_cron;
 SELECT cron.schedule(
   'studyx-expire-inbound-recoveries-v1',
   '* * * * *',
