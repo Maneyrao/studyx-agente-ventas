@@ -10,6 +10,8 @@ const actionSpies = vi.hoisted(() => ({
   commit: vi.fn(),
   dispatch: vi.fn(),
   delivery: vi.fn(),
+  continuation: vi.fn(),
+  syncInbound: vi.fn(),
   transcribe: vi.fn(),
   flush: vi.fn(),
   geminiDecision: vi.fn(),
@@ -49,6 +51,12 @@ vi.mock('../../../botpress-agent/src/actions/dispatchCall', () => ({
 }));
 vi.mock('../../../botpress-agent/src/actions/reportDelivery', () => ({
   reportDelivery: { execute: actionSpies.delivery },
+}));
+vi.mock('../../../botpress-agent/src/actions/authorizeOutboundContinuation', () => ({
+  authorizeOutboundContinuation: { execute: actionSpies.continuation },
+}));
+vi.mock('../../../botpress-agent/src/lib/inbound/sync-conversation-inbound', () => ({
+  synchronizeConversationInbound: actionSpies.syncInbound,
 }));
 vi.mock('../../../botpress-agent/src/actions/transcribeAudio', () => ({
   transcribeAudio: { execute: actionSpies.transcribe },
@@ -115,6 +123,7 @@ import { dispatch } from '../../../botpress-agent/src/channels';
 
 const UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
 const NOW = '2026-08-21T12:00:00.000Z';
+const DELIVERY_SUSPENSION = { [Symbol.for('StepSignal')]: true };
 
 function ingestResponse() {
   return {
@@ -281,7 +290,7 @@ function workflowInput() {
     message: {
       type: 'text',
       text: '¿Cuánto sale el curso?',
-      occurred_at: NOW,
+      occurred_at: new Date().toISOString(),
       reply_to_external_message_id: null,
       audio_reference: null,
       metadata: {},
@@ -337,6 +346,8 @@ describe('processInboundTurn hot path', () => {
     });
     actionSpies.flush.mockResolvedValue({ status: 'unavailable', completed: 0 });
     actionSpies.delivery.mockResolvedValue({ status: 'recorded' });
+    actionSpies.continuation.mockResolvedValue({ outcome: 'authorized', trace_id: UUID, outbound_id: UUID });
+    actionSpies.syncInbound.mockResolvedValue(undefined);
     actionSpies.conversationInterpreter.mockResolvedValue({
       move: {
         schema_version: 1,
@@ -396,7 +407,7 @@ describe('processInboundTurn hot path', () => {
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
   });
 
-  it.each(['ingest', 'claim'] as const)('recovers a transient %s outage durably before accepting a terminal backend result', async stage => {
+  it.each(['ingest', 'claim', 'syncInbound'] as const)('recovers a transient %s outage durably before accepting a terminal backend result', async stage => {
     actionSpies[stage].mockRejectedValueOnce(new StudyxHttpError('STUDYX_TIMEOUT', true, null, 4));
     actionSpies.claim.mockResolvedValue({ outcome: 'completed', trace_id: UUID, batch_id: UUID, retry_after_ms: 0 });
     const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
@@ -404,7 +415,8 @@ describe('processInboundTurn hot path', () => {
     const result = await (processInboundTurn as unknown as {
       definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
     }).definition.handler({ input: workflowInput(), state: processingState(), step,
-      execute: vi.fn(), client: {}, signal: new AbortController().signal, workflow: { id: 'recover-test' } });
+      execute: vi.fn(), client: {}, signal: new AbortController().signal,
+      workflow: { id: 'recover-test', setTimeout: vi.fn(async () => undefined) } });
 
     expect(result).toMatchObject({ status: 'completed', error_code: null });
     expect(actionSpies[stage]).toHaveBeenCalledTimes(2);
@@ -433,7 +445,8 @@ describe('processInboundTurn hot path', () => {
       definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
     }).definition.handler;
     const args = { input: workflowInput(), state, step, execute: vi.fn(), client: {},
-      signal: new AbortController().signal, workflow: { id: 'recover-resume-test' } };
+      signal: new AbortController().signal,
+      workflow: { id: 'recover-resume-test', setTimeout: vi.fn(async () => undefined) } };
     await expect(handler(args)).rejects.toBe(suspension);
     await expect(handler(args)).resolves.toMatchObject({ status: 'completed', error_code: null });
     expect(actionSpies.ingest).toHaveBeenCalledTimes(2);
@@ -462,36 +475,62 @@ describe('processInboundTurn hot path', () => {
   });
 
   it.each([
-    ['transient', new StudyxHttpError('STUDYX_TIMEOUT', true), 6, 5],
-    ['permanent', new StudyxHttpError('INVALID_STUDYX_RESPONSE', false), 1, 0],
-  ] as const)('bounds %s ingest failures without reaching claim or external effects', async (_kind, failure, attempts, waits) => {
+    ['transient', new StudyxHttpError('STUDYX_TIMEOUT', true)],
+    ['permanent', new StudyxHttpError('INVALID_STUDYX_RESPONSE', false)],
+  ] as const)('leaves %s ingest failures durably pending without claim or external effects', async (_kind, failure) => {
+    const suspension = { [Symbol.for('StepSignal')]: true };
     actionSpies.ingest.mockRejectedValue(failure);
     const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
-      { sleep: vi.fn(async (name: string, delayMs: number) => { void name; void delayMs; }) });
-    const result = await (processInboundTurn as unknown as {
+      { sleep: vi.fn(async () => { throw suspension; }) });
+    const state = processingState();
+    const result = (processInboundTurn as unknown as {
       definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
-    }).definition.handler({ input: workflowInput(), state: processingState(), step,
-      execute: vi.fn(), client: {}, signal: new AbortController().signal, workflow: { id: 'bounded-recover-test' } });
-    expect(result).toMatchObject({ status: 'paused_error', error_code: failure.code });
-    expect(actionSpies.ingest).toHaveBeenCalledTimes(attempts);
-    expect(step.sleep).toHaveBeenCalledTimes(waits);
+    }).definition.handler({ input: workflowInput(), state, step,
+      execute: vi.fn(), client: {}, signal: new AbortController().signal,
+      workflow: { id: 'bounded-recover-test', setTimeout: vi.fn(async () => undefined) } });
+    await expect(result).rejects.toBe(suspension);
+    expect(state).toMatchObject({ phase: 'retry_pending', errorCode: failure.code });
+    expect(actionSpies.ingest).toHaveBeenCalledTimes(1);
+    expect(step.sleep).toHaveBeenCalledTimes(1);
     expect(actionSpies.claim).not.toHaveBeenCalled();
     expect(actionSpies.commit).not.toHaveBeenCalled();
     expect(actionSpies.dispatch).not.toHaveBeenCalled();
   });
 
-  it('preserves the shared recovery deadline across workflow resumptions', async () => {
+  it('keeps scheduling ingestion after the old eight-minute deadline instead of completing the lost event', async () => {
+    const suspension = { [Symbol.for('StepSignal')]: true };
     actionSpies.ingest.mockRejectedValue(new StudyxHttpError('STUDYX_TIMEOUT', true));
     const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
-      { sleep: vi.fn(async (name: string, delayMs: number) => { void name; void delayMs; }) });
-    const result = await (processInboundTurn as unknown as {
+      { sleep: vi.fn(async () => { throw suspension; }) });
+    const result = (processInboundTurn as unknown as {
       definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
     }).definition.handler({ input: workflowInput(), state: { ...processingState(), inboundRecoveryDeadlineAt: Date.now() - 1 }, step,
-      execute: vi.fn(), client: {}, signal: new AbortController().signal, workflow: { id: 'expired-recovery-test' } });
-    expect(result).toMatchObject({ status: 'paused_error', error_code: 'STUDYX_TIMEOUT' });
+      execute: vi.fn(), client: {}, signal: new AbortController().signal,
+      workflow: { id: 'expired-recovery-test', setTimeout: vi.fn(async () => undefined) } });
+    await expect(result).rejects.toBe(suspension);
     expect(actionSpies.ingest).toHaveBeenCalledTimes(1);
-    expect(step.sleep).not.toHaveBeenCalled();
+    expect(step.sleep).toHaveBeenCalledTimes(1);
     expect(actionSpies.claim).not.toHaveBeenCalled();
+  });
+
+  it('preserves an old real-channel event for review without retiming or ingesting it', async () => {
+    const suspension = { [Symbol.for('StepSignal')]: true };
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => { throw suspension; }) });
+    const state = processingState();
+    const input = { ...workflowInput(), channel: 'telegram',
+      message: { ...workflowInput().message, occurred_at: new Date(Date.now() - 11 * 60_000).toISOString() } };
+    actionSpies.claim.mockResolvedValue({ outcome: 'completed', trace_id: UUID, batch_id: UUID, retry_after_ms: 0 });
+    const promise = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler({ input, state, step, execute: vi.fn(), client: {},
+      signal: new AbortController().signal,
+      workflow: { id: 'aged-event-test', setTimeout: vi.fn(async () => undefined) } });
+    await expect(promise).rejects.toBe(suspension);
+    expect(actionSpies.ingest).not.toHaveBeenCalled();
+    expect(actionSpies.claim).not.toHaveBeenCalled();
+    expect(state).toMatchObject({ phase: 'retry_pending', needsOperator: true,
+      pendingInboundRecovery: { errorCode: 'INBOUND_EVENT_REQUIRES_REVIEW', needsOperator: true } });
   });
 
   it('persists independent profile fields before effect validation and repairs from the receipt', async () => {
@@ -2429,6 +2468,9 @@ describe('processInboundTurn hot path', () => {
       outbounds?: Array<Record<string, unknown>>;
       createMessage?: ReturnType<typeof vi.fn>;
       callRequest?: { call_id: string; status: 'requested' } | null;
+      step?: ((name: string, run: () => Promise<unknown>) => Promise<unknown>) & { sleep: (name: string, ms: number) => Promise<void> };
+      state?: ReturnType<typeof processingState>;
+      workflow?: { id: string; setTimeout: ReturnType<typeof vi.fn> };
     } = {},
   ) {
     actionSpies.commit.mockResolvedValue({
@@ -2450,9 +2492,11 @@ describe('processInboundTurn hot path', () => {
     });
     const createMessage = options.createMessage
       ?? vi.fn(async () => ({ message: { id: 'bp-message-1' } }));
-    const step = Object.assign(
+    const step = options.step ?? Object.assign(
       async (_name: string, run: () => Promise<unknown>) => run(),
-      { sleep: vi.fn(async () => undefined) },
+      { sleep: vi.fn(async (name: string) => {
+        if (name.startsWith('review-ambiguous-submission-')) throw DELIVERY_SUSPENSION;
+      }) },
     );
     const execute = vi.fn(async () => ({
       is: () => true,
@@ -2478,16 +2522,189 @@ describe('processInboundTurn hot path', () => {
 
     const result = await handler({
       input: { ...workflowInput(), ...inputOverrides },
-      state: processingState(),
+      state: options.state ?? processingState(),
       step,
       execute,
       client: { createMessage },
       signal: new AbortController().signal,
-      workflow: { id: 'workflow-test' },
+      workflow: options.workflow ?? { id: 'workflow-test', setTimeout: vi.fn(async () => undefined) },
     });
 
     return { createMessage, result };
   }
+
+  it.each([
+    { multipart: false, continuation: 'authorized', authorizationOutage: false, expected: ['Primero'], status: 'completed' },
+    { multipart: true, continuation: 'authorized', authorizationOutage: false, expected: ['Primero', 'Segundo'], status: 'completed' },
+    { multipart: true, continuation: 'superseded', authorizationOutage: false, expected: ['Primero'], status: 'absorbed' },
+    { multipart: true, continuation: 'superseded', authorizationOutage: true, expected: ['Primero'], status: 'absorbed' },
+  ])('resumes only the receipt and current remaining parts after losing its HTTP response ($multipart/$continuation/$authorizationOutage)', async ({ multipart, continuation, authorizationOutage, expected, status }) => {
+    actionSpies.continuation.mockImplementation(async ({ input }: { input: { outbound_id: string } }) => ({
+      outcome: input.outbound_id === UUID ? 'authorized' : continuation, trace_id: UUID, outbound_id: input.outbound_id,
+    }));
+    const suspension = { [Symbol.for('StepSignal')]: true };
+    const savedSteps = new Map<string, unknown>();
+    const step = Object.assign(async (name: string, run: () => Promise<unknown>) => {
+      if (savedSteps.has(name)) return structuredClone(savedSteps.get(name));
+      const output = await run();
+      savedSteps.set(name, structuredClone(output));
+      return output;
+    }, { sleep: vi.fn(async (name: string, delayMs: number) => {
+      if (name.startsWith('await-batch-window-')) return;
+      expect(delayMs).toBeGreaterThanOrEqual(10_000);
+      if (savedSteps.has(name)) return;
+      savedSteps.set(name, undefined);
+      throw suspension;
+    }) });
+    const submittedTexts: string[] = [];
+    const createMessage = vi.fn(async ({ payload }: { payload: { text: string } }) => {
+      submittedTexts.push(payload.text);
+      return { message: { id: `bp-part-${submittedTexts.length}` } };
+    });
+    const recorded = new Map<string, string>();
+    let loseResponse = true;
+    actionSpies.delivery.mockImplementation(async ({ input }: { input: { outbound_id: string; botpress_message_id: string } }) => {
+      const existing = recorded.get(input.outbound_id);
+      if (existing) expect(input.botpress_message_id).toBe(existing);
+      recorded.set(input.outbound_id, input.botpress_message_id);
+      if (loseResponse) {
+        loseResponse = false;
+        throw new StudyxHttpError('STUDYX_TIMEOUT', true, null, 4);
+      }
+      return { status: existing ? 'duplicate' : 'recorded' };
+    });
+    const first = { id: UUID, content: 'Primero', status: 'pending', delivery_attempt: 1,
+      authorized_egress: { schema_version: 1, content_hash: '67d02dfce5ef9a0aa49675a19b9f92983e52abb2cceb96e6e932c26f171e68aa', authorized_urls: [], protected_facts: [] },
+      part_index: 0, part_count: multipart ? 2 : 1 };
+    const second = { id: '28a823e8-27c2-4279-9956-058f45f33cd6', content: 'Segundo', status: 'pending', delivery_attempt: 1,
+      authorized_egress: { schema_version: 1, content_hash: '2f50e3d71e066e86ebb03e28f5bac2e90cd0de1982f34ecef3f0753b14b27897', authorized_urls: [], protected_facts: [] },
+      part_index: 1, part_count: 2 };
+    const state = processingState();
+    const workflow = { id: 'receipt-recovery-test', setTimeout: vi.fn(async () => undefined) };
+    const run = () => runCommittedOutbound(first, {}, { step, state, workflow, createMessage,
+      ...(multipart ? { outbounds: [first, second] } : {}) });
+
+    await expect(run()).rejects.toBe(suspension);
+    expect(submittedTexts).toEqual(['Primero']);
+    expect(recorded.size).toBe(1);
+    expect(state).toMatchObject({ phase: 'retry_pending', errorCode: 'STUDYX_TIMEOUT' });
+    expect(workflow.setTimeout).toHaveBeenCalledWith({ in: '30m' });
+    if (authorizationOutage) {
+      actionSpies.continuation.mockRejectedValueOnce(new StudyxHttpError('STUDYX_TIMEOUT', true));
+      await expect(run()).rejects.toBe(suspension);
+      expect(submittedTexts).toEqual(['Primero']);
+      expect(state).toMatchObject({ pendingDeliveryReport: { stage: 'continuation', outboundId: second.id } });
+      // A later inbound invalidates this part while authorization is offline.
+      // No successful cached grant can bypass the next fresh backend check.
+    }
+    await expect(run()).resolves.toMatchObject({ result: { status,
+      error_code: continuation === 'superseded' ? 'OUTBOUND_SUPERSEDED' : null } });
+    expect(submittedTexts).toEqual(expected);
+    expect(recorded.size).toBe(expected.length);
+    if (multipart) expect(actionSpies.continuation.mock.calls.find(([call]) => call.input.outbound_id === second.id)?.[0]?.input).toEqual({
+      outbound_id: second.id, trace_id: UUID, delivery_attempt: 1,
+    });
+    await run();
+    expect(submittedTexts).toEqual(expected);
+    expect(actionSpies.commit).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a possibly accepted createMessage timeout ambiguous instead of authorizing a resend', async () => {
+    const accepted: string[] = [];
+    const createMessage = vi.fn(async ({ payload }: { payload: { text: string } }) => {
+      accepted.push(payload.text);
+      throw new DOMException('Response lost after acceptance', 'AbortError');
+    });
+    const state = processingState();
+    await expect(runCommittedOutbound({
+      authorized_egress: { schema_version: 1,
+        content_hash: 'e2dee359447348131358a63664853c018f5db0fcb31835e30a0aac56badab6bd',
+        authorized_urls: [], protected_facts: [] },
+    }, {}, { createMessage, state })).rejects.toBe(DELIVERY_SUSPENSION);
+    expect(accepted).toEqual(['Contenido autorizado']);
+    expect(actionSpies.delivery).not.toHaveBeenCalled();
+    expect(state).toMatchObject({ phase: 'retry_pending', deliveryStatus: null,
+      errorCode: 'OUTBOUND_SUBMISSION_AMBIGUOUS', needsOperator: true });
+  });
+
+  it('holds a committed start with its HTTP response lost for review without invoking the provider', async () => {
+    const saved = new Map<string, unknown>();
+    const suspension = { [Symbol.for('StepSignal')]: true };
+    const step = Object.assign(async (name: string, run: () => Promise<unknown>) => {
+      if (saved.has(name)) return structuredClone(saved.get(name));
+      const output = await run();
+      saved.set(name, structuredClone(output));
+      return output;
+    }, { sleep: vi.fn(async (name: string) => {
+      if (name.startsWith('await-batch-window-') || saved.has(name)) return;
+      saved.set(name, undefined);
+      throw suspension;
+    }) });
+    let started = false;
+    actionSpies.continuation.mockImplementation(async () => {
+      if (!started) {
+        started = true;
+        throw new StudyxHttpError('STUDYX_TIMEOUT', true, null, 4);
+      }
+      return { outcome: 'not_owner', reason: 'SEND_ALREADY_STARTED', trace_id: UUID, outbound_id: UUID };
+    });
+    const createMessage = vi.fn();
+    const state = processingState();
+    const workflow = { id: 'lost-start-response', setTimeout: vi.fn(async () => undefined) };
+    const run = () => runCommittedOutbound({ authorized_egress: { schema_version: 1,
+      content_hash: 'e2dee359447348131358a63664853c018f5db0fcb31835e30a0aac56badab6bd',
+      authorized_urls: [], protected_facts: [] } }, {}, { step, state, workflow, createMessage });
+    await expect(run()).rejects.toBe(suspension);
+    await expect(run()).rejects.toBe(suspension);
+    await expect(run()).rejects.toBe(suspension);
+    expect(createMessage).not.toHaveBeenCalled();
+    expect(actionSpies.delivery).not.toHaveBeenCalled();
+    expect(actionSpies.commit).toHaveBeenCalledTimes(1);
+    expect(state).toMatchObject({ phase: 'retry_pending', needsOperator: true,
+      errorCode: 'SEND_ALREADY_STARTED', pendingDeliveryReport: { stage: 'continuation', needsOperator: true } });
+  });
+
+  it('converges an ambiguous send after an operator records positive delivery evidence without repeating the provider', async () => {
+    const saved = new Map<string, unknown>();
+    const suspension = { [Symbol.for('StepSignal')]: true };
+    const step = Object.assign(async (name: string, run: () => Promise<unknown>) => {
+      if (saved.has(name)) {
+        const cached = saved.get(name);
+        if (cached instanceof Error) throw new Error(cached.message);
+        return structuredClone(cached);
+      }
+      try {
+        const output = await run();
+        saved.set(name, structuredClone(output));
+        return output;
+      } catch (error) { saved.set(name, error); throw error; }
+    }, { sleep: vi.fn(async (name: string) => {
+      if (name.startsWith('await-batch-window-') || saved.has(name)) return;
+      saved.set(name, undefined);
+      throw suspension;
+    }) });
+    const accepted: string[] = [];
+    const createMessage = vi.fn(async () => {
+      accepted.push('bp-positive-proof');
+      throw new DOMException('Acceptance response lost', 'AbortError');
+    });
+    const state = processingState();
+    const workflow = { id: 'operator-proof', setTimeout: vi.fn(async () => undefined) };
+    const run = () => runCommittedOutbound({ authorized_egress: { schema_version: 1,
+      content_hash: 'e2dee359447348131358a63664853c018f5db0fcb31835e30a0aac56badab6bd',
+      authorized_urls: [], protected_facts: [] } }, {}, { step, state, workflow, createMessage });
+    await expect(run()).rejects.toBe(suspension);
+    expect(state).toMatchObject({ needsOperator: true, pendingDeliveryReport: { stage: 'submission_review' } });
+    actionSpies.continuation.mockResolvedValue({ outcome: 'not_owner', reason: 'ALREADY_SUBMITTED',
+      botpress_message_id: 'bp-positive-proof', trace_id: UUID, outbound_id: UUID });
+    await expect(run()).resolves.toMatchObject({ result: { status: 'completed', error_code: null } });
+    expect(accepted).toEqual(['bp-positive-proof']);
+    expect(actionSpies.commit).toHaveBeenCalledTimes(1);
+    expect(actionSpies.delivery.mock.calls[0]?.[0]?.input).toMatchObject({
+      status: 'submitted_to_botpress', botpress_message_id: 'bp-positive-proof', delivery_attempt: 1,
+    });
+    expect(state).toMatchObject({ needsOperator: false, pendingDeliveryReport: null });
+  });
 
   it('submits and records the Agent A acknowledgement before dispatching the reserved call', async () => {
     const order: string[] = [];
@@ -2525,7 +2742,7 @@ describe('processInboundTurn hot path', () => {
   });
 
   it('does not dispatch the reserved call when the Agent A acknowledgement cannot be submitted', async () => {
-    await runCommittedOutbound({
+    await expect(runCommittedOutbound({
       content: 'Perfecto. Registré la llamada; nuestra asesora virtual intenta comunicarse ahora.',
       authorized_egress: {
         schema_version: 1,
@@ -2536,7 +2753,7 @@ describe('processInboundTurn hot path', () => {
     }, {}, {
       createMessage: vi.fn(async () => { throw new Error('CHANNEL_UNAVAILABLE'); }),
       callRequest: { call_id: UUID, status: 'requested' },
-    });
+    })).rejects.toBe(DELIVERY_SUSPENSION);
 
     expect(actionSpies.dispatch).not.toHaveBeenCalled();
   });
@@ -2594,7 +2811,7 @@ describe('processInboundTurn hot path', () => {
     expect(submittedAt[1] - submittedAt[0]).toBeLessThanOrEqual(1_100);
   });
 
-  it('stops after a failed second part without resending the first', async () => {
+  it('stops after an ambiguous second part without authorizing any resend', async () => {
     const createMessage = vi.fn()
       .mockResolvedValueOnce({ message: { id: 'bp-part-1' } })
       .mockRejectedValueOnce(Object.assign(new Error('channel failed'), { code: 'CHANNEL_FAILED' }));
@@ -2602,21 +2819,24 @@ describe('processInboundTurn hot path', () => {
       { schema_version: 1, content_hash: '67d02dfce5ef9a0aa49675a19b9f92983e52abb2cceb96e6e932c26f171e68aa', authorized_urls: [], protected_facts: [] },
       { schema_version: 1, content_hash: '2f50e3d71e066e86ebb03e28f5bac2e90cd0de1982f34ecef3f0753b14b27897', authorized_urls: [], protected_facts: [] },
     ];
-    const { result } = await runCommittedOutbound({
+    const state = processingState();
+    await expect(runCommittedOutbound({
       authorized_egress: manifests[0],
     }, {}, {
       createMessage,
+      state,
       outbounds: [
         { id: UUID, content: 'Primero', status: 'pending', delivery_attempt: 1, authorized_egress: manifests[0], part_index: 0, part_count: 2 },
         { id: '28a823e8-27c2-4279-9956-058f45f33cd6', content: 'Segundo', status: 'pending', delivery_attempt: 1, authorized_egress: manifests[1], part_index: 1, part_count: 2 },
       ],
-    });
+    })).rejects.toBe(DELIVERY_SUSPENSION);
 
     expect(createMessage).toHaveBeenCalledTimes(2);
     expect(actionSpies.delivery.mock.calls.map(([call]) => call.input.status)).toEqual([
-      'submitted_to_botpress', 'failed',
+      'submitted_to_botpress',
     ]);
-    expect(result).toMatchObject({ status: 'paused_error', delivery_status: 'failed' });
+    expect(state).toMatchObject({ phase: 'retry_pending', deliveryStatus: null,
+      errorCode: 'OUTBOUND_SUBMISSION_AMBIGUOUS', needsOperator: true });
   });
 
   it('never resends submitted or retryable-failed parts without a new delivery lease', async () => {

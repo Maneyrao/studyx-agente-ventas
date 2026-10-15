@@ -8,8 +8,11 @@ import { commitDecision } from '../actions/commitDecision'
 import { dispatchCall } from '../actions/dispatchCall'
 import { flushLeadProjection } from '../actions/flushLeadProjection'
 import { ingestTurn } from '../actions/ingestTurn'
+import { synchronizeConversationInbound } from '../lib/inbound/sync-conversation-inbound'
 import { planConversation } from '../actions/planConversation'
 import { reportDelivery } from '../actions/reportDelivery'
+import { authorizeOutboundContinuation } from '../actions/authorizeOutboundContinuation'
+import { persistDeliveryReportDurably, type PendingDeliveryReport } from '../lib/delivery/durable-delivery-report'
 import { transcribeAudio } from '../actions/transcribeAudio'
 import {
   ClaimedTurnSchema,
@@ -254,7 +257,16 @@ const workflowStateSchema = z.object({
   outboundId: z.string().uuid().nullable().default(null),
   deliveryStatus: z.enum(['submitted_to_botpress', 'failed']).nullable().default(null),
   errorCode: z.string().nullable().default(null),
+  needsOperator: z.boolean().default(false),
   inboundRecoveryDeadlineAt: z.number().nullable().default(null),
+  pendingInboundRecovery: z.object({ stage: z.string(), errorCode: z.string(),
+    attempt: z.number(), needsOperator: z.boolean(), nextRetryAt: z.number() }).nullable().default(null),
+  pendingDeliveryReport: z.object({
+    outboundId: z.string().uuid(), botpressMessageId: z.string().nullable(),
+    stage: z.enum(['report', 'continuation', 'submission_review']),
+    attempt: z.number(), errorCode: z.string(), needsOperator: z.boolean(),
+    nextRetryAt: z.number(),
+  }).nullable().default(null),
 })
 
 function safeLog(event: string, fields: Record<string, unknown>): void {
@@ -276,6 +288,11 @@ function errorCode(error: unknown): string {
   ) return error.message.slice(0, 256)
   if (error instanceof Error && error.name) return error.name.slice(0, 128)
   return 'UNKNOWN_ERROR'
+}
+
+function isConfirmedPreSubmissionBlock(code: string): boolean {
+  return ['AUTOMATION_DISABLED', 'WHATSAPP_ROLLOUT_MODE_INVALID', 'WHATSAPP_CANARY_DISABLED',
+    'WHATSAPP_CANARY_ALLOWLIST_INVALID', 'WHATSAPP_CANARY_PHONE_NOT_ALLOWED'].includes(code)
 }
 
 const PLANNERLESS_REJECTION_PREFIX = 'PLANNERLESS_PROPOSAL_REJECTED:'
@@ -427,8 +444,8 @@ export const processInboundTurn = new Workflow({
   input: WorkflowInputSchema as any,
   output: WorkflowResultSchema as any,
   state: workflowStateSchema as any,
-  // Ingest/claim recovery sleeps durably through short backend outages, then
-  // leaves enough time for the owned decision and delivery.
+  // Normal work expires after fifteen minutes. Pending transport recovery
+  // renews this lifetime before each durable continuation.
   timeout: '15m',
 
   async handler({ input, state, step, execute, client, signal, workflow }) {
@@ -441,7 +458,6 @@ export const processInboundTurn = new Workflow({
     // Best-effort under durable replays — a resumed workflow re-times only the
     // stages that actually re-run.
     const workflowStartedAt = Date.now()
-    state.inboundRecoveryDeadlineAt ??= workflowStartedAt + 8 * 60_000
     const recoveryJitterMs = (recovery: number): number => {
       // Stable per physical event so durable replays use the same schedule,
       // while different WhatsApp bubbles stop retrying in lockstep.
@@ -451,19 +467,18 @@ export const processInboundTurn = new Workflow({
     }
     const recoverInboundOperation = async <T>(name: string, operation: () => Promise<T>): Promise<T> => {
       for (let recovery = 0; ; recovery += 1) {
-        const delayMs = Math.min(60_000, 15_000 * 2 ** recovery) + recoveryJitterMs(recovery)
+        const shortDelayMs = Math.min(300_000, 15_000 * 2 ** Math.min(recovery, 5)) + recoveryJitterMs(recovery)
         const receipt = await step(
           recovery === 0 ? name : `${name}-recovery-${recovery}`,
           async () => {
             try { return await operation() }
             catch (error) {
-              if (!(error instanceof StudyxHttpError) || !error.retryable) throw error
+              if (!(error instanceof Error)) throw error
               // ADK rehydrates thrown errors as plain Error. Persist a typed
               // receipt so a durable sleep can replay the retry decision.
               return { studyx_inbound_retry: {
-                code: error.code, status: error.status, attempts: error.attempts,
-                retry_allowed: recovery < 5
-                  && Date.now() + delayMs <= state.inboundRecoveryDeadlineAt!,
+                code: errorCode(error),
+                retryable: error instanceof StudyxHttpError && error.retryable,
               } }
             }
           },
@@ -471,16 +486,34 @@ export const processInboundTurn = new Workflow({
         )
         // Successful receipts stay in their original shape for workflows
         // whose ingest/claim steps were cached by an earlier deployment.
-        if (!receipt || typeof receipt !== 'object' || !('studyx_inbound_retry' in receipt)) return receipt as T
+        if (!receipt || typeof receipt !== 'object' || !('studyx_inbound_retry' in receipt)) {
+          state.pendingInboundRecovery = null
+          state.phase = 'processing'
+          state.errorCode = null
+          state.needsOperator = false
+          return receipt as T
+        }
         const failure = receipt.studyx_inbound_retry
-        const error = new StudyxHttpError(failure.code, true, failure.status, failure.attempts)
-        if (!failure.retry_allowed) throw error
-        safeLog('studyx.turn.inbound_recovery_scheduled', {
+        // Older typed receipts have retry_allowed rather than retryable. They
+        // represent transient HTTP failures too; their old deadline no longer
+        // completes and silently strands the original event.
+        const retryable = !('retryable' in failure) || failure.retryable
+        const delayMs = retryable ? shortDelayMs : 300_000
+        state.phase = 'retry_pending'
+        state.errorCode = failure.code
+        state.needsOperator = !retryable
+        state.pendingInboundRecovery = { stage: name, errorCode: failure.code,
+          attempt: recovery + 1, needsOperator: !retryable, nextRetryAt: Date.now() + delayMs }
+        safeLog(retryable ? 'studyx.turn.inbound_recovery_scheduled'
+          : 'studyx.turn.inbound_recovery_operator_required', {
           trace_id: input.trace_id, stage: name, recovery: recovery + 1,
-          delay_ms: delayMs, error_code: error.code,
+          delay_ms: delayMs, error_code: failure.code, needs_operator: !retryable,
         })
         // Only idempotent ingest and claim use this retry. Never wrap a
         // provider send, payment or call dispatch in it.
+        await step(`${name}-recovery-keepalive-${recovery + 1}`, async () => {
+          await workflow.setTimeout({ in: '30m' })
+        }, { maxAttempts: 1 })
         await step.sleep(`${name}-recovery-wait-${recovery + 1}`, delayMs)
       }
     }
@@ -562,11 +595,21 @@ export const processInboundTurn = new Workflow({
     try {
       ingest = input.preingested ?? await recoverInboundOperation(
         'ingest-canonical-turn',
-        () => ingestTurn.execute({
+        () => {
+          const occurredAt = Date.parse(input.message.occurred_at)
+          // Past this horizon the backend deliberately stops trusting provider
+          // occurrence time. Preserve the original event for review instead of
+          // retiming an old question after a newer refusal or consent change.
+          if (input.channel !== 'emulator'
+            && (!Number.isFinite(occurredAt) || Date.now() - occurredAt > 10 * 60_000)) {
+            throw new StudyxHttpError('INBOUND_EVENT_REQUIRES_REVIEW', false)
+          }
+          return ingestTurn.execute({
           input: InboundEnvelopeSchema.parse({ ...input, identity_owner:
             configuration.agentAPlannerlessV2Enabled === true ? 'agent_a_v1' : undefined }),
           client,
-        }),
+          })
+        },
       )
       timings.ingest_ms = Date.now() - ingestStartedAt
       state.turnId = ingest.turn_id
@@ -596,7 +639,8 @@ export const processInboundTurn = new Workflow({
         state.errorCode = 'EXISTING_DELIVERY_FAILED'
       } else {
         // Never make a second physical send while the backend cannot prove whether
-        // the first submission happened. ADK 2.0.5 exposes no idempotent send here.
+        // the first submission happened. This createMessage path has no verified
+        // provider idempotency contract.
         state.phase = 'retry_pending'
         state.errorCode = 'OUTBOUND_DELIVERY_UNRESOLVED'
       }
@@ -645,15 +689,19 @@ export const processInboundTurn = new Workflow({
       try {
         outcome = await recoverInboundOperation(
           `claim-inbound-batch-${attempt}`,
-          () =>
-            claimBatch.execute({
+          async () => {
+            // Read the durable transport source on every actual claim attempt,
+            // including recovery after an outage, before canonical context closes.
+            await synchronizeConversationInbound({ input, client })
+            return claimBatch.execute({
               client,
               input: {
                 batch_id: ingest.batch.id,
                 trace_id: input.trace_id,
                 claimed_by: `botpress:${workflow?.id ?? input.trace_id}`,
               },
-            }),
+            })
+          },
         )
         timings.claim_ms += Date.now() - claimStartedAt
       } catch (error) {
@@ -1735,6 +1783,7 @@ export const processInboundTurn = new Workflow({
             conversation_pipeline_v1: pipelineCommit,
             agent_turn_v2: agentTurnV2Commit,
             supports_multi_outbound: true,
+            supports_send_fencing: true,
             supports_turn_supersession: true,
             turn_diagnostics: turnDiagnostics,
             decision,
@@ -1995,6 +2044,100 @@ export const processInboundTurn = new Workflow({
       }
     }
 
+    const markDeliveryRecoveryPending = (outboundId: string, botpressMessageId: string | null,
+      failure: PendingDeliveryReport): void => {
+        state.phase = 'retry_pending'
+        state.errorCode = failure.code
+        state.needsOperator = !failure.retryable
+        state.pendingDeliveryReport = { outboundId, botpressMessageId,
+          stage: botpressMessageId ? 'report'
+            : failure.code === 'OUTBOUND_SUBMISSION_AMBIGUOUS' ? 'submission_review' : 'continuation',
+          attempt: failure.attempt, errorCode: failure.code,
+          needsOperator: !failure.retryable, nextRetryAt: Date.now() + failure.delayMs }
+        safeLog(failure.retryable ? 'studyx.turn.delivery_recovery_pending'
+          : 'studyx.turn.delivery_recovery_operator_required', {
+          trace_id: input.trace_id, turn_id: owned.turn_id, outbound_id: outboundId,
+          stage: state.pendingDeliveryReport.stage, error_code: failure.code,
+          recovery_attempt: failure.attempt, delay_ms: failure.delayMs,
+          needs_operator: !failure.retryable,
+        })
+    }
+    const recoverDeliveryOperation = <T>(name: string, outboundId: string,
+      botpressMessageId: string | null, operation: () => Promise<T>) => persistDeliveryReportDurably({
+      name, step, workflow, report: operation,
+      onPending: failure => markDeliveryRecoveryPending(outboundId, botpressMessageId, failure),
+      onRecovered: () => {
+        state.pendingDeliveryReport = null
+        state.errorCode = null
+        state.needsOperator = false
+        state.phase = 'decision_committed'
+      },
+    })
+
+    type Submission = { message: { id: string } } | { continuationOutcome: 'superseded' }
+    type AuthorizationRetry = { authorizationRetry: { code: string; retryable: boolean } }
+    const submitWithOwnership = async (name: string, outbound: { id: string; delivery_attempt: number },
+      send: () => Promise<{ message: { id: string } }>): Promise<Submission> => {
+      for (let attempt = 0; ; attempt += 1) {
+        const receipt: Submission | AuthorizationRetry = await step(attempt === 0 ? name : `${name}-authorization-retry-${attempt}`, async () => {
+          let checked
+          try {
+            await synchronizeConversationInbound({ input, client })
+            checked = await authorizeOutboundContinuation.execute({ client, input: {
+              outbound_id: outbound.id, trace_id: input.trace_id, delivery_attempt: outbound.delivery_attempt,
+            } })
+          } catch (error) {
+            if (!(error instanceof Error)) throw error
+            return { authorizationRetry: { code: errorCode(error),
+              retryable: error instanceof StudyxHttpError && error.retryable } }
+          }
+          if (checked.outcome === 'superseded') return { continuationOutcome: 'superseded' as const }
+          if (checked.reason === 'ALREADY_SUBMITTED' && checked.botpress_message_id) {
+            return { message: { id: checked.botpress_message_id as string } }
+          }
+          if (checked.outcome !== 'authorized') {
+            // A lost start response may already have moved reserved → started.
+            // The backend marker prevents any provider attempt; preserve review
+            // ownership visibly and retry the authority check slowly after repair.
+            return { authorizationRetry: { code: checked.reason ?? 'OUTBOUND_NOT_OWNER', retryable: false } }
+          }
+          state.pendingDeliveryReport = null
+          state.errorCode = null
+          state.needsOperator = false
+          // This call is NEVER inside an HTTP retry. Any exception becomes a
+          // cached failed physical step and is held for review by the caller.
+          return send()
+        }, { maxAttempts: 1 })
+        if (!('authorizationRetry' in receipt)) return receipt
+        const failure = receipt.authorizationRetry
+        const delayMs = failure.retryable ? Math.min(300_000, 15_000 * 2 ** Math.min(attempt, 5)) : 300_000
+        markDeliveryRecoveryPending(outbound.id, null, { ...failure, attempt: attempt + 1, delayMs })
+        await step(`${name}-authorization-keepalive-${attempt}`, async () => {
+          await workflow.setTimeout({ in: '30m' })
+        }, { maxAttempts: 1 })
+        await step.sleep(`${name}-authorization-wait-${attempt}`, delayMs)
+      }
+    }
+
+    const holdAmbiguousSubmission = async (outbound: { id: string; delivery_attempt: number }): Promise<{ message: { id: string } }> => {
+      state.deliveryStatus = null
+      const proof = await recoverDeliveryOperation(`review-ambiguous-submission-${outbound.id}`, outbound.id, null,
+        async () => {
+          try {
+            const checked = await authorizeOutboundContinuation.execute({ client, input: {
+              outbound_id: outbound.id, trace_id: input.trace_id, delivery_attempt: outbound.delivery_attempt,
+            } })
+            if (checked.reason === 'ALREADY_SUBMITTED' && checked.botpress_message_id) {
+              return { message: { id: checked.botpress_message_id as string } }
+            }
+          } catch (error) {
+            if (!(error instanceof Error)) throw error
+          }
+          throw new StudyxHttpError('OUTBOUND_SUBMISSION_AMBIGUOUS', false)
+        })
+      return proof.output
+    }
+
     // New backend capability: each model-authored part has its own durable
     // message, manifest, delivery lease and report. Older backends omit the
     // array and continue through the singular compatibility path below.
@@ -2064,7 +2207,7 @@ export const processInboundTurn = new Workflow({
           return resultFromState(state, input.trace_id)
         }
 
-        let delivery: { message: { id: string } }
+        let delivery: Submission
         try {
           // Preserve the model-authored bubbles exactly, while avoiding the
           // machine-like effect of submitting every part in the same instant.
@@ -2075,43 +2218,55 @@ export const processInboundTurn = new Workflow({
               setTimeout(resolve, interBubbleDelayMs(outboundPart.id))
             })
           }
-          delivery = await step(
+          delivery = await submitWithOwnership(
             `submit-outbound-to-botpress-part-${outboundPart.part_index}`,
+            outboundPart,
             () => {
               if (input.channel === 'whatsapp' && input.sandbox_provider !== 'telegram_sandbox') {
-                const canary = evaluateWhatsAppCanarySend({
-                  automationEnabled: configuration.automationEnabled,
-                  whatsappPublicEnabled: configuration.whatsappPublicEnabled === true,
-                  whatsappCanaryEnabled: configuration.whatsappCanaryEnabled === true,
-                  allowlist: secrets.WHATSAPP_CANARY_PHONE_E164S,
-                  phoneE164: input.phone_e164,
-                  log: (event) => console.info(JSON.stringify(event)),
-                })
-                if (!canary.allowed) {
-                  const blocked = new Error(canary.reason)
-                  blocked.name = canary.reason
-                  throw blocked
+                  const canary = evaluateWhatsAppCanarySend({
+                    automationEnabled: configuration.automationEnabled,
+                    whatsappPublicEnabled: configuration.whatsappPublicEnabled === true,
+                    whatsappCanaryEnabled: configuration.whatsappCanaryEnabled === true,
+                    allowlist: secrets.WHATSAPP_CANARY_PHONE_E164S,
+                    phoneE164: input.phone_e164,
+                    log: (event) => console.info(JSON.stringify(event)),
+                  })
+                  if (!canary.allowed) {
+                    const blocked = new Error(canary.reason)
+                    blocked.name = canary.reason
+                    throw blocked
+                  }
                 }
-              }
-              return client.createMessage({
-                conversationId: input.botpress_conversation_id,
-                userId: context.get('botId'),
-                type: 'text',
-                payload: { text: outboundPart.content },
-                tags: {
-                  studyxOutboundId: outboundPart.id,
-                  studyxTraceId: input.trace_id,
-                  studyxPartIndex: String(outboundPart.part_index),
-                  studyxPartCount: String(outboundPart.part_count),
-                },
-              }) as Promise<{ message: { id: string } }>
-            },
-            { maxAttempts: 1 }
-          )
+                return client.createMessage({
+                  conversationId: input.botpress_conversation_id,
+                  userId: context.get('botId'),
+                  type: 'text',
+                  payload: { text: outboundPart.content },
+                  tags: {
+                    studyxOutboundId: outboundPart.id,
+                    studyxTraceId: input.trace_id,
+                    studyxPartIndex: String(outboundPart.part_index),
+                    studyxPartCount: String(outboundPart.part_count),
+                  },
+                }) as Promise<{ message: { id: string } }>
+              },
+            )
         } catch (error) {
-          state.deliveryStatus = 'failed'
+          if (!(error instanceof Error)) throw error
           state.phase = 'paused_error'
           state.errorCode = errorCode(error)
+          if (!isConfirmedPreSubmissionBlock(state.errorCode)) {
+            // A provider error can happen after accepting the message. No ID
+            // is not proof of no send; never publish a retry-authorizing failure.
+            state.deliveryStatus = null
+            state.errorCode = 'OUTBOUND_SUBMISSION_AMBIGUOUS'
+            safeLog('studyx.turn.delivery_submission_ambiguous', {
+              trace_id: input.trace_id, outbound_id: outboundPart.id, error_code: errorCode(error),
+            })
+            emitTimings()
+            delivery = await holdAmbiguousSubmission(outboundPart)
+          } else {
+          state.deliveryStatus = 'failed'
           try {
             await step(
               `report-botpress-failure-part-${outboundPart.part_index}`,
@@ -2140,13 +2295,26 @@ export const processInboundTurn = new Workflow({
           }
           emitTimings()
           return resultFromState(state, input.trace_id)
+          }
+        }
+
+        if ('continuationOutcome' in delivery) {
+          state.pendingDeliveryReport = null
+          state.phase = 'absorbed'
+          state.errorCode = 'OUTBOUND_SUPERSEDED'
+          safeLog('studyx.turn.delivery_continuation_stopped', {
+            trace_id: input.trace_id, outbound_id: outboundPart.id,
+            outcome: delivery.continuationOutcome,
+          })
+          emitTimings()
+          return resultFromState(state, input.trace_id)
         }
 
         // Report immediately. If this becomes ambiguous after createMessage
         // returned an id, stop before the next part; never resend this one.
-        try {
-          await step(
+        await recoverDeliveryOperation(
             `report-botpress-submission-part-${outboundPart.part_index}`,
+            outboundPart.id, delivery.message.id,
             () => reportDelivery.execute({
               client,
               input: {
@@ -2159,22 +2327,7 @@ export const processInboundTurn = new Workflow({
                 delivery_attempt: outboundPart.delivery_attempt,
               },
             }),
-            { maxAttempts: 1 }
           )
-        } catch (error) {
-          state.phase = 'paused_error'
-          state.errorCode = errorCode(error)
-          safeLog('studyx.turn.delivery_report_failed', {
-            trace_id: input.trace_id,
-            turn_id: owned.turn_id,
-            outbound_id: outboundPart.id,
-            part_index: outboundPart.part_index,
-            botpress_message_id: delivery.message.id,
-            error_code: state.errorCode,
-          })
-          emitTimings()
-          return resultFromState(state, input.trace_id)
-        }
         lastBotpressMessageId = delivery.message.id
         submittedPartsThisRun += 1
       }
@@ -2268,11 +2421,12 @@ export const processInboundTurn = new Workflow({
     }
 
     // ---- Paso 11: un único envío físico ----------------------------------
-    let delivery: { message: { id: string } }
+    let delivery: Submission
     const sendStartedAt = Date.now()
     try {
-      delivery = await step(
+      delivery = await submitWithOwnership(
         'submit-outbound-to-botpress',
+        committed.outbound,
         () => {
           // The WhatsApp production canary applies only to real WhatsApp. The
           // Telegram sandbox is identified independently by its true channel
@@ -2307,8 +2461,14 @@ export const processInboundTurn = new Workflow({
             },
           }) as Promise<{ message: { id: string } }>
         },
-        { maxAttempts: 1 }
       )
+      if ('continuationOutcome' in delivery) {
+        state.pendingDeliveryReport = null
+        state.phase = 'absorbed'
+        state.errorCode = 'OUTBOUND_SUPERSEDED'
+        emitTimings()
+        return resultFromState(state, input.trace_id)
+      }
       timings.send_ms = Date.now() - sendStartedAt
       if (Number.isFinite(occurredAtMs)) {
         // Returned createMessage is the first edge-owned proof that the
@@ -2319,10 +2479,20 @@ export const processInboundTurn = new Workflow({
           timings.event_to_visible_outbound_ms >= 10_000 ? 1 : 0
       }
     } catch (error) {
+      if (!(error instanceof Error)) throw error
       timings.send_ms = Date.now() - sendStartedAt
-      state.deliveryStatus = 'failed'
       state.phase = 'paused_error'
       state.errorCode = errorCode(error)
+      if (!isConfirmedPreSubmissionBlock(state.errorCode)) {
+        state.deliveryStatus = null
+        state.errorCode = 'OUTBOUND_SUBMISSION_AMBIGUOUS'
+        safeLog('studyx.turn.delivery_submission_ambiguous', {
+          trace_id: input.trace_id, outbound_id: committed.outbound.id, error_code: errorCode(error),
+        })
+        emitTimings()
+        delivery = await holdAmbiguousSubmission(committed.outbound)
+      } else {
+      state.deliveryStatus = 'failed'
 
       try {
         await step(
@@ -2358,14 +2528,15 @@ export const processInboundTurn = new Workflow({
       })
       emitTimings()
       return resultFromState(state, input.trace_id)
+      }
     }
 
     // ---- Paso 12: reportar la entrega ------------------------------------
     state.deliveryStatus = 'submitted_to_botpress'
     const reportStartedAt = Date.now()
-    try {
-      await step(
+    await recoverDeliveryOperation(
         'report-botpress-submission',
+        committed.outbound.id, delivery.message.id,
         () =>
           reportDelivery.execute({
             client,
@@ -2379,25 +2550,8 @@ export const processInboundTurn = new Workflow({
               delivery_attempt: committed.outbound!.delivery_attempt,
             },
           }),
-        { maxAttempts: 1 }
       )
       timings.delivery_report_ms = Date.now() - reportStartedAt
-    } catch (error) {
-      timings.delivery_report_ms = Date.now() - reportStartedAt
-      // Botpress returned a message ID, so delivery must never be downgraded to
-      // failed. Pause for reconciliation instead of risking a duplicate send.
-      state.phase = 'paused_error'
-      state.errorCode = errorCode(error)
-      safeLog('studyx.turn.delivery_report_failed', {
-        trace_id: input.trace_id,
-        turn_id: owned.turn_id,
-        outbound_id: committed.outbound.id,
-        botpress_message_id: delivery.message.id,
-        error_code: state.errorCode,
-      })
-      emitTimings()
-      return resultFromState(state, input.trace_id)
-    }
 
     await dispatchAcknowledgedCall()
 

@@ -102,6 +102,16 @@ describe('router registration', () => {
 });
 
 describe('router dispatch for production Telegram events', () => {
+  it('durably records the inbound without depending on backend availability', async () => {
+    ingestCanonicalTurnV1.mockImplementation(() => new Promise(() => {}));
+    const pending = definition.handler({ type: 'message', channel: 'telegram.channel',
+      message: telegramInbound, conversation: telegramConversation });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(getOrCreate).toHaveBeenCalledTimes(1);
+    expect(ingestCanonicalTurnV1).not.toHaveBeenCalled();
+    await pending;
+  });
   it('starts the durable workflow before nonessential transcript cleanup', async () => {
     let releaseTranscriptReset!: () => void;
     const transcriptReset = new Promise<void>((resolve) => {
@@ -165,12 +175,9 @@ describe('router dispatch for production Telegram events', () => {
 
     expect(getOrCreate).toHaveBeenCalledTimes(1);
     const call = getOrCreate.mock.calls[0][0];
-    expect(ingestCanonicalTurnV1).toHaveBeenCalledTimes(1);
-    expect(ingestCanonicalTurnV1.mock.invocationCallOrder[0]).toBeLessThan(
-      getOrCreate.mock.invocationCallOrder[0]!,
-    );
+    expect(ingestCanonicalTurnV1).not.toHaveBeenCalled();
     expect(call.key).toBe(`turn:botpress:telegram:${telegramInbound.id}`);
-    expect(call.input.preingested).toEqual(preingested);
+    expect(call.input.preingested).toBeNull();
     expect(call.input.phone_e164).toBe('+9998464326323');
     expect(call.input.sandbox_provider).toBe('telegram_sandbox');
   });
@@ -234,17 +241,12 @@ describe('router dispatch for production Telegram events', () => {
     expect(scheduled.input.preingested).toBeNull();
   });
 
-  it('rethrows a canonical ingest failure without scheduling an empty workflow', async () => {
+  it('does not consult the unavailable backend while persisting the workflow input', async () => {
     ingestCanonicalTurnV1.mockRejectedValueOnce(new Error('backend unavailable'));
-    await expect(
-      definition.handler({
-        type: 'message',
-        channel: 'telegram.channel',
-        message: telegramInbound,
-        conversation: telegramConversation,
-      }),
-    ).rejects.toThrow('backend unavailable');
-    expect(getOrCreate).not.toHaveBeenCalled();
+    await definition.handler({ type: 'message', channel: 'telegram.channel',
+      message: telegramInbound, conversation: telegramConversation });
+    expect(ingestCanonicalTurnV1).not.toHaveBeenCalled();
+    expect(getOrCreate.mock.calls[0][0].input.message.text).toBe('Hola');
   });
 });
 

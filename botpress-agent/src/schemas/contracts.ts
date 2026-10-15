@@ -786,6 +786,7 @@ export const CommitDecisionInputSchema = z.object({
   conversation_pipeline_v1: ConversationPipelineCommitV1Schema.nullable().default(null),
   agent_turn_v2: AgentATurnCommitV2Schema.nullable().default(null),
   supports_multi_outbound: z.boolean().default(false),
+  supports_send_fencing: z.boolean().default(false),
   supports_turn_supersession: z.boolean().default(false),
   turn_diagnostics: TurnDiagnosticsV1Schema.nullable().default(null),
   decision: DecisionSchema,

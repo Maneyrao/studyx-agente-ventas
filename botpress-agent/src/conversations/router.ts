@@ -2,9 +2,7 @@ import { Conversation, configuration, secrets } from '@botpress/runtime'
 import { dispatch, logEvent } from '../channels'
 import { evaluateWhatsAppCanarySend } from '../channels/whatsapp.channel'
 import { processInboundTurn } from '../workflows/processInboundTurn'
-import { ingestCanonicalTurnV1 } from '../lib/inbound/ingest-canonical-turn'
 import { WorkflowInputSchema } from '../schemas/contracts'
-import { StudyxHttpError } from '../utils/http'
 
 /**
  * SINGLE Botpress Conversation handler for every channel.
@@ -66,24 +64,12 @@ export default new Conversation({
     const workflowKey = `turn:botpress:${input.integration_id}:${input.external_message_id}`
 
     try {
-      let preingested = null
-      if (input.message.type === 'text') {
-        try {
-          // One fast attempt keeps normal text latency low. On a retryable
-          // outage the workflow below becomes the sole retry owner.
-          preingested = await ingestCanonicalTurnV1(input, { additionalRetries: 0 })
-        } catch (error) {
-          if (!(error instanceof StudyxHttpError) || !error.retryable) throw error
-          // Persist the original envelope in Botpress even when StudyX cannot
-          // acknowledge it. The workflow replays the same ingest idempotency key.
-          logEvent('studyx.router.ingest_deferred', {
-            adapter, trace_id: traceId, error_code: error.code,
-          })
-        }
-      }
+      // Save the physical envelope in the managed durable workflow before
+      // depending on the canonical backend. An unavailable HTTP endpoint must
+      // not delay or prevent ownership of the incoming event.
       const workflow = await processInboundTurn.getOrCreate({
         key: workflowKey,
-        input: WorkflowInputSchema.parse({ ...input, preingested }),
+        input: WorkflowInputSchema.parse({ ...input, preingested: null }),
       })
 
       logEvent('studyx.router.workflow_started', {
