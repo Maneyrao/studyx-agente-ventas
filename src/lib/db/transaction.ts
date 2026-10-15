@@ -46,6 +46,7 @@ export async function withSerializableTransactionOn<T>(
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       const queuedAt = Date.now();
+      console.info(JSON.stringify({ event: 'db.transaction.queued', trace_id: options.traceId, attempt }));
       return (await connection.begin('isolation level serializable', async (transaction) => {
         const startedAt = Date.now();
         console.info(JSON.stringify({ event: 'db.transaction.started', trace_id: options.traceId,

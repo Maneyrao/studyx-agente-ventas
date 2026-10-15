@@ -82,6 +82,16 @@ const UNAUTHENTICATED_PATHS = new Set([
 ]);
 
 export async function proxy(request: NextRequest) {
+  const startedAt = Date.now();
+  const incomingTrace = request.headers.get('x-trace-id');
+  const traceId = incomingTrace && /^[0-9a-f-]{36}$/i.test(incomingTrace) ? incomingTrace : undefined;
+  const observe = (phase: string) => {
+    if (request.nextUrl.pathname.startsWith('/api/agent/')) {
+      console.info(JSON.stringify({ event: 'http.ingress.phase', phase, trace_id: traceId,
+        path: request.nextUrl.pathname, duration_ms: Date.now() - startedAt }));
+    }
+  };
+  observe('proxy_entered');
   // Vercel Cron authenticates with Authorization: Bearer CRON_SECRET inside
   // each cron handler. Requiring the internal orchestrator key here would make
   // legitimate scheduled requests unreachable.
@@ -133,7 +143,9 @@ export async function proxy(request: NextRequest) {
       return NextResponse.json({ error: 'INVALID_SIGNATURE' }, { status: 401 });
     }
 
+    observe('body_read_started');
     const rawBody = await request.clone().text();
+    observe('body_read_completed');
     const canonical = [timestamp, request.method, request.nextUrl.pathname, rawBody].join('\n');
     const expectedSignature = await hmacHex(signingSecret, canonical);
     if (!constantTimeEqual(signature.slice(3), expectedSignature)) {
@@ -165,6 +177,7 @@ export async function proxy(request: NextRequest) {
     }
   }
 
+  observe('authenticated');
   return NextResponse.next();
 }
 

@@ -21,9 +21,18 @@ const legacySchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  const ingressStartedAt = Date.now();
+  const incomingTrace = request.headers.get('x-trace-id');
+  const ingressTrace = incomingTrace && /^[0-9a-f-]{36}$/i.test(incomingTrace) ? incomingTrace : undefined;
+  const observeIngress = (phase: string) => console.info(JSON.stringify({
+    event: 'ingest.ingress.phase', phase, trace_id: ingressTrace,
+    duration_ms: Date.now() - ingressStartedAt,
+  }));
+  observeIngress('handler_entered');
   let body: unknown;
   try {
     body = await request.json();
+    observeIngress('body_parsed');
   } catch {
     return NextResponse.json({ error: 'INVALID_JSON' }, { status: 400 });
   }
@@ -75,6 +84,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    observeIngress('persistence_requested');
     const context = await timedStage('ingest.process', { trace_id: envelope.trace_id }, () =>
       processInboundMessage(envelope)
     );
