@@ -30,6 +30,8 @@ export type PaymentLinkRefusalReason =
 
 type MaterializedPaymentLinkSuccess = Extract<MaterializePaymentLinkResult, { readonly ok: true }>;
 
+export const PAYMENT_ACCESS_NOTICE = 'Cuando se acredite el pago, el alta se hará automáticamente. Si es tu primera inscripción, recibirás el acceso por email y WhatsApp; si ya tienes una cuenta, conservarás tus credenciales.';
+
 /**
  * The configured resolver is the final URL authority. Snapshot-authored prose
  * may already contain that exact URL; otherwise append the fixed canonical
@@ -43,8 +45,19 @@ export function assembleMaterializedPaymentResponse(
   // colapsan a un único corte de párrafo, igual que hace el guard de egreso con
   // la narrativa canónica. Sólo se tocan espacios: ninguna frase se pierde.
   const response = materialized.response_text.replace(/\n{2,}/gu, '\n\n').trim();
-  if (response.includes(materialized.block.url)) return response;
-  return `${response}\n\n${materialized.block.label}: ${materialized.block.url}`.trim();
+  const authored = response.replaceAll(PAYMENT_ACCESS_NOTICE, '').trim();
+  const paragraphs = authored.split('\n\n').filter(Boolean);
+  const linkParagraphIndex = paragraphs.findIndex((paragraph) =>
+    paragraph.includes(materialized.block.url));
+  if (linkParagraphIndex >= 0) {
+    paragraphs.splice(linkParagraphIndex, 0, PAYMENT_ACCESS_NOTICE);
+    return paragraphs.join('\n\n');
+  }
+  return [
+    authored,
+    PAYMENT_ACCESS_NOTICE,
+    `${materialized.block.label}: ${materialized.block.url}`,
+  ].filter(Boolean).join('\n\n');
 }
 
 export interface MaterializePaymentLinkContact {

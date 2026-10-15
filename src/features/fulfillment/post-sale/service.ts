@@ -145,7 +145,13 @@ export function assemblePostSaleMessage(source: Pick<Source, 'kind' | 'student_w
   const credentials = source.student_was_created
     ? `- Usuario: ${source.login_email}\n- Contraseña: ${INITIAL_PASSWORD}`
     : `- Usuario: ${source.login_email}\n- Contraseña: la que ya utilizas`;
-  return [narrative.intro, credentials, source.login_url, narrative.suggestion].filter(Boolean).join('\n\n');
+  const communityWelcome = source.student_was_created === true
+    ? 'Gracias por unirte a nuestra comunidad StudyX. Nos alegra mucho acompañarte en este nuevo paso 💛'
+    : source.student_was_created === false
+      ? 'Gracias por seguir siendo parte de nuestra comunidad StudyX. Nos alegra acompañarte en este nuevo paso 💛'
+      : 'Gracias por ser parte de nuestra comunidad StudyX. Nos alegra acompañarte en este nuevo paso 💛';
+  return [narrative.intro, credentials, source.login_url, narrative.suggestion, communityWelcome]
+    .filter(Boolean).join('\n\n');
 }
 export async function deliverNotification(id: string, input: { claim_token: string; botpress_conversation_id: string; narrative: z.infer<typeof NarrativeSchema> }, deps: Deps = {}) {
   const config = deps.config ?? loadPostSaleConfig();

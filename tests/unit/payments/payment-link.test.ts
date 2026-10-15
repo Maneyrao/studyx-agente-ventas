@@ -584,6 +584,45 @@ describe('materializePaymentLinkAction', () => {
     expect(result.stripped_urls).toEqual([staleUrl]);
   });
 
+  it('explains automatic enrollment and access delivery before every payment link', () => {
+    const result = materializePaymentLinkAction({
+      action: action({ plan_code: 'monthly_6' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
+      backendAuthorizedPlanCode: 'monthly_6',
+      batchMessages: [msg('Sí, los datos están correctos. Pasame el link.')],
+      businessSnapshot,
+      contact: allowedContact(),
+      modelResponseText: 'Perfecto, acá lo tienes.',
+      resolver,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const rendered = assembleMaterializedPaymentResponse(result);
+    const notice = 'Cuando se acredite el pago, el alta se hará automáticamente. Si es tu primera inscripción, recibirás el acceso por email y WhatsApp; si ya tienes una cuenta, conservarás tus credenciales.';
+    expect(rendered).toContain(notice);
+    expect(rendered.indexOf(notice)).toBeLessThan(rendered.indexOf(LINK_6M));
+    expect(rendered.split(notice)).toHaveLength(2);
+  });
+
+  it('keeps an already-authored canonical link label and URL together after the notice', () => {
+    const result = materializePaymentLinkAction({
+      action: action({ plan_code: 'monthly_6' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
+      backendAuthorizedPlanCode: 'monthly_6',
+      batchMessages: [msg('Sí, los datos están correctos. Pasame el link.')],
+      businessSnapshot,
+      contact: allowedContact(),
+      modelResponseText: `Perfecto.\n\n6 pagos: ${LINK_6M}`,
+      resolver,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const rendered = assembleMaterializedPaymentResponse(result);
+    expect(rendered).toContain(`credenciales.\n\n6 pagos: ${LINK_6M}`);
+  });
+
   /**
    * El recorte de bordes no ve los saltos que quedan en el medio del texto del
    * modelo, y el bloque del link agrega un párrafo más. Un mensaje que ya venía
@@ -606,7 +645,7 @@ describe('materializePaymentLinkAction', () => {
 
     const rendered = assembleMaterializedPaymentResponse(result);
     expect(rendered).not.toMatch(/\n{3,}/u);
-    expect(rendered.split(/\r?\n/u).length).toBeLessThanOrEqual(6);
+    expect(rendered.split(/\r?\n/u).length).toBeLessThanOrEqual(8);
   });
 
   it('allows a strict "ahora sí" resume only for the exact previously deferred canonical plan', () => {

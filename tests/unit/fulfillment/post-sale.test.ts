@@ -5,10 +5,12 @@ describe('post-sale verified access message', () => {
   const access = { kind: 'access_ready' as const, student_was_created: true, login_email: 'student@example.com', login_url: null };
   it('uses the verified username and initial password in a list', () => {
     expect(assemblePostSaleMessage(access, { intro: 'Ya tienes acceso a tu curso 🙂', suggestion: 'Si quieres, puedes cambiar tu contraseña al ingresar.' }))
-      .toBe('Ya tienes acceso a tu curso 🙂\n\n- Usuario: student@example.com\n- Contraseña: Escuela.123\n\nSi quieres, puedes cambiar tu contraseña al ingresar.');
+      .toBe('Ya tienes acceso a tu curso 🙂\n\n- Usuario: student@example.com\n- Contraseña: Escuela.123\n\nSi quieres, puedes cambiar tu contraseña al ingresar.\n\nGracias por unirte a nuestra comunidad StudyX. Nos alegra mucho acompañarte en este nuevo paso 💛');
   });
   it('retains the password of an existing user', () => {
-    expect(assemblePostSaleMessage({ ...access, student_was_created: false }, { intro: 'Ya tienes acceso.', suggestion: '' })).not.toContain('Escuela.123');
+    const message = assemblePostSaleMessage({ ...access, student_was_created: false }, { intro: 'Ya tienes acceso.', suggestion: '' });
+    expect(message).not.toContain('Escuela.123');
+    expect(message).toContain('Gracias por seguir siendo parte de nuestra comunidad StudyX');
   });
   it('does not expose credentials on payment confirmation or delay', () => {
     for (const kind of ['payment_received', 'access_delayed'] as const) {

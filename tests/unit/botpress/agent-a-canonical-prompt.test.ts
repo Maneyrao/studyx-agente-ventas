@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const PROMPT_PATH = 'docs/prompts/studyx-agent-a-canonical.md';
 const GENERATED_PATH = 'botpress-agent/src/prompts/studyx-agent-a-canonical.generated.ts';
-const EXPECTED_SHA256 = '2ebcd38c3d4ae089d27cf82d74bdc0c042720fef43afeea6a5ed0f8f9751a161';
+const EXPECTED_SHA256 = '93f8e125c374cc6a61d96552c2303d4acc27a457a1217e27229ed50cc4200b8a';
 
 describe('Agent A canonical sales prompt', () => {
   it('ships the complete approved prompt and a byte-equivalent generated module', () => {
@@ -16,7 +16,7 @@ describe('Agent A canonical sales prompt', () => {
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v70' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v71' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
@@ -34,37 +34,39 @@ describe('Agent A canonical sales prompt', () => {
   it('keeps intake confirmation brief instead of combining it with another sales explanation', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
-    expect(prompt).toMatch(/Es un paso propio/iu);
-    expect(prompt).toMatch(/no vuelvas a explicar el curso ni a listar planes/iu);
+    expect(prompt).toMatch(/espera esa confirmaci[oó]n antes de cualquier enlace/iu);
+    expect(prompt).toMatch(/no reexplique el curso, liste planes/iu);
   });
 
   it('reconfirms complete data once and waits for corrections or confirmation before the payment link', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
-    expect(prompt).toContain('reconfirma nombre, apellido, correo y teléfono en un solo resumen');
-    expect(prompt).toContain('espera su confirmación antes de enviar el enlace');
-    expect(prompt).toContain('Si corrige un dato, actualízalo y reconfirma el resumen corregido');
-    expect(prompt).toContain('No repitas una reconfirmación ya aceptada si los datos no cambiaron');
+    expect(prompt).toMatch(/resumen[^:]*: nombre, apellido, correo y tel[eé]fono/iu);
+    expect(prompt).toMatch(/espera esa confirmaci[oó]n antes de cualquier enlace/iu);
+    expect(prompt).toContain('Si corrige un dato, actualízalo y reconfirma');
+    expect(prompt).toMatch(/ni repita un resumen aceptado sin cambios/iu);
     expect(prompt).not.toContain('confirma brevemente si aún hace falta');
   });
 
-  it('defaults to no emojis and keeps data, payment and access messages free of them', () => {
+  it('uses occasional emojis for warmth without forcing them into every reply', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
-    expect(prompt).toContain('Por defecto escribe sin emojis');
-    expect(prompt).toContain('nunca en respuestas consecutivas ni al recoger o reconfirmar datos, enviar pagos o entregar accesos');
+    expect(prompt).toMatch(/emoji de vez en cuando/iu);
+    expect(prompt).toMatch(/es opcional/iu);
+    expect(prompt).toMatch(/nunca mec[aá]nicamente/iu);
+    expect(prompt).toMatch(/bienvenida final/iu);
   });
 
   it('explains both access delivery channels with the link and reserves welcome for confirmed new students', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
-    expect(prompt).toContain('junto al enlace aclara que, cuando se confirme el pago y se complete el alta, recibirá sus credenciales por correo y WhatsApp');
-    expect(prompt).toContain('Sólo para un alumno nuevo con alta confirmada');
-    expect(prompt).toContain('Bienvenido a Studyx, espero que disfrutes mucho de estudiar con nosotros!');
+    expect(prompt).toMatch(/alta será automática[\s\S]*primera inscripción[\s\S]*email y WhatsApp/iu);
+    expect(prompt).toMatch(/cuenta[\s\S]*conservará sus credenciales/iu);
+    expect(prompt).toMatch(/agradecimiento cálido[\s\S]*comunidad StudyX/iu);
   });
 
   it('teaches a variable WhatsApp rhythm without imposing two bubbles on every turn', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
     expect(prompt).toMatch(/formato orientativo, no (?:una )?plantilla literal/iu);
-    expect(prompt).toMatch(/uno o dos mensajes[\s\S]*no fuerces dos/iu);
+    expect(prompt).toMatch(/uno o dos mensajes[\s\S]*usa tres s[oó]lo si mejora la lectura/iu);
     expect(prompt).toMatch(/dos o m[aá]s (?:cursos|opciones)[\s\S]*lista/iu);
     expect(prompt).toMatch(/no conviertas cada elemento[\s\S]*mensaje separado/iu);
   });
@@ -73,7 +75,7 @@ describe('Agent A canonical sales prompt', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
     expect(prompt).toMatch(/responde s[oó]lo con informaci[oó]n nueva/iu);
-    expect(prompt).toMatch(/pregunta es opcional/iu);
+    expect(prompt).toMatch(/preguntar es opcional/iu);
     expect(prompt).toMatch(/una opci[oó]n por l[ií]nea/iu);
   });
 
@@ -94,7 +96,7 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toMatch(/WhatsApp no es una llamada escrita/iu);
     expect(prompt).toMatch(/contenido no interpretable/iu);
     expect(prompt).toMatch(/reenvíe el audio|escriba el mensaje/iu);
-    expect(prompt).toMatch(/no uses una plantilla fija/iu);
+    expect(prompt).toMatch(/var[ií]a:[^\n]*responde[^\n]*reacciona[^\n]*profundiza/iu);
     expect(prompt).toMatch(/no encadenes preguntas para completar campos/iu);
     expect(prompt).toMatch(/situaci[oó]n actual[\s\S]*deseo[\s\S]*motivaci[oó]n[\s\S]*distancia[\s\S]*frenos/iu);
     expect(prompt).toMatch(/informaci[oó]n del cliente[\s\S]*necesidad[\s\S]*hecho verificado[\s\S]*utilidad personal/iu);
@@ -104,17 +106,15 @@ describe('Agent A canonical sales prompt', () => {
   it('keeps commercial firmness collaborative instead of blaming or ordering the prospect', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
-    expect(prompt).toMatch(/firmeza comercial[^.]*impaciencia[^.]*reproche[^.]*orden/iu);
-    expect(prompt).toMatch(/peticiones colaborativas/iu);
-    expect(prompt).toMatch(/no atribuyas la fricci[oó]n al cliente/iu);
+    expect(prompt).toMatch(/s[eé] firme sin impaciencia, reproches ni [oó]rdenes/iu);
+    expect(prompt).toMatch(/pide de forma colaborativa/iu);
   });
 
   it('runs Lisandro humanity check before returning the model-authored reply', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
-    expect(prompt).toMatch(/antes de entregar[^.]*persona real por WhatsApp/iu);
-    expect(prompt).toMatch(/suena gen[eé]rica[^.]*fr[ií]a[^.]*brusca[^.]*repetitiva/iu);
-    expect(prompt).toMatch(/reescr[ií]bela/iu);
+    expect(prompt).toMatch(/antes de entregar[^.]*suene humano/iu);
+    expect(prompt).toMatch(/si no, ac[oó]rtalo sin alterar hechos ni acciones/iu);
   });
 
   it('offers a call for a commercial reason rather than for turn position alone', () => {
@@ -147,9 +147,18 @@ describe('Agent A canonical sales prompt', () => {
 
     expect(prompt).toMatch(/aceptar o pedir una llamada[\s\S]*proposed_action=none/iu);
     expect(prompt).toMatch(/puede atender ahora/iu);
-    expect(prompt).toMatch(/respuesta posterior[\s\S]*request_call_now/iu);
+    expect(prompt).toMatch(/confirmaci[oó]n posterior[\s\S]*request_call_now/iu);
     expect(prompt).toMatch(/si no puede[\s\S]*sigue por chat/iu);
-    expect(prompt).toMatch(/pedido posterior[\s\S]*repite esta confirmaci[oó]n/iu);
+    expect(prompt).toMatch(/reconfirma ante un pedido posterior/iu);
+  });
+
+  it('advances calls and payment links without redundant permissions or repeated summaries', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+
+    expect(prompt).toMatch(/intenci[oó]n ya est[aá] clara[\s\S]*sin pedir permisos redundantes/iu);
+    expect(prompt).toMatch(/con datos completos[\s\S]*ll[aá]mame[\s\S]*request_call_now[\s\S]*ese turno/iu);
+    expect(prompt).toMatch(/curso, plan y datos completos[\s\S]*directo al resumen[\s\S]*sin reconfirmar el plan/iu);
+    expect(prompt).toMatch(/confirmaci[oó]n del resumen[\s\S]*env[ií]a el enlace[\s\S]*sin pedir otro «dale»/iu);
   });
 
 });
