@@ -94,6 +94,13 @@ export class PostgresChannelIdentityStore implements ChannelIdentityStore {
       WHERE ct.contact_id = ${contactId}::uuid
         AND ct.unusable_at IS NULL
         AND ct.channel IN ('whatsapp', 'telegram')
+        AND NOT EXISTS (
+          SELECT 1 FROM channel_thread_aliases alias
+          WHERE alias.provider = ct.provider AND alias.integration_id = ct.integration_id
+            AND alias.external_conversation_id = ct.external_conversation_id
+            AND alias.workspace_id = ${workspaceId}::uuid AND alias.contact_id = ct.contact_id
+            AND alias.canonical_thread_id <> ct.id
+        )
       ORDER BY ct.last_seen_at DESC
     `;
     return rows.map((row) => ({

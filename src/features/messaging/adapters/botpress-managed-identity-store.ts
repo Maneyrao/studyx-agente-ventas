@@ -72,6 +72,13 @@ export class BotpressManagedIdentityStore implements ChannelIdentityStore {
         AND thread.channel IN ('whatsapp', 'telegram')
         AND thread.unusable_at IS NULL
         AND NULLIF(thread.metadata->>'botpress_conversation_id', '') IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM channel_thread_aliases alias
+          WHERE alias.provider = thread.provider AND alias.integration_id = thread.integration_id
+            AND alias.external_conversation_id = thread.external_conversation_id
+            AND alias.workspace_id = ${workspaceId}::uuid AND alias.contact_id = thread.contact_id
+            AND alias.canonical_thread_id <> thread.id
+        )
       ORDER BY thread.last_seen_at DESC
     `;
     return rows.map((row) => ({

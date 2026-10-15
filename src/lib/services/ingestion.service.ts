@@ -1,3 +1,5 @@
+import { resolveInboundChannelThread } from './channel-thread-continuity.service';
+export { ChannelIdentityConflictError } from './channel-thread-continuity.service';
 import { resolveContact, Contact } from './contact.service';
 import { getOrCreateOpenConversation } from './conversation.service';
 import { registerMessage, getMessageById, Message } from './message.service';
@@ -136,14 +138,6 @@ export class IdempotencyConflictError extends Error {
   constructor() {
     super('The external message identity is already bound to another payload');
     this.name = 'IdempotencyConflictError';
-  }
-}
-
-export class ChannelIdentityConflictError extends Error {
-  readonly code = 'CHANNEL_IDENTITY_CONFLICT';
-  constructor() {
-    super('The provider conversation is already bound to another contact');
-    this.name = 'ChannelIdentityConflictError';
   }
 }
 
@@ -511,34 +505,10 @@ async function persistInbound(envelope: InboundEnvelope): Promise<InboundCore> {
 
     mark('contact');
 
-    const threads = await db<Array<{ id: string; contact_id: string }>>`
-      INSERT INTO channel_threads (
-        contact_id, provider, integration_id, channel, external_conversation_id, metadata
-      )
-      VALUES (
-        ${contact.id}::uuid,
-        ${provider},
-        ${envelope.integration_id},
-        ${channel},
-        ${envelope.external_conversation_id},
-        ${jsonbParam(db, {
-          external_user_id: envelope.external_user_id,
-          ...(envelope.botpress_conversation_id
-            ? { botpress_conversation_id: envelope.botpress_conversation_id }
-            : {}),
-          ...(envelope.botpress_user_id ? { botpress_user_id: envelope.botpress_user_id } : {}),
-        })}
-      )
-      ON CONFLICT (provider, integration_id, external_conversation_id)
-      DO UPDATE SET
-        last_seen_at = now(),
-        metadata = channel_threads.metadata || EXCLUDED.metadata
-      WHERE channel_threads.contact_id = EXCLUDED.contact_id
-        AND channel_threads.channel = EXCLUDED.channel
-      RETURNING id, contact_id
-    `;
-    const thread = threads[0];
-    if (!thread) throw new ChannelIdentityConflictError();
+    const thread = await resolveInboundChannelThread({
+      db, envelope, contactId: contact.id, provider, channel, workspaceSlug,
+      occurredAt: occurrence.occurred_at,
+    });
 
     await db`
       UPDATE channel_events

@@ -1,3 +1,4 @@
+import { loadBusinessWorkspaceConfig } from '@/lib/config';
 import { sql } from '@/lib/db/orchestrator';
 import type { DbClient } from '@/lib/db/types';
 import type {
@@ -197,6 +198,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
     recent_turns_limit: number;
   }): Promise<ClaimedBatchContext | null> {
     const limit = Math.min(Math.max(input.recent_turns_limit, 1), 20);
+    const { workspaceSlug } = loadBusinessWorkspaceConfig();
     const logicalLimit = Math.min(limit, 6);
     type JsonBatchMessage = {
       id: string;
@@ -308,7 +310,15 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
               rm.id, rm.direction, rm.content, rm.created_at, rm.batch_id, rm.in_reply_to,
               rm.part_index, message_occurrence_v1(rm.metadata, rm.created_at) AS occurred_at
             FROM messages AS rm
-            WHERE rm.conversation_id = b.conversation_id
+            WHERE (rm.conversation_id = b.conversation_id OR EXISTS (
+              SELECT 1 FROM conversation_history_recovery_links recovery
+              JOIN workspaces workspace ON workspace.id = recovery.workspace_id
+              JOIN conversations source ON source.id = recovery.source_conversation_id AND source.status = 'closed'
+              WHERE recovery.canonical_conversation_id = b.conversation_id
+                AND recovery.source_conversation_id = rm.conversation_id
+                AND recovery.contact_id = b.contact_id AND recovery.channel = conv.channel
+                AND workspace.slug = ${workspaceSlug} AND workspace.status = 'active'
+            ))
               AND rm.contact_id = b.contact_id
               AND rm.batch_id IS DISTINCT FROM b.id
               AND (rm.direction <> 'outbound'
@@ -356,7 +366,15 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
                   ELSE 'physical:' || rm.id::text
                 END AS logical_turn_id
               FROM messages AS rm
-              WHERE rm.conversation_id = b.conversation_id
+              WHERE (rm.conversation_id = b.conversation_id OR EXISTS (
+              SELECT 1 FROM conversation_history_recovery_links recovery
+              JOIN workspaces workspace ON workspace.id = recovery.workspace_id
+              JOIN conversations source ON source.id = recovery.source_conversation_id AND source.status = 'closed'
+              WHERE recovery.canonical_conversation_id = b.conversation_id
+                AND recovery.source_conversation_id = rm.conversation_id
+                AND recovery.contact_id = b.contact_id AND recovery.channel = conv.channel
+                AND workspace.slug = ${workspaceSlug} AND workspace.status = 'active'
+            ))
                 AND rm.contact_id = b.contact_id
                 AND rm.batch_id IS DISTINCT FROM b.id
               AND (rm.direction <> 'outbound'
@@ -554,6 +572,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
     recent_turns_limit: number;
   }): Promise<ClaimedTurnFacts | null> {
     const limit = Math.min(Math.max(input.recent_turns_limit, 1), 20);
+    const { workspaceSlug } = loadBusinessWorkspaceConfig();
 
     const rows = await this.db<Array<{
       contact_id: string;
@@ -621,14 +640,28 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
     }>>`
       SELECT direction, content, created_at
       FROM (
-        SELECT direction, content, created_at
-        FROM messages
-        WHERE conversation_id = ${row.conversation_id}::uuid
+        SELECT direction, content, created_at, id, part_index,
+          message_occurrence_v1(metadata, created_at) AS occurred_at
+        FROM messages AS rm
+        WHERE rm.contact_id = ${row.contact_id}::uuid
+          AND (rm.conversation_id = ${row.conversation_id}::uuid OR EXISTS (
+            SELECT 1 FROM conversation_history_recovery_links recovery
+            JOIN workspaces workspace ON workspace.id = recovery.workspace_id
+            JOIN conversations source ON source.id = recovery.source_conversation_id AND source.status = 'closed'
+            WHERE recovery.canonical_conversation_id = ${row.conversation_id}::uuid
+              AND recovery.source_conversation_id = rm.conversation_id
+              AND recovery.contact_id = ${row.contact_id}::uuid
+              AND workspace.slug = ${workspaceSlug} AND workspace.status = 'active'
+          ))
           AND batch_id IS DISTINCT FROM ${input.batch_id}::uuid
-        ORDER BY created_at DESC, id DESC
+          AND (rm.direction <> 'outbound'
+            OR NOT EXISTS (SELECT 1 FROM outbound_deliveries known WHERE known.message_id = rm.id)
+            OR EXISTS (SELECT 1 FROM outbound_deliveries sent WHERE sent.message_id = rm.id
+              AND (sent.provider_message_id IS NOT NULL OR sent.state IN ('submitted', 'delivered'))))
+        ORDER BY message_occurrence_v1(metadata, created_at) DESC, part_index DESC, id DESC
         LIMIT ${limit}
       ) AS recent_window
-      ORDER BY created_at ASC
+      ORDER BY occurred_at ASC, part_index ASC, id ASC
     `;
 
     return {
