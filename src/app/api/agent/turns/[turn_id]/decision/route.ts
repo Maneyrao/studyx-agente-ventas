@@ -166,6 +166,7 @@ const schema = z.object({
   conversation_pipeline_v1: ConversationPipelineCommitV1Schema.nullable().optional(),
   agent_turn_v2: AgentATurnCommitV2Schema.nullable().optional(),
   supports_multi_outbound: z.boolean().optional(),
+  supports_send_fencing: z.boolean().optional(),
   supports_turn_supersession: z.boolean().optional(),
   turn_diagnostics: turnDiagnosticsV1Schema.nullable().optional(),
   decision: decisionSchema,

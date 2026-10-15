@@ -311,6 +311,10 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
             WHERE rm.conversation_id = b.conversation_id
               AND rm.contact_id = b.contact_id
               AND rm.batch_id IS DISTINCT FROM b.id
+              AND (rm.direction <> 'outbound'
+                OR NOT EXISTS (SELECT 1 FROM outbound_deliveries known WHERE known.message_id = rm.id)
+                OR EXISTS (SELECT 1 FROM outbound_deliveries sent WHERE sent.message_id = rm.id
+                  AND (sent.provider_message_id IS NOT NULL OR sent.state IN ('submitted', 'delivered'))))
             ORDER BY message_occurrence_v1(rm.metadata, rm.created_at) DESC, rm.part_index DESC, rm.id DESC
             LIMIT ${limit}
           ) AS recent
@@ -355,6 +359,10 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
               WHERE rm.conversation_id = b.conversation_id
                 AND rm.contact_id = b.contact_id
                 AND rm.batch_id IS DISTINCT FROM b.id
+              AND (rm.direction <> 'outbound'
+                OR NOT EXISTS (SELECT 1 FROM outbound_deliveries known WHERE known.message_id = rm.id)
+                OR EXISTS (SELECT 1 FROM outbound_deliveries sent WHERE sent.message_id = rm.id
+                  AND (sent.provider_message_id IS NOT NULL OR sent.state IN ('submitted', 'delivered'))))
             ) AS grouped
             GROUP BY grouped.logical_turn_id, grouped.direction
             ORDER BY max(grouped.occurred_at) DESC

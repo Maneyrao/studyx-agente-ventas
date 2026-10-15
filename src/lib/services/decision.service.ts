@@ -158,6 +158,7 @@ export interface CommitDecisionInput {
   supports_multi_outbound?: boolean;
   /** New workflow capability: stale model results may yield to a newer inbound batch. */
   supports_turn_supersession?: boolean;
+  supports_send_fencing?: boolean;
   /** Immutable PII-free classification of generation/policy outcomes. */
   turn_diagnostics?: TurnDiagnosticsV1 | null;
   decision: AnyDecision;
@@ -447,6 +448,7 @@ function decisionPayload(input: CommitDecisionInput) {
       : {}),
     ...(input.supports_multi_outbound ? { supports_multi_outbound: true } : {}),
     ...(input.supports_turn_supersession ? { supports_turn_supersession: true } : {}),
+    ...(input.supports_send_fencing ? { supports_send_fencing: true } : {}),
     ...(input.turn_diagnostics ? { turn_diagnostics: input.turn_diagnostics } : {}),
   };
 }
@@ -1671,6 +1673,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           SET
             state = 'leased',
             leased_by = ${`botpress:${validatedInput.trace_id}`},
+            physical_send_state = ${validatedInput.supports_send_fencing ? 'reserved' : null},
             lease_until = now() + interval '5 minutes',
             attempt_count = attempt_count + 1
           WHERE id = ${queue.delivery_id}::uuid AND state = 'pending'

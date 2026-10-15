@@ -31,6 +31,9 @@ function expectedIdempotencyKey(pathname: string, body: Record<string, unknown>)
     ) return null;
     return `inbound:${String(body.source)}:${String(body.integration_id)}:${String(body.external_message_id)}`;
   }
+  if (pathname === '/api/agent/inbound/receipts') {
+    return `inbound-receipts:${String(body.integration_id)}:${String(body.external_conversation_id)}`;
+  }
   // A claim is idempotent per batch: replaying the same signed request must not
   // be able to masquerade as a claim on a different window.
   const claim = pathname.match(/^\/api\/agent\/batches\/([^/]+)\/claim$/);
@@ -43,6 +46,8 @@ function expectedIdempotencyKey(pathname: string, body: Record<string, unknown>)
   if (delivery) {
     return `delivery:${delivery[1]}:${String(body.botpress_message_id ?? 'none')}:${String(body.status)}`;
   }
+  const continuation = pathname.match(/^\/api\/agent\/outbounds\/([^/]+)\/continuation$/);
+  if (continuation) return `continuation:${continuation[1]}:${String(body.delivery_attempt)}`;
   // Dispatch is idempotent per call: the signed key must be bound to the
   // call_id in the path so a replay cannot dispatch a different call.
   const postSale = pathname.match(/^\/api\/agent\/post-sale\/([^/]+)\/(claim|deliver|release)$/);
