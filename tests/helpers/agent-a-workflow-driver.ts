@@ -234,7 +234,15 @@ async function executeWorkflowTurnV1(
       signal: new AbortController().signal,
       // Cloud creates a distinct durable workflow for each source message.
       // A constant id would impersonate the same owner in concurrent bursts.
-      workflow: { id: `workflow-harness:${externalMessageId}` },
+      workflow: {
+        id: `workflow-harness:${externalMessageId}`,
+        // Record the ADK lifetime update required by transport recovery. Local
+        // sleeps still run above; this does not simulate Cloud's durable timer.
+        async setTimeout(options: { in: string } | { at: string }) {
+          steps.push('in' in options ? `workflow:setTimeout:${options.in}`
+            : `workflow:setTimeoutAt:${options.at}`);
+        },
+      },
     });
     status = (result as { status?: string } | null)?.status ?? null;
   } catch (error) {

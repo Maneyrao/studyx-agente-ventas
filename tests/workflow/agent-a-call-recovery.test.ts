@@ -16,6 +16,7 @@ const previousKey = secrets.DEEPSEEK_API_KEY;
 let phase: 'course' | 'agus_course' | 'missing_identity' | 'identity' | 'agus_identity' | 'confirm' | 'invalid_repair' | 'payment_course' | 'payment_identity' | 'payment_options' | 'payment_choice' | 'payment_permission' | 'payment_confirm_choice' | 'payment_missing_identity' | 'payment_complete_intake' = 'course';
 let generationCount = 0;
 let latestContext: AgentAContextV1 | null = null;
+let ingestTimeoutsRemaining = 0;
 
 function proposal(text: string, action: AgentATurnProposalV1['proposed_action'] = { type: 'none' }): AgentATurnProposalV1 {
   return {
@@ -39,7 +40,13 @@ beforeAll(async () => {
   secrets.DEEPSEEK_API_KEY = 'call-recovery-fixture';
   vi.stubGlobal('fetch', async (request: RequestInfo | URL, init?: RequestInit) => {
     const target = new URL(request instanceof Request ? request.url : String(request));
-    if (target.origin === backend.origin) return localFetch(request, init);
+    if (target.origin === backend.origin) {
+      if (target.pathname === '/api/agent/ingest' && ingestTimeoutsRemaining > 0) {
+        ingestTimeoutsRemaining -= 1;
+        throw new DOMException('Fixture ingress timeout before acknowledgement', 'AbortError');
+      }
+      return localFetch(request, init);
+    }
     if (target.href !== 'https://api.deepseek.com/responses') throw new Error('UNEXPECTED_EXTERNAL_CALL');
     generationCount += 1;
     const requestBody = JSON.parse(String(init?.body));
@@ -129,7 +136,13 @@ it('retains a payment request through intake and executes it once after the sepa
   const id = { conversationId: `payment-pending-${randomUUID()}`, userId: `payment-pending-${randomUUID()}`,
     phoneE164: `+999${String(Date.now()).slice(-10)}`, providerMode: 'fixture' as const };
   phase = 'payment_course';
-  expect((await runWorkflowTurnV1({ ...id, text: 'Me interesa Inglés 1.' })).commitSucceeded).toBe(true);
+  // Fail one HTTP attempt: the workflow owns ingress retries durably. Exercise
+  // its recovery interface without depending on an accidental dev cold start.
+  ingestTimeoutsRemaining = 1;
+  const course = await runWorkflowTurnV1({ ...id, text: 'Me interesa Inglés 1.' });
+  expect(course.errorCode).toBeNull();
+  expect(course.commitSucceeded).toBe(true);
+  expect(course.steps).toContain('workflow:setTimeout:30m');
   phase = 'payment_missing_identity'; generationCount = 0;
   const initial = await runWorkflowTurnV1({ ...id, text: 'Quiero el enlace para 1 pago.' });
   expect(initial.commitSucceeded).toBe(true);
