@@ -14,7 +14,8 @@ Estado: fallo confirmado en el canario real de la versión `2027514` / Brain v10
 | 10:33:04.266 | Solo la pregunta del acceso llegó al historial canónico, después de varias esperas HTTP. |
 | 10:33:13.549 | Se respondió sobre el acceso, 104,835 segundos después de recibir esa pregunta. |
 | 10:36:56.463 | La ejecución de la pregunta de seguridad terminó en Botpress con resultado `paused_error`, `STUDYX_TIMEOUT`, sin turn_id ni respuesta. |
-| 10:45:32 | La pregunta de seguridad seguía ausente de la tabla de mensajes. |
+| 10:39:08.297 | Respondió a la pregunta posterior de pago/acceso recibida a las 10:36:23.164: 165,133 segundos de demora. No fue la recuperación de la pregunta de seguridad. |
+| 10:57:00 | La pregunta de seguridad seguía ausente de la tabla de mensajes; permanecían 44 mensajes y 14 decisiones. |
 
 Hay errores reales de disponibilidad y consistencia. La agrupación normal funciona en algunos casos; eso no cubre retrasos asimétricos de entrada. La separación de 10 segundos entre «seguimos por acá» y la consulta de dinámica corresponde a dos ventanas normales de cinco segundos; el caso seguridad/acceso sí estaba dentro de la misma ventana nominal y se fragmentó por el fallo de entrada.
 
@@ -45,3 +46,24 @@ El contrato de perfil debe diferenciar aclarar/corregir un dato conocido de decl
 Validar juntos: ráfagas, demoras, reintentos, historial, datos confirmados, consentimiento de llamadas, pago único, dudas posteriores al enlace, recepción fuera de orden y ausencia de duplicados. Mantener la personalidad canónica v70 y la autoría de Agent A. No afirmar solución integral por una prueba local ni por salud HTTP.
 
 Posible hipótesis pendiente: reutilización de conexiones TCP inactivas en serverless. Está descrita por [Supabase](https://supabase.com/docs/guides/troubleshooting/troubleshooting-connect_timeout-or-hanging-queries-in-vercel-serverless-functions-775f92), pero no está probada en este incidente. No aplicar una rotación de pool o una modificación de límites globales solo por coincidencia de síntomas.
+
+## Instrumentación activada y límites de las pruebas
+
+Se activó en la cuenta actual el backend `01fe4eeaefa5030df4334271ecfe5eb118cba2f2`, despliegue `dpl_FWoob2wA7zq2mhMWDKT2wYsma6RL`. Solo añade observación de fronteras HTTP y cola de transacción. Botpress conserva el bundle publicado a las 09:51:28; no se modificó el comportamiento ni se envió un mensaje de prueba al cliente.
+
+Verificaciones de esta instrumentación: 20 pruebas de seguridad, análisis de tipos, lint de los archivos cambiados y compilación Vercel aprobados; salud y disponibilidad 200; recuperación contra lote inexistente 200 `not_owner`; doce peticiones sintéticas inválidas 400, sin persistencia. Los registros de esas doce peticiones incluyen todas las fases hasta `body_parsed`. Los primeros registros consultados estaban incompletos por retraso de propagación; la consulta posterior confirmó que no había un bloqueo en esas peticiones.
+
+Estas comprobaciones no reproducen todavía el bloqueo de Botpress Cloud. Tampoco certifican la recuperación de la entrada, la agrupación bajo fallo ni el comportamiento del modelo. El arnés `tests/helpers/agent-a-workflow-driver.ts` ejecuta el handler real con backend y PostgreSQL, pero sustituye el planificador durable, el cliente de entrega y otras fronteras de Botpress; su propio encabezado declara ese límite. Las pruebas de router, además, sustituyen la ingesta y la creación del workflow. Aprobarlas no equivale a probar WhatsApp → Botpress Cloud → Vercel → PostgreSQL → respuesta entregada.
+
+### Matriz de aceptación pendiente
+
+| Caso | Evidencia obligatoria |
+| --- | --- |
+| Primera burbuja falla y la segunda llega dentro de la ventana | Ambas permanecen recuperables y ninguna respuesta se autoriza ignorando la pregunta anterior. |
+| Se agotan todos los intentos de ingesta | Estado operativo pendiente o de revisión con reanudación efectiva; no `completed` engañoso ni pérdida silenciosa. |
+| Mensajes duplicados y reanudación tras timeout | Una única decisión efectiva y ninguna entrega física duplicada. |
+| Conexión fría, reutilizada e inactiva | Tiempos de cada frontera correlacionados y prueba desde Botpress Cloud, con presupuesto de latencia definido antes de ejecutar. |
+| Perfil completo y primera propuesta `clarify` | No se afirma que falta un dato confirmado; una corrección explícita del usuario sigue siendo válida. |
+| Pago, acceso, dudas y llamada dentro de la misma conversación | Se mantienen historial completo, consentimiento, evidencia comercial y personalidad v70. |
+
+Estado final de esta comprobación: **canario real FALLIDO; reparación integral ABIERTA; instrumentación PUBLICADA**. No se autoriza avanzar la migración por el resultado de estas comprobaciones básicas.
