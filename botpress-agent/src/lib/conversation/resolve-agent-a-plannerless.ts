@@ -7,6 +7,7 @@ import {
   solicitsACallV1,
   validateAgentATurnProposalV1,
 } from './agent-a-brain'
+import { supportsCallRequestV1 } from './channel-preference-evidence'
 import type {
   AgentAProposalCycleEvidenceV1,
   AgentAProposalEnvelopeV1,
@@ -218,6 +219,40 @@ function materializeAuthorizedPaymentAction<T extends AgentAProposalEnvelopeV1>(
   }
 }
 
+/**
+ * A direct call request is already customer consent. If the model preserves
+ * that semantic move but drops the redundant action field, bind the canonical
+ * action from the capability instead of turning the repair into a refusal.
+ */
+function materializeAuthorizedCallAction<T extends AgentAProposalEnvelopeV1>(input: {
+  readonly initial: T
+  readonly context: AgentAContextV1
+}): T {
+  if (input.initial.proposal.proposed_action.type !== 'none') return input.initial
+  const moves = new Set([
+    input.initial.proposal.move.move,
+    ...input.initial.proposal.move.secondary_moves,
+  ])
+  if (!moves.has('request_call')
+    || input.initial.proposal.move.vetoes.includes('call')
+    || !input.context.capabilities.may_request_call_now
+    || input.context.commercial_state.call_preference !== 'call'
+    || input.context.commercial_state.call_offer_status !== 'accepted'
+    || input.context.commercial_state.awaiting_reply !== 'call_or_chat') return input.initial
+  const currentText = input.context.turn.batch_messages.map(message => message.text).join('\n')
+  if (!supportsCallRequestV1(currentText, false)) return input.initial
+  return {
+    ...input.initial,
+    proposal: {
+      ...input.initial.proposal,
+      proposed_action: {
+        type: 'request_call_now',
+        reason: 'direct_request',
+      },
+    },
+  }
+}
+
 /** Both the initial proposal and its one repair use this exact pipeline. */
 function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   readonly initial: T
@@ -240,7 +275,7 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   // An unavailable call needs the existing model repair: changing only the
   // action would publish an acknowledgement for a call that never occurred.
   if (input.semantic_rejections === 'advisory'
-    && !rejection.rejections.some(requiresModelCorrection)
+    && !rejection.rejections.some((reason) => requiresModelCorrection(reason, effective.proposal))
     && !claimsImmediatePaymentLinkDelivery(effective.proposal)
     && !hasUnbackedCallDispatchClaim(effective.proposal, rejection, input.context)
     || hasOnlyNonBlockingGuidance(effective.proposal, rejection, input.context)) {
@@ -261,11 +296,17 @@ const NON_BLOCKING_GUIDANCE_CODES = new Set([
   'MISSING_INTAKE',
 ])
 
-function requiresModelCorrection(reason: TurnRejectionV1['rejections'][number]): boolean {
+function requiresModelCorrection(
+  reason: TurnRejectionV1['rejections'][number],
+  proposal: AgentATurnProposalV1,
+): boolean {
   if (reason.code === 'FACT_VALUE_MISMATCH') {
     // Candidate naming/resolution heuristics remain guidance. The backend
     // independently validates actual catalogue values before any delivery.
     return !['candidate_course_detail', 'candidate_course_names'].includes(reason.subject)
+  }
+  if (reason.code === 'PLAN_NOT_SELECTED') {
+    return proposal.proposed_action.type === 'none'
   }
   return ['UNSUPPORTED_OPERATIONAL_CLAIM',
     'REPEATED_AGENT_REPLY', 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'].includes(reason.code)
@@ -399,8 +440,12 @@ export async function resolveAgentAPlannerlessProposalV2<
   readonly semantic_rejections?: 'blocking' | 'advisory'
 }): Promise<PlannerlessResolutionV2<T>> {
   const factIds = authorizedFactIds(input.context)
-  const boundInitial = materializeAuthorizedPaymentAction({
+  const callBoundInitial = materializeAuthorizedCallAction({
     initial: input.initial,
+    context: input.context,
+  })
+  const boundInitial = materializeAuthorizedPaymentAction({
+    initial: callBoundInitial,
     context: input.context,
   })
   const prepared = preparePlannerlessProposal({

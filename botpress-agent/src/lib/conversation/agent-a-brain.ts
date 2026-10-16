@@ -1943,6 +1943,20 @@ export function validateAgentATurnProposalV1(input: {
     && action.payment_plan === input.proposal.move.payment_plan
     && action.offering_code === input.context.commercial_state.selected_offering_code
     && action.offering_code === input.context.catalog.selected_offering?.code
+  const requestsPaymentLink = input.proposal.move.move === 'request_payment_link'
+    || input.proposal.move.secondary_moves.includes('request_payment_link')
+  const selectsKnownPlanNow = (input.proposal.move.move === 'select_payment_plan'
+    || input.proposal.move.secondary_moves.includes('select_payment_plan'))
+    && input.proposal.move.payment_plan !== undefined
+    && input.context.catalog.payment_plans.some(
+      (plan) => plan.code === input.proposal.move.payment_plan,
+    )
+  if (action.type === 'none' && requestsPaymentLink
+    && input.context.commercial_state.selected_payment_plan === null
+    && !selectsKnownPlanNow
+    && (input.context.capabilities.intake_missing ?? []).length === 0) {
+    rejections.push({ code: 'PLAN_NOT_SELECTED', subject: 'payment_plan' })
+  }
   if (action.type === 'send_payment_link') {
     if (!input.context.capabilities.may_send_payment_link) {
       rejections.push({ code: 'ACTION_NOT_AUTHORIZED', subject: 'send_payment_link' })
@@ -2121,7 +2135,10 @@ export function validateAgentATurnProposalV1(input: {
     authorized_alternatives: {
       fact_ids: [...planned],
       actions: authorizedActionsV1(input.context),
-      missing_information: [...(input.context.capabilities.intake_missing ?? [])],
+      missing_information: [
+        ...(input.context.capabilities.intake_missing ?? []),
+        ...(rejections.some((reason) => reason.code === 'PLAN_NOT_SELECTED') ? ['payment_plan'] : []),
+      ],
     },
   }
 }

@@ -1008,39 +1008,6 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     ]);
   });
 
-  it('repairs a false call confirmation into an availability question', async () => {
-    const current = context();
-    current.turn.batch_messages = [{ id: 'm1', text: 'Dale, llamame' }];
-    current.commercial_state.call_preference = 'call';
-    current.commercial_state.call_offer_status = 'accepted';
-    current.commercial_state.awaiting_reply = 'call_or_chat';
-    const initial = proposal({
-      move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
-      response: { messages: ['Perfecto, te llamo ahora.'], call_offer: null },
-      proposed_action: { type: 'none' },
-      used_fact_ids: [],
-    });
-    const repair = vi.fn(async rejection => generated({
-      ...initial,
-      response: { messages: ['Perfecto. Puedes atender ahora?'], call_offer: null },
-      repair_of: { rejection_id: rejection.rejection_id, attempt: 1 as const },
-    }));
-
-    const result = await resolveAgentAPlannerlessProposalV2({
-      initial: generated(initial),
-      context: current,
-      repair_enabled: true,
-      repair,
-      rejection_id: '00000000-0000-4000-8000-0000000000c4',
-    });
-
-    expect(repair).toHaveBeenCalledTimes(1);
-    expect(result.effective.proposal.response.messages).toEqual([
-      'Perfecto. Puedes atender ahora?',
-    ]);
-    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
-  });
-
   it('preserves requested information embedded with an unsolicited pending-call reminder', async () => {
     const current = context();
     current.commercial_state.call_offer_count = 1;
@@ -1913,6 +1880,72 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       offering_code: 'maquillaje-profesional',
       payment_plan: 'monthly_6',
     });
+  });
+
+  it('requires the agent to ask for a payment plan when a link is requested without one', async () => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'Dale, mandame el link';
+    current.commercial_state.selected_payment_plan = null;
+    current.capabilities.may_send_payment_link = true;
+    current.capabilities.intake_missing = [];
+    const initial = generated(proposal({
+      move: {
+        schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [], confidence: 1,
+      },
+      response: { messages: ['Sí, claro.'], call_offer: null },
+      proposed_action: { type: 'none' },
+      used_fact_ids: [],
+    }));
+    const repair = vi.fn(async rejection => generated(proposal({
+      move: {
+        schema_version: 1, move: 'ask_payment_options', secondary_moves: [], vetoes: [], confidence: 1,
+      },
+      response: { messages: ['Prefieres 12 cuotas, 6 cuotas o un solo pago?'], call_offer: null },
+      proposed_action: { type: 'none' },
+      used_fact_ids: [],
+      repair_of: { rejection_id: rejection.rejection_id, attempt: 1 },
+    })));
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: true, repair,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.evidence.rejection_codes).toContain('PLAN_NOT_SELECTED');
+    expect(result.effective.proposal.response.messages).toEqual([
+      'Prefieres 12 cuotas, 6 cuotas o un solo pago?',
+    ]);
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+  });
+
+  it('materializes an authorized direct call when the model keeps the request but omits the action', async () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm1', text: 'Che, me podes llamar?' }];
+    current.commercial_state.call_preference = 'call';
+    current.commercial_state.call_offer_status = 'accepted';
+    current.commercial_state.awaiting_reply = 'call_or_chat';
+    current.capabilities.may_request_call_now = true;
+    current.capabilities.intake_missing = [];
+    const initial = generated(proposal({
+      move: {
+        schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1,
+      },
+      response: { messages: ['Sí, claro.'], call_offer: null },
+      proposed_action: { type: 'none' },
+      used_fact_ids: [],
+    }));
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: true,
+      repair: async () => { throw new Error('Unexpected repair'); },
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(result.effective.proposal.proposed_action).toEqual({
+      type: 'request_call_now', reason: 'direct_request',
+    });
+    expect(result.evidence.repair_attempted).toBe(false);
   });
 
   it('repairs an unsolicited payment action instead of silently deleting it', async () => {

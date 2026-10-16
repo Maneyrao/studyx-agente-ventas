@@ -589,6 +589,38 @@ describe('plannerless Agent A authority', () => {
     });
   });
 
+  it('sends the link when one turn both selects the first plan and explicitly requests checkout', () => {
+    const result = authorize({
+      customerText: 'okay\npero me pasas el link\nde 1 cuota',
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: null,
+        stage: 'course_selected',
+        awaiting_reply: 'none',
+      }),
+      intake: completeIntake,
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'select_payment_plan', secondary_moves: ['request_payment_link'],
+          vetoes: [], payment_plan: 'one_time', confidence: 0.99,
+        },
+        response: { messages: ['Te comparto el enlace del pago único.'] },
+        proposed_action: { type: 'none' },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: {
+        type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'one_time',
+      },
+      transition: {
+        stage: 'payment_link_sent', selected_payment_plan: 'one_time', awaiting_reply: 'none',
+        payment_link_request: { status: 'consumed', payment_plan: 'one_time' },
+      },
+    });
+  });
+
   it('persists checkout intent when the plan is selected and waits for data reconfirmation', () => {
     const result = authorize({
       state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected' }),

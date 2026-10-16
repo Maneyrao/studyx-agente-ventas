@@ -93,6 +93,13 @@ function unique<T>(values: readonly T[]): T[] {
   return [...new Set(values)];
 }
 
+function explicitlyRequestsPaymentLink(messages: readonly string[] | undefined): boolean {
+  const text = (messages ?? []).join('\n').normalize('NFD')
+    .replace(/[\u0300-\u036f]/gu, '').toLocaleLowerCase('es');
+  return /\b(?:pasame|mandame|enviame|compartime|dame|quiero|necesito|me\s+(?:pasas|mandas|envias|compartis|compartes|das)|(?:podes|puedes)\s+(?:pasarme|mandarme|enviarme|compartirme|darme))\b[^.!?\n]{0,48}\b(?:link|enlace)\b/u.test(text)
+    || /\b(?:link|enlace)\b[^.!?\n]{0,32}\b(?:pago|pagar|cuota)\b/u.test(text);
+}
+
 function allMoves(proposal: AgentATurnProposalV1): Set<string> {
   return new Set([proposal.move.move, ...proposal.move.secondary_moves]);
 }
@@ -319,10 +326,14 @@ export function authorizeAgentTurnV2(input: {
   const paymentLinkWasAlreadyDelivered = state.stage === 'payment_link_sent'
     && state.selected_offering_code === selectedOffering
     && state.selected_payment_plan === selectedPlan;
+  const sameTurnPlanAndCheckoutRequested = selectsPaymentPlanNow
+    && moves.has('request_payment_link')
+    && explicitlyRequestsPaymentLink(input.current_customer_messages);
   const paymentLinkBaseAuthorized = !moves.has('report_payment') && !selectedPurchasePaid
     && stateFacts.has('state:intake_recorded:v1');
   const paymentLinkAuthorized = paymentLinkBaseAuthorized
-    && (paymentConfirmationSatisfied || paymentLinkWasAlreadyDelivered);
+    && (paymentConfirmationSatisfied || paymentLinkWasAlreadyDelivered
+      || sameTurnPlanAndCheckoutRequested);
   // Asking for the next missing field is also prompt guidance. Missing intake
   // remains a hard boundary only for the payment side effect below.
   const explicitPaymentLinkRequested = proposal.proposed_action.type === 'send_payment_link'
