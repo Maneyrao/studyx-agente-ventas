@@ -2044,7 +2044,11 @@ export function validateAgentATurnProposalV1(input: {
   const requestedCallNow = moves.has('request_call') && input.proposal.proposed_action.type === 'request_call_now'
     && input.context.capabilities.may_request_call_now && callRequestSupported
     && !input.proposal.move.vetoes.includes('call');
+  const asksForMissingCallIdentity = moves.has('request_call')
+    && missingCallIntake.length > 0
+    && mentionsMissingIntakeField(input.proposal.response.messages, missingCallIntake);
   const claimsCallDispatchWithoutAction = input.proposal.proposed_action.type !== 'request_call_now'
+    && !asksForMissingCallIdentity
     && [...input.proposal.response.messages, typeof declaredCallOffer === 'string' ? declaredCallOffer : '']
       .some(message => claimsImmediateCallDispatchV1(message, input.context.commercial_state.active_call?.status));
   if (claimsCallDispatchWithoutAction) {
