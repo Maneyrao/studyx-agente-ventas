@@ -140,3 +140,11 @@ Una extensión de configuración no reabre automáticamente solicitudes en
 intentos e idempotencia. Consultar el
 [informe de recuperación](../reports/2026-10-13-lucas-enrollment-recovery.md)
 para la evidencia y el pendiente del evento de aviso automático.
+
+## Segunda extensión autorizada — 16-10-2026
+
+El usuario extendió expresamente el permiso hasta el final del **18-10-2026 en
+Argentina**. La configuración publicada es
+`CENTRAL_CARGA_SANDBOX_LIVE_UNTIL=2026-10-19T03:00:00Z`. Los pagos y enlaces de
+esta prueba continúan en entorno `test`; esta extensión no habilita cobros live
+ni cambia las claves o webhooks de Stripe.
