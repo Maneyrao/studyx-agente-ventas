@@ -79,23 +79,26 @@ describe('Agent A Brain prompt', () => {
     const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v71');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v107');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v72');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v108');
   });
   it('distinguishes authoritative channel intake from evidence required for new observations', () => {
     const current = context();
     current.customer.contact_intake = { nombre: 'Ana', apellido: 'Costa', correo: 'ana@example.test', telefono: '+15555550168' };
     const instructions = buildAgentABrainInstructionsV1(current);
     const contract = instructions.split('<internal_contact_profile_contract>')[1]!.split('</internal_contact_profile_contract>')[0]!;
-    expect(contract).toContain('including a channel-provided phone');
-    expect(contract).toContain('Source evidence is required for new updates, not for re-validating existing canonical values');
+    expect(contract).toContain('backend-confirmed');
+    expect(contract).toContain('source_message_id');
+    expect(contract).toContain('source_quote');
+    expect(contract.trim().split(/\s+/u).length).toBeLessThanOrEqual(115);
     current.turn_rejection = { schema_version: 1, attempt: 1,
       rejection_id: '00000000-0000-4000-8000-000000000001',
       rejections: [{ code: 'ACTION_NOT_AUTHORIZED', subject: 'contact_profile.already_confirmed.telefono' }],
       authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: [] } };
     const repair = buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]!;
-    expect(repair).toContain('already confirmed, not missing');
-    expect(repair).toContain('profile_requests');
+    expect(repair).toContain('Do not repeat confirmed data');
+    expect(repair).toContain('Keep prose and metadata consistent');
+    expect(repair.split('</mandatory_repair>')[0]!.trim().split(/\s+/u).length).toBeLessThanOrEqual(90);
   });
 
   it('resolves academy identity without altering authorized facts', () => {
@@ -126,9 +129,9 @@ describe('Agent A Brain prompt', () => {
     const execution = instructions.slice(0, instructions.indexOf('<canonical_sales_behavior'));
     expect(execution).not.toContain('profile_updates');
     const profileContract = instructions.slice(profileStart, profileEnd);
-    expect(profileContract).toContain('only govern profile_updates and profile_requests');
-    expect(profileContract).toContain('Canonical behavior alone decides whether to ask or acknowledge');
-    expect(profileContract).toContain('Ambiguous evidence produces no guessed update');
+    expect(profileContract).toContain('Profile metadata is silent evidence');
+    expect(profileContract).toContain('never customer-facing wording');
+    expect(profileContract).toContain('use empty arrays when inapplicable or uncertain');
   });
   it('uses assistant history for continuity while preserving canonical authority over style', () => {
     const current = context();
@@ -155,6 +158,24 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!).turn_rejection).toEqual(current.turn_rejection);
   });
 
+  it('applies Lisandro voice after context and repair without changing the structured contract', () => {
+    const current = context();
+    current.turn_rejection = { schema_version: 1, attempt: 1,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+      rejections: [{ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_reply' }],
+      authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: [] },
+    };
+    const instructions = buildAgentABrainInstructionsV1(current);
+    const gateStart = instructions.indexOf('<lisandro_voice_gate>');
+
+    expect(gateStart).toBeGreaterThan(instructions.indexOf('</authorized_context>'));
+    expect(gateStart).toBeGreaterThan(instructions.indexOf('</mandatory_repair>'));
+    const gate = instructions.slice(gateStart);
+    expect(gate).toMatch(/generic, cold, administrative, blunt or repetitive/iu);
+    expect(gate).toContain('Preserve schema, facts, effects and profile metadata');
+    expect(gate).toContain('Do not narrate internal state or validation');
+  });
+
   it('exposes contact source evidence and a delivered question even after another assistant bubble', () => {
     const current = context();
     current.customer.contact_profile = {
@@ -172,9 +193,9 @@ describe('Agent A Brain prompt', () => {
       ?.split('</internal_contact_profile_contract>')[0] ?? '';
     expect(profileContract).toContain('profile_updates');
     expect(profileContract).toContain('profile_requests');
-    expect(profileContract).toContain('independent fields');
-    expect(profileContract).toContain('never split');
-    expect(profileContract).toContain('only the customer');
-    expect(profileContract).toContain('later bubbles');
+    expect(profileContract).toContain('independent');
+    expect(profileContract).toContain('never infer or split');
+    expect(profileContract).toContain("customer's own");
+    expect(profileContract).toContain('pending_requests');
   });
 });
