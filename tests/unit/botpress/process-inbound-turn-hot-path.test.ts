@@ -3884,6 +3884,89 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.dispatch).not.toHaveBeenCalled();
   });
 
+  it('turns a repeated call promise into a data request instead of abandoning the accepted call turn', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off',
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+      agent_a_repair_enabled: true,
+    };
+    claimed.deterministic_route = 'call_accepted_offer';
+    claimed.batch.message_count = 2;
+    claimed.context.batch_messages = [
+      { id: UUID, conversation_seq: 1, content: 'Dale, ¿me llamas?', created_at: NOW, message_type: 'text' },
+      { id: '00000000-0000-4000-8000-000000000002', conversation_seq: 2,
+        content: 'Espero tu llamada', created_at: NOW, message_type: 'text' },
+    ];
+    claimed.sales_context.allowed_actions = ['offer_call'];
+    claimed.contact_intake = { nombre: null, apellido: null, correo: null, telefono: '+5491169004497' };
+    claimed.contact_intake_missing = ['nombre', 'apellido', 'correo'];
+    claimed.catalog_index = { as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0 };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null, selected_payment_plan: null,
+      stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'offered',
+      call_offer_count: 1, awaiting_reply: 'call_or_chat', version: 2,
+    };
+    actionSpies.claim.mockResolvedValue(claimed);
+    actionSpies.agentABrainValidate.mockImplementation(({ proposal }: {
+      proposal: { response: { messages: string[] } };
+    }) => proposal.response.messages.some(message => /te llamo ahora/iu.test(message)) ? {
+      schema_version: 1, rejection_id: UUID, attempt: 1,
+      rejections: [
+        { code: 'UNSUPPORTED_OPERATIONAL_CLAIM', subject: 'call_confirmation' },
+        { code: 'COURSE_NOT_RESOLVED', subject: 'call_offer' },
+      ],
+      authorized_alternatives: {
+        fact_ids: [], actions: ['none'], missing_information: ['nombre', 'apellido'],
+      },
+    } : null);
+    actionSpies.agentABrainDeepSeek.mockImplementation(async ({ context }: { context: AgentAContextV1 }) => ({
+      proposal: {
+        schema_version: 1,
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Perfecto, te llamo ahora.'], call_offer: null },
+        proposed_action: { type: 'none' }, used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+        repair_of: context.turn_rejection
+          ? { rejection_id: context.turn_rejection.rejection_id, attempt: 1 }
+          : null,
+      },
+      provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1,
+    }));
+    actionSpies.commit.mockResolvedValueOnce({
+      status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
+      decision_id: UUID, next_state: 'waiting_user', outbound: null, call_request: null,
+    });
+    configuration.agentAPlannerlessV2Enabled = true;
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    const result = await handler({
+      input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(result).toMatchObject({ status: 'waiting_user', error_code: null });
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      agent_turn_v2: { conversation_only: true, proposal: {
+        move: { move: 'request_call' },
+        proposed_action: { type: 'none' },
+        response: { messages: [expect.stringMatching(/nombre y apellido/iu)], call_offer: null },
+        profile_requests: [{ message_index: 0, fields: ['nombre', 'apellido'], purpose: 'call', mode: 'collect' }],
+      } },
+    });
+    expect(actionSpies.recovery).not.toHaveBeenCalled();
+    expect(actionSpies.dispatch).not.toHaveBeenCalled();
+  });
+
   it.each(['policy', 'schema', 'timeout', 'spent_budget'])('keeps safe Agent A prose and semantic state when optional continuation fails: %s', async failure => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,

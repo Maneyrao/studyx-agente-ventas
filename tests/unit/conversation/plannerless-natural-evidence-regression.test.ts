@@ -48,6 +48,7 @@ describe('plannerless natural evidence regression', () => {
     '¿Pueden llamarme ahora?',
     'Me gustaría una llamada',
     'Quisiera que me contacten por teléfono',
+    'Dale, ¿me llamas?\nEspero tu llamada',
   ])('keeps backend and workflow call evidence aligned for natural requests: %s', (text) => {
     expect(supportsCallRequestV1(text, false)).toBe(true);
     expect(workflowCallRequest(text, false)).toBe(true);

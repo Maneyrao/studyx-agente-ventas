@@ -1,7 +1,70 @@
-import type { AgentAContextV1, AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
+import {
+  AgentATurnProposalV1Schema,
+  type AgentAContextV1,
+  type AgentATurnProposalV1,
+} from '../../schemas/agent-a-brain'
 import { TurnRejectionCodeSchema, type TurnRejectionV1 } from '../../schemas/turn-rejection'
-import { generateDeepSeekAgentATurnProposalV1 } from './agent-a-brain'
+import { claimsImmediateCallDispatchV1, generateDeepSeekAgentATurnProposalV1 } from './agent-a-brain'
+import { supportsCallRequestV1 } from './channel-preference-evidence'
 import { resolveAgentAPlannerlessProposalV2 } from './resolve-agent-a-plannerless'
+
+const CALL_IDENTITY_FIELDS = ['nombre', 'apellido', 'telefono'] as const
+
+function spanishList(values: readonly string[]): string {
+  if (values.length < 2) return values[0] ?? ''
+  if (values.length === 2) return `${values[0]} y ${values[1]}`
+  return `${values.slice(0, -1).join(', ')} y ${values.at(-1)}`
+}
+
+function safeCallIdentityProposalV1(input: {
+  readonly context: AgentAContextV1
+  readonly rejection: TurnRejectionV1
+  readonly original_proposal?: AgentATurnProposalV1 | null
+}): AgentATurnProposalV1 | null {
+  const missing = CALL_IDENTITY_FIELDS.filter(field => (
+    (input.context.capabilities.intake_missing ?? []).includes(field)
+  ))
+  if (missing.length === 0) return null
+
+  const currentText = input.context.turn.batch_messages.map(message => message.text).join('\n')
+  const pendingOffer = input.context.commercial_state.call_offer_status === 'offered'
+  if (!supportsCallRequestV1(currentText, pendingOffer)) return null
+  const originalMoves = input.original_proposal === null || input.original_proposal === undefined
+    ? []
+    : [input.original_proposal.move.move, ...input.original_proposal.move.secondary_moves]
+  const originalWasCall = originalMoves.includes('request_call')
+    || input.original_proposal?.proposed_action.type === 'request_call_now'
+    || input.original_proposal?.response.messages.some(message => claimsImmediateCallDispatchV1(message)) === true
+  const rejectionWasCall = input.rejection.rejections.some(reason => reason.subject.startsWith('call'))
+  if (!originalWasCall && !rejectionWasCall) return null
+
+  const labels = missing.map(field => field === 'telefono' ? 'teléfono con código de país' : field)
+  const response = `Dale. Para coordinar la llamada, ¿me pasás tu ${spanishList(labels)}?`
+  return AgentATurnProposalV1Schema.parse({
+    schema_version: 1,
+    move: {
+      schema_version: 1,
+      move: 'request_call',
+      secondary_moves: [],
+      vetoes: [],
+      confidence: 1,
+    },
+    response: { messages: [response], call_offer: null },
+    proposed_action: { type: 'none' },
+    profile_requests: [{ message_index: 0, fields: missing, purpose: 'call', mode: 'collect' }],
+    used_fact_ids: [],
+    used_memory_ids: [],
+    memory_candidates: [],
+    repair_of: { rejection_id: input.rejection.rejection_id, attempt: 1 },
+  })
+}
+
+function isRejectedContinuation(error: unknown): boolean {
+  return error instanceof Error && (
+    error.message === 'PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:continuation'
+    || error.message.startsWith('PLANNERLESS_PROPOSAL_REJECTED:')
+  )
+}
 
 /** Preserve A's original operation request as state, with execution fenced. */
 export function fencedAgentARequestV1(original: AgentATurnProposalV1 | null) {
@@ -56,17 +119,35 @@ export async function continueAgentAAfterActionFeedbackV1(input: {
     context, apiKey: input.apiKey, signal: input.signal, model: input.model, conversation_only: true,
     on_provider_request: input.on_provider_request,
   })
-  if (generated.proposal.proposed_action.type !== 'none'
-    || !['unknown', 'ask_course_information', 'ask_payment_options', 'ask_current_state'].includes(generated.proposal.move.move)
-    || generated.proposal.move.secondary_moves.length !== 0
-    || generated.proposal.response.call_offer) {
-    throw new Error('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:continuation')
+  let resolved
+  try {
+    if (generated.proposal.proposed_action.type !== 'none'
+      || !['unknown', 'ask_course_information', 'ask_payment_options', 'ask_current_state'].includes(generated.proposal.move.move)
+      || generated.proposal.move.secondary_moves.length !== 0
+      || generated.proposal.response.call_offer) {
+      throw new Error('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:continuation')
+    }
+    resolved = await resolveAgentAPlannerlessProposalV2({
+      initial: generated, context, repair_enabled: false, semantic_rejections: 'advisory',
+      rejection_id: input.rejection.rejection_id,
+      repair: async () => { throw new Error('AGENT_A_CONTINUATION_REPAIR_NOT_ALLOWED') },
+    })
+  } catch (error) {
+    const fallback = safeCallIdentityProposalV1({
+      context,
+      rejection: input.rejection,
+      original_proposal: input.original_proposal,
+    })
+    if (!fallback || !isRejectedContinuation(error)) throw error
+    return (await resolveAgentAPlannerlessProposalV2({
+      initial: { ...generated, proposal: fallback },
+      context,
+      repair_enabled: false,
+      semantic_rejections: 'advisory',
+      rejection_id: input.rejection.rejection_id,
+      repair: async () => { throw new Error('AGENT_A_CONTINUATION_REPAIR_NOT_ALLOWED') },
+    })).effective
   }
-  const resolved = await resolveAgentAPlannerlessProposalV2({
-    initial: generated, context, repair_enabled: false, semantic_rejections: 'advisory',
-    rejection_id: input.rejection.rejection_id,
-    repair: async () => { throw new Error('AGENT_A_CONTINUATION_REPAIR_NOT_ALLOWED') },
-  })
   // The new generation owns wording and its citations. Keep the first Agent A
   // semantic interpretation separately; backend conversation_only validates
   // that transition without executing an explicit or implicit effect.

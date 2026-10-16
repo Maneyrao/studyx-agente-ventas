@@ -67,12 +67,24 @@ describe('Agent A conversation from action feedback', () => {
     expect(generate).toHaveBeenCalledOnce();
   });
 
-  it('never delivers an unsupported call promise or invents a second repair', async () => {
+  it('turns a repeated unsupported call promise into a safe request for the missing call identity', async () => {
     const current = context();
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_status = 'offered';
     const rejection = plannerlessActionFeedbackV1({ context: current, failure_code: 'PLANNERLESS_PROPOSAL_REJECTED:MISSING_INTAKE:apellido', rejection_id: '00000000-0000-4000-8000-000000000001' });
+    const original = reply('Perfecto, te llamo ahora.').proposal;
     const generate = vi.fn(async () => reply('Te llamo ahora.'));
-    await expect(continueAgentAAfterActionFeedbackV1({ context: current, rejection, apiKey: 'fixture',
-      signal: new AbortController().signal, model: 'deepseek-v4-flash', generate })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
+    const result = await continueAgentAAfterActionFeedbackV1({ context: current, rejection,
+      original_proposal: original, apiKey: 'fixture', signal: new AbortController().signal,
+      model: 'deepseek-v4-flash', generate });
+    expect(result.proposal).toMatchObject({
+      move: { move: 'request_call', secondary_moves: [], vetoes: [] },
+      response: { messages: [expect.stringMatching(/nombre y apellido/i)], call_offer: null },
+      proposed_action: { type: 'none' },
+      profile_requests: [{ message_index: 0, fields: ['nombre', 'apellido'], purpose: 'call', mode: 'collect' }],
+      repair_of: { rejection_id: '00000000-0000-4000-8000-000000000001', attempt: 1 },
+    });
+    expect(result.proposal.response.messages.join(' ')).not.toMatch(/te llamo ahora/i);
     expect(generate).toHaveBeenCalledOnce();
   });
 
