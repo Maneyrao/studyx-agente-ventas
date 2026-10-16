@@ -8,7 +8,11 @@ const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
 afterAll(async () => db?.end());
 
-async function fixture(input: { readonly planMode?: 'payment' | 'subscription'; readonly omitOneTime?: boolean } = {}) {
+async function fixture(input: {
+  readonly planMode?: 'payment' | 'subscription';
+  readonly omitOneTime?: boolean;
+  readonly omitIdentity?: 'name' | 'email' | 'both';
+} = {}) {
   const workspaceSlug = `retell-five-${randomUUID()}`;
   const paymentOptions = [
     {
@@ -34,8 +38,13 @@ async function fixture(input: { readonly planMode?: 'payment' | 'subscription'; 
   `;
   const workspaceId = workspaces[0].id;
   const contacts = await db!<Array<{ id: string }>>`
-    INSERT INTO contacts (phone, channel_origin, email)
-    VALUES (${`+54911${randomUUID().replace(/\D/gu, '').padEnd(8, '1').slice(0, 8)}`}, 'whatsapp', 'lead@example.test')
+    INSERT INTO contacts (phone, channel_origin, name, email)
+    VALUES (
+      ${`+54911${randomUUID().replace(/\D/gu, '').padEnd(8, '1').slice(0, 8)}`},
+      'whatsapp',
+      ${['name', 'both'].includes(input.omitIdentity ?? '') ? null : 'Lead Example'},
+      ${['email', 'both'].includes(input.omitIdentity ?? '') ? null : 'lead@example.test'}
+    )
     RETURNING id
   `;
   const contactId = contacts[0].id;
@@ -81,6 +90,7 @@ async function callFixture(input: {
   readonly selectedPaymentPlan?: 'monthly_12' | 'monthly_6' | 'one_time' | null;
   readonly courseInCallSnapshot?: string;
   readonly selectedOfferingCode?: string | null;
+  readonly omitIdentity?: 'name' | 'email' | 'both';
 } = {}) {
   const ids = await fixture(input);
   const conversations = await db!<Array<{ id: string }>>`
@@ -197,6 +207,55 @@ run('Retell five tools PostgreSQL adapter', () => {
       awaiting_reply: 'payment_confirmation',
     });
     expect(outbound.calls).toHaveLength(1);
+  });
+
+  it('refuses to send a payment link until Agent B has saved the enrollment identity', async () => {
+    const ids = await callFixture({ omitIdentity: 'name' });
+    const outbound = sender();
+    const store = new PostgresRetellOrchestrationStore(db!, {
+      paymentLinkResolver: { resolve: () => 'https://buy.stripe.com/identity-gated-link' },
+      sendOutbound: outbound.send,
+    });
+
+    await expect(store.requestAgentAPaymentLink({
+      callId: ids.callId,
+      contactId: ids.contactId,
+      conversationId: ids.conversationId,
+      workspaceSlug: ids.workspaceSlug,
+      course: 'retell_course',
+      paymentPlan: 'one_time',
+    })).resolves.toEqual({
+      sent: false,
+      reference: null,
+      reason: 'CONTACT_NAME_REQUIRED',
+    });
+    expect(outbound.calls).toHaveLength(0);
+    await expect(db!<Array<{ count: string }>>`
+      SELECT count(*)::text AS count FROM payments WHERE contact_id=${ids.contactId}::uuid
+    `).resolves.toEqual([{ count: '0' }]);
+  });
+
+  it('refuses to send a payment link until Agent B has saved the enrollment email', async () => {
+    const ids = await callFixture({ omitIdentity: 'email' });
+    const outbound = sender();
+    const store = new PostgresRetellOrchestrationStore(db!, {
+      paymentLinkResolver: { resolve: () => 'https://buy.stripe.com/email-gated-link' },
+      sendOutbound: outbound.send,
+    });
+
+    await expect(store.requestAgentAPaymentLink({
+      callId: ids.callId,
+      contactId: ids.contactId,
+      conversationId: ids.conversationId,
+      workspaceSlug: ids.workspaceSlug,
+      course: 'retell_course',
+      paymentPlan: 'one_time',
+    })).resolves.toEqual({
+      sent: false,
+      reference: null,
+      reason: 'CONTACT_EMAIL_REQUIRED',
+    });
+    expect(outbound.calls).toHaveLength(0);
   });
 
   it('reports a failed payment-link send without advancing commercial state or leaking content', async () => {

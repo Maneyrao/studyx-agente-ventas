@@ -14,6 +14,7 @@ const UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
 function claimed(overrides: {
   texts?: string[];
   allowedActions?: Array<'offer_call' | 'request_call_now'>;
+  contactIntakeMissing?: Array<'nombre' | 'apellido' | 'correo' | 'telefono'>;
   openOffer?: boolean;
   acceptedOffer?: boolean;
   course?: string | null;
@@ -48,6 +49,7 @@ function claimed(overrides: {
       consent_status: 'allowed',
       opted_in_at: '2026-08-12T00:00:00.000Z',
     },
+    contact_intake_missing: overrides.contactIntakeMissing ?? [],
     context: {
       batch_messages: texts.map((text, index) => ({
         id: UUID,
@@ -141,6 +143,17 @@ describe('matchCallHandoffFastPath', () => {
     ).toBeNull();
   });
 
+  it('a direct request with missing identity falls through so the agent asks for it before calling', () => {
+    expect(
+      matchCallHandoffFastPath(claimed({
+        texts: ['Dale, me llamas?'],
+        allowedActions: ['request_call_now'],
+        contactIntakeMissing: ['nombre', 'apellido'],
+        route: 'call_direct_request',
+      })),
+    ).toBeNull();
+  });
+
   it('reports an already active call without creating another call action', () => {
     const active = claimed({
       texts: ['Me podes llamar?'],
@@ -172,6 +185,16 @@ describe('matchCallHandoffFastPath', () => {
       response_type: 'call_confirmation',
       business_action: { type: 'request_call_now', reason: 'accepted_offer' },
     });
+  });
+
+  it('an accepted call offer with missing identity falls through so the agent asks before calling', () => {
+    expect(matchCallHandoffFastPath(claimed({
+      texts: ['Sí'],
+      allowedActions: ['request_call_now'],
+      acceptedOffer: true,
+      contactIntakeMissing: ['apellido'],
+      route: 'call_accepted_offer',
+    }))).toBeNull();
   });
 
   it('does not reinterpret a payment-data confirmation as acceptance of an older call offer', () => {

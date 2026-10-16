@@ -57,6 +57,7 @@ type ClaimedOverrides = {
   offeringCode?: string | null;
   selectedPaymentPlan?: ClaimedTurn['sales_context']['selected_payment_plan'];
   name?: string | null;
+  contactIntakeMissing?: ClaimedTurn['contact_intake_missing'];
   recentInbound?: string[];
   catalogResolution?: ClaimedTurn['catalog_resolution'];
   offerings?: BusinessOffering[];
@@ -103,6 +104,7 @@ function claimedTurn(overrides: ClaimedOverrides = {}): ClaimedTurn {
       consent_status: overrides.consentStatus ?? 'allowed',
       opted_in_at: '2026-08-20T12:00:00.000Z',
     },
+    contact_intake_missing: overrides.contactIntakeMissing ?? [],
     context: {
       batch_messages: texts.map((text, index) => ({
         id: UUID,

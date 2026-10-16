@@ -24,6 +24,7 @@ import {
 import type { RetellOrchestrationStore } from '../application/retell-tools';
 import type { RetellPaymentPlanRequest } from '../application/retell-tools';
 import { logger } from '@/lib/observability/structured-log';
+import { splitFullName } from '@/lib/heuristics/contact-identity';
 
 export type RetellOutboundSender = (
   input: Parameters<typeof sendOutboundMessage>[0],
@@ -150,6 +151,13 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     if (!workspace) return { sent: false, reference: null, reason: 'CONTACT_UNAVAILABLE' };
     if (workspace.conversation_id !== input.conversationId) {
       return { sent: false, reference: null, reason: 'CONVERSATION_MISMATCH' };
+    }
+    const identity = workspace.contact_name ? splitFullName(workspace.contact_name) : null;
+    if (!identity?.nombre.trim() || !identity.apellido.trim()) {
+      return { sent: false, reference: null, reason: 'CONTACT_NAME_REQUIRED' };
+    }
+    if (!workspace.contact_email?.trim()) {
+      return { sent: false, reference: null, reason: 'CONTACT_EMAIL_REQUIRED' };
     }
     const paymentPlan = resolveRetellPaymentPlanRequest(
       input.paymentPlan,
@@ -390,8 +398,11 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
       conversation_id: string;
       course_code: string;
       selected_payment_plan: PaymentPlanCode | null;
+      contact_name: string | null;
+      contact_email: string | null;
     }>>`
       SELECT w.id, w.slug, w.metadata, cs.conversation_id,
+             contact.name AS contact_name, contact.email AS contact_email,
              state.selected_payment_plan,
              COALESCE(
                NULLIF(btrim(state.selected_offering_code), ''),
@@ -400,6 +411,7 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
              ) AS course_code
       FROM call_sessions AS cs
       JOIN workspaces AS w ON w.id = cs.workspace_id
+      JOIN contacts AS contact ON contact.id = cs.contact_id AND contact.deleted_at IS NULL
       JOIN workspace_contacts AS wc
         ON wc.workspace_id = cs.workspace_id
        AND wc.contact_id = cs.contact_id

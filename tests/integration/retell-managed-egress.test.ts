@@ -86,6 +86,10 @@ run('Retell managed egress', () => {
     expect(offering).toBeDefined();
     const course = offering.code;
     await db!`
+      UPDATE contacts SET name='Managed Egress', email='managed@example.test'
+      WHERE id=${inbound.contact.id}::uuid
+    `;
+    await db!`
       INSERT INTO conversation_sales_context_states_v1 (
         workspace_id, conversation_id, contact_id,
         selected_offering_code, selected_payment_plan

@@ -831,6 +831,13 @@ run('Agent A → Xendra → Agent B → Agent A local smoke', () => {
         body: { ok: false, error: { code: 'CALL_CORRELATION_MISMATCH' } },
       });
 
+      const capturedIdentity = await tool(call, providerCallId, 'guardar_datos_contacto', {
+        nombre: 'Ana',
+        apellido: 'Pérez',
+        email: 'ana.perez@example.test',
+      }, outbound.dependencies);
+      expect(capturedIdentity).toMatchObject({ status: 200, body: { ok: true } });
+
       const ambiguousPlan = await tool(call, providerCallId, 'enviar_link_pago', {
         cursos: ['fotografia_profesional'],
         plan: 'cuotas',

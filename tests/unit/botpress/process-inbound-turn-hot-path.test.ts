@@ -3779,7 +3779,7 @@ describe('processInboundTurn hot path', () => {
     configuration.agentAPlannerlessV2Enabled = true;
     claimed.context.batch_messages[0].content = 'Okay, llámame';
     claimed.sales_context.allowed_actions = ['request_call_now'];
-    claimed.contact_intake_missing = ['nombre', 'apellido'];
+    claimed.contact_intake_missing = [];
     claimed.catalog_index = {
       as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0,
     };

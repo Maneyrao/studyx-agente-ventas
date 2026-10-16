@@ -5,8 +5,8 @@ import type { ClaimedTurn, Decision } from '../schemas/contracts'
  *
  * A single-message batch whose text is an unambiguous call signal does not
  * need catalog, embeddings or a model call: the right decision is fixed by
- * `sales_context.allowed_actions` (computed by the backend at claim time)
- * and the backend re-validates consent on commit anyway. The backend owns the
+ * `sales_context.allowed_actions` and the complete contact intake returned by
+ * the backend at claim time; the backend re-validates consent on commit too. The backend owns the
  * bounded classifier and exposes `deterministic_route`; Botpress renders the
  * route and keeps no duplicated regular-expression vocabulary.
  *
@@ -33,6 +33,13 @@ const CALL_ALREADY_ACTIVE_RESPONSE =
   'La llamada ya está en proceso. Atendé el teléfono y seguimos por ahí.'
 
 const RETRIEVAL_NONE = { kb: false, long_term_memory: false, summary_version: null }
+
+const CALL_REQUIRED_INTAKE = ['nombre', 'apellido', 'telefono'] as const
+
+function hasCompleteCallIdentity(claimed: ClaimedTurn): boolean {
+  return Array.isArray(claimed.contact_intake_missing)
+    && !CALL_REQUIRED_INTAKE.some((field) => claimed.contact_intake_missing.includes(field))
+}
 
 function callConfirmation(
   reason: 'direct_request' | 'accepted_offer',
@@ -97,7 +104,7 @@ export function matchCallHandoffFastPath(claimed: ClaimedTurn): Decision | null 
   }
 
   if (claimed.deterministic_route === 'call_direct_request') {
-    if (!allowed.includes('request_call_now')) return null
+    if (!allowed.includes('request_call_now') || !hasCompleteCallIdentity(claimed)) return null
     return callConfirmation('direct_request', course)
   }
 
@@ -107,7 +114,11 @@ export function matchCallHandoffFastPath(claimed: ClaimedTurn): Decision | null 
     // confirmación de datos o pago debe continuar por el modelo.
     const awaitingReply = claimed.conversation_state_v1?.awaiting_reply
     if (awaitingReply !== undefined && awaitingReply !== 'call_or_chat') return null
-    if (!allowed.includes('request_call_now') || !claimed.sales_context.accepted_call_offer) return null
+    if (
+      !allowed.includes('request_call_now')
+      || !claimed.sales_context.accepted_call_offer
+      || !hasCompleteCallIdentity(claimed)
+    ) return null
     return callConfirmation('accepted_offer', course)
   }
 

@@ -323,6 +323,8 @@ const RETELL_TOOL_FAILURE_MESSAGES: Readonly<Record<string, string>> = {
   MATERIAL_UNAVAILABLE: 'No pude encontrar o enviar ese material en este momento.',
   OUTBOUND_UNAVAILABLE: 'No pude entregar el mensaje al canal original.',
   CONTACT_UNAVAILABLE: 'No pude confirmar el contacto asociado a esta llamada.',
+  CONTACT_NAME_REQUIRED: 'Antes de enviar el link, pedí y guardá el nombre y apellido del estudiante.',
+  CONTACT_EMAIL_REQUIRED: 'Antes de enviar el link, pedí y guardá el correo del estudiante.',
   CONVERSATION_MISMATCH: 'No pude confirmar el chat original asociado a esta llamada.',
   CALL_CORRELATION_NOT_FOUND: 'No pude confirmar esta llamada en el sistema.',
   CALL_CORRELATION_MISMATCH: 'No pude confirmar que esta llamada corresponda al contacto y chat originales.',
