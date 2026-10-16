@@ -128,6 +128,14 @@ describe('classifyBatchSalesSignal', () => {
     });
   });
 
+  it('recognizes the polite production request even when it follows greeting and info messages', () => {
+    expect(classifyBatchSalesSignal([
+      'Buenas',
+      'quiero info',
+      'Que me llames, puede ser?',
+    ])).toEqual({ type: 'direct_call_request' });
+  });
+
   it('lets the newest decisive message override an earlier request', () => {
     expect(classifyBatchSalesSignal(['llamame', 'pensándolo mejor no me llames'])).toEqual({
       type: 'call_decline',

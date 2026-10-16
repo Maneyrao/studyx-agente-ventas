@@ -58,6 +58,7 @@ const DIRECT_CALL_REQUEST_PATTERNS: RegExp[] = [
   /\b(?:pueden|podrian|podes)\s+llamarme\b/,
   /\bme\s+(?:pueden|podrian|podes|puedes)\s+llamar\b/,
   /\bme\s+llamas\b/,
+  /^que\s+me\s+llam(?:es|en)\b.{0,32}\bpuede\s+ser\b/,
   /\bme\s+volves\s+a\s+llamar\b/,
   /\bvolveme\s+a\s+llamar\b/,
   /\b(?:quiero|necesito)\s+una\s+llamada\b/,
