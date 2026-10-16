@@ -886,7 +886,7 @@ export const processInboundTurn = new Workflow({
       // In the model-owned route, short confirmations (including a phone
       // confirmation) must reach DeepSeek. The legacy call router cannot
       // interpret every "sí" as call consent or substitute its canned reply.
-      && (!deterministicCallHandoff || plannerlessV2Enabled)
+      && !deterministicCallHandoff
       && agentABrainContext !== null
 
     if (agentABrainContext !== null) {

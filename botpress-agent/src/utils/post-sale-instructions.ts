@@ -9,6 +9,24 @@ export const PostSaleClaimSchema = z.union([
     history: z.array(z.object({ direction: z.string(), content: z.string() })) }),
 ])
 
+export function fallbackPostSaleNarrative(claim: {
+  kind: 'payment_received' | 'access_ready' | 'access_delayed'
+  offering_name: string
+}): { intro: string; suggestion: string } {
+  if (claim.kind === 'payment_received') return {
+    intro: `Recibimos tu pago para ${claim.offering_name} y ya estamos preparando tu acceso.`,
+    suggestion: '',
+  }
+  if (claim.kind === 'access_ready') return {
+    intro: `Tu acceso a ${claim.offering_name} ya está habilitado.`,
+    suggestion: 'Si quieres, puedes cambiar tu contraseña cuando ingreses.',
+  }
+  return {
+    intro: `Recibimos tu pago para ${claim.offering_name} y estamos revisando el alta.`,
+    suggestion: '',
+  }
+}
+
 export function buildPostSaleInstructions(canonicalPrompt: string, claim: {
   kind: 'payment_received' | 'access_ready' | 'access_delayed'
   new_user?: boolean

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildPostSaleInstructions, PostSaleClaimSchema } from '../../../botpress-agent/src/utils/post-sale-instructions';
+import * as postSaleInstructions from '../../../botpress-agent/src/utils/post-sale-instructions';
+
+const { buildPostSaleInstructions, PostSaleClaimSchema } = postSaleInstructions;
 
 type EventKind = 'payment_received' | 'access_ready' | 'access_delayed';
 const welcome = 'Bienvenido a Studyx, espero que disfrutes mucho de estudiar con nosotros!';
@@ -11,6 +13,21 @@ const claim = {
 };
 
 describe('post-sale Agent A event instructions', () => {
+  it.each([
+    ['payment_received', 'Recibimos tu pago', ''] as const,
+    ['access_ready', 'ya está habilitado', 'Si quieres, puedes cambiar tu contraseña'] as const,
+    ['access_delayed', 'estamos revisando el alta', ''] as const,
+  ])('has a safe deterministic %s narrative when the optional model is unavailable', (kind, intro, suggestion) => {
+    const fallback = (postSaleInstructions as unknown as {
+      fallbackPostSaleNarrative?: (input: typeof claim) => { intro: string; suggestion: string };
+    }).fallbackPostSaleNarrative;
+    expect(fallback).toBeTypeOf('function');
+    if (!fallback) return;
+    const narrative = fallback({ ...claim, kind });
+    expect(narrative.intro).toContain(intro);
+    expect(narrative.suggestion).toContain(suggestion);
+  });
+
   it('authorizes the welcome alongside access only for a verified new student', () => {
     const parsed = PostSaleClaimSchema.parse(claim);
     if (!parsed.claimed) throw new Error('Expected a claimed notification');

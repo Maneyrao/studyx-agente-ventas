@@ -76,9 +76,13 @@ export async function dispatchNotifications(paymentId?: string, deps: Deps = {})
         WHERE id = ${source.id}::uuid AND status IN ('pending', 'dispatched')`;
       continue;
     }
-    // An expired delivery claim may have sent a message. Hold it for reconciliation, never blindly resend.
-    await db`UPDATE post_sale_notifications SET status = 'ambiguous', last_error_code = 'DELIVERY_LEASE_EXPIRED'
-      WHERE id = ${source.id}::uuid AND status = 'processing' AND lease_until <= now()`;
+    // `processing` only covers Botpress narrative generation. `deliverNotification`
+    // moves the row to `ambiguous` before any external send, so an expired
+    // processing lease is proven pre-send and is safe to reclaim.
+    await db`UPDATE post_sale_notifications SET status = 'pending', claim_token = NULL,
+      lease_until = NULL, available_at = now(), last_error_code = 'NARRATIVE_LEASE_EXPIRED'
+      WHERE id = ${source.id}::uuid AND status = 'processing' AND lease_until <= now()
+        AND provider_message_id IS NULL`;
     await db`UPDATE post_sale_notifications SET status = 'dead_letter', last_error_code = 'DISPATCH_ATTEMPTS_EXHAUSTED'
       WHERE id = ${source.id}::uuid AND status IN ('pending', 'dispatched') AND dispatch_attempts >= 3
         AND (lease_until IS NULL OR lease_until <= now())`;

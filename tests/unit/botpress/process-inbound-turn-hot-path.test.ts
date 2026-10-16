@@ -3767,7 +3767,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('does not invent a name request after a WhatsApp model failure', async () => {
+  it('executes an explicit direct call in plannerless mode without asking DeepSeek to reinterpret it', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -3791,7 +3791,7 @@ describe('processInboundTurn hot path', () => {
       call_offer_count: 1, awaiting_reply: 'call_or_chat', version: 2,
     };
     actionSpies.claim.mockResolvedValue(claimed);
-    actionSpies.agentABrainDeepSeek.mockRejectedValue(new Error('BRAIN_DEEPSEEK_TIMEOUT'));
+    actionSpies.agentABrainDeepSeek.mockRejectedValue(new Error('BRAIN_MUST_NOT_RUN'));
     const step = Object.assign(
       async (_name: string, run: () => Promise<unknown>) => run(),
       { sleep: vi.fn(async () => undefined) },
@@ -3806,9 +3806,14 @@ describe('processInboundTurn hot path', () => {
       client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
+    expect(actionSpies.agentABrainDeepSeek).not.toHaveBeenCalled();
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       agent_turn_v2: null,
-      decision: { reason_code: 'MODEL_UNAVAILABLE' },
+      decision: {
+        response_type: 'call_confirmation',
+        business_action: { type: 'request_call_now', reason: 'direct_request' },
+        reason_code: 'CALL_DIRECT_REQUEST',
+      },
     });
   });
 
