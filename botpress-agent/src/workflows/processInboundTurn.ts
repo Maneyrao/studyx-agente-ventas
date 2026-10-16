@@ -333,7 +333,19 @@ function backendCommitTurnRejectionV1(input: {
     ? 'backend_action'
     : input.proposal.proposed_action.type
   const factSubject = input.proposal.used_fact_ids[0] ?? 'backend_fact'
-  const missingSubject = input.context.capabilities.intake_missing?.[0] ?? 'contact_details'
+  const requirements = input.context.capabilities.required_contact_fields
+  const callRequest = input.proposal.proposed_action.type === 'request_call_now'
+    || input.proposal.move.move === 'request_call'
+  const paymentRequest = input.proposal.proposed_action.type === 'send_payment_link'
+    || input.proposal.proposed_action.type === 'send_test_payment_link'
+    || input.proposal.move.move === 'request_payment_link'
+  const relevantMissing = callRequest
+    ? requirements?.call
+    : paymentRequest
+      ? requirements?.payment
+      : requirements?.identity
+  const missingInformation = relevantMissing ?? input.context.capabilities.intake_missing ?? []
+  const missingSubject = missingInformation[0] ?? 'contact_details'
   const detailedSubjects = backendDecisionRejectionSubjects(input.error)
   const mapped: Array<TurnRejectionV1['rejections'][number]> = []
   const push = (code: TurnRejectionV1['rejections'][number]['code'], subject: string) => {
@@ -397,7 +409,7 @@ function backendCommitTurnRejectionV1(input: {
     authorized_alternatives: {
       fact_ids: [...new Set(factIds)],
       actions,
-      missing_information: [...(input.context.capabilities.intake_missing ?? [])],
+      missing_information: [...missingInformation],
     },
   }
 }
@@ -950,8 +962,17 @@ export const processInboundTurn = new Workflow({
           mode: request.mode, rejection })
         return request.fields.filter(field => !eligible.includes(field))
       })
-      if (repeated.length) throw new Error(`PLANNERLESS_PROPOSAL_REJECTED:${[...new Set(repeated)]
-        .map(field => `ACTION_NOT_AUTHORIZED:contact_profile.already_confirmed.${field}`).join(',')}`)
+      if (repeated.length) {
+        // La ficha canónica ya impide que esta pregunta altere datos o abra
+        // efectos. Bloquear además la prosa dejaba al cliente en silencio por
+        // una imperfección conversacional que Agent A debe poder corregir en
+        // el turno siguiente.
+        safeLog('studyx.turn.contact_profile_request_redundant', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          fields: [...new Set(repeated)],
+        })
+      }
     }
 
     if (brainEligible) {

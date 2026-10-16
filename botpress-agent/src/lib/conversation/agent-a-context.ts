@@ -526,6 +526,15 @@ export function buildAgentAContextV1(
   // sobre un contacto del que no sabía nada.
   const intakeAnswered = Array.isArray(claimed.contact_intake_missing);
   const intakeMissing = intakeAnswered ? claimed.contact_intake_missing! : [];
+  const requiredContactFields = {
+    call: intakeMissing.filter((field) => (
+      field === 'nombre' || field === 'apellido' || field === 'telefono'
+    )),
+    // El alta y el pago usan la ficha completa. Mantener esta lista derivada
+    // de la autoridad evita que el prompt adivine qué dato falta.
+    payment: [...intakeMissing],
+    identity: [...intakeMissing],
+  };
   const intakeStatus: 'known' | 'unknown' = intakeAnswered ? 'known' : 'unknown';
   const firstNameKnownNow = Boolean(claimed.contact.name?.trim())
     || (intakeAnswered && !intakeMissing.includes('nombre'));
@@ -725,6 +734,7 @@ export function buildAgentAContextV1(
       intake_status: intakeStatus,
       authorized_payment_plan: selectedPlan,
       intake_missing: intakeMissing,
+      required_contact_fields: requiredContactFields,
     },
   });
 }

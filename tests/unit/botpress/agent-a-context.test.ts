@@ -2157,3 +2157,22 @@ it('authorizes an immediate call when only payment-only email is missing', () =>
 
   expect(context.capabilities.may_request_call_now).toBe(true);
 });
+
+it('separates missing contact data by the purpose Agent A is pursuing', () => {
+  const claimed = claimedTurn();
+  claimed.contact_intake = {
+    nombre: null,
+    apellido: null,
+    correo: null,
+    telefono: '+5491169004497',
+  };
+  claimed.contact_intake_missing = ['nombre', 'apellido', 'correo'];
+
+  const context = buildAgentAContextV1(claimed)!;
+
+  expect(context.capabilities.required_contact_fields).toEqual({
+    call: ['nombre', 'apellido'],
+    payment: ['nombre', 'apellido', 'correo'],
+    identity: ['nombre', 'apellido', 'correo'],
+  });
+});

@@ -239,6 +239,14 @@ export const AgentAContextV1Schema = z.object({
     intake_status: z.enum(['known', 'unknown']),
     intake_missing: z.array(z.enum(['nombre', 'apellido', 'correo', 'telefono']))
       .default([]),
+    // La ficha completa sigue visible arriba. Esta proyección evita que una
+    // acción herede requisitos de otra: una llamada no necesita correo,
+    // mientras que un pago sí necesita la ficha completa.
+    required_contact_fields: z.object({
+      call: z.array(ProfileFieldSchema),
+      payment: z.array(ProfileFieldSchema),
+      identity: z.array(ProfileFieldSchema),
+    }).strict().optional(),
   }).strict(),
 }).strict();
 

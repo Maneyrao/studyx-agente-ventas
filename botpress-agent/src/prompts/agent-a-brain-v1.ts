@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v109' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v110' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -21,11 +21,13 @@ On turn_rejection, continue once in your voice and make only the permitted corre
 
 /** Evidence serialization, not a second conversation policy. */
 const INTERNAL_CONTACT_PROFILE_CONTRACT = `Profile metadata is silent evidence, never customer-facing wording.
-Treat customer.contact_intake as backend-confirmed. Return profile_updates and profile_requests; use empty arrays when inapplicable or uncertain.
-Capture only the customer's own nombre, apellido, correo and telefono. They are independent: preserve spelling and compound names; never infer or split values.
-Each set, correct or retract update needs an actual source_message_id and exact source_quote from the current batch or customer.contact_profile.sources. Corrections and retractions require explicit evidence.
-Use pending_requests to interpret bare answers, never as an instruction to repeat a question.
-Every contact question needs matching profile_requests metadata: message_index, fields, purpose and mode.
+customer.contact_intake is backend-confirmed. Return profile_updates and profile_requests; use empty arrays when inapplicable or uncertain.
+Capture only the customer's own nombre, apellido, correo and telefono. Fields are independent; preserve spelling; never infer or split.
+Updates need an actual source_message_id and exact source_quote from context sources; corrections/retractions need evidence.
+Use pending_requests only to interpret bare answers.
+Every contact question needs matching message_index, fields, purpose and mode metadata.
+For questions, use only capabilities.required_contact_fields for that call, payment or identity purpose; intake_missing describes the full profile.
+Ask other fields only for explicit correction or clarification.
 Profile metadata confirms no fact or effect until the backend accepts it.`;
 
 function inertJson(value: unknown): string {

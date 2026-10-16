@@ -56,6 +56,26 @@ describe('Agent A conversation from action feedback', () => {
     expect(current.turn_rejection).toBeUndefined();
   });
 
+  it('returns only call requirements when a call action is rejected', () => {
+    const current = context();
+    current.capabilities.intake_status = 'known';
+    current.capabilities.intake_missing = ['nombre', 'apellido', 'correo'];
+    current.capabilities.required_contact_fields = {
+      call: ['nombre', 'apellido'],
+      payment: ['nombre', 'apellido', 'correo'],
+      identity: ['nombre', 'apellido', 'correo'],
+    };
+
+    const rejection = plannerlessActionFeedbackV1({
+      context: current,
+      failure_code: 'PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:request_call_now',
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection.authorized_alternatives.missing_information)
+      .toEqual(['nombre', 'apellido']);
+  });
+
   it('cannot repeat an effect or let a payment-intent move materialize a link implicitly', async () => {
     const current = context();
     const rejection = plannerlessActionFeedbackV1({ context: current, failure_code: 'PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:send_payment_link', rejection_id: '00000000-0000-4000-8000-000000000001' });

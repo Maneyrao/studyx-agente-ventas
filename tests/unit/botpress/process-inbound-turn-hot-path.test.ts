@@ -628,6 +628,48 @@ describe('processInboundTurn hot path', () => {
       .toEqual(['Gracias, María José. ¿Cuál es tu apellido?']);
   });
 
+  it('keeps Agent A reply when it accidentally requests an already confirmed profile field', async () => {
+    configuration.agentAPlannerlessV2Enabled = true;
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true, agent_a_brain_v1_shadow: false, agent_a_repair_enabled: true };
+    claimed.deterministic_route = null;
+    claimed.contact_intake = { nombre: 'Agustina', apellido: null, correo: null, telefono: '+5491169004399' };
+    claimed.contact_intake_missing = ['apellido', 'correo'];
+    claimed.conversation_state_v1 = { selected_offering_code: null, selected_payment_plan: null, stage: 'exploring',
+      call_preference: 'unknown', call_offer_status: 'not_offered', call_offer_count: 0, awaiting_reply: 'none', version: 0 };
+    claimed.contact_profile = { version: 3, sources: [], pending_requests: [] };
+    claimed.catalog_index = { as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0 };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+    actionSpies.agentABrainDeepSeek.mockResolvedValueOnce({
+      proposal: { schema_version: 1,
+        move: { schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['¿Me recordás tu nombre?'], call_offer: null },
+        proposed_action: { type: 'none' }, used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+        profile_updates: [],
+        profile_requests: [{ message_index: 0, fields: ['nombre'], purpose: 'identity', mode: 'collect' }],
+        repair_of: null },
+      provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1,
+    });
+    actionSpies.commit.mockResolvedValueOnce({ status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
+      decision_id: UUID, next_state: 'waiting_user', outbound: null, call_request: null });
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) });
+
+    const result = await (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler({ input: workflowInput(), state: processingState(), step, execute: vi.fn(), client: {},
+      signal: new AbortController().signal, workflow: { id: 'profile-repeated-request-test' } });
+
+    expect(result).toMatchObject({ status: 'waiting_user', error_code: null });
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
+    expect(actionSpies.commit).toHaveBeenCalledTimes(1);
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input.agent_turn_v2.proposal.response.messages)
+      .toEqual(['¿Me recordás tu nombre?']);
+  });
+
   it('transcribes a WhatsApp audio before ingesting and never sends its signed URL to the backend', async () => {
     actionSpies.transcribe.mockResolvedValueOnce({
       status: 'ok',
