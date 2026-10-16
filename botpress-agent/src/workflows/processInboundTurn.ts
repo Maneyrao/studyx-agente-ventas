@@ -891,14 +891,11 @@ export const processInboundTurn = new Workflow({
     const brainEligible = conversationalBaseEligible
       && (brainAuthoritative || brainShadow)
       && (owned.deterministic_route === null || brainAuthoritative)
-      // An explicit, already-authorized call request is an action boundary,
-      // not a second conversational interpretation. Waiting for DeepSeek here
-      // can strand the claimed batch before commit and leave the customer in
-      // silence even though the requested action is unambiguous.
-      // In the model-owned route, short confirmations (including a phone
-      // confirmation) must reach DeepSeek. The legacy call router cannot
-      // interpret every "sí" as call consent or substitute its canned reply.
-      && !deterministicCallHandoff
+      // The classifier is capability evidence, not a replacement for Agent A.
+      // Keep the old direct handoff only while Agent A is non-authoritative;
+      // once authoritative, A interprets the turn, writes the reply and asks
+      // for the tool while the backend still authorizes the exact effect.
+      && !(deterministicCallHandoff && !brainAuthoritative)
       && agentABrainContext !== null
 
     if (agentABrainContext !== null) {

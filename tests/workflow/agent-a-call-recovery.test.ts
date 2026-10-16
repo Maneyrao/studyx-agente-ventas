@@ -248,10 +248,12 @@ it('repairs the Lucas promise, records the real repair, retains full identity an
   expect(receipt.values).toMatchObject({ nombre: 'Juan', apellido: 'Perez', correo: null });
   expect(persisted.state).toMatchObject({ callPreference: 'call', callOfferStatus: 'accepted' });
 
-  phase = 'confirm';
+  phase = 'confirm'; generationCount = 0;
   const confirmed = await runWorkflowTurnV1({ ...id, text: 'Sí, puedo atender ahora, llámame.' });
   expect(confirmed.errorCode).toBeNull();
   expect(confirmed.commitSucceeded).toBe(true);
+  expect(generationCount).toBe(1);
+  expect(confirmed.authorizedMessages.join(' ')).toContain('Te llamo ahora.');
   const calls = await db<Array<{ id: string; source_turn_id: string }>>`
     SELECT cs.id, cs.source_turn_id FROM call_sessions cs
     JOIN contacts c ON c.id = cs.contact_id WHERE c.phone = ${id.phoneE164}

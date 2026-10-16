@@ -3715,7 +3715,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('executes an authorized direct call without waiting for the authoritative brain', async () => {
+  it('routes call_direct_request through authoritative Agent A before requesting the call', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -3724,18 +3724,29 @@ describe('processInboundTurn hot path', () => {
       agent_a_brain_v1_shadow: false,
     };
     claimed.deterministic_route = 'call_direct_request';
+    configuration.agentAPlannerlessV2Enabled = true;
     claimed.conversation_state_v1 = {
       selected_offering_code: null, selected_payment_plan: null,
-      stage: 'exploring', call_preference: 'unknown', call_offer_status: 'offered',
+      stage: 'exploring', call_preference: 'call', call_offer_status: 'accepted',
       call_offer_count: 1, awaiting_reply: 'call_or_chat', version: 2,
     };
     claimed.context.batch_messages[0].content = 'Llamame';
     claimed.sales_context.allowed_actions = ['request_call_now'];
+    claimed.contact_intake_missing = [];
     claimed.catalog_index = { as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0 };
     actionSpies.claim.mockResolvedValue(claimed);
     secrets.DEEPSEEK_API_KEY = 'deepseek-local-test-only';
-    actionSpies.agentABrainDeepSeek.mockRejectedValue(new Error('BRAIN_DEEPSEEK_HTTP_503'));
-    actionSpies.agentABrain.mockRejectedValueOnce(new Error('GROQ_UNAVAILABLE'));
+    actionSpies.agentABrainDeepSeek.mockResolvedValueOnce({
+      proposal: {
+        schema_version: 1,
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Perfecto, te llamo ahora.'], call_offer: null },
+        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+        profile_updates: [], profile_requests: [], repair_of: null,
+      },
+      provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1,
+    });
     const step = Object.assign(
       async (_name: string, run: () => Promise<unknown>) => run(),
       { sleep: vi.fn(async () => undefined) },
@@ -3751,14 +3762,14 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(actionSpies.plan).not.toHaveBeenCalled();
-    expect(actionSpies.agentABrainDeepSeek).not.toHaveBeenCalled();
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       conversation_pipeline_v1: null,
-      decision: {
-        kind: 'reply',
-        response_type: 'call_confirmation',
-        business_action: { type: 'request_call_now', reason: 'direct_request' },
-        reason_code: 'CALL_DIRECT_REQUEST',
+      agent_turn_v2: {
+        proposal: {
+          response: { messages: ['Perfecto, te llamo ahora.'] },
+          proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+        },
       },
     });
   });
@@ -3809,7 +3820,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('executes an explicit direct call in plannerless mode without asking DeepSeek to reinterpret it', async () => {
+  it('routes call_accepted_offer through authoritative Agent A before requesting the call', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -3817,10 +3828,11 @@ describe('processInboundTurn hot path', () => {
       agent_a_brain_v1_enabled: true,
       agent_a_brain_v1_shadow: false,
     };
-    claimed.deterministic_route = 'call_direct_request';
+    claimed.deterministic_route = 'call_accepted_offer';
     configuration.agentAPlannerlessV2Enabled = true;
-    claimed.context.batch_messages[0].content = 'Okay, llámame';
+    claimed.context.batch_messages[0].content = 'Sí, llamame';
     claimed.sales_context.allowed_actions = ['request_call_now'];
+    claimed.sales_context.accepted_call_offer = { decision_id: UUID, expires_at: NOW };
     claimed.contact_intake_missing = [];
     claimed.catalog_index = {
       as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0,
@@ -3833,7 +3845,17 @@ describe('processInboundTurn hot path', () => {
       call_offer_count: 1, awaiting_reply: 'call_or_chat', version: 2,
     };
     actionSpies.claim.mockResolvedValue(claimed);
-    actionSpies.agentABrainDeepSeek.mockRejectedValue(new Error('BRAIN_MUST_NOT_RUN'));
+    actionSpies.agentABrainDeepSeek.mockResolvedValueOnce({
+      proposal: {
+        schema_version: 1,
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Dale, te llamo ahora.'], call_offer: null },
+        proposed_action: { type: 'request_call_now', reason: 'accepted_offer' },
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+        profile_updates: [], profile_requests: [], repair_of: null,
+      },
+      provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1,
+    });
     const step = Object.assign(
       async (_name: string, run: () => Promise<unknown>) => run(),
       { sleep: vi.fn(async () => undefined) },
@@ -3848,13 +3870,14 @@ describe('processInboundTurn hot path', () => {
       client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
-    expect(actionSpies.agentABrainDeepSeek).not.toHaveBeenCalled();
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      agent_turn_v2: null,
-      decision: {
-        response_type: 'call_confirmation',
-        business_action: { type: 'request_call_now', reason: 'direct_request' },
-        reason_code: 'CALL_DIRECT_REQUEST',
+      conversation_pipeline_v1: null,
+      agent_turn_v2: {
+        proposal: {
+          response: { messages: ['Dale, te llamo ahora.'] },
+          proposed_action: { type: 'request_call_now', reason: 'accepted_offer' },
+        },
       },
     });
   });
