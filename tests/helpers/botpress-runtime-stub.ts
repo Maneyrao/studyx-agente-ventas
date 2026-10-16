@@ -22,6 +22,10 @@ interface WorkflowDefinition {
   readonly handler: RuntimeHandler;
 }
 
+interface TriggerDefinition {
+  readonly handler: RuntimeHandler;
+}
+
 /** Mirrors `new Conversation({ channel, handler })`: just records the definition. */
 export class Conversation<TDefinition extends ConversationDefinition = ConversationDefinition> {
   definition: TDefinition;
@@ -40,6 +44,14 @@ export class Workflow<TDefinition extends WorkflowDefinition = WorkflowDefinitio
   async getOrCreate(_input: unknown): Promise<{ id: string }> {
     void _input;
     return { id: 'test-workflow-id' };
+  }
+}
+
+/** Records trigger definitions so event handlers can run in unit tests. */
+export class Trigger<TDefinition extends TriggerDefinition = TriggerDefinition> {
+  definition: TDefinition;
+  constructor(definition: TDefinition & TriggerDefinition) {
+    this.definition = definition;
   }
 }
 
