@@ -3928,8 +3928,13 @@ describe('processInboundTurn hot path', () => {
       proposal: {
         schema_version: 1,
         move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
-        response: { messages: ['Perfecto, te llamo ahora.'], call_offer: null },
+        response: { messages: [context.turn_rejection
+          ? 'Claro. Para poder llamarte, ¿me compartes tu nombre y apellido?'
+          : 'Perfecto, te llamo ahora.'], call_offer: null },
         proposed_action: { type: 'none' }, used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+        profile_requests: context.turn_rejection
+          ? [{ message_index: 0, fields: ['nombre', 'apellido'], purpose: 'call', mode: 'collect' }]
+          : [],
         repair_of: context.turn_rejection
           ? { rejection_id: context.turn_rejection.rejection_id, attempt: 1 }
           : null,
@@ -3959,7 +3964,7 @@ describe('processInboundTurn hot path', () => {
       agent_turn_v2: { conversation_only: true, proposal: {
         move: { move: 'request_call' },
         proposed_action: { type: 'none' },
-        response: { messages: [expect.stringMatching(/nombre y apellido/iu)], call_offer: null },
+        response: { messages: ['Claro. Para poder llamarte, ¿me compartes tu nombre y apellido?'], call_offer: null },
         profile_requests: [{ message_index: 0, fields: ['nombre', 'apellido'], purpose: 'call', mode: 'collect' }],
       } },
     });

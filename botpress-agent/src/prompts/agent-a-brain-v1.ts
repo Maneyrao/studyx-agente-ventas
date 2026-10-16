@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v108' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v109' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -38,10 +38,18 @@ function inertJson(value: unknown): string {
 function mandatoryRepairDirectiveV1(context: AgentAContextV1): string {
   const rejection = context.turn_rejection;
   if (!rejection) return '';
+  const repairsCall = rejection.rejections.some(reason => (
+    reason.subject === 'request_call_now' || reason.subject.startsWith('call')
+  ));
+  const callRepair = repairsCall ? `
+For an unavailable request_call_now, retain move=request_call and use proposed_action=none.
+Ask only for missing call data among nombre, apellido and telefono. Keep the customer's intent and write the request naturally in the canonical voice.
+Do not claim the call was placed.` : '';
   return `
 <mandatory_repair attempt="1" rejection_id="${rejection.rejection_id}">
 Use repair_of with this rejection_id and attempt 1. This is the only rewrite.
 Correct only the facts or effects identified in turn_rejection, preserving the customer's intent.
+${callRepair}
 If an action did not occur, do not claim it; continue naturally from the permitted facts and effects.
 Do not repeat confirmed data or an earlier opening or question. Ask only for truly missing information.
 Keep prose and metadata consistent. Preserve accepted observations. Never expose validation to the customer.
