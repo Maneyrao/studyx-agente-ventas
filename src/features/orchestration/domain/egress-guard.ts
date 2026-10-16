@@ -75,8 +75,12 @@ export type AuthorizedEgressVerification =
 const DOMAIN_LABEL = String.raw`(?:xn--[a-z0-9-]{1,59}|[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?)`;
 const DOMAIN_TLD = String.raw`(?:xn--[a-z0-9-]{2,59}|[\p{L}]{2,63})`;
 const EXPLICIT_URL = String.raw`(?:\b[a-z][a-z0-9+.-]*:\/\/|\b(?:mailto|tel|data|javascript):|\bwww\.)[^\s<>"']+`;
-const BARE_HOSTNAME = String.raw`(?<![@\p{L}\p{N}_.-])${DOMAIN_LABEL}(?:\.${DOMAIN_LABEL})*\.${DOMAIN_TLD}(?::\d{1,5})?(?:[/?#][^\s<>"']*)?`;
+const BARE_HOSTNAME = String.raw`(?<![@\p{L}\p{N}_.-])${DOMAIN_LABEL}(?:\.${DOMAIN_LABEL})*\.${DOMAIN_TLD}(?::\d{1,5})?(?:[/?#][^\s<>"']*)?(?!@)`;
 const URL_LIKE_PATTERN = new RegExp(`${EXPLICIT_URL}|${BARE_HOSTNAME}`, 'giu');
+const EMAIL_ADDRESS_PATTERN = new RegExp(
+  String.raw`[\p{L}\p{N}!#$%&'*+/=?^_{|}~.-]+@${DOMAIN_LABEL}(?:\.${DOMAIN_LABEL})*\.${DOMAIN_TLD}`,
+  'giu',
+);
 /*
  * This is a lexical safety boundary, not a general hallucination detector.
  * It recognizes currency-associated prices, numeric course/time units, a
@@ -187,7 +191,14 @@ function trimTrailingUrlPunctuation(candidate: string): string {
 }
 
 function extractUrlCandidates(content: string): string[] {
+  const emailSpans = [...content.matchAll(EMAIL_ADDRESS_PATTERN)].map((match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+  }));
   return [...content.matchAll(URL_LIKE_PATTERN)]
+    .filter((match) => !emailSpans.some((span) => (
+      match.index >= span.start && match.index + match[0].length <= span.end
+    )))
     .map((match) => trimTrailingUrlPunctuation(match[0]));
 }
 

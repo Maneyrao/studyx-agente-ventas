@@ -188,6 +188,21 @@ describe('authorized egress manifest', () => {
     expect(verifyAuthorizedEgress({ content, manifest })).toEqual({ ok: true });
   });
 
+  it.each([
+    'drape.indumentaria@gmail.com',
+    'nombre.apellido@studyx.com',
+    'ventas.academia@subdominio.studyx.com',
+  ])('does not reinterpret a dotted email username as an unauthorized hostname: %s', (email) => {
+    const content = `- Usuario: ${email}\n- Contraseña: Escuela.123`;
+    const manifest = buildAuthorizedEgress({
+      content,
+      authorized_urls: [],
+      protected_facts: [],
+    });
+
+    expect(verifyAuthorizedEgress({ content, manifest })).toEqual({ ok: true });
+  });
+
   it('allows content with zero URLs when the manifest authorizes none', () => {
     const content = 'Perfecto, te cuento las opciones.';
     const manifest = buildAuthorizedEgress({
