@@ -427,6 +427,25 @@ describe('registro canónico desde el catálogo', () => {
     metadata: { academy: 'Academia de Oficios' },
   };
 
+  it('acepta un alias canónico que el catálogo le expone al agente', () => {
+    const canonical = canonicalTruthSetFromOfferingsV1({
+      offerings: [{
+        ...PYTHON,
+        code: 'ingles_1',
+        display_name: 'Inglés 1',
+        metadata: { aliases: ['inglés', 'inglés básico'] },
+      }],
+      selected_offering_code: null,
+    });
+    const content = 'Te recomiendo el curso de Inglés para trabajar internacionalmente. ¿Querés que veamos tu nivel?';
+
+    expect(enforce(content, canonical)).toMatchObject({
+      content,
+      removed: [],
+      violations: [],
+    });
+  });
+
   it.each([
     'En tecnología contamos con el curso de Armado y Reparación de PC, dentro de nuestra Academia de Oficios.',
     'Ofrecemos Armado y Reparación de PC, parte de la Academia de Oficios.',

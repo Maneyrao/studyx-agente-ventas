@@ -531,7 +531,14 @@ export function canonicalTruthSetFromOfferingsV1(input: {
     .filter((certification): certification is boolean => typeof certification === 'boolean');
 
   return {
-    offering_names: input.offerings.flatMap((offering) => offering.display_name ? [offering.display_name] : []),
+    offering_names: [...new Set(input.offerings.flatMap((offering) => [
+      ...(offering.display_name ? [offering.display_name] : []),
+      ...(Array.isArray(offering.metadata?.aliases)
+        ? offering.metadata.aliases.filter((alias): alias is string => (
+            typeof alias === 'string' && alias.trim().length > 0
+          ))
+        : []),
+    ]))],
     area_names: [...new Set(input.offerings.flatMap((offering) => (
       typeof offering.metadata?.academy === 'string' ? [offering.metadata.academy] : []
     )))],
