@@ -6,6 +6,7 @@ import {
 } from '../helpers/db';
 import { runEnrollmentWorker } from '@/features/fulfillment/central-carga/worker';
 import type { CentralCargaConfig } from '@/features/fulfillment/central-carga/config';
+import { createResilientPostgresRuntime } from '@/lib/db/resilient-postgres';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
@@ -196,6 +197,24 @@ run('Central de Carga enrollment worker', () => {
     expect(await enrollments(f.paymentId)).toEqual([
       { enrollment_id: 'enr_1', student_id: 'stu_1', login_email: 'alumno@example.com', welcome_sent: true },
     ]);
+  });
+
+  it('settles a completed enrollment through the production resilient SQL adapter', async () => {
+    const f = await fixture({ declaredPhone: '+5491100001112' });
+    const central = mockCentral((call) => json(201, body(call.paymentId)));
+    const runtime = createResilientPostgresRuntime({
+      createClient: () => db!,
+      healthyForMs: 60_000,
+    });
+
+    const result = await runEnrollmentWorker(
+      { worker_id: 'w-resilient', limit: 1 },
+      { sql: runtime.sql, config, fetchImpl: central.fetchImpl },
+    );
+
+    expect(result).toMatchObject({ claimed: 1, completed: 1, lease_lost: 0 });
+    expect(await job(f.jobId)).toMatchObject({ status: 'completed', leased_by: null });
+    expect(await enrollments(f.paymentId)).toHaveLength(1);
   });
 
   it('two concurrent workers never take the same job', async () => {

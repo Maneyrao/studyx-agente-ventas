@@ -290,8 +290,6 @@ async function settle(
     terminal = { kind: 'dead_letter', code: `max_attempts_exhausted:${terminal.code}`.slice(0, 80) };
   }
 
-  const fence = sql`id = ${job.id}::uuid AND status = 'leased' AND leased_by = ${workerId}
-    AND attempt_count = ${job.attempt_count}`;
   const detail = (code: string) => `code=${code} attempt=${job.attempt_count}`;
   let fenced: Array<{ id: string }>;
 
@@ -302,7 +300,8 @@ async function settle(
         UPDATE fulfillment_jobs
         SET status = 'completed', completed_at = now(), lease_until = NULL, leased_by = NULL,
             last_error_code = NULL, last_error_detail = NULL
-        WHERE ${fence}
+        WHERE id = ${job.id}::uuid AND status = 'leased' AND leased_by = ${workerId}
+          AND attempt_count = ${job.attempt_count}
         RETURNING id
       `;
       if (rows.length === 0) return false;
@@ -337,7 +336,8 @@ async function settle(
       SET status = 'failed_retryable', available_at = now() + make_interval(secs => ${delay}),
           lease_until = NULL, leased_by = NULL,
           last_error_code = ${terminal.code}, last_error_detail = ${detail(terminal.code)}
-      WHERE ${fence}
+      WHERE id = ${job.id}::uuid AND status = 'leased' AND leased_by = ${workerId}
+        AND attempt_count = ${job.attempt_count}
       RETURNING id
     `;
     if (fenced.length === 0) return null;
@@ -356,7 +356,8 @@ async function settle(
       UPDATE fulfillment_jobs
       SET status = 'skipped', lease_until = NULL, leased_by = NULL,
           last_error_code = ${terminal.code}, last_error_detail = ${detail(terminal.code)}
-      WHERE ${fence}
+      WHERE id = ${job.id}::uuid AND status = 'leased' AND leased_by = ${workerId}
+        AND attempt_count = ${job.attempt_count}
       RETURNING id
     `;
     if (fenced.length === 0) return null;
@@ -372,7 +373,8 @@ async function settle(
     UPDATE fulfillment_jobs
     SET status = 'dead_letter', lease_until = NULL, leased_by = NULL,
         last_error_code = ${terminal.code}, last_error_detail = ${detail(terminal.code)}
-    WHERE ${fence}
+    WHERE id = ${job.id}::uuid AND status = 'leased' AND leased_by = ${workerId}
+      AND attempt_count = ${job.attempt_count}
     RETURNING id
   `;
   if (fenced.length === 0) return null;
