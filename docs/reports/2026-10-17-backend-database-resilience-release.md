@@ -41,6 +41,8 @@ The second cutover promoted `dpl_B4RkveXasMcSMHfF2FDa8GxdR6c6`. Five consecutive
 - deliberately invalid ingest: HTTP 400 `VALIDATION_ERROR`;
 - no runtime errors in the post-promotion log window.
 
+Pilot cleanup removed 18 synthetic `+999` identities and their dependent test rows in one transaction. A count over the three exact pilot prefixes returned zero afterward; no real contact was in scope.
+
 Observed readiness database latency was 141 ms on the first cold probe and remained bounded on subsequent probes. End-to-end HTTP readiness stayed between 0.49 s and 1.22 s after promotion.
 
 ## Verification
