@@ -4,6 +4,7 @@ import { AgentATurnProposalV1Schema, type AgentAContextV1, type AgentATurnPropos
 import {
   AgentABrainError,
   claimsImmediateCallDispatchV1,
+  mentionsMissingIntakeField,
   solicitsACallV1,
   validateAgentATurnProposalV1,
 } from './agent-a-brain'
@@ -172,7 +173,17 @@ function hasUnbackedCallDispatchClaim(
   context: AgentAContextV1,
 ): boolean {
   const declaredCallOffer = proposal.response.call_offer
-  return [...proposal.response.messages, typeof declaredCallOffer === 'string' ? declaredCallOffer : '']
+  const missingCallIdentity = (['nombre', 'apellido', 'telefono'] as const)
+    .filter((field) => (context.capabilities.intake_missing ?? []).includes(field))
+  const moves = new Set([proposal.move.move, ...proposal.move.secondary_moves])
+  const callCollectionInProgress = moves.has('request_call')
+    || (context.commercial_state.call_preference === 'call'
+      && context.commercial_state.call_offer_status === 'accepted')
+  const asksForMissingCallIdentity = callCollectionInProgress
+    && missingCallIdentity.length > 0
+    && mentionsMissingIntakeField(proposal.response.messages, missingCallIdentity)
+  return !asksForMissingCallIdentity
+    && [...proposal.response.messages, typeof declaredCallOffer === 'string' ? declaredCallOffer : '']
     .some(message => claimsImmediateCallDispatchV1(message, context.commercial_state.active_call?.status))
     && (proposal.proposed_action.type !== 'request_call_now'
       || rejection.rejections.some((reason) => (

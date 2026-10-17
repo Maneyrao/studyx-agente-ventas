@@ -1547,7 +1547,7 @@ export function removeRepeatedAgentOpeningMessagesV1(messages: readonly string[]
     .filter((message) => message.length > 0);
 }
 
-function mentionsMissingIntakeField(messages: readonly string[], missing: readonly string[]): boolean {
+export function mentionsMissingIntakeField(messages: readonly string[], missing: readonly string[]): boolean {
   const text = messages.join(' ').normalize('NFD')
     .replace(/[\u0300-\u036f]/gu, '')
     .toLocaleLowerCase('es');
@@ -2044,7 +2044,11 @@ export function validateAgentATurnProposalV1(input: {
   const requestedCallNow = moves.has('request_call') && input.proposal.proposed_action.type === 'request_call_now'
     && input.context.capabilities.may_request_call_now && callRequestSupported
     && !input.proposal.move.vetoes.includes('call');
-  const asksForMissingCallIdentity = moves.has('request_call')
+  // Asking for a call prerequisite is not a claim that the call was already
+  // dispatched. Agent A may classify a terse or noisy reply as `unknown`
+  // while still naturally continuing an already accepted call handoff.
+  const callCollectionInProgress = moves.has('request_call') || resumesAcceptedCall;
+  const asksForMissingCallIdentity = callCollectionInProgress
     && missingCallIntake.length > 0
     && mentionsMissingIntakeField(input.proposal.response.messages, missingCallIntake);
   const claimsCallDispatchWithoutAction = input.proposal.proposed_action.type !== 'request_call_now'

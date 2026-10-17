@@ -457,6 +457,57 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.evidence.repair_attempted).toBe(false);
   });
 
+  it('preserves a natural missing-data request for an accepted call even when A classifies the noisy input as unknown', async () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm1', text: 'te paso mis datos?' }];
+    current.customer.contact_intake = {
+      nombre: null, apellido: null, correo: null, telefono: '+5491169004497',
+    };
+    current.commercial_state.call_preference = 'call';
+    current.commercial_state.call_offer_status = 'accepted';
+    current.commercial_state.awaiting_reply = 'contact_details';
+    current.capabilities.intake_status = 'unknown';
+    current.capabilities.intake_missing = ['nombre', 'apellido'];
+    const message = 'Sí, pasame tu nombre y apellido y te llamo.';
+    const initial = proposal({
+      move: {
+        schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 1,
+      },
+      response: { messages: [message], call_offer: null },
+      proposed_action: { type: 'none' },
+      used_fact_ids: [],
+    });
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(initial), context: current,
+      repair_enabled: false, semantic_rejections: 'advisory',
+      rejection_id: '00000000-0000-4000-8000-0000000000e9',
+      repair: async () => { throw new Error('Unexpected repair'); },
+    });
+
+    expect(result.effective.proposal.response.messages).toEqual([message]);
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+    expect(result.evidence.repair_attempted).toBe(false);
+  });
+
+  it('still rejects the same call promise when no call collection is in progress', async () => {
+    const current = context();
+    current.capabilities.intake_status = 'unknown';
+    current.capabilities.intake_missing = ['nombre', 'apellido'];
+    await expect(resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({
+        move: {
+          schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 1,
+        },
+        response: { messages: ['Pasame tu nombre y apellido y te llamo.'], call_offer: null },
+        proposed_action: { type: 'none' }, used_fact_ids: [],
+      })),
+      context: current, repair_enabled: false, semantic_rejections: 'advisory',
+      rejection_id: '00000000-0000-4000-8000-0000000000ea',
+      repair: async () => { throw new Error('Unexpected repair'); },
+    })).rejects.toThrow('UNSUPPORTED_OPERATIONAL_CLAIM:call_confirmation');
+  });
+
   it.each(['none', 'unavailable'] as const)('repairs a call announcement with %s action in production advisory mode', async (actionCase) => {
     const current = context();
     current.turn.batch_messages = [{ id: 'm1', text: 'Dale, llamame' }];
