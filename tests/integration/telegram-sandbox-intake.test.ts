@@ -46,6 +46,50 @@ function nextMessage(first: InboundEnvelope, overrides: Partial<InboundEnvelope>
 }
 
 run('Telegram sandbox intake boundary', () => {
+  it('allows the orchestrator role to register, but not mutate or delete, sandbox identities', async () => {
+    const [privileges] = await db!<Array<{
+      can_select: boolean;
+      can_insert: boolean;
+      can_update: boolean;
+      can_delete: boolean;
+    }>>`
+      SELECT
+        has_table_privilege('orchestrator_role', 'sandbox_identities', 'SELECT') AS can_select,
+        has_table_privilege('orchestrator_role', 'sandbox_identities', 'INSERT') AS can_insert,
+        has_table_privilege('orchestrator_role', 'sandbox_identities', 'UPDATE') AS can_update,
+        has_table_privilege('orchestrator_role', 'sandbox_identities', 'DELETE') AS can_delete
+    `;
+
+    expect(privileges).toEqual({
+      can_select: true,
+      can_insert: true,
+      can_update: false,
+      can_delete: false,
+    });
+  });
+
+  it('allows the orchestrator role to persist immutable multi-part decision links', async () => {
+    const [privileges] = await db!<Array<{
+      can_select: boolean;
+      can_insert: boolean;
+      can_update: boolean;
+      can_delete: boolean;
+    }>>`
+      SELECT
+        has_table_privilege('orchestrator_role', 'agent_decision_outbound_parts', 'SELECT') AS can_select,
+        has_table_privilege('orchestrator_role', 'agent_decision_outbound_parts', 'INSERT') AS can_insert,
+        has_table_privilege('orchestrator_role', 'agent_decision_outbound_parts', 'UPDATE') AS can_update,
+        has_table_privilege('orchestrator_role', 'agent_decision_outbound_parts', 'DELETE') AS can_delete
+    `;
+
+    expect(privileges).toEqual({
+      can_select: true,
+      can_insert: true,
+      can_update: false,
+      can_delete: false,
+    });
+  });
+
   it('commits the sandbox lock with the first inbound and keeps it idempotent on replay and follow-up', async () => {
     const first = envelope();
     const accepted = await processInboundMessage(first);
