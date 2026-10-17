@@ -6,7 +6,7 @@ Branch: `codex/orchestrator-integrity-20261015`
 
 ## Outcome
 
-Production now runs deployment `dpl_B4RkveXasMcSMHfF2FDa8GxdR6c6` with a least-privilege `orchestrator_role`, bounded database operations, stale-connection detection and one controlled connection recycle. The public alias is `https://studyx-agente-ventas.vercel.app`.
+Production now runs deployment `dpl_B3GhfWPegwYFKe9HtR39x4i7Stps` with a least-privilege `orchestrator_role`, bounded database operations, stale-connection detection and one controlled connection recycle. The public alias is `https://studyx-agente-ventas.vercel.app`.
 
 This release does not change Agent A's prompt, wording, sales judgment or Botpress bundle. On an already-live connection it adds no query. After 15 seconds of database inactivity, the next operation performs one liveness query before continuing.
 
@@ -45,6 +45,16 @@ Pilot cleanup removed 18 synthetic `+999` identities and their dependent test ro
 
 Observed readiness database latency was 141 ms on the first cold probe and remained bounded on subsequent probes. End-to-end HTTP readiness stayed between 0.49 s and 1.22 s after promotion.
 
+## Enrollment settlement follow-up
+
+A real sandbox payment for the contact ending in `4399` exposed one compatibility gap after the first release: the Central de Carga worker built its lease fence as a reusable Postgres.js fragment. The resilient adapter treated that fragment as a complete query, producing `syntax error at or near "id"`; Central had accepted the request, but the local job remained leased and no `access_ready` notification could be created.
+
+Commit `e893c93` inlines the fenced predicate in each terminal update and adds an integration regression that runs the complete enrollment worker through the production resilient adapter. The focused regression failed with the exact production signature before the change and passed afterward; all 22 Central de Carga worker tests, the 4,243 unit tests, typecheck, lint and the post-sale integration passed.
+
+Deployment `dpl_B3GhfWPegwYFKe9HtR39x4i7Stps` was then promoted. The expired `4399` job was released and retried through the production endpoint: attempt 2 reconciled the already-created Central enrollment, completed with `lease_lost: 0`, persisted an active enrollment and sent the `access_ready` WhatsApp notification successfully. Final readiness returned HTTP 200 with a 105 ms PostgreSQL probe and the deployment error log was empty.
+
+Before this diagnosis, the test contact ending in `4497` was reset. Its immutable call/continuity ledger could not be deleted by design, so the old contact was tombstoned under a synthetic number, mutable memory and sales state were removed, a fresh contact took the real number, and the Botpress conversation was deleted. Independent verification found zero messages, conversations, memories, sales states, payments, calls and channel threads on the fresh contact.
+
 ## Verification
 
 - Unit: 239 files passed; 4,243 tests passed; 17 skipped; 7 todo.
@@ -59,4 +69,4 @@ Observed readiness database latency was 141 ms on the first cold probe and remai
 
 This proves the structural backend path and the limited-role transaction flow. It does not claim a fresh real-money Stripe payment, real Central de Carga enrollment, real email/WhatsApp credential delivery or real voice call was executed during this release, because those actions have external side effects. Those remain supervised acceptance checks.
 
-Rollback target: `dpl_8JnUTCTrLKxkGXZJpfJhti3kX7xg`.
+Immediate rollback target: `dpl_B4RkveXasMcSMHfF2FDa8GxdR6c6`.
