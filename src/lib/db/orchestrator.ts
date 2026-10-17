@@ -1,4 +1,5 @@
 import postgres from 'postgres';
+import { createResilientPostgresRuntime } from './resilient-postgres';
 
 if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL is not set');
@@ -12,11 +13,19 @@ if (!process.env.DATABASE_URL) {
 // prepare: false — named prepared statements are not guaranteed to survive
 // transaction-mode pooling (Supabase's documented requirement for this port).
 const poolMax = Number.parseInt(process.env.DB_POOL_MAX ?? '1', 10) || 1;
-const sql = postgres(process.env.DATABASE_URL, {
-  max: poolMax, prepare: false, connect_timeout: 5,
-  // Query/lock deadlines belong to orchestrator_role (migration), because
-  // session settings are not portable through Supavisor transaction pooling.
-  connection: { application_name: 'studyx-orchestrator' },
+const runtime = createResilientPostgresRuntime({
+  expectedRole: process.env.ORCHESTRATOR_DB_EXPECTED_ROLE,
+  createClient: () => postgres(process.env.DATABASE_URL!, {
+    max: poolMax,
+    prepare: false,
+    connect_timeout: 5,
+    idle_timeout: 20,
+    // Query/lock deadlines belong to orchestrator_role (migration), because
+    // session settings are not portable through Supavisor transaction pooling.
+    connection: { application_name: 'studyx-orchestrator' },
+  }),
 });
 
-export { sql };
+const { sql, ensureReady: ensureOrchestratorDatabaseReady } = runtime;
+
+export { sql, ensureOrchestratorDatabaseReady };
