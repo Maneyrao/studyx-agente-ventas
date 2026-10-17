@@ -80,7 +80,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v72');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v111');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v112');
   });
   it('distinguishes authoritative channel intake from evidence required for new observations', () => {
     const current = context();
@@ -177,6 +177,33 @@ describe('Agent A Brain prompt', () => {
     expect(gate).toMatch(/generic, cold, administrative, blunt or repetitive/iu);
     expect(gate).toContain('Preserve schema, facts, effects and profile metadata');
     expect(gate).toContain('Do not narrate internal state or validation');
+  });
+
+  it('prevents mechanical consecutive use of a known first name through Agent A guidance', () => {
+    const current = context();
+    current.customer.display_name = 'Thiago Maneyro';
+    current.customer.contact_intake = {
+      nombre: 'Thiago', apellido: 'Maneyro', correo: 'thiago@example.test', telefono: '+5491169004497',
+    };
+    current.turn.recent_turns = [
+      { id: 'assistant-1', direction: 'outbound', content: 'Gracias, Thiago. Ya tengo tu correo.' },
+      { id: 'assistant-2', direction: 'outbound', content: 'Perfecto, Thiago. Me falta que elijas el plan.' },
+    ];
+    current.continuity = {
+      assistant_has_spoken: true, first_name_status: 'known',
+      last_agent_reply: current.turn.recent_turns[1]!.content,
+    };
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+    const canonical = instructions.split('<canonical_sales_behavior')[1]!
+      .split('</canonical_sales_behavior>')[0]!;
+    const gate = instructions.split('<lisandro_voice_gate>')[1]!;
+
+    expect(canonical).toMatch(/conocer (?:su|el) nombre no (?:implica|obliga) usarlo/iu);
+    expect(canonical).toMatch(/no (?:lo )?uses? en (?:dos )?intervenciones consecutivas/iu);
+    expect(canonical).toMatch(/confirmaciones? (?:mec[aá]nicas?|operativas?)/iu);
+    expect(gate).toMatch(/compare.*response.*recent assistant turns/iu);
+    expect(gate).toMatch(/name.*consecutive interventions/iu);
   });
 
   it('exposes contact source evidence and a delivered question even after another assistant bubble', () => {

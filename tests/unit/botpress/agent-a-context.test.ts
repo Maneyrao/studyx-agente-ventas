@@ -2158,6 +2158,22 @@ it('authorizes an immediate call when only payment-only email is missing', () =>
   expect(context.capabilities.may_request_call_now).toBe(true);
 });
 
+it('authorizes the current explicit acceptance of an open offer with complete call data', () => {
+  const claimed = claimedTurn();
+  claimed.context.batch_messages[0] = {
+    ...claimed.context.batch_messages[0]!, content: 'dale de una',
+  };
+  claimed.contact_intake_missing = ['correo'];
+  Object.assign(claimed.conversation_state_v1!, {
+    call_preference: 'unknown', call_offer_status: 'offered', call_offer_count: 1,
+    awaiting_reply: 'call_or_chat', stage: 'course_selected',
+  });
+
+  const context = buildAgentAContextV1(claimed)!;
+
+  expect(context.capabilities.may_request_call_now).toBe(true);
+});
+
 it('separates missing contact data by the purpose Agent A is pursuing', () => {
   const claimed = claimedTurn();
   claimed.contact_intake = {

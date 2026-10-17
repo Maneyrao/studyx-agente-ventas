@@ -4067,10 +4067,12 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(failure === 'spent_budget' ? 1 : 2);
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       agent_turn_v2: { conversation_only: true,
-        requested_action: { type: 'request_call_now', reason: 'direct_request' }, proposal: {
+        proposal: {
         move: { move: 'request_call' }, proposed_action: { type: 'none' }, response: { messages: [safeText] },
       } }, turn_diagnostics: { generation_attempts: 2, action_status: 'needs_input' },
     });
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input.agent_turn_v2)
+      .not.toHaveProperty('requested_action');
     expect(actionSpies.dispatch).not.toHaveBeenCalled();
     actionSpies.agentABrainDeepSeek.mockReset();
   });

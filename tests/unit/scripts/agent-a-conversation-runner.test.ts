@@ -753,16 +753,16 @@ describe('Agent A conversation runner', () => {
       rejectionCodes: expect.arrayContaining(['ACTION_NOT_AUTHORIZED']) });
     if (continuationResult === 'valid') {
       expect(commitBody.agent_turn_v2.conversation_only).toBe(true);
-      expect(commitBody.agent_turn_v2.requested_action).toEqual(invalidProposal.proposed_action);
+      expect(commitBody.agent_turn_v2).not.toHaveProperty('requested_action');
       expect(commitBody.agent_turn_v2.proposal).toMatchObject({
-        move: invalidProposal.move, proposed_action: { type: 'none' },
+        move: { move: 'unknown' }, proposed_action: { type: 'none' },
         response: { messages, call_offer: null },
       });
       expect(result.turnDiagnostic?.repaired).toBe(true);
     } else if (initialMessage === 'Seguimos por chat.') {
       expect(commitBody.agent_turn_v2).toMatchObject({ conversation_only: true,
-        requested_action: invalidProposal.proposed_action,
         proposal: { move: invalidProposal.move, response: { messages: [initialMessage] } } });
+      expect(commitBody.agent_turn_v2).not.toHaveProperty('requested_action');
       expect(result.turnDiagnostic?.repaired).toBe(false);
       expect(result.turnDiagnostic?.technicalFallbackReason).toBeNull();
     } else if (continuationResult === 'rejected') {
@@ -804,9 +804,11 @@ describe('Agent A conversation runner', () => {
     const result = await sendTurn('Prefiero seguir por chat', null);
     expect(fetchMock.mock.calls.filter(([url]) => url === 'https://api.deepseek.com/responses')).toHaveLength(2);
     expect(JSON.parse(String(fetchMock.mock.calls[4]?.[1]?.body)).agent_turn_v2).toMatchObject({
-      conversation_only: true, requested_action: invalidActionProposal.proposed_action,
+      conversation_only: true,
       proposal: { move: invalidActionProposal.move, response: invalidActionProposal.response },
     });
+    expect(JSON.parse(String(fetchMock.mock.calls[4]?.[1]?.body)).agent_turn_v2)
+      .not.toHaveProperty('requested_action');
     expect(result.turnDiagnostic).toMatchObject({ proposalGenerationCalls: 2, repairAttempted: false });
   });
 

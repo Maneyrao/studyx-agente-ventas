@@ -767,8 +767,8 @@ describe('prepareAgentTurnV2', () => {
     expect(prepared.authorized_protected_facts).toContainEqual({ kind: 'duration', value: '12 clases' });
   });
 
-  it('does not re-authorize acceptance of an expired call offer', async () => {
-    await expect(prepareAgentTurnV2({
+  it('authorizes current acceptance of the still-open call offer in the same turn', async () => {
+    const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
       workspace_slug: 'studyx', business_context: business, catalog_index: index,
       current_customer_messages: ['sí'],
@@ -797,10 +797,15 @@ describe('prepareAgentTurnV2', () => {
       },
       contact_intake: completeIntake,
       now: () => Date.parse(index.as_of),
-    })).rejects.toMatchObject({
-      code: 'AGENT_TURN_V2_REJECTED',
-      reasons: expect.arrayContaining(['ACTION_NOT_AUTHORIZED']),
     });
+
+    expect(prepared.decision.business_action).toEqual({
+      type: 'request_call_now', reason: 'accepted_offer',
+    });
+    expect(prepared.transition).toMatchObject({
+      call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'none', stage: 'handoff',
+    });
+    expect(prepared.action_rejection).toBeNull();
   });
 
   it('keeps Agent A conversationally in control when payment intake is incomplete', async () => {
@@ -851,7 +856,7 @@ describe('prepareAgentTurnV2', () => {
     });
   });
 
-  it('keeps a direct call request pending when dispatch is not ready yet', async () => {
+  it('executes a direct call request immediately when canonical call data is complete', async () => {
     const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
       workspace_slug: 'studyx', business_context: business, catalog_index: index,
@@ -872,12 +877,13 @@ describe('prepareAgentTurnV2', () => {
     expect(prepared).toMatchObject({
       decision: {
         response: 'Dale. ¿Puedes atender si te llamamos ahora?',
-        business_action: null,
+        business_action: { type: 'request_call_now', reason: 'direct_request' },
       },
       transition: {
         call_preference: 'call',
         call_offer_status: 'accepted',
-        awaiting_reply: 'call_or_chat',
+        awaiting_reply: 'none',
+        stage: 'handoff',
       },
     });
   });
