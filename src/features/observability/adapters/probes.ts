@@ -23,13 +23,27 @@ import {
 
 const PROBE_TIMEOUT_MS = 2_000;
 
-async function withTimeout<T>(operation: Promise<T>, ms = PROBE_TIMEOUT_MS): Promise<T> {
+async function withTimeout<T>(
+  operation: PromiseLike<T> & { cancel?: () => unknown },
+  ms = PROBE_TIMEOUT_MS,
+): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
-      operation,
+      Promise.resolve(operation),
       new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error(`probe timed out after ${ms}ms`)), ms);
+        timer = setTimeout(() => {
+          try {
+            const cancellation = operation.cancel?.();
+            if (cancellation && typeof (cancellation as PromiseLike<unknown>).then === 'function') {
+              void Promise.resolve(cancellation).catch(() => undefined);
+            }
+          } catch {
+            // The timeout remains authoritative even if cancellation itself
+            // fails; the probe must still return instead of hanging readiness.
+          }
+          reject(new Error(`probe timed out after ${ms}ms`));
+        }, ms);
       }),
     ]);
   } finally {
