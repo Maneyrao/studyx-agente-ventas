@@ -123,7 +123,7 @@ describe('Agent A conversation from action feedback', () => {
     expect(generate).toHaveBeenCalledOnce();
   });
 
-  it('lets the continuation own its safe move and never restores the rejected call action', async () => {
+  it('retains Agent A call intent while never restoring the rejected call action', async () => {
     const current = context();
     const original = { ...reply('Te llamo ahora.').proposal,
       move: { schema_version: 1 as const, move: 'request_call' as const, secondary_moves: [], vetoes: [], confidence: 1 },
@@ -136,7 +136,7 @@ describe('Agent A conversation from action feedback', () => {
     const result = await continueAgentAAfterActionFeedbackV1({ context: current, rejection,
       original_proposal: original, apiKey: 'fixture', signal: new AbortController().signal,
       model: 'deepseek-v4-flash', generate: vi.fn(async () => reply('Me dices tu apellido para coordinarla?')) });
-    expect(result.proposal.move.move).toBe('unknown');
+    expect(result.proposal.move).toEqual(original.move);
     expect(result.proposal.proposed_action).toEqual({ type: 'none' });
     expect(result.proposal.confirmed_phone).toBeUndefined();
     expect(result.proposal.response.messages).toEqual(['Me dices tu apellido para coordinarla?']);

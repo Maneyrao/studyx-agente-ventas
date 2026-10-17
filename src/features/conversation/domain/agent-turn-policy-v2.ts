@@ -333,7 +333,8 @@ export function authorizeAgentTurnV2(input: {
     && stateFacts.has('state:intake_recorded:v1');
   const paymentLinkAuthorized = paymentLinkBaseAuthorized
     && (paymentConfirmationSatisfied || paymentLinkWasAlreadyDelivered
-      || sameTurnPlanAndCheckoutRequested);
+      || sameTurnPlanAndCheckoutRequested
+      || (pendingPaymentRequest !== null && moves.has('provide_contact_details')));
   // Asking for the next missing field is also prompt guidance. Missing intake
   // remains a hard boundary only for the payment side effect below.
   const explicitPaymentLinkRequested = proposal.proposed_action.type === 'send_payment_link'

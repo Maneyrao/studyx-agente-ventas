@@ -75,8 +75,14 @@ export async function continueAgentAAfterActionFeedbackV1(input: {
     rejection_id: input.rejection.rejection_id,
     repair: async () => { throw new Error('AGENT_A_CONTINUATION_REPAIR_NOT_ALLOWED') },
   })
-  // The continuation owns wording, citations and its safe next move. Restoring
-  // the rejected move or action here would feed the same unavailable effect
-  // back through authorization and turn a useful question into another veto.
-  return resolved.effective
+  // The continuation owns wording and citations. A rejected call effect still
+  // needs its original Agent A semantic intent so the backend can persist the
+  // pending call while the continuation asks for missing data. Only the move
+  // is retained; the rejected action and confirmed phone never cross the fence.
+  const retainPendingCallIntent = input.original_proposal?.proposed_action.type === 'request_call_now'
+    && input.original_proposal.move.move === 'request_call'
+  return retainPendingCallIntent ? {
+    ...resolved.effective,
+    proposal: { ...resolved.effective.proposal, move: input.original_proposal!.move },
+  } : resolved.effective
 }

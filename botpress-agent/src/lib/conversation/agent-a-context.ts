@@ -4,6 +4,7 @@ import {
 } from '../../schemas/agent-a-brain';
 import type { ClaimedTurn } from '../../schemas/contracts';
 import type { ConversationMoveV1 } from '../../schemas/conversation-pipeline';
+import { classifyBatchSalesSignal } from '../../../../src/features/orchestration/domain/sales-signal';
 
 const MEMORY_TYPES = new Set([
   'study_goal', 'study_context', 'preference', 'constraint',
@@ -540,6 +541,13 @@ export function buildAgentAContextV1(
     || (intakeAnswered && !intakeMissing.includes('nombre'));
   const logicalHistory = projectLogicalHistoryV1(claimed);
   const currentLogicalMessages = currentLogicalMessagesV1(claimed);
+  const currentSalesSignal = classifyBatchSalesSignal(
+    currentLogicalMessages.map((message) => message.content),
+  );
+  const currentCallAuthorization = currentSalesSignal.type === 'direct_call_request'
+    || (currentSalesSignal.type === 'call_acceptance'
+      && state.call_offer_status === 'offered'
+      && state.awaiting_reply === 'call_or_chat');
   const inputCapability = inputCapabilityV1(claimed);
   const hasReadableCurrentInput = inputCapability.status !== 'unreadable';
   const previousAgentReplies = previousAgentRepliesV1(claimed);
@@ -721,10 +729,15 @@ export function buildAgentAContextV1(
         && hasReadableCurrentInput
         && !claimed.contact.blocked
         && claimed.sales_context.active_call === null
-        // Same durable readiness contract as prepareAgentTurnV2. Legacy
-        // classifier permissions cannot grant an effect this state forbids.
-        && state.call_preference === 'call' && state.call_offer_status === 'accepted'
-        && state.awaiting_reply === 'call_or_chat' && !['handoff', 'closed'].includes(state.stage)
+        // Current consent is evidence in this turn. Requiring it to be written
+        // as accepted before evaluating the same turn created a circular,
+        // one-message-late authorization gate.
+        && (currentCallAuthorization || (
+          state.call_preference === 'call'
+          && state.call_offer_status === 'accepted'
+          && state.awaiting_reply === 'call_or_chat'
+        ))
+        && !['handoff', 'closed'].includes(state.stage)
         && intakeStatus === 'known'
         && !(['nombre', 'apellido', 'telefono'] as const)
           .some((field) => intakeMissing.includes(field)),

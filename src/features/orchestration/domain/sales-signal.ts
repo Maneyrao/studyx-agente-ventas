@@ -81,7 +81,7 @@ const RETRY_ACCEPTANCE_PATTERNS: RegExp[] = [
 // Only an exact short reply counts — the moment the customer adds words
 // ("sí, contame más") the affirmative is no longer unambiguous on its own,
 // so it falls through to `model_required`.
-const SHORT_ACCEPTANCE_REPLIES = new Set(['si', 'dale', 'de una']);
+const SHORT_ACCEPTANCE_REPLIES = new Set(['si', 'dale', 'de una', 'dale de una']);
 
 export function classifyDeterministicSalesSignal(text: string): DeterministicSalesSignal {
   const normalized = normalize(text);

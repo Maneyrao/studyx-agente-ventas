@@ -56,7 +56,18 @@ afterAll(async () => { vi.unstubAllGlobals(); await db.end(); });
 
 it.each([2, 3])('persists the exact real-model confirmation %s with a formatted international phone', async index => {
   const c = conversation();
-  for (const turn of recordedPayment.slice(0, 2)) await c.send(turn.customer, () => turn.proposal);
+  for (const [position, turn] of recordedPayment.slice(0, 2).entries()) {
+    await c.send(turn.customer, context => ({
+      ...turn.proposal,
+      profile_updates: contactFixtureUpdatesV1(context, position === 0
+        ? [{ field: 'nombre', value: 'Ludmi' }]
+        : [{ field: 'apellido', value: 'Medina', quote: 'Medina' },
+          { field: 'correo', value: 'ludmi@example.test' }]),
+      profile_requests: position === 0
+        ? [{ message_index: 1, fields: ['apellido', 'correo', 'telefono'], purpose: 'payment', mode: 'collect' as const }]
+        : [{ message_index: 0, fields: ['telefono'], purpose: 'payment', mode: 'clarify' as const }],
+    }));
+  }
   const confirmed = await c.send(recordedPayment[index].customer, () => recordedPayment[index].proposal);
   expect(confirmed.evidence.workflowEvents.filter(e => e.brain_source === 'fallback')).toEqual([]);
   expect(confirmed.persisted.contact).toMatchObject({ name: 'Ludmi Medina', email: 'ludmi@example.test', declaredPhone: '+541155550101' });
@@ -66,12 +77,24 @@ it.each([2, 3])('persists the exact real-model confirmation %s with a formatted 
   expect(replay.outboundCount).toBe(confirmed.persisted.outboundCount);
 }, 120_000);
 
-it('commits the exact real-model call proposals without a previous agent invitation', async () => {
+it('adapts the recorded call proposals to the current profile contract without a previous invitation', async () => {
   const c = conversation();
-  const pending = await c.send(recordedCall[0].customer, () => recordedCall[0].proposal);
+  const pending = await c.send('Dale, llamame. Soy Nora Vale.', context => ({
+    ...recordedCall[0].proposal,
+    response: { messages: ['Dale. ¿A qué número completo, con código de país y área, puedo llamarte?'], call_offer: null },
+    profile_updates: contactFixtureUpdatesV1(context, [
+      { field: 'nombre', value: 'Nora' }, { field: 'apellido', value: 'Vale' },
+    ]),
+    profile_requests: [{ message_index: 0, fields: ['telefono'], purpose: 'call', mode: 'collect' as const }],
+  }));
   expect(pending.persisted.state).toMatchObject({ callPreference: 'call', callOfferStatus: 'accepted', callOfferCount: 0 });
   expect(pending.calls).toHaveLength(0);
-  const requested = await c.send(recordedCall[1].customer, () => recordedCall[1].proposal);
+  const requested = await c.send(recordedCall[1].customer, context => ({
+    ...recordedCall[1].proposal,
+    profile_updates: contactFixtureUpdatesV1(context, [
+      { field: 'telefono', value: '+5491155550101', quote: '+54 9 11 5555 0101' },
+    ]),
+  }));
   expect(requested.persisted.state).toMatchObject({ stage: 'handoff', callOfferCount: 0 });
   expect(requested.calls).toHaveLength(1);
   expect(requested.persisted.decisions.filter(d => d.businessActionType === 'request_call_now')).toHaveLength(1);

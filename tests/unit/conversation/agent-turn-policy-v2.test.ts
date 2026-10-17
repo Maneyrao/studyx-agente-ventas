@@ -100,6 +100,34 @@ function authorize(input: {
 }
 
 describe('plannerless Agent A authority', () => {
+  it('consumes a pending payment-link request when the last contact field arrives', () => {
+    const result = authorize({
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected',
+        awaiting_reply: 'contact_details',
+        payment_link_request: {
+          status: 'pending', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+          requested_by_turn_id: null, resolved_by_decision_id: null,
+        },
+      }),
+      intake: completeIntake,
+      customerText: 'Mi teléfono es +54 9 11 1234 5678',
+      proposal: proposal({
+        move: { schema_version: 1, move: 'provide_contact_details', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Listo, te comparto el enlace seguro.'] },
+        proposed_action: { type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6' },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: { type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6' },
+      transition: { stage: 'payment_link_sent', awaiting_reply: 'none', payment_link_request: { status: 'consumed' } },
+    });
+  });
+
   it.each([
     ['pago 1', 'select_payment_plan', null, 'one_time'],
     ['12 pagos 30', 'select_payment_plan', null, 'monthly_12'],
@@ -646,7 +674,7 @@ describe('plannerless Agent A authority', () => {
     });
   });
 
-  it('keeps a durable payment-link request pending when the final contact detail arrives', () => {
+  it('consumes a durable payment-link request when the final contact detail arrives', () => {
     const result = authorize({
       customerText: 'Mi teléfono es +54 9 11 1234 5678',
       state: state({
@@ -671,10 +699,10 @@ describe('plannerless Agent A authority', () => {
 
     expect(result).toMatchObject({
       ok: true,
-      action: { type: 'none' },
+      action: { type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6' },
       transition: {
-        stage: 'plan_selected', awaiting_reply: 'payment_confirmation',
-        payment_link_request: { status: 'pending' },
+        stage: 'payment_link_sent', awaiting_reply: 'none',
+        payment_link_request: { status: 'consumed' },
       },
     });
   });
