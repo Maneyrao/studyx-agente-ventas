@@ -201,6 +201,14 @@ describe('resilient postgres runtime', () => {
     expect(replacement.beginCalls).toBe(1);
   });
 
+  it('exposes begin capability checks used to select the transactional projection path', () => {
+    const healthy = makeClient();
+    const runtime = createResilientPostgresRuntime({ createClient: () => healthy.client });
+
+    expect('begin' in runtime.sql).toBe(true);
+    expect(typeof runtime.sql.begin).toBe('function');
+  });
+
   it('ends the active generation exactly once through the stable proxy', async () => {
     const healthy = makeClient();
     const runtime = createResilientPostgresRuntime({ createClient: () => healthy.client });

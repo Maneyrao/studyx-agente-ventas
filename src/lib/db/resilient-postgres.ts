@@ -223,6 +223,10 @@ export function createResilientPostgresRuntime(options: ResilientPostgresRuntime
     apply(_target, _thisArg, args: unknown[]) {
       return target(...args);
     },
+    has(_target, property) {
+      if (property === 'begin' || property === 'end') return true;
+      return property in active;
+    },
     get(_target, property) {
       if (property === 'begin') {
         return async (...args: unknown[]) => {
