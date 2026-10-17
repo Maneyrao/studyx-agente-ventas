@@ -1230,8 +1230,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       if (verdict.violations.some((violation) => violation.code === 'UNAUTHORIZED_URL')) {
         throw egressPolicyError('UNAUTHORIZED_URL');
       }
-      const isAgentARepair = validatedInput.agent_turn_v2?.proposal.repair_of != null;
-      if (preparedAgentTurn !== null && verdict.violations.length > 0 && !isAgentARepair) {
+      if (preparedAgentTurn !== null && verdict.violations.length > 0) {
         const subjects = [...new Set(verdict.violations.map((violation) => violation.code.toLowerCase()))];
         logger.warn({
           event: 'orchestration.agent_a.commercial_truth_rejected',

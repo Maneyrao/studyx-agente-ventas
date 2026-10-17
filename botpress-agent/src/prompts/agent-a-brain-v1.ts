@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v110' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v111' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -47,16 +47,32 @@ function mandatoryRepairDirectiveV1(context: AgentAContextV1): string {
 For an unavailable request_call_now, retain move=request_call and use proposed_action=none.
 Ask only for missing call data among nombre, apellido and telefono. Keep the customer's intent and write the request naturally in the canonical voice.
 Do not claim the call was placed.` : '';
+  const repairsOffering = rejection.rejections.some(reason => (
+    reason.subject === 'offering_not_canonical'
+    || reason.code === 'COURSE_NOT_RESOLVED'
+  ));
+  const offeringRepair = repairsOffering ? `
+For an unresolved or non-canonical offering, remove that offering claim completely. Use only identities present in catalog.selected_offering, catalog.candidate_offerings or catalog.available_offerings. Preserve the customer's intent and let canonical_sales_behavior choose the conversational next step.` : '';
   return `
 <mandatory_repair attempt="1" rejection_id="${rejection.rejection_id}">
 Use repair_of with this rejection_id and attempt 1. This is the only rewrite.
 Correct only the facts or effects identified in turn_rejection, preserving the customer's intent.
 ${callRepair}
+${offeringRepair}
 If an action did not occur, do not claim it; continue naturally from the permitted facts and effects.
 Do not repeat confirmed data or an earlier opening or question. Ask only for truly missing information.
 Keep prose and metadata consistent. Preserve accepted observations. Never expose validation to the customer.
 Use authorized fact values or omit unsupported claims.
 </mandatory_repair>`;
+}
+
+function currentCatalogResolutionDirectiveV1(context: AgentAContextV1): string {
+  if (context.catalog.resolution !== 'not_found') return '';
+  return `<current_catalog_resolution>
+The customer's current wording did not resolve to a canonical StudyX offering.
+Never invent or present the unresolved offering as available. Any offering identity you mention must come from catalog.selected_offering, catalog.candidate_offerings or catalog.available_offerings.
+Choose your own natural wording in the canonical voice. This grounding rule constrains facts, not style.
+</current_catalog_resolution>`;
 }
 
 const LISANDRO_VOICE_GATE = `<lisandro_voice_gate>
@@ -82,6 +98,8 @@ ${INTERNAL_CONTACT_PROFILE_CONTRACT}
 <authorized_context>
 ${inertJson(context)}
 </authorized_context>
+
+${currentCatalogResolutionDirectiveV1(context)}
 
 ${mandatoryRepairDirectiveV1(context)}
 

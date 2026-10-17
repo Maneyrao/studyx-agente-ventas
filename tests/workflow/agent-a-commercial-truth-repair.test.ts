@@ -163,10 +163,7 @@ it('repairs a fabricated installment count without losing fragmented identity, t
       used_fact_ids: ['payment:ingles_1:monthly_12:label:v1'],
     });
   };
-  const awaiting = await runWorkflowTurnV1({ ...id, text: 'Quiero pagar en 12 cuotas de USD 30; envíame el enlace de pago.' });
-  expect(awaiting.errorCode).toBeNull();
-  expect(await payments()).toHaveLength(0);
-  const paymentText = 'Sí, confirmo mis datos y las 12 cuotas de USD 30; envíame el enlace de pago.';
+  const paymentText = 'Quiero pagar en 12 cuotas de USD 30; envíame el enlace de pago.';
   const paid = await runWorkflowTurnV1({ ...id, text: paymentText });
   expect(paid.errorCode, JSON.stringify(paid.httpExchanges.filter(exchange => exchange.status !== 200))).toBeNull();
   expect(paid.commitSucceeded).toBe(true);
@@ -174,7 +171,7 @@ it('repairs a fabricated installment count without losing fragmented identity, t
   expect(await payments()).toMatchObject([{ plan_code: 'monthly_12' }]);
   expect(await calls()).toHaveLength(0);
   const paidDb = await readWorkflowDbEvidenceV1({ databaseUrl, externalConversationId: id.conversationId,
-    adapterCaptures: [...selected.adapterCaptures, ...repaired.adapterCaptures, ...awaiting.adapterCaptures, ...paid.adapterCaptures] });
+    adapterCaptures: [...selected.adapterCaptures, ...repaired.adapterCaptures, ...paid.adapterCaptures] });
   expect(paidDb.recordedLinks).toHaveLength(1);
   expect(paidDb.recordedLinks[0]).toMatch(/^https:\/\/buy\.stripe\.com\/local-eval-12m\?client_reference_id=/u);
   expect(paidDb.deliveredLinks).toEqual(paidDb.recordedLinks);
@@ -216,7 +213,7 @@ it('replays the English enumeration and unselected plan request without losing e
   expect(persisted.recordedLinks).toEqual([]);
 });
 
-it('recovers a twice-rejected proposal with a fresh claim, one answer and no duplicate effects', async () => {
+it('closes a twice-rejected proposal with one continuity reply and no duplicate effects', async () => {
   const id = { conversationId: `durable-repair-${randomUUID()}`, userId: randomUUID(),
     phoneE164: `+999${randomUUID().replace(/\D/gu, '').slice(0, 10).padEnd(10, '0')}`, providerMode: 'fixture' as const };
   const child = vi.spyOn(Workflow.prototype, 'getOrCreate');
@@ -224,34 +221,15 @@ it('recovers a twice-rejected proposal with a fresh claim, one answer and no dup
     used_fact_ids: ['payment-workspace:monthly_6:label:v1'],
   });
   const first = await runWorkflowTurnV1({ ...id, text: '¿Cuáles son los planes de pago?' });
-  expect(first.authorizedMessages).toEqual([]);
-  expect(first.commitSucceeded).toBe(false);
-  expect(first.errorCode).toBe('AGENT_A_CONTINUATION_REJECTED');
+  expect(first.authorizedMessages).toEqual([
+    'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.',
+  ]);
+  expect(first.commitSucceeded).toBe(true);
+  expect(first.errorCode).toBeNull();
   expect(first.httpExchanges.filter(exchange => exchange.status === 422 && exchange.url.endsWith('/decision'))).toHaveLength(2);
-  expect(child).toHaveBeenCalledWith(expect.objectContaining({
-    key: expect.stringMatching(/^recovery:/u), input: expect.objectContaining({
-      external_message_id: first.externalMessageId, preingested: null,
-    }),
-  }));
-  const answer = 'Los planes son 12 pagos de USD 30, 6 pagos de USD 60 o un pago de USD 360.';
-  respond = () => proposal(answer, { used_fact_ids: ['payment-workspace:monthly_12:label:v1',
-    'payment-workspace:monthly_6:label:v1', 'payment-workspace:one_time:label:v1'] });
-  // Execute the envelope handed to the next workflow against the real backend.
-  // Cloud scheduling itself remains a separate deployment canary.
-  const resumed = await runWorkflowTurnV1({ ...id, text: '¿Cuáles son los planes de pago?',
-    externalMessageId: first.externalMessageId, occurredAt: first.occurredAt });
-  expect(resumed.errorCode, JSON.stringify(resumed.httpExchanges.filter(exchange => (exchange.status ?? 0) >= 400))).toBeNull();
-  expect(resumed.turnId).toBe(first.turnId);
-  expect(resumed.authorizedMessages).toEqual([answer]);
-  expect(resumed.commitSucceeded).toBe(true);
-  const rows = await db`SELECT b.state, b.claim_attempt_count, r.outcome, r.resolved_at
-    FROM inbound_batches b JOIN inbound_batch_recoveries r ON r.batch_id = b.id
-    WHERE b.representative_turn_id = ${first.turnId}::uuid`;
-  expect(rows).toHaveLength(1);
-  expect(rows[0]).toMatchObject({ state: 'completed', claim_attempt_count: 2, outcome: 'scheduled' });
-  expect(rows[0]!.resolved_at).toBeTruthy();
+  expect(child).not.toHaveBeenCalled();
   const evidence = await readWorkflowDbEvidenceV1({ databaseUrl, externalConversationId: id.conversationId,
-    adapterCaptures: resumed.adapterCaptures });
+    adapterCaptures: first.adapterCaptures });
   expect(evidence.decisions).toHaveLength(1);
   expect(evidence.outbound).toHaveLength(1);
   expect(evidence.recordedLinks).toEqual([]);
@@ -262,7 +240,7 @@ it('recovers a twice-rejected proposal with a fresh claim, one answer and no dup
 });
 
 
-it('recovers a known channel phone requested as collect then disguised as clarify without losing identity', async () => {
+it('preserves accepted identity when a twice-rejected reply falls back, then continues on the next turn', async () => {
   const id = { conversationId: `known-phone-${randomUUID()}`, userId: randomUUID(),
     phoneE164: `+999${String(Date.now()).slice(-10)}`, providerMode: 'fixture' as const };
   respond = () => proposal('Hola. ¿En qué te ayudo?', {
@@ -298,10 +276,12 @@ it('recovers a known channel phone requested as collect then disguised as clarif
   try {
     const first = await runWorkflowTurnV1({ ...id, text });
     expect(generations).toBe(2);
-    expect(first.authorizedMessages).toEqual([]);
-    expect(first.commitSucceeded).toBe(false);
-    expect(first.errorCode).toBe('AGENT_A_CONTINUATION_REJECTED');
-    expect(child).toHaveBeenCalledWith(expect.objectContaining({ key: expect.stringMatching(/^recovery:/u) }));
+    expect(first.authorizedMessages).toEqual([
+      'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.',
+    ]);
+    expect(first.commitSucceeded).toBe(true);
+    expect(first.errorCode).toBeNull();
+    expect(child).not.toHaveBeenCalled();
     const [contact] = await db`SELECT id, name, email FROM contacts WHERE phone = ${id.phoneE164}`;
     expect(contact).toMatchObject({ name: 'Ana Costa', email: 'ana.costa@example.test' });
     expect(await db`SELECT id FROM call_sessions WHERE contact_id = ${contact!.id}::uuid`).toHaveLength(0);
@@ -313,8 +293,7 @@ it('recovers a known channel phone requested as collect then disguised as clarif
         move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
       });
     };
-    const resumed = await runWorkflowTurnV1({ ...id, text,
-      externalMessageId: first.externalMessageId, occurredAt: first.occurredAt });
+    const resumed = await runWorkflowTurnV1({ ...id, text: '¿Me puedes llamar ahora?' });
     expect(resumed.errorCode).toBeNull();
     expect(resumed.authorizedMessages).toEqual(['Gracias, Ana. Puedes atender una llamada ahora?']);
     const evidence = await readWorkflowDbEvidenceV1({ databaseUrl, externalConversationId: id.conversationId });

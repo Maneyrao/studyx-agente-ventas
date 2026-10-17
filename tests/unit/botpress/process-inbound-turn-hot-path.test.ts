@@ -1077,7 +1077,7 @@ describe('processInboundTurn hot path', () => {
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
   });
 
-  it.each([false, true])('keeps a twice-rejected turn durable across recovery suspension (%s)', async (suspend) => {
+  it('ends a twice-rejected turn with one bounded continuity reply instead of a recovery loop', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -1139,6 +1139,7 @@ describe('processInboundTurn hot path', () => {
         provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 160, attempt_count: 1,
       }));
 
+    const continuity = 'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.';
     actionSpies.commit
       .mockRejectedValueOnce(new StudyxHttpError(
         'DECISION_REJECTED', false, 422, 1,
@@ -1156,44 +1157,31 @@ describe('processInboundTurn hot path', () => {
         status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
         decision_id: UUID, next_state: 'waiting_user',
         outbound: {
-          id: UUID, content: 'Te cuento únicamente la información verificada del curso.', status: 'pending', delivery_attempt: 1,
+          id: UUID, content: continuity, status: 'pending', delivery_attempt: 1,
           authorized_egress: {
             schema_version: 1,
-            content_hash: '475afbdaee1fd8588c53b37ae16f80b1c131ab0fb3b38263e5f465179fc1d894',
+            content_hash: '0eaced12311bf276e71580af16a157c9063d707a82e07d640c65026f5465956c',
             authorized_urls: [], protected_facts: [],
           },
         },
         outbounds: [{
-          id: UUID, content: 'Te cuento únicamente la información verificada del curso.', status: 'pending', delivery_attempt: 1,
+          id: UUID, content: continuity, status: 'pending', delivery_attempt: 1,
           authorized_egress: {
             schema_version: 1,
-            content_hash: '475afbdaee1fd8588c53b37ae16f80b1c131ab0fb3b38263e5f465179fc1d894',
+            content_hash: '0eaced12311bf276e71580af16a157c9063d707a82e07d640c65026f5465956c',
             authorized_urls: [], protected_facts: [],
           },
         }], call_request: null,
       });
 
     const createMessage = vi.fn(async () => ({ message: { id: 'bp-recovered-message' } }));
-    const savedSteps = new Map<string, { value?: unknown; error?: unknown }>();
-    const suspension = { [Symbol.for('StepSignal')]: true };
-    actionSpies.recovery.mockResolvedValue({ outcome: 'scheduled', attempt: 2, delay_ms: 10_000 });
-    const step = Object.assign(async (name: string, run: () => Promise<unknown>) => {
-      const saved = savedSteps.get(name);
-      if (saved) { if ('error' in saved) throw new Error(`${(saved.error as Error).message} [step="${name}"]`); return structuredClone(saved.value); }
-      try { const value = await run(); savedSteps.set(name, { value: structuredClone(value) }); return value; }
-      catch (error) { savedSteps.set(name, { error }); throw error; }
-    }, { sleep: vi.fn(async (name: string, delayMs: number) => {
-      if (!suspend || !name.startsWith('rejected-turn-recovery-')) return;
-      expect(delayMs).toBe(10_000);
-      if (savedSteps.has(name)) return;
-      savedSteps.set(name, {});
-      throw suspension;
-    }) });
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(), {
+      sleep: vi.fn(async () => undefined),
+    });
     const handler = (processInboundTurn as unknown as {
       definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
     }).definition.handler;
 
-    const startRecovery = vi.spyOn(processInboundTurn, 'getOrCreate').mockResolvedValue({ id: 'next-recovery' } as never);
     const run = () => handler({
       input: workflowInput(), state: processingState(), step,
       execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
@@ -1201,26 +1189,13 @@ describe('processInboundTurn hot path', () => {
       workflow: { id: 'workflow-test' },
     });
 
-    if (suspend) {
-      await expect(run()).rejects.toBe(suspension);
-      expect(startRecovery).not.toHaveBeenCalled();
-      expect(createMessage).not.toHaveBeenCalled();
-    }
     const result = await run();
-    await run();
-    expect(startRecovery).toHaveBeenCalledTimes(1);
-    expect(startRecovery).toHaveBeenCalledWith(expect.objectContaining({ input: expect.objectContaining({
-      recovery_feedback: expect.objectContaining({ batch_id: UUID, conversation_id: UUID,
-        rejection: expect.objectContaining({ rejections: expect.arrayContaining([
-          { code: 'FACT_VALUE_MISMATCH', subject: 'offering_not_canonical' },
-        ]) }),
-      }),
-    }) }));
-    startRecovery.mockRestore();
-    expect(actionSpies.commit).toHaveBeenCalledTimes(2);
-    expect(createMessage).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ status: 'retry_pending', decision_id: null,
-      error_code: 'AGENT_A_CONTINUATION_REJECTED' });
+    expect(actionSpies.recovery).not.toHaveBeenCalled();
+    expect(actionSpies.commit).toHaveBeenCalledTimes(3);
+    expect(createMessage).toHaveBeenCalledTimes(1);
+    expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({ payload: { text: continuity } }));
+    expect(result).toMatchObject({ status: 'waiting_user', decision_id: UUID,
+      delivery_status: 'submitted_to_botpress', error_code: null });
   });
 
   async function runRecoveryFeedbackHotPath(mismatch?: 'batch_id' | 'turn_id') {
@@ -1359,18 +1334,18 @@ describe('processInboundTurn hot path', () => {
         status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
         decision_id: UUID, next_state: 'waiting_user',
         outbound: {
-          id: UUID, content: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.', status: 'pending', delivery_attempt: 1,
+          id: UUID, content: 'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.', status: 'pending', delivery_attempt: 1,
           authorized_egress: {
             schema_version: 1,
-            content_hash: '6059f66ef980b4591ffe2d2b2adb9e98ae1ece07a3b6d2bbd2c2b72f8e3db747',
+            content_hash: '0eaced12311bf276e71580af16a157c9063d707a82e07d640c65026f5465956c',
             authorized_urls: [], protected_facts: [],
           },
         },
         outbounds: [{
-          id: UUID, content: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.', status: 'pending', delivery_attempt: 1,
+          id: UUID, content: 'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.', status: 'pending', delivery_attempt: 1,
           authorized_egress: {
             schema_version: 1,
-            content_hash: '6059f66ef980b4591ffe2d2b2adb9e98ae1ece07a3b6d2bbd2c2b72f8e3db747',
+            content_hash: '0eaced12311bf276e71580af16a157c9063d707a82e07d640c65026f5465956c',
             authorized_urls: [], protected_facts: [],
           },
         }], call_request: null,
@@ -1396,14 +1371,14 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.commit.mock.calls[1]?.[0]?.input).toMatchObject({
       agent_turn_v2: null,
       decision: {
-        response: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.',
+        response: 'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.',
         business_action: null,
         reason_code: 'MODEL_UNAVAILABLE',
       },
     });
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
     expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({
-      payload: { text: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.' },
+      payload: { text: 'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.' },
     }));
   });
 
@@ -1673,7 +1648,7 @@ describe('processInboundTurn hot path', () => {
       conversation_pipeline_v1: null,
       decision: {
         kind: 'reply',
-        response: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.',
+        response: 'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.',
         response_type: 'commercial_reply',
         reason_code: 'MODEL_UNAVAILABLE',
         business_action: null,
@@ -1691,7 +1666,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('does not reinterpret a course choice when DeepSeek rejects the turn', async () => {
+  it('uses bounded continuity instead of requeuing when DeepSeek cannot produce a valid turn', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -1746,10 +1721,19 @@ describe('processInboundTurn hot path', () => {
       client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
-    expect(actionSpies.commit).not.toHaveBeenCalled();
-    expect(actionSpies.recovery).toHaveBeenCalledWith(expect.objectContaining({
-      input: expect.objectContaining({ reason_code: 'BRAIN_INVALID_SCHEMA' }),
-    }));
+    expect(actionSpies.recovery).not.toHaveBeenCalled();
+    expect(actionSpies.commit).toHaveBeenCalledTimes(1);
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: null,
+      agent_turn_v2: null,
+      decision: {
+        kind: 'reply',
+        response: 'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.',
+        response_type: 'commercial_reply',
+        reason_code: 'MODEL_UNAVAILABLE',
+        business_action: null,
+      },
+    });
   });
 
   it('retries one transient DeepSeek timeout before committing the model reply', async () => {
@@ -1865,7 +1849,7 @@ describe('processInboundTurn hot path', () => {
         failure_codes: ['BRAIN_DEEPSEEK_TIMEOUT'],
       },
       decision: {
-        response: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.',
+        response: 'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.',
         reason_code: 'MODEL_UNAVAILABLE',
       },
       model: { provider: 'botpress', model: 'policy:conversation-pipeline-v1-unavailable' },
@@ -1929,7 +1913,7 @@ describe('processInboundTurn hot path', () => {
       conversation_pipeline_v1: null,
       decision: {
         kind: 'reply',
-        response: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.',
+        response: 'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.',
         reason_code: 'MODEL_UNAVAILABLE',
         next_state: 'waiting_user',
       },
@@ -2005,7 +1989,7 @@ describe('processInboundTurn hot path', () => {
       },
       decision: {
         kind: 'reply',
-        response: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.',
+        response: 'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.',
         response_type: 'commercial_reply',
         reason_code: 'MODEL_UNAVAILABLE',
         business_action: null,
@@ -2077,7 +2061,7 @@ describe('processInboundTurn hot path', () => {
       conversation_pipeline_v1: null,
       decision: {
         kind: 'reply',
-        response: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.',
+        response: 'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.',
         reason_code: 'MODEL_UNAVAILABLE',
         next_state: 'waiting_user',
       },
@@ -2294,7 +2278,7 @@ describe('processInboundTurn hot path', () => {
       agent_turn_v2: null,
       decision: {
         kind: 'reply',
-        response: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.',
+        response: 'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.',
         reason_code: 'MODEL_UNAVAILABLE',
       },
     });
@@ -2490,7 +2474,7 @@ describe('processInboundTurn hot path', () => {
       conversation_pipeline_v1: null,
       decision: {
         kind: 'reply',
-        response: 'Perdón, se cortó mi respuesta. Envíame ese último mensaje otra vez y seguimos.',
+        response: 'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.',
         reason_code: 'MODEL_UNAVAILABLE',
         next_state: 'waiting_user',
       },

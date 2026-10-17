@@ -1934,6 +1934,25 @@ export function validateAgentATurnProposalV1(input: {
     rejections.push({ code: 'UNSUPPORTED_OPERATIONAL_CLAIM', subject: 'contact_details' });
   }
 
+  // A known field is evidence, not a conversational suggestion. Return a
+  // redundant request to Agent A so it can rewrite its own words; never let
+  // the orchestrator publish the false "me falta" claim or rewrite it.
+  for (const request of input.proposal.profile_requests ?? []) {
+    const eligible = new Set(eligibleContactRequestFieldsV1({
+      values: input.context.customer.contact_intake,
+      mode: request.mode,
+      rejection: input.context.turn_rejection,
+    }));
+    for (const field of request.fields) {
+      if (!eligible.has(field)) {
+        rejections.push({
+          code: 'ACTION_NOT_AUTHORIZED',
+          subject: `contact_profile.already_confirmed.${field}`,
+        });
+      }
+    }
+  }
+
   const action = input.proposal.proposed_action
   const selectsCanonicalPlanNow = (input.proposal.move.move === 'select_payment_plan'
     || input.proposal.move.secondary_moves.includes('select_payment_plan'))

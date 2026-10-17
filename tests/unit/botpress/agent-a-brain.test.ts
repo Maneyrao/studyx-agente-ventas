@@ -595,6 +595,15 @@ describe('Agent A Brain V1', () => {
     );
   });
 
+  it.each(['exact', 'ambiguous'] as const)(
+    'does not add catalog-resolution choreography for a %s match', (resolution) => {
+      const current = context();
+      current.catalog.resolution = resolution;
+
+      expect(buildAgentABrainInstructionsV1(current)).not.toContain('<current_catalog_resolution>');
+    },
+  );
+
   it.each(['USD 360', 'USD 360.0', 'USD 360.00', 'USD 360,00'])(
     'accepts equivalent zero cents without rejecting an authorized total: %s', (total) => {
       const ctx = context();
@@ -1537,8 +1546,12 @@ describe('Agent A Brain V1', () => {
     expect(body.input).toContain('JSON');
     expect(body.input).toContain(JSON.stringify(context().turn.batch_messages.map((message) => message.text)));
     expect(body.instructions).toContain('"resolution":"not_found"');
-    expect(body.input).not.toContain('The customer asked about an inactive offering');
-    expect(body.input).not.toContain('answer that honest absence');
+    expect(body.instructions).toContain('<current_catalog_resolution>');
+    expect(body.instructions).toContain('did not resolve to a canonical StudyX offering');
+    expect(body.instructions).toContain('Never invent or present the unresolved offering as available');
+    expect(body.instructions).toContain('Choose your own natural wording');
+    expect(body.instructions).not.toContain('offer up to three relevant alternatives');
+    expect(body.instructions).not.toContain('ask one useful clarifying question');
     const moveProperties = body.text.format.schema.properties.move.properties;
     const responseProperties = body.text.format.schema.properties.response.properties;
     expect(body.text.format.schema.properties.used_fact_ids.maxItems).toBe(60);
@@ -1718,6 +1731,38 @@ describe('Agent A Brain V1', () => {
     const clarification = alternatives.find((item: { properties: { mode: { enum: string[] }; fields: { items: { enum: string[] } } } }) => item.properties.mode.enum.includes('clarify'));
     expect(clarification.properties.fields.items.enum).toContain('telefono');
   });
+
+  it.each(['collect', 'clarify'] as const)(
+    'returns a confirmed profile request to Agent A when it is disguised as %s', (mode) => {
+      const current = context();
+      current.customer.contact_intake = {
+        nombre: 'Ana', apellido: 'Costa', correo: 'ana@example.test', telefono: '+15555550168',
+      };
+      if (mode === 'clarify') {
+        current.turn_rejection = {
+          schema_version: 1,
+          rejection_id: '00000000-0000-4000-8000-000000000022',
+          attempt: 1,
+          rejections: [{ code: 'ACTION_NOT_AUTHORIZED', subject: 'contact_profile.already_confirmed.telefono' }],
+          authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: [] },
+        };
+      }
+      const parsed = parseAgentATurnProposalV1(proposal({
+        response: { messages: ['Me falta tu teléfono para coordinar la llamada.'], call_offer: null },
+        profile_requests: [{ message_index: 0, fields: ['telefono'], purpose: 'call', mode }],
+      }), current);
+
+      expect(validateAgentATurnProposalV1({
+        proposal: parsed,
+        context: current,
+        planned_fact_ids: parsed.used_fact_ids,
+        rejection_id: '00000000-0000-4000-8000-000000000023',
+      })?.rejections).toContainEqual({
+        code: 'ACTION_NOT_AUTHORIZED',
+        subject: 'contact_profile.already_confirmed.telefono',
+      });
+    },
+  );
 
   it('preserves valid contact interpretation on JSON schema repair without retaining obsolete question indexes', async () => {
     const updates = [{ field: 'apellido', value: 'de la Cruz', operation: 'set',

@@ -118,13 +118,13 @@ run('commercial-truth boundary', () => {
     });
   });
 
-  it('delivers the safe remainder when Agent A already repaired an unknown offering', async () => {
+  it('rejects the whole repaired reply instead of rewriting Agent A around an unknown offering', async () => {
     const seeded = await seedConversationForAgentTurn({
       call_offer_count: 0, selected_offering_code: null, intake_complete: true,
     });
     const safeQuestion = '¿Te interesaría más aprender un idioma o algo orientado a negocios?';
 
-    const committed = await commitAgentDecision({
+    await expect(commitAgentDecision({
       turn_id: seeded.turn_id,
       trace_id: seeded.trace_id,
       supports_multi_outbound: true,
@@ -154,10 +154,19 @@ run('commercial-truth boundary', () => {
       } as never },
       decision: seeded.placeholderDecision as never,
       model: seeded.model as never,
+    })).rejects.toMatchObject({
+      code: 'DECISION_REJECTED',
+      reason: 'AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
+      subjects: ['offering_not_canonical'],
     });
 
-    expect(committed.status).toBe('committed');
-    expect(committed.outbounds.map((outbound) => outbound.content)).toEqual([safeQuestion]);
+    const [counts] = await sql<Array<{ decisions: number; outbounds: number }>>`
+      SELECT
+        (SELECT COUNT(*)::int FROM agent_decisions WHERE turn_id = ${seeded.turn_id}::uuid) AS decisions,
+        (SELECT COUNT(*)::int FROM messages
+          WHERE conversation_id = ${seeded.conversation_id}::uuid AND direction = 'outbound') AS outbounds
+    `;
+    expect(counts).toEqual({ decisions: 0, outbounds: 0 });
     expect(await new PostgresConversationStateStoreV1(sql).load(
       'studyx', seeded.conversation_id, seeded.contact_id,
     )).toMatchObject({ selected_offering_code: null, stage: 'exploring' });

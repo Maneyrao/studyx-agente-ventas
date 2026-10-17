@@ -62,7 +62,7 @@ import {
   classifyBrainFailureReason,
   constrainModelToAdvisory,
   modelUnavailableFallback,
-  suppress,
+  technicalFallback,
 } from '../botpress-agent/src/utils/decision-policy';
 import { routeCommercialTurn } from '../botpress-agent/src/utils/commercial-router';
 import {
@@ -1039,7 +1039,11 @@ export function createLocalTurnSender(
         const code = actualError instanceof Error ? actualError.message.slice(0, plannerlessV2 ? 256 : 128) : 'UNKNOWN';
         if (plannerlessV2 && classifyAgentAAttemptFailure(actualError).stage === 'policy') {
           brainFailureCode = code;
-          decision = suppress('AGENT_A_CONTINUATION_REJECTED');
+          decision = technicalFallback(
+            claimed.policy.allowed_response_types.includes('technical_fallback')
+              ? 'technical_fallback'
+              : 'commercial_reply',
+          );
           agentTurnV2 = null;
           plannedBusinessAction = null;
           provider = 'deepseek-direct';

@@ -767,8 +767,12 @@ describe('Agent A conversation runner', () => {
       expect(result.turnDiagnostic?.technicalFallbackReason).toBeNull();
     } else if (continuationResult === 'rejected') {
       expect(commitBody.agent_turn_v2).toBeNull();
-      expect(commitBody.decision).toMatchObject({ kind: 'suppress', response: null, reason_code: 'AGENT_A_CONTINUATION_REJECTED' });
-      expect(result.turnDiagnostic?.technicalFallbackReason).toBeNull();
+      expect(commitBody.decision).toMatchObject({
+        kind: 'reply',
+        response: 'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.',
+        response_type: 'technical_fallback',
+        reason_code: 'MODEL_UNAVAILABLE',
+      });
     } else {
       expect(commitBody.agent_turn_v2).toBeNull();
       expect(result.turnDiagnostic?.brainFailureCode).toBe('BRAIN_DEEPSEEK_HTTP_503');

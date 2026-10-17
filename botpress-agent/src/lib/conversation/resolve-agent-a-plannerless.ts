@@ -276,6 +276,8 @@ function requiresModelCorrection(
   reason: TurnRejectionV1['rejections'][number],
   proposal: AgentATurnProposalV1,
 ): boolean {
+  if (reason.code === 'ACTION_NOT_AUTHORIZED'
+    && reason.subject.startsWith('contact_profile.already_confirmed.')) return true
   if (reason.code === 'FACT_VALUE_MISMATCH') {
     // Candidate naming/resolution heuristics remain guidance. The backend
     // independently validates actual catalogue values before any delivery.
