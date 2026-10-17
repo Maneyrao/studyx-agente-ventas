@@ -9,7 +9,7 @@ const outputPaths = [
   resolve(root, 'src/shared/prompts/studyx-agent-a-canonical.generated.ts'),
 ];
 // v72: restaura el control humano de Lisandro sobre la redacción final.
-const expectedSha256 = '893228f2301d8edaa5f863c1b10ff3e69ff7171bfb3db1eb849a323ea65e39f3';
+const expectedSha256 = '87ffb62c732e79a99e261e4c3ebf7f9669113f0b8ca91ab4f34b6647a9380930';
 const prompt = readFileSync(sourcePath, 'utf8');
 const sha256 = createHash('sha256').update(prompt).digest('hex');
 const lineCount = prompt.match(/\n/g)?.length ?? 0;

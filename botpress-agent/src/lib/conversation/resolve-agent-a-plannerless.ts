@@ -362,8 +362,14 @@ export type AgentActionRejectionActionV1 =
 
 export interface AgentActionRejectionV1 {
   readonly action: AgentActionRejectionActionV1
+  readonly status: 'needs_input' | 'rejected'
+  readonly code: string
   readonly codes: readonly string[]
   readonly missing_fields: readonly string[]
+  readonly canonical_data: {
+    readonly offering_code: string | null
+    readonly payment_plan: 'monthly_12' | 'monthly_6' | 'one_time' | null
+  }
   readonly retryable: boolean
 }
 
@@ -383,6 +389,7 @@ const ACTION_REJECTION_CODES = new Set([
 function actionRejectionV1(
   proposal: AgentATurnProposalV1,
   rejection: TurnRejectionV1 | null,
+  context: AgentAContextV1,
 ): AgentActionRejectionV1 | null {
   const action = proposal.proposed_action.type
   if (action === 'none' || rejection === null) return null
@@ -390,13 +397,21 @@ function actionRejectionV1(
     .filter((reason) => ACTION_REJECTION_CODES.has(reason.code))
     .map((reason) => reason.code))]
   if (codes.length === 0) return null
+  const missingFields = [...new Set([
+    ...rejection.authorized_alternatives.missing_information,
+    ...(codes.includes('PLAN_NOT_SELECTED') ? ['payment_plan'] : []),
+  ])]
   return {
     action,
+    status: missingFields.length > 0 || codes.includes('MISSING_INTAKE')
+      || codes.includes('PLAN_NOT_SELECTED') ? 'needs_input' : 'rejected',
+    code: codes[0]!,
     codes,
-    missing_fields: [...new Set([
-      ...rejection.authorized_alternatives.missing_information,
-      ...(codes.includes('PLAN_NOT_SELECTED') ? ['payment_plan'] : []),
-    ])],
+    missing_fields: missingFields,
+    canonical_data: {
+      offering_code: context.commercial_state.selected_offering_code,
+      payment_plan: context.commercial_state.selected_payment_plan,
+    },
     retryable: false,
   }
 }
@@ -432,7 +447,7 @@ export async function resolveAgentAPlannerlessProposalV2<
   const originalRejection = prepared.originalRejection ?? rejection
   if (rejection === null) {
     const advisoryActionRejection = input.semantic_rejections === 'advisory'
-      ? actionRejectionV1(initial.proposal, originalRejection)
+      ? actionRejectionV1(initial.proposal, originalRejection, input.context)
       : null
     return {
       effective: initial,
@@ -444,7 +459,7 @@ export async function resolveAgentAPlannerlessProposalV2<
       action_rejection: advisoryActionRejection,
     }
   }
-  const initialActionRejection = actionRejectionV1(initial.proposal, originalRejection)
+  const initialActionRejection = actionRejectionV1(initial.proposal, originalRejection, input.context)
   let terminalRejection = rejection
   const rejectedCodes = () => [...new Set([
     ...(originalRejection?.rejections.map((reason) => reason.code) ?? []),
@@ -540,7 +555,7 @@ function pruneRejectedActionV1<T extends AgentAProposalEnvelopeV1>(input: {
   readonly context: AgentAContextV1
   readonly authorized_fact_ids: readonly string[]
 }): T | null {
-  if (actionRejectionV1(input.initial.proposal, input.rejection) === null) return null
+  if (actionRejectionV1(input.initial.proposal, input.rejection, input.context) === null) return null
   // Removing the structured action cannot make an authored success claim
   // true. The response itself stays byte-for-byte model-owned; when it claims
   // an effect that did not happen, the whole proposal remains rejected and is

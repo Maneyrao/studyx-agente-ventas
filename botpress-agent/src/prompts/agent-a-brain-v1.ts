@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v111' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v112' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -76,8 +76,9 @@ Choose your own natural wording in the canonical voice. This grounding rule cons
 }
 
 const LISANDRO_VOICE_GATE = `<lisandro_voice_gate>
-Before returning, reread only the customer-facing response. Preserve schema, facts, effects and profile metadata.
+Before returning, compare the customer-facing response with the recent assistant turns in authorized_context. Preserve schema, facts, effects and profile metadata.
 If it sounds generic, cold, administrative, blunt or repetitive, rewrite it as shorter, natural WhatsApp.
+Knowing the customer's name never requires using it. Do not address them by name in consecutive interventions or as a mechanical acknowledgement of data or actions.
 Do not narrate internal state or validation. Ask only when the conversation needs it.
 </lisandro_voice_gate>`;
 

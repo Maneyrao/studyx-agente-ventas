@@ -39,9 +39,38 @@ export class AgentTurnV2RejectedError extends Error {
 
 export interface AgentActionRejectionV1 {
   readonly action: 'request_call_now' | 'send_payment_link' | 'send_test_payment_link';
+  readonly status: 'needs_input' | 'rejected';
+  readonly code: string;
   readonly codes: readonly string[];
   readonly missing_fields: readonly string[];
+  readonly canonical_data: {
+    readonly offering_code: string | null;
+    readonly payment_plan: 'monthly_12' | 'monthly_6' | 'one_time' | null;
+  };
   readonly retryable: boolean;
+}
+
+function actionRejectionV1(input: {
+  readonly action: AgentActionRejectionV1['action'];
+  readonly codes: readonly string[];
+  readonly missing_fields: readonly string[];
+  readonly offering_code: string | null;
+  readonly payment_plan: 'monthly_12' | 'monthly_6' | 'one_time' | null;
+}): AgentActionRejectionV1 {
+  const codes = [...new Set(input.codes)];
+  return {
+    action: input.action,
+    status: input.missing_fields.length > 0 || codes.includes('MISSING_INTAKE')
+      || codes.includes('PLAN_NOT_SELECTED') ? 'needs_input' : 'rejected',
+    code: codes[0] ?? 'ACTION_NOT_AUTHORIZED',
+    codes,
+    missing_fields: [...new Set(input.missing_fields)],
+    canonical_data: {
+      offering_code: input.offering_code,
+      payment_plan: input.payment_plan,
+    },
+    retryable: false,
+  };
 }
 
 function renderDecimal(amount: string): string {
@@ -212,6 +241,10 @@ export async function prepareAgentTurnV2(input: {
     && state.awaiting_reply === 'call_or_chat';
   const availabilityConfirmed = salesSignal.type === 'call_acceptance'
     || salesSignal.type === 'direct_call_request';
+  const currentCallAuthorization = salesSignal.type === 'direct_call_request'
+    || (salesSignal.type === 'call_acceptance'
+      && state.call_offer_status === 'offered'
+      && state.awaiting_reply === 'call_or_chat');
   const authorize = (proposal: AgentATurnProposalV1, effectsAllowed = input.conversation_only !== true,
     semanticRejections = input.semantic_rejections) => authorizeAgentTurnV2({
     proposal,
@@ -237,9 +270,10 @@ export async function prepareAgentTurnV2(input: {
       // Accepting or requesting a call only prepares it. Dispatch requires a
       // later turn that confirms availability against that durable state.
       may_request_call_now: noActiveCall
-        && awaitingCallAvailability
-        && (availabilityConfirmed || (proposal.proposed_action.type === 'request_call_now'
+        && (currentCallAuthorization || (awaitingCallAvailability
+          && (availabilityConfirmed || (proposal.proposed_action.type === 'request_call_now'
           && [proposal.move.move, ...proposal.move.secondary_moves].includes('request_call')))
+        ))
         && Boolean(contactIntake?.nombre?.trim() && contactIntake?.apellido?.trim())
         && isCallablePhoneE164V1(contactIntake?.telefono ?? ''),
     },
@@ -263,12 +297,13 @@ export async function prepareAgentTurnV2(input: {
       const requiredFields = rejectedAction === 'request_call_now'
         ? (['nombre', 'apellido', 'telefono'] as const)
         : (['nombre', 'apellido', 'correo', 'telefono'] as const);
-      actionRejection = {
+      actionRejection = actionRejectionV1({
         action: rejectedAction,
         codes: [...new Set(actionCodes)],
         missing_fields: requiredFields.filter((field) => !contactIntake?.[field]),
-        retryable: false,
-      };
+        offering_code: state.selected_offering_code,
+        payment_plan: state.selected_payment_plan,
+      });
     }
   }
 
@@ -292,12 +327,18 @@ export async function prepareAgentTurnV2(input: {
     const requiredFields = rejectedAction === 'request_call_now'
       ? (['nombre', 'apellido', 'telefono'] as const)
       : (['nombre', 'apellido', 'correo', 'telefono'] as const);
-    actionRejection = {
+    actionRejection = actionRejectionV1({
       action: rejectedAction,
       codes: [...authority.reasons],
       missing_fields: requiredFields.filter((field) => !contactIntake?.[field]),
-      retryable: false,
-    };
+      offering_code: effectiveProposal.proposed_action.type === 'send_payment_link'
+        || effectiveProposal.proposed_action.type === 'send_test_payment_link'
+        ? effectiveProposal.proposed_action.offering_code
+        : state.selected_offering_code,
+      payment_plan: effectiveProposal.proposed_action.type === 'send_payment_link'
+        ? effectiveProposal.proposed_action.payment_plan
+        : state.selected_payment_plan,
+    });
     // Preserve the explicit request as semantic evidence while fencing every
     // side effect. Removing it would lose pending intent for a selector move.
     authority = authorize(effectiveProposal, false, 'advisory');

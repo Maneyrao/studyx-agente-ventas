@@ -959,8 +959,11 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
     expect(result.action_rejection).toEqual({
       action: 'request_call_now',
+      status: 'needs_input',
+      code: 'ACTION_NOT_AUTHORIZED',
       codes: ['ACTION_NOT_AUTHORIZED'],
       missing_fields: ['telefono'],
+      canonical_data: { offering_code: 'maquillaje-profesional', payment_plan: null },
       retryable: false,
     });
   });

@@ -842,8 +842,11 @@ describe('prepareAgentTurnV2', () => {
       },
       action_rejection: {
         action: 'send_payment_link',
+        status: 'needs_input',
+        code: 'MISSING_INTAKE',
         codes: ['MISSING_INTAKE'],
         missing_fields: ['correo'],
+        canonical_data: { offering_code: 'redes_informaticas', payment_plan: 'monthly_6' },
         retryable: false,
       },
       transition: {
