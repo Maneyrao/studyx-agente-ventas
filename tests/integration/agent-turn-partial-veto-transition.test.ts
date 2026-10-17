@@ -117,6 +117,52 @@ run('commercial-truth boundary', () => {
       call_offer_count: 1, call_offer_status: 'offered', awaiting_reply: 'call_or_chat',
     });
   });
+
+  it('delivers the safe remainder when Agent A already repaired an unknown offering', async () => {
+    const seeded = await seedConversationForAgentTurn({
+      call_offer_count: 0, selected_offering_code: null, intake_complete: true,
+    });
+    const safeQuestion = '¿Te interesaría más aprender un idioma o algo orientado a negocios?';
+
+    const committed = await commitAgentDecision({
+      turn_id: seeded.turn_id,
+      trace_id: seeded.trace_id,
+      supports_multi_outbound: true,
+      authorized_offering_code: null,
+      authorized_payment_plan: null,
+      conversation_pipeline_v1: null,
+      agent_turn_v2: { schema_version: 2, proposal: {
+        ...seeded.proposalWithCallOfferAndFalsePrice,
+        move: {
+          schema_version: 1,
+          move: 'unknown',
+          secondary_moves: [],
+          vetoes: [],
+          confidence: 0.7,
+        },
+        response: {
+          messages: [
+            'Te recomiendo el curso de Negocios Internacionales para trabajar con empresas de otros países.',
+            safeQuestion,
+          ],
+          call_offer: null,
+        },
+        repair_of: {
+          rejection_id: '00000000-0000-4000-8000-000000000449',
+          attempt: 1,
+        },
+      } as never },
+      decision: seeded.placeholderDecision as never,
+      model: seeded.model as never,
+    });
+
+    expect(committed.status).toBe('committed');
+    expect(committed.outbounds.map((outbound) => outbound.content)).toEqual([safeQuestion]);
+    expect(await new PostgresConversationStateStoreV1(sql).load(
+      'studyx', seeded.conversation_id, seeded.contact_id,
+    )).toMatchObject({ selected_offering_code: null, stage: 'exploring' });
+  });
+
   it('commits canonical commercial facts in Agent A’s own paragraphs', async () => {
     const seeded = await seedConversationForAgentTurn({
       call_offer_count: 0,
