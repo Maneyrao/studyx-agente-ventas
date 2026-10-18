@@ -426,4 +426,32 @@ run('plannerless Agent A vertical', () => {
     });
   });
 
+  it('commits a natural customer-scoped discount denial through the complete backend boundary', async () => {
+    const content = 'No te corresponde un descuento por haberte anotado antes. El precio es el mismo para todos.';
+    const result = await commitTurn('¿Tengo descuento por haberme anotado?', {
+      schema_version: 1,
+      move: {
+        schema_version: 1,
+        move: 'ask_payment_options',
+        secondary_moves: [],
+        vetoes: [],
+        confidence: 1,
+      },
+      response: { messages: [content] },
+      proposed_action: { type: 'none' },
+      used_fact_ids: [],
+      used_memory_ids: [],
+      memory_candidates: [],
+      repair_of: null,
+    });
+
+    expect(result.committed.outbound?.content).toBe(content);
+    const [decision] = await db!<Array<{ reason_code: string; model_provider: string }>>`
+      SELECT reason_code, model_provider
+      FROM agent_decisions
+      WHERE id = ${result.committed.decision_id}::uuid
+    `;
+    expect(decision).toEqual({ reason_code: 'AGENT_A_PLANNERLESS_V2', model_provider: 'deepseek-direct' });
+  });
+
 });

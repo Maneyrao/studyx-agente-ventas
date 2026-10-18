@@ -109,7 +109,7 @@ const FORBIDDEN_PROMISE =
   /(?:\bte\s+aseguramos\s+(?:empleo|trabajo)\b|\b(?:empleo|trabajo|salida\s+laboral|resultados?|exito)\s+(?:esta\s+)?(?:garantizad[oa]s?|asegurad[oa]s?)\b|\bsalida\s+laboral\s+garantizada\b|\b100\s*%\s+de\s+empleabilidad\b|\bte\s+devolvemos\s+(?:la\s+)?(?:plata|dinero)\b|\bvas\s+a\s+conseguir\s+trabajo\s+seguro\b)/u;
 
 const COMMERCIAL_BENEFIT = /\b(?:becas?|descuentos?)\b/u;
-const DENIED_BENEFIT = /\b(?:no|nunca|tampoco)\s+(?:ofrecemos|ofrece|tenemos|damos|aplicamos|hay|incluye|tenes|tienes|podemos\s+ofrecer)\b[^.;]{0,40}\b(?:becas?|descuentos?)\b|\bsin\s+(?:becas?|descuentos?)\b/u;
+const DENIED_BENEFIT = /\b(?:no|nunca|tampoco)\s+(?:(?:te|le|les|se|nos)\s+)?(?:ofrecemos|ofrece|tenemos|damos|aplicamos|aplica(?:n)?|hay|incluye|tenes|tienes|corresponde(?:n)?|recib(?:es|e|en|imos)|obtien(?:es|e|en)|podemos\s+ofrecer)\b[^.;]{0,40}\b(?:becas?|descuentos?)\b|\bsin\s+(?:becas?|descuentos?)\b/u;
 const OFFERING_CLAIM = /\b(?:(?:studyx\s+)?(?:ofrece(?:mos)?|tenemos|brinda(?:mos)?|dicta(?:mos)?|contamos\s+con|disponemos\s+de)|studyx\s+tiene|pod[eé]s\s+estudiar|te\s+recomiendo)\s+([^.!?\n]+)/giu;
 const GENERIC_CATALOG = /^(?:(?:varias|distintas|muchas|algunas|las|estas|tres)\s+)?(?:opciones|alternativas|areas|formas|planes)\b|^(?:cursos|diplomados)\s*(?:$|disponibles\b)/u;
 const OFFERING_DESCRIPTION = /^(?:todos|todas|ambos|ambas|que|para|con|sin|ideal|donde|porque|si|una\s+opcion|un\s+curso|es|tiene|incluye)\b/u;

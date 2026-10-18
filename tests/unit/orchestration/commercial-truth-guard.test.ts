@@ -645,8 +645,19 @@ describe('discount topic is not an affirmative benefit', () => {
     expect(enforce(content).content).toBe(content);
   });
   it.each([
+    'No tienes descuento por haberte anotado antes.',
+    'No te corresponde un descuento por la inscripción anterior.',
+    'En este caso no aplica ningún descuento.',
+    'Por haberte inscrito antes no recibes un descuento adicional.',
+  ])('preserves a customer-scoped denial instead of treating it as an invented benefit: %s', content => {
+    expect(enforce(content)).toMatchObject({ content, removed: [], violations: [] });
+  });
+  it.each([
     'Sobre descuentos, te damos uno.',
     'Sobre descuentos, hay uno para vos.',
+    'Te corresponde un descuento por la inscripción anterior.',
+    'En este caso aplica un descuento.',
+    'Por haberte inscrito antes recibes un descuento adicional.',
     'Sobre descuentos, no hay rebajas, pero te ofrecemos una.',
     'Sobre descuentos, no hay problema, te damos uno.',
     'No hay descuentos, pero te damos un descuento del 20%.',
