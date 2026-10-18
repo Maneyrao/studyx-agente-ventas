@@ -48,8 +48,20 @@ run('post-sale payment / central / Agent A pipeline', () => {
     await db!`UPDATE payments SET status='paid' WHERE id=${f.paymentId}`;
     expect(await db!`SELECT id FROM post_sale_notifications WHERE payment_id=${f.paymentId}`).toHaveLength(1);
   });
-  it('enrolls despite a pending chat message; ready credentials wait for payment notification', async () => {
+  it('delivers payment confirmation, enrolls, then delivers access exactly once', async () => {
+    process.env.BOTPRESS_MANAGED_EGRESS_TOKEN='synthetic'; process.env.BOTPRESS_MANAGED_EGRESS_BOT_ID='bot-test';
     const f=await fixture();
+    const messages:string[]=[];
+    const deliveryDeps={...deps(),sender:async(input:{text:string})=>{
+      messages.push(input.text);
+      return {outcome:'sent' as const,channel:'whatsapp' as const,providerMessageId:`sent-${messages.length}`,deliveryId:null,reason:null};
+    }};
+    expect(await dispatchNotifications(f.paymentId,deps())).toEqual({dispatched:1});
+    const paymentClaim=await claimNotification(f.notificationId,f.botpressId,deps());
+    if(!paymentClaim.claimed) throw new Error('payment claim');
+    expect(await deliverNotification(f.notificationId,{claim_token:paymentClaim.claim_token,botpress_conversation_id:f.botpressId,
+      narrative:{intro:'Recibimos tu pago, estamos preparando tu acceso.',suggestion:''}},deliveryDeps)).toEqual({outcome:'sent'});
+
     const centralFetch=(async (_url:unknown,init?:RequestInit)=>{
       const body=JSON.parse(String(init?.body));
       expect(body.student.email).toBe('ana@example.com'); expect(body.environment).toBe('test');
@@ -60,14 +72,24 @@ run('post-sale payment / central / Agent A pipeline', () => {
     expect(await runEnrollmentWorker({scoped:true,payment_id:f.paymentId,limit:1},{sql:db!,config:workerConfig,fetchImpl:centralFetch})).toMatchObject({completed:1});
     const [ready]=await db!`SELECT id,status FROM post_sale_notifications WHERE payment_id=${f.paymentId} AND kind='access_ready'`;
     expect(ready.status).toBe('pending');
-    expect(await claimNotification(ready.id,f.botpressId,deps())).toEqual({claimed:false});
-    await db!`UPDATE post_sale_notifications SET status='sent' WHERE id=${f.notificationId}`;
-    await dispatchNotifications(f.paymentId,deps());
+    expect(await dispatchNotifications(f.paymentId,deps())).toEqual({dispatched:1});
     const claim=await claimNotification(ready.id,f.botpressId,deps()); if(!claim.claimed) throw new Error('ready claim');
-    let message='';
-    await deliverNotification(ready.id,{claim_token:claim.claim_token,botpress_conversation_id:f.botpressId,narrative:{intro:'Ya tienes acceso a tu curso.',suggestion:'Si quieres, puedes cambiar tu contraseña.'}},
-      {...deps(),sender:async(input)=>{message=input.text;return {outcome:'sent',channel:'whatsapp',providerMessageId:'ready',deliveryId:null,reason:null};}});
-    expect(message).toContain('- Usuario: ana@example.com\n- Contraseña: Escuela.123');
+    expect(await deliverNotification(ready.id,{claim_token:claim.claim_token,botpress_conversation_id:f.botpressId,
+      narrative:{intro:'Ya tienes acceso a tu curso.',suggestion:'Si quieres, puedes cambiar tu contraseña.'}},deliveryDeps)).toEqual({outcome:'sent'});
+
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).not.toContain('Contraseña:');
+    expect(messages[1]).toContain('- Usuario: ana@example.com\n- Contraseña: Escuela.123');
+    expect(await db!`SELECT kind,status FROM post_sale_notifications WHERE payment_id=${f.paymentId} ORDER BY kind`).toEqual([
+      {kind:'access_ready',status:'sent'},
+      {kind:'payment_received',status:'sent'},
+    ]);
+    expect(await db!`SELECT id FROM central_enrollments WHERE payment_id=${f.paymentId}`).toHaveLength(1);
+
+    expect(await runEnrollmentWorker({scoped:true,payment_id:f.paymentId,limit:1},{sql:db!,config:workerConfig,fetchImpl:centralFetch})).toMatchObject({claimed:0,completed:0});
+    expect(await dispatchNotifications(f.paymentId,deps())).toEqual({dispatched:0});
+    expect(messages).toHaveLength(2);
+    expect(await db!`SELECT id FROM central_enrollments WHERE payment_id=${f.paymentId}`).toHaveLength(1);
   });
   it('releases failed generation but holds ambiguous delivery without resending', async () => {
     const f=await fixture(); await dispatchNotifications(f.paymentId,deps());
