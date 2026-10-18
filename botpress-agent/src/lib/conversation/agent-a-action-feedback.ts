@@ -1,10 +1,10 @@
-import type { AgentAContextV1, AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
+import type { AgentAContextV1 } from '../../schemas/agent-a-brain'
 import { TurnRejectionCodeSchema, type TurnRejectionV1 } from '../../schemas/turn-rejection'
 import { generateDeepSeekAgentATurnProposalV1 } from './agent-a-brain'
 import { resolveAgentAPlannerlessProposalV2 } from './resolve-agent-a-plannerless'
 
 /** Fence every effect; the continuation's own safe move carries conversation state. */
-export function fencedAgentARequestV1(_original: AgentATurnProposalV1 | null) {
+export function fencedAgentARequestV1() {
   return { conversation_only: true as const }
 }
 
@@ -52,7 +52,6 @@ export async function continueAgentAAfterActionFeedbackV1(input: {
   readonly apiKey: string
   readonly signal: AbortSignal
   readonly model: string
-  readonly original_proposal?: AgentATurnProposalV1 | null
   readonly on_provider_request?: () => void
   readonly generate?: typeof generateDeepSeekAgentATurnProposalV1
 }) {
@@ -65,8 +64,6 @@ export async function continueAgentAAfterActionFeedbackV1(input: {
     on_provider_request: input.on_provider_request,
   })
   if (generated.proposal.proposed_action.type !== 'none'
-    || !['unknown', 'request_call', 'ask_course_information', 'ask_payment_options', 'ask_current_state'].includes(generated.proposal.move.move)
-    || generated.proposal.move.secondary_moves.length !== 0
     || generated.proposal.response.call_offer) {
     throw new Error('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:continuation')
   }
@@ -75,14 +72,8 @@ export async function continueAgentAAfterActionFeedbackV1(input: {
     rejection_id: input.rejection.rejection_id,
     repair: async () => { throw new Error('AGENT_A_CONTINUATION_REPAIR_NOT_ALLOWED') },
   })
-  // The continuation owns wording and citations. A rejected call effect still
-  // needs its original Agent A semantic intent so the backend can persist the
-  // pending call while the continuation asks for missing data. Only the move
-  // is retained; the rejected action and confirmed phone never cross the fence.
-  const retainPendingCallIntent = input.original_proposal?.proposed_action.type === 'request_call_now'
-    && input.original_proposal.move.move === 'request_call'
-  return retainPendingCallIntent ? {
-    ...resolved.effective,
-    proposal: { ...resolved.effective.proposal, move: input.original_proposal!.move },
-  } : resolved.effective
+  // The continuation owns both wording and semantic movement. The rejected
+  // draft is evidence for the feedback only; restoring its move here would
+  // let an invalid action mutate state after Agent A chose a different path.
+  return resolved.effective
 }

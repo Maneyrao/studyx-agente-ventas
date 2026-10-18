@@ -40,7 +40,10 @@ export function classifyAgentAAttemptFailure(error: unknown): AgentAAttemptFailu
   ) {
     return { stage: 'provider_transport', code, retryable: true }
   }
-  if (/^BRAIN_DEEPSEEK_HTTP_\d{3}$/u.test(code)) {
+  if (
+    code === 'BRAIN_DEEPSEEK_RATE_LIMITED'
+    || /^BRAIN_DEEPSEEK_HTTP_\d{3}$/u.test(code)
+  ) {
     return { stage: 'provider_rejected', code, retryable: false }
   }
   if (code === 'BRAIN_INVALID_SCHEMA' || code.startsWith('PROPOSAL_SCHEMA_INVALID')) {

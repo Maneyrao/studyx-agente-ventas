@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v112' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v114' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -53,12 +53,20 @@ Do not claim the call was placed.` : '';
   ));
   const offeringRepair = repairsOffering ? `
 For an unresolved or non-canonical offering, remove that offering claim completely. Use only identities present in catalog.selected_offering, catalog.candidate_offerings or catalog.available_offerings. Preserve the customer's intent and let canonical_sales_behavior choose the conversational next step.` : '';
+  const repairsCourseLogistics = rejection.rejections.some(reason => (
+    reason.subject === 'course_logistics' || reason.subject.startsWith('course_logistics.')
+  ));
+  const courseLogisticsRepair = repairsCourseLogistics ? `
+Online alone does not authorize self-paced study or access from any location.
+Omit those logistics claims unless their exact values appear in authorized facts.
+Answer the customer from the remaining verified course facts; do not replace the rejected detail with another inferred logistical promise.` : '';
   return `
 <mandatory_repair attempt="1" rejection_id="${rejection.rejection_id}">
 Use repair_of with this rejection_id and attempt 1. This is the only rewrite.
 Correct only the facts or effects identified in turn_rejection, preserving the customer's intent.
 ${callRepair}
 ${offeringRepair}
+${courseLogisticsRepair}
 If an action did not occur, do not claim it; continue naturally from the permitted facts and effects.
 Do not repeat confirmed data or an earlier opening or question. Ask only for truly missing information.
 Keep prose and metadata consistent. Preserve accepted observations. Never expose validation to the customer.

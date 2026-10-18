@@ -157,7 +157,7 @@ it('keeps a general opening unselected despite a course saved for a previous con
 it('retains call acceptance without a phone, repairs the impossible action and creates one session after the phone', async () => {
   const c = conversation();
   const first = await c.send('Dsle llamame. Mi nombre es Nora y mi apellido es Vale', context => context.turn_rejection
-    ? proposal('unknown', 'A qué número con código de país y área puedo llamarte?', {
+    ? proposal('request_call', 'A qué número con código de país y área puedo llamarte?', {
       profile_requests: [{ message_index: 0, fields: ['telefono'], purpose: 'call', mode: 'collect' }],
     })
     : proposal('request_call', 'Coordino la llamada para explicarte el curso.', {

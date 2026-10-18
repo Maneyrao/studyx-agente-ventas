@@ -62,7 +62,7 @@ import {
   classifyBrainFailureReason,
   constrainModelToAdvisory,
   modelUnavailableFallback,
-  technicalFallback,
+  validationExhaustedNotice,
 } from '../botpress-agent/src/utils/decision-policy';
 import { routeCommercialTurn } from '../botpress-agent/src/utils/commercial-router';
 import {
@@ -89,7 +89,10 @@ import {
   fencedAgentARequestV1,
   plannerlessActionFeedbackV1,
 } from '../botpress-agent/src/lib/conversation/agent-a-action-feedback';
-import { classifyAgentAAttemptFailure } from '../botpress-agent/src/lib/conversation/agent-a-attempt';
+import {
+  classifyAgentAAttemptFailure,
+  isAgentAProviderFailure,
+} from '../botpress-agent/src/lib/conversation/agent-a-attempt';
 import type { TurnRejectionV1 } from '../botpress-agent/src/schemas/turn-rejection';
 import type { TurnDiagnosticsV1 } from '../botpress-agent/src/schemas/contracts';
 import { AGENT_A_BRAIN_PROMPT_VERSION } from '../botpress-agent/src/prompts/agent-a-brain-v1';
@@ -749,7 +752,6 @@ export function createLocalTurnSender(
     let plannerlessGenerationAttempts: 0 | 1 | 2 = 0;
     let physicalModelRequests = 0;
     let plannerlessConversationOnly = false;
-    let plannerlessOriginalProposal: AgentATurnCommitV2['proposal'] | null = null;
     let plannerlessContinuationError: unknown;
     let turnDiagnostics: TurnDiagnosticsV1 | null = null;
     let visibleCallOffers = 0;
@@ -793,7 +795,6 @@ export function createLocalTurnSender(
         try {
           return await continueAgentAAfterActionFeedbackV1({
             context: brainContext, rejection, apiKey: credentials.deepseekApiKey,
-            original_proposal: plannerlessOriginalProposal,
             on_provider_request: accountProviderRequest,
             model: credentials.deepseekModel ?? DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
             signal: new AbortController().signal, generate: generateDeepSeekAgentATurnProposalV1,
@@ -899,7 +900,6 @@ export function createLocalTurnSender(
             ...generated,
             proposal: { ...generated.proposal, move: authoritativeMove },
           };
-          plannerlessOriginalProposal = authoritativeGenerated.proposal;
           const resolved = await resolveAgentAPlannerlessProposalV2({
             initial: authoritativeGenerated,
             context: brainContext,
@@ -933,7 +933,7 @@ export function createLocalTurnSender(
           agentTurnV2 = {
             schema_version: 2,
             proposal: plannerlessConversationOnly ? { ...generated.proposal, proposed_action: { type: 'none' } } : generated.proposal,
-            ...(plannerlessConversationOnly ? fencedAgentARequestV1(plannerlessOriginalProposal) : {}),
+            ...(plannerlessConversationOnly ? fencedAgentARequestV1() : {}),
           };
           visibleCallOffers = generated.proposal.response.call_offer
             || generated.proposal.response.messages.some((message) => solicitsACall(message))
@@ -1037,9 +1037,10 @@ export function createLocalTurnSender(
         // same or the provider-down case measures a different workflow.
         const actualError = plannerlessV2 && plannerlessContinuationError !== undefined ? plannerlessContinuationError : error;
         const code = actualError instanceof Error ? actualError.message.slice(0, plannerlessV2 ? 256 : 128) : 'UNKNOWN';
-        if (plannerlessV2 && classifyAgentAAttemptFailure(actualError).stage === 'policy') {
+        const attemptFailure = classifyAgentAAttemptFailure(actualError);
+        if (plannerlessV2 && !isAgentAProviderFailure(attemptFailure)) {
           brainFailureCode = code;
-          decision = technicalFallback(
+          decision = validationExhaustedNotice(
             claimed.policy.allowed_response_types.includes('technical_fallback')
               ? 'technical_fallback'
               : 'commercial_reply',
@@ -1060,7 +1061,7 @@ export function createLocalTurnSender(
           if (plannerlessGenerationAttempts < 2 && credentials.deepseekApiKey) {
             try {
               const continuation = await continueWithFeedback(rejection);
-              agentTurnV2 = { schema_version: 2, proposal: continuation.proposal, ...fencedAgentARequestV1(plannerlessOriginalProposal) };
+              agentTurnV2 = { schema_version: 2, proposal: continuation.proposal, ...fencedAgentARequestV1() };
               proposalCycleEvidence = { rejection_codes: codes, repair_attempted: true,
                 repaired: true, proposal_generation_calls: 2 };
               decision = { schema_version: 4, intent: 'commercial', kind: 'reply',
@@ -1071,7 +1072,7 @@ export function createLocalTurnSender(
             } catch (continuationError) {
               const failure = classifyAgentAAttemptFailure(continuationError);
               brainFailureCode = failure.code;
-              if (failure.stage !== 'policy') {
+              if (isAgentAProviderFailure(failure)) {
                 const reason = classifyBrainFailureReason(failure.code, claimed.business_context_available && claimed.catalog_index !== null);
                 fallbackReason = reason;
                 brainFailureReason = reason;
@@ -1079,7 +1080,10 @@ export function createLocalTurnSender(
                 turnDiagnostics = { schema_version: 1, generation_attempts: 2, failure_stage: 'provider_generation',
                   failure_codes: [failure.code], action_status: 'none' };
               } else {
-                turnDiagnostics = { ...turnDiagnostics!, generation_attempts: 2, action_status: 'rejected' };
+                turnDiagnostics = { schema_version: 1, generation_attempts: 2,
+                  failure_stage: 'proposal_validation',
+                  failure_codes: [...new Set([...(turnDiagnostics?.failure_codes ?? []), failure.code])].slice(0, 8),
+                  action_status: 'rejected' };
               }
             }
           }

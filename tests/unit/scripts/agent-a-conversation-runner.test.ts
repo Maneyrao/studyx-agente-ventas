@@ -690,6 +690,7 @@ describe('Agent A conversation runner', () => {
     ['Seguimos por chat.', 'valid'],
     ['Te mando el link ahora.', 'rejected'],
     ['Seguimos por chat.', 'rejected'],
+    ['Te mando el link ahora.', 'schema_failure'],
     ['Te mando el link ahora.', 'provider_failure'],
     ['Seguimos por chat.', 'provider_failure'],
   ] as const)('returns a rejected action to Agent A within two plannerless generations: %s / %s', async (initialMessage, continuationResult) => {
@@ -714,6 +715,15 @@ describe('Agent A conversation runner', () => {
         if (continuationResult === 'provider_failure') return jsonResponse(503, { error: 'temporary_unavailable' });
         const body = JSON.parse(String(init?.body));
         const rejectionId = body.text.format.schema.properties.repair_of.properties.rejection_id.enum[0];
+        if (continuationResult === 'schema_failure') {
+          return deepSeekResponse({
+            ...invalidProposal,
+            move: { ...invalidProposal.move, confidence: 2 },
+            response: { messages, call_offer: null },
+            proposed_action: { type: 'none' },
+            repair_of: { rejection_id: rejectionId, attempt: 1 },
+          });
+        }
         return deepSeekResponse({
           ...invalidProposal,
           ...(continuationResult === 'valid' ? {
@@ -765,14 +775,22 @@ describe('Agent A conversation runner', () => {
       expect(commitBody.agent_turn_v2).not.toHaveProperty('requested_action');
       expect(result.turnDiagnostic?.repaired).toBe(false);
       expect(result.turnDiagnostic?.technicalFallbackReason).toBeNull();
-    } else if (continuationResult === 'rejected') {
+    } else if (continuationResult === 'rejected' || continuationResult === 'schema_failure') {
       expect(commitBody.agent_turn_v2).toBeNull();
       expect(commitBody.decision).toMatchObject({
         kind: 'reply',
-        response: 'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.',
+        response: 'Aviso del sistema: no pudimos validar una respuesta segura para este mensaje. La conversación quedó guardada y podés continuar por acá.',
         response_type: 'technical_fallback',
-        reason_code: 'MODEL_UNAVAILABLE',
+        reason_code: 'AGENT_A_VALIDATION_EXHAUSTED',
       });
+      expect(result.turnDiagnostic?.technicalFallbackReason).toBeNull();
+      if (continuationResult === 'schema_failure') {
+        expect(result.turnDiagnostic?.brainFailureCode).toBe('BRAIN_INVALID_SCHEMA');
+        expect(commitBody.turn_diagnostics).toMatchObject({
+          failure_stage: 'proposal_validation',
+          action_status: 'rejected',
+        });
+      }
     } else {
       expect(commitBody.agent_turn_v2).toBeNull();
       expect(result.turnDiagnostic?.brainFailureCode).toBe('BRAIN_DEEPSEEK_HTTP_503');

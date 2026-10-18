@@ -1583,6 +1583,53 @@ describe('Agent A Brain V1', () => {
     expect(moveProperties.vetoes.description).toContain('current customer message explicitly refuses');
   });
 
+  it('fences a continuation effect without erasing Agent A semantic move', async () => {
+    const ctx = context();
+    ctx.turn.batch_messages = [{ id: 'message-1', text: 'Dale, llamame' }];
+    ctx.turn_rejection = {
+      schema_version: 1,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+      attempt: 1,
+      rejections: [{ code: 'MISSING_INTAKE', subject: 'telefono' }],
+      authorized_alternatives: {
+        fact_ids: [], actions: ['none'], missing_information: ['telefono'],
+      },
+    };
+    const continuation = proposal({
+      move: {
+        schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1,
+      },
+      response: { messages: ['A qué número completo puedo llamarte?'], call_offer: null },
+      proposed_action: { type: 'none' },
+      repair_of: { rejection_id: ctx.turn_rejection.rejection_id, attempt: 1 },
+      used_fact_ids: [], used_memory_ids: [],
+    });
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(
+      200,
+      responsesSuccessBody(continuation),
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await generateDeepSeekAgentATurnProposalV1({
+      context: ctx,
+      apiKey: 'deepseek-test-key',
+      signal: new AbortController().signal,
+      conversation_only: true,
+    });
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1]?.body));
+    const schema = body.text.format.schema;
+    expect(schema.properties.move.properties.move.enum).toContain('request_call');
+    expect(schema.properties.move.properties.secondary_moves.maxItems).toBe(2);
+    expect(schema.properties.proposed_action.anyOf).toHaveLength(1);
+    expect(schema.properties.proposed_action.anyOf[0].properties.type.enum).toEqual(['none']);
+    expect(schema.properties.response.properties.call_offer.anyOf).toEqual([{ type: 'null' }]);
+    expect(body.instructions).toContain('Preserve the customer intent with the accurate structured move');
+    expect(body.instructions).toContain('never use unknown merely because the physical action is fenced');
+    expect(result.proposal.move.move).toBe('request_call');
+    expect(result.proposal.proposed_action).toEqual({ type: 'none' });
+  });
+
   it('preserves canonical course selection when DeepSeek flattens the move object at the root', async () => {
     const ctx = context();
     ctx.commercial_state.selected_offering_code = null;

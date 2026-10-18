@@ -136,6 +136,8 @@ export function authorizeAgentTurnV2(input: {
    * `none`. The strict mode remains useful for offline policy evaluation.
    */
   readonly semantic_rejections?: 'blocking' | 'advisory';
+  /** Return an action-only veto as data while preserving safe Agent A prose. */
+  readonly action_rejections?: 'blocking' | 'structured';
   readonly call_policy: {
     readonly may_offer_call: boolean;
     readonly may_request_call_now: boolean;
@@ -412,7 +414,12 @@ export function authorizeAgentTurnV2(input: {
   // into dispatch, checkout, or a consumed pending request.
   if (input.effects_allowed === false) action = { type: 'none' };
 
-  if (reasons.length > 0 && input.semantic_rejections !== 'advisory') return {
+  const rejectedActionOnly = proposal.proposed_action.type !== 'none'
+    && reasons.length > 0
+    && reasons.every((reason) => reason === 'ACTION_NOT_AUTHORIZED' || reason === 'MISSING_INTAKE');
+  if (reasons.length > 0
+    && !(rejectedActionOnly && input.action_rejections === 'structured')
+    && input.semantic_rejections !== 'advisory') return {
     ok: false,
     reasons: unique(reasons),
     ...(rejectionSubjects.length > 0 ? { rejection_subjects: rejectionSubjects } : {}),

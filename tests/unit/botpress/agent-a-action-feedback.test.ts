@@ -28,13 +28,12 @@ describe('Agent A conversation from action feedback', () => {
     { type: 'request_call_now' as const, reason: 'direct_request' as const },
   ])('fences the rejected $type request without carrying it into the continuation', action => {
     const original = { ...reply('Necesito un dato para continuar.').proposal, proposed_action: action };
-    expect(fencedAgentARequestV1(original)).toEqual({ conversation_only: true });
+    expect(fencedAgentARequestV1()).toEqual({ conversation_only: true });
     expect(original.proposed_action).toEqual(action);
   });
 
   it('never invents an operation for an informational reply or absent proposal', () => {
-    expect(fencedAgentARequestV1(reply('Qué opción prefieres?').proposal)).toEqual({ conversation_only: true });
-    expect(fencedAgentARequestV1(null)).toEqual({ conversation_only: true });
+    expect(fencedAgentARequestV1()).toEqual({ conversation_only: true });
   });
 
   it('passes exact structural missing fields and preserves the original customer messages', async () => {
@@ -76,14 +75,16 @@ describe('Agent A conversation from action feedback', () => {
       .toEqual(['nombre', 'apellido']);
   });
 
-  it('cannot repeat an effect or let a payment-intent move materialize a link implicitly', async () => {
+  it('preserves Agent A payment intent while fencing the physical effect', async () => {
     const current = context();
     const rejection = plannerlessActionFeedbackV1({ context: current, failure_code: 'PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:send_payment_link', rejection_id: '00000000-0000-4000-8000-000000000001' });
     const generated = reply('Me confirmas el plan que prefieres?');
     const generate = vi.fn(async () => ({ ...generated, proposal: { ...generated.proposal,
       move: { ...generated.proposal.move, move: 'request_payment_link' as const, payment_plan: 'one_time' as const } } }));
-    await expect(continueAgentAAfterActionFeedbackV1({ context: current, rejection, apiKey: 'fixture',
-      signal: new AbortController().signal, model: 'deepseek-v4-flash', generate })).rejects.toThrow('ACTION_NOT_AUTHORIZED:continuation');
+    const result = await continueAgentAAfterActionFeedbackV1({ context: current, rejection, apiKey: 'fixture',
+      signal: new AbortController().signal, model: 'deepseek-v4-flash', generate });
+    expect(result.proposal.move.move).toBe('request_payment_link');
+    expect(result.proposal.proposed_action).toEqual({ type: 'none' });
     expect(generate).toHaveBeenCalledOnce();
   });
 
@@ -113,8 +114,6 @@ describe('Agent A conversation from action feedback', () => {
     const generate = vi.fn(async () => authored);
 
     const result = await continueAgentAAfterActionFeedbackV1({ context: current, rejection,
-      original_proposal: { ...reply('Perfecto, te llamo ahora.').proposal,
-        move: { ...draft.proposal.move, move: 'request_call' } },
       apiKey: 'fixture', signal: new AbortController().signal, model: 'deepseek-v4-flash', generate });
 
     expect(result.proposal.response.messages).toEqual(authored.proposal.response.messages);
@@ -123,20 +122,15 @@ describe('Agent A conversation from action feedback', () => {
     expect(generate).toHaveBeenCalledOnce();
   });
 
-  it('retains Agent A call intent while never restoring the rejected call action', async () => {
+  it('never restores the rejected call move or action over the continuation', async () => {
     const current = context();
-    const original = { ...reply('Te llamo ahora.').proposal,
-      move: { schema_version: 1 as const, move: 'request_call' as const, secondary_moves: [], vetoes: [], confidence: 1 },
-      proposed_action: { type: 'request_call_now' as const, reason: 'direct_request' as const },
-      confirmed_phone: '+15551234567',
-      used_fact_ids: ['initial-unused-fact'] };
     const rejection = plannerlessActionFeedbackV1({ context: current,
       failure_code: 'PLANNERLESS_PROPOSAL_REJECTED:MISSING_INTAKE:apellido',
       rejection_id: '00000000-0000-4000-8000-000000000001' });
     const result = await continueAgentAAfterActionFeedbackV1({ context: current, rejection,
-      original_proposal: original, apiKey: 'fixture', signal: new AbortController().signal,
+      apiKey: 'fixture', signal: new AbortController().signal,
       model: 'deepseek-v4-flash', generate: vi.fn(async () => reply('Me dices tu apellido para coordinarla?')) });
-    expect(result.proposal.move).toEqual(original.move);
+    expect(result.proposal.move.move).toBe('unknown');
     expect(result.proposal.proposed_action).toEqual({ type: 'none' });
     expect(result.proposal.confirmed_phone).toBeUndefined();
     expect(result.proposal.response.messages).toEqual(['Me dices tu apellido para coordinarla?']);
@@ -145,16 +139,11 @@ describe('Agent A conversation from action feedback', () => {
 
   it('never restores a rejected payment-link move after Agent A asks for the missing plan', async () => {
     const current = context();
-    const original = { ...reply('Te dejo el enlace.').proposal,
-      move: { schema_version: 1 as const, move: 'request_payment_link' as const,
-        secondary_moves: [], vetoes: [], confidence: 1 },
-      proposed_action: { type: 'send_payment_link' as const,
-        offering_code: 'ingles_1', payment_plan: 'one_time' as const } };
     const rejection = plannerlessActionFeedbackV1({ context: current,
       failure_code: 'PLANNERLESS_PROPOSAL_REJECTED:PLAN_NOT_SELECTED:payment_plan',
       rejection_id: '00000000-0000-4000-8000-000000000001' });
     const result = await continueAgentAAfterActionFeedbackV1({ context: current, rejection,
-      original_proposal: original, apiKey: 'fixture', signal: new AbortController().signal,
+      apiKey: 'fixture', signal: new AbortController().signal,
       model: 'deepseek-v4-flash', generate: vi.fn(async () => reply('Qué plan prefieres?')) });
 
     expect(result.proposal.move.move).toBe('unknown');

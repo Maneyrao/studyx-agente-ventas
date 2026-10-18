@@ -254,7 +254,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
           body: JSON.stringify({
             model,
             instructions: buildAgentABrainInstructionsV1(input.context)
-              + (input.conversation_only ? '\nThe requested operation was not executed. This is a conversation-only continuation from the structured turn_rejection. Answer the customer in your own usual voice using the actual context and explain or ask for the relevant missing information. Do not claim an effect succeeded, repeat an action, invent a provider cause, or ask the customer to repeat a message that is already in context. Use move unknown, no secondary moves, proposed_action none, and no call_offer; these are internal effect boundaries, not wording instructions.' : ''),
+              + (input.conversation_only ? '\nThe requested operation was not executed. This is a conversation-only continuation from the structured turn_rejection. Answer the customer in your own usual voice using the actual context and explain or ask for the relevant missing information. Do not claim an effect succeeded, repeat an action, invent a provider cause, or ask the customer to repeat a message that is already in context. Preserve the customer intent with the accurate structured move; never use unknown merely because the physical action is fenced. Use proposed_action none and no call_offer. These are internal effect boundaries, not wording instructions.' : ''),
             input: `Current customer messages: ${JSON.stringify(input.context.turn.batch_messages.map((message) => message.text))}\nAnswer these messages and return only the single AgentATurnProposalV1 JSON object.${retryDiagnostic ? `\nThe previous output failed validation at ${retryDiagnostic}. Return a corrected full object. ${naturalnessRepairDirectiveV1(input.context)}${retryProfileEvidence}` : ''}`,
             reasoning: { effort: 'none' },
             temperature: 0.2,
@@ -555,8 +555,6 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
     ],
   };
   if (conversationOnly) {
-    move.properties.move = { type: 'string', enum: ['unknown'] };
-    move.properties.secondary_moves = { type: 'array', maxItems: 0, items: { type: 'string' } };
     proposedAction.anyOf = [closedObject({ type: { type: 'string', enum: ['none'] } })];
   }
   return closedObject({

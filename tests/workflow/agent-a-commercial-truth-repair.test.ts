@@ -213,7 +213,7 @@ it('replays the English enumeration and unselected plan request without losing e
   expect(persisted.recordedLinks).toEqual([]);
 });
 
-it('closes a twice-rejected proposal with one continuity reply and no duplicate effects', async () => {
+it('delivers one explicit system notice after a twice-rejected proposal without a false provider outage or duplicate effects', async () => {
   const id = { conversationId: `durable-repair-${randomUUID()}`, userId: randomUUID(),
     phoneE164: `+999${randomUUID().replace(/\D/gu, '').slice(0, 10).padEnd(10, '0')}`, providerMode: 'fixture' as const };
   const child = vi.spyOn(Workflow.prototype, 'getOrCreate');
@@ -222,7 +222,7 @@ it('closes a twice-rejected proposal with one continuity reply and no duplicate 
   });
   const first = await runWorkflowTurnV1({ ...id, text: '¿Cuáles son los planes de pago?' });
   expect(first.authorizedMessages).toEqual([
-    'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.',
+    'Aviso del sistema: no pudimos validar una respuesta segura para este mensaje. La conversación quedó guardada y podés continuar por acá.',
   ]);
   expect(first.commitSucceeded).toBe(true);
   expect(first.errorCode).toBeNull();
@@ -231,6 +231,8 @@ it('closes a twice-rejected proposal with one continuity reply and no duplicate 
   const evidence = await readWorkflowDbEvidenceV1({ databaseUrl, externalConversationId: id.conversationId,
     adapterCaptures: first.adapterCaptures });
   expect(evidence.decisions).toHaveLength(1);
+  expect(evidence.decisions[0]?.reasonCode).toBe('AGENT_A_VALIDATION_EXHAUSTED');
+  expect(evidence.decisions[0]?.reasonCode).not.toBe('MODEL_UNAVAILABLE');
   expect(evidence.outbound).toHaveLength(1);
   expect(evidence.recordedLinks).toEqual([]);
   const duplicate = await runWorkflowTurnV1({ ...id, text: '¿Cuáles son los planes de pago?',
@@ -240,7 +242,7 @@ it('closes a twice-rejected proposal with one continuity reply and no duplicate 
 });
 
 
-it('preserves accepted identity when a twice-rejected reply falls back, then continues on the next turn', async () => {
+it('preserves accepted identity when a twice-rejected reply gets a system notice, then continues on the next turn', async () => {
   const id = { conversationId: `known-phone-${randomUUID()}`, userId: randomUUID(),
     phoneE164: `+999${String(Date.now()).slice(-10)}`, providerMode: 'fixture' as const };
   respond = () => proposal('Hola. ¿En qué te ayudo?', {
@@ -277,7 +279,7 @@ it('preserves accepted identity when a twice-rejected reply falls back, then con
     const first = await runWorkflowTurnV1({ ...id, text });
     expect(generations).toBe(2);
     expect(first.authorizedMessages).toEqual([
-      'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.',
+      'Aviso del sistema: no pudimos validar una respuesta segura para este mensaje. La conversación quedó guardada y podés continuar por acá.',
     ]);
     expect(first.commitSucceeded).toBe(true);
     expect(first.errorCode).toBeNull();
@@ -297,7 +299,8 @@ it('preserves accepted identity when a twice-rejected reply falls back, then con
     expect(resumed.errorCode).toBeNull();
     expect(resumed.authorizedMessages).toEqual(['Gracias, Ana. Puedes atender una llamada ahora?']);
     const evidence = await readWorkflowDbEvidenceV1({ databaseUrl, externalConversationId: id.conversationId });
-    expect(evidence.decisions.filter(decision => decision.turnId === first.turnId)).toHaveLength(1);
+    expect(evidence.decisions.filter(decision => decision.turnId === first.turnId))
+      .toMatchObject([{ reasonCode: 'AGENT_A_VALIDATION_EXHAUSTED' }]);
     expect(evidence.state?.awaitingReply).toBe('call_or_chat');
     expect(await db`SELECT id FROM call_sessions WHERE contact_id = ${contact!.id}::uuid`).toHaveLength(0);
     const duplicate = await runWorkflowTurnV1({ ...id, text,

@@ -80,7 +80,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v72');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v112');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v114');
   });
   it('distinguishes authoritative channel intake from evidence required for new observations', () => {
     const current = context();
@@ -159,6 +159,28 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).toContain('Ask only for missing call data among nombre, apellido and telefono');
     expect(instructions).toContain('Do not claim the call was placed');
     expect(JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!).turn_rejection).toEqual(current.turn_rejection);
+  });
+
+  it('turns the exact production logistics rejection into narrow factual correction guidance', () => {
+    const current = context();
+    current.turn_rejection = { schema_version: 1, attempt: 1,
+      rejection_id: '00000000-0000-4000-8000-000000000002',
+      rejections: [
+        { code: 'FACT_VALUE_MISMATCH', subject: 'course_logistics' },
+        { code: 'FACT_VALUE_MISMATCH', subject: 'course_logistics.self_paced' },
+        { code: 'FACT_VALUE_MISMATCH', subject: 'course_logistics.remote_location' },
+      ],
+      authorized_alternatives: {
+        fact_ids: ['offering:redes-informaticas:name:v1'], actions: ['none'], missing_information: [],
+      },
+    };
+
+    const repair = buildAgentABrainInstructionsV1(current)
+      .split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
+
+    expect(repair).toContain('Online alone does not authorize self-paced study or access from any location');
+    expect(repair).toContain('Omit those logistics claims unless their exact values appear in authorized facts');
+    expect(repair).toContain('Answer the customer from the remaining verified course facts');
   });
 
   it('applies Lisandro voice after context and repair without changing the structured contract', () => {

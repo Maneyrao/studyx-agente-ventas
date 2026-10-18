@@ -60,6 +60,29 @@ export function technicalFallback(
 }
 
 /**
+ * Explicit operational notice after Agent A exhausts its one safe correction.
+ * This is not commercial copy and never impersonates Agent A or an outage.
+ */
+export function validationExhaustedNotice(
+  responseType: 'technical_fallback' | 'commercial_reply' = 'technical_fallback',
+): Decision {
+  return {
+    schema_version: 3,
+    intent: 'unknown',
+    kind: 'reply',
+    response: 'Aviso del sistema: no pudimos validar una respuesta segura para este mensaje. La conversación quedó guardada y podés continuar por acá.',
+    response_type: responseType,
+    business_action: null,
+    memory_candidates: [],
+    missing_information: [],
+    next_state: 'waiting_user',
+    reason_code: 'AGENT_A_VALIDATION_EXHAUSTED',
+    confidence: 1,
+    retrieval_used: null,
+  }
+}
+
+/**
  * The call intent is already known; only the callable destination is missing.
  * This is an action-boundary recovery, not a replacement sales script: the
  * model still owns the normal response whenever it is available.

@@ -1077,7 +1077,7 @@ describe('processInboundTurn hot path', () => {
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
   });
 
-  it('ends a twice-rejected turn with one bounded continuity reply instead of a recovery loop', async () => {
+  it('sends one explicit system notice after a twice-rejected backend commit without claiming a provider outage', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -1139,7 +1139,6 @@ describe('processInboundTurn hot path', () => {
         provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 160, attempt_count: 1,
       }));
 
-    const continuity = 'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.';
     actionSpies.commit
       .mockRejectedValueOnce(new StudyxHttpError(
         'DECISION_REJECTED', false, 422, 1,
@@ -1157,21 +1156,14 @@ describe('processInboundTurn hot path', () => {
         status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
         decision_id: UUID, next_state: 'waiting_user',
         outbound: {
-          id: UUID, content: continuity, status: 'pending', delivery_attempt: 1,
-          authorized_egress: {
-            schema_version: 1,
-            content_hash: '0eaced12311bf276e71580af16a157c9063d707a82e07d640c65026f5465956c',
-            authorized_urls: [], protected_facts: [],
-          },
+          id: UUID,
+          content: 'Aviso del sistema: no pudimos validar una respuesta segura para este mensaje. La conversación quedó guardada y podés continuar por acá.',
+          status: 'pending', delivery_attempt: 1,
+          authorized_egress: { schema_version: 1,
+            content_hash: '24ae763d17410e91c91aacf3c85c1346ef0f9db42f216b06721c898c1453fe06',
+            authorized_urls: [], protected_facts: [] },
         },
-        outbounds: [{
-          id: UUID, content: continuity, status: 'pending', delivery_attempt: 1,
-          authorized_egress: {
-            schema_version: 1,
-            content_hash: '0eaced12311bf276e71580af16a157c9063d707a82e07d640c65026f5465956c',
-            authorized_urls: [], protected_facts: [],
-          },
-        }], call_request: null,
+        call_request: null,
       });
 
     const createMessage = vi.fn(async () => ({ message: { id: 'bp-recovered-message' } }));
@@ -1192,8 +1184,19 @@ describe('processInboundTurn hot path', () => {
     const result = await run();
     expect(actionSpies.recovery).not.toHaveBeenCalled();
     expect(actionSpies.commit).toHaveBeenCalledTimes(3);
-    expect(createMessage).toHaveBeenCalledTimes(1);
-    expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({ payload: { text: continuity } }));
+    expect(actionSpies.commit.mock.calls[2]?.[0]?.input).toMatchObject({
+      agent_turn_v2: null,
+      decision: {
+        kind: 'reply',
+        response: 'Aviso del sistema: no pudimos validar una respuesta segura para este mensaje. La conversación quedó guardada y podés continuar por acá.',
+        response_type: 'commercial_reply',
+        reason_code: 'AGENT_A_VALIDATION_EXHAUSTED', business_action: null,
+      },
+      turn_diagnostics: { failure_stage: 'backend_commit', action_status: 'rejected' },
+    });
+    expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({ payload: {
+      text: 'Aviso del sistema: no pudimos validar una respuesta segura para este mensaje. La conversación quedó guardada y podés continuar por acá.',
+    } }));
     expect(result).toMatchObject({ status: 'waiting_user', decision_id: UUID,
       delivery_status: 'submitted_to_botpress', error_code: null });
   });
@@ -1380,6 +1383,89 @@ describe('processInboundTurn hot path', () => {
     expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({
       payload: { text: 'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.' },
     }));
+  });
+
+  it('never labels a twice-rejected factual answer as MODEL_UNAVAILABLE', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true, agent_a_brain_v1_shadow: false,
+      agent_a_repair_enabled: true,
+    };
+    claimed.conversation_state_v1 = {
+      selected_offering_code: 'redes-informaticas', selected_payment_plan: null,
+      stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 1,
+    };
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 1,
+      offerings: [{ code: 'redes-informaticas', display_name: 'Redes Informáticas',
+        academy: 'Tecnología', aliases: ['redes'] }],
+      injection_suspected_count: 0,
+    };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+
+    const rejection = {
+      schema_version: 1, rejection_id: UUID, attempt: 1,
+      rejections: [
+        { code: 'FACT_VALUE_MISMATCH', subject: 'course_logistics' },
+        { code: 'FACT_VALUE_MISMATCH', subject: 'course_logistics.self_paced' },
+        { code: 'FACT_VALUE_MISMATCH', subject: 'course_logistics.remote_location' },
+      ],
+      authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: [] },
+    } as const;
+    actionSpies.agentABrainValidate.mockReturnValue(rejection);
+    actionSpies.agentABrainDeepSeek.mockReset()
+      .mockResolvedValueOnce({
+        proposal: {
+          schema_version: 1,
+          move: { schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
+            course_reference: 'redes-informaticas', confidence: 0.98 },
+          response: { messages: ['Es online, así que avanzas a tu ritmo desde cualquier lugar.'], call_offer: null },
+          proposed_action: { type: 'none' }, used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+          repair_of: null,
+        },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 100, attempt_count: 1,
+      })
+      .mockImplementationOnce(async (input: { context: { turn_rejection: { rejection_id: string } } }) => ({
+        proposal: {
+          schema_version: 1,
+          move: { schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 0.9 },
+          response: { messages: ['Puedes estudiar a tu ritmo desde donde estés.'], call_offer: null },
+          proposed_action: { type: 'none' }, used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+          repair_of: { rejection_id: input.context.turn_rejection.rejection_id, attempt: 1 },
+        },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 90, attempt_count: 1,
+      }));
+
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({ input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }), client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' } });
+
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      agent_turn_v2: null,
+      decision: {
+        kind: 'reply',
+        reason_code: 'AGENT_A_VALIDATION_EXHAUSTED',
+        response: 'Aviso del sistema: no pudimos validar una respuesta segura para este mensaje. La conversación quedó guardada y podés continuar por acá.',
+      },
+      turn_diagnostics: {
+        failure_stage: 'proposal_validation',
+        action_status: 'rejected',
+      },
+    });
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input?.decision?.reason_code)
+      .not.toBe('MODEL_UNAVAILABLE');
   });
 
   it('lets Agent A recover an unreadable input instead of forcing a technical fallback', async () => {
@@ -1666,7 +1752,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('uses bounded continuity instead of requeuing when DeepSeek cannot produce a valid turn', async () => {
+  it('reports invalid model structure explicitly without misclassifying it as a provider outage', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -1728,9 +1814,9 @@ describe('processInboundTurn hot path', () => {
       agent_turn_v2: null,
       decision: {
         kind: 'reply',
-        response: 'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.',
+        response: 'Aviso del sistema: no pudimos validar una respuesta segura para este mensaje. La conversación quedó guardada y podés continuar por acá.',
         response_type: 'commercial_reply',
-        reason_code: 'MODEL_UNAVAILABLE',
+        reason_code: 'AGENT_A_VALIDATION_EXHAUSTED',
         business_action: null,
       },
     });

@@ -261,6 +261,7 @@ export async function prepareAgentTurnV2(input: {
         || paymentVerification.plan_code === state.selected_payment_plan),
     current_customer_messages: input.current_customer_messages,
     semantic_rejections: semanticRejections,
+    action_rejections: 'structured',
     effects_allowed: effectsAllowed,
     call_policy: {
       // A refusal closes the invitation in that turn, not the whole sales
@@ -281,9 +282,9 @@ export async function prepareAgentTurnV2(input: {
   if (input.requested_action !== undefined && input.conversation_only !== true) {
     throw new AgentTurnV2RejectedError(['ACTION_NOT_AUTHORIZED']);
   }
-  let effectiveProposal = input.requested_action === undefined ? input.proposal
+  const effectiveProposal = input.requested_action === undefined ? input.proposal
     : { ...input.proposal, proposed_action: input.requested_action };
-  let authority = authorize(effectiveProposal);
+  const authority = authorize(effectiveProposal);
   let actionRejection: AgentActionRejectionV1 | null = null;
 
   if (authority.ok
@@ -307,43 +308,6 @@ export async function prepareAgentTurnV2(input: {
     }
   }
 
-  // A rejected side effect must not reject the conversation that requested it.
-  // Keep Agent A's wording, semantic move and explicit request while the same
-  // authority derives pending state with every side effect fenced. This
-  // is deliberately not a second planner or a backend-authored response.
-  const recoverablePaymentAction = effectiveProposal.proposed_action.type === 'send_payment_link'
-    || effectiveProposal.proposed_action.type === 'send_test_payment_link';
-  const recoverableCallAction = effectiveProposal.proposed_action.type === 'request_call_now'
-    && (effectiveProposal.proposed_action.reason === 'direct_request'
-      || (state.call_preference === 'call' && state.call_offer_status === 'accepted'));
-  if (!authority.ok && (recoverablePaymentAction || recoverableCallAction)
-    && authority.reasons.every((reason) => (
-      reason === 'ACTION_NOT_AUTHORIZED' || reason === 'MISSING_INTAKE'
-    ))) {
-    const rejectedAction = effectiveProposal.proposed_action.type;
-    if (rejectedAction === 'none') {
-      throw new AgentTurnV2RejectedError(authority.reasons, authority.rejection_subjects);
-    }
-    const requiredFields = rejectedAction === 'request_call_now'
-      ? (['nombre', 'apellido', 'telefono'] as const)
-      : (['nombre', 'apellido', 'correo', 'telefono'] as const);
-    actionRejection = actionRejectionV1({
-      action: rejectedAction,
-      codes: [...authority.reasons],
-      missing_fields: requiredFields.filter((field) => !contactIntake?.[field]),
-      offering_code: effectiveProposal.proposed_action.type === 'send_payment_link'
-        || effectiveProposal.proposed_action.type === 'send_test_payment_link'
-        ? effectiveProposal.proposed_action.offering_code
-        : state.selected_offering_code,
-      payment_plan: effectiveProposal.proposed_action.type === 'send_payment_link'
-        ? effectiveProposal.proposed_action.payment_plan
-        : state.selected_payment_plan,
-    });
-    // Preserve the explicit request as semantic evidence while fencing every
-    // side effect. Removing it would lose pending intent for a selector move.
-    authority = authorize(effectiveProposal, false, 'advisory');
-    effectiveProposal = { ...effectiveProposal, proposed_action: { type: 'none' } };
-  }
   if (!authority.ok) {
     throw new AgentTurnV2RejectedError(authority.reasons, authority.rejection_subjects);
   }

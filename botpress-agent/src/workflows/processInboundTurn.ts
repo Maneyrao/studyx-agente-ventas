@@ -41,6 +41,7 @@ import {
   constrainModelToAdvisory,
   suppress,
   technicalFallback,
+  validationExhaustedNotice,
   modelUnavailableFallback,
 } from '../utils/decision-policy'
 import {
@@ -845,7 +846,6 @@ export const processInboundTurn = new Workflow({
     let turnDiagnostics: TurnDiagnosticsV1 | null = null
     let agentAGenerationAttempts: 0 | 1 | 2 = 0
     let physicalAgentARequests = 0
-    let initialAgentAProposal: AgentATurnProposalV1 | null = null
     let agentAConversationOnly = resumedRejection !== null
     const accountAgentAProviderRequest = () => {
       if (physicalAgentARequests >= 2) {
@@ -1024,7 +1024,6 @@ export const processInboundTurn = new Workflow({
           action_status: 'none',
         }
         let generated = generatedAttempt.value
-        initialAgentAProposal = generated.proposal
         await persistProfileProposal(generated.proposal)
         timings.agent_a_brain_ms = Date.now() - brainStartedAt
         safeLog('studyx.turn.agent_a_brain_generation', {
@@ -1089,7 +1088,6 @@ export const processInboundTurn = new Workflow({
                   'repair-agent-a-turn-proposal-v2',
                   () => continueAgentAAfterActionFeedbackV1({
                     context: agentABrainContext,
-                    original_proposal: authoritativeGenerated.proposal,
                     on_provider_request: accountAgentAProviderRequest,
                     rejection,
                     apiKey: secrets.DEEPSEEK_API_KEY as string,
@@ -1120,7 +1118,6 @@ export const processInboundTurn = new Workflow({
               effectiveGenerated = await step('continue-agent-a-after-authorization-result-v2',
                 () => continueAgentAAfterActionFeedbackV1({
                   context: agentABrainContext, rejection: resolved.rejection!,
-                  original_proposal: authoritativeGenerated.proposal,
                   on_provider_request: accountAgentAProviderRequest,
                   apiKey: secrets.DEEPSEEK_API_KEY as string, signal,
                   generate: generateDeepSeekAgentATurnProposalV1,
@@ -1207,7 +1204,7 @@ export const processInboundTurn = new Workflow({
             agentTurnV2Commit = {
               schema_version: 2,
               proposal: effectiveGenerated.proposal,
-              ...(agentAConversationOnly ? fencedAgentARequestV1(initialAgentAProposal) : {}),
+              ...(agentAConversationOnly ? fencedAgentARequestV1() : {}),
             }
             pipelineMemoryCandidates = effectiveGenerated.proposal.memory_candidates
             safeLog('studyx.turn.agent_a_plannerless_v2', {
@@ -1386,11 +1383,14 @@ export const processInboundTurn = new Workflow({
           authorized_action_type: 'none',
         })
         // A rejected operation is structured input for A, not a channel outage.
-        // The remaining bounded generation is conversation-only: no effect
-        // can be requested or inferred from its neutral internal move.
+        // The remaining bounded generation is conversation-only: Agent A keeps
+        // the semantic move, while the physical effect stays explicitly fenced.
         if (brainAuthoritative) {
           if (!isAgentAProviderFailure(attemptFailure)) {
-            pipelineFailureDecision = technicalFallback(
+            // A policy/schema rejection is not a provider outage. If Agent A's
+            // single bounded correction is also invalid, persist the exact
+            // diagnostic without inventing a customer-facing backend reply.
+            pipelineFailureDecision = validationExhaustedNotice(
               owned.policy.allowed_response_types.includes('technical_fallback')
                 ? 'technical_fallback' : 'commercial_reply')
             if (agentAGenerationAttempts < 2 && typeof secrets.DEEPSEEK_API_KEY === 'string') {
@@ -1401,7 +1401,6 @@ export const processInboundTurn = new Workflow({
                 const continuation = await step('continue-agent-a-after-action-feedback-v1',
                   () => continueAgentAAfterActionFeedbackV1({
                     context: agentABrainContext,
-                    original_proposal: initialAgentAProposal,
                     on_provider_request: accountAgentAProviderRequest,
                     rejection: profileRejection,
                     apiKey: secrets.DEEPSEEK_API_KEY as string, signal,
@@ -1410,7 +1409,7 @@ export const processInboundTurn = new Workflow({
                       ? configuration.agentABrainDeepSeekModel : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
                   }), { maxAttempts: 1 })
                 await persistProfileProposal(continuation.proposal, profileRejection)
-                agentTurnV2Commit = { schema_version: 2, proposal: continuation.proposal, ...fencedAgentARequestV1(initialAgentAProposal) }
+                agentTurnV2Commit = { schema_version: 2, proposal: continuation.proposal, ...fencedAgentARequestV1() }
                 pipelineMemoryCandidates = continuation.proposal.memory_candidates
                 pipelineDecisionProvider = continuation.provider
                 pipelineDecisionModel = continuation.model
@@ -1823,7 +1822,6 @@ export const processInboundTurn = new Workflow({
               'repair-agent-a-turn-after-backend-rejection-v1',
               () => continueAgentAAfterActionFeedbackV1({
                 context: repairContext,
-                original_proposal: rejectedProposal,
                 on_provider_request: accountAgentAProviderRequest,
                 rejection,
                 apiKey: deepSeekApiKey,
@@ -1850,7 +1848,7 @@ export const processInboundTurn = new Workflow({
             agentTurnV2Commit = {
               schema_version: 2,
               proposal: effectiveRepair.proposal,
-              ...fencedAgentARequestV1(initialAgentAProposal ?? rejectedProposal),
+              ...fencedAgentARequestV1(),
             }
             pipelineCommit = null
             pipelineMemoryCandidates = effectiveRepair.proposal.memory_candidates
@@ -1895,9 +1893,12 @@ export const processInboundTurn = new Workflow({
           pipelineMemoryCandidates = []
           const generationUnavailable = continuationFailure !== null
             && isAgentAProviderFailure(continuationFailure)
-          decision = technicalFallback(
-            owned.policy.allowed_response_types.includes('technical_fallback')
+          decision = generationUnavailable
+            ? technicalFallback(owned.policy.allowed_response_types.includes('technical_fallback')
               ? 'technical_fallback' : 'commercial_reply')
+            : validationExhaustedNotice(
+                owned.policy.allowed_response_types.includes('technical_fallback')
+                  ? 'technical_fallback' : 'commercial_reply')
           decisionProvider = 'botpress'
           decisionModel = 'policy:agent-a-repair-unavailable'
           turnDiagnostics = {
