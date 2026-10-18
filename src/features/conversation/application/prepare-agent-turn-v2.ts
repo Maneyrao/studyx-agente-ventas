@@ -267,8 +267,8 @@ export async function prepareAgentTurnV2(input: {
       // conversation. The per-turn authority below still blocks an immediate
       // repeat; the durable counter keeps the lifetime ceiling at two.
       may_offer_call: noActiveCall,
-      // Accepting or requesting a call only prepares it. Dispatch requires a
-      // later turn that confirms availability against that durable state.
+      // Accepting an open offer or requesting a call is current-turn consent.
+      // Dispatch still occurs only after the resulting outbound is accepted.
       may_request_call_now: noActiveCall
         && (currentCallAuthorization || (awaitingCallAvailability
           && (availabilityConfirmed || (proposal.proposed_action.type === 'request_call_now'
