@@ -1044,6 +1044,7 @@ export function createLocalTurnSender(
             claimed.policy.allowed_response_types.includes('technical_fallback')
               ? 'technical_fallback'
               : 'commercial_reply',
+            { claimed, failure_codes: [code] },
           );
           agentTurnV2 = null;
           plannedBusinessAction = null;

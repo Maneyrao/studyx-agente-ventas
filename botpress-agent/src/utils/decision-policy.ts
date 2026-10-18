@@ -65,7 +65,79 @@ export function technicalFallback(
  */
 export function validationExhaustedNotice(
   responseType: 'technical_fallback' | 'commercial_reply' = 'technical_fallback',
+  recovery?: {
+    readonly claimed: ClaimedTurn
+    readonly failure_codes: readonly string[]
+  },
 ): Decision {
+  const paymentActionRejected = recovery?.failure_codes.some((code) => (
+    code.includes('ACTION_NOT_AUTHORIZED:send_payment_link')
+    || code.includes('PLAN_NOT_SELECTED:payment_plan')
+  )) === true
+  const selectedOfferingCode = recovery?.claimed.conversation_state_v1?.selected_offering_code
+    ?? recovery?.claimed.sales_context.offering_code
+    ?? null
+  if (paymentActionRejected && selectedOfferingCode === null) {
+    return {
+      schema_version: 4,
+      intent: 'commercial',
+      kind: 'reply',
+      response: 'Antes de preparar el enlace de pago, dime qué curso quieres comprar.',
+      response_type: responseType === 'technical_fallback' ? 'commercial_reply' : responseType,
+      business_action: null,
+      memory_candidates: [],
+      missing_information: ['course_of_interest'],
+      next_state: 'waiting_user',
+      reason_code: 'PAYMENT_COURSE_REQUIRED',
+      confidence: 1,
+      retrieval_used: null,
+    }
+  }
+  const selectedPaymentPlan = recovery?.claimed.conversation_state_v1?.selected_payment_plan
+    ?? recovery?.claimed.sales_context.selected_payment_plan
+    ?? null
+  if (paymentActionRejected && selectedPaymentPlan === null) {
+    return {
+      schema_version: 4,
+      intent: 'commercial',
+      kind: 'reply',
+      response: 'Para pasarte el enlace correcto, necesito que elijas el plan: 12 cuotas, 6 cuotas o un pago único. ¿Con cuál avanzamos?',
+      response_type: responseType === 'technical_fallback' ? 'commercial_reply' : responseType,
+      business_action: null,
+      memory_candidates: [],
+      missing_information: ['payment_plan'],
+      next_state: 'waiting_user',
+      reason_code: 'PAYMENT_PLAN_REQUIRED',
+      confidence: 1,
+      retrieval_used: null,
+    }
+  }
+  const missingPaymentContact = recovery?.claimed.contact_intake_missing ?? []
+  if (paymentActionRejected && missingPaymentContact.length > 0) {
+    const labels = missingPaymentContact.map((field) => ({
+      nombre: 'tu nombre',
+      apellido: 'tu apellido',
+      correo: 'tu correo',
+      telefono: 'tu teléfono completo con código de país y área',
+    })[field])
+    const missingText = labels.length === 1
+      ? labels[0]
+      : `${labels.slice(0, -1).join(', ')} y ${labels.at(-1)}`
+    return {
+      schema_version: 4,
+      intent: 'commercial',
+      kind: 'reply',
+      response: `Para preparar el enlace de pago me falta ${missingText}. ¿Me lo compartes?`,
+      response_type: responseType === 'technical_fallback' ? 'commercial_reply' : responseType,
+      business_action: null,
+      memory_candidates: [],
+      missing_information: [...missingPaymentContact],
+      next_state: 'waiting_user',
+      reason_code: 'PAYMENT_CONTACT_REQUIRED',
+      confidence: 1,
+      retrieval_used: null,
+    }
+  }
   return {
     schema_version: 3,
     intent: 'unknown',

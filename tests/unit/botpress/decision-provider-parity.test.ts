@@ -5,6 +5,7 @@ import {
   constrainModelToAdvisory,
   modelUnavailableFallback,
   policyRejectedStateFallback,
+  validationExhaustedNotice,
 } from '../../../botpress-agent/src/utils/decision-policy';
 import type { ClaimedTurn, Decision } from '../../../botpress-agent/src/schemas/contracts';
 
@@ -159,6 +160,95 @@ function modelDecision(overrides: Partial<Decision> = {}): Decision {
 }
 
 describe('applyDecisionPolicy — provider parity', () => {
+  it('asks for the missing plan when payment-link validation is exhausted', () => {
+    const claimed = claimedTurn({
+      allowed_response_types: ['commercial_reply'],
+      batch_message_content: 'Dale, pasame un pago puede ser?',
+      course_of_interest: 'Inglés 3',
+      offering_code: 'ingles_3',
+      selected_payment_plan: null,
+    });
+    claimed.contact_intake_missing = [];
+
+    const decision = validationExhaustedNotice('commercial_reply', {
+      claimed,
+      failure_codes: [
+        'PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:send_payment_link',
+      ],
+    });
+
+    expect(decision).toMatchObject({
+      intent: 'commercial',
+      kind: 'reply',
+      response_type: 'commercial_reply',
+      business_action: null,
+      missing_information: ['payment_plan'],
+      next_state: 'waiting_user',
+      reason_code: 'PAYMENT_PLAN_REQUIRED',
+    });
+    expect(decision.response).toContain('12 cuotas');
+    expect(decision.response).toContain('6 cuotas');
+    expect(decision.response).toContain('pago único');
+  });
+
+  it('asks for missing contact data when payment-link validation is exhausted', () => {
+    const claimed = claimedTurn({
+      allowed_response_types: ['commercial_reply'],
+      batch_message_content: 'Pasame el link de pago',
+      course_of_interest: 'Inglés 3',
+      offering_code: 'ingles_3',
+      selected_payment_plan: 'monthly_12',
+    });
+    claimed.contact_intake_missing = ['correo'];
+
+    const decision = validationExhaustedNotice('commercial_reply', {
+      claimed,
+      failure_codes: [
+        'PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:send_payment_link',
+      ],
+    });
+
+    expect(decision).toMatchObject({
+      intent: 'commercial',
+      kind: 'reply',
+      response_type: 'commercial_reply',
+      business_action: null,
+      missing_information: ['correo'],
+      next_state: 'waiting_user',
+      reason_code: 'PAYMENT_CONTACT_REQUIRED',
+    });
+    expect(decision.response).toContain('correo');
+  });
+
+  it('asks for the course before the plan when payment-link validation has no selection', () => {
+    const claimed = claimedTurn({
+      allowed_response_types: ['commercial_reply'],
+      batch_message_content: 'Pasame un link de pago',
+      course_of_interest: null,
+      offering_code: null,
+      selected_payment_plan: null,
+    });
+    claimed.contact_intake_missing = [];
+
+    const decision = validationExhaustedNotice('commercial_reply', {
+      claimed,
+      failure_codes: [
+        'PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:send_payment_link',
+      ],
+    });
+
+    expect(decision).toMatchObject({
+      intent: 'commercial',
+      kind: 'reply',
+      response_type: 'commercial_reply',
+      business_action: null,
+      missing_information: ['course_of_interest'],
+      next_state: 'waiting_user',
+      reason_code: 'PAYMENT_COURSE_REQUIRED',
+    });
+    expect(decision.response).toContain('qué curso');
+  });
+
   it('normalizes a clarification with no missing field before the backend boundary', () => {
     const decision = applyDecisionPolicy(modelDecision({
       kind: 'clarify',

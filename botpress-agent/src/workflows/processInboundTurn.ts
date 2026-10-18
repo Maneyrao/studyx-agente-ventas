@@ -1392,7 +1392,9 @@ export const processInboundTurn = new Workflow({
             // diagnostic without inventing a customer-facing backend reply.
             pipelineFailureDecision = validationExhaustedNotice(
               owned.policy.allowed_response_types.includes('technical_fallback')
-                ? 'technical_fallback' : 'commercial_reply')
+                ? 'technical_fallback' : 'commercial_reply',
+              { claimed: owned, failure_codes: turnDiagnostics.failure_codes },
+            )
             if (agentAGenerationAttempts < 2 && typeof secrets.DEEPSEEK_API_KEY === 'string') {
               agentAGenerationAttempts = 2
               try {
@@ -1898,7 +1900,14 @@ export const processInboundTurn = new Workflow({
               ? 'technical_fallback' : 'commercial_reply')
             : validationExhaustedNotice(
                 owned.policy.allowed_response_types.includes('technical_fallback')
-                  ? 'technical_fallback' : 'commercial_reply')
+                  ? 'technical_fallback' : 'commercial_reply',
+                {
+                  claimed: owned,
+                  failure_codes: rejection.rejections.map(
+                    (reason) => `${reason.code}:${reason.subject}`,
+                  ),
+                },
+              )
           decisionProvider = 'botpress'
           decisionModel = 'policy:agent-a-repair-unavailable'
           turnDiagnostics = {
