@@ -43,11 +43,11 @@ export function technicalFallback(
     schema_version: 3,
     intent: 'unknown',
     kind: 'reply',
-    // Last-resort continuity only. Do not expose provider failures to the
-    // customer or terminate the commercial conversation. This text neither
-    // invents facts nor interprets the customer's intent; Agent A regains
-    // ownership on the next message.
-    response: 'Perdón, no pude responderte bien. Envíame ese último mensaje otra vez y seguimos.',
+    // Last-resort continuity only. Never expose a provider failure or ask the
+    // customer to repeat the exact message that the system already received.
+    // Ask for the smallest useful clarification so the conversation keeps
+    // moving even while the model path is unavailable.
+    response: 'No quiero suponer algo incorrecto. Dime qué necesitas o a qué curso te refieres y lo resolvemos por aquí.',
     response_type: responseType,
     business_action: null,
     memory_candidates: [],
@@ -59,10 +59,7 @@ export function technicalFallback(
   }
 }
 
-/**
- * Explicit operational notice after Agent A exhausts its one safe correction.
- * This is not commercial copy and never impersonates Agent A or an outage.
- */
+/** Customer-safe clarification after Agent A exhausts its one correction. */
 export function validationExhaustedNotice(
   responseType: 'technical_fallback' | 'commercial_reply' = 'technical_fallback',
   recovery?: {
@@ -138,12 +135,22 @@ export function validationExhaustedNotice(
       retrieval_used: null,
     }
   }
+  const currentBatch = recovery?.claimed.context.batch_messages
+    .map((message) => message.content)
+    .join(' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLocaleLowerCase('es') ?? ''
+  const comparisonIsAmbiguous = /\b(?:igual|diferencia|compar|otro\s+curso|cual\s+es\s+mejor)\b/u
+    .test(currentBatch)
   return {
-    schema_version: 3,
-    intent: 'unknown',
+    schema_version: 4,
+    intent: 'commercial',
     kind: 'reply',
-    response: 'Aviso del sistema: no pudimos validar una respuesta segura para este mensaje. La conversación quedó guardada y podés continuar por acá.',
-    response_type: responseType,
+    response: comparisonIsAmbiguous
+      ? 'No quiero asumir cuál es el otro curso. Dime cuáles dos quieres comparar y te marco las diferencias.'
+      : 'No quiero darte información incorrecta. Dime qué dato o qué curso quieres confirmar y lo revisamos por aquí.',
+    response_type: responseType === 'technical_fallback' ? 'commercial_reply' : responseType,
     business_action: null,
     memory_candidates: [],
     missing_information: [],

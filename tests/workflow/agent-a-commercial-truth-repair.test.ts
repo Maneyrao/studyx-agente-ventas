@@ -213,16 +213,16 @@ it('replays the English enumeration and unselected plan request without losing e
   expect(persisted.recordedLinks).toEqual([]);
 });
 
-it('delivers one explicit system notice after a twice-rejected proposal without a false provider outage or duplicate effects', async () => {
+it('asks which courses to compare after the exact twice-rejected production question without duplicate effects', async () => {
   const id = { conversationId: `durable-repair-${randomUUID()}`, userId: randomUUID(),
     phoneE164: `+999${randomUUID().replace(/\D/gu, '').slice(0, 10).padEnd(10, '0')}`, providerMode: 'fixture' as const };
   const child = vi.spyOn(Workflow.prototype, 'getOrCreate');
   respond = () => proposal('Podés pagar en 2 cuotas de USD 60.', {
     used_fact_ids: ['payment-workspace:monthly_6:label:v1'],
   });
-  const first = await runWorkflowTurnV1({ ...id, text: '¿Cuáles son los planes de pago?' });
+  const first = await runWorkflowTurnV1({ ...id, text: '¿Es igual que el otro curso?' });
   expect(first.authorizedMessages).toEqual([
-    'Aviso del sistema: no pudimos validar una respuesta segura para este mensaje. La conversación quedó guardada y podés continuar por acá.',
+    'No quiero asumir cuál es el otro curso. Dime cuáles dos quieres comparar y te marco las diferencias.',
   ]);
   expect(first.commitSucceeded).toBe(true);
   expect(first.errorCode).toBeNull();
@@ -235,7 +235,7 @@ it('delivers one explicit system notice after a twice-rejected proposal without 
   expect(evidence.decisions[0]?.reasonCode).not.toBe('MODEL_UNAVAILABLE');
   expect(evidence.outbound).toHaveLength(1);
   expect(evidence.recordedLinks).toEqual([]);
-  const duplicate = await runWorkflowTurnV1({ ...id, text: '¿Cuáles son los planes de pago?',
+  const duplicate = await runWorkflowTurnV1({ ...id, text: '¿Es igual que el otro curso?',
     externalMessageId: first.externalMessageId, occurredAt: first.occurredAt });
   expect(duplicate.authorizedMessages).toEqual([]);
   child.mockRestore();
@@ -279,7 +279,7 @@ it('preserves accepted identity when a twice-rejected reply gets a system notice
     const first = await runWorkflowTurnV1({ ...id, text });
     expect(generations).toBe(2);
     expect(first.authorizedMessages).toEqual([
-      'Aviso del sistema: no pudimos validar una respuesta segura para este mensaje. La conversación quedó guardada y podés continuar por acá.',
+      'No quiero darte información incorrecta. Dime qué dato o qué curso quieres confirmar y lo revisamos por aquí.',
     ]);
     expect(first.commitSucceeded).toBe(true);
     expect(first.errorCode).toBeNull();

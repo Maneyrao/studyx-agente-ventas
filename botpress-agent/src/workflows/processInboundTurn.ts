@@ -146,6 +146,8 @@ const DECISION_ITERATIONS = 2
 
 /** Bounded: the window slides, but not forever. */
 const MAX_CLAIM_ATTEMPTS = 6
+const INBOUND_RECOVERY_BASE_DELAY_MS = 2_000
+const INBOUND_RECOVERY_MAX_DELAY_MS = 15_000
 
 const MIN_INTER_BUBBLE_DELAY_MS = 650
 const INTER_BUBBLE_DELAY_RANGE_MS = 251
@@ -455,7 +457,16 @@ export const processInboundTurn = new Workflow({
     }
     const recoverInboundOperation = async <T>(name: string, operation: () => Promise<T>): Promise<T> => {
       for (let recovery = 0; ; recovery += 1) {
-        const shortDelayMs = Math.min(300_000, 15_000 * 2 ** Math.min(recovery, 5)) + recoveryJitterMs(recovery)
+        // Ingest and claim happen before the customer can receive a reply.
+        // Keep recovery frequent even across consecutive transport failures;
+        // an exponential five-minute gap turns a brief backend recovery into
+        // customer-visible silence. The stable jitter still prevents a burst
+        // of conversations from retrying in lockstep.
+        const shortDelayMs = Math.min(
+          INBOUND_RECOVERY_MAX_DELAY_MS,
+          INBOUND_RECOVERY_BASE_DELAY_MS * 2 ** Math.min(recovery, 3)
+            + recoveryJitterMs(recovery),
+        )
         const receipt = await step(
           recovery === 0 ? name : `${name}-recovery-${recovery}`,
           async () => {

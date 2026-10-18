@@ -17,6 +17,11 @@ export function createOrchestratorSql(databaseUrl: string, max = poolMax) {
     max,
     prepare: false,
     connect_timeout: 5,
+    // Vercel Fluid Compute may suspend a warm instance longer than the
+    // Supavisor socket remains usable. Retire an actually idle connection
+    // before that socket can be reused by the next customer turn. This is a
+    // native pool lifecycle rule only: it never retries an ambiguous write.
+    idle_timeout: 20,
     // Query/lock deadlines belong to orchestrator_role (migration), because
     // session settings are not portable through Supavisor transaction pooling.
     connection: { application_name: 'studyx-orchestrator' },

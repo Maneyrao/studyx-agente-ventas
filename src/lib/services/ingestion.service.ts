@@ -797,10 +797,11 @@ export async function processInboundMessage(envelope: InboundEnvelope): Promise<
   // path toward the claim, so making it perform an unrelated decision read can
   // strand an otherwise healthy durable batch before the claim is retried.
   //
-  // A completed batch does need the lookup. It tells a replay whether the
-  // already-committed outbound was submitted, failed or remains ambiguous,
-  // which preserves the exactly-once delivery fence.
-  const shouldLoadExistingDecision = replayed && batch.state === 'completed';
+  // Once ownership was claimed, a decision may already exist even before a
+  // caller has finalized the batch row. Replays in that state must recover
+  // the decision/delivery fence; only a still-waiting batch is guaranteed to
+  // have no committed result and must remain on the short path to /claim.
+  const shouldLoadExistingDecision = replayed && batch.state !== 'waiting';
   const decisions = shouldLoadExistingDecision ? await timedStage(
     'ingest.replay_lookup',
     { trace_id: envelope.trace_id },

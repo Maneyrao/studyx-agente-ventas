@@ -208,6 +208,16 @@ run('canonical orchestration lifecycle', () => {
     expect(decisionReplay.decision_id).toBe(decision.decision_id);
     expect(decisionReplay.outbound?.id).toBe(decision.outbound?.id);
 
+    // This test calls the low-level decision service directly, so it must
+    // model the workflow's normal completion step before checking an inbound
+    // replay. A still-waiting batch deliberately skips the decision lookup so
+    // transport recovery can proceed to claim without an unrelated read.
+    await db!`
+      UPDATE inbound_batches
+      SET state = 'completed', completed_at = now()
+      WHERE id = ${first.batch.id}::uuid
+    `;
+
     const decidedInboundReplay = await processInboundMessage({ ...inbound, trace_id: randomUUID() });
     expect(decidedInboundReplay.existing_result).toMatchObject({
       decision_id: decision.decision_id,

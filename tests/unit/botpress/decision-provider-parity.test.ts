@@ -249,6 +249,50 @@ describe('applyDecisionPolicy — provider parity', () => {
     expect(decision.response).toContain('qué curso');
   });
 
+  it('asks which courses to compare instead of exposing a validation failure', () => {
+    const claimed = claimedTurn({
+      allowed_response_types: ['commercial_reply', 'technical_fallback'],
+      batch_message_content: '¿Es igual que el otro curso?',
+      course_of_interest: 'Inglés 3',
+      offering_code: 'ingles_3',
+    });
+
+    const decision = validationExhaustedNotice('technical_fallback', {
+      claimed,
+      failure_codes: ['FACT_VALUE_MISMATCH'],
+    });
+
+    expect(decision).toMatchObject({
+      intent: 'commercial',
+      kind: 'reply',
+      response_type: 'commercial_reply',
+      business_action: null,
+      next_state: 'waiting_user',
+      reason_code: 'AGENT_A_VALIDATION_EXHAUSTED',
+    });
+    expect(decision.response).toBe(
+      'No quiero asumir cuál es el otro curso. Dime cuáles dos quieres comparar y te marco las diferencias.',
+    );
+    expect(decision.response).not.toMatch(/aviso del sistema|validar|error/iu);
+  });
+
+  it('uses a useful clarification when an arbitrary safe reply is rejected twice', () => {
+    const claimed = claimedTurn({
+      allowed_response_types: ['commercial_reply', 'technical_fallback'],
+      batch_message_content: 'No sé, contame otra cosa',
+    });
+
+    const decision = validationExhaustedNotice('technical_fallback', {
+      claimed,
+      failure_codes: ['FACT_VALUE_MISMATCH'],
+    });
+
+    expect(decision.response).toBe(
+      'No quiero darte información incorrecta. Dime qué dato o qué curso quieres confirmar y lo revisamos por aquí.',
+    );
+    expect(decision.response_type).toBe('commercial_reply');
+  });
+
   it('normalizes a clarification with no missing field before the backend boundary', () => {
     const decision = applyDecisionPolicy(modelDecision({
       kind: 'clarify',
