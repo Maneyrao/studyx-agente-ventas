@@ -3,7 +3,7 @@ import { requestStudyxJson } from '../utils/http'
 import { AGENT_A_DEEPSEEK_MODEL } from '../config/agent-a-model'
 import { STUDYX_AGENT_A_CANONICAL_PROMPT } from '../prompts/studyx-agent-a-canonical.generated'
 import { resolveCanonicalPromptIdentityV1 } from '../prompts/agent-a-identity'
-import { buildPostSaleInstructions, fallbackPostSaleNarrative, PostSaleClaimSchema } from '../utils/post-sale-instructions'
+import { buildPostSaleInstructions, PostSaleClaimSchema } from '../utils/post-sale-instructions'
 
 const Narrative = z.object({
   intro: z.string().min(1).max(500),
@@ -34,7 +34,7 @@ export default new Trigger({
     const claimed = await requestStudyxJson({ path: `/api/agent/post-sale/${id}/claim`,
       body: { botpress_conversation_id: conversationId }, traceId, idempotencyKey: `post-sale-claim:${id}`, responseSchema: PostSaleClaimSchema })
     if (!claimed.claimed) return
-    let narrative = fallbackPostSaleNarrative(claimed)
+    let narrative: z.infer<typeof Narrative>
     try {
       const identity = resolveCanonicalPromptIdentityV1(STUDYX_AGENT_A_CANONICAL_PROMPT, {
         advisor_name: typeof configuration.agentAAdvisorName === 'string'
@@ -76,10 +76,16 @@ export default new Trigger({
       if (!raw) throw new Error('POST_SALE_MODEL_EMPTY')
       narrative = Narrative.parse(JSON.parse(raw))
     } catch {
-      // Post-sale delivery is more important than optional generation. The
-      // normal path is Agent A; this bounded fallback prevents payment/access
-      // facts and credentials from being lost during a provider incident.
-      console.warn(JSON.stringify({ event: 'studyx.post_sale.narrative_fallback', notification_id: id }))
+      // Customer-visible prose belongs exclusively to Agent A. Release the
+      // durable claim so the backend schedules another Agent A event; payment,
+      // enrollment and verified credentials remain persisted independently.
+      await requestStudyxJson({ path: `/api/agent/post-sale/${id}/release`,
+        body: { claim_token: claimed.claim_token }, traceId,
+        idempotencyKey: `post-sale-release:${id}:${claimed.claim_token}`,
+        responseSchema: z.object({ outcome: z.string() }),
+      })
+      console.warn(JSON.stringify({ event: 'studyx.post_sale.retry', notification_id: id }))
+      return
     }
     try {
       await requestStudyxJson({ path: `/api/agent/post-sale/${id}/deliver`,

@@ -173,7 +173,9 @@ it('repairs a fabricated installment count without losing fragmented identity, t
   const paidDb = await readWorkflowDbEvidenceV1({ databaseUrl, externalConversationId: id.conversationId,
     adapterCaptures: [...selected.adapterCaptures, ...repaired.adapterCaptures, ...paid.adapterCaptures] });
   expect(paidDb.recordedLinks).toHaveLength(1);
-  expect(paidDb.recordedLinks[0]).toMatch(/^https:\/\/buy\.stripe\.com\/local-eval-12m\?client_reference_id=/u);
+  // The local server may use any dedicated Stripe test slug; the invariant is
+  // the configured Stripe host plus the canonical payment correlation key.
+  expect(paidDb.recordedLinks[0]).toMatch(/^https:\/\/buy\.stripe\.com\/[^?]+\?client_reference_id=/u);
   expect(paidDb.deliveredLinks).toEqual(paidDb.recordedLinks);
   expect(paid.authorizedMessages.join('\n').split(paidDb.recordedLinks[0]!).length - 1).toBe(1);
   expect(paidDb.decisions.filter(decision => decision.businessActionType === 'send_payment_link')).toHaveLength(1);
@@ -217,13 +219,22 @@ it('asks which courses to compare after the exact twice-rejected production ques
   const id = { conversationId: `durable-repair-${randomUUID()}`, userId: randomUUID(),
     phoneE164: `+999${randomUUID().replace(/\D/gu, '').slice(0, 10).padEnd(10, '0')}`, providerMode: 'fixture' as const };
   const child = vi.spyOn(Workflow.prototype, 'getOrCreate');
-  respond = () => proposal('Podés pagar en 2 cuotas de USD 60.', {
-    used_fact_ids: ['payment-workspace:monthly_6:label:v1'],
-  });
+  let generations = 0;
+  respond = () => {
+    generations += 1;
+    return generations === 3
+      ? proposal('Dime cuáles dos cursos quieres comparar y te explico las diferencias.', {
+          move: { schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [], confidence: 1 },
+        })
+      : proposal('Puedes pagar en 2 cuotas de USD 60.', {
+          used_fact_ids: ['payment-workspace:monthly_6:label:v1'],
+        });
+  };
   const first = await runWorkflowTurnV1({ ...id, text: '¿Es igual que el otro curso?' });
   expect(first.authorizedMessages).toEqual([
-    'No quiero asumir cuál es el otro curso. Dime cuáles dos quieres comparar y te marco las diferencias.',
+    'Dime cuáles dos cursos quieres comparar y te explico las diferencias.',
   ]);
+  expect(generations).toBe(3);
   expect(first.commitSucceeded).toBe(true);
   expect(first.errorCode).toBeNull();
   expect(first.httpExchanges.filter(exchange => exchange.status === 422 && exchange.url.endsWith('/decision'))).toHaveLength(2);
@@ -231,7 +242,7 @@ it('asks which courses to compare after the exact twice-rejected production ques
   const evidence = await readWorkflowDbEvidenceV1({ databaseUrl, externalConversationId: id.conversationId,
     adapterCaptures: first.adapterCaptures });
   expect(evidence.decisions).toHaveLength(1);
-  expect(evidence.decisions[0]?.reasonCode).toBe('AGENT_A_VALIDATION_EXHAUSTED');
+  expect(evidence.decisions[0]?.reasonCode).not.toBe('AGENT_A_VALIDATION_EXHAUSTED');
   expect(evidence.decisions[0]?.reasonCode).not.toBe('MODEL_UNAVAILABLE');
   expect(evidence.outbound).toHaveLength(1);
   expect(evidence.recordedLinks).toEqual([]);
@@ -242,7 +253,7 @@ it('asks which courses to compare after the exact twice-rejected production ques
 });
 
 
-it('preserves accepted identity when a twice-rejected reply gets a system notice, then continues on the next turn', async () => {
+it('preserves identity and an authorized call while Agent A repairs rejected prose', async () => {
   const id = { conversationId: `known-phone-${randomUUID()}`, userId: randomUUID(),
     phoneE164: `+999${String(Date.now()).slice(-10)}`, providerMode: 'fixture' as const };
   respond = () => proposal('Hola. ¿En qué te ayudo?', {
@@ -262,47 +273,39 @@ it('preserves accepted identity when a twice-rejected reply gets a system notice
   respond = context => {
     generations += 1;
     expect(context.customer.contact_intake?.telefono).toBe(channelPhone);
-    if (context.turn_rejection) expect(context.customer.contact_intake)
-      .toMatchObject({ nombre: 'Ana', apellido: 'Costa', correo: 'ana.costa@example.test' });
+    if (context.turn_rejection) {
+      expect(context.customer.contact_intake).toMatchObject({
+        nombre: 'Ana', apellido: 'Costa', correo: 'ana.costa@example.test', telefono: channelPhone,
+      });
+      expect(context.turn_rejection.authorized_alternatives.actions).toContain('request_call_now');
+      return proposal('Gracias, Ana. Te llamo ahora.', {
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+      });
+    }
     return proposal('Me falta tu teléfono para coordinar la llamada.', {
-      move: context.turn_rejection
-        ? { schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 1 }
-        : { schema_version: 1, move: 'request_call', secondary_moves: ['provide_contact_details'], vetoes: [], confidence: 1 },
-      profile_updates: context.turn_rejection ? [] : contactFixtureUpdatesV1(context, [
+      move: { schema_version: 1, move: 'request_call', secondary_moves: ['provide_contact_details'], vetoes: [], confidence: 1 },
+      proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+      profile_updates: contactFixtureUpdatesV1(context, [
         { field: 'nombre', value: 'Ana' }, { field: 'apellido', value: 'Costa' },
         { field: 'correo', value: 'ana.costa@example.test' }]),
       profile_requests: [{ message_index: 0, fields: ['telefono'], purpose: 'call',
-        mode: context.turn_rejection ? 'clarify' : 'collect' }],
+        mode: 'collect' }],
     });
   };
   try {
     const first = await runWorkflowTurnV1({ ...id, text });
     expect(generations).toBe(2);
-    expect(first.authorizedMessages).toEqual([
-      'No quiero darte información incorrecta. Dime qué dato o qué curso quieres confirmar y lo revisamos por aquí.',
-    ]);
+    expect(first.authorizedMessages).toEqual(['Gracias, Ana. Te llamo ahora.']);
     expect(first.commitSucceeded).toBe(true);
     expect(first.errorCode).toBeNull();
     expect(child).not.toHaveBeenCalled();
     const [contact] = await db`SELECT id, name, email FROM contacts WHERE phone = ${id.phoneE164}`;
     expect(contact).toMatchObject({ name: 'Ana Costa', email: 'ana.costa@example.test' });
-    expect(await db`SELECT id FROM call_sessions WHERE contact_id = ${contact!.id}::uuid`).toHaveLength(0);
-    respond = context => {
-      expect(context.turn_rejection).toBeUndefined();
-      expect(context.customer.contact_intake).toMatchObject({ nombre: 'Ana', apellido: 'Costa',
-        correo: 'ana.costa@example.test', telefono: channelPhone });
-      return proposal('Gracias, Ana. Puedes atender una llamada ahora?', {
-        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
-      });
-    };
-    const resumed = await runWorkflowTurnV1({ ...id, text: '¿Me puedes llamar ahora?' });
-    expect(resumed.errorCode).toBeNull();
-    expect(resumed.authorizedMessages).toEqual(['Gracias, Ana. Puedes atender una llamada ahora?']);
+    expect(await db`SELECT id FROM call_sessions WHERE contact_id = ${contact!.id}::uuid`).toHaveLength(1);
     const evidence = await readWorkflowDbEvidenceV1({ databaseUrl, externalConversationId: id.conversationId });
-    expect(evidence.decisions.filter(decision => decision.turnId === first.turnId))
-      .toMatchObject([{ reasonCode: 'AGENT_A_VALIDATION_EXHAUSTED' }]);
-    expect(evidence.state?.awaitingReply).toBe('call_or_chat');
-    expect(await db`SELECT id FROM call_sessions WHERE contact_id = ${contact!.id}::uuid`).toHaveLength(0);
+    expect(evidence.decisions.filter(decision => decision.turnId === first.turnId)[0]?.reasonCode)
+      .not.toBe('AGENT_A_VALIDATION_EXHAUSTED');
     const duplicate = await runWorkflowTurnV1({ ...id, text,
       externalMessageId: first.externalMessageId, occurredAt: first.occurredAt });
     expect(duplicate.authorizedMessages).toEqual([]);

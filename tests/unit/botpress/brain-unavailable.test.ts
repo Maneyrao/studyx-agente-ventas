@@ -10,7 +10,7 @@ const workflowSource = readFileSync(
 /**
  * When the model owns the copy, a provider outage does not license another
  * component to invent sales prose. Both model-owned routes use the same
- * neutral continuity acknowledgement instead of lexical or catalog-authored
+ * durable recovery instead of lexical, catalog-authored, or canned technical
  * sales substitutes.
  * The conversation-pipeline route used to disagree — it called
  * `modelUnavailableFallback`, a nine-regex engine over the customer's own text
@@ -18,14 +18,16 @@ const workflowSource = readFileSync(
  * for the same event is the defect; these tests pin them together.
  */
 describe('brain unavailable is one behaviour, not two', () => {
-  it('uses no backend-authored state or catalog reply before continuity acknowledgement', () => {
+  it('uses no backend-authored state or catalog reply in Agent A recovery', () => {
     const stateFallbacks = workflowSource.match(/policyRejectedStateFallback\(owned\)/gu);
     const canonicalFallbacks = workflowSource.match(/routeCanonicalCatalogFailureFallback\(owned\)/gu);
     const technicalAcknowledgements = workflowSource.match(/technicalFallback\(/gu);
 
     expect(stateFallbacks).toBeNull();
     expect(canonicalFallbacks).toBeNull();
-    expect(technicalAcknowledgements?.length ?? 0).toBeGreaterThanOrEqual(2);
+    expect(technicalAcknowledgements).toHaveLength(1);
+    expect(workflowSource).toContain("decision.reason_code === 'AGENT_A_CONTINUATION_REJECTED'");
+    expect(workflowSource).toContain('return recoverRejectedTurn()');
   });
 
   it('never routes a brain failure into the lexical fallback engine', () => {

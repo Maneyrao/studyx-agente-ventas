@@ -55,8 +55,15 @@ describe('post-sale trigger', () => {
     expect(request.input).toContain('Marketing Digital');
   });
 
-  it('delivers a bounded safe fallback when Agent A is temporarily unavailable', async () => {
+  it('releases the durable notification without backend-authored prose when Agent A is temporarily unavailable', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('provider unavailable'));
+    requestStudyxJson.mockReset()
+      .mockResolvedValueOnce({
+        claimed: true, claim_token: claimToken, kind: 'access_ready',
+        academy_name: 'StudyX', offering_name: 'Marketing Digital', customer_first_name: 'Thiago',
+        existing_user: false, new_user: true, history: [],
+      })
+      .mockResolvedValueOnce({ outcome: 'released' });
     const handler = (postSaleTrigger as unknown as {
       definition: { handler: (input: Record<string, unknown>) => Promise<void> };
     }).definition.handler;
@@ -65,11 +72,9 @@ describe('post-sale trigger', () => {
 
     expect(requestStudyxJson).toHaveBeenCalledTimes(2);
     expect(requestStudyxJson.mock.calls[1]?.[0]).toMatchObject({
-      path: `/api/agent/post-sale/${notificationId}/deliver`,
-      body: { narrative: {
-        intro: expect.stringContaining('Marketing Digital'),
-        suggestion: expect.stringContaining('puedes cambiar tu contraseña'),
-      } },
+      path: `/api/agent/post-sale/${notificationId}/release`,
+      body: { claim_token: claimToken },
     });
+    expect(requestStudyxJson.mock.calls.some(([request]) => request.path.endsWith('/deliver'))).toBe(false);
   });
 });

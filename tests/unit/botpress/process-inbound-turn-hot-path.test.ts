@@ -1113,7 +1113,7 @@ describe('processInboundTurn hot path', () => {
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
   });
 
-  it('sends one explicit system notice after a twice-rejected backend commit without claiming a provider outage', async () => {
+  it('asks Agent A for one final fenced correction after a twice-rejected backend commit', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -1173,6 +1173,25 @@ describe('processInboundTurn hot path', () => {
           },
         },
         provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 160, attempt_count: 1,
+      }))
+      .mockImplementationOnce(async (input: {
+        context: { turn_rejection: { rejection_id: string } | null };
+      }) => ({
+        proposal: {
+          schema_version: 1,
+          move: {
+            schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
+            course_reference: 'redes-informaticas', confidence: 0.98,
+          },
+          response: { messages: ['Dime qué te interesa saber y lo vemos con la información confirmada.'], call_offer: null },
+          proposed_action: { type: 'none' },
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+          repair_of: {
+            rejection_id: input.context.turn_rejection!.rejection_id,
+            attempt: 1,
+          },
+        },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 140, attempt_count: 1,
       }));
 
     actionSpies.commit
@@ -1193,10 +1212,10 @@ describe('processInboundTurn hot path', () => {
         decision_id: UUID, next_state: 'waiting_user',
         outbound: {
           id: UUID,
-          content: 'No quiero darte información incorrecta. Dime qué dato o qué curso quieres confirmar y lo revisamos por aquí.',
+          content: 'Dime qué te interesa saber y lo vemos con la información confirmada.',
           status: 'pending', delivery_attempt: 1,
           authorized_egress: { schema_version: 1,
-            content_hash: '5bff74a7483919bebeac60b35c4edab839e399ef134346f5d03a985033267bb1',
+            content_hash: 'cd2efe47a82adb45e3ae42d0d7ceadc8925f069788e34c4a788560fa35b11398',
             authorized_urls: [], protected_facts: [] },
         },
         call_request: null,
@@ -1219,19 +1238,19 @@ describe('processInboundTurn hot path', () => {
 
     const result = await run();
     expect(actionSpies.recovery).not.toHaveBeenCalled();
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(3);
     expect(actionSpies.commit).toHaveBeenCalledTimes(3);
     expect(actionSpies.commit.mock.calls[2]?.[0]?.input).toMatchObject({
-      agent_turn_v2: null,
-      decision: {
-        kind: 'reply',
-        response: 'No quiero darte información incorrecta. Dime qué dato o qué curso quieres confirmar y lo revisamos por aquí.',
-        response_type: 'commercial_reply',
-        reason_code: 'AGENT_A_VALIDATION_EXHAUSTED', business_action: null,
+      agent_turn_v2: {
+        proposal: {
+          response: { messages: ['Dime qué te interesa saber y lo vemos con la información confirmada.'] },
+          proposed_action: { type: 'none' },
+        },
       },
-      turn_diagnostics: { failure_stage: 'backend_commit', action_status: 'rejected' },
+      turn_diagnostics: { generation_attempts: 3, failure_stage: 'backend_commit', action_status: 'none' },
     });
     expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({ payload: {
-      text: 'No quiero darte información incorrecta. Dime qué dato o qué curso quieres confirmar y lo revisamos por aquí.',
+      text: 'Dime qué te interesa saber y lo vemos con la información confirmada.',
     } }));
     expect(result).toMatchObject({ status: 'waiting_user', decision_id: UUID,
       delivery_status: 'submitted_to_botpress', error_code: null });
@@ -1330,7 +1349,7 @@ describe('processInboundTurn hot path', () => {
     }
   });
 
-  it('uses a technical notice only when Agent A continuation actually times out', async () => {
+  it('durably retries instead of sending backend prose when Agent A continuation times out', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
@@ -1405,20 +1424,12 @@ describe('processInboundTurn hot path', () => {
       workflow: { id: 'workflow-test' },
     });
 
-    expect(actionSpies.commit).toHaveBeenCalledTimes(2);
+    expect(actionSpies.commit).toHaveBeenCalledTimes(1);
     expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
-    expect(actionSpies.commit.mock.calls[1]?.[0]?.input).toMatchObject({
-      agent_turn_v2: null,
-      decision: {
-        response: 'No quiero suponer algo incorrecto. Dime qué necesitas o a qué curso te refieres y lo resolvemos por aquí.',
-        business_action: null,
-        reason_code: 'MODEL_UNAVAILABLE',
-      },
-    });
-    expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
-    expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({
-      payload: { text: 'No quiero suponer algo incorrecto. Dime qué necesitas o a qué curso te refieres y lo resolvemos por aquí.' },
-    }));
+    expect(actionSpies.recovery).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ status: 'retry_pending', delivery_status: null,
+      error_code: 'AGENT_A_CONTINUATION_REJECTED' });
+    expect(createMessage).not.toHaveBeenCalled();
   });
 
   it('never labels a twice-rejected factual answer as MODEL_UNAVAILABLE', async () => {
@@ -1453,7 +1464,9 @@ describe('processInboundTurn hot path', () => {
       ],
       authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: [] },
     } as const;
-    actionSpies.agentABrainValidate.mockReturnValue(rejection);
+    actionSpies.agentABrainValidate.mockImplementation(({ proposal }: {
+      proposal: { response: { messages: string[] } };
+    }) => proposal.response.messages[0]?.startsWith('Claro.') ? null : rejection);
     actionSpies.agentABrainDeepSeek.mockReset()
       .mockResolvedValueOnce({
         proposal: {
@@ -1475,6 +1488,17 @@ describe('processInboundTurn hot path', () => {
           repair_of: { rejection_id: input.context.turn_rejection.rejection_id, attempt: 1 },
         },
         provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 90, attempt_count: 1,
+      }))
+      .mockImplementationOnce(async (input: { context: { turn_rejection: { rejection_id: string } } }) => ({
+        proposal: {
+          schema_version: 1,
+          move: { schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
+            course_reference: 'redes-informaticas', confidence: 0.95 },
+          response: { messages: ['Claro. Dime qué aspecto del curso quieres revisar.'], call_offer: null },
+          proposed_action: { type: 'none' }, used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+          repair_of: { rejection_id: input.context.turn_rejection.rejection_id, attempt: 1 },
+        },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 80, attempt_count: 1,
       }));
 
     const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
@@ -1487,21 +1511,22 @@ describe('processInboundTurn hot path', () => {
       execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }), client: {},
       signal: new AbortController().signal, workflow: { id: 'workflow-test' } });
 
-    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(3);
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      agent_turn_v2: null,
-      decision: {
-        kind: 'reply',
-        reason_code: 'AGENT_A_VALIDATION_EXHAUSTED',
-        response: 'No quiero darte información incorrecta. Dime qué dato o qué curso quieres confirmar y lo revisamos por aquí.',
+      agent_turn_v2: {
+        proposal: {
+          response: { messages: ['Claro. Dime qué aspecto del curso quieres revisar.'] },
+          proposed_action: { type: 'none' },
+        },
       },
       turn_diagnostics: {
+        generation_attempts: 3,
         failure_stage: 'proposal_validation',
-        action_status: 'rejected',
+        action_status: 'none',
       },
     });
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input?.decision?.reason_code)
-      .not.toBe('MODEL_UNAVAILABLE');
+      .toBe('CONVERSATION_PIPELINE_V1_PENDING_BACKEND');
   });
 
   it('lets Agent A recover an unreadable input instead of forcing a technical fallback', async () => {
@@ -1759,23 +1784,17 @@ describe('processInboundTurn hot path', () => {
       definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
     }).definition.handler;
 
-    await handler({
+    const result = await handler({
       input: workflowInput(), state: processingState(), step, execute, client: {},
       signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
     expect(actionSpies.plan).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();
-    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      conversation_pipeline_v1: null,
-      decision: {
-        kind: 'reply',
-        response: 'No quiero suponer algo incorrecto. Dime qué necesitas o a qué curso te refieres y lo resolvemos por aquí.',
-        response_type: 'commercial_reply',
-        reason_code: 'MODEL_UNAVAILABLE',
-        business_action: null,
-      },
-    });
+    expect(actionSpies.commit).not.toHaveBeenCalled();
+    expect(actionSpies.recovery).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ status: 'retry_pending', delivery_status: null,
+      error_code: 'AGENT_A_CONTINUATION_REJECTED' });
     const brainLog = vi.mocked(console.info).mock.calls
       .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
       .find((entry) => entry.event === 'studyx.turn.agent_a_brain_v1');
@@ -1837,25 +1856,16 @@ describe('processInboundTurn hot path', () => {
       definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
     }).definition.handler;
 
-    await handler({
+    const result = await handler({
       input: workflowInput(), state: processingState(), step,
       execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
       client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
-    expect(actionSpies.recovery).not.toHaveBeenCalled();
-    expect(actionSpies.commit).toHaveBeenCalledTimes(1);
-    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      conversation_pipeline_v1: null,
-      agent_turn_v2: null,
-      decision: {
-        kind: 'reply',
-        response: 'No quiero darte información incorrecta. Dime qué dato o qué curso quieres confirmar y lo revisamos por aquí.',
-        response_type: 'commercial_reply',
-        reason_code: 'AGENT_A_VALIDATION_EXHAUSTED',
-        business_action: null,
-      },
-    });
+    expect(actionSpies.recovery).toHaveBeenCalledTimes(1);
+    expect(actionSpies.commit).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: 'retry_pending', delivery_status: null,
+      error_code: 'AGENT_A_CONTINUATION_REJECTED' });
   });
 
   it('retries one transient DeepSeek timeout before committing the model reply', async () => {
@@ -1956,7 +1966,7 @@ describe('processInboundTurn hot path', () => {
       definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
     }).definition.handler;
 
-    await handler({
+    const result = await handler({
       input: workflowInput(), state: processingState(), step,
       execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
       client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
@@ -1964,18 +1974,10 @@ describe('processInboundTurn hot path', () => {
 
     expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
     expect(actionSpies.agentABrainGemini).not.toHaveBeenCalled();
-    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      turn_diagnostics: {
-        generation_attempts: 2,
-        failure_stage: 'provider_generation',
-        failure_codes: ['BRAIN_DEEPSEEK_TIMEOUT'],
-      },
-      decision: {
-        response: 'No quiero suponer algo incorrecto. Dime qué necesitas o a qué curso te refieres y lo resolvemos por aquí.',
-        reason_code: 'MODEL_UNAVAILABLE',
-      },
-      model: { provider: 'botpress', model: 'policy:conversation-pipeline-v1-unavailable' },
-    });
+    expect(actionSpies.commit).not.toHaveBeenCalled();
+    expect(actionSpies.recovery).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ status: 'retry_pending', delivery_status: null,
+      error_code: 'AGENT_A_CONTINUATION_REJECTED' });
   });
 
   it('does not use Botpress managed extraction when DeepSeek fails', async () => {
@@ -2024,22 +2026,17 @@ describe('processInboundTurn hot path', () => {
       definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
     }).definition.handler;
 
-    await handler({
+    const result = await handler({
       input: workflowInput(), state: processingState(), step, execute, client: {},
       signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
     expect(execute).not.toHaveBeenCalled();
     expect(actionSpies.agentABrainOpenAI).not.toHaveBeenCalled();
-    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      conversation_pipeline_v1: null,
-      decision: {
-        kind: 'reply',
-        response: 'No quiero suponer algo incorrecto. Dime qué necesitas o a qué curso te refieres y lo resolvemos por aquí.',
-        reason_code: 'MODEL_UNAVAILABLE',
-        next_state: 'waiting_user',
-      },
-    });
+    expect(actionSpies.commit).not.toHaveBeenCalled();
+    expect(actionSpies.recovery).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ status: 'retry_pending', delivery_status: null,
+      error_code: 'AGENT_A_CONTINUATION_REJECTED' });
   });
 
   it('does not publish a backend-edited subset when the legacy planner rejects Agent A', async () => {
@@ -2096,31 +2093,16 @@ describe('processInboundTurn hot path', () => {
       definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
     }).definition.handler;
 
-    await handler({
+    const result = await handler({
       input: workflowInput(), state: processingState(), step, execute, client: {},
       signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
     expect(execute).not.toHaveBeenCalled();
-    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      conversation_pipeline_v1: null,
-      turn_diagnostics: {
-        generation_attempts: 1,
-        failure_stage: 'proposal_validation',
-        action_status: 'rejected',
-      },
-      decision: {
-        kind: 'reply',
-        response: 'No quiero suponer algo incorrecto. Dime qué necesitas o a qué curso te refieres y lo resolvemos por aquí.',
-        response_type: 'commercial_reply',
-        reason_code: 'MODEL_UNAVAILABLE',
-        business_action: null,
-        memory_candidates: [],
-      },
-      model: { provider: 'botpress', model: 'policy:conversation-pipeline-v1-unavailable' },
-    });
-    expect(actionSpies.commit.mock.calls[0]?.[0]?.input.decision.response)
-      .not.toContain('tecnología');
+    expect(actionSpies.commit).not.toHaveBeenCalled();
+    expect(actionSpies.recovery).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ status: 'retry_pending', delivery_status: null,
+      error_code: 'AGENT_A_CONTINUATION_REJECTED' });
   });
 
   it('does not use a managed model when DeepSeek is rate limited', async () => {
@@ -2171,7 +2153,7 @@ describe('processInboundTurn hot path', () => {
       definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
     }).definition.handler;
 
-    await handler({
+    const result = await handler({
       input: workflowInput(), state: processingState(), step, execute, client: {},
       signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
@@ -2179,15 +2161,10 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
     expect(execute).not.toHaveBeenCalled();
     expect(actionSpies.plan).not.toHaveBeenCalled();
-    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      conversation_pipeline_v1: null,
-      decision: {
-        kind: 'reply',
-        response: 'No quiero suponer algo incorrecto. Dime qué necesitas o a qué curso te refieres y lo resolvemos por aquí.',
-        reason_code: 'MODEL_UNAVAILABLE',
-        next_state: 'waiting_user',
-      },
-    });
+    expect(actionSpies.commit).not.toHaveBeenCalled();
+    expect(actionSpies.recovery).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ status: 'retry_pending', delivery_status: null,
+      error_code: 'AGENT_A_CONTINUATION_REJECTED' });
   });
 
   it('ignores an OpenAI secret and keeps DeepSeek as the authoritative brain', async () => {
@@ -2385,7 +2362,7 @@ describe('processInboundTurn hot path', () => {
       definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
     }).definition.handler;
 
-    await handler({
+    const result = await handler({
       input: workflowInput(), state: processingState(), step, execute, client: {},
       signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
@@ -2395,15 +2372,10 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.agentABrain).not.toHaveBeenCalled();
     expect(actionSpies.agentABrainGemini).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();
-    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      conversation_pipeline_v1: null,
-      agent_turn_v2: null,
-      decision: {
-        kind: 'reply',
-        response: 'No quiero suponer algo incorrecto. Dime qué necesitas o a qué curso te refieres y lo resolvemos por aquí.',
-        reason_code: 'MODEL_UNAVAILABLE',
-      },
-    });
+    expect(actionSpies.commit).not.toHaveBeenCalled();
+    expect(actionSpies.recovery).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ status: 'retry_pending', delivery_status: null,
+      error_code: 'AGENT_A_CONTINUATION_REJECTED' });
   });
 
   it('binds the backend-resolved current course before planning a fluent brain reply', async () => {
@@ -2586,21 +2558,16 @@ describe('processInboundTurn hot path', () => {
       definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
     }).definition.handler;
 
-    await handler({
+    const result = await handler({
       input: workflowInput(), state: processingState(), step, execute, client: {},
       signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
     expect(actionSpies.plan).not.toHaveBeenCalled();
-    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      conversation_pipeline_v1: null,
-      decision: {
-        kind: 'reply',
-        response: 'No quiero suponer algo incorrecto. Dime qué necesitas o a qué curso te refieres y lo resolvemos por aquí.',
-        reason_code: 'MODEL_UNAVAILABLE',
-        next_state: 'waiting_user',
-      },
-    });
+    expect(actionSpies.commit).not.toHaveBeenCalled();
+    expect(actionSpies.recovery).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ status: 'retry_pending', delivery_status: null,
+      error_code: 'AGENT_A_CONTINUATION_REJECTED' });
   });
 
   it('lets a greeting reach the planner under the V1 pipeline instead of a canned answer', async () => {
@@ -3912,18 +3879,16 @@ describe('processInboundTurn hot path', () => {
       definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
     }).definition.handler;
 
-    await handler({
+    const result = await handler({
       input: workflowInput(), state: processingState(), step,
       execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
       client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
-    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      agent_turn_v2: null,
-      decision: {
-        reason_code: 'MODEL_UNAVAILABLE',
-      },
-    });
+    expect(actionSpies.commit).not.toHaveBeenCalled();
+    expect(actionSpies.recovery).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ status: 'retry_pending', delivery_status: null,
+      error_code: 'AGENT_A_CONTINUATION_REJECTED' });
   });
 
   it('routes call_accepted_offer through authoritative Agent A before requesting the call', async () => {
@@ -4143,7 +4108,7 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.dispatch).not.toHaveBeenCalled();
   });
 
-  it.each(['policy', 'schema', 'timeout', 'spent_budget'])('keeps safe Agent A prose and semantic state when optional continuation fails: %s', async failure => {
+  it.each(['policy', 'schema', 'timeout', 'prior_provider_retry'])('keeps safe Agent A prose and semantic state when optional continuation fails: %s', async failure => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
       agent_a_brain_v1_enabled: true, agent_a_brain_v1_shadow: false };
@@ -4166,14 +4131,14 @@ describe('processInboundTurn hot path', () => {
     const safeText = 'Podemos coordinarla. Me pasas tu teléfono con código de país?';
     actionSpies.agentABrainDeepSeek.mockReset().mockImplementationOnce(async ({ on_provider_request }: { on_provider_request?: () => void }) => {
       on_provider_request?.();
-      if (failure === 'spent_budget') on_provider_request?.();
+      if (failure === 'prior_provider_retry') on_provider_request?.();
       return { proposal: { schema_version: 1,
         move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
         response: { messages: [safeText], call_offer: null },
         proposed_action: { type: 'request_call_now', reason: 'direct_request' },
         used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null },
         provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1,
-        attempt_count: failure === 'spent_budget' ? 2 : 1 };
+        attempt_count: failure === 'prior_provider_retry' ? 2 : 1 };
     }).mockRejectedValueOnce(new Error(failure === 'policy'
       ? 'PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:continuation'
       : failure === 'schema' ? 'BRAIN_INVALID_SCHEMA' : 'BRAIN_DEEPSEEK_TIMEOUT'));
@@ -4186,7 +4151,7 @@ describe('processInboundTurn hot path', () => {
     await handler({ input: workflowInput(), state: processingState(), step,
       execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }), client: {},
       signal: new AbortController().signal, workflow: { id: 'workflow-test' } });
-    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(failure === 'spent_budget' ? 1 : 2);
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       agent_turn_v2: { conversation_only: true,
         proposal: {

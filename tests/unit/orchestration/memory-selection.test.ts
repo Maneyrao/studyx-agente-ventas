@@ -126,20 +126,27 @@ describe('evaluateMemoryCandidate — anti-hallucination', () => {
     expect(result).toMatchObject({ status: 'rejected', reason: 'QUOTE_NOT_FOUND' });
   });
 
-  it('rejects a value whose content is absent from its own quote', () => {
+  it('stores the exact customer quote instead of an ungrounded model paraphrase', () => {
     const result = evaluateMemoryCandidate(
       candidate({ value: 'tiene presupuesto de 500 dolares' }),
       contextWith('Quiero rendir el final de anatomía en marzo')
     );
-    expect(result).toMatchObject({ status: 'rejected', reason: 'VALUE_NOT_GROUNDED' });
+    expect(result).toMatchObject({
+      status: 'accepted',
+      memory: { value: 'quiero rendir el final de anatomia en marzo' },
+    });
   });
 
-  it('rejects a value that adds a number the customer never wrote', () => {
+  it('drops a number the customer never wrote by storing the exact quote', () => {
     const result = evaluateMemoryCandidate(
       candidate({ value: 'rendir 3 finales en marzo' }),
       contextWith('Quiero rendir el final de anatomía en marzo')
     );
-    expect(result).toMatchObject({ status: 'rejected', reason: 'VALUE_NOT_GROUNDED' });
+    expect(result).toMatchObject({
+      status: 'accepted',
+      memory: { value: 'quiero rendir el final de anatomia en marzo' },
+    });
+    if (result.status === 'accepted') expect(result.memory.value).not.toContain('3');
   });
 
   it('rejects a quote borrowed from another contact conversation', () => {

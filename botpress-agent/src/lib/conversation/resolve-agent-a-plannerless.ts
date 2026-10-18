@@ -157,6 +157,38 @@ function validatePlannerless(input: {
           },
         }
   }
+  if (rejection !== null) {
+    const actionRejected = rejection.rejections.some((reason) => (
+      reason.code === 'ACTION_NOT_AUTHORIZED'
+      && reason.subject === action.type
+    ))
+    const callIdentityMissing = rejection.rejections.some((reason) => (
+      reason.code === 'MISSING_INTAKE'
+      && ['nombre', 'apellido', 'telefono'].includes(reason.subject)
+    ))
+    const independentlyAuthorizedAction = action.type === 'request_call_now'
+      && input.context.capabilities.may_request_call_now
+      && input.context.capabilities.intake_status === 'known'
+      && (input.context.capabilities.intake_missing ?? []).length === 0
+      && !actionRejected
+      && !callIdentityMissing
+        ? 'request_call_now'
+        : action.type === 'send_payment_link' && paymentTransitionAuthorized
+          ? 'send_payment_link'
+          : null
+    if (independentlyAuthorizedAction !== null) {
+      rejection = {
+        ...rejection,
+        authorized_alternatives: {
+          ...rejection.authorized_alternatives,
+          actions: [...new Set([
+            ...rejection.authorized_alternatives.actions,
+            independentlyAuthorizedAction,
+          ])],
+        },
+      }
+    }
+  }
   return rejection === null ? null : {
     ...rejection,
     authorized_alternatives: {
@@ -507,6 +539,18 @@ export async function resolveAgentAPlannerlessProposalV2<
         semantic_rejections: input.semantic_rejections ?? 'blocking',
       })
       if (repaired.rejection === null) {
+        // The first draft may have had an action-specific rejection that the
+        // continuation has now corrected. Carrying that stale receipt forward
+        // makes the workflow erase the repaired, independently authorized
+        // call/payment effect and then reject Agent A's truthful wording at
+        // the backend boundary.
+        const repairedActionRejection = repaired.effective.proposal.proposed_action.type === 'none'
+          ? initialActionRejection
+          : actionRejectionV1(
+              repaired.effective.proposal,
+              repaired.originalRejection,
+              input.context,
+            )
         return {
           effective: repaired.effective,
           evidence: {
@@ -514,7 +558,7 @@ export async function resolveAgentAPlannerlessProposalV2<
             repair_attempted: true, repaired: true, proposal_generation_calls: 2,
           },
           rejection: originalRejection,
-          action_rejection: initialActionRejection,
+          action_rejection: repairedActionRejection,
         }
       }
       terminalRejection = repaired.rejection

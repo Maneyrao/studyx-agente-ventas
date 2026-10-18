@@ -767,7 +767,7 @@ export type AuthorizedEgress = z.infer<typeof AuthorizedEgressSchema>
 
 export const TurnDiagnosticsV1Schema = z.object({
   schema_version: z.literal(1),
-  generation_attempts: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+  generation_attempts: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
   failure_stage: z.enum([
     'none',
     'provider_generation',

@@ -1,5 +1,6 @@
 import { commitDecisionWithRejectionReceiptV1, backendDecisionRejectionReason, backendDecisionRejectionSubjects } from '../lib/delivery/commit-decision-receipt'
 import { eligibleContactRequestFieldsV1 } from '../lib/conversation/contact-profile-request-policy'
+import { scheduleTurnRecovery } from '../actions/scheduleTurnRecovery'
 import { bindRecoveryFeedbackV1 } from '../lib/conversation/recovery-feedback'
 import { captureContactProfile, ContactProfileReceiptSchema } from '../actions/captureContactProfile'
 import { randomUUID } from 'node:crypto'
@@ -41,7 +42,6 @@ import {
   constrainModelToAdvisory,
   suppress,
   technicalFallback,
-  validationExhaustedNotice,
   modelUnavailableFallback,
 } from '../utils/decision-policy'
 import {
@@ -809,6 +809,7 @@ export const processInboundTurn = new Workflow({
       feedback: input.recovery_feedback, batch_id: owned.batch.id,
       conversation_id: owned.batch.conversation_id, turn_id: owned.turn_id, context: agentABrainContext,
     }) : null
+    let latestRejection: TurnRejectionV1 | null = resumedRejection
     if (agentABrainContext && resumedRejection) agentABrainContext.turn_rejection = resumedRejection
     if (agentABrainContext) {
       safeLog('studyx.turn.agent_a_context_built', {
@@ -855,15 +856,15 @@ export const processInboundTurn = new Workflow({
     let pipelinePromptVersion = `${CONVERSATION_INTERPRETER_PROMPT_VERSION}+${CONVERSATION_COMPOSER_PROMPT_VERSION}+${STUDYX_SALES_BEHAVIOR_VERSION}`
     let pipelineMemoryCandidates: Decision['memory_candidates'] = []
     let turnDiagnostics: TurnDiagnosticsV1 | null = null
-    let agentAGenerationAttempts: 0 | 1 | 2 = 0
+    let agentAGenerationAttempts: 0 | 1 | 2 | 3 = 0
     let physicalAgentARequests = 0
     let agentAConversationOnly = resumedRejection !== null
     const accountAgentAProviderRequest = () => {
-      if (physicalAgentARequests >= 2) {
+      if (physicalAgentARequests >= 3) {
         throw new Error('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:generation_budget')
       }
       physicalAgentARequests += 1
-      agentAGenerationAttempts = Math.max(agentAGenerationAttempts, physicalAgentARequests) as 1 | 2
+      agentAGenerationAttempts = Math.max(agentAGenerationAttempts, physicalAgentARequests) as 1 | 2 | 3
     }
     let agentARepairAttempted = false
     let agentAContinuationFailure: unknown = null
@@ -1026,7 +1027,7 @@ export const processInboundTurn = new Workflow({
         // envelope still accounts for provider requests made before the crash.
         physicalAgentARequests = Math.max(physicalAgentARequests,
           generatedAttempt.attempts, generatedAttempt.value.attempt_count ?? 1)
-        agentAGenerationAttempts = physicalAgentARequests as 1 | 2
+        agentAGenerationAttempts = physicalAgentARequests as 1 | 2 | 3
         turnDiagnostics = {
           schema_version: 1,
           generation_attempts: agentAGenerationAttempts,
@@ -1084,12 +1085,14 @@ export const processInboundTurn = new Workflow({
               semantic_rejections: 'advisory',
               rejection_id: randomUUID(),
               repair: async (rejection) => {
-                if (agentAGenerationAttempts >= 2) {
+                if (agentAGenerationAttempts >= 3) {
                   throw new Error('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:generation_budget')
                 }
                 agentARepairAttempted = true
-                agentAConversationOnly = true
-                agentAGenerationAttempts = 2
+                const repairEffectsAllowed = rejection.authorized_alternatives.actions
+                  .some((action) => action !== 'none')
+                agentAConversationOnly = !repairEffectsAllowed
+                agentAGenerationAttempts = Math.max(agentAGenerationAttempts, 2) as 2 | 3
                 if (typeof secrets.DEEPSEEK_API_KEY !== 'string'
                   || secrets.DEEPSEEK_API_KEY.length === 0) {
                   throw new Error('DEEPSEEK_API_KEY_MISSING')
@@ -1101,6 +1104,7 @@ export const processInboundTurn = new Workflow({
                     context: agentABrainContext,
                     on_provider_request: accountAgentAProviderRequest,
                     rejection,
+                    effects_allowed: repairEffectsAllowed,
                     apiKey: secrets.DEEPSEEK_API_KEY as string,
                     signal,
                     generate: generateDeepSeekAgentATurnProposalV1,
@@ -1121,10 +1125,10 @@ export const processInboundTurn = new Workflow({
             let effectiveGenerated = resolved.effective
             if (resolved.action_rejection !== null) agentAConversationOnly = true
             if (resolved.action_rejection !== null && resolved.rejection !== null
-              && !resolved.evidence.repair_attempted && agentAGenerationAttempts < 2) {
+              && !resolved.evidence.repair_attempted && agentAGenerationAttempts < 3) {
               agentARepairAttempted = true
               agentAConversationOnly = true
-              agentAGenerationAttempts = 2
+              agentAGenerationAttempts = Math.max(agentAGenerationAttempts, 2) as 2 | 3
               try {
               effectiveGenerated = await step('continue-agent-a-after-authorization-result-v2',
                 () => continueAgentAAfterActionFeedbackV1({
@@ -1137,7 +1141,8 @@ export const processInboundTurn = new Workflow({
                 }), { maxAttempts: 1 })
               await persistProfileProposal(effectiveGenerated.proposal, resolved.rejection!)
               turnDiagnostics = {
-                schema_version: 1, generation_attempts: 2, failure_stage: 'action_authorization',
+                schema_version: 1, generation_attempts: agentAGenerationAttempts,
+                failure_stage: 'action_authorization',
                 failure_codes: resolved.action_rejection.codes.slice(0, 8), action_status: 'needs_input',
               }
               } catch (continuationError) {
@@ -1259,11 +1264,7 @@ export const processInboundTurn = new Workflow({
                   : ['UNKNOWN_ERROR'],
                 action_status: 'rejected',
               }
-              pipelineFailureDecision = technicalFallback(
-                owned.policy.allowed_response_types.includes('technical_fallback')
-                  ? 'technical_fallback'
-                  : 'commercial_reply',
-              )
+            pipelineFailureDecision = suppress('AGENT_A_CONTINUATION_REJECTED')
               safeLog('studyx.turn.agent_a_brain_v1', {
                 trace_id: input.trace_id,
                 turn_id: owned.turn_id,
@@ -1399,18 +1400,15 @@ export const processInboundTurn = new Workflow({
         if (brainAuthoritative) {
           if (!isAgentAProviderFailure(attemptFailure)) {
             // A policy/schema rejection is not a provider outage. If Agent A's
-            // single bounded correction is also invalid, persist the exact
+            // bounded corrections are also invalid, persist the exact
             // diagnostic without inventing a customer-facing backend reply.
-            pipelineFailureDecision = validationExhaustedNotice(
-              owned.policy.allowed_response_types.includes('technical_fallback')
-                ? 'technical_fallback' : 'commercial_reply',
-              { claimed: owned, failure_codes: turnDiagnostics.failure_codes },
-            )
-            if (agentAGenerationAttempts < 2 && typeof secrets.DEEPSEEK_API_KEY === 'string') {
-              agentAGenerationAttempts = 2
+            pipelineFailureDecision = suppress('AGENT_A_CONTINUATION_REJECTED')
+            if (agentAGenerationAttempts < 3 && typeof secrets.DEEPSEEK_API_KEY === 'string') {
+              agentAGenerationAttempts = 3
               try {
                 const profileRejection = plannerlessActionFeedbackV1({ failure_code: failureCode,
                   context: agentABrainContext, rejection_id: randomUUID() })
+                latestRejection = profileRejection
                 const continuation = await step('continue-agent-a-after-action-feedback-v1',
                   () => continueAgentAAfterActionFeedbackV1({
                     context: agentABrainContext,
@@ -1428,24 +1426,22 @@ export const processInboundTurn = new Workflow({
                 pipelineDecisionModel = continuation.model
                 pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
                 pipelineFailureDecision = null
-                turnDiagnostics = { ...turnDiagnostics, generation_attempts: 2, action_status: 'none' }
+                turnDiagnostics = { ...turnDiagnostics,
+                  generation_attempts: agentAGenerationAttempts, action_status: 'none' }
               } catch (continuationError) {
                 if (!(continuationError instanceof Error)) throw continuationError
                 const continuationFailure = classifyAgentAAttemptFailure(continuationError)
-                turnDiagnostics = { ...turnDiagnostics, generation_attempts: 2,
+                turnDiagnostics = { ...turnDiagnostics,
+                  generation_attempts: agentAGenerationAttempts,
                   failure_codes: [...new Set([...turnDiagnostics.failure_codes,
                     ...attemptFailureDiagnosticCodes(continuationFailure)])].slice(0, 8) }
                 if (isAgentAProviderFailure(continuationFailure)) {
-                  pipelineFailureDecision = technicalFallback(
-                    owned.policy.allowed_response_types.includes('technical_fallback')
-                      ? 'technical_fallback' : 'commercial_reply')
+                  pipelineFailureDecision = suppress('AGENT_A_CONTINUATION_REJECTED')
                 }
               }
             }
           } else {
-            pipelineFailureDecision = technicalFallback(
-              owned.policy.allowed_response_types.includes('technical_fallback')
-                ? 'technical_fallback' : 'commercial_reply')
+            pipelineFailureDecision = suppress('AGENT_A_CONTINUATION_REJECTED')
           }
         }
       }
@@ -1750,6 +1746,80 @@ export const processInboundTurn = new Workflow({
       timings.event_to_decision_ms = Math.max(0, Date.now() - occurredAtMs)
     }
 
+    // A failed Agent A turn remains unfinished work. The backend never turns
+    // that failure into customer copy: it releases the owned batch and starts
+    // a fresh, bounded workflow with current facts. Delays are 2s/10s, not the
+    // old five-minute operator pause, and every replay is fenced by the batch
+    // claim token so it cannot duplicate a send or an effect.
+    const recoverRejectedTurn = async (): Promise<WorkflowResult> => {
+      try {
+        const recoveryCause = turnDiagnostics?.failure_codes.find(
+          (code) => /^[A-Z0-9_]{1,128}$/u.test(code),
+        ) ?? 'AGENT_A_CONTINUATION_REJECTED'
+        const recovery = await step('schedule-rejected-turn-recovery-v1', () =>
+          scheduleTurnRecovery.execute({ client, input: {
+            batch_id: owned.batch.id,
+            claim_token: owned.batch.claim_token,
+            trace_id: input.trace_id,
+            reason_code: recoveryCause,
+          } }), { maxAttempts: 3 })
+        state.errorCode = recovery.outcome === 'exhausted'
+          ? 'AGENT_A_RECOVERY_EXHAUSTED'
+          : 'AGENT_A_CONTINUATION_REJECTED'
+        state.phase = recovery.outcome === 'scheduled'
+          ? 'retry_pending'
+          : recovery.outcome === 'exhausted'
+            ? 'paused_error'
+            : 'absorbed'
+        safeLog('studyx.turn.recovery', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          batch_id: owned.batch.id,
+          outcome: recovery.outcome,
+          attempt: recovery.attempt,
+        })
+        if (recovery.outcome === 'scheduled') {
+          await step.sleep(`rejected-turn-recovery-wait-${recovery.attempt}`, recovery.delay_ms)
+          await step('start-rejected-turn-recovery-v1', () => processInboundTurn.getOrCreate({
+            key: `recovery:${owned.batch.id}:${recovery.attempt}`,
+            input: {
+              ...input,
+              preingested: null,
+              transport_media_url: undefined,
+              recovery_feedback: latestRejection && agentABrainContext ? {
+                batch_id: owned.batch.id,
+                conversation_id: owned.batch.conversation_id,
+                turn_id: owned.turn_id,
+                selected_offering_code: agentABrainContext.commercial_state.selected_offering_code,
+                rejection: {
+                  ...latestRejection,
+                  authorized_alternatives: {
+                    fact_ids: [],
+                    actions: ['none'],
+                    missing_information: [],
+                  },
+                },
+              } : undefined,
+            },
+          }), { maxAttempts: 3 })
+        }
+      } catch (error) {
+        if (!(error instanceof Error)) throw error
+        state.phase = 'paused_error'
+        state.errorCode = errorCode(error)
+        safeLog('studyx.turn.recovery_schedule_failed', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          error_code: state.errorCode,
+        })
+      }
+      emitTimings()
+      return resultFromState(state, input.trace_id)
+    }
+    if (decision.reason_code === 'AGENT_A_CONTINUATION_REJECTED') {
+      return recoverRejectedTurn()
+    }
+
     // ---- Paso 10: commitear en Next.js -----------------------------------
     let committed: CommitDecisionResponse | null = null
     const commitStartedAt = Date.now()
@@ -1815,14 +1885,20 @@ export const processInboundTurn = new Workflow({
         rejection_codes: rejection.rejections.map((item) => item.code),
         rejection_subjects: rejection.rejections.map((item) => item.subject),
       })
+        latestRejection = rejection
         const rejectionCodes = [...new Set(
           rejection.rejections.map((item) => item.code),
         )].slice(0, 8)
+        const repairEffectsAllowed = rejection.authorized_alternatives.actions
+          .some((action) => action !== 'none')
         const deepSeekApiKey = secrets.DEEPSEEK_API_KEY
+        // A second backend rejection does not authorize the backend to write
+        // a canned customer reply. Give the conversational owner one final,
+        // effect-fenced correction with the exact rejection receipt.
         const mayRepairWithAgentA = plannerlessV2Enabled
           && repairEnabled
           && !agentARepairAttempted
-          && agentAGenerationAttempts < 2
+          && agentAGenerationAttempts < 3
           && typeof deepSeekApiKey === 'string'
           && deepSeekApiKey.length > 0
         let continuationFailure: ReturnType<typeof classifyAgentAAttemptFailure> | null = null
@@ -1837,6 +1913,7 @@ export const processInboundTurn = new Workflow({
                 context: repairContext,
                 on_provider_request: accountAgentAProviderRequest,
                 rejection,
+                effects_allowed: repairEffectsAllowed,
                 apiKey: deepSeekApiKey,
                 signal,
                 generate: generateDeepSeekAgentATurnProposalV1,
@@ -1861,7 +1938,7 @@ export const processInboundTurn = new Workflow({
             agentTurnV2Commit = {
               schema_version: 2,
               proposal: effectiveRepair.proposal,
-              ...fencedAgentARequestV1(),
+              ...(repairEffectsAllowed ? {} : fencedAgentARequestV1()),
             }
             pipelineCommit = null
             pipelineMemoryCandidates = effectiveRepair.proposal.memory_candidates
@@ -1898,6 +1975,70 @@ export const processInboundTurn = new Workflow({
           }
         }
 
+        if (committed === null
+          && continuationFailure?.stage === 'backend_rejected'
+          && agentAGenerationAttempts < 3
+          && typeof deepSeekApiKey === 'string'
+          && deepSeekApiKey.length > 0) {
+          agentAGenerationAttempts = 3
+          try {
+            const finalContinuation = await step(
+              'final-agent-a-turn-after-backend-rejection-v1',
+              () => continueAgentAAfterActionFeedbackV1({
+                context: repairContext,
+                on_provider_request: accountAgentAProviderRequest,
+                rejection,
+                effects_allowed: repairEffectsAllowed,
+                apiKey: deepSeekApiKey,
+                signal,
+                generate: generateDeepSeekAgentATurnProposalV1,
+                model: typeof configuration.agentABrainDeepSeekModel === 'string'
+                  ? configuration.agentABrainDeepSeekModel
+                  : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
+              }),
+              { maxAttempts: 1 },
+            )
+            await persistProfileProposal(finalContinuation.proposal, rejection)
+            agentTurnV2Commit = {
+              schema_version: 2,
+              proposal: finalContinuation.proposal,
+              ...(repairEffectsAllowed ? {} : fencedAgentARequestV1()),
+            }
+            pipelineCommit = null
+            pipelineMemoryCandidates = finalContinuation.proposal.memory_candidates
+            decision = pipelinePlaceholder(pipelineMemoryCandidates)
+            decisionProvider = finalContinuation.provider
+            decisionModel = finalContinuation.model
+            pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
+            turnDiagnostics = {
+              schema_version: 1,
+              generation_attempts: 3,
+              failure_stage: 'backend_commit',
+              failure_codes: rejectionCodes,
+              action_status: finalContinuation.proposal.proposed_action.type === 'none'
+                ? 'none'
+                : 'authorized',
+            }
+            committed = await commitCurrentDecision('commit-final-agent-a-continuation-v1')
+            continuationFailure = null
+            safeLog('studyx.turn.backend_commit_final_agent_a_continuation', {
+              trace_id: input.trace_id,
+              turn_id: owned.turn_id,
+              rejection_id: rejection.rejection_id,
+              rejection_codes: rejectionCodes,
+            })
+          } catch (finalError) {
+            if (!(finalError instanceof Error)) throw finalError
+            continuationFailure = classifyAgentAAttemptFailure(finalError)
+            safeLog('studyx.turn.backend_commit_final_agent_a_failed', {
+              trace_id: input.trace_id,
+              turn_id: owned.turn_id,
+              rejection_id: rejection.rejection_id,
+              error_code: errorCode(finalError),
+            })
+          }
+        }
+
         if (committed === null) {
           // No safe model-authored continuation exists. Persist the exact
           // rejection without inventing customer prose or claiming an outage.
@@ -1906,19 +2047,7 @@ export const processInboundTurn = new Workflow({
           pipelineMemoryCandidates = []
           const generationUnavailable = continuationFailure !== null
             && isAgentAProviderFailure(continuationFailure)
-          decision = generationUnavailable
-            ? technicalFallback(owned.policy.allowed_response_types.includes('technical_fallback')
-              ? 'technical_fallback' : 'commercial_reply')
-            : validationExhaustedNotice(
-                owned.policy.allowed_response_types.includes('technical_fallback')
-                  ? 'technical_fallback' : 'commercial_reply',
-                {
-                  claimed: owned,
-                  failure_codes: rejection.rejections.map(
-                    (reason) => `${reason.code}:${reason.subject}`,
-                  ),
-                },
-              )
+          decision = suppress('AGENT_A_CONTINUATION_REJECTED')
           decisionProvider = 'botpress'
           decisionModel = 'policy:agent-a-repair-unavailable'
           turnDiagnostics = {
@@ -1929,7 +2058,7 @@ export const processInboundTurn = new Workflow({
               : [...new Set([...rejectionCodes, ...attemptFailureDiagnosticCodes(continuationFailure)])].slice(0, 8),
             action_status: 'rejected',
           }
-          committed = await commitCurrentDecision('commit-rejection-after-agent-a-continuation-v1')
+          return await recoverRejectedTurn()
         }
       }
     } catch (error) {

@@ -88,6 +88,50 @@ describe('Agent A conversation from action feedback', () => {
     expect(generate).toHaveBeenCalledOnce();
   });
 
+  it('retains an independently authorized call effect while repairing rejected prose', async () => {
+    const current = context();
+    current.capabilities.may_request_call_now = true;
+    current.capabilities.intake_status = 'known';
+    current.capabilities.intake_missing = [];
+    current.customer.contact_intake = {
+      nombre: 'Ana', apellido: 'Costa', correo: null, telefono: '+15551234070',
+    };
+    const rejection = {
+      schema_version: 1 as const,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+      attempt: 1 as const,
+      rejections: [{ code: 'FACT_VALUE_MISMATCH' as const, subject: 'course_fact' }],
+      authorized_alternatives: {
+        fact_ids: [], actions: ['none', 'request_call_now'], missing_information: [],
+      },
+    };
+    const draft = reply('Perfecto, te llamo ahora.');
+    const generate = vi.fn(async () => ({ ...draft, proposal: {
+      ...draft.proposal,
+      move: { ...draft.proposal.move, move: 'request_call' as const },
+      proposed_action: { type: 'request_call_now' as const, reason: 'direct_request' as const },
+      repair_of: { rejection_id: rejection.rejection_id, attempt: 1 as const },
+    } }));
+
+    const result = await continueAgentAAfterActionFeedbackV1({
+      context: current, rejection, effects_allowed: true,
+      apiKey: 'fixture', signal: new AbortController().signal,
+      model: 'deepseek-v4-flash', generate,
+    });
+
+    expect(result.proposal.proposed_action).toEqual({
+      type: 'request_call_now', reason: 'direct_request',
+    });
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({
+      conversation_only: false,
+      context: expect.objectContaining({ turn_rejection: expect.objectContaining({
+        authorized_alternatives: expect.objectContaining({
+          actions: ['none', 'request_call_now'],
+        }),
+      }) }),
+    }));
+  });
+
   it('never delivers an unsupported call promise or invents a second repair', async () => {
     const current = context();
     const rejection = plannerlessActionFeedbackV1({ context: current, failure_code: 'PLANNERLESS_PROPOSAL_REJECTED:MISSING_INTAKE:apellido', rejection_id: '00000000-0000-4000-8000-000000000001' });

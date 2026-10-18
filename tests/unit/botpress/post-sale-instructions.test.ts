@@ -12,19 +12,8 @@ const claim = {
 };
 
 describe('post-sale Agent A event instructions', () => {
-  it.each([
-    ['payment_received', 'recibimos tu pago', ''] as const,
-    ['access_ready', 'ya está habilitado', 'Si quieres, puedes cambiar tu contraseña'] as const,
-    ['access_delayed', 'estamos revisando el alta', ''] as const,
-  ])('has a safe deterministic %s narrative when the optional model is unavailable', (kind, intro, suggestion) => {
-    const fallback = (postSaleInstructions as unknown as {
-      fallbackPostSaleNarrative?: (input: typeof claim) => { intro: string; suggestion: string };
-    }).fallbackPostSaleNarrative;
-    expect(fallback).toBeTypeOf('function');
-    if (!fallback) return;
-    const narrative = fallback({ ...claim, kind });
-    expect(narrative.intro).toContain(intro);
-    expect(narrative.suggestion).toContain(suggestion);
+  it('does not export backend-authored customer prose', () => {
+    expect('fallbackPostSaleNarrative' in postSaleInstructions).toBe(false);
   });
 
   it('authorizes the welcome alongside access only for a verified new student', () => {

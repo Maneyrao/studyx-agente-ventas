@@ -26,6 +26,7 @@ import * as dispatchProvider from '@/app/api/agent/calls/[call_id]/dispatch/rout
 import * as managedOutbound from '@/features/messaging/adapters/managed-outbound';
 import * as agentANarrative from '@/features/calls/adapters/agent-a-post-call-narrative';
 import type { ComposePostCallFollowupInput } from '@/features/calls/ports/post-call-followup-composer';
+import { buildPostCallNarrativeEgress } from '@/features/calls/domain/post-call-narrative-egress';
 
 /**
  * Spec 007 (B → A) against a real database. Unit tests already cover
@@ -520,6 +521,44 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
     expect(await syntheticMessageCount(callId)).toBe(1);
     expect(await agentDecisionCountForCall(callId)).toBe(0);
     expect(await outboundDeliveryCountForConversation(conversationId)).toBe(1);
+  });
+
+  it('does not send a stale post-call follow-up after Agent A already resumed the conversation', async () => {
+    const fixture = await seedTerminalCall({
+      status: 'failed',
+      result: null,
+      analysis_status: 'pending',
+    });
+    const resumedText = 'Sigo contigo por aquí. ¿Qué necesitas revisar?';
+    const resumed = await sendOutboundMessage({
+      workspaceId: fixture.workspaceId,
+      contactId: fixture.contactId,
+      conversationId: fixture.conversationId,
+      text: resumedText,
+      authorizedEgress: buildPostCallNarrativeEgress(resumedText, null),
+      idempotencyKey: `agent-a-resumed:${fixture.callId}`,
+      preferredChannel: 'whatsapp',
+      purpose: 'conversational',
+    }, {
+      identities: new PostgresChannelIdentityStore(sql),
+      channels: { whatsapp: postCallChannel },
+      preferenceOrder: ['whatsapp'],
+      contentAuthorizer: new AuthorizedEgressContentAuthorizer(),
+      sideEffectAuthorizer: { authorize: async () => ({ allowed: true as const, reason: null }) },
+      db: sql,
+    });
+    expect(resumed.outcome).toBe('sent');
+
+    const pending = await store.listPendingFollowups({
+      call_id: fixture.callId,
+      limit: 10,
+      grace_seconds: 0,
+    });
+    expect(pending).toEqual([]);
+    const result = await sweep(randomUUID(), 0);
+    expect(result.findings.find((finding) => finding.call_id === fixture.callId)).toBeUndefined();
+    expect(await postCallOutboundDeliveryCount(fixture.callId)).toBe(0);
+    expect(await outboundDeliveryCountForConversation(fixture.conversationId)).toBe(1);
   });
 
   it('FR-3: result = no_contactar emits no message and revokes the contact', async () => {

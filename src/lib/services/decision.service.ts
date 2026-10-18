@@ -119,7 +119,7 @@ export type AnyDecision = DecisionV2 | DecisionV3 | DecisionV4;
 
 export interface TurnDiagnosticsV1 {
   readonly schema_version: 1;
-  readonly generation_attempts: 0 | 1 | 2;
+  readonly generation_attempts: 0 | 1 | 2 | 3;
   readonly failure_stage:
     | 'none'
     | 'provider_generation'

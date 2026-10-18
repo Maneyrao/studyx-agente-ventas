@@ -45,25 +45,32 @@ export function plannerlessActionFeedbackV1(input: {
   }
 }
 
-/** A bounded conversational continuation cannot request or replay an effect. */
+/** A bounded continuation may retain only an effect explicitly re-authorized by the receipt. */
 export async function continueAgentAAfterActionFeedbackV1(input: {
   readonly context: AgentAContextV1
   readonly rejection: TurnRejectionV1
   readonly apiKey: string
   readonly signal: AbortSignal
   readonly model: string
+  /** Keep an independently authorized call/payment obligation alive. */
+  readonly effects_allowed?: boolean
   readonly on_provider_request?: () => void
   readonly generate?: typeof generateDeepSeekAgentATurnProposalV1
 }) {
+  const allowedActions = input.effects_allowed
+    ? input.rejection.authorized_alternatives.actions
+    : ['none']
   const context = { ...input.context, turn_rejection: {
     ...input.rejection,
-    authorized_alternatives: { ...input.rejection.authorized_alternatives, actions: ['none'] },
+    authorized_alternatives: { ...input.rejection.authorized_alternatives, actions: allowedActions },
   } }
   const generated = await (input.generate ?? generateDeepSeekAgentATurnProposalV1)({
-    context, apiKey: input.apiKey, signal: input.signal, model: input.model, conversation_only: true,
+    context, apiKey: input.apiKey, signal: input.signal, model: input.model,
+    conversation_only: input.effects_allowed !== true,
     on_provider_request: input.on_provider_request,
   })
-  if (generated.proposal.proposed_action.type !== 'none'
+  const proposedAction = generated.proposal.proposed_action.type
+  if ((!allowedActions.includes(proposedAction))
     || generated.proposal.response.call_offer) {
     throw new Error('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:continuation')
   }

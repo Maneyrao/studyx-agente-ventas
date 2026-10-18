@@ -536,6 +536,39 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
   });
 
+  it('does not carry a stale action rejection after Agent A repairs the prose and keeps an authorized call', async () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm1', text: 'Me llamas? Soy Ana Costa.' }];
+    current.customer.contact_intake = {
+      nombre: 'Ana', apellido: 'Costa', correo: 'ana@example.test', telefono: '+15551234070',
+    };
+    current.commercial_state.call_preference = 'call';
+    current.commercial_state.call_offer_status = 'accepted';
+    const initial = proposal({
+      move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+      response: { messages: ['Me falta tu teléfono para coordinar la llamada.'], call_offer: null },
+      proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+      profile_requests: [{ message_index: 0, fields: ['telefono'], purpose: 'call', mode: 'collect' }],
+      used_fact_ids: [],
+    });
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(initial), context: current, repair_enabled: true, semantic_rejections: 'advisory',
+      rejection_id: '00000000-0000-4000-8000-0000000000e5',
+      repair: async rejection => generated({
+        ...initial,
+        response: { messages: ['Gracias, Ana. Te llamo ahora.'], call_offer: null },
+        profile_requests: [],
+        repair_of: { rejection_id: rejection.rejection_id, attempt: 1 },
+      }),
+    });
+
+    expect(result.effective.proposal.proposed_action).toEqual({
+      type: 'request_call_now', reason: 'direct_request',
+    });
+    expect(result.action_rejection).toBeNull();
+    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
+  });
+
   it.each(['disabled', 'transport_failure', 'still_false'] as const)(
     'never publishes a false call announcement when repair is %s in advisory mode', async repairOutcome => {
       const current = context();

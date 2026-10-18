@@ -331,6 +331,23 @@ export class PostgresPostCallFollowupStore implements PostCallFollowupStore {
           WHERE ce.event_kind = 'system_call_result'
             AND ce.external_event_id = 'system:call_result:' || cs.id::text
         )
+        -- A visible outbound after the call means Agent A already resumed the
+        -- conversation through the normal turn pipeline. Do not append a
+        -- delayed, now-stale post-call message. Exclude this call's own
+        -- idempotent delivery so a crash between send and completion marker
+        -- can still recover and synthesize the marker on the next sweep.
+        AND NOT EXISTS (
+          SELECT 1
+          FROM outbound_deliveries AS resumed_delivery
+          JOIN messages AS resumed_message
+            ON resumed_message.id = resumed_delivery.message_id
+           AND resumed_message.conversation_id = cs.conversation_id
+           AND resumed_message.contact_id = cs.contact_id
+           AND resumed_message.direction = 'outbound'
+          WHERE resumed_delivery.state IN ('submitted', 'delivered')
+            AND resumed_delivery.idempotency_key <> 'post-call:' || cs.id::text
+            AND resumed_message.created_at > COALESCE(cs.completed_at, cs.updated_at)
+        )
       ORDER BY COALESCE(cs.completed_at, cs.updated_at) ASC
       LIMIT ${input.limit}
     `;
