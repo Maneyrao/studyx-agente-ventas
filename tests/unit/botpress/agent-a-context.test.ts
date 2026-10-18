@@ -193,6 +193,25 @@ function claimedTurn(): ClaimedTurn {
 }
 
 describe('buildAgentAContextV1', () => {
+  it('projects durable summary memory and ten logical interventions to Agent A', () => {
+    const claimed = claimedTurn();
+    claimed.context.summary = {
+      text: 'Matías busca salida laboral y prefiere estudiar por la noche.',
+      version: 7,
+      updated_at: NOW,
+    };
+
+    const context = buildAgentAContextV1(claimed)!;
+
+    expect(context.customer.conversation_summary).toEqual({
+      text: 'Matías busca salida laboral y prefiere estudiar por la noche.',
+      version: 7,
+      updated_at: NOW,
+    });
+    expect(context.turn.recent_turns).toHaveLength(10);
+    expect(context.turn.recent_turns[0]?.content).toBe('turno-1');
+  });
+
   it.each([
     ['1', 'pago'],
     ['1 pago'],
@@ -579,7 +598,7 @@ describe('buildAgentAContextV1', () => {
     });
   });
 
-  it('keeps the latest six complete interventions instead of the latest physical rows', () => {
+  it('keeps up to ten complete interventions instead of truncating physical rows', () => {
     const claimed = claimedTurn();
     const histories = [
       ['Cliente 1', 'Agente 1'],
@@ -632,6 +651,8 @@ describe('buildAgentAContextV1', () => {
     const context = buildAgentAContextV1(claimed);
 
     expect(context?.turn.recent_turns.map((turn) => turn.content)).toEqual([
+      'Cliente 1',
+      'Agente 1',
       'Cliente 2',
       'Agente 2, primera burbuja.\nAgente 2, segunda burbuja.\nAgente 2, tercera burbuja.',
       'Cliente 3',
@@ -1526,9 +1547,10 @@ describe('buildAgentAContextV1', () => {
   it('connects bounded recent turns, selected memories and canonical catalog without secrets', () => {
     const context = buildAgentAContextV1(claimedTurn());
     expect(context).not.toBeNull();
-    expect(context!.turn.recent_turns).toHaveLength(6);
+    expect(context!.turn.recent_turns).toHaveLength(10);
     expect(context!.turn.recent_turns.map((turn) => turn.content)).toEqual([
-      'turno-5', 'turno-6', 'turno-7', 'turno-8', 'turno-9', 'turno-10',
+      'turno-1', 'turno-2', 'turno-3', 'turno-4', 'turno-5',
+      'turno-6', 'turno-7', 'turno-8', 'turno-9', 'turno-10',
     ]);
     expect(context!.customer.memories.map((memory) => memory.id)).toEqual([
       'memory-relevant', 'memory-2', 'memory-3', 'memory-4', 'memory-5',

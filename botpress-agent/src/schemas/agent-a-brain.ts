@@ -95,7 +95,7 @@ export const AgentAContextV1Schema = z.object({
       // messages; an agent intervention can contain three visible bubbles.
       // Keep the complete causal turn in context rather than truncating one.
       content: z.string().trim().min(1).max(40_019),
-    }).strict()).max(8),
+    }).strict()).max(10),
   }).strict(),
   continuity: z.object({
     assistant_has_spoken: z.boolean(),
@@ -104,6 +104,11 @@ export const AgentAContextV1Schema = z.object({
   }).strict().optional(),
   customer: z.object({
     display_name: z.string().trim().min(1).max(321).nullable(),
+    conversation_summary: z.object({
+      text: z.string().trim().min(1).max(4_096),
+      version: z.number().int().min(1),
+      updated_at: z.string().nullable(),
+    }).strict().nullable().optional(),
     contact_profile: ContactProfileContextV1Schema.optional(),
     contact_intake: z.object({
       nombre: z.string().trim().min(1).max(160).nullable(),

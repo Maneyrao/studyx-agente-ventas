@@ -12,6 +12,7 @@ const claimToken = '15357952-de34-498c-a877-7e19a8c9d266';
 
 describe('post-sale trigger', () => {
   beforeEach(() => {
+    requestStudyxJson.mockReset();
     configuration.agentAAdvisorName = 'Emma';
     secrets.DEEPSEEK_API_KEY = 'test-only-key';
     requestStudyxJson
@@ -23,9 +24,12 @@ describe('post-sale trigger', () => {
       .mockResolvedValueOnce({ outcome: 'sent' });
   });
 
-  it('delivers verified access with deterministic copy and no optional model dependency', async () => {
+  it('lets Agent A author the verified access message from personality and history', async () => {
     const modelFetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
-      output_text: JSON.stringify({ intro: 'Model copy.', suggestion: '' }),
+      output_text: JSON.stringify({
+        intro: 'Thiago, ya tienes habilitado Marketing Digital. Bienvenido a StudyX; me alegra acompañarte en este paso.',
+        suggestion: 'Si quieres, puedes cambiar tu contraseña después de ingresar.',
+      }),
     }), { status: 200 }));
     const handler = (postSaleTrigger as unknown as {
       definition: { handler: (input: Record<string, unknown>) => Promise<void> };
@@ -33,7 +37,7 @@ describe('post-sale trigger', () => {
 
     await handler({ event: { payload: { notification_id: notificationId }, conversationId: 'botpress-conversation' } });
 
-    expect(modelFetch).not.toHaveBeenCalled();
+    expect(modelFetch).toHaveBeenCalledTimes(1);
     expect(requestStudyxJson).toHaveBeenCalledTimes(2);
     expect(requestStudyxJson.mock.calls[1]?.[0]).toMatchObject({
       path: `/api/agent/post-sale/${notificationId}/deliver`,
@@ -41,10 +45,31 @@ describe('post-sale trigger', () => {
         claim_token: claimToken,
         botpress_conversation_id: 'botpress-conversation',
         narrative: {
-          intro: 'Tu acceso a Marketing Digital ya está habilitado.',
-          suggestion: 'Si quieres, puedes cambiar tu contraseña cuando ingreses.',
+          intro: 'Thiago, ya tienes habilitado Marketing Digital. Bienvenido a StudyX; me alegra acompañarte en este paso.',
+          suggestion: 'Si quieres, puedes cambiar tu contraseña después de ingresar.',
         },
       },
+    });
+    const request = JSON.parse(String(modelFetch.mock.calls[0]?.[1]?.body));
+    expect(request.instructions).toContain('personalidad');
+    expect(request.input).toContain('Marketing Digital');
+  });
+
+  it('delivers a bounded safe fallback when Agent A is temporarily unavailable', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('provider unavailable'));
+    const handler = (postSaleTrigger as unknown as {
+      definition: { handler: (input: Record<string, unknown>) => Promise<void> };
+    }).definition.handler;
+
+    await handler({ event: { payload: { notification_id: notificationId }, conversationId: 'botpress-conversation' } });
+
+    expect(requestStudyxJson).toHaveBeenCalledTimes(2);
+    expect(requestStudyxJson.mock.calls[1]?.[0]).toMatchObject({
+      path: `/api/agent/post-sale/${notificationId}/deliver`,
+      body: { narrative: {
+        intro: expect.stringContaining('Marketing Digital'),
+        suggestion: expect.stringContaining('puedes cambiar tu contraseña'),
+      } },
     });
   });
 });

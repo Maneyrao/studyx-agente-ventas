@@ -27,7 +27,7 @@ import {
 
 describe('default retrieval thresholds', () => {
   it('keeps contact-scoped memory recall broader than tenant knowledge recall', () => {
-    expect(DEFAULT_CONTEXT_LIMITS.memoryMinSimilarity).toBe(0.65);
+    expect(DEFAULT_CONTEXT_LIMITS.memoryMinSimilarity).toBe(0.5);
     expect(DEFAULT_CONTEXT_LIMITS.knowledgeMinSimilarity).toBe(0.75);
   });
 });

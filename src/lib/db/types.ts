@@ -15,6 +15,7 @@ export function getPostgresError(error: unknown): PostgresErrorLike | null {
 
 const TRANSIENT_DATABASE_AVAILABILITY_CODES = new Set([
   'CONNECTION_DESTROYED',
+  'ORCHESTRATOR_DATABASE_UNAVAILABLE',
   '57014',
 ]);
 

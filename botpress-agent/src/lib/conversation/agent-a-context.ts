@@ -30,7 +30,7 @@ const LOW_INFORMATION_TOKENS = new Set([
   'saber', 'sos', 'tarde', 'tenes', 'tienen', 'toda', 'todas', 'todos', 'vos',
 ]);
 
-const LOGICAL_HISTORY_LIMIT = 6;
+const LOGICAL_HISTORY_LIMIT = 10;
 
 type LogicalHistoryTurnV1 = {
   readonly id: string;
@@ -617,6 +617,13 @@ export function buildAgentAContextV1(
     },
     customer: {
       display_name: nonBlankOrNull(claimed.contact.name),
+      conversation_summary: claimed.context.summary.text?.trim()
+        ? {
+            text: claimed.context.summary.text.trim(),
+            version: claimed.context.summary.version,
+            updated_at: claimed.context.summary.updated_at,
+          }
+        : null,
       contact_intake: canonicalContactIntake,
       ...(claimed.contact_profile ? { contact_profile: claimed.contact_profile } : {}),
       memories: (suppressContactMemories ? [] : [...claimed.context.selected_memories])

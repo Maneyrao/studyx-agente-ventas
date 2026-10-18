@@ -4,7 +4,6 @@ import * as postSaleInstructions from '../../../botpress-agent/src/utils/post-sa
 const { buildPostSaleInstructions, PostSaleClaimSchema } = postSaleInstructions;
 
 type EventKind = 'payment_received' | 'access_ready' | 'access_delayed';
-const welcome = 'Bienvenido a Studyx, espero que disfrutes mucho de estudiar con nosotros!';
 const canonicalPrompt = 'Personalidad canónica de la asesora.';
 const claim = {
   claimed: true, claim_token: '15357952-de34-498c-a877-7e19a8c9d266', kind: 'access_ready',
@@ -14,7 +13,7 @@ const claim = {
 
 describe('post-sale Agent A event instructions', () => {
   it.each([
-    ['payment_received', 'Recibimos tu pago', ''] as const,
+    ['payment_received', 'recibimos tu pago', ''] as const,
     ['access_ready', 'ya está habilitado', 'Si quieres, puedes cambiar tu contraseña'] as const,
     ['access_delayed', 'estamos revisando el alta', ''] as const,
   ])('has a safe deterministic %s narrative when the optional model is unavailable', (kind, intro, suggestion) => {
@@ -35,18 +34,18 @@ describe('post-sale Agent A event instructions', () => {
 
     expect(parsed).toMatchObject({ kind: 'access_ready', new_user: true });
     expect(instructions.startsWith(`${canonicalPrompt}\n\n`)).toBe(true);
-    expect(instructions).toContain(welcome);
-    expect(instructions).not.toContain('No saludes, no te presentes de nuevo');
+    expect(instructions).toContain('dale una bienvenida cálida y natural a StudyX');
+    expect(instructions).toContain('Tú, Agente A, redactas el mensaje final');
   });
 
   it.each([
-    { kind: 'access_ready', newUser: false, existingUser: true },
-    { kind: 'access_ready', newUser: false, existingUser: false },
-    { kind: 'access_ready', newUser: undefined, existingUser: false },
-    { kind: 'payment_received', newUser: true, existingUser: false },
-    { kind: 'access_delayed', newUser: true, existingUser: false },
-  ] satisfies Array<{ kind: EventKind; newUser: boolean | undefined; existingUser: boolean }>)
-  ('does not authorize a new-student welcome for $kind, new_user=$newUser, existing_user=$existingUser', ({ kind, newUser, existingUser }) => {
+    { kind: 'access_ready', newUser: false, existingUser: true, expected: 'Ya era alumno' },
+    { kind: 'access_ready', newUser: false, existingUser: false, expected: 'sin afirmar si es su primera inscripción' },
+    { kind: 'access_ready', newUser: undefined, existingUser: false, expected: 'sin afirmar si es su primera inscripción' },
+    { kind: 'payment_received', newUser: true, existingUser: false, expected: 'el acceso todavía no está confirmado' },
+    { kind: 'access_delayed', newUser: true, existingUser: false, expected: 'el acceso todavía no está confirmado' },
+  ] satisfies Array<{ kind: EventKind; newUser: boolean | undefined; existingUser: boolean; expected: string }>)
+  ('uses the verified relationship for $kind, new_user=$newUser, existing_user=$existingUser', ({ kind, newUser, existingUser, expected }) => {
     const input: Record<string, unknown> = { ...claim, kind, existing_user: existingUser };
     if (newUser === undefined) delete input.new_user;
     else input.new_user = newUser;
@@ -55,7 +54,7 @@ describe('post-sale Agent A event instructions', () => {
     const instructions = buildPostSaleInstructions(canonicalPrompt, parsed);
 
     expect(parsed).toMatchObject({ kind, new_user: newUser ?? false });
-    expect(instructions).not.toContain(welcome);
-    expect(instructions).toContain('No saludes ni des la bienvenida');
+    expect(instructions).not.toContain('dale una bienvenida cálida y natural a StudyX');
+    expect(instructions).toContain(expected);
   });
 });

@@ -1,4 +1,5 @@
 import postgres from 'postgres';
+import { createResilientPostgresRuntime } from './resilient-postgres';
 
 if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL is not set');
@@ -17,6 +18,8 @@ export function createOrchestratorSql(databaseUrl: string, max = poolMax) {
     max,
     prepare: false,
     connect_timeout: 5,
+    max_lifetime: 30,
+    keep_alive: 5,
     // Vercel Fluid Compute may suspend a warm instance longer than the
     // Supavisor socket remains usable. Retire an actually idle connection
     // before that socket can be reused by the next customer turn. This is a
@@ -28,6 +31,9 @@ export function createOrchestratorSql(databaseUrl: string, max = poolMax) {
   });
 }
 
-const sql = createOrchestratorSql(process.env.DATABASE_URL);
+const runtime = createResilientPostgresRuntime({
+  createClient: () => createOrchestratorSql(process.env.DATABASE_URL!),
+});
+const sql = runtime.sql;
 
 export { sql };
