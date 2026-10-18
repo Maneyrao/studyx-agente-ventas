@@ -148,4 +148,4 @@ export function classifyBatchSalesSignalWithIndex(texts: readonly string[]): {
   }
   return { signal: { type: 'model_required' }, index: null };
 }
-import { isExplicitOptOut } from '@/lib/heuristics/opt-out';
+import { isExplicitOptOut } from '../../../lib/heuristics/opt-out';
