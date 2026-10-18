@@ -1973,6 +1973,53 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
   });
 
+  it('preserves the original safe reply when payment-plan repair repeats the structural link request', async () => {
+    const current = context();
+    current.turn.batch_messages = [
+      { id: 'm1', text: 'buenas' },
+      { id: 'm2', text: 'me das el pago' },
+      { id: 'm3', text: 'cual me recomendas entonces?' },
+    ];
+    current.commercial_state.selected_payment_plan = null;
+    current.capabilities.may_send_payment_link = true;
+    current.capabilities.intake_missing = [];
+    const initial = generated(proposal({
+      move: {
+        schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [], confidence: 1,
+      },
+      response: {
+        messages: ['Por lo que me contás, primero comparemos las opciones y elegimos la que mejor te quede.'],
+        call_offer: null,
+      },
+      proposed_action: { type: 'none' },
+      used_fact_ids: [],
+    }));
+    const repair = vi.fn(async rejection => generated(proposal({
+      move: {
+        schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [], confidence: 1,
+      },
+      response: {
+        messages: ['Te recomiendo revisar primero las alternativas de pago para elegir bien.'],
+        call_offer: null,
+      },
+      proposed_action: { type: 'none' },
+      used_fact_ids: [],
+      repair_of: { rejection_id: rejection.rejection_id, attempt: 1 },
+    })));
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: true, repair,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.effective).toBe(initial);
+    expect(result.evidence).toMatchObject({
+      rejection_codes: ['PLAN_NOT_SELECTED'], repair_attempted: true, repaired: false,
+    });
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+  });
+
   it('never synthesizes a call action when Agent A keeps the request conversational', async () => {
     const current = context();
     current.turn.batch_messages = [{ id: 'm1', text: 'Che, me podes llamar?' }];

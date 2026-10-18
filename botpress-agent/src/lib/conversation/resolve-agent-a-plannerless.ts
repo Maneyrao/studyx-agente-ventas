@@ -327,6 +327,7 @@ function mayDegradeToBackendBoundary(
   // A failed style repair must not silence a factually safe answer. Actual
   // commercial/operational contradictions never enter this fallback.
   return rejection.rejections.every(reason => reason.code === 'REPEATED_AGENT_REPLY'
+    || reason.code === 'PLAN_NOT_SELECTED'
     || isNonBlockingGuidanceReason(reason))
 }
 

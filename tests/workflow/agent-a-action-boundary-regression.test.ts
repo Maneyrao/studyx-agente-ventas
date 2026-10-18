@@ -16,7 +16,8 @@ const db = openLocalTestDatabase();
 const previousKey = secrets.DEEPSEEK_API_KEY;
 
 type Phase = 'call_offer' | 'call_profile' | 'call_accept'
-  | 'payment_course' | 'payment_profile' | 'payment_without_plan' | 'payment_with_plan';
+  | 'payment_course' | 'payment_profile' | 'payment_without_plan' | 'payment_with_plan'
+  | 'payment_safe_retry_exhaustion';
 let phase: Phase = 'call_offer';
 let latestContext: AgentAContextV1 | null = null;
 
@@ -62,7 +63,9 @@ beforeAll(async () => {
     if (conversationOnly || rejection) {
       result = phase === 'payment_without_plan'
         ? proposal('Qué plan prefieres: 12 pagos de USD 30, 6 de USD 60 o un pago de USD 360?', 'ask_payment_options')
-        : proposal('Para coordinarla, me compartes sólo los datos que faltan?', 'request_call');
+        : phase === 'payment_safe_retry_exhaustion'
+          ? proposal('Te recomiendo revisar primero las alternativas de pago para elegir bien.', 'request_payment_link')
+          : proposal('Para coordinarla, me compartes sólo los datos que faltan?', 'request_call');
       result.repair_of = rejection
         ? { rejection_id: rejection.rejection_id, attempt: 1 }
         : null;
@@ -87,6 +90,11 @@ beforeAll(async () => {
       result = proposal('Te dejo el enlace de pago.', 'request_payment_link', {
         type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'monthly_12',
       });
+    } else if (phase === 'payment_safe_retry_exhaustion') {
+      result = proposal(
+        'Primero comparemos las opciones de pago para elegir la que mejor te quede.',
+        'request_payment_link',
+      );
     } else {
       result = proposal('Te dejo el enlace de 12 pagos.', 'select_payment_plan', {
         type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'monthly_12',
@@ -173,6 +181,40 @@ it('asks for a plan without MODEL_UNAVAILABLE, then emits exactly one payment li
   expect(paid.commitSucceeded).toBe(true);
   expect(paid.authorizedMessages.join(' ')).toContain('https://buy.stripe.com/local-eval-12m');
   expect(evidence.decisions.filter((item) => item.businessActionType === 'send_payment_link')).toHaveLength(1);
+});
+
+it('keeps a safe Agent A reply when payment-plan guidance remains after its single repair', async () => {
+  const id = {
+    conversationId: `action-boundary-payment-safe-${randomUUID()}`,
+    userId: `action-boundary-payment-safe-${randomUUID()}`,
+    phoneE164: `+999${String(Date.now() + 2).slice(-10)}`,
+    providerMode: 'fixture' as const,
+  };
+  phase = 'payment_course';
+  expect((await runWorkflowTurnV1({ ...id, text: 'Me interesa Inglés 1' })).commitSucceeded).toBe(true);
+  phase = 'payment_profile';
+  expect((await runWorkflowTurnV1({
+    ...id,
+    text: 'Soy Thiago Sukas, thiago@example.test, +15551234567',
+  })).commitSucceeded).toBe(true);
+  phase = 'payment_safe_retry_exhaustion';
+
+  const result = await runWorkflowTurnV1({
+    ...id,
+    text: 'buenas\nme das el pago\ncual me recomendas entonces?',
+  });
+  const evidence = await readWorkflowDbEvidenceV1({
+    databaseUrl,
+    externalConversationId: id.conversationId,
+  });
+
+  expect(result.commitSucceeded).toBe(true);
+  expect(result.authorizedMessages).toEqual([
+    'Primero comparemos las opciones de pago para elegir la que mejor te quede.',
+  ]);
+  expect(evidence.decisions.at(-1)?.reasonCode).not.toBe('AGENT_A_VALIDATION_EXHAUSTED');
+  expect(evidence.decisions.filter((item) => item.businessActionType === 'send_payment_link')).toHaveLength(0);
+  expect(result.authorizedMessages.join(' ')).not.toMatch(/https?:\/\//iu);
 });
 
 afterAll(async () => {
