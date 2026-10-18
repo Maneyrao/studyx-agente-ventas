@@ -91,6 +91,38 @@ describe('recorte de contexto por alcanzabilidad', () => {
     const context = buildAgentAContextV1(current, null)!;
     expect(context.capabilities.may_send_payment_link).toBe(status !== 'paid');
   });
+
+  it('preserves confirmed enrollment and access delivery for post-sale replies', () => {
+    const base = claim();
+    const current = claim({
+      contact_intake_missing: [],
+      conversation_state_v1: {
+        ...base.conversation_state_v1,
+        selected_offering_code: 'ingles_3',
+        selected_payment_plan: 'monthly_12',
+        stage: 'payment_link_sent',
+      },
+      payment_verification: {
+        status: 'paid',
+        offering_code: 'ingles_3',
+        plan_code: 'monthly_12',
+        paid_at: '2026-10-18T13:05:32.316Z',
+        fulfillment: {
+          enrollment_status: 'active',
+          access_message_status: 'sent',
+          access_sent_at: '2026-10-18T13:05:36.693Z',
+        },
+      },
+    });
+
+    const context = buildAgentAContextV1(current, null)!;
+
+    expect(context.commercial_state.payment_verification?.fulfillment).toEqual({
+      enrollment_status: 'active',
+      access_message_status: 'sent',
+      access_sent_at: '2026-10-18T13:05:36.693Z',
+    });
+  });
   it('anuncia qué falta de los cuatro campos de contacto', () => {
     const context = buildAgentAContextV1(claim({
       contact_intake_missing: ['apellido', 'correo', 'telefono'],

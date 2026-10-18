@@ -572,6 +572,14 @@ export const ClaimedTurnSchema = z.object({
     offering_code: z.string().min(1),
     plan_code: z.enum(['monthly_12', 'monthly_6', 'one_time']).nullable(),
     paid_at: z.string().nullable(),
+    fulfillment: z.object({
+      enrollment_status: z.enum(['active', 'already_enrolled']),
+      access_message_status: z.enum([
+        'pending', 'dispatched', 'processing', 'sent', 'ambiguous',
+        'dead_letter', 'cancelled',
+      ]).nullable(),
+      access_sent_at: z.string().nullable(),
+    }).strict().nullable().optional(),
   }).strict().nullable().optional(),
   context: z.object({
     batch_messages: z.array(BatchMessageSchema),

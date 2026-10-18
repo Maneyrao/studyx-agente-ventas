@@ -15,11 +15,30 @@ export const PAYMENT_VERIFICATION_STATUSES = [
 
 export type PaymentVerificationStatus = typeof PAYMENT_VERIFICATION_STATUSES[number];
 
+export const ACCESS_MESSAGE_STATUSES = [
+  'pending',
+  'dispatched',
+  'processing',
+  'sent',
+  'ambiguous',
+  'dead_letter',
+  'cancelled',
+] as const;
+
+export type AccessMessageStatus = typeof ACCESS_MESSAGE_STATUSES[number];
+
+export interface PaymentFulfillmentV1 {
+  readonly enrollment_status: 'active' | 'already_enrolled';
+  readonly access_message_status: AccessMessageStatus | null;
+  readonly access_sent_at: string | null;
+}
+
 export interface PaymentVerificationV1 {
   readonly status: PaymentVerificationStatus;
   readonly offering_code: string;
   readonly plan_code: PaymentPlanCode | null;
   readonly paid_at: string | null;
+  readonly fulfillment?: PaymentFulfillmentV1 | null;
 }
 
 /**
@@ -42,9 +61,15 @@ export async function loadLatestPaymentVerificationV1(input: {
     offering_code: string;
     plan_code: PaymentPlanCode | null;
     paid_at: Date | string | null;
+    enrollment_status: PaymentFulfillmentV1['enrollment_status'] | null;
+    access_message_status: AccessMessageStatus | null;
+    access_sent_at: Date | string | null;
   }>>`
     SELECT payment.status, offering.code AS offering_code,
-           payment.plan_code, payment.paid_at
+           payment.plan_code, payment.paid_at,
+           enrollment.enrollment_status,
+           access_notification.status AS access_message_status,
+           access_notification.sent_at AS access_sent_at
     FROM payments AS payment
     JOIN workspaces AS workspace
       ON workspace.id = payment.workspace_id
@@ -53,6 +78,17 @@ export async function loadLatestPaymentVerificationV1(input: {
     JOIN offerings AS offering
       ON offering.id = payment.offering_id
      AND offering.workspace_id = payment.workspace_id
+    LEFT JOIN central_enrollments AS enrollment
+      ON enrollment.payment_id = payment.id
+     AND enrollment.workspace_id = payment.workspace_id
+    LEFT JOIN LATERAL (
+      SELECT notification.status, notification.sent_at
+      FROM post_sale_notifications AS notification
+      WHERE notification.payment_id = payment.id
+        AND notification.kind = 'access_ready'
+      ORDER BY notification.created_at DESC, notification.id DESC
+      LIMIT 1
+    ) AS access_notification ON true
     WHERE payment.contact_id = ${input.contact_id}::uuid
       AND payment.provider = 'stripe'
       AND (${environment}::text IS NULL OR payment.environment = ${environment})
@@ -74,5 +110,16 @@ export async function loadLatestPaymentVerificationV1(input: {
       : row.paid_at instanceof Date
         ? row.paid_at.toISOString()
         : new Date(row.paid_at).toISOString(),
+    fulfillment: row.enrollment_status === null
+      ? null
+      : {
+          enrollment_status: row.enrollment_status,
+          access_message_status: row.access_message_status,
+          access_sent_at: row.access_sent_at === null
+            ? null
+            : row.access_sent_at instanceof Date
+              ? row.access_sent_at.toISOString()
+              : new Date(row.access_sent_at).toISOString(),
+        },
   };
 }

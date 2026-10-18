@@ -328,6 +328,64 @@ run('canonical payments — event recording', () => {
     }
   });
 
+  it('exposes confirmed enrollment and the delivered access message to Agent A', async () => {
+    const workspaceId = await workspaceFixture();
+    const contactId = await contactFixture();
+    const offering = await offeringFixture({ workspaceId });
+    const [workspace] = await db!<Array<{ slug: string }>>`
+      SELECT slug FROM workspaces WHERE id = ${workspaceId}::uuid
+    `;
+    const [payment] = await db!<Array<{ id: string }>>`
+      INSERT INTO payments (
+        workspace_id, contact_id, offering_id, amount, currency, status,
+        provider, environment, checkout_mode, idempotency_key,
+        provider_session_id, plan_code, paid_at
+      ) VALUES (
+        ${workspaceId}::uuid, ${contactId}::uuid, ${offering.id}::uuid,
+        '60.00', 'USD', 'paid', 'stripe', 'live', 'subscription',
+        ${`stripe-fulfillment:${randomUUID()}`}, ${`cs_live_${randomUUID()}`},
+        'monthly_6', '2026-10-18T13:05:32.316Z'
+      )
+      RETURNING id
+    `;
+    await db!`
+      INSERT INTO central_enrollments (
+        payment_id, workspace_id, enrollment_id, student_id, enrollment_status,
+        student_was_created, welcome_sent, login_email, central_created_at
+      ) VALUES (
+        ${payment.id}::uuid, ${workspaceId}::uuid, ${`enr_${randomUUID()}`},
+        ${`student_${randomUUID()}`}, 'active', true, true,
+        'student@example.test', '2026-10-18T13:05:33.000Z'
+      )
+    `;
+    await db!`
+      UPDATE post_sale_notifications
+      SET status = 'sent', sent_at = '2026-10-18T13:05:36.693Z'
+      WHERE payment_id = ${payment.id}::uuid AND kind = 'access_ready'
+    `;
+
+    const previousEnvironment = process.env.PAYMENT_LINK_ENVIRONMENT;
+    process.env.PAYMENT_LINK_ENVIRONMENT = 'live';
+    try {
+      await expect(loadLatestPaymentVerificationV1({
+        workspace_slug: workspace.slug,
+        contact_id: contactId,
+        offering_code: offering.code,
+        plan_code: 'monthly_6',
+      }, db!)).resolves.toMatchObject({
+        status: 'paid',
+        fulfillment: {
+          enrollment_status: 'active',
+          access_message_status: 'sent',
+          access_sent_at: '2026-10-18T13:05:36.693Z',
+        },
+      });
+    } finally {
+      if (previousEnvironment === undefined) delete process.env.PAYMENT_LINK_ENVIRONMENT;
+      else process.env.PAYMENT_LINK_ENVIRONMENT = previousEnvironment;
+    }
+  });
+
   it('a paid event marks paid and enqueues exactly one fulfillment job, even replayed x10', async () => {
     const paymentId = await pendingPayment();
     const eventId = `evt_${randomUUID()}`;

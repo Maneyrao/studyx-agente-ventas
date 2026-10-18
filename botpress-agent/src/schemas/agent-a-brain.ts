@@ -158,6 +158,14 @@ export const AgentAContextV1Schema = z.object({
       offering_code: IdentifierSchema,
       plan_code: PaymentPlanSchema.nullable(),
       paid_at: z.string().nullable(),
+      fulfillment: z.object({
+        enrollment_status: z.enum(['active', 'already_enrolled']),
+        access_message_status: z.enum([
+          'pending', 'dispatched', 'processing', 'sent', 'ambiguous',
+          'dead_letter', 'cancelled',
+        ]).nullable(),
+        access_sent_at: z.string().nullable(),
+      }).strict().nullable().optional(),
     }).strict().nullable().optional(),
     payment_link_request: z.object({
       status: z.enum(['pending', 'withdrawn', 'consumed']),

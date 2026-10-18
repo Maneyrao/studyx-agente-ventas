@@ -14,7 +14,7 @@ describe('Agent A canonical sales prompt', () => {
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v73' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v74' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
@@ -60,6 +60,7 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toMatch(/redactas toda la parte conversacional de postventa[\s\S]*personalidad[\s\S]*contexto del cliente/iu);
     expect(prompt).toMatch(/backend añade únicamente hechos inmutables[\s\S]*Usuario\/Contraseña[\s\S]*enlace de acceso/iu);
     expect(prompt).toMatch(/cuentas nuevas[\s\S]*bienvenida cálida[\s\S]*cuenta existente[\s\S]*sin recibirla como nueva/iu);
+    expect(prompt).toMatch(/access_message_status=`sent`[\s\S]*ya fue enviado[\s\S]*no hables en futuro/iu);
   });
 
   it('teaches a variable WhatsApp rhythm without imposing two bubbles on every turn', () => {
