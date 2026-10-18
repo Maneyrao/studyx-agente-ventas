@@ -102,12 +102,21 @@ beforeAll(async () => {
         ? proposal('Gracias, Agus. Puedes atender la llamada ahora?')
         : proposal('Te llamo ahora.', { type: 'request_call_now', reason: 'direct_request' });
     if (requestBody.text.format.schema.properties.proposed_action.anyOf.length === 1) {
+      const continuationMove = phase === 'payment_choice'
+        ? { schema_version: 1 as const, move: 'select_payment_plan' as const,
+            secondary_moves: [], vetoes: [], payment_plan: 'one_time' as const, confidence: 1 }
+        : phase === 'payment_missing_identity'
+        ? { schema_version: 1 as const, move: 'select_payment_plan' as const,
+            secondary_moves: ['request_payment_link' as const], vetoes: [],
+            payment_plan: 'one_time' as const, confidence: 1 }
+        : { schema_version: 1 as const, move: 'request_call' as const,
+            secondary_moves: [], vetoes: [], confidence: 1 };
       result = { ...proposal(phase === 'payment_choice'
         ? '¿Confirmas tus datos y el pago único para enviarte el enlace?'
         : phase === 'payment_missing_identity'
         ? 'Para generar el enlace, me pasas tu nombre, apellido, correo y teléfono con código de país?'
         : 'Para coordinarla, me pasas tu nombre, apellido y teléfono con código de país?'),
-        move: { schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 1 } };
+        move: continuationMove };
     }
     result.profile_updates = contactFixtureUpdatesV1(latestContext,
       phase === 'identity' ? [{ field: 'nombre', value: 'Juan' }, { field: 'apellido', value: 'Perez' },

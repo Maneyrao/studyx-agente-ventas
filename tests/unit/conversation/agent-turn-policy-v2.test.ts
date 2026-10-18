@@ -305,6 +305,46 @@ describe('plannerless Agent A authority', () => {
       transition: { payment_reported: true, payment_link_request: { status: 'consumed' } } });
   });
 
+  it('resumes an explicitly requested durable plan after a prior payment deferral', () => {
+    const result = authorize({
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected',
+        awaiting_reply: 'none',
+        payment_link_request: {
+          status: 'withdrawn',
+          offering_code: 'redes_informaticas',
+          payment_plan: 'monthly_6',
+          requested_by_turn_id: null,
+          resolved_by_decision_id: null,
+        },
+      }),
+      intake: completeIntake,
+      customerText: 'Ahora sí, enviame el link de las seis cuotas',
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+          payment_plan: 'monthly_6', confidence: 1,
+        },
+        response: { messages: ['Acá tenés el enlace para avanzar con el pago.'] },
+        proposed_action: {
+          type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+        },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: {
+        type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+      },
+      transition: {
+        stage: 'payment_link_sent', awaiting_reply: 'none', payment_link_request: { status: 'consumed' },
+      },
+    });
+  });
+
   it('does not issue a new link when the selected purchase is verified paid', () => {
     const result = authorize({
       state: state({ selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6' }),

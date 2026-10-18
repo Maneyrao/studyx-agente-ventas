@@ -1741,6 +1741,11 @@ export function validateAgentATurnProposalV1(input: {
   const previousReply = lastAgentReplyV1(input.context.turn.recent_turns);
   const currentCustomerText = input.context.turn.batch_messages.map((message) => message.text).join('\n');
   const customerRequestsRepeat = CUSTOMER_REQUESTS_REPEAT.test(currentCustomerText);
+  const progressesProfileCollection = (input.proposal.profile_updates?.length ?? 0) > 0
+    && (input.proposal.profile_requests ?? []).some((request) => (
+      request.fields.length > 0
+      && request.fields.every((field) => input.context.capabilities.intake_missing.includes(field))
+    ));
   if (previousReply && !customerRequestsRepeat && sameVisibleText(input.proposal.response.messages, previousReply)) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_reply' });
   }
@@ -1756,6 +1761,7 @@ export function validateAgentATurnProposalV1(input: {
   if (
     previousReply
     && !customerRequestsRepeat
+    && !progressesProfileCollection
     && input.proposal.response.call_offer
     && sameVisibleFragment(input.proposal.response.call_offer, previousReply)
   ) {
@@ -1764,6 +1770,7 @@ export function validateAgentATurnProposalV1(input: {
   if (
     previousReply
     && !customerRequestsRepeat
+    && !progressesProfileCollection
     && repeatsPreviousQuestion(input.proposal.response.messages, previousReply)
   ) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_question' });
@@ -1840,7 +1847,7 @@ export function validateAgentATurnProposalV1(input: {
   if (assertsUnverifiedCandidateCourseDetailV1(
     input.proposal.response.messages,
     input.context,
-    planned,
+    cited,
     input.proposal.move.course_reference ?? null,
   )) {
     rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'candidate_course_detail' });

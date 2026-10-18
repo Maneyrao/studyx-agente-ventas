@@ -325,6 +325,8 @@ export function authorizeAgentTurnV2(input: {
   // consume that request. This makes reconfirmation a state boundary rather
   // than optional wording in the prompt.
   const paymentConfirmationSatisfied = state.awaiting_reply === 'payment_confirmation';
+  const explicitlyResumesDurablePlan = resumesDurablePlan
+    && explicitlyRequestsPaymentLink(input.current_customer_messages);
   const paymentLinkWasAlreadyDelivered = state.stage === 'payment_link_sent'
     && state.selected_offering_code === selectedOffering
     && state.selected_payment_plan === selectedPlan;
@@ -335,6 +337,7 @@ export function authorizeAgentTurnV2(input: {
     && stateFacts.has('state:intake_recorded:v1');
   const paymentLinkAuthorized = paymentLinkBaseAuthorized
     && (paymentConfirmationSatisfied || paymentLinkWasAlreadyDelivered
+      || explicitlyResumesDurablePlan
       || sameTurnPlanAndCheckoutRequested
       || (pendingPaymentRequest !== null && moves.has('provide_contact_details')));
   // Asking for the next missing field is also prompt guidance. Missing intake

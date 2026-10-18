@@ -1665,6 +1665,57 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
+  it('accepts a progressive intake question when the customer supplied only one requested field', async () => {
+    const current = context();
+    current.capabilities.may_offer_call = false;
+    current.capabilities.intake_missing = ['apellido', 'correo', 'telefono'];
+    current.customer.contact_intake = {
+      nombre: 'Inés', apellido: null, correo: null, telefono: null,
+    };
+    current.turn.batch_messages = [{ id: 'm2', text: 'Inés' }];
+    current.turn.recent_turns = [{
+      id: 'prior-agent',
+      direction: 'outbound',
+      content: 'Para dejarlo registrado necesito tu nombre, apellido, correo electrónico y teléfono. ¿Me los pasás?',
+    }];
+    const messages = [
+      '¡Gracias, Inés! Me falta tu apellido, tu correo electrónico y tu teléfono para dejarlo registrado. ¿Me los pasás?',
+    ];
+    const initial = generated(proposal({
+      move: {
+        schema_version: 1, move: 'provide_contact_details', secondary_moves: [], vetoes: [],
+        confidence: 1,
+      },
+      response: { messages, call_offer: null },
+      profile_updates: [{
+        field: 'nombre',
+        value: 'Inés',
+        operation: 'set',
+        source_message_id: '00000000-0000-4000-8000-000000000002',
+        source_quote: 'Inés',
+      }],
+      profile_requests: [{
+        message_index: 0,
+        fields: ['apellido', 'correo', 'telefono'],
+        purpose: 'payment',
+        mode: 'collect',
+      }],
+      used_fact_ids: [],
+    }));
+    const repair = vi.fn();
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: true, repair,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.response.messages).toEqual(messages);
+    expect(result.evidence).toMatchObject({
+      rejection_codes: [], repair_attempted: false, proposal_generation_calls: 1,
+    });
+  });
+
   it('retains the model-authored replacement of a repeated greeting', async () => {
     const current = context();
     current.capabilities.may_offer_call = false;
@@ -2505,9 +2556,12 @@ describe('afirmar un link no autorizado no puede terminar en silencio', () => {
  * link no autorizado.
  */
 describe('la conversación sobre candidatos no se confunde con autoridad comercial', () => {
-  it('removes a rejected call effect but preserves the model-owned catalog reply', async () => {
+  it('removes an unsupported candidate detail and a rejected call effect while preserving safe prose', async () => {
     const current = context();
-    current.turn.batch_messages = [{ id: 'm2', text: 'Contame de fotografía' }];
+    current.turn.batch_messages = [{
+      id: 'm2',
+      text: 'Estoy entre Fotografía Profesional e Inglés 1. Quiero que me llamen.',
+    }];
     current.catalog.selected_offering = null;
     current.commercial_state.selected_offering_code = null;
     current.commercial_state.stage = 'exploring';
@@ -2517,11 +2571,21 @@ describe('la conversación sobre candidatos no se confunde con autoridad comerci
       fact_id: AVAILABLE_NAME_FACT,
       display_name: 'Fotografía Profesional',
       area_code: 'fotografia',
+      facts: [{
+        id: 'offering:fotografia-profesional:description:v1',
+        kind: 'offering_description',
+        value: 'Curso de fotografía con práctica y edición de imágenes.',
+      }],
     }, {
       code: 'ingles-1',
       fact_id: ENGLISH_1_NAME_FACT,
       display_name: 'Inglés 1',
       area_code: 'idiomas',
+      facts: [{
+        id: 'offering:ingles-1:description:v1',
+        kind: 'offering_description',
+        value: 'Curso inicial de inglés con lectura y práctica.',
+      }],
     }];
 
     const repair = vi.fn(async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); });
@@ -2530,14 +2594,14 @@ describe('la conversación sobre candidatos no se confunde con autoridad comerci
         move: {
           schema_version: 1,
           move: 'browse_catalog',
-          secondary_moves: [],
+          secondary_moves: ['request_call'],
           vetoes: [],
           confidence: 0.9,
         },
         response: {
           messages: [
             'Fotografía Profesional es ideal para empezar desde cero y editar imágenes.',
-            'Puedo ayudarte a comparar opciones por aquí.',
+            'Pásame un número con código de país y coordinamos la llamada.',
           ],
           call_offer: null,
         },
@@ -2548,13 +2612,13 @@ describe('la conversación sobre candidatos no se confunde con autoridad comerci
       repair_enabled: true,
       repair,
       rejection_id: '00000000-0000-4000-8000-0000000000b5',
+      semantic_rejections: 'advisory',
     });
 
-    expect(repair).toHaveBeenCalledTimes(1);
+    expect(repair).not.toHaveBeenCalled();
     expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
     expect(result.effective.proposal.response.messages).toEqual([
-      'Fotografía Profesional es ideal para empezar desde cero y editar imágenes.',
-      'Puedo ayudarte a comparar opciones por aquí.',
+      'Pásame un número con código de país y coordinamos la llamada.',
     ]);
     expect(result.action_rejection).toMatchObject({ action: 'request_call_now' });
   });

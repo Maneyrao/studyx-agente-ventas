@@ -5,6 +5,9 @@ import {
   AgentABrainError,
   claimsImmediateCallDispatchV1,
   mentionsMissingIntakeField,
+  removeUnsupportedCourseLogisticsAssertionsV1,
+  removeUnsupportedPrerequisiteAssertionsV1,
+  removeUnverifiedCandidateCourseDetailAssertionsV1,
   solicitsACallV1,
   validateAgentATurnProposalV1,
 } from './agent-a-brain'
@@ -295,7 +298,7 @@ function isNonBlockingGuidanceReason(
 ): boolean {
   if (reason.code === 'PROPOSAL_SCHEMA_INVALID') return false
   if (reason.code === 'FACT_VALUE_MISMATCH'
-    && reason.subject === 'candidate_course_detail') return true
+    && ['candidate_course_detail', 'candidate_course_names'].includes(reason.subject)) return true
   return NON_BLOCKING_GUIDANCE_CODES.has(reason.code)
 }
 
@@ -450,8 +453,16 @@ export async function resolveAgentAPlannerlessProposalV2<
     const advisoryActionRejection = input.semantic_rejections === 'advisory'
       ? actionRejectionV1(initial.proposal, originalRejection, input.context)
       : null
+    const advisoryEffective = advisoryActionRejection !== null && originalRejection !== null
+      ? pruneRejectedActionV1({
+          initial,
+          rejection: originalRejection,
+          context: input.context,
+          authorized_fact_ids: factIds,
+        }) ?? initial
+      : initial
     return {
-      effective: initial,
+      effective: advisoryEffective,
       evidence: {
         rejection_codes: originalRejection?.rejections.map((reason) => reason.code) ?? [],
         repair_attempted: false, repaired: false, proposal_generation_calls: 1,
@@ -557,16 +568,18 @@ function pruneRejectedActionV1<T extends AgentAProposalEnvelopeV1>(input: {
   readonly authorized_fact_ids: readonly string[]
 }): T | null {
   if (actionRejectionV1(input.initial.proposal, input.rejection, input.context) === null) return null
+  const factPruned = pruneKnownUnsupportedFactClaimsWithoutValidationV1(input)
+  const source = factPruned ?? input.initial
   // Removing the structured action cannot make an authored success claim
   // true. The response itself stays byte-for-byte model-owned; when it claims
   // an effect that did not happen, the whole proposal remains rejected and is
   // returned to Agent A for repair.
-  if (claimsImmediatePaymentLinkDelivery(input.initial.proposal)) return null
-  if (hasUnbackedCallDispatchClaim(input.initial.proposal, input.rejection, input.context)) return null
+  if (claimsImmediatePaymentLinkDelivery(source.proposal)) return null
+  if (hasUnbackedCallDispatchClaim(source.proposal, input.rejection, input.context)) return null
   const candidate = {
-    ...input.initial,
+    ...source,
     proposal: {
-      ...input.initial.proposal,
+      ...source.proposal,
       proposed_action: { type: 'none' as const },
     },
   } as T
@@ -580,6 +593,59 @@ function pruneRejectedActionV1<T extends AgentAProposalEnvelopeV1>(input: {
     || hasOnlyNonBlockingGuidance(candidate.proposal, candidateRejection, input.context)
     ? candidate
     : null
+}
+
+/**
+ * A failed repair may still contain an independently safe message next to an
+ * unsupported catalogue assertion. Remove only the known unsupported
+ * assertion before dropping the rejected action; the remaining words are
+ * still Agent A's own response.
+ */
+function pruneKnownUnsupportedFactClaimsWithoutValidationV1<
+  T extends AgentAProposalEnvelopeV1,
+>(input: {
+  readonly initial: T
+  readonly rejection: TurnRejectionV1
+  readonly context: AgentAContextV1
+  readonly authorized_fact_ids: readonly string[]
+}): T | null {
+  const subjects = new Set(input.rejection.rejections
+    .filter((reason) => reason.code === 'FACT_VALUE_MISMATCH')
+    .map((reason) => reason.subject))
+  if (!['prerequisites', 'course_logistics', 'candidate_course_detail']
+    .some((subject) => subjects.has(subject))) return null
+
+  const availableIds = new Set(input.authorized_fact_ids)
+  const citedIds = new Set(input.initial.proposal.used_fact_ids.filter((id) => availableIds.has(id)))
+  let safeMessages = [...input.initial.proposal.response.messages]
+  if (subjects.has('prerequisites')) {
+    safeMessages = safeMessages.flatMap(removeUnsupportedPrerequisiteAssertionsV1)
+  }
+  if (subjects.has('course_logistics')) {
+    const authorizedValues = input.context.catalog.selected_offering?.facts
+      .filter((fact) => citedIds.has(fact.id))
+      .map((fact) => fact.value) ?? []
+    safeMessages = safeMessages.flatMap((message) => (
+      removeUnsupportedCourseLogisticsAssertionsV1(message, authorizedValues)
+    ))
+  }
+  if (subjects.has('candidate_course_detail')) {
+    safeMessages = removeUnverifiedCandidateCourseDetailAssertionsV1(
+      safeMessages,
+      input.context,
+      citedIds,
+      input.initial.proposal.move.course_reference ?? null,
+    )
+  }
+  if (safeMessages.length === 0) return null
+
+  return {
+    ...input.initial,
+    proposal: {
+      ...input.initial.proposal,
+      response: { ...input.initial.proposal.response, messages: safeMessages },
+    },
+  } as T
 }
 
 export type PlannerlessAgentATurnProposalV2 = AgentATurnProposalV1
