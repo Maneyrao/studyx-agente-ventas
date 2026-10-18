@@ -714,7 +714,7 @@ describe('plannerless Agent A authority', () => {
     });
   });
 
-  it('consumes a durable payment-link request when the final contact detail arrives', () => {
+  it('preserves a durable payment-link request and waits for confirmation after final intake', () => {
     const result = authorize({
       customerText: 'Mi teléfono es +54 9 11 1234 5678',
       state: state({
@@ -732,17 +732,17 @@ describe('plannerless Agent A authority', () => {
           schema_version: 1, move: 'provide_contact_details', secondary_moves: [], vetoes: [],
           confidence: 0.99,
         },
-        response: { messages: ['Listo, te comparto el link seguro.'] },
+        response: { messages: ['Listo, tus datos están completos. ¿Confirmas el plan para enviarte el enlace?'] },
         proposed_action: { type: 'none' },
       }),
     });
 
     expect(result).toMatchObject({
       ok: true,
-      action: { type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6' },
+      action: { type: 'none' },
       transition: {
-        stage: 'payment_link_sent', awaiting_reply: 'none',
-        payment_link_request: { status: 'consumed' },
+        stage: 'plan_selected', awaiting_reply: 'payment_confirmation',
+        payment_link_request: { status: 'pending' },
       },
     });
   });
@@ -898,6 +898,13 @@ describe('plannerless Agent A authority', () => {
       state: state({
         selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6',
         stage: 'plan_selected', awaiting_reply: 'contact_details',
+        payment_link_request: {
+          status: 'pending',
+          offering_code: 'redes_informaticas',
+          payment_plan: 'monthly_6',
+          requested_by_turn_id: null,
+          resolved_by_decision_id: null,
+        },
       }),
       intake: completeIntake,
       proposal: proposal({

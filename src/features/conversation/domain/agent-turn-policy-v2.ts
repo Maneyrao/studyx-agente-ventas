@@ -400,6 +400,10 @@ export function authorizeAgentTurnV2(input: {
     && !proposal.move.vetoes.includes('payment_link')
     && !proposal.move.vetoes.includes('purchase')
     && paymentLinkAuthorized
+    // Completing intake preserves the customer's pending request, but it must
+    // not make the backend invent a checkout behind an Agent A confirmation
+    // question. An explicit proposed action can still consume the request.
+    && !(pendingPaymentRequest !== null && moves.has('provide_contact_details'))
   ) {
     // The model owns the conversational move; the backend owns side effects.
     // Materializing the action encoded by an authorized request is not a
