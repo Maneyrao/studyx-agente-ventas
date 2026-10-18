@@ -194,6 +194,11 @@ run('canonical orchestration lifecycle', () => {
     expect(replay.status).toBe('duplicate');
     expect(replay.turn_id).toBe(first.turn_id);
     expect(replay.conversation_id).toBe(first.conversation_id);
+    // A replay of an unanswered waiting batch is only transport recovery. It
+    // must stay on the short ingest path so Botpress can continue to /claim;
+    // there cannot be an existing decision until the batch is completed.
+    expect(replay.batch.state).toBe('waiting');
+    expect(replay.existing_result).toBeNull();
 
     const decisionInput = reply(first.turn_id);
     const decision = await commitAgentDecision(decisionInput);

@@ -792,13 +792,16 @@ export async function processInboundMessage(envelope: InboundEnvelope): Promise<
     unsupported_message: envelope.message.type === 'unsupported',
   });
 
-  // A brand-new inbound cannot already have a decision. Keep this recovery
-  // lookup off the acknowledgement path: if a read connection stalls after
-  // the durable write, Botpress otherwise times out, retries the same event,
-  // and the batch remains waiting even though the message was persisted.
-  // Replays still perform the lookup so an already-decided turn can never be
-  // answered twice.
-  const decisions = replayed ? await timedStage(
+  // A brand-new inbound cannot already have a decision. Neither can a replay
+  // whose original batch is still waiting: that replay is Botpress' recovery
+  // path toward the claim, so making it perform an unrelated decision read can
+  // strand an otherwise healthy durable batch before the claim is retried.
+  //
+  // A completed batch does need the lookup. It tells a replay whether the
+  // already-committed outbound was submitted, failed or remains ambiguous,
+  // which preserves the exactly-once delivery fence.
+  const shouldLoadExistingDecision = replayed && batch.state === 'completed';
+  const decisions = shouldLoadExistingDecision ? await timedStage(
     'ingest.replay_lookup',
     { trace_id: envelope.trace_id },
     () => sql<Array<{
