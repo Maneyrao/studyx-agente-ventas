@@ -89,6 +89,7 @@ export async function POST(request: NextRequest) {
     const context = await timedStage('ingest.process', { trace_id: envelope.trace_id }, () =>
       processInboundMessage(envelope)
     );
+    observeIngress('response_ready');
     if (!context.replayed && !context.contact.blocked) {
       after(() => flushSheetProjectionsAfterMutation({
         traceId: envelope.trace_id,

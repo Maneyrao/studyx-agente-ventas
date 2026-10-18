@@ -792,12 +792,21 @@ export async function processInboundMessage(envelope: InboundEnvelope): Promise<
     unsupported_message: envelope.message.type === 'unsupported',
   });
 
-  const decisions = await sql<Array<{
+  // A brand-new inbound cannot already have a decision. Keep this recovery
+  // lookup off the acknowledgement path: if a read connection stalls after
+  // the durable write, Botpress otherwise times out, retries the same event,
+  // and the batch remains waiting even though the message was persisted.
+  // Replays still perform the lookup so an already-decided turn can never be
+  // answered twice.
+  const decisions = replayed ? await timedStage(
+    'ingest.replay_lookup',
+    { trace_id: envelope.trace_id },
+    () => sql<Array<{
     decision_id: string;
     outbound_id: string | null;
     state: string | null;
     next_state: 'completed' | 'waiting_user';
-  }>>`
+    }>>`
     SELECT
       ad.id AS decision_id,
       ad.outbound_message_id AS outbound_id,
@@ -821,7 +830,8 @@ export async function processInboundMessage(envelope: InboundEnvelope): Promise<
     ) AS part_delivery ON true
     WHERE ad.turn_id = ${inbound.id}::uuid
     LIMIT 1
-  `;
+    `,
+  ) : [];
   const existingDecision = decisions[0];
   const deliveryStatus = existingDecision?.state === 'submitted' || existingDecision?.state === 'delivered'
     ? 'submitted_to_botpress'
