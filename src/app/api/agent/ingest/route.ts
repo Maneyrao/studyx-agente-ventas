@@ -10,6 +10,7 @@ import {
 } from '@/lib/services/ingestion.service';
 import { ContactValidationError } from '@/lib/services/contact.service';
 import { isRetryableTransactionError } from '@/lib/db/transaction';
+import { isTransientDatabaseAvailabilityError } from '@/lib/db/types';
 import { timedStage } from '@/lib/observability/structured-log';
 import { flushSheetProjectionsAfterMutation } from '@/lib/services/sheet-projection-trigger';
 import { InboundEnvelopeSchema } from '@/lib/contracts/inbound-envelope';
@@ -108,13 +109,16 @@ export async function POST(request: NextRequest) {
         { status: err.retryable ? 425 : 409 }
       );
     }
-    // A serialization/deadlock failure that survived the in-process retries is
-    // still transient: the write is idempotent, so the client may safely try
-    // again. 503 keeps it inside the client's retryable status set; 500 would
-    // read as a permanent fault and drop the turn.
+    // A serialization/deadlock failure that survived the in-process retries,
+    // or a provider-side connection interruption, is still transient: ingest
+    // is idempotent, so Botpress may safely retry the same external event.
     if (isRetryableTransactionError(err)) {
       console.error('POST /api/agent/ingest transient contention:', err);
       return NextResponse.json({ error: 'TRANSIENT_DB_CONTENTION' }, { status: 503 });
+    }
+    if (isTransientDatabaseAvailabilityError(err)) {
+      console.error('POST /api/agent/ingest transient database interruption:', err);
+      return NextResponse.json({ error: 'TRANSIENT_DB_UNAVAILABLE' }, { status: 503 });
     }
     console.error('POST /api/agent/ingest error:', err);
     return NextResponse.json({ error: 'INTERNAL_ERROR' }, { status: 500 });
