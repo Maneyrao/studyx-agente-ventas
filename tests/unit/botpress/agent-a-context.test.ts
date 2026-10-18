@@ -58,7 +58,7 @@ function claimedTurn(): ClaimedTurn {
         created_at: NOW,
         message_type: 'text',
       }],
-      recent_turns: Array.from({ length: 10 }, (_, index) => ({
+      recent_turns: Array.from({ length: 20 }, (_, index) => ({
         direction: index % 2 === 0 ? 'inbound' as const : 'outbound' as const,
         content: `turno-${index + 1}`,
         created_at: `2026-08-28T11:${String(index).padStart(2, '0')}:00.000Z`,
@@ -193,7 +193,7 @@ function claimedTurn(): ClaimedTurn {
 }
 
 describe('buildAgentAContextV1', () => {
-  it('projects durable summary memory and ten logical interventions to Agent A', () => {
+  it('projects durable summary memory and twenty logical interventions to Agent A', () => {
     const claimed = claimedTurn();
     claimed.context.summary = {
       text: 'Matías busca salida laboral y prefiere estudiar por la noche.',
@@ -208,7 +208,7 @@ describe('buildAgentAContextV1', () => {
       version: 7,
       updated_at: NOW,
     });
-    expect(context.turn.recent_turns).toHaveLength(10);
+    expect(context.turn.recent_turns).toHaveLength(20);
     expect(context.turn.recent_turns[0]?.content).toBe('turno-1');
   });
 
@@ -1547,10 +1547,12 @@ describe('buildAgentAContextV1', () => {
   it('connects bounded recent turns, selected memories and canonical catalog without secrets', () => {
     const context = buildAgentAContextV1(claimedTurn());
     expect(context).not.toBeNull();
-    expect(context!.turn.recent_turns).toHaveLength(10);
+    expect(context!.turn.recent_turns).toHaveLength(20);
     expect(context!.turn.recent_turns.map((turn) => turn.content)).toEqual([
       'turno-1', 'turno-2', 'turno-3', 'turno-4', 'turno-5',
       'turno-6', 'turno-7', 'turno-8', 'turno-9', 'turno-10',
+      'turno-11', 'turno-12', 'turno-13', 'turno-14', 'turno-15',
+      'turno-16', 'turno-17', 'turno-18', 'turno-19', 'turno-20',
     ]);
     expect(context!.customer.memories.map((memory) => memory.id)).toEqual([
       'memory-relevant', 'memory-2', 'memory-3', 'memory-4', 'memory-5',

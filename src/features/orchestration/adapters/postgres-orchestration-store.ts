@@ -199,7 +199,10 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
   }): Promise<ClaimedBatchContext | null> {
     const limit = Math.min(Math.max(input.recent_turns_limit, 1), 20);
     const { workspaceSlug } = loadBusinessWorkspaceConfig();
-    const logicalLimit = Math.min(limit, 6);
+    // The brain consumes logical interventions, not physical bubbles. Keeping
+    // this equal to the bounded request prevents a 20-row read from silently
+    // collapsing to only three customer/agent exchanges.
+    const logicalLimit = limit;
     type JsonBatchMessage = {
       id: string;
       conversation_seq: string | number;

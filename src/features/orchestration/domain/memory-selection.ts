@@ -351,18 +351,27 @@ export function evaluateMemoryCandidate(
   const source = context.batch_messages.find((message) => message.content.includes(literalQuote));
   if (!source || significantChars(quote).length === 0) return reject('QUOTE_NOT_FOUND');
 
-  if (!isGroundedInQuote(value, quote)) return reject('VALUE_NOT_GROUNDED');
+  // Agent A is allowed to paraphrase when every meaningful token is grounded.
+  // If it over-paraphrases, the customer's exact cited words are still safer
+  // and more useful than discarding the memory completely. All sensitive,
+  // reserved and instruction-like checks above already inspected that quote.
+  const groundedValue = isGroundedInQuote(value, quote)
+    ? value
+    : candidate.source_quote.length <= MAX_MEMORY_VALUE_LENGTH
+      ? quote
+      : null;
+  if (groundedValue === null) return reject('VALUE_NOT_GROUNDED');
 
   return {
     status: 'accepted',
     memory: {
       type: type as MemoryType,
       key,
-      value,
+      value: groundedValue,
       source_quote: candidate.source_quote.trim(),
       source_message_id: source.id,
       confidence: candidate.confidence,
-      dedupe_hash: memoryDedupeHash({ contact_id: context.contact_id, type, key, value }),
+      dedupe_hash: memoryDedupeHash({ contact_id: context.contact_id, type, key, value: groundedValue }),
       ttl_days: MEMORY_TTL_DAYS[type as MemoryType],
     },
   };

@@ -47,4 +47,18 @@ describe('Agent A durable memory admission', () => {
       status: 'rejected', reason: 'QUOTE_NOT_FOUND',
     });
   });
+
+  it('keeps the exact customer quote when the model paraphrase adds unsupported words', () => {
+    expect(validate({
+      type: 'study_goal', key: 'communication_goal',
+      value: 'quiere ganar seguridad y soltarse al hablar con otras personas',
+      source_quote: 'Me gustaría soltarme más al hablar',
+    })).toMatchObject({
+      status: 'accepted',
+      memory: {
+        value: 'me gustaria soltarme mas al hablar',
+        source_quote: 'Me gustaría soltarme más al hablar',
+      },
+    });
+  });
 });

@@ -14,7 +14,7 @@ describe('Agent A canonical sales prompt', () => {
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v74' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v75' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
@@ -86,7 +86,8 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toContain('Eres {{NOMBRE_ASESOR}}, administrativa de {{NOMBRE_ACADEMIA}}');
     expect(prompt).toContain('«Soy {{NOMBRE_ASESOR}}, administrativa de {{NOMBRE_ACADEMIA}}»');
     expect(prompt).toMatch(/nombre y apellido[\s\S]*primeras interacciones[\s\S]*sin bloquear/iu);
-    expect(prompt).toMatch(/curso concreto[\s\S]*segunda intervenci[oó]n comercial[\s\S]*primera invitaci[oó]n/iu);
+    expect(prompt).toMatch(/momento comercial[\s\S]*primera invitaci[oó]n[\s\S]*raz[oó]n concreta/iu);
+    expect(prompt).not.toMatch(/segunda intervenci[oó]n comercial/iu);
     expect(prompt).toMatch(/m[aá]ximo dos invitaciones[\s\S]*segunda[\s\S]*motivo nuevo/iu);
     expect(prompt).toMatch(/ad[aá]ptalas al contexto[\s\S]*sin frases fijas/iu);
   });
@@ -122,8 +123,17 @@ describe('Agent A canonical sales prompt', () => {
   it('offers a call for a commercial reason rather than for turn position alone', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
-    expect(prompt).toMatch(/segunda intervenci[oó]n comercial[^.]*raz[oó]n concreta/iu);
-    expect(prompt).toMatch(/posici[oó]n temporal[^.]*no sustituye[^.]*raz[oó]n comercial/iu);
+    expect(prompt).toMatch(/momento comercial[^.]*raz[oó]n concreta/iu);
+    expect(prompt).toMatch(/no la ofrezcas por turno, reloj ni plantilla/iu);
+  });
+
+  it('makes Agent A the sole author across ordinary, call and post-sale moments', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+
+    expect(prompt).toMatch(/toda prosa visible[^.]*la redactas t[uú]/iu);
+    expect(prompt).toMatch(/backend no redacta, completa ni reemplaza respuestas/iu);
+    expect(prompt).toMatch(/llamada[^.]*postventa[^.]*protocolo[^.]*no guiones fijos/iu);
+    expect(prompt).toMatch(/etapa comercial actual[^.]*intenci[oó]n del cliente/iu);
   });
 
   it('retains the richer commercial context Lisandro expects without storing inference', () => {

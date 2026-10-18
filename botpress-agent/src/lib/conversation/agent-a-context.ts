@@ -30,7 +30,9 @@ const LOW_INFORMATION_TOKENS = new Set([
   'saber', 'sos', 'tarde', 'tenes', 'tienen', 'toda', 'todas', 'todos', 'vos',
 ]);
 
-const LOGICAL_HISTORY_LIMIT = 10;
+// Keep enough complete interventions for conversational continuity. This is
+// still bounded, but no longer throws away half of a typical ten-exchange chat.
+const LOGICAL_HISTORY_LIMIT = 20;
 
 type LogicalHistoryTurnV1 = {
   readonly id: string;
