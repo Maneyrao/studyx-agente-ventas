@@ -12,6 +12,11 @@ describe('Agent A DeepSeek attempt boundary', () => {
     ['BRAIN_DEEPSEEK_HTTP_503', true, 'provider_transport'],
     ['BRAIN_DEEPSEEK_RATE_LIMITED', false, 'provider_rejected'],
     ['BRAIN_DEEPSEEK_HTTP_429', false, 'provider_rejected'],
+    ['BRAIN_TIMEOUT', true, 'provider_transport'],
+    ['BRAIN_NETWORK_ERROR', true, 'provider_transport'],
+    ['BRAIN_HTTP_503', true, 'provider_transport'],
+    ['BRAIN_RATE_LIMITED', false, 'provider_rejected'],
+    ['BRAIN_HTTP_402', false, 'provider_rejected'],
     ['BRAIN_INVALID_SCHEMA', false, 'schema'],
     [
       'PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:request_call_now',

@@ -37,12 +37,17 @@ export function classifyAgentAAttemptFailure(error: unknown): AgentAAttemptFailu
     code === 'BRAIN_DEEPSEEK_TIMEOUT'
     || code === 'BRAIN_DEEPSEEK_NETWORK_ERROR'
     || /^BRAIN_DEEPSEEK_HTTP_5\d\d$/u.test(code)
+    || code === 'BRAIN_TIMEOUT'
+    || code === 'BRAIN_NETWORK_ERROR'
+    || /^BRAIN_HTTP_5\d\d$/u.test(code)
   ) {
     return { stage: 'provider_transport', code, retryable: true }
   }
   if (
     code === 'BRAIN_DEEPSEEK_RATE_LIMITED'
     || /^BRAIN_DEEPSEEK_HTTP_\d{3}$/u.test(code)
+    || code === 'BRAIN_RATE_LIMITED'
+    || /^BRAIN_HTTP_\d{3}$/u.test(code)
   ) {
     return { stage: 'provider_rejected', code, retryable: false }
   }

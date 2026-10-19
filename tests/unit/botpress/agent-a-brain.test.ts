@@ -1425,14 +1425,17 @@ describe('Agent A Brain V1', () => {
 
   it('makes one strict structured request with the required budget', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(200, successBody(proposal())));
+    const onProviderRequest = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await generateAgentATurnProposalV1({
       context: context(), apiKey: 'test-key', signal: new AbortController().signal,
+      on_provider_request: onProviderRequest,
     });
 
     expect(result.proposal.response.messages).toHaveLength(2);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(onProviderRequest).toHaveBeenCalledTimes(1);
     const body = JSON.parse(String(fetchMock.mock.calls[0]![1]?.body));
     expect(body.temperature).toBe(0.2);
     expect(body.reasoning_effort).toBe('low');

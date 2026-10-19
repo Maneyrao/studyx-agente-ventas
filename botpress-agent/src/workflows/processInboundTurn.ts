@@ -65,7 +65,9 @@ import {
 } from '../lib/conversation/agent-a-context'
 import { isLegacyConversationPipelineEligibleV1 } from '../lib/conversation/agent-a-routing'
 import {
+  DEFAULT_AGENT_A_BRAIN_MODEL,
   DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
+  generateAgentATurnProposalV1,
   generateDeepSeekAgentATurnProposalV1,
 } from '../lib/conversation/agent-a-brain'
 import {
@@ -885,6 +887,38 @@ export const processInboundTurn = new Workflow({
       physicalAgentARequests += 1
       agentAGenerationAttempts = Math.max(agentAGenerationAttempts, physicalAgentARequests) as 1 | 2 | 3
     }
+    let agentAGroqFallbackActive = false
+    const generateAgentAProviderProposal = async (
+      providerInput: Parameters<typeof generateDeepSeekAgentATurnProposalV1>[0],
+    ) => {
+      if (!agentAGroqFallbackActive) {
+        try {
+          return await generateDeepSeekAgentATurnProposalV1(providerInput)
+        } catch (error) {
+          const failure = classifyAgentAAttemptFailure(error)
+          const groqApiKey = secrets.GROQ_API_KEY
+          if (!isAgentAProviderFailure(failure)
+            || typeof groqApiKey !== 'string' || groqApiKey.length === 0) throw error
+          agentAGroqFallbackActive = true
+          safeLog('studyx.turn.agent_a_provider_failover', {
+            trace_id: input.trace_id,
+            turn_id: owned.turn_id,
+            from: 'deepseek-direct',
+            to: 'groq-direct',
+            failure_code: failure.code,
+          })
+        }
+      }
+      return generateAgentATurnProposalV1({
+        context: providerInput.context,
+        apiKey: secrets.GROQ_API_KEY as string,
+        signal: providerInput.signal,
+        model: DEFAULT_AGENT_A_BRAIN_MODEL,
+        timeout_ms: providerInput.timeout_ms,
+        conversation_only: providerInput.conversation_only,
+        on_provider_request: providerInput.on_provider_request,
+      })
+    }
     let agentARepairAttempted = false
     let agentAContinuationFailure: unknown = null
     let callOfferAudit: {
@@ -1007,7 +1041,7 @@ export const processInboundTurn = new Workflow({
         if (typeof deepSeekApiKey !== 'string' || deepSeekApiKey.length === 0) {
           throw new StudyxHttpError('DEEPSEEK_API_KEY_MISSING', false)
         }
-        const generateDeepSeekProposal = () => generateDeepSeekAgentATurnProposalV1({
+        const generateDeepSeekProposal = () => generateAgentAProviderProposal({
             context: agentABrainContext,
             ...(resumedRejection ? { conversation_only: true } : {}),
             on_provider_request: accountAgentAProviderRequest,
@@ -1126,7 +1160,7 @@ export const processInboundTurn = new Workflow({
                     effects_allowed: repairEffectsAllowed,
                     apiKey: secrets.DEEPSEEK_API_KEY as string,
                     signal,
-                    generate: generateDeepSeekAgentATurnProposalV1,
+                    generate: generateAgentAProviderProposal,
                     model: typeof configuration.agentABrainDeepSeekModel === 'string'
                       ? configuration.agentABrainDeepSeekModel
                       : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
@@ -1154,7 +1188,7 @@ export const processInboundTurn = new Workflow({
                   context: agentABrainContext, rejection: resolved.rejection!,
                   on_provider_request: accountAgentAProviderRequest,
                   apiKey: secrets.DEEPSEEK_API_KEY as string, signal,
-                  generate: generateDeepSeekAgentATurnProposalV1,
+                  generate: generateAgentAProviderProposal,
                   model: typeof configuration.agentABrainDeepSeekModel === 'string'
                     ? configuration.agentABrainDeepSeekModel : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
                 }), { maxAttempts: 1 })
@@ -1317,7 +1351,7 @@ export const processInboundTurn = new Workflow({
                 try {
                   return await step(
                     'repair-agent-a-turn-proposal-v1',
-                    () => generateDeepSeekAgentATurnProposalV1({
+                    () => generateAgentAProviderProposal({
                       context: { ...agentABrainContext, turn_rejection: rejection },
                       on_provider_request: accountAgentAProviderRequest,
                       apiKey: secrets.DEEPSEEK_API_KEY as string,
@@ -1434,7 +1468,7 @@ export const processInboundTurn = new Workflow({
                     on_provider_request: accountAgentAProviderRequest,
                     rejection: profileRejection,
                     apiKey: secrets.DEEPSEEK_API_KEY as string, signal,
-                    generate: generateDeepSeekAgentATurnProposalV1,
+                    generate: generateAgentAProviderProposal,
                     model: typeof configuration.agentABrainDeepSeekModel === 'string'
                       ? configuration.agentABrainDeepSeekModel : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
                   }), { maxAttempts: 1 })
@@ -1935,7 +1969,7 @@ export const processInboundTurn = new Workflow({
                 effects_allowed: repairEffectsAllowed,
                 apiKey: deepSeekApiKey,
                 signal,
-                generate: generateDeepSeekAgentATurnProposalV1,
+                generate: generateAgentAProviderProposal,
                 model: typeof configuration.agentABrainDeepSeekModel === 'string'
                   ? configuration.agentABrainDeepSeekModel
                   : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
@@ -2010,7 +2044,7 @@ export const processInboundTurn = new Workflow({
                 effects_allowed: repairEffectsAllowed,
                 apiKey: deepSeekApiKey,
                 signal,
-                generate: generateDeepSeekAgentATurnProposalV1,
+                generate: generateAgentAProviderProposal,
                 model: typeof configuration.agentABrainDeepSeekModel === 'string'
                   ? configuration.agentABrainDeepSeekModel
                   : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,

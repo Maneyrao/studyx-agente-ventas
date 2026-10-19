@@ -617,11 +617,12 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
   });
 }
 
-function requestBody(context: AgentAContextV1, model: string): unknown {
+function requestBody(context: AgentAContextV1, model: string, conversationOnly = false): unknown {
   return {
     model,
     messages: [
-      { role: 'system', content: buildAgentABrainInstructionsV1(context) },
+      { role: 'system', content: buildAgentABrainInstructionsV1(context)
+        + (conversationOnly ? '\nThe requested operation was not executed. Continue the conversation in your usual voice, use proposed_action none and call_offer null, and never claim that an effect succeeded.' : '') },
       { role: 'user', content: 'Return only the single AgentATurnProposalV1 JSON object.' },
     ],
     temperature: 0.2,
@@ -633,7 +634,7 @@ function requestBody(context: AgentAContextV1, model: string): unknown {
       json_schema: {
         name: 'studyx_agent_a_turn_proposal_v1',
         strict: true,
-        schema: proposalJsonSchema(context),
+        schema: proposalJsonSchema(context, conversationOnly),
       },
     },
   };
@@ -1309,6 +1310,8 @@ export async function generateAgentATurnProposalV1(input: {
   readonly signal: AbortSignal;
   readonly model?: string;
   readonly timeout_ms?: number;
+  readonly conversation_only?: boolean;
+  readonly on_provider_request?: () => void;
 }): Promise<GeneratedAgentATurnProposalV1> {
   const model = input.model ?? DEFAULT_AGENT_A_BRAIN_MODEL;
   const budgetMs = Math.min(AGENT_A_BRAIN_DEADLINE_MS, Math.max(1, input.timeout_ms ?? AGENT_A_BRAIN_DEADLINE_MS));
@@ -1326,12 +1329,13 @@ export async function generateAgentATurnProposalV1(input: {
 
   try {
     for (const attempt of [1, 2] as const) {
+      input.on_provider_request?.();
       let response: Response;
       try {
         response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
           method: 'POST',
           headers: { authorization: `Bearer ${input.apiKey}`, 'content-type': 'application/json' },
-          body: JSON.stringify(requestBody(input.context, model)),
+          body: JSON.stringify(requestBody(input.context, model, input.conversation_only)),
           signal: controller.signal,
         });
       } catch {

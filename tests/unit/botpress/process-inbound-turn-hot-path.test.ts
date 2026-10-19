@@ -2181,6 +2181,74 @@ describe('processInboundTurn hot path', () => {
       error_code: 'AGENT_A_CONTINUATION_REJECTED' });
   });
 
+  it('fails over to Groq and commits the same Agent A contract when DeepSeek rejects billing', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off',
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null, selected_payment_plan: null,
+      stage: 'exploring', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 1,
+    };
+    claimed.context.batch_messages[0].content = 'Quiero que me llames para asesorarme sobre otro curso';
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 1,
+      offerings: [{ code: 'entrenamiento-funcional', display_name: 'Entrenamiento Funcional', academy: 'Salud y Bienestar', aliases: [] }],
+      injection_suspected_count: 0,
+    };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+    secrets.GROQ_API_KEY = 'groq-local-test-only';
+    actionSpies.agentABrainDeepSeek.mockRejectedValue(
+      Object.assign(new Error('billing required'), { code: 'BRAIN_DEEPSEEK_HTTP_402' }),
+    );
+    actionSpies.commit.mockResolvedValueOnce({
+      status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
+      decision_id: UUID, next_state: 'completed', outbound: null, call_request: null,
+    });
+
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('MANAGED_MODEL_MUST_NOT_RUN'); }),
+      client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
+    expect(actionSpies.agentABrain).toHaveBeenCalledTimes(1);
+    expect(actionSpies.agentABrain).toHaveBeenCalledWith(expect.objectContaining({
+      apiKey: 'groq-local-test-only',
+      model: 'openai/gpt-oss-120b',
+    }));
+    expect(actionSpies.commit).toHaveBeenCalledTimes(1);
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      model: { provider: 'groq-direct', prompt_version: AGENT_A_BRAIN_PROMPT_VERSION },
+      agent_turn_v2: { proposal: { proposed_action: { type: 'none' } } },
+    });
+    expect(actionSpies.recovery).not.toHaveBeenCalled();
+    const failoverLog = vi.mocked(console.info).mock.calls
+      .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
+      .find((entry) => entry.event === 'studyx.turn.agent_a_provider_failover');
+    expect(failoverLog).toMatchObject({
+      from: 'deepseek-direct',
+      to: 'groq-direct',
+      failure_code: 'BRAIN_DEEPSEEK_HTTP_402',
+    });
+  });
+
   it('ignores an OpenAI secret and keeps DeepSeek as the authoritative brain', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
@@ -2348,7 +2416,6 @@ describe('processInboundTurn hot path', () => {
     configuration.agentAPlannerlessV2Enabled = true;
     secrets.DEEPSEEK_API_KEY = 'deepseek-local-test-only';
     secrets.OPENAI_API_KEY = 'openai-must-not-run';
-    secrets.GROQ_API_KEY = 'groq-must-not-run';
     secrets.GEMINI_API_KEY = 'gemini-must-not-run';
     actionSpies.agentABrainDeepSeek.mockRejectedValueOnce(
       Object.assign(new Error('provider failure'), { code: 'BRAIN_DEEPSEEK_HTTP_429' }),
