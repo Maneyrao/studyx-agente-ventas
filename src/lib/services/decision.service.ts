@@ -1225,7 +1225,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       // Agent A owns its wording and transition. Reject an unsupported fact
       // before the transaction commits so A can reformulate the complete turn;
       // pruning sentences here would persist a transition for different copy.
-      // The legacy pipeline below retains its existing sentence-veto contract.
+      // Natural uncertainty and denials are excluded inside the truth guard,
+      // so this boundary remains about concrete false facts, never style.
       const verdict = inspectedVerdict;
       if (verdict.violations.some((violation) => violation.code === 'UNAUTHORIZED_URL')) {
         throw egressPolicyError('UNAUTHORIZED_URL');

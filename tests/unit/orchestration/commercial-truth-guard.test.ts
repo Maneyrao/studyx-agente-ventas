@@ -640,6 +640,9 @@ describe('discount topic is not an affirmative benefit', () => {
     'Sobre descuentos.',
     'Sobre descuentos, no tengo información confirmada.',
     'Sobre descuentos, no puedo confirmarte ninguno.',
+    'No tengo confirmado si hay un descuento por ser alumno.',
+    'No puedo confirmarte si existe alguna beca vigente.',
+    'No me consta que haya un descuento para alumnos.',
   ])('preserves the real denied-benefit reply: %s', content => {
     expect(enforce(content).violations).not.toContainEqual(expect.objectContaining({ code: 'FORBIDDEN_PROMISE' }));
     expect(enforce(content).content).toBe(content);
@@ -663,6 +666,7 @@ describe('discount topic is not an affirmative benefit', () => {
     'No hay descuentos, pero te damos un descuento del 20%.',
     'No hay descuentos y te ofrecemos una beca.',
     'Sobre descuentos, no tengo información confirmada, pero te damos uno.',
+    'No puedo confirmarte si hay descuento, pero te damos uno.',
   ])('still rejects an affirmative or referential benefit: %s', content => {
     expect(enforce(content).violations).toContainEqual(expect.objectContaining({ code: 'FORBIDDEN_PROMISE' }));
   });

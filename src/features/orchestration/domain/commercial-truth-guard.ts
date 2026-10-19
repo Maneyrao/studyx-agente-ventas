@@ -110,6 +110,7 @@ const FORBIDDEN_PROMISE =
 
 const COMMERCIAL_BENEFIT = /\b(?:becas?|descuentos?)\b/u;
 const DENIED_BENEFIT = /\b(?:no|nunca|tampoco)\s+(?:(?:te|le|les|se|nos)\s+)?(?:ofrecemos|ofrece|tenemos|damos|aplicamos|aplica(?:n)?|hay|incluye|tenes|tienes|corresponde(?:n)?|recib(?:es|e|en|imos)|obtien(?:es|e|en)|podemos\s+ofrecer)\b[^.;]{0,40}\b(?:becas?|descuentos?)\b|\bsin\s+(?:becas?|descuentos?)\b/u;
+const UNCERTAIN_BENEFIT = /\b(?:no\s+(?:(?:tengo|tenemos)\s+(?:(?:informacion|datos?)\s+)?confirmad[oa]s?|(?:puedo|podemos)\s+confirmar(?:te)?|me\s+consta|veo\s+(?:confirmad[oa]|registrad[oa])|figura\s+(?:confirmad[oa]|registrad[oa]))|(?:becas?|descuentos?)\s+no\s+(?:esta|estan)\s+(?:confirmad[oa]s?|registrad[oa]s?))\b[^.;]{0,80}\b(?:becas?|descuentos?)?\b/u;
 const OFFERING_CLAIM = /\b(?:(?:studyx\s+)?(?:ofrece(?:mos)?|tenemos|brinda(?:mos)?|dicta(?:mos)?|contamos\s+con|disponemos\s+de)|studyx\s+tiene|pod[eé]s\s+estudiar|te\s+recomiendo)\s+([^.!?\n]+)/giu;
 const GENERIC_CATALOG = /^(?:(?:varias|distintas|muchas|algunas|las|estas|tres)\s+)?(?:opciones|alternativas|areas|formas|planes)\b|^(?:cursos|diplomados)\s*(?:$|disponibles\b)/u;
 const OFFERING_DESCRIPTION = /^(?:todos|todas|ambos|ambas|que|para|con|sin|ideal|donde|porque|si|una\s+opcion|un\s+curso|es|tiene|incluye)\b/u;
@@ -125,7 +126,7 @@ function offersUnauthorizedBenefit(sentence: string): boolean {
   const topic = /^\s*(?:sobre|en cuanto a|respecto (?:a|de))\s+(?:(?:los|las)\s+)?(?:becas?|descuentos?)\s*[.:?]?\s*$/u;
   const deniesTopic = /^\s*(?:no|nunca|tampoco)\s+(?:ofrecemos|ofrece|tenemos|damos|aplicamos|hay|incluye|podemos\s+ofrecer)\s*(?:$|[.:]|(?:promociones?|rebajas?|becas?|descuentos?)\b)/u;
   const uncertainTopic = /^\s*no\s+(?:(?:tengo|tenemos)\s+(?:informacion|datos?)\s+confirmad[ao]s?|(?:puedo|podemos)\s+confirmar(?:te)?\s+ningun[oa]?)\s*[.:]?\s*$/u;
-  const hasTopic = clauses.some(clause => topic.test(clause));
+  const hasTopic = clauses.some(clause => topic.test(clause) || COMMERCIAL_BENEFIT.test(clause));
   return clauses.some((clause, index) => {
     // "Sobre descuentos, no hay..." names the topic before denying it.
     // Retain the topic as context for an affirmative "te ofrecemos una".
@@ -138,6 +139,7 @@ function offersUnauthorizedBenefit(sentence: string): boolean {
       && !/^\s*(?:no|nunca|tampoco)\b/u.test(clause);
     return referentialOffer || (COMMERCIAL_BENEFIT.test(clause)
       && !DENIED_BENEFIT.test(clause)
+      && !UNCERTAIN_BENEFIT.test(clause)
       && !/^\s*ni\b/u.test(clause));
   });
 }

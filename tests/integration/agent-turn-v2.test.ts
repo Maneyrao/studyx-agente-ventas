@@ -454,4 +454,27 @@ run('plannerless Agent A vertical', () => {
     expect(decision).toEqual({ reason_code: 'AGENT_A_PLANNERLESS_V2', model_provider: 'deepseek-direct' });
   });
 
+  it('keeps a natural Agent A uncertainty reply even when the heuristic labels it commercial', async () => {
+    const content = 'No tengo confirmado si hay un descuento por ser alumno. Puedo orientarte con los planes disponibles.';
+    const result = await commitTurn('¿Tengo descuento por haberme anotado?', {
+      schema_version: 1,
+      move: {
+        schema_version: 1,
+        move: 'ask_payment_options',
+        secondary_moves: [],
+        vetoes: [],
+        confidence: 1,
+      },
+      response: { messages: [content] },
+      proposed_action: { type: 'none' },
+      used_fact_ids: [],
+      used_memory_ids: [],
+      memory_candidates: [],
+      repair_of: null,
+    });
+
+    expect(result.committed.outbound?.content).toBe(content);
+    expect(result.committed.status).toBe('committed');
+  });
+
 });

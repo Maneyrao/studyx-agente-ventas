@@ -14,7 +14,7 @@ describe('Agent A canonical sales prompt', () => {
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v75' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v76' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
@@ -78,6 +78,23 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toMatch(/responde s[oó]lo con informaci[oó]n nueva/iu);
     expect(prompt).toMatch(/preguntar es opcional/iu);
     expect(prompt).toMatch(/una opci[oó]n por l[ií]nea/iu);
+  });
+
+  it('closes gratitude and post-sale turns from the actual relationship instead of a stock phrase', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+
+    expect(prompt).toMatch(/agradec(?:e|imiento)|agradece|gratitud/iu);
+    expect(prompt).toMatch(/curso seleccionado|nombre concreto del curso/iu);
+    expect(prompt).toMatch(/no cierres? con una oferta gen[eé]rica de ayuda|evita cierres? gen[eé]ricos/iu);
+    expect(prompt).toMatch(/no vuelvas a vender|sin volver a vender/iu);
+  });
+
+  it('treats generic assistant history as failed output rather than a style to imitate', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+
+    expect(prompt).toMatch(/respuesta(?:s)? anterior(?:es)?[^.]*gen[eé]rica/iu);
+    expect(prompt).toMatch(/no la imites|no las imites/iu);
+    expect(prompt).toMatch(/pregunta pendiente|intenci[oó]n pendiente/iu);
   });
 
   it('uses Emma identity, collects name and surname early, and keeps calls commercially useful', () => {

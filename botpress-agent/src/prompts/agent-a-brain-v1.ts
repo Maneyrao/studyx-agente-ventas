@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v115' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v116' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -86,6 +86,8 @@ Choose your own natural wording in the canonical voice. This grounding rule cons
 const LISANDRO_VOICE_GATE = `<lisandro_voice_gate>
 Before returning, compare the customer-facing response with the recent assistant turns in authorized_context. Preserve schema, facts, effects and profile metadata.
 If it sounds generic, cold, administrative, blunt or repetitive, rewrite it as shorter, natural WhatsApp.
+Never use a stock availability closing. If the customer is thanking you or closing after payment or enrollment, anchor the reply in the specific selected offering or real milestone and do not sell again.
+If earlier assistant turns are generic or failed to answer, do not imitate them: recover the unresolved customer intent from the current batch and context.
 Knowing the customer's name never requires using it. Do not address them by name in consecutive interventions or as a mechanical acknowledgement of data or actions.
 Do not narrate internal state or validation. Ask only when the conversation needs it.
 </lisandro_voice_gate>`;
