@@ -1,9 +1,11 @@
 const DEFAULT_TIMEOUT_MS = 15_000
 const MAX_FILE_BYTES = 25 * 1024 * 1024
 
-export type BotpressAudioDownloadResult =
+export type BotpressMediaDownloadResult =
   | { status: 'ok'; bytes: Uint8Array; size_bytes: number; mime_type: string }
   | { status: 'failed'; reason: string }
+
+export type BotpressAudioDownloadResult = BotpressMediaDownloadResult
 
 function trustedBotpressMediaUrl(raw: string): URL | null {
   try {
@@ -16,11 +18,11 @@ function trustedBotpressMediaUrl(raw: string): URL | null {
   }
 }
 
-export async function downloadBotpressAudio(input: {
+async function downloadBotpressMedia(input: {
   url: string
   fetch_impl?: typeof fetch
   timeout_ms?: number
-}): Promise<BotpressAudioDownloadResult> {
+}, acceptsContentType: (mimeType: string) => boolean): Promise<BotpressMediaDownloadResult> {
   const url = trustedBotpressMediaUrl(input.url)
   if (!url) return { status: 'failed', reason: 'UNTRUSTED_MEDIA_URL' }
 
@@ -44,7 +46,7 @@ export async function downloadBotpressAudio(input: {
     return { status: 'failed', reason: 'FILE_TOO_LARGE' }
   }
   const mimeType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase() ?? ''
-  if (!mimeType.startsWith('audio/') && mimeType !== 'application/ogg') {
+  if (!acceptsContentType(mimeType)) {
     return { status: 'failed', reason: 'UNSUPPORTED_CONTENT_TYPE' }
   }
   const bytes = new Uint8Array(await response.arrayBuffer())
@@ -55,4 +57,26 @@ export async function downloadBotpressAudio(input: {
     size_bytes: bytes.byteLength,
     mime_type: mimeType === 'application/ogg' ? 'audio/ogg' : mimeType,
   }
+}
+
+export async function downloadBotpressAudio(input: {
+  url: string
+  fetch_impl?: typeof fetch
+  timeout_ms?: number
+}): Promise<BotpressAudioDownloadResult> {
+  return downloadBotpressMedia(
+    input,
+    (mimeType) => mimeType.startsWith('audio/') || mimeType === 'application/ogg',
+  )
+}
+
+export async function downloadBotpressImage(input: {
+  url: string
+  fetch_impl?: typeof fetch
+  timeout_ms?: number
+}): Promise<BotpressMediaDownloadResult> {
+  return downloadBotpressMedia(
+    input,
+    (mimeType) => ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(mimeType),
+  )
 }
