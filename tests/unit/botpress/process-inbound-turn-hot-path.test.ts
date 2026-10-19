@@ -2181,7 +2181,7 @@ describe('processInboundTurn hot path', () => {
       error_code: 'AGENT_A_CONTINUATION_REJECTED' });
   });
 
-  it('fails over to Groq and commits the same Agent A contract when DeepSeek rejects billing', async () => {
+  it('keeps DeepSeek as the only Agent A provider when DeepSeek rejects billing', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -2204,15 +2204,10 @@ describe('processInboundTurn hot path', () => {
     claimed.business_context_available = true;
     actionSpies.claim.mockResolvedValue(claimed);
     configuration.agentAPlannerlessV2Enabled = true;
-    secrets.GROQ_API_KEY = 'groq-local-test-only';
+    secrets.GROQ_API_KEY = 'groq-must-not-be-used';
     actionSpies.agentABrainDeepSeek.mockRejectedValue(
       Object.assign(new Error('billing required'), { code: 'BRAIN_DEEPSEEK_HTTP_402' }),
     );
-    actionSpies.commit.mockResolvedValueOnce({
-      status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
-      decision_id: UUID, next_state: 'completed', outbound: null, call_request: null,
-    });
-
     const step = Object.assign(
       async (_name: string, run: () => Promise<unknown>) => run(),
       { sleep: vi.fn(async () => undefined) },
@@ -2221,31 +2216,20 @@ describe('processInboundTurn hot path', () => {
       definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
     }).definition.handler;
 
-    await handler({
+    const result = await handler({
       input: workflowInput(), state: processingState(), step,
       execute: vi.fn(async () => { throw new Error('MANAGED_MODEL_MUST_NOT_RUN'); }),
       client: {}, signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
     expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
-    expect(actionSpies.agentABrain).toHaveBeenCalledTimes(1);
-    expect(actionSpies.agentABrain).toHaveBeenCalledWith(expect.objectContaining({
-      apiKey: 'groq-local-test-only',
-      model: 'openai/gpt-oss-120b',
-    }));
-    expect(actionSpies.commit).toHaveBeenCalledTimes(1);
-    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
-      model: { provider: 'groq-direct', prompt_version: AGENT_A_BRAIN_PROMPT_VERSION },
-      agent_turn_v2: { proposal: { proposed_action: { type: 'none' } } },
-    });
-    expect(actionSpies.recovery).not.toHaveBeenCalled();
-    const failoverLog = vi.mocked(console.info).mock.calls
-      .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
-      .find((entry) => entry.event === 'studyx.turn.agent_a_provider_failover');
-    expect(failoverLog).toMatchObject({
-      from: 'deepseek-direct',
-      to: 'groq-direct',
-      failure_code: 'BRAIN_DEEPSEEK_HTTP_402',
+    expect(actionSpies.agentABrain).not.toHaveBeenCalled();
+    expect(actionSpies.commit).not.toHaveBeenCalled();
+    expect(actionSpies.recovery).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      status: 'retry_pending',
+      delivery_status: null,
+      error_code: 'AGENT_A_CONTINUATION_REJECTED',
     });
   });
 
