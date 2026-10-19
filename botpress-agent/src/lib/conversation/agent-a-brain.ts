@@ -617,26 +617,34 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
   });
 }
 
-function requestBody(context: AgentAContextV1, model: string, conversationOnly = false): unknown {
+function requestBody(
+  context: AgentAContextV1,
+  model: string,
+  conversationOnly = false,
+  responseMode: 'strict_schema' | 'json_object' = 'strict_schema',
+): unknown {
   return {
     model,
     messages: [
       { role: 'system', content: buildAgentABrainInstructionsV1(context)
-        + (conversationOnly ? '\nThe requested operation was not executed. Continue the conversation in your usual voice, use proposed_action none and call_offer null, and never claim that an effect succeeded.' : '') },
+        + (conversationOnly ? '\nThe requested operation was not executed. Continue the conversation in your usual voice, use proposed_action none and call_offer null, and never claim that an effect succeeded.' : '')
+        + (responseMode === 'json_object' ? '\nReturn one valid JSON object that conforms exactly to AgentATurnProposalV1. Do not wrap it in markdown or add prose.' : '') },
       { role: 'user', content: 'Return only the single AgentATurnProposalV1 JSON object.' },
     ],
     temperature: 0.2,
     reasoning_effort: 'low',
     stream: false,
     max_completion_tokens: 800,
-    response_format: {
-      type: 'json_schema',
-      json_schema: {
-        name: 'studyx_agent_a_turn_proposal_v1',
-        strict: true,
-        schema: proposalJsonSchema(context, conversationOnly),
-      },
-    },
+    response_format: responseMode === 'strict_schema'
+      ? {
+        type: 'json_schema',
+        json_schema: {
+          name: 'studyx_agent_a_turn_proposal_v1',
+          strict: true,
+          schema: proposalJsonSchema(context, conversationOnly),
+        },
+      }
+      : { type: 'json_object' },
   };
 }
 
@@ -1328,6 +1336,7 @@ export async function generateAgentATurnProposalV1(input: {
   }, budgetMs);
 
   try {
+    let responseMode: 'strict_schema' | 'json_object' = 'strict_schema';
     for (const attempt of [1, 2] as const) {
       input.on_provider_request?.();
       let response: Response;
@@ -1335,7 +1344,12 @@ export async function generateAgentATurnProposalV1(input: {
         response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
           method: 'POST',
           headers: { authorization: `Bearer ${input.apiKey}`, 'content-type': 'application/json' },
-          body: JSON.stringify(requestBody(input.context, model, input.conversation_only)),
+          body: JSON.stringify(requestBody(
+            input.context,
+            model,
+            input.conversation_only,
+            responseMode,
+          )),
           signal: controller.signal,
         });
       } catch {
@@ -1346,6 +1360,14 @@ export async function generateAgentATurnProposalV1(input: {
       }
 
       if (!response.ok) {
+        if (attempt === 1 && response.status === 400) {
+          // Groq can reject a valid but complex strict schema before model
+          // execution. JSON object mode preserves syntactic JSON while the
+          // same local Zod, policy and backend gates still validate every
+          // field and side effect before anything customer-facing occurs.
+          responseMode = 'json_object';
+          continue;
+        }
         const retryable = response.status === 429 || (response.status >= 500 && response.status <= 599);
         const delayMs = retryAfterMs(response);
         if (attempt === 1 && retryable && delayMs !== null && Date.now() + delayMs < deadlineAt) {
