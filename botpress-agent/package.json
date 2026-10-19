@@ -12,11 +12,11 @@
     "deploy": "adk deploy"
   },
   "dependencies": {
-    "@botpress/evals": "^2.0.5",
-    "@botpress/runtime": "^2.0.5"
+    "@botpress/evals": "^2.0.6",
+    "@botpress/runtime": "^2.0.6"
   },
   "devDependencies": {
-    "@botpress/adk-cli": "^2.0.5",
+    "@botpress/adk-cli": "^2.0.6",
     "typescript": "^5.9.3"
   }
 }

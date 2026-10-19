@@ -2,15 +2,16 @@
  * Transport-only publication. Run with Bun from botpress-agent; default is read-only.
  * --publish permits updating ONLY code after a fresh production build and contract checks.
  * A change to API contracts/dependencies must use a separately reviewed full deployment.
- * SDK entry points are pinned to installed ADK 2.0.5; fail closed after SDK upgrades.
+ * SDK entry points are pinned to installed ADK 2.0.6; fail closed after SDK upgrades.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 
-const expectedBotId = '2f7fe6e1-1fc9-40d9-9045-d0c96b456f4b';
-const expectedWorkspaceId = 'wkspace_01M0X4K3H2EE7RGM39Q29GF6VS';
+const expectedBotId = '0d7c9ecb-4781-4c65-913d-f7e947fa14d4';
+const expectedWorkspaceId = 'wkspace_01M4XEBZNC10HX2KDHKY36T6R0';
+const expectedProfile = process.env.STUDYX_BOTPRESS_PROFILE ?? 'vertice';
 const root = process.cwd();
 const outputDirectory = process.env.STUDYX_RELEASE_EVIDENCE_DIR;
 const publish = process.argv.includes('--publish');
@@ -32,10 +33,12 @@ try {
   assert(outputDirectory && path.isAbsolute(outputDirectory), 'ABSOLUTE_EVIDENCE_DIRECTORY_REQUIRED');
   fs.mkdirSync(outputDirectory, { recursive: true, mode: 0o700 });
   const sdkPackage = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@botpress/adk-cli/package.json'), 'utf8'));
-  assert(sdkPackage.version === '2.0.5', 'UNREVIEWED_ADK_VERSION');
-  const { resolveCommandContext } = await load('node_modules/@botpress/adk-cli/dist/chunk-3ahwp6fe.js');
-  const { refreshDependencySnapshotOnce } = await load('node_modules/@botpress/adk-cli/dist/chunk-xkcrb68a.js');
-  const { adkBuild } = await load('node_modules/@botpress/adk-cli/dist/chunk-ttvctaf1.js');
+  assert(sdkPackage.version === '2.0.6', 'UNREVIEWED_ADK_VERSION');
+  const { auth } = await load('node_modules/@botpress/adk-cli/dist/chunk-dcbcz1ws.js');
+  auth.setProfileOverride(expectedProfile);
+  const { resolveCommandContext } = await load('node_modules/@botpress/adk-cli/dist/chunk-wddbs9hm.js');
+  const { refreshDependencySnapshotOnce } = await load('node_modules/@botpress/adk-cli/dist/chunk-rq2e6ba8.js');
+  const { adkBuild } = await load('node_modules/@botpress/adk-cli/dist/chunk-p4ar5kkm.js');
   const { Client } = await load('node_modules/@botpress/client/dist/index.cjs');
   const { prepareCreateBotBody } = await load('node_modules/@botpress/cli/dist/api/bot-body.js');
   const ctx = await resolveCommandContext({ target: 'prod', projectLoadOptions: { adkCommand: 'adk-deploy' },
