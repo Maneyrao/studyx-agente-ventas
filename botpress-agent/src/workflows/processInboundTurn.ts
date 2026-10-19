@@ -151,11 +151,25 @@ const INBOUND_RECOVERY_MAX_DELAY_MS = 15_000
 
 const MIN_INTER_BUBBLE_DELAY_MS = 650
 const INTER_BUBBLE_DELAY_RANGE_MS = 251
+const MIN_WHATSAPP_REPLY_LATENCY_MS = 8_000
+const WHATSAPP_REPLY_LATENCY_RANGE_MS = 6_001
+const VISIBLE_OUTBOUND_BUDGET_MS = 15_000
 
 function interBubbleDelayMs(outboundId: string): number {
   let hash = 0
   for (const character of outboundId) hash = (hash * 31 + character.charCodeAt(0)) >>> 0
   return MIN_INTER_BUBBLE_DELAY_MS + hash % INTER_BUBBLE_DELAY_RANGE_MS
+}
+
+function stableJitterMs(value: string, rangeMs: number): number {
+  let hash = 0
+  for (const character of value) hash = (hash * 31 + character.charCodeAt(0)) >>> 0
+  return hash % rangeMs
+}
+
+export function whatsappReplyTargetLatencyMs(externalMessageId: string): number {
+  return MIN_WHATSAPP_REPLY_LATENCY_MS
+    + stableJitterMs(externalMessageId, WHATSAPP_REPLY_LATENCY_RANGE_MS)
 }
 
 const DecisionExit = new Autonomous.Exit({
@@ -518,6 +532,7 @@ export const processInboundTurn = new Workflow({
     }
     const timings: Record<string, number> = {}
     let occurredAtMs = Date.parse(input.message.occurred_at ?? '')
+    let latestInboundAtMs = occurredAtMs
     if (Number.isFinite(occurredAtMs)) {
       timings.telegram_to_router_ms = Math.max(0, workflowStartedAt - occurredAtMs)
     }
@@ -779,9 +794,13 @@ export const processInboundTurn = new Workflow({
       .filter((value) => Number.isFinite(value))
     if (batchEventTimes.length > 0) {
       const firstBatchEventAtMs = Math.min(...batchEventTimes)
+      const lastBatchEventAtMs = Math.max(...batchEventTimes)
       occurredAtMs = Number.isFinite(occurredAtMs)
         ? Math.min(occurredAtMs, firstBatchEventAtMs)
         : firstBatchEventAtMs
+      latestInboundAtMs = Number.isFinite(latestInboundAtMs)
+        ? Math.max(latestInboundAtMs, lastBatchEventAtMs)
+        : lastBatchEventAtMs
     }
     Object.assign(timings, owned.diagnostics.timings, owned.diagnostics.counters)
     safeLog('studyx.turn.claimed', {
@@ -2206,6 +2225,28 @@ export const processInboundTurn = new Workflow({
 
     type Submission = { message: { id: string } } | { continuationOutcome: 'superseded' }
     type AuthorizationRetry = { authorizationRetry: { code: string; retryable: boolean } }
+    const waitForNaturalWhatsAppReply = async (outboundId: string): Promise<void> => {
+      if (
+        input.channel !== 'whatsapp'
+        || input.sandbox_provider === 'telegram_sandbox'
+        || !Number.isFinite(latestInboundAtMs)
+      ) return
+      const targetMs = whatsappReplyTargetLatencyMs(input.external_message_id)
+      const elapsedMs = Math.max(0, Date.now() - latestInboundAtMs)
+      const remainingMs = Math.max(0, targetMs - elapsedMs)
+      if (remainingMs === 0) return
+      safeLog('studyx.turn.natural_reply_wait', {
+        trace_id: input.trace_id,
+        turn_id: owned.turn_id,
+        outbound_id: outboundId,
+        target_ms: targetMs,
+        remaining_ms: remainingMs,
+      })
+      // Durable sleep only. On wake, submitWithOwnership synchronizes the
+      // conversation and asks the backend again; a newer inbound supersedes
+      // this outbound instead of allowing a stale reply through.
+      await step.sleep(`natural-whatsapp-reply-${outboundId}`, remainingMs)
+    }
     const submitWithOwnership = async (name: string, outbound: { id: string; delivery_attempt: number },
       send: () => Promise<{ message: { id: string } }>): Promise<Submission> => {
       for (let attempt = 0; ; attempt += 1) {
@@ -2343,6 +2384,9 @@ export const processInboundTurn = new Workflow({
 
         let delivery: Submission
         try {
+          if (outboundPart.part_index === 0) {
+            await waitForNaturalWhatsAppReply(outboundPart.id)
+          }
           // Preserve the model-authored bubbles exactly, while avoiding the
           // machine-like effect of submitting every part in the same instant.
           // A replay resumes immediately from its first unfinished part: the
@@ -2471,7 +2515,7 @@ export const processInboundTurn = new Workflow({
       if (Number.isFinite(occurredAtMs)) {
         timings.event_to_visible_outbound_ms = Math.max(0, Date.now() - occurredAtMs)
         timings.event_to_visible_outbound_over_budget =
-          timings.event_to_visible_outbound_ms >= 10_000 ? 1 : 0
+          timings.event_to_visible_outbound_ms >= VISIBLE_OUTBOUND_BUDGET_MS ? 1 : 0
       }
       state.deliveryStatus = 'submitted_to_botpress'
       await dispatchAcknowledgedCall()
@@ -2564,6 +2608,7 @@ export const processInboundTurn = new Workflow({
     let delivery: Submission
     const sendStartedAt = Date.now()
     try {
+      await waitForNaturalWhatsAppReply(committed.outbound.id)
       delivery = await submitWithOwnership(
         'submit-outbound-to-botpress',
         committed.outbound,
@@ -2616,7 +2661,7 @@ export const processInboundTurn = new Workflow({
         // the inbound event timestamp, this includes the batching window.
         timings.event_to_visible_outbound_ms = Math.max(0, Date.now() - occurredAtMs)
         timings.event_to_visible_outbound_over_budget =
-          timings.event_to_visible_outbound_ms >= 10_000 ? 1 : 0
+          timings.event_to_visible_outbound_ms >= VISIBLE_OUTBOUND_BUDGET_MS ? 1 : 0
       }
     } catch (error) {
       if (!(error instanceof Error)) throw error

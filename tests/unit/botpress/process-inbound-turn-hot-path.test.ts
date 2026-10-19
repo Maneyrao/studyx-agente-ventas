@@ -109,7 +109,10 @@ vi.mock('../../../botpress-agent/src/lib/conversation/agent-a-brain', async (imp
 }));
 
 import { adk, configuration, secrets } from '../../helpers/botpress-runtime-stub';
-import { processInboundTurn } from '../../../botpress-agent/src/workflows/processInboundTurn';
+import {
+  processInboundTurn,
+  whatsappReplyTargetLatencyMs,
+} from '../../../botpress-agent/src/workflows/processInboundTurn';
 import { buildAgentAContextV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-context';
 import { AGENT_A_BRAIN_PROMPT_VERSION } from '../../../botpress-agent/src/prompts/agent-a-brain-v1';
 import type { ClaimedTurn } from '../../../botpress-agent/src/schemas/contracts';
@@ -314,6 +317,17 @@ function processingState() {
 }
 
 describe('processInboundTurn hot path', () => {
+  it('uses a stable 8–14 second WhatsApp reply target', () => {
+    const first = whatsappReplyTargetLatencyMs('wamid.first');
+    const repeated = whatsappReplyTargetLatencyMs('wamid.first');
+    const second = whatsappReplyTargetLatencyMs('wamid.second');
+
+    expect(first).toBe(repeated);
+    expect(first).toBeGreaterThanOrEqual(8_000);
+    expect(first).toBeLessThanOrEqual(14_000);
+    expect(second).toBeGreaterThanOrEqual(8_000);
+    expect(second).toBeLessThanOrEqual(14_000);
+  });
   beforeEach(() => {
     for (const spy of Object.values(actionSpies)) spy.mockReset();
     actionSpies.recovery.mockResolvedValue({ outcome: 'scheduled', attempt: 1, delay_ms: 2000 });
