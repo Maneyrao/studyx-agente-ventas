@@ -112,7 +112,8 @@ try {
       assert(equal(plugin[field] ?? {}, remote[field] ?? {}), `PLUGIN_CHANGED:${alias}.${field}`);
     }
   }
-  assert(!!before.integrations.telegram?.identifier, 'TELEGRAM_AUTHORIZATION_MISSING');
+  assert(before.integrations.telegram?.enabled !== true || !!before.integrations.telegram?.identifier,
+    'TELEGRAM_AUTHORIZATION_MISSING');
   const bundle = fs.readFileSync(path.join(root, '.adk/bot/.botpress/dist/index.cjs'));
   for (const marker of ['transportRecoveryCanary', 'supports_send_fencing', 'SOURCE_SYNC_PENDING', 'DELIVERY_REPORT_UNCONFIRMED']) {
     assert(bundle.includes(Buffer.from(marker)), `BUNDLE_MARKER_MISSING:${marker}`);
