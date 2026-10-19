@@ -53,8 +53,53 @@ async function sources(db: postgres.Sql, config: PostSaleConfig, id?: string, pa
       AND (${id ?? null}::uuid IS NULL OR n.id = ${id ?? null}::uuid)
       AND (${paymentId ?? null}::uuid IS NULL OR p.id = ${paymentId ?? null}::uuid)
       AND (n.kind = 'payment_received' OR EXISTS (SELECT 1 FROM post_sale_notifications prior
-        WHERE prior.payment_id = p.id AND prior.kind = 'payment_received' AND prior.status = 'sent'))
+        WHERE prior.payment_id = p.id AND prior.kind = 'payment_received'
+          AND prior.status IN ('sent', 'cancelled')))
     ORDER BY n.created_at LIMIT 20
+  `;
+}
+
+/**
+ * A verified enrollment result contains the payment acknowledgement already.
+ * If it arrives before the first notification has begun an external send, keep
+ * only the newest useful state. `ambiguous` is deliberately excluded because
+ * that row may already have reached WhatsApp and can no longer be superseded
+ * safely.
+ */
+async function supersedePostSalePredecessors(
+  db: postgres.Sql,
+  scope: { paymentId?: string; notificationId?: string } = {},
+) {
+  await db`
+    WITH target_payment AS (
+      SELECT payment_id
+      FROM post_sale_notifications
+      WHERE (${scope.notificationId ?? null}::uuid IS NOT NULL AND id = ${scope.notificationId ?? null}::uuid)
+        OR (${scope.notificationId ?? null}::uuid IS NULL AND ${scope.paymentId ?? null}::uuid IS NULL)
+      UNION
+      SELECT ${scope.paymentId ?? null}::uuid
+      WHERE ${scope.paymentId ?? null}::uuid IS NOT NULL
+    )
+    UPDATE post_sale_notifications stale
+    SET status = 'cancelled', lease_until = NULL, claim_token = NULL,
+      last_error_code = 'SUPERSEDED_BY_FULFILLMENT_STATE'
+    WHERE stale.payment_id IN (SELECT payment_id FROM target_payment)
+      AND stale.status IN ('pending', 'dispatched', 'processing')
+      AND (
+        (stale.kind = 'payment_received' AND EXISTS (
+          SELECT 1 FROM post_sale_notifications newer
+          WHERE newer.payment_id = stale.payment_id
+            AND newer.kind IN ('access_ready', 'access_delayed')
+            AND newer.status NOT IN ('cancelled', 'dead_letter')
+        ))
+        OR
+        (stale.kind = 'access_delayed' AND EXISTS (
+          SELECT 1 FROM post_sale_notifications newer
+          WHERE newer.payment_id = stale.payment_id
+            AND newer.kind = 'access_ready'
+            AND newer.status NOT IN ('cancelled', 'dead_letter')
+        ))
+      )
   `;
 }
 export function validateNotificationSource(source: Pick<Source, 'kind' | 'enrollment_status' | 'login_email' | 'registration_email'>): boolean {
@@ -69,6 +114,7 @@ export async function dispatchNotifications(paymentId?: string, deps: Deps = {})
   const managed = loadBotpressManagedMessagingConfig();
   if (!managed) throw new Error('POST_SALE_BOTPRESS_UNCONFIGURED');
   const fetchImpl = deps.fetchImpl ?? fetch;
+  await supersedePostSalePredecessors(db, { paymentId });
   let dispatched = 0;
   for (const source of await sources(db, config, undefined, paymentId)) {
     if (!validateNotificationSource(source)) {
@@ -116,6 +162,7 @@ export async function claimNotification(id: string, botpressConversationId: stri
   const config = deps.config ?? loadPostSaleConfig();
   if (!config.enabled) return { claimed: false as const };
   const db = deps.db ?? defaultDb;
+  await supersedePostSalePredecessors(db, { notificationId: id });
   const [source] = await sources(db, config, id);
   if (!source || source.botpress_conversation_id !== botpressConversationId || !validateNotificationSource(source)) return { claimed: false as const };
   const token = randomUUID();
@@ -190,7 +237,6 @@ export async function runPostSalePipeline(paymentId?: string) {
   // The webhook responds immediately; its bounded background task retries transient
   // Central failures without requiring a minute-level cron or another customer turn.
   for (let attempt = 0; attempt < 3; attempt++) {
-    await dispatchNotifications(paymentId).catch(() => logger.warn({ event: 'post_sale.dispatch_failed' }));
     enrollment = await runEnrollmentWorker({ scoped: true, payment_id: paymentId, limit: paymentId ? 1 : 10 });
     await dispatchNotifications(paymentId).catch(() => logger.warn({ event: 'post_sale.dispatch_failed' }));
     if (!paymentId) break;

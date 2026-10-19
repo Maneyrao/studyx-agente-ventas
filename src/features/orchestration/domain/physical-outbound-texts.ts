@@ -30,7 +30,10 @@ export function physicalOutboundTexts(input: {
   readonly final_response: string;
   readonly authored_messages: readonly string[] | null;
   readonly enabled: boolean;
+  /** Payment prose and its backend-authorized link belong to one customer message. */
+  readonly force_single_message?: boolean;
 }): string[] {
+  if (input.force_single_message) return [input.final_response];
   if (!input.enabled || !input.authored_messages?.length) return [input.final_response];
 
   const authored = input.authored_messages.map((message) => message.trim()).filter(Boolean);

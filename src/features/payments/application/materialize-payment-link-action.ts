@@ -30,12 +30,12 @@ export type PaymentLinkRefusalReason =
 
 type MaterializedPaymentLinkSuccess = Extract<MaterializePaymentLinkResult, { readonly ok: true }>;
 
-export const PAYMENT_ACCESS_NOTICE = 'Cuando se acredite el pago, el alta se hará automáticamente. Si es tu primera inscripción, recibirás el acceso por email y WhatsApp; si ya tienes una cuenta, conservarás tus credenciales.';
-
 /**
  * The configured resolver is the final URL authority. Snapshot-authored prose
- * may already contain that exact URL; otherwise append the fixed canonical
- * block after the materializer has removed every stale or foreign URL.
+ * may already contain that exact URL; otherwise append only the canonical
+ * label and link after the materializer has removed every stale or foreign
+ * URL. The conversational explanation remains Agent A's responsibility so
+ * the backend cannot repeat it with a second, fixed paragraph.
  */
 export function assembleMaterializedPaymentResponse(
   materialized: MaterializedPaymentLinkSuccess,
@@ -45,17 +45,14 @@ export function assembleMaterializedPaymentResponse(
   // colapsan a un único corte de párrafo, igual que hace el guard de egreso con
   // la narrativa canónica. Sólo se tocan espacios: ninguna frase se pierde.
   const response = materialized.response_text.replace(/\n{2,}/gu, '\n\n').trim();
-  const authored = response.replaceAll(PAYMENT_ACCESS_NOTICE, '').trim();
-  const paragraphs = authored.split('\n\n').filter(Boolean);
+  const paragraphs = response.split('\n\n').filter(Boolean);
   const linkParagraphIndex = paragraphs.findIndex((paragraph) =>
     paragraph.includes(materialized.block.url));
   if (linkParagraphIndex >= 0) {
-    paragraphs.splice(linkParagraphIndex, 0, PAYMENT_ACCESS_NOTICE);
     return paragraphs.join('\n\n');
   }
   return [
-    authored,
-    PAYMENT_ACCESS_NOTICE,
+    response,
     `${materialized.block.label}: ${materialized.block.url}`,
   ].filter(Boolean).join('\n\n');
 }

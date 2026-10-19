@@ -50,7 +50,9 @@ export default new Conversation({
         whatsappCanaryEnabled: configuration.whatsappCanaryEnabled === true,
         allowlist: secrets.WHATSAPP_CANARY_PHONE_E164S,
         phoneE164: input.phone_e164,
-        allowedBotPhoneNumberId: configuration.whatsappAllowedBotPhoneNumberId,
+        allowedBotPhoneNumberId: typeof configuration.whatsappAllowedBotPhoneNumberId === 'string'
+          ? configuration.whatsappAllowedBotPhoneNumberId
+          : undefined,
         botPhoneNumberId: input.message.metadata?.bot_phone_number_id as string | undefined,
       })
       if (!canary.allowed) {

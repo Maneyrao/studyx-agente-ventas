@@ -30,4 +30,18 @@ describe('physicalOutboundTexts', () => {
     expect(result.join('\n\n')).toBe(`${authored.join('\n\n')}\n\n${payment}`);
     expect(result.at(-1)).toBe(payment);
   });
+
+  it('keeps a payment explanation and its canonical link in one WhatsApp message', () => {
+    const authored = ['Perfecto, te dejo el enlace.'];
+    const payment = 'Pago único de USD 360: https://buy.stripe.com/test';
+
+    const result = physicalOutboundTexts({
+      final_response: `${authored[0]}\n\n${payment}`,
+      authored_messages: authored,
+      enabled: true,
+      force_single_message: true,
+    });
+
+    expect(result).toEqual([`${authored[0]}\n\n${payment}`]);
+  });
 });

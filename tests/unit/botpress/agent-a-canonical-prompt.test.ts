@@ -14,7 +14,7 @@ describe('Agent A canonical sales prompt', () => {
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v78' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v79' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
@@ -53,10 +53,11 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toMatch(/bienvenida final/iu);
   });
 
-  it('explains both access delivery channels with the link and reserves welcome for confirmed new students', () => {
+  it('keeps the payment handoff concise and reserves access details for verified post-sale', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
-    expect(prompt).toMatch(/alta será automática[\s\S]*primera inscripción[\s\S]*email y WhatsApp/iu);
-    expect(prompt).toMatch(/cuenta[\s\S]*conservará sus credenciales/iu);
+    expect(prompt).toMatch(/transición breve y humana[\s\S]*No expliques el funcionamiento de Stripe/iu);
+    expect(prompt).toMatch(/No enumeres por adelantado[\s\S]*evento verificado de postventa/iu);
+    expect(prompt).toMatch(/link canónico dentro del mismo mensaje/iu);
     expect(prompt).toMatch(/redactas toda la parte conversacional de postventa[\s\S]*personalidad[\s\S]*contexto del cliente/iu);
     expect(prompt).toMatch(/backend añade únicamente hechos inmutables[\s\S]*Usuario\/Contraseña[\s\S]*enlace de acceso/iu);
     expect(prompt).toMatch(/cuentas nuevas[\s\S]*bienvenida cálida[\s\S]*cuenta existente[\s\S]*sin recibirla como nueva/iu);

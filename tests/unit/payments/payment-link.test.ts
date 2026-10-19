@@ -584,7 +584,7 @@ describe('materializePaymentLinkAction', () => {
     expect(result.stripped_urls).toEqual([staleUrl]);
   });
 
-  it('explains automatic enrollment and access delivery before every payment link', () => {
+  it('adds only the canonical payment link after the agent-authored explanation', () => {
     const result = materializePaymentLinkAction({
       action: action({ plan_code: 'monthly_6' }),
       authorizedOfferingCode: CANONICAL_OFFERING_SKU,
@@ -599,13 +599,11 @@ describe('materializePaymentLinkAction', () => {
     if (!result.ok) return;
 
     const rendered = assembleMaterializedPaymentResponse(result);
-    const notice = 'Cuando se acredite el pago, el alta se hará automáticamente. Si es tu primera inscripción, recibirás el acceso por email y WhatsApp; si ya tienes una cuenta, conservarás tus credenciales.';
-    expect(rendered).toContain(notice);
-    expect(rendered.indexOf(notice)).toBeLessThan(rendered.indexOf(LINK_6M));
-    expect(rendered.split(notice)).toHaveLength(2);
+    expect(rendered).toBe(`Perfecto, acá lo tienes.\n\n6 pagos mensuales de USD 60: ${LINK_6M}`);
+    expect(rendered).not.toContain('el alta se hará automáticamente');
   });
 
-  it('keeps an already-authored canonical link label and URL together after the notice', () => {
+  it('keeps an already-authored canonical link label and URL without adding backend prose', () => {
     const result = materializePaymentLinkAction({
       action: action({ plan_code: 'monthly_6' }),
       authorizedOfferingCode: CANONICAL_OFFERING_SKU,
@@ -620,7 +618,7 @@ describe('materializePaymentLinkAction', () => {
     if (!result.ok) return;
 
     const rendered = assembleMaterializedPaymentResponse(result);
-    expect(rendered).toContain(`credenciales.\n\n6 pagos: ${LINK_6M}`);
+    expect(rendered).toBe(`Perfecto.\n\n6 pagos: ${LINK_6M}`);
   });
 
   /**

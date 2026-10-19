@@ -45,5 +45,7 @@ describe('post-sale Agent A event instructions', () => {
     expect(parsed).toMatchObject({ kind, new_user: newUser ?? false });
     expect(instructions).not.toContain('dale una bienvenida cálida y natural a StudyX');
     expect(instructions).toContain(expected);
+    expect(instructions).toContain('sin lenguaje de trámite');
+    expect(instructions).toContain('Evita fórmulas como «se gestionará»');
   });
 });

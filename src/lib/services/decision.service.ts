@@ -1568,6 +1568,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         final_response: finalResponse,
         authored_messages: preparedAgentTurn?.response_messages ?? null,
         enabled: validatedInput.supports_multi_outbound === true,
+        force_single_message: committedBusinessAction?.type === 'send_payment_link'
+          && authorizedUrls.length > 0,
       });
       const profileRequests = preparedAgentTurn && validatedInput.agent_turn_v2
         ? contactProfileRequestsForPartsV1({
