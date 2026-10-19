@@ -14,7 +14,7 @@ describe('Agent A canonical sales prompt', () => {
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v76' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v77' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
@@ -100,8 +100,10 @@ describe('Agent A canonical sales prompt', () => {
   it('uses Emma identity, collects name and surname early, and keeps calls commercially useful', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
-    expect(prompt).toContain('Eres {{NOMBRE_ASESOR}}, administrativa de {{NOMBRE_ACADEMIA}}');
-    expect(prompt).toContain('«Soy {{NOMBRE_ASESOR}}, administrativa de {{NOMBRE_ACADEMIA}}»');
+    expect(prompt).toContain('Eres {{NOMBRE_ASESOR}}, administrativa de Studyx');
+    expect(prompt).toContain('«Soy {{NOMBRE_ASESOR}}, administrativa de Studyx»');
+    expect(prompt).toMatch(/varía naturalmente el saludo, la puntuación y la transición/iu);
+    expect(prompt).toContain('No añadas «Academia Internacional»');
     expect(prompt).toMatch(/nombre y apellido[\s\S]*primeras interacciones[\s\S]*sin bloquear/iu);
     expect(prompt).toMatch(/momento comercial[\s\S]*primera invitaci[oó]n[\s\S]*raz[oó]n concreta/iu);
     expect(prompt).not.toMatch(/segunda intervenci[oó]n comercial/iu);
