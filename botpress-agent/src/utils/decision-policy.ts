@@ -803,6 +803,9 @@ export function applyDecisionPolicy(decision: Decision, claimed: ClaimedTurn): D
 
   return withDeterministicMemories({
     ...decision,
-    response: withoutRepeatedGreeting(response, claimed),
+    // Keep every customer-visible route consistent with the WhatsApp voice,
+    // including deterministic and recovery copy that does not pass through
+    // the Agent A proposal normalizer.
+    response: withoutRepeatedGreeting(response, claimed).replace(/[¿¡]/gu, ''),
   }, claimed)
 }

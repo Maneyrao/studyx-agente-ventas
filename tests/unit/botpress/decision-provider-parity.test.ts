@@ -160,6 +160,14 @@ function modelDecision(overrides: Partial<Decision> = {}): Decision {
 }
 
 describe('applyDecisionPolicy — provider parity', () => {
+  it('removes inverted opening punctuation from every customer-visible route', () => {
+    const decision = applyDecisionPolicy(modelDecision({
+      response: '¡Claro! ¿Qué te gustaría aprender?',
+    }), claimedTurn())
+
+    expect(decision.response).toBe('Claro! Qué te gustaría aprender?')
+  })
+
   it('asks for the missing plan when payment-link validation is exhausted', () => {
     const claimed = claimedTurn({
       allowed_response_types: ['commercial_reply'],
@@ -307,7 +315,7 @@ describe('applyDecisionPolicy — provider parity', () => {
 
     expect(decision).toMatchObject({
       kind: 'reply',
-      response: '¿Querés que te muestre otras opciones?',
+      response: 'Querés que te muestre otras opciones?',
       response_type: 'commercial_reply',
       missing_information: [],
       next_state: 'waiting_user',
