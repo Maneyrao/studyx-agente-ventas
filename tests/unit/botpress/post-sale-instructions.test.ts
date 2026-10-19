@@ -23,8 +23,10 @@ describe('post-sale Agent A event instructions', () => {
 
     expect(parsed).toMatchObject({ kind: 'access_ready', new_user: true });
     expect(instructions.startsWith(`${canonicalPrompt}\n\n`)).toBe(true);
-    expect(instructions).toContain('dale una bienvenida cálida y natural a StudyX');
+    expect(instructions).toContain('dale una bienvenida cálida y natural a Studyx');
     expect(instructions).toContain('Tú, Agente A, redactas el mensaje final');
+    expect(instructions).toContain('No uses customer_first_name ni offering_name');
+    expect(instructions).toContain('escribe exactamente «Studyx»');
   });
 
   it.each([
@@ -43,7 +45,7 @@ describe('post-sale Agent A event instructions', () => {
     const instructions = buildPostSaleInstructions(canonicalPrompt, parsed);
 
     expect(parsed).toMatchObject({ kind, new_user: newUser ?? false });
-    expect(instructions).not.toContain('dale una bienvenida cálida y natural a StudyX');
+    expect(instructions).not.toContain('dale una bienvenida cálida y natural a Studyx');
     expect(instructions).toContain(expected);
     expect(instructions).toContain('sin lenguaje de trámite');
     expect(instructions).toContain('Evita fórmulas como «se gestionará»');

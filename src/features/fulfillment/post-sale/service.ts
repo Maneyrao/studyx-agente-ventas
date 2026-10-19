@@ -184,9 +184,16 @@ export const NarrativeSchema = z.object({
   intro: z.string().trim().min(1).max(500),
   suggestion: z.string().trim().max(180),
 }).strict();
-export function assemblePostSaleMessage(source: Pick<Source, 'kind' | 'student_was_created' | 'login_email' | 'login_url'>, narrative: z.infer<typeof NarrativeSchema>) {
+export function assemblePostSaleMessage(source: Pick<Source, 'kind' | 'student_was_created' | 'login_email' | 'login_url'> & Partial<Pick<Source, 'registration_name' | 'offering_name'>>, narrative: z.infer<typeof NarrativeSchema>) {
   // The model authors the conversation. Credentials are bound to verified backend data, outside the model.
   if (/https?:|www\.|@|(?:usuario|contraseña|password)\s*:|(?:Studyx|Escuela)\.123/i.test(narrative.intro)) throw new Error('POST_SALE_UNAUTHORIZED_PROSE');
+  if (/\bStudyX\b/u.test(narrative.intro)) throw new Error('POST_SALE_BRAND_CASING');
+  const repeatedValues = [source.registration_name?.trim().split(/\s+/u)[0], source.offering_name?.trim()]
+    .filter((value): value is string => !!value)
+    .map(value => value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'));
+  if (repeatedValues.some(value => new RegExp(`(^|\\P{L})${value}(?=$|\\P{L})`, 'iu').test(narrative.intro))) {
+    throw new Error('POST_SALE_REPETITIVE_PROSE');
+  }
   if (source.kind !== 'access_ready') {
     if (narrative.suggestion) throw new Error('POST_SALE_UNEXPECTED_SUGGESTION');
     return narrative.intro;

@@ -2,15 +2,16 @@ import { describe, it, expect, vi } from 'vitest';
 import { assemblePostSaleMessage, claimNotification, dispatchNotifications, type Deps, validateNotificationSource } from '@/features/fulfillment/post-sale/service';
 vi.mock('@/lib/db/orchestrator', () => ({ sql: {} }));
 describe('post-sale verified access message', () => {
-  const access = { kind: 'access_ready' as const, student_was_created: true, login_email: 'student@example.com', login_url: null };
+  const access = { kind: 'access_ready' as const, student_was_created: true, login_email: 'student@example.com', login_url: null,
+    registration_name: 'Ana Prueba', offering_name: 'Curso Prueba' };
   it('uses the verified username and initial password in a list', () => {
-    expect(assemblePostSaleMessage(access, { intro: 'Ya tienes acceso a tu curso. Bienvenido a StudyX 🙂', suggestion: 'Si quieres, puedes cambiar tu contraseña al ingresar.' }))
-      .toBe('Ya tienes acceso a tu curso. Bienvenido a StudyX 🙂\n\n- Usuario: student@example.com\n- Contraseña: Escuela.123\n\nSi quieres, puedes cambiar tu contraseña al ingresar.');
+    expect(assemblePostSaleMessage(access, { intro: 'Ya tienes acceso. Bienvenido a Studyx 🙂', suggestion: 'Si quieres, puedes cambiar tu contraseña al ingresar.' }))
+      .toBe('Ya tienes acceso. Bienvenido a Studyx 🙂\n\n- Usuario: student@example.com\n- Contraseña: Escuela.123\n\nSi quieres, puedes cambiar tu contraseña al ingresar.');
   });
   it('retains the password of an existing user without appending backend-authored prose', () => {
-    const message = assemblePostSaleMessage({ ...access, student_was_created: false }, { intro: 'Ya tienes acceso. Qué bueno seguir acompañándote en StudyX.', suggestion: '' });
+    const message = assemblePostSaleMessage({ ...access, student_was_created: false }, { intro: 'Ya tienes acceso. Qué bueno seguir acompañándote en Studyx.', suggestion: '' });
     expect(message).not.toContain('Escuela.123');
-    expect(message).toBe('Ya tienes acceso. Qué bueno seguir acompañándote en StudyX.\n\n- Usuario: student@example.com\n- Contraseña: la que ya utilizas');
+    expect(message).toBe('Ya tienes acceso. Qué bueno seguir acompañándote en Studyx.\n\n- Usuario: student@example.com\n- Contraseña: la que ya utilizas');
   });
   it('does not expose credentials on payment confirmation or delay', () => {
     for (const kind of ['payment_received', 'access_delayed'] as const) {
@@ -23,6 +24,11 @@ describe('post-sale verified access message', () => {
     expect(() => assemblePostSaleMessage(access, { intro: 'Usuario: another@example.com', suggestion: '' })).toThrow();
     expect(() => assemblePostSaleMessage(access, { intro: 'Listo.', suggestion: 'Debes cambiar tu contraseña.' })).toThrow();
     expect(() => assemblePostSaleMessage(access, { intro: 'Entra en https://fake.example', suggestion: '' })).toThrow();
+  });
+  it('rejects repeated identity details and incorrect brand casing before sending', () => {
+    expect(() => assemblePostSaleMessage(access, { intro: 'Ana, tu acceso está listo.', suggestion: '' })).toThrow('POST_SALE_REPETITIVE_PROSE');
+    expect(() => assemblePostSaleMessage(access, { intro: 'Ya tienes acceso a Curso Prueba.', suggestion: '' })).toThrow('POST_SALE_REPETITIVE_PROSE');
+    expect(() => assemblePostSaleMessage(access, { intro: 'Ya tienes acceso a StudyX.', suggestion: '' })).toThrow('POST_SALE_BRAND_CASING');
   });
   it('requires a confirmed enrollment for the originally registered email', () => {
     const source = { kind: 'access_ready' as const, enrollment_status: 'active', login_email: 'Student@Example.com', registration_email: 'student@example.com' };
@@ -43,7 +49,12 @@ describe('post-sale verified access message', () => {
       offering_name: 'Curso Prueba', registration_email: 'student@example.com', registration_name: 'Ana Prueba',
       enrollment_status: 'active', student_was_created: created, login_email: 'student@example.com', login_url: null,
     };
-    const db = vi.fn().mockResolvedValueOnce([source]).mockResolvedValueOnce([{ id: source.id }]).mockResolvedValueOnce([]);
+    const db = vi.fn(async (strings: TemplateStringsArray) => {
+      const query = strings.join(' ').replace(/\s+/gu, ' ').trim();
+      if (query.startsWith('SELECT n.*')) return [source];
+      if (query.includes("SET status = 'processing'")) return [{ id: source.id }];
+      return [];
+    });
     const claim = await claimNotification(source.id, 'botpress-test', {
       db: db as unknown as Deps['db'],
       config: { enabled: true, environment: 'test', paidAfter: new Date('2026-10-09T00:00:00Z') },
