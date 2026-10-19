@@ -28,6 +28,12 @@ const protectedConfiguration = (bot) => ({
   integrations: bot.integrations, plugins: bot.plugins, configuration: bot.configuration,
   secretNames: [...bot.secrets].sort(), name: bot.name, blocked: bot.blocked,
 });
+const normalizedIntegrationField = (alias, field, value) => {
+  if (alias === 'whatsapp' && field === 'configuration') {
+    return { ...(value ?? {}), listenMessageEchoes: value?.listenMessageEchoes ?? false };
+  }
+  return value;
+};
 
 try {
   assert(outputDirectory && path.isAbsolute(outputDirectory), 'ABSOLUTE_EVIDENCE_DIRECTORY_REQUIRED');
@@ -87,7 +93,10 @@ try {
     const [cloudAlias, remote] = instances[0];
     for (const field of ['enabled', 'configurationType', 'configuration', 'disabledChannels']) {
       const fallback = field === 'configurationType' ? null : field === 'disabledChannels' ? [] : undefined;
-      assert(equal(integration[field] ?? fallback, remote[field] ?? fallback), `INTEGRATION_CHANGED:${alias}.${field}`);
+      assert(equal(
+        normalizedIntegrationField(alias, field, integration[field] ?? fallback),
+        normalizedIntegrationField(alias, field, remote[field] ?? fallback),
+      ), `INTEGRATION_CHANGED:${alias}.${field}`);
     }
     // ADK gives this pre-existing, unused namespaced integration a friendly local alias.
     // Code-only publication deliberately preserves its Cloud instance and webhook.
