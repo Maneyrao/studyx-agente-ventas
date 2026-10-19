@@ -3869,7 +3869,7 @@ describe('processInboundTurn hot path', () => {
     });
   });
 
-  it('routes call_direct_request through authoritative Agent A before requesting the call', async () => {
+  it('executes an authorized direct call request without depending on a model provider', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -3890,17 +3890,7 @@ describe('processInboundTurn hot path', () => {
     claimed.catalog_index = { as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0 };
     actionSpies.claim.mockResolvedValue(claimed);
     secrets.DEEPSEEK_API_KEY = 'deepseek-local-test-only';
-    actionSpies.agentABrainDeepSeek.mockResolvedValueOnce({
-      proposal: {
-        schema_version: 1,
-        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
-        response: { messages: ['Perfecto, te llamo ahora.'], call_offer: null },
-        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
-        used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
-        profile_updates: [], profile_requests: [], repair_of: null,
-      },
-      provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1,
-    });
+    actionSpies.agentABrainDeepSeek.mockRejectedValueOnce(new Error('MODEL_PROVIDER_UNAVAILABLE'));
     const step = Object.assign(
       async (_name: string, run: () => Promise<unknown>) => run(),
       { sleep: vi.fn(async () => undefined) },
@@ -3916,14 +3906,14 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(actionSpies.plan).not.toHaveBeenCalled();
-    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
+    expect(actionSpies.agentABrainDeepSeek).not.toHaveBeenCalled();
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       conversation_pipeline_v1: null,
-      agent_turn_v2: {
-        proposal: {
-          response: { messages: ['Perfecto, te llamo ahora.'] },
-          proposed_action: { type: 'request_call_now', reason: 'direct_request' },
-        },
+      agent_turn_v2: null,
+      decision: {
+        response_type: 'call_confirmation',
+        reason_code: 'CALL_DIRECT_REQUEST',
+        business_action: { type: 'request_call_now', reason: 'direct_request' },
       },
     });
   });

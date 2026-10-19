@@ -1445,31 +1445,34 @@ describe('Agent A Brain V1', () => {
     });
   });
 
-  it('retries a rejected Groq strict schema once in JSON object mode', async () => {
-    const fetchMock = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(providerResponse(400, {
-        error: { message: 'provider schema detail must stay private' },
-      }))
-      .mockResolvedValueOnce(providerResponse(200, successBody(proposal())));
-    const onProviderRequest = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
+  it.each([400, 413])(
+    'retries a rejected Groq strict schema once in JSON object mode after HTTP %s',
+    async (status) => {
+      const fetchMock = vi.fn<typeof fetch>()
+        .mockResolvedValueOnce(providerResponse(status, {
+          error: { message: 'provider schema detail must stay private' },
+        }))
+        .mockResolvedValueOnce(providerResponse(200, successBody(proposal())));
+      const onProviderRequest = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
 
-    const result = await generateAgentATurnProposalV1({
-      context: context(), apiKey: 'test-key', signal: new AbortController().signal,
-      on_provider_request: onProviderRequest,
-    });
+      const result = await generateAgentATurnProposalV1({
+        context: context(), apiKey: 'test-key', signal: new AbortController().signal,
+        on_provider_request: onProviderRequest,
+      });
 
-    expect(result).toMatchObject({ provider: 'groq-direct', attempt_count: 2 });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(onProviderRequest).toHaveBeenCalledTimes(2);
-    const strictBody = JSON.parse(String(fetchMock.mock.calls[0]![1]?.body));
-    const compatibilityBody = JSON.parse(String(fetchMock.mock.calls[1]![1]?.body));
-    expect(strictBody.response_format).toMatchObject({
-      type: 'json_schema', json_schema: { strict: true },
-    });
-    expect(compatibilityBody.response_format).toEqual({ type: 'json_object' });
-    expect(compatibilityBody.messages[0].content).toContain('AgentATurnProposalV1');
-  });
+      expect(result).toMatchObject({ provider: 'groq-direct', attempt_count: 2 });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(onProviderRequest).toHaveBeenCalledTimes(2);
+      const strictBody = JSON.parse(String(fetchMock.mock.calls[0]![1]?.body));
+      const compatibilityBody = JSON.parse(String(fetchMock.mock.calls[1]![1]?.body));
+      expect(strictBody.response_format).toMatchObject({
+        type: 'json_schema', json_schema: { strict: true },
+      });
+      expect(compatibilityBody.response_format).toEqual({ type: 'json_object' });
+      expect(compatibilityBody.messages[0].content).toContain('AgentATurnProposalV1');
+    },
+  );
 
   it('uses OpenAI structured outputs with the complete brain prompt and no Groq-only knobs', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(200, responsesSuccessBody(proposal())));

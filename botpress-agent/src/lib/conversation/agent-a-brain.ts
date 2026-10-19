@@ -1360,11 +1360,13 @@ export async function generateAgentATurnProposalV1(input: {
       }
 
       if (!response.ok) {
-        if (attempt === 1 && response.status === 400) {
+        if (attempt === 1 && (response.status === 400 || response.status === 413)) {
           // Groq can reject a valid but complex strict schema before model
-          // execution. JSON object mode preserves syntactic JSON while the
-          // same local Zod, policy and backend gates still validate every
-          // field and side effect before anything customer-facing occurs.
+          // execution, either during validation (400) or because the schema
+          // makes the request too large (413). JSON object mode preserves
+          // syntactic JSON while the same local Zod, policy and backend gates
+          // still validate every field and side effect before anything
+          // customer-facing occurs.
           responseMode = 'json_object';
           continue;
         }

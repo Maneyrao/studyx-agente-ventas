@@ -951,13 +951,17 @@ export const processInboundTurn = new Workflow({
     })
     const deterministicCallHandoff = commercialRoute.kind === 'deterministic'
       && commercialRoute.origin === 'call_handoff'
+    const deterministicDirectCallHandoff = deterministicCallHandoff
+      && owned.deterministic_route === 'call_direct_request'
     const brainEligible = conversationalBaseEligible
       && (brainAuthoritative || brainShadow)
       && (owned.deterministic_route === null || brainAuthoritative)
-      // The classifier is capability evidence, not a replacement for Agent A.
-      // Keep the old direct handoff only while Agent A is non-authoritative;
-      // once authoritative, A interprets the turn, writes the reply and asks
-      // for the tool while the backend still authorizes the exact effect.
+      // An explicit direct call request is already fully authorized by the
+      // claimed backend snapshot and is revalidated again on commit. Keep it
+      // independent from model availability so a provider outage cannot block
+      // the requested handoff. Accepted-offer projections still go through
+      // Agent A because their surrounding conversational context can be stale.
+      && !deterministicDirectCallHandoff
       && !(deterministicCallHandoff && !brainAuthoritative)
       && agentABrainContext !== null
 
