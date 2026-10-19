@@ -2407,6 +2407,8 @@ export const processInboundTurn = new Workflow({
                     whatsappCanaryEnabled: configuration.whatsappCanaryEnabled === true,
                     allowlist: secrets.WHATSAPP_CANARY_PHONE_E164S,
                     phoneE164: input.phone_e164,
+                    allowedBotPhoneNumberId: configuration.whatsappAllowedBotPhoneNumberId,
+                    botPhoneNumberId: input.message.metadata.bot_phone_number_id as string | undefined,
                     log: (event) => console.info(JSON.stringify(event)),
                   })
                   if (!canary.allowed) {
@@ -2623,6 +2625,8 @@ export const processInboundTurn = new Workflow({
               whatsappCanaryEnabled: configuration.whatsappCanaryEnabled === true,
               allowlist: secrets.WHATSAPP_CANARY_PHONE_E164S,
               phoneE164: input.phone_e164,
+              allowedBotPhoneNumberId: configuration.whatsappAllowedBotPhoneNumberId,
+              botPhoneNumberId: input.message.metadata.bot_phone_number_id as string | undefined,
               log: (event) => console.info(JSON.stringify(event)),
             })
             if (!canary.allowed) {

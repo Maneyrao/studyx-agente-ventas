@@ -14,6 +14,7 @@ export type WhatsAppCanaryBlockReason =
   | 'WHATSAPP_CANARY_DISABLED'
   | 'WHATSAPP_CANARY_ALLOWLIST_INVALID'
   | 'WHATSAPP_CANARY_PHONE_NOT_ALLOWED'
+  | 'WHATSAPP_BOT_PHONE_NOT_ALLOWED'
 
 type WhatsAppCanarySendInput = {
   automationEnabled: boolean
@@ -21,6 +22,8 @@ type WhatsAppCanarySendInput = {
   whatsappCanaryEnabled: boolean
   allowlist: string | undefined
   phoneE164: string | undefined
+  allowedBotPhoneNumberId?: string
+  botPhoneNumberId?: string
   log?: (event: Record<string, unknown>) => void
 }
 
@@ -56,6 +59,11 @@ export function evaluateWhatsAppCanarySend(
   let decision: WhatsAppCanarySendDecision
   if (!input.automationEnabled) {
     decision = { allowed: false, reason: 'AUTOMATION_DISABLED' }
+  } else if (
+    input.allowedBotPhoneNumberId
+    && input.botPhoneNumberId !== input.allowedBotPhoneNumberId
+  ) {
+    decision = { allowed: false, reason: 'WHATSAPP_BOT_PHONE_NOT_ALLOWED' }
   } else if (input.whatsappPublicEnabled && input.whatsappCanaryEnabled) {
     decision = { allowed: false, reason: 'WHATSAPP_ROLLOUT_MODE_INVALID' }
   } else if (input.whatsappPublicEnabled) {

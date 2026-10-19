@@ -24,6 +24,7 @@ export default defineConfig({
       automationEnabled: z.boolean().default(false),
       whatsappPublicEnabled: z.boolean().default(false),
       whatsappCanaryEnabled: z.boolean().default(false),
+      whatsappAllowedBotPhoneNumberId: z.string().default(''),
       decisionProvider: z.enum(['botpress_managed', 'gemini_direct', 'groq_direct']).default('botpress_managed'),
       geminiDecisionModel: z.string().min(1).default('gemini-3.6-flash'),
       groqDecisionModel: z.string().min(1).default('openai/gpt-oss-120b'),

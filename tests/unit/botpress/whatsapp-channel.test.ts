@@ -189,6 +189,7 @@ describe('whatsappChannel.toEnvelope', () => {
 describe('evaluateWhatsAppCanarySend', () => {
   const tester = '+5491112345678';
   const other = '+5491198765432';
+  const productionBotPhoneNumberId = '1300545066485709';
 
   it('suppresses every official WhatsApp send while global automation is disabled', () => {
     expect(evaluateWhatsAppCanarySend({
@@ -249,6 +250,28 @@ describe('evaluateWhatsAppCanarySend', () => {
       whatsappCanaryEnabled: false,
       allowlist: undefined,
       phoneE164: other,
+    })).toEqual({ allowed: true, reason: null });
+  });
+
+  it('blocks traffic routed through a different WhatsApp business number', () => {
+    expect(evaluateWhatsAppCanarySend({
+      automationEnabled: true,
+      whatsappPublicEnabled: true,
+      whatsappCanaryEnabled: false,
+      allowlist: undefined,
+      phoneE164: other,
+      allowedBotPhoneNumberId: productionBotPhoneNumberId,
+      botPhoneNumberId: '263931016792682',
+    })).toEqual({ allowed: false, reason: 'WHATSAPP_BOT_PHONE_NOT_ALLOWED' });
+
+    expect(evaluateWhatsAppCanarySend({
+      automationEnabled: true,
+      whatsappPublicEnabled: true,
+      whatsappCanaryEnabled: false,
+      allowlist: undefined,
+      phoneE164: other,
+      allowedBotPhoneNumberId: productionBotPhoneNumberId,
+      botPhoneNumberId: productionBotPhoneNumberId,
     })).toEqual({ allowed: true, reason: null });
   });
 

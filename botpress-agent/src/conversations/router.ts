@@ -50,6 +50,8 @@ export default new Conversation({
         whatsappCanaryEnabled: configuration.whatsappCanaryEnabled === true,
         allowlist: secrets.WHATSAPP_CANARY_PHONE_E164S,
         phoneE164: input.phone_e164,
+        allowedBotPhoneNumberId: configuration.whatsappAllowedBotPhoneNumberId,
+        botPhoneNumberId: input.message.metadata?.bot_phone_number_id as string | undefined,
       })
       if (!canary.allowed) {
         logEvent('studyx.router.whatsapp_canary_blocked', {
