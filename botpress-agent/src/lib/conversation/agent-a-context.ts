@@ -4,10 +4,7 @@ import {
 } from '../../schemas/agent-a-brain';
 import type { ClaimedTurn } from '../../schemas/contracts';
 import type { ConversationMoveV1 } from '../../schemas/conversation-pipeline';
-import {
-  classifyBatchSalesSignal,
-  isBatchOnlyKnownContactDataV1,
-} from '../../../../src/features/orchestration/domain/sales-signal';
+import { classifyBatchSalesSignal } from '../../../../src/features/orchestration/domain/sales-signal';
 
 const MEMORY_TYPES = new Set([
   'study_goal', 'study_context', 'preference', 'constraint',
@@ -551,10 +548,7 @@ export function buildAgentAContextV1(
   const currentSalesSignal = classifyBatchSalesSignal(
     currentLogicalMessages.map((message) => message.content),
   );
-  const currentCallAuthorization = currentSalesSignal.type === 'direct_call_request'
-    || (currentSalesSignal.type === 'call_acceptance'
-      && state.call_offer_status === 'offered'
-      && state.awaiting_reply === 'call_or_chat');
+  const currentCallAuthorization = currentSalesSignal.type === 'direct_call_request';
   const inputCapability = inputCapabilityV1(claimed);
   const hasReadableCurrentInput = inputCapability.status !== 'unreadable';
   const previousAgentReplies = previousAgentRepliesV1(claimed);
@@ -606,13 +600,7 @@ export function buildAgentAContextV1(
     && state.call_offer_status === 'accepted'
     && state.awaiting_reply === 'call_or_chat';
   const availabilityConfirmed = currentSalesSignal.type === 'direct_call_request'
-    || currentSalesSignal.type === 'call_acceptance'
-    || (currentSalesSignal.type === 'model_required'
-      && awaitingCallAvailability
-      && !isBatchOnlyKnownContactDataV1(
-        currentLogicalMessages.map((message) => message.content),
-        canonicalContactIntake,
-      ));
+    || currentSalesSignal.type === 'call_acceptance';
 
   return AgentAContextV1Schema.parse({
     schema_version: 1,
@@ -754,9 +742,9 @@ export function buildAgentAContextV1(
         && hasReadableCurrentInput
         && !claimed.contact.blocked
         && claimed.sales_context.active_call === null
-        // Current consent is evidence in this turn. Requiring it to be written
-        // as accepted before evaluating the same turn created a circular,
-        // one-message-late authorization gate.
+        // A direct request is sufficient in this turn. A short acceptance is
+        // sufficient only after the persisted availability question, never
+        // while an invitation or contact-data request is still pending.
         && (currentCallAuthorization || (
           awaitingCallAvailability
           && availabilityConfirmed

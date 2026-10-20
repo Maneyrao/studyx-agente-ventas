@@ -64,6 +64,7 @@ type ClaimedOverrides = {
   offerings?: BusinessOffering[];
   optOutAckEligible?: boolean;
   conversationPipelineV1?: boolean;
+  availabilityPending?: boolean;
 };
 
 function claimedTurn(overrides: ClaimedOverrides = {}): ClaimedTurn {
@@ -153,6 +154,19 @@ function claimedTurn(overrides: ClaimedOverrides = {}): ClaimedTurn {
     },
     catalog_resolution: overrides.catalogResolution ?? { kind: 'no_catalog_intent' },
     deterministic_route: overrides.route ?? null,
+    ...(overrides.availabilityPending ? {
+      conversation_state_v1: {
+        selected_offering_code: overrides.offeringCode ?? null,
+        selected_payment_plan: overrides.selectedPaymentPlan ?? null,
+        stage: 'course_selected',
+        call_preference: 'call',
+        call_offer_status: 'accepted',
+        call_offer_count: 1,
+        awaiting_reply: 'call_or_chat',
+        payment_reported: false,
+        version: 1,
+      },
+    } : {}),
     business_context_available: true,
     business_context: {
       as_of: '2026-08-25T12:00:00.000Z',
@@ -796,13 +810,14 @@ describe('routeCommercialTurn', () => {
     expectDecisionRoute(route);
   });
 
-  it('preserves acceptance of a currently authorized call offer', () => {
+  it('preserves a later availability confirmation for an accepted call', () => {
     const route = routeCommercialTurn({
       automationEnabled: true,
       claimed: claimedTurn({
         texts: ['Sí'],
         route: 'call_accepted_offer',
         acceptedOffer: true,
+        availabilityPending: true,
         allowedActions: ['request_call_now'],
       }),
     });

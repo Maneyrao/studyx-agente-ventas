@@ -11,8 +11,8 @@ import type { ClaimedTurn, Decision } from '../schemas/contracts'
  * route and keeps no duplicated regular-expression vocabulary.
  *
  *   - "llamame" with request_call_now allowed  → immediate v4 request.
- *   - exact "sí"/"dale" with an open offer and request_call_now allowed
- *     → immediate v4 request (accepted_offer).
+ *   - exact "sí"/"dale" after the separate availability question and with
+ *     request_call_now allowed → immediate v4 request (accepted_offer).
  *   - exact "sí" without an open offer → one clarification, never a call.
  *   - any decline or opt-out wording → null: this path never requests a
  *     call on a negation, and the reply stays with the normal pipeline.
@@ -106,11 +106,13 @@ export function matchCallHandoffFastPath(claimed: ClaimedTurn): Decision | null 
   }
 
   if (claimed.deterministic_route === 'call_accepted_offer') {
-    // Un "sí" responde a la pregunta conversacional vigente, no a cualquier
-    // oferta de llamada que todavía siga abierta en el ledger. Durante la
-    // confirmación de datos o pago debe continuar por el modelo.
-    const awaitingReply = claimed.conversation_state_v1?.awaiting_reply
-    if (awaitingReply !== undefined && awaitingReply !== 'call_or_chat') return null
+    // An open invitation and a later availability question share the same
+    // linguistic answer ("sí") but not the same durable state. Only the
+    // accepted+awaiting combination proves the latter was actually asked.
+    const state = claimed.conversation_state_v1
+    if (state?.call_preference !== 'call'
+      || state.call_offer_status !== 'accepted'
+      || state.awaiting_reply !== 'call_or_chat') return null
     if (
       !allowed.includes('request_call_now')
       || !claimed.sales_context.accepted_call_offer

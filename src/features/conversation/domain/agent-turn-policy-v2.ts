@@ -141,6 +141,8 @@ export function authorizeAgentTurnV2(input: {
   readonly call_policy: {
     readonly may_offer_call: boolean;
     readonly may_request_call_now: boolean;
+    /** Canonical persisted intake readiness for the current claimed turn. */
+    readonly intake_ready?: boolean;
   };
 }): AgentTurnAuthorityResultV2 {
   const { proposal, state } = input;
@@ -229,6 +231,10 @@ export function authorizeAgentTurnV2(input: {
   const currentText = (input.current_customer_messages ?? []).join('\n');
   const resumesAcceptedCall = state.call_preference === 'call'
     && state.call_offer_status === 'accepted';
+  const completesAcceptedCallIntake = resumesAcceptedCall
+    && state.awaiting_reply === 'contact_details'
+    && input.call_policy.intake_ready === true
+    && moves.has('provide_contact_details');
   const channelChoice = moves.has('continue_by_chat') || moves.has('decline_call');
   const currentTurnRejectsCallOffer = channelChoice || supportsChatPreferenceV1(
     currentText,
@@ -549,13 +555,15 @@ export function authorizeAgentTurnV2(input: {
   } else if (callRequestSupported && (moves.has('request_call') || (
     state.awaiting_reply === 'call_or_chat'
     && !selectsPaymentPlanNow && !paymentLinkRequested
-  ))) {
+  ) || completesAcceptedCallIntake)) {
     // The customer chose the call, but dispatch always waits for a later
     // availability confirmation. Persist the prepared call while the agent
     // asks for that confirmation or for a missing callable number.
     callPreference = 'call';
     callOfferStatus = 'accepted';
-    awaitingReply = 'call_or_chat';
+    awaitingReply = input.call_policy.intake_ready === false
+      ? 'contact_details'
+      : 'call_or_chat';
   }
   if (action.type === 'send_payment_link') {
     nextOffering = action.offering_code;

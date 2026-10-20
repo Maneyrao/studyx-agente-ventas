@@ -3,10 +3,7 @@ import type { DecisionV4 } from '@/features/orchestration/domain/decision-v4';
 import type { ProtectedFactRef } from '@/features/orchestration/domain/egress-guard';
 import { materializeCanonicalCatalogFacts } from '@/features/orchestration/domain/canonical-offering-egress';
 import type { OrchestrationStore } from '@/features/orchestration/ports/orchestration-store';
-import {
-  classifyBatchSalesSignal,
-  isBatchOnlyKnownContactDataV1,
-} from '@/features/orchestration/domain/sales-signal';
+import { classifyBatchSalesSignal } from '@/features/orchestration/domain/sales-signal';
 import { loadConversationSessionConfig } from '@/lib/config';
 import type { AgentAProposedActionV1, AgentATurnProposalV1 } from '../domain/agent-a-brain';
 import { authorizeAgentTurnV2 } from '../domain/agent-turn-policy-v2';
@@ -259,24 +256,11 @@ export async function prepareAgentTurnV2(input: {
   const awaitingCallAvailability = state.call_preference === 'call'
     && state.call_offer_status === 'accepted'
     && state.awaiting_reply === 'call_or_chat';
-  const currentCallAuthorization = salesSignal.type === 'direct_call_request'
-    || (salesSignal.type === 'call_acceptance'
-      && state.call_offer_status === 'offered'
-      && state.awaiting_reply === 'call_or_chat');
+  const currentCallAuthorization = salesSignal.type === 'direct_call_request';
   const authorize = (proposal: AgentATurnProposalV1, effectsAllowed = input.conversation_only !== true,
     semanticRejections = input.semantic_rejections) => {
-    const moves = new Set([proposal.move.move, ...proposal.move.secondary_moves]);
-    const containsOnlyProfileData = isBatchOnlyKnownContactDataV1(
-      input.current_customer_messages ?? [],
-      callIntakeReadiness.intake,
-    );
     const availabilityConfirmed = salesSignal.type === 'call_acceptance'
-      || salesSignal.type === 'direct_call_request'
-      || (salesSignal.type === 'model_required'
-        && awaitingCallAvailability
-        && proposal.proposed_action.type === 'request_call_now'
-        && moves.has('request_call')
-        && !containsOnlyProfileData);
+      || salesSignal.type === 'direct_call_request';
     return authorizeAgentTurnV2({
     proposal,
     state,
@@ -299,11 +283,13 @@ export async function prepareAgentTurnV2(input: {
       // conversation. The per-turn authority below still blocks an immediate
       // repeat; the durable counter keeps the lifetime ceiling at two.
       may_offer_call: noActiveCall,
-      // Accepting an open offer or requesting a call is current-turn consent.
-      // Dispatch still occurs only after the resulting outbound is accepted.
+      // A direct request is current-turn authority. Accepting an invitation
+      // only prepares the call; a later reply to the availability question is
+      // the separate authority to dispatch.
       may_request_call_now: noActiveCall
         && (currentCallAuthorization || (awaitingCallAvailability && availabilityConfirmed))
         && callIntakeReadiness.status === 'ready',
+      intake_ready: callIntakeReadiness.status === 'ready',
     },
     });
   };

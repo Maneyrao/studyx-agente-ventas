@@ -18,7 +18,8 @@ describe('Agent A to future Agent B call boundary', () => {
       }),
       selected_offering_code: 'redes_informaticas',
       stage: 'course_selected' as const,
-      call_offer_status: 'offered' as const,
+      call_preference: 'call' as const,
+      call_offer_status: 'accepted' as const,
       call_offer_count: 1 as const,
       awaiting_reply: 'call_or_chat' as const,
     };

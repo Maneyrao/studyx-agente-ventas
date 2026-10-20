@@ -1954,7 +1954,7 @@ describe('claimBatch sales_context', () => {
     expect(result.sales_context.allowed_actions).toEqual([]);
   });
 
-  it('carries accepted-offer identity through claim into one Botpress call request', async () => {
+  it('carries accepted-offer identity without dispatching before availability confirmation', async () => {
     const wireIds = {
       trace: '00000000-0000-4000-8000-000000000001',
       batch: '00000000-0000-4000-8000-000000000002',
@@ -2026,14 +2026,7 @@ describe('claimBatch sales_context', () => {
       expires_at: '2026-08-11T12:13:00.000Z',
     });
     const decision = matchCallHandoffFastPath(wireClaim);
-    expect(decision).toMatchObject({
-      response_type: 'call_confirmation',
-      business_action: {
-        type: 'request_call_now',
-        reason: 'accepted_offer',
-      },
-    });
-    expect(decision?.business_action).not.toBeNull();
+    expect(decision).toBeNull();
   });
 
   it('turns an explicit acceptance of the durable post-call retry prompt into a fresh direct request', async () => {

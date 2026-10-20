@@ -84,6 +84,8 @@ function fallbackCopy(goal: TurnPlanV1['response_goal']): ComposedNarrativeV1['n
       return { opening: 'Perfecto, seguimos por chat.', explanation: 'Puedo acompañarte por este medio.', next_question: '¿Qué querés consultar ahora?' }
     case 'acknowledge_call_decline':
       return { opening: 'Entendido, continuamos por escrito.', explanation: null, next_question: '¿Qué aspecto querés revisar?' }
+    case 'confirm_call_availability':
+      return { opening: 'Perfecto.', explanation: null, next_question: '¿Podés atender si te llamamos ahora?' }
     case 'confirm_call_request':
       return { opening: 'Entendido, registré tu solicitud de llamada.', explanation: null, next_question: null }
     case 'present_payment_options':

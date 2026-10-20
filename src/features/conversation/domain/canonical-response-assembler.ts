@@ -189,6 +189,7 @@ function fallbackOpening(responseGoal: TurnPlanV1['response_goal']): string | nu
       return 'Gracias por avisar. Queda registrado para que una persona lo revise.';
     case 'confirm_current_state': return 'Te confirmo en qué punto quedamos.';
     case 'request_contact_details': return 'Para dejarlo listo necesito unos datos tuyos.';
+    case 'confirm_call_availability': return '¿Podés atender si te llamamos ahora?';
     default: return null;
   }
 }

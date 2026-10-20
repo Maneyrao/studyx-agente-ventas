@@ -23,13 +23,6 @@ export type DeterministicSalesSignal =
   | { type: 'opt_out' }
   | { type: 'model_required' };
 
-export type KnownContactIntakeV1 = {
-  readonly nombre: string | null;
-  readonly apellido: string | null;
-  readonly correo: string | null;
-  readonly telefono: string | null;
-};
-
 function normalize(text: string): string {
   return text
     .normalize('NFD')
@@ -37,48 +30,6 @@ function normalize(text: string): string {
     .toLowerCase()
     .trim()
     .replace(/\s+/g, ' ');
-}
-
-function unwrapContactDatum(text: string): string {
-  return normalize(text)
-    .replace(
-      /^(?:mi\s+)?(?:nombre(?:\s+completo)?|apellido|correo(?:\s+electronico)?|e-?mail|mail|telefono|celular|numero)(?:\s+(?:es|seria))?\s*[:=\-]?\s*/u,
-      '',
-    )
-    .replace(/^[¿¡!.,;:\s]+|[¿¡!.,;:\s]+$/gu, '')
-    .trim();
-}
-
-/**
- * Detects a turn that contributes only literal profile data. This is not a
- * language classifier: it compares the current text with the canonical
- * values already persisted for the contact. Its purpose is to keep a final
- * email/name/phone from doubling as consent to start a call.
- */
-export function isBatchOnlyKnownContactDataV1(
-  texts: readonly string[],
-  intake: KnownContactIntakeV1 | null | undefined,
-): boolean {
-  if (!intake) return false;
-  const values = texts.map(unwrapContactDatum).filter(Boolean);
-  if (values.length === 0) return false;
-
-  const knownWords = new Set([
-    intake.nombre,
-    intake.apellido,
-    [intake.nombre, intake.apellido].filter(Boolean).join(' '),
-    intake.correo,
-  ].filter((value): value is string => Boolean(value?.trim())).map(unwrapContactDatum));
-  const knownEmail = intake.correo?.trim().toLowerCase() ?? null;
-  const knownPhoneDigits = intake.telefono?.replace(/\D/gu, '') ?? '';
-
-  return values.every((value) => {
-    if (knownWords.has(value)) return true;
-    if (knownEmail !== null && value.toLowerCase() === knownEmail) return true;
-    if (!/^\+?[\d\s().-]+$/u.test(value)) return false;
-    const digits = value.replace(/\D/gu, '');
-    return knownPhoneDigits.length >= 8 && digits === knownPhoneDigits;
-  });
 }
 
 // Broader than a call decline: the customer wants no further contact at all,
@@ -129,6 +80,17 @@ const RETRY_ACCEPTANCE_PATTERNS: RegExp[] = [
   /^(?:(?:si|dale)\s+)?(?:intenta|intenten|intentemos|proba|probe|probemos|prueba|prueben|reintenta|reintentemos)\s+(?:nuevamente|de\s+nuevo|otra\s+vez)$/,
 ];
 
+// Availability is authority only when the durable conversation state says
+// the agent already asked whether the customer can answer now. Keep the
+// language set bounded here; arbitrary model interpretation must never start
+// a phone call.
+const AVAILABILITY_ACCEPTANCE_PATTERNS: RegExp[] = [
+  /^(?:si\s+)?ahora\s+puedo(?:\s+(?:atender|hablar))?$/,
+  /^(?:si\s+)?(?:estoy|estamos)\s+disponible(?:s)?(?:\s+ahora)?$/,
+  /^(?:si\s+)?puedo\s+(?:atender|hablar)\s+ahora$/,
+  /\by\s+ahora\s+puedo(?:\s+(?:atender|hablar))?\b/,
+];
+
 // Only an exact short reply counts — the moment the customer adds words
 // ("sí, contame más") the affirmative is no longer unambiguous on its own,
 // so it falls through to `model_required`.
@@ -155,6 +117,10 @@ export function classifyDeterministicSalesSignal(text: string): DeterministicSal
   }
 
   if (RETRY_ACCEPTANCE_PATTERNS.some((pattern) => pattern.test(phrase))) {
+    return { type: 'call_acceptance' };
+  }
+
+  if (AVAILABILITY_ACCEPTANCE_PATTERNS.some((pattern) => pattern.test(phrase))) {
     return { type: 'call_acceptance' };
   }
 

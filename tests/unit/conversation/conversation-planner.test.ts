@@ -221,8 +221,12 @@ describe('planConversationTurn', () => {
       call_offer_status: first.next_call_offer_status,
       awaiting_reply: first.next_awaiting_reply,
     }));
-    expect(accepted.allowed_business_action).toEqual({
-      type: 'request_call_now', reason: 'accepted_offer',
+    expect(accepted).toMatchObject({
+      response_goal: 'confirm_call_availability',
+      allowed_business_action: { type: 'none' },
+      next_call_preference: 'call',
+      next_call_offer_status: 'accepted',
+      next_awaiting_reply: 'call_or_chat',
     });
   });
 

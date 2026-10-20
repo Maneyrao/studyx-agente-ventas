@@ -1270,6 +1270,8 @@ function safeContextualOpening(
       return 'Perfecto, seguimos por chat.';
     case 'acknowledge_call_decline':
       return 'Entendido, continuamos por este medio.';
+    case 'confirm_call_availability':
+      return 'Perfecto. Pregunta con naturalidad si puede atender una llamada ahora.';
     case 'confirm_call_request':
       return 'Perfecto, queda registrada tu solicitud.';
     case 'present_payment_options':

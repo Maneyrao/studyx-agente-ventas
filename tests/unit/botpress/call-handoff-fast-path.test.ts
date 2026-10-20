@@ -133,7 +133,7 @@ describe('matchCallHandoffFastPath', () => {
         texts: ['Sí, llamame'],
         allowedActions: ['request_call_now'],
         acceptedOffer: true,
-        route: 'call_accepted_offer',
+        route: 'call_direct_request',
       }),
     );
 
@@ -190,7 +190,7 @@ describe('matchCallHandoffFastPath', () => {
     });
   });
 
-  it('an exact acceptance over an open offer becomes an accepted_offer request', () => {
+  it('an exact acceptance over an open offer falls through to ask availability', () => {
     const decision = matchCallHandoffFastPath(
       claimed({
         texts: ['sí'],
@@ -199,7 +199,23 @@ describe('matchCallHandoffFastPath', () => {
         route: 'call_accepted_offer',
       }),
     );
-    expect(decision).toMatchObject({
+    expect(decision).toBeNull();
+  });
+
+  it('a later availability confirmation can use the accepted-offer fast path', () => {
+    const pendingAvailability = claimed({
+      texts: ['sí'],
+      allowedActions: ['request_call_now'],
+      acceptedOffer: true,
+      route: 'call_accepted_offer',
+    });
+    Object.assign(pendingAvailability.conversation_state_v1!, {
+      call_preference: 'call',
+      call_offer_status: 'accepted',
+      awaiting_reply: 'call_or_chat',
+    });
+
+    expect(matchCallHandoffFastPath(pendingAvailability)).toMatchObject({
       response_type: 'call_confirmation',
       business_action: { type: 'request_call_now', reason: 'accepted_offer' },
     });

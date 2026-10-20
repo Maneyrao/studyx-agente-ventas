@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyBatchSalesSignal,
   classifyDeterministicSalesSignal,
-  isBatchOnlyKnownContactDataV1,
 } from '@/features/orchestration/domain/sales-signal';
 
 describe('classifyDeterministicSalesSignal', () => {
@@ -122,7 +121,6 @@ describe('classifyDeterministicSalesSignal', () => {
     expect(classifyDeterministicSalesSignal('   ')).toEqual({ type: 'model_required' });
   });
 });
-
 describe('classifyBatchSalesSignal', () => {
   it('finds a direct call request buried under trailing small talk', () => {
     expect(classifyBatchSalesSignal(['llamame', 'gracias'])).toEqual({ type: 'direct_call_request' });
@@ -156,6 +154,14 @@ describe('classifyBatchSalesSignal', () => {
     expect(classifyDeterministicSalesSignal('Bueno dale')).toEqual({ type: 'call_acceptance' });
   });
 
+  it.each([
+    'Ahora puedo atender',
+    'Estoy disponible',
+    'Sí, ahora puedo',
+  ])('classifies an explicit current-availability answer (%s)', (text) => {
+    expect(classifyDeterministicSalesSignal(text)).toEqual({ type: 'call_acceptance' });
+  });
+
   it('returns model_required when no message is decisive', () => {
     expect(classifyBatchSalesSignal(['hola', 'cuánto sale el curso?'])).toEqual({ type: 'model_required' });
     expect(classifyBatchSalesSignal([])).toEqual({ type: 'model_required' });
@@ -163,30 +169,5 @@ describe('classifyBatchSalesSignal', () => {
 
   it('matches the single-message classifier on one-message batches', () => {
     expect(classifyBatchSalesSignal(['llamame'])).toEqual(classifyDeterministicSalesSignal('llamame'));
-  });
-});
-
-describe('isBatchOnlyKnownContactDataV1', () => {
-  const intake = {
-    nombre: 'Ana', apellido: 'Pérez', correo: 'ana@example.test', telefono: '+5491112345678',
-  };
-
-  it.each([
-    'ana@example.test',
-    'Mi correo es ana@example.test',
-    'Teléfono: +54 9 11 1234-5678',
-    'Ana Pérez',
-  ])('recognizes a batch containing only known contact data (%s)', (message) => {
-    expect(isBatchOnlyKnownContactDataV1([message], intake)).toBe(true);
-  });
-
-  it('does not erase a semantic availability confirmation that accompanies contact data', () => {
-    expect(isBatchOnlyKnownContactDataV1([
-      'ana@example.test',
-      'Ahora puedo atender',
-    ], intake)).toBe(false);
-    expect(isBatchOnlyKnownContactDataV1([
-      'Mi teléfono es +5491112345678, ahora estoy disponible',
-    ], intake)).toBe(false);
   });
 });

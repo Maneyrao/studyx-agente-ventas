@@ -2186,7 +2186,7 @@ it('does not authorize an immediate call when email is missing', () => {
   expect(context.capabilities.required_contact_fields?.call).toEqual(['correo']);
 });
 
-it('authorizes the current explicit acceptance of an open offer with complete call data', () => {
+it('does not treat acceptance of an open offer as the later availability confirmation', () => {
   const claimed = claimedTurn();
   claimed.context.batch_messages[0] = {
     ...claimed.context.batch_messages[0]!, content: 'dale de una',
@@ -2202,7 +2202,7 @@ it('authorizes the current explicit acceptance of an open offer with complete ca
 
   const context = buildAgentAContextV1(claimed)!;
 
-  expect(context.capabilities.may_request_call_now).toBe(true);
+  expect(context.capabilities.may_request_call_now).toBe(false);
 });
 
 it('exposes a known voice email as awaiting written WhatsApp confirmation', () => {
