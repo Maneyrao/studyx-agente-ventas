@@ -889,6 +889,8 @@ describe('processInboundTurn hot path', () => {
   });
 
   it('describes a WhatsApp image before ingesting and never sends its signed URL to the backend', async () => {
+    configuration.whatsappPublicEnabled = true;
+    configuration.whatsappAllowedBotPhoneNumberId = 'allowed-business-number-75';
     actionSpies.analyzeImage.mockResolvedValueOnce({
       status: 'ok',
       text: 'La imagen muestra el temario del curso de inglés.',
@@ -903,6 +905,7 @@ describe('processInboundTurn hot path', () => {
         ...workflowInput().message,
         type: 'image',
         text: '[imagen_pendiente_descripcion]',
+        metadata: { bot_phone_number_id: 'allowed-business-number-75' },
       },
     };
     const step = Object.assign(
@@ -936,6 +939,8 @@ describe('processInboundTurn hot path', () => {
   });
 
   it('turns an image that cannot be understood into recoverable unreadable input', async () => {
+    configuration.whatsappPublicEnabled = true;
+    configuration.whatsappAllowedBotPhoneNumberId = 'allowed-business-number-75';
     actionSpies.analyzeImage.mockResolvedValueOnce({
       status: 'failed',
       text: '[imagen_no_interpretada]',
@@ -950,6 +955,7 @@ describe('processInboundTurn hot path', () => {
         ...workflowInput().message,
         type: 'image',
         text: '[imagen_pendiente_descripcion]',
+        metadata: { bot_phone_number_id: 'allowed-business-number-75' },
       },
     };
     const step = Object.assign(
