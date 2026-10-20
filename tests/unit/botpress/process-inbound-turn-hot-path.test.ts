@@ -13,6 +13,7 @@ const actionSpies = vi.hoisted(() => ({
   continuation: vi.fn(),
   syncInbound: vi.fn(),
   transcribe: vi.fn(),
+  analyzeImage: vi.fn(),
   flush: vi.fn(),
   geminiDecision: vi.fn(),
   groqDecision: vi.fn(),
@@ -60,6 +61,9 @@ vi.mock('../../../botpress-agent/src/lib/inbound/sync-conversation-inbound', () 
 }));
 vi.mock('../../../botpress-agent/src/actions/transcribeAudio', () => ({
   transcribeAudio: { execute: actionSpies.transcribe },
+}));
+vi.mock('../../../botpress-agent/src/actions/analyzeImage', () => ({
+  analyzeImage: { execute: actionSpies.analyzeImage },
 }));
 vi.mock('../../../botpress-agent/src/actions/flushLeadProjection', () => ({
   flushLeadProjection: { execute: actionSpies.flush },
@@ -881,6 +885,94 @@ describe('processInboundTurn hot path', () => {
       type: 'unsupported',
       text: '[audio_no_transcrito]',
       audio_reference: { transcription_status: 'failed' },
+    });
+  });
+
+  it('describes a WhatsApp image before ingesting and never sends its signed URL to the backend', async () => {
+    actionSpies.analyzeImage.mockResolvedValueOnce({
+      status: 'ok',
+      text: 'La imagen muestra el temario del curso de inglés.',
+      provider: 'gemini/gemini-2.5-flash',
+      reason: null,
+    });
+    const input = {
+      ...workflowInput(),
+      channel: 'whatsapp',
+      transport_media_url: 'https://files.bpcontent.cloud/2026/10/07/course.jpg',
+      message: {
+        ...workflowInput().message,
+        type: 'image',
+        text: '[imagen_pendiente_descripcion]',
+      },
+    };
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input,
+      state: processingState(),
+      step,
+      execute: vi.fn(async () => { throw new Error('MODEL_MUST_NOT_RUN'); }),
+      client: {},
+      signal: new AbortController().signal,
+      workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.analyzeImage).toHaveBeenCalledWith(expect.objectContaining({
+      input: { media_download_url: input.transport_media_url },
+    }));
+    const ingested = actionSpies.ingest.mock.calls[0]?.[0]?.input;
+    expect(ingested.message).toMatchObject({
+      type: 'image',
+      text: 'La imagen muestra el temario del curso de inglés.',
+    });
+    expect(ingested.transport_media_url).toBeUndefined();
+    expect(JSON.stringify(ingested)).not.toContain('files.bpcontent.cloud');
+  });
+
+  it('turns an image that cannot be understood into recoverable unreadable input', async () => {
+    actionSpies.analyzeImage.mockResolvedValueOnce({
+      status: 'failed',
+      text: '[imagen_no_interpretada]',
+      provider: 'disabled',
+      reason: 'MISSING_GEMINI_API_KEY',
+    });
+    const input = {
+      ...workflowInput(),
+      channel: 'whatsapp',
+      transport_media_url: 'https://files.bpcontent.cloud/2026/10/07/course.jpg',
+      message: {
+        ...workflowInput().message,
+        type: 'image',
+        text: '[imagen_pendiente_descripcion]',
+      },
+    };
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input,
+      state: processingState(),
+      step,
+      execute: vi.fn(async () => { throw new Error('MODEL_MUST_NOT_RUN'); }),
+      client: {},
+      signal: new AbortController().signal,
+      workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.ingest.mock.calls[0]?.[0]?.input.message).toMatchObject({
+      type: 'unsupported',
+      text: '[imagen_no_interpretada]',
     });
   });
 

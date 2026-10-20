@@ -4,7 +4,7 @@ import { E164_PATTERN } from './shared/normalize'
 import { buildWhatsAppEnvelope } from './shared/whatsapp-envelope'
 
 const WHATSAPP_CHANNEL = 'whatsapp.channel'
-const UNSUPPORTED_MEDIA_TYPES = new Set(['image', 'video', 'file', 'sticker'])
+const UNSUPPORTED_MEDIA_TYPES = new Set(['video', 'file', 'sticker'])
 const UNSUPPORTED_MEDIA_MARKER = '[whatsapp_media_no_soportado]'
 const UNSUPPORTED_TYPE_MARKER = '[whatsapp_tipo_no_soportado]'
 
@@ -118,9 +118,9 @@ function isIncomingWhatsAppMessage(value: unknown): value is IncomingWhatsAppMes
 }
 
 function mapMessage(message: IncomingWhatsAppMessage): {
-  type: 'text' | 'audio' | 'unsupported'
+  type: 'text' | 'audio' | 'image' | 'unsupported'
   text: string
-  audioUrl?: string
+  mediaUrl?: string
 } | null {
   if (message.type === 'text') {
     const text = message.payload.text
@@ -130,7 +130,14 @@ function mapMessage(message: IncomingWhatsAppMessage): {
   if (message.type === 'audio') {
     const audioUrl = message.payload.audioUrl
     if (typeof audioUrl === 'string' && audioUrl !== '') {
-      return { type: 'audio', text: '[audio_pendiente_transcripcion]', audioUrl }
+      return { type: 'audio', text: '[audio_pendiente_transcripcion]', mediaUrl: audioUrl }
+    }
+    return { type: 'unsupported', text: UNSUPPORTED_MEDIA_MARKER }
+  }
+  if (message.type === 'image') {
+    const imageUrl = message.payload.imageUrl
+    if (typeof imageUrl === 'string' && imageUrl !== '') {
+      return { type: 'image', text: '[imagen_pendiente_descripcion]', mediaUrl: imageUrl }
     }
     return { type: 'unsupported', text: UNSUPPORTED_MEDIA_MARKER }
   }
@@ -246,7 +253,7 @@ export const whatsappChannel: ChannelAdapter = {
             transcription_status: 'skipped',
             transcription_provider: null,
           } : null,
-          transportMediaUrl: mapped.audioUrl,
+          transportMediaUrl: mapped.mediaUrl,
           metadata: {
             original_type: message.type,
             ...(botPhoneNumberId ? { bot_phone_number_id: botPhoneNumberId } : {}),

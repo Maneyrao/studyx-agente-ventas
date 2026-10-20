@@ -137,7 +137,34 @@ describe('whatsappChannel.toEnvelope', () => {
     expect(result.input.message.audio_reference).toBeNull();
   });
 
-  it.each(['image', 'video', 'file', 'sticker'])(
+  it('maps an image to pending understanding while keeping its signed URL ephemeral', () => {
+    const result = whatsappChannel.toEnvelope(
+      ctx({
+        message: {
+          ...incomingText,
+          type: 'image',
+          payload: {
+            imageUrl: 'https://files.bpcontent.cloud/2026/10/07/course-payment.jpg',
+            caption: '¿Esto sirve?',
+          },
+        },
+      }),
+    );
+
+    expect(result.kind).toBe('envelope');
+    if (result.kind !== 'envelope') return;
+    expect(result.input.message).toMatchObject({
+      type: 'image',
+      text: '[imagen_pendiente_descripcion]',
+      audio_reference: null,
+    });
+    expect(result.input.transport_media_url).toBe(
+      'https://files.bpcontent.cloud/2026/10/07/course-payment.jpg',
+    );
+    expect(JSON.stringify(result.input.message)).not.toContain('files.bpcontent.cloud');
+  });
+
+  it.each(['video', 'file', 'sticker'])(
     'maps %s media to one unsupported marker without media references',
     (type) => {
       const result = whatsappChannel.toEnvelope(
