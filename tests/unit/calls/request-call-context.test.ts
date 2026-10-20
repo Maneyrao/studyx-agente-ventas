@@ -131,17 +131,16 @@ describe('resolveStoredVoiceProvider', () => {
 });
 
 describe('reserveCallForDecision intake gate', () => {
-  it('rejects a call before any ledger query when the email is not written in WhatsApp', async () => {
+  it('rejects a consented call before touching the call ledger when the email is not written in WhatsApp', async () => {
+    loadCallIntakeReadiness.mockReset();
     loadCallIntakeReadiness.mockResolvedValueOnce({
       status: 'needs_input',
       intake: { nombre: 'Ana', apellido: 'Pérez', correo: 'ana@example.test', telefono: '+5491112345678' },
       requirements: [{ field: 'correo', reason: 'written_whatsapp_confirmation_required' }],
     });
-    const unexpectedDb = (() => {
-      throw new Error('ledger must not be queried before durable intake is ready');
-    }) as unknown as DbClient;
+    const db = vi.fn(async () => []) as unknown as DbClient;
 
-    await expect(reserveCallForDecision(unexpectedDb, {
+    await expect(reserveCallForDecision(db, {
       turn_id: '10000000-0000-4000-8000-000000000001',
       trace_id: '10000000-0000-4000-8000-000000000002',
       decision_id: '10000000-0000-4000-8000-000000000003',
@@ -157,8 +156,30 @@ describe('reserveCallForDecision intake gate', () => {
     expect(loadCallIntakeReadiness).toHaveBeenCalledWith(
       '10000000-0000-4000-8000-000000000004',
       '10000000-0000-4000-8000-000000000005',
-      unexpectedDb,
+      db,
       { forUpdate: true },
     );
+    expect(db).toHaveBeenCalledTimes(1);
+  });
+
+  it('honors a refusal before requesting or locking personal data', async () => {
+    loadCallIntakeReadiness.mockReset();
+    const db = vi.fn(async () => []) as unknown as DbClient;
+
+    await expect(reserveCallForDecision(db, {
+      turn_id: '10000000-0000-4000-8000-000000000011',
+      trace_id: '10000000-0000-4000-8000-000000000012',
+      decision_id: '10000000-0000-4000-8000-000000000013',
+      contact_id: '10000000-0000-4000-8000-000000000014',
+      conversation_id: '10000000-0000-4000-8000-000000000015',
+      contact_name: null,
+      contact_email: null,
+      phone: null,
+      consent_messages: [{ id: '10000000-0000-4000-8000-000000000016', content: 'Sí, pero no me llames' }],
+      course_of_interest: null,
+      prompt_version: 'test-v1',
+    })).rejects.toMatchObject({ reason: 'CALL_EXPLICITLY_DECLINED' });
+    expect(loadCallIntakeReadiness).not.toHaveBeenCalled();
+    expect(db).toHaveBeenCalledTimes(1);
   });
 });

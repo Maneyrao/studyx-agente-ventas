@@ -197,22 +197,6 @@ export async function reserveCallForDecision(
   ) {
     throw new CallRequestRejectedError('CALL_RESERVATION_ID_INVALID');
   }
-  const { loadCallIntakeReadinessV1 } = await import(
-    '@/lib/repositories/call-intake-readiness.repository'
-  );
-  const callIntake = await loadCallIntakeReadinessV1(
-    input.contact_id,
-    input.conversation_id,
-    db,
-    { forUpdate: true },
-  );
-  const intakeRejection = callIntakeRejectionReasonV1(callIntake);
-  if (intakeRejection) throw new CallRequestRejectedError(intakeRejection);
-  const callPhone = callIntake.intake.telefono;
-  if (callPhone === null || !E164.test(callPhone)) {
-    throw new CallRequestRejectedError('CALL_PHONE_INVALID');
-  }
-
   const nowIso = (input.now?.() ?? new Date()).toISOString();
 
   const offers = await db<Array<{ decision_id: string; offered_at: Date }>>`
@@ -259,6 +243,27 @@ export async function reserveCallForDecision(
     throw new CallRequestRejectedError('CALL_CONSENT_MODE_MISMATCH');
   }
   const consentSourceMessageId = input.consent_messages[verdict.sourceIndex].id;
+
+  // Refusals and invalid consent must win over intake collection: after a
+  // customer says not to call, the agent must not respond by asking for
+  // personal data. Once consent is valid, lock the canonical contact profile
+  // before touching the call ledger so every writer keeps contact→session
+  // lock order and the final reservation uses one durable snapshot.
+  const { loadCallIntakeReadinessV1 } = await import(
+    '@/lib/repositories/call-intake-readiness.repository'
+  );
+  const callIntake = await loadCallIntakeReadinessV1(
+    input.contact_id,
+    input.conversation_id,
+    db,
+    { forUpdate: true },
+  );
+  const intakeRejection = callIntakeRejectionReasonV1(callIntake);
+  if (intakeRejection) throw new CallRequestRejectedError(intakeRejection);
+  const callPhone = callIntake.intake.telefono;
+  if (callPhone === null || !E164.test(callPhone)) {
+    throw new CallRequestRejectedError('CALL_PHONE_INVALID');
+  }
 
   // Xendra can acknowledge creation without ever delivering a lifecycle
   // event. Such a call must not hold the one-active-call fence forever.

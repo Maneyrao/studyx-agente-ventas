@@ -62,6 +62,12 @@ export interface PlanConversationTurnInputV1 {
    * unknown is treated as missing: the gate never opens on ignorance.
    */
   readonly contact_intake?: ContactIntakeV1;
+  /**
+   * Canonical call readiness also verifies that the email was written by the
+   * customer on WhatsApp. Undefined preserves the pure planner's legacy
+   * field-only contract; production always supplies the canonical verdict.
+   */
+  readonly call_intake_ready?: boolean;
 }
 
 type StateIdentity = Pick<ConversationStateV1, 'workspace_id' | 'conversation_id' | 'contact_id'>;
@@ -452,6 +458,10 @@ function planSingle(
   }
   if (kind === 'request_call') {
     if (vetoes.has('call')) return unchangedPlan(state, 'clarify_current_step', ['call_or_chat_choice']);
+    if (input.call_intake_ready === false
+      || missingContactIntakeFieldsV1(input.contact_intake).length > 0) {
+      return requestContactDetails(state);
+    }
     const acceptedOffer = state.call_offer_status === 'offered'
       && state.awaiting_reply === 'call_or_chat';
     return {

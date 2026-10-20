@@ -41,6 +41,13 @@ describe('Agent A to future Agent B call boundary', () => {
         }],
         payment_plans: ['monthly_12', 'monthly_6', 'one_time'],
       },
+      contact_intake: {
+        nombre: 'Ariana',
+        apellido: 'Paz',
+        correo: 'ariana.paz@example.test',
+        telefono: '+5491100000001',
+      },
+      call_intake_ready: true,
     });
 
     expect(plan.allowed_business_action.type).toBe('request_call_now');

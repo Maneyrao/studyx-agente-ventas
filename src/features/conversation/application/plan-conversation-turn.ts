@@ -25,6 +25,7 @@ import {
   materializeCanonicalFactRequests,
 } from '../domain/canonical-fact-registry';
 import { loadConversationSessionConfig } from '@/lib/config';
+import type { CallIntakeReadinessV1 } from '@/features/calls/domain/call-intake-readiness';
 
 export interface AuthoritativeConversationPlanV1 {
   readonly plan: TurnPlanV1;
@@ -81,6 +82,10 @@ export interface AuthoritativeConversationPlanDependenciesV1 {
    * diverge, so it is one shared reader rather than two call-site queries.
    */
   readonly contact_intake?: (contactId: string) => Promise<ContactIntakeV1>;
+  readonly call_intake_readiness?: (
+    contactId: string,
+    conversationId: string,
+  ) => Promise<CallIntakeReadinessV1>;
   readonly now?: () => number;
 }
 
@@ -127,7 +132,7 @@ export async function authoritativelyPlanConversationTurnV1(
   input: AuthoritativeConversationPlanInputV1,
   deps: AuthoritativeConversationPlanDependenciesV1,
 ): Promise<AuthoritativeConversationPlanV1> {
-  const [loaded, callFacts, contactIntake] = await Promise.all([
+  const [loaded, callFacts, legacyContactIntake, callIntakeReadiness] = await Promise.all([
     deps.state_store.load(
       input.workspace_slug,
       input.turn.conversation_id,
@@ -138,7 +143,10 @@ export async function authoritativelyPlanConversationTurnV1(
       contact_id: input.turn.contact_id,
     }) ?? Promise.resolve(null),
     deps.contact_intake?.(input.turn.contact_id) ?? Promise.resolve(undefined),
+    deps.call_intake_readiness?.(input.turn.contact_id, input.turn.conversation_id)
+      ?? Promise.resolve(undefined),
   ]);
+  const contactIntake = callIntakeReadiness?.intake ?? legacyContactIntake;
   const state = loaded
     ? effectiveConversationStateV1(
         loaded,
@@ -158,6 +166,9 @@ export async function authoritativelyPlanConversationTurnV1(
     business_context: buildPlanningBusinessContextV1(input.business_context, input.catalog_index),
     proactive_call_offer_allowed: proactiveCallOfferAllowed,
     contact_intake: contactIntake,
+    call_intake_ready: callIntakeReadiness
+      ? callIntakeReadiness.status === 'ready'
+      : undefined,
     // Measured against the state as persisted, not the effective one: the
     // effective copy already had its pending question expired by the same
     // window, so reading dormancy from it would always come back false.

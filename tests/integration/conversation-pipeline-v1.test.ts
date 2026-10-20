@@ -16,6 +16,13 @@ import { EMBEDDING_DIMENSIONS } from '@/lib/embeddings/gemini';
 import { sql } from '@/lib/db/orchestrator';
 import { recordDeliveryReport } from '@/lib/services/decision.service';
 import { loadContactIntakeV1 } from '@/lib/repositories/contact-intake.repository';
+import { loadCallIntakeReadinessV1 } from '@/lib/repositories/call-intake-readiness.repository';
+import {
+  applyContactProfileUpdatesV1,
+  loadContactProfileV1,
+} from '@/lib/repositories/contact-profile.repository';
+import { withSerializableTransactionOn } from '@/lib/db/transaction';
+import type { ContactProfileUpdateV1 } from '@/shared/conversation/contact-profile-contract';
 import { leadProjectionKey } from '@/features/payments/domain/payment-report-projection';
 import { processInboundMessage, type InboundEnvelope } from '@/lib/services/ingestion.service';
 import { openLocalTestDatabase } from '../helpers/db';
@@ -185,13 +192,14 @@ run('conversation pipeline V1 vertical', () => {
     const result: InboundEnvelope = {
       schema_version: 1,
       source: 'botpress',
-      channel: 'telegram',
-      integration_id: 'telegram-conversation-pipeline-v1',
+      channel: 'whatsapp',
+      integration_id: 'whatsapp-conversation-pipeline-v1',
       external_message_id: externalMessageId,
       external_conversation_id: conversationExternalId,
       external_user_id: userExternalId,
       phone_e164: phone,
       trace_id: randomUUID(),
+      identity_owner: 'agent_a_v1',
       message: {
         type: 'text', text, occurred_at: new Date(Date.now() + sequence * 1_000).toISOString(),
         reply_to_external_message_id: previousExternalMessageId,
@@ -205,6 +213,7 @@ run('conversation pipeline V1 vertical', () => {
     text: string,
     interpretedMove: ConversationMoveV1,
     composition?: ParsedConversationPipelineCommitV1['composition'],
+    profileUpdates: readonly Omit<ContactProfileUpdateV1, 'source_message_id'>[] = [],
   ) {
     const input = envelope(text);
     const ingested = await processInboundMessage(input);
@@ -224,6 +233,21 @@ run('conversation pipeline V1 vertical', () => {
     }, claimDeps);
     if (claimed.outcome !== 'claimed') throw new Error(`expected claimed, got ${claimed.outcome}`);
 
+    if (profileUpdates.length > 0) {
+      const profile = await loadContactProfileV1(claimed.batch.contact_id, sql);
+      if (!profile) throw new Error('expected Agent A contact profile');
+      await withSerializableTransactionOn(sql, tx => applyContactProfileUpdatesV1(tx, {
+        turn_id: claimed.turn_id,
+        batch_id: claimed.batch.id,
+        claim_token: claimed.batch.claim_token,
+        expected_version: profile.version,
+        updates: profileUpdates.map(update => ({
+          ...update,
+          source_message_id: claimed.turn_id,
+        })),
+      }));
+    }
+
     const planned = await authoritativelyPlanConversationTurnV1({
       turn: {
         workspace_id: workspaceId,
@@ -234,7 +258,13 @@ run('conversation pipeline V1 vertical', () => {
       move: interpretedMove,
       business_context: claimed.business_context,
       catalog_index: claimed.catalog_index,
-    }, { state_store: stateStore, contact_intake: loadContactIntakeV1 });
+    }, {
+      state_store: stateStore,
+      contact_intake: loadContactIntakeV1,
+      call_intake_readiness: (contactId, conversationId) => (
+        loadCallIntakeReadinessV1(contactId, conversationId, sql)
+      ),
+    });
     const commitInput = {
       turn_id: claimed.turn_id,
       trace_id: input.trace_id,
@@ -265,8 +295,9 @@ run('conversation pipeline V1 vertical', () => {
     text: string,
     interpretedMove: ConversationMoveV1,
     composition?: ParsedConversationPipelineCommitV1['composition'],
+    profileUpdates: readonly Omit<ContactProfileUpdateV1, 'source_message_id'>[] = [],
   ) {
-    const prepared = await prepareTurn(text, interpretedMove, composition);
+    const prepared = await prepareTurn(text, interpretedMove, composition, profileUpdates);
     const committed = await commitClaimedDecision(prepared.commitInput, { store: orchestrationStore });
     expect(committed.status).toBe('committed');
     expect(committed.batch_completion).toBe('completed');
@@ -314,8 +345,30 @@ run('conversation pipeline V1 vertical', () => {
     );
     expect(chat.committed.outbound?.content).toContain('siguiente paso autorizado');
 
-    const call = await commitTurn(
+    const incompleteCall = await commitTurn(
       'Cambié de idea y deseo una comunicación por voz',
+      move('request_call'),
+    );
+    expect(incompleteCall.planned.plan.response_goal).toBe('request_contact_details');
+    expect(incompleteCall.committed.call_request).toBeNull();
+
+    // El dato escrito se persiste antes de planificar la respuesta, como en el
+    // endpoint de perfil de producción. Completar el último dato no equivale a
+    // aceptar la llamada: hace falta un pedido posterior y explícito.
+    const identityConfirmation = await commitTurn(
+      'Soy Ariana Paz, ariana.paz@example.test',
+      move('provide_contact_details'),
+      undefined,
+      [
+        { field: 'nombre', value: 'Ariana', operation: 'set', source_quote: 'Ariana' },
+        { field: 'apellido', value: 'Paz', operation: 'set', source_quote: 'Paz' },
+        { field: 'correo', value: 'ariana.paz@example.test', operation: 'set', source_quote: 'ariana.paz@example.test' },
+      ],
+    );
+    expect(identityConfirmation.committed.call_request).toBeNull();
+
+    const call = await commitTurn(
+      'Ya te pasé los datos. Llamame ahora',
       move('request_call'),
     );
     expect(call.committed.call_request).not.toBeNull();
@@ -338,24 +391,11 @@ run('conversation pipeline V1 vertical', () => {
     );
     expect(deferred.committed.outbound?.content).not.toContain(paymentLinks.monthly_12);
 
-    const withheld = await commitTurn(
-      'Retomemos el paso pendiente y compartime el acceso de cobro',
-      move('request_payment_link'),
-    );
-    expect(withheld.committed.outbound?.content).not.toContain(paymentLinks.monthly_12);
-
-    // Supplying the missing identity must first produce the canonical data
-    // confirmation. Data entry alone is never consent to send a payment link.
-    const identityConfirmation = await commitTurn(
-      'Soy Ariana Paz, ariana.paz@example.test',
-      move('provide_contact_details'),
-    );
-    expect(identityConfirmation.committed.outbound?.content).not.toContain(paymentLinks.monthly_12);
-
-    // Only a later, explicit confirmation may emit the link. That is the turn
-    // that must survive being committed twice at once.
+    // The identity was already confirmed for the call. A later explicit
+    // payment-link request may therefore advance without asking it again, and
+    // the side effect must remain exactly-once under concurrent commits.
     const payment = await prepareTurn(
-      'Sí, los datos son correctos. Ahora compartime el link',
+      'Retomemos el paso pendiente y compartime el acceso de cobro',
       move('request_payment_link'),
     );
     const concurrent = await Promise.all([

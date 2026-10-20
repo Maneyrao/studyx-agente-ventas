@@ -721,6 +721,12 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           state_store: new PostgresConversationStateStoreV1(db),
           call_facts: new PostgresOrchestrationStore(db),
           contact_intake: (contactId) => loadContactIntakeV1(contactId, db),
+          call_intake_readiness: async (contactId, conversationId) => {
+            const { loadCallIntakeReadinessV1 } = await import(
+              '@/lib/repositories/call-intake-readiness.repository'
+            );
+            return loadCallIntakeReadinessV1(contactId, conversationId, db);
+          },
         });
       } catch (error) {
         if (error instanceof ConversationPlanMismatchError

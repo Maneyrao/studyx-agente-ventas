@@ -95,6 +95,9 @@ run('post-sale payment / central / Agent A pipeline', () => {
       narrative:{intro:'Tu contraseña es ClaveInventada99',suggestion:''}},deliveryDeps))
       .toEqual({outcome:'invalid_content',reason:'POST_SALE_UNAUTHORIZED_PROSE'});
     expect(await deliverNotification(f.notificationId,{claim_token:claim.claim_token,botpress_conversation_id:f.botpressId,
+      narrative:{intro:'El curso sale USD 47.',suggestion:''}},deliveryDeps))
+      .toEqual({outcome:'invalid_content',reason:'POST_SALE_EGRESS_INVALID'});
+    expect(await deliverNotification(f.notificationId,{claim_token:claim.claim_token,botpress_conversation_id:f.botpressId,
       narrative:{intro:'Recibimos tu pago. Estoy preparando tu acceso.',suggestion:''}},deliveryDeps))
       .toEqual({outcome:'sent'});
     expect(sends).toBe(1);

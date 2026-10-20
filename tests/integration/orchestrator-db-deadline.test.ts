@@ -9,7 +9,8 @@ run('orchestrator database deadline', () => {
     // This role has no login in the disposable seed; production provisions its
     // password separately. The helper above refuses any remote test database.
     const [{ rolcanlogin }] = await db!`SELECT rolcanlogin FROM pg_roles WHERE rolname = 'orchestrator_role'`;
-    await db!`ALTER ROLE orchestrator_role LOGIN`;
+    expect(rolcanlogin).toBe(false);
+    await db!`ALTER ROLE orchestrator_role LOGIN PASSWORD 'postgres'`;
     const url = new URL(process.env.TEST_DATABASE_URL!);
     url.username = 'orchestrator_role';
     const connection = postgres(url.toString(), { max: 1, prepare: false });
@@ -19,7 +20,7 @@ run('orchestrator database deadline', () => {
       expect((await connection`SELECT 1 AS healthy`)[0].healthy).toBe(1);
     } finally {
       await connection.end();
-      if (!rolcanlogin) await db!`ALTER ROLE orchestrator_role NOLOGIN`;
+      await db!`ALTER ROLE orchestrator_role NOLOGIN PASSWORD NULL`;
     }
   }, 12_000);
 });

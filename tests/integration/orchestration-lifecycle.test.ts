@@ -528,7 +528,14 @@ run('canonical orchestration lifecycle', () => {
     expect(committed.status).toBe('committed');
     // The canonical commit only enqueues durable projection jobs. Run the
     // same bounded worker used by reconciliation before asserting the
-    // selected-memory projection.
+    // selected-memory projection. The integration database is shared across
+    // files, so make only this decision's jobs the oldest claimable work;
+    // otherwise the global LIMIT may be exhausted by unrelated decisions.
+    await db!`
+      UPDATE agent_a_memory_projection_jobs
+      SET created_at = now() - interval '200 years', available_at = now()
+      WHERE decision_id = ${committed.decision_id}::uuid
+    `;
     await projectAgentAMemories({ limit: 10 }, { db: db!, audit: auditLog });
 
     const memories = await db!<Array<{ memory_key: string }>>`

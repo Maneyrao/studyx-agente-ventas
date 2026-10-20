@@ -87,6 +87,37 @@ describe('six-field contact intake', () => {
     });
   });
 
+  it('asks for missing data instead of confirming a call that cannot be placed', () => {
+    const result = planConversationTurn({
+      move: move('request_call'),
+      sales_context: state({ selected_offering_code: 'redes-informaticas' }),
+      business_context: business,
+      contact_intake: { ...complete, apellido: null },
+      call_intake_ready: false,
+    });
+
+    expect(result.response_goal).toBe('request_contact_details');
+    expect(result.allowed_business_action).toEqual({ type: 'none' });
+    expect(result.next_awaiting_reply).toBe('contact_details');
+    expect(result.next_stage).not.toBe('handoff');
+  });
+
+  it('authorizes the call only after the canonical intake is ready', () => {
+    const result = planConversationTurn({
+      move: move('request_call'),
+      sales_context: state({ selected_offering_code: 'redes-informaticas' }),
+      business_context: business,
+      contact_intake: complete,
+      call_intake_ready: true,
+    });
+
+    expect(result.response_goal).toBe('confirm_call_request');
+    expect(result.allowed_business_action).toEqual({
+      type: 'request_call_now',
+      reason: 'direct_request',
+    });
+  });
+
   it('confirms completed data before resuming the link the customer asked for', () => {
     const awaitingData = { ...planChosen, awaiting_reply: 'contact_details' as const };
     const result = planConversationTurn({

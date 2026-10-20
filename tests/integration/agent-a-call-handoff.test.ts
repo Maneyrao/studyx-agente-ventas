@@ -6,6 +6,7 @@ import { PostgresContextReceiptStore } from '@/features/calls/adapters/postgres-
 import { TelegramSimVoiceProvider } from '@/features/calls/adapters/telegram-sim-voice.provider';
 import type { TelegramSendMessageInput } from '@/features/calls/adapters/telegram-bot-api.client';
 import { openLocalTestDatabase } from '../helpers/db';
+import { seedWrittenCallIntakeV1 } from '../helpers/call-intake-fixtures';
 import { processInboundMessage, type InboundEnvelope } from '@/lib/services/ingestion.service';
 import { commitAgentDecision, DecisionPolicyError } from '@/lib/services/decision.service';
 import { reserveCallForDecision } from '@/features/calls/application/request-call';
@@ -21,6 +22,7 @@ import { sql } from '@/lib/db/orchestrator';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
+const seededCallIntake = new Set<string>();
 
 afterAll(async () => {
   await db?.end();
@@ -66,6 +68,16 @@ function envelope(identity: Identity, text: string): InboundEnvelope {
 }
 
 async function seedTurn(identity: Identity, text: string): Promise<string> {
+  if (!seededCallIntake.has(identity.conversation)) {
+    await seedWrittenCallIntakeV1({
+      phone: identity.phone,
+      correo: `ana.${randomUUID()}@example.test`,
+      ...(identity.phone.startsWith('+999')
+        ? { telefono: `+54911${Math.floor(10_000_000 + Math.random() * 89_999_999)}` }
+        : {}),
+    }, db!);
+    seededCallIntake.add(identity.conversation);
+  }
   const context = await processInboundMessage(envelope(identity, text));
   const [workspace] = await sql<Array<{ id: string }>>`
     SELECT id FROM workspaces WHERE slug = 'studyx' AND status = 'active' LIMIT 1
@@ -320,29 +332,25 @@ run('agent a call handoff — refusals reserve nothing', () => {
     ]);
   });
 
-  it('an absent or unparseable phone is refused fail-closed', async () => {
-    // La base ya fuerza E.164 en contacts.phone, así que esta defensa del
-    // dominio se prueba directamente: es la que corta si esa invariante
-    // cambiara o el dato llegara degradado.
+  it('an incomplete durable profile is refused even when the caller supplies a spoofed phone argument', async () => {
     const identity = newIdentity();
-    const turnId = await seedTurn(identity, 'Llamame ahora');
-    for (const phone of [null, 'sin-telefono', '54911']) {
-      await expect(
-        reserveCallForDecision(db!, {
-          turn_id: turnId,
-          trace_id: randomUUID(),
-          decision_id: randomUUID(),
-          contact_id: randomUUID(),
-          conversation_id: randomUUID(),
-          contact_name: null,
-          phone,
-          consent_messages: [{ id: turnId, content: 'Llamame ahora' }],
-          course_of_interest: null,
-          prompt_version: 'studyx-agent-a-sales-bridge-v1',
-        }),
-      ).rejects.toMatchObject({ reason: 'CALL_PHONE_INVALID' });
-    }
-    expect(await sessionsByTurn(turnId)).toHaveLength(0);
+    const context = await processInboundMessage({
+      ...envelope(identity, 'Llamame ahora'),
+      identity_owner: 'agent_a_v1',
+    });
+    await expect(reserveCallForDecision(db!, {
+      turn_id: context.turn_id,
+      trace_id: randomUUID(),
+      decision_id: randomUUID(),
+      contact_id: context.contact.id,
+      conversation_id: context.conversation_id,
+      contact_name: 'Dato no canónico',
+      phone: '+5491199999999',
+      consent_messages: [{ id: context.turn_id, content: 'Llamame ahora' }],
+      course_of_interest: null,
+      prompt_version: 'studyx-agent-a-sales-bridge-v1',
+    })).rejects.toMatchObject({ reason: 'CALL_INTAKE_INCOMPLETE' });
+    expect(await sessionsByTurn(context.turn_id)).toHaveLength(0);
   });
 
   it('a blocked contact cannot request a call', async () => {
@@ -442,7 +450,7 @@ run('agent a → agent b end to end', () => {
         });
         const provider = new TelegramSimVoiceProvider({
           receipts,
-          destinationResolver: receipts,
+          destinationResolver: { resolve: async () => ({ chatId, userId }) },
           telegram: { sendMessage, answerCallbackQuery: vi.fn(async () => undefined) },
           nonce: () => `nonce_${callId.replaceAll('-', '').slice(0, 16)}`,
         });
@@ -546,7 +554,7 @@ run('agent a → agent b end to end', () => {
     };
     const provider = new TelegramSimVoiceProvider({
       receipts,
-      destinationResolver: receipts,
+      destinationResolver: { resolve: async () => ({ chatId, userId }) },
       telegram,
       nonce: () => `nonce_${callId.replaceAll('-', '').slice(0, 16)}`,
     });
