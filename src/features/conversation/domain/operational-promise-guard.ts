@@ -110,11 +110,38 @@ const SELF_CONTAINED_ACT = new RegExp(
   'iu',
 );
 
+// A commercial exception or human escalation is an operational side effect,
+// just like an enrolment or call dispatch. Unless a structured handoff exists,
+// saying that the case was raised makes the customer wait for work that no
+// system or person was asked to perform.
+const ESCALATION_ACTION = '(?:(?:dej|elev|escal|deriv|plante|consult|solicit|gestion)(?:aré|are|amos|ar|o|e|é)|pedir|pido|pedí|pedire|pediré|pedimos)';
+const ESCALATION_TARGET = /(?:^|[^\p{L}])(?:caso|pedido|excepci[oó]n|equipo|asesor(?:a)?|[áa]rea)(?=$|[^\p{L}])/iu;
+const LOCAL_ESCALATION_NEGATION = new RegExp(
+  `(?:\\bnunca\\s+|\\bno\\s+(?:(?:te\\s+)?(?:puedo|podemos)\\s+|(?:voy|vamos)\\s+a\\s+)?` +
+    `|\\bno\\s+(?:tengo|tenemos|hay|existe)\\s+(?:forma|posibilidad|v[ií]a)\\s+de\\s+)$`,
+  'iu',
+);
+
+function hasUnmaterializedEscalation(sentence: string): boolean {
+  const action = new RegExp(`\\b${ESCALATION_ACTION}(?=$|[^\\p{L}])`, 'giu');
+  for (const match of sentence.matchAll(action)) {
+    const before = sentence.slice(0, match.index);
+    const localPrefix = before.split(/[,;.!?]/u).at(-1) ?? '';
+    const after = sentence.slice(match.index + match[0].length).split(/[;.!?]/u)[0] ?? '';
+    const targetNearby = ESCALATION_TARGET.test(after.slice(0, 80))
+      || ESCALATION_TARGET.test(localPrefix.slice(-80));
+    if (!targetNearby || LOCAL_ESCALATION_NEGATION.test(localPrefix)) continue;
+    return true;
+  }
+  return false;
+}
+
 /**
  * Whether one sentence claims an operational outcome already happened, or
  * commits the agent to making it happen.
  */
 export function assertsCompletedOperationalOutcome(sentence: string): boolean {
+  if (hasUnmaterializedEscalation(sentence)) return true;
   if (SELF_CONTAINED_ACT.test(sentence)) return true;
   if (!OPERATIONAL_OUTCOME.test(sentence)) return false;
   return COMPLETED_ASSERTION.test(sentence) || AGENT_COMMITMENT.test(sentence);
@@ -468,6 +495,12 @@ export function detectOperationalStateAssertionsV1(
         .replace(new RegExp(FUTURE_PAYMENT_CONDITION.source, 'giu'), '')
         .replace(FUTURE_CONTACT_RECORD_PURPOSE, '');
       if (asserted === clause && ATTRIBUTED_TO_TEAM.test(clause) && AFTER_VERIFICATION.test(clause)) continue;
+      // Escalations need predicate-local negation. A generic "No" at the
+      // beginning of the sentence must not authorize a later positive promise
+      // ("No te preocupes, voy a elevar...").
+      if (hasUnmaterializedEscalation(asserted)) {
+        found.push({ sentence, requires: UNREACHABLE_MILESTONE });
+      }
       for (const { pattern, requires } of ASSERTION_CLASSES) {
         const match = pattern.exec(asserted);
         if (match) {

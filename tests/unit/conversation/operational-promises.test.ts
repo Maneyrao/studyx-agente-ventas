@@ -54,6 +54,44 @@ describe('unsupported operational promises', () => {
     }
   });
 
+  it.each([
+    'Puedo dejar tu caso planteado para que hagan una excepción.',
+    'Te dejo el caso planteado para una excepción.',
+    'Voy a elevar el pedido al equipo para ver si te cobran USD 15.',
+    'Ya elevé tu caso al equipo.',
+    'Derivo tu pedido a un asesor.',
+    'Solicité una excepción para tu caso.',
+    'Consultaré con el área si pueden cobrarte menos.',
+    'Consulto con un asesor si podemos ofrecerte una cuota menor.',
+  ])('blocks an exception or escalation promise when no handoff was materialized: %s', (promise) => {
+    expect(assertsCompletedOperationalOutcome(promise)).toBe(true);
+    expect(dropUnsupportedStateAssertionsV1(`Entiendo el punto. ${promise}`, new Set()))
+      .toBe('Entiendo el punto.');
+  });
+
+  it('allows an honest explanation that no exception can be created', () => {
+    for (const text of [
+      'No puedo solicitar una excepción ni ofrecer una cuota menor a USD 30.',
+      'No voy a elevar tu caso porque no existe una vía autorizada para hacerlo.',
+      'No tengo forma de derivar el pedido a un asesor.',
+    ]) {
+      expect(assertsCompletedOperationalOutcome(text)).toBe(false);
+      expect(dropUnsupportedStateAssertionsV1(text, new Set())).toBe(text);
+    }
+  });
+
+  it.each([
+    'No te preocupes, voy a elevar tu caso al equipo.',
+    'No puedo solicitar una excepción, pero voy a consultar tu caso con el equipo.',
+  ])('scopes negation to its own predicate and still blocks a later escalation: %s', (text) => {
+    expect(assertsCompletedOperationalOutcome(text)).toBe(true);
+    expect(detectOperationalStateAssertionsV1(text)).toContainEqual({
+      sentence: text,
+      requires: 'state:__external_milestone__:v1',
+    });
+    expect(dropUnsupportedStateAssertionsV1(text, new Set())).toBe('');
+  });
+
   /** The guard must not eat the ordinary, truthful things the agent says. */
   it('leaves truthful conversational copy alone', () => {
     for (const honest of [

@@ -8,6 +8,10 @@ import {
 export type CallOfferTurnReasonV1 =
   | 'FIRST_NAME_OR_NEED_MISSING'
   | 'FIRST_OFFER_DUE'
+  | 'FIRST_NOT_YET_USEFUL'
+  | 'FIRST_USEFUL_MOMENT'
+  | 'FIRST_REPEATED_PRICE_OBJECTION'
+  | 'FIRST_EXCEPTION_REQUEST'
   | 'SECOND_PRICE_OBJECTION'
   | 'SECOND_MULTIPLE_QUESTIONS'
   | 'SECOND_INDECISION'
@@ -61,6 +65,19 @@ function optOut(text: string): boolean {
 function priceObjection(text: string): boolean {
   const value = normalized(text);
   return /\b(?:car[oa]|costos[oa]|fuera\s+de\s+(?:mi\s+)?presupuesto|no\s+me\s+alcanza|no\s+llego|se\s+me\s+va|much[oa]\s+dinero|presupuesto\b[^.!?\n]{0,32}\b(?:ajustado|limitado))\b/u.test(value);
+}
+
+function exceptionRequest(text: string): boolean {
+  const value = normalized(text);
+  return /\b(?:hacer|hacen|pueden\s+hacer|pedir|dar|ofrecer)\s+(?:una\s+)?excepcion\b/u.test(value)
+    || /\b(?:cobrar|pagar|dejar)\b[^.!?\n]{0,48}\b(?:menos|otra\s+cuota|cuota\s+menor)\b/u.test(value)
+    || /\b(?:descuento|bonificacion|precio\s+especial)\b/u.test(value);
+}
+
+function priorPriceObjection(context: AgentAContextV1): boolean {
+  return context.turn.recent_turns.some((turn) => (
+    turn.direction === 'inbound' && priceObjection(turn.content)
+  ));
 }
 
 function severalQuestions(context: AgentAContextV1, text: string): boolean {
@@ -157,45 +174,57 @@ export function evaluateCallOfferTurnPolicyV1(input: {
     return { offer_required: false, offer_allowed: false, reason: 'CALL_OFFER_NOT_AUTHORIZED', customer_signal: customerSignal };
   }
 
-  if (context.commercial_state.call_offer_count === 0) {
-    // The first agent turn introduces StudyX. Every later customer turn is
-    // eligible for the required first invitation until it is actually sent.
-    // The model writes the invitation; this policy only makes the timing
-    // durable and independent from catalog wording or a particular phrase.
-    const introductionAlreadyDelivered = context.continuity?.assistant_has_spoken === true
-      || context.turn.recent_turns.some((turn) => turn.direction === 'outbound');
-    return introductionAlreadyDelivered
-      ? { offer_required: true, offer_allowed: true, reason: 'FIRST_OFFER_DUE', customer_signal: customerSignal }
-      : { offer_required: false, offer_allowed: false, reason: 'FIRST_NAME_OR_NEED_MISSING', customer_signal: customerSignal };
-  }
-
   if (customerSignal === 'direct_purchase') {
     return { offer_required: false, offer_allowed: false, reason: 'DIRECT_PURCHASE', customer_signal: customerSignal };
   }
   if (customerSignal === 'chat_preference') {
     return { offer_required: false, offer_allowed: false, reason: 'SOFT_CHAT_PREFERENCE_THIS_TURN', customer_signal: customerSignal };
   }
+
+  if (context.commercial_state.call_offer_count === 0) {
+    const introductionAlreadyDelivered = context.continuity?.assistant_has_spoken === true
+      || context.turn.recent_turns.some((turn) => turn.direction === 'outbound');
+    if (!introductionAlreadyDelivered) {
+      return { offer_required: false, offer_allowed: false, reason: 'FIRST_NAME_OR_NEED_MISSING', customer_signal: customerSignal };
+    }
+    if (exceptionRequest(text)) {
+      return { offer_required: true, offer_allowed: true, reason: 'FIRST_EXCEPTION_REQUEST', customer_signal: customerSignal };
+    }
+    if (priceObjection(text) && priorPriceObjection(context)) {
+      return { offer_required: true, offer_allowed: true, reason: 'FIRST_REPEATED_PRICE_OBJECTION', customer_signal: customerSignal };
+    }
+    if (
+      priceObjection(text)
+      || severalQuestions(context, text)
+      || indecision(text)
+      || detailsRequest(text)
+      || prepaymentFriction(text)
+    ) {
+      return { offer_required: false, offer_allowed: true, reason: 'FIRST_USEFUL_MOMENT', customer_signal: customerSignal };
+    }
+    return { offer_required: false, offer_allowed: false, reason: 'FIRST_NOT_YET_USEFUL', customer_signal: customerSignal };
+  }
   if (priceObjection(text)) {
-    return { offer_required: true, offer_allowed: true, reason: 'SECOND_PRICE_OBJECTION', customer_signal: customerSignal };
+    return { offer_required: false, offer_allowed: true, reason: 'SECOND_PRICE_OBJECTION', customer_signal: customerSignal };
   }
   if (severalQuestions(context, text)) {
-    return { offer_required: true, offer_allowed: true, reason: 'SECOND_MULTIPLE_QUESTIONS', customer_signal: customerSignal };
+    return { offer_required: false, offer_allowed: true, reason: 'SECOND_MULTIPLE_QUESTIONS', customer_signal: customerSignal };
   }
   if (indecision(text)) {
-    return { offer_required: true, offer_allowed: true, reason: 'SECOND_INDECISION', customer_signal: customerSignal };
+    return { offer_required: false, offer_allowed: true, reason: 'SECOND_INDECISION', customer_signal: customerSignal };
   }
   if (detailsRequest(text)) {
-    return { offer_required: true, offer_allowed: true, reason: 'SECOND_DETAILS_REQUEST', customer_signal: customerSignal };
+    return { offer_required: false, offer_allowed: true, reason: 'SECOND_DETAILS_REQUEST', customer_signal: customerSignal };
   }
   if (prepaymentFriction(text)) {
-    return { offer_required: true, offer_allowed: true, reason: 'SECOND_PREPAYMENT_FRICTION', customer_signal: customerSignal };
+    return { offer_required: false, offer_allowed: true, reason: 'SECOND_PREPAYMENT_FRICTION', customer_signal: customerSignal };
   }
   if (
     context.commercial_state.selected_payment_plan !== null
     && (context.capabilities.intake_missing?.length ?? 0) > 0
     || asksForMissingIntake(context, input.response_messages ?? [])
   ) {
-    return { offer_required: true, offer_allowed: true, reason: 'SECOND_BEFORE_FINAL_DATA', customer_signal: customerSignal };
+    return { offer_required: false, offer_allowed: true, reason: 'SECOND_BEFORE_FINAL_DATA', customer_signal: customerSignal };
   }
   return { offer_required: false, offer_allowed: false, reason: 'SECOND_NOT_YET_DUE', customer_signal: customerSignal };
 }

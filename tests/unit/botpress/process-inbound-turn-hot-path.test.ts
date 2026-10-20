@@ -1033,7 +1033,7 @@ describe('processInboundTurn hot path', () => {
       proposed_call_offer: true,
       visible_call_offer: true,
       offered_call: true,
-      reason: 'FIRST_OFFER_DUE',
+      reason: 'FIRST_NOT_YET_USEFUL',
       call_accepted: false,
       call_rejected: false,
       chat_preference: false,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as postSaleInstructions from '../../../botpress-agent/src/utils/post-sale-instructions';
 
-const { buildPostSaleInstructions, PostSaleClaimSchema } = postSaleInstructions;
+const { buildPostSaleInstructions, fallbackPostSaleNarrative, PostSaleClaimSchema } = postSaleInstructions;
 
 type EventKind = 'payment_received' | 'access_ready' | 'access_delayed';
 const canonicalPrompt = 'Personalidad canónica de la asesora.';
@@ -12,8 +12,15 @@ const claim = {
 };
 
 describe('post-sale Agent A event instructions', () => {
-  it('does not export backend-authored customer prose', () => {
-    expect('fallbackPostSaleNarrative' in postSaleInstructions).toBe(false);
+  it('keeps a bounded transactional fallback for model outages', () => {
+    expect(fallbackPostSaleNarrative({ kind: 'access_ready', new_user: true, existing_user: false })).toEqual({
+      intro: 'Tu acceso ya está habilitado. Bienvenido a Studyx.',
+      suggestion: 'Si quieres, puedes cambiar tu contraseña después de ingresar.',
+    });
+    expect(fallbackPostSaleNarrative({ kind: 'payment_received', new_user: false, existing_user: false })).toEqual({
+      intro: 'Recibimos tu pago. Estoy preparando tu acceso.',
+      suggestion: '',
+    });
   });
 
   it('authorizes the welcome alongside access only for a verified new student', () => {

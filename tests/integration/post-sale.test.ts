@@ -84,6 +84,19 @@ run('post-sale payment / central / Agent A pipeline', () => {
     expect(messages).toHaveLength(1);
     expect(await db!`SELECT id FROM central_enrollments WHERE payment_id=${f.paymentId}`).toHaveLength(1);
   });
+  it('reuses the same claim after invalid model prose and sends the safe fallback once', async () => {
+    const f=await fixture(); await dispatchNotifications(f.paymentId,deps());
+    const claim=await claimNotification(f.notificationId,f.botpressId,deps()); if(!claim.claimed) throw new Error('claim');
+    let sends=0;
+    const deliveryDeps={...deps(),sender:async()=>{ sends++; return {outcome:'sent' as const,channel:'whatsapp' as const,providerMessageId:'sent-safe',deliveryId:null,reason:null}; }};
+    expect(await deliverNotification(f.notificationId,{claim_token:claim.claim_token,botpress_conversation_id:f.botpressId,
+      narrative:{intro:'Tu contraseña es ClaveInventada99',suggestion:''}},deliveryDeps))
+      .toEqual({outcome:'invalid_content',reason:'POST_SALE_UNAUTHORIZED_PROSE'});
+    expect(await deliverNotification(f.notificationId,{claim_token:claim.claim_token,botpress_conversation_id:f.botpressId,
+      narrative:{intro:'Recibimos tu pago. Estoy preparando tu acceso.',suggestion:''}},deliveryDeps))
+      .toEqual({outcome:'sent'});
+    expect(sends).toBe(1);
+  });
   it('releases failed generation but holds ambiguous delivery without resending', async () => {
     const f=await fixture(); await dispatchNotifications(f.paymentId,deps());
     const first=await claimNotification(f.notificationId,f.botpressId,deps()); if(!first.claimed) throw new Error('claim');

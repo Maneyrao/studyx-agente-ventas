@@ -90,9 +90,9 @@ describe('Agent A Meta sales brain', () => {
     const instructions = buildAgentABrainInstructionsV1(current);
     expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v116');
     const staticInstructions = instructions.split('<authorized_context>')[0]!;
-    // v70 keeps the approved voice; Brain v107 adds only bounded execution and
-    // lifecycle rules. Keep the complete instruction surface compact.
-    expect(staticInstructions.trim().split(/\s+/u).length).toBeLessThan(2225);
+    // The canonical surface includes the adaptive voice, referent resolution,
+    // contextual call and execution rules. Keep the complete prompt bounded.
+    expect(staticInstructions.trim().split(/\s+/u).length).toBeLessThan(2450);
     expect(JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!)).toEqual(current);
   });
 });

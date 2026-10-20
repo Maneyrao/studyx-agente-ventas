@@ -504,13 +504,18 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
 
 type RetellPaymentPlanRequestResolution =
   | { readonly ok: true; readonly planCode: PaymentPlanCode }
-  | { readonly ok: false; readonly reason: 'PLAN_SELECTION_REQUIRED' };
+  | { readonly ok: false; readonly reason: 'PLAN_SELECTION_REQUIRED' | 'PLAN_SELECTION_CONFLICT' };
 
 export function resolveRetellPaymentPlanRequest(
   requested: RetellPaymentPlanRequest,
   durableSelection: PaymentPlanCode | null,
 ): RetellPaymentPlanRequestResolution {
-  if (requested !== 'cuotas') return { ok: true, planCode: requested };
+  if (requested !== 'cuotas') {
+    if (durableSelection !== null && durableSelection !== requested) {
+      return { ok: false, reason: 'PLAN_SELECTION_CONFLICT' };
+    }
+    return { ok: true, planCode: requested };
+  }
   return durableSelection === 'monthly_12' || durableSelection === 'monthly_6'
     ? { ok: true, planCode: durableSelection }
     : { ok: false, reason: 'PLAN_SELECTION_REQUIRED' };

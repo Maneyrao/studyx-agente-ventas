@@ -24,11 +24,14 @@ describe('post-sale verified access message', () => {
     expect(() => assemblePostSaleMessage(access, { intro: 'Usuario: another@example.com', suggestion: '' })).toThrow();
     expect(() => assemblePostSaleMessage(access, { intro: 'Listo.', suggestion: 'Debes cambiar tu contraseña.' })).toThrow();
     expect(() => assemblePostSaleMessage(access, { intro: 'Entra en https://fake.example', suggestion: '' })).toThrow();
+    expect(() => assemblePostSaleMessage(access, { intro: 'Tu contraseña es ClaveInventada99', suggestion: '' })).toThrow();
+    expect(() => assemblePostSaleMessage(access, { intro: 'Tu clave temporal es SecretaNueva', suggestion: '' })).toThrow();
+    expect(() => assemblePostSaleMessage(access, { intro: 'Listo.', suggestion: 'Si quieres, entra con contraseña: ClaveInventada99' })).toThrow();
+    expect(() => assemblePostSaleMessage(access, { intro: 'Listo.', suggestion: 'Si quieres, usa SecretaNueva como contraseña.' })).toThrow();
   });
-  it('rejects repeated identity details and incorrect brand casing before sending', () => {
-    expect(() => assemblePostSaleMessage(access, { intro: 'Ana, tu acceso está listo.', suggestion: '' })).toThrow('POST_SALE_REPETITIVE_PROSE');
-    expect(() => assemblePostSaleMessage(access, { intro: 'Ya tienes acceso a Curso Prueba.', suggestion: '' })).toThrow('POST_SALE_REPETITIVE_PROSE');
-    expect(() => assemblePostSaleMessage(access, { intro: 'Ya tienes acceso a StudyX.', suggestion: '' })).toThrow('POST_SALE_BRAND_CASING');
+  it('treats repeated identity details and brand casing as non-blocking style issues', () => {
+    expect(assemblePostSaleMessage(access, { intro: 'Ana, ya tienes acceso a Curso Prueba en StudyX.', suggestion: '' }))
+      .toContain('Ana, ya tienes acceso a Curso Prueba en Studyx.');
   });
   it('requires a confirmed enrollment for the originally registered email', () => {
     const source = { kind: 'access_ready' as const, enrollment_status: 'active', login_email: 'Student@Example.com', registration_email: 'student@example.com' };

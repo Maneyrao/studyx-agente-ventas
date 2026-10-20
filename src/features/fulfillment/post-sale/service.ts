@@ -184,26 +184,41 @@ export const NarrativeSchema = z.object({
   intro: z.string().trim().min(1).max(500),
   suggestion: z.string().trim().max(180),
 }).strict();
+
+export type PostSaleContentErrorCode =
+  | 'POST_SALE_UNAUTHORIZED_PROSE'
+  | 'POST_SALE_UNEXPECTED_SUGGESTION'
+  | 'POST_SALE_CHANGE_MUST_BE_OPTIONAL';
+
+export class PostSaleContentError extends Error {
+  constructor(readonly code: PostSaleContentErrorCode) {
+    super(code);
+    this.name = 'PostSaleContentError';
+  }
+}
+
+const OPTIONAL_PASSWORD_CHANGE = /^(?:(?:si quieres,?\s+)?(?:puedes\s+)?(?:cambiar|actualizar|modificar)\s+(?:tu|la)\s+contraseña|te\s+(?:sugiero|recomiendo)(?:\s+que)?\s+(?:cambiar|actualizar|modificar|cambies|actualices|modifiques)\s+(?:tu|la)\s+contraseña)(?:\s+(?:después de|al)\s+(?:ingresar|entrar))?[.!]?$/iu;
+
 export function assemblePostSaleMessage(source: Pick<Source, 'kind' | 'student_was_created' | 'login_email' | 'login_url'> & Partial<Pick<Source, 'registration_name' | 'offering_name'>>, narrative: z.infer<typeof NarrativeSchema>) {
   // The model authors the conversation. Credentials are bound to verified backend data, outside the model.
-  if (/https?:|www\.|@|(?:usuario|contraseña|password)\s*:|(?:Studyx|Escuela)\.123/i.test(narrative.intro)) throw new Error('POST_SALE_UNAUTHORIZED_PROSE');
-  if (/\bStudyX\b/u.test(narrative.intro)) throw new Error('POST_SALE_BRAND_CASING');
-  const repeatedValues = [source.registration_name?.trim().split(/\s+/u)[0], source.offering_name?.trim()]
-    .filter((value): value is string => !!value)
-    .map(value => value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'));
-  if (repeatedValues.some(value => new RegExp(`(^|\\P{L})${value}(?=$|\\P{L})`, 'iu').test(narrative.intro))) {
-    throw new Error('POST_SALE_REPETITIVE_PROSE');
+  if (/https?:|www\.|@|\b(?:usuario|contraseña|password|clave)\b|(?:Studyx|Escuela)\.123/iu.test(narrative.intro)) {
+    throw new PostSaleContentError('POST_SALE_UNAUTHORIZED_PROSE');
   }
+  // Brand casing and a repeated first name/course are style concerns. They
+  // must never strand verified access. Normalize the one mechanical issue and
+  // let the transactional message through.
+  const intro = narrative.intro.replace(/\bStudyX\b/gu, 'Studyx');
   if (source.kind !== 'access_ready') {
-    if (narrative.suggestion) throw new Error('POST_SALE_UNEXPECTED_SUGGESTION');
-    return narrative.intro;
+    if (narrative.suggestion) throw new PostSaleContentError('POST_SALE_UNEXPECTED_SUGGESTION');
+    return intro;
   }
-  if (narrative.suggestion && (!/puedes|si quieres|te sugiero|te recomiendo/i.test(narrative.suggestion)
-    || /debes|obligatori|tienes que|necesitas cambiar|https?:|@/i.test(narrative.suggestion))) throw new Error('POST_SALE_CHANGE_MUST_BE_OPTIONAL');
+  if (narrative.suggestion && !OPTIONAL_PASSWORD_CHANGE.test(narrative.suggestion.trim())) {
+    throw new PostSaleContentError('POST_SALE_CHANGE_MUST_BE_OPTIONAL');
+  }
   const credentials = source.student_was_created
     ? `- Usuario: ${source.login_email}\n- Contraseña: ${INITIAL_PASSWORD}`
     : `- Usuario: ${source.login_email}\n- Contraseña: la que ya utilizas`;
-  return [narrative.intro, credentials, source.login_url, narrative.suggestion]
+  return [intro, credentials, source.login_url, narrative.suggestion]
     .filter(Boolean).join('\n\n');
 }
 export async function deliverNotification(id: string, input: { claim_token: string; botpress_conversation_id: string; narrative: z.infer<typeof NarrativeSchema> }, deps: Deps = {}) {
@@ -212,9 +227,19 @@ export async function deliverNotification(id: string, input: { claim_token: stri
   const db = deps.db ?? defaultDb;
   const [source] = await sources(db, config, id);
   if (!source || source.botpress_conversation_id !== input.botpress_conversation_id || !validateNotificationSource(source)) return { outcome: 'not_authorized' };
-  const text = assemblePostSaleMessage(source, NarrativeSchema.parse(input.narrative));
+  let text: string;
+  try {
+    text = assemblePostSaleMessage(source, NarrativeSchema.parse(input.narrative));
+  } catch (error) {
+    if (error instanceof PostSaleContentError) {
+      return { outcome: 'invalid_content' as const, reason: error.code };
+    }
+    throw error;
+  }
   const authorization = buildAuthorizedEgress({ content: text, authorized_urls: source.login_url ? [source.login_url] : [], protected_facts: [] });
-  if (!verifyAuthorizedEgress({ content: text, manifest: authorization }).ok) return { outcome: 'invalid_content' };
+  if (!verifyAuthorizedEgress({ content: text, manifest: authorization }).ok) {
+    return { outcome: 'invalid_content' as const, reason: 'POST_SALE_EGRESS_INVALID' as const };
+  }
   const [locked] = await db<Array<{ id: string }>>`
     UPDATE post_sale_notifications SET status = 'ambiguous', last_error_code = 'SEND_IN_PROGRESS'
     WHERE id = ${id}::uuid AND status = 'processing' AND claim_token = ${input.claim_token}::uuid

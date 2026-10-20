@@ -3,12 +3,17 @@ import { requestStudyxJson } from '../utils/http'
 import { AGENT_A_DEEPSEEK_MODEL } from '../config/agent-a-model'
 import { STUDYX_AGENT_A_CANONICAL_PROMPT } from '../prompts/studyx-agent-a-canonical.generated'
 import { resolveCanonicalPromptIdentityV1 } from '../prompts/agent-a-identity'
-import { buildPostSaleInstructions, PostSaleClaimSchema } from '../utils/post-sale-instructions'
+import { buildPostSaleInstructions, fallbackPostSaleNarrative, PostSaleClaimSchema } from '../utils/post-sale-instructions'
 
 const Narrative = z.object({
   intro: z.string().min(1).max(500),
   suggestion: z.string().max(180),
 }).strict()
+
+const Delivery = z.object({
+  outcome: z.string(),
+  reason: z.string().optional(),
+})
 
 function responseText(payload: unknown): string | null {
   if (!payload || typeof payload !== 'object') return null
@@ -35,6 +40,7 @@ export default new Trigger({
       body: { botpress_conversation_id: conversationId }, traceId, idempotencyKey: `post-sale-claim:${id}`, responseSchema: PostSaleClaimSchema })
     if (!claimed.claimed) return
     let narrative: z.infer<typeof Narrative>
+    let usedFallback = false
     try {
       const identity = resolveCanonicalPromptIdentityV1(STUDYX_AGENT_A_CANONICAL_PROMPT, {
         advisor_name: typeof configuration.agentAAdvisorName === 'string'
@@ -76,22 +82,38 @@ export default new Trigger({
       if (!raw) throw new Error('POST_SALE_MODEL_EMPTY')
       narrative = Narrative.parse(JSON.parse(raw))
     } catch {
-      // Customer-visible prose belongs exclusively to Agent A. Release the
-      // durable claim so the backend schedules another Agent A event; payment,
-      // enrollment and verified credentials remain persisted independently.
-      await requestStudyxJson({ path: `/api/agent/post-sale/${id}/release`,
-        body: { claim_token: claimed.claim_token }, traceId,
-        idempotencyKey: `post-sale-release:${id}:${claimed.claim_token}`,
-        responseSchema: z.object({ outcome: z.string() }),
-      })
-      console.warn(JSON.stringify({ event: 'studyx.post_sale.retry', notification_id: id }))
-      return
+      // Verified payment/access is transactional and must not depend on model
+      // availability. The fallback contains no identity, URL or credential;
+      // those immutable values are still appended and authorized by backend.
+      narrative = fallbackPostSaleNarrative(claimed)
+      usedFallback = true
+      console.warn(JSON.stringify({ event: 'studyx.post_sale.fallback', notification_id: id, reason: 'MODEL_UNAVAILABLE' }))
     }
     try {
-      await requestStudyxJson({ path: `/api/agent/post-sale/${id}/deliver`,
+      let delivery = await requestStudyxJson({ path: `/api/agent/post-sale/${id}/deliver`,
         body: { claim_token: claimed.claim_token, botpress_conversation_id: conversationId, narrative },
-        traceId, idempotencyKey: `post-sale-deliver:${id}:${claimed.claim_token}`, responseSchema: z.object({ outcome: z.string() }),
+        traceId, idempotencyKey: `post-sale-deliver:${id}:${claimed.claim_token}`, responseSchema: Delivery,
       })
+      if (delivery.outcome === 'invalid_content' && !usedFallback) {
+        console.warn(JSON.stringify({
+          event: 'studyx.post_sale.content_rejected', notification_id: id,
+          reason: delivery.reason ?? 'POST_SALE_CONTENT_INVALID',
+        }))
+        narrative = fallbackPostSaleNarrative(claimed)
+        usedFallback = true
+        delivery = await requestStudyxJson({ path: `/api/agent/post-sale/${id}/deliver`,
+          body: { claim_token: claimed.claim_token, botpress_conversation_id: conversationId, narrative },
+          traceId, idempotencyKey: `post-sale-deliver-fallback:${id}:${claimed.claim_token}`,
+          responseSchema: Delivery,
+        })
+      }
+      if (delivery.outcome === 'invalid_content') {
+        console.warn(JSON.stringify({
+          event: 'studyx.post_sale.safe_fallback_rejected', notification_id: id,
+          reason: delivery.reason ?? 'POST_SALE_CONTENT_INVALID',
+        }))
+        throw new Error('POST_SALE_SAFE_FALLBACK_INVALID')
+      }
     } catch {
       await requestStudyxJson({ path: `/api/agent/post-sale/${id}/release`,
         body: { claim_token: claimed.claim_token }, traceId, idempotencyKey: `post-sale-release:${id}:${claimed.claim_token}`,

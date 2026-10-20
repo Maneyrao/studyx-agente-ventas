@@ -1869,7 +1869,6 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       rejection_codes: [
         'REPEATED_AGENT_REPLY',
         'FACT_VALUE_MISMATCH',
-        'CALL_OFFER_REQUIRED',
       ],
       repair_attempted: true, repaired: true,
       proposal_generation_calls: 2,

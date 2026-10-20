@@ -14,6 +14,7 @@ import {
   supportsChatPreferenceV1 as workflowChatPreference,
 } from '../../../botpress-agent/src/lib/conversation/channel-preference-evidence';
 import { resolveAgentAPlannerlessProposalV2 } from '../../../botpress-agent/src/lib/conversation/resolve-agent-a-plannerless';
+import type { AgentAProposalEnvelopeV1 } from '../../../botpress-agent/src/lib/conversation/resolve-agent-a-proposal';
 import type { AgentAContextV1, AgentATurnProposalV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
 import { hasTemporalPaymentDeferral as workflowDeferral } from '../../../botpress-agent/src/utils/payment-choice';
 
@@ -44,6 +45,211 @@ const proposal: AgentATurnProposalV1 = {
 };
 
 describe('plannerless natural evidence regression', () => {
+  it('does not force a call after an ordinary greeting or first useful answer', () => {
+    const context = {
+      schema_version: 1,
+      turn: {
+        batch_messages: [{ id: 'ordinary-detail', text: 'Quiero aprender inglés desde cero.' }],
+        recent_turns: [{
+          id: 'ordinary-outbound', direction: 'outbound' as const,
+          content: 'Hola, soy Emma. Qué te gustaría aprender?',
+        }],
+      },
+      continuity: {
+        assistant_has_spoken: true, first_name_status: 'known' as const,
+        last_agent_reply: 'Hola, soy Emma. Qué te gustaría aprender?',
+      },
+      customer: { display_name: 'Carlos', memories: [] },
+      identity: null,
+      commercial_state: {
+        selected_offering_code: null, selected_payment_plan: null,
+        stage: 'exploring' as const, call_preference: 'unknown' as const,
+        call_offer_status: 'not_offered' as const, call_offer_count: 0 as const,
+        awaiting_reply: 'none' as const, payment_reported: false,
+      },
+      catalog: {
+        selected_offering: null, available_offerings: [], areas: [],
+        candidate_offerings: [], payment_plans: [],
+      },
+      capabilities: {
+        may_reply: true, may_offer_call: true, may_request_call_now: false,
+        may_present_payment_options: false, may_send_payment_link: false,
+        authorized_payment_plan: null, intake_status: 'known' as const, intake_missing: [],
+      },
+    } satisfies AgentAContextV1;
+
+    expect(evaluateCallOfferTurnPolicyV1({ context })).toMatchObject({
+      offer_required: false,
+      offer_allowed: false,
+      reason: 'FIRST_NOT_YET_USEFUL',
+    });
+  });
+
+  it.each([
+    'Me parece caro.',
+    'Estoy entre Inglés 1 e Inglés 2 y no sé cuál me conviene.',
+    'Me pasas el temario y todos los detalles?',
+  ])('allows but does not force a contextual first call invitation: %s', (text) => {
+    const context = {
+      schema_version: 1,
+      turn: {
+        batch_messages: [{ id: 'useful-first-offer', text }],
+        recent_turns: [{
+          id: 'useful-first-outbound', direction: 'outbound' as const,
+          content: 'Contame qué necesitás y lo vemos.',
+        }],
+      },
+      continuity: {
+        assistant_has_spoken: true, first_name_status: 'known' as const,
+        last_agent_reply: 'Contame qué necesitás y lo vemos.',
+      },
+      customer: { display_name: 'Carlos', memories: [] },
+      identity: null,
+      commercial_state: {
+        selected_offering_code: 'ingles_1', selected_payment_plan: null,
+        stage: 'course_selected' as const, call_preference: 'unknown' as const,
+        call_offer_status: 'not_offered' as const, call_offer_count: 0 as const,
+        awaiting_reply: 'none' as const, payment_reported: false,
+      },
+      catalog: {
+        selected_offering: null, available_offerings: [], areas: [],
+        candidate_offerings: [], payment_plans: [],
+      },
+      capabilities: {
+        may_reply: true, may_offer_call: true, may_request_call_now: false,
+        may_present_payment_options: true, may_send_payment_link: false,
+        authorized_payment_plan: null, intake_status: 'known' as const, intake_missing: [],
+      },
+    } satisfies AgentAContextV1;
+
+    expect(evaluateCallOfferTurnPolicyV1({ context })).toMatchObject({
+      offer_required: false,
+      offer_allowed: true,
+      reason: 'FIRST_USEFUL_MOMENT',
+    });
+  });
+
+  it.each([
+    ['Me sigue pareciendo caro, no llego con 30 dólares por mes.', 'FIRST_REPEATED_PRICE_OBJECTION'],
+    ['No pueden hacer una excepción para que pague 15?', 'FIRST_EXCEPTION_REQUEST'],
+  ] as const)('requires the first call invitation only at a useful Gabi/Lisandro trigger: %s', (text, reason) => {
+    const context = {
+      schema_version: 1,
+      turn: {
+        batch_messages: [{ id: 'commercial-friction', text }],
+        recent_turns: [
+          { id: 'friction-outbound', direction: 'outbound' as const, content: 'La opción más baja es de 12 pagos de USD 30.' },
+          { id: 'friction-inbound', direction: 'inbound' as const, content: 'Me parece muy caro.' },
+        ],
+      },
+      continuity: {
+        assistant_has_spoken: true, first_name_status: 'known' as const,
+        last_agent_reply: 'La opción más baja es de 12 pagos de USD 30.',
+      },
+      customer: { display_name: 'Carlos', memories: [] },
+      identity: null,
+      commercial_state: {
+        selected_offering_code: 'ingles_1', selected_payment_plan: null,
+        stage: 'course_selected' as const, call_preference: 'unknown' as const,
+        call_offer_status: 'not_offered' as const, call_offer_count: 0 as const,
+        awaiting_reply: 'none' as const, payment_reported: false,
+      },
+      catalog: {
+        selected_offering: null, available_offerings: [], areas: [],
+        candidate_offerings: [], payment_plans: [],
+      },
+      capabilities: {
+        may_reply: true, may_offer_call: true, may_request_call_now: false,
+        may_present_payment_options: true, may_send_payment_link: false,
+        authorized_payment_plan: null, intake_status: 'known' as const, intake_missing: [],
+      },
+    } satisfies AgentAContextV1;
+
+    expect(evaluateCallOfferTurnPolicyV1({ context })).toMatchObject({
+      offer_required: true,
+      offer_allowed: true,
+      reason,
+    });
+  });
+
+  it('gives Agent A one bounded rewrite when a useful call opportunity was missed', async () => {
+    const context = {
+      schema_version: 1,
+      turn: {
+        batch_messages: [{ id: 'exception', text: 'No pueden hacer una excepción para que pague 15?' }],
+        recent_turns: [
+          { id: 'repair-outbound', direction: 'outbound' as const, content: 'La cuota más baja es de USD 30.' },
+          { id: 'repair-inbound', direction: 'inbound' as const, content: 'Es muy caro para mí.' },
+        ],
+      },
+      continuity: {
+        assistant_has_spoken: true, first_name_status: 'known' as const,
+        last_agent_reply: 'La cuota más baja es de USD 30.',
+      },
+      customer: { display_name: 'Carlos', memories: [] },
+      identity: null,
+      commercial_state: {
+        selected_offering_code: 'ingles_1', selected_payment_plan: null,
+        stage: 'course_selected' as const, call_preference: 'unknown' as const,
+        call_offer_status: 'not_offered' as const, call_offer_count: 0 as const,
+        awaiting_reply: 'none' as const, payment_reported: false,
+      },
+      catalog: {
+        selected_offering: null,
+        available_offerings: [{
+          code: 'ingles_1', fact_id: 'offering:ingles_1:name:v1',
+          display_name: 'Inglés 1', area_code: null,
+        }],
+        areas: [], candidate_offerings: [], payment_plans: [],
+      },
+      capabilities: {
+        may_reply: true, may_offer_call: true, may_request_call_now: false,
+        may_present_payment_options: true, may_send_payment_link: false,
+        authorized_payment_plan: null, intake_status: 'known' as const, intake_missing: [],
+      },
+    } satisfies AgentAContextV1;
+    const initial: AgentAProposalEnvelopeV1 & {
+      readonly provider: 'deepseek-direct'
+      readonly model: string
+      readonly latency_ms: number
+      readonly attempt_count: 1 | 2
+    } = {
+      proposal: {
+        ...proposal,
+        move: { ...proposal.move, move: 'ask_course_information' as const, course_reference: 'ingles_1' },
+        response: { messages: ['No tenemos una excepción disponible.'] },
+        used_fact_ids: ['offering:ingles_1:name:v1'],
+      },
+      provider: 'deepseek-direct' as const,
+      model: 'deepseek-v4-flash', latency_ms: 10, attempt_count: 1,
+    };
+    let repairCalls = 0;
+
+    const resolved = await resolveAgentAPlannerlessProposalV2({
+      initial, context, repair_enabled: true, semantic_rejections: 'advisory',
+      rejection_id: '44444444-4444-4444-8444-444444444444',
+      repair: async (rejection) => {
+        repairCalls += 1;
+        return {
+          ...initial,
+          proposal: {
+            ...initial.proposal,
+            response: {
+              messages: ['No tenemos esa excepción disponible.'],
+              call_offer: 'Si te sirve, podemos coordinar una llamada breve para revisar juntos qué opción encaja con lo que necesitás.',
+            },
+            repair_of: { rejection_id: rejection.rejection_id, attempt: 1 as const },
+          },
+          attempt_count: 2 as const,
+        };
+      },
+    });
+
+    expect(repairCalls).toBe(1);
+    expect(resolved.evidence).toMatchObject({ repair_attempted: true, repaired: true });
+    expect(resolved.effective.proposal.response.call_offer).toContain('llamada breve');
+  });
+
   it.each([
     '¿Pueden llamarme ahora?',
     'Me gustaría una llamada',
@@ -54,7 +260,7 @@ describe('plannerless natural evidence regression', () => {
     expect(workflowCallRequest(text, false)).toBe(true);
   });
 
-  it('treats a prior refusal as turn-local and requires the final reminder on a later detail request', () => {
+  it('treats a prior refusal as turn-local and allows a later contextual reminder without forcing it', () => {
     const current = {
       schema_version: 1,
       turn: {
@@ -85,7 +291,7 @@ describe('plannerless natural evidence regression', () => {
     } satisfies AgentAContextV1;
 
     expect(evaluateCallOfferTurnPolicyV1({ context: current })).toMatchObject({
-      offer_required: true,
+      offer_required: false,
       offer_allowed: true,
       reason: 'SECOND_DETAILS_REQUEST',
     });
@@ -287,7 +493,8 @@ describe('plannerless natural evidence regression', () => {
       },
     };
     expect.soft(evaluateCallOfferTurnPolicyV1({ context })).toMatchObject({
-      offer_required: true,
+      offer_required: false,
+      offer_allowed: true,
       reason: 'SECOND_PRICE_OBJECTION',
     });
 

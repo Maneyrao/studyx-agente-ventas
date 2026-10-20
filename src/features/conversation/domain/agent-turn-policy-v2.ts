@@ -146,7 +146,12 @@ export function authorizeAgentTurnV2(input: {
   const { proposal, state } = input;
   const moves = allMoves(proposal);
   const requestedOffering = resolveOffering(proposal.move.course_reference, input.offerings);
-  const changesCourse = moves.has('select_course');
+  // A call must carry the course currently being discussed, not a stale
+  // selection from an earlier sale. Merely asking a comparative question
+  // remains non-mutating; `request_call` is the execution boundary where an
+  // exact model-owned reference becomes the active course for the handoff.
+  const changesCourse = moves.has('select_course')
+    || (moves.has('request_call') && requestedOffering !== null);
   const selectedOfferingCandidate = changesCourse
     ? requestedOffering
     : state.selected_offering_code;

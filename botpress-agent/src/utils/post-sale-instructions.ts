@@ -9,6 +9,25 @@ export const PostSaleClaimSchema = z.union([
     history: z.array(z.object({ direction: z.string(), content: z.string() })) }),
 ])
 
+export function fallbackPostSaleNarrative(claim: {
+  kind: 'payment_received' | 'access_ready' | 'access_delayed'
+  new_user?: boolean
+  existing_user?: boolean
+}): { intro: string; suggestion: string } {
+  if (claim.kind === 'payment_received') {
+    return { intro: 'Recibimos tu pago. Estoy preparando tu acceso.', suggestion: '' }
+  }
+  if (claim.kind === 'access_delayed') {
+    return { intro: 'Recibimos tu pago. Todavía estoy terminando de preparar tu acceso.', suggestion: '' }
+  }
+  return {
+    intro: claim.new_user === true
+      ? 'Tu acceso ya está habilitado. Bienvenido a Studyx.'
+      : 'Tu acceso ya está habilitado.',
+    suggestion: 'Si quieres, puedes cambiar tu contraseña después de ingresar.',
+  }
+}
+
 export function buildPostSaleInstructions(canonicalPrompt: string, claim: {
   kind: 'payment_received' | 'access_ready' | 'access_delayed'
   new_user?: boolean

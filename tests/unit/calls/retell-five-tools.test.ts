@@ -165,6 +165,10 @@ describe('remaining Retell orchestration tools', () => {
       ok: true,
       planCode: 'monthly_12',
     });
+    expect(resolveRetellPaymentPlanRequest('one_time', 'monthly_12')).toEqual({
+      ok: false,
+      reason: 'PLAN_SELECTION_CONFLICT',
+    });
   });
 
   it('authorizes only exact sanitized canonical material URLs/facts', () => {

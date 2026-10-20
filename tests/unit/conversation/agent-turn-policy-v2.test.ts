@@ -100,6 +100,44 @@ function authorize(input: {
 }
 
 describe('plannerless Agent A authority', () => {
+  it('replaces a stale course before handing an exact current course to the call', () => {
+    const result = authorizeAgentTurnV2({
+      state: state({
+        selected_offering_code: 'fotografia_profesional',
+        selected_payment_plan: 'one_time',
+        stage: 'course_selected',
+      }),
+      offerings: [
+        { code: 'fotografia_profesional', display_name: 'Fotografía Profesional' },
+        { code: 'ingles_1', display_name: 'Inglés 1' },
+      ],
+      facts: [{
+        id: 'offering:ingles_1:name:v1', kind: 'offering_name', source: 'business_snapshot',
+        value: 'Inglés 1', offering_code: 'ingles_1',
+      }],
+      contact_intake: completeIntake,
+      current_customer_messages: ['Me puedes llamar?'],
+      call_policy: { may_offer_call: true, may_request_call_now: false },
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [],
+          course_reference: 'ingles_1', confidence: 1,
+        },
+        response: { messages: ['Claro. Puedes atender ahora?'] },
+        used_fact_ids: ['offering:ingles_1:name:v1'],
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      transition: {
+        selected_offering_code: 'ingles_1',
+        selected_payment_plan: null,
+        stage: 'course_selected',
+      },
+    });
+  });
+
   it('consumes a pending payment-link request when the last contact field arrives', () => {
     const result = authorize({
       state: state({

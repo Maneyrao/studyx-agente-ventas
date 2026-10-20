@@ -283,13 +283,18 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   const effective = input.initial
   const rejection = validate(effective)
   if (rejection === null) return { effective, rejection, originalRejection }
+  const requiresCallOfferRewrite = rejection.rejections.some(
+    (reason) => reason.code === 'CALL_OFFER_REQUIRED',
+  )
   // An unavailable call needs the existing model repair: changing only the
   // action would publish an acknowledgement for a call that never occurred.
-  if (input.semantic_rejections === 'advisory'
-    && !rejection.rejections.some((reason) => requiresModelCorrection(reason, effective.proposal))
-    && !claimsImmediatePaymentLinkDelivery(effective.proposal)
-    && !hasUnbackedCallDispatchClaim(effective.proposal, rejection, input.context)
-    || hasOnlyNonBlockingGuidance(effective.proposal, rejection, input.context)) {
+  if (!requiresCallOfferRewrite && (
+    input.semantic_rejections === 'advisory'
+      && !rejection.rejections.some((reason) => requiresModelCorrection(reason, effective.proposal))
+      && !claimsImmediatePaymentLinkDelivery(effective.proposal)
+      && !hasUnbackedCallDispatchClaim(effective.proposal, rejection, input.context)
+    || hasOnlyNonBlockingGuidance(effective.proposal, rejection, input.context)
+  )) {
     return { effective, rejection: null, originalRejection }
   }
   return { effective, rejection, originalRejection }

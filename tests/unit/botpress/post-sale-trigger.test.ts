@@ -6,6 +6,7 @@ vi.mock('../../../botpress-agent/src/utils/http', () => ({ requestStudyxJson }))
 
 import { configuration, secrets } from '../../helpers/botpress-runtime-stub';
 import postSaleTrigger from '../../../botpress-agent/src/triggers/postSale';
+import { fallbackPostSaleNarrative } from '../../../botpress-agent/src/utils/post-sale-instructions';
 
 const notificationId = '8ebdc504-59cc-4b32-9b18-4bfb2b96f88a';
 const claimToken = '15357952-de34-498c-a877-7e19a8c9d266';
@@ -55,7 +56,7 @@ describe('post-sale trigger', () => {
     expect(request.input).toContain('Marketing Digital');
   });
 
-  it('releases the durable notification without backend-authored prose when Agent A is temporarily unavailable', async () => {
+  it('uses a safe transactional fallback when Agent A is temporarily unavailable', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('provider unavailable'));
     requestStudyxJson.mockReset()
       .mockResolvedValueOnce({
@@ -63,7 +64,7 @@ describe('post-sale trigger', () => {
         academy_name: 'StudyX', offering_name: 'Marketing Digital', customer_first_name: 'Thiago',
         existing_user: false, new_user: true, history: [],
       })
-      .mockResolvedValueOnce({ outcome: 'released' });
+      .mockResolvedValueOnce({ outcome: 'sent' });
     const handler = (postSaleTrigger as unknown as {
       definition: { handler: (input: Record<string, unknown>) => Promise<void> };
     }).definition.handler;
@@ -72,9 +73,68 @@ describe('post-sale trigger', () => {
 
     expect(requestStudyxJson).toHaveBeenCalledTimes(2);
     expect(requestStudyxJson.mock.calls[1]?.[0]).toMatchObject({
-      path: `/api/agent/post-sale/${notificationId}/release`,
-      body: { claim_token: claimToken },
+      path: `/api/agent/post-sale/${notificationId}/deliver`,
+      body: {
+        claim_token: claimToken,
+        botpress_conversation_id: 'botpress-conversation',
+        narrative: fallbackPostSaleNarrative({ kind: 'access_ready', new_user: true, existing_user: false }),
+      },
     });
-    expect(requestStudyxJson.mock.calls.some(([request]) => request.path.endsWith('/deliver'))).toBe(false);
+  });
+
+  it('replaces rejected model prose with the safe fallback on the same durable claim', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({
+        intro: 'Ana, entra en https://inventado.example con usuario inventado@example.com',
+        suggestion: '',
+      }),
+    }), { status: 200 }));
+    requestStudyxJson.mockReset()
+      .mockResolvedValueOnce({
+        claimed: true, claim_token: claimToken, kind: 'access_ready',
+        academy_name: 'StudyX', offering_name: 'Marketing Digital', customer_first_name: 'Thiago',
+        existing_user: false, new_user: true, history: [],
+      })
+      .mockResolvedValueOnce({ outcome: 'invalid_content', reason: 'POST_SALE_UNAUTHORIZED_PROSE' })
+      .mockResolvedValueOnce({ outcome: 'sent' });
+    const handler = (postSaleTrigger as unknown as {
+      definition: { handler: (input: Record<string, unknown>) => Promise<void> };
+    }).definition.handler;
+
+    await handler({ event: { payload: { notification_id: notificationId }, conversationId: 'botpress-conversation' } });
+
+    expect(requestStudyxJson).toHaveBeenCalledTimes(3);
+    expect(requestStudyxJson.mock.calls[2]?.[0]).toMatchObject({
+      path: `/api/agent/post-sale/${notificationId}/deliver`,
+      body: { narrative: fallbackPostSaleNarrative({ kind: 'access_ready', new_user: true, existing_user: false }) },
+    });
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('POST_SALE_UNAUTHORIZED_PROSE'));
+    expect(warning).not.toHaveBeenCalledWith(expect.stringContaining('inventado.example'));
+    warning.mockRestore();
+  });
+
+  it('logs the typed reason when even the safe fallback is rejected', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('provider unavailable'));
+    requestStudyxJson.mockReset()
+      .mockResolvedValueOnce({
+        claimed: true, claim_token: claimToken, kind: 'access_ready',
+        academy_name: 'StudyX', offering_name: 'Marketing Digital', customer_first_name: 'Thiago',
+        existing_user: false, new_user: true, history: [],
+      })
+      .mockResolvedValueOnce({ outcome: 'invalid_content', reason: 'POST_SALE_EGRESS_INVALID' })
+      .mockResolvedValueOnce({ outcome: 'released' });
+    const handler = (postSaleTrigger as unknown as {
+      definition: { handler: (input: Record<string, unknown>) => Promise<void> };
+    }).definition.handler;
+
+    await handler({ event: { payload: { notification_id: notificationId }, conversationId: 'botpress-conversation' } });
+
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('POST_SALE_EGRESS_INVALID'));
+    expect(requestStudyxJson.mock.calls[2]?.[0]).toMatchObject({
+      path: `/api/agent/post-sale/${notificationId}/release`,
+    });
+    warning.mockRestore();
   });
 });

@@ -14,7 +14,7 @@ describe('Agent A canonical sales prompt', () => {
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v80' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v81' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
@@ -98,7 +98,7 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toMatch(/pregunta pendiente|intenci[oó]n pendiente/iu);
   });
 
-  it('uses Emma identity, collects name and surname early, and keeps calls commercially useful', () => {
+  it('uses Emma identity, delays data collection, and keeps calls commercially useful', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
     expect(prompt).toContain('Eres {{NOMBRE_ASESOR}}, administrativa de Studyx');
@@ -106,7 +106,7 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toMatch(/varía naturalmente el saludo, la puntuación y la transición/iu);
     expect(prompt).toContain('No añadas «Academia Internacional»');
     expect(prompt).toContain('No uses los signos invertidos de apertura `¿` ni `¡` en ningún punto');
-    expect(prompt).toMatch(/nombre y apellido[\s\S]*primeras interacciones[\s\S]*sin bloquear/iu);
+    expect(prompt).toMatch(/no pidas nombre y apellido por rutina/iu);
     expect(prompt).toMatch(/momento comercial[\s\S]*primera invitaci[oó]n[\s\S]*raz[oó]n concreta/iu);
     expect(prompt).not.toMatch(/segunda intervenci[oó]n comercial/iu);
     expect(prompt).toMatch(/m[aá]ximo dos invitaciones[\s\S]*segunda[\s\S]*motivo nuevo/iu);
@@ -146,6 +146,22 @@ describe('Agent A canonical sales prompt', () => {
 
     expect(prompt).toMatch(/momento comercial[^.]*raz[oó]n concreta/iu);
     expect(prompt).toMatch(/no la ofrezcas por turno, reloj ni plantilla/iu);
+    expect(prompt).toMatch(/objeci[oó]n persistente|pedido de excepci[oó]n/iu);
+  });
+
+  it('adapts to the customer register and delays intake until it executes a chosen next step', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+
+    expect(prompt).toMatch(/si habla de vos[^.]*voseo[^.]*si usa t[uú][^.]*t[uú]/iu);
+    expect(prompt).toMatch(/no pidas nombre y apellido por rutina|no conviertas el inicio en un formulario/iu);
+    expect(prompt).toMatch(/datos[^.]*cuando[^.]*llamada|inscripci[oó]n/iu);
+  });
+
+  it('resolves short referents and refuses to promise an exception without a real action', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+
+    expect(prompt).toMatch(/«pasame eso»|«pasame el link»/iu);
+    expect(prompt).toMatch(/no prometas elevar[^.]*excepci[oó]n[^.]*acci[oó]n/iu);
   });
 
   it('makes Agent A the sole author across ordinary, call and post-sale moments', () => {
