@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { downloadBotpressAudio } from '../../../botpress-agent/src/lib/transcription/botpress-media-downloader';
+import * as mediaDownloader from '../../../botpress-agent/src/lib/transcription/botpress-media-downloader';
+
+const { downloadBotpressAudio } = mediaDownloader;
 
 describe('downloadBotpressAudio', () => {
   it('downloads audio only from Botpress Files and returns bytes without the URL', async () => {
@@ -43,5 +45,45 @@ describe('downloadBotpressAudio', () => {
       fetch_impl: fetchImpl,
     });
     expect(result).toEqual({ status: 'failed', reason: 'UNSUPPORTED_CONTENT_TYPE' });
+  });
+});
+
+describe('downloadBotpressImage', () => {
+  it('accepts an image from Botpress Files and rejects the same bytes under a non-image content type', async () => {
+    const downloadImage = (mediaDownloader as unknown as {
+      downloadBotpressImage?: (input: {
+        url: string;
+        fetch_impl?: typeof fetch;
+      }) => Promise<unknown>;
+    }).downloadBotpressImage;
+    const imageResponse = vi.fn(async () => new Response(new Uint8Array([0xff, 0xd8, 0xff]), {
+      status: 200,
+      headers: { 'content-type': 'image/jpeg', 'content-length': '3' },
+    })) as unknown as typeof fetch;
+
+    const accepted = downloadImage
+      ? await downloadImage({
+        url: 'https://files.bpcontent.cloud/2026/10/07/customer.jpg',
+        fetch_impl: imageResponse,
+      })
+      : undefined;
+
+    expect(accepted).toEqual({
+      status: 'ok',
+      bytes: new Uint8Array([0xff, 0xd8, 0xff]),
+      size_bytes: 3,
+      mime_type: 'image/jpeg',
+    });
+
+    const rejected = downloadImage
+      ? await downloadImage({
+        url: 'https://files.bpcontent.cloud/2026/10/07/not-an-image.jpg',
+        fetch_impl: vi.fn(async () => new Response('html', {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        })) as unknown as typeof fetch,
+      })
+      : undefined;
+    expect(rejected).toEqual({ status: 'failed', reason: 'UNSUPPORTED_CONTENT_TYPE' });
   });
 });

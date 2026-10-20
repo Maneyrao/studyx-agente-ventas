@@ -11,6 +11,7 @@ import { dispatchCall } from '../actions/dispatchCall'
 import { flushLeadProjection } from '../actions/flushLeadProjection'
 import { ingestTurn } from '../actions/ingestTurn'
 import { synchronizeConversationInbound } from '../lib/inbound/sync-conversation-inbound'
+import { analyzeImage } from '../actions/analyzeImage'
 import { planConversation } from '../actions/planConversation'
 import { reportDelivery } from '../actions/reportDelivery'
 import { authorizeOutboundContinuation } from '../actions/authorizeOutboundContinuation'
@@ -674,6 +675,43 @@ export const processInboundTurn = new Workflow({
           transcription_status: 'failed',
         }
         safeLog('studyx.turn.audio_transcription_failed', {
+          trace_id: input.trace_id,
+          error_code: errorCode(error),
+        })
+      }
+    }
+
+    if (
+      input.message.type === 'image' &&
+      input.message.text === '[imagen_pendiente_descripcion]'
+    ) {
+      try {
+        if (input.channel !== 'whatsapp' || !input.transport_media_url) {
+          throw new Error('UNSUPPORTED_IMAGE_SOURCE')
+        }
+        const result = await step(
+          'analyze-image',
+          async () => {
+            const analyzed = await analyzeImage.execute({
+              input: { media_download_url: input.transport_media_url },
+              client,
+            })
+            if (analyzed.status !== 'ok') {
+              throw new Error(`IMAGE_ANALYSIS_${analyzed.reason ?? 'FAILED'}`)
+            }
+            return analyzed
+          },
+          { maxAttempts: 1 },
+        )
+        input.message.text = result.text
+        safeLog('studyx.turn.image_described', {
+          trace_id: input.trace_id,
+          provider: result.provider,
+        })
+      } catch (error) {
+        input.message.type = 'unsupported'
+        input.message.text = '[imagen_no_interpretada]'
+        safeLog('studyx.turn.image_description_failed', {
           trace_id: input.trace_id,
           error_code: errorCode(error),
         })
