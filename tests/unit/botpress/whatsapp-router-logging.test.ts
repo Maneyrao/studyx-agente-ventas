@@ -87,6 +87,7 @@ beforeEach(() => {
     existing_result: null,
   });
   configuration.automationEnabled = true;
+  configuration.whatsappPublicEnabled = false;
   configuration.whatsappCanaryEnabled = true;
   configuration.whatsappAllowedBotPhoneNumberId = 'safe-sender-reference';
   secrets.WHATSAPP_CANARY_PHONE_E164S = `+${successSecrets.phone}`;
@@ -163,6 +164,29 @@ describe('WhatsApp router log boundary', () => {
       reason: 'WHATSAPP_BOT_PHONE_NOT_ALLOWED',
     }]);
   });
+
+  it('blocks public WhatsApp before workflow creation when the business number allowlist is empty', async () => {
+    configuration.whatsappPublicEnabled = true;
+    configuration.whatsappCanaryEnabled = false;
+    configuration.whatsappAllowedBotPhoneNumberId = '';
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+
+    await handler({
+      type: 'message',
+      channel: 'whatsapp.channel',
+      message: successMessage,
+      conversation: successConversation,
+    });
+
+    expect(getOrCreate).not.toHaveBeenCalled();
+    expect(capturedRecords(info)).toEqual([{
+      event: 'studyx.router.whatsapp_canary_blocked',
+      adapter: 'whatsapp',
+      trace_id: expect.any(String),
+      reason: 'WHATSAPP_BOT_PHONE_ALLOWLIST_INVALID',
+    }]);
+  });
+
   it('omits WhatsApp identifiers and payload values from workflow-start logs', async () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
 

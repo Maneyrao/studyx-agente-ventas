@@ -243,14 +243,15 @@ describe('evaluateWhatsAppCanarySend', () => {
     })).toEqual({ allowed: false, reason: 'WHATSAPP_CANARY_DISABLED' });
   });
 
-  it('allows every valid WhatsApp identity only in explicit public mode', () => {
+  it('fails closed in public mode when the allowed business number is not configured', () => {
     expect(evaluateWhatsAppCanarySend({
       automationEnabled: true,
       whatsappPublicEnabled: true,
       whatsappCanaryEnabled: false,
       allowlist: undefined,
       phoneE164: other,
-    })).toEqual({ allowed: true, reason: null });
+      botPhoneNumberId: productionBotPhoneNumberId,
+    })).toEqual({ allowed: false, reason: 'WHATSAPP_BOT_PHONE_ALLOWLIST_INVALID' });
   });
 
   it('blocks traffic routed through a different WhatsApp business number', () => {
@@ -273,6 +274,18 @@ describe('evaluateWhatsAppCanarySend', () => {
       allowedBotPhoneNumberId: productionBotPhoneNumberId,
       botPhoneNumberId: productionBotPhoneNumberId,
     })).toEqual({ allowed: true, reason: null });
+  });
+
+  it('blocks public traffic when the incoming business number id is absent', () => {
+    expect(evaluateWhatsAppCanarySend({
+      automationEnabled: true,
+      whatsappPublicEnabled: true,
+      whatsappCanaryEnabled: false,
+      allowlist: undefined,
+      phoneE164: other,
+      allowedBotPhoneNumberId: productionBotPhoneNumberId,
+      botPhoneNumberId: undefined,
+    })).toEqual({ allowed: false, reason: 'WHATSAPP_BOT_PHONE_NOT_ALLOWED' });
   });
 
   it('fails closed when public and canary rollout modes are enabled together', () => {

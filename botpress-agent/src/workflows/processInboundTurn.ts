@@ -308,9 +308,10 @@ function errorCode(error: unknown): string {
   return 'UNKNOWN_ERROR'
 }
 
-function isConfirmedPreSubmissionBlock(code: string): boolean {
+export function isConfirmedPreSubmissionBlock(code: string): boolean {
   return ['AUTOMATION_DISABLED', 'WHATSAPP_ROLLOUT_MODE_INVALID', 'WHATSAPP_CANARY_DISABLED',
-    'WHATSAPP_CANARY_ALLOWLIST_INVALID', 'WHATSAPP_CANARY_PHONE_NOT_ALLOWED'].includes(code)
+    'WHATSAPP_CANARY_ALLOWLIST_INVALID', 'WHATSAPP_CANARY_PHONE_NOT_ALLOWED',
+    'WHATSAPP_BOT_PHONE_ALLOWLIST_INVALID', 'WHATSAPP_BOT_PHONE_NOT_ALLOWED'].includes(code)
 }
 
 const PLANNERLESS_REJECTION_PREFIX = 'PLANNERLESS_PROPOSAL_REJECTED:'
@@ -456,6 +457,32 @@ export const processInboundTurn = new Workflow({
     input = WorkflowInputSchema.parse(input)
     state.phase = 'processing'
     state.errorCode = null
+
+    // A workflow may have been queued before a safer bundle was deployed.
+    // Re-authorize the receiving WhatsApp business number before audio,
+    // persistence, model calls, or any other external effect.
+    if (input.channel === 'whatsapp' && input.sandbox_provider !== 'telegram_sandbox') {
+      const authorization = evaluateWhatsAppCanarySend({
+        automationEnabled: configuration.automationEnabled,
+        whatsappPublicEnabled: configuration.whatsappPublicEnabled === true,
+        whatsappCanaryEnabled: configuration.whatsappCanaryEnabled === true,
+        allowlist: secrets.WHATSAPP_CANARY_PHONE_E164S,
+        phoneE164: input.phone_e164,
+        allowedBotPhoneNumberId: typeof configuration.whatsappAllowedBotPhoneNumberId === 'string'
+          ? configuration.whatsappAllowedBotPhoneNumberId
+          : undefined,
+        botPhoneNumberId: input.message.metadata.bot_phone_number_id as string | undefined,
+      })
+      if (!authorization.allowed) {
+        state.phase = 'abandoned'
+        state.errorCode = authorization.reason
+        safeLog('studyx.turn.whatsapp_business_number_blocked', {
+          trace_id: input.trace_id,
+          reason: authorization.reason,
+        })
+        return resultFromState(state, input.trace_id)
+      }
+    }
 
     // Per-stage wall-clock in milliseconds, logged once at every terminal
     // return via `emitTimings`. Content-free: stage names and durations only.

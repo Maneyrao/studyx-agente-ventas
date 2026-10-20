@@ -110,6 +110,7 @@ vi.mock('../../../botpress-agent/src/lib/conversation/agent-a-brain', async (imp
 
 import { adk, configuration, secrets } from '../../helpers/botpress-runtime-stub';
 import {
+  isConfirmedPreSubmissionBlock,
   processInboundTurn,
   whatsappReplyTargetLatencyMs,
 } from '../../../botpress-agent/src/workflows/processInboundTurn';
@@ -127,6 +128,13 @@ import { dispatch } from '../../../botpress-agent/src/channels';
 const UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
 const NOW = '2026-08-21T12:00:00.000Z';
 const DELIVERY_SUSPENSION = { [Symbol.for('StepSignal')]: true };
+
+it.each([
+  'WHATSAPP_BOT_PHONE_ALLOWLIST_INVALID',
+  'WHATSAPP_BOT_PHONE_NOT_ALLOWED',
+])('treats %s as a confirmed pre-submission block', (reason) => {
+  expect(isConfirmedPreSubmissionBlock(reason)).toBe(true);
+});
 
 function ingestResponse() {
   return {
@@ -332,6 +340,9 @@ describe('processInboundTurn hot path', () => {
     for (const spy of Object.values(actionSpies)) spy.mockReset();
     actionSpies.recovery.mockResolvedValue({ outcome: 'scheduled', attempt: 1, delay_ms: 2000 });
     configuration.automationEnabled = true;
+    configuration.whatsappPublicEnabled = false;
+    configuration.whatsappCanaryEnabled = false;
+    configuration.whatsappAllowedBotPhoneNumberId = '';
     configuration.decisionProvider = 'botpress_managed';
     configuration.agentAPlannerlessV2Enabled = false;
     configuration.agentAAgentLoopV3KillSwitch = false;
@@ -419,6 +430,42 @@ describe('processInboundTurn hot path', () => {
       plan_hash: 'a'.repeat(64),
     });
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
+  });
+
+  it('abandons a queued WhatsApp turn for a non-allowed business number before ingesting it', async () => {
+    configuration.whatsappPublicEnabled = true;
+    configuration.whatsappCanaryEnabled = false;
+    configuration.whatsappAllowedBotPhoneNumberId = 'allowed-business-number-75';
+    const input = {
+      ...workflowInput(),
+      channel: 'whatsapp',
+      message: {
+        ...workflowInput().message,
+        metadata: { bot_phone_number_id: 'blocked-business-number-72' },
+      },
+    };
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(), {
+      sleep: vi.fn(async () => undefined),
+    });
+
+    const result = await (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler({
+      input,
+      state: processingState(),
+      step,
+      execute: vi.fn(),
+      client: {},
+      signal: new AbortController().signal,
+      workflow: { id: 'blocked-whatsapp-number-test', setTimeout: vi.fn(async () => undefined) },
+    });
+
+    expect(result).toMatchObject({
+      status: 'abandoned',
+      error_code: 'WHATSAPP_BOT_PHONE_NOT_ALLOWED',
+    });
+    expect(actionSpies.ingest).not.toHaveBeenCalled();
+    expect(actionSpies.transcribe).not.toHaveBeenCalled();
   });
 
   it.each(['ingest', 'claim', 'syncInbound'] as const)('recovers a transient %s outage durably before accepting a terminal backend result', async stage => {
@@ -721,6 +768,8 @@ describe('processInboundTurn hot path', () => {
   });
 
   it('transcribes a WhatsApp audio before ingesting and never sends its signed URL to the backend', async () => {
+    configuration.whatsappPublicEnabled = true;
+    configuration.whatsappAllowedBotPhoneNumberId = 'allowed-business-number-75';
     actionSpies.transcribe.mockResolvedValueOnce({
       status: 'ok',
       text: 'Quiero información del curso de inglés',
@@ -735,6 +784,7 @@ describe('processInboundTurn hot path', () => {
         ...workflowInput().message,
         type: 'audio',
         text: '[audio_pendiente_transcripcion]',
+        metadata: { bot_phone_number_id: 'allowed-business-number-75' },
         audio_reference: {
           provider_file_id: 'wamid.audio-1',
           mime_type: 'audio/ogg',
@@ -782,6 +832,8 @@ describe('processInboundTurn hot path', () => {
   });
 
   it('turns an untranscribable audio into recoverable unreadable input instead of crashing', async () => {
+    configuration.whatsappPublicEnabled = true;
+    configuration.whatsappAllowedBotPhoneNumberId = 'allowed-business-number-75';
     actionSpies.transcribe.mockResolvedValueOnce({
       status: 'failed',
       text: '[audio_no_transcrito]',
@@ -796,6 +848,7 @@ describe('processInboundTurn hot path', () => {
         ...workflowInput().message,
         type: 'audio',
         text: '[audio_pendiente_transcripcion]',
+        metadata: { bot_phone_number_id: 'allowed-business-number-75' },
         audio_reference: {
           provider_file_id: 'wamid.audio-2',
           mime_type: 'audio/ogg',
