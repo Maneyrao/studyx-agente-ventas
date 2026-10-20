@@ -253,13 +253,17 @@ export const AgentAContextV1Schema = z.object({
     intake_missing: z.array(z.enum(['nombre', 'apellido', 'correo', 'telefono']))
       .default([]),
     // La ficha completa sigue visible arriba. Esta proyección evita que una
-    // acción herede requisitos de otra: una llamada no necesita correo,
-    // mientras que un pago sí necesita la ficha completa.
+    // acción herede requisitos de otra. La llamada exige los cuatro campos
+    // y además evidencia escrita de WhatsApp para el correo.
     required_contact_fields: z.object({
       call: z.array(ProfileFieldSchema),
       payment: z.array(ProfileFieldSchema),
       identity: z.array(ProfileFieldSchema),
     }).strict().optional(),
+    call_contact_requirements: z.array(z.object({
+      field: ProfileFieldSchema,
+      reason: z.enum(['missing', 'written_whatsapp_confirmation_required']),
+    }).strict()).optional(),
   }).strict(),
 }).strict();
 

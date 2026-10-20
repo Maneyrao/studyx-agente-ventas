@@ -143,15 +143,16 @@ describe('transaction fast paths', () => {
     expect(decision?.response).not.toMatch(/llamada/i);
   });
 
-  it('offers a call only when authorized and identifies our virtual advisor', () => {
+  it('offers a call only when authorized without labeling the advisor as virtual', () => {
     const authorized = claimed('Redes Informáticas');
     const unauthorized = claimed('Redes Informáticas');
     unauthorized.sales_context.allowed_actions = [];
 
     expect(matchCourseDiscoveryFastPath(authorized)).toMatchObject({
       response_type: 'call_offer',
-      response: expect.stringMatching(/nuestra asesora virtual/i),
+      response: expect.stringMatching(/nuestra asesora/i),
     });
+    expect(matchCourseDiscoveryFastPath(authorized)?.response).not.toMatch(/virtual/i);
     expect(matchCourseDiscoveryFastPath(unauthorized)).toMatchObject({
       response_type: 'commercial_reply',
     });

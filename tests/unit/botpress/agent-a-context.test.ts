@@ -2171,15 +2171,19 @@ it.each(['nombre', 'apellido', 'telefono'] as const)(
   },
 );
 
-it('authorizes an immediate call when only payment-only email is missing', () => {
+it('does not authorize an immediate call when email is missing', () => {
   const claimed = claimedTurn();
   claimed.contact_intake_missing = ['correo'];
+  (claimed as unknown as Record<string, unknown>).call_intake_readiness = {
+    status: 'needs_input', requirements: [{ field: 'correo', reason: 'missing' }],
+  };
   Object.assign(claimed.conversation_state_v1!, { call_preference: 'call',
     call_offer_status: 'accepted', awaiting_reply: 'call_or_chat' });
 
   const context = buildAgentAContextV1(claimed)!;
 
-  expect(context.capabilities.may_request_call_now).toBe(true);
+  expect(context.capabilities.may_request_call_now).toBe(false);
+  expect(context.capabilities.required_contact_fields?.call).toEqual(['correo']);
 });
 
 it('authorizes the current explicit acceptance of an open offer with complete call data', () => {
@@ -2187,7 +2191,10 @@ it('authorizes the current explicit acceptance of an open offer with complete ca
   claimed.context.batch_messages[0] = {
     ...claimed.context.batch_messages[0]!, content: 'dale de una',
   };
-  claimed.contact_intake_missing = ['correo'];
+  claimed.contact_intake_missing = [];
+  (claimed as unknown as Record<string, unknown>).call_intake_readiness = {
+    status: 'ready', requirements: [],
+  };
   Object.assign(claimed.conversation_state_v1!, {
     call_preference: 'unknown', call_offer_status: 'offered', call_offer_count: 1,
     awaiting_reply: 'call_or_chat', stage: 'course_selected',
@@ -2196,6 +2203,90 @@ it('authorizes the current explicit acceptance of an open offer with complete ca
   const context = buildAgentAContextV1(claimed)!;
 
   expect(context.capabilities.may_request_call_now).toBe(true);
+});
+
+it('exposes a known voice email as awaiting written WhatsApp confirmation', () => {
+  const claimed = claimedTurn();
+  claimed.contact_intake = {
+    nombre: 'Ana', apellido: 'Pérez', correo: 'ana@example.test', telefono: '+5491112345678',
+  };
+  claimed.contact_intake_missing = [];
+  (claimed as unknown as Record<string, unknown>).call_intake_readiness = {
+    status: 'needs_input',
+    requirements: [{ field: 'correo', reason: 'written_whatsapp_confirmation_required' }],
+  };
+  Object.assign(claimed.conversation_state_v1!, { call_preference: 'call',
+    call_offer_status: 'accepted', awaiting_reply: 'call_or_chat' });
+
+  const context = buildAgentAContextV1(claimed)!;
+
+  expect(context.capabilities.may_request_call_now).toBe(false);
+  expect(context.capabilities.required_contact_fields?.call).toEqual(['correo']);
+  expect(context.capabilities.call_contact_requirements).toEqual([
+    { field: 'correo', reason: 'written_whatsapp_confirmation_required' },
+  ]);
+});
+
+it('does not treat a final email as current consent to call now', () => {
+  const claimed = claimedTurn();
+  claimed.context.batch_messages[0] = {
+    ...claimed.context.batch_messages[0]!, content: 'ana@example.test',
+  };
+  claimed.contact_intake = {
+    nombre: 'Ana', apellido: 'Pérez', correo: 'ana@example.test', telefono: '+5491112345678',
+  };
+  claimed.contact_intake_missing = [];
+  (claimed as unknown as Record<string, unknown>).call_intake_readiness = {
+    status: 'ready', requirements: [],
+  };
+  Object.assign(claimed.conversation_state_v1!, { call_preference: 'call',
+    call_offer_status: 'accepted', awaiting_reply: 'call_or_chat' });
+
+  const context = buildAgentAContextV1(claimed)!;
+
+  expect(context.capabilities.may_request_call_now).toBe(false);
+});
+
+it.each([
+  'Ahora puedo atender',
+  'Estoy disponible',
+  'Sí, ahora puedo',
+])('lets Agent A semantically interpret a natural availability confirmation: %s', (text) => {
+  const claimed = claimedTurn();
+  claimed.context.batch_messages[0] = {
+    ...claimed.context.batch_messages[0]!, content: text,
+  };
+  claimed.contact_intake = {
+    nombre: 'Ana', apellido: 'Pérez', correo: 'ana@example.test', telefono: '+5491112345678',
+  };
+  claimed.contact_intake_missing = [];
+  (claimed as unknown as Record<string, unknown>).call_intake_readiness = {
+    status: 'ready', requirements: [],
+  };
+  Object.assign(claimed.conversation_state_v1!, { call_preference: 'call',
+    call_offer_status: 'accepted', awaiting_reply: 'call_or_chat' });
+
+  const context = buildAgentAContextV1(claimed)!;
+
+  expect(context.capabilities.may_request_call_now).toBe(true);
+});
+
+it('does not authorize a semantic availability path after a later call refusal', () => {
+  const claimed = claimedTurn();
+  claimed.context.batch_messages = [
+    { ...claimed.context.batch_messages[0]!, id: 'm-available', content: 'Ahora puedo atender' },
+    { ...claimed.context.batch_messages[0]!, id: 'm-decline', content: 'Ahora no puedo atender' },
+  ];
+  claimed.contact_intake_missing = [];
+  (claimed as unknown as Record<string, unknown>).call_intake_readiness = {
+    status: 'ready', requirements: [],
+  };
+  Object.assign(claimed.conversation_state_v1!, { call_preference: 'call',
+    call_offer_status: 'accepted', awaiting_reply: 'call_or_chat' });
+
+  const context = buildAgentAContextV1(claimed)!;
+
+  expect(context.capabilities.may_request_call_now).toBe(false);
 });
 
 it('separates missing contact data by the purpose Agent A is pursuing', () => {
@@ -2207,11 +2298,19 @@ it('separates missing contact data by the purpose Agent A is pursuing', () => {
     telefono: '+5491169004497',
   };
   claimed.contact_intake_missing = ['nombre', 'apellido', 'correo'];
+  (claimed as unknown as Record<string, unknown>).call_intake_readiness = {
+    status: 'needs_input',
+    requirements: [
+      { field: 'nombre', reason: 'missing' },
+      { field: 'apellido', reason: 'missing' },
+      { field: 'correo', reason: 'missing' },
+    ],
+  };
 
   const context = buildAgentAContextV1(claimed)!;
 
   expect(context.capabilities.required_contact_fields).toEqual({
-    call: ['nombre', 'apellido'],
+    call: ['nombre', 'apellido', 'correo'],
     payment: ['nombre', 'apellido', 'correo'],
     identity: ['nombre', 'apellido', 'correo'],
   });

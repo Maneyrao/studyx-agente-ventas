@@ -20,6 +20,7 @@ function claimed(overrides: {
   course?: string | null;
   route?: ClaimedTurn['deterministic_route'];
   awaitingReply?: NonNullable<ClaimedTurn['conversation_state_v1']>['awaiting_reply'];
+  callIntakeStatus?: 'ready' | 'needs_input' | 'unknown';
 }): ClaimedTurn {
   const texts = overrides.texts ?? ['Llamame'];
   return {
@@ -50,6 +51,14 @@ function claimed(overrides: {
       opted_in_at: '2026-08-12T00:00:00.000Z',
     },
     contact_intake_missing: overrides.contactIntakeMissing ?? [],
+    call_intake_readiness: {
+      status: overrides.callIntakeStatus
+        ?? ((overrides.contactIntakeMissing?.length ?? 0) > 0 ? 'needs_input' : 'ready'),
+      requirements: (overrides.contactIntakeMissing ?? []).map((field) => ({
+        field,
+        reason: 'missing' as const,
+      })),
+    },
     context: {
       batch_messages: texts.map((text, index) => ({
         id: UUID,
@@ -129,7 +138,7 @@ describe('matchCallHandoffFastPath', () => {
     );
 
     expect(decision?.response).toBe(
-      'Perfecto. Registré la llamada; nuestra asesora virtual intenta comunicarse ahora.',
+      'Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.',
     );
   });
 
@@ -152,6 +161,15 @@ describe('matchCallHandoffFastPath', () => {
         route: 'call_direct_request',
       })),
     ).toBeNull();
+  });
+
+  it('falls through when the backend has not proved call intake readiness', () => {
+    expect(matchCallHandoffFastPath(claimed({
+      texts: ['Llamame ahora'],
+      allowedActions: ['request_call_now'],
+      callIntakeStatus: 'unknown',
+      route: 'call_direct_request',
+    }))).toBeNull();
   });
 
   it('reports an already active call without creating another call action', () => {

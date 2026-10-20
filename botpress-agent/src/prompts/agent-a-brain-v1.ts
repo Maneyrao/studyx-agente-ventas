@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v116' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v118' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -45,7 +45,7 @@ function mandatoryRepairDirectiveV1(context: AgentAContextV1): string {
   ));
   const callRepair = repairsCall ? `
 For an unavailable request_call_now, retain move=request_call and use proposed_action=none.
-Ask only for missing call data among nombre, apellido and telefono. Keep the customer's intent and write the request naturally in the canonical voice.
+Ask only for missing call data among nombre, apellido, correo and telefono. If correo is known but call_contact_requirements says written_whatsapp_confirmation_required, ask only that they type it in this chat. Keep the customer's intent and write the request naturally in the canonical voice.
 Do not claim the call was placed.` : '';
   const repairsOffering = rejection.rejections.some(reason => (
     reason.subject === 'offering_not_canonical'

@@ -24,7 +24,7 @@ import type { ClaimedTurn, Decision } from '../schemas/contracts'
 export const CALL_HANDOFF_FAST_PATH_MODEL = 'deterministic:call-handoff-fast-path-v1'
 
 export const CALL_CONFIRMATION_RESPONSE =
-  'Perfecto. Registré la llamada; nuestra asesora virtual intenta comunicarse ahora.'
+  'Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.'
 
 const CALL_CLARIFICATION_RESPONSE =
   '¿Me confirmás a qué te referís? Contame qué curso o información estás buscando.'
@@ -34,11 +34,8 @@ const CALL_ALREADY_ACTIVE_RESPONSE =
 
 const RETRIEVAL_NONE = { kb: false, long_term_memory: false, summary_version: null }
 
-const CALL_REQUIRED_INTAKE = ['nombre', 'apellido', 'telefono'] as const
-
 function hasCompleteCallIdentity(claimed: ClaimedTurn): boolean {
-  return Array.isArray(claimed.contact_intake_missing)
-    && !CALL_REQUIRED_INTAKE.some((field) => claimed.contact_intake_missing.includes(field))
+  return claimed.call_intake_readiness?.status === 'ready'
 }
 
 function callConfirmation(

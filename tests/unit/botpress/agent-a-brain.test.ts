@@ -191,6 +191,35 @@ describe('Agent A Brain V1', () => {
     });
   });
 
+  it('treats written WhatsApp email confirmation as a real call prerequisite', () => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'Quiero que me llames';
+    current.customer.contact_intake = {
+      nombre: 'Ana', apellido: 'Costa', correo: 'ana@example.test', telefono: '+15555550168',
+    };
+    current.capabilities.intake_missing = [];
+    current.capabilities.required_contact_fields = {
+      call: ['correo'], payment: [], identity: [],
+    };
+    current.capabilities.call_contact_requirements = [{
+      field: 'correo', reason: 'written_whatsapp_confirmation_required',
+    }];
+    const parsed = parseAgentATurnProposalV1(proposal({
+      move: {
+        schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1,
+      },
+      response: { messages: ['Listo. ¿Puedes atender ahora?'], call_offer: null },
+      proposed_action: { type: 'none' },
+    }), current);
+
+    expect(validateAgentATurnProposalV1({
+      proposal: parsed,
+      context: current,
+      planned_fact_ids: parsed.used_fact_ids,
+      rejection_id: '00000000-0000-4000-8000-0000000000c3',
+    })?.rejections).toContainEqual({ code: 'MISSING_INTAKE', subject: 'correo' });
+  });
+
   it('preserves provider-authored bubble boundaries and call invitation copy', () => {
     const result = parseAgentATurnProposalV1(proposal({
       response: {

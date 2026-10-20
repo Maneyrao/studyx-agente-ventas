@@ -15,6 +15,24 @@ export const ContactProfileReceiptSchema = z.object({
     correo: z.string().nullable(), telefono: z.string().nullable() }).strict(),
   accepted_fields: z.array(Fields).max(4),
   rejections: z.array(z.object({ field: Fields, code: z.string().min(1).max(160) }).strict()).max(9),
+  // Optional only for durable workflow steps cached before this response
+  // field existed. New backend responses bind version, values and readiness
+  // into one current snapshot so an idempotent operation receipt can remain
+  // historical without mixing generations.
+  contact_profile_snapshot: z.object({
+    version: z.number().int().min(0),
+    values: z.object({ nombre: z.string().nullable(), apellido: z.string().nullable(),
+      correo: z.string().nullable(), telefono: z.string().nullable() }).strict(),
+    call_intake_readiness: z.object({
+      status: z.enum(['ready', 'needs_input', 'unknown']),
+      intake: z.object({ nombre: z.string().nullable(), apellido: z.string().nullable(),
+        correo: z.string().nullable(), telefono: z.string().nullable() }).strict(),
+      requirements: z.array(z.object({
+        field: Fields,
+        reason: z.enum(['missing', 'written_whatsapp_confirmation_required']),
+      }).strict()).max(4),
+    }).strict(),
+  }).strict().optional(),
 }).strict()
 
 export const captureContactProfile = new Action<any, any>({

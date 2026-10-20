@@ -123,6 +123,7 @@ function buildDeps(options: {
   knowledge?: ClaimBatchDependencies['knowledge'];
   now?: () => string;
   contactIntake?: ClaimBatchDependencies['contactIntake'];
+  callIntakeReadiness?: ClaimBatchDependencies['callIntakeReadiness'];
   paymentVerification?: ClaimBatchDependencies['paymentVerification'];
 } = {}): ClaimBatchDependencies & { store: OrchestrationStore } {
   const messages = options.messagesResult ?? [
@@ -160,6 +161,7 @@ function buildDeps(options: {
     contactIntake: options.contactIntake ?? (async () => ({
       nombre: null, apellido: null, correo: null, telefono: null,
     })),
+    callIntakeReadiness: options.callIntakeReadiness,
     paymentVerification: options.paymentVerification ?? (async () => null),
   } as ClaimBatchDependencies & { store: OrchestrationStore };
 }
@@ -802,6 +804,11 @@ describe('claimBatch', () => {
       })),
       contactIntake: async () => ({
         nombre: 'Ariana', apellido: 'Paz', correo: 'a@example.test', telefono: '+5491112345678',
+      }),
+      callIntakeReadiness: async () => ({
+        status: 'ready',
+        intake: { nombre: 'Ariana', apellido: 'Paz', correo: 'a@example.test', telefono: '+5491112345678' },
+        requirements: [],
       }),
     });
 
@@ -1927,6 +1934,11 @@ describe('claimBatch sales_context', () => {
       contactIntake: async () => ({
         nombre: 'Ariana', apellido: 'Paz', correo: 'a@example.test', telefono: '+5491112345678',
       }),
+      callIntakeReadiness: async () => ({
+        status: 'ready',
+        intake: { nombre: 'Ariana', apellido: 'Paz', correo: 'a@example.test', telefono: '+5491112345678' },
+        requirements: [],
+      }),
     });
 
     const result = await claimBatch(input, deps);
@@ -1983,6 +1995,11 @@ describe('claimBatch sales_context', () => {
       now: () => '2026-08-11T12:00:00.000Z',
       contactIntake: async () => ({
         nombre: 'Ariana', apellido: 'Paz', correo: 'a@example.test', telefono: '+5491112345678',
+      }),
+      callIntakeReadiness: async () => ({
+        status: 'ready',
+        intake: { nombre: 'Ariana', apellido: 'Paz', correo: 'a@example.test', telefono: '+5491112345678' },
+        requirements: [],
       }),
     });
 
@@ -2044,6 +2061,11 @@ describe('claimBatch sales_context', () => {
       contactIntake: async () => ({
         nombre: 'Ariana', apellido: 'Paz', correo: 'a@example.test', telefono: '+5491112345678',
       }),
+      callIntakeReadiness: async () => ({
+        status: 'ready',
+        intake: { nombre: 'Ariana', apellido: 'Paz', correo: 'a@example.test', telefono: '+5491112345678' },
+        requirements: [],
+      }),
     });
 
     const result = await claimBatch(input, deps);
@@ -2085,6 +2107,11 @@ describe('claimBatch sales_context', () => {
         contactIntake: async () => ({
           nombre: 'Matias', apellido: 'Maneyro', correo: null, telefono: '+5491130872611',
         }),
+        callIntakeReadiness: async () => ({
+          status: 'needs_input',
+          intake: { nombre: 'Matias', apellido: 'Maneyro', correo: null, telefono: '+5491130872611' },
+          requirements: [{ field: 'correo', reason: 'missing' }],
+        }),
       });
 
       const result = await claimBatch(input, deps);
@@ -2092,10 +2119,10 @@ describe('claimBatch sales_context', () => {
 
       expect(result.sales_context.allowed_actions).toEqual(['request_call_now']);
       expect(result.deterministic_route).toBe('call_direct_request');
-      expect(matchCallHandoffFastPath(withWireUuids(result) as unknown as BotpressClaimedTurn)).toMatchObject({
-        response_type: 'call_confirmation',
-        business_action: { type: 'request_call_now', reason: 'direct_request' },
+      expect(result.call_intake_readiness).toMatchObject({
+        status: 'needs_input', requirements: [{ field: 'correo', reason: 'missing' }],
       });
+      expect(matchCallHandoffFastPath(withWireUuids(result) as unknown as BotpressClaimedTurn)).toBeNull();
     },
   );
 
@@ -2167,6 +2194,11 @@ describe('claimBatch sales_context', () => {
       contactIntake: async () => ({
         nombre: 'Luke', apellido: 'Pierella', correo: 'luke@example.test',
         telefono: '+5491100000000',
+      }),
+      callIntakeReadiness: async () => ({
+        status: 'ready',
+        intake: { nombre: 'Luke', apellido: 'Pierella', correo: 'luke@example.test', telefono: '+5491100000000' },
+        requirements: [],
       }),
     });
 

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { classifyBatchSalesSignal, classifyDeterministicSalesSignal } from '@/features/orchestration/domain/sales-signal';
+import {
+  classifyBatchSalesSignal,
+  classifyDeterministicSalesSignal,
+  isBatchOnlyKnownContactDataV1,
+} from '@/features/orchestration/domain/sales-signal';
 
 describe('classifyDeterministicSalesSignal', () => {
   it('recognizes a direct request to be called', () => {
@@ -32,6 +36,8 @@ describe('classifyDeterministicSalesSignal', () => {
     'Prefiero WhatsApp',
     'Solo chat',
     'No puedo atender llamadas',
+    'Ahora no puedo atender',
+    'No estoy disponible en este momento',
   ])('recognizes a call/channel refusal (%s)', (text) => {
     expect(classifyDeterministicSalesSignal(text)).toEqual({ type: 'call_decline' });
   });
@@ -157,5 +163,30 @@ describe('classifyBatchSalesSignal', () => {
 
   it('matches the single-message classifier on one-message batches', () => {
     expect(classifyBatchSalesSignal(['llamame'])).toEqual(classifyDeterministicSalesSignal('llamame'));
+  });
+});
+
+describe('isBatchOnlyKnownContactDataV1', () => {
+  const intake = {
+    nombre: 'Ana', apellido: 'Pérez', correo: 'ana@example.test', telefono: '+5491112345678',
+  };
+
+  it.each([
+    'ana@example.test',
+    'Mi correo es ana@example.test',
+    'Teléfono: +54 9 11 1234-5678',
+    'Ana Pérez',
+  ])('recognizes a batch containing only known contact data (%s)', (message) => {
+    expect(isBatchOnlyKnownContactDataV1([message], intake)).toBe(true);
+  });
+
+  it('does not erase a semantic availability confirmation that accompanies contact data', () => {
+    expect(isBatchOnlyKnownContactDataV1([
+      'ana@example.test',
+      'Ahora puedo atender',
+    ], intake)).toBe(false);
+    expect(isBatchOnlyKnownContactDataV1([
+      'Mi teléfono es +5491112345678, ahora estoy disponible',
+    ], intake)).toBe(false);
   });
 });

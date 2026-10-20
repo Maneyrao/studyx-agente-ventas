@@ -345,7 +345,7 @@ async function createAgentACall(input: {
   }
 
   const confirmation = await commitTurn(confirmationTurnId, decision(
-    'Perfecto. Registré la llamada; nuestra asesora virtual intenta comunicarse ahora.',
+    'Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.',
     'call_confirmation',
     {
       type: 'request_call_now',

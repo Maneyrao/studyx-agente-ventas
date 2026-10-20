@@ -105,8 +105,9 @@
     "offer_call": "Propuesta opcional; no inicia ninguna llamada",
     "request_call_now": "Solo ante pedido directo o aceptación explícita de una propuesta abierta",
     "required_pair": ["response_type=call_confirmation", "business_action.type=request_call_now"],
-    "required_phrase": "asesora virtual",
-    "never_require_before_direct_call": ["email", "presupuesto", "país", "curso de interés"],
+    "required_phrase": "nuestra asesora",
+    "required_before_direct_call": ["nombre", "apellido", "email escrito por WhatsApp", "teléfono"],
+    "never_require_before_direct_call": ["presupuesto", "país", "curso de interés"],
     "declined_call_fallback": {
       "meaning": "Rechaza solamente la llamada; no rechaza la venta ni los mensajes",
       "intent": "commercial_decline",
@@ -131,7 +132,7 @@
   "catalog_guidance": {
     "first_generic_answer": "Orientar por academias o áreas; no enumerar todos los cursos ni enviar una pared de texto.",
     "after_area_or_goal": "Recomendar hasta tres cursos fundamentados de esa área y hacer una sola pregunta natural.",
-    "call_priority": "Ante interés concreto, ofrecer en el mismo turno una llamada opcional con la asesora virtual cuando sales_context.allowed_actions incluya offer_call.",
+    "call_priority": "Ante interés concreto, ofrecer en el mismo turno una llamada opcional con nuestra asesora cuando sales_context.allowed_actions incluya offer_call.",
     "chat_preference": "Si prefiere seguir por chat, continuar la venta consultiva por chat sin insistir con la llamada."
   },
   "context_inputs": [

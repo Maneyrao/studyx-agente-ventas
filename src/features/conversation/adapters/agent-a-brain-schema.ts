@@ -156,6 +156,10 @@ export const AgentAContextV1Schema = z.object({
     intake_status: z.enum(['known', 'unknown']),
     intake_missing: z.array(z.enum(['nombre', 'apellido', 'correo', 'telefono']))
       .default([]),
+    call_contact_requirements: z.array(z.object({
+      field: z.enum(['nombre', 'apellido', 'correo', 'telefono']),
+      reason: z.enum(['missing', 'written_whatsapp_confirmation_required']),
+    }).strict()).optional(),
   }).strict(),
 }).strict();
 

@@ -217,13 +217,13 @@ run('Agent Loop preparation materialization', () => {
 
     const first = await commit(seeded, {
       preparation_ids: [prepared.preparation_id!],
-      text: 'Perfecto. Registré la llamada; nuestra asesora virtual intenta comunicarse ahora.',
+      text: 'Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.',
       response_type: 'call_confirmation',
       state_patch: { call_preference: 'call', call_offer_status: 'accepted', stage: 'handoff' },
     });
     const replay = await commit(seeded, {
       preparation_ids: [prepared.preparation_id!],
-      text: 'Perfecto. Registré la llamada; nuestra asesora virtual intenta comunicarse ahora.',
+      text: 'Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.',
       response_type: 'call_confirmation',
       state_patch: { call_preference: 'call', call_offer_status: 'accepted', stage: 'handoff' },
     });

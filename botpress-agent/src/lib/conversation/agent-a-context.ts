@@ -4,7 +4,10 @@ import {
 } from '../../schemas/agent-a-brain';
 import type { ClaimedTurn } from '../../schemas/contracts';
 import type { ConversationMoveV1 } from '../../schemas/conversation-pipeline';
-import { classifyBatchSalesSignal } from '../../../../src/features/orchestration/domain/sales-signal';
+import {
+  classifyBatchSalesSignal,
+  isBatchOnlyKnownContactDataV1,
+} from '../../../../src/features/orchestration/domain/sales-signal';
 
 const MEMORY_TYPES = new Set([
   'study_goal', 'study_context', 'preference', 'constraint',
@@ -529,10 +532,12 @@ export function buildAgentAContextV1(
   // sobre un contacto del que no sabía nada.
   const intakeAnswered = Array.isArray(claimed.contact_intake_missing);
   const intakeMissing = intakeAnswered ? claimed.contact_intake_missing! : [];
+  const callIntakeReadiness = claimed.call_intake_readiness;
+  const callRequirements = callIntakeReadiness?.status === 'unknown'
+    ? []
+    : callIntakeReadiness?.requirements ?? [];
   const requiredContactFields = {
-    call: intakeMissing.filter((field) => (
-      field === 'nombre' || field === 'apellido' || field === 'telefono'
-    )),
+    call: callRequirements.map(({ field }) => field),
     // El alta y el pago usan la ficha completa. Mantener esta lista derivada
     // de la autoridad evita que el prompt adivine qué dato falta.
     payment: [...intakeMissing],
@@ -597,6 +602,17 @@ export function buildAgentAContextV1(
         telefono: nonBlankOrNull(claimed.contact_intake.telefono),
       }
     : null;
+  const awaitingCallAvailability = state.call_preference === 'call'
+    && state.call_offer_status === 'accepted'
+    && state.awaiting_reply === 'call_or_chat';
+  const availabilityConfirmed = currentSalesSignal.type === 'direct_call_request'
+    || currentSalesSignal.type === 'call_acceptance'
+    || (currentSalesSignal.type === 'model_required'
+      && awaitingCallAvailability
+      && !isBatchOnlyKnownContactDataV1(
+        currentLogicalMessages.map((message) => message.content),
+        canonicalContactIntake,
+      ));
 
   return AgentAContextV1Schema.parse({
     schema_version: 1,
@@ -742,14 +758,11 @@ export function buildAgentAContextV1(
         // as accepted before evaluating the same turn created a circular,
         // one-message-late authorization gate.
         && (currentCallAuthorization || (
-          state.call_preference === 'call'
-          && state.call_offer_status === 'accepted'
-          && state.awaiting_reply === 'call_or_chat'
+          awaitingCallAvailability
+          && availabilityConfirmed
         ))
         && !['handoff', 'closed'].includes(state.stage)
-        && intakeStatus === 'known'
-        && !(['nombre', 'apellido', 'telefono'] as const)
-          .some((field) => intakeMissing.includes(field)),
+        && callIntakeReadiness?.status === 'ready',
       may_present_payment_options: claimed.policy.may_respond
         && (claimed.business_context?.workspace.payment_options.length ?? 0) > 0,
       may_send_payment_link: hasReadableCurrentInput && maySendPaymentLink,
@@ -757,6 +770,7 @@ export function buildAgentAContextV1(
       authorized_payment_plan: selectedPlan,
       intake_missing: intakeMissing,
       required_contact_fields: requiredContactFields,
+      call_contact_requirements: callRequirements,
     },
   });
 }

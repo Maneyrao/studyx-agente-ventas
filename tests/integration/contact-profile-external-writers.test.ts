@@ -14,6 +14,7 @@ import { withSerializableTransactionOn } from '@/lib/db/transaction';
 import { registerMessage } from '@/lib/services/message.service';
 import { processInboundMessage, type InboundEnvelope } from '@/lib/services/ingestion.service';
 import { sql } from '@/lib/db/orchestrator';
+import { loadCallIntakeReadinessV1 } from '@/lib/repositories/call-intake-readiness.repository';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
@@ -35,6 +36,85 @@ async function fixture() {
 }
 
 run('canonical contact profile external writers', () => {
+  it('promotes an identical voice email only when the customer types it in WhatsApp', async () => {
+    const f = await fixture();
+    const voiceEmail = 'voice-then-whatsapp@example.test';
+    await new PostgresRetellContactToolStore(db!).saveCorrelatedContact({
+      callId: f.callId,
+      workspaceSlug: 'studyx',
+      email: voiceEmail,
+      sheets: null,
+    });
+    await db!`UPDATE conversations SET channel = 'whatsapp' WHERE id = ${f.conversation_id}::uuid`;
+
+    const before = await loadContactProfileV1(f.contact_id, db!);
+    expect(await loadCallIntakeReadinessV1(f.contact_id, f.conversation_id, db!)).toMatchObject({
+      status: 'needs_input',
+      requirements: [{ field: 'correo', reason: 'written_whatsapp_confirmation_required' }],
+    });
+
+    const [transport] = await db!<Array<{ payload: InboundEnvelope }>>`
+      SELECT e.payload FROM messages m JOIN channel_events e ON e.id = m.source_event_id
+      WHERE m.id = ${f.second_turn_id}::uuid
+    `;
+    const inbound = await processInboundMessage({
+      ...transport.payload,
+      channel: 'whatsapp',
+      identity_owner: 'agent_a_v1',
+      external_message_id: randomUUID(),
+      trace_id: randomUUID(),
+      message: {
+        ...transport.payload.message,
+        text: voiceEmail,
+        type: 'text',
+        occurred_at: new Date().toISOString(),
+      },
+    });
+    await db!`UPDATE inbound_batches SET due_at = now() - interval '1 second' WHERE id = ${inbound.batch.id}::uuid`;
+    const [claim] = await db!<Array<{ outcome: string; claim_token: string }>>`
+      SELECT outcome, claim_token FROM claim_inbound_batch(${inbound.batch.id}::uuid, 'voice-email-promotion', 120000)
+    `;
+    expect(claim.outcome).toBe('claimed');
+
+    const receipt = await withSerializableTransactionOn(db!, tx => applyContactProfileUpdatesV1(tx, {
+      turn_id: inbound.turn_id,
+      batch_id: inbound.batch.id,
+      claim_token: claim.claim_token,
+      expected_version: before!.version,
+      updates: [{
+        field: 'correo',
+        value: voiceEmail,
+        operation: 'set',
+        source_message_id: inbound.turn_id,
+        source_quote: voiceEmail,
+      }],
+    }));
+
+    expect(receipt.accepted_fields).toEqual(['correo']);
+    expect(receipt.version).toBe(before!.version + 1);
+    expect((await loadContactProfileV1(f.contact_id, db!))?.fields.correo).toMatchObject({
+      value: voiceEmail,
+      source: 'agent_a_v1',
+      source_message_id: inbound.turn_id,
+      voice_evidence: undefined,
+    });
+    expect(await loadCallIntakeReadinessV1(f.contact_id, f.conversation_id, db!)).toMatchObject({
+      status: 'ready',
+      requirements: [],
+    });
+
+    const replay = await withSerializableTransactionOn(db!, tx => applyContactProfileUpdatesV1(tx, {
+      turn_id: inbound.turn_id,
+      batch_id: inbound.batch.id,
+      claim_token: claim.claim_token,
+      expected_version: before!.version,
+      updates: [{ field: 'correo', value: voiceEmail, operation: 'set',
+        source_message_id: inbound.turn_id, source_quote: voiceEmail }],
+    }));
+    expect(replay).toEqual(receipt);
+    expect((await loadContactProfileV1(f.contact_id, db!))?.version).toBe(before!.version + 1);
+  });
+
   it('resolves a delivered email clarification after a correlated voice observation before the next inbound', async () => {
     const f = await fixture();
     const [transport] = await db!<Array<{ provider: string; integration_id: string; phone: string; payload: InboundEnvelope }>>`

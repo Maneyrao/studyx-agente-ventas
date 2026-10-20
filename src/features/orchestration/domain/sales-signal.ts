@@ -23,6 +23,13 @@ export type DeterministicSalesSignal =
   | { type: 'opt_out' }
   | { type: 'model_required' };
 
+export type KnownContactIntakeV1 = {
+  readonly nombre: string | null;
+  readonly apellido: string | null;
+  readonly correo: string | null;
+  readonly telefono: string | null;
+};
+
 function normalize(text: string): string {
   return text
     .normalize('NFD')
@@ -30,6 +37,48 @@ function normalize(text: string): string {
     .toLowerCase()
     .trim()
     .replace(/\s+/g, ' ');
+}
+
+function unwrapContactDatum(text: string): string {
+  return normalize(text)
+    .replace(
+      /^(?:mi\s+)?(?:nombre(?:\s+completo)?|apellido|correo(?:\s+electronico)?|e-?mail|mail|telefono|celular|numero)(?:\s+(?:es|seria))?\s*[:=\-]?\s*/u,
+      '',
+    )
+    .replace(/^[¿¡!.,;:\s]+|[¿¡!.,;:\s]+$/gu, '')
+    .trim();
+}
+
+/**
+ * Detects a turn that contributes only literal profile data. This is not a
+ * language classifier: it compares the current text with the canonical
+ * values already persisted for the contact. Its purpose is to keep a final
+ * email/name/phone from doubling as consent to start a call.
+ */
+export function isBatchOnlyKnownContactDataV1(
+  texts: readonly string[],
+  intake: KnownContactIntakeV1 | null | undefined,
+): boolean {
+  if (!intake) return false;
+  const values = texts.map(unwrapContactDatum).filter(Boolean);
+  if (values.length === 0) return false;
+
+  const knownWords = new Set([
+    intake.nombre,
+    intake.apellido,
+    [intake.nombre, intake.apellido].filter(Boolean).join(' '),
+    intake.correo,
+  ].filter((value): value is string => Boolean(value?.trim())).map(unwrapContactDatum));
+  const knownEmail = intake.correo?.trim().toLowerCase() ?? null;
+  const knownPhoneDigits = intake.telefono?.replace(/\D/gu, '') ?? '';
+
+  return values.every((value) => {
+    if (knownWords.has(value)) return true;
+    if (knownEmail !== null && value.toLowerCase() === knownEmail) return true;
+    if (!/^\+?[\d\s().-]+$/u.test(value)) return false;
+    const digits = value.replace(/\D/gu, '');
+    return knownPhoneDigits.length >= 8 && digits === knownPhoneDigits;
+  });
 }
 
 // Broader than a call decline: the customer wants no further contact at all,
@@ -47,6 +96,8 @@ const CALL_DECLINE_PATTERNS: RegExp[] = [
   /\bprefiero\s+(?:whatsapp|chat|texto)\b/,
   /\bsolo\s+(?:whatsapp|chat|texto)\b/,
   /\bno\s+puedo\s+atender\s+llamadas?\b/,
+  /\b(?:ahora\s+)?no\s+puedo\s+(?:atender|hablar)\b/,
+  /\bno\s+estoy\s+disponible\b/,
   /\bdeja\s+de\s+llamarme\b/,
 ];
 

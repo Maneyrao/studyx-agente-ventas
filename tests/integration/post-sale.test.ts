@@ -72,7 +72,9 @@ run('post-sale payment / central / Agent A pipeline', () => {
       narrative:{intro:'Ya tienes acceso a tu curso.',suggestion:'Si quieres, puedes cambiar tu contraseña.'}},deliveryDeps)).toEqual({outcome:'sent'});
 
     expect(messages).toHaveLength(1);
-    expect(messages[0]).toContain('- Usuario: ana@example.com\n- Contraseña: Escuela.123');
+    expect(messages[0]).toContain('LINK DIRECTO AL CAMPUS VIRTUAL 👇🏻\n\nhttps://mystudyx.com/campus-virtual');
+    expect(messages[0]).toContain('📌 USUARIO: ana@example.com\n\n📌 CONTRASEÑA: Escuela.123');
+    expect(messages[0]).toContain('ADMINISTRACIÓN: info@mystudyx.com');
     expect(await db!`SELECT kind,status FROM post_sale_notifications WHERE payment_id=${f.paymentId} ORDER BY kind`).toEqual([
       {kind:'access_ready',status:'sent'},
       {kind:'payment_received',status:'cancelled'},

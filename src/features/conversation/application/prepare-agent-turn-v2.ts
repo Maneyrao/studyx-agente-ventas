@@ -3,9 +3,11 @@ import type { DecisionV4 } from '@/features/orchestration/domain/decision-v4';
 import type { ProtectedFactRef } from '@/features/orchestration/domain/egress-guard';
 import { materializeCanonicalCatalogFacts } from '@/features/orchestration/domain/canonical-offering-egress';
 import type { OrchestrationStore } from '@/features/orchestration/ports/orchestration-store';
-import { classifyBatchSalesSignal } from '@/features/orchestration/domain/sales-signal';
+import {
+  classifyBatchSalesSignal,
+  isBatchOnlyKnownContactDataV1,
+} from '@/features/orchestration/domain/sales-signal';
 import { loadConversationSessionConfig } from '@/lib/config';
-import { isCallablePhoneE164V1 } from '@/lib/heuristics/contact-identity';
 import type { AgentAProposedActionV1, AgentATurnProposalV1 } from '../domain/agent-a-brain';
 import { authorizeAgentTurnV2 } from '../domain/agent-turn-policy-v2';
 import {
@@ -24,6 +26,10 @@ import {
 import { claimsImmediateCallDispatchV1, claimsImmediatePaymentLinkDelivery, solicitsACall } from '../domain/operational-promise-guard';
 import type { ConversationStateStoreV1 } from '../ports/conversation-state-store';
 import type { PaymentVerificationV1 } from '@/features/payments/application/read-payment-verification';
+import {
+  evaluateCallIntakeReadinessV1,
+  type CallIntakeReadinessV1,
+} from '@/features/calls/domain/call-intake-readiness';
 
 export class AgentTurnV2RejectedError extends Error {
   readonly code = 'AGENT_TURN_V2_REJECTED';
@@ -186,6 +192,10 @@ export async function prepareAgentTurnV2(input: {
   readonly state_store: Pick<ConversationStateStoreV1, 'load'>;
   readonly call_facts?: Pick<OrchestrationStore, 'loadClaimedCallFacts'>;
   readonly contact_intake?: (contactId: string) => Promise<ContactIntakeV1>;
+  readonly call_intake_readiness?: (
+    contactId: string,
+    conversationId: string,
+  ) => Promise<CallIntakeReadinessV1>;
   readonly payment_verification?: (input: {
     workspace_slug: string;
     contact_id: string;
@@ -203,14 +213,24 @@ export async function prepareAgentTurnV2(input: {
   readonly action_rejection: AgentActionRejectionV1 | null;
 }> {
   const nowMs = deps.now?.() ?? Date.now();
-  const [loaded, callFacts, contactIntake] = await Promise.all([
+  const [loaded, callFacts, contactIntake, strictCallIntakeReadiness] = await Promise.all([
     deps.state_store.load(input.workspace_slug, input.turn.conversation_id, input.turn.contact_id),
     deps.call_facts?.loadClaimedCallFacts({
       conversation_id: input.turn.conversation_id,
       contact_id: input.turn.contact_id,
     }) ?? Promise.resolve(null),
     deps.contact_intake?.(input.turn.contact_id) ?? Promise.resolve(undefined),
+    deps.call_intake_readiness?.(input.turn.contact_id, input.turn.conversation_id)
+      ?? Promise.resolve(undefined),
   ]);
+  const callIntakeReadiness = strictCallIntakeReadiness ?? evaluateCallIntakeReadinessV1({
+    intake: contactIntake ?? { nombre: null, apellido: null, correo: null, telefono: null },
+    // Compatibility for isolated callers; production supplies durable
+    // evidence and the final reservation always revalidates it under lock.
+    email_evidence: contactIntake?.correo
+      ? { direction: 'inbound', message_type: 'text', channel: 'whatsapp' }
+      : null,
+  });
   const state = loaded
     ? effectiveConversationStateV1(
         loaded,
@@ -239,14 +259,25 @@ export async function prepareAgentTurnV2(input: {
   const awaitingCallAvailability = state.call_preference === 'call'
     && state.call_offer_status === 'accepted'
     && state.awaiting_reply === 'call_or_chat';
-  const availabilityConfirmed = salesSignal.type === 'call_acceptance'
-    || salesSignal.type === 'direct_call_request';
   const currentCallAuthorization = salesSignal.type === 'direct_call_request'
     || (salesSignal.type === 'call_acceptance'
       && state.call_offer_status === 'offered'
       && state.awaiting_reply === 'call_or_chat');
   const authorize = (proposal: AgentATurnProposalV1, effectsAllowed = input.conversation_only !== true,
-    semanticRejections = input.semantic_rejections) => authorizeAgentTurnV2({
+    semanticRejections = input.semantic_rejections) => {
+    const moves = new Set([proposal.move.move, ...proposal.move.secondary_moves]);
+    const containsOnlyProfileData = isBatchOnlyKnownContactDataV1(
+      input.current_customer_messages ?? [],
+      callIntakeReadiness.intake,
+    );
+    const availabilityConfirmed = salesSignal.type === 'call_acceptance'
+      || salesSignal.type === 'direct_call_request'
+      || (salesSignal.type === 'model_required'
+        && awaitingCallAvailability
+        && proposal.proposed_action.type === 'request_call_now'
+        && moves.has('request_call')
+        && !containsOnlyProfileData);
+    return authorizeAgentTurnV2({
     proposal,
     state,
     offerings,
@@ -271,14 +302,11 @@ export async function prepareAgentTurnV2(input: {
       // Accepting an open offer or requesting a call is current-turn consent.
       // Dispatch still occurs only after the resulting outbound is accepted.
       may_request_call_now: noActiveCall
-        && (currentCallAuthorization || (awaitingCallAvailability
-          && (availabilityConfirmed || (proposal.proposed_action.type === 'request_call_now'
-          && [proposal.move.move, ...proposal.move.secondary_moves].includes('request_call')))
-        ))
-        && Boolean(contactIntake?.nombre?.trim() && contactIntake?.apellido?.trim())
-        && isCallablePhoneE164V1(contactIntake?.telefono ?? ''),
+        && (currentCallAuthorization || (awaitingCallAvailability && availabilityConfirmed))
+        && callIntakeReadiness.status === 'ready',
     },
-  });
+    });
+  };
   if (input.requested_action !== undefined && input.conversation_only !== true) {
     throw new AgentTurnV2RejectedError(['ACTION_NOT_AUTHORIZED']);
   }
@@ -296,12 +324,14 @@ export async function prepareAgentTurnV2(input: {
     if (actionCodes.length > 0) {
       const rejectedAction = effectiveProposal.proposed_action.type;
       const requiredFields = rejectedAction === 'request_call_now'
-        ? (['nombre', 'apellido', 'telefono'] as const)
+        ? callIntakeReadiness.requirements.map(({ field }) => field)
         : (['nombre', 'apellido', 'correo', 'telefono'] as const);
       actionRejection = actionRejectionV1({
         action: rejectedAction,
         codes: [...new Set(actionCodes)],
-        missing_fields: requiredFields.filter((field) => !contactIntake?.[field]),
+        missing_fields: rejectedAction === 'request_call_now'
+          ? requiredFields
+          : requiredFields.filter((field) => !contactIntake?.[field]),
         offering_code: state.selected_offering_code,
         payment_plan: state.selected_payment_plan,
       });

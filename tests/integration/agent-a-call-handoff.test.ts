@@ -90,7 +90,7 @@ async function seedTurn(identity: Identity, text: string): Promise<string> {
   return context.turn_id;
 }
 
-const CONFIRMATION = 'Perfecto. Registré la llamada; nuestra asesora virtual intenta comunicarse ahora.';
+const CONFIRMATION = 'Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.';
 
 function callConfirmation(reason: 'direct_request' | 'accepted_offer') {
   return {

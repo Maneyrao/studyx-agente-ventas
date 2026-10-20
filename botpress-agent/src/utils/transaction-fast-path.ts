@@ -338,7 +338,7 @@ export function matchCourseDiscoveryFastPathMatch(
     && !/\b(?:no (?:me gustan?|quiero|puedo) las? llamadas?|prefiero (?:texto|chat)|seguimos? por (?:aca|aqui|chat))\b/u
       .test(normalizeCourse(message.content))
   const response = mayOfferCall
-    ? `${answer} Si querés, coordinamos una llamada ahora con nuestra asesora virtual o seguimos por chat. ¿Cómo preferís avanzar?`
+    ? `${answer} Si querés, coordinamos una llamada ahora con nuestra asesora o seguimos por chat. ¿Cómo preferís avanzar?`
     : `${answer} ¿Qué te gustaría saber?`
 
   return {

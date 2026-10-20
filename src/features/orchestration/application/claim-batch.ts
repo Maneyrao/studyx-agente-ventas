@@ -44,6 +44,10 @@ import type {
   RetrievedMemory,
 } from '../ports/retrieval';
 import type { PaymentVerificationV1 } from '@/features/payments/application/read-payment-verification';
+import {
+  unknownCallIntakeReadinessV1,
+  type CallIntakeReadinessV1,
+} from '@/features/calls/domain/call-intake-readiness';
 
 /**
  * Claim a batch and, only if this caller won it, build the one controlled
@@ -98,6 +102,11 @@ export interface ClaimBatchDependencies {
   /** Inyectable para test; por defecto lee `contacts` con el cliente compartido. */
   readonly contactProfileContext?: (input: { contactId: string; conversationId: string; batchId: string }) => Promise<ContactProfileContextV1 | null>;
   readonly contactIntake?: (contactId: string) => Promise<ContactIntakeV1>;
+  /** Canonical call gate. Unknown never means ready. */
+  readonly callIntakeReadiness?: (
+    contactId: string,
+    conversationId: string,
+  ) => Promise<CallIntakeReadinessV1>;
   /** Canonical Stripe ledger projection; customer text never supplies it. */
   readonly paymentVerification?: (contactId: string, purchase?: {
     offering_code: string | null;
@@ -189,6 +198,7 @@ export interface ClaimedTurn {
   /** Valores canónicos necesarios para que el agente confirme los datos sin
    * reconstruirlos desde texto viejo ni volver a pedirlos. */
   readonly contact_intake: ContactIntakeV1;
+  readonly call_intake_readiness: Pick<CallIntakeReadinessV1, 'status' | 'requirements'>;
   readonly contact_profile?: ContactProfileContextV1 | null;
   readonly payment_verification: PaymentVerificationV1 | null;
   readonly contact: {
@@ -1117,15 +1127,20 @@ export async function claimBatch(
   // y este módulo tiene tests unitarios que no deben necesitar una conexión.
   const readIntake = deps.contactIntake
     ?? (await import('@/lib/repositories/contact-intake.repository')).loadContactIntakeV1;
+  const readCallIntakeReadiness = deps.callIntakeReadiness
+    ?? (deps.contactIntake
+      ? async (contactId: string) => unknownCallIntakeReadinessV1(await readIntake(contactId))
+      : (await import('@/lib/repositories/call-intake-readiness.repository')).loadCallIntakeReadinessV1);
   const readPaymentVerification = deps.paymentVerification ?? (async () => null);
-  const [contactIntake, paymentVerification, contactProfile] = await Promise.all([
-    readIntake(facts.contact.id),
+  const [callIntakeReadiness, paymentVerification, contactProfile] = await Promise.all([
+    readCallIntakeReadiness(facts.contact.id, claim.conversation_id!),
     readPaymentVerification(facts.contact.id, {
       offering_code: conversationStateV1?.selected_offering_code ?? null,
       plan_code: conversationStateV1?.selected_payment_plan ?? null,
     }),
     deps.contactProfileContext?.({ contactId: facts.contact.id, conversationId: claim.conversation_id!, batchId: claim.batch_id }) ?? null,
   ]);
+  const contactIntake = callIntakeReadiness.intake;
   const contactIntakeMissing = missingContactIntakeFieldsV1(contactIntake);
   // A call fast path has no conversational recovery. Preserve the customer's
   // call intent as structured context while Agent A asks naturally for an
@@ -1156,6 +1171,10 @@ export async function claimBatch(
     policy,
     contact_intake_missing: contactIntakeMissing,
     contact_intake: contactIntake,
+    call_intake_readiness: {
+      status: callIntakeReadiness.status,
+      requirements: callIntakeReadiness.requirements,
+    },
     ...(contactProfile ? { contact_profile: contactProfile } : {}),
     payment_verification: paymentVerification,
     contact: {

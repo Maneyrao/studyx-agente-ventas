@@ -15,6 +15,8 @@ import type { ClaimedTurn } from '../../../botpress-agent/src/schemas/contracts'
  */
 
 function claim(overrides: Record<string, unknown> = {}): ClaimedTurn {
+  const missing = (overrides.contact_intake_missing
+    ?? ['nombre', 'apellido', 'correo', 'telefono']) as Array<'nombre' | 'apellido' | 'correo' | 'telefono'>;
   return {
     schema_version: 1,
     turn_id: '00000000-0000-4000-8000-000000000001',
@@ -35,6 +37,10 @@ function claim(overrides: Record<string, unknown> = {}): ClaimedTurn {
       opted_in_at: '2026-01-01T00:00:00.000Z',
     },
     contact_intake_missing: ['nombre', 'apellido', 'correo', 'telefono'],
+    call_intake_readiness: {
+      status: missing.length === 0 ? 'ready' : 'needs_input',
+      requirements: missing.map((field) => ({ field, reason: 'missing' })),
+    },
     context: {
       batch_messages: [{
         id: '00000000-0000-4000-8000-000000000005',
@@ -202,6 +208,8 @@ it.each([
 ] as const)('derives call execution from the durable conversation consent (%s/%s)', (preference, status, awaiting, legacyActions, permitted) => {
   const base = claim();
   const current = claim({ contact_intake_missing: [],
+    context: { ...base.context, batch_messages: [{ ...base.context.batch_messages[0],
+      content: permitted ? 'Sí' : 'hola' }] },
     sales_context: { offering_code: null, active_call: null, allowed_actions: [...legacyActions] },
     conversation_state_v1: { ...base.conversation_state_v1, call_preference: preference,
       call_offer_status: status, awaiting_reply: awaiting } });

@@ -79,8 +79,8 @@ describe('Agent A Brain prompt', () => {
     const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v81');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v116');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v83');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v118');
   });
   it('distinguishes authoritative channel intake from evidence required for new observations', () => {
     const current = context();
@@ -156,7 +156,7 @@ describe('Agent A Brain prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(current);
     expect(instructions).toContain('<mandatory_repair attempt="1" rejection_id="00000000-0000-4000-8000-000000000001">');
     expect(instructions).toContain('retain move=request_call and use proposed_action=none');
-    expect(instructions).toContain('Ask only for missing call data among nombre, apellido and telefono');
+    expect(instructions).toContain('Ask only for missing call data among nombre, apellido, correo and telefono');
     expect(instructions).toContain('Do not claim the call was placed');
     expect(JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!).turn_rejection).toEqual(current.turn_rejection);
   });

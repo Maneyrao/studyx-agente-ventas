@@ -498,6 +498,9 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
   // Clarification remains available for an explicit correction/ambiguity.
   const collectableFields = eligibleContactRequestFieldsV1({
     values: context.customer.contact_intake, mode: 'collect', rejection: context.turn_rejection,
+    collectable_confirmed_fields: (context.capabilities.call_contact_requirements ?? [])
+      .filter(({ reason }) => reason === 'written_whatsapp_confirmation_required')
+      .map(({ field }) => field),
   });
   const clarifiableFields = eligibleContactRequestFieldsV1({
     values: context.customer.contact_intake, mode: 'clarify', rejection: context.turn_rejection,
@@ -1975,6 +1978,11 @@ export function validateAgentATurnProposalV1(input: {
       values: input.context.customer.contact_intake,
       mode: request.mode,
       rejection: input.context.turn_rejection,
+      collectable_confirmed_fields: request.purpose === 'call'
+        ? (input.context.capabilities.call_contact_requirements ?? [])
+          .filter(({ reason }) => reason === 'written_whatsapp_confirmation_required')
+          .map(({ field }) => field)
+        : [],
     }));
     for (const field of request.fields) {
       if (!eligible.has(field)) {
@@ -2039,8 +2047,9 @@ export function validateAgentATurnProposalV1(input: {
     ...input.proposal.move.secondary_moves,
   ]);
   const missingIntake = input.context.capabilities.intake_missing ?? [];
-  const missingCallIntake = ['nombre', 'apellido', 'telefono']
-    .filter((field) => missingIntakeFields.has(field));
+  const missingCallIntake = input.context.capabilities.required_contact_fields?.call
+    ?? (['nombre', 'apellido', 'correo', 'telefono'] as const)
+      .filter((field) => missingIntakeFields.has(field));
   const needsIntakeForRequestedCall = moves.has('request_call')
     && missingCallIntake.length > 0
     && !input.context.capabilities.may_request_call_now
