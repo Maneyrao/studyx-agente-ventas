@@ -36,7 +36,7 @@ async function suggested(first: InboundEnvelope, context: IngestContext, deliver
     VALUES (${message.id}::uuid, ${context.conversation_id}::uuid, ${context.contact.id}::uuid, 'telegram_sandbox',
       ${first.integration_id}, 'whatsapp', ${first.phone_e164}, ${randomUUID()},
       ${delivered ? 'submitted' : 'pending'}, ${delivered ? randomUUID() : null},
-      ${delivered ? new Date() : null}::timestamptz)`;
+      CASE WHEN ${delivered}::boolean THEN now() ELSE NULL END)`;
   return message.id;
 }
 
