@@ -1138,6 +1138,22 @@ describe('Agent A Brain V1', () => {
     }
   });
 
+  it('asks the customer directly when unsafe copy is filtered from call availability', () => {
+    const composition = buildSafeAgentABrainCompositionV1({
+      proposal: parseAgentATurnProposalV1(proposal({
+        response: { messages: ['Redes Informáticas dura 10 meses.'] },
+      }), context()),
+      context: context(),
+      response_goal: 'confirm_call_availability',
+      planned_fact_ids: [],
+    });
+
+    expect(composition.narrative.opening).toBe(
+      'Perfecto. Te viene bien que te llamemos ahora?',
+    );
+    expect(composition.narrative.opening).not.toMatch(/pregunta con naturalidad/iu);
+  });
+
   it('rejects model-authored URLs/placeholders but only drops unknown audit ids', () => {
     expect(() => parseAgentATurnProposalV1(proposal({
       response: { messages: ['Pagá en https://buy.stripe.com/model-link'] },
