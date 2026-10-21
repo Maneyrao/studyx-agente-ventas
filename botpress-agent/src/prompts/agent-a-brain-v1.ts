@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { evaluateSalesObjectionTurnV1 } from '../lib/conversation/sales-objection-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v123' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v124' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -90,6 +90,7 @@ function currentCommercialGuidanceDirectiveV1(context: AgentAContextV1): string 
 
   const guidanceByKind: Record<Exclude<typeof objection.kind, 'none'>, string> = {
     price_question: `Answer the price question promptly with the authorized plans; do not delay it behind a presentation or diagnostic. You may connect one relevant benefit afterward when the customer's intended use is already known.`,
+    price_question_with_objection: `Answer the requested authorized price or payment terms exactly; the customer must not lose a direct answer because they also expressed concern. Then address the concern through contextual value or, when it is a real budget limit, acknowledge it without pressure. Do not use that answer as a separate tactic to make the price feel lower, and never add cost-per-day comparisons, discounts or bonus courses.`,
     price_objection: `Distinguish a perceived-value gap from a real inability to pay, but only ask one brief discriminating question when existing context does not already make that clear. For a value gap, connect the customer's stated goal or constraint to one authorized course capability and describe a possible application conditionally. For a real budget limit, acknowledge it without pressure or an invented workaround. Do not use payment plans, installment amounts, cost-per-day comparisons, discounts or bonus courses to make the price feel lower.`,
     repeated_price_objection: `This is a persistent price objection. Do not merely repeat the price, installment amounts or class count. Change the argument dimension using recent conversation evidence: connect a different authorized fact to the customer's intended use with conditional language, or ask one concrete question that isolates budget, timing, confidence or value. Do not use payment plans, installment amounts, cost-per-day comparisons, discounts or bonus courses to make the price feel lower.`,
     payment_terms_question: `Answer the payment-terms question directly. Do not infer how payment cadence affects study, access or certification; state that relationship only when authorized_context explicitly supports it.`,

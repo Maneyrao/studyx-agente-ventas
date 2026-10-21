@@ -80,7 +80,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v89');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v123');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v124');
   });
 
   it('adds turn-specific guidance for a repeated price objection without forcing a script', () => {
@@ -118,6 +118,22 @@ describe('Agent A Brain prompt', () => {
     expect(guidance).toContain('perceived-value gap from a real inability to pay');
     expect(guidance).toContain('Do not use payment plans, installment amounts, cost-per-day comparisons, discounts or bonus courses to make the price feel lower');
     expect(guidance).toContain('acknowledge it without pressure or an invented workaround');
+  });
+
+  it('answers an explicit installment question even when the customer also objects to price', () => {
+    const current = context();
+    current.turn.batch_messages = [{
+      id: 'current-1',
+      text: 'Me parece caro, cuánto sería en 12 cuotas?',
+    }];
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+    const guidance = instructions
+      .split('<current_commercial_guidance kind="price_question_with_objection">')[1]
+      ?.split('</current_commercial_guidance>')[0];
+
+    expect(guidance).toContain('Answer the requested authorized price or payment terms exactly');
+    expect(guidance).toContain('Do not use that answer as a separate tactic to make the price feel lower');
   });
 
   it.each([

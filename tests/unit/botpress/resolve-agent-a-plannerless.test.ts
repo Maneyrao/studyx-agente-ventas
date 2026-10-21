@@ -78,6 +78,42 @@ function generated(value: AgentATurnProposalV1) {
 }
 
 describe('resolveAgentAPlannerlessProposalV2', () => {
+  it('keeps a no-pressure budget-limit response without opening a repair that could silence it', async () => {
+    const current = context();
+    current.turn = {
+      batch_messages: [{ id: 'budget-current', text: 'No me alcanza, no puedo pagarlo ahora.' }],
+      recent_turns: [{
+        id: 'budget-prior',
+        direction: 'inbound',
+        content: 'Está fuera de mi presupuesto.',
+      }],
+    };
+    const initial = generated(proposal({
+      response: {
+        messages: ['Si hoy el presupuesto realmente no te lo permite, está bien; no quiero presionarte.'],
+        call_offer: null,
+      },
+      used_fact_ids: [],
+    }));
+    const repair = vi.fn().mockRejectedValue(new Error('repair unavailable'));
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial,
+      context: current,
+      repair_enabled: true,
+      semantic_rejections: 'advisory',
+      rejection_id: '00000000-0000-4000-8000-000000000088',
+      repair,
+    });
+
+    expect(result.effective).toBe(initial);
+    expect(result.evidence).toMatchObject({
+      repair_attempted: false,
+      proposal_generation_calls: 1,
+    });
+    expect(repair).not.toHaveBeenCalled();
+  });
+
   it('accepts the authorized test amount with decimal dot when its source uses a decimal comma', async () => {
     const current = context();
     current.catalog.test_payment_options = [{ code: 'stripe_verification_050',

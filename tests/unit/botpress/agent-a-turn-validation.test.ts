@@ -329,6 +329,131 @@ describe('validación de la propuesta del turno', () => {
     });
   });
 
+  it('rechaza también una mensualidad autorizada presentada como más accesible', () => {
+    const paymentFactId = 'payment:redes-informaticas:monthly_12:price:v1';
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        response: {
+          messages: ['Para tu negocio, te puede ayudar a vender. Son solo USD 30 al mes.'],
+          call_offer: null,
+        },
+        used_fact_ids: [paymentFactId],
+      }),
+      context: context({
+        turn: {
+          batch_messages: [{ id: 'm-monthly-pitch', text: 'Me parece caro.' }],
+          recent_turns: [],
+        },
+        catalog: {
+          ...context().catalog,
+          payment_plans: [{
+            fact_id: paymentFactId,
+            code: 'monthly_12',
+            label: '12 pagos mensuales de USD 30',
+          }],
+        },
+      }),
+      planned_fact_ids: [paymentFactId],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection?.rejections).toContainEqual({
+      code: 'FACT_VALUE_MISMATCH',
+      subject: 'price_objection_reframe',
+    });
+  });
+
+  it('permite responder la cuota exacta cuando el mismo mensaje pregunta el precio y expresa objeción', () => {
+    const paymentFactId = 'payment:redes-informaticas:monthly_12:price:v1';
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        response: {
+          messages: ['El plan tiene 12 pagos de USD 30.'],
+          call_offer: null,
+        },
+        used_fact_ids: [paymentFactId],
+      }),
+      context: context({
+        turn: {
+          batch_messages: [{ id: 'm-mixed-price', text: 'Me parece caro, cuánto sería en 12 cuotas?' }],
+          recent_turns: [],
+        },
+        catalog: {
+          ...context().catalog,
+          payment_plans: [{
+            fact_id: paymentFactId,
+            code: 'monthly_12',
+            label: '12 pagos mensuales de USD 30',
+          }],
+        },
+      }),
+      planned_fact_ids: [paymentFactId],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection).toBeNull();
+  });
+
+  it('rechaza una comparación promocional aunque el mensaje mixto haya pedido la cuota', () => {
+    const paymentFactId = 'payment:redes-informaticas:monthly_12:price:v1';
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        response: {
+          messages: ['El plan tiene 12 pagos de USD 30, menos de un dólar por día.'],
+          call_offer: null,
+        },
+        used_fact_ids: [paymentFactId],
+      }),
+      context: context({
+        turn: {
+          batch_messages: [{ id: 'm-mixed-promotional-price', text: 'Me parece caro, cuánto sería en 12 cuotas?' }],
+          recent_turns: [],
+        },
+        catalog: {
+          ...context().catalog,
+          payment_plans: [{
+            fact_id: paymentFactId,
+            code: 'monthly_12',
+            label: '12 pagos mensuales de USD 30',
+          }],
+        },
+      }),
+      planned_fact_ids: [paymentFactId],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection?.rejections).toContainEqual({
+      code: 'FACT_VALUE_MISMATCH',
+      subject: 'price_objection_reframe',
+    });
+  });
+
+  it('acepta cerrar sin presión cuando la objeción repetida es una imposibilidad real de presupuesto', () => {
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        response: {
+          messages: ['Si hoy el presupuesto realmente no te lo permite, está bien; no quiero presionarte.'],
+          call_offer: null,
+        },
+        used_fact_ids: [],
+      }),
+      context: context({
+        turn: {
+          batch_messages: [{ id: 'm-budget-repeat', text: 'No me alcanza, no puedo pagarlo ahora.' }],
+          recent_turns: [{
+            id: 'm-budget-first',
+            direction: 'inbound',
+            content: 'Está fuera de mi presupuesto.',
+          }],
+        },
+      }),
+      planned_fact_ids: [],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection).toBeNull();
+  });
+
   // V4
   it('pedir el link sin plan seleccionado es ACTION_NOT_AUTHORIZED', () => {
     const rejection = validateAgentATurnProposalV1({

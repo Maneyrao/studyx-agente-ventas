@@ -23,6 +23,7 @@ describe('evaluateSalesObjectionTurnV1', () => {
   it.each([
     ['Cual es el costo?', 'price_question', null],
     ['Cuanto sale el curso?', 'price_question', null],
+    ['Me parece caro, cuánto sería en 12 cuotas?', 'price_question_with_objection', null],
     ['Me sigue pareciendo caro', 'repeated_price_objection', ['Está fuera de mi presupuesto']],
     ['Si pago en 12 meses, el diploma tarda 12 meses?', 'payment_terms_question', null],
     ['Si pago en 12 meses, puedo terminar antes?', 'payment_terms_question', null],
@@ -87,6 +88,7 @@ describe('responseProgressesRepeatedPriceObjectionV1', () => {
     'Es un tema de presupuesto o de confianza en la formación?',
     'Es presupuesto o confianza?',
     'Qué te hace dudar?',
+    'Si hoy el presupuesto realmente no te lo permite, está bien; no quiero presionarte.',
   ])('accepts a diagnostic or conditional value advance: %s', (message) => {
     expect(responseProgressesRepeatedPriceObjectionV1({
       messages: [message],
@@ -125,6 +127,10 @@ describe('responseAvoidsDisallowedPriceReframingV1', () => {
     'Para tu trabajo, te puede ayudar a crecer y es menos de un dólar por día.',
     'Te puede ayudar a emprender y puedo incluir Marketing sin costo por el mismo precio.',
     'Es una inversión parecida a lo que gastas en un café por día.',
+    'Para tu negocio, te puede ayudar a vender. Son solo USD 30 al mes.',
+    'Para tu negocio, te puede ayudar a vender. Son solo USD 30 mensuales.',
+    'Para tu negocio, te puede ayudar a vender. Puedes abonarlo en mensualidades de USD 30.',
+    'Para tu negocio, te puede ayudar a vender. La opción mensual es más accesible.',
   ])('rejects forbidden price persuasion even when it also sounds contextual: %s', (message) => {
     expect(responseAvoidsDisallowedPriceReframingV1({ messages: [message] })).toBe(false);
   });
@@ -134,5 +140,19 @@ describe('responseAvoidsDisallowedPriceReframingV1', () => {
     'Si hoy el presupuesto realmente no te lo permite, está bien; no quiero presionarte.',
   ])('allows contextual value or an honest budget limit without changing the price: %s', (message) => {
     expect(responseAvoidsDisallowedPriceReframingV1({ messages: [message] })).toBe(true);
+  });
+
+  it('allows an exact requested installment answer in a mixed price question and objection', () => {
+    expect(responseAvoidsDisallowedPriceReframingV1({
+      messages: ['El plan tiene 12 pagos de USD 30.'],
+      allow_requested_payment_terms: true,
+    })).toBe(true);
+  });
+
+  it('still rejects a promotional price tactic after an exact answer was requested', () => {
+    expect(responseAvoidsDisallowedPriceReframingV1({
+      messages: ['El plan tiene 12 pagos de USD 30, menos de un dólar por día.'],
+      allow_requested_payment_terms: true,
+    })).toBe(false);
   });
 });

@@ -1824,8 +1824,13 @@ export function validateAgentATurnProposalV1(input: {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'persistent_price_objection' });
   }
   if (
-    (salesObjection.kind === 'price_objection' || salesObjection.kind === 'repeated_price_objection')
-    && !responseAvoidsDisallowedPriceReframingV1(input.proposal.response)
+    (salesObjection.kind === 'price_objection'
+      || salesObjection.kind === 'repeated_price_objection'
+      || salesObjection.kind === 'price_question_with_objection')
+    && !responseAvoidsDisallowedPriceReframingV1({
+      ...input.proposal.response,
+      allow_requested_payment_terms: salesObjection.kind === 'price_question_with_objection',
+    })
   ) {
     rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'price_objection_reframe' });
   }
