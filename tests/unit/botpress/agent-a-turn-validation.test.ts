@@ -394,6 +394,68 @@ describe('validación de la propuesta del turno', () => {
     expect(rejection).toBeNull();
   });
 
+  it.each([
+    ['Me parece caro, cuánto cuesta por mes?', 'El plan es de USD 30 al mes durante 12 meses.'],
+    ['Me parece caro, hay que pagar todo junto para empezar?', 'No, puedes empezar con el plan de 12 pagos de USD 30.'],
+  ])('permite el dato de pago pedido sin convertirlo en una táctica: %s', (customerMessage, answer) => {
+    const paymentFactId = 'payment:redes-informaticas:monthly_12:price:v1';
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        response: { messages: [answer], call_offer: null },
+        used_fact_ids: [paymentFactId],
+      }),
+      context: context({
+        turn: { batch_messages: [{ id: 'm-requested-payment-fact', text: customerMessage }], recent_turns: [] },
+        catalog: {
+          ...context().catalog,
+          payment_plans: [{
+            fact_id: paymentFactId,
+            code: 'monthly_12',
+            label: '12 pagos mensuales de USD 30',
+          }],
+        },
+      }),
+      planned_fact_ids: [paymentFactId],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection).toBeNull();
+  });
+
+  it('rechaza recomendar la cuota como más accesible aunque el cliente haya pedido ese dato', () => {
+    const paymentFactId = 'payment:redes-informaticas:monthly_12:price:v1';
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        response: {
+          messages: ['Te recomiendo la cuota más baja: 12 pagos de USD 30, así resulta más accesible.'],
+          call_offer: null,
+        },
+        used_fact_ids: [paymentFactId],
+      }),
+      context: context({
+        turn: {
+          batch_messages: [{ id: 'm-requested-promotional-payment', text: 'Me parece caro, cuánto sería en 12 cuotas?' }],
+          recent_turns: [],
+        },
+        catalog: {
+          ...context().catalog,
+          payment_plans: [{
+            fact_id: paymentFactId,
+            code: 'monthly_12',
+            label: '12 pagos mensuales de USD 30',
+          }],
+        },
+      }),
+      planned_fact_ids: [paymentFactId],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection?.rejections).toContainEqual({
+      code: 'FACT_VALUE_MISMATCH',
+      subject: 'price_objection_reframe',
+    });
+  });
+
   it('rechaza una comparación promocional aunque el mensaje mixto haya pedido la cuota', () => {
     const paymentFactId = 'payment:redes-informaticas:monthly_12:price:v1';
     const rejection = validateAgentATurnProposalV1({
@@ -442,6 +504,30 @@ describe('validación de la propuesta del turno', () => {
           batch_messages: [{ id: 'm-budget-repeat', text: 'No me alcanza, no puedo pagarlo ahora.' }],
           recent_turns: [{
             id: 'm-budget-first',
+            direction: 'inbound',
+            content: 'Está fuera de mi presupuesto.',
+          }],
+        },
+      }),
+      planned_fact_ids: [],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection).toBeNull();
+  });
+
+  it.each([
+    'Claro, lo dejamos para cuando te resulte posible. No hace falta que decidas ahora.',
+    'Entiendo. Podemos retomarlo más adelante, sin problema.',
+    'Está bien, gracias por decírmelo.',
+  ])('acepta un cierre natural cuando el cliente confirmó una imposibilidad real: %s', (answer) => {
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({ response: { messages: [answer], call_offer: null }, used_fact_ids: [] }),
+      context: context({
+        turn: {
+          batch_messages: [{ id: 'm-budget-natural', text: 'No me alcanza, no puedo pagarlo ahora.' }],
+          recent_turns: [{
+            id: 'm-budget-natural-prior',
             direction: 'inbound',
             content: 'Está fuera de mi presupuesto.',
           }],

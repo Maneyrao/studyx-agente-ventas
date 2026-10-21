@@ -24,6 +24,8 @@ describe('evaluateSalesObjectionTurnV1', () => {
     ['Cual es el costo?', 'price_question', null],
     ['Cuanto sale el curso?', 'price_question', null],
     ['Me parece caro, cuánto sería en 12 cuotas?', 'price_question_with_objection', null],
+    ['Me parece caro, cuánto cuesta por mes?', 'price_question_with_objection', null],
+    ['Me parece caro, hay que pagar todo junto para empezar?', 'price_question_with_objection', null],
     ['Me sigue pareciendo caro', 'repeated_price_objection', ['Está fuera de mi presupuesto']],
     ['Si pago en 12 meses, el diploma tarda 12 meses?', 'payment_terms_question', null],
     ['Si pago en 12 meses, puedo terminar antes?', 'payment_terms_question', null],
@@ -88,11 +90,22 @@ describe('responseProgressesRepeatedPriceObjectionV1', () => {
     'Es un tema de presupuesto o de confianza en la formación?',
     'Es presupuesto o confianza?',
     'Qué te hace dudar?',
-    'Si hoy el presupuesto realmente no te lo permite, está bien; no quiero presionarte.',
   ])('accepts a diagnostic or conditional value advance: %s', (message) => {
     expect(responseProgressesRepeatedPriceObjectionV1({
       messages: [message],
       call_offer: null,
+    })).toBe(true);
+  });
+
+  it.each([
+    'Si hoy el presupuesto realmente no te lo permite, está bien; no quiero presionarte.',
+    'Claro, lo dejamos para cuando te resulte posible. No hace falta que decidas ahora.',
+    'Entiendo. Podemos retomarlo más adelante, sin problema.',
+  ])('accepts a natural response after the customer states a real budget limit: %s', (message) => {
+    expect(responseProgressesRepeatedPriceObjectionV1({
+      messages: [message],
+      call_offer: null,
+      customer_expressed_real_budget_limit: true,
     })).toBe(true);
   });
 
@@ -152,6 +165,23 @@ describe('responseAvoidsDisallowedPriceReframingV1', () => {
   it('still rejects a promotional price tactic after an exact answer was requested', () => {
     expect(responseAvoidsDisallowedPriceReframingV1({
       messages: ['El plan tiene 12 pagos de USD 30, menos de un dólar por día.'],
+      allow_requested_payment_terms: true,
+    })).toBe(false);
+  });
+
+  it.each([
+    'El plan es de USD 30 al mes durante 12 meses.',
+    'No, puedes empezar con el plan de 12 pagos de USD 30.',
+  ])('allows neutral requested payment facts without treating them as persuasion: %s', (message) => {
+    expect(responseAvoidsDisallowedPriceReframingV1({
+      messages: [message],
+      allow_requested_payment_terms: true,
+    })).toBe(true);
+  });
+
+  it('rejects recommendation and affordability language even when payment facts were requested', () => {
+    expect(responseAvoidsDisallowedPriceReframingV1({
+      messages: ['Te recomiendo la cuota más baja: 12 pagos de USD 30, así resulta más accesible.'],
       allow_requested_payment_terms: true,
     })).toBe(false);
   });

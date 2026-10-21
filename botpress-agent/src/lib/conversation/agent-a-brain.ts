@@ -3,6 +3,7 @@ import { eligibleContactRequestFieldsV1 } from './contact-profile-request-policy
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import { evaluateCallOfferTurnPolicyV1 } from './call-offer-turn-policy';
 import {
+  customerExpressesRealBudgetLimitV1,
   evaluateSalesObjectionTurnV1,
   responseAvoidsDisallowedPriceReframingV1,
   responseProgressesRepeatedPriceObjectionV1,
@@ -1819,7 +1820,10 @@ export function validateAgentATurnProposalV1(input: {
   const salesObjection = evaluateSalesObjectionTurnV1(input.context);
   if (
     salesObjection.kind === 'repeated_price_objection'
-    && !responseProgressesRepeatedPriceObjectionV1(input.proposal.response)
+    && !responseProgressesRepeatedPriceObjectionV1({
+      ...input.proposal.response,
+      customer_expressed_real_budget_limit: customerExpressesRealBudgetLimitV1(currentCustomerText),
+    })
   ) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'persistent_price_objection' });
   }

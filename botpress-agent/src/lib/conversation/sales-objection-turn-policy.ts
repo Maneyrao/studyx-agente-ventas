@@ -24,7 +24,12 @@ function normalized(value: string): string {
 
 export function isPriceObjectionTextV1(text: string): boolean {
   const value = normalized(text);
-  return /\b(?:car[oa]|costos[oa]|fuera\s+de\s+(?:mi\s+)?presupuesto|no\s+me\s+alcanza|no\s+llego|se\s+me\s+va|much[oa]\s+dinero|presupuesto\b[^.!?\n]{0,32}\b(?:ajustado|limitado))\b/u.test(value);
+  return /\b(?:car[oa]|costos[oa]|fuera\s+de\s+(?:mi\s+)?presupuesto|no\s+me\s+alcanza|no\s+llego|no\s+(?:puedo|podria|podre)\s+(?:pagar|abonarlo|hacer\s+ese\s+gasto)|se\s+me\s+va|much[oa]\s+dinero|presupuesto\b[^.!?\n]{0,32}\b(?:ajustado|limitado|no\s+(?:me\s+)?(?:alcanza|permite)))\b/u.test(value);
+}
+
+export function customerExpressesRealBudgetLimitV1(text: string): boolean {
+  const value = normalized(text);
+  return /\b(?:no\s+me\s+alcanza|no\s+llego|no\s+(?:puedo|podria|podre)\s+(?:pagar|abonarlo|hacer\s+ese\s+gasto)|fuera\s+de\s+(?:mi\s+)?presupuesto|no\s+tengo\s+(?:el\s+)?(?:dinero|plata)|presupuesto\b[^.!?\n]{0,40}\b(?:no\s+(?:me\s+)?(?:alcanza|permite)|ajustado|limitado))\b/u.test(value);
 }
 
 function isPaymentTermsQuestionTextV1(text: string): boolean {
@@ -79,7 +84,10 @@ export function evaluateSalesObjectionTurnV1(
   const current = context.turn.batch_messages.map((message) => message.text).join('\n');
   const priceObjection = isPriceObjectionTextV1(current);
   const priceQuestion = isPriceQuestionTextV1(current);
-  if (priceObjection && priceQuestion) return { kind: 'price_question_with_objection' };
+  const paymentTermsQuestion = isPaymentTermsQuestionTextV1(current);
+  if (priceObjection && (priceQuestion || paymentTermsQuestion)) {
+    return { kind: 'price_question_with_objection' };
+  }
   if (priceObjection) {
     const priorPriceObjection = context.turn.recent_turns.some((turn) => (
       turn.direction === 'inbound' && isPriceObjectionTextV1(turn.content)
@@ -87,7 +95,7 @@ export function evaluateSalesObjectionTurnV1(
     return { kind: priorPriceObjection ? 'repeated_price_objection' : 'price_objection' };
   }
   if (isPaymentFrictionTextV1(current)) return { kind: 'payment_friction' };
-  if (isPaymentTermsQuestionTextV1(current)) return { kind: 'payment_terms_question' };
+  if (paymentTermsQuestion) return { kind: 'payment_terms_question' };
   if (isOfferTimingQuestionTextV1(current)) return { kind: 'offer_timing_question' };
   if (isPriceQuestionTextV1(current)) return { kind: 'price_question' };
   if (isTimeOrScheduleObjectionTextV1(current)) return { kind: 'time_or_schedule_objection' };
@@ -112,12 +120,16 @@ export function responseAvoidsDisallowedPriceReframingV1(input: {
     ...(input.call_offer ? [input.call_offer] : []),
   ].join('\n'));
   const installmentFacts = /\b(?:\d+|seis|doce)\s+(?:pagos?|cuotas?)\b/u.test(text)
-    || /\b(?:cuota|plan)\b[^.!?\n]{0,48}\b(?:mas\s+(?:baja|chica|liviana|accesible)|accesible|usd|dolares?)\b/u.test(text)
+    || /\b(?:cuota|plan)\b[^.!?\n]{0,48}\b(?:usd|dolares?)\b/u.test(text)
+    || /\b(?:usd\s*)?\d+(?:[.,]\d+)?\s*(?:dolar(?:es)?)?\s+(?:al\s+mes|mensual(?:es|mente)?)\b/u.test(text)
     || /\b(?:pagarlo|pagalo|pagar|abonarlo|abonar)\b[^.!?\n]{0,36}\b(?:en\s+)?(?:cuotas?|pagos?\s+mensuales?|mensualidades?)\b/u.test(text);
   const monthlyMinimization = /\b(?:solo|apenas)\b[^.!?\n]{0,32}\b(?:usd|\d+|dolar(?:es)?)\b[^.!?\n]{0,24}\b(?:al\s+mes|mensual(?:es|mente)?)\b/u.test(text)
     || /\bmensualidades?\b[^.!?\n]{0,32}\b(?:usd|\d+|dolar(?:es)?)\b/u.test(text)
     || /\b(?:opcion|plan|cuota)\s+mensual\b[^.!?\n]{0,32}\b(?:mas\s+)?(?:accesible|barat[oa]|baj[oa]|livian[oa])\b/u.test(text)
-    || /\b(?:usd\s*)?\d+(?:[.,]\d+)?\s*(?:dolar(?:es)?)?\s+(?:al\s+mes|mensual(?:es|mente)?)\b/u.test(text);
+    || /\b(?:cuota|plan|opcion)\b[^.!?\n]{0,40}\b(?:mas\s+)?(?:baj[oa]|chic[oa]|livian[oa]|accesible|barat[oa])\b/u.test(text)
+    || /\b(?:te\s+)?recomiend\p{L}*\b[^.!?\n]{0,56}\b(?:cuota|plan|pagos?|mensualidad)\b/u.test(text)
+    || /\b(?:asi|porque)\b[^.!?\n]{0,32}\b(?:resulta|queda|es|sea)\b[^.!?\n]{0,20}\b(?:mas\s+)?(?:accesible|barat[oa]|livian[oa])\b/u.test(text)
+    || /\b(?:menos\s+pesa|pesa\s+menos)\b/u.test(text);
   const installmentPitch = monthlyMinimization
     || (!input.allow_requested_payment_terms && installmentFacts);
   const dailyComparison = /\b(?:menos\s+de\s+)?(?:usd\s*)?(?:\d+(?:[.,]\d+)?|un[oa]?)\s*(?:dolar(?:es)?)?\s+(?:por|al)\s+dia\b/u.test(text)
@@ -137,8 +149,16 @@ export function responseAvoidsDisallowedPriceReframingV1(input: {
 export function responseProgressesRepeatedPriceObjectionV1(input: {
   readonly messages: readonly string[];
   readonly call_offer?: string | null;
+  readonly customer_expressed_real_budget_limit?: boolean;
 }): boolean {
   if (!responseAvoidsDisallowedPriceReframingV1(input)) return false;
+  // Once the customer has explicitly said they cannot afford the purchase,
+  // any non-empty answer that preserves the price guard may acknowledge or
+  // close naturally. Requiring a specific sentence here caused valid replies
+  // to enter repair and, if repair failed, disappear from the conversation.
+  if (input.customer_expressed_real_budget_limit && input.messages.some((message) => message.trim().length > 0)) {
+    return true;
+  }
   const visible = input.messages.join('\n');
   const text = normalized(visible);
   const concreteDiagnosticQuestion = (visible.match(/[^.!?\n]+\?/gu) ?? []).some((question) => {
@@ -157,9 +177,6 @@ export function responseProgressesRepeatedPriceObjectionV1(input: {
   const vagueConditionalTarget = /\b(?:lo\s+que\s+(?:quieras|necesites|sea)|cualquier\s+cosa)\b/u.test(text);
   const conditionalValueConnection = /\b(?:lo\s+aprendido\s+)?te\s+(?:puede|podria|podrias|podes|puedes)\s+(?:servir|ayudar)\s+(?:a|para)\b/u.test(text)
     || /\b(?:podria|podrias|podes|puedes)\s+(?:aplicar|usar)\b[^.!?\n]{0,100}\b(?:en|para)\b/u.test(text);
-  const acknowledgesRealBudgetLimit = /\b(?:presupuesto\b[^.!?\n]{0,56}\b(?:no\s+te\s+lo\s+permite|no\s+alcanza|limite)|no\s+(?:puedes|podes)\s+pagar)\b/u.test(text)
-    && /\b(?:esta\s+bien|sin\s+presion|no\s+quiero\s+presionarte|no\s+te\s+voy\s+a\s+presionar)\b/u.test(text);
   return concreteDiagnosticQuestion
-    || (conditionalValueConnection && !vagueConditionalTarget)
-    || acknowledgesRealBudgetLimit;
+    || (conditionalValueConnection && !vagueConditionalTarget);
 }

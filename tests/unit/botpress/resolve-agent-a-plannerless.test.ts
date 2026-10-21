@@ -78,7 +78,11 @@ function generated(value: AgentATurnProposalV1) {
 }
 
 describe('resolveAgentAPlannerlessProposalV2', () => {
-  it('keeps a no-pressure budget-limit response without opening a repair that could silence it', async () => {
+  it.each([
+    'Si hoy el presupuesto realmente no te lo permite, está bien; no quiero presionarte.',
+    'Claro, lo dejamos para cuando te resulte posible. No hace falta que decidas ahora.',
+    'Entiendo. Podemos retomarlo más adelante, sin problema.',
+  ])('keeps a natural budget-limit response without opening a repair: %s', async (answer) => {
     const current = context();
     current.turn = {
       batch_messages: [{ id: 'budget-current', text: 'No me alcanza, no puedo pagarlo ahora.' }],
@@ -90,7 +94,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     };
     const initial = generated(proposal({
       response: {
-        messages: ['Si hoy el presupuesto realmente no te lo permite, está bien; no quiero presionarte.'],
+        messages: [answer],
         call_offer: null,
       },
       used_fact_ids: [],
