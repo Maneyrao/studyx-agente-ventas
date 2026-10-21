@@ -397,6 +397,9 @@ describe('validación de la propuesta del turno', () => {
   it.each([
     ['Me parece caro, cuánto cuesta por mes?', 'El plan es de USD 30 al mes durante 12 meses.'],
     ['Me parece caro, hay que pagar todo junto para empezar?', 'No, puedes empezar con el plan de 12 pagos de USD 30.'],
+    ['Me parece caro, puedo pagar en cuotas?', 'El plan tiene 12 pagos de USD 30.'],
+    ['Me parece caro, cuántas cuotas son?', 'El plan tiene 12 pagos de USD 30.'],
+    ['Me parece caro, qué opciones de pago hay?', 'El plan consta de 12 mensualidades de USD 30.'],
   ])('permite el dato de pago pedido sin convertirlo en una táctica: %s', (customerMessage, answer) => {
     const paymentFactId = 'payment:redes-informaticas:monthly_12:price:v1';
     const rejection = validateAgentATurnProposalV1({

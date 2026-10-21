@@ -26,6 +26,8 @@ describe('evaluateSalesObjectionTurnV1', () => {
     ['Me parece caro, cuánto sería en 12 cuotas?', 'price_question_with_objection', null],
     ['Me parece caro, cuánto cuesta por mes?', 'price_question_with_objection', null],
     ['Me parece caro, hay que pagar todo junto para empezar?', 'price_question_with_objection', null],
+    ['Me parece caro, puedo pagar en cuotas?', 'price_question_with_objection', null],
+    ['Me parece caro, cuántas cuotas son?', 'price_question_with_objection', null],
     ['Me sigue pareciendo caro', 'repeated_price_objection', ['Está fuera de mi presupuesto']],
     ['Si pago en 12 meses, el diploma tarda 12 meses?', 'payment_terms_question', null],
     ['Si pago en 12 meses, puedo terminar antes?', 'payment_terms_question', null],
@@ -172,6 +174,7 @@ describe('responseAvoidsDisallowedPriceReframingV1', () => {
   it.each([
     'El plan es de USD 30 al mes durante 12 meses.',
     'No, puedes empezar con el plan de 12 pagos de USD 30.',
+    'El plan consta de 12 mensualidades de USD 30.',
   ])('allows neutral requested payment facts without treating them as persuasion: %s', (message) => {
     expect(responseAvoidsDisallowedPriceReframingV1({
       messages: [message],

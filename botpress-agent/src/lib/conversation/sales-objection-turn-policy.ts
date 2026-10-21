@@ -36,7 +36,10 @@ function isPaymentTermsQuestionTextV1(text: string): boolean {
   const value = normalized(text);
   const installmentVersusStudy = /\b(?:pago|cuotas?)\b[^.!?\n]{0,72}\b(?:mes(?:es)?|12|doce|6|seis)\b[^.!?\n]{0,72}\b(?:diploma|certificado|termin\p{L}*|dur\p{L}*|estudi\p{L}*|curso)\b/u.test(value);
   const allAtOnce = /\b(?:pagar|pago)\b[^.!?\n]{0,32}\b(?:todo\s+junto|completo|total)\b[^.!?\n]{0,48}\b(?:empezar|iniciar|arrancar|inscrib\p{L}*)\b/u.test(value);
-  return installmentVersusStudy || allAtOnce;
+  const installmentQuestion = /\b(?:puedo|podria|se\s+puede|hay\s+posibilidad\s+de)\s+(?:pagar|abonar)(?:lo)?\s+en\s+(?:cuotas?|pagos?|mensualidades?)\b/u.test(value)
+    || /\bcuantas?\s+(?:cuotas?|pagos?|mensualidades?)\b/u.test(value)
+    || /\b(?:que|cuales)\s+(?:opciones|formas|modalidades)\s+de\s+pago\b/u.test(value);
+  return installmentVersusStudy || allAtOnce || installmentQuestion;
 }
 
 function isTimeOrScheduleObjectionTextV1(text: string): boolean {
@@ -119,12 +122,11 @@ export function responseAvoidsDisallowedPriceReframingV1(input: {
     ...input.messages,
     ...(input.call_offer ? [input.call_offer] : []),
   ].join('\n'));
-  const installmentFacts = /\b(?:\d+|seis|doce)\s+(?:pagos?|cuotas?)\b/u.test(text)
+  const installmentFacts = /\b(?:\d+|seis|doce)\s+(?:pagos?|cuotas?|mensualidades?)\b/u.test(text)
     || /\b(?:cuota|plan)\b[^.!?\n]{0,48}\b(?:usd|dolares?)\b/u.test(text)
     || /\b(?:usd\s*)?\d+(?:[.,]\d+)?\s*(?:dolar(?:es)?)?\s+(?:al\s+mes|mensual(?:es|mente)?)\b/u.test(text)
     || /\b(?:pagarlo|pagalo|pagar|abonarlo|abonar)\b[^.!?\n]{0,36}\b(?:en\s+)?(?:cuotas?|pagos?\s+mensuales?|mensualidades?)\b/u.test(text);
   const monthlyMinimization = /\b(?:solo|apenas)\b[^.!?\n]{0,32}\b(?:usd|\d+|dolar(?:es)?)\b[^.!?\n]{0,24}\b(?:al\s+mes|mensual(?:es|mente)?)\b/u.test(text)
-    || /\bmensualidades?\b[^.!?\n]{0,32}\b(?:usd|\d+|dolar(?:es)?)\b/u.test(text)
     || /\b(?:opcion|plan|cuota)\s+mensual\b[^.!?\n]{0,32}\b(?:mas\s+)?(?:accesible|barat[oa]|baj[oa]|livian[oa])\b/u.test(text)
     || /\b(?:cuota|plan|opcion)\b[^.!?\n]{0,40}\b(?:mas\s+)?(?:baj[oa]|chic[oa]|livian[oa]|accesible|barat[oa])\b/u.test(text)
     || /\b(?:te\s+)?recomiend\p{L}*\b[^.!?\n]{0,56}\b(?:cuota|plan|pagos?|mensualidad)\b/u.test(text)
