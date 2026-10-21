@@ -9,6 +9,10 @@ import {
   type ContactIntakeFieldV1,
   type ContactIntakeV1,
 } from '@/features/conversation/domain/conversation-planner';
+import {
+  customerResumesCommercialFlowAfterCallV1,
+  reconcileTerminalCallStateV1,
+} from '@/features/conversation/domain/call-lifecycle-reconciliation';
 import { loadConversationSessionConfig } from '@/lib/config';
 import {
   isCatalogRequestNeutral,
@@ -154,8 +158,9 @@ export interface ClaimBatchInput {
 /**
  * The controlled sales/call context handed to Agent A on every claimed turn.
  *
- * `allowed_actions` is the only thing this shape grants — it is always the
- * pure call-offer policy's output, never re-derived or widened here. `mode`
+ * `allowed_actions` is the only thing this shape grants. It starts from the
+ * pure call-offer policy and may be widened only by the persisted
+ * direct-request availability checkpoint after canonical intake is ready. `mode`
  * is a coarse label over the same underlying facts (open offer, active call,
  * last call result) so the prompt can describe where the conversation is
  * without re-deriving it. `course_of_interest` has no source in this task:
@@ -1036,7 +1041,7 @@ export async function claimBatch(
     : currentSelection;
   const selectionKeepsPersistedCourse = selection.offering_code !== null
     && selection.offering_code === persistedOffering;
-  const salesContext: ClaimedSalesContext = {
+  let salesContext: ClaimedSalesContext = {
     ...initialSalesContext,
     stage: selection.offering_code === null
       ? initialSalesContext.stage
@@ -1047,11 +1052,28 @@ export async function claimBatch(
     ...selection,
   };
   const rawPersistedConversationState = persisted_conversation_state as ConversationStateV1 | null;
-  const persistedConversationState = rawPersistedConversationState
+  const effectivePersistedConversationState = rawPersistedConversationState
     ? effectiveConversationStateV1(
         rawPersistedConversationState,
         Date.parse((deps.now ?? (() => new Date().toISOString()))()),
         loadConversationSessionConfig().sessionIdleMs,
+      )
+    : null;
+  const currentSalesSignal = classifyBatchSalesSignal(
+    batchMessages.map((message) => message.content),
+    { pendingCallReply: effectivePersistedConversationState?.awaiting_reply === 'call_or_chat' },
+  );
+  const currentCustomerResumesCommercialFlow = customerResumesCommercialFlowAfterCallV1(
+    batchMessages.map((message) => message.content),
+  );
+  const persistedConversationState = effectivePersistedConversationState
+    ? reconcileTerminalCallStateV1(
+        effectivePersistedConversationState,
+        callFacts,
+        {
+          current_customer_signal: currentSalesSignal.type,
+          current_customer_resumes_commercial_flow: currentCustomerResumesCommercialFlow,
+        },
       )
     : null;
   const conversationStateV1 = conversationStateEnabled
@@ -1142,6 +1164,25 @@ export async function claimBatch(
   ]);
   const contactIntake = callIntakeReadiness.intake;
   const contactIntakeMissing = missingContactIntakeFieldsV1(contactIntake);
+  const resumesCustomerRequestedCall =
+    currentSalesSignal.type === 'call_acceptance'
+    && conversationStateV1?.call_preference === 'call'
+    && conversationStateV1.call_offer_status === 'accepted'
+    && conversationStateV1.call_offer_count === 0
+    && conversationStateV1.awaiting_reply === 'call_or_chat'
+    && callIntakeReadiness.status === 'ready'
+    && salesContext.open_call_offer === null
+    && salesContext.accepted_call_offer === null
+    && salesContext.active_call === null
+    && policy.may_respond
+    && !policy.blocked;
+  if (resumesCustomerRequestedCall) {
+    salesContext = {
+      ...salesContext,
+      allowed_actions: [...new Set([...salesContext.allowed_actions, 'request_call_now' as const])],
+    };
+    deterministic_route = 'call_direct_request';
+  }
   // A call fast path has no conversational recovery. Preserve the customer's
   // call intent as structured context while Agent A asks naturally for an
   // internationally callable number. This also gives provider-failure

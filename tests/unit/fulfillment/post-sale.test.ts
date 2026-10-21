@@ -26,6 +26,59 @@ describe('post-sale verified access message', () => {
       expect(assemblePostSaleMessage({ ...access, kind }, { intro: 'Recibimos tu pago, estamos preparando tu acceso.', suggestion: '' })).not.toContain('Contraseña');
     }
   });
+  it('acknowledges payment and delivers access without generating an invoice or receipt', () => {
+    const payment = {
+      ...access,
+      kind: 'payment_received' as const,
+      payment_id: '7b3c35f7-ec49-46ce-a621-2ef7fbeb2d04',
+      payment_amount: '30.00',
+      payment_currency: 'USD',
+      paid_at: new Date('2026-10-21T13:45:00.000Z'),
+      payment_received_status: 'processing',
+    };
+    const acknowledgement = assemblePostSaleMessage(payment, { intro: 'Recibimos tu pago. Estoy preparando tu acceso.', suggestion: '' });
+    expect(acknowledgement).toBe('Recibimos tu pago. Estoy preparando tu acceso.');
+
+    const supersededPayment = {
+      ...payment,
+      kind: 'access_ready' as const,
+      payment_received_status: 'cancelled',
+    };
+    const consolidated = assemblePostSaleMessage(supersededPayment, { intro: 'Tu acceso ya está habilitado.', suggestion: '' });
+    expect(consolidated).not.toContain('COMPROBANTE DE PAGO');
+    expect(consolidated).not.toContain('IMPORTE ACREDITADO');
+    expect(consolidated).not.toContain('REFERENCIA:');
+    expect(consolidated).toContain('LINK DIRECTO AL CAMPUS VIRTUAL');
+
+    const previouslyAcknowledgedPayment = {
+      ...payment,
+      kind: 'access_ready' as const,
+      payment_received_status: 'sent',
+    };
+    const noDuplicate = assemblePostSaleMessage(previouslyAcknowledgedPayment, { intro: 'Tu acceso ya está habilitado.', suggestion: '' });
+    expect(noDuplicate).not.toContain('COMPROBANTE DE PAGO');
+
+    const delayedPayment = {
+      ...payment,
+      kind: 'access_delayed' as const,
+      payment_received_status: 'cancelled',
+      access_delayed_status: 'processing',
+    };
+    const delayed = assemblePostSaleMessage(delayedPayment, { intro: 'Recibimos tu pago. Todavía estoy preparando tu acceso.', suggestion: '' });
+    expect(delayed).toBe('Recibimos tu pago. Todavía estoy preparando tu acceso.');
+
+    for (const priorDelayStatus of ['sent', 'ambiguous'] as const) {
+      const recoveredPayment = {
+        ...payment,
+        kind: 'access_ready' as const,
+        payment_received_status: 'cancelled',
+        access_delayed_status: priorDelayStatus,
+      };
+      const recoveredAccess = assemblePostSaleMessage(recoveredPayment, { intro: 'Tu acceso ya está habilitado.', suggestion: '' });
+      expect(recoveredAccess).not.toContain('COMPROBANTE DE PAGO');
+      expect(recoveredAccess).toContain('LINK DIRECTO AL CAMPUS VIRTUAL');
+    }
+  });
   it('rejects invented credentials, URLs and required password changes', () => {
     expect(() => assemblePostSaleMessage(access, { intro: 'Tu clave es Escuela.123', suggestion: '' })).toThrow();
     expect(() => assemblePostSaleMessage(access, { intro: 'Tu clave es Studyx.123', suggestion: '' })).toThrow();

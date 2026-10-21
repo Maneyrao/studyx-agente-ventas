@@ -547,6 +547,7 @@ export function buildAgentAContextV1(
   const currentLogicalMessages = currentLogicalMessagesV1(claimed);
   const currentSalesSignal = classifyBatchSalesSignal(
     currentLogicalMessages.map((message) => message.content),
+    { pendingCallReply: state.awaiting_reply === 'call_or_chat' },
   );
   const currentCallAuthorization = currentSalesSignal.type === 'direct_call_request';
   const inputCapability = inputCapabilityV1(claimed);

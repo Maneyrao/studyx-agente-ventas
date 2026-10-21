@@ -809,6 +809,101 @@ describe('prepareAgentTurnV2', () => {
     expect(prepared.action_rejection).toMatchObject({ action: 'request_call_now' });
   });
 
+  it('authorizes a fresh invitation after the prior call reached a terminal result', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Contame qué beneficios tiene el curso.'],
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
+          course_reference: 'redes_informaticas', confidence: 0.98,
+        },
+        response: {
+          messages: ['Te cuento lo más importante para que puedas decidir.'],
+          call_offer: 'Y si querés, te llamo y lo vemos.',
+        },
+      }),
+    }, {
+      state_store: store(state({
+        selected_offering_code: 'redes_informaticas', stage: 'course_selected',
+        call_preference: 'call', call_offer_status: 'accepted', call_offer_count: 0,
+        awaiting_reply: 'none',
+      })),
+      call_facts: {
+        async loadClaimedCallFacts() {
+          return {
+            open_offer: null,
+            open_retry_prompt: null,
+            active_call: null,
+            last_call_result: {
+              call_id: '44444444-4444-4444-8444-444444444444',
+              result: 'buzon_de_voz',
+              ended_at: '2026-10-21T10:30:30.117Z',
+            },
+            last_decline_at: null,
+          };
+        },
+      },
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.transition).toMatchObject({
+      stage: 'course_selected',
+      call_preference: 'unknown',
+      call_offer_status: 'offered',
+      call_offer_count: 1,
+      awaiting_reply: 'call_or_chat',
+    });
+  });
+
+  it('persists released terminal consent when the customer resumes the sale', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['quiero pagar'],
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'ask_payment_options', secondary_moves: [], vetoes: [],
+          course_reference: 'redes_informaticas', confidence: 0.98,
+        },
+        response: { messages: ['Te muestro las formas disponibles para avanzar.'] },
+      }),
+    }, {
+      state_store: store(state({
+        selected_offering_code: 'redes_informaticas', stage: 'course_selected',
+        call_preference: 'call', call_offer_status: 'accepted', call_offer_count: 0,
+        awaiting_reply: 'call_or_chat',
+      })),
+      call_facts: {
+        async loadClaimedCallFacts() {
+          return {
+            open_offer: null,
+            open_retry_prompt: null,
+            active_call: null,
+            last_call_result: {
+              call_id: '44444444-4444-4444-8444-444444444444',
+              result: 'buzon_de_voz',
+              ended_at: '2026-10-21T17:19:06.022Z',
+            },
+            last_decline_at: null,
+          };
+        },
+      },
+      contact_intake: completeIntake,
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.transition).toMatchObject({
+      selected_offering_code: 'redes_informaticas',
+      stage: 'course_selected',
+      call_preference: 'unknown',
+      call_offer_status: 'not_offered',
+      call_offer_count: 0,
+      awaiting_reply: 'none',
+    });
+  });
+
   it('keeps Agent A conversationally in control when payment intake is incomplete', async () => {
     const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
@@ -1146,6 +1241,33 @@ describe('prepareAgentTurnV2', () => {
       call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'none', stage: 'handoff',
     });
   });
+
+  it.each(['no', 'no, mejor no', 'ahora no', 'por ahora no', 'prefiero que no'])(
+    'does not dispatch when a later message in the availability burst says %s',
+    async (refusal) => {
+      const prepared = await prepareAgentTurnV2({
+        turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+        workspace_slug: 'studyx', business_context: business, catalog_index: index,
+        current_customer_messages: ['sí, dale', refusal],
+        proposal: proposal({
+          move: {
+            schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 0.98,
+          },
+          response: { messages: ['Perfecto, seguimos por acá.'] },
+          proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+        }),
+      }, {
+        state_store: store(state({
+          call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat',
+        })),
+        contact_intake: completeIntake,
+        now: () => Date.parse(index.as_of),
+      });
+
+      expect(prepared.decision.business_action).toBeNull();
+      expect(prepared.action_rejection).toMatchObject({ action: 'request_call_now' });
+    },
+  );
 
   it('prepares a retry and asks availability before dispatching again', async () => {
     const prepared = await prepareAgentTurnV2({

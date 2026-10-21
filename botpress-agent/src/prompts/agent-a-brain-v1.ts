@@ -4,8 +4,9 @@ import {
   STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION,
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
+import { evaluateSalesObjectionTurnV1 } from '../lib/conversation/sales-objection-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v118' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v121' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -83,6 +84,20 @@ Choose your own natural wording in the canonical voice. This grounding rule cons
 </current_catalog_resolution>`;
 }
 
+function currentCommercialGuidanceDirectiveV1(context: AgentAContextV1): string {
+  const objection = evaluateSalesObjectionTurnV1(context);
+  if (objection.kind === 'none') return '';
+
+  const repeated = objection.kind === 'repeated_price_objection';
+  return `<current_commercial_guidance kind="${objection.kind}">
+${repeated ? 'This turn contains a persistent price objection. ' : ''}The call lifecycle never replaces handling the objection in chat.
+${repeated ? 'Do not merely repeat the price, installment amounts or class count. ' : ''}Connect an authorized fact to the customer's stated use with conditional language. If the real outcome is unclear, ask one concrete diagnostic question.
+Keep USD 30 as the floor. Do not invent discounts, extras or promises of income or results.
+If the call policy permits or requires an invitation, put it only in response.call_offer and briefly explain what the call would help resolve.
+Choose the wording and structure yourself; this is guidance, not a script.
+</current_commercial_guidance>`;
+}
+
 const LISANDRO_VOICE_GATE = `<lisandro_voice_gate>
 Before returning, compare the customer-facing response with the recent assistant turns in authorized_context. Preserve schema, facts, effects and profile metadata.
 If it sounds generic, cold, administrative, blunt or repetitive, rewrite it as shorter, natural WhatsApp.
@@ -111,6 +126,8 @@ ${inertJson(context)}
 </authorized_context>
 
 ${currentCatalogResolutionDirectiveV1(context)}
+
+${currentCommercialGuidanceDirectiveV1(context)}
 
 ${mandatoryRepairDirectiveV1(context)}
 

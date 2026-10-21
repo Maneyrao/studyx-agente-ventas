@@ -79,8 +79,31 @@ describe('Agent A Brain prompt', () => {
     const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v83');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v118');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v87');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v121');
+  });
+
+  it('adds turn-specific guidance for a repeated price objection without forcing a script', () => {
+    const current = context();
+    current.turn.batch_messages = [
+      { id: 'current-1', text: 'me sigue pareciendo caro' },
+      { id: 'current-2', text: 'vale la pena?' },
+    ];
+    current.turn.recent_turns = [
+      { id: 'prior-1', direction: 'inbound', content: 'me parece caro' },
+      { id: 'prior-2', direction: 'outbound', content: 'La cuota de USD 30 es la más liviana.' },
+    ];
+    current.commercial_state.call_preference = 'call';
+    current.commercial_state.call_offer_status = 'accepted';
+    current.capabilities.may_offer_call = false;
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+
+    expect(instructions).toContain('<current_commercial_guidance kind="repeated_price_objection">');
+    expect(instructions).toContain('The call lifecycle never replaces handling the objection in chat');
+    expect(instructions).toContain('Do not merely repeat the price, installment amounts or class count');
+    expect(instructions).toContain('Choose the wording and structure yourself');
+    expect(instructions).not.toContain('bonific');
   });
   it('distinguishes authoritative channel intake from evidence required for new observations', () => {
     const current = context();
@@ -103,9 +126,9 @@ describe('Agent A Brain prompt', () => {
 
   it('resolves academy identity without altering authorized facts', () => {
     const current = context();
-    current.identity = { advisor_name: 'Asistente virtual', academy_name: 'StudyX', website: null, instagram: null };
+    current.identity = { advisor_name: 'Emma', academy_name: 'StudyX', website: null, instagram: null };
     const instructions = buildAgentABrainInstructionsV1(current);
-    expect(instructions).toContain('Eres Asistente virtual, administrativa de Studyx');
+    expect(instructions).toContain('Eres Emma, administrativa de Studyx');
     expect(instructions).not.toContain('{{NOMBRE_ACADEMIA}}');
     expect(JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!)).toEqual(current);
   });

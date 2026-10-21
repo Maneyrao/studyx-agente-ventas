@@ -2,6 +2,10 @@ import { courseLogisticsInV1 } from '../../../../src/shared/conversation/course-
 import { eligibleContactRequestFieldsV1 } from './contact-profile-request-policy';
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import { evaluateCallOfferTurnPolicyV1 } from './call-offer-turn-policy';
+import {
+  evaluateSalesObjectionTurnV1,
+  responseProgressesRepeatedPriceObjectionV1,
+} from './sales-objection-turn-policy';
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import {
   AgentATurnProposalV1Schema,
@@ -478,8 +482,11 @@ function normalizedCurrentCustomerTextV1(context: AgentAContextV1): string {
     .trim();
 }
 
-function naturalnessRepairDirectiveV1(_context: AgentAContextV1): string {
-  return 'Preserve the customer intent and the natural rhythm of the original answer. Use one or two short messages as needed, change only the rejected fact or action, and do not add unsupported claims.';
+function naturalnessRepairDirectiveV1(context: AgentAContextV1): string {
+  const objectionRepair = evaluateSalesObjectionTurnV1(context).kind === 'repeated_price_objection'
+    ? ' The customer repeated a price objection: do not answer by merely repeating plans, amounts or class count. Either connect an authorized fact to their intended use with conditional language or ask one concrete diagnostic question. A call invitation belongs only in response.call_offer when permitted.'
+    : '';
+  return `Preserve the customer intent and the natural rhythm of the original answer. Use one or two short messages as needed, change only the rejected fact or action, and do not add unsupported claims.${objectionRepair}`;
 }
 
 function closedObject(properties: Record<string, unknown>) {
@@ -1808,6 +1815,12 @@ export function validateAgentATurnProposalV1(input: {
   ) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_question' });
   }
+  if (
+    evaluateSalesObjectionTurnV1(input.context).kind === 'repeated_price_objection'
+    && !responseProgressesRepeatedPriceObjectionV1(input.proposal.response)
+  ) {
+    rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'persistent_price_objection' });
+  }
 
   // V2 — cada hecho citado existe en el registro materializado del turno.
   for (const factId of input.proposal.used_fact_ids) {
@@ -2107,15 +2120,7 @@ export function validateAgentATurnProposalV1(input: {
   const requestedCallNow = moves.has('request_call') && input.proposal.proposed_action.type === 'request_call_now'
     && input.context.capabilities.may_request_call_now && callRequestSupported
     && !input.proposal.move.vetoes.includes('call');
-  // Asking for a call prerequisite is not a claim that the call was already
-  // dispatched. Agent A may classify a terse or noisy reply as `unknown`
-  // while still naturally continuing an already accepted call handoff.
-  const callCollectionInProgress = moves.has('request_call') || resumesAcceptedCall;
-  const asksForMissingCallIdentity = callCollectionInProgress
-    && missingCallIntake.length > 0
-    && mentionsMissingIntakeField(input.proposal.response.messages, missingCallIntake);
   const claimsCallDispatchWithoutAction = input.proposal.proposed_action.type !== 'request_call_now'
-    && !asksForMissingCallIdentity
     && [...input.proposal.response.messages, typeof declaredCallOffer === 'string' ? declaredCallOffer : '']
       .some(message => claimsImmediateCallDispatchV1(message, input.context.commercial_state.active_call?.status));
   if (claimsCallDispatchWithoutAction) {

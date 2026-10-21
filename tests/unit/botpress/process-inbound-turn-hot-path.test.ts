@@ -484,6 +484,11 @@ describe('processInboundTurn hot path', () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.policy = { may_respond: false, allowed_response_types: [], reason: 'CONTACT_BLOCKED' };
     claimed.contact.blocked = true;
+    actionSpies.ingest.mockResolvedValue({
+      ...ingestResponse(),
+      policy: { may_respond: false, allowed_response_types: [], reason: 'CONTACT_BLOCKED' },
+      contact: { ...ingestResponse().contact, blocked: true },
+    });
     actionSpies.claim.mockResolvedValue(claimed);
     const startTyping = vi.spyOn(runtimeActions.whatsapp, 'startTypingIndicator');
     const stopTyping = vi.spyOn(runtimeActions.whatsapp, 'stopTypingIndicator');
@@ -545,6 +550,9 @@ describe('processInboundTurn hot path', () => {
     expect(stopTyping).toHaveBeenCalledWith({
       conversationId: 'bp-conversation', messageId: 'wamid.typing-test',
     });
+    expect(startTyping.mock.invocationCallOrder[0]).toBeLessThan(
+      actionSpies.claim.mock.invocationCallOrder[0]!,
+    );
     expect(startTyping.mock.invocationCallOrder[0]).toBeLessThan(stopTyping.mock.invocationCallOrder[0]!);
   });
 
@@ -4183,6 +4191,54 @@ describe('processInboundTurn hot path', () => {
         response_type: 'call_confirmation',
         reason_code: 'CALL_DIRECT_REQUEST',
         business_action: { type: 'request_call_now', reason: 'direct_request' },
+      },
+    });
+  });
+
+  it('sends a completed direct-request availability reply through backend call authorization', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off',
+      conversation_pipeline_v1_enabled: true,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.deterministic_route = 'call_direct_request';
+    configuration.agentAPlannerlessV2Enabled = true;
+    claimed.context.batch_messages[0].content = 'si dale';
+    claimed.sales_context.allowed_actions = ['request_call_now'];
+    claimed.contact_intake_missing = [];
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0,
+    };
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null, selected_payment_plan: null,
+      stage: 'exploring', call_preference: 'call', call_offer_status: 'accepted',
+      call_offer_count: 0, awaiting_reply: 'call_or_chat', version: 4,
+    };
+    actionSpies.claim.mockResolvedValue(claimed);
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute: vi.fn(), client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.agentABrainDeepSeek).not.toHaveBeenCalled();
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: null,
+      agent_turn_v2: {
+        schema_version: 2,
+        proposal: {
+          move: { move: 'request_call' },
+          proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+        },
       },
     });
   });

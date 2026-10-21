@@ -4,6 +4,7 @@ import {
   supportsCallRequestV1,
   supportsChatPreferenceV1,
 } from './channel-preference-evidence';
+import { isPriceObjectionTextV1 } from './sales-objection-turn-policy';
 
 export type CallOfferTurnReasonV1 =
   | 'FIRST_NAME_OR_NEED_MISSING'
@@ -62,21 +63,17 @@ function optOut(text: string): boolean {
   return /\b(?:no\s+(?:quiero|deseo)\s+(?:recibir\s+)?mas\s+mensajes|deja\s+de\s+(?:escribirme|contactarme)|dame\s+de\s+baja|no\s+me\s+contactes|stop)\b/u.test(value);
 }
 
-function priceObjection(text: string): boolean {
-  const value = normalized(text);
-  return /\b(?:car[oa]|costos[oa]|fuera\s+de\s+(?:mi\s+)?presupuesto|no\s+me\s+alcanza|no\s+llego|se\s+me\s+va|much[oa]\s+dinero|presupuesto\b[^.!?\n]{0,32}\b(?:ajustado|limitado))\b/u.test(value);
-}
-
 function exceptionRequest(text: string): boolean {
   const value = normalized(text);
   return /\b(?:hacer|hacen|pueden\s+hacer|pedir|dar|ofrecer)\s+(?:una\s+)?excepcion\b/u.test(value)
     || /\b(?:cobrar|pagar|dejar)\b[^.!?\n]{0,48}\b(?:menos|otra\s+cuota|cuota\s+menor)\b/u.test(value)
-    || /\b(?:descuento|bonificacion|precio\s+especial)\b/u.test(value);
+    || /\b(?:descuento|bonificacion|precio\s+especial|promo(?:cion(?:es)?)?|negoci(?:ar|amos|acion))\b/u.test(value)
+    || /\b(?:agregar|sumar|incluir)\b[^.!?\n]{0,56}\b(?:curso|marketing)\b[^.!?\n]{0,40}\b(?:mismo\s+valor|mismo\s+precio|sin\s+costo|incluido)\b/u.test(value);
 }
 
 function priorPriceObjection(context: AgentAContextV1): boolean {
   return context.turn.recent_turns.some((turn) => (
-    turn.direction === 'inbound' && priceObjection(turn.content)
+    turn.direction === 'inbound' && isPriceObjectionTextV1(turn.content)
   ));
 }
 
@@ -138,6 +135,13 @@ export function evaluateCallOfferTurnPolicyV1(input: {
   const { context } = input;
   const text = currentText(context);
   const pendingOffer = context.commercial_state.call_offer_status === 'offered';
+  const completedHistoricalCall = context.commercial_state.active_call == null
+    && context.commercial_state.last_call_result != null
+    && context.commercial_state.call_preference === 'call'
+    && context.commercial_state.call_offer_status === 'accepted'
+    && context.commercial_state.awaiting_reply === 'none'
+    && context.commercial_state.stage !== 'payment_link_sent'
+    && context.commercial_state.stage !== 'closed';
   const customerSignal: CallOfferCustomerSignalV1 = optOut(text)
     ? 'opt_out'
     : supportsCallDeclineV1(text, pendingOffer)
@@ -157,11 +161,13 @@ export function evaluateCallOfferTurnPolicyV1(input: {
     return { offer_required: false, offer_allowed: false, reason: 'CALL_REJECTED', customer_signal: customerSignal };
   }
   if (customerSignal === 'acceptance'
-      || context.commercial_state.call_offer_status === 'accepted'
-      || context.commercial_state.call_preference === 'call') {
+      || (!completedHistoricalCall && (
+        context.commercial_state.call_offer_status === 'accepted'
+        || context.commercial_state.call_preference === 'call'
+      ))) {
     return { offer_required: false, offer_allowed: false, reason: 'CALL_ACCEPTED', customer_signal: customerSignal };
   }
-  if (context.commercial_state.stage === 'handoff'
+  if ((!completedHistoricalCall && context.commercial_state.stage === 'handoff')
       || context.commercial_state.stage === 'closed'
       || context.commercial_state.stage === 'payment_link_sent'
       || context.commercial_state.payment_reported) {
@@ -190,11 +196,15 @@ export function evaluateCallOfferTurnPolicyV1(input: {
     if (exceptionRequest(text)) {
       return { offer_required: true, offer_allowed: true, reason: 'FIRST_EXCEPTION_REQUEST', customer_signal: customerSignal };
     }
-    if (priceObjection(text) && priorPriceObjection(context)) {
+    if (isPriceObjectionTextV1(text) && priorPriceObjection(context)) {
       return { offer_required: true, offer_allowed: true, reason: 'FIRST_REPEATED_PRICE_OBJECTION', customer_signal: customerSignal };
     }
+    if (context.commercial_state.selected_offering_code !== null
+      || context.catalog.selected_offering !== null) {
+      return { offer_required: true, offer_allowed: true, reason: 'FIRST_OFFER_DUE', customer_signal: customerSignal };
+    }
     if (
-      priceObjection(text)
+      isPriceObjectionTextV1(text)
       || severalQuestions(context, text)
       || indecision(text)
       || detailsRequest(text)
@@ -204,7 +214,7 @@ export function evaluateCallOfferTurnPolicyV1(input: {
     }
     return { offer_required: false, offer_allowed: false, reason: 'FIRST_NOT_YET_USEFUL', customer_signal: customerSignal };
   }
-  if (priceObjection(text)) {
+  if (isPriceObjectionTextV1(text)) {
     return { offer_required: false, offer_allowed: true, reason: 'SECOND_PRICE_OBJECTION', customer_signal: customerSignal };
   }
   if (severalQuestions(context, text)) {

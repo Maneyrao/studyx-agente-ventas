@@ -20,6 +20,10 @@ import {
   effectiveConversationStateV1,
   type ContactIntakeV1,
 } from '../domain/conversation-planner';
+import {
+  customerResumesCommercialFlowAfterCallV1,
+  reconcileTerminalCallStateV1,
+} from '../domain/call-lifecycle-reconciliation';
 import { claimsImmediateCallDispatchV1, claimsImmediatePaymentLinkDelivery, solicitsACall } from '../domain/operational-promise-guard';
 import type { ConversationStateStoreV1 } from '../ports/conversation-state-store';
 import type { PaymentVerificationV1 } from '@/features/payments/application/read-payment-verification';
@@ -228,13 +232,28 @@ export async function prepareAgentTurnV2(input: {
       ? { direction: 'inbound', message_type: 'text', channel: 'whatsapp' }
       : null,
   });
-  const state = loaded
+  const sessionState = loaded
     ? effectiveConversationStateV1(
         loaded,
         nowMs,
         loadConversationSessionConfig().sessionIdleMs,
       )
     : createDefaultConversationStateV1(input.turn);
+  const currentCustomerMessages = input.current_customer_messages ?? [];
+  const salesSignal = classifyBatchSalesSignal(
+    currentCustomerMessages,
+    { pendingCallReply: sessionState.awaiting_reply === 'call_or_chat' },
+  );
+  const state = callFacts === null
+    ? sessionState
+    : reconcileTerminalCallStateV1(sessionState, callFacts, {
+        current_customer_signal: salesSignal.type,
+        current_customer_resumes_commercial_flow:
+          customerResumesCommercialFlowAfterCallV1(currentCustomerMessages),
+      });
+  const awaitingCallAvailability = state.call_preference === 'call'
+    && state.call_offer_status === 'accepted'
+    && state.awaiting_reply === 'call_or_chat';
   const paymentVerification = await deps.payment_verification?.({
     workspace_slug: input.workspace_slug, contact_id: input.turn.contact_id,
     offering_code: state.selected_offering_code, plan_code: state.selected_payment_plan,
@@ -252,10 +271,6 @@ export async function prepareAgentTurnV2(input: {
     }),
   );
   const noActiveCall = callFacts?.active_call == null;
-  const salesSignal = classifyBatchSalesSignal(input.current_customer_messages ?? []);
-  const awaitingCallAvailability = state.call_preference === 'call'
-    && state.call_offer_status === 'accepted'
-    && state.awaiting_reply === 'call_or_chat';
   const currentCallAuthorization = salesSignal.type === 'direct_call_request';
   const authorize = (proposal: AgentATurnProposalV1, effectsAllowed = input.conversation_only !== true,
     semanticRejections = input.semantic_rejections) => {

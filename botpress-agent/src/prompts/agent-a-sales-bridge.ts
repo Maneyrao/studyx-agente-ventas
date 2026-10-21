@@ -3,7 +3,7 @@ import type { ClaimedTurn } from '../schemas/contracts'
 /**
  * The versioned Agent A instructions: a concise sales advisor for the
  * configured workspace that can bridge a high-intent conversation into an
- * immediate voice call with "nuestra asesora virtual".
+ * immediate voice call with nuestra asesora.
  *
  * This file is the entire behavioral contract for that model call. It is
  * organized as eight explicit blocks so each spec rule has exactly one place
@@ -18,8 +18,8 @@ import type { ClaimedTurn } from '../schemas/contracts'
  *   4. PAYMENT_OPTIONS_BLOCK       — canonical options and checkout rules.
  *   5. CALL_POLICY_BLOCK           — when a call may be offered or placed,
  *                                    gated by sales_context.allowed_actions.
- *   6. STYLE_AND_COPY_BLOCK        — answer-first, one CTA, "asesora
- *                                    virtual" never a human.
+ *   6. STYLE_AND_COPY_BLOCK        — answer-first, one CTA, and no invented
+ *                                    human identity.
  *   7. WHATSAPP_FALLBACK_BLOCK     — a declined call continues as a complete
  *                                    written sales journey.
  *   8. buildBoundedUntrustedContext — the fenced JSON payload: everything

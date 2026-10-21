@@ -487,6 +487,28 @@ export const processInboundTurn = new Workflow({
     state.phase = 'processing'
     state.errorCode = null
     let whatsappTypingActive = false
+    const startWhatsAppTyping = async (): Promise<void> => {
+      if (whatsappTypingActive
+        || input.channel !== 'whatsapp'
+        || input.sandbox_provider === 'telegram_sandbox') return
+      try {
+        await getWhatsappRuntimeActions().startTypingIndicator({
+          conversationId: input.botpress_conversation_id,
+          messageId: input.external_message_id,
+          timeout: 60_000,
+        })
+        whatsappTypingActive = true
+        safeLog('studyx.turn.typing_indicator_started', { trace_id: input.trace_id })
+      } catch (error) {
+        if (!(error instanceof Error)) throw error
+        // Presence is UX only. A provider or integration failure must never
+        // prevent the durable turn from producing the actual answer.
+        safeLog('studyx.turn.typing_indicator_start_failed', {
+          trace_id: input.trace_id,
+          error_code: errorCode(error),
+        })
+      }
+    }
     const stopWhatsAppTyping = async (): Promise<void> => {
       if (!whatsappTypingActive) return
       whatsappTypingActive = false
@@ -782,6 +804,13 @@ export const processInboundTurn = new Workflow({
       return finish()
     }
 
+    // Ingest already contains the canonical contact policy. Start presence
+    // before the durable batch wait so WhatsApp shows activity during the
+    // entire customer-visible wait, without leaking it to blocked contacts.
+    if (ingest.policy.may_respond && !ingest.contact.blocked) {
+      await startWhatsAppTyping()
+    }
+
     // ---- Pasos 4-6: dormir hasta due_at y reclamar ------------------------
     //
     // El sueño es un step durable: si el runtime recicla el workflow, se
@@ -903,28 +932,6 @@ export const processInboundTurn = new Workflow({
         }
       : claimed
     state.turnId = owned.turn_id
-    if (input.channel === 'whatsapp'
-      && input.sandbox_provider !== 'telegram_sandbox'
-      && owned.policy.may_respond
-      && !owned.contact.blocked) {
-      try {
-        await getWhatsappRuntimeActions().startTypingIndicator({
-          conversationId: input.botpress_conversation_id,
-          messageId: input.external_message_id,
-          timeout: 60_000,
-        })
-        whatsappTypingActive = true
-      } catch (error) {
-        if (!(error instanceof Error)) throw error
-        // Presence is UX only. A provider or integration failure must never
-        // prevent the durable turn from producing the actual answer.
-        safeLog('studyx.turn.typing_indicator_start_failed', {
-          trace_id: input.trace_id,
-          turn_id: owned.turn_id,
-          error_code: errorCode(error),
-        })
-      }
-    }
     const batchEventTimes = owned.context.batch_messages
       .map((message) => Date.parse(message.occurred_at ?? message.created_at))
       .filter((value) => Number.isFinite(value))
@@ -1078,6 +1085,53 @@ export const processInboundTurn = new Workflow({
         call_accepted: policy.customer_signal === 'acceptance',
         call_rejected: policy.customer_signal === 'rejection',
         chat_preference: policy.customer_signal === 'chat_preference',
+      }
+    }
+
+    if (deterministicDirectCallHandoff
+      && owned.conversation_state_v1?.call_preference === 'call'
+      && owned.conversation_state_v1.call_offer_status === 'accepted'
+      && owned.conversation_state_v1.call_offer_count === 0
+      && owned.conversation_state_v1.awaiting_reply === 'call_or_chat'
+      && commercialRoute.kind === 'deterministic'
+      && commercialRoute.decision.response !== null
+      && commercialRoute.decision.business_action?.type === 'request_call_now'
+      && commercialRoute.decision.business_action.reason === 'direct_request') {
+      // A short availability answer ("sí, dale") is not a standalone direct
+      // request. Preserve the model-free fast path, but send its structured
+      // move through the backend Agent Turn authority so the persisted
+      // accepted direct request is reloaded and proven before call consent is
+      // materialized. A bare affirmative outside this state never reaches it.
+      agentTurnV2Commit = {
+        schema_version: 2,
+        proposal: {
+          schema_version: 1,
+          move: {
+            schema_version: 1,
+            move: 'request_call',
+            secondary_moves: [],
+            vetoes: [],
+            confidence: 1,
+          },
+          response: { messages: [commercialRoute.decision.response], call_offer: null },
+          proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+          used_fact_ids: [],
+          used_memory_ids: [],
+          memory_candidates: [],
+          profile_updates: [],
+          profile_requests: [],
+          repair_of: null,
+        },
+      }
+      pipelineDecisionProvider = 'botpress'
+      pipelineDecisionModel = 'deterministic:direct-call-availability-v1'
+      pipelinePromptVersion = AGENT_A_PROMPT_VERSION
+      turnDiagnostics = {
+        schema_version: 1,
+        generation_attempts: 0,
+        failure_stage: 'none',
+        failure_codes: [],
+        action_status: 'authorized',
       }
     }
 

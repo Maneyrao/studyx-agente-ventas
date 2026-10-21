@@ -117,7 +117,8 @@ describe('matchDeterministicGreeting', () => {
   it('stays brand-neutral when business context is unavailable', () => {
     const decision = matchDeterministicGreeting(claimedTurn({ texts: ['hola'], route: 'greeting' }));
     expect(decision!.response).not.toMatch(/StudyX|Aburridont/);
-    expect(decision!.response).toContain('asistente virtual');
+    expect(decision!.response).toContain('parte del equipo');
+    expect(decision!.response).not.toMatch(/asesora virtual|asistente virtual/iu);
   });
 
   it('uses only the first name, once, when the contact name is known', () => {

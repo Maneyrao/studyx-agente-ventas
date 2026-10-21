@@ -139,7 +139,12 @@ try {
   } else console.log(JSON.stringify(preflight));
 } catch (error) {
   // Never dump the SDK error object: it may contain credentials or a request body.
+  const apiDiagnostic = error.isApiError ? {
+    errorId: typeof error.id === 'string' ? error.id : undefined,
+    errorTimestamp: typeof error.timestamp === 'string' ? error.timestamp : undefined,
+    description: typeof error.description === 'string' ? error.description : undefined,
+  } : {};
   console.error(JSON.stringify({ failed: true, code: error.code, type: error.type,
-    reason: error.isApiError ? 'BOTPRESS_API_REJECTED' : String(error.message) }));
+    reason: error.isApiError ? 'BOTPRESS_API_REJECTED' : String(error.message), ...apiDiagnostic }));
   process.exitCode = 1;
 }

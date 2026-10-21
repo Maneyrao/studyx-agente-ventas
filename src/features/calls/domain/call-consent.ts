@@ -98,14 +98,28 @@ export function selectAuthorizedVoiceConsentSourceIndex(input: {
   readonly mode: AuthorizedVoiceConsentFacts['mode'];
   readonly texts: readonly string[];
 }): number {
-  const { signal, index } = classifyBatchSalesSignalWithIndex(input.texts);
-  const matches = (input.mode === 'direct_request' && signal.type === 'direct_call_request')
+  const { signal, index } = classifyBatchSalesSignalWithIndex(
+    input.texts,
+    { pendingCallReply: true },
+  );
+  const matches = (input.mode === 'direct_request'
+      && (signal.type === 'direct_call_request' || signal.type === 'call_acceptance'))
     || (input.mode === 'accepted_offer' && signal.type === 'call_acceptance');
   return matches && index !== null ? index : input.texts.length - 1;
 }
 
 export function evaluateVoiceConsent(facts: VoiceConsentFacts): VoiceConsentVerdict {
-  const { signal, index } = classifyBatchSalesSignalWithIndex(facts.texts);
+  let classified = classifyBatchSalesSignalWithIndex(
+    facts.texts,
+    { pendingCallReply: facts.openOffer !== null },
+  );
+  // A direct request earlier in the same burst creates the context in which
+  // a later short refusal ("ahora no") is meaningful, even without a durable
+  // offer from a previous turn.
+  if (facts.openOffer === null && classified.signal.type === 'direct_call_request') {
+    classified = classifyBatchSalesSignalWithIndex(facts.texts, { pendingCallReply: true });
+  }
+  const { signal, index } = classified;
 
   if (signal.type === 'call_decline' || signal.type === 'opt_out') {
     return { allowed: false, code: 'CALL_EXPLICITLY_DECLINED' };

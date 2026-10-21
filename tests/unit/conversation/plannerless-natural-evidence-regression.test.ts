@@ -89,7 +89,8 @@ describe('plannerless natural evidence regression', () => {
     'Me parece caro.',
     'Estoy entre Inglés 1 e Inglés 2 y no sé cuál me conviene.',
     'Me pasas el temario y todos los detalles?',
-  ])('allows but does not force a contextual first call invitation: %s', (text) => {
+    'Qué beneficios tiene el curso de marketing?',
+  ])('requires one natural first call invitation once the course is already known: %s', (text) => {
     const context = {
       schema_version: 1,
       turn: {
@@ -123,15 +124,64 @@ describe('plannerless natural evidence regression', () => {
     } satisfies AgentAContextV1;
 
     expect(evaluateCallOfferTurnPolicyV1({ context })).toMatchObject({
-      offer_required: false,
+      offer_required: true,
       offer_allowed: true,
-      reason: 'FIRST_USEFUL_MOMENT',
+      reason: 'FIRST_OFFER_DUE',
+    });
+  });
+
+  it('does not let a completed historical call suppress a new qualified invitation', () => {
+    const context = {
+      schema_version: 1,
+      turn: {
+        batch_messages: [{ id: 'after-voicemail', text: 'Contame qué beneficios tiene Marketing.' }],
+        recent_turns: [{
+          id: 'after-voicemail-outbound', direction: 'outbound' as const,
+          content: 'Marketing Digital te puede servir para ordenar una estrategia comercial.',
+        }],
+      },
+      continuity: {
+        assistant_has_spoken: true, first_name_status: 'known' as const,
+        last_agent_reply: 'Marketing Digital te puede servir para ordenar una estrategia comercial.',
+      },
+      customer: { display_name: 'Carlos', memories: [] },
+      identity: null,
+      commercial_state: {
+        selected_offering_code: 'marketing_digital', selected_payment_plan: null,
+        stage: 'course_selected' as const, call_preference: 'call' as const,
+        call_offer_status: 'accepted' as const, call_offer_count: 0 as const,
+        active_call: null,
+        last_call_result: {
+          call_id: '44444444-4444-4444-8444-444444444444',
+          result: 'buzon_de_voz',
+          ended_at: '2026-10-21T10:30:30.117Z',
+        },
+        awaiting_reply: 'none' as const, payment_reported: false,
+      },
+      catalog: {
+        selected_offering: null, available_offerings: [], areas: [],
+        candidate_offerings: [], payment_plans: [],
+      },
+      capabilities: {
+        may_reply: true, may_offer_call: true, may_request_call_now: false,
+        may_present_payment_options: true, may_send_payment_link: false,
+        authorized_payment_plan: null, intake_status: 'known' as const, intake_missing: [],
+      },
+    } satisfies AgentAContextV1;
+
+    expect(evaluateCallOfferTurnPolicyV1({ context })).toMatchObject({
+      offer_required: true,
+      offer_allowed: true,
+      reason: 'FIRST_OFFER_DUE',
     });
   });
 
   it.each([
     ['Me sigue pareciendo caro, no llego con 30 dólares por mes.', 'FIRST_REPEATED_PRICE_OBJECTION'],
     ['No pueden hacer una excepción para que pague 15?', 'FIRST_EXCEPTION_REQUEST'],
+    ['No tienen alguna promo?', 'FIRST_EXCEPTION_REQUEST'],
+    ['No vas a negociar?', 'FIRST_EXCEPTION_REQUEST'],
+    ['Me puedes agregar Marketing por el mismo valor?', 'FIRST_EXCEPTION_REQUEST'],
   ] as const)('requires the first call invitation only at a useful Gabi/Lisandro trigger: %s', (text, reason) => {
     const context = {
       schema_version: 1,

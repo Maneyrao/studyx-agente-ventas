@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   classifyBatchSalesSignal,
+  classifyBatchSalesSignalWithIndex,
   classifyDeterministicSalesSignal,
 } from '@/features/orchestration/domain/sales-signal';
 
@@ -88,11 +89,18 @@ describe('classifyDeterministicSalesSignal', () => {
     });
   });
 
-  it.each(['Sí', 'sí', 'Sii', 'Siii', 'Dale', 'Daleee', 'De una', '¡Dale!', 'si.'])(
+  it.each(['Sí', 'sí', 'Sí dale', 'Sí, dale', 'Sí. Dale', 'Sii', 'Siii', 'Dale', 'Daleee', 'De una', '¡Dale!', 'si.'])(
     'recognizes a short standalone acceptance (%s)',
     (text) => {
       expect(classifyDeterministicSalesSignal(text)).toEqual({ type: 'call_acceptance' });
     }
+  );
+
+  it.each(['No', 'No, gracias', 'Mejor no', 'No, mejor no'])(
+    'recognizes a bounded short call refusal (%s)',
+    (text) => {
+      expect(classifyDeterministicSalesSignal(text)).toEqual({ type: 'call_decline' });
+    },
   );
 
   it('does not treat an affirmative embedded in a longer reply as a short acceptance', () => {
@@ -145,6 +153,19 @@ describe('classifyBatchSalesSignal', () => {
       type: 'call_decline',
     });
   });
+
+  it.each(['no', 'no, mejor no', 'ahora no', 'por ahora no', 'prefiero que no'])(
+    'lets a trailing short refusal (%s) revoke a prior acceptance and retains its evidence index',
+    (refusal) => {
+      expect(classifyBatchSalesSignalWithIndex(
+        ['sí, dale', refusal],
+        { pendingCallReply: true },
+      )).toEqual({
+        signal: { type: 'call_decline' },
+        index: 1,
+      });
+    },
+  );
 
   it('keeps a contextual short acceptance decisive inside a burst', () => {
     expect(classifyBatchSalesSignal(['dale', 'perfecto'])).toEqual({ type: 'call_acceptance' });

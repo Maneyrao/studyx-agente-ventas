@@ -2073,6 +2073,106 @@ describe('claimBatch sales_context', () => {
     });
   });
 
+  it('dispatches a direct requested call when complete intake is followed by the production reply si dale', async () => {
+    const messages = [{
+      id: '00000000-0000-4000-8000-000000000007',
+      conversation_seq: 7,
+      content: 'si dale',
+      created_at: '2026-10-21T10:23:15.000Z',
+      message_type: 'text',
+    }];
+    const persisted = {
+      workspace_id: 'workspace-1', conversation_id: 'conversation-1', contact_id: 'contact-1',
+      selected_offering_code: null, selected_payment_plan: null,
+      stage: 'exploring' as const, call_preference: 'call' as const,
+      call_offer_status: 'accepted' as const, call_offer_count: 0 as const,
+      awaiting_reply: 'call_or_chat' as const, payment_reported_at: null,
+      human_review_requested_at: null, consecutive_technical_fallbacks: 0,
+      source_turn_id: 'turn-previous', version: 4,
+      created_at: '2026-10-21T10:18:12.000Z', updated_at: '2026-10-21T10:23:08.000Z',
+    };
+    const deps = {
+      ...buildDeps({
+        messagesResult: messages,
+        now: () => '2026-10-21T10:23:15.000Z',
+        callIntakeReadiness: async () => ({
+          status: 'ready' as const,
+          intake: {
+            nombre: 'Thiago', apellido: 'Maneyro', correo: 'tmaneyro@gmail.com',
+            telefono: '+5491169004497',
+          },
+          requirements: [],
+        }),
+      }),
+      conversationPipelineEnabled: true,
+      conversationState: { load: vi.fn().mockResolvedValue(persisted) },
+    };
+
+    const result = await claimBatch(input, deps);
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+    expect(result.sales_context.allowed_actions).toContain('request_call_now');
+    expect(result.deterministic_route).toBe('call_direct_request');
+    expect(matchCallHandoffFastPath(withWireUuids(result) as unknown as BotpressClaimedTurn)).toMatchObject({
+      response_type: 'call_confirmation',
+      business_action: { type: 'request_call_now', reason: 'direct_request' },
+    });
+  });
+
+  it.each(['no', 'no, mejor no', 'ahora no', 'por ahora no', 'prefiero que no'])(
+    'does not resume a pending call when a later message in the burst says %s',
+    async (refusal) => {
+      const messages = [
+        {
+          id: '00000000-0000-4000-8000-000000000007',
+          conversation_seq: 7,
+          content: 'sí, dale',
+          created_at: '2026-10-21T10:23:15.000Z',
+          message_type: 'text',
+        },
+        {
+          id: '00000000-0000-4000-8000-000000000008',
+          conversation_seq: 8,
+          content: refusal,
+          created_at: '2026-10-21T10:23:16.000Z',
+          message_type: 'text',
+        },
+      ];
+      const persisted = {
+        workspace_id: 'workspace-1', conversation_id: 'conversation-1', contact_id: 'contact-1',
+        selected_offering_code: null, selected_payment_plan: null,
+        stage: 'exploring' as const, call_preference: 'call' as const,
+        call_offer_status: 'accepted' as const, call_offer_count: 0 as const,
+        awaiting_reply: 'call_or_chat' as const, payment_reported_at: null,
+        human_review_requested_at: null, consecutive_technical_fallbacks: 0,
+        source_turn_id: 'turn-previous', version: 4,
+        created_at: '2026-10-21T10:18:12.000Z', updated_at: '2026-10-21T10:23:08.000Z',
+      };
+      const deps = {
+        ...buildDeps({
+          messagesResult: messages,
+          now: () => '2026-10-21T10:23:16.000Z',
+          callIntakeReadiness: async () => ({
+            status: 'ready' as const,
+            intake: {
+              nombre: 'Thiago', apellido: 'Maneyro', correo: 'tmaneyro@gmail.com',
+              telefono: '+5491169004497',
+            },
+            requirements: [],
+          }),
+        }),
+        conversationPipelineEnabled: true,
+        conversationState: { load: vi.fn().mockResolvedValue(persisted) },
+      };
+
+      const result = await claimBatch(input, deps);
+      if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+      expect(result.sales_context.allowed_actions).not.toContain('request_call_now');
+      expect(result.deterministic_route).not.toBe('call_direct_request');
+    },
+  );
+
   it.each(['Daleee', 'Sii'])(
     'turns an emphatic chat acceptance (%s) of a durable retry prompt into a fresh call request',
     async (content) => {
@@ -2289,6 +2389,98 @@ describe('claimBatch sales_context', () => {
     // Nothing newer than the finished call has started, but the policy still
     // decides whether a new offer may be made.
     expect(result.sales_context.allowed_actions).toEqual(['offer_call']);
+  });
+
+  it('projects a completed call as resumable sales state instead of permanent handoff', async () => {
+    const persisted = {
+      workspace_id: 'workspace-1', conversation_id: 'conversation-1', contact_id: 'contact-1',
+      selected_offering_code: 'marketing_digital', selected_payment_plan: null,
+      stage: 'handoff' as const, call_preference: 'call' as const,
+      call_offer_status: 'accepted' as const, call_offer_count: 0 as const,
+      awaiting_reply: 'none' as const, payment_reported_at: null,
+      human_review_requested_at: null, consecutive_technical_fallbacks: 0,
+      source_turn_id: 'turn-call', version: 32,
+      created_at: '2026-10-21T10:20:00.000Z', updated_at: '2026-10-21T11:42:07.085Z',
+    };
+    const deps = {
+      ...buildDeps({
+        callFactsResult: callFacts({
+          last_call_result: {
+            call_id: '44444444-4444-4444-8444-444444444444',
+            result: 'buzon_de_voz',
+            ended_at: '2026-10-21T10:30:30.117Z',
+          },
+        }),
+      }),
+      agentABrainEnabled: true,
+      conversationState: { load: vi.fn().mockResolvedValue(persisted) },
+    };
+
+    const result = await claimBatch(input, deps);
+
+    expect(result).toMatchObject({
+      outcome: 'claimed',
+      conversation_state_v1: {
+        selected_offering_code: 'marketing_digital',
+        stage: 'course_selected',
+        call_preference: 'unknown',
+        call_offer_status: 'not_offered',
+        call_offer_count: 0,
+        awaiting_reply: 'none',
+      },
+    });
+  });
+
+  it('consumes terminal call consent when the customer resumes payment instead of confirming a retry', async () => {
+    const persisted = {
+      workspace_id: 'workspace-1', conversation_id: 'conversation-1', contact_id: 'contact-1',
+      selected_offering_code: 'marketing_digital', selected_payment_plan: null,
+      stage: 'course_selected' as const, call_preference: 'call' as const,
+      call_offer_status: 'accepted' as const, call_offer_count: 0 as const,
+      awaiting_reply: 'call_or_chat' as const, payment_reported_at: null,
+      human_review_requested_at: null, consecutive_technical_fallbacks: 0,
+      source_turn_id: 'turn-call', version: 41,
+      created_at: '2026-10-21T17:18:24.000Z', updated_at: '2026-10-21T17:19:23.000Z',
+    };
+    const deps = {
+      ...buildDeps({
+        messagesResult: [
+          {
+            id: '00000000-0000-4000-8000-000000000007',
+            conversation_seq: 12,
+            content: 'quiero pagar',
+            created_at: '2026-10-21T17:19:51.000Z',
+            message_type: 'text',
+          },
+        ],
+        callFactsResult: callFacts({
+          active_call: null,
+          last_call_result: {
+            call_id: '44444444-4444-4444-8444-444444444444',
+            result: 'buzon_de_voz',
+            ended_at: '2026-10-21T17:19:06.022Z',
+          },
+        }),
+      }),
+      agentABrainEnabled: true,
+      conversationPipelineEnabled: true,
+      conversationState: { load: vi.fn().mockResolvedValue(persisted) },
+    };
+
+    const result = await claimBatch(input, deps);
+
+    expect(result).toMatchObject({
+      outcome: 'claimed',
+      conversation_state_v1: {
+        selected_offering_code: 'marketing_digital',
+        call_preference: 'unknown',
+        call_offer_status: 'not_offered',
+        call_offer_count: 0,
+        awaiting_reply: 'none',
+      },
+    });
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.deterministic_route).not.toBe('call_direct_request');
   });
 
   it('never grants a sales action for a blocked contact', async () => {

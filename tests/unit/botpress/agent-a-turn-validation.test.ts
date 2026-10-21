@@ -1640,3 +1640,41 @@ it('does not require a purchase course to clarify a customer-initiated call', ()
   expect(rejection?.rejections.filter(item => item.code === 'COURSE_NOT_RESOLVED') ?? []).toEqual([]);
   expect(rejection?.rejections).toContainEqual({ code: 'UNSUPPORTED_OPERATIONAL_CLAIM', subject: 'call_confirmation' });
 });
+
+it('rejects a call promise even when the same message asks for missing call identity', () => {
+  const ctx = context({
+    turn: { batch_messages: [{ id: 'm1', text: '¿Me pueden llamar?' }], recent_turns: [] },
+    commercial_state: {
+      ...context().commercial_state,
+      call_preference: 'call',
+      call_offer_status: 'accepted',
+      awaiting_reply: 'contact_details',
+    },
+    capabilities: {
+      ...context().capabilities,
+      may_request_call_now: false,
+      intake_missing: ['nombre', 'apellido', 'correo'],
+    },
+  } as Partial<AgentAContextV1>);
+  const request = proposal({
+    move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+    response: {
+      messages: ['Sí, te llamamos. Para coordinar necesito tu nombre, apellido y correo.'],
+      call_offer: null,
+    },
+    proposed_action: { type: 'none' },
+    used_fact_ids: [],
+  });
+
+  const rejection = validateAgentATurnProposalV1({
+    proposal: request,
+    context: ctx,
+    planned_fact_ids: [],
+    rejection_id: '00000000-0000-4000-8000-000000000002',
+  });
+
+  expect(rejection?.rejections).toContainEqual({
+    code: 'UNSUPPORTED_OPERATIONAL_CLAIM',
+    subject: 'call_confirmation',
+  });
+});

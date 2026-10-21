@@ -26,8 +26,8 @@ export const GREETING_FAST_PATH_MODEL = 'deterministic:greeting-fast-path-v3'
 function buildGreetingResponse(claimed: ClaimedTurn): string {
   const businessName = claimed.business_context?.workspace.display_name ?? null
   const identity = businessName
-    ? `Soy el asistente virtual de ${businessName}.`
-    : 'Soy el asistente virtual del equipo.'
+    ? `Soy parte del equipo de ${businessName}.`
+    : 'Soy parte del equipo.'
   const firstName = claimed.contact.name?.trim().split(/\s+/u)[0] || null
   const salutation = firstName ? `Hola, ${firstName} 😊` : 'Hola 😊'
   const nextStep = firstName

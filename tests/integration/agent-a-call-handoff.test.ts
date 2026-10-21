@@ -151,6 +151,108 @@ function commit(turnId: string, decision: Record<string, unknown>) {
   });
 }
 
+async function markAwaitingCallAvailability(turnId: string) {
+  await db!`
+    INSERT INTO conversation_sales_context_states_v1 (
+      workspace_id, conversation_id, contact_id, call_preference,
+      call_offer_status, call_offer_count, awaiting_reply, stage, source_turn_id
+    )
+    SELECT workspace.id, message.conversation_id, message.contact_id,
+           'call', 'accepted', 0, 'call_or_chat', 'exploring', message.id
+    FROM messages AS message
+    JOIN workspaces AS workspace ON workspace.slug = 'studyx' AND workspace.status = 'active'
+    WHERE message.id = ${turnId}::uuid
+    ON CONFLICT (workspace_id, conversation_id) DO UPDATE
+    SET call_preference = 'call', call_offer_status = 'accepted',
+        call_offer_count = 0, awaiting_reply = 'call_or_chat',
+        stage = 'exploring', source_turn_id = EXCLUDED.source_turn_id,
+        version = conversation_sales_context_states_v1.version + 1, updated_at = now()
+  `;
+}
+
+function commitPreparedAvailabilityCall(turnId: string) {
+  return commitAgentDecision({
+    turn_id: turnId,
+    trace_id: randomUUID(),
+    authorized_offering_code: null,
+    authorized_payment_plan: null,
+    conversation_pipeline_v1: null,
+    agent_turn_v2: {
+      schema_version: 2,
+      proposal: {
+        schema_version: 1,
+        move: {
+          schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1,
+        },
+        response: { messages: [CONFIRMATION], call_offer: null },
+        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+        profile_updates: [], profile_requests: [], repair_of: null,
+      },
+    },
+    supports_multi_outbound: true,
+    decision: callConfirmation('direct_request'),
+    model: {
+      provider: 'botpress', model: 'deterministic:direct-call-availability-v1',
+      prompt_version: 'studyx-agent-a-brain-plannerless-test',
+    },
+  });
+}
+
+const QUALIFIED_GUIDANCE = 'Te ayudo a revisar si encaja con lo que buscás.';
+const NATURAL_CALL_OFFER = 'Y si querés, te llamo y lo vemos.';
+
+function commitPreparedCallOffer(turnId: string) {
+  return commitAgentDecision({
+    turn_id: turnId,
+    trace_id: randomUUID(),
+    authorized_offering_code: null,
+    authorized_payment_plan: null,
+    conversation_pipeline_v1: null,
+    agent_turn_v2: {
+      schema_version: 2,
+      proposal: {
+        schema_version: 1,
+        move: {
+          schema_version: 1,
+          move: 'ask_course_information',
+          secondary_moves: [],
+          vetoes: [],
+          course_reference: 'marketing_digital',
+          confidence: 1,
+        },
+        response: { messages: [QUALIFIED_GUIDANCE], call_offer: NATURAL_CALL_OFFER },
+        proposed_action: { type: 'none' },
+        used_fact_ids: [],
+        used_memory_ids: [],
+        memory_candidates: [],
+        profile_updates: [],
+        profile_requests: [],
+        repair_of: null,
+      },
+    },
+    supports_multi_outbound: true,
+    decision: {
+      schema_version: 4,
+      intent: 'commercial',
+      kind: 'reply',
+      response: `${QUALIFIED_GUIDANCE}\n\n${NATURAL_CALL_OFFER}`,
+      response_type: 'call_offer',
+      business_action: null,
+      memory_candidates: [],
+      missing_information: [],
+      next_state: 'waiting_user',
+      reason_code: 'CALL_OFFER_PROPOSED',
+      confidence: 1,
+      retrieval_used: null,
+    },
+    model: {
+      provider: 'botpress', model: 'vitest-terminal-call-reoffer',
+      prompt_version: 'studyx-agent-a-brain-plannerless-test',
+    },
+  });
+}
+
 async function sessionsByTurn(turnId: string) {
   return db!<Array<{
     id: string;
@@ -166,6 +268,96 @@ async function sessionsByTurn(turnId: string) {
 }
 
 run('agent a call handoff — reservation', () => {
+  it('persists a new offer after a terminal call from inherited course-selected state', async () => {
+    const identity = newIdentity();
+    const firstTurn = await seedTurn(identity, 'Llamame ahora');
+    const first = await commit(firstTurn, callConfirmation('direct_request'));
+    const callId = first.call_request!.call_id;
+
+    await db!`
+      UPDATE call_sessions
+      SET status = 'no_answer', analysis_status = 'completed',
+          result = 'buzon_de_voz', completed_at = now(), updated_at = now()
+      WHERE id = ${callId}::uuid
+    `;
+    await db!`
+      INSERT INTO conversation_sales_context_states_v1 (
+        workspace_id, conversation_id, contact_id, selected_offering_code,
+        stage, call_preference, call_offer_status, call_offer_count,
+        awaiting_reply, source_turn_id
+      )
+      SELECT workspace.id, message.conversation_id, message.contact_id,
+             'marketing_digital', 'course_selected', 'call', 'accepted', 0,
+             'none', message.id
+      FROM messages AS message
+      JOIN workspaces AS workspace ON workspace.slug = 'studyx' AND workspace.status = 'active'
+      WHERE message.id = ${firstTurn}::uuid
+      ON CONFLICT (workspace_id, conversation_id) DO UPDATE
+      SET selected_offering_code = 'marketing_digital', stage = 'course_selected',
+          call_preference = 'call', call_offer_status = 'accepted',
+          call_offer_count = 0, awaiting_reply = 'none',
+          source_turn_id = EXCLUDED.source_turn_id,
+          version = conversation_sales_context_states_v1.version + 1,
+          updated_at = now()
+    `;
+
+    const offerTurn = await seedTurn(identity, 'Contame si Marketing me puede servir');
+    const committed = await commitPreparedCallOffer(offerTurn);
+    expect(committed.status).toBe('committed');
+
+    const replay = await commitPreparedCallOffer(offerTurn);
+    expect(replay.status).toBe('duplicate');
+
+    const state = await db!<Array<{
+      stage: string;
+      call_preference: string;
+      call_offer_status: string;
+      call_offer_count: number;
+      awaiting_reply: string;
+      events: number;
+    }>>`
+      SELECT state.stage, state.call_preference, state.call_offer_status,
+             state.call_offer_count, state.awaiting_reply,
+             (SELECT count(*)::int
+                FROM conversation_sales_context_state_events_v1 AS event
+               WHERE event.workspace_id = state.workspace_id
+                 AND event.conversation_id = state.conversation_id
+                 AND event.source_turn_id = ${offerTurn}::uuid) AS events
+      FROM conversation_sales_context_states_v1 AS state
+      WHERE state.conversation_id = (
+        SELECT conversation_id FROM messages WHERE id = ${offerTurn}::uuid
+      )
+    `;
+    expect(state).toEqual([{
+      stage: 'course_selected',
+      call_preference: 'unknown',
+      call_offer_status: 'offered',
+      call_offer_count: 1,
+      awaiting_reply: 'call_or_chat',
+      events: 1,
+    }]);
+  });
+
+  it('the Agent Turn availability path reserves once and points at the exact affirmative message', async () => {
+    const identity = newIdentity();
+    const acceptanceTurn = await seedTurn(identity, 'Sí, dale');
+    await seedTurn(identity, 'gracias');
+    await markAwaitingCallAvailability(acceptanceTurn);
+
+    const committed = await commitPreparedAvailabilityCall(acceptanceTurn);
+    expect(committed.status).toBe('committed');
+    expect(await sessionsByTurn(acceptanceTurn)).toEqual([
+      expect.objectContaining({
+        consent_source_message_id: acceptanceTurn,
+        offered_by_decision_id: null,
+      }),
+    ]);
+
+    const replay = await commitPreparedAvailabilityCall(acceptanceTurn);
+    expect(replay.status).toBe('duplicate');
+    expect(await sessionsByTurn(acceptanceTurn)).toHaveLength(1);
+  });
+
   it('a direct request reserves exactly one session with derived consent', async () => {
     const identity = newIdentity();
     const turnId = await seedTurn(identity, 'Llamame ahora');
@@ -299,6 +491,41 @@ run('agent a call handoff — refusals reserve nothing', () => {
     `;
     expect(committed).toHaveLength(0);
   });
+
+  it.each(['no', 'no, mejor no'])(
+    'a trailing short refusal (%s) blocks the call and persists no consent',
+    async (refusal) => {
+      const identity = newIdentity();
+      const representativeTurn = await seedTurn(identity, 'sí, dale');
+      await seedTurn(identity, refusal);
+
+      await expectRejected(
+        representativeTurn,
+        callConfirmation('direct_request'),
+        'CALL_EXPLICITLY_DECLINED',
+      );
+    },
+  );
+
+  it.each(['ahora no', 'por ahora no', 'prefiero que no'])(
+    'the Agent Turn availability path honors a later contextual refusal (%s)',
+    async (refusal) => {
+      const identity = newIdentity();
+      const representativeTurn = await seedTurn(identity, 'Sí, dale');
+      await seedTurn(identity, refusal);
+      await markAwaitingCallAvailability(representativeTurn);
+
+      await expect(commitPreparedAvailabilityCall(representativeTurn)).rejects.toMatchObject({
+        code: 'DECISION_REJECTED',
+        reason: expect.stringContaining('ACTION_NOT_AUTHORIZED'),
+      });
+      expect(await sessionsByTurn(representativeTurn)).toHaveLength(0);
+      const committed = await db!<Array<{ id: string }>>`
+        SELECT id FROM agent_decisions WHERE turn_id = ${representativeTurn}::uuid
+      `;
+      expect(committed).toHaveLength(0);
+    },
+  );
 
   it('an expired offer no longer authorizes the acceptance', async () => {
     const identity = newIdentity();

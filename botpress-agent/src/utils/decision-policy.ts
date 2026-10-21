@@ -293,9 +293,9 @@ export function modelUnavailableFallback(
   )
   const businessName = claimed.business_context?.workspace.display_name?.trim() || 'StudyX'
   const socialResponse = /^hola+$/u.test(latest)
-    ? `Hola! 😊 Soy la asesora virtual de ${businessName}. Qué te gustaría aprender?`
+    ? `Hola! 😊 Soy parte del equipo de ${businessName}. Qué te gustaría aprender?`
     : /\b(?:quien sos|quienes son|con quien hablo|de donde me hablas)\b/u.test(latest)
-      ? `Soy la asesora virtual de ${businessName}. Estoy para orientarte y ayudarte a elegir una formación. Qué te gustaría aprender?`
+      ? `Soy parte del equipo de ${businessName}. Estoy para orientarte y ayudarte a elegir una formación. Qué te gustaría aprender?`
       : /\b(?:como estas|todo bien|como va)\b/u.test(latest)
         ? `Bien, gracias! 😊 Qué te gustaría aprender o consultar?`
         : null
